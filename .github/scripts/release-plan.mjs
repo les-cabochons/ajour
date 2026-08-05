@@ -89,8 +89,7 @@ export function planNightly({
     .map(coreVersionFromTag)
     .filter(Boolean);
   const version = highestVersion([configuredVersion, ...releaseVersions]);
-  const escapedVersion = version.replaceAll(".", "\\.");
-  const nightlyPattern = new RegExp(`^v${escapedVersion}-nightly-${date}\\.(\\d+)$`);
+  const nightlyPattern = /^v\d+\.\d+\.\d+-nightly-\d{8}\.(\d{3,})$/;
   const highestSequence = tags.reduce((highest, tag) => {
     const match = nightlyPattern.exec(tag);
     return match ? Math.max(highest, Number(match[1])) : highest;

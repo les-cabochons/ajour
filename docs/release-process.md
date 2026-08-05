@@ -8,11 +8,11 @@ Every push to `main` runs **Desktop Nightly Release**. The workflow:
 
 1. reads the release series from `VERSION` and existing release tags;
 2. creates an `America/Toronto`-dated tag such as `v0.0.1-nightly-20260804.001`;
-3. increments the three-digit counter for additional releases on the same Toronto date and resets it to `.001` on the next date;
+3. increments one global build counter across all dates and version series, so the build after `.002` is always `.003`;
 4. builds the macOS DMG and Windows Squirrel distributables;
 5. creates a GitHub prerelease with generated changelog notes and attaches all distributable files.
 
-The nightly workflow tests the version planner, then reserves its tag with an atomic Git push before packaging. Simultaneous pushes retry against the newly fetched tags, so each push gets a distinct counter instead of being cancelled by a workflow concurrency queue. A rerun reuses the tag already reserved for that commit. Release-series selection uses only `VERSION` and published release tags reachable from that commit; tags on later commits cannot change an older queued build.
+The nightly workflow tests the version planner, then reserves its tag with an atomic Git push before packaging. Simultaneous pushes retry against the newly fetched tags, so each push gets a distinct global build number instead of being cancelled by a workflow concurrency queue. A rerun reuses the tag already reserved for that commit. Release-series selection uses only `VERSION` and published release tags reachable from that commit; tags on later commits cannot change an older queued build.
 
 The padded counter is kept in the Git tag as part of the release naming contract. Because a numeric SemVer prerelease identifier cannot contain leading zeroes, packaged nightly applications use the equivalent valid version `0.0.1-nightly-20260804-001` internally.
 

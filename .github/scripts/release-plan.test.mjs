@@ -27,14 +27,26 @@ test("creates the requested first nightly tag from the alpha baseline", () => {
   );
 });
 
-test("increments nightlies on the same date and resets on the next date", () => {
+test("increments one global nightly build number across dates", () => {
   const tags = [
     "v0.0.1-nightly-20260804.001",
     "v0.0.1-nightly-20260804.002",
   ];
 
   assert.equal(planNightly({ configuredVersion: "0.0.1", tags, date: "20260804" }).tag, "v0.0.1-nightly-20260804.003");
-  assert.equal(planNightly({ configuredVersion: "0.0.1", tags, date: "20260805" }).tag, "v0.0.1-nightly-20260805.001");
+  assert.equal(planNightly({ configuredVersion: "0.0.1", tags, date: "20260805" }).tag, "v0.0.1-nightly-20260805.003");
+});
+
+test("keeps incrementing the global build number after a version change", () => {
+  const plan = planNightly({
+    configuredVersion: "0.1.0",
+    tags: ["v0.0.1-nightly-20260804.009"],
+    reachableTags: ["v0.0.1-nightly-20260804.009"],
+    publishedTags: ["v0.0.1-nightly-20260804.009"],
+    date: "20260805",
+  });
+
+  assert.equal(plan.tag, "v0.1.0-nightly-20260805.010");
 });
 
 test("does not inherit a release series from an unreachable later tag", () => {
@@ -46,7 +58,7 @@ test("does not inherit a release series from an unreachable later tag", () => {
     date: "20260805",
   });
 
-  assert.equal(plan.tag, "v0.0.1-nightly-20260805.001");
+  assert.equal(plan.tag, "v0.0.1-nightly-20260805.002");
 });
 
 test("reuses the tag already reserved for the same commit", () => {
