@@ -17,7 +17,7 @@ const {
   getWindowsTitleBarOverlay,
 } = require("./window-chrome.cjs");
 const {
-  checkForUpdates,
+  createUpdateCheckCoordinator,
   isAllowedReleaseUrl,
 } = require("./update-check.cjs");
 
@@ -67,6 +67,7 @@ let desktopBootstrapLocalState = null;
 let developmentPluginDirectoriesOverride;
 let mainWindow = null;
 let gracefulQuitStarted = false;
+const checkForUpdatesCoordinated = createUpdateCheckCoordinator();
 
 const developmentPluginSettingsPath = path.join(
   app.getPath("userData"),
@@ -103,7 +104,7 @@ ipcMain.on("timetracker:set-window-chrome-theme", (event, theme) => {
 
 ipcMain.handle("timetracker:check-for-updates", async (event, track) => {
   assertActiveDesktopWindow(event, "check for application updates");
-  return await checkForUpdates({
+  return await checkForUpdatesCoordinated({
     track,
     currentVersion: app.getVersion(),
     fetchImpl: net.fetch,

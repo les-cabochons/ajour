@@ -6,6 +6,7 @@ const {
   GITHUB_LATEST_STABLE_API_URL,
   GITHUB_RELEASES_API_URL,
   checkForUpdates,
+  createUpdateCheckCoordinator,
   isAllowedReleaseUrl,
   isUpdateAvailable,
   normalizeReleases,
@@ -21,6 +22,16 @@ const {
     fetchImpl: ReturnType<typeof vi.fn>;
     now?: () => number;
   }) => Promise<Record<string, unknown>>;
+  createUpdateCheckCoordinator: (options?: {
+    checkForUpdatesImpl?: ReturnType<typeof vi.fn>;
+    now?: () => number;
+    successTtlMs?: number;
+    failureTtlMs?: number;
+  }) => (options: {
+    track: "stable" | "nightly";
+    currentVersion: string;
+    fetchImpl?: ReturnType<typeof vi.fn>;
+  }) => Promise<unknown>;
   isAllowedReleaseUrl: (value: unknown) => boolean;
   isUpdateAvailable: (
     currentVersion: string,
@@ -175,6 +186,94 @@ describe("desktop update checks", () => {
       GITHUB_LATEST_STABLE_API_URL,
       expect.any(Object),
     );
+  });
+
+  it("looks up the installed release when cross-track ordering needs it", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue([
+          githubRelease("v1.0.0-nightly-20260806.011", "2026-08-06T18:00:00Z"),
+        ]),
+      })
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi.fn().mockResolvedValue(
+          githubRelease("v1.0.0", "2026-08-05T18:00:00Z", false),
+        ),
+      });
+
+    await expect(
+      checkForUpdates({
+        track: "nightly",
+        currentVersion: "1.0.0",
+        fetchImpl,
+      }),
+    ).resolves.toMatchObject({
+      latestTag: "v1.0.0-nightly-20260806.011",
+      updateAvailable: true,
+    });
+    expect(fetchImpl.mock.calls[1]?.[0]).toBe(
+      "https://api.github.com/repos/les-cabochons/ajour/releases/tags/v1.0.0",
+    );
+  });
+
+  it("coalesces in-flight checks and caches each track with failure backoff", async () => {
+    let currentTime = 1_000;
+    let resolveFirst: ((value: { latestTag: string }) => void) | undefined;
+    const checkForUpdatesImpl = vi
+      .fn()
+      .mockImplementationOnce(
+        () =>
+          new Promise<{ latestTag: string }>((resolve) => {
+            resolveFirst = resolve;
+          }),
+      )
+      .mockResolvedValueOnce({ latestTag: "v1.0.1" })
+      .mockRejectedValue(new Error("offline"));
+    const coordinatedCheck = createUpdateCheckCoordinator({
+      checkForUpdatesImpl,
+      now: () => currentTime,
+      successTtlMs: 5_000,
+      failureTtlMs: 1_000,
+    });
+    const stableOptions = {
+      track: "stable" as const,
+      currentVersion: "1.0.0",
+    };
+
+    const first = coordinatedCheck(stableOptions);
+    const coalesced = coordinatedCheck(stableOptions);
+    expect(coalesced).toBe(first);
+    await Promise.resolve();
+    expect(resolveFirst).toBeTypeOf("function");
+    resolveFirst?.({ latestTag: "v1.0.0" });
+    await expect(first).resolves.toEqual({ latestTag: "v1.0.0" });
+    await expect(coordinatedCheck(stableOptions)).resolves.toEqual({
+      latestTag: "v1.0.0",
+    });
+    expect(checkForUpdatesImpl).toHaveBeenCalledTimes(1);
+
+    currentTime += 5_001;
+    await expect(coordinatedCheck(stableOptions)).resolves.toEqual({
+      latestTag: "v1.0.1",
+    });
+    await expect(
+      coordinatedCheck({ track: "nightly", currentVersion: "1.0.0" }),
+    ).rejects.toThrow("offline");
+    await expect(
+      coordinatedCheck({ track: "nightly", currentVersion: "1.0.0" }),
+    ).rejects.toThrow("offline");
+    expect(checkForUpdatesImpl).toHaveBeenCalledTimes(3);
+
+    currentTime += 1_001;
+    await expect(
+      coordinatedCheck({ track: "nightly", currentVersion: "1.0.0" }),
+    ).rejects.toThrow("offline");
+    expect(checkForUpdatesImpl).toHaveBeenCalledTimes(4);
   });
 
   it("reports GitHub failures and an unpublished track clearly", async () => {

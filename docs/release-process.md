@@ -42,6 +42,16 @@ does not receive general network or shell access: the preload bridge exposes one
 update-check command and one repository-scoped command for opening a release
 page in the default browser.
 
+Stable checks use GitHub's latest full-release endpoint so a long nightly history
+cannot hide the current stable build. Nightly checks inspect a bounded release
+page but select by the parsed release version and global build number rather than
+publication time, because concurrent packaging jobs can finish out of order.
+Cross-track comparisons look up the installed release tag when publication order
+is needed, and every GitHub request has a bounded timeout. The desktop process
+coalesces concurrent checks for the same track and installed version, caches
+successful results for five minutes, and applies a 30-second retry backoff after
+a failed check.
+
 Checks run when General Settings opens, when the track changes, and when the
 user selects **Check again**. They do not download or install a release. If a
 track has no published release yet, Settings reports that as an empty track

@@ -57,9 +57,9 @@
 - Add safe defaults for older local records when adding fields.
 - Preserve user-entered notes and time values exactly unless the user changes them.
 - Connector imports should produce reviewable candidates or explicit conflict states.
-- Connector packages under `connectors/` must compile and run without imports
-  from application source. Keep the host protocol structural and validate every
-  manifest, request, and result at the API boundary.
+- Standalone connector packages must compile and run without imports from
+  HarDay application source. Keep the host protocol structural and validate
+  every manifest, request, and result at the API boundary.
 - Run connector operations in ephemeral worker threads. Do not add persistent
   plugin child processes or load plugin modules into the API or Electron main
   execution context.

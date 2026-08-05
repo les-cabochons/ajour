@@ -148,12 +148,14 @@ Connector implementations live in standalone repositories. They compile to
 self-contained JavaScript and do not import API, desktop, web, or shared
 application source at runtime.
 
-Development desktop builds compile and watch these plugin directories. Set
-`TIMETRACKER_DEV_PLUGIN_DIRS` to a platform-delimited list of other development
-plugin directories when needed, or choose a directory from Settings → Debug in
-the development desktop app. A selected directory must contain `plugin.json`
-and its compiled manifest entrypoint. The Debug setting is persisted for future
-development launches and is ignored by production builds. An explicit
+Each standalone connector repository owns its compilation and watch process.
+Run `just install` there, then keep `just dev` running while developing the
+connector. In HarDay, set `TIMETRACKER_DEV_PLUGIN_DIRS` to a platform-delimited
+list of development plugin directories, or choose a directory from Settings →
+Debug in the development desktop app. A selected directory must contain
+`plugin.json` and its compiled manifest entrypoint. HarDay loads that output but
+does not compile or watch the external connector. The Debug setting is persisted
+for future development launches and is ignored by production builds. An explicit
 `TIMETRACKER_DEV_PLUGIN_DIRS` value overrides the saved Debug setting for that
 launch.
 
@@ -191,7 +193,6 @@ just build
 apps/web/        React + Vite app for the main time-tracking UI
 apps/desktop/    Electron shell and packaging scripts
 apps/api/        local API for connectors and import flows
-connectors/      isolated connector plugin packages
 packages/shared/ shared schemas, rules, and domain logic
 docs/            architecture and logging notes
 ```

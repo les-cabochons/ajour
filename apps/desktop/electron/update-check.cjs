@@ -2,6 +2,8 @@ const GITHUB_REPOSITORY = "les-cabochons/ajour";
 const GITHUB_RELEASES_API_URL = `https://api.github.com/repos/${GITHUB_REPOSITORY}/releases?per_page=100`;
 const GITHUB_LATEST_STABLE_API_URL = `https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest`;
 const UPDATE_CHECK_TIMEOUT_MS = 15_000;
+const UPDATE_CHECK_CACHE_TTL_MS = 5 * 60_000;
+const UPDATE_CHECK_FAILURE_TTL_MS = 30_000;
 const STABLE_TAG_PATTERN = /^v(\d+)\.(\d+)\.(\d+)$/;
 const NIGHTLY_TAG_PATTERN = /^v(\d+)\.(\d+)\.(\d+)-nightly-(\d{8})\.(\d{3,})$/;
 const STABLE_VERSION_PATTERN = /^(\d+)\.(\d+)\.(\d+)$/;
@@ -345,11 +347,66 @@ async function checkForUpdates({ track, currentVersion, fetchImpl, now = Date.no
   };
 }
 
+function createUpdateCheckCoordinator({
+  checkForUpdatesImpl = checkForUpdates,
+  now = Date.now,
+  successTtlMs = UPDATE_CHECK_CACHE_TTL_MS,
+  failureTtlMs = UPDATE_CHECK_FAILURE_TTL_MS,
+} = {}) {
+  const inFlight = new Map();
+  const cache = new Map();
+
+  return function checkForUpdatesCoordinated(options) {
+    assertUpdateTrack(options?.track);
+    const key = `${options.track}:${options.currentVersion}`;
+    const cached = cache.get(key);
+    if (cached && cached.expiresAt > now()) {
+      return cached.error
+        ? Promise.reject(cached.error)
+        : Promise.resolve(cached.result);
+    }
+    if (cached) {
+      cache.delete(key);
+    }
+
+    const activeRequest = inFlight.get(key);
+    if (activeRequest) {
+      return activeRequest;
+    }
+
+    const request = Promise.resolve()
+      .then(() => checkForUpdatesImpl(options))
+      .then((result) => {
+        cache.set(key, {
+          result,
+          expiresAt: now() + successTtlMs,
+        });
+        return result;
+      })
+      .catch((error) => {
+        cache.set(key, {
+          error,
+          expiresAt: now() + failureTtlMs,
+        });
+        throw error;
+      })
+      .finally(() => {
+        if (inFlight.get(key) === request) {
+          inFlight.delete(key);
+        }
+      });
+
+    inFlight.set(key, request);
+    return request;
+  };
+}
+
 module.exports = {
   GITHUB_LATEST_STABLE_API_URL,
   GITHUB_RELEASES_API_URL,
   checkForUpdates,
   comparePackageVersions,
+  createUpdateCheckCoordinator,
   isAllowedReleaseUrl,
   isUpdateAvailable,
   normalizeReleases,

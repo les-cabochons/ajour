@@ -77,7 +77,9 @@ export function SettingsGeneralPage() {
   const [updateCheck, setUpdateCheck] = useState<UpdateCheckState>({
     status: "idle",
   });
+  const [releaseOpenError, setReleaseOpenError] = useState<string | null>(null);
   const updateRequestId = useRef(0);
+  const releaseOpenRequestId = useRef(0);
   const desktopUpdates = window.timetrackerDesktop?.checkForUpdates;
 
   const handleThemeChange = (mode: ThemeMode) => {
@@ -85,6 +87,8 @@ export function SettingsGeneralPage() {
   };
 
   const runUpdateCheck = useCallback(async (track: UpdateTrack) => {
+    releaseOpenRequestId.current += 1;
+    setReleaseOpenError(null);
     const checkForUpdates = window.timetrackerDesktop?.checkForUpdates;
     if (!checkForUpdates) {
       setUpdateCheck({ status: "idle" });
@@ -123,16 +127,18 @@ export function SettingsGeneralPage() {
   };
 
   const handleOpenRelease = async (releaseUrl: string) => {
+    const requestId = ++releaseOpenRequestId.current;
+    setReleaseOpenError(null);
     try {
       await window.timetrackerDesktop?.openUpdateRelease?.(releaseUrl);
     } catch (error) {
-      setUpdateCheck({
-        status: "error",
-        message:
+      if (requestId === releaseOpenRequestId.current) {
+        setReleaseOpenError(
           error instanceof Error
             ? error.message
             : "The release page could not be opened.",
-      });
+        );
+      }
     }
   };
 
@@ -303,6 +309,11 @@ export function SettingsGeneralPage() {
                       </p>
                     </>
                   )}
+                  {releaseOpenError ? (
+                    <p className="mt-1 text-sm leading-5 text-destructive" role="alert">
+                      Release page could not be opened: {releaseOpenError}
+                    </p>
+                  ) : null}
                 </div>
               </div>
 
