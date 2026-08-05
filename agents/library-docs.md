@@ -75,12 +75,10 @@ The backlog editor module is feature-local because its vocabulary and commands b
 
 ## Connector Plugins
 
-- Connector packages maintained in this repository live under `connectors/`.
-- The Azure DevOps connector lives in the standalone
-  `les-cabochons/ajc-azure-devops` repository.
+- Connector packages live in the standalone `les-cabochons/ajc-azure-devops`
+  and `les-cabochons/ajc-jira` repositories.
 - Each connector compiles to local JavaScript modules and packages
   `plugin.json` plus `dist/` into one `.harday-connector` archive.
-- `just connector-package` builds every connector archive maintained here.
 - Development builds load configured plugin directories; production builds
   only install packaged archives into the managed user-data plugin directory.
 - Desktop archive installation crosses the restricted preload/IPC bridge and

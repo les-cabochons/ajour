@@ -110,9 +110,7 @@ desktop-start:
 [doc("Starts the API server locally")]
 [group("app")]
 api-start:
-    echo >&2 "[1/2] Building development connector plugins"
-    {{PNPM}} build:connectors
-    echo >&2 "[2/2] Starting the API server"
+    echo >&2 "[1/1] Starting the API server"
     {{PNPM}} --filter @timetracker/api dev
 
 [doc("Builds all workspace packages")]
@@ -126,12 +124,6 @@ build:
 desktop-build:
     echo >&2 "[1/1] Building the desktop renderer"
     {{PNPM}} build:desktop
-
-[doc("Builds packaged connector archives for local installation")]
-[group("app")]
-connector-package:
-    echo >&2 "[1/1] Building connector plugin archives"
-    {{PNPM}} package:connectors
 
 [doc("Packages the desktop app for this host")]
 [group("app")]

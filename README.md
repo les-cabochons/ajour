@@ -144,9 +144,9 @@ The optional local API lives in `apps/api` and defaults to `127.0.0.1:8787`. It 
 
 ### Connector plugins
 
-Connector implementations live as standalone workspace packages under
-`connectors/`. They compile to self-contained JavaScript and do not import API,
-desktop, web, or shared application source at runtime.
+Connector implementations live in standalone repositories. They compile to
+self-contained JavaScript and do not import API, desktop, web, or shared
+application source at runtime.
 
 Development desktop builds compile and watch these plugin directories. Set
 `TIMETRACKER_DEV_PLUGIN_DIRS` to a platform-delimited list of other development
@@ -163,15 +163,12 @@ TIMETRACKER_DEV_PLUGIN_DIRS=/absolute/path/to/plugin just desktop-start
 
 Production desktop installs use one local `.harday-connector` archive at a time
 through Settings → Plugins. Archive installation is available only through the
-desktop bridge and its native file chooser, not the loopback HTTP API. Build the
-connector archives maintained in this repository with:
+desktop bridge and its native file chooser, not the loopback HTTP API. Official
+connector implementations and their versioned builds are maintained in:
 
-```sh
-just connector-package
-```
+- [`les-cabochons/ajc-azure-devops`](https://github.com/les-cabochons/ajc-azure-devops)
+- [`les-cabochons/ajc-jira`](https://github.com/les-cabochons/ajc-jira)
 
-The Azure DevOps connector is maintained and built independently in
-[`les-cabochons/ajc-azure-devops`](https://github.com/les-cabochons/ajc-azure-devops).
 Each archive contains `plugin.json` and the compiled `dist/` tree. The manifest
 declares the connector version, host API version, entrypoint, icon, and
 connection fields. Production builds do not preinstall connector archives.

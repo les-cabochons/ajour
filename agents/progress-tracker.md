@@ -28,9 +28,9 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Desktop inline and mobile modal backlog editing share one canonical field, validation, draft, and patch model.
 - [x] Backlog, timesheet, project-task, and project-navigation reordering share one tested pointer lifecycle and geometry module.
 - [x] Adversarial review regressions cover connector identity and archive provenance, reversible estimate overruns, timer-linked edits, import validation, one-time desktop recovery, and overlapping drag state.
-- [x] The Jira connector is an isolated workspace package with a self-contained
-  compiled archive; the Azure DevOps connector is maintained and built in the
-  standalone `les-cabochons/ajc-azure-devops` repository.
+- [x] Azure DevOps and Jira connectors are maintained and independently built
+  in the standalone `les-cabochons/ajc-azure-devops` and
+  `les-cabochons/ajc-jira` repositories.
 - [x] Development builds load connector directories while production installs
   only validated `.harday-connector` archives.
 - [x] Development plugin directories are configurable from the Debug page, and

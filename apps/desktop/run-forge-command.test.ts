@@ -40,20 +40,4 @@ describe("run-forge-command", () => {
 
     expect(pathEntry).toBe(path.join(path.dirname(scriptPath), "..", "bin"));
   });
-
-  it("runs the Corepack command through the Windows shell", () => {
-    vi.spyOn(process, "platform", "get").mockReturnValue("win32");
-    const spawnSyncMock = vi.spyOn(childProcess, "spawnSync").mockReturnValue({
-      status: 0,
-      error: undefined,
-    });
-
-    runScript(["make", "win32"]);
-
-    expect(spawnSyncMock).toHaveBeenCalledWith(
-      "corepack.cmd",
-      ["pnpm", "package:connectors"],
-      expect.objectContaining({ shell: true }),
-    );
-  });
 });

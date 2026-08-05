@@ -7,8 +7,7 @@
   "main": "electron/main.cjs",
   "scripts": {
     "build": "node scripts/run-renderer.cjs build",
-    "predev": "corepack pnpm --dir ../.. build:connectors",
-    "dev": "concurrently -k \"corepack pnpm --dir ../.. dev:connectors\" \"corepack pnpm --dir ../.. --filter @timetracker/web dev --host 127.0.0.1 --port 5173 --strictPort --mode desktop\" \"wait-on tcp:127.0.0.1:5173 && TIMETRACKER_DESKTOP_RENDERER_URL=http://127.0.0.1:5173 env -u ELECTRON_RUN_AS_NODE electron .\"",
+    "dev": "concurrently -k \"corepack pnpm --dir ../.. --filter @timetracker/web dev --host 127.0.0.1 --port 5173 --strictPort --mode desktop\" \"wait-on tcp:127.0.0.1:5173 && TIMETRACKER_DESKTOP_RENDERER_URL=http://127.0.0.1:5173 env -u ELECTRON_RUN_AS_NODE electron .\"",
     "package": "node scripts/run-forge-command.cjs package host",
     "package:win": "node scripts/run-forge-command.cjs package win32",
     "make": "node scripts/run-forge-command.cjs make host",

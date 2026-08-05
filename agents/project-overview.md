@@ -46,10 +46,13 @@ The product is aimed at people who need accurate workday time records without tu
 apps/web/        React + Vite product UI
 apps/desktop/    Electron runtime and packaging
 apps/api/        optional local API and connector plugin host
-connectors/      isolated installable connector implementations
 packages/shared/ shared domain logic and types
 docs/            architecture and strategy docs
 ```
+
+Installable connector implementations are maintained in standalone
+repositories, including `les-cabochons/ajc-azure-devops` and
+`les-cabochons/ajc-jira`.
 
 ## Command Surface
 

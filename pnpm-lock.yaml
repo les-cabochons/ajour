@@ -158,8 +158,6 @@ importers:
         specifier: ^9.2.0
         version: 9.2.0(@playwright/test@1.62.0)
 
-  connectors/jira: {}
-
   packages/shared:
     dependencies:
       zod:
