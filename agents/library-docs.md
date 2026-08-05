@@ -66,11 +66,6 @@ The backlog editor module is feature-local because its vocabulary and commands b
 - Electron
 - Electron Forge configuration in `apps/desktop/forge.config.cjs`
 - desktop bootstrap in `apps/desktop/electron`
-- GitHub release selection, tag-to-package-version mapping, and update
-  availability checks: `apps/desktop/electron/update-check.cjs`
-- Update checks cross the context-isolated preload/IPC bridge; the renderer does
-  not fetch releases or open arbitrary external URLs directly.
-
 ## API
 
 - Local API lives in `apps/api`

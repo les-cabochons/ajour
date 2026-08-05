@@ -46,9 +46,6 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Pushes to `main` publish collision-safe Toronto-dated nightly desktop releases,
   and a manual workflow promotes a selected published nightly commit into a
   commit-classified stable release for macOS and Windows with generated changelogs.
-- [x] General Settings persists a stable/nightly update track and the desktop
-  checks the matching published GitHub releases through a restricted IPC bridge.
-
 ## Standard Task Flow
 
 - [ ] Understand the requested outcome.
