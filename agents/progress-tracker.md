@@ -28,8 +28,9 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Desktop inline and mobile modal backlog editing share one canonical field, validation, draft, and patch model.
 - [x] Backlog, timesheet, project-task, and project-navigation reordering share one tested pointer lifecycle and geometry module.
 - [x] Adversarial review regressions cover connector identity and archive provenance, reversible estimate overruns, timer-linked edits, import validation, one-time desktop recovery, and overlapping drag state.
-- [x] Azure DevOps and Jira connector implementations are isolated as standalone
-  workspace packages with self-contained compiled archives.
+- [x] The Jira connector is an isolated workspace package with a self-contained
+  compiled archive; the Azure DevOps connector is maintained and built in the
+  standalone `les-cabochons/ajc-azure-devops` repository.
 - [x] Development builds load connector directories while production installs
   only validated `.harday-connector` archives.
 - [x] Development plugin directories are configurable from the Debug page, and
@@ -45,6 +46,8 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Pushes to `main` publish collision-safe Toronto-dated nightly desktop releases,
   and a manual workflow promotes a selected published nightly commit into a
   commit-classified stable release for macOS and Windows with generated changelogs.
+- [x] General Settings persists a stable/nightly update track and the desktop
+  checks the matching published GitHub releases through a restricted IPC bridge.
 
 ## Standard Task Flow
 

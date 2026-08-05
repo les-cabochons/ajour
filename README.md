@@ -162,19 +162,21 @@ TIMETRACKER_DEV_PLUGIN_DIRS=/absolute/path/to/plugin just desktop-start
 ```
 
 Production desktop installs use one local `.harday-connector` archive at a time
-through Settings → Connectors. Archive installation is available only through
-the desktop bridge and its native file chooser, not the loopback HTTP API. Build
-the repository connector archives with:
+through Settings → Plugins. Archive installation is available only through the
+desktop bridge and its native file chooser, not the loopback HTTP API. Build the
+connector archives maintained in this repository with:
 
 ```sh
 just connector-package
 ```
 
+The Azure DevOps connector is maintained and built independently in
+[`les-cabochons/ajc-azure-devops`](https://github.com/les-cabochons/ajc-azure-devops).
 Each archive contains `plugin.json` and the compiled `dist/` tree. The manifest
 declares the connector version, host API version, entrypoint, icon, and
-connection fields. Production builds do not preinstall these repository
-connectors. Uninstalling removes the managed archive contents and connector
-configuration while retaining backlog items that were already imported.
+connection fields. Production builds do not preinstall connector archives.
+Uninstalling removes the managed archive contents and connector configuration
+while retaining backlog items that were already imported.
 
 ## Verification
 

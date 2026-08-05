@@ -66,6 +66,10 @@ The backlog editor module is feature-local because its vocabulary and commands b
 - Electron
 - Electron Forge configuration in `apps/desktop/forge.config.cjs`
 - desktop bootstrap in `apps/desktop/electron`
+- GitHub release selection, tag-to-package-version mapping, and update
+  availability checks: `apps/desktop/electron/update-check.cjs`
+- Update checks cross the context-isolated preload/IPC bridge; the renderer does
+  not fetch releases or open arbitrary external URLs directly.
 
 ## API
 
@@ -76,10 +80,12 @@ The backlog editor module is feature-local because its vocabulary and commands b
 
 ## Connector Plugins
 
-- Standalone connector packages live under `connectors/`.
+- Connector packages maintained in this repository live under `connectors/`.
+- The Azure DevOps connector lives in the standalone
+  `les-cabochons/ajc-azure-devops` repository.
 - Each connector compiles to local JavaScript modules and packages
   `plugin.json` plus `dist/` into one `.harday-connector` archive.
-- `just connector-package` builds every connector archive.
+- `just connector-package` builds every connector archive maintained here.
 - Development builds load configured plugin directories; production builds
   only install packaged archives into the managed user-data plugin directory.
 - Desktop archive installation crosses the restricted preload/IPC bridge and
