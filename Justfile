@@ -164,6 +164,12 @@ make *flags:
     if [ "$make_mac" -eq 1 ]; then echo >&2 "[mac] Creating the desktop app distributable"; {{PNPM}} make:desktop:mac; fi
     if [ "$make_windows" -eq 1 ]; then echo >&2 "[windows] Creating the desktop app distributable"; {{PNPM}} make:desktop:win; fi
 
+[doc("Runs release versioning unit tests")]
+[group("app")]
+release-test:
+    echo >&2 "[1/1] Running release versioning tests"
+    node --test .github/scripts/release-plan.test.mjs
+
 [doc("Runs all workspace tests")]
 [group("app")]
 test:

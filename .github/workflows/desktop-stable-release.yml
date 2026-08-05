@@ -1,0 +1,192 @@
+name: Desktop Stable Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      nightly_tag:
+        description: Nightly tag to promote (vX.Y.Z-nightly-YYYYMMDD.NNN)
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-stable-release
+  cancel-in-progress: false
+
+jobs:
+  plan:
+    name: Plan stable release
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      package_version: ${{ steps.release.outputs.package_version }}
+      bump: ${{ steps.release.outputs.bump }}
+      previous_tag: ${{ steps.release.outputs.previous_tag }}
+      target_sha: ${{ steps.release.outputs.target_sha }}
+      nightly_tag: ${{ steps.release.outputs.nightly_tag }}
+    steps:
+      - name: Require the main branch
+        if: github.ref != 'refs/heads/main'
+        run: |
+          echo "Stable releases must be dispatched from the main branch." >&2
+          exit 1
+
+      - name: Check out repository and tags
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Test release planner
+        run: node --test .github/scripts/release-plan.test.mjs
+
+      - name: Reserve stable tag
+        id: release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          NIGHTLY_TAG: ${{ inputs.nightly_tag }}
+          PROMOTION_BASE_SHA: ${{ github.sha }}
+        run: |
+          if [[ ! "$NIGHTLY_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-nightly-[0-9]{8}\.[0-9]{3,}$ ]]; then
+            echo "Invalid nightly tag: $NIGHTLY_TAG" >&2
+            exit 1
+          fi
+          if [[ "$(gh release view "$NIGHTLY_TAG" --json isDraft,isPrerelease --jq '.isPrerelease == true and .isDraft == false' 2>/dev/null || true)" != "true" ]]; then
+            echo "Selected tag is not a published nightly prerelease: $NIGHTLY_TAG" >&2
+            exit 1
+          fi
+
+          candidate_output="$RUNNER_TEMP/stable-release-output"
+          published_tags_file="$RUNNER_TEMP/published-release-tags"
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" \
+            --jq '.[] | select(.draft == false) | .tag_name' > "$published_tags_file"
+          rm -f "$candidate_output"
+          PUBLISHED_RELEASE_TAGS_FILE="$published_tags_file" \
+            GITHUB_OUTPUT="$candidate_output" \
+            node .github/scripts/release-plan.mjs stable "$NIGHTLY_TAG"
+          tag="$(sed -n 's/^tag=//p' "$candidate_output" | tail -n 1)"
+          target_sha="$(sed -n 's/^target_sha=//p' "$candidate_output" | tail -n 1)"
+          if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Release planner returned an invalid stable tag: $tag" >&2
+            exit 1
+          fi
+          if [[ ! "$target_sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "Release planner returned an invalid target commit: $target_sha" >&2
+            exit 1
+          fi
+
+          if git show-ref --verify --quiet "refs/tags/$tag"; then
+            if [[ "$(git rev-list -n 1 "$tag")" != "$target_sha" ]]; then
+              echo "Stable tag $tag already points to another commit." >&2
+              exit 1
+            fi
+          else
+            git tag "$tag" "$target_sha"
+            git push origin "refs/tags/$tag"
+          fi
+
+          cat "$candidate_output" >> "$GITHUB_OUTPUT"
+
+  package:
+    name: Package ${{ matrix.name }}
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS
+            runner: macos-latest
+            artifact: harday-macos
+            command: corepack pnpm make:desktop:mac
+          - name: Windows
+            runner: windows-latest
+            artifact: harday-windows
+            command: corepack pnpm make:desktop:win
+    runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.plan.outputs.target_sha }}
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install pnpm on Windows
+        if: runner.os == 'Windows'
+        run: npm install --global pnpm@10.7.0
+
+      - name: Install dependencies
+        run: corepack pnpm install --frozen-lockfile
+
+      - name: Set desktop package version
+        env:
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+        run: node .github/scripts/release-plan.mjs set-package-version "$RELEASE_TAG"
+        shell: bash
+
+      - name: Create desktop distributable
+        run: ${{ matrix.command }}
+
+      - name: Upload desktop distributable
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: apps/desktop/out/make/**
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Publish stable release
+    needs:
+      - plan
+      - package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download desktop distributables
+        uses: actions/download-artifact@v4
+        with:
+          path: release-assets
+
+      - name: Create tag and release with changelog
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_TAG: ${{ needs.plan.outputs.tag }}
+          PREVIOUS_TAG: ${{ needs.plan.outputs.previous_tag }}
+          NIGHTLY_TAG: ${{ needs.plan.outputs.nightly_tag }}
+        run: |
+          mapfile -d '' assets < <(find release-assets -type f -print0)
+          if (( ${#assets[@]} == 0 )); then
+            echo "No release assets were downloaded." >&2
+            exit 1
+          fi
+
+          notes_args=(--generate-notes)
+          if [[ -n "$PREVIOUS_TAG" ]]; then
+            notes_args+=(--notes-start-tag "$PREVIOUS_TAG")
+          fi
+
+          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+            exit 0
+          fi
+
+          gh release create "$RELEASE_TAG" "${assets[@]}" \
+            --verify-tag \
+            --title "HarDay $RELEASE_TAG" \
+            --notes "Promoted from $NIGHTLY_TAG." \
+            --latest \
+            "${notes_args[@]}"

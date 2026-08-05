@@ -42,6 +42,9 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
   boundary cases.
 - [x] Desktop startup enforces a single application instance before starting
   the local API or connector workers.
+- [x] Pushes to `main` publish collision-safe Toronto-dated nightly desktop releases,
+  and a manual workflow promotes a selected published nightly commit into a
+  commit-classified stable release for macOS and Windows with generated changelogs.
 
 ## Standard Task Flow
 
