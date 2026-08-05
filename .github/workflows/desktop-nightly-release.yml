@@ -154,12 +154,13 @@ jobs:
             notes_args+=(--notes-start-tag "$PREVIOUS_TAG")
           fi
 
-          if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber
+          if gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            gh release upload "$RELEASE_TAG" "${assets[@]}" --clobber --repo "$GITHUB_REPOSITORY"
             exit 0
           fi
 
           gh release create "$RELEASE_TAG" "${assets[@]}" \
+            --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
             --title "HarDay $RELEASE_TAG" \
             --prerelease \
