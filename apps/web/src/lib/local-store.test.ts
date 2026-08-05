@@ -72,6 +72,37 @@ describe("localStore backlog status sync", () => {
     installMockWindow();
   });
 
+  it("defaults update checks to the stable release track", async () => {
+    const { localStore } = await import("./local-store");
+
+    expect(localStore.snapshot().userPreferences.updateTrack).toBe("stable");
+  });
+
+  it("persists a selected nightly update track", async () => {
+    const { localStore } = await import("./local-store");
+
+    localStore.setUserPreferences({ updateTrack: "nightly" });
+
+    expect(localStore.snapshot().userPreferences.updateTrack).toBe("nightly");
+    expect(window.localStorage.setItem).toHaveBeenCalled();
+  });
+
+  it("normalizes unsupported persisted update tracks to stable", async () => {
+    window.localStorage.setItem(
+      "timetracker.local-state.v2",
+      JSON.stringify({
+        userPreferences: {
+          themeMode: "system",
+          updateTrack: "experimental",
+        },
+      }),
+    );
+
+    const { localStore } = await import("./local-store");
+
+    expect(localStore.snapshot().userPreferences.updateTrack).toBe("stable");
+  });
+
   it("keeps a local backlog status override when the synced mapping changes", async () => {
     const { localStore } = await import("./local-store");
 

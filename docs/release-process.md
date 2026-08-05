@@ -31,3 +31,18 @@ To start a future major series, change `VERSION` to the intended `X.0.0` value i
 Nightly and stable tags are reserved before packaging so reruns can recover without silently skipping a version; their GitHub releases are published only after both platform builds succeed. Changelog and stable-bump baselines use published, non-draft releases rather than reservation tags. If a stable tag is stranded on another commit, promotion stops and requires that pending reservation to be recovered or removed instead of silently advancing. Only the tag-planning and release jobs receive `contents: write`; packaging jobs run with read-only repository permissions and do not retain Git credentials. Repository Actions settings must allow the `GITHUB_TOKEN` to have read and write permissions.
 
 The current macOS build is ad-hoc signed and not notarized, and the Windows installer is not code-signed. Users may therefore see operating-system trust warnings until signing and notarization credentials are added.
+
+## In-app release checks
+
+General Settings stores a local update-track preference. Stable is the default;
+nightly is an explicit opt-in for preview builds. The desktop main process checks
+the public `les-cabochons/ajour` GitHub Releases API and returns only published
+releases whose tag and prerelease flag match the selected track. The renderer
+does not receive general network or shell access: the preload bridge exposes one
+update-check command and one repository-scoped command for opening a release
+page in the default browser.
+
+Checks run when General Settings opens, when the track changes, and when the
+user selects **Check again**. They do not download or install a release. If a
+track has no published release yet, Settings reports that as an empty track
+rather than a network failure.

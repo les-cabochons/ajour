@@ -5,6 +5,10 @@ contextBridge.exposeInMainWorld("timetrackerDesktop", {
   runtime: ipcRenderer.sendSync("timetracker:get-runtime-info"),
   setWindowChromeTheme: (theme) =>
     ipcRenderer.send("timetracker:set-window-chrome-theme", theme),
+  checkForUpdates: (track) =>
+    ipcRenderer.invoke("timetracker:check-for-updates", track),
+  openUpdateRelease: (releaseUrl) =>
+    ipcRenderer.invoke("timetracker:open-update-release", releaseUrl),
   installConnectorPlugin: () =>
     ipcRenderer.invoke("timetracker:install-connector-plugin"),
   uninstallConnectorPlugin: (pluginId) =>

@@ -279,6 +279,16 @@
     padding-left: max(2rem, calc(11rem - ((100vw - 960px) / 2)));
   }
 
+  .desktop-shell-windows .desktop-shell-nav-inner {
+    padding-right: max(
+      2rem,
+      calc(
+        (100vw + min(960px, 100vw)) / 2 -
+          env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 1rem
+      )
+    );
+  }
+
   .desktop-drag-region {
     -webkit-app-region: drag;
   }

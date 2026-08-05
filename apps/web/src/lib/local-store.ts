@@ -181,6 +181,7 @@ const defaultWorkspaceProjects: LocalProjectDraft[] = [
 
 const defaultUserPreferences: UserPreferences = {
   themeMode: "system",
+  updateTrack: "stable",
 };
 
 let cachedState: LocalAppState | undefined;
@@ -325,6 +326,10 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
       userPreferences: {
         ...defaults.userPreferences,
         ...persistedState.userPreferences,
+        updateTrack:
+          persistedState.userPreferences?.updateTrack === "nightly"
+            ? "nightly"
+            : "stable",
       },
     }),
   );

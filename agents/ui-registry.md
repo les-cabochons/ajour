@@ -75,3 +75,15 @@ without nesting controls inside the configuration link. Opening an entry moves
 to a dedicated detail route with a back link, compact identity header, activation
 state, and the plugin-owned configuration forms. Mobile collapses the catalog to
 one column without changing the card hierarchy or hiding activation.
+
+### Application Updates
+
+File: `apps/web/src/features/settings/settings-general-page.tsx`
+Last updated: 2026-08-05
+
+The stable/nightly choice uses the shared compact toggle group inside an
+`AppPanel`. Keep exactly one track selected, explain nightly risk beside the
+control, and separate repository status with a single top border rather than a
+nested card. Status text uses `aria-live`, preserves its layout while checking,
+and shows the release action only when a newer matching release exists. Web-only
+rendering keeps the preference available but identifies the desktop requirement.

@@ -1,6 +1,7 @@
 const GITHUB_REPOSITORY = "les-cabochons/ajour";
 const GITHUB_RELEASES_API_URL = `https://api.github.com/repos/${GITHUB_REPOSITORY}/releases?per_page=100`;
-const GITHUB_RELEASES_URL = `https://github.com/${GITHUB_REPOSITORY}/releases/`;
+const GITHUB_LATEST_STABLE_API_URL = `https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/latest`;
+const UPDATE_CHECK_TIMEOUT_MS = 15_000;
 const STABLE_TAG_PATTERN = /^v(\d+)\.(\d+)\.(\d+)$/;
 const NIGHTLY_TAG_PATTERN = /^v(\d+)\.(\d+)\.(\d+)-nightly-(\d{8})\.(\d{3,})$/;
 const STABLE_VERSION_PATTERN = /^(\d+)\.(\d+)\.(\d+)$/;
@@ -21,6 +22,20 @@ function packageVersionForTag(tag) {
   const nightly = NIGHTLY_TAG_PATTERN.exec(tag);
   if (nightly) {
     return `${nightly[1]}.${nightly[2]}.${nightly[3]}-nightly-${nightly[4]}-${nightly[5]}`;
+  }
+
+  return null;
+}
+
+function tagForPackageVersion(version) {
+  const stable = STABLE_VERSION_PATTERN.exec(version);
+  if (stable) {
+    return `v${version}`;
+  }
+
+  const nightly = NIGHTLY_VERSION_PATTERN.exec(version);
+  if (nightly) {
+    return `v${nightly[1]}.${nightly[2]}.${nightly[3]}-nightly-${nightly[4]}.${nightly[5]}`;
   }
 
   return null;
@@ -99,12 +114,25 @@ function normalizeReleases(value) {
 
 function selectLatestTrackRelease(releases, track) {
   assertUpdateTrack(track);
-  return (
-    releases
-      .filter((release) => release.track === track)
-      .sort((left, right) => right.publishedTimestamp - left.publishedTimestamp)[0] ??
-    null
-  );
+  return releases
+    .filter((release) => release.track === track)
+    .reduce((latest, release) => {
+      if (!latest) {
+        return release;
+      }
+
+      const versionComparison = comparePackageVersions(
+        release.packageVersion,
+        latest.packageVersion,
+      );
+      if (versionComparison !== 0) {
+        return versionComparison > 0 ? release : latest;
+      }
+
+      return release.publishedTimestamp > latest.publishedTimestamp
+        ? release
+        : latest;
+    }, null);
 }
 
 function parsePackageVersion(value) {
@@ -137,6 +165,21 @@ function compareNumberParts(left, right) {
     }
   }
   return 0;
+}
+
+function comparePackageVersions(leftVersion, rightVersion) {
+  const left = parsePackageVersion(leftVersion);
+  const right = parsePackageVersion(rightVersion);
+  if (!left || !right || left.track !== right.track) {
+    return 0;
+  }
+
+  const baseComparison = compareNumberParts(left.base, right.base);
+  if (baseComparison !== 0 || left.track === "stable") {
+    return baseComparison;
+  }
+
+  return compareNumberParts([left.date, left.build], [right.date, right.build]);
 }
 
 function isFallbackUpdateAvailable(currentVersion, latestRelease) {
@@ -175,11 +218,80 @@ function isUpdateAvailable(currentVersion, latestRelease, releases) {
   const currentRelease = releases.find(
     (release) => release.packageVersion === currentVersion,
   );
+  const current = parsePackageVersion(currentVersion);
+  const latest = parsePackageVersion(latestRelease.packageVersion);
+  if (current && latest && current.track === latest.track) {
+    return comparePackageVersions(latestRelease.packageVersion, currentVersion) > 0;
+  }
   if (currentRelease) {
     return latestRelease.publishedTimestamp > currentRelease.publishedTimestamp;
   }
 
   return isFallbackUpdateAvailable(currentVersion, latestRelease);
+}
+
+async function fetchGithubJson(fetchImpl, url, { allowNotFound = false } = {}) {
+  let response;
+  try {
+    response = await fetchImpl(url, {
+      headers: {
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2026-03-10",
+      },
+      signal: AbortSignal.timeout(UPDATE_CHECK_TIMEOUT_MS),
+    });
+  } catch (error) {
+    if (error?.name === "AbortError" || error?.name === "TimeoutError") {
+      throw new Error("GitHub release check timed out.");
+    }
+    throw error;
+  }
+
+  if (allowNotFound && response?.status === 404) {
+    return null;
+  }
+  if (!response?.ok) {
+    const status = typeof response?.status === "number" ? ` (${response.status})` : "";
+    throw new Error(`GitHub release check failed${status}.`);
+  }
+
+  return await response.json();
+}
+
+async function fetchTrackReleases(fetchImpl, track) {
+  if (track === "stable") {
+    const value = await fetchGithubJson(fetchImpl, GITHUB_LATEST_STABLE_API_URL, {
+      allowNotFound: true,
+    });
+    const release = normalizeRelease(value);
+    return release?.track === "stable" ? [release] : [];
+  }
+
+  return normalizeReleases(
+    await fetchGithubJson(fetchImpl, GITHUB_RELEASES_API_URL),
+  );
+}
+
+async function fetchCurrentRelease(fetchImpl, currentVersion, releases) {
+  const includedRelease = releases.find(
+    (release) => release.packageVersion === currentVersion,
+  );
+  if (includedRelease) {
+    return includedRelease;
+  }
+
+  const currentTag = tagForPackageVersion(currentVersion);
+  if (!currentTag) {
+    return null;
+  }
+
+  const value = await fetchGithubJson(
+    fetchImpl,
+    `https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/${encodeURIComponent(currentTag)}`,
+    { allowNotFound: true },
+  );
+  const release = normalizeRelease(value);
+  return release?.packageVersion === currentVersion ? release : null;
 }
 
 async function checkForUpdates({ track, currentVersion, fetchImpl, now = Date.now }) {
@@ -191,22 +303,33 @@ async function checkForUpdates({ track, currentVersion, fetchImpl, now = Date.no
     throw new Error("Update checking is unavailable.");
   }
 
-  const response = await fetchImpl(GITHUB_RELEASES_API_URL, {
-    headers: {
-      Accept: "application/vnd.github+json",
-      "X-GitHub-Api-Version": "2026-03-10",
-    },
-  });
-
-  if (!response?.ok) {
-    const status = typeof response?.status === "number" ? ` (${response.status})` : "";
-    throw new Error(`GitHub release check failed${status}.`);
-  }
-
-  const releases = normalizeReleases(await response.json());
+  const releases = await fetchTrackReleases(fetchImpl, track);
   const latestRelease = selectLatestTrackRelease(releases, track);
   if (!latestRelease) {
-    throw new Error(`No published ${track} release is available.`);
+    return {
+      track,
+      currentVersion,
+      latestVersion: null,
+      latestTag: null,
+      releaseName: null,
+      releaseUrl: null,
+      publishedAt: null,
+      updateAvailable: false,
+      checkedAt: new Date(now()).toISOString(),
+    };
+  }
+
+  const current = parsePackageVersion(currentVersion);
+  const latest = parsePackageVersion(latestRelease.packageVersion);
+  if (current && latest && current.track !== latest.track) {
+    const currentRelease = await fetchCurrentRelease(
+      fetchImpl,
+      currentVersion,
+      releases,
+    );
+    if (currentRelease) {
+      releases.push(currentRelease);
+    }
   }
 
   return {
@@ -223,11 +346,14 @@ async function checkForUpdates({ track, currentVersion, fetchImpl, now = Date.no
 }
 
 module.exports = {
+  GITHUB_LATEST_STABLE_API_URL,
   GITHUB_RELEASES_API_URL,
   checkForUpdates,
+  comparePackageVersions,
   isAllowedReleaseUrl,
   isUpdateAvailable,
   normalizeReleases,
   packageVersionForTag,
   selectLatestTrackRelease,
+  tagForPackageVersion,
 };

@@ -141,9 +141,11 @@ export interface LocalTimesheetImportDraft {
 export type BacklogSortMode = "custom" | "priority_asc" | "priority_desc";
 
 export type ThemeMode = "system" | "dark" | "light";
+export type UpdateTrack = "stable" | "nightly";
 
 export interface UserPreferences {
   themeMode: ThemeMode;
+  updateTrack: UpdateTrack;
 }
 
 export interface LocalBacklogStatus {

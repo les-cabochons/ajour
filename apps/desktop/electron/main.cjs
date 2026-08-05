@@ -16,6 +16,10 @@ const {
   getPlatformWindowChromeOptions,
   getWindowsTitleBarOverlay,
 } = require("./window-chrome.cjs");
+const {
+  checkForUpdates,
+  isAllowedReleaseUrl,
+} = require("./update-check.cjs");
 
 const DESKTOP_USER_DATA_DIRNAME = "HarDay";
 const stableUserDataPath =
@@ -81,6 +85,7 @@ ipcMain.on("timetracker:get-runtime-info", (event) => {
   event.returnValue = {
     developmentBuild: !app.isPackaged,
     platform: process.platform,
+    version: app.getVersion(),
   };
 });
 
@@ -94,6 +99,23 @@ ipcMain.on("timetracker:set-window-chrome-theme", (event, theme) => {
   }
 
   mainWindow.setTitleBarOverlay(getWindowsTitleBarOverlay(theme));
+});
+
+ipcMain.handle("timetracker:check-for-updates", async (event, track) => {
+  assertActiveDesktopWindow(event, "check for application updates");
+  return await checkForUpdates({
+    track,
+    currentVersion: app.getVersion(),
+    fetchImpl: net.fetch,
+  });
+});
+
+ipcMain.handle("timetracker:open-update-release", async (event, releaseUrl) => {
+  assertActiveDesktopWindow(event, "open an application update release");
+  if (!isAllowedReleaseUrl(releaseUrl)) {
+    throw new Error("The update release URL is not allowed.");
+  }
+  await shell.openExternal(releaseUrl);
 });
 
 ipcMain.handle("timetracker:install-connector-plugin", async (event) => {
@@ -489,6 +511,11 @@ async function createMainWindow() {
   });
 
   mainWindow = window;
+  window.once("closed", () => {
+    if (mainWindow === window) {
+      mainWindow = null;
+    }
+  });
 
   window.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
@@ -504,11 +531,6 @@ async function createMainWindow() {
   });
 
   await window.loadURL(rendererUrl);
-  window.once("closed", () => {
-    if (mainWindow === window) {
-      mainWindow = null;
-    }
-  });
 }
 
 if (!hasSingleInstanceLock) {

@@ -62,6 +62,7 @@ function createState(
     },
     userPreferences: {
       themeMode: "system",
+      updateTrack: "stable",
     },
     updatedAt: 0,
     ...overrides,
