@@ -3,7 +3,7 @@ const { stat } = require("node:fs/promises");
 const http = require("node:http");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
-const { app, BrowserWindow, dialog, ipcMain, nativeImage, net, protocol, shell } = require("electron");
+const { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, net, protocol, shell } = require("electron");
 const { selectConnectorPluginArchive } = require("./connector-install.cjs");
 const {
   clearDevelopmentPluginDirectories,
@@ -12,6 +12,10 @@ const {
   selectDevelopmentPluginDirectory,
 } = require("./development-plugin-settings.cjs");
 const { loadDesktopBootstrapLocalState } = require("./local-state-bootstrap.cjs");
+const {
+  getPlatformWindowChromeOptions,
+  getWindowsTitleBarOverlay,
+} = require("./window-chrome.cjs");
 
 const DESKTOP_USER_DATA_DIRNAME = "HarDay";
 const stableUserDataPath =
@@ -74,7 +78,22 @@ ipcMain.on("timetracker:get-bootstrap-local-state", (event) => {
 });
 
 ipcMain.on("timetracker:get-runtime-info", (event) => {
-  event.returnValue = { developmentBuild: !app.isPackaged };
+  event.returnValue = {
+    developmentBuild: !app.isPackaged,
+    platform: process.platform,
+  };
+});
+
+ipcMain.on("timetracker:set-window-chrome-theme", (event, theme) => {
+  assertActiveDesktopWindow(event, "update the window chrome theme");
+  if (process.platform !== "win32") {
+    return;
+  }
+  if (theme !== "dark" && theme !== "light") {
+    return;
+  }
+
+  mainWindow.setTitleBarOverlay(getWindowsTitleBarOverlay(theme));
 });
 
 ipcMain.handle("timetracker:install-connector-plugin", async (event) => {
@@ -446,13 +465,10 @@ async function applyDevelopmentPluginDirectories(directories) {
 async function createMainWindow() {
   const rendererUrl = await resolveRendererUrl();
   const allowedOrigin = new URL(rendererUrl).origin;
-  const macChromeOptions =
-    process.platform === "darwin"
-      ? {
-          titleBarStyle: "hidden",
-          trafficLightPosition: { x: 16, y: 18 },
-        }
-      : {};
+  const platformChromeOptions = getPlatformWindowChromeOptions(
+    process.platform,
+    nativeTheme.shouldUseDarkColors ? "dark" : "light",
+  );
 
   const window = new BrowserWindow({
     width: 1320,
@@ -469,8 +485,10 @@ async function createMainWindow() {
       preload: preloadPath,
       sandbox: true,
     },
-    ...macChromeOptions,
+    ...platformChromeOptions,
   });
+
+  mainWindow = window;
 
   window.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
@@ -486,7 +504,6 @@ async function createMainWindow() {
   });
 
   await window.loadURL(rendererUrl);
-  mainWindow = window;
   window.once("closed", () => {
     if (mainWindow === window) {
       mainWindow = null;

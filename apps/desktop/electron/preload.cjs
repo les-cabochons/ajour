@@ -3,6 +3,8 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("timetrackerDesktop", {
   bootstrapLocalState: ipcRenderer.sendSync("timetracker:get-bootstrap-local-state"),
   runtime: ipcRenderer.sendSync("timetracker:get-runtime-info"),
+  setWindowChromeTheme: (theme) =>
+    ipcRenderer.send("timetracker:set-window-chrome-theme", theme),
   installConnectorPlugin: () =>
     ipcRenderer.invoke("timetracker:install-connector-plugin"),
   uninstallConnectorPlugin: (pluginId) =>

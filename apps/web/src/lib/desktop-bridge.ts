@@ -15,7 +15,9 @@ declare global {
       bootstrapLocalState?: Partial<LocalAppState> | null;
       runtime?: {
         developmentBuild: boolean;
+        platform: string;
       };
+      setWindowChromeTheme?: (theme: "dark" | "light") => void;
       installConnectorPlugin?: () => Promise<
         ConnectorPluginInstallResponse | null
       >;

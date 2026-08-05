@@ -6192,6 +6192,17 @@
   .desktop-shell-nav-inner {
     padding-left: 7.5rem;
   }
+
+  .desktop-shell-windows .desktop-shell-nav-inner {
+    padding-left: 2rem;
+    padding-right: max(
+      2rem,
+      calc(
+        100vw - env(titlebar-area-x, 0px) -
+          env(titlebar-area-width, 100vw) + 1rem
+      )
+    );
+  }
 }
 
 @media (max-width: 1023px) {
@@ -6304,6 +6315,17 @@
     min-height: 40px;
     padding-left: 5rem;
     padding-right: 1rem;
+  }
+
+  .desktop-shell-windows .desktop-shell-nav-inner {
+    padding-left: 1rem;
+    padding-right: max(
+      1rem,
+      calc(
+        100vw - env(titlebar-area-x, 0px) -
+          env(titlebar-area-width, 100vw) + 0.75rem
+      )
+    );
   }
 
   .harday-nav-brand {

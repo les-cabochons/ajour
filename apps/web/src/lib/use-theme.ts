@@ -43,6 +43,8 @@ export function useApplyTheme(): void {
       root.classList.add("dark");
       root.classList.remove("light");
     }
+
+    window.timetrackerDesktop?.setWindowChromeTheme?.(resolvedTheme);
   }, [resolvedTheme]);
 }
 

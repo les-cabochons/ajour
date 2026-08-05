@@ -55,6 +55,11 @@ import { useLocalProjects, useLocalState } from "@/lib/local-hooks";
 import { MOBILE_BREAKPOINT } from "@/hooks/use-mobile";
 import { useApplyTheme } from "@/lib/use-theme";
 
+const isWindowsDesktopShell =
+  isDesktopShell &&
+  typeof window !== "undefined" &&
+  window.timetrackerDesktop?.runtime?.platform === "win32";
+
 const navItems = [
   { to: "/time/$date", params: { date: "today" }, label: "Time", icon: Timer },
   { to: "/backlog", label: "Backlog", icon: ListTodo },
@@ -951,6 +956,7 @@ export function AppShell() {
       className={cn(
         "flex h-dvh min-h-0 flex-col bg-background",
         isDesktopShell && "desktop-shell-app",
+        isWindowsDesktopShell && "desktop-shell-windows",
       )}
     >
       <ConnectorAutoSyncScheduler />
