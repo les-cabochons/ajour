@@ -28,6 +28,21 @@ describe("isInlineEditorOutsideClick", () => {
     expect(isInlineEditorOutsideClick(option, editor)).toBe(false);
   });
 
+  it("ignores clicks inside project-task picker portals", () => {
+    const editor = {
+      contains() {
+        return false;
+      },
+    };
+    const option = {
+      closest(selector: string) {
+        return selector === ".project-task-picker-popover" ? {} : null;
+      },
+    } as unknown as EventTarget;
+
+    expect(isInlineEditorOutsideClick(option, editor)).toBe(false);
+  });
+
   it("ignores clicks inside explicitly ignored selectors", () => {
     const editor = {
       contains() {

@@ -34,9 +34,11 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { buildProjectTaskOptions } from "@/features/projects/project-task-options";
+import {
+  ProjectTaskPicker,
+  type ProjectTaskSelection,
+} from "@/features/projects/project-task-picker";
 import {
   formatClockDuration,
   normalizeHoursInput,
@@ -170,31 +172,12 @@ function TitlebarNewEntryPopover({ date }: { date: string }) {
   const [note, setNote] = useState("");
   const [durationHours, setDurationHours] = useState("");
 
-  const projectOptions = useMemo(
-    () =>
-      projects.map((project) => ({
-        value: project._id,
-        label: project.code
-          ? `[${project.code}] ${getLocalProjectDisplayName(project)}`
-          : getLocalProjectDisplayName(project),
-        keywords: [
-          project.name,
-          getLocalProjectDisplayName(project),
-          project.code ?? "",
-        ],
-      })),
-    [projects],
-  );
   const availableTasks = useMemo(
     () =>
       projects
         .find((project) => project._id === projectId)
         ?.tasks.filter((task) => task.status === "active") ?? [],
     [projectId, projects],
-  );
-  const taskOptions = useMemo(
-    () => buildProjectTaskOptions(availableTasks),
-    [availableTasks],
   );
   const parsedDurationMs = useMemo(
     () => parseHoursInput(durationHours),
@@ -223,14 +206,9 @@ function TitlebarNewEntryPopover({ date }: { date: string }) {
     setDurationHours("");
   }
 
-  function handleProjectChange(nextProjectId: string) {
-    const nextTaskId =
-      projects
-        .find((project) => project._id === nextProjectId)
-        ?.tasks.find((task) => task.status === "active")?._id ?? "";
-
-    setProjectId(nextProjectId);
-    setTaskId(nextTaskId);
+  function handleProjectTaskChange(selection: ProjectTaskSelection) {
+    setProjectId(selection.projectId);
+    setTaskId(selection.taskId);
   }
 
   function saveEntry() {
@@ -277,31 +255,13 @@ function TitlebarNewEntryPopover({ date }: { date: string }) {
           </div>
 
           <label className="field">
-            <span className="field-label">Project</span>
-            <SearchableSelect
-              value={projectId}
-              options={projectOptions}
-              onChange={handleProjectChange}
+            <span className="field-label">Project / task</span>
+            <ProjectTaskPicker
+              projects={projects}
+              projectId={projectId}
+              taskId={taskId}
+              onChange={handleProjectTaskChange}
               placeholder="No project"
-              clearLabel="No project"
-              emptyMessage="No matching projects"
-              ariaLabel="Project"
-            />
-          </label>
-
-          <label className="field">
-            <span className="field-label">Task</span>
-            <SearchableSelect
-              value={taskId}
-              options={taskOptions}
-              onChange={setTaskId}
-              placeholder={projectId ? "Select task" : "Pick a project first"}
-              clearLabel={projectId ? "No task" : undefined}
-              emptyMessage={
-                projectId ? "No matching tasks" : "Pick a project first"
-              }
-              ariaLabel="Task"
-              disabled={!projectId || availableTasks.length === 0}
             />
           </label>
 
@@ -482,40 +442,15 @@ function QuickTimerPopup({
   const taskId = currentTimer?.taskId ?? "";
   const note = currentTimer?.note ?? "";
 
-  const projectOptions = useMemo(
-    () =>
-      projects.map((project) => ({
-        value: project._id,
-        label: project.code
-          ? `[${project.code}] ${getLocalProjectDisplayName(project)}`
-          : getLocalProjectDisplayName(project),
-        keywords: [
-          project.name,
-          getLocalProjectDisplayName(project),
-          project.code ?? "",
-        ],
-      })),
-    [projects],
-  );
-  const availableTasks = useMemo(
-    () =>
-      projects
-        .find((p) => p._id === projectId)
-        ?.tasks.filter((t) => t.status === "active") ?? [],
-    [projectId, projects],
-  );
-  const taskOptions = useMemo(
-    () => buildProjectTaskOptions(availableTasks),
-    [availableTasks],
-  );
-
   // Close on click outside
   useEffect(() => {
     function handleMouseDown(event: MouseEvent) {
       const target = event.target as Node;
       if (
         anchorRef.current?.contains(target) ||
-        popupRef.current?.contains(target)
+        popupRef.current?.contains(target) ||
+        (target instanceof Element &&
+          target.closest(".project-task-picker-popover"))
       ) {
         return;
       }
@@ -545,18 +480,11 @@ function QuickTimerPopup({
     return null;
   }
 
-  function handleProjectChange(nextProjectId: string) {
+  function handleProjectTaskChange(selection: ProjectTaskSelection) {
     if (!currentTimer) return;
     localStore.updateTimer(currentTimer._id, {
-      projectId: nextProjectId || undefined,
-      taskId: undefined,
-    });
-  }
-
-  function handleTaskChange(nextTaskId: string) {
-    if (!currentTimer) return;
-    localStore.updateTimer(currentTimer._id, {
-      taskId: nextTaskId || undefined,
+      projectId: selection.projectId || undefined,
+      taskId: selection.taskId || undefined,
     });
   }
 
@@ -587,34 +515,14 @@ function QuickTimerPopup({
         </span>
       </div>
 
-      {/* Project */}
       <label className="field">
-        <span className="field-label">Project</span>
-        <SearchableSelect
-          value={projectId}
-          options={projectOptions}
-          onChange={handleProjectChange}
+        <span className="field-label">Project / task</span>
+        <ProjectTaskPicker
+          projects={projects}
+          projectId={projectId}
+          taskId={taskId}
+          onChange={handleProjectTaskChange}
           placeholder="No project"
-          clearLabel="No project"
-          emptyMessage="No matching projects"
-          ariaLabel="Project"
-        />
-      </label>
-
-      {/* Task */}
-      <label className="field">
-        <span className="field-label">Task</span>
-        <SearchableSelect
-          value={taskId}
-          options={taskOptions}
-          onChange={handleTaskChange}
-          placeholder={projectId ? "No task" : "Pick a project first"}
-          clearLabel={projectId ? "No task" : undefined}
-          emptyMessage={
-            projectId ? "No matching tasks" : "Pick a project first"
-          }
-          ariaLabel="Task"
-          disabled={!projectId || availableTasks.length === 0}
         />
       </label>
 

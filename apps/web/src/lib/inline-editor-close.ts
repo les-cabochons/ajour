@@ -29,6 +29,7 @@ export function isInlineEditorOutsideClick(
 
     if (
       targetElement.closest(".searchable-select-popover") ||
+      targetElement.closest(".project-task-picker-popover") ||
       ignoredSelectors.some((selector) => targetElement.closest(selector))
     ) {
       return false;

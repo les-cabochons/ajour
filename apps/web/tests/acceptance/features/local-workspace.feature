@@ -27,6 +27,20 @@ Feature: Open the local time workspace
     When I start the timer on the Backlog task from mobile
     Then the first timer is saved and the Backlog timer is running
 
+  Scenario: Find a time-entry task from project and task terms
+    Given I have projects with searchable tasks
+    When I open today's time workspace
+    And I open the new time-entry project and task picker
+    Then the picker initially lists projects without expanding their tasks
+    When I browse the tasks in project "aaa xyz"
+    Then the picker lists that project's tasks
+    When I return to the project list
+    And I search for project and task "aaa 222"
+    And I select the matching project and task
+    Then the combined project and task are selected
+    When I save one hour to the selected project and task
+    Then the time entry uses project "aaa xyz" and task "222 000"
+
   Scenario: Install a packaged connector from local files
     Given I have no saved TimeTracker workspace
     When I install a packaged connector from settings
