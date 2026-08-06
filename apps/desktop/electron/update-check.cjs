@@ -5,9 +5,19 @@ const UPDATE_CHECK_TIMEOUT_MS = 15_000;
 const UPDATE_CHECK_CACHE_TTL_MS = 5 * 60_000;
 const UPDATE_CHECK_FAILURE_TTL_MS = 30_000;
 const STABLE_TAG_PATTERN = /^v(\d+)\.(\d+)\.(\d+)$/;
-const NIGHTLY_TAG_PATTERN = /^v(\d+)\.(\d+)\.(\d+)-nightly-(\d{8})\.(\d{3,})$/;
+const NIGHTLY_TAG_PATTERN = /^v(\d+)\.(\d+)\.(\d+)-nightly\.(\d{8})\.([1-9]\d*)$/;
+const LEGACY_NIGHTLY_TAG_PATTERN = /^v(\d+)\.(\d+)\.(\d+)-nightly-(\d{8})\.(\d{3,})$/;
 const STABLE_VERSION_PATTERN = /^(\d+)\.(\d+)\.(\d+)$/;
-const NIGHTLY_VERSION_PATTERN = /^(\d+)\.(\d+)\.(\d+)-nightly-(\d{8})-(\d{3,})$/;
+const NIGHTLY_VERSION_PATTERN = /^(\d+)\.(\d+)\.(\d+)-nightly\.(\d{8})\.([1-9]\d*)$/;
+const LEGACY_NIGHTLY_VERSION_PATTERN = /^(\d+)\.(\d+)\.(\d+)-nightly-(\d{8})-(\d{3,})$/;
+
+function matchNightlyTag(tag) {
+  return NIGHTLY_TAG_PATTERN.exec(tag) ?? LEGACY_NIGHTLY_TAG_PATTERN.exec(tag);
+}
+
+function matchNightlyVersion(version) {
+  return NIGHTLY_VERSION_PATTERN.exec(version) ?? LEGACY_NIGHTLY_VERSION_PATTERN.exec(version);
+}
 
 function assertUpdateTrack(track) {
   if (track !== "stable" && track !== "nightly") {
@@ -23,7 +33,12 @@ function packageVersionForTag(tag) {
 
   const nightly = NIGHTLY_TAG_PATTERN.exec(tag);
   if (nightly) {
-    return `${nightly[1]}.${nightly[2]}.${nightly[3]}-nightly-${nightly[4]}-${nightly[5]}`;
+    return tag.slice(1);
+  }
+
+  const legacyNightly = LEGACY_NIGHTLY_TAG_PATTERN.exec(tag);
+  if (legacyNightly) {
+    return `${legacyNightly[1]}.${legacyNightly[2]}.${legacyNightly[3]}-nightly-${legacyNightly[4]}-${legacyNightly[5]}`;
   }
 
   return null;
@@ -37,7 +52,12 @@ function tagForPackageVersion(version) {
 
   const nightly = NIGHTLY_VERSION_PATTERN.exec(version);
   if (nightly) {
-    return `v${nightly[1]}.${nightly[2]}.${nightly[3]}-nightly-${nightly[4]}.${nightly[5]}`;
+    return `v${version}`;
+  }
+
+  const legacyNightly = LEGACY_NIGHTLY_VERSION_PATTERN.exec(version);
+  if (legacyNightly) {
+    return `v${legacyNightly[1]}.${legacyNightly[2]}.${legacyNightly[3]}-nightly-${legacyNightly[4]}.${legacyNightly[5]}`;
   }
 
   return null;
@@ -47,7 +67,7 @@ function releaseTrackForTag(tag) {
   if (STABLE_TAG_PATTERN.test(tag)) {
     return "stable";
   }
-  if (NIGHTLY_TAG_PATTERN.test(tag)) {
+  if (matchNightlyTag(tag)) {
     return "nightly";
   }
   return null;
@@ -146,7 +166,7 @@ function parsePackageVersion(value) {
     };
   }
 
-  const nightly = NIGHTLY_VERSION_PATTERN.exec(value);
+  const nightly = matchNightlyVersion(value);
   if (nightly) {
     return {
       track: "nightly",

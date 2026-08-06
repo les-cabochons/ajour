@@ -42,7 +42,30 @@ describe("desktop connector lifecycle", () => {
     expect(source).not.toContain("resolveBundledPluginArchives()");
     expect(source).toContain("installedPluginDirectory:");
     expect(source).toContain('app.on("before-quit"');
-    expect(source).toContain("stopInternalAppApi().finally(() => app.quit())");
+    expect(source).toContain("automaticUpdateController.installPendingUpdate()");
+    expect(source).toContain("stopInternalAppApi().finally(() => {");
+  });
+
+  it("does not poison graceful quit state when update preparation fails", async () => {
+    const source = await readFile(
+      new URL("./electron/main.cjs", import.meta.url),
+      "utf8",
+    );
+
+    const preparationStart = source.indexOf("prepareToInstall: async () => {");
+    const stopIndex = source.indexOf("await stopInternalAppApi();", preparationStart);
+    const quitFlagIndex = source.indexOf(
+      "gracefulQuitStarted = true;",
+      preparationStart,
+    );
+    const preparationEnd = source.indexOf("},", preparationStart);
+
+    expect(preparationStart).toBeGreaterThan(-1);
+    expect(stopIndex).toBeGreaterThan(preparationStart);
+    expect(quitFlagIndex).toBeGreaterThan(stopIndex);
+    expect(quitFlagIndex).toBeLessThan(preparationEnd);
+    expect(source).toContain("resetInstallPreparation: () => {");
+    expect(source).toContain("gracefulQuitStarted = false;");
   });
 
   it("keeps connector installation behind the active desktop window IPC bridge", async () => {
@@ -79,11 +102,22 @@ describe("desktop connector lifecycle", () => {
       'ipcRenderer.invoke("timetracker:check-for-updates", track)',
     );
     expect(preloadSource).toContain(
+      'ipcRenderer.invoke("timetracker:configure-automatic-updates", track)',
+    );
+    expect(preloadSource).toContain(
       'ipcRenderer.invoke("timetracker:open-update-release", releaseUrl)',
     );
     expect(mainSource).toContain(
       'ipcMain.handle("timetracker:check-for-updates"',
     );
+    expect(mainSource).toContain(
+      'ipcMain.handle("timetracker:configure-automatic-updates"',
+    );
+    expect(mainSource).toContain("createAutomaticUpdateController({");
+    expect(mainSource).toContain(
+      'app.isPackaged && process.platform === "win32"',
+    );
+    expect(mainSource).toContain("automaticUpdatesEnabled,");
     expect(mainSource).toContain("assertActiveDesktopWindow(event");
     expect(mainSource).toContain("currentVersion: app.getVersion()");
     expect(mainSource).toContain("fetchImpl: net.fetch");

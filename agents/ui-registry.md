@@ -79,7 +79,7 @@ one column without changing the card hierarchy or hiding activation.
 ### Application Updates
 
 File: `apps/web/src/features/settings/settings-general-page.tsx`
-Last updated: 2026-08-05
+Last updated: 2026-08-06
 
 The stable/nightly choice uses the shared compact toggle group inside an
 `AppPanel`. Keep exactly one track selected, explain nightly risk beside the
@@ -87,3 +87,7 @@ control, and separate repository status with a single top border rather than a
 nested card. Status text uses `aria-live`, preserves its layout while checking,
 and shows the release action only when a newer matching release exists. Web-only
 rendering keeps the preference available but identifies the desktop requirement.
+Packaged Windows builds download the selected track in the background and use a
+native restart confirmation only after the update is ready; the app never
+restarts without the user's confirmation. Other platforms show truthful manual
+update guidance while preserving the same release-track status and link.

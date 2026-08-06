@@ -48,6 +48,10 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
   commit-classified stable release for macOS and Windows with generated changelogs.
 - [x] General Settings persists a stable/nightly update track and the desktop
   checks the matching published GitHub releases through a restricted IPC bridge.
+- [x] Packaged Windows builds automatically check and download the selected
+  update channel, cancel stale-track downloads, reject older-core nightlies, and
+  ask before restarting. Releases publish NSIS/macOS updater artifacts without
+  Squirrel `.nupkg` packages; macOS stays manual until signing and notarization.
 
 ## Standard Task Flow
 

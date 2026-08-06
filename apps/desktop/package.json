@@ -3,26 +3,28 @@
   "version": "0.1.0",
   "private": true,
   "productName": "HarDay",
+  "description": "HarDay desktop app for local-first time tracking.",
+  "author": "TimeTracker",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {
     "build": "node scripts/run-renderer.cjs build",
     "dev": "concurrently -k \"corepack pnpm --dir ../.. --filter @timetracker/web dev --host 127.0.0.1 --port 5173 --strictPort --mode desktop\" \"wait-on tcp:127.0.0.1:5173 && TIMETRACKER_DESKTOP_RENDERER_URL=http://127.0.0.1:5173 env -u ELECTRON_RUN_AS_NODE electron .\"",
-    "package": "node scripts/run-forge-command.cjs package host",
-    "package:win": "node scripts/run-forge-command.cjs package win32",
-    "make": "node scripts/run-forge-command.cjs make host",
-    "make:win": "node scripts/run-forge-command.cjs make win32",
+    "package": "node scripts/run-builder-command.cjs package host",
+    "package:win": "node scripts/run-builder-command.cjs package win32",
+    "make": "node scripts/run-builder-command.cjs make host",
+    "make:win": "node scripts/run-builder-command.cjs make win32",
     "start": "node scripts/run-renderer.cjs build && node scripts/run-renderer.cjs start",
     "test": "vitest run",
     "typecheck": "node --check electron/main.cjs"
   },
+  "dependencies": {
+    "electron-updater": "^6.8.9"
+  },
   "devDependencies": {
-    "@electron-forge/cli": "^7.11.1",
-    "@electron-forge/maker-dmg": "^7.11.1",
-    "@electron-forge/maker-squirrel": "^7.11.1",
-    "@electron-forge/maker-zip": "^7.11.1",
     "concurrently": "^9.2.1",
     "electron": "^41.3.0",
+    "electron-builder": "^26.15.3",
     "wait-on": "^9.0.5"
   }
 }

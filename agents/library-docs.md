@@ -64,10 +64,15 @@ The backlog editor module is feature-local because its vocabulary and commands b
 ## Desktop
 
 - Electron
-- Electron Forge configuration in `apps/desktop/forge.config.cjs`
+- Electron Builder configuration in `apps/desktop/electron-builder.config.cjs`
+- NSIS updater packaging and macOS DMG/ZIP update artifacts are produced through
+  `apps/desktop/scripts/run-builder-command.cjs`
 - desktop bootstrap in `apps/desktop/electron`
 - GitHub release selection, tag-to-package-version mapping, and update
   availability checks: `apps/desktop/electron/update-check.cjs`
+- Windows background download, track-bound cancellation, restart confirmation,
+  and installer handoff:
+  `apps/desktop/electron/automatic-update.cjs`
 - Update checks cross the context-isolated preload/IPC bridge; the renderer does
   not fetch releases or open arbitrary external URLs directly.
 

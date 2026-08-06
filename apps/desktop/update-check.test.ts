@@ -60,7 +60,7 @@ interface Release {
 function githubRelease(
   tag: string,
   publishedAt: string,
-  prerelease = tag.includes("-nightly-"),
+  prerelease = tag.includes("-nightly"),
 ) {
   return {
     tag_name: tag,
@@ -75,27 +75,30 @@ function githubRelease(
 describe("desktop update checks", () => {
   it("maps stable and nightly tags to packaged versions", () => {
     expect(packageVersionForTag("v1.4.2")).toBe("1.4.2");
+    expect(packageVersionForTag("v1.4.2-nightly.20260805.17")).toBe(
+      "1.4.2-nightly.20260805.17",
+    );
     expect(packageVersionForTag("v1.4.2-nightly-20260805.017")).toBe(
       "1.4.2-nightly-20260805-017",
     );
     expect(packageVersionForTag("unrelated-tag")).toBeNull();
     expect(tagForPackageVersion("1.4.2")).toBe("v1.4.2");
-    expect(tagForPackageVersion("1.4.2-nightly-20260805-017")).toBe(
-      "v1.4.2-nightly-20260805.017",
+    expect(tagForPackageVersion("1.4.2-nightly.20260805.17")).toBe(
+      "v1.4.2-nightly.20260805.17",
     );
   });
 
   it("selects the highest release version even when builds publish out of order", () => {
     const releases = normalizeReleases([
-      githubRelease("v1.2.0-nightly-20260805.003", "2026-08-05T16:00:00Z"),
+      githubRelease("v1.2.0-nightly.20260805.3", "2026-08-05T16:00:00Z"),
       githubRelease("v1.1.0", "2026-08-05T17:00:00Z", false),
-      githubRelease("v1.2.0-nightly-20260805.004", "2026-08-05T15:00:00Z"),
+      githubRelease("v1.2.0-nightly.20260805.4", "2026-08-05T15:00:00Z"),
       githubRelease("v1.2.0", "2026-08-05T14:00:00Z", false),
     ]);
 
     expect(selectLatestTrackRelease(releases, "stable")?.tagName).toBe("v1.2.0");
     expect(selectLatestTrackRelease(releases, "nightly")?.tagName).toBe(
-      "v1.2.0-nightly-20260805.004",
+      "v1.2.0-nightly.20260805.4",
     );
   });
 
@@ -117,14 +120,14 @@ describe("desktop update checks", () => {
 
   it("uses publication order when switching between release tracks", () => {
     const releases = normalizeReleases([
-      githubRelease("v1.0.0-nightly-20260806.002", "2026-08-06T14:00:00Z"),
+      githubRelease("v1.0.0-nightly.20260806.2", "2026-08-06T14:00:00Z"),
       githubRelease("v1.0.0", "2026-08-05T14:00:00Z", false),
-      githubRelease("v1.0.0-nightly-20260804.001", "2026-08-04T14:00:00Z"),
+      githubRelease("v1.0.0-nightly.20260804.1", "2026-08-04T14:00:00Z"),
     ]);
 
     expect(isUpdateAvailable("1.0.0", releases[0]!, releases)).toBe(true);
     expect(isUpdateAvailable("1.0.0", releases[2]!, releases)).toBe(false);
-    expect(isUpdateAvailable("1.0.0-nightly-20260804-001", releases[1]!, releases)).toBe(true);
+    expect(isUpdateAvailable("1.0.0-nightly.20260804.1", releases[1]!, releases)).toBe(true);
   });
 
   it("checks GitHub releases and returns a renderer-safe result", async () => {
@@ -132,22 +135,22 @@ describe("desktop update checks", () => {
       ok: true,
       status: 200,
       json: vi.fn().mockResolvedValue([
-        githubRelease("v1.3.0-nightly-20260805.009", "2026-08-05T18:00:00Z"),
+        githubRelease("v1.3.0-nightly.20260805.9", "2026-08-05T18:00:00Z"),
       ]),
     });
 
     await expect(
       checkForUpdates({
         track: "nightly",
-        currentVersion: "1.3.0-nightly-20260805-008",
+        currentVersion: "1.3.0-nightly.20260805.8",
         fetchImpl,
         now: () => Date.parse("2026-08-05T19:00:00Z"),
       }),
     ).resolves.toMatchObject({
       track: "nightly",
-      currentVersion: "1.3.0-nightly-20260805-008",
-      latestVersion: "1.3.0-nightly-20260805-009",
-      latestTag: "v1.3.0-nightly-20260805.009",
+      currentVersion: "1.3.0-nightly.20260805.8",
+      latestVersion: "1.3.0-nightly.20260805.9",
+      latestTag: "v1.3.0-nightly.20260805.9",
       updateAvailable: true,
       checkedAt: "2026-08-05T19:00:00.000Z",
     });
@@ -195,7 +198,7 @@ describe("desktop update checks", () => {
         ok: true,
         status: 200,
         json: vi.fn().mockResolvedValue([
-          githubRelease("v1.0.0-nightly-20260806.011", "2026-08-06T18:00:00Z"),
+          githubRelease("v1.0.0-nightly.20260806.11", "2026-08-06T18:00:00Z"),
         ]),
       })
       .mockResolvedValueOnce({
@@ -213,7 +216,7 @@ describe("desktop update checks", () => {
         fetchImpl,
       }),
     ).resolves.toMatchObject({
-      latestTag: "v1.0.0-nightly-20260806.011",
+      latestTag: "v1.0.0-nightly.20260806.11",
       updateAvailable: true,
     });
     expect(fetchImpl.mock.calls[1]?.[0]).toBe(
@@ -302,7 +305,7 @@ describe("desktop update checks", () => {
     await expect(
       checkForUpdates({
         track: "nightly",
-        currentVersion: "1.0.0-nightly-20260805-001",
+        currentVersion: "1.0.0-nightly.20260805.1",
         fetchImpl: vi.fn().mockRejectedValue(
           Object.assign(new Error("aborted"), { name: "TimeoutError" }),
         ),

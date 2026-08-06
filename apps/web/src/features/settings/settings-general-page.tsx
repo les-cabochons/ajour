@@ -81,6 +81,8 @@ export function SettingsGeneralPage() {
   const updateRequestId = useRef(0);
   const releaseOpenRequestId = useRef(0);
   const desktopUpdates = window.timetrackerDesktop?.checkForUpdates;
+  const automaticUpdatesEnabled =
+    window.timetrackerDesktop?.runtime?.automaticUpdatesEnabled === true;
 
   const handleThemeChange = (mode: ThemeMode) => {
     localStore.setUserPreferences({ themeMode: mode });
@@ -191,8 +193,9 @@ export function SettingsGeneralPage() {
       <section className="settings-section">
         <h2 className="settings-section-title">Application updates</h2>
         <p className="settings-section-desc">
-          Choose which GitHub release track HarDay checks. Changing tracks does
-          not install anything automatically.
+          {automaticUpdatesEnabled
+            ? "Choose which GitHub release track HarDay follows. Updates download in the background, and HarDay asks before restarting to install them."
+            : "Choose which GitHub release track HarDay checks. Automatic installation is currently available on packaged Windows builds; use the release link to update this platform manually."}
         </p>
 
         <AppPanel>

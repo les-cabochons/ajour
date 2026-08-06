@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       nightly_tag:
-        description: Nightly tag to promote (vX.Y.Z-nightly-YYYYMMDD.NNN)
+        description: Nightly tag to promote (vX.Y.Z-nightly.YYYYMMDD.N)
         required: true
         type: string
 
@@ -50,7 +50,7 @@ jobs:
           NIGHTLY_TAG: ${{ inputs.nightly_tag }}
           PROMOTION_BASE_SHA: ${{ github.sha }}
         run: |
-          if [[ ! "$NIGHTLY_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-nightly-[0-9]{8}\.[0-9]{3,}$ ]]; then
+          if [[ ! "$NIGHTLY_TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-nightly\.([0-9]{8})\.([1-9][0-9]*)$ ]]; then
             echo "Invalid nightly tag: $NIGHTLY_TAG" >&2
             exit 1
           fi
@@ -137,13 +137,23 @@ jobs:
         shell: bash
 
       - name: Create desktop distributable
+        env:
+          HARDAY_UPDATE_CHANNEL: latest
         run: ${{ matrix.command }}
 
       - name: Upload desktop distributable
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: apps/desktop/out/make/**
+          path: |
+            apps/desktop/out/make/*.exe
+            apps/desktop/out/make/*.exe.blockmap
+            apps/desktop/out/make/*.dmg
+            apps/desktop/out/make/*.dmg.blockmap
+            apps/desktop/out/make/*.zip
+            apps/desktop/out/make/*.zip.blockmap
+            apps/desktop/out/make/latest.yml
+            apps/desktop/out/make/latest-mac.yml
           if-no-files-found: error
           retention-days: 30
 

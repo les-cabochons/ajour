@@ -51,7 +51,11 @@ import {
 } from "@/lib/timer-totals";
 import { isDesktopShell } from "@/lib/runtime";
 import { cn, getIsoWeekDates, todayIsoDate } from "@/lib/utils";
-import { useLocalProjects, useLocalState } from "@/lib/local-hooks";
+import {
+  useLocalProjects,
+  useLocalState,
+  useUserPreferences,
+} from "@/lib/local-hooks";
 import { MOBILE_BREAKPOINT } from "@/hooks/use-mobile";
 import { useApplyTheme } from "@/lib/use-theme";
 
@@ -903,6 +907,7 @@ function GlobalTimerBar({ selectedDate }: { selectedDate: string }) {
 /* ── App Shell ─────────────────────────────────────────────────────── */
 
 export function AppShell() {
+  const { updateTrack } = useUserPreferences();
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
@@ -930,6 +935,12 @@ export function AppShell() {
       : [];
 
   useApplyTheme();
+
+  useEffect(() => {
+    void window.timetrackerDesktop
+      ?.configureAutomaticUpdates?.(updateTrack)
+      .catch((error) => console.error("Unable to configure automatic updates.", error));
+  }, [updateTrack]);
 
   useEffect(() => {
     if (timeRouteDate) {

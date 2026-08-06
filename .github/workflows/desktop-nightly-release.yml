@@ -45,7 +45,7 @@ jobs:
               GITHUB_OUTPUT="$candidate_output" \
               node .github/scripts/release-plan.mjs nightly
             tag="$(sed -n 's/^tag=//p' "$candidate_output" | tail -n 1)"
-            if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-nightly-[0-9]{8}\.[0-9]{3,}$ ]]; then
+            if [[ ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-nightly\.([0-9]{8})\.([1-9][0-9]*)$ && ! "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+-nightly-[0-9]{8}\.[0-9]{3,}$ ]]; then
               echo "Release planner returned an invalid nightly tag: $tag" >&2
               exit 1
             fi
@@ -113,13 +113,23 @@ jobs:
         shell: bash
 
       - name: Create desktop distributable
+        env:
+          HARDAY_UPDATE_CHANNEL: nightly
         run: ${{ matrix.command }}
 
       - name: Upload desktop distributable
         uses: actions/upload-artifact@v4
         with:
           name: ${{ matrix.artifact }}
-          path: apps/desktop/out/make/**
+          path: |
+            apps/desktop/out/make/*.exe
+            apps/desktop/out/make/*.exe.blockmap
+            apps/desktop/out/make/*.dmg
+            apps/desktop/out/make/*.dmg.blockmap
+            apps/desktop/out/make/*.zip
+            apps/desktop/out/make/*.zip.blockmap
+            apps/desktop/out/make/nightly.yml
+            apps/desktop/out/make/nightly-mac.yml
           if-no-files-found: error
           retention-days: 7
 

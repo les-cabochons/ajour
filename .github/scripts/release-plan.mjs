@@ -5,7 +5,7 @@ import path from "node:path";
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
 const stableTagPattern = /^v(\d+)\.(\d+)\.(\d+)$/;
-const releaseTagPattern = /^v(\d+)\.(\d+)\.(\d+)(?:-(?:nightly-\d{8}\.\d+|alpha\.\d{8}\.\d+))?$/;
+const releaseTagPattern = /^v(\d+)\.(\d+)\.(\d+)(?:-(?:nightly(?:-\d{8}\.\d+|\.\d{8}\.[1-9]\d*)|alpha\.\d{8}\.\d+))?$/;
 
 export function parseVersion(value) {
   const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(value);
@@ -35,9 +35,10 @@ export function coreVersionFromTag(tag) {
 }
 
 export function parseNightlyTag(tag) {
-  const match = /^v(\d+\.\d+\.\d+)-nightly-(\d{8})\.(\d{3,})$/.exec(tag);
+  const match = /^v(\d+\.\d+\.\d+)-nightly\.(\d{8})\.([1-9]\d*)$/.exec(tag)
+    ?? /^v(\d+\.\d+\.\d+)-nightly-(\d{8})\.(\d{3,})$/.exec(tag);
   if (!match) {
-    throw new Error(`Invalid nightly tag: ${tag}. Expected vX.Y.Z-nightly-YYYYMMDD.NNN.`);
+    throw new Error(`Invalid nightly tag: ${tag}. Expected vX.Y.Z-nightly.YYYYMMDD.N.`);
   }
 
   return {
@@ -89,17 +90,19 @@ export function planNightly({
     .map(coreVersionFromTag)
     .filter(Boolean);
   const version = highestVersion([configuredVersion, ...releaseVersions]);
-  const nightlyPattern = /^v\d+\.\d+\.\d+-nightly-\d{8}\.(\d{3,})$/;
   const highestSequence = tags.reduce((highest, tag) => {
-    const match = nightlyPattern.exec(tag);
-    return match ? Math.max(highest, Number(match[1])) : highest;
+    try {
+      return Math.max(highest, Number(parseNightlyTag(tag).sequence));
+    } catch {
+      return highest;
+    }
   }, 0);
-  const sequence = String(highestSequence + 1).padStart(3, "0");
+  const sequence = String(highestSequence + 1);
 
   return {
     version,
-    tag: `v${version}-nightly-${date}.${sequence}`,
-    packageVersion: `${version}-nightly-${date}-${sequence}`,
+    tag: `v${version}-nightly.${date}.${sequence}`,
+    packageVersion: `${version}-nightly.${date}.${sequence}`,
     bump: "nightly",
   };
 }
@@ -205,9 +208,14 @@ export function planStable({
 }
 
 export function packageVersionForTag(tag) {
-  const nightly = /^v(\d+\.\d+\.\d+)-nightly-(\d{8})\.(\d+)$/.exec(tag);
+  const nightly = /^v(\d+\.\d+\.\d+)-nightly\.(\d{8})\.([1-9]\d*)$/.exec(tag);
   if (nightly) {
-    return `${nightly[1]}-nightly-${nightly[2]}-${nightly[3].padStart(3, "0")}`;
+    return tag.slice(1);
+  }
+
+  const legacyNightly = /^v(\d+\.\d+\.\d+)-nightly-(\d{8})\.(\d+)$/.exec(tag);
+  if (legacyNightly) {
+    return `${legacyNightly[1]}-nightly-${legacyNightly[2]}-${legacyNightly[3].padStart(3, "0")}`;
   }
 
   const stable = stableTagPattern.exec(tag);

@@ -26,6 +26,7 @@ declare global {
     timetrackerDesktop?: {
       bootstrapLocalState?: Partial<LocalAppState> | null;
       runtime?: {
+        automaticUpdatesEnabled: boolean;
         developmentBuild: boolean;
         platform: string;
         version: string;
@@ -34,6 +35,7 @@ declare global {
       checkForUpdates?: (
         track: UpdateTrack,
       ) => Promise<DesktopUpdateCheckResult>;
+      configureAutomaticUpdates?: (track: UpdateTrack) => Promise<void>;
       openUpdateRelease?: (releaseUrl: string) => Promise<void>;
       installConnectorPlugin?: () => Promise<
         ConnectorPluginInstallResponse | null

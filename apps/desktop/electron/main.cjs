@@ -4,6 +4,8 @@ const http = require("node:http");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, net, protocol, shell } = require("electron");
+const { autoUpdater } = require("electron-updater");
+const { createAutomaticUpdateController } = require("./automatic-update.cjs");
 const { selectConnectorPluginArchive } = require("./connector-install.cjs");
 const {
   clearDevelopmentPluginDirectories,
@@ -67,7 +69,21 @@ let desktopBootstrapLocalState = null;
 let developmentPluginDirectoriesOverride;
 let mainWindow = null;
 let gracefulQuitStarted = false;
+const automaticUpdatesEnabled = app.isPackaged && process.platform === "win32";
 const checkForUpdatesCoordinated = createUpdateCheckCoordinator();
+const automaticUpdateController = createAutomaticUpdateController({
+  autoUpdater,
+  isEnabled: automaticUpdatesEnabled,
+  dialog,
+  getMainWindow: () => mainWindow,
+  prepareToInstall: async () => {
+    await stopInternalAppApi();
+    gracefulQuitStarted = true;
+  },
+  resetInstallPreparation: () => {
+    gracefulQuitStarted = false;
+  },
+});
 
 const developmentPluginSettingsPath = path.join(
   app.getPath("userData"),
@@ -84,6 +100,7 @@ ipcMain.on("timetracker:get-bootstrap-local-state", (event) => {
 
 ipcMain.on("timetracker:get-runtime-info", (event) => {
   event.returnValue = {
+    automaticUpdatesEnabled,
     developmentBuild: !app.isPackaged,
     platform: process.platform,
     version: app.getVersion(),
@@ -104,11 +121,17 @@ ipcMain.on("timetracker:set-window-chrome-theme", (event, theme) => {
 
 ipcMain.handle("timetracker:check-for-updates", async (event, track) => {
   assertActiveDesktopWindow(event, "check for application updates");
+  void automaticUpdateController.checkNow(track);
   return await checkForUpdatesCoordinated({
     track,
     currentVersion: app.getVersion(),
     fetchImpl: net.fetch,
   });
+});
+
+ipcMain.handle("timetracker:configure-automatic-updates", async (event, track) => {
+  assertActiveDesktopWindow(event, "configure automatic application updates");
+  await automaticUpdateController.configure(track);
 });
 
 ipcMain.handle("timetracker:open-update-release", async (event, releaseUrl) => {
@@ -578,7 +601,12 @@ if (!hasSingleInstanceLock) {
 
     gracefulQuitStarted = true;
     event.preventDefault();
-    void stopInternalAppApi().finally(() => app.quit());
+    void stopInternalAppApi().finally(() => {
+      if (!automaticUpdateController.installPendingUpdate()) {
+        gracefulQuitStarted = true;
+        app.quit();
+      }
+    });
   });
 
   app.on("window-all-closed", () => {

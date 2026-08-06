@@ -20,8 +20,8 @@ test("creates the requested first nightly tag from the alpha baseline", () => {
     }),
     {
       version: "0.0.1",
-      tag: "v0.0.1-nightly-20260804.001",
-      packageVersion: "0.0.1-nightly-20260804-001",
+      tag: "v0.0.1-nightly.20260804.1",
+      packageVersion: "0.0.1-nightly.20260804.1",
       bump: "nightly",
     },
   );
@@ -33,8 +33,8 @@ test("increments one global nightly build number across dates", () => {
     "v0.0.1-nightly-20260804.002",
   ];
 
-  assert.equal(planNightly({ configuredVersion: "0.0.1", tags, date: "20260804" }).tag, "v0.0.1-nightly-20260804.003");
-  assert.equal(planNightly({ configuredVersion: "0.0.1", tags, date: "20260805" }).tag, "v0.0.1-nightly-20260805.003");
+  assert.equal(planNightly({ configuredVersion: "0.0.1", tags, date: "20260804" }).tag, "v0.0.1-nightly.20260804.3");
+  assert.equal(planNightly({ configuredVersion: "0.0.1", tags, date: "20260805" }).tag, "v0.0.1-nightly.20260805.3");
 });
 
 test("keeps incrementing the global build number after a version change", () => {
@@ -46,7 +46,7 @@ test("keeps incrementing the global build number after a version change", () => 
     date: "20260805",
   });
 
-  assert.equal(plan.tag, "v0.1.0-nightly-20260805.010");
+  assert.equal(plan.tag, "v0.1.0-nightly.20260805.10");
 });
 
 test("does not inherit a release series from an unreachable later tag", () => {
@@ -58,7 +58,7 @@ test("does not inherit a release series from an unreachable later tag", () => {
     date: "20260805",
   });
 
-  assert.equal(plan.tag, "v0.0.1-nightly-20260805.002");
+  assert.equal(plan.tag, "v0.0.1-nightly.20260805.2");
 });
 
 test("reuses the tag already reserved for the same commit", () => {
@@ -179,20 +179,23 @@ test("recovers a pending stable reservation only on its original commit", () => 
 
 test("ignores tags outside the supported release formats", () => {
   assert.equal(coreVersionFromTag("v0.0.1-nightly-20260804.001"), "0.0.1");
+  assert.equal(coreVersionFromTag("v0.0.1-nightly.20260805.2"), "0.0.1");
   assert.equal(coreVersionFromTag("v0.0.1-x$(echo-danger)"), undefined);
 });
 
 test("validates a nightly selected for stable promotion", () => {
-  assert.deepEqual(parseNightlyTag("v0.1.0-nightly-20260805.012"), {
+  assert.deepEqual(parseNightlyTag("v0.1.0-nightly.20260805.12"), {
     version: "0.1.0",
     date: "20260805",
-    sequence: "012",
+    sequence: "12",
   });
+  assert.equal(parseNightlyTag("v0.1.0-nightly-20260805.012").sequence, "012");
   assert.throws(() => parseNightlyTag("v0.1.0"), /Invalid nightly tag/);
-  assert.throws(() => parseNightlyTag("v0.1.0-nightly-20260805.12"), /Invalid nightly tag/);
+  assert.throws(() => parseNightlyTag("v0.1.0-nightly.20260805.012"), /Invalid nightly tag/);
 });
 
-test("uses a valid package version for the padded nightly tag", () => {
+test("uses SemVer package versions while retaining legacy tag compatibility", () => {
+  assert.equal(packageVersionForTag("v0.0.1-nightly.20260805.2"), "0.0.1-nightly.20260805.2");
   assert.equal(packageVersionForTag("v0.0.1-nightly-20260804.001"), "0.0.1-nightly-20260804-001");
   assert.equal(packageVersionForTag("v0.1.0"), "0.1.0");
 });

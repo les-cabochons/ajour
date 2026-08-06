@@ -7,10 +7,10 @@
     "build": "corepack pnpm -r build",
     "build:desktop": "corepack pnpm --filter @timetracker/desktop build",
     "package:desktop": "corepack pnpm --filter @timetracker/desktop package",
-    "package:desktop:mac": "corepack pnpm --filter @timetracker/desktop exec node scripts/run-forge-command.cjs package darwin",
+    "package:desktop:mac": "corepack pnpm --filter @timetracker/desktop exec node scripts/run-builder-command.cjs package darwin",
     "package:desktop:win": "corepack pnpm --filter @timetracker/desktop package:win",
     "make:desktop": "corepack pnpm --filter @timetracker/desktop make",
-    "make:desktop:mac": "corepack pnpm --filter @timetracker/desktop exec node scripts/run-forge-command.cjs make darwin",
+    "make:desktop:mac": "corepack pnpm --filter @timetracker/desktop exec node scripts/run-builder-command.cjs make darwin",
     "make:desktop:win": "corepack pnpm --filter @timetracker/desktop make:win",
     "dev:web": "corepack pnpm --filter @timetracker/web dev",
     "dev:desktop": "corepack pnpm --filter @timetracker/desktop dev",
@@ -43,8 +43,7 @@
       "uuid": "14.0.0"
     },
     "onlyBuiltDependencies": [
-      "electron",
-      "electron-winstaller"
+      "electron"
     ]
   }
 }
