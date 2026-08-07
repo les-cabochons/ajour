@@ -57,18 +57,21 @@ describe("desktop development plugin settings", () => {
 
   it("accepts one user-selected directory containing a plugin manifest", async () => {
     const parentWindow = {};
+    const selectedDirectory = path.resolve(path.sep, "tmp", "example-plugin");
     const dialog = {
       showOpenDialog: vi.fn().mockResolvedValue({
         canceled: false,
-        filePaths: ["/tmp/example-plugin"],
+        filePaths: [selectedDirectory],
       }),
     };
     const stat = vi.fn().mockResolvedValue({ isFile: () => true });
 
     await expect(
       selectDevelopmentPluginDirectory(dialog, parentWindow, { stat }),
-    ).resolves.toBe("/tmp/example-plugin");
-    expect(stat).toHaveBeenCalledWith("/tmp/example-plugin/plugin.json");
+    ).resolves.toBe(selectedDirectory);
+    expect(stat).toHaveBeenCalledWith(
+      path.join(selectedDirectory, "plugin.json"),
+    );
   });
 
   it("does not change settings when directory selection is cancelled", async () => {
