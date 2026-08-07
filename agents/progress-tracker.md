@@ -12,6 +12,15 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Feature checkboxes use the shared `Checkbox` UI primitive.
 - [x] Connector settings plugin field rendering is extracted to a feature-local UI module.
 - [x] Settings presents connectors as activatable Plugins catalog entries with dedicated configuration detail routes.
+- [x] The Plugins catalog is populated from the Ajour plugin index, caches and
+  conditionally refreshes catalog artwork in the desktop main process, and uses
+  deterministic thumbnail and capability-band fallbacks when artwork is absent.
+- [x] Catalog packages download through the managed connector installer in an
+  inactive state; manual archive installation and Debug plugin directories keep
+  their existing behavior.
+- [x] A persisted plugin-system master switch blocks all connector and
+  project-data-shape execution while preserving individual activation choices,
+  and catalog refresh defaults to a configurable 15-minute interval.
 - [x] Web-domain contracts and pure calculations are separated from persistence and feature UI.
 - [x] Local state, duration, task budget/import, and project icon contracts have canonical domain modules.
 - [x] `apps/web/src/lib` no longer depends on feature modules.

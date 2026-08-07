@@ -130,12 +130,17 @@ export const connectorOverviewGroupSchema = z.object({
 export type ConnectorOverviewGroup = z.infer<typeof connectorOverviewGroupSchema>;
 
 export const connectorsOverviewSchema = z.object({
+  pluginsEnabled: z.boolean(),
   plugins: z.array(connectorPluginManifestSchema),
   connectionGroups: z.array(connectorOverviewGroupSchema),
   totalPendingImportCount: z.number().int().nonnegative(),
   totalSelectedImportCount: z.number().int().nonnegative(),
 });
 export type ConnectorsOverview = z.infer<typeof connectorsOverviewSchema>;
+
+export const pluginSystemActivationUpdateSchema = z.object({
+  enabled: z.boolean(),
+});
 
 export const connectorPluginActivationUpdateSchema = z.object({
   enabled: z.boolean(),

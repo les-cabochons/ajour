@@ -7,6 +7,7 @@ async function mockEmptyConnectorOverview(page: Page) {
   await page.route("http://127.0.0.1:8787/api/connectors", async (route) => {
     await route.fulfill({
       json: {
+        pluginsEnabled: true,
         plugins: [],
         connectionGroups: [],
         totalPendingImportCount: 0,
@@ -33,6 +34,7 @@ Given(
     await page.route("http://127.0.0.1:8787/api/connectors", async (route) => {
       await route.fulfill({
         json: {
+          pluginsEnabled: true,
           plugins: [],
           connectionGroups: [],
           totalPendingImportCount: 0,
@@ -414,6 +416,7 @@ When("I install a packaged connector from settings", async ({ page }) => {
     plugin,
     replaced: false,
     overview: {
+      pluginsEnabled: true,
       plugins: [plugin],
       connectionGroups: [{ plugin, enabled: true, connections: [] }],
       totalPendingImportCount: 0,
@@ -429,6 +432,7 @@ When("I install a packaged connector from settings", async ({ page }) => {
         uninstallConnectorPlugin: () => Promise<{
           pluginId: string;
           overview: {
+            pluginsEnabled: boolean;
             plugins: never[];
             connectionGroups: never[];
             totalPendingImportCount: number;
@@ -444,6 +448,7 @@ When("I install a packaged connector from settings", async ({ page }) => {
       uninstallConnectorPlugin: async () => ({
         pluginId: response.plugin.id,
         overview: {
+          pluginsEnabled: true,
           plugins: [],
           connectionGroups: [],
           totalPendingImportCount: 0,

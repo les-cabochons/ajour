@@ -7,6 +7,11 @@ const { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, net, prot
 const { autoUpdater } = require("electron-updater");
 const { createAutomaticUpdateController } = require("./automatic-update.cjs");
 const { selectConnectorPluginArchive } = require("./connector-install.cjs");
+const { createPluginCatalogService } = require("./plugin-catalog.cjs");
+const {
+  loadPluginCatalogSettings,
+  savePluginCatalogSettings,
+} = require("./plugin-catalog-settings.cjs");
 const {
   clearDevelopmentPluginDirectories,
   loadDevelopmentPluginDirectories,
@@ -69,6 +74,8 @@ let desktopBootstrapLocalState = null;
 let developmentPluginDirectoriesOverride;
 let mainWindow = null;
 let gracefulQuitStarted = false;
+let pluginCatalogRefreshPromise = null;
+let pluginCatalogRefreshTimer = null;
 const automaticUpdatesEnabled = app.isPackaged && process.platform === "win32";
 const checkForUpdatesCoordinated = createUpdateCheckCoordinator();
 const automaticUpdateController = createAutomaticUpdateController({
@@ -89,6 +96,46 @@ const developmentPluginSettingsPath = path.join(
   app.getPath("userData"),
   "development-plugins.json",
 );
+const pluginCatalogSettingsPath = path.join(
+  app.getPath("userData"),
+  "plugin-catalog-settings.json",
+);
+let pluginCatalogSettings = loadPluginCatalogSettings(
+  pluginCatalogSettingsPath,
+);
+const pluginCatalogService = createPluginCatalogService({
+  cacheDirectory: path.join(app.getPath("userData"), "plugin-catalog"),
+  fetchImpl: net.fetch,
+});
+
+function refreshPluginCatalog() {
+  pluginCatalogRefreshPromise ??= pluginCatalogService
+    .refresh()
+    .then((catalog) => {
+      mainWindow?.webContents.send("timetracker:plugin-catalog-updated", catalog);
+      return catalog;
+    })
+    .finally(() => {
+      pluginCatalogRefreshPromise = null;
+    });
+  return pluginCatalogRefreshPromise;
+}
+
+function schedulePluginCatalogRefresh() {
+  if (pluginCatalogRefreshTimer) {
+    clearInterval(pluginCatalogRefreshTimer);
+    pluginCatalogRefreshTimer = null;
+  }
+  if (pluginCatalogSettings.refreshMinutes === 0) {
+    return;
+  }
+  pluginCatalogRefreshTimer = setInterval(() => {
+    void refreshPluginCatalog().catch((error) => {
+      console.error("Unable to refresh the plugin catalog.", error);
+    });
+  }, pluginCatalogSettings.refreshMinutes * 60 * 1000);
+  pluginCatalogRefreshTimer.unref?.();
+}
 
 ipcMain.on("timetracker:get-bootstrap-local-state", (event) => {
   desktopBootstrapLocalState ??= loadDesktopBootstrapLocalState({
@@ -173,6 +220,53 @@ ipcMain.handle("timetracker:install-connector-plugin", async (event) => {
     selectedArchive.archiveBytes,
     selectedArchive.archiveFilename,
   );
+});
+
+ipcMain.handle("timetracker:get-plugin-catalog", async (event) => {
+  assertActiveDesktopWindow(event, "read the plugin catalog");
+  return pluginCatalogService.getCurrentCatalog() ?? (await refreshPluginCatalog());
+});
+
+ipcMain.handle("timetracker:get-plugin-catalog-settings", async (event) => {
+  assertActiveDesktopWindow(event, "read plugin catalog settings");
+  return pluginCatalogSettings;
+});
+
+ipcMain.handle("timetracker:configure-plugin-catalog", async (event, settings) => {
+  assertActiveDesktopWindow(event, "configure the plugin catalog");
+  pluginCatalogSettings = savePluginCatalogSettings(
+    pluginCatalogSettingsPath,
+    settings,
+  );
+  schedulePluginCatalogRefresh();
+  return pluginCatalogSettings;
+});
+
+ipcMain.handle("timetracker:download-catalog-plugin", async (event, pluginId) => {
+  assertActiveDesktopWindow(event, "download a plugin");
+  if (!app.isPackaged) {
+    throw new Error("Catalog plugin downloads are only available in production builds.");
+  }
+  if (typeof pluginId !== "string" || pluginId.length < 2 || pluginId.length > 64) {
+    throw new Error("The catalog plugin identifier is invalid.");
+  }
+
+  const downloaded = await pluginCatalogService.downloadPluginArchive(pluginId);
+  await ensureInternalAppApiRunning();
+  if (!internalAppApiServer || !internalAppApiModulePromise) {
+    throw new Error("Internal connector API unavailable. Restart the app.");
+  }
+  const { installConnectorPluginForServer } = await internalAppApiModulePromise;
+  if (typeof installConnectorPluginForServer !== "function") {
+    throw new Error("Internal connector API does not support plugin installation.");
+  }
+  const result = await installConnectorPluginForServer(
+    internalAppApiServer,
+    downloaded.archiveBytes,
+    downloaded.archiveFilename,
+    { enableAfterInstall: false },
+  );
+  return { type: "connector", result };
 });
 
 ipcMain.handle("timetracker:uninstall-connector-plugin", async (event, pluginId) => {
@@ -579,6 +673,11 @@ if (!hasSingleInstanceLock) {
       registerStaticProtocol();
     }
 
+    void refreshPluginCatalog().catch((error) => {
+      console.error("Unable to refresh the plugin catalog.", error);
+    });
+    schedulePluginCatalogRefresh();
+
     try {
       await ensureInternalAppApiRunning();
     } catch (error) {
@@ -600,6 +699,10 @@ if (!hasSingleInstanceLock) {
     }
 
     gracefulQuitStarted = true;
+    if (pluginCatalogRefreshTimer) {
+      clearInterval(pluginCatalogRefreshTimer);
+      pluginCatalogRefreshTimer = null;
+    }
     event.preventDefault();
     void stopInternalAppApi().finally(() => {
       if (!automaticUpdateController.installPendingUpdate()) {

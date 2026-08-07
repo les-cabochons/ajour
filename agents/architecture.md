@@ -122,6 +122,26 @@ items intact, but blocks manual sync and excludes its connections from the web
 auto-sync scheduler. Reactivation restores those sync paths without requiring
 the connector to be configured again.
 
+The plugin system also has one persisted master activation gate. Turning it off
+stops connector workers, cancels active project-data-shape operations, hides
+data-shape capabilities from consumers, and makes every installed plugin
+inactive. It does not rewrite individual activation choices, so turning the
+system on restores the user's previous per-plugin configuration. Catalog
+browsing, managed downloads, manual archive installation, and Debug-directory
+configuration remain available while execution is disabled.
+
+The desktop main process owns the Ajour plugin-index boundary. It fetches and
+strictly validates catalog definitions, release metadata, and optional artwork;
+caches catalog files and images below Electron user data; and gives the renderer
+only normalized metadata and local data URLs. Conditional requests check for
+catalog and image updates at launch and on a configurable interval (15 minutes
+by default, with launch-only refresh available). A built-in snapshot of the
+index keeps the catalog usable on first launch when the remote index is
+unreachable; the validated remote catalog replaces it when available. Catalog connector downloads
+reuse the validated managed-package installer and are inactive until the user
+explicitly activates them. The existing local-file installer retains its
+current behavior.
+
 ## Project Data Shape Plugins
 
 Project import/export separates canonical data, data shape, and file format:

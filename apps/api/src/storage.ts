@@ -82,16 +82,17 @@ interface AppApiStateV2 {
   seenImportKeys?: string[];
 }
 
-interface AppApiStateV6 {
-  version: 6;
+interface AppApiStateV7 {
+  version: 7;
   connections: StoredConnection[];
   stagedImports: ConnectorImportCandidate[];
   dismissedImportKeys: string[];
   connectorBacklogStatuses: ConnectorBacklogStatus[];
   disabledPluginIds: string[];
+  pluginsEnabled: boolean;
 }
 
-type AppApiState = AppApiStateV6;
+type AppApiState = AppApiStateV7;
 
 interface StageImportItemsResult {
   queuedCount: number;
@@ -108,12 +109,13 @@ function importKey(item: Pick<ConnectorImportCandidateInput, "source" | "connect
 
 function createDefaultState(): AppApiState {
   return {
-    version: 6,
+    version: 7,
     connections: [],
     stagedImports: [],
     dismissedImportKeys: [],
     connectorBacklogStatuses: [],
     disabledPluginIds: [],
+    pluginsEnabled: true,
   };
 }
 
@@ -306,7 +308,7 @@ function normalizeState(raw: Partial<AppApiState | AppApiStateV1 | AppApiStateV2
     const defaults = createDefaultState();
 
     return {
-      version: 6,
+      version: 7,
       connections: raw.connections
         .filter(
           (connection): connection is StoredConnection =>
@@ -360,6 +362,10 @@ function normalizeState(raw: Partial<AppApiState | AppApiStateV1 | AppApiStateV2
             .map((pluginId) => pluginId.trim()),
         ),
       ).sort(),
+      pluginsEnabled:
+        typeof (raw as Partial<AppApiState>).pluginsEnabled === "boolean"
+          ? (raw as Partial<AppApiState>).pluginsEnabled!
+          : defaults.pluginsEnabled,
     };
   }
 
@@ -395,7 +401,7 @@ function normalizeState(raw: Partial<AppApiState | AppApiStateV1 | AppApiStateV2
       })) ?? defaults.connections);
 
     return {
-      version: 6,
+      version: 7,
       connections: legacyConnections.sort(compareConnections),
       stagedImports: (raw.stagedImports ?? defaults.stagedImports)
         .filter(
@@ -429,6 +435,7 @@ function normalizeState(raw: Partial<AppApiState | AppApiStateV1 | AppApiStateV2
         )
         .sort(compareBacklogStatuses),
       disabledPluginIds: defaults.disabledPluginIds,
+      pluginsEnabled: defaults.pluginsEnabled,
     };
   }
 
@@ -461,6 +468,7 @@ export class AppApiStorage {
     const connectionGroups = allPlugins.map((plugin) => ({
       plugin,
       enabled:
+        state.pluginsEnabled &&
         plugin.entrypoint.length > 0 &&
         !state.disabledPluginIds.includes(plugin.id),
       connections: state.connections
@@ -469,6 +477,7 @@ export class AppApiStorage {
     }));
 
     return {
+      pluginsEnabled: state.pluginsEnabled,
       plugins: allPlugins,
       connectionGroups,
       totalPendingImportCount: connectionGroups.reduce(
@@ -489,8 +498,20 @@ export class AppApiStorage {
     const state = await this.readState();
     return (
       availablePluginIds.has(pluginId) &&
+      state.pluginsEnabled &&
       !state.disabledPluginIds.includes(pluginId)
     );
+  }
+
+  async getPluginSystemEnabled(): Promise<boolean> {
+    return (await this.readState()).pluginsEnabled;
+  }
+
+  async setPluginSystemEnabled(enabled: boolean): Promise<void> {
+    await this.mutate(async (state) => ({
+      nextState: { ...state, pluginsEnabled: enabled },
+      result: undefined,
+    }));
   }
 
   async setConnectorPluginEnabled(

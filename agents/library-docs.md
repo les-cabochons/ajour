@@ -77,6 +77,10 @@ The backlog editor module is feature-local because its vocabulary and commands b
   `apps/desktop/electron/automatic-update.cjs`
 - Update checks cross the context-isolated preload/IPC bridge; the renderer does
   not fetch releases or open arbitrary external URLs directly.
+- Plugin-index validation, image caching, built-in fallback, and release
+  download: `apps/desktop/electron/plugin-catalog.cjs` and
+  `apps/desktop/electron/plugin-catalog-seed.cjs`
+- Catalog refresh persistence: `apps/desktop/electron/plugin-catalog-settings.cjs`
 
 ## API
 

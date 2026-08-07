@@ -13,6 +13,19 @@ contextBridge.exposeInMainWorld("timetrackerDesktop", {
     ipcRenderer.invoke("timetracker:open-update-release", releaseUrl),
   installConnectorPlugin: () =>
     ipcRenderer.invoke("timetracker:install-connector-plugin"),
+  getPluginCatalog: () =>
+    ipcRenderer.invoke("timetracker:get-plugin-catalog"),
+  getPluginCatalogSettings: () =>
+    ipcRenderer.invoke("timetracker:get-plugin-catalog-settings"),
+  configurePluginCatalog: (settings) =>
+    ipcRenderer.invoke("timetracker:configure-plugin-catalog", settings),
+  onPluginCatalogUpdated: (callback) => {
+    const listener = (_event, catalog) => callback(catalog);
+    ipcRenderer.on("timetracker:plugin-catalog-updated", listener);
+    return () => ipcRenderer.removeListener("timetracker:plugin-catalog-updated", listener);
+  },
+  downloadCatalogPlugin: (pluginId) =>
+    ipcRenderer.invoke("timetracker:download-catalog-plugin", pluginId),
   uninstallConnectorPlugin: (pluginId) =>
     ipcRenderer.invoke("timetracker:uninstall-connector-plugin", pluginId),
   getDevelopmentPluginSettings: () =>

@@ -124,6 +124,25 @@ describe("desktop connector lifecycle", () => {
     expect(mainSource).toContain("isAllowedReleaseUrl(releaseUrl)");
   });
 
+  it("refreshes the parent-owned plugin catalog on a configurable interval", async () => {
+    const [mainSource, preloadSource] = await Promise.all([
+      readFile(new URL("./electron/main.cjs", import.meta.url), "utf8"),
+      readFile(new URL("./electron/preload.cjs", import.meta.url), "utf8"),
+    ]);
+
+    expect(mainSource).toContain("createPluginCatalogService({");
+    expect(mainSource).toContain("pluginCatalogSettings.refreshMinutes * 60 * 1000");
+    expect(mainSource).toContain('ipcMain.handle("timetracker:get-plugin-catalog"');
+    expect(mainSource).toContain('ipcMain.handle("timetracker:download-catalog-plugin"');
+    expect(mainSource).toContain("{ enableAfterInstall: false }");
+    expect(preloadSource).toContain(
+      'ipcRenderer.invoke("timetracker:configure-plugin-catalog", settings)',
+    );
+    expect(preloadSource).toContain(
+      'ipcRenderer.on("timetracker:plugin-catalog-updated", listener)',
+    );
+  });
+
   it("keeps development directory configuration out of production builds", async () => {
     const source = await readFile(
       new URL("./electron/main.cjs", import.meta.url),

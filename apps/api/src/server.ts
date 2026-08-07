@@ -12,6 +12,7 @@ import {
   connectorConnectionSaveResponseSchema,
   connectorFieldValuesSchema,
   connectorPluginActivationUpdateSchema,
+  pluginSystemActivationUpdateSchema,
   connectorPluginIdSchema,
   connectorPluginInstallResponseSchema,
   connectorPluginUninstallResponseSchema,
@@ -417,14 +418,43 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       }
 
       if (
+        request.method === "POST" &&
+        requestUrl.pathname === "/api/plugins/activation"
+      ) {
+        const payload = pluginSystemActivationUpdateSchema.parse(
+          await readJsonBody(request),
+        );
+        await storage.setPluginSystemEnabled(payload.enabled);
+        if (!payload.enabled) {
+          const plugins = await pluginManager.listPlugins();
+          await Promise.allSettled(
+            plugins.map((plugin) =>
+              pluginManager.cancelPluginOperations(
+                plugin.id,
+                new Error("The Ajour plugin system was deactivated."),
+              ),
+            ),
+          );
+          await projectDataShapePluginManager.cancelOperations(
+            new Error("The Ajour plugin system was deactivated."),
+          );
+        }
+        writeJson(response, 200, await getOverview(storage, pluginManager));
+        return;
+      }
+
+      if (
         request.method === "GET" &&
         requestUrl.pathname === "/api/project-data-shapes"
       ) {
+        const pluginsEnabled = await storage.getPluginSystemEnabled();
         writeJson(
           response,
           200,
           projectDataShapeListResponseSchema.parse({
-            plugins: await projectDataShapePluginManager.listPlugins(),
+            plugins: pluginsEnabled
+              ? await projectDataShapePluginManager.listPlugins()
+              : [],
           }),
         );
         return;
@@ -434,6 +464,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         requestUrl.pathname,
       );
       if (request.method === "POST" && projectDataShapeRoute) {
+        if (!(await storage.getPluginSystemEnabled())) {
+          writeJson(response, 409, {
+            error: "The Ajour plugin system is deactivated.",
+          });
+          return;
+        }
         const pluginId = projectDataShapePluginIdSchema.parse(
           decodeURIComponent(projectDataShapeRoute[1] ?? ""),
         );
@@ -767,6 +803,7 @@ export async function installConnectorPluginForServer(
   server: Server,
   archiveBytes: Uint8Array,
   archiveFilename: string,
+  options: { enableAfterInstall?: boolean } = {},
 ) {
   const runtime = appApiRuntimesByServer.get(server);
   if (!runtime) {
@@ -777,6 +814,12 @@ export async function installConnectorPluginForServer(
     archiveBytes,
     archiveFilename,
   );
+  if (installedPlugin.installed && options.enableAfterInstall === false) {
+    await runtime.storage.setConnectorPluginEnabled(
+      installedPlugin.manifest.id,
+      false,
+    );
+  }
   return connectorPluginInstallResponseSchema.parse({
     plugin: installedPlugin.manifest,
     replaced: installedPlugin.replaced,

@@ -3,6 +3,7 @@ import { Link } from "@tanstack/react-router";
 import {
   RiArrowLeftLine as ArrowLeft,
   RiDeleteBinLine as Trash2,
+  RiDownloadLine as Download,
   RiPencilLine as Pencil,
   RiRefreshLine as RefreshCw,
   RiUpload2Line as Upload,
@@ -37,6 +38,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { FieldGroup } from "@/components/ui/field";
+import { NativeSelect } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import {
@@ -51,9 +53,15 @@ import {
   getAppApiBaseUrl,
   getAppApiDescription,
   getConnectorsOverview,
+  getPluginCatalog,
+  getPluginCatalogSettings,
+  getProjectDataShapePlugins,
+  configurePluginCatalog,
+  downloadCatalogPlugin,
   installConnectorPlugin,
   saveConnectorConnection,
   setConnectorPluginEnabled,
+  setPluginSystemEnabled,
   syncConnectorConnection,
   uninstallConnectorPlugin,
 } from "@/lib/app-api";
@@ -65,6 +73,10 @@ import type {
   ConnectorOverviewGroup,
   ConnectorPluginManifest,
   ConnectorsOverview,
+  PluginCatalogEntry,
+  PluginCatalogResponse,
+  PluginCatalogSettings,
+  ProjectDataShapePluginManifest,
 } from "@timetracker/shared";
 import {
   areConnectorFormValuesEqual,
@@ -72,16 +84,27 @@ import {
   canSubmitConnectorForm,
   normalizeConnectorFormValuesForSave,
 } from "./connector-form-state";
+import { ConnectorFieldInput } from "./connector-settings-ui";
 import {
-  ConnectorFieldInput,
-  ConnectorPluginIcon,
-} from "./connector-settings-ui";
+  PluginCapabilityBand,
+  PluginCapabilityList,
+  PluginIdentityMark,
+  PluginInfoLedger,
+} from "./plugin-catalog-ui";
 
 type ConnectorFormState = {
   pluginId: string;
   editingConnectionId: string | null;
   initialValues: ConnectorFieldValues;
   values: ConnectorFieldValues;
+};
+
+type PluginCatalogFilter = "all" | "connector" | "plugin";
+
+type PluginDisplayEntry = {
+  catalog: PluginCatalogEntry;
+  connectorGroup?: ConnectorOverviewGroup;
+  dataShapePlugin?: ProjectDataShapePluginManifest;
 };
 
 function formatConnectorTimestamp(timestamp?: number) {
@@ -95,50 +118,132 @@ function prettifySummaryKey(key: string) {
     .replace(/\b\w/g, (match) => match.toUpperCase());
 }
 
+function localCatalogEntry(
+  plugin:
+    | ConnectorPluginManifest
+    | ProjectDataShapePluginManifest,
+  type: PluginCatalogEntry["type"],
+): PluginCatalogEntry {
+  return {
+    schemaVersion: 1,
+    id: plugin.id,
+    type,
+    title: plugin.displayName,
+    description:
+      plugin.description ?? "Locally installed Ajour plugin capability.",
+    author: {
+      name: "Local plugin",
+      url: "https://github.com/les-cabochons/ajour",
+    },
+    license: {
+      name: "See plugin package",
+      spdxId: "LicenseRef-Plugin",
+      url: "https://github.com/les-cabochons/ajour",
+    },
+    website: "https://github.com/les-cabochons/ajour",
+    repository: {
+      provider: "github",
+      slug: "les-cabochons/ajour",
+      url: "https://github.com/les-cabochons/ajour",
+    },
+    status: "available",
+    compatibility: { pluginApiVersion: plugin.apiVersion },
+    capabilities:
+      type === "connector"
+        ? ["work-item-sync"]
+        : ["project-data-shape"],
+    tags: [type === "connector" ? "connector" : "data-shape"],
+  };
+}
+
 function PluginCatalogCard({
-  pluginId,
-  name,
-  description,
-  icon,
-  enabled,
-  disabled,
-  metadata,
+  entry,
+  canDownload,
+  pluginsEnabled,
+  isMutating,
+  onDownload,
   onEnabledChange,
 }: {
-  pluginId: string;
-  name: string;
-  description: string;
-  icon: ReactNode;
-  enabled: boolean;
-  disabled?: boolean;
-  metadata: ReactNode;
+  entry: PluginDisplayEntry;
+  canDownload: boolean;
+  pluginsEnabled: boolean;
+  isMutating: boolean;
+  onDownload: () => void;
   onEnabledChange: (enabled: boolean) => void;
 }) {
+  const { catalog, connectorGroup, dataShapePlugin } = entry;
+  const installed = Boolean(connectorGroup || dataShapePlugin);
+  const version = connectorGroup?.plugin.version ?? dataShapePlugin?.version;
+  const statusLabel = installed
+    ? "Installed"
+    : catalog.status === "coming-soon"
+      ? "Coming soon"
+      : catalog.status === "deprecated"
+        ? "Deprecated"
+        : "Available";
+
   return (
-    <AppPanel className="group min-h-32 flex-row items-start gap-3 p-4 transition-colors hover:bg-[var(--surface-high)]">
+    <AppPanel className="group min-h-32 flex-col items-stretch gap-3 p-4 transition-colors hover:bg-[var(--surface-high)] sm:flex-row sm:items-start">
       <Link
         to="/settings/plugins/$pluginId"
-        params={{ pluginId }}
-        className="flex min-w-0 flex-1 items-start gap-3 rounded-[var(--control-radius)] outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
-        aria-label={`Configure ${name}`}
+        params={{ pluginId: catalog.id }}
+        className="flex w-full min-w-0 flex-1 items-start gap-3 rounded-[var(--control-radius)] outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+        aria-label={`View ${catalog.title}`}
       >
-        {icon}
+        <PluginIdentityMark
+          entry={catalog}
+          iconSvg={connectorGroup?.plugin.iconSvg ?? dataShapePlugin?.iconSvg}
+        />
         <span className="min-w-0 flex-1">
           <span className="block text-sm font-semibold text-foreground">
-            {name}
+            {catalog.title}
           </span>
           <span className="mt-1 line-clamp-2 block text-sm leading-5 text-muted-foreground">
-            {description}
+            {catalog.description}
           </span>
-          <span className="mt-3 flex flex-wrap gap-2">{metadata}</span>
+          <span className="mt-3 flex flex-wrap gap-2">
+            <Badge variant="outline">
+              {catalog.type === "connector" ? "Connector" : "Plugin"}
+            </Badge>
+            <Badge variant={installed ? "secondary" : "outline"}>
+              {statusLabel}
+            </Badge>
+            {version ? <Badge variant="outline">v{version}</Badge> : null}
+          </span>
         </span>
       </Link>
-      <Switch
-        checked={enabled}
-        disabled={disabled}
-        aria-label={`${enabled ? "Deactivate" : "Activate"} ${name}`}
-        onCheckedChange={onEnabledChange}
-      />
+      {connectorGroup ? (
+        <Switch
+          className="self-end sm:self-auto"
+          checked={connectorGroup.enabled}
+          disabled={
+            isMutating ||
+            !pluginsEnabled ||
+            connectorGroup.plugin.entrypoint.length === 0
+          }
+          aria-label={`${connectorGroup.enabled ? "Deactivate" : "Activate"} ${catalog.title}`}
+          onCheckedChange={onEnabledChange}
+        />
+      ) : !installed && catalog.status === "available" ? (
+        <Button
+          className="w-full sm:w-auto"
+          size="sm"
+          variant="outline"
+          disabled={!canDownload || isMutating || catalog.type !== "connector"}
+          title={
+            catalog.type !== "connector"
+              ? "Packaged schema-plugin installation is not available in this Ajour version."
+              : !canDownload
+                ? "Downloads are available in the production desktop app."
+                : undefined
+          }
+          aria-label={`Download ${catalog.title}`}
+          onClick={onDownload}
+        >
+          <Download data-icon="inline-start" />
+          Download
+        </Button>
+      ) : null}
     </AppPanel>
   );
 }
@@ -147,22 +252,42 @@ function PluginsHeader({
   canInstall,
   isMutating,
   onInstall,
+  filter,
+  onFilterChange,
+  pluginsEnabled,
+  refreshMinutes,
+  canConfigureRefresh,
+  onPluginsEnabledChange,
+  onRefreshMinutesChange,
   children,
 }: {
   canInstall: boolean;
   isMutating: boolean;
   onInstall: () => void;
+  filter: PluginCatalogFilter;
+  onFilterChange: (filter: PluginCatalogFilter) => void;
+  pluginsEnabled: boolean;
+  refreshMinutes: PluginCatalogSettings["refreshMinutes"];
+  canConfigureRefresh: boolean;
+  onPluginsEnabledChange: (enabled: boolean) => void;
+  onRefreshMinutesChange: (
+    refreshMinutes: PluginCatalogSettings["refreshMinutes"],
+  ) => void;
   children: ReactNode;
 }) {
   return (
-    <Tabs value="connectors" className="contents">
+    <Tabs
+      value={filter}
+      onValueChange={(value) => onFilterChange(value as PluginCatalogFilter)}
+      className="contents"
+    >
       <section className="settings-section gap-4">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-lg font-semibold text-foreground">Plugins</h1>
             <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
-              Activate the capabilities you use, then open a plugin to configure
-              its connections.
+              Discover extensions, download the ones you need, then activate and
+              configure them locally.
             </p>
           </div>
           {canInstall ? (
@@ -172,20 +297,58 @@ function PluginsHeader({
               onClick={onInstall}
             >
               <Upload data-icon="inline-start" />
-              Install connector
+              Install from file
             </Button>
           ) : null}
         </div>
 
         <TabsList
           variant="line"
-          aria-label="Plugin categories"
+          aria-label="Filter plugins"
           className="border-b border-border/70"
         >
-          <TabsTrigger value="connectors">Connectors</TabsTrigger>
+          <TabsTrigger value="all">All</TabsTrigger>
+          <TabsTrigger value="connector">Connectors</TabsTrigger>
+          <TabsTrigger value="plugin">Plugins</TabsTrigger>
         </TabsList>
+
+        <div className="flex flex-col gap-3 border-y border-border/60 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex min-w-0 items-center justify-between gap-4 sm:justify-start">
+            <div>
+              <p className="text-sm font-medium text-foreground">Plugin system</p>
+              <p className="text-xs text-muted-foreground">
+                Deactivating pauses every installed plugin without removing its data.
+              </p>
+            </div>
+            <Switch
+              checked={pluginsEnabled}
+              disabled={isMutating}
+              aria-label={`${pluginsEnabled ? "Deactivate" : "Activate"} all plugins`}
+              onCheckedChange={onPluginsEnabledChange}
+            />
+          </div>
+          <label className="flex items-center justify-between gap-3 text-xs text-muted-foreground sm:justify-end">
+            Refresh catalog
+            <NativeSelect
+              className="w-36"
+              value={String(refreshMinutes)}
+              disabled={!canConfigureRefresh}
+              onChange={(event) =>
+                onRefreshMinutesChange(
+                  Number(event.target.value) as PluginCatalogSettings["refreshMinutes"],
+                )
+              }
+            >
+              <option value="0">At launch only</option>
+              <option value="15">Every 15 min</option>
+              <option value="30">Every 30 min</option>
+              <option value="60">Every hour</option>
+              <option value="240">Every 4 hours</option>
+            </NativeSelect>
+          </label>
+        </div>
       </section>
-      <TabsContent value="connectors" className="contents">
+      <TabsContent value={filter} className="contents">
         {children}
       </TabsContent>
     </Tabs>
@@ -193,21 +356,15 @@ function PluginsHeader({
 }
 
 function PluginDetailHeader({
-  name,
-  description,
-  icon,
-  enabled,
-  disabled,
+  entry,
+  iconSvg,
+  action,
   badges,
-  onEnabledChange,
 }: {
-  name: string;
-  description: string;
-  icon: ReactNode;
-  enabled: boolean;
-  disabled?: boolean;
+  entry: PluginCatalogEntry;
+  iconSvg?: string;
+  action?: ReactNode;
   badges: ReactNode;
-  onEnabledChange: (enabled: boolean) => void;
 }) {
   return (
     <>
@@ -219,20 +376,22 @@ function PluginDetailHeader({
         All plugins
       </Link>
       <AppPanel as="section" className="gap-5 p-5">
-        <div className="flex items-start gap-4">
-          {icon}
+        <div className="flex flex-col items-start gap-4 sm:flex-row">
+          <PluginIdentityMark
+            entry={entry}
+            iconSvg={iconSvg}
+            className="size-14"
+          />
           <div className="min-w-0 flex-1">
-            <h2 className="text-base font-semibold text-foreground">{name}</h2>
+            <h1 className="text-lg font-semibold text-foreground">{entry.title}</h1>
             <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">
-              {description}
+              {entry.description}
+            </p>
+            <p className="mt-2 text-xs text-[var(--text-tertiary)]">
+              {entry.author.name} · {entry.type === "connector" ? "Connector" : "Plugin"} · {entry.license.spdxId}
             </p>
           </div>
-          <Switch
-            checked={enabled}
-            disabled={disabled}
-            aria-label={`${enabled ? "Deactivate" : "Activate"} ${name}`}
-            onCheckedChange={onEnabledChange}
-          />
+          {action ? <div className="w-full sm:w-auto">{action}</div> : null}
         </div>
         <div className="flex flex-wrap gap-2">{badges}</div>
       </AppPanel>
@@ -250,9 +409,22 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
   const canUninstallConnectorPlugins = Boolean(
     window.timetrackerDesktop?.uninstallConnectorPlugin,
   ) && !isDevelopmentBuild;
+  const canDownloadCatalogPlugins = Boolean(
+    window.timetrackerDesktop?.downloadCatalogPlugin,
+  ) && !isDevelopmentBuild;
   const [connectors, setConnectors] = useState<ConnectorsOverview | null>(
     getCachedConnectorsOverview,
   );
+  const [catalog, setCatalog] = useState<PluginCatalogResponse | null>(null);
+  const [catalogSettings, setCatalogSettings] = useState<PluginCatalogSettings>({
+    refreshMinutes: 15,
+  });
+  const [dataShapePlugins, setDataShapePlugins] = useState<
+    ProjectDataShapePluginManifest[]
+  >([]);
+  const [catalogFilter, setCatalogFilter] =
+    useState<PluginCatalogFilter>("all");
+  const [catalogError, setCatalogError] = useState<string | null>(null);
   const [connectorError, setConnectorError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isMutatingConnector, setIsMutatingConnector] = useState(false);
@@ -285,13 +457,76 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
     }
   };
 
+  const refreshCatalog = async () => {
+    try {
+      const nextCatalog = await getPluginCatalog();
+      setCatalog(nextCatalog);
+      setCatalogError(null);
+    } catch (error) {
+      setCatalogError(
+        error instanceof Error
+          ? error.message
+          : "Unable to load the plugin catalog.",
+      );
+    }
+  };
+
+  const refreshDataShapePlugins = async () => {
+    try {
+      setDataShapePlugins(await getProjectDataShapePlugins());
+    } catch {
+      setDataShapePlugins([]);
+    }
+  };
+
   useEffect(() => {
     if (!getCachedConnectorsOverview()) {
       void refreshConnectors();
     }
+    void refreshCatalog();
+    void refreshDataShapePlugins();
+    void getPluginCatalogSettings().then(setCatalogSettings);
+    const unsubscribe = window.timetrackerDesktop?.onPluginCatalogUpdated?.(
+      (nextCatalog) => setCatalog(nextCatalog),
+    );
+    return unsubscribe;
   }, []);
 
   const connectorGroups = connectors?.connectionGroups ?? [];
+  const displayEntries = useMemo(() => {
+    const entries = new Map<string, PluginDisplayEntry>(
+      (catalog?.entries ?? []).map((entry) => [
+        entry.id,
+        { catalog: entry },
+      ]),
+    );
+
+    for (const group of connectorGroups) {
+      const current = entries.get(group.plugin.id);
+      entries.set(group.plugin.id, {
+        catalog:
+          current?.catalog ?? localCatalogEntry(group.plugin, "connector"),
+        connectorGroup: group,
+        dataShapePlugin: current?.dataShapePlugin,
+      });
+    }
+    for (const plugin of dataShapePlugins) {
+      const current = entries.get(plugin.id);
+      entries.set(plugin.id, {
+        catalog: current?.catalog ?? localCatalogEntry(plugin, "plugin"),
+        connectorGroup: current?.connectorGroup,
+        dataShapePlugin: plugin,
+      });
+    }
+
+    return Array.from(entries.values()).sort((left, right) =>
+      left.catalog.title.localeCompare(right.catalog.title),
+    );
+  }, [catalog?.entries, connectorGroups, dataShapePlugins]);
+  const filteredDisplayEntries = displayEntries.filter(
+    (entry) =>
+      catalogFilter === "all" || entry.catalog.type === catalogFilter,
+  );
   const pluginsById = useMemo(
     () =>
       new Map(
@@ -506,6 +741,75 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
     }
   };
 
+  const handlePluginSystemActivation = async (enabled: boolean) => {
+    setIsMutatingConnector(true);
+    setStatusMessage(null);
+    setConnectorError(null);
+    try {
+      const overview = await setPluginSystemEnabled(enabled);
+      setConnectors(overview);
+      if (enabled) {
+        await refreshDataShapePlugins();
+      }
+      setStatusMessage(
+        enabled
+          ? "Plugins enabled. Each plugin has returned to its previous activation state."
+          : "Plugins deactivated. Sync and plugin-provided schemas are paused.",
+      );
+    } catch (error) {
+      setConnectorError(
+        error instanceof Error
+          ? error.message
+          : "Unable to update the plugin system.",
+      );
+    } finally {
+      setIsMutatingConnector(false);
+    }
+  };
+
+  const handleCatalogRefreshInterval = async (refreshMinutes: number) => {
+    const parsedMinutes = [0, 15, 30, 60, 240].includes(refreshMinutes)
+      ? (refreshMinutes as PluginCatalogSettings["refreshMinutes"])
+      : 15;
+    try {
+      setCatalogSettings(
+        await configurePluginCatalog({ refreshMinutes: parsedMinutes }),
+      );
+      setStatusMessage(
+        parsedMinutes === 0
+          ? "Catalog will refresh at app launch only."
+          : `Catalog refresh set to every ${parsedMinutes} minutes.`,
+      );
+    } catch (error) {
+      setConnectorError(
+        error instanceof Error
+          ? error.message
+          : "Unable to update catalog refresh settings.",
+      );
+    }
+  };
+
+  const handleDownloadPlugin = async (entry: PluginCatalogEntry) => {
+    setIsMutatingConnector(true);
+    setStatusMessage(null);
+    setConnectorError(null);
+    try {
+      const downloaded = await downloadCatalogPlugin(entry.id);
+      setConnectors(downloaded.result.overview);
+      setStatusMessage(
+        `${downloaded.result.plugin.displayName} ${downloaded.result.plugin.version} downloaded. Activate it when you are ready to configure it.`,
+      );
+    } catch (error) {
+      setConnectorError(
+        error instanceof Error
+          ? error.message
+          : "Unable to download the plugin.",
+      );
+    } finally {
+      setIsMutatingConnector(false);
+    }
+  };
+
   const handleUninstallPlugin = async (group: ConnectorOverviewGroup) => {
     setIsMutatingConnector(true);
     setStatusMessage(null);
@@ -534,35 +838,52 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
       {connectorError ? (
         <MessagePanel tone="warning">{connectorError}</MessagePanel>
       ) : null}
+      {catalog?.warning ? (
+        <MessagePanel tone="warning">
+          The catalog was loaded from its local cache. Artwork and metadata will
+          refresh when the index is reachable.
+        </MessagePanel>
+      ) : null}
+      {catalogError ? (
+        <MessagePanel tone="warning">{catalogError}</MessagePanel>
+      ) : null}
     </>
   );
 
-  const renderConnectorDetail = (group: ConnectorOverviewGroup) => {
+  const renderConnectorDetail = (
+    entry: PluginCatalogEntry,
+    group: ConnectorOverviewGroup,
+  ) => {
     const groupFormState =
       formState?.pluginId === group.plugin.id ? formState : null;
 
     return (
       <>
         <PluginDetailHeader
-          name={group.plugin.displayName}
-          description={
-            group.plugin.description ??
-            "Configure this connector and sync imported work into backlog."
-          }
-          icon={
-            <ConnectorPluginIcon
-              plugin={group.plugin}
-              className="size-14"
-              imageClassName="size-7"
-            />
-          }
-          enabled={group.enabled}
-          disabled={isMutatingConnector || group.plugin.entrypoint.length === 0}
-          onEnabledChange={(enabled) =>
-            void handlePluginActivation(group, enabled)
+          entry={entry}
+          iconSvg={group.plugin.iconSvg}
+          action={
+            <div className="flex w-full items-center justify-between gap-3 sm:w-auto sm:justify-end">
+              <span className="text-sm text-muted-foreground">
+                {group.enabled ? "Active" : "Inactive"}
+              </span>
+              <Switch
+                checked={group.enabled}
+                disabled={
+                  isMutatingConnector ||
+                  connectors?.pluginsEnabled === false ||
+                  group.plugin.entrypoint.length === 0
+                }
+                aria-label={`${group.enabled ? "Deactivate" : "Activate"} ${entry.title}`}
+                onCheckedChange={(enabled) =>
+                  void handlePluginActivation(group, enabled)
+                }
+              />
+            </div>
           }
           badges={
             <>
+              <Badge variant="secondary">Installed</Badge>
               <Badge variant={group.enabled ? "secondary" : "outline"}>
                 {group.enabled ? "Active" : "Inactive"}
               </Badge>
@@ -579,7 +900,24 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
         />
         {renderMessages()}
 
-        {!group.enabled ? (
+        <PluginCapabilityBand entry={entry} />
+
+        <section className="settings-section">
+          <h2 className="settings-section-title">Capabilities</h2>
+          <PluginCapabilityList entry={entry} />
+        </section>
+
+        <section className="settings-section">
+          <h2 className="settings-section-title">Information</h2>
+          <PluginInfoLedger entry={entry} version={group.plugin.version} />
+        </section>
+
+        {connectors?.pluginsEnabled === false ? (
+          <MessagePanel tone="warning">
+            The plugin system is deactivated. All plugin execution and sync are
+            paused until you enable it from the Plugins catalog.
+          </MessagePanel>
+        ) : !group.enabled ? (
           <MessagePanel>
             This plugin is inactive. Its saved connections and imported data are
             preserved, but sync is paused until you reactivate it.
@@ -596,7 +934,9 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
             </div>
             <Button
               size="sm"
-              disabled={isMutatingConnector}
+              disabled={
+                isMutatingConnector || connectors?.pluginsEnabled === false
+              }
               onClick={() => handleCreate(group.plugin)}
             >
               Add a connection
@@ -767,7 +1107,11 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                       <Button
                         size="sm"
                         variant="outline"
-                        disabled={isMutatingConnector || !group.enabled}
+                        disabled={
+                          isMutatingConnector ||
+                          connectors?.pluginsEnabled === false ||
+                          !group.enabled
+                        }
                         onClick={() =>
                           void handleSync(group.plugin.id, connection.id)
                         }
@@ -848,9 +1192,151 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
     );
   };
 
-  const selectedConnectorGroup = pluginId
-    ? connectorGroups.find((group) => group.plugin.id === pluginId)
+  const renderCatalogDetail = (entry: PluginDisplayEntry) => {
+    const { catalog: catalogEntry, dataShapePlugin } = entry;
+    const installed = Boolean(dataShapePlugin);
+    const available = catalogEntry.status === "available";
+    const canDownloadThisEntry =
+      available && catalogEntry.type === "connector" && canDownloadCatalogPlugins;
+
+    return (
+      <>
+        <PluginDetailHeader
+          entry={catalogEntry}
+          iconSvg={dataShapePlugin?.iconSvg}
+          action={
+            installed ? (
+              <Button
+                variant="outline"
+                render={<Link to="/settings/projects" />}
+              >
+                Use in Projects
+              </Button>
+            ) : available ? (
+              <Button
+                className="w-full sm:w-auto"
+                disabled={!canDownloadThisEntry || isMutatingConnector}
+                title={
+                  catalogEntry.type !== "connector"
+                    ? "Packaged schema-plugin installation is not available in this Ajour version."
+                    : !canDownloadCatalogPlugins
+                      ? "Downloads are available in the production desktop app."
+                      : undefined
+                }
+                onClick={() => void handleDownloadPlugin(catalogEntry)}
+              >
+                <Download data-icon="inline-start" />
+                Download
+              </Button>
+            ) : (
+              <Button className="w-full sm:w-auto" variant="outline" disabled>
+                {catalogEntry.status === "coming-soon"
+                  ? "Coming soon"
+                  : "Unavailable"}
+              </Button>
+            )
+          }
+          badges={
+            <>
+              <Badge variant={installed ? "secondary" : "outline"}>
+                {installed
+                  ? "Installed"
+                  : catalogEntry.status === "coming-soon"
+                    ? "Coming soon"
+                    : catalogEntry.status === "deprecated"
+                      ? "Deprecated"
+                      : "Available"}
+              </Badge>
+              <Badge variant="outline">
+                {catalogEntry.type === "connector" ? "Connector" : "Plugin"}
+              </Badge>
+              <Badge variant="outline">
+                Plugin API {catalogEntry.compatibility.pluginApiVersion}
+              </Badge>
+              {dataShapePlugin ? (
+                <Badge variant="outline">Version {dataShapePlugin.version}</Badge>
+              ) : null}
+            </>
+          }
+        />
+        {renderMessages()}
+        <PluginCapabilityBand entry={catalogEntry} />
+
+        <section className="settings-section">
+          <h2 className="settings-section-title">Capabilities</h2>
+          <PluginCapabilityList entry={catalogEntry} />
+        </section>
+
+        <section className="settings-section">
+          <h2 className="settings-section-title">Information</h2>
+          <PluginInfoLedger
+            entry={catalogEntry}
+            version={dataShapePlugin?.version}
+          />
+        </section>
+
+        {catalogEntry.status === "coming-soon" ? (
+          <MessagePanel>
+            {catalogEntry.title} is listed in the Ajour plugin index, but no
+            installable release is available yet.
+          </MessagePanel>
+        ) : installed ? (
+          <MessagePanel>
+            This plugin is installed. Select its schema under Projects settings
+            to use it for import and export.
+          </MessagePanel>
+        ) : null}
+      </>
+    );
+  };
+
+  const selectedDisplayEntry = pluginId
+    ? displayEntries.find((entry) => entry.catalog.id === pluginId)
     : undefined;
+
+  if (pluginId) {
+    return (
+      <div className="settings-sections gap-6">
+        {selectedDisplayEntry?.connectorGroup
+          ? renderConnectorDetail(
+              selectedDisplayEntry.catalog,
+              selectedDisplayEntry.connectorGroup,
+            )
+          : selectedDisplayEntry
+            ? renderCatalogDetail(selectedDisplayEntry)
+            : catalog === null || connectors === null
+              ? (
+                  <>
+                    <Link
+                      to="/settings/plugins"
+                      className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground"
+                    >
+                      <ArrowLeft className="size-4" />
+                      All plugins
+                    </Link>
+                    {renderMessages()}
+                    <MessagePanel>Loading plugin…</MessagePanel>
+                  </>
+                )
+              : (
+                  <>
+                    <Link
+                      to="/settings/plugins"
+                      className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground"
+                    >
+                      <ArrowLeft className="size-4" />
+                      All plugins
+                    </Link>
+                    {renderMessages()}
+                    <MessagePanel tone="warning">
+                      That plugin is not present in the Ajour index or installed
+                      on this device.
+                    </MessagePanel>
+                  </>
+                )}
+      </div>
+    );
+  }
 
   return (
     <div className="settings-sections gap-6">
@@ -858,100 +1344,70 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
         canInstall={canInstallConnectorPlugins}
         isMutating={isMutatingConnector}
         onInstall={() => void handleInstallPlugin()}
+        filter={catalogFilter}
+        onFilterChange={setCatalogFilter}
+        pluginsEnabled={connectors?.pluginsEnabled ?? true}
+        refreshMinutes={catalogSettings.refreshMinutes}
+        canConfigureRefresh={Boolean(
+          window.timetrackerDesktop?.configurePluginCatalog,
+        )}
+        onPluginsEnabledChange={(enabled) =>
+          void handlePluginSystemActivation(enabled)
+        }
+        onRefreshMinutesChange={(refreshMinutes) =>
+          void handleCatalogRefreshInterval(refreshMinutes)
+        }
       >
-
-      {selectedConnectorGroup ? (
-        renderConnectorDetail(selectedConnectorGroup)
-      ) : pluginId && connectors ? (
-        <>
-          {renderMessages()}
-          <MessagePanel tone={statusMessage ? "default" : "warning"}>
-            That plugin is not installed.{" "}
-            <Link
-              to="/settings/plugins"
-              className="font-medium underline underline-offset-4"
-            >
-              Return to the catalog
-            </Link>
-            .
-          </MessagePanel>
-        </>
-      ) : pluginId ? (
-        <>
-          {renderMessages()}
-          {!connectorError ? <MessagePanel>Loading plugin…</MessagePanel> : null}
-          {connectorError ? (
-            <Button variant="outline" onClick={() => void refreshConnectors()}>
-              Retry loading plugins
-            </Button>
-          ) : null}
-        </>
-      ) : (
         <>
           {renderMessages()}
           <section className="settings-section">
-            {connectorGroups.length > 0 ? (
+            {filteredDisplayEntries.length > 0 ? (
               <div className="grid gap-3 md:grid-cols-2">
-                {connectorGroups.map((group) => (
+                {filteredDisplayEntries.map((entry) => (
                   <PluginCatalogCard
-                    key={group.plugin.id}
-                    pluginId={group.plugin.id}
-                    name={group.plugin.displayName}
-                    description={
-                      group.plugin.description ??
-                      "Configure this connector and sync imported work into backlog."
-                    }
-                    icon={<ConnectorPluginIcon plugin={group.plugin} />}
-                    enabled={group.enabled}
-                    disabled={
-                      isMutatingConnector ||
-                      group.plugin.entrypoint.length === 0
-                    }
+                    key={entry.catalog.id}
+                    entry={entry}
+                    canDownload={canDownloadCatalogPlugins}
+                    pluginsEnabled={connectors?.pluginsEnabled ?? true}
+                    isMutating={isMutatingConnector}
+                    onDownload={() => void handleDownloadPlugin(entry.catalog)}
                     onEnabledChange={(enabled) =>
-                      void handlePluginActivation(group, enabled)
-                    }
-                    metadata={
-                      <>
-                        <Badge variant="outline">
-                          Version {group.plugin.version}
-                        </Badge>
-                        <Badge variant="outline">
-                          {group.connections.length} connection
-                          {group.connections.length === 1 ? "" : "s"}
-                        </Badge>
-                      </>
+                      entry.connectorGroup
+                        ? void handlePluginActivation(entry.connectorGroup, enabled)
+                        : undefined
                     }
                   />
                 ))}
               </div>
-            ) : connectors && !connectorError ? (
+            ) : catalog || connectors ? (
               <Empty className="border border-dashed border-border/70 bg-muted/10 py-10">
                 <EmptyHeader>
-                  <EmptyTitle>No connector plugins installed</EmptyTitle>
+                  <EmptyTitle>No matching plugins</EmptyTitle>
                   <EmptyDescription>
-                    {canInstallConnectorPlugins
-                      ? "Install a connector package to add it to this catalog."
-                      : "Packaged connector installation is available in the desktop app."}
+                    Choose another category or install a compatible plugin from
+                    a local file.
                   </EmptyDescription>
                 </EmptyHeader>
               </Empty>
             ) : null}
-            {connectors === null && !connectorError ? (
-              <MessagePanel>Loading connector plugins…</MessagePanel>
+            {catalog === null && connectors === null && !connectorError ? (
+              <MessagePanel>Loading plugins…</MessagePanel>
             ) : null}
           </section>
 
           <p className="text-xs text-muted-foreground">
-            Connector runtime: {getAppApiDescription()}
+            Plugin runtime: {getAppApiDescription()}
             {getAppApiDescription() !== getAppApiBaseUrl()
               ? ` · ${getAppApiBaseUrl()}`
               : ""}
+            {catalog
+              ? ` · Catalog checked ${new Date(catalog.checkedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+              : ""}
             {!canInstallConnectorPlugins
-              ? " · Packaged installation is available in the desktop app."
+              ? " · Downloads and packaged installation are available in the desktop app."
               : ""}
           </p>
         </>
-      )}
       </PluginsHeader>
     </div>
   );

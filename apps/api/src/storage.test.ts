@@ -288,6 +288,37 @@ describe("AppApiStorage", () => {
     ).resolves.toBe(false);
   });
 
+  it("deactivates every plugin globally without losing individual choices", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "timetracker-storage-"));
+    tempDirs.push(tempDir);
+    const statePath = path.join(tempDir, "app-api-state.json");
+    const storage = new AppApiStorage(statePath);
+    const jiraPlugin = buildPlugin("jira", "Jira");
+    const availablePluginIds = new Set(["jira"]);
+
+    await storage.setPluginSystemEnabled(false);
+    await expect(storage.getConnectorsOverview([jiraPlugin])).resolves.toMatchObject({
+      pluginsEnabled: false,
+      connectionGroups: [{ enabled: false }],
+    });
+    await expect(
+      storage.isConnectorPluginEnabled("jira", availablePluginIds),
+    ).resolves.toBe(false);
+
+    const reloaded = new AppApiStorage(statePath);
+    await reloaded.setPluginSystemEnabled(true);
+    await expect(
+      reloaded.isConnectorPluginEnabled("jira", availablePluginIds),
+    ).resolves.toBe(true);
+
+    await reloaded.setConnectorPluginEnabled("jira", false);
+    await reloaded.setPluginSystemEnabled(false);
+    await reloaded.setPluginSystemEnabled(true);
+    await expect(
+      reloaded.isConnectorPluginEnabled("jira", availablePluginIds),
+    ).resolves.toBe(false);
+  });
+
   it("migrates version 5 activation state and tolerates invalid disabled IDs", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "timetracker-storage-"));
     tempDirs.push(tempDir);

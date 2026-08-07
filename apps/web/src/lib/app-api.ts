@@ -5,6 +5,7 @@ import {
   connectorConnectionSaveResponseSchema,
   connectorConnectionSaveRequestSchema,
   connectorPluginActivationUpdateSchema,
+  pluginSystemActivationUpdateSchema,
   connectorPluginInstallResponseSchema,
   connectorPluginUninstallResponseSchema,
   connectorSyncRequestSchema,
@@ -26,6 +27,12 @@ import {
   type ConnectorsOverview,
   type ConnectorSyncResult,
 } from "@timetracker/shared";
+import {
+  catalogConnectorDownloadResponseSchema,
+  pluginCatalogResponseSchema,
+  pluginCatalogSettingsSchema,
+} from "@timetracker/shared";
+import type { PluginCatalogSettings } from "@timetracker/shared";
 import {
   projectDataShapeExportRequestSchema,
   projectDataShapeExportResponseSchema,
@@ -137,6 +144,42 @@ export function getAppApiDescription() {
   return isDefaultInternalAppApi() ? "Internal app runtime" : APP_API_BASE_URL;
 }
 
+export async function getPluginCatalog() {
+  const getCatalog = window.timetrackerDesktop?.getPluginCatalog;
+  if (!getCatalog) {
+    throw new Error("The plugin catalog is available in the desktop app.");
+  }
+  return pluginCatalogResponseSchema.parse(await getCatalog());
+}
+
+export async function getPluginCatalogSettings() {
+  const getSettings = window.timetrackerDesktop?.getPluginCatalogSettings;
+  if (!getSettings) {
+    return pluginCatalogSettingsSchema.parse({ refreshMinutes: 15 });
+  }
+  return pluginCatalogSettingsSchema.parse(await getSettings());
+}
+
+export async function configurePluginCatalog(settings: PluginCatalogSettings) {
+  const configure = window.timetrackerDesktop?.configurePluginCatalog;
+  if (!configure) {
+    throw new Error("Plugin catalog settings are available in the desktop app.");
+  }
+  return pluginCatalogSettingsSchema.parse(await configure(settings));
+}
+
+export async function downloadCatalogPlugin(pluginId: string) {
+  const download = window.timetrackerDesktop?.downloadCatalogPlugin;
+  if (!download) {
+    throw new Error("Plugin downloads are available in the production desktop app.");
+  }
+  const result = catalogConnectorDownloadResponseSchema.parse(
+    await download(pluginId),
+  );
+  cacheConnectorsOverview(result.result.overview);
+  return result;
+}
+
 export async function getProjectDataShapePlugins() {
   return (
     await appApiRequest(
@@ -213,6 +256,22 @@ export async function setConnectorPluginEnabled(
   return cacheConnectorsOverview(
     await appApiRequest(
       `/api/connectors/${encodeURIComponent(pluginId)}/activation`,
+      {
+        method: "POST",
+        body: JSON.stringify(payload),
+      },
+      connectorsOverviewSchema,
+    ),
+  );
+}
+
+export async function setPluginSystemEnabled(
+  enabled: boolean,
+): Promise<ConnectorsOverview> {
+  const payload = pluginSystemActivationUpdateSchema.parse({ enabled });
+  return cacheConnectorsOverview(
+    await appApiRequest(
+      "/api/plugins/activation",
       {
         method: "POST",
         body: JSON.stringify(payload),

@@ -120,16 +120,20 @@ export class ProjectDataShapePluginManager {
 
   async shutdown() {
     this.shuttingDown = true;
-    await Promise.allSettled(
-      Array.from(this.activeWorkers.values()).map((worker) =>
-        worker.cancel(
-          new Error(
-            "Project data shape operation stopped because the app is shutting down.",
-          ),
-        ),
+    await this.cancelOperations(
+      new Error(
+        "Project data shape operation stopped because the app is shutting down.",
       ),
     );
     await this.waitForOperationsToDrain();
+  }
+
+  async cancelOperations(error: Error) {
+    await Promise.allSettled(
+      Array.from(this.activeWorkers.values()).map((worker) =>
+        worker.cancel(error),
+      ),
+    );
   }
 
   private async runPluginOperation<T>(

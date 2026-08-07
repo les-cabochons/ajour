@@ -229,6 +229,7 @@ describe("connector plugin installation boundary", () => {
       server,
       archiveBytes,
       path.basename(archivePath),
+      { enableAfterInstall: false },
     );
 
     expect(response).toMatchObject({
@@ -239,6 +240,7 @@ describe("connector plugin installation boundary", () => {
       replaced: false,
       overview: {
         plugins: [expect.objectContaining({ id: "jira" })],
+        connectionGroups: [expect.objectContaining({ enabled: false })],
       },
     });
 
@@ -292,6 +294,37 @@ describe("connector plugin installation boundary", () => {
       body: {
         error: "No route for DELETE /api/connectors/plugins/jira",
       },
+    });
+  });
+
+  it("deactivates the plugin system and hides data-shape plugins", async () => {
+    const root = await tempDir();
+    const server = createAppApiServer({
+      statePath: path.join(root, "state.json"),
+      installedPluginDirectory: path.join(root, "installed"),
+      projectDataShapePluginDirectories: [],
+      allowDevelopmentPlugins: false,
+    });
+    servers.push(server);
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: "/api/plugins/activation",
+        body: JSON.stringify({ enabled: false }),
+      }),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { pluginsEnabled: false },
+    });
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "GET",
+        path: "/api/project-data-shapes",
+      }),
+    ).resolves.toEqual({
+      status: 200,
+      body: { plugins: [] },
     });
   });
 
