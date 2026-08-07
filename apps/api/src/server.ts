@@ -30,8 +30,17 @@ import {
   connectorImportSelectionUpdateSchema,
   connectorsOverviewSchema,
 } from "../../../packages/shared/src/connectors.ts";
+import {
+  projectDataShapeExportRequestSchema,
+  projectDataShapeExportResponseSchema,
+  projectDataShapeImportRequestSchema,
+  projectDataShapeImportResponseSchema,
+  projectDataShapeListResponseSchema,
+  projectDataShapePluginIdSchema,
+} from "../../../packages/shared/src/project-data-shapes.ts";
 import { mergeConnectionConfigForSave } from "./connection-values.ts";
 import { ConnectorPluginManager } from "./plugin-host.ts";
+import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";
 import { AppApiStorage } from "./storage.ts";
 
 interface AppApiServerOptions {
@@ -43,16 +52,19 @@ interface AppApiServerOptions {
   bundledPluginArchives?: string[];
   allowDevelopmentPlugins?: boolean;
   pluginRequestTimeoutMs?: number;
+  projectDataShapePluginDirectories?: string[];
   allowedOrigins?: string[];
 }
 
 interface AppApiRuntime {
   storage: AppApiStorage;
   pluginManager: ConnectorPluginManager;
+  projectDataShapePluginManager: ProjectDataShapePluginManager;
   stopping: boolean;
 }
 
 const appApiRuntimesByServer = new WeakMap<Server, AppApiRuntime>();
+const MAX_JSON_BODY_BYTES = 16 * 1024 * 1024;
 
 const RESERVED_CONNECTION_FIELDS = new Set([
   "label",
@@ -157,8 +169,16 @@ function isAllowedRequestHost(hostHeader: string) {
 
 async function readJsonBody(request: IncomingMessage): Promise<unknown> {
   const chunks: Buffer[] = [];
+  let totalBytes = 0;
   for await (const chunk of request) {
-    chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+    const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+    totalBytes += buffer.byteLength;
+    if (totalBytes > MAX_JSON_BODY_BYTES) {
+      throw new Error(
+        `JSON request body exceeds ${MAX_JSON_BODY_BYTES} bytes.`,
+      );
+    }
+    chunks.push(buffer);
   }
 
   if (chunks.length === 0) {
@@ -183,6 +203,10 @@ function matchConnectorRoute(pathname: string) {
 
 function matchConnectorPluginActivationRoute(pathname: string) {
   return pathname.match(/^\/api\/connectors\/([^/]+)\/activation$/);
+}
+
+function matchProjectDataShapeRoute(pathname: string) {
+  return pathname.match(/^\/api\/project-data-shapes\/([^/]+)\/(export|import)$/);
 }
 
 function parseBooleanValue(value: unknown, fieldId: string) {
@@ -288,6 +312,25 @@ function defaultDevelopmentPluginDirectories() {
     .map((entry) => path.join(connectorRoot, entry.name));
 }
 
+function defaultProjectDataShapePluginDirectories() {
+  const repoRoot = path.resolve(
+    path.dirname(fileURLToPath(import.meta.url)),
+    "../../..",
+  );
+  const pluginRoot = path.join(repoRoot, "plugins");
+  if (!existsSync(pluginRoot)) {
+    return [];
+  }
+
+  return readdirSync(pluginRoot, { withFileTypes: true })
+    .filter(
+      (entry) =>
+        entry.isDirectory() &&
+        existsSync(path.join(pluginRoot, entry.name, "plugin.json")),
+    )
+    .map((entry) => path.join(pluginRoot, entry.name));
+}
+
 export function createAppApiServer(options: AppApiServerOptions = {}) {
   const host = options.host ?? process.env.TIMETRACKER_APP_API_HOST ?? "127.0.0.1";
   const port = options.port ?? Number(process.env.TIMETRACKER_APP_API_PORT ?? 8787);
@@ -306,10 +349,21 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     allowDevelopmentPlugins,
     requestTimeoutMs: options.pluginRequestTimeoutMs,
   });
+  const projectDataShapePluginManager = new ProjectDataShapePluginManager({
+    pluginDirectories:
+      options.projectDataShapePluginDirectories ??
+      defaultProjectDataShapePluginDirectories(),
+    requestTimeoutMs: options.pluginRequestTimeoutMs,
+  });
   const allowedOrigins = new Set(
     options.allowedOrigins ?? configuredAllowedOrigins(),
   );
-  const runtime: AppApiRuntime = { storage, pluginManager, stopping: false };
+  const runtime: AppApiRuntime = {
+    storage,
+    pluginManager,
+    projectDataShapePluginManager,
+    stopping: false,
+  };
 
   const server = createServer(async (request, response) => {
     if (runtime.stopping) {
@@ -359,6 +413,61 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
 
       if (request.method === "GET" && requestUrl.pathname === "/api/connectors/plugins") {
         writeJson(response, 200, await pluginManager.listPlugins());
+        return;
+      }
+
+      if (
+        request.method === "GET" &&
+        requestUrl.pathname === "/api/project-data-shapes"
+      ) {
+        writeJson(
+          response,
+          200,
+          projectDataShapeListResponseSchema.parse({
+            plugins: await projectDataShapePluginManager.listPlugins(),
+          }),
+        );
+        return;
+      }
+
+      const projectDataShapeRoute = matchProjectDataShapeRoute(
+        requestUrl.pathname,
+      );
+      if (request.method === "POST" && projectDataShapeRoute) {
+        const pluginId = projectDataShapePluginIdSchema.parse(
+          decodeURIComponent(projectDataShapeRoute[1] ?? ""),
+        );
+        const operation = projectDataShapeRoute[2];
+        if (operation === "export") {
+          const payload = projectDataShapeExportRequestSchema.parse(
+            await readJsonBody(request),
+          );
+          writeJson(
+            response,
+            200,
+            projectDataShapeExportResponseSchema.parse(
+              await projectDataShapePluginManager.exportProjects(
+                pluginId,
+                payload.projects,
+              ),
+            ),
+          );
+          return;
+        }
+
+        const payload = projectDataShapeImportRequestSchema.parse(
+          await readJsonBody(request),
+        );
+        writeJson(
+          response,
+          200,
+          projectDataShapeImportResponseSchema.parse(
+            await projectDataShapePluginManager.importProjects(
+              pluginId,
+              payload.datasets,
+            ),
+          ),
+        );
         return;
       }
 
@@ -649,6 +758,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   appApiRuntimesByServer.set(server, runtime);
   server.once("close", () => {
     void pluginManager.shutdown();
+    void projectDataShapePluginManager.shutdown();
   });
   return server;
 }
@@ -724,7 +834,10 @@ export async function stopAppApiServer(server: Server): Promise<void> {
     });
   });
   server.closeIdleConnections();
-  await runtime?.pluginManager.shutdown();
+  await Promise.all([
+    runtime?.pluginManager.shutdown(),
+    runtime?.projectDataShapePluginManager.shutdown(),
+  ]);
   server.closeAllConnections();
   await closePromise;
 }

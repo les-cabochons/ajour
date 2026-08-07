@@ -146,6 +146,7 @@ export type UpdateTrack = "stable" | "nightly";
 export interface UserPreferences {
   themeMode: ThemeMode;
   updateTrack: UpdateTrack;
+  projectDataShapeId: string;
 }
 
 export interface LocalBacklogStatus {

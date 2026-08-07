@@ -49,6 +49,7 @@ Use this file as the local index for important library choices. Check official d
 - Project task budgets and consumption: `apps/web/src/domain/projects/task-budget.ts`
 - Project task import normalization: `apps/web/src/domain/projects/task-import.ts`
 - Project task/workbook import transitions and the canonical transfer-row contract: `apps/web/src/domain/projects/project-import.ts`
+- Format-neutral project dataset workbook adapter and built-in default shape: `apps/web/src/features/settings/settings-projects.ts`
 - Project/task creation, hydration, ordering, edits, and archive transitions: `apps/web/src/domain/projects/project-transitions.ts`
 - Persisted project icon contract: `apps/web/src/domain/projects/project-icon.ts`
 
@@ -83,6 +84,9 @@ The backlog editor module is feature-local because its vocabulary and commands b
 - Connector package validation and installation: `apps/api/src/plugin-package.ts`
 - Ephemeral worker-thread orchestration: `apps/api/src/plugin-host.ts`
 - Worker entrypoint bridge: `apps/api/src/plugin-worker.mjs`
+- Project data-shape manifest and dataset contracts: `packages/shared/src/project-data-shapes.ts`
+- Project data-shape discovery and worker orchestration: `apps/api/src/project-data-shape-plugin.ts` and `apps/api/src/project-data-shape-host.ts`
+- Standalone Workday shape plugin: `les-cabochons/ajp-workday`
 
 ## Connector Plugins
 

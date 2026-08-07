@@ -1,29 +1,31 @@
 # Workday Plugin Brainstorm
 
-Status: Paused. This is not a current priority, and no implementation has started.
+Status: Implemented. The Workday implementation is standalone.
 
 ## Intent
 
 Plan TimeTracker's first plugin that is not a connector: the Workday plugin.
 
-The Workday plugin will not authenticate with, connect to, read from, or write to
-Workday. It will only determine Workday-specific data shapes and transformations
-for:
+The Workday plugin does not authenticate with, connect to, read from, or write to
+Workday. It determines Workday-specific data shapes and transformations. The
+initial implementation covers:
 
 - project import
 - project export
-- timesheet submission
 
-This is expected to be a major application change because it establishes the
-first general plugin capability outside the existing connector contract.
+Timesheet submission remains future work.
+
+The implementation is maintained in `les-cabochons/ajp-workday`; Ajour owns
+only the generic contract and runtime surface.
 
 ## Existing Context
 
 - TimeTracker is local-first. Canonical projects, tasks, timesheet entries, and
   submission state remain owned by the application.
-- Project import/export currently uses a generic Excel workbook adapter around a
-  canonical project/task transfer-row contract. Import merges projects and tasks
-  through deterministic web-domain transitions.
+- Project import/export uses an Ajour-owned Excel adapter around a format-neutral
+  dataset contract. The built-in default shape always remains available. Shape
+  plugins map canonical projects to and from those datasets, while deterministic
+  web-domain transitions continue to own project and task merging.
 - Timesheet import/export has a separate generic Excel workbook shape and a
   staged local review workflow.
 - Timesheet submission currently performs no external operation. It marks
@@ -33,12 +35,11 @@ first general plugin capability outside the existing connector contract.
   is connector-specific: `.harday-connector` packaging, connection fields,
   configuration validation, synchronization operations, API-side storage, and
   worker execution.
-- A Workday data-shaping plugin should not be forced into the connector contract.
-  It introduces a new plugin category and requires a general capability model.
+- The Workday data-shaping plugin is not part of the connector contract. It is
+  discovered and executed by a dedicated worker host through the versioned
+  `projectDataShape` capability.
 
-## Proposed Language To Confirm
-
-These definitions were proposed but have not yet been confirmed:
+## Confirmed Language
 
 - **Plugin:** An installable, activatable capability package that extends
   defined application workflows. A plugin does not inherently connect to an
@@ -49,24 +50,21 @@ These definitions were proposed but have not yet been confirmed:
 - **Data shape:** The Workday-specific schema, validation, mapping, grouping,
   and formatting applied at a workflow boundary without owning TimeTracker's
   canonical local records.
-- **Project import/export:** Workday-specific representations entering or
-  leaving the canonical project/task model. The core application continues to
-  own merge rules and local persistence.
+- **Project import/export:** A selected data shape maps records entering or
+  leaving the canonical project/task model. Ajour owns Excel and future CSV or
+  JSON serialization, merge rules, and local persistence.
 - **Timesheet submission:** Currently a local submission-state transition. The
   initial understanding is that the Workday plugin will shape selected entries
   into a Workday-compatible representation without authenticating or
   transmitting data to Workday.
 
-## Resume Point
+## Current Boundary
 
-When this becomes a priority again:
-
-1. Confirm or correct the proposed language above.
-2. Gather the exact Workday project import, project export, and timesheet
-   submission formats and examples.
-3. Work through the architectural decisions one at a time, beginning with the
-   general plugin capability boundary.
-4. Produce an implementation blueprint and wait for explicit confirmation
-   before changing application code.
-
-No architectural decisions beyond the stated intent have been finalized.
+1. Ajour canonical data → selected data shape → selected file format.
+2. With no plugins, the Ajour default shape continues to import and export.
+3. Plugins own format-neutral dataset definitions, mapping, validation, and
+   normalization. They never receive or mutate the local store.
+4. Ajour owns workbook parsing/writing, file interaction, plugin result
+   validation, deterministic merging, and persistence.
+5. Excel is the first file format. CSV and JSON can reuse the same dataset
+   contract later without changing shape plugins.

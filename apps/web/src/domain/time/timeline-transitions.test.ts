@@ -63,6 +63,7 @@ function createState(
     userPreferences: {
       themeMode: "system",
       updateTrack: "stable",
+      projectDataShapeId: "default",
     },
     updatedAt: 0,
     ...overrides,

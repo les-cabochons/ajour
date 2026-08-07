@@ -11,6 +11,7 @@ TimeTracker is a work-focused, local-first time tracker for daily timesheets, pr
 - daily time page
 - backlog management
 - optional Azure DevOps and Jira connector support through local API/plugin surfaces
+- optional provider-specific project import/export shapes, beginning with Workday-compatible records
 - Electron desktop shell and packaging
 
 ## Primary Users
@@ -53,6 +54,10 @@ docs/            architecture and strategy docs
 Installable connector implementations are maintained in standalone
 repositories, including `les-cabochons/ajc-azure-devops` and
 `les-cabochons/ajc-jira`.
+
+Provider-specific project data shapes are also standalone. The Workday shape is
+maintained in `les-cabochons/ajp-workday`; Ajour contains only the generic
+shape contract, host, file adapters, and always-available default behavior.
 
 ## Command Surface
 

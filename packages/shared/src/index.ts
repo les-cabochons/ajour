@@ -7,3 +7,4 @@ export * from "./timeline/dominant-log";
 export * from "./rules/engine";
 export * from "./validation/schemas";
 export * from "./connectors";
+export * from "./project-data-shapes";

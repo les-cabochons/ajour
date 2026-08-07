@@ -58,8 +58,11 @@
 - Preserve user-entered notes and time values exactly unless the user changes them.
 - Connector imports should produce reviewable candidates or explicit conflict states.
 - Standalone connector packages must compile and run without imports from
-  HarDay application source. Keep the host protocol structural and validate
+  Ajour application source. Keep the host protocol structural and validate
   every manifest, request, and result at the API boundary.
+- Project data-shape plugins must remain format-neutral and must not import
+  Ajour application source. Ajour owns Excel, CSV, and JSON serialization;
+  shape plugins own only dataset definitions and canonical-data mappings.
 - Run connector operations in ephemeral worker threads. Do not add persistent
   plugin child processes or load plugin modules into the API or Electron main
   execution context.

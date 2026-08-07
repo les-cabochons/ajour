@@ -1,4 +1,5 @@
 import {
+  BUILT_IN_PROJECT_DATA_SHAPE_ID,
   type ActivityBlockRecord,
   type BrowserActivityBucket,
   type CaptureSettings,
@@ -7,6 +8,7 @@ import {
 import type {
   ConnectorImportCandidate,
   ConnectorSyncWorkItemUpdate,
+  ProjectDataShapeImportProject,
 } from "@timetracker/shared";
 import {
   addBacklogStatus as applyAddBacklogStatus,
@@ -78,6 +80,7 @@ import {
   type TimelineRuleSeed,
 } from "@/domain/time/timeline-transitions";
 import {
+  importProjectDataShapeProjects as applyProjectDataShapeImport,
   importProjectTasks as applyProjectTaskImport,
   importProjectWorkbookRows as applyProjectWorkbookImport,
   type ProjectTransferRow,
@@ -182,6 +185,7 @@ const defaultWorkspaceProjects: LocalProjectDraft[] = [
 const defaultUserPreferences: UserPreferences = {
   themeMode: "system",
   updateTrack: "stable",
+  projectDataShapeId: BUILT_IN_PROJECT_DATA_SHAPE_ID,
 };
 
 let cachedState: LocalAppState | undefined;
@@ -330,6 +334,14 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
           persistedState.userPreferences?.updateTrack === "nightly"
             ? "nightly"
             : "stable",
+        projectDataShapeId:
+          typeof persistedState.userPreferences?.projectDataShapeId ===
+            "string" &&
+          persistedState.userPreferences.projectDataShapeId.trim().length > 0
+            ? persistedState.userPreferences.projectDataShapeId
+                .trim()
+                .slice(0, 120)
+            : defaults.userPreferences.projectDataShapeId,
       },
     }),
   );
@@ -777,6 +789,25 @@ export const localStore = {
   importProjectWorkbookRows(rows: ProjectTransferRow[]) {
     return updateStateWithResult<ProjectWorkbookImportResult>((state) => {
       const operation = applyProjectWorkbookImport(state.projects, rows, {
+        createProject: (project) =>
+          createProject(project, { createId, now: Date.now }),
+        createTask: (task) =>
+          createProjectTask(task, { createId, now: Date.now }),
+        now: Date.now,
+      });
+
+      return {
+        state: {
+          ...state,
+          projects: operation.projects,
+        },
+        result: operation.result,
+      };
+    });
+  },
+  importProjectDataShapeProjects(projects: ProjectDataShapeImportProject[]) {
+    return updateStateWithResult<ProjectWorkbookImportResult>((state) => {
+      const operation = applyProjectDataShapeImport(state.projects, projects, {
         createProject: (project) =>
           createProject(project, { createId, now: Date.now }),
         createTask: (task) =>

@@ -4,7 +4,9 @@ import type { LocalProject } from "@/domain/local-state";
 import { DEFAULT_PROJECT_ICON } from "@/domain/projects/project-icon";
 import {
   buildProjectTransferRows,
+  createProjectDataShapeWorkbook,
   createProjectTransferWorkbook,
+  parseProjectDataShapeWorkbook,
   parseProjectTransferWorkbook,
 } from "./settings-projects";
 
@@ -89,9 +91,61 @@ describe("buildProjectTransferRows", () => {
       },
     ]);
   });
+
 });
 
 describe("project workbook round-trip", () => {
+  it("derives valid, stable Excel sheet names from format-neutral dataset labels", async () => {
+    const definition = {
+      apiVersion: 1 as const,
+      datasets: [
+        {
+          id: "first",
+          displayName: "A very long/provider:dataset?name*that exceeds Excel",
+          columns: [
+            {
+              key: "value",
+              header: "value",
+              type: "string" as const,
+              required: false,
+            },
+          ],
+        },
+        {
+          id: "second",
+          displayName: "A very long/provider:dataset?name*that exceeds Excel",
+          columns: [
+            {
+              key: "value",
+              header: "value",
+              type: "string" as const,
+              required: false,
+            },
+          ],
+        },
+      ],
+    };
+    const datasets = [
+      { id: "first", rows: [{ value: "one" }] },
+      { id: "second", rows: [{ value: "two" }] },
+    ];
+
+    const workbookBytes = await createProjectDataShapeWorkbook(
+      definition,
+      datasets,
+    );
+    const workbook = new ExcelJS.Workbook();
+    await workbook.xlsx.load(workbookBytes);
+
+    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
+      "A very long_provider_dataset_na",
+      "A very long_provider_datase (2)",
+    ]);
+    await expect(
+      parseProjectDataShapeWorkbook(workbookBytes, definition),
+    ).resolves.toEqual(datasets);
+  });
+
   it("writes and re-parses the shared project import/export workbook shape", async () => {
     const workbookBytes = await createProjectTransferWorkbook({
       projects,
@@ -189,5 +243,27 @@ describe("project workbook round-trip", () => {
         adjustmentHours: "",
       },
     ]);
+  });
+
+  it("keeps source row numbers accurate when blank rows are present", async () => {
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Projects");
+    sheet.addRow([
+      "project",
+      "code",
+      "color",
+      "status",
+      "task",
+      "task_status",
+      "billable",
+      "budget_hours",
+      "adjustment_hours",
+    ]);
+    sheet.addRow([]);
+    sheet.addRow(["", "", "", "active", "Feature Work"]);
+
+    await expect(
+      parseProjectTransferWorkbook(await workbook.xlsx.writeBuffer()),
+    ).rejects.toThrow("Row 3 is invalid. A project name is required.");
   });
 });
