@@ -55,7 +55,7 @@ This registry captures reusable visual patterns already present in TimeTracker. 
 ### Plugin Catalog And Detail
 
 File: `apps/web/src/features/settings/settings-connectors-page.tsx`
-Last updated: 2026-08-02
+Last updated: 2026-08-07
 
 | Property         | Class or token |
 | ---------------- | -------------- |
@@ -70,12 +70,21 @@ Last updated: 2026-08-02
 | Accent usage     | `Badge variant="secondary"` for active state; status colors only for errors |
 
 **Pattern notes:**
-Plugin settings use a category tab bar above a responsive two-column catalog.
-Each entry keeps its icon, description, metadata, and activation switch visible
-without nesting controls inside the configuration link. Opening an entry moves
-to a dedicated detail route with a back link, compact identity header, activation
-state, and the plugin-owned configuration forms. Mobile collapses the catalog to
-one column without changing the card hierarchy or hiding activation.
+Plugin settings use a compact system-level activation switch and refresh-policy
+selector above a category tab bar and responsive two-column catalog. Catalog
+entries merge normalized Ajour-index metadata with installed connector and
+schema capabilities. The catalog calls non-connector extensions Plugins and
+labels the project-data-shape capability Schema. An available remote connector shows Download;
+only an installed plugin can be activated. Manual file installation remains a
+separate action.
+
+Opening an entry moves to a dedicated detail route with a back link,
+identity-first header, status-driven primary action, capability band, capability
+list, and information ledger before plugin-owned configuration. Cached catalog
+artwork is optional: the identity mark supplies a consistent generated default
+thumbnail, while the capability band supplies an equally sized operational-flow
+fallback when no hero exists. Never fetch remote images from the renderer.
+Mobile collapses the catalog to one column and preserves the detail hierarchy.
 
 ### Application Updates
 
@@ -98,9 +107,9 @@ update guidance while preserving the same release-track status and link.
 File: `apps/web/src/features/settings/settings-projects-page.tsx`
 Last updated: 2026-08-06
 
-The Projects settings workflow separates the data-shape selector from the Excel
+The Projects settings workflow separates the schema selector from the Excel
 format actions. `Ajour default` is always the first option and remains usable
-without the plugin host. Discovered shape plugins add provider-specific options;
-the selection persists in user preferences. Export and import copy identifies
-the active shape and explains that the shape controls fields while Ajour owns
+without the plugin host. Discovered plugins add provider-specific schemas; the
+selection persists in user preferences. Export and import copy identifies the
+active schema and explains that the schema controls fields while Ajour owns
 the file format.

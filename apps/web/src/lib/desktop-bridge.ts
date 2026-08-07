@@ -1,6 +1,9 @@
 import type {
+  CatalogConnectorDownloadResponse,
   ConnectorPluginInstallResponse,
   ConnectorPluginUninstallResponse,
+  PluginCatalogResponse,
+  PluginCatalogSettings,
 } from "@timetracker/shared";
 import type { LocalAppState, UpdateTrack } from "@/domain/local-state";
 
@@ -40,6 +43,17 @@ declare global {
       installConnectorPlugin?: () => Promise<
         ConnectorPluginInstallResponse | null
       >;
+      getPluginCatalog?: () => Promise<PluginCatalogResponse>;
+      getPluginCatalogSettings?: () => Promise<PluginCatalogSettings>;
+      configurePluginCatalog?: (
+        settings: PluginCatalogSettings,
+      ) => Promise<PluginCatalogSettings>;
+      onPluginCatalogUpdated?: (
+        callback: (catalog: PluginCatalogResponse) => void,
+      ) => () => void;
+      downloadCatalogPlugin?: (
+        pluginId: string,
+      ) => Promise<CatalogConnectorDownloadResponse>;
       uninstallConnectorPlugin?: (
         pluginId: string,
       ) => Promise<ConnectorPluginUninstallResponse>;

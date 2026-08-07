@@ -231,14 +231,14 @@ export function SettingsProjectsPage() {
       <section className="settings-section">
         <h2 className="settings-section-title">Project Import/Export</h2>
         <p className="settings-section-desc">
-          Choose a data shape, then export projects and tasks to Excel or import
-          the same shaped workbook to merge projects by name.
+          Choose a schema, then export projects and tasks to Excel or import the
+          same structured workbook to merge projects by name.
         </p>
 
         <AppPanel>
           <div className="grid gap-4 md:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] md:items-end">
             <div className="space-y-2">
-              <Label htmlFor="project-data-shape">Data shape</Label>
+              <Label htmlFor="project-data-shape">Schema</Label>
               <NativeSelect
                 id="project-data-shape"
                 value={selectedShapeId}
@@ -256,15 +256,15 @@ export function SettingsProjectsPage() {
             </div>
             <p className="text-sm leading-5 text-foreground/65">
               {selectedShapePlugin?.description ??
-                "Ajour's built-in shape is always available, even when no plugins are installed."}
+                "Ajour's built-in schema is always available, even when no plugins are installed."}
             </p>
           </div>
         </AppPanel>
 
         <AppPanel>
           <SurfaceCallout icon={FolderKanban} title="Excel workbook export">
-            Select the projects to export using the {selectedShapeName} data
-            shape. Excel controls the file format; the shape controls its fields.
+            Select the projects to export using the {selectedShapeName} schema.
+            Excel controls the file format; the schema controls its fields.
           </SurfaceCallout>
 
           <div className="flex flex-wrap items-center gap-2 text-sm text-foreground/70">
@@ -352,7 +352,7 @@ export function SettingsProjectsPage() {
 
         <AppPanel>
           <SurfaceCallout icon={Upload} title="Excel workbook import">
-            Import an Excel workbook using the {selectedShapeName} data shape
+            Import an Excel workbook using the {selectedShapeName} schema
             to merge projects by name, update project metadata, and add missing
             tasks.
           </SurfaceCallout>
