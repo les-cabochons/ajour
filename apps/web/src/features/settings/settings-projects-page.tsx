@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import type { ProjectDataShapePluginManifest } from "@timetracker/shared";
 import {
   RiDownloadLine as Download,
   RiFolderChartLine as FolderKanban,
@@ -10,13 +11,23 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { NativeSelect } from "@/components/ui/select";
+import {
+  exportProjectsWithDataShape,
+  getProjectDataShapePlugins,
+  importProjectsWithDataShape,
+} from "@/lib/app-api";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 import { ProjectIcon } from "@/lib/project-icons";
 import {
+  DEFAULT_PROJECT_DATA_SHAPE_ID,
+  buildProjectDataShapeExportProjects,
   buildProjectTransferFilename,
+  createProjectDataShapeWorkbook,
   createProjectTransferWorkbook,
   downloadProjectTransferWorkbook,
+  parseProjectDataShapeWorkbook,
   parseProjectTransferWorkbook,
 } from "./settings-projects";
 
@@ -52,8 +63,31 @@ export function SettingsProjectsPage() {
   const state = useLocalState();
   const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>(() => state.projects.map((project) => project._id));
   const [selectedImportFile, setSelectedImportFile] = useState<File | null>(null);
+  const [shapePlugins, setShapePlugins] = useState<
+    ProjectDataShapePluginManifest[]
+  >([]);
+  const [isTransferring, setIsTransferring] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
+  const [exportError, setExportError] = useState("");
   const [error, setError] = useState("");
+
+  useEffect(() => {
+    let active = true;
+    void getProjectDataShapePlugins()
+      .then((plugins) => {
+        if (active) {
+          setShapePlugins(plugins);
+        }
+      })
+      .catch(() => {
+        if (active) {
+          setShapePlugins([]);
+        }
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   useEffect(() => {
     setSelectedProjectIds((current) => {
@@ -87,17 +121,61 @@ export function SettingsProjectsPage() {
     [selectedProjects],
   );
 
+  const selectedShapePlugin = shapePlugins.find(
+    (plugin) => plugin.id === state.userPreferences.projectDataShapeId,
+  );
+  const selectedShapeId = selectedShapePlugin
+    ? selectedShapePlugin.id
+    : DEFAULT_PROJECT_DATA_SHAPE_ID;
+  const selectedShapeName = selectedShapePlugin?.displayName ?? "Ajour default";
+
+  function handleShapeChange(shapeId: string) {
+    localStore.setUserPreferences({ projectDataShapeId: shapeId });
+    setSelectedImportFile(null);
+    setStatusMessage("");
+    setExportError("");
+    setError("");
+  }
+
   async function handleExport() {
     if (selectedProjectIds.length === 0) {
       return;
     }
 
-    const workbookBytes = await createProjectTransferWorkbook({
-      projects: state.projects,
-      projectIds: selectedProjectIds,
-    });
+    setIsTransferring(true);
+    setExportError("");
+    try {
+      const workbookBytes = selectedShapePlugin
+        ? await exportProjectsWithDataShape(
+            selectedShapePlugin.id,
+            buildProjectDataShapeExportProjects({
+              projects: state.projects,
+              projectIds: selectedProjectIds,
+            }),
+          ).then((result) =>
+            createProjectDataShapeWorkbook(
+              selectedShapePlugin.capabilities.projectDataShape,
+              result.datasets,
+            ),
+          )
+        : await createProjectTransferWorkbook({
+            projects: state.projects,
+            projectIds: selectedProjectIds,
+          });
 
-    downloadProjectTransferWorkbook(workbookBytes, buildProjectTransferFilename());
+      downloadProjectTransferWorkbook(
+        workbookBytes,
+        buildProjectTransferFilename(),
+      );
+    } catch (nextError) {
+      setExportError(
+        nextError instanceof Error
+          ? nextError.message
+          : "Unable to export the workbook.",
+      );
+    } finally {
+      setIsTransferring(false);
+    }
   }
 
   function handleImportFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -112,14 +190,29 @@ export function SettingsProjectsPage() {
     }
 
     try {
+      setIsTransferring(true);
       const workbookBytes = await selectedImportFile.arrayBuffer();
-      const rows = await parseProjectTransferWorkbook(workbookBytes);
-      const result = localStore.importProjectWorkbookRows(rows);
+      const result = selectedShapePlugin
+        ? await parseProjectDataShapeWorkbook(
+            workbookBytes,
+            selectedShapePlugin.capabilities.projectDataShape,
+          )
+            .then((datasets) =>
+              importProjectsWithDataShape(selectedShapePlugin.id, datasets),
+            )
+            .then((response) =>
+              localStore.importProjectDataShapeProjects(response.projects),
+            )
+        : localStore.importProjectWorkbookRows(
+            await parseProjectTransferWorkbook(workbookBytes),
+          );
       setStatusMessage(formatProjectImportSummary(result));
       setError("");
     } catch (nextError) {
       setError(nextError instanceof Error ? nextError.message : "Unable to import the workbook.");
       setStatusMessage("");
+    } finally {
+      setIsTransferring(false);
     }
   }
 
@@ -138,13 +231,40 @@ export function SettingsProjectsPage() {
       <section className="settings-section">
         <h2 className="settings-section-title">Project Import/Export</h2>
         <p className="settings-section-desc">
-          Export one or more projects and their tasks to Excel, or import the same workbook format to
-          merge projects by name.
+          Choose a data shape, then export projects and tasks to Excel or import
+          the same shaped workbook to merge projects by name.
         </p>
 
         <AppPanel>
+          <div className="grid gap-4 md:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] md:items-end">
+            <div className="space-y-2">
+              <Label htmlFor="project-data-shape">Data shape</Label>
+              <NativeSelect
+                id="project-data-shape"
+                value={selectedShapeId}
+                onChange={(event) => handleShapeChange(event.target.value)}
+              >
+                <option value={DEFAULT_PROJECT_DATA_SHAPE_ID}>
+                  Ajour default
+                </option>
+                {shapePlugins.map((plugin) => (
+                  <option key={plugin.id} value={plugin.id}>
+                    {plugin.displayName}
+                  </option>
+                ))}
+              </NativeSelect>
+            </div>
+            <p className="text-sm leading-5 text-foreground/65">
+              {selectedShapePlugin?.description ??
+                "Ajour's built-in shape is always available, even when no plugins are installed."}
+            </p>
+          </div>
+        </AppPanel>
+
+        <AppPanel>
           <SurfaceCallout icon={FolderKanban} title="Excel workbook export">
-            Select the projects to export. Each row repeats the project metadata and one task.
+            Select the projects to export using the {selectedShapeName} data
+            shape. Excel controls the file format; the shape controls its fields.
           </SurfaceCallout>
 
           <div className="flex flex-wrap items-center gap-2 text-sm text-foreground/70">
@@ -216,29 +336,46 @@ export function SettingsProjectsPage() {
               <p>Projects without tasks still export one row so they can be re-imported later.</p>
             </div>
 
-            <Button type="button" onClick={handleExport} disabled={selectedProjectIds.length === 0}>
+            <Button
+              type="button"
+              onClick={handleExport}
+              disabled={selectedProjectIds.length === 0 || isTransferring}
+            >
               <Download className="h-4 w-4" />
               Export to Excel
             </Button>
           </div>
+          {exportError ? (
+            <MessagePanel tone="warning">{exportError}</MessagePanel>
+          ) : null}
         </AppPanel>
 
         <AppPanel>
           <SurfaceCallout icon={Upload} title="Excel workbook import">
-            Import the same workbook format to merge projects by name, update project metadata, and add
-            missing tasks.
+            Import an Excel workbook using the {selectedShapeName} data shape
+            to merge projects by name, update project metadata, and add missing
+            tasks.
           </SurfaceCallout>
 
           <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
             <div className="space-y-2">
               <Label>Workbook</Label>
-              <Input type="file" accept=".xlsx" onChange={handleImportFileChange} />
+              <Input
+                key={selectedShapeId}
+                type="file"
+                accept=".xlsx"
+                onChange={handleImportFileChange}
+              />
               <p className="text-sm text-foreground/65">
                 {selectedImportFile ? selectedImportFile.name : "Choose a .xlsx file with a Projects sheet."}
               </p>
             </div>
 
-            <Button type="button" onClick={handleImport} disabled={!selectedImportFile}>
+            <Button
+              type="button"
+              onClick={handleImport}
+              disabled={!selectedImportFile || isTransferring}
+            >
               <Upload className="h-4 w-4" />
               Import workbook
             </Button>

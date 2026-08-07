@@ -122,6 +122,31 @@ items intact, but blocks manual sync and excludes its connections from the web
 auto-sync scheduler. Reactivation restores those sync paths without requiring
 the connector to be configured again.
 
+## Project Data Shape Plugins
+
+Project import/export separates canonical data, data shape, and file format:
+
+```text
+Ajour projects and tasks -> selected data shape -> Excel, CSV, or JSON
+```
+
+Ajour always provides a built-in default shape. Project import/export must
+continue to work when the plugin host is unavailable or no data-shape plugins
+are installed. Optional plugins declare a versioned `projectDataShape`
+capability with format-neutral datasets and typed columns. They map canonical
+projects to datasets for export and datasets back to canonical import
+candidates. They do not receive the local store and cannot persist projects.
+
+The web app owns file selection, downloads, and format adapters. Excel is the
+current adapter; future CSV and JSON adapters must consume the same dataset
+contract. The API validates manifests, requests, datasets, and results, and runs
+each shape operation in an ephemeral worker. Deterministic project merge rules
+and persistence remain in the web domain and local store.
+
+Provider-specific shape plugins are maintained outside Ajour. The Workday
+implementation lives in `les-cabochons/ajp-workday`, imports no Ajour source,
+and targets this versioned host protocol. Ajour does not compile or bundle it.
+
 The desktop runtime must acquire Electron's single-instance lock before
 starting the local API or any plugin operation. A second launch should focus
 the existing window and exit so concurrent application versions do not share

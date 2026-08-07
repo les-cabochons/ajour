@@ -26,6 +26,15 @@ import {
   type ConnectorsOverview,
   type ConnectorSyncResult,
 } from "@timetracker/shared";
+import {
+  projectDataShapeExportRequestSchema,
+  projectDataShapeExportResponseSchema,
+  projectDataShapeImportRequestSchema,
+  projectDataShapeImportResponseSchema,
+  projectDataShapeListResponseSchema,
+  type ProjectDataShapeDataset,
+  type ProjectDataShapeExportProject,
+} from "@timetracker/shared";
 import { localStore } from "@/lib/local-store";
 
 export type SyncConnectorConnectionResult = ConnectorSyncResult & {
@@ -126,6 +135,46 @@ export function getAppApiBaseUrl() {
 
 export function getAppApiDescription() {
   return isDefaultInternalAppApi() ? "Internal app runtime" : APP_API_BASE_URL;
+}
+
+export async function getProjectDataShapePlugins() {
+  return (
+    await appApiRequest(
+      "/api/project-data-shapes",
+      undefined,
+      projectDataShapeListResponseSchema,
+    )
+  ).plugins;
+}
+
+export function exportProjectsWithDataShape(
+  pluginId: string,
+  projects: ProjectDataShapeExportProject[],
+) {
+  const payload = projectDataShapeExportRequestSchema.parse({ projects });
+  return appApiRequest(
+    `/api/project-data-shapes/${encodeURIComponent(pluginId)}/export`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    projectDataShapeExportResponseSchema,
+  );
+}
+
+export function importProjectsWithDataShape(
+  pluginId: string,
+  datasets: ProjectDataShapeDataset[],
+) {
+  const payload = projectDataShapeImportRequestSchema.parse({ datasets });
+  return appApiRequest(
+    `/api/project-data-shapes/${encodeURIComponent(pluginId)}/import`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    projectDataShapeImportResponseSchema,
+  );
 }
 
 export function getCachedConnectorsOverview() {

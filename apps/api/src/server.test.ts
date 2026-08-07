@@ -67,6 +67,56 @@ async function createPlugin(
   return pluginDirectory;
 }
 
+async function createProjectDataShapePlugin(parent: string) {
+  const pluginDirectory = path.join(parent, "workday-project-data");
+  await mkdir(pluginDirectory, { recursive: true });
+  await writeFile(
+    path.join(pluginDirectory, "plugin.json"),
+    JSON.stringify({
+      id: "workday-project-data",
+      version: "1.0.0",
+      apiVersion: 1,
+      displayName: "Workday",
+      description: "Test project data shape.",
+      iconSvg: ICON,
+      entrypoint: "plugin.mjs",
+      capabilities: {
+        projectDataShape: {
+          apiVersion: 1,
+          datasets: [
+            {
+              id: "projects",
+              displayName: "Projects",
+              columns: [
+                {
+                  key: "project",
+                  header: "project",
+                  type: "string",
+                  required: true,
+                },
+              ],
+            },
+          ],
+        },
+      },
+    }),
+    "utf8",
+  );
+  await writeFile(
+    path.join(pluginDirectory, "plugin.mjs"),
+    [
+      "export async function exportProjects(projects) {",
+      "  return { datasets: [{ id: 'projects', rows: projects.map((project) => ({ project: project.name })) }] };",
+      "}",
+      "export async function importProjects(datasets) {",
+      "  return { projects: datasets[0].rows.map((row) => ({ name: row.project, color: '#123456', status: 'active', tasks: [] })) };",
+      "}",
+    ].join("\n"),
+    "utf8",
+  );
+  return pluginDirectory;
+}
+
 async function dispatchJsonRequest(
   server: Server,
   options: {
@@ -241,6 +291,78 @@ describe("connector plugin installation boundary", () => {
       status: 404,
       body: {
         error: "No route for DELETE /api/connectors/plugins/jira",
+      },
+    });
+  });
+
+  it("lists and invokes project data shape plugins through validated routes", async () => {
+    const root = await tempDir();
+    const pluginDirectory = await createProjectDataShapePlugin(root);
+    const server = createAppApiServer({
+      statePath: path.join(root, "state.json"),
+      installedPluginDirectory: path.join(root, "installed"),
+      projectDataShapePluginDirectories: [pluginDirectory],
+      allowDevelopmentPlugins: false,
+    });
+    servers.push(server);
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "GET",
+        path: "/api/project-data-shapes",
+      }),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: {
+        plugins: [{ id: "workday-project-data", displayName: "Workday" }],
+      },
+    });
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: "/api/project-data-shapes/workday-project-data/export",
+        body: JSON.stringify({
+          projects: [
+            {
+              name: "Mercury",
+              color: "#123456",
+              status: "active",
+              tasks: [],
+            },
+          ],
+        }),
+      }),
+    ).resolves.toEqual({
+      status: 200,
+      body: {
+        datasets: [
+          { id: "projects", rows: [{ project: "Mercury" }] },
+        ],
+      },
+    });
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: "/api/project-data-shapes/workday-project-data/import",
+        body: JSON.stringify({
+          datasets: [
+            { id: "projects", rows: [{ project: "Mercury" }] },
+          ],
+        }),
+      }),
+    ).resolves.toEqual({
+      status: 200,
+      body: {
+        projects: [
+          {
+            name: "Mercury",
+            color: "#123456",
+            status: "active",
+            tasks: [],
+          },
+        ],
       },
     });
   });

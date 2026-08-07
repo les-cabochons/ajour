@@ -92,3 +92,15 @@ Packaged Windows builds download the selected track in the background and use a
 native restart confirmation only after the update is ready; the app never
 restarts without the user's confirmation. Other platforms show truthful manual
 update guidance while preserving the same release-track status and link.
+
+### Project Import And Export
+
+File: `apps/web/src/features/settings/settings-projects-page.tsx`
+Last updated: 2026-08-06
+
+The Projects settings workflow separates the data-shape selector from the Excel
+format actions. `Ajour default` is always the first option and remains usable
+without the plugin host. Discovered shape plugins add provider-specific options;
+the selection persists in user preferences. Export and import copy identifies
+the active shape and explains that the shape controls fields while Ajour owns
+the file format.

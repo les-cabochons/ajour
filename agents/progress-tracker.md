@@ -24,6 +24,8 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Timer hydration, start/edit/cancel/save/restart transitions, elapsed time, and restarted-entry replacement are isolated from browser persistence and have direct domain tests.
 - [x] Imported browser review preservation, timeline materialization, dismissal, idempotent commits, and rule creation are isolated from browser persistence and have direct domain tests.
 - [x] Timesheet import normalization, conflict detection, draft lifecycle, project/task recovery, and commits are isolated from browser persistence and have direct domain tests.
+- [x] Project import/export keeps an always-available default shape and can apply optional format-neutral data-shape plugins through validated worker operations.
+- [x] The Workday project shape is maintained independently in `les-cabochons/ajp-workday` while Ajour retains Excel serialization and project merge ownership.
 - [x] `local-store.ts` is reduced from 4,215 lines to about 1,100 lines and now coordinates persisted-state compatibility, desktop bootstrap, storage notifications, and domain commands.
 - [x] Desktop inline and mobile modal backlog editing share one canonical field, validation, draft, and patch model.
 - [x] Backlog, timesheet, project-task, and project-navigation reordering share one tested pointer lifecycle and geometry module.

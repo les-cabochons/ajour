@@ -76,6 +76,22 @@ describe("localStore backlog status sync", () => {
     const { localStore } = await import("./local-store");
 
     expect(localStore.snapshot().userPreferences.updateTrack).toBe("stable");
+    expect(localStore.snapshot().userPreferences.projectDataShapeId).toBe(
+      "default",
+    );
+  });
+
+  it("persists the selected project data shape", async () => {
+    const { localStore } = await import("./local-store");
+
+    localStore.setUserPreferences({
+      projectDataShapeId: "workday-project-data",
+    });
+
+    expect(localStore.snapshot().userPreferences.projectDataShapeId).toBe(
+      "workday-project-data",
+    );
+    expect(window.localStorage.setItem).toHaveBeenCalled();
   });
 
   it("persists a selected nightly update track", async () => {

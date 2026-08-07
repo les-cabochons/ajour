@@ -4,8 +4,10 @@ import type {
   LocalProjectTask,
   LocalProjectTaskDraft,
 } from "@/domain/local-state";
+import type { ProjectDataShapeImportProject } from "@timetracker/shared";
 import {
   durationHoursValueToMs,
+  durationMsToHoursValue,
   normalizeProjectTaskAdjustmentMs,
   normalizeProjectTaskBudgetMs,
 } from "@/domain/projects/task-budget";
@@ -18,6 +20,7 @@ import {
 export type ProjectTransferStatus = "active" | "archived";
 
 export interface ProjectTransferRow {
+  [key: string]: string | number;
   project: string;
   code: string;
   color: string;
@@ -297,4 +300,47 @@ export function importProjectWorkbookRows(
   }
 
   return { projects: nextProjects, result };
+}
+
+export function importProjectDataShapeProjects(
+  projects: LocalProject[],
+  importedProjects: ProjectDataShapeImportProject[],
+  factories: ProjectImportFactories,
+) {
+  const rows = importedProjects.flatMap<ProjectTransferRow>((project) => {
+    if (project.tasks.length === 0) {
+      return [
+        {
+          project: project.name,
+          code: project.code ?? "",
+          color: project.color ?? "",
+          status: project.status,
+          task: "",
+          taskStatus: "",
+          billable: "",
+          budgetHours: "",
+          adjustmentHours: "",
+        },
+      ];
+    }
+
+    return project.tasks.map((task) => ({
+      project: project.name,
+      code: project.code ?? "",
+      color: project.color ?? "",
+      status: project.status,
+      task: task.name,
+      taskStatus: task.status ?? "",
+      billable:
+        task.billable === undefined
+          ? ""
+          : task.billable
+            ? "billable"
+            : "non_billable",
+      budgetHours: durationMsToHoursValue(task.budgetMs) ?? "",
+      adjustmentHours: durationMsToHoursValue(task.adjustmentMs) ?? "",
+    }));
+  });
+
+  return importProjectWorkbookRows(projects, rows, factories);
 }
