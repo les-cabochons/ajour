@@ -99,7 +99,7 @@ export function TimeEntryModal({
     [durationHours],
   );
   const canSave = Boolean(projectId) && (parsedDurationMs ?? 0) > 0;
-  const canStartTimer = !currentTimer;
+  const startTimerLabel = currentTimer ? "Switch timer" : "Start timer";
   const isTimerMode = durationHours.trim() === "" || parsedDurationMs === 0;
   const title = isEditingTimer
     ? "Running timer"
@@ -216,10 +216,6 @@ export function TimeEntryModal({
   }
 
   function handleStartTimer() {
-    if (currentTimer) {
-      return;
-    }
-
     localStore.startTimer({
       localDate: date,
       projectId,
@@ -353,11 +349,10 @@ export function TimeEntryModal({
             <Button
               size="sm"
               className="gap-1.5"
-              disabled={!canStartTimer}
               onClick={handleStartTimer}
             >
               <Play className="h-3.5 w-3.5" />
-              Start timer
+              {startTimerLabel}
             </Button>
           ) : (
             <>
@@ -374,11 +369,10 @@ export function TimeEntryModal({
                 size="sm"
                 variant="outline"
                 className="gap-1.5"
-                disabled={!canStartTimer}
                 onClick={handleStartTimer}
               >
                 <Play className="h-3.5 w-3.5" />
-                Start timer
+                {startTimerLabel}
               </Button>
             </>
           )}

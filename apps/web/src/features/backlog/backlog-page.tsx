@@ -1619,7 +1619,7 @@ export function BacklogPage() {
     const nextProjectId = overrides?.projectId || workItem.projectId;
     const nextTaskId = overrides?.taskId || workItem.taskId;
 
-    if (currentTimer || workItem.status === "archived") {
+    if (workItem.status === "archived") {
       return;
     }
 
@@ -1970,7 +1970,7 @@ export function BacklogPage() {
     const resolvedWorkItemIcon = resolveWorkItemIcon(workItem, workItemIconData);
     const showWorkItemIcon = true;
     const showSubtasksPill = !isLogicalChild && hasSubtasks;
-    const canStartTimer = Boolean(!currentTimer && !isArchived);
+    const canStartTimer = !isArchived;
     const editorTitle = isEditingChildItem
       ? expandedChildEditor.title
       : expandedTitle;
@@ -2043,7 +2043,7 @@ export function BacklogPage() {
       parseEstimateInput(editorOriginalEstimateHours) !== null &&
       parseEstimateInput(editorRemainingEstimateHours) !== null &&
       parseEstimateInput(editorCompletedEstimateHours) !== null;
-    const canStartEditorTimer = Boolean(!currentTimer && !isArchived);
+    const canStartEditorTimer = !isArchived;
     const editorTimeFeedback = !hasEditorTimeDraft
       ? null
       : editorParsedDurationMs === null
@@ -2087,7 +2087,7 @@ export function BacklogPage() {
       childEstimateTotals ?? workItem,
     );
     const startTimerTitle = currentTimer
-      ? "Stop the current timer first"
+      ? `Switch timer to ${workItem.title}`
       : `Start timer for ${workItem.title}`;
     const canResetOriginalEstimate =
       childEstimateTotals !== null &&
@@ -2108,7 +2108,7 @@ export function BacklogPage() {
     const editorStartTimerTitle = isArchived
       ? "Archived tasks cannot start timers"
       : currentTimer
-        ? "Stop the current timer first"
+        ? `Switch timer to ${editorTitle.trim() || workItem.title}`
         : `Start timer for ${editorTitle.trim() || workItem.title}`;
     const isDraggedWorkItem = backlogDragState?.workItemId === workItem._id;
     const rootIndex = visibleRootItems.findIndex(
@@ -2902,7 +2902,7 @@ export function BacklogPage() {
                             "inline-hours-action",
                             "inline-hours-action-play",
                           )}
-                          aria-label={`Start timer for ${editorTitle.trim() || workItem.title}`}
+                          aria-label={editorStartTimerTitle}
                           title={editorStartTimerTitle}
                           disabled={!canStartEditorTimer}
                           onMouseDown={(event) => event.preventDefault()}
@@ -3097,7 +3097,7 @@ export function BacklogPage() {
                   <button
                     type="button"
                     className="entry-row-action entry-row-action-play"
-                    aria-label={`Start timer for ${workItem.title}`}
+                    aria-label={startTimerTitle}
                     title={startTimerTitle}
                     disabled={!canStartTimer}
                     data-no-backlog-drag="true"
@@ -3183,7 +3183,7 @@ export function BacklogPage() {
               <button
                 type="button"
                 className="backlog-task-start backlog-task-action-pill backlog-estimate-mobile-action"
-                aria-label={`Start timer for ${workItem.title}`}
+                aria-label={startTimerTitle}
                 title={startTimerTitle}
                 disabled={!canStartTimer}
                 data-no-backlog-drag="true"
@@ -3196,7 +3196,7 @@ export function BacklogPage() {
                 }}
               >
                 <Play className="h-3.5 w-3.5" />
-                <span>Start Timer</span>
+                <span>{currentTimer ? "Switch Timer" : "Start Timer"}</span>
               </button>
             ) : null}
           </div>

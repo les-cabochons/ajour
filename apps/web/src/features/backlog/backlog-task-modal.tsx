@@ -221,9 +221,7 @@ export function BacklogTaskModal({
   });
   const { priorityError } = editorValidation;
   const canSubmitDuration = Boolean(parsedDurationMs && parsedDurationMs > 0);
-  const canStartTimer = Boolean(
-    !currentTimer && workItem?.status !== "archived",
-  );
+  const canStartTimer = workItem?.status !== "archived";
   const canCreateSubtask = editorValidation.canSave;
   const canCreateRootTask = validateBacklogTaskEditor(editorFields, {
     isSubtask: false,
@@ -837,7 +835,7 @@ export function BacklogTaskModal({
   const timerTitle = isArchived
     ? "Archived tasks cannot start timers"
     : currentTimer
-      ? "Stop the current timer first"
+      ? `Switch timer to ${title.trim() || editingWorkItem.title}`
       : `Start timer for ${title.trim() || editingWorkItem.title}`;
 
   return (
@@ -993,7 +991,7 @@ export function BacklogTaskModal({
                       "inline-hours-action",
                       "inline-hours-action-play",
                     )}
-                    aria-label={`Start timer for ${title.trim() || editingWorkItem.title}`}
+                    aria-label={timerTitle}
                     title={timerTitle}
                     disabled={!canStartTimer}
                     onMouseDown={(event) => event.preventDefault()}

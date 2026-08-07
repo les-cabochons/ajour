@@ -7,6 +7,26 @@ Feature: Open the local time workspace
     Then the Time workspace is visible
     And the timesheet can be submitted
 
+  Scenario: Switch directly from one time entry timer to another
+    Given I have two saved entries with a timer running on the first
+    When I start the timer on the second entry
+    Then the first timer is saved and the second timer is running
+
+  Scenario: Start a fresh timer while another timer is running
+    Given I have two saved entries with a timer running on the first
+    When I start a fresh timer from the Time page
+    Then the first timer is saved and the fresh timer is running
+
+  Scenario: Start a Backlog timer while another timer is running
+    Given I have two saved entries with a timer running on the first
+    When I start the timer on the Backlog task
+    Then the first timer is saved and the Backlog timer is running
+
+  Scenario: Start a Backlog timer from mobile while another timer is running
+    Given I have two saved entries with a timer running on the first
+    When I start the timer on the Backlog task from mobile
+    Then the first timer is saved and the Backlog timer is running
+
   Scenario: Install a packaged connector from local files
     Given I have no saved TimeTracker workspace
     When I install a packaged connector from settings

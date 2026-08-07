@@ -69,13 +69,27 @@ export function startTimer(
   timer: LocalTimerDraft,
   factories: TimerFactories,
 ): LocalAppState {
-  if (state.timers.length > 0) {
+  if (state.timers.length > 1) {
     return state;
   }
 
+  const activeTimer = state.timers[0];
+  if (timer.entryId !== undefined && activeTimer?.entryId === timer.entryId) {
+    return state;
+  }
+
+  const switchedAt = factories.now();
+  const switchFactories: TimerFactories = {
+    ...factories,
+    now: () => switchedAt,
+  };
+  const stoppedState = activeTimer
+    ? saveTimer(state, activeTimer._id, switchFactories)
+    : state;
+
   return {
-    ...state,
-    timers: [createTimer(timer, factories)],
+    ...stoppedState,
+    timers: [createTimer(timer, switchFactories)],
   };
 }
 
@@ -227,25 +241,21 @@ export function restartTimesheetEntry(
   factories: TimerFactories,
 ): LocalAppState {
   const entry = state.timesheetEntries.find((item) => item._id === entryId);
-  if (!entry || state.timers.length > 0) {
+  if (!entry) {
     return state;
   }
 
-  return {
-    ...state,
-    timers: [
-      createTimer(
-        {
-          localDate: entry.localDate,
-          workItemId: entry.workItemId,
-          projectId: entry.projectId,
-          taskId: entry.taskId,
-          note: entry.note,
-          accumulatedDurationMs: entry.durationMs,
-          entryId: entry._id,
-        },
-        factories,
-      ),
-    ],
-  };
+  return startTimer(
+    state,
+    {
+      localDate: entry.localDate,
+      workItemId: entry.workItemId,
+      projectId: entry.projectId,
+      taskId: entry.taskId,
+      note: entry.note,
+      accumulatedDurationMs: entry.durationMs,
+      entryId: entry._id,
+    },
+    factories,
+  );
 }

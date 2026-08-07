@@ -23,8 +23,159 @@ Given("I have no saved TimeTracker workspace", async ({ page }) => {
   });
 });
 
+Given(
+  "I have two saved entries with a timer running on the first",
+  async ({ page }) => {
+    await page.route("http://127.0.0.1:8787/api/connectors", async (route) => {
+      await route.fulfill({
+        json: {
+          plugins: [],
+          connectionGroups: [],
+          totalPendingImportCount: 0,
+          totalSelectedImportCount: 0,
+        },
+        headers: {
+          "access-control-allow-origin": "*",
+        },
+      });
+    });
+    await page.addInitScript(() => {
+      const now = new Date();
+      const localDate = [
+        now.getFullYear(),
+        String(now.getMonth() + 1).padStart(2, "0"),
+        String(now.getDate()).padStart(2, "0"),
+      ].join("-");
+      const startedAt = Date.now() - 60_000;
+
+      window.localStorage.setItem(
+        "timetracker.local-state.v2",
+        JSON.stringify({
+          projects: [
+            {
+              _id: "project-acceptance",
+              name: "Acceptance Project",
+              displayName: "Acceptance Project",
+              color: "#1f7667",
+              icon: { kind: "preset", name: "dot" },
+              status: "active",
+              tasks: [
+                {
+                  _id: "task-first",
+                  name: "First task",
+                  status: "active",
+                  createdAt: startedAt - 1_000,
+                },
+                {
+                  _id: "task-second",
+                  name: "Second task",
+                  status: "active",
+                  createdAt: startedAt - 1_000,
+                },
+              ],
+            },
+          ],
+          timers: [
+            {
+              _id: "timer-first",
+              startedAt,
+              localDate,
+              projectId: "project-acceptance",
+              taskId: "task-first",
+              note: "First entry",
+              accumulatedDurationMs: 60_000,
+              entryId: "entry-first",
+            },
+          ],
+          timesheetEntries: [
+            {
+              _id: "entry-first",
+              localDate,
+              projectId: "project-acceptance",
+              taskId: "task-first",
+              label: "First task",
+              note: "First entry",
+              durationMs: 60_000,
+              sourceBlockIds: [],
+              committedAt: startedAt - 1_000,
+            },
+            {
+              _id: "entry-second",
+              localDate,
+              projectId: "project-acceptance",
+              taskId: "task-second",
+              label: "Second task",
+              note: "Second entry",
+              durationMs: 300_000,
+              sourceBlockIds: [],
+              committedAt: startedAt - 500,
+            },
+          ],
+          workItems: [
+            {
+              _id: "work-item-acceptance",
+              title: "Backlog switch task",
+              status: "active",
+              source: "manual",
+              projectId: "project-acceptance",
+              taskId: "task-second",
+              createdAt: startedAt - 2_000,
+            },
+          ],
+          updatedAt: startedAt,
+        }),
+      );
+    });
+    await page.goto("/time/today");
+  },
+);
+
 When("I open today's time workspace", async ({ page }) => {
   await page.goto("/time/today");
+});
+
+When("I start the timer on the second entry", async ({ page }) => {
+  const secondEntryRow = page
+    .getByRole("row")
+    .filter({ hasText: "Second task" });
+  await secondEntryRow.hover();
+  await secondEntryRow
+    .getByRole("button", { name: "Switch timer to this entry" })
+    .click();
+});
+
+When("I start a fresh timer from the Time page", async ({ page }) => {
+  await page.goto("/time/today?entry=new");
+  const switchTimer = page.getByRole("button", {
+    name: "Switch timer",
+    exact: true,
+  });
+  await expect(switchTimer).toBeEnabled();
+  await switchTimer.click();
+});
+
+When("I start the timer on the Backlog task", async ({ page }) => {
+  await page.goto("/backlog");
+  const backlogRow = page
+    .getByRole("row")
+    .filter({ hasText: "Backlog switch task" });
+  await backlogRow.hover();
+  const switchTimer = backlogRow.getByRole("button", {
+    name: "Switch timer to Backlog switch task",
+  });
+  await expect(switchTimer).toBeEnabled();
+  await switchTimer.click();
+});
+
+When("I start the timer on the Backlog task from mobile", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/backlog");
+  const switchTimer = page.getByRole("button", {
+    name: "Switch timer to Backlog switch task",
+  });
+  await expect(switchTimer).toBeEnabled();
+  await expect(switchTimer).toContainText("Switch Timer");
+  await switchTimer.click();
 });
 
 Then("the Time workspace is visible", async ({ page }) => {
@@ -41,6 +192,74 @@ Then("the timesheet can be submitted", async ({ page }) => {
   await expect(submitTimesheet).toBeVisible();
   await expect(submitTimesheet).toBeEnabled();
 });
+
+Then(
+  "the first timer is saved and the second timer is running",
+  async ({ page }) => {
+    const state = await page.evaluate(() =>
+      JSON.parse(
+        window.localStorage.getItem("timetracker.local-state.v2") ?? "null",
+      ),
+    );
+
+    expect(state.timers).toHaveLength(1);
+    expect(state.timers[0]).toMatchObject({
+      entryId: "entry-second",
+      accumulatedDurationMs: 300_000,
+    });
+    expect(
+      state.timesheetEntries.find(
+        (entry: { _id: string }) => entry._id === "entry-first",
+      )?.durationMs,
+    ).toBeGreaterThanOrEqual(120_000);
+  },
+);
+
+Then(
+  "the first timer is saved and the fresh timer is running",
+  async ({ page }) => {
+    const state = await page.evaluate(() =>
+      JSON.parse(
+        window.localStorage.getItem("timetracker.local-state.v2") ?? "null",
+      ),
+    );
+
+    expect(state.timers).toHaveLength(1);
+    expect(state.timers[0]).toMatchObject({
+      accumulatedDurationMs: 0,
+    });
+    expect(state.timers[0].entryId).toBeUndefined();
+    expect(
+      state.timesheetEntries.find(
+        (entry: { _id: string }) => entry._id === "entry-first",
+      )?.durationMs,
+    ).toBeGreaterThanOrEqual(120_000);
+  },
+);
+
+Then(
+  "the first timer is saved and the Backlog timer is running",
+  async ({ page }) => {
+    const state = await page.evaluate(() =>
+      JSON.parse(
+        window.localStorage.getItem("timetracker.local-state.v2") ?? "null",
+      ),
+    );
+
+    expect(state.timers).toHaveLength(1);
+    expect(state.timers[0]).toMatchObject({
+      workItemId: "work-item-acceptance",
+      projectId: "project-acceptance",
+      taskId: "task-second",
+      accumulatedDurationMs: 0,
+    });
+    expect(
+      state.timesheetEntries.find(
+        (entry: { _id: string }) => entry._id === "entry-first",
+      )?.durationMs,
+    ).toBeGreaterThanOrEqual(120_000);
+  },
+);
 
 When("I install a packaged connector from settings", async ({ page }) => {
   const plugin = {

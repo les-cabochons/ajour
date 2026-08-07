@@ -676,10 +676,6 @@ export function TimerPanel({
   }
 
   function handleRestartEntry(entryId: string) {
-    if (currentTimer) {
-      return;
-    }
-
     setPendingDeleteEntryId(null);
     resetExpandedEntry();
     localStore.restartTimesheetEntry(entryId);
@@ -1119,8 +1115,11 @@ export function TimerPanel({
                               <button
                                 type="button"
                                 className="entry-row-action entry-row-action-play"
-                                aria-label="Restart entry"
-                                disabled={Boolean(currentTimer)}
+                                aria-label={
+                                  currentTimer
+                                    ? "Switch timer to this entry"
+                                    : "Restart entry"
+                                }
                                 data-no-entry-drag="true"
                                 onClick={(event) => {
                                   event.stopPropagation();
