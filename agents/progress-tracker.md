@@ -52,6 +52,8 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
   update channel, cancel stale-track downloads, reject older-core nightlies, and
   ask before restarting. Releases publish NSIS/macOS updater artifacts without
   Squirrel `.nupkg` packages; macOS stays manual until signing and notarization.
+- [x] Time-entry surfaces share a hierarchical shadcn project/task command picker
+  with project drill-down, mixed-term direct task search, and bounded results.
 
 ## Standard Task Flow
 

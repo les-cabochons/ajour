@@ -57,6 +57,7 @@ Keep React rendering and runtime adapters outside these modules. For example, th
 ## Web Workflow Modules
 
 - Canonical backlog task editor fields, parsing, validation, drafts, patches, hierarchy exclusions, and time-note fallback: `apps/web/src/features/backlog/backlog-task-editor.ts`
+- Hierarchical project/task selection and capped mixed-term search for time entry: `apps/web/src/features/projects/project-task-picker.tsx` and `apps/web/src/features/projects/project-task-search.ts`
 - Shared pointer-reordering session, geometry, row shifts, overlay positioning, and document state: `apps/web/src/lib/table-drag.ts`
 
 The backlog editor module is feature-local because its vocabulary and commands belong to the backlog workflow. The drag module is runtime-aware and cross-feature, so it belongs in `lib`.

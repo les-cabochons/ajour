@@ -7,14 +7,15 @@ import {
   RiStopLine as Square,
 } from "@remixicon/react";
 import { Button } from "@/components/ui/button";
-import { SearchableSelect } from "@/components/ui/searchable-select";
-import { buildProjectTaskOptions } from "@/features/projects/project-task-options";
+import {
+  ProjectTaskPicker,
+  type ProjectTaskSelection,
+} from "@/features/projects/project-task-picker";
 import {
   formatDurationHoursInput,
   normalizeHoursInput,
   parseHoursInput,
 } from "@/domain/time/duration";
-import { getLocalProjectDisplayName } from "@/domain/local-state";
 import { localStore } from "@/lib/local-store";
 import { useLocalProjects, useLocalState } from "@/lib/local-hooks";
 
@@ -66,33 +67,6 @@ export function TimeEntryModal({
   const [taskId, setTaskId] = useState("");
   const [note, setNote] = useState("");
   const [durationHours, setDurationHours] = useState("");
-
-  const projectOptions = useMemo(
-    () =>
-      projects.map((project) => ({
-        value: project._id,
-        label: project.code
-          ? `[${project.code}] ${getLocalProjectDisplayName(project)}`
-          : getLocalProjectDisplayName(project),
-        keywords: [
-          project.name,
-          getLocalProjectDisplayName(project),
-          project.code ?? "",
-        ],
-      })),
-    [projects],
-  );
-  const availableTasks = useMemo(
-    () =>
-      projects
-        .find((project) => project._id === projectId)
-        ?.tasks.filter((task) => task.status === "active") ?? [],
-    [projectId, projects],
-  );
-  const taskOptions = useMemo(
-    () => buildProjectTaskOptions(availableTasks),
-    [availableTasks],
-  );
 
   const parsedDurationMs = useMemo(
     () => parseHoursInput(durationHours),
@@ -177,14 +151,9 @@ export function TimeEntryModal({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [onClose]);
 
-  function handleProjectChange(nextProjectId: string) {
-    const nextTaskId =
-      projects
-        .find((project) => project._id === nextProjectId)
-        ?.tasks.find((task) => task.status === "active")?._id ?? "";
-
-    setProjectId(nextProjectId);
-    setTaskId(nextTaskId);
+  function handleProjectTaskChange(selection: ProjectTaskSelection) {
+    setProjectId(selection.projectId);
+    setTaskId(selection.taskId);
   }
 
   function handleSave() {
@@ -267,34 +236,14 @@ export function TimeEntryModal({
 
         {/* Form */}
         <div className="time-entry-modal-form">
-          {/* Project */}
-          <label className="field entry-field-span-2">
-            <span className="field-label">Project</span>
-            <SearchableSelect
-              value={projectId}
-              options={projectOptions}
-              onChange={handleProjectChange}
-              placeholder="Select project"
-              clearLabel="Select project"
-              emptyMessage="No matching projects"
-              ariaLabel="Project"
-            />
-          </label>
-
-          {/* Task */}
-          <label className="field entry-field-span-2">
-            <span className="field-label">Task</span>
-            <SearchableSelect
-              value={taskId}
-              options={taskOptions}
-              onChange={setTaskId}
-              placeholder={projectId ? "Select task" : "Pick a project first"}
-              clearLabel={projectId ? "No task" : undefined}
-              emptyMessage={
-                projectId ? "No matching tasks" : "Pick a project first"
-              }
-              ariaLabel="Task"
-              disabled={!projectId || availableTasks.length === 0}
+          <label className="field col-span-full">
+            <span className="field-label">Project / task</span>
+            <ProjectTaskPicker
+              projects={projects}
+              projectId={projectId}
+              taskId={taskId}
+              onChange={handleProjectTaskChange}
+              placeholder="Select project or task"
             />
           </label>
 

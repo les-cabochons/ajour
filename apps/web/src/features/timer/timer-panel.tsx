@@ -23,8 +23,10 @@ import {
 } from "@/components/ui/empty";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { SearchableSelect } from "@/components/ui/searchable-select";
-import { buildProjectTaskOptions } from "@/features/projects/project-task-options";
+import {
+  ProjectTaskPicker,
+  type ProjectTaskSelection,
+} from "@/features/projects/project-task-picker";
 import {
   formatClockDuration,
   formatDurationHoursInput,
@@ -142,21 +144,6 @@ export function TimerPanel({
     null,
   );
 
-  const projectOptions = useMemo(
-    () =>
-      projects.map((project) => ({
-        value: project._id,
-        label: project.code
-          ? `[${project.code}] ${getLocalProjectDisplayName(project)}`
-          : getLocalProjectDisplayName(project),
-        keywords: [
-          project.name,
-          getLocalProjectDisplayName(project),
-          project.code ?? "",
-        ],
-      })),
-    [projects],
-  );
   const currentTimer = state.timers[0] ?? null;
   const expandedEntry = expandedEntryId
     ? (state.timesheetEntries.find(
@@ -190,10 +177,6 @@ export function TimerPanel({
         ?.tasks.filter((task) => task.status === "active") ?? [],
     [expandedProjectId, projects],
   );
-  const expandedTaskOptions = useMemo(
-    () => buildProjectTaskOptions(expandedAvailableTasks),
-    [expandedAvailableTasks],
-  );
   const expandedParsedDurationMs = useMemo(
     () => parseHoursInput(expandedDurationHours),
     [expandedDurationHours],
@@ -219,10 +202,6 @@ export function TimerPanel({
         .find((project) => project._id === newProjectId)
         ?.tasks.filter((task) => task.status === "active") ?? [],
     [newProjectId, projects],
-  );
-  const newTaskOptions = useMemo(
-    () => buildProjectTaskOptions(newAvailableTasks),
-    [newAvailableTasks],
   );
   const newParsedDurationMs = useMemo(
     () => parseHoursInput(newDurationHours),
@@ -644,35 +623,19 @@ export function TimerPanel({
     };
   }, [expandedEntryId]);
 
-  function handleExpandedProjectChange(nextProjectId: string) {
-    const nextTaskId =
-      nextProjectId === expandedProjectId ? expandedTaskId : "";
-    setExpandedProjectId(nextProjectId);
-    setExpandedTaskId(nextTaskId);
+  function handleExpandedProjectTaskChange(selection: ProjectTaskSelection) {
+    setExpandedProjectId(selection.projectId);
+    setExpandedTaskId(selection.taskId);
     persistExpandedMetadata({
-      projectId: nextProjectId,
-      taskId: nextTaskId,
+      projectId: selection.projectId,
+      taskId: selection.taskId,
       note: expandedNote,
     });
   }
 
-  function handleExpandedTaskChange(nextTaskId: string) {
-    setExpandedTaskId(nextTaskId);
-    persistExpandedMetadata({
-      projectId: expandedProjectId,
-      taskId: nextTaskId,
-      note: expandedNote,
-    });
-  }
-
-  function handleNewProjectChange(nextProjectId: string) {
-    const nextTaskId =
-      projects
-        .find((project) => project._id === nextProjectId)
-        ?.tasks.find((task) => task.status === "active")?._id ?? "";
-
-    setNewProjectId(nextProjectId);
-    setNewTaskId(nextTaskId);
+  function handleNewProjectTaskChange(selection: ProjectTaskSelection) {
+    setNewProjectId(selection.projectId);
+    setNewTaskId(selection.taskId);
   }
 
   function handleRestartEntry(entryId: string) {
@@ -855,40 +818,14 @@ export function TimerPanel({
                   <td colSpan={3}>
                     <div className="entry-edit-dropdown entry-create-dropdown">
                       <div className="entry-edit-dropdown-grid">
-                        <label className="field entry-field-span-2">
-                          <span className="field-label">Project</span>
-                          <SearchableSelect
-                            value={newProjectId}
-                            options={projectOptions}
-                            onChange={handleNewProjectChange}
+                        <label className="field col-span-full">
+                          <span className="field-label">Project / task</span>
+                          <ProjectTaskPicker
+                            projects={projects}
+                            projectId={newProjectId}
+                            taskId={newTaskId}
+                            onChange={handleNewProjectTaskChange}
                             placeholder="No project"
-                            clearLabel="No project"
-                            emptyMessage="No matching projects"
-                            ariaLabel="Project"
-                          />
-                        </label>
-
-                        <label className="field entry-field-span-2">
-                          <span className="field-label">Task</span>
-                          <SearchableSelect
-                            value={newTaskId}
-                            options={newTaskOptions}
-                            onChange={setNewTaskId}
-                            placeholder={
-                              newProjectId
-                                ? "Select task"
-                                : "Pick a project first"
-                            }
-                            clearLabel={newProjectId ? "No task" : undefined}
-                            emptyMessage={
-                              newProjectId
-                                ? "No matching tasks"
-                                : "Pick a project first"
-                            }
-                            ariaLabel="Task"
-                            disabled={
-                              !newProjectId || newAvailableTasks.length === 0
-                            }
                           />
                         </label>
 
@@ -1174,45 +1111,14 @@ export function TimerPanel({
                             className="entry-edit-dropdown"
                           >
                             <div className="entry-edit-dropdown-grid">
-                              {/* Project */}
-                              <label className="field entry-field-span-2">
-                                <span className="field-label">Project</span>
-                                <SearchableSelect
-                                  value={expandedProjectId}
-                                  options={projectOptions}
-                                  onChange={handleExpandedProjectChange}
+                              <label className="field col-span-full">
+                                <span className="field-label">Project / task</span>
+                                <ProjectTaskPicker
+                                  projects={projects}
+                                  projectId={expandedProjectId}
+                                  taskId={expandedTaskId}
+                                  onChange={handleExpandedProjectTaskChange}
                                   placeholder="No project"
-                                  clearLabel="No project"
-                                  emptyMessage="No matching projects"
-                                  ariaLabel="Project"
-                                />
-                              </label>
-
-                              {/* Task */}
-                              <label className="field entry-field-span-2">
-                                <span className="field-label">Task</span>
-                                <SearchableSelect
-                                  value={expandedTaskId}
-                                  options={expandedTaskOptions}
-                                  onChange={handleExpandedTaskChange}
-                                  placeholder={
-                                    expandedProjectId
-                                      ? "Select task"
-                                      : "Pick a project first"
-                                  }
-                                  clearLabel={
-                                    expandedProjectId ? "No task" : undefined
-                                  }
-                                  emptyMessage={
-                                    expandedProjectId
-                                      ? "No matching tasks"
-                                      : "Pick a project first"
-                                  }
-                                  ariaLabel="Task"
-                                  disabled={
-                                    !expandedProjectId ||
-                                    expandedAvailableTasks.length === 0
-                                  }
                                 />
                               </label>
 

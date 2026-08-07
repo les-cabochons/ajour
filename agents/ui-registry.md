@@ -22,6 +22,7 @@ This registry captures reusable visual patterns already present in TimeTracker. 
 - Compact controls use 13px sizing and tight radii.
 - Popovers handle secondary choices such as calendar selection and compact creation flows.
 - Searchable selects are preferred where project/task lists can grow.
+- Time-entry project/task selection uses the shadcn command navigator in `features/projects/project-task-picker.tsx`: its default view lists projects only, selecting a project drills into active tasks, and typed task or mixed project/task terms return capped direct matches.
 - Toggle groups and tabs are preferred for mutually exclusive local view modes.
 - Checkboxes use `Checkbox` from `apps/web/src/components/ui/checkbox.tsx`, backed by Base UI. Use its `indeterminate` prop for mixed selection state instead of mutating DOM refs.
 - Connector settings fields are rendered through `apps/web/src/features/settings/connector-settings-ui.tsx`, so plugin-driven field styling stays consistent.

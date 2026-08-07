@@ -1,9 +1,9 @@
-import { expect } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 
 const { Given, When, Then } = createBdd();
 
-Given("I have no saved TimeTracker workspace", async ({ page }) => {
+async function mockEmptyConnectorOverview(page: Page) {
   await page.route("http://127.0.0.1:8787/api/connectors", async (route) => {
     await route.fulfill({
       json: {
@@ -17,6 +17,10 @@ Given("I have no saved TimeTracker workspace", async ({ page }) => {
       },
     });
   });
+}
+
+Given("I have no saved TimeTracker workspace", async ({ page }) => {
+  await mockEmptyConnectorOverview(page);
   await page.addInitScript(() => {
     window.localStorage.clear();
     window.sessionStorage.clear();
@@ -129,6 +133,70 @@ Given(
     await page.goto("/time/today");
   },
 );
+Given("I have projects with searchable tasks", async ({ page }) => {
+  await mockEmptyConnectorOverview(page);
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    window.localStorage.setItem(
+      "timetracker.local-state.v2",
+      JSON.stringify({
+        projects: [
+          {
+            _id: "project-aaa",
+            name: "aaa xyz",
+            displayName: "aaa xyz",
+            code: "AAA",
+            color: "#1f7667",
+            icon: { kind: "preset", name: "dot" },
+            status: "active",
+            tasks: [
+              {
+                _id: "task-111",
+                name: "111 000",
+                status: "active",
+                createdAt: 1,
+                billable: true,
+              },
+              {
+                _id: "task-222-aaa",
+                name: "222 000",
+                status: "active",
+                createdAt: 2,
+                billable: true,
+              },
+            ],
+          },
+          {
+            _id: "project-bbb",
+            name: "bbb zyx",
+            displayName: "bbb zyx",
+            code: "BBB",
+            color: "#ec7a43",
+            icon: { kind: "preset", name: "dot" },
+            status: "active",
+            tasks: [
+              {
+                _id: "task-222-bbb",
+                name: "222 000",
+                status: "active",
+                createdAt: 3,
+                billable: false,
+              },
+              {
+                _id: "task-333",
+                name: "333 000",
+                status: "active",
+                createdAt: 4,
+                billable: true,
+              },
+            ],
+          },
+        ],
+      }),
+    );
+  });
+});
 
 When("I open today's time workspace", async ({ page }) => {
   await page.goto("/time/today");
@@ -177,6 +245,66 @@ When("I start the timer on the Backlog task from mobile", async ({ page }) => {
   await expect(switchTimer).toContainText("Switch Timer");
   await switchTimer.click();
 });
+
+When("I open the new time-entry project and task picker", async ({ page }) => {
+  await page.getByRole("button", { name: "Create time entry" }).click();
+  await page.getByRole("button", { name: "Project or task" }).click();
+});
+
+Then(
+  "the picker initially lists projects without expanding their tasks",
+  async ({ page }) => {
+    await expect(page.getByText("[AAA] aaa xyz", { exact: true })).toBeVisible();
+    await expect(page.getByText("[BBB] bbb zyx", { exact: true })).toBeVisible();
+    await expect(page.getByText("111 000", { exact: true })).toHaveCount(0);
+    await expect(page.getByText("222 000", { exact: true })).toHaveCount(0);
+  },
+);
+
+When("I browse the tasks in project {string}", async ({ page }, project: string) => {
+  await page.getByText(`[AAA] ${project}`, { exact: true }).click();
+});
+
+Then("the picker lists that project's tasks", async ({ page }) => {
+  await expect(
+    page.getByText("Use project without a task", { exact: true }),
+  ).toBeVisible();
+  await expect(page.getByText("111 000", { exact: true })).toBeVisible();
+  await expect(page.getByText("222 000", { exact: true })).toBeVisible();
+  await expect(page.getByText("333 000", { exact: true })).toHaveCount(0);
+});
+
+When("I return to the project list", async ({ page }) => {
+  await page.getByText("Back to projects", { exact: true }).click();
+});
+
+When("I search for project and task {string}", async ({ page }, query: string) => {
+  await page.getByPlaceholder("Search projects and tasks...").fill(query);
+});
+
+When("I select the matching project and task", async ({ page }) => {
+  await expect(page.getByText("222 000", { exact: true })).toBeVisible();
+  await page.keyboard.press("Enter");
+});
+
+Then("the combined project and task are selected", async ({ page }) => {
+  await expect(page.getByRole("button", { name: "Project or task" })).toContainText(
+    "[AAA] aaa xyz · 222 000",
+  );
+});
+
+When("I save one hour to the selected project and task", async ({ page }) => {
+  await page.getByRole("textbox", { name: "Hours" }).fill("01:00");
+  await page.getByRole("button", { name: "Save", exact: true }).click();
+});
+
+Then(
+  "the time entry uses project {string} and task {string}",
+  async ({ page }, project: string, task: string) => {
+    await expect(page.getByText(project, { exact: true }).first()).toBeVisible();
+    await expect(page.getByText(task, { exact: true }).first()).toBeVisible();
+  },
+);
 
 Then("the Time workspace is visible", async ({ page }) => {
   await expect(
