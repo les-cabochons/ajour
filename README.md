@@ -1,4 +1,4 @@
-# TimeTracker
+# Ajour - TimeTracker
 
 TimeTracker is a local-first time-tracking workspace with a web app, an Electron desktop shell, shared domain logic, and an optional local API for connector-driven imports.
 
