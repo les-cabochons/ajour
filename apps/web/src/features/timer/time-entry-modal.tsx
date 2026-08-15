@@ -180,8 +180,17 @@ export function TimeEntryModal({
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-xl gap-5">
-        <DialogHeader>
+        <DialogHeader className="flex-row items-start justify-between gap-3 pr-9">
           <DialogTitle>{title}</DialogTitle>
+          {editingEntry && !editingTimer ? (
+            <EntryActionsMenu
+              currentDate={editingEntry.localDate}
+              disabled={!canSave}
+              onDuplicate={() => duplicateTo(editingEntry.localDate)}
+              onDuplicateTo={duplicateTo}
+              onMoveTo={moveTo}
+            />
+          ) : null}
         </DialogHeader>
 
         <TimeEntryFields
@@ -206,27 +215,18 @@ export function TimeEntryModal({
         <DialogFooter className="sm:justify-between">
           <div className="flex flex-wrap gap-2">
             {editingEntry && !editingTimer ? (
-              <>
-                <EntryActionsMenu
-                  currentDate={editingEntry.localDate}
-                  disabled={!canSave}
-                  onDuplicate={() => duplicateTo(editingEntry.localDate)}
-                  onDuplicateTo={duplicateTo}
-                  onMoveTo={moveTo}
-                />
-                <Button
-                  type="button"
-                  size="sm"
-                  variant="danger"
-                  onClick={() => {
-                    localStore.deleteTimesheetEntry(editingEntry._id);
-                    onClose();
-                  }}
-                >
-                  <Trash2 data-icon="inline-start" />
-                  Delete
-                </Button>
-              </>
+              <Button
+                type="button"
+                size="sm"
+                variant="danger"
+                onClick={() => {
+                  localStore.deleteTimesheetEntry(editingEntry._id);
+                  onClose();
+                }}
+              >
+                <Trash2 data-icon="inline-start" />
+                Delete
+              </Button>
             ) : null}
           </div>
           <div className="flex flex-wrap justify-end gap-2">

@@ -76,6 +76,10 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
   and domain boundaries, preserve taskless labels on duplicate, use stable
   Ledger row identities, and harden nested dialogs, drag ownership, keyboard
   focus, and entry-group semantics.
+- [x] Weekly time visual refinement now uses one full-width continuous surface,
+  leading return-to-Day navigation, attached Ledger totals/detail regions,
+  fixed seven-day lane headers, project-color scanning cues, and a shared
+  upper-right entry-options Popover with an anchored confirmed date picker.
 
 ## Standard Task Flow
 
@@ -118,4 +122,12 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
   fallback. The Windows `just` parser rejected the repository's existing
   `short=` annotation, so equivalent locked pnpm commands were used for this
   pass.
+- [x] Weekly visual refinement verification: all 210 web tests and 328 tests
+  repository-wide passed; repository typecheck and production builds passed.
+  Real-browser checks covered the unified Ledger/Lanes surface, seven visible
+  lanes without horizontal overflow at 1280px, project markers and rails, the
+  Week modal and Day inline editor, and the single-layer anchored date picker.
+  The broader Playwright suite passed 8 of 12 scenarios on an isolated port;
+  four pre-existing plugin-catalog scenarios still expect removed connector
+  controls/copy and do not exercise the time view.
 - [ ] Assign an owner and record a manual result in `qa/routines/local-workspace-smoke.md`.

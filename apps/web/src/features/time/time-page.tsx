@@ -16,7 +16,7 @@ import {
   getTimerContributionMs,
   getTimerDurationsMs,
 } from "@/lib/timer-totals";
-import { getIsoWeekDates, todayIsoDate } from "@/lib/utils";
+import { cn, getIsoWeekDates, todayIsoDate } from "@/lib/utils";
 
 export function TimePage({ date }: { date: string }) {
   const navigate = useNavigate();
@@ -153,7 +153,7 @@ export function TimePage({ date }: { date: string }) {
   }
 
   return (
-    <div className="time-page-stack">
+    <div className={cn("time-page-stack", isWeekView && "is-week-view")}>
       {isWeekView ? (
         <WeeklyTimeView
           anchorDate={date}

@@ -4,14 +4,15 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
   RiAddLine as Plus,
   RiAlertLine as AlertTriangle,
+  RiArrowLeftLine as ArrowLeft,
   RiArrowLeftSLine as ChevronLeft,
   RiArrowRightSLine as ChevronRight,
-  RiCalendar2Line as CalendarDays,
   RiCloseLine as X,
   RiLockLine as Lock,
 } from "@remixicon/react";
@@ -27,6 +28,7 @@ import {
   Table,
   TableBody,
   TableCell,
+  TableFooter,
   TableHead,
   TableHeader,
   TableRow,
@@ -53,7 +55,8 @@ import {
   type SharedTableDragPointerSession,
 } from "@/lib/table-drag";
 import { getTimerContributionMs, getTimerDurationsMs } from "@/lib/timer-totals";
-import { addDaysIsoDate, cn } from "@/lib/utils";
+import { ProjectIcon } from "@/lib/project-icons";
+import { addDaysIsoDate, cn, todayIsoDate } from "@/lib/utils";
 
 type LedgerCellSelection = {
   entryIds: string[];
@@ -102,19 +105,22 @@ function formatDay(localDate: string, options: Intl.DateTimeFormatOptions) {
 function CapacityValue({
   capacityMs,
   label,
+  microLabel,
   overCapacity,
   showWarning,
   totalMs,
 }: {
   capacityMs: number;
   label: string;
+  microLabel?: string;
   overCapacity: boolean;
   showWarning: boolean;
   totalMs: number;
 }) {
   const utilization = capacityMs > 0 ? Math.round((totalMs / capacityMs) * 100) : null;
   return (
-    <div className="weekly-capacity-value">
+    <div className={cn("weekly-capacity-value", microLabel && "is-summary")}>
+      {microLabel ? <span className="weekly-capacity-label">{microLabel}</span> : null}
       <HoverCard>
         <HoverCardTrigger className="weekly-capacity-trigger">
           {formatClockDuration(totalMs)}
@@ -166,6 +172,11 @@ export function WeeklyTimeView({
   const dayTargetRefs = useRef(new Map<string, HTMLElement>());
   const suppressClickUntilRef = useRef(0);
   const currentTimer = state.timers[0] ?? null;
+  const today = todayIsoDate();
+  const projectsById = useMemo(
+    () => new Map(projects.map((project) => [project._id, project])),
+    [projects],
+  );
   const runningTime = useMemo(() => {
     if (!currentTimer) return null;
     const durations = getTimerDurationsMs(currentTimer, now);
@@ -312,10 +323,11 @@ export function WeeklyTimeView({
   }
 
   function renderEntrySummary(entry: LocalTimesheetEntry) {
-    const project = projects.find((candidate) => candidate._id === entry.projectId);
+    const project = entry.projectId ? projectsById.get(entry.projectId) : undefined;
     const task = project?.tasks.find((candidate) => candidate._id === entry.taskId);
     return {
       note: entry.note,
+      projectColor: project?.color ?? "#3b82f6",
       projectName: project?.displayName ?? project?.name ?? "No project",
       taskName: task?.name ?? (entry.label || "No task"),
     };
@@ -347,41 +359,51 @@ export function WeeklyTimeView({
     <section className="weekly-time-view" aria-label="Week overview">
       <header className="weekly-time-header">
         <div className="weekly-time-heading">
+          <Button
+            className="weekly-return-day"
+            variant="ghost"
+            size="sm"
+            onClick={onReturnToDay}
+          >
+            <ArrowLeft data-icon="inline-start" />
+            Day
+          </Button>
           <div className="weekly-time-navigation">
-            <Button variant="outline" size="icon-sm" aria-label="Previous week" onClick={() => onSelectWeek(addDaysIsoDate(anchorDate, -7))}>
+            <Button variant="ghost" size="icon-sm" aria-label="Previous week" onClick={() => onSelectWeek(addDaysIsoDate(anchorDate, -7))}>
               <ChevronLeft />
             </Button>
-            <Button variant="outline" size="icon-sm" aria-label="Next week" onClick={() => onSelectWeek(addDaysIsoDate(anchorDate, 7))}>
+            <Button variant="ghost" size="icon-sm" aria-label="Next week" onClick={() => onSelectWeek(addDaysIsoDate(anchorDate, 7))}>
               <ChevronRight />
             </Button>
           </div>
-          <div>
-            <p className="weekly-time-kicker">Week overview</p>
-            <h2 className="weekly-time-title">{formatWeekRange(weekDates)}</h2>
-          </div>
+          <h2 className="weekly-time-title">{formatWeekRange(weekDates)}</h2>
         </div>
         <div className="weekly-time-actions">
           <ToggleGroup value={[preferences.weeklyTimeViewStyle]} onValueChange={changeStyle} variant="outline" size="sm" aria-label="Week layout">
             <ToggleGroupItem value="ledger">Ledger</ToggleGroupItem>
             <ToggleGroupItem value="lanes">Lanes</ToggleGroupItem>
           </ToggleGroup>
-          <CapacityValue capacityMs={projection.capacityMs} totalMs={projection.totalMs} label="Week capacity" overCapacity={projection.overCapacity} showWarning={preferences.warnWhenOverCapacity} />
-          <Button variant="outline" size="sm" onClick={onReturnToDay}>
-            <CalendarDays data-icon="inline-start" /> Day
-          </Button>
+          <CapacityValue microLabel="Week total" capacityMs={projection.capacityMs} totalMs={projection.totalMs} label="Week capacity" overCapacity={projection.overCapacity} showWarning={preferences.warnWhenOverCapacity} />
           <Button size="sm" onClick={onSubmit}>Submit</Button>
         </div>
       </header>
 
       {preferences.weeklyTimeViewStyle === "ledger" ? (
         <div className="weekly-ledger-stack">
-          <Card className="weekly-ledger-card py-0">
+          <div className="weekly-ledger-table-scroll">
             <Table>
               <TableHeader>
                 <TableRow>
                   <TableHead className="weekly-ledger-task-column">Project / task</TableHead>
-                  {projection.days.map((day) => (
-                    <TableHead key={day.localDate} className="weekly-ledger-day-column">
+                  {projection.days.map((day, index) => (
+                    <TableHead
+                      key={day.localDate}
+                      className={cn(
+                        "weekly-ledger-day-column",
+                        index >= 5 && "is-weekend",
+                        day.localDate === today && "is-today",
+                      )}
+                    >
                       <div
                         ref={(node) => registerDayTarget(day.localDate, node)}
                         className={cn(
@@ -389,7 +411,8 @@ export function WeeklyTimeView({
                           dragState?.targetDate === day.localDate && "is-drop-target",
                         )}
                       >
-                        <span>{formatDay(day.localDate, { weekday: "short" })}</span>
+                        <span className="weekly-ledger-weekday">{formatDay(day.localDate, { weekday: "short" })}</span>
+                        <span className="weekly-ledger-day-number">{formatDay(day.localDate, { day: "numeric" })}</span>
                         <CapacityValue capacityMs={day.capacityMs} totalMs={day.totalMs} label={formatDay(day.localDate, { weekday: "long" })} overCapacity={day.overCapacity} showWarning={preferences.warnWhenOverCapacity} />
                       </div>
                     </TableHead>
@@ -398,48 +421,82 @@ export function WeeklyTimeView({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {projection.ledgerRows.map((row) => (
-                  <TableRow key={row.rowKey}>
-                    <TableCell className="weekly-ledger-task-cell">
-                      <span>{row.projectName}</span>
-                      <strong>{row.taskName}</strong>
-                    </TableCell>
-                    {row.dayTotalsMs.map((durationMs, index) => (
-                      <TableCell key={weekDates[index]} className="weekly-ledger-time-cell">
-                        {durationMs > 0 ? (
-                          <button
-                            type="button"
-                            className={cn(
-                              "weekly-ledger-time-button",
-                              ledgerCell?.localDate === weekDates[index] &&
-                                ledgerCell?.rowKey === row.rowKey &&
-                                "is-selected",
-                            )}
-                            onClick={() =>
-                              setLedgerCell({
-                                entryIds: row.entryIds,
-                                localDate: weekDates[index]!,
-                                rowKey: row.rowKey,
-                                taskName: row.taskName,
-                              })
-                            }
-                          >
-                            {formatClockDuration(durationMs)}
-                          </button>
-                        ) : (
-                          <span className="text-muted-foreground/45">—</span>
-                        )}
+                {projection.ledgerRows.map((row) => {
+                  const project = row.projectId ? projectsById.get(row.projectId) : undefined;
+                  return (
+                    <TableRow key={row.rowKey}>
+                      <TableCell className="weekly-ledger-task-cell">
+                        <ProjectIcon
+                          icon={project?.icon}
+                          color={project?.color ?? "#3b82f6"}
+                          className="weekly-project-mark"
+                          fallback="dot"
+                        />
+                        <div>
+                          <span>{row.projectName}</span>
+                          <strong>{row.taskName}</strong>
+                        </div>
                       </TableCell>
-                    ))}
-                    <TableCell className="weekly-ledger-total-cell">{formatClockDuration(row.totalMs)}</TableCell>
-                  </TableRow>
-                ))}
+                      {row.dayTotalsMs.map((durationMs, index) => (
+                        <TableCell
+                          key={weekDates[index]}
+                          className={cn(
+                            "weekly-ledger-time-cell",
+                            index >= 5 && "is-weekend",
+                            weekDates[index] === today && "is-today",
+                          )}
+                        >
+                          {durationMs > 0 ? (
+                            <button
+                              type="button"
+                              className={cn(
+                                "weekly-ledger-time-button",
+                                ledgerCell?.localDate === weekDates[index] &&
+                                  ledgerCell?.rowKey === row.rowKey &&
+                                  "is-selected",
+                              )}
+                              onClick={() =>
+                                setLedgerCell({
+                                  entryIds: row.entryIds,
+                                  localDate: weekDates[index]!,
+                                  rowKey: row.rowKey,
+                                  taskName: row.taskName,
+                                })
+                              }
+                            >
+                              {formatClockDuration(durationMs)}
+                            </button>
+                          ) : (
+                            <span className="text-muted-foreground/45">—</span>
+                          )}
+                        </TableCell>
+                      ))}
+                      <TableCell className="weekly-ledger-total-cell">{formatClockDuration(row.totalMs)}</TableCell>
+                    </TableRow>
+                  );
+                })}
               </TableBody>
+              <TableFooter>
+                <TableRow className="weekly-ledger-footer-row">
+                  <TableCell className="weekly-ledger-task-cell">Daily totals</TableCell>
+                  {projection.days.map((day, index) => (
+                    <TableCell
+                      key={day.localDate}
+                      className={cn("weekly-ledger-time-cell", index >= 5 && "is-weekend")}
+                    >
+                      {formatClockDuration(day.totalMs)}
+                    </TableCell>
+                  ))}
+                  <TableCell className="weekly-ledger-total-cell">
+                    {formatClockDuration(projection.totalMs)}
+                  </TableCell>
+                </TableRow>
+              </TableFooter>
             </Table>
-          </Card>
+          </div>
 
           {ledgerCell ? (
-            <Card className="weekly-ledger-tray" size="sm">
+            <div className="weekly-ledger-tray">
               <header className="weekly-ledger-tray-header">
                 <div>
                   <span>{formatDay(ledgerCell.localDate, { weekday: "long", month: "short", day: "numeric" })}</span>
@@ -484,22 +541,25 @@ export function WeeklyTimeView({
                   );
                 })}
               </div>
-            </Card>
+            </div>
           ) : null}
         </div>
       ) : (
         <div className="weekly-lanes-grid">
-          {projection.days.map((day) => {
+          {projection.days.map((day, index) => {
             const visibleEntries = currentTimer?.entryId
               ? day.entries.filter((entry) => entry._id !== currentTimer.entryId)
               : day.entries;
             const runningHere = runningTime?.localDate === day.localDate;
+            const isToday = day.localDate === today;
             return (
               <section
                 key={day.localDate}
                 ref={(node) => registerDayTarget(day.localDate, node)}
                 className={cn(
                   "weekly-lane",
+                  index >= 5 && "is-weekend",
+                  isToday && "is-today",
                   dragState?.targetDate === day.localDate && "is-drop-target",
                 )}
                 aria-label={formatDay(day.localDate, { weekday: "long", month: "long", day: "numeric" })}
@@ -507,7 +567,7 @@ export function WeeklyTimeView({
                 <header className="weekly-lane-header">
                   <div>
                     <span className="weekly-lane-weekday">{formatDay(day.localDate, { weekday: "short" })}</span>
-                    <span className="weekly-lane-date">{formatDay(day.localDate, { month: "short", day: "numeric" })}</span>
+                    <span className={cn("weekly-lane-date", isToday && "is-today")}>{formatDay(day.localDate, { month: "short", day: "numeric" })}</span>
                   </div>
                   <CapacityValue capacityMs={day.capacityMs} totalMs={day.totalMs} label={formatDay(day.localDate, { weekday: "long" })} overCapacity={day.overCapacity} showWarning={preferences.warnWhenOverCapacity} />
                 </header>
@@ -528,6 +588,7 @@ export function WeeklyTimeView({
                         role="button"
                         aria-label={`${summary.projectName}, ${summary.taskName}, ${formatClockDuration(entry.durationMs)}`}
                         aria-pressed={selectedEntryId === entry._id}
+                        style={{ "--project-color": summary.projectColor } as CSSProperties}
                         className={cn(
                           "weekly-entry-card",
                           selectedEntryId === entry._id && "is-selected",
@@ -555,7 +616,11 @@ export function WeeklyTimeView({
                         </div>
                         <span className="weekly-entry-card-task">{summary.taskName}</span>
                         {summary.note ? <span className="weekly-entry-card-note">{summary.note}</span> : null}
-                        {entry.submittedAt ? <Badge variant="outline">Submitted</Badge> : null}
+                        <footer className="weekly-entry-card-footer">
+                          <span className="weekly-entry-card-status">
+                            {entry.submittedAt ? "submitted" : "saved"}
+                          </span>
+                        </footer>
                       </Card>
                     );
                   })}

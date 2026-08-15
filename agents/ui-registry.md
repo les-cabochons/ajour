@@ -112,12 +112,22 @@ Day remains the default, timer-first time surface. A dedicated Week overview
 action is available at desktop widths of 1024px and above; narrower layouts
 fall back to Day. Week offers Ledger and Lanes through the shared toggle group,
 with the preference persisted locally. Ledger aggregates project/task time by
-day and reveals every contributing entry in a tray. Lanes use seven equal-height
-headers. Both styles share thresholded pointer dragging, explicit weekday drop
-targets, Escape/pointer-cancel cleanup, and keyboard/double-click editing.
-Running entries stay locked. Normal headers show logged totals only; capacity
-target and utilization live in hover cards, with an optional compact
+day, shows project markers and daily totals, and reveals every contributing
+entry in a tray attached to the same continuous ruled surface. Lanes use seven
+equal-height headers, restrained weekend/today cues, and a project-color rail
+on each entry card. Both styles share thresholded pointer dragging, explicit
+weekday drop targets, Escape/pointer-cancel cleanup, and keyboard/double-click
+editing. Running entries stay locked. Normal headers show logged totals only;
+capacity target and utilization live in hover cards, with an optional compact
 over-target warning.
+
+The Week toolbar, table or lanes, totals, and detail tray form one full-width
+desktop workspace rather than stacked cards. Return to Day is the leading
+left-arrow action. The shared Day-inline/Week-dialog editor places an icon-only
+entry-options trigger at the form's upper right. Duplicate to and Move to swap
+that trigger's anchored Popover from actions to a Calendar with explicit
+confirmation, avoiding a second modal or backdrop while preserving the Day
+inline-editor outside-click boundary.
 
 Capacity targets and the two independent warning switches live in General
 Settings. Targets are Monday-first, default to eight hours on weekdays and zero

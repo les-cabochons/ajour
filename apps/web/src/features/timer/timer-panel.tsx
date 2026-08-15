@@ -1090,7 +1090,18 @@ export function TimerPanel({
                             ref={expandedEntryEditorRef}
                             className="entry-edit-dropdown"
                           >
-                            <div>
+                            <div className="entry-edit-dropdown-content">
+                              <div className="entry-edit-dropdown-actions">
+                                <EntryActionsMenu
+                                  currentDate={expandedEntry.localDate}
+                                  disabled={Boolean(expandedDurationError)}
+                                  onDuplicate={() =>
+                                    duplicateExpandedEntry(expandedEntry.localDate)
+                                  }
+                                  onDuplicateTo={duplicateExpandedEntry}
+                                  onMoveTo={moveExpandedEntry}
+                                />
+                              </div>
                               <TimeEntryFields
                                 idPrefix={`day-entry-${expandedEntry._id}`}
                                 className="entry-edit-dropdown-grid"
@@ -1110,17 +1121,6 @@ export function TimerPanel({
                                   }
                                 }}
                               />
-                              <div className="col-span-full flex justify-end">
-                                <EntryActionsMenu
-                                  currentDate={expandedEntry.localDate}
-                                  disabled={Boolean(expandedDurationError)}
-                                  onDuplicate={() =>
-                                    duplicateExpandedEntry(expandedEntry.localDate)
-                                  }
-                                  onDuplicateTo={duplicateExpandedEntry}
-                                  onMoveTo={moveExpandedEntry}
-                                />
-                              </div>
                             </div>
                           </div>
                         </td>
