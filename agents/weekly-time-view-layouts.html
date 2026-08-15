@@ -1,0 +1,602 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23191918'/%3E%3Cpath d='M9 8v16M23 8v16M9 16h14' stroke='white' stroke-width='3'/%3E%3C/svg%3E" />
+  <title>HarDay — Weekly time view layout study</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f4f0;
+      --paper: #fff;
+      --surface: #f9f9f7;
+      --surface-2: #f0f0ed;
+      --ink: #191918;
+      --muted: #686864;
+      --faint: #94948e;
+      --line: #deded8;
+      --line-strong: #c3c3bc;
+      --accent: #1d4ed8;
+      --accent-soft: #e7edff;
+      --success: #157347;
+      --success-soft: #e6f4ec;
+      --weekend: #f6f4ef;
+      --danger: #b42318;
+      --shadow: 0 22px 70px rgba(37, 36, 32, 0.11);
+      --sans: "Raleway Variable", "Avenir Next", "Trebuchet MS", sans-serif;
+      --serif: "Noto Serif Variable", "Iowan Old Style", "Palatino Linotype", serif;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+
+    body.dark {
+      color-scheme: dark;
+      --bg: #111210;
+      --paper: #191a18;
+      --surface: #20211f;
+      --surface-2: #292a27;
+      --ink: #f5f5f1;
+      --muted: #b5b5ad;
+      --faint: #85857e;
+      --line: #343630;
+      --line-strong: #4c4e47;
+      --accent: #8eabff;
+      --accent-soft: #27355d;
+      --success: #76d49c;
+      --success-soft: #183729;
+      --weekend: #1d1e1b;
+      --danger: #ff8c82;
+      --shadow: 0 22px 70px rgba(0, 0, 0, 0.34);
+    }
+
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body {
+      margin: 0;
+      min-width: 320px;
+      background:
+        linear-gradient(90deg, transparent 0 49.9%, color-mix(in srgb, var(--line) 26%, transparent) 50%, transparent 50.1%),
+        var(--bg);
+      color: var(--ink);
+      font-family: var(--sans);
+      font-size: 14px;
+      line-height: 1.45;
+    }
+
+    button { font: inherit; }
+    button:focus-visible { outline: 3px solid color-mix(in srgb, var(--accent) 38%, transparent); outline-offset: 2px; }
+
+    .document-header {
+      width: min(1360px, calc(100% - 40px));
+      margin: 0 auto;
+      padding: 56px 0 34px;
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 32px;
+      align-items: end;
+    }
+    .eyebrow {
+      margin: 0 0 10px;
+      color: var(--muted);
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .13em;
+      text-transform: uppercase;
+    }
+    h1, h2, h3, p { margin-top: 0; }
+    h1 {
+      max-width: 820px;
+      margin-bottom: 12px;
+      font-family: var(--serif);
+      font-size: clamp(38px, 6vw, 76px);
+      font-weight: 540;
+      letter-spacing: -.055em;
+      line-height: .98;
+    }
+    .lede { max-width: 720px; margin-bottom: 0; color: var(--muted); font-size: 16px; }
+    .header-actions { display: flex; gap: 8px; align-items: center; }
+    .doc-button, .concept-button, .mock-button, .icon-button {
+      border: 1px solid var(--line);
+      border-radius: 5px;
+      background: var(--paper);
+      color: var(--ink);
+      cursor: pointer;
+      transition: background 120ms ease, border-color 120ms ease, color 120ms ease;
+    }
+    .doc-button { min-height: 36px; padding: 0 12px; font-size: 12px; font-weight: 700; }
+    .doc-button:hover, .mock-button:hover, .icon-button:hover { background: var(--surface-2); border-color: var(--line-strong); }
+
+    .study-shell {
+      width: min(1360px, calc(100% - 40px));
+      margin: 0 auto 64px;
+      border: 1px solid var(--line-strong);
+      background: var(--paper);
+      box-shadow: var(--shadow);
+    }
+    .study-toolbar {
+      display: grid;
+      grid-template-columns: 250px minmax(0, 1fr);
+      border-bottom: 1px solid var(--line);
+    }
+    .study-mark {
+      padding: 17px 20px;
+      border-right: 1px solid var(--line);
+      font-family: var(--mono);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: .09em;
+      text-transform: uppercase;
+    }
+    .concept-switcher { display: grid; grid-template-columns: repeat(2, 1fr); }
+    .concept-button {
+      position: relative;
+      min-height: 62px;
+      padding: 10px 18px;
+      border: 0;
+      border-right: 1px solid var(--line);
+      border-radius: 0;
+      background: transparent;
+      text-align: left;
+    }
+    .concept-button:last-child { border-right: 0; }
+    .concept-button::after { content: ""; position: absolute; right: 18px; bottom: 0; left: 18px; height: 2px; background: transparent; }
+    .concept-button[aria-selected="true"] { background: var(--surface); }
+    .concept-button[aria-selected="true"]::after { background: var(--ink); }
+    .concept-index { display: block; color: var(--faint); font-family: var(--mono); font-size: 10px; }
+    .concept-name { display: block; margin-top: 2px; font-size: 13px; font-weight: 750; }
+
+    .concept-panel { display: none; }
+    .concept-panel.is-active { display: block; animation: reveal 260ms ease both; }
+    @keyframes reveal { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+
+    .concept-intro {
+      display: grid;
+      grid-template-columns: 250px minmax(0, 1fr);
+      min-height: 150px;
+      border-bottom: 1px solid var(--line);
+    }
+    .concept-label { padding: 24px 20px; border-right: 1px solid var(--line); }
+    .concept-label strong { display: block; margin-bottom: 8px; font-family: var(--serif); font-size: 23px; font-weight: 570; letter-spacing: -.025em; }
+    .concept-label span { color: var(--muted); font-size: 12px; }
+    .concept-copy { padding: 24px 28px; display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 34px; align-items: start; }
+    .concept-copy > p { max-width: 700px; margin: 0; color: var(--muted); font-size: 14px; }
+    .fit-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 7px; }
+    .fit-list li { display: flex; justify-content: space-between; gap: 18px; padding-bottom: 6px; border-bottom: 1px dotted var(--line); color: var(--muted); font-size: 11px; }
+    .fit-list b { color: var(--ink); font-family: var(--mono); font-size: 10px; text-transform: uppercase; }
+
+    .mock-stage { padding: 30px; overflow: hidden; background: var(--surface); }
+    .app-frame { min-width: 940px; border: 1px solid var(--line-strong); border-radius: 8px; overflow: hidden; background: var(--paper); box-shadow: 0 12px 30px rgba(25, 25, 23, .08); }
+    .window-bar { height: 38px; display: grid; grid-template-columns: 180px 1fr 180px; align-items: center; padding: 0 12px; border-bottom: 1px solid var(--line); background: color-mix(in srgb, var(--paper) 92%, transparent); }
+    .window-dots { display: flex; gap: 6px; }
+    .window-dots i { width: 8px; height: 8px; border: 1px solid var(--line-strong); border-radius: 50%; background: var(--surface-2); }
+    .window-title { text-align: center; color: var(--muted); font-family: var(--serif); font-size: 12px; }
+    .window-status { justify-self: end; color: var(--success); font-size: 10px; font-weight: 700; }
+    .app-body { display: grid; grid-template-columns: 176px minmax(0, 1fr); min-height: 610px; }
+    .side-nav { padding: 18px 10px; border-right: 1px solid var(--line); background: var(--surface); }
+    .brand { padding: 0 10px 18px; font-family: var(--serif); font-size: 18px; font-weight: 650; }
+    .nav-item { display: flex; align-items: center; gap: 9px; height: 34px; padding: 0 10px; border-radius: 4px; color: var(--muted); font-size: 12px; font-weight: 650; }
+    .nav-item.active { background: var(--surface-2); color: var(--ink); box-shadow: inset 2px 0 0 var(--ink); }
+    .nav-icon { width: 15px; text-align: center; color: var(--faint); font-family: var(--mono); }
+    .main-workspace { min-width: 0; }
+    .week-toolbar { min-height: 78px; display: grid; grid-template-columns: minmax(280px, 1fr) auto auto auto; align-items: center; gap: 16px; padding: 13px 18px; border-bottom: 1px solid var(--line); }
+    .week-title-line { display: flex; align-items: center; gap: 12px; }
+    .week-title { margin: 0; font-family: var(--serif); font-size: 22px; font-weight: 590; letter-spacing: -.025em; }
+    .week-nav { display: flex; gap: 4px; }
+    .icon-button { width: 28px; height: 28px; padding: 0; }
+    .return-day { min-height: 28px; padding: 0 9px; border: 0; border-right: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer; font-size: 10px; font-weight: 750; }
+    .return-day:hover { color: var(--ink); }
+    .view-controls { display: flex; justify-items: end; }
+    .segmented { display: inline-flex; padding: 2px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); }
+    .segmented button { min-height: 24px; padding: 0 8px; border: 0; border-radius: 3px; background: transparent; color: var(--muted); cursor: pointer; font-size: 9px; font-weight: 750; }
+    .segmented button.active { background: var(--paper); color: var(--ink); box-shadow: 0 1px 2px rgba(20,20,18,.08); }
+    .segmented button:disabled { opacity: .45; cursor: not-allowed; }
+    .total-block { position: relative; min-width: 88px; padding-left: 16px; border-left: 1px solid var(--line); text-align: right; }
+    .total-label { display: block; color: var(--faint); font-size: 9px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
+    .total-value { display: block; width: 100%; padding: 0; border: 0; background: transparent; color: var(--ink); cursor: help; font-family: var(--mono); font-size: 18px; font-weight: 750; letter-spacing: -.04em; text-align: right; }
+    .capacity-popover { position: absolute; z-index: 8; top: calc(100% + 9px); right: 0; width: 190px; padding: 10px 12px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--paper); box-shadow: 0 12px 26px rgba(20,20,18,.16); color: var(--muted); font-size: 10px; text-align: left; opacity: 0; transform: translateY(-3px); visibility: hidden; transition: opacity 120ms ease, transform 120ms ease; }
+    .capacity-popover strong { display: flex; justify-content: space-between; margin-bottom: 5px; color: var(--ink); font-family: var(--mono); font-size: 11px; }
+    .total-block:hover .capacity-popover, .total-block:focus-within .capacity-popover { opacity: 1; transform: none; visibility: visible; }
+    .mock-button { min-height: 30px; padding: 0 11px; font-size: 11px; font-weight: 750; }
+    .mock-button.primary { border-color: var(--ink); background: var(--ink); color: var(--paper); }
+    .mock-button.primary:hover { background: color-mix(in srgb, var(--ink) 86%, var(--paper)); }
+    .toolbar-actions { display: flex; gap: 7px; }
+
+    /* Concept 1: ledger */
+    .ledger-wrap { display: grid; grid-template-rows: auto 1fr; }
+    .ledger-table { width: 100%; table-layout: fixed; border-collapse: collapse; }
+    .ledger-table th, .ledger-table td { height: 54px; padding: 0; border-right: 1px solid var(--line); border-bottom: 1px solid var(--line); }
+    .ledger-table th:last-child, .ledger-table td:last-child { border-right: 0; }
+    .ledger-table thead th { height: 56px; background: var(--surface); color: var(--muted); font-size: 10px; font-weight: 750; }
+    .ledger-table .task-col { width: 220px; padding: 0 16px; text-align: left; }
+    .ledger-table .total-col { width: 72px; background: var(--surface); }
+    .ledger-table .weekend { background: var(--weekend); }
+    .day-head { display: flex; flex-direction: column; gap: 2px; }
+    .day-head span:first-child { letter-spacing: .08em; text-transform: uppercase; }
+    .day-head span:last-child { color: var(--ink); font-family: var(--mono); font-size: 14px; }
+    .day-head.today span:last-child { display: inline-grid; place-items: center; align-self: center; min-width: 24px; height: 24px; border-radius: 50%; background: var(--ink); color: var(--paper); }
+    .task-cell { display: flex; align-items: center; gap: 9px; padding: 0 16px; overflow: hidden; }
+    .project-mark { width: 9px; height: 9px; flex: 0 0 auto; border-radius: 2px; background: var(--project, #718096); }
+    .task-copy { min-width: 0; }
+    .task-copy strong, .task-copy span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .task-copy strong { font-size: 11px; }
+    .task-copy span { margin-top: 2px; color: var(--muted); font-size: 10px; }
+    .cell-button { width: 100%; height: 100%; border: 0; background: transparent; color: var(--muted); cursor: pointer; font-family: var(--mono); font-size: 11px; }
+    .cell-button:hover { background: var(--surface-2); color: var(--ink); }
+    .cell-button.has-time { color: var(--ink); font-weight: 650; }
+    .cell-button.selected { position: relative; background: var(--accent-soft); color: var(--accent); }
+    .cell-button.selected::after { content: ""; position: absolute; inset: 4px; border: 1px solid color-mix(in srgb, var(--accent) 40%, transparent); border-radius: 3px; pointer-events: none; }
+    .running-mark { display: inline-block; width: 5px; height: 5px; margin-right: 4px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 3px var(--success-soft); vertical-align: 1px; }
+    .row-total { text-align: center; font-family: var(--mono); font-size: 11px; font-weight: 700; }
+    .ledger-footer { display: grid; grid-template-columns: 220px repeat(7, 1fr) 72px; min-height: 48px; border-bottom: 1px solid var(--line); background: var(--surface); }
+    .ledger-footer > div { display: grid; place-items: center; border-right: 1px solid var(--line); font-family: var(--mono); font-size: 10px; font-weight: 700; }
+    .ledger-footer > div:first-child { place-items: center start; padding-left: 16px; font-family: var(--sans); }
+    .ledger-footer > div:last-child { border-right: 0; }
+    .detail-tray { display: grid; grid-template-columns: 220px minmax(0, 1fr); min-height: 178px; }
+    .detail-heading { padding: 19px 16px; border-right: 1px solid var(--line); background: var(--surface); }
+    .detail-kicker { display: block; color: var(--accent); font-family: var(--mono); font-size: 9px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
+    .detail-heading strong { display: block; margin-top: 5px; font-family: var(--serif); font-size: 19px; }
+    .detail-heading p { margin: 6px 0 14px; color: var(--muted); font-size: 10px; }
+    .entry-list { padding: 8px 14px; }
+    .entry-row { min-height: 48px; display: grid; grid-template-columns: 14px 10px minmax(120px, 180px) minmax(0, 1fr) 72px; gap: 9px; align-items: center; border-bottom: 1px solid var(--line); }
+    .entry-row:last-child { border-bottom: 0; }
+    .entry-project { font-size: 10px; font-weight: 750; }
+    .entry-note { overflow: hidden; color: var(--muted); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+    .entry-time { font-family: var(--mono); font-size: 11px; font-weight: 700; text-align: right; }
+    .drag-handle { color: var(--faint); cursor: grab; font-family: var(--mono); font-size: 10px; letter-spacing: -2px; }
+    .submitted { color: var(--success); font-size: 9px; }
+    .resubmit { color: var(--danger); font-size: 9px; font-weight: 750; }
+
+    /* Concept 2: lanes */
+    .lanes { display: grid; grid-template-columns: repeat(7, minmax(112px, 1fr)); min-height: 558px; }
+    .lane { min-width: 0; border-right: 1px solid var(--line); }
+    .lane:last-child { border-right: 0; }
+    .lane.weekend { background: var(--weekend); }
+    .lane-head { height: 70px; min-height: 70px; max-height: 70px; display: flex; align-items: center; justify-content: space-between; gap: 8px; overflow: hidden; padding: 13px 10px; border-bottom: 1px solid var(--line); }
+    .lane-day strong { display: block; font-family: var(--serif); font-size: 14px; }
+    .lane-day span { display: block; overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+    .lane-total { text-align: right; }
+    .lane-total strong { display: block; font-family: var(--mono); font-size: 12px; }
+    .capacity-warning { display: inline-grid; width: 16px; height: 16px; margin-top: 4px; place-items: center; border: 1px solid color-mix(in srgb, var(--danger) 42%, var(--line)); border-radius: 50%; color: var(--danger); cursor: help; font-family: var(--mono); font-size: 9px; font-weight: 800; }
+    .lane-body { padding: 9px; display: grid; gap: 8px; align-content: start; }
+    .entry-card { position: relative; padding: 10px 9px 9px; border: 1px solid var(--line); border-radius: 5px; background: var(--paper); cursor: pointer; }
+    .entry-card:hover { border-color: var(--line-strong); background: var(--surface); }
+    .entry-card::before { content: ""; position: absolute; top: -1px; bottom: -1px; left: -1px; width: 3px; border-radius: 5px 0 0 5px; background: var(--project, #718096); }
+    .entry-card::after { content: ""; position: absolute; top: 6px; right: 7px; width: 6px; height: 10px; background: radial-gradient(circle, var(--faint) 1px, transparent 1.2px) 0 0 / 3px 3px; cursor: grab; }
+    .entry-card strong { display: block; overflow: hidden; font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+    .entry-card p { min-height: 27px; margin: 5px 0 8px; overflow: hidden; color: var(--muted); font-size: 9px; line-height: 1.4; }
+    .entry-card footer { display: flex; justify-content: space-between; gap: 8px; color: var(--faint); font-size: 8px; }
+    .entry-card time { color: var(--ink); font-family: var(--mono); font-size: 10px; font-weight: 700; }
+    .entry-card .drag-handle { position: absolute; top: 5px; right: 7px; }
+    .lane-add { width: 100%; height: 30px; border: 1px dashed var(--line-strong); border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; font-size: 10px; }
+
+    .dialog-backdrop { position: fixed; z-index: 50; inset: 0; display: grid; place-items: center; padding: 20px; background: rgba(11, 12, 10, .62); backdrop-filter: blur(3px); }
+    .dialog-backdrop[hidden] { display: none; }
+    .warning-dialog { width: min(420px, 100%); padding: 22px; border: 1px solid var(--line-strong); border-radius: 8px; background: var(--paper); box-shadow: 0 28px 90px rgba(0,0,0,.32); }
+    .warning-dialog .warning-mark { display: grid; width: 30px; height: 30px; margin-bottom: 16px; place-items: center; border-radius: 50%; background: color-mix(in srgb, var(--danger) 12%, var(--paper)); color: var(--danger); font-weight: 800; }
+    .warning-dialog h2 { margin-bottom: 7px; font-family: var(--serif); font-size: 23px; }
+    .warning-dialog p { margin-bottom: 18px; color: var(--muted); font-size: 12px; }
+    .warning-dialog small { display: block; margin-bottom: 20px; color: var(--faint); font-size: 10px; }
+    .dialog-actions { display: flex; justify-content: flex-end; gap: 7px; }
+    .entry-dialog { width: min(570px, 100%); border: 1px solid var(--line-strong); border-radius: 8px; overflow: visible; background: var(--paper); box-shadow: 0 28px 90px rgba(0,0,0,.32); }
+    .entry-dialog-header { min-height: 62px; display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 13px 16px 13px 20px; border-bottom: 1px solid var(--line); }
+    .entry-dialog-title { margin: 0; font-family: var(--serif); font-size: 20px; }
+    .entry-dialog-date { display: block; margin-top: 2px; color: var(--muted); font-family: var(--mono); font-size: 9px; text-transform: uppercase; }
+    .dialog-close { width: 30px; height: 30px; border: 0; border-radius: 4px; background: transparent; color: var(--muted); cursor: pointer; font-size: 16px; }
+    .dialog-close:hover { background: var(--surface-2); color: var(--ink); }
+    .entry-dialog-form { display: grid; grid-template-columns: minmax(0, 1fr) 120px; gap: 14px; padding: 20px; }
+    .form-field { display: grid; gap: 5px; color: var(--muted); font-size: 10px; font-weight: 700; }
+    .form-field.full { grid-column: 1 / -1; }
+    .form-input, .form-select { width: 100%; min-height: 36px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 5px; background: var(--surface); color: var(--ink); font: inherit; text-align: left; }
+    textarea.form-input { min-height: 72px; resize: vertical; }
+    .form-hours { font-family: var(--mono); }
+    .entry-dialog-footer { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 13px 20px; border-top: 1px solid var(--line); background: var(--surface); }
+    .entry-action-shell { position: relative; }
+    .entry-action-menu { position: absolute; z-index: 3; bottom: calc(100% + 7px); left: 0; width: 174px; padding: 4px; border: 1px solid var(--line-strong); border-radius: 6px; background: var(--paper); box-shadow: 0 12px 28px rgba(20,20,18,.17); }
+    .entry-action-menu[hidden] { display: none; }
+    .entry-action-menu button { width: 100%; min-height: 31px; padding: 0 9px; border: 0; border-radius: 3px; background: transparent; color: var(--ink); cursor: pointer; font-size: 10px; text-align: left; }
+    .entry-action-menu button:hover, .entry-action-menu button:focus-visible { background: var(--surface-2); }
+    .entry-action-menu button + button { margin-top: 1px; }
+    .entry-action-menu span { float: right; color: var(--faint); }
+    .entry-dialog-primary { display: flex; gap: 7px; }
+    .entry-card:focus-visible, .entry-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+    .decision-strip { display: grid; grid-template-columns: 250px minmax(0, 1fr); border-top: 1px solid var(--line); }
+    .decision-title { padding: 24px 20px; border-right: 1px solid var(--line); background: var(--ink); color: var(--paper); }
+    .decision-title span { font-family: var(--mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
+    .decision-title strong { display: block; margin-top: 7px; font-family: var(--serif); font-size: 20px; }
+    .decision-content { padding: 24px 28px; }
+    .decision-content p { max-width: 850px; margin-bottom: 18px; color: var(--muted); }
+    .tradeoffs { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+    .tradeoff { padding-top: 10px; border-top: 2px solid var(--ink); }
+    .tradeoff b { display: block; margin-bottom: 5px; font-size: 11px; }
+    .tradeoff span { color: var(--muted); font-size: 10px; }
+
+    .document-footer { width: min(1360px, calc(100% - 40px)); margin: 0 auto 64px; display: flex; justify-content: space-between; gap: 24px; color: var(--muted); font-size: 11px; }
+    .document-footer a { color: var(--ink); font-weight: 700; }
+
+    @media (max-width: 980px) {
+      .document-header { grid-template-columns: 1fr; }
+      .header-actions { justify-self: start; }
+      .study-toolbar, .concept-intro, .decision-strip { grid-template-columns: 1fr; }
+      .study-mark, .concept-label, .decision-title { border-right: 0; border-bottom: 1px solid var(--line); }
+      .mock-stage { overflow-x: auto; padding: 20px; }
+      .concept-copy { grid-template-columns: 1fr; }
+      .fit-list { grid-template-columns: repeat(3, 1fr); }
+      .tradeoffs { grid-template-columns: 1fr; }
+    }
+
+    @media (max-width: 640px) {
+      .document-header, .study-shell, .document-footer { width: min(100% - 20px, 1360px); }
+      .document-header { padding-top: 30px; }
+      .concept-switcher { grid-template-columns: 1fr; }
+      .concept-button { border-right: 0; border-bottom: 1px solid var(--line); }
+      .concept-button::after { top: 10px; right: auto; bottom: 10px; left: 0; width: 2px; height: auto; }
+      .fit-list { grid-template-columns: 1fr; }
+      .document-footer { flex-direction: column; }
+    }
+
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { scroll-behavior: auto !important; animation: none !important; transition: none !important; }
+    }
+  </style>
+</head>
+<body>
+  <header class="document-header">
+    <div>
+      <p class="eyebrow">HarDay / feature study / 15 Aug 2026</p>
+      <h1>A week should read at a glance.</h1>
+      <p class="lede">Day remains the default timer workspace. Week is a deliberate secondary mode with two complementary tools: a ledger for allocation and lanes for entry context and cross-day organization.</p>
+    </div>
+    <div class="header-actions">
+      <button class="doc-button" id="theme-toggle" type="button" aria-pressed="false">Dark preview</button>
+      <button class="doc-button" type="button" onclick="document.querySelector('.decision-strip').scrollIntoView()">Product rules ↓</button>
+    </div>
+  </header>
+
+  <main class="study-shell">
+    <div class="study-toolbar">
+      <div class="study-mark">Layout alternatives</div>
+      <div class="concept-switcher" role="tablist" aria-label="Weekly time view concepts">
+        <button class="concept-button" role="tab" aria-selected="true" aria-controls="concept-ledger" id="tab-ledger" data-concept="ledger">
+          <span class="concept-index">01 / Allocation</span>
+          <span class="concept-name">Weekly ledger</span>
+        </button>
+        <button class="concept-button" role="tab" aria-selected="false" aria-controls="concept-lanes" id="tab-lanes" data-concept="lanes">
+          <span class="concept-index">02 / Spatial</span>
+          <span class="concept-name">Day lanes</span>
+        </button>
+      </div>
+    </div>
+
+    <section class="concept-panel is-active" id="concept-ledger" role="tabpanel" aria-labelledby="tab-ledger">
+      <div class="concept-intro">
+        <div class="concept-label"><strong>Weekly ledger</strong><span>Scan by task, then open one day for precise work.</span></div>
+        <div class="concept-copy">
+          <p>A task-by-day matrix makes allocation and missing time obvious. Selecting a cell opens its entries below; any stopped entry can move to another day, while the full Day view remains the fastest place for timer work.</p>
+          <ul class="fit-list">
+            <li><span>Weekly scan</span><b>Excellent</b></li>
+            <li><span>Detailed editing</span><b>Excellent</b></li>
+            <li><span>Capacity scan</span><b>Excellent</b></li>
+          </ul>
+        </div>
+      </div>
+      <div class="mock-stage">
+        <div class="app-frame">
+          <div class="window-bar"><div class="window-dots"><i></i><i></i><i></i></div><div class="window-title">HarDay — Time</div><div class="window-status">● Local</div></div>
+          <div class="app-body">
+            <nav class="side-nav" aria-label="Mock application navigation">
+              <div class="brand">HarDay</div>
+              <div class="nav-item active"><span class="nav-icon">◷</span>Time</div>
+              <div class="nav-item"><span class="nav-icon">☷</span>Backlog</div>
+              <div class="nav-item"><span class="nav-icon">□</span>Projects</div>
+              <div class="nav-item"><span class="nav-icon">⚙</span>Settings</div>
+            </nav>
+            <div class="main-workspace">
+              <header class="week-toolbar">
+                <div class="week-title-line"><button class="return-day" type="button">← Day</button><div class="week-nav"><button class="icon-button" aria-label="Previous week">‹</button><button class="icon-button" aria-label="Next week">›</button></div><h2 class="week-title">August 10–16</h2></div>
+                <div class="view-controls" aria-label="Mock view controls">
+                  <div class="segmented"><button class="active">Ledger</button><button>Lanes</button></div>
+                </div>
+                <div class="total-block"><span class="total-label">Week total</span><button class="total-value" type="button" aria-describedby="ledger-capacity-detail">34:00</button><span class="capacity-popover" id="ledger-capacity-detail" role="tooltip"><strong><span>Target</span><span>40:00</span></strong>85% used · 6:00 remaining</span></div>
+                <div class="toolbar-actions"><button class="mock-button primary submit-trigger" type="button">Submit</button></div>
+              </header>
+              <div class="ledger-wrap">
+                <table class="ledger-table" aria-label="Weekly task ledger mockup">
+                  <thead><tr>
+                    <th class="task-col">Project / task</th>
+                    <th><span class="day-head"><span>Mon</span><span>10</span></span></th>
+                    <th><span class="day-head"><span>Tue</span><span>11</span></span></th>
+                    <th><span class="day-head today"><span>Wed</span><span>12</span></span></th>
+                    <th><span class="day-head"><span>Thu</span><span>13</span></span></th>
+                    <th><span class="day-head"><span>Fri</span><span>14</span></span></th>
+                    <th class="weekend"><span class="day-head"><span>Sat</span><span>15</span></span></th>
+                    <th class="weekend"><span class="day-head"><span>Sun</span><span>16</span></span></th>
+                    <th class="total-col">Total</th>
+                  </tr></thead>
+                  <tbody>
+                    <tr><td><div class="task-cell"><i class="project-mark" style="--project:#2563eb"></i><div class="task-copy"><strong>HarDay</strong><span>Plugin host hardening</span></div></div></td><td><button class="cell-button has-time">2:00</button></td><td><button class="cell-button has-time">2:30</button></td><td><button class="cell-button has-time selected" data-day="Wednesday, Aug 12">1:15</button></td><td><button class="cell-button has-time">2:45</button></td><td><button class="cell-button has-time">1:00</button></td><td class="weekend"><button class="cell-button">—</button></td><td class="weekend"><button class="cell-button">—</button></td><td class="row-total">9:30</td></tr>
+                    <tr><td><div class="task-cell"><i class="project-mark" style="--project:#d97706"></i><div class="task-copy"><strong>Boreal Maintenance</strong><span>Release QA</span></div></div></td><td><button class="cell-button has-time">3:30</button></td><td><button class="cell-button has-time">2:00</button></td><td><button class="cell-button has-time" data-day="Wednesday, Aug 12">2:30</button></td><td><button class="cell-button has-time">1:30</button></td><td><button class="cell-button has-time">1:00</button></td><td class="weekend"><button class="cell-button">—</button></td><td class="weekend"><button class="cell-button">—</button></td><td class="row-total">10:30</td></tr>
+                    <tr><td><div class="task-cell"><i class="project-mark" style="--project:#059669"></i><div class="task-copy"><strong>Redwood Internal</strong><span>Runbook refresh</span></div></div></td><td><button class="cell-button has-time">1:00</button></td><td><button class="cell-button has-time">1:30</button></td><td><button class="cell-button has-time" data-day="Wednesday, Aug 12">1:00</button></td><td><button class="cell-button has-time">1:00</button></td><td><button class="cell-button has-time">0:30</button></td><td class="weekend"><button class="cell-button">—</button></td><td class="weekend"><button class="cell-button">—</button></td><td class="row-total">5:00</td></tr>
+                    <tr><td><div class="task-cell"><i class="project-mark" style="--project:#7c3aed"></i><div class="task-copy"><strong>Northstar Client</strong><span>Discovery research</span></div></div></td><td><button class="cell-button">—</button></td><td><button class="cell-button has-time">2:00</button></td><td><button class="cell-button has-time" data-day="Wednesday, Aug 12"><i class="running-mark"></i>2:00</button></td><td><button class="cell-button has-time">3:00</button></td><td><button class="cell-button has-time">1:00</button></td><td class="weekend"><button class="cell-button">—</button></td><td class="weekend"><button class="cell-button">—</button></td><td class="row-total">8:00</td></tr>
+                    <tr><td><div class="task-cell"><i class="project-mark" style="--project:#64748b"></i><div class="task-copy"><strong>Operations</strong><span>Administration</span></div></div></td><td><button class="cell-button has-time">1:00</button></td><td><button class="cell-button">—</button></td><td><button class="cell-button">—</button></td><td><button class="cell-button">—</button></td><td><button class="cell-button">—</button></td><td class="weekend"><button class="cell-button">—</button></td><td class="weekend"><button class="cell-button">—</button></td><td class="row-total">1:00</td></tr>
+                  </tbody>
+                </table>
+                <div class="ledger-footer"><div>Daily totals</div><div>7:30</div><div>8:00</div><div>6:45</div><div>8:15</div><div>3:30</div><div>—</div><div>—</div><div>34:00</div></div>
+                <div class="detail-tray">
+                  <aside class="detail-heading"><span class="detail-kicker">Selected day</span><strong id="selected-day-label">Wednesday, Aug 12</strong><p>4 entries · 6:45 total</p><button class="mock-button primary">+ New entry</button></aside>
+                  <div class="entry-list">
+                    <div class="entry-row"><span class="drag-handle" title="Drag to another day">⠿</span><i class="project-mark" style="--project:#2563eb"></i><span class="entry-project">HarDay</span><span class="entry-note">Plugin package validation and worker lifecycle</span><span class="entry-time">1:15</span></div>
+                    <div class="entry-row"><span class="drag-handle" title="Move; the entry will need resubmission">⠿</span><i class="project-mark" style="--project:#d97706"></i><span class="entry-project">Boreal Maintenance</span><span class="entry-note">Windows release smoke test <small class="submitted">· submitted</small></span><span class="entry-time">2:30</span></div>
+                    <div class="entry-row"><span class="drag-handle" title="Drag to another day">⠿</span><i class="project-mark" style="--project:#059669"></i><span class="entry-project">Redwood Internal</span><span class="entry-note">Clarify recovery steps in the runbook</span><span class="entry-time">1:00</span></div>
+                    <div class="entry-row"><span class="drag-handle" title="Running entries are locked">—</span><i class="project-mark" style="--project:#7c3aed"></i><span class="entry-project">Northstar Client</span><span class="entry-note"><i class="running-mark"></i>Discovery notes — timer running</span><span class="entry-time">2:00</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="concept-panel" id="concept-lanes" role="tabpanel" aria-labelledby="tab-lanes" hidden>
+      <div class="concept-intro">
+        <div class="concept-label"><strong>Day lanes</strong><span>Make every day tangible and preserve entry-card context.</span></div>
+        <div class="concept-copy"><p>Seven equal columns keep entries grouped in their natural daily containers. Double-click or press Enter on a card to open the same editor used in Day, hosted here in a modal. Any stopped entry can move between dates.</p><ul class="fit-list"><li><span>Weekly scan</span><b>Good</b></li><li><span>Entry context</span><b>Excellent</b></li><li><span>Cross-day drag</span><b>Excellent</b></li></ul></div>
+      </div>
+      <div class="mock-stage">
+        <div class="app-frame">
+          <div class="window-bar"><div class="window-dots"><i></i><i></i><i></i></div><div class="window-title">HarDay — Time</div><div class="window-status">● Local</div></div>
+          <div class="app-body"><nav class="side-nav"><div class="brand">HarDay</div><div class="nav-item active"><span class="nav-icon">◷</span>Time</div><div class="nav-item"><span class="nav-icon">☷</span>Backlog</div><div class="nav-item"><span class="nav-icon">□</span>Projects</div><div class="nav-item"><span class="nav-icon">⚙</span>Settings</div></nav>
+            <div class="main-workspace"><header class="week-toolbar"><div class="week-title-line"><button class="return-day" type="button">← Day</button><div class="week-nav"><button class="icon-button" aria-label="Previous week">‹</button><button class="icon-button" aria-label="Next week">›</button></div><h2 class="week-title">August 10–16</h2></div><div class="view-controls"><div class="segmented"><button>Ledger</button><button class="active">Lanes</button></div></div><div class="total-block"><span class="total-label">Week total</span><button class="total-value" type="button" aria-describedby="lanes-capacity-detail">34:00</button><span class="capacity-popover" id="lanes-capacity-detail" role="tooltip"><strong><span>Target</span><span>40:00</span></strong>85% used · 6:00 remaining</span></div><div class="toolbar-actions"><button class="mock-button primary submit-trigger" type="button">Submit</button></div></header>
+              <div class="lanes">
+                <section class="lane"><header class="lane-head"><div class="lane-day"><strong>Mon</strong><span>Aug 10</span></div><div class="lane-total"><strong>7:30</strong></div></header><div class="lane-body"><article class="entry-card" style="--project:#2563eb"><strong>HarDay</strong><p>Plugin host hardening</p><footer><span>saved</span><time>2:00</time></footer></article><article class="entry-card" style="--project:#d97706"><strong>Boreal</strong><p>Release QA and packaging</p><footer><span>submitted</span><time>3:30</time></footer></article><article class="entry-card" style="--project:#64748b"><strong>Operations</strong><p>Administration</p><footer><span>saved</span><time>2:00</time></footer></article><button class="lane-add">+ Add</button></div></section>
+                <section class="lane"><header class="lane-head"><div class="lane-day"><strong>Tue</strong><span>Aug 11</span></div><div class="lane-total"><strong>8:00</strong></div></header><div class="lane-body"><article class="entry-card" style="--project:#2563eb"><strong>HarDay</strong><p>Worker lifecycle</p><footer><span>saved</span><time>2:30</time></footer></article><article class="entry-card" style="--project:#d97706"><strong>Boreal</strong><p>Regression pass</p><footer><span>saved</span><time>2:00</time></footer></article><article class="entry-card" style="--project:#059669"><strong>Redwood</strong><p>Runbook refresh</p><footer><span>saved</span><time>1:30</time></footer></article><article class="entry-card" style="--project:#7c3aed"><strong>Northstar</strong><p>Discovery</p><footer><span>saved</span><time>2:00</time></footer></article><button class="lane-add">+ Add</button></div></section>
+                <section class="lane"><header class="lane-head"><div class="lane-day"><strong>Wed</strong><span>Aug 12 · Today</span></div><div class="lane-total"><strong>6:45</strong></div></header><div class="lane-body"><article class="entry-card" style="--project:#2563eb"><strong>HarDay</strong><p>Package validation</p><footer><span>saved</span><time>1:15</time></footer></article><article class="entry-card" style="--project:#d97706"><strong>Boreal</strong><p>Windows smoke test</p><footer><span>submitted</span><time>2:30</time></footer></article><article class="entry-card" style="--project:#059669"><strong>Redwood</strong><p>Recovery notes</p><footer><span>saved</span><time>1:00</time></footer></article><article class="entry-card" style="--project:#7c3aed"><strong>Northstar</strong><p>● Timer running</p><footer><span>active</span><time>2:00</time></footer></article><button class="lane-add">+ Add</button></div></section>
+                <section class="lane"><header class="lane-head"><div class="lane-day"><strong>Thu</strong><span>Aug 13</span></div><div class="lane-total"><strong>8:15</strong><span class="capacity-warning" title="15 minutes over the 8 hour target" aria-label="15 minutes over target">!</span></div></header><div class="lane-body"><article class="entry-card" style="--project:#2563eb"><strong>HarDay</strong><p>Host protocol tests</p><footer><span>saved</span><time>2:45</time></footer></article><article class="entry-card" style="--project:#d97706"><strong>Boreal</strong><p>Release notes</p><footer><span class="resubmit">resubmit</span><time>1:30</time></footer></article><article class="entry-card" style="--project:#059669"><strong>Redwood</strong><p>Runbook review</p><footer><span>saved</span><time>1:00</time></footer></article><article class="entry-card" style="--project:#7c3aed"><strong>Northstar</strong><p>Research synthesis</p><footer><span>saved</span><time>3:00</time></footer></article><button class="lane-add">+ Add</button></div></section>
+                <section class="lane"><header class="lane-head"><div class="lane-day"><strong>Fri</strong><span>Aug 14</span></div><div class="lane-total"><strong>3:30</strong></div></header><div class="lane-body"><article class="entry-card" style="--project:#2563eb"><strong>HarDay</strong><p>Weekly wrap-up</p><footer><span>saved</span><time>1:00</time></footer></article><article class="entry-card" style="--project:#d97706"><strong>Boreal</strong><p>QA handoff</p><footer><span>saved</span><time>1:00</time></footer></article><article class="entry-card" style="--project:#059669"><strong>Redwood</strong><p>Review comments</p><footer><span>saved</span><time>0:30</time></footer></article><article class="entry-card" style="--project:#7c3aed"><strong>Northstar</strong><p>Follow-ups</p><footer><span>saved</span><time>1:00</time></footer></article><button class="lane-add">+ Add</button></div></section>
+                <section class="lane weekend"><header class="lane-head"><div class="lane-day"><strong>Sat</strong><span>Aug 15</span></div><div class="lane-total"><strong>—</strong></div></header><div class="lane-body"><button class="lane-add">+ Add</button></div></section>
+                <section class="lane weekend"><header class="lane-head"><div class="lane-day"><strong>Sun</strong><span>Aug 16</span></div><div class="lane-total"><strong>—</strong></div></header><div class="lane-body"><button class="lane-add">+ Add</button></div></section>
+              </div>
+            </div></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="decision-strip">
+      <div class="decision-title"><span>Product rules</span><strong>Day first. Two useful Week tools.</strong></div>
+      <div class="decision-content">
+        <p>The Time route always opens in Day because timer work is HarDay’s core loop. A dedicated Week action opens the secondary desktop workspace; a clear “Day” return action replaces the competing Day/Week segmented control. Capacity targets and both warning preferences live in Settings. Below 1024px, Week controls disappear and the route falls back to Day.</p>
+        <div class="tradeoffs"><div class="tradeoff"><b>One entry editor</b><span>Day renders it inline; Week opens it in a modal. Duplicate, Duplicate to…, and Move to… live in the same action menu everywhere.</span></div><div class="tradeoff"><b>Submitted work can change</b><span>Editing or moving it clears the current submission state and marks the entry for resubmission. Copies are always unsubmitted.</span></div><div class="tradeoff"><b>Settings own warnings</b><span>Over-target and under-target-on-submit warnings can be disabled independently.</span></div></div>
+      </div>
+    </section>
+  </main>
+
+  <div class="dialog-backdrop" id="capacity-warning-dialog" hidden>
+    <section class="warning-dialog" role="alertdialog" aria-modal="true" aria-labelledby="capacity-warning-title" aria-describedby="capacity-warning-copy">
+      <span class="warning-mark" aria-hidden="true">!</span>
+      <h2 id="capacity-warning-title">This week is under target</h2>
+      <p id="capacity-warning-copy">You have logged 34:00 against a 40:00 weekly target. Submit the selected entries anyway?</p>
+      <small>This warning can be turned off in Settings → General.</small>
+      <div class="dialog-actions"><button class="mock-button" id="cancel-submit" type="button">Cancel</button><button class="mock-button primary" id="confirm-submit" type="button">Submit anyway</button></div>
+    </section>
+  </div>
+
+  <div class="dialog-backdrop" id="entry-editor-dialog" hidden>
+    <section class="entry-dialog" role="dialog" aria-modal="true" aria-labelledby="entry-editor-title">
+      <header class="entry-dialog-header">
+        <div><h2 class="entry-dialog-title" id="entry-editor-title">Edit time entry</h2><span class="entry-dialog-date">Monday · August 10</span></div>
+        <button class="dialog-close" id="close-entry-editor" type="button" aria-label="Close entry editor">×</button>
+      </header>
+      <div class="entry-dialog-form">
+        <label class="form-field full">Project / task<button class="form-select" type="button">HarDay / Plugin host hardening</button></label>
+        <label class="form-field">Note<textarea class="form-input" rows="2">Plugin host hardening</textarea></label>
+        <label class="form-field">Hours<input class="form-input form-hours" type="text" value="02:00" /></label>
+      </div>
+      <footer class="entry-dialog-footer">
+        <div class="entry-action-shell">
+          <button class="mock-button" id="entry-actions-trigger" type="button" aria-haspopup="menu" aria-expanded="false">Entry actions ▾</button>
+          <div class="entry-action-menu" id="entry-action-menu" role="menu" hidden>
+            <button type="button" role="menuitem">Duplicate</button>
+            <button type="button" role="menuitem">Duplicate to… <span>›</span></button>
+            <button type="button" role="menuitem">Move to… <span>›</span></button>
+          </div>
+        </div>
+        <div class="entry-dialog-primary"><button class="mock-button" type="button">Delete</button><button class="mock-button primary" id="save-entry-editor" type="button">Save</button></div>
+      </footer>
+    </section>
+  </div>
+
+  <footer class="document-footer"><span>Static planning artifact — sample data only; no application state is read.</span><span>Next: <a href="weekly-time-view-plan.html">read the implementation plan →</a></span></footer>
+
+  <script>
+    const conceptButtons = [...document.querySelectorAll('[data-concept]')];
+    const conceptPanels = [...document.querySelectorAll('.concept-panel')];
+    conceptButtons.forEach((button) => {
+      button.addEventListener('click', () => {
+        const selected = button.dataset.concept;
+        conceptButtons.forEach((candidate) => candidate.setAttribute('aria-selected', String(candidate === button)));
+        conceptPanels.forEach((panel) => {
+          const active = panel.id === `concept-${selected}`;
+          panel.classList.toggle('is-active', active);
+          panel.hidden = !active;
+        });
+      });
+    });
+
+    const themeToggle = document.querySelector('#theme-toggle');
+    themeToggle.addEventListener('click', () => {
+      const dark = document.body.classList.toggle('dark');
+      themeToggle.setAttribute('aria-pressed', String(dark));
+      themeToggle.textContent = dark ? 'Light preview' : 'Dark preview';
+    });
+
+    document.querySelectorAll('.ledger-table .cell-button').forEach((cell) => {
+      cell.addEventListener('click', () => {
+        document.querySelectorAll('.ledger-table .cell-button').forEach((candidate) => candidate.classList.remove('selected'));
+        cell.classList.add('selected');
+        if (cell.dataset.day) document.querySelector('#selected-day-label').textContent = cell.dataset.day;
+      });
+    });
+
+    const capacityWarningDialog = document.querySelector('#capacity-warning-dialog');
+    const closeCapacityWarning = () => {
+      capacityWarningDialog.hidden = true;
+    };
+    document.querySelectorAll('.submit-trigger').forEach((button) => {
+      button.addEventListener('click', () => {
+        capacityWarningDialog.hidden = false;
+        document.querySelector('#cancel-submit').focus();
+      });
+    });
+    document.querySelector('#cancel-submit').addEventListener('click', closeCapacityWarning);
+    document.querySelector('#confirm-submit').addEventListener('click', closeCapacityWarning);
+    capacityWarningDialog.addEventListener('click', (event) => {
+      if (event.target === capacityWarningDialog) closeCapacityWarning();
+    });
+
+    const entryEditorDialog = document.querySelector('#entry-editor-dialog');
+    const entryActionMenu = document.querySelector('#entry-action-menu');
+    const entryActionsTrigger = document.querySelector('#entry-actions-trigger');
+    const closeEntryEditor = () => {
+      entryEditorDialog.hidden = true;
+      entryActionMenu.hidden = true;
+      entryActionsTrigger.setAttribute('aria-expanded', 'false');
+    };
+    const openEntryEditor = () => {
+      entryEditorDialog.hidden = false;
+      document.querySelector('#close-entry-editor').focus();
+    };
+    document.querySelectorAll('.entry-card, .entry-row').forEach((entry) => {
+      entry.tabIndex = 0;
+      entry.title = 'Double-click to edit';
+      entry.addEventListener('dblclick', openEntryEditor);
+      entry.addEventListener('keydown', (event) => {
+        if (event.key === 'Enter') openEntryEditor();
+      });
+    });
+    entryActionsTrigger.addEventListener('click', () => {
+      const nextOpen = entryActionMenu.hidden;
+      entryActionMenu.hidden = !nextOpen;
+      entryActionsTrigger.setAttribute('aria-expanded', String(nextOpen));
+      if (nextOpen) entryActionMenu.querySelector('button').focus();
+    });
+    entryActionMenu.querySelectorAll('button').forEach((button) => {
+      button.addEventListener('click', () => {
+        entryActionMenu.hidden = true;
+        entryActionsTrigger.setAttribute('aria-expanded', 'false');
+        entryActionsTrigger.focus();
+      });
+    });
+    document.querySelector('#close-entry-editor').addEventListener('click', closeEntryEditor);
+    document.querySelector('#save-entry-editor').addEventListener('click', closeEntryEditor);
+    entryEditorDialog.addEventListener('click', (event) => {
+      if (event.target === entryEditorDialog) closeEntryEditor();
+    });
+    document.addEventListener('keydown', (event) => {
+      if (event.key === 'Escape' && !capacityWarningDialog.hidden) closeCapacityWarning();
+      if (event.key === 'Escape' && !entryEditorDialog.hidden) closeEntryEditor();
+    });
+  </script>
+</body>
+</html>

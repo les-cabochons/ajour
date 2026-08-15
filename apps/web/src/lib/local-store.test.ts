@@ -79,6 +79,47 @@ describe("localStore backlog status sync", () => {
     expect(localStore.snapshot().userPreferences.projectDataShapeId).toBe(
       "default",
     );
+    expect(localStore.snapshot().userPreferences).toMatchObject({
+      weeklyTimeViewStyle: "ledger",
+      weeklyCapacityTargets: {
+        monday: 8 * 60 * 60 * 1000,
+        friday: 8 * 60 * 60 * 1000,
+        saturday: 0,
+        sunday: 0,
+      },
+      warnWhenOverCapacity: true,
+      warnWhenSubmittingUnderCapacity: true,
+    });
+  });
+
+  it("normalizes malformed weekly time preferences", async () => {
+    window.localStorage.setItem(
+      "timetracker.local-state.v2",
+      JSON.stringify({
+        userPreferences: {
+          weeklyTimeViewStyle: "stream",
+          weeklyCapacityTargets: {
+            monday: -1,
+            tuesday: 123,
+            wednesday: "invalid",
+          },
+          warnWhenOverCapacity: false,
+          warnWhenSubmittingUnderCapacity: false,
+        },
+      }),
+    );
+
+    const { localStore } = await import("./local-store");
+    expect(localStore.snapshot().userPreferences).toMatchObject({
+      weeklyTimeViewStyle: "ledger",
+      weeklyCapacityTargets: {
+        monday: 8 * 60 * 60 * 1000,
+        tuesday: 123,
+        wednesday: 8 * 60 * 60 * 1000,
+      },
+      warnWhenOverCapacity: false,
+      warnWhenSubmittingUnderCapacity: false,
+    });
   });
 
   it("persists the selected project data shape", async () => {

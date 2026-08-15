@@ -4,7 +4,9 @@ import { DEFAULT_PROJECT_ICON } from "@/domain/projects/project-icon";
 import {
   createTimesheetEntrySubmissionFingerprint,
   deleteTimesheetEntry,
+  duplicateTimesheetEntry,
   markTimesheetEntriesSubmitted,
+  moveTimesheetEntry,
   normalizeTimesheetEntry,
   reorderTimesheetEntries,
   saveManualTimesheetEntry,
@@ -73,6 +75,10 @@ function createState(
       themeMode: "system",
       updateTrack: "stable",
       projectDataShapeId: "default",
+      weeklyTimeViewStyle: "ledger",
+      weeklyCapacityTargets: { monday: 8, tuesday: 8, wednesday: 8, thursday: 8, friday: 8, saturday: 0, sunday: 0 },
+      warnWhenOverCapacity: true,
+      warnWhenSubmittingUnderCapacity: true,
     },
     updatedAt: 0,
     ...overrides,
@@ -263,7 +269,7 @@ describe("timesheet entry lifecycle", () => {
     });
   });
 
-  it("deletes an entry, detaches its timer, and reverses logged estimates", () => {
+  it("deletes an unlinked entry and reverses logged estimates", () => {
     const saved = saveManualTimesheetEntry(
       createState(),
       {
@@ -274,30 +280,190 @@ describe("timesheet entry lifecycle", () => {
       },
       factories,
     );
-    const deleted = deleteTimesheetEntry(
-      {
-        ...saved,
-        timers: [
-          {
-            _id: "timer-1",
-            startedAt: 1,
-            localDate: "2026-07-30",
-            projectId: "project-1",
-            taskId: "task-1",
-            accumulatedDurationMs: 0,
-            entryId: "timesheet-1",
-          },
-        ],
-      },
-      "timesheet-1",
-    );
+    const deleted = deleteTimesheetEntry(saved, "timesheet-1");
 
     expect(deleted.timesheetEntries).toEqual([]);
-    expect(deleted.timers[0]?.entryId).toBeUndefined();
     expect(deleted.workItems[0]).toMatchObject({
       remainingEstimateHours: 2,
       completedEstimateHours: 0,
     });
+  });
+
+  it("rejects delete, duplicate, and move while an entry is linked to a running timer", () => {
+    const saved = saveManualTimesheetEntry(
+      createState(),
+      {
+        localDate: "2026-07-30",
+        projectId: "project-1",
+        taskId: "task-1",
+        durationMs: 60 * 60 * 1000,
+      },
+      factories,
+    );
+    const runningState = {
+      ...saved,
+      timers: [
+        {
+          _id: "timer-1",
+          startedAt: 1,
+          localDate: "2026-07-30",
+          projectId: "project-1",
+          taskId: "task-1",
+          accumulatedDurationMs: 60 * 60 * 1000,
+          entryId: "timesheet-1",
+        },
+      ],
+    };
+    const relocateValues = {
+      localDate: "2026-07-31",
+      projectId: "project-1",
+      taskId: "task-1",
+      durationMs: 60 * 60 * 1000,
+    };
+
+    expect(deleteTimesheetEntry(runningState, "timesheet-1")).toBe(runningState);
+    expect(
+      duplicateTimesheetEntry(
+        runningState,
+        "timesheet-1",
+        relocateValues,
+        factories,
+      ),
+    ).toBe(runningState);
+    expect(
+      moveTimesheetEntry(runningState, "timesheet-1", relocateValues, factories),
+    ).toBe(runningState);
+  });
+
+  it("duplicates visible values without copying submission or source provenance", () => {
+    const state = createState({
+      timesheetEntries: [
+        {
+          _id: "entry-1",
+          localDate: "2026-07-30",
+          workItemId: "work-item-1",
+          projectId: "project-1",
+          taskId: "task-1",
+          label: "Feature work",
+          note: "Original",
+          durationMs: 60 * 60 * 1000,
+          sourceBlockIds: ["block-1"],
+          committedAt: 10,
+          submittedAt: 20,
+          submittedFingerprint: "submitted",
+        },
+      ],
+    });
+
+    const duplicated = duplicateTimesheetEntry(
+      state,
+      "entry-1",
+      {
+        localDate: "2026-07-31",
+        projectId: "project-1",
+        taskId: "task-1",
+        note: "Visible edit",
+        durationMs: 30 * 60 * 1000,
+      },
+      factories,
+    );
+
+    expect(duplicated.timesheetEntries[1]).toMatchObject({
+      _id: "timesheet-1",
+      localDate: "2026-07-31",
+      workItemId: "work-item-1",
+      note: "Visible edit",
+      durationMs: 30 * 60 * 1000,
+      sourceBlockIds: [],
+      submittedAt: undefined,
+      submittedFingerprint: undefined,
+    });
+    expect(duplicated.workItems[0]).toMatchObject({
+      remainingEstimateHours: 1.5,
+      completedEstimateHours: 0.5,
+    });
+  });
+
+  it("preserves the label when duplicating a taskless imported entry", () => {
+    const state = createState({
+      timesheetEntries: [
+        {
+          _id: "entry-1",
+          localDate: "2026-07-30",
+          projectId: "project-1",
+          label: "github.com",
+          durationMs: 30 * 60 * 1000,
+          sourceBlockIds: ["block-1"],
+          committedAt: 10,
+        },
+      ],
+    });
+
+    const duplicated = duplicateTimesheetEntry(
+      state,
+      "entry-1",
+      {
+        localDate: "2026-07-31",
+        projectId: "project-1",
+        taskId: undefined,
+        durationMs: 30 * 60 * 1000,
+      },
+      factories,
+    );
+
+    expect(duplicated.timesheetEntries[1]).toMatchObject({
+      label: "github.com",
+      sourceBlockIds: [],
+    });
+  });
+
+  it("moves an entry without changing logged estimates and clears submission", () => {
+    const entry = {
+      _id: "entry-1",
+      localDate: "2026-07-30",
+      projectId: "project-1",
+      taskId: "task-1",
+      label: "Feature work",
+      note: "Original",
+      durationMs: 60 * 60 * 1000,
+      sourceBlockIds: ["block-1"],
+      committedAt: 10,
+      submittedAt: 20,
+      submittedFingerprint: "",
+    };
+    entry.submittedFingerprint = createTimesheetEntrySubmissionFingerprint(entry);
+    const baseline = createState();
+    const state = createState({
+      timesheetEntries: [entry],
+      workItems: baseline.workItems.map((workItem) => ({
+        ...workItem,
+        remainingEstimateHours: 1,
+        completedEstimateHours: 1,
+      })),
+    });
+
+    const moved = moveTimesheetEntry(
+      state,
+      "entry-1",
+      {
+        localDate: "2026-07-31",
+        projectId: "project-1",
+        taskId: "task-1",
+        note: "Original",
+        durationMs: 60 * 60 * 1000,
+      },
+      { ...factories, now: () => 300 },
+    );
+
+    expect(moved.timesheetEntries[0]).toMatchObject({
+      _id: "entry-1",
+      localDate: "2026-07-31",
+      sourceBlockIds: ["block-1"],
+      committedAt: 300,
+      submittedAt: undefined,
+      submittedFingerprint: undefined,
+    });
+    expect(moved.workItems).toEqual(state.workItems);
   });
 
   it("reorders one day by exchanging committed-time slots", () => {

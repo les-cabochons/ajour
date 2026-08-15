@@ -5,6 +5,16 @@ import {
   RiFilter3Line as Filter,
 } from "@remixicon/react";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   HoverCard,
@@ -228,6 +238,7 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
   const [viewMode, setViewMode] = useState<SubmitViewMode>("day");
   const [groupingMode, setGroupingMode] = useState<SubmitGroupingMode>("single");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
+  const [isUnderTargetWarningOpen, setIsUnderTargetWarningOpen] = useState(false);
 
   const weekDateSet = useMemo(() => new Set(weekDates), [weekDates]);
   const projectMap = useMemo(
@@ -357,6 +368,16 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
       ),
     [enrichedEntries, selectedEntryIdSet],
   );
+  const weekCapacityMs = Object.values(
+    state.userPreferences.weeklyCapacityTargets,
+  ).reduce((sum, value) => sum + value, 0);
+  const loggedWeekDurationMs = useMemo(
+    () =>
+      state.timesheetEntries
+        .filter((entry) => weekDateSet.has(entry.localDate))
+        .reduce((sum, entry) => sum + entry.durationMs, 0),
+    [state.timesheetEntries, weekDateSet],
+  );
   const primaryCountLabel =
     viewMode === "task"
       ? formatCountLabel(taskRows.length, "task", "tasks")
@@ -440,7 +461,21 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
       return;
     }
 
+    if (
+      state.userPreferences.warnWhenSubmittingUnderCapacity &&
+      weekCapacityMs > 0 &&
+      loggedWeekDurationMs < weekCapacityMs
+    ) {
+      setIsUnderTargetWarningOpen(true);
+      return;
+    }
+
     localStore.markTimesheetEntriesSubmitted(selectedEntryIds);
+  }
+
+  function confirmSubmit() {
+    localStore.markTimesheetEntriesSubmitted(selectedEntryIds);
+    setIsUnderTargetWarningOpen(false);
   }
 
   function renderTimeHover(collection: EntryCollection, cellLabel: string, triggerClassName: string) {
@@ -819,6 +854,26 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
           </Button>
         </div>
       </div>
+      <AlertDialog
+        open={isUnderTargetWarningOpen}
+        onOpenChange={setIsUnderTargetWarningOpen}
+      >
+        <AlertDialogContent
+          className="z-[240]"
+          overlayClassName="z-[230]"
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle>Submit below the week target?</AlertDialogTitle>
+            <AlertDialogDescription>
+              This week has {formatClockDuration(loggedWeekDurationMs)} logged against a {formatClockDuration(weekCapacityMs)} target. You can continue without changing the selected entries.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Review</AlertDialogCancel>
+            <AlertDialogAction onClick={confirmSubmit}>Submit anyway</AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

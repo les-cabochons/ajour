@@ -65,6 +65,17 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
   Squirrel `.nupkg` packages; macOS stays manual until signing and notarization.
 - [x] Time-entry surfaces share a hierarchical shadcn project/task command picker
   with project drill-down, mixed-term direct task search, and bounded results.
+- [x] Day remains the default timer-first view and now links to a desktop-only
+  Week overview with Ledger and Lanes layouts, locally persisted capacity
+  targets, hover-only utilization details, and configurable warnings.
+- [x] Saved time entries share one Day-inline/Week-dialog editor with Duplicate,
+  Duplicate to, and Move to actions; cross-day moves preserve identity and
+  provenance while invalidating changed submissions through the existing
+  fingerprint lifecycle.
+- [x] Weekly-view adversarial review fixes lock running linked entries at the UI
+  and domain boundaries, preserve taskless labels on duplicate, use stable
+  Ledger row identities, and harden nested dialogs, drag ownership, keyboard
+  focus, and entry-group semantics.
 
 ## Standard Task Flow
 
@@ -99,4 +110,12 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Verified `just acceptance-test`: 1 Chromium scenario passed.
 - [x] Verified `just typecheck`.
 - [x] Verified `just build`.
+- [x] Weekly time implementation verification: 210 web tests and 317 tests
+  repository-wide passed; repository typecheck and production builds passed.
+  Real-browser checks covered Day to Week navigation, Ledger, Lanes, the Week
+  entry dialog, General capacity settings, visible keyboard focus, nested date
+  dialog dismissal, corrected entry-group semantics, and the sub-1024px Day
+  fallback. The Windows `just` parser rejected the repository's existing
+  `short=` annotation, so equivalent locked pnpm commands were used for this
+  pass.
 - [ ] Assign an owner and record a manual result in `qa/routines/local-workspace-smoke.md`.

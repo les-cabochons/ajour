@@ -22,6 +22,8 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Button } from "@/components/ui/button";
+import { EntryActionsMenu } from "@/features/time/entry-actions-menu";
+import { TimeEntryFields } from "@/features/time/time-entry-fields";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   ProjectTaskPicker,
@@ -413,58 +415,6 @@ export function TimerPanel({
     resetNewEntry();
   }
 
-  function persistExpandedMetadata(nextValues?: {
-    projectId?: string;
-    taskId?: string;
-    note?: string;
-  }) {
-    if (!expandedEntry) {
-      return;
-    }
-
-    const nextProjectId =
-      (nextValues?.projectId ?? expandedProjectId) || undefined;
-    const nextTaskId = (nextValues?.taskId ?? expandedTaskId) || undefined;
-    const nextNote = (nextValues?.note ?? expandedNote).trim() || undefined;
-    const hasMetadataChanges =
-      nextProjectId !== expandedEntry.projectId ||
-      nextTaskId !== expandedEntry.taskId ||
-      nextNote !== expandedEntry.note;
-
-    if (!hasMetadataChanges) {
-      return;
-    }
-
-    localStore.updateTimesheetEntry(expandedEntry._id, {
-      projectId: nextProjectId,
-      taskId: nextTaskId,
-      note: nextNote,
-      durationMs: expandedEntry.durationMs,
-    });
-  }
-
-  function persistExpandedDuration(nextDurationHours: string) {
-    if (!expandedEntry) {
-      return;
-    }
-
-    const nextDurationMs = parseHoursInput(nextDurationHours);
-    if (
-      nextDurationMs === null ||
-      nextDurationMs <= 0 ||
-      nextDurationMs === expandedEntry.durationMs
-    ) {
-      return;
-    }
-
-    localStore.updateTimesheetEntry(expandedEntry._id, {
-      projectId: expandedProjectId || undefined,
-      taskId: expandedTaskId || undefined,
-      note: expandedNote.trim() || undefined,
-      durationMs: nextDurationMs,
-    });
-  }
-
   function closeExpandedEntry() {
     if (!expandedEntry) {
       resetExpandedEntry();
@@ -498,6 +448,40 @@ export function TimerPanel({
   }
 
   function discardExpandedEntry() {
+    resetExpandedEntry();
+  }
+
+  function getExpandedRelocationValues(localDate: string) {
+    if (!expandedEntry || expandedParsedDurationMs === null || expandedParsedDurationMs <= 0) {
+      return null;
+    }
+
+    return {
+      localDate,
+      projectId: expandedProjectId || undefined,
+      taskId: expandedTaskId || undefined,
+      note: expandedNote.trim() || undefined,
+      durationMs: expandedParsedDurationMs,
+    };
+  }
+
+  function duplicateExpandedEntry(localDate: string) {
+    const values = getExpandedRelocationValues(localDate);
+    if (!expandedEntry || !values) {
+      return;
+    }
+
+    localStore.duplicateTimesheetEntry(expandedEntry._id, values);
+    resetExpandedEntry();
+  }
+
+  function moveExpandedEntry(localDate: string) {
+    const values = getExpandedRelocationValues(localDate);
+    if (!expandedEntry || !values) {
+      return;
+    }
+
+    localStore.moveTimesheetEntry(expandedEntry._id, values);
     resetExpandedEntry();
   }
 
@@ -609,6 +593,7 @@ export function TimerPanel({
         !isInlineEditorOutsideClick(
           event.target,
           expandedEntryEditorRef.current,
+          [".entry-actions-menu-layer"],
         )
       ) {
         return;
@@ -626,11 +611,6 @@ export function TimerPanel({
   function handleExpandedProjectTaskChange(selection: ProjectTaskSelection) {
     setExpandedProjectId(selection.projectId);
     setExpandedTaskId(selection.taskId);
-    persistExpandedMetadata({
-      projectId: selection.projectId,
-      taskId: selection.taskId,
-      note: expandedNote,
-    });
   }
 
   function handleNewProjectTaskChange(selection: ProjectTaskSelection) {
@@ -1110,112 +1090,37 @@ export function TimerPanel({
                             ref={expandedEntryEditorRef}
                             className="entry-edit-dropdown"
                           >
-                            <div className="entry-edit-dropdown-grid">
-                              <label className="field col-span-full">
-                                <span className="field-label">Project / task</span>
-                                <ProjectTaskPicker
-                                  projects={projects}
-                                  projectId={expandedProjectId}
-                                  taskId={expandedTaskId}
-                                  onChange={handleExpandedProjectTaskChange}
-                                  placeholder="No project"
-                                />
-                              </label>
-
-                              {/* Note */}
-                              <label className="field entry-field-note">
-                                <span className="field-label">Note</span>
-                                <textarea
-                                  className="field-input entry-note-input"
-                                  value={expandedNote}
-                                  onChange={(event) =>
-                                    setExpandedNote(event.target.value)
+                            <div>
+                              <TimeEntryFields
+                                idPrefix={`day-entry-${expandedEntry._id}`}
+                                className="entry-edit-dropdown-grid"
+                                projects={projects}
+                                projectId={expandedProjectId}
+                                taskId={expandedTaskId}
+                                note={expandedNote}
+                                durationHours={expandedDurationHours}
+                                durationError={expandedDurationError}
+                                onProjectTaskChange={handleExpandedProjectTaskChange}
+                                onNoteChange={setExpandedNote}
+                                onDurationChange={setExpandedDurationHours}
+                                onDurationKeyDown={(event) => {
+                                  if (event.key === "Enter") {
+                                    event.preventDefault();
+                                    closeExpandedEntry();
                                   }
-                                  onBlur={(event) => {
-                                    const nextNote = event.target.value.trim();
-                                    setExpandedNote(nextNote);
-                                    persistExpandedMetadata({ note: nextNote });
-                                  }}
-                                  placeholder="Notes (optional)"
-                                  rows={2}
+                                }}
+                              />
+                              <div className="col-span-full flex justify-end">
+                                <EntryActionsMenu
+                                  currentDate={expandedEntry.localDate}
+                                  disabled={Boolean(expandedDurationError)}
+                                  onDuplicate={() =>
+                                    duplicateExpandedEntry(expandedEntry.localDate)
+                                  }
+                                  onDuplicateTo={duplicateExpandedEntry}
+                                  onMoveTo={moveExpandedEntry}
                                 />
-                              </label>
-
-                              {/* Hours */}
-                              <label className="field entry-field-hours">
-                                <span className="field-label">Hours</span>
-                                <div className="inline-hours-input-shell">
-                                  <input
-                                    className="field-input entry-hours-input inline-hours-input"
-                                    type="text"
-                                    placeholder="01:30"
-                                    style={{ fontFamily: "var(--font-mono)" }}
-                                    value={expandedDurationHours}
-                                    onChange={(event) =>
-                                      setExpandedDurationHours(
-                                        event.target.value,
-                                      )
-                                    }
-                                    onBlur={(event) => {
-                                      const normalizedValue =
-                                        normalizeHoursInput(event.target.value);
-                                      setExpandedDurationHours(normalizedValue);
-                                      const nextTarget = event.relatedTarget;
-                                      if (
-                                        nextTarget instanceof HTMLElement &&
-                                        nextTarget.closest(
-                                          ".inline-hours-actions",
-                                        )
-                                      ) {
-                                        return;
-                                      }
-
-                                      persistExpandedDuration(normalizedValue);
-                                    }}
-                                    onKeyDown={(event) => {
-                                      if (event.key === "Enter") {
-                                        event.preventDefault();
-                                        closeExpandedEntry();
-                                      }
-                                    }}
-                                    aria-label="Hours"
-                                  />
-                                  {hasExpandedTimeChanged ? (
-                                    <div className="inline-hours-actions">
-                                      <button
-                                        type="button"
-                                        className="inline-hours-action"
-                                        aria-label="Save and close entry"
-                                        disabled={Boolean(
-                                          expandedDurationError,
-                                        )}
-                                        onMouseDown={(event) =>
-                                          event.preventDefault()
-                                        }
-                                        onClick={closeExpandedEntry}
-                                      >
-                                        <Check className="h-3.5 w-3.5" />
-                                      </button>
-                                      <button
-                                        type="button"
-                                        className="inline-hours-action"
-                                        aria-label="Cancel entry changes"
-                                        onMouseDown={(event) =>
-                                          event.preventDefault()
-                                        }
-                                        onClick={discardExpandedEntry}
-                                      >
-                                        <X className="h-3.5 w-3.5" />
-                                      </button>
-                                    </div>
-                                  ) : null}
-                                </div>
-                                {expandedDurationError ? (
-                                  <span className="field-error">
-                                    {expandedDurationError}
-                                  </span>
-                                ) : null}
-                              </label>
+                              </div>
                             </div>
                           </div>
                         </td>

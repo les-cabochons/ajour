@@ -1,0 +1,311 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23191918'/%3E%3Cpath d='M9 8v16M23 8v16M9 16h14' stroke='white' stroke-width='3'/%3E%3C/svg%3E" />
+  <title>HarDay — Weekly time view implementation plan</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f4f0;
+      --paper: #fff;
+      --surface: #f8f8f5;
+      --surface-2: #eeeeea;
+      --ink: #191918;
+      --muted: #666661;
+      --faint: #92928b;
+      --line: #deded8;
+      --line-strong: #bcbcb4;
+      --accent: #1d4ed8;
+      --accent-soft: #e9eeff;
+      --success: #157347;
+      --success-soft: #e6f4ec;
+      --warn: #9a5b13;
+      --warn-soft: #fbf1dd;
+      --sans: "Raleway Variable", "Avenir Next", "Trebuchet MS", sans-serif;
+      --serif: "Noto Serif Variable", "Iowan Old Style", "Palatino Linotype", serif;
+      --mono: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+    }
+    * { box-sizing: border-box; }
+    html { scroll-behavior: smooth; }
+    body { margin: 0; min-width: 320px; background: var(--bg); color: var(--ink); font-family: var(--sans); font-size: 14px; line-height: 1.55; }
+    a { color: inherit; }
+    button { font: inherit; }
+    h1, h2, h3, p { margin-top: 0; }
+    .page { width: min(1180px, calc(100% - 40px)); margin: 0 auto; }
+    .masthead { padding: 58px 0 34px; display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 44px; align-items: end; }
+    .eyebrow { margin-bottom: 10px; color: var(--muted); font-family: var(--mono); font-size: 10px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+    h1 { max-width: 800px; margin-bottom: 13px; font-family: var(--serif); font-size: clamp(42px, 6vw, 74px); font-weight: 540; letter-spacing: -.055em; line-height: .98; }
+    .lede { max-width: 780px; margin-bottom: 0; color: var(--muted); font-size: 16px; }
+    .status-card { padding: 16px; border: 1px solid var(--line-strong); background: var(--paper); }
+    .status-card span { display: block; color: var(--faint); font-family: var(--mono); font-size: 9px; letter-spacing: .1em; text-transform: uppercase; }
+    .status-card strong { display: block; margin: 5px 0 8px; font-family: var(--serif); font-size: 19px; font-weight: 600; }
+    .status-card p { margin: 0; color: var(--muted); font-size: 11px; }
+
+    .plan-shell { margin-bottom: 56px; display: grid; grid-template-columns: 238px minmax(0, 1fr); border: 1px solid var(--line-strong); background: var(--paper); box-shadow: 0 20px 60px rgba(35, 34, 30, .08); }
+    .toc { position: relative; padding: 22px 18px; border-right: 1px solid var(--line); background: var(--surface); }
+    .toc-inner { position: sticky; top: 20px; }
+    .toc-title { margin: 0 0 14px; color: var(--faint); font-family: var(--mono); font-size: 9px; font-weight: 750; letter-spacing: .1em; text-transform: uppercase; }
+    .toc a { display: block; padding: 7px 8px; border-left: 2px solid transparent; color: var(--muted); font-size: 11px; text-decoration: none; }
+    .toc a:hover { border-left-color: var(--ink); background: var(--surface-2); color: var(--ink); }
+    .toc-separator { height: 1px; margin: 15px 8px; background: var(--line); }
+    .toc-link-strong { color: var(--ink) !important; font-weight: 750; }
+    .plan-content { min-width: 0; }
+    .section { padding: 38px 42px; border-bottom: 1px solid var(--line); scroll-margin-top: 12px; }
+    .section:last-child { border-bottom: 0; }
+    .section-number { display: block; margin-bottom: 6px; color: var(--accent); font-family: var(--mono); font-size: 9px; font-weight: 750; letter-spacing: .12em; text-transform: uppercase; }
+    h2 { margin-bottom: 16px; font-family: var(--serif); font-size: 29px; font-weight: 560; letter-spacing: -.035em; line-height: 1.1; }
+    h3 { margin-bottom: 8px; font-size: 12px; letter-spacing: 0; }
+    .section-intro { max-width: 800px; color: var(--muted); }
+    .callout { display: grid; grid-template-columns: 6px minmax(0, 1fr); margin: 24px 0; border: 1px solid var(--line); background: var(--surface); }
+    .callout::before { content: ""; background: var(--accent); }
+    .callout-body { padding: 16px 18px; }
+    .callout-body strong { display: block; margin-bottom: 5px; }
+    .callout-body p { margin: 0; color: var(--muted); font-size: 12px; }
+    .callout.success::before { background: var(--success); }
+    .callout.warning::before { background: var(--warn); }
+
+    .scope-grid, .principles, .acceptance-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 22px; }
+    .scope-card, .principle, .acceptance-card { padding: 16px; border: 1px solid var(--line); background: var(--surface); }
+    .scope-card.in { border-top: 3px solid var(--success); }
+    .scope-card.out { border-top: 3px solid var(--faint); }
+    .scope-card h3, .principle h3, .acceptance-card h3 { margin-bottom: 9px; }
+    ul { margin: 0; padding-left: 18px; }
+    li { margin: 6px 0; color: var(--muted); font-size: 12px; }
+    li::marker { color: var(--ink); }
+
+    .flow { margin: 24px 0; display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); border: 1px solid var(--line); }
+    .flow-step { position: relative; min-height: 115px; padding: 14px; border-right: 1px solid var(--line); background: var(--surface); }
+    .flow-step:last-child { border-right: 0; }
+    .flow-step::after { content: "→"; position: absolute; top: 43px; right: -8px; z-index: 2; display: grid; width: 16px; height: 22px; place-items: center; background: var(--paper); color: var(--faint); }
+    .flow-step:last-child::after { display: none; }
+    .flow-step span { color: var(--accent); font-family: var(--mono); font-size: 9px; font-weight: 750; }
+    .flow-step strong { display: block; margin: 6px 0; font-size: 11px; }
+    .flow-step p { margin: 0; color: var(--muted); font-size: 10px; }
+
+    .architecture { margin: 22px 0; overflow-x: auto; }
+    .arch-row { min-width: 680px; display: grid; grid-template-columns: 150px minmax(0, 1fr) 210px; border: 1px solid var(--line); border-bottom: 0; }
+    .arch-row:last-child { border-bottom: 1px solid var(--line); }
+    .arch-layer { padding: 14px; background: var(--surface-2); font-family: var(--mono); font-size: 9px; font-weight: 750; letter-spacing: .08em; text-transform: uppercase; }
+    .arch-owner, .arch-rule { padding: 14px 16px; border-left: 1px solid var(--line); font-size: 11px; }
+    .arch-owner code { display: block; margin-bottom: 5px; font-family: var(--mono); font-size: 10px; font-weight: 700; }
+    .arch-owner span, .arch-rule { color: var(--muted); }
+    code { font-family: var(--mono); }
+
+    .backlog { margin-top: 22px; border-top: 1px solid var(--line-strong); }
+    .work-package { display: grid; grid-template-columns: 62px minmax(0, 1fr) 150px; border-bottom: 1px solid var(--line); }
+    .work-index { padding: 18px 10px; color: var(--faint); font-family: var(--mono); font-size: 11px; font-weight: 750; }
+    .work-copy { padding: 16px 18px; border-left: 1px solid var(--line); border-right: 1px solid var(--line); }
+    .work-copy strong { display: block; margin-bottom: 4px; }
+    .work-copy p { margin: 0 0 8px; color: var(--muted); font-size: 11px; }
+    .file-list { color: var(--faint); font-family: var(--mono); font-size: 9px; line-height: 1.6; }
+    .work-proof { padding: 16px 13px; color: var(--muted); font-size: 10px; }
+    .work-proof b { display: block; margin-bottom: 5px; color: var(--ink); }
+
+    table { width: 100%; margin-top: 22px; border-collapse: collapse; font-size: 11px; }
+    th, td { padding: 12px 13px; border: 1px solid var(--line); text-align: left; vertical-align: top; }
+    th { background: var(--surface); font-size: 10px; }
+    td { color: var(--muted); }
+    td:first-child { color: var(--ink); font-weight: 700; }
+    .risk-level { display: inline-block; min-width: 42px; padding: 2px 5px; border-radius: 3px; background: var(--surface-2); color: var(--ink); font-family: var(--mono); font-size: 8px; font-weight: 750; text-align: center; text-transform: uppercase; }
+    .risk-level.medium { background: var(--warn-soft); color: var(--warn); }
+
+    .checklist { display: grid; gap: 0; margin-top: 20px; border: 1px solid var(--line); }
+    .check { display: grid; grid-template-columns: 30px minmax(0, 1fr); border-bottom: 1px solid var(--line); }
+    .check:last-child { border-bottom: 0; }
+    .check-mark { display: grid; place-items: center; border-right: 1px solid var(--line); background: var(--surface); color: var(--success); font-weight: 800; }
+    .check-copy { padding: 11px 13px; color: var(--muted); font-size: 11px; }
+    .check-copy b { color: var(--ink); }
+
+    .decision-box { padding: 22px; border: 1px solid var(--ink); background: var(--ink); color: var(--paper); }
+    .decision-box h3 { font-family: var(--serif); font-size: 21px; font-weight: 560; }
+    .decision-box p { margin-bottom: 14px; color: color-mix(in srgb, var(--paper) 72%, transparent); }
+    .decision-box ul { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; padding: 0; list-style: none; }
+    .decision-box li { margin: 0; padding-top: 9px; border-top: 1px solid color-mix(in srgb, var(--paper) 25%, transparent); color: var(--paper); font-size: 10px; }
+    .footer { padding: 0 0 60px; display: flex; justify-content: space-between; gap: 24px; color: var(--muted); font-size: 11px; }
+    .footer a { color: var(--ink); font-weight: 750; }
+
+    @media (max-width: 900px) {
+      .masthead { grid-template-columns: 1fr; }
+      .status-card { max-width: 320px; }
+      .plan-shell { grid-template-columns: 1fr; }
+      .toc { border-right: 0; border-bottom: 1px solid var(--line); }
+      .toc-inner { position: static; display: flex; flex-wrap: wrap; gap: 4px; }
+      .toc-title, .toc-separator { display: none; }
+      .toc a { border-left: 0; border-bottom: 2px solid transparent; }
+      .flow { grid-template-columns: 1fr; }
+      .flow-step { min-height: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+      .flow-step::after { display: none; }
+    }
+    @media (max-width: 650px) {
+      .page { width: min(100% - 20px, 1180px); }
+      .masthead { padding-top: 32px; }
+      .section { padding: 28px 20px; }
+      .scope-grid, .principles, .acceptance-grid { grid-template-columns: 1fr; }
+      .work-package { grid-template-columns: 46px minmax(0, 1fr); }
+      .work-proof { grid-column: 2; padding-top: 0; }
+      .decision-box ul { grid-template-columns: 1fr; }
+      .footer { flex-direction: column; }
+    }
+    @media print {
+      body { background: white; }
+      .page { width: 100%; }
+      .masthead { padding-top: 20px; }
+      .plan-shell { box-shadow: none; }
+      .toc { display: none; }
+      .plan-shell { display: block; }
+      .section { break-inside: avoid; }
+    }
+  </style>
+</head>
+<body>
+  <header class="page masthead">
+    <div>
+      <p class="eyebrow">HarDay / implementation plan / revised</p>
+      <h1>Day first. Week when needed.</h1>
+      <p class="lede">A scoped plan for keeping the Time page timer-first while adding two quiet desktop weekly tools, one shared editor, explicit duplicate/move actions, settings-owned capacity, and resubmission after changes.</p>
+    </div>
+    <aside class="status-card"><span>Planning status</span><strong>Ready for review</strong><p>No application code has been changed. The feature keeps HarDay’s existing date-and-duration time-entry model.</p></aside>
+  </header>
+
+  <main class="page plan-shell">
+    <nav class="toc" aria-label="Plan sections"><div class="toc-inner">
+      <p class="toc-title">Contents</p>
+      <a href="#outcome">01 · Outcome</a>
+      <a href="#experience">02 · Experience</a>
+      <a href="#architecture">03 · Architecture</a>
+      <a href="#backlog">04 · Work backlog</a>
+      <a href="#acceptance">05 · Acceptance</a>
+      <a href="#risk">06 · Risks</a>
+      <a href="#verification">07 · Verification</a>
+      <a href="#decisions">08 · Decisions</a>
+      <div class="toc-separator"></div>
+      <a class="toc-link-strong" href="weekly-time-view-layouts.html">Open layout study ↗</a>
+    </div></nav>
+
+    <article class="plan-content">
+      <section class="section" id="outcome">
+        <span class="section-number">01 / Product outcome</span>
+        <h2>Protect the timer loop; add a deliberate weekly workspace.</h2>
+        <p class="section-intro">Opening Time must still lead directly to the selected day and its running timer. Week is a secondary desktop mode for allocation review, moving work between dates, comparing capacity, and preparing submission.</p>
+        <div class="callout success"><div class="callout-body"><strong>Final view hierarchy</strong><p><b>Day</b> is the default. <b>Week</b> is available at 1024px and wider with both <b>Ledger</b> and <b>Lanes</b>. Neither weekly style replaces or weakens the existing Day workflow.</p></div></div>
+        <div class="scope-grid">
+          <div class="scope-card in"><h3>In the feature</h3><ul><li>Dedicated Week entry and Day return actions</li><li>Ledger and Lanes weekly styles</li><li>One shared Day/Week entry form</li><li>Duplicate, Duplicate to…, and Move to…</li><li>Cross-day dragging for all stopped entries</li><li>Submitted-entry edits followed by resubmission</li><li>Settings-owned capacity and warning preferences</li><li>Desktop-only Week availability</li></ul></div>
+          <div class="scope-card out"><h3>Explicitly out</h3><ul><li>Calendar layout or start/end time persistence</li><li>Resize-to-change-duration behavior</li><li>Any mobile Week rendering</li><li>Dragging a running entry</li><li>Inline matrix duration editing</li><li>New remote submission semantics</li></ul></div>
+        </div>
+      </section>
+
+      <section class="section" id="experience">
+        <span class="section-number">02 / Interaction model</span>
+        <h2>Enter Week deliberately; return to Day directly.</h2>
+        <p class="section-intro">Day does not compete with Week in another segmented control. The Day toolbar gets one secondary “Week overview” action beside date navigation. Week replaces it with a clear “Day” return action and keeps the proven Ledger/Lanes toggle. The weekly style may persist locally; Week mode does not.</p>
+        <div class="flow" aria-label="Time page interaction flow">
+          <div class="flow-step"><span>01</span><strong>Open Day</strong><p><code>/time/$date</code> renders the existing timer-first page.</p></div>
+          <div class="flow-step"><span>02</span><strong>Open overview</strong><p>Desktop users choose “Week overview” for the containing ISO week.</p></div>
+          <div class="flow-step"><span>03</span><strong>Choose a lens</strong><p>Ledger compares allocation; Lanes preserves entry context.</p></div>
+          <div class="flow-step"><span>04</span><strong>Edit or organize</strong><p>Double-click a Week entry to edit, duplicate, duplicate to another day, or move it.</p></div>
+          <div class="flow-step"><span>05</span><strong>Return or submit</strong><p>Open a day for timer work or submit through the existing review modal.</p></div>
+        </div>
+        <div class="principles">
+          <div class="principle"><h3>Ledger behavior</h3><p>Rows group project/task work across seven days. Selecting a cell reveals its entries in a tray; double-clicking a tray entry opens the shared editor. Dragging still moves an eligible entry onto another weekday.</p></div>
+          <div class="principle"><h3>Lanes behavior</h3><p>Each day is a column containing entry cards. A single click selects, a thresholded pointer movement drags, and double-click or Enter opens the shared editor in a modal. The destination receives a moved entry at the top of its saved ordering.</p></div>
+          <div class="principle"><h3>Drag and resubmit</h3><p>Every stopped entry can move, including submitted entries. A move changes the submission fingerprint, clears the current submitted state through the existing transition rule, and returns that entry to the submit queue. Running entries remain locked. Keyboard “Move to…” performs the same mutation.</p></div>
+          <div class="principle"><h3>Desktop boundary</h3><p>Week requires <code>min-width: 1024px</code>. At 1023px or narrower, hide Week controls and canonicalize any Week state back to Day. There is no mobile weekly substitute.</p></div>
+          <div class="principle"><h3>Capacity in Settings</h3><p>Settings → General owns a duration target for each ISO weekday plus independent “Warn when over target” and “Warn when submitting under target” switches. Weekly capacity is the seven targets’ sum; zero-target days remain valid destinations.</p></div>
+          <div class="principle"><h3>One editor, two hosts</h3><p>Extract the existing project/task, note, and hours controls into one entry form. Day keeps that form inline; Ledger and Lanes host it in a shadcn Dialog. When editing a saved stopped entry, its Entry actions menu contains <b>Duplicate</b>, <b>Duplicate to…</b>, and <b>Move to…</b> in every host; new-entry and running-timer forms do not show that menu.</p></div>
+          <div class="principle"><h3>Quiet capacity feedback</h3><p>The toolbar and normal day headers show logged totals only. Hovering or focusing a total reveals its target and percentage. If enabled, exceeding a target adds a compact persistent warning; submitting below target opens a confirmation warning.</p></div>
+        </div>
+      </section>
+
+      <section class="section" id="architecture">
+        <span class="section-number">03 / Technical shape</span>
+        <h2>One shared editor with explicit copy and move transitions.</h2>
+        <p class="section-intro">Timesheet entries keep their current date-and-duration model, so no start timestamp or calendar migration is needed. Capacity lives in local user preferences; weekly projections and utilization remain pure derived data.</p>
+        <div class="architecture">
+          <div class="arch-row"><div class="arch-layer">Preferences</div><div class="arch-owner"><code>domain/local-state.ts</code><span>Add validated Monday-first weekday capacity targets, two warning booleans, and a preferred Week style (<code>ledger | lanes</code>) to <code>UserPreferences</code>.</span></div><div class="arch-rule">Default 8h Monday–Friday, 0h weekends, and both warnings on; missing historical fields hydrate safely.</div></div>
+          <div class="arch-row"><div class="arch-layer">Pure projection</div><div class="arch-owner"><code>domain/time/weekly-time.ts</code><span>Build task rows, lane groups, day totals, capacity totals, utilization, eligibility, and the single live timer contribution.</span></div><div class="arch-rule">No React, browser APIs, persistence, or wall-clock reads.</div></div>
+          <div class="arch-row"><div class="arch-layer">Entry commands</div><div class="arch-owner"><code>domain/time/timesheet-entry.ts</code><span>Add <code>moveTimesheetEntryToDate</code> and <code>duplicateTimesheetEntry</code>. Duplicate accepts the validated form values and an optional destination date; move changes only the original entry’s date and ordering.</span></div><div class="arch-rule">Copies receive a new ID and timestamp, start unsubmitted, clear source-block provenance, and add logged duration exactly once. Moves preserve provenance, add no duration, and reuse submission invalidation.</div></div>
+          <div class="arch-row"><div class="arch-layer">Shared editor</div><div class="arch-owner"><code>features/timer/time-entry-form.tsx</code><span>Own one controlled project/task, note, and hours form plus an Entry actions DropdownMenu. <code>timer-panel.tsx</code> renders it inline; <code>time-entry-modal.tsx</code> renders it inside Dialog.</span></div><div class="arch-rule">Duplicate uses the visible validated form values without mutating the source; Move to saves valid edits, then relocates the source.</div></div>
+          <div class="arch-row"><div class="arch-layer">Workflow UI</div><div class="arch-owner"><code>features/time/time-page.tsx</code><span>Own route query, 1024px capability gate, Day/Week composition, week navigation, and live refresh. The submit modal may wrap its final action in the optional capacity AlertDialog.</span></div><div class="arch-rule">The route date remains both Day selection and Week anchor; existing submission commands and filters do not change.</div></div>
+          <div class="arch-row"><div class="arch-layer">Week renderers</div><div class="arch-owner"><code>features/time/weekly-time-ledger.tsx</code><code>features/time/weekly-time-lanes.tsx</code><span>Consume the same projection and move command with style-specific drag targets; double-click and Enter open <code>TimeEntryModal</code> by entry ID and date.</span></div><div class="arch-rule">Lane headers use one fixed block size; status, selection, and warnings never alter their height.</div></div>
+          <div class="arch-row"><div class="arch-layer">Drag adapter</div><div class="arch-owner"><code>lib/cross-day-entry-drag.ts</code><span>Extend the proven pointer-session geometry patterns from <code>lib/table-drag.ts</code> for cross-container targets and previews.</span></div><div class="arch-rule">Pointer behavior is custom; surrounding controls remain local shadcn components.</div></div>
+        </div>
+        <div class="callout"><div class="callout-body"><strong>shadcn-first component map</strong><p>Use local <code>Button</code> for “Week overview,” “Day,” navigation, and actions; <code>ToggleGroup</code> only for Ledger/Lanes; <code>Table</code> plus <code>ScrollArea</code> for Ledger; <code>Card</code> for lane entries; <code>Dialog</code> to host the shared Week editor; <code>DropdownMenu</code> for Duplicate, Duplicate to…, and Move to…; <code>Popover</code> plus <code>Calendar</code> for destination dates; <code>HoverCard</code> for capacity details; <code>Tooltip</code> for warning and running-lock explanations; <code>AlertDialog</code> for under-target submission confirmation; <code>Field</code>, <code>Input</code>, <code>Label</code>, and <code>Switch</code> for forms and Settings; and <code>Badge</code> for over-target and resubmission states. Import only through <code>components/ui</code>.</p></div></div>
+        <div class="callout warning"><div class="callout-body"><strong>Submission logic stays unchanged.</strong><p>The current fingerprint already includes <code>localDate</code>, and existing edits clear <code>submittedAt</code> when that fingerprint changes. A moved submitted entry therefore becomes unsubmitted and appears in the existing submit modal automatically. The optional under-target AlertDialog wraps the final submit trigger before it calls the same command; it does not change filters, selection, payloads, or remote semantics.</p></div></div>
+      </section>
+
+      <section class="section" id="backlog">
+        <span class="section-number">04 / Ordered backlog</span>
+        <h2>Seven reviewable work packages.</h2>
+        <p class="section-intro">The sequence settles persistence and mutation rules before drag UI, then verifies the default Day workflow has not moved.</p>
+        <div class="backlog">
+          <div class="work-package"><div class="work-index">01</div><div class="work-copy"><strong>Add capacity and warning preferences</strong><p>Extend preference types, normalization, defaults, and local persistence; add targets and independent warning switches to Settings → General. Do not add an in-context Targets action or persist Week mode.</p><div class="file-list">domain/local-state.ts · local-store.ts<br>features/settings/settings-general-page.tsx · preference tests</div></div><div class="work-proof"><b>Done when</b>Existing states hydrate to 8/8/8/8/8/0/0 hours, both warnings default on, and invalid targets cannot persist.</div></div>
+          <div class="work-package"><div class="work-index">02</div><div class="work-copy"><strong>Specify the weekly projection</strong><p>Derive Ledger rows, Lane groups, daily/weekly totals, capacity, utilization, eligibility, and running contribution.</p><div class="file-list">domain/time/weekly-time.ts<br>domain/time/weekly-time.test.ts</div></div><div class="work-proof"><b>Done when</b>Tests cover zero capacity, over-capacity, missing references, week boundaries, and one live timer contribution.</div></div>
+          <div class="work-package"><div class="work-index">03</div><div class="work-copy"><strong>Add duplicate and move transitions</strong><p>Implement Duplicate, Duplicate to…, and Move to… for stopped entries. Copies use the current validated form values, receive a new identity, and start unsubmitted; moves preserve the original identity and reuse submission invalidation.</p><div class="file-list">domain/time/timesheet-entry.ts<br>domain/time/timesheet-entry.test.ts · local-store.ts</div></div><div class="work-proof"><b>Done when</b>Same-day and cross-day copies add duration exactly once, moves add none, moved submitted entries re-enter the submit queue, and invalid/running operations do not mutate state.</div></div>
+          <div class="work-package"><div class="work-index">04</div><div class="work-copy"><strong>Share the editor and introduce Week entry</strong><p>Extract one controlled TimeEntryForm from the existing Day inline editor and modal, add its Entry actions menu, host it inline in Day and in shadcn Dialog from Week, then add Week overview/Day return and the width gate.</p><div class="file-list">features/timer/time-entry-form.tsx · timer-panel.tsx · time-entry-modal.tsx<br>features/time/time-page.tsx · router and form tests</div></div><div class="work-proof"><b>Done when</b>Day and Week expose identical fields and entry actions, normal routes still open Day, and narrowing an explicit Week returns to Day.</div></div>
+          <div class="work-package"><div class="work-index">05</div><div class="work-copy"><strong>Build Ledger with quiet capacity and tray dragging</strong><p>Use shadcn Table and ScrollArea, show only totals by default, reveal capacity in HoverCard, open cell entries in a tray, and connect tray double-click/Enter to the shared editor Dialog.</p><div class="file-list">features/time/weekly-time-ledger.tsx<br>features/time/weekly-capacity-ui.tsx · styles.css</div></div><div class="work-proof"><b>Done when</b>Task/day totals, hover details, editor actions, drag targets, and empty weeks remain legible without permanent percentages.</div></div>
+          <div class="work-package"><div class="work-index">06</div><div class="work-copy"><strong>Build equal-height Lanes and shared dragging</strong><p>Use repeated shadcn Cards inside day columns, one invariant day-header size, thresholded drag geometry, stable previews/drop states, and the same editor and move command as Ledger.</p><div class="file-list">features/time/weekly-time-lanes.tsx<br>lib/cross-day-entry-drag.ts · direct geometry tests</div></div><div class="work-proof"><b>Done when</b>Single-click, drag, double-click, and Enter do not conflict; submitted changes require resubmission, running entries stay locked, and every lane header has identical dimensions.</div></div>
+          <div class="work-package"><div class="work-index">07</div><div class="work-copy"><strong>Add the submit confirmation and finish regression</strong><p>Wrap the modal’s existing final submit action in AlertDialog when enabled and under target; then verify shared editing, all three entry actions, drag/double-click separation, warnings, resubmission, Day, both Week styles, themes, and documentation.</p><div class="file-list">features/time/submit-timesheet-modal.tsx · weekly-capacity-ui.tsx · closest feature/e2e tests<br>agents/ui-registry.md · agents/progress-tracker.md</div></div><div class="work-proof"><b>Done when</b>Entry commands and warnings are covered, submit filtering/selection/payloads remain unchanged, and all repository gates pass.</div></div>
+        </div>
+      </section>
+
+      <section class="section" id="acceptance">
+        <span class="section-number">05 / Acceptance criteria</span>
+        <h2>Observable behavior, including the boundaries.</h2>
+        <div class="acceptance-grid">
+          <div class="acceptance-card"><h3>Day remains primary</h3><ul><li>A normal Time route opens Day.</li><li>Timer creation, start, switch, stop, save, edit, reorder, restart, and delete remain unchanged.</li><li>Entry/timer search parameters still open the correct modal.</li><li>Week never becomes a persisted default mode.</li></ul></div>
+          <div class="acceptance-card"><h3>Both Week styles</h3><ul><li>Ledger and Lanes use the same Monday–Sunday week and totals.</li><li>Switching styles preserves the week anchor.</li><li>The preferred style may persist locally.</li><li>Every Lane day header has the same width behavior and fixed height.</li></ul></div>
+          <div class="acceptance-card"><h3>Dragging</h3><ul><li>Every stopped entry can move between dates in Ledger and Lanes.</li><li>Duration, project, task, note, work item, and source associations are preserved.</li><li>A moved submitted entry becomes unsubmitted through the existing fingerprint rule.</li><li>Running entries stay locked; keyboard “Move to…” matches pointer drag.</li></ul></div>
+          <div class="acceptance-card"><h3>Shared editor and actions</h3><ul><li>Day’s inline editor and Week’s Dialog render the same TimeEntryForm fields and saved-entry actions.</li><li>Double-click and Enter open a stopped Week entry; drag still requires pointer movement beyond the threshold.</li><li>Duplicate creates an unsubmitted manual copy on the same day; Duplicate to… does so on the chosen date without reusing source-block provenance.</li><li>Move to… is available in Day and Week and produces the same transition as drag; new and running forms omit all three actions.</li></ul></div>
+          <div class="acceptance-card"><h3>Capacity and warnings</h3><ul><li>Targets validate as finite, non-negative Settings values.</li><li>Normal headers show totals without persistent fractions or percentages.</li><li>Hover/focus exposes target and percentage; zero capacity yields “No target.”</li><li>Enabled over-target and under-target-on-submit warnings appear; each can be disabled.</li></ul></div>
+          <div class="acceptance-card"><h3>Width boundary</h3><ul><li>Week is available at 1024px and wider.</li><li>At 1023px and narrower, Week controls are absent.</li><li>Narrowing an active Week view switches to Day.</li><li>No mobile Week markup or alternate weekly renderer ships.</li></ul></div>
+          <div class="acceptance-card"><h3>shadcn ownership</h3><ul><li>Feature code imports controls only from <code>components/ui</code>.</li><li>Existing Dialog, DropdownMenu, Calendar, Button, ToggleGroup, HoverCard, Tooltip, AlertDialog, Switch, Table, Card, and Badge components are reused.</li><li>No new general-purpose UI primitive is required.</li><li>Custom code is limited to the shared form contract, entry commands, weekly rendering, derived capacity, and drag geometry.</li></ul></div>
+        </div>
+      </section>
+
+      <section class="section" id="risk">
+        <span class="section-number">06 / Risk register</span>
+        <h2>Known pressure points and bounded responses.</h2>
+        <table>
+          <thead><tr><th>Risk</th><th>Level</th><th>Mitigation</th><th>Proof</th></tr></thead>
+          <tbody>
+            <tr><td>Accidental cross-day move</td><td><span class="risk-level medium">Medium</span></td><td>Use the existing press threshold, explicit drop targets, Escape/pointer-cancel cleanup, and a compact undo action.</td><td>Direct pointer-session tests plus browser drag cancellation.</td></tr>
+            <tr><td>Duplicate uses stale or partially edited values</td><td><span class="risk-level medium">Medium</span></td><td>One controlled form supplies validated values directly to the duplicate command; invalid drafts disable every copy/move action.</td><td>Form tests cover dirty, invalid, same-day, and cross-day copies.</td></tr>
+            <tr><td>Submitted work changes without a resubmit cue</td><td><span class="risk-level medium">Medium</span></td><td>After a submitted entry moves, show “Moved · resubmit required”; its existing cleared submission state remains the source of truth.</td><td>Domain test proves fingerprint invalidation; browser test proves the cue and submit-queue presence.</td></tr>
+            <tr><td>Capacity dominates the timer workspace</td><td><span class="risk-level medium">Medium</span></td><td>Keep targets and percentages inside HoverCard; render only totals and enabled exception warnings persistently.</td><td>Visual review of normal, zero-target, and over-target weeks.</td></tr>
+            <tr><td>Live timer counted twice</td><td><span class="risk-level medium">Medium</span></td><td>Use the existing timer-contribution helper and inject one contribution into the pure projection.</td><td>Restarted and linked-timer tests.</td></tr>
+            <tr><td>Week leaks into narrow layouts</td><td><span class="risk-level">Low</span></td><td>One 1024px capability helper controls rendering, query cleanup, and tests.</td><td>Checks at 1024 and 1023px.</td></tr>
+            <tr><td>Preference migration breaks old state</td><td><span class="risk-level">Low</span></td><td>Hydrate missing fields with explicit defaults and reject non-finite persisted values.</td><td>Legacy-state normalization tests.</td></tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section" id="verification">
+        <span class="section-number">07 / Verification path</span>
+        <h2>Focused domain proof, then real interaction proof.</h2>
+        <div class="checklist">
+          <div class="check"><div class="check-mark">1</div><div class="check-copy"><b>Preferences:</b> verify defaults, validation, serialization, and hydration of historical state.</div></div>
+          <div class="check"><div class="check-mark">2</div><div class="check-copy"><b>Pure models:</b> test weekly projection, utilization, live contribution, duplicate accounting/provenance, and move invariants.</div></div>
+          <div class="check"><div class="check-mark">3</div><div class="check-copy"><b>Interaction:</b> verify Day inline and Week modal editing, Duplicate, Duplicate to…, Move to…, pointer drag, double-click/Enter, cancel, running locks, submitted invalidation, navigation, HoverCard, Settings, and warnings.</div></div>
+          <div class="check"><div class="check-mark">4</div><div class="check-copy"><b>Responsive boundary:</b> inspect 1440, 1280, and 1024px Week layouts; verify 1023, 768, 390, and 320px render Day only.</div></div>
+          <div class="check"><div class="check-mark">5</div><div class="check-copy"><b>Submission regression:</b> prove existing modal filtering, selection, payload, submission command, and remote behavior are unchanged; only an optional confirmation before that command is new.</div></div>
+          <div class="check"><div class="check-mark">6</div><div class="check-copy"><b>Repository gates:</b> run <code>just test</code>, <code>just typecheck</code>, and <code>just build</code>.</div></div>
+        </div>
+      </section>
+
+      <section class="section" id="decisions">
+        <span class="section-number">08 / Locked product decisions</span>
+        <h2>The scope is now explicit.</h2>
+        <div class="decision-box">
+          <h3>Implement Day plus two desktop Week styles.</h3>
+          <p>The execution defaults are:</p>
+          <ul><li>Day is the default; Week uses explicit enter/return actions and never appears below 1024px.</li><li>Day and Week share one entry form; Week opens it by double-click or Enter inside Dialog.</li><li>Duplicate, Duplicate to…, and Move to… live in that form everywhere, including Move to… from Day.</li><li>Ledger and equal-header Lanes both ship; all stopped entries can move and submitted changes are resubmitted through the existing workflow.</li><li>Targets and warning switches live in Settings; submission filtering, payloads, commands, and remote semantics remain unchanged.</li></ul>
+        </div>
+      </section>
+    </article>
+  </main>
+
+  <footer class="page footer"><span>Prepared from the current HarDay data model, UI rules, and shadcn component inventory.</span><span><a href="weekly-time-view-layouts.html">← Compare Ledger and Lanes</a></span></footer>
+</body>
+</html>

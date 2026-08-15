@@ -197,6 +197,422 @@
   }
 }
 
+/* Weekly time overview */
+.day-viewer-week-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  height: 30px;
+  padding: 0 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background 140ms var(--ease), border-color 140ms var(--ease), color 140ms var(--ease);
+}
+
+.day-viewer-week-pill:hover {
+  background: var(--hover-bg);
+  border-color: var(--border-hover);
+  color: var(--text);
+}
+
+.weekly-time-view {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.weekly-time-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.weekly-time-heading,
+.weekly-time-actions,
+.weekly-time-navigation,
+.weekly-capacity-value {
+  display: flex;
+  align-items: center;
+}
+
+.weekly-time-heading,
+.weekly-time-actions {
+  gap: 0.75rem;
+}
+
+.weekly-time-navigation {
+  gap: 0.35rem;
+}
+
+.weekly-time-kicker {
+  margin: 0 0 0.15rem;
+  color: var(--text-tertiary);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.weekly-time-title {
+  margin: 0;
+  color: var(--text);
+  font-family: var(--font-heading);
+  font-size: 1.5rem;
+  font-weight: 650;
+  letter-spacing: -0.03em;
+}
+
+.weekly-capacity-value {
+  justify-content: flex-end;
+  gap: 0.3rem;
+}
+
+.weekly-capacity-trigger {
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.8rem;
+  font-weight: 700;
+  cursor: default;
+}
+
+.weekly-capacity-warning {
+  width: 0.9rem;
+  height: 0.9rem;
+  color: var(--destructive);
+}
+
+.weekly-ledger-card {
+  min-height: 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  border-radius: var(--radius);
+}
+
+.weekly-ledger-stack {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.75rem;
+}
+
+.weekly-ledger-day-target {
+  margin: -0.55rem -0.45rem;
+  padding: 0.55rem 0.45rem;
+  border-radius: var(--radius-sm);
+  transition: background 120ms var(--ease), box-shadow 120ms var(--ease);
+}
+
+.weekly-ledger-day-target.is-drop-target {
+  background: var(--highlight-bg);
+  box-shadow: inset 0 0 0 1px var(--border-focus);
+}
+
+.weekly-ledger-task-column,
+.weekly-ledger-task-cell {
+  min-width: 160px;
+}
+
+.weekly-ledger-day-column {
+  min-width: 78px;
+  text-align: right;
+}
+
+.weekly-ledger-day-column > span {
+  display: block;
+  margin-bottom: 0.2rem;
+  color: var(--text-tertiary);
+  font-size: 0.68rem;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.weekly-ledger-total-column,
+.weekly-ledger-total-cell {
+  min-width: 76px;
+  text-align: right;
+  font-family: var(--font-mono);
+  font-weight: 700;
+}
+
+.weekly-ledger-task-cell span,
+.weekly-ledger-task-cell strong {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.weekly-ledger-task-cell span {
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
+}
+
+.weekly-ledger-time-cell {
+  text-align: right;
+}
+
+.weekly-ledger-time-button {
+  border: 0;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: 0.78rem;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.weekly-ledger-time-button:hover,
+.weekly-ledger-time-button:focus-visible,
+.weekly-ledger-time-button.is-selected {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.weekly-ledger-tray {
+  gap: 0.75rem;
+  padding: 0.8rem;
+  border-radius: var(--radius);
+  box-shadow: none;
+}
+
+.weekly-ledger-tray-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.weekly-ledger-tray-header span,
+.weekly-ledger-tray-header strong {
+  display: block;
+}
+
+.weekly-ledger-tray-header span {
+  color: var(--text-tertiary);
+  font-size: 0.72rem;
+}
+
+.weekly-ledger-tray-entries {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+  gap: 0.55rem;
+}
+
+.weekly-tray-entry {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr) auto;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface-lowest);
+  color: var(--text-secondary);
+  font-size: 0.75rem;
+  text-align: left;
+  cursor: grab;
+}
+
+.weekly-tray-entry span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.weekly-tray-entry strong {
+  color: var(--text);
+  font-family: var(--font-mono);
+}
+
+.weekly-tray-entry:hover,
+.weekly-tray-entry:focus-visible,
+.weekly-tray-entry.is-selected {
+  border-color: var(--border-hover);
+  background: var(--surface-high);
+}
+
+.weekly-tray-entry.is-running {
+  grid-template-columns: auto 1fr auto;
+  cursor: default;
+}
+
+.weekly-lanes-grid {
+  display: grid;
+  min-height: 0;
+  flex: 1 1 auto;
+  grid-template-columns: repeat(7, minmax(146px, 1fr));
+  overflow-x: auto;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.weekly-lane {
+  display: flex;
+  min-height: 360px;
+  flex-direction: column;
+  border-left: 1px solid var(--border);
+  transition: background 120ms var(--ease);
+}
+
+.weekly-lane:first-child {
+  border-left: 0;
+}
+
+.weekly-lane.is-drop-target {
+  background: color-mix(in srgb, var(--accent) 45%, transparent);
+  box-shadow: inset 0 0 0 1px var(--border-focus);
+}
+
+.weekly-lane-header {
+  display: flex;
+  min-height: 76px;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.35rem;
+  padding: 0.8rem 0.65rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.weekly-lane-weekday,
+.weekly-lane-date {
+  display: block;
+}
+
+.weekly-lane-weekday {
+  color: var(--text);
+  font-weight: 700;
+}
+
+.weekly-lane-date {
+  margin-top: 0.15rem;
+  color: var(--text-tertiary);
+  font-size: 0.7rem;
+}
+
+.weekly-lane-entries {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+  gap: 0.6rem;
+  padding: 0.65rem;
+}
+
+.weekly-entry-card {
+  gap: 0.35rem;
+  padding: 0.7rem;
+  border-radius: var(--radius-sm);
+  cursor: grab;
+  outline: none;
+  box-shadow: none;
+  transition: transform 120ms var(--ease), background 120ms var(--ease), box-shadow 120ms var(--ease);
+}
+
+.weekly-entry-card:hover,
+.weekly-entry-card:focus-visible,
+.weekly-entry-card.is-selected {
+  background: var(--surface-high);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 40%, transparent);
+}
+
+.weekly-entry-card.is-dragging {
+  opacity: 0.45;
+}
+
+.weekly-entry-card.is-running {
+  cursor: default;
+  border-left: 2px solid var(--primary);
+}
+
+.weekly-entry-card-project {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.35rem;
+}
+
+.weekly-entry-card-project span,
+.weekly-entry-card-task,
+.weekly-entry-card-note {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.weekly-entry-card-project span {
+  color: var(--text-tertiary);
+  font-size: 0.7rem;
+}
+
+.weekly-entry-card-project strong {
+  font-family: var(--font-mono);
+  font-size: 0.72rem;
+}
+
+.weekly-entry-card-task {
+  color: var(--text);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.weekly-entry-card-note {
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+}
+
+.weekly-lane-add {
+  margin-top: auto;
+  width: 100%;
+  color: var(--text-tertiary);
+}
+
+.weekly-entry-drag-preview {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 320;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.65rem 0.75rem;
+  border: 1px solid var(--border-focus);
+  border-radius: var(--radius-sm);
+  background: var(--surface-high);
+  color: var(--text);
+  box-shadow: var(--shadow-drag);
+  pointer-events: none;
+}
+
+.weekly-entry-drag-preview strong {
+  font-family: var(--font-mono);
+}
+
+@media (max-width: 1023px) {
+  .weekly-time-view,
+  .day-viewer-week-pill {
+    display: none;
+  }
+}
+
 @theme inline {
   --font-sans: "Raleway Variable", sans-serif;
   --font-heading: "Noto Serif Variable", serif;
