@@ -1,6 +1,5 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
-  RiCloseLine as X,
   RiDeleteBinLine as Trash2,
   RiPlayLine as Play,
   RiSaveLine as Save,
@@ -8,16 +7,21 @@ import {
 } from "@remixicon/react";
 import { Button } from "@/components/ui/button";
 import {
-  ProjectTaskPicker,
-  type ProjectTaskSelection,
-} from "@/features/projects/project-task-picker";
+  Dialog,
+  DialogContent,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import {
   formatDurationHoursInput,
-  normalizeHoursInput,
   parseHoursInput,
 } from "@/domain/time/duration";
-import { localStore } from "@/lib/local-store";
+import { EntryActionsMenu } from "@/features/time/entry-actions-menu";
+import type { ProjectTaskSelection } from "@/features/projects/project-task-picker";
+import { TimeEntryFields } from "@/features/time/time-entry-fields";
 import { useLocalProjects, useLocalState } from "@/lib/local-hooks";
+import { localStore } from "@/lib/local-store";
 
 interface TimeEntryModalProps {
   date: string;
@@ -34,58 +38,41 @@ export function TimeEntryModal({
 }: TimeEntryModalProps) {
   const state = useLocalState();
   const projects = useLocalProjects();
-  const overlayRef = useRef<HTMLDivElement>(null);
   const [now, setNow] = useState(() => Date.now());
-
   const currentTimer = state.timers[0] ?? null;
   const editingTimer = useMemo(
-    () =>
-      timerId &&
-      currentTimer?._id === timerId &&
-      currentTimer.localDate === date
-        ? currentTimer
-        : null,
-    [currentTimer, date, timerId],
+    () => (timerId && currentTimer?._id === timerId ? currentTimer : null),
+    [currentTimer, timerId],
   );
   const editingEntry = useMemo(
     () =>
       entryId
-        ? (state.timesheetEntries.find(
-            (entry) => entry._id === entryId && entry.localDate === date,
-          ) ?? null)
+        ? (state.timesheetEntries.find((entry) => entry._id === entryId) ?? null)
         : null,
-    [date, entryId, state.timesheetEntries],
+    [entryId, state.timesheetEntries],
   );
-  const isEditing = Boolean(editingEntry || editingTimer);
-  const isEditingTimer = Boolean(editingTimer);
+  const entryDate = editingEntry?.localDate ?? editingTimer?.localDate ?? date;
   const runningDurationMs = editingTimer
-    ? editingTimer.accumulatedDurationMs +
-      Math.max(0, now - editingTimer.startedAt)
+    ? editingTimer.accumulatedDurationMs + Math.max(0, now - editingTimer.startedAt)
     : 0;
-
   const [projectId, setProjectId] = useState("");
   const [taskId, setTaskId] = useState("");
   const [note, setNote] = useState("");
   const [durationHours, setDurationHours] = useState("");
-
   const parsedDurationMs = useMemo(
     () => parseHoursInput(durationHours),
     [durationHours],
   );
-  const canSave = Boolean(projectId) && (parsedDurationMs ?? 0) > 0;
-  const startTimerLabel = currentTimer ? "Switch timer" : "Start timer";
+  const canSave = (parsedDurationMs ?? 0) > 0;
   const isTimerMode = durationHours.trim() === "" || parsedDurationMs === 0;
-  const title = isEditingTimer
+  const title = editingTimer
     ? "Running timer"
-    : isEditing
+    : editingEntry
       ? "Edit time entry"
       : "New time entry";
 
   useEffect(() => {
-    if (!editingTimer) {
-      return;
-    }
-
+    if (!editingTimer) return;
     setNow(Date.now());
     const intervalId = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(intervalId);
@@ -98,7 +85,6 @@ export function TimeEntryModal({
       setNote(editingTimer.note ?? "");
       return;
     }
-
     if (!editingEntry) {
       setProjectId("");
       setTaskId("");
@@ -106,7 +92,6 @@ export function TimeEntryModal({
       setDurationHours("");
       return;
     }
-
     setProjectId(editingEntry.projectId ?? "");
     setTaskId(editingEntry.taskId ?? "");
     setNote(editingEntry.note ?? "");
@@ -114,71 +99,42 @@ export function TimeEntryModal({
   }, [editingEntry, editingTimer]);
 
   useEffect(() => {
-    if (!editingTimer) {
-      return;
-    }
-
-    setDurationHours(formatDurationHoursInput(runningDurationMs));
+    if (editingTimer) setDurationHours(formatDurationHoursInput(runningDurationMs));
   }, [editingTimer, runningDurationMs]);
 
   useEffect(() => {
-    if (timerId && !editingTimer) {
-      onClose();
-    }
+    if (timerId && !editingTimer) onClose();
   }, [editingTimer, onClose, timerId]);
-
-  // Close on click outside
-  useEffect(() => {
-    function handleMouseDown(event: MouseEvent) {
-      if (overlayRef.current === event.target) {
-        onClose();
-      }
-    }
-
-    document.addEventListener("mousedown", handleMouseDown);
-    return () => document.removeEventListener("mousedown", handleMouseDown);
-  }, [onClose]);
-
-  // Close on Escape
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
 
   function handleProjectTaskChange(selection: ProjectTaskSelection) {
     setProjectId(selection.projectId);
     setTaskId(selection.taskId);
   }
 
+  function currentValues(localDate = entryDate) {
+    if (!editingEntry || !parsedDurationMs || parsedDurationMs <= 0) {
+      return null;
+    }
+    return {
+      localDate,
+      projectId: projectId || undefined,
+      taskId: taskId || undefined,
+      note: note.trim() || undefined,
+      durationMs: parsedDurationMs,
+    };
+  }
+
   function handleSave() {
-    if (editingTimer) {
-      return;
-    }
-
-    if (!projectId || (parsedDurationMs ?? 0) <= 0) {
-      return;
-    }
-
+    if (editingTimer || !parsedDurationMs || parsedDurationMs <= 0) return;
     if (editingEntry) {
-      localStore.updateTimesheetEntry(editingEntry._id, {
-        projectId,
-        taskId: taskId || undefined,
-        note: note.trim() || undefined,
-        durationMs: parsedDurationMs!,
-      });
+      localStore.updateTimesheetEntry(editingEntry._id, currentValues()!);
     } else {
       localStore.saveManualTimeEntry({
         localDate: date,
-        projectId,
+        projectId: projectId || undefined,
         taskId: taskId || undefined,
         note: note.trim() || undefined,
-        durationMs: parsedDurationMs!,
+        durationMs: parsedDurationMs,
       });
     }
     onClose();
@@ -186,8 +142,8 @@ export function TimeEntryModal({
 
   function handleStartTimer() {
     localStore.startTimer({
-      localDate: date,
-      projectId,
+      localDate: entryDate,
+      projectId: projectId || undefined,
       taskId: taskId || undefined,
       note: note.trim() || undefined,
       accumulatedDurationMs: editingEntry ? (parsedDurationMs ?? 0) : undefined,
@@ -197,10 +153,7 @@ export function TimeEntryModal({
   }
 
   function handleStopTimer() {
-    if (!editingTimer) {
-      return;
-    }
-
+    if (!editingTimer) return;
     localStore.updateTimer(editingTimer._id, {
       projectId: projectId || undefined,
       taskId: taskId || undefined,
@@ -210,134 +163,98 @@ export function TimeEntryModal({
     onClose();
   }
 
-  function handleDelete() {
-    if (!editingEntry) {
-      return;
-    }
+  function duplicateTo(localDate: string) {
+    const values = currentValues(localDate);
+    if (!editingEntry || !values) return;
+    localStore.duplicateTimesheetEntry(editingEntry._id, values);
+    onClose();
+  }
 
-    localStore.deleteTimesheetEntry(editingEntry._id);
+  function moveTo(localDate: string) {
+    const values = currentValues(localDate);
+    if (!editingEntry || !values) return;
+    localStore.moveTimesheetEntry(editingEntry._id, values);
     onClose();
   }
 
   return (
-    <div ref={overlayRef} className="time-entry-modal-overlay">
-      <div className="time-entry-modal">
-        {/* Header */}
-        <div className="time-entry-modal-header">
-          <span className="time-entry-modal-title">{title}</span>
-          <button
-            type="button"
-            className="time-entry-modal-close"
-            onClick={onClose}
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        {/* Form */}
-        <div className="time-entry-modal-form">
-          <label className="field col-span-full">
-            <span className="field-label">Project / task</span>
-            <ProjectTaskPicker
-              projects={projects}
-              projectId={projectId}
-              taskId={taskId}
-              onChange={handleProjectTaskChange}
-              placeholder="Select project or task"
+    <Dialog open onOpenChange={(open) => !open && onClose()}>
+      <DialogContent className="max-w-xl gap-5">
+        <DialogHeader className="flex-row items-start justify-between gap-3 pr-9">
+          <DialogTitle>{title}</DialogTitle>
+          {editingEntry && !editingTimer ? (
+            <EntryActionsMenu
+              currentDate={editingEntry.localDate}
+              disabled={!canSave}
+              onDuplicate={() => duplicateTo(editingEntry.localDate)}
+              onDuplicateTo={duplicateTo}
+              onMoveTo={moveTo}
             />
-          </label>
-
-          {/* Note */}
-          <label className="field entry-field-note">
-            <span className="field-label">Note</span>
-            <textarea
-              className="field-input entry-note-input"
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              placeholder="Notes (optional)"
-              rows={2}
-            />
-          </label>
-
-          {/* Hours */}
-          <label className="field entry-field-hours">
-            <span className="field-label">Hours</span>
-            <input
-              className="field-input entry-hours-input"
-              type="text"
-              placeholder="01:30"
-              style={{ fontFamily: "var(--font-mono)" }}
-              value={durationHours}
-              disabled={isEditingTimer}
-              onChange={(event) => setDurationHours(event.target.value)}
-              onBlur={(event) =>
-                setDurationHours(normalizeHoursInput(event.target.value))
-              }
-              onKeyDown={(event) => {
-                if (isEditingTimer) {
-                  return;
-                }
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  event.currentTarget.blur();
-                }
-              }}
-              aria-label="Hours"
-            />
-          </label>
-        </div>
-
-        {/* Actions */}
-        <div className="time-entry-modal-actions">
-          {isEditingTimer ? (
-            <Button size="sm" className="gap-1.5" onClick={handleStopTimer}>
-              <Square className="h-3.5 w-3.5" />
-              Stop timer
-            </Button>
-          ) : isTimerMode ? (
-            <Button
-              size="sm"
-              className="gap-1.5"
-              onClick={handleStartTimer}
-            >
-              <Play className="h-3.5 w-3.5" />
-              {startTimerLabel}
-            </Button>
-          ) : (
-            <>
-              <Button
-                size="sm"
-                className="gap-1.5"
-                disabled={!canSave}
-                onClick={handleSave}
-              >
-                <Save className="h-3.5 w-3.5" />
-                Save
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="gap-1.5"
-                onClick={handleStartTimer}
-              >
-                <Play className="h-3.5 w-3.5" />
-                {startTimerLabel}
-              </Button>
-            </>
-          )}
-          {editingEntry ? (
-            <Button
-              size="sm"
-              variant="danger"
-              className="gap-1.5"
-              onClick={handleDelete}
-            >
-              <Trash2 className="h-3.5 w-3.5" />
-              Delete
-            </Button>
           ) : null}
-        </div>
-      </div>
-    </div>
+        </DialogHeader>
+
+        <TimeEntryFields
+          idPrefix="time-entry-modal"
+          className="sm:grid sm:grid-cols-[minmax(0,1fr)_8rem]"
+          projects={projects}
+          projectId={projectId}
+          taskId={taskId}
+          note={note}
+          durationHours={durationHours}
+          durationDisabled={Boolean(editingTimer)}
+          durationError={
+            durationHours.trim() !== "" && parsedDurationMs === null
+              ? "Enter a valid duration"
+              : null
+          }
+          onProjectTaskChange={handleProjectTaskChange}
+          onNoteChange={setNote}
+          onDurationChange={setDurationHours}
+        />
+
+        <DialogFooter className="sm:justify-between">
+          <div className="flex flex-wrap gap-2">
+            {editingEntry && !editingTimer ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="danger"
+                onClick={() => {
+                  localStore.deleteTimesheetEntry(editingEntry._id);
+                  onClose();
+                }}
+              >
+                <Trash2 data-icon="inline-start" />
+                Delete
+              </Button>
+            ) : null}
+          </div>
+          <div className="flex flex-wrap justify-end gap-2">
+            {editingTimer ? (
+              <Button size="sm" onClick={handleStopTimer}>
+                <Square data-icon="inline-start" />
+                Stop timer
+              </Button>
+            ) : isTimerMode ? (
+              <Button size="sm" onClick={handleStartTimer}>
+                <Play data-icon="inline-start" />
+                {currentTimer ? "Switch timer" : "Start timer"}
+              </Button>
+            ) : (
+              <>
+                <Button size="sm" variant="outline" onClick={handleStartTimer}>
+                  <Play data-icon="inline-start" />
+                  {currentTimer ? "Switch timer" : "Start timer"}
+                </Button>
+                <Button size="sm" disabled={!canSave} onClick={handleSave}>
+                  <Save data-icon="inline-start" />
+                  Save
+                </Button>
+              </>
+            )}
+          </div>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }

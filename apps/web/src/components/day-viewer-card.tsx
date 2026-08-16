@@ -36,6 +36,7 @@ interface DayViewerCardProps {
   totalValue: string;
   getDayValue: (localDate: string) => string;
   onSelectDate: (localDate: string) => void;
+  dateScopeControl?: ReactNode;
   headerActions?: ReactNode;
 }
 
@@ -47,6 +48,7 @@ export function DayViewerCard({
   totalValue,
   getDayValue,
   onSelectDate,
+  dateScopeControl,
   headerActions,
 }: DayViewerCardProps) {
   return (
@@ -130,7 +132,10 @@ export function DayViewerCard({
                 </button>
               )}
             </span>
-            <span className="day-viewer-date-big">{formatMonthDay(date).toUpperCase()}</span>
+            <span className="day-viewer-date-big-row">
+              <span className="day-viewer-date-big">{formatMonthDay(date).toUpperCase()}</span>
+              {dateScopeControl}
+            </span>
           </div>
         </div>
 

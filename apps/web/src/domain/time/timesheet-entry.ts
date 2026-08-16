@@ -28,6 +28,10 @@ export interface UpdateTimesheetEntryValues {
   durationMs: number;
 }
 
+export interface RelocateTimesheetEntryValues extends UpdateTimesheetEntryValues {
+  localDate: string;
+}
+
 function hasOwn<T extends object>(value: T, key: PropertyKey) {
   return Object.prototype.hasOwnProperty.call(value, key);
 }
@@ -244,32 +248,103 @@ export function deleteTimesheetEntry(
   entryId: string,
 ): LocalAppState {
   const entry = state.timesheetEntries.find((item) => item._id === entryId);
+  if (!entry || state.timers.some((timer) => timer.entryId === entryId)) {
+    return state;
+  }
 
   return {
     ...state,
     timesheetEntries: state.timesheetEntries.filter(
       (item) => item._id !== entryId,
     ),
-    timers: state.timers.map((timer) =>
-      timer.entryId === entryId
-        ? {
-            ...timer,
-            entryId: undefined,
-            accumulatedDurationMs: Math.max(
-              0,
-              timer.accumulatedDurationMs - (entry?.durationMs ?? 0),
-            ),
-          }
-        : timer,
+    workItems: applyLoggedTimeToWorkItems(state.workItems, {
+      workItemId: entry.workItemId,
+      projectId: entry.projectId,
+      taskId: entry.taskId,
+      durationMsDelta: -entry.durationMs,
+    }),
+  };
+}
+
+export function duplicateTimesheetEntry(
+  state: LocalAppState,
+  entryId: string,
+  values: RelocateTimesheetEntryValues,
+  factories: TimesheetEntryFactories,
+): LocalAppState {
+  const entry = state.timesheetEntries.find((item) => item._id === entryId);
+  if (!entry || state.timers.some((timer) => timer.entryId === entryId)) {
+    return state;
+  }
+
+  const createdDuplicate = createTimesheetEntry(
+    state.projects,
+    {
+      localDate: values.localDate,
+      workItemId: entry.workItemId,
+      projectId: values.projectId,
+      taskId: values.taskId,
+      note: values.note,
+      durationMs: values.durationMs,
+      sourceBlockIds: [],
+    },
+    factories,
+  );
+  const duplicate = createdDuplicate.taskId
+    ? createdDuplicate
+    : {
+        ...createdDuplicate,
+        label: entry.taskId ? "" : entry.label,
+      };
+
+  return {
+    ...state,
+    timesheetEntries: [...state.timesheetEntries, duplicate],
+    workItems: applyLoggedTimeToWorkItems(state.workItems, {
+      workItemId: duplicate.workItemId,
+      projectId: duplicate.projectId,
+      taskId: duplicate.taskId,
+      durationMsDelta: duplicate.durationMs,
+    }),
+  };
+}
+
+export function moveTimesheetEntry(
+  state: LocalAppState,
+  entryId: string,
+  values: RelocateTimesheetEntryValues,
+  factories: TimesheetEntryFactories,
+): LocalAppState {
+  const entry = state.timesheetEntries.find((item) => item._id === entryId);
+  if (!entry || state.timers.some((timer) => timer.entryId === entryId)) {
+    return state;
+  }
+
+  const updated = updateTimesheetEntry(state, entryId, values, factories);
+  const updatedEntry = updated.timesheetEntries.find((item) => item._id === entryId);
+  if (!updatedEntry) {
+    return state;
+  }
+
+  const movedEntry = preserveTimesheetEntrySubmissionState(entry, {
+    ...updatedEntry,
+    localDate: values.localDate,
+    committedAt: factories.now(),
+  });
+
+  if (
+    movedEntry.localDate === entry.localDate &&
+    createTimesheetEntrySubmissionFingerprint(movedEntry) ===
+      createTimesheetEntrySubmissionFingerprint(entry)
+  ) {
+    return updated;
+  }
+
+  return {
+    ...updated,
+    timesheetEntries: updated.timesheetEntries.map((item) =>
+      item._id === entryId ? movedEntry : item,
     ),
-    workItems: entry
-      ? applyLoggedTimeToWorkItems(state.workItems, {
-          workItemId: entry.workItemId,
-          projectId: entry.projectId,
-          taskId: entry.taskId,
-          durationMsDelta: -entry.durationMs,
-        })
-      : state.workItems,
   };
 }
 

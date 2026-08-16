@@ -28,6 +28,7 @@ This registry captures reusable visual patterns already present in TimeTracker. 
 - Connector settings fields are rendered through `apps/web/src/features/settings/connector-settings-ui.tsx`, so plugin-driven field styling stays consistent.
 - Immediate on/off settings use `Switch` from `apps/web/src/components/ui/switch.tsx`; labels describe the action as Activate or Deactivate plus the capability name.
 - Reorderable tables and navigation lists use `apps/web/src/lib/table-drag.ts` for consistent mouse/touch thresholds, cancellation, row movement, and drag-preview positioning.
+- Saved time entries share `features/time/time-entry-fields.tsx`. Day hosts it inline; Week hosts it in a shadcn dialog. Entry actions use one dropdown/calendar surface for Duplicate, Duplicate to, and Move to.
 - On mobile, backlog add and filter actions use a compact vertical pair of
   icon-only floating controls at the bottom right. Keep add as the lower primary
   action, open the filter menu upward, preserve safe-area spacing, and reserve
@@ -101,6 +102,39 @@ Packaged Windows builds download the selected track in the background and use a
 native restart confirmation only after the update is ready; the app never
 restarts without the user's confirmation. Other platforms show truthful manual
 update guidance while preserving the same release-track status and link.
+
+### Weekly Time Overview
+
+Files: `apps/web/src/features/time/weekly-time-view.tsx`, `apps/web/src/features/time/time-entry-fields.tsx`
+Last updated: 2026-08-15
+
+Day remains the default, timer-first time surface. The date heading exposes a
+compact anchored scope menu with `Day` and `Weeks`; choosing `Weeks` is available
+at desktop widths of 1024px and above, while narrower layouts fall back to Day.
+Week offers Ledger and Lanes through the shared toggle group,
+with the preference persisted locally. Ledger aggregates project/task time by
+day, shows project markers and daily totals, and reveals every contributing
+entry in a tray attached to the same continuous ruled surface. Lanes use seven
+equal-height headers, restrained weekend/today cues, and a project-color rail
+on each entry card. Both styles share thresholded pointer dragging, explicit
+weekday drop targets, Escape/pointer-cancel cleanup, and keyboard/double-click
+editing. Running entries stay locked. Normal headers show logged totals only;
+capacity target and utilization live in hover cards, with an optional compact
+over-target warning.
+
+The Week toolbar, table or lanes, totals, and detail tray form one full-width
+desktop workspace rather than stacked cards. Return to Day is the leading
+left-arrow action. The shared Day-inline/Week-dialog editor places an icon-only
+entry-options trigger at the form's upper right. Duplicate to and Move to swap
+that trigger's anchored Popover from actions to a Calendar with explicit
+confirmation, avoiding a second modal or backdrop while preserving the Day
+inline-editor outside-click boundary.
+
+Capacity targets and the two independent warning switches live in General
+Settings. Targets are Monday-first, default to eight hours on weekdays and zero
+on weekends, and remain local user preferences. Submitting below the week target
+adds a confirmation step only; the existing selection and submit command remain
+unchanged.
 
 ### Project Import And Export
 

@@ -65,6 +65,22 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
   Squirrel `.nupkg` packages; macOS stays manual until signing and notarization.
 - [x] Time-entry surfaces share a hierarchical shadcn project/task command picker
   with project drill-down, mixed-term direct task search, and bounded results.
+- [x] Day remains the default timer-first view and now exposes a compact date-
+  heading scope menu with `Day` and `Weeks`; the desktop-only Weeks view offers
+  Ledger and Lanes layouts, locally persisted capacity targets, hover-only
+  utilization details, and configurable warnings.
+- [x] Saved time entries share one Day-inline/Week-dialog editor with Duplicate,
+  Duplicate to, and Move to actions; cross-day moves preserve identity and
+  provenance while invalidating changed submissions through the existing
+  fingerprint lifecycle.
+- [x] Weekly-view adversarial review fixes lock running linked entries at the UI
+  and domain boundaries, preserve taskless labels on duplicate, use stable
+  Ledger row identities, and harden nested dialogs, drag ownership, keyboard
+  focus, and entry-group semantics.
+- [x] Weekly time visual refinement now uses one full-width continuous surface,
+  leading return-to-Day navigation, attached Ledger totals/detail regions,
+  fixed seven-day lane headers, project-color scanning cues, and a shared
+  upper-right entry-options Popover with an anchored confirmed date picker.
 
 ## Standard Task Flow
 
@@ -99,4 +115,23 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Verified `just acceptance-test`: 1 Chromium scenario passed.
 - [x] Verified `just typecheck`.
 - [x] Verified `just build`.
+- [x] Weekly time implementation verification: 210 web tests and 317 tests
+  repository-wide passed; repository typecheck and production builds passed.
+  Real-browser checks covered Day to Week navigation, Ledger, Lanes, the Week
+  entry dialog, General capacity settings, visible keyboard focus, nested date
+  dialog dismissal, corrected entry-group semantics, and the sub-1024px Day
+  fallback. The Windows `just` parser rejected the repository's existing
+  `short=` annotation, so equivalent locked pnpm commands were used for this
+  pass.
+- [x] Weekly visual refinement verification: all 210 web tests and 328 tests
+  repository-wide passed; repository typecheck and production builds passed.
+  Real-browser checks covered the unified Ledger/Lanes surface, seven visible
+  lanes without horizontal overflow at 1280px, project markers and rails, the
+  Week modal and Day inline editor, and the single-layer anchored date picker.
+  The broader Playwright suite passed 8 of 12 scenarios on an isolated port;
+  four pre-existing plugin-catalog scenarios still expect removed connector
+  controls/copy and do not exercise the time view.
+- [x] The Day-to-Weeks scope control was typechecked after replacing the old
+  Week overview action; the scope menu intentionally omits Calendar until that
+  feature exists.
 - [ ] Assign an owner and record a manual result in `qa/routines/local-workspace-smoke.md`.

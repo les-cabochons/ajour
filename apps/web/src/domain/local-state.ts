@@ -142,11 +142,26 @@ export type BacklogSortMode = "custom" | "priority_asc" | "priority_desc";
 
 export type ThemeMode = "system" | "dark" | "light";
 export type UpdateTrack = "stable" | "nightly";
+export type WeeklyTimeViewStyle = "ledger" | "lanes";
+
+export interface WeeklyCapacityTargets {
+  monday: number;
+  tuesday: number;
+  wednesday: number;
+  thursday: number;
+  friday: number;
+  saturday: number;
+  sunday: number;
+}
 
 export interface UserPreferences {
   themeMode: ThemeMode;
   updateTrack: UpdateTrack;
   projectDataShapeId: string;
+  weeklyTimeViewStyle: WeeklyTimeViewStyle;
+  weeklyCapacityTargets: WeeklyCapacityTargets;
+  warnWhenOverCapacity: boolean;
+  warnWhenSubmittingUnderCapacity: boolean;
 }
 
 export interface LocalBacklogStatus {

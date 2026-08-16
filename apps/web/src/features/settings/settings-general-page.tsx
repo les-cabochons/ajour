@@ -11,8 +11,19 @@ import {
 } from "@remixicon/react";
 import { AppPanel } from "@/components/app-surface";
 import { Button } from "@/components/ui/button";
+import { Field, FieldLabel } from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import type { ThemeMode, UpdateTrack } from "@/domain/local-state";
+import type {
+  ThemeMode,
+  UpdateTrack,
+  WeeklyCapacityTargets,
+} from "@/domain/local-state";
+import {
+  formatDurationHoursInput,
+  parseHoursInput,
+} from "@/domain/time/duration";
 import type { DesktopUpdateCheckResult } from "@/lib/desktop-bridge";
 import { cn } from "@/lib/utils";
 import { useUserPreferences } from "@/lib/local-hooks";
@@ -60,6 +71,57 @@ type UpdateCheckState =
   | { status: "checking" }
   | { status: "success"; result: DesktopUpdateCheckResult }
   | { status: "error"; message: string };
+
+const CAPACITY_DAYS: Array<{
+  key: keyof WeeklyCapacityTargets;
+  label: string;
+}> = [
+  { key: "monday", label: "Monday" },
+  { key: "tuesday", label: "Tuesday" },
+  { key: "wednesday", label: "Wednesday" },
+  { key: "thursday", label: "Thursday" },
+  { key: "friday", label: "Friday" },
+  { key: "saturday", label: "Saturday" },
+  { key: "sunday", label: "Sunday" },
+];
+
+function CapacityInput({
+  label,
+  value,
+  onCommit,
+}: {
+  label: string;
+  value: number;
+  onCommit: (value: number) => void;
+}) {
+  const [draft, setDraft] = useState(() => formatDurationHoursInput(value));
+
+  useEffect(() => {
+    setDraft(formatDurationHoursInput(value));
+  }, [value]);
+
+  return (
+    <Field>
+      <FieldLabel htmlFor={`capacity-${label.toLowerCase()}`}>{label}</FieldLabel>
+      <Input
+        id={`capacity-${label.toLowerCase()}`}
+        className="font-mono"
+        value={draft}
+        placeholder="08:00"
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={(event) => {
+          const parsed = parseHoursInput(event.target.value);
+          if (parsed !== null && parsed >= 0) {
+            onCommit(parsed);
+            setDraft(formatDurationHoursInput(parsed));
+          } else {
+            setDraft(formatDurationHoursInput(value));
+          }
+        }}
+      />
+    </Field>
+  );
+}
 
 function formatCheckedAt(value: string) {
   const date = new Date(value);
@@ -185,6 +247,70 @@ export function SettingsGeneralPage() {
                   </button>
                 );
               })}
+            </div>
+          </div>
+        </AppPanel>
+      </section>
+
+      <section className="settings-section">
+        <h2 className="settings-section-title">Time capacity</h2>
+        <p className="settings-section-desc">
+          Set the target for each weekday and choose which capacity warnings HarDay shows.
+        </p>
+
+        <AppPanel>
+          <div className="space-y-6">
+            <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+              {CAPACITY_DAYS.map((day) => (
+                <CapacityInput
+                  key={day.key}
+                  label={day.label}
+                  value={preferences.weeklyCapacityTargets[day.key]}
+                  onCommit={(value) =>
+                    localStore.setUserPreferences({
+                      weeklyCapacityTargets: {
+                        ...preferences.weeklyCapacityTargets,
+                        [day.key]: value,
+                      },
+                    })
+                  }
+                />
+              ))}
+            </div>
+
+            <div className="grid gap-3 border-t border-border/70 pt-5 md:grid-cols-2">
+              <Field orientation="horizontal" className="rounded-2xl border border-border/70 p-4">
+                <div className="flex-1">
+                  <FieldLabel htmlFor="warn-over-capacity">Over-capacity warning</FieldLabel>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Show a compact warning when logged time exceeds a target.
+                  </p>
+                </div>
+                <Switch
+                  id="warn-over-capacity"
+                  checked={preferences.warnWhenOverCapacity}
+                  onCheckedChange={(checked) =>
+                    localStore.setUserPreferences({ warnWhenOverCapacity: checked })
+                  }
+                />
+              </Field>
+              <Field orientation="horizontal" className="rounded-2xl border border-border/70 p-4">
+                <div className="flex-1">
+                  <FieldLabel htmlFor="warn-under-capacity">Under-target submit warning</FieldLabel>
+                  <p className="mt-1 text-sm text-muted-foreground">
+                    Ask for confirmation when submitted time is below the week target.
+                  </p>
+                </div>
+                <Switch
+                  id="warn-under-capacity"
+                  checked={preferences.warnWhenSubmittingUnderCapacity}
+                  onCheckedChange={(checked) =>
+                    localStore.setUserPreferences({
+                      warnWhenSubmittingUnderCapacity: checked,
+                    })
+                  }
+                />
+              </Field>
             </div>
           </div>
         </AppPanel>

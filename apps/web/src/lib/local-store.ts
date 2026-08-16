@@ -40,7 +40,9 @@ import {
 } from "@/domain/projects/task-import";
 import {
   deleteTimesheetEntry as applyDeleteTimesheetEntry,
+  duplicateTimesheetEntry as applyDuplicateTimesheetEntry,
   markTimesheetEntriesSubmitted as applyMarkTimesheetEntriesSubmitted,
+  moveTimesheetEntry as applyMoveTimesheetEntry,
   normalizeTimesheetEntry,
   reorderTimesheetEntries as applyReorderTimesheetEntries,
   saveManualTimesheetEntry,
@@ -186,7 +188,25 @@ const defaultUserPreferences: UserPreferences = {
   themeMode: "system",
   updateTrack: "stable",
   projectDataShapeId: BUILT_IN_PROJECT_DATA_SHAPE_ID,
+  weeklyTimeViewStyle: "ledger",
+  weeklyCapacityTargets: {
+    monday: 8 * 60 * 60 * 1000,
+    tuesday: 8 * 60 * 60 * 1000,
+    wednesday: 8 * 60 * 60 * 1000,
+    thursday: 8 * 60 * 60 * 1000,
+    friday: 8 * 60 * 60 * 1000,
+    saturday: 0,
+    sunday: 0,
+  },
+  warnWhenOverCapacity: true,
+  warnWhenSubmittingUnderCapacity: true,
 };
+
+function normalizeCapacityTarget(value: unknown, fallback: number) {
+  return typeof value === "number" && Number.isFinite(value) && value >= 0
+    ? value
+    : fallback;
+}
 
 let cachedState: LocalAppState | undefined;
 
@@ -342,6 +362,44 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
                 .trim()
                 .slice(0, 120)
             : defaults.userPreferences.projectDataShapeId,
+        weeklyTimeViewStyle:
+          persistedState.userPreferences?.weeklyTimeViewStyle === "lanes"
+            ? "lanes"
+            : "ledger",
+        weeklyCapacityTargets: {
+          monday: normalizeCapacityTarget(
+            persistedState.userPreferences?.weeklyCapacityTargets?.monday,
+            defaults.userPreferences.weeklyCapacityTargets.monday,
+          ),
+          tuesday: normalizeCapacityTarget(
+            persistedState.userPreferences?.weeklyCapacityTargets?.tuesday,
+            defaults.userPreferences.weeklyCapacityTargets.tuesday,
+          ),
+          wednesday: normalizeCapacityTarget(
+            persistedState.userPreferences?.weeklyCapacityTargets?.wednesday,
+            defaults.userPreferences.weeklyCapacityTargets.wednesday,
+          ),
+          thursday: normalizeCapacityTarget(
+            persistedState.userPreferences?.weeklyCapacityTargets?.thursday,
+            defaults.userPreferences.weeklyCapacityTargets.thursday,
+          ),
+          friday: normalizeCapacityTarget(
+            persistedState.userPreferences?.weeklyCapacityTargets?.friday,
+            defaults.userPreferences.weeklyCapacityTargets.friday,
+          ),
+          saturday: normalizeCapacityTarget(
+            persistedState.userPreferences?.weeklyCapacityTargets?.saturday,
+            defaults.userPreferences.weeklyCapacityTargets.saturday,
+          ),
+          sunday: normalizeCapacityTarget(
+            persistedState.userPreferences?.weeklyCapacityTargets?.sunday,
+            defaults.userPreferences.weeklyCapacityTargets.sunday,
+          ),
+        },
+        warnWhenOverCapacity:
+          persistedState.userPreferences?.warnWhenOverCapacity !== false,
+        warnWhenSubmittingUnderCapacity:
+          persistedState.userPreferences?.warnWhenSubmittingUnderCapacity !== false,
       },
     }),
   );
@@ -1076,6 +1134,40 @@ export const localStore = {
   },
   deleteTimesheetEntry(entryId: string) {
     updateState((state) => applyDeleteTimesheetEntry(state, entryId));
+  },
+  duplicateTimesheetEntry(
+    entryId: string,
+    values: {
+      localDate: string;
+      projectId?: string;
+      taskId?: string;
+      note?: string;
+      durationMs: number;
+    },
+  ) {
+    updateState((state) =>
+      applyDuplicateTimesheetEntry(state, entryId, values, {
+        createId,
+        now: Date.now,
+      }),
+    );
+  },
+  moveTimesheetEntry(
+    entryId: string,
+    values: {
+      localDate: string;
+      projectId?: string;
+      taskId?: string;
+      note?: string;
+      durationMs: number;
+    },
+  ) {
+    updateState((state) =>
+      applyMoveTimesheetEntry(state, entryId, values, {
+        createId,
+        now: Date.now,
+      }),
+    );
   },
   saveTimer(timerId: string) {
     updateState((state) =>
