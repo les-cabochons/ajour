@@ -65,9 +65,10 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
   Squirrel `.nupkg` packages; macOS stays manual until signing and notarization.
 - [x] Time-entry surfaces share a hierarchical shadcn project/task command picker
   with project drill-down, mixed-term direct task search, and bounded results.
-- [x] Day remains the default timer-first view and now links to a desktop-only
-  Week overview with Ledger and Lanes layouts, locally persisted capacity
-  targets, hover-only utilization details, and configurable warnings.
+- [x] Day remains the default timer-first view and now exposes a compact date-
+  heading scope menu with `Day` and `Weeks`; the desktop-only Weeks view offers
+  Ledger and Lanes layouts, locally persisted capacity targets, hover-only
+  utilization details, and configurable warnings.
 - [x] Saved time entries share one Day-inline/Week-dialog editor with Duplicate,
   Duplicate to, and Move to actions; cross-day moves preserve identity and
   provenance while invalidating changed submissions through the existing
@@ -130,4 +131,7 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
   The broader Playwright suite passed 8 of 12 scenarios on an isolated port;
   four pre-existing plugin-catalog scenarios still expect removed connector
   controls/copy and do not exercise the time view.
+- [x] The Day-to-Weeks scope control was typechecked after replacing the old
+  Week overview action; the scope menu intentionally omits Calendar until that
+  feature exists.
 - [ ] Assign an owner and record a manual result in `qa/routines/local-workspace-smoke.md`.

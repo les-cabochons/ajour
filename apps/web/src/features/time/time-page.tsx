@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useState } from "react";
 import {
-  RiCalendar2Line as CalendarDays,
   RiSendPlaneLine as SendHorizontal,
 } from "@remixicon/react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { DayViewerCard } from "@/components/day-viewer-card";
-import { Button } from "@/components/ui/button";
 import { formatClockDuration } from "@/domain/time/duration";
 import { SubmitTimesheetModal } from "@/features/time/submit-timesheet-modal";
+import { TimeViewScopeMenu } from "@/features/time/time-view-scope-menu";
 import { WeeklyTimeView } from "@/features/time/weekly-time-view";
 import { TimerPanel } from "@/features/timer/timer-panel";
 import { TimeEntryModal } from "@/features/timer/time-entry-modal";
@@ -115,6 +114,16 @@ export function TimePage({ date }: { date: string }) {
     });
   }
 
+  function changeTimeView(nextView: "day" | "week") {
+    if (nextView === "week") {
+      void navigate({
+        to: "/time/$date",
+        params: { date },
+        search: { view: "week" } as never,
+      });
+    }
+  }
+
   function closeModal() {
     void navigate({
       to: "/time/$date",
@@ -181,25 +190,9 @@ export function TimePage({ date }: { date: string }) {
         totalValue={formatClockDuration(weekTotalMs)}
         getDayValue={(day) => formatClockDuration(totalsByDate.get(day) ?? 0)}
         onSelectDate={goToDate}
+        dateScopeControl={<TimeViewScopeMenu value="day" onChange={changeTimeView} />}
         headerActions={
           <div className="flex items-center gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              className="day-viewer-week-pill"
-              aria-label="Open week overview"
-              onClick={() => {
-                void navigate({
-                  to: "/time/$date",
-                  params: { date },
-                  search: { view: "week" } as never,
-                });
-              }}
-            >
-              <CalendarDays data-icon="inline-start" />
-              <span>Week overview</span>
-            </Button>
             <button
               type="button"
               className="day-viewer-submit-pill"

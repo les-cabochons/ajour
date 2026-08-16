@@ -198,28 +198,6 @@
 }
 
 /* Weekly time overview */
-.day-viewer-week-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.35rem;
-  height: 30px;
-  padding: 0 0.75rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: transparent;
-  color: var(--text-tertiary);
-  font-size: 12px;
-  font-weight: 600;
-  cursor: pointer;
-  transition: background 140ms var(--ease), border-color 140ms var(--ease), color 140ms var(--ease);
-}
-
-.day-viewer-week-pill:hover {
-  background: var(--hover-bg);
-  border-color: var(--border-hover);
-  color: var(--text);
-}
-
 .weekly-time-view {
   --weekly-lane-header-height: 64px;
   --weekly-project-rail: 3px;
@@ -231,6 +209,58 @@
   gap: 0;
   overflow: hidden;
   background: var(--surface);
+}
+
+.day-viewer-date-big-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.2rem;
+}
+
+.day-viewer-date-scope-trigger {
+  align-self: flex-end;
+  margin-bottom: 0.1rem;
+  color: var(--text-tertiary);
+}
+
+.day-viewer-date-scope-trigger:hover {
+  color: var(--text);
+}
+
+.time-view-scope-popover {
+  width: 11rem;
+  gap: 0.5rem;
+  padding: 0.4rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  background: var(--surface-high);
+}
+
+.time-view-scope-options {
+  width: 100%;
+  align-items: stretch;
+  gap: 0.15rem;
+}
+
+.time-view-scope-option {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 0.55rem;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+}
+
+.time-view-scope-option[aria-pressed="true"] {
+  background: var(--hover-bg);
+  color: var(--text);
+}
+
+.time-view-scope-check {
+  visibility: hidden;
+}
+
+.time-view-scope-option[aria-pressed="true"] .time-view-scope-check {
+  visibility: visible;
 }
 
 .weekly-time-header {
@@ -835,8 +865,7 @@
 }
 
 @media (max-width: 1023px) {
-  .weekly-time-view,
-  .day-viewer-week-pill {
+  .weekly-time-view {
     display: none;
   }
 }

@@ -108,9 +108,10 @@ update guidance while preserving the same release-track status and link.
 Files: `apps/web/src/features/time/weekly-time-view.tsx`, `apps/web/src/features/time/time-entry-fields.tsx`
 Last updated: 2026-08-15
 
-Day remains the default, timer-first time surface. A dedicated Week overview
-action is available at desktop widths of 1024px and above; narrower layouts
-fall back to Day. Week offers Ledger and Lanes through the shared toggle group,
+Day remains the default, timer-first time surface. The date heading exposes a
+compact anchored scope menu with `Day` and `Weeks`; choosing `Weeks` is available
+at desktop widths of 1024px and above, while narrower layouts fall back to Day.
+Week offers Ledger and Lanes through the shared toggle group,
 with the preference persisted locally. Ledger aggregates project/task time by
 day, shows project markers and daily totals, and reveals every contributing
 entry in a tray attached to the same continuous ruled surface. Lanes use seven

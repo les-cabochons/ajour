@@ -356,7 +356,7 @@ export function WeeklyTimeView({
   );
 
   return (
-    <section className="weekly-time-view" aria-label="Week overview">
+    <section className="weekly-time-view" aria-label="Weeks">
       <header className="weekly-time-header">
         <div className="weekly-time-heading">
           <Button
