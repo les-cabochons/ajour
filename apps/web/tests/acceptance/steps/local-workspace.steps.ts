@@ -123,9 +123,30 @@ Given(
               title: "Backlog switch task",
               status: "active",
               source: "manual",
+              priority: 1,
               projectId: "project-acceptance",
               taskId: "task-second",
               createdAt: startedAt - 2_000,
+            },
+            {
+              _id: "work-item-child-acceptance",
+              title: "Backlog child task",
+              status: "active",
+              source: "manual",
+              parentWorkItemId: "work-item-acceptance",
+              projectId: "project-acceptance",
+              taskId: "task-second",
+              createdAt: startedAt - 1_900,
+            },
+            {
+              _id: "work-item-second-root",
+              title: "Backlog second root",
+              status: "active",
+              source: "manual",
+              priority: 2,
+              projectId: "project-acceptance",
+              taskId: "task-second",
+              createdAt: startedAt - 1_800,
             },
           ],
           updatedAt: startedAt,
@@ -202,6 +223,42 @@ Given("I have projects with searchable tasks", async ({ page }) => {
 
 When("I open today's time workspace", async ({ page }) => {
   await page.goto("/time/today");
+});
+
+When("I open today's new-entry workspace", async ({ page }) => {
+  await page.goto("/time/today?entry=new");
+});
+
+When("I resize the app to a compact desktop width", async ({ page }) => {
+  await page.setViewportSize({ width: 800, height: 900 });
+});
+
+When("I open the legacy Rules route", async ({ page }) => {
+  await page.goto("/rules");
+});
+
+When("I open Settings from the desktop sidebar", async ({ page }) => {
+  const settingsLink = page
+    .getByRole("navigation", { name: "Primary navigation" })
+    .getByRole("link", { name: "Settings" });
+  await settingsLink.focus();
+  await settingsLink.press("Enter");
+});
+
+When("I leave Settings from the sidebar", async ({ page }) => {
+  const backButton = page
+    .getByRole("navigation", { name: "Settings sections" })
+    .getByRole("button", { name: "Back" });
+  await backButton.focus();
+  await backButton.press("Enter");
+});
+
+When("I go back in the browser history", async ({ page }) => {
+  await page.goBack();
+});
+
+When("I open the Projects workspace", async ({ page }) => {
+  await page.goto("/projects");
 });
 
 When("I start the timer on the second entry", async ({ page }) => {
@@ -309,10 +366,310 @@ Then(
 );
 
 Then("the Time workspace is visible", async ({ page }) => {
+  const primaryNavigation = page.getByRole("navigation", {
+    name: "Primary navigation",
+  });
+  await expect(primaryNavigation).toBeVisible();
   await expect(
-    page.getByRole("button", { name: "Open primary navigation" }),
-  ).toContainText("Time");
+    primaryNavigation.getByRole("link", { name: "Time" }),
+  ).toHaveAttribute("aria-current", "page");
 });
+
+Then("the desktop sidebar owns the full left edge", async ({ page }) => {
+  const primaryNavigation = page.getByRole("navigation", {
+    name: "Primary navigation",
+  });
+  const workspaceTitlebar = page.locator(".harday-nav");
+
+  const [sidebarBox, titlebarBox, viewport] = await Promise.all([
+    primaryNavigation.boundingBox(),
+    workspaceTitlebar.boundingBox(),
+    page.evaluate(() => ({
+      width: window.innerWidth,
+      height: window.innerHeight,
+    })),
+  ]);
+
+  expect(sidebarBox).not.toBeNull();
+  expect(titlebarBox).not.toBeNull();
+  expect(sidebarBox?.x).toBe(0);
+  expect(sidebarBox?.y).toBe(0);
+  expect(sidebarBox?.height).toBe(viewport.height);
+  expect(titlebarBox?.x).toBe(sidebarBox?.width);
+  expect(titlebarBox?.width).toBe(viewport.width - (sidebarBox?.width ?? 0));
+});
+
+Then("the day surfaces stretch around centered content", async ({ page }) => {
+  await page.setViewportSize({ width: 1800, height: 900 });
+
+  const workspace = page.locator(".harday-app-workspace");
+  const content = page.locator(".app-content-shell");
+  const dayViewer = page.locator(".time-page-stack .day-viewer");
+  const dayViewerStrip = dayViewer.locator(".day-viewer-strip");
+  const entriesShell = page.locator(
+    ".time-page-stack .entries-table-scroll-shell-time",
+  );
+  const entriesHeader = entriesShell.locator(".entries-table-header-table");
+  const [
+    workspaceBox,
+    contentBox,
+    dayViewerBox,
+    dayViewerStripBox,
+    entriesHeaderBox,
+  ] = await Promise.all([
+    workspace.boundingBox(),
+    content.boundingBox(),
+    dayViewer.boundingBox(),
+    dayViewerStrip.boundingBox(),
+    entriesHeader.boundingBox(),
+  ]);
+
+  expect(workspaceBox).not.toBeNull();
+  expect(contentBox).not.toBeNull();
+  expect(dayViewerBox).not.toBeNull();
+  expect(dayViewerStripBox).not.toBeNull();
+  expect(entriesHeaderBox).not.toBeNull();
+  expect(contentBox?.x).toBe(workspaceBox?.x);
+  expect(contentBox?.width).toBe(workspaceBox?.width);
+  expect(dayViewerBox?.x).toBe(contentBox?.x);
+  expect(dayViewerBox?.width).toBe(contentBox?.width);
+  expect(entriesHeaderBox?.x).toBe(contentBox?.x);
+  expect(entriesHeaderBox?.width).toBe(contentBox?.width);
+
+  const stripLeftInset =
+    (dayViewerStripBox?.x ?? 0) - (contentBox?.x ?? 0);
+  const stripRightInset =
+    (contentBox?.x ?? 0) + (contentBox?.width ?? 0) -
+    ((dayViewerStripBox?.x ?? 0) + (dayViewerStripBox?.width ?? 0));
+  expect(dayViewerStripBox?.width).toBe(1440);
+  expect(Math.abs(stripLeftInset - stripRightInset)).toBeLessThanOrEqual(1);
+
+  const projectHeadingPadding = await entriesHeader
+    .locator(".entry-project-heading")
+    .evaluate((element) => Number.parseFloat(getComputedStyle(element).paddingLeft));
+  expect(projectHeadingPadding).toBeCloseTo(stripLeftInset + 16, 0);
+
+  await expect(dayViewer).toHaveCSS("border-left-width", "0px");
+  await expect(dayViewer).toHaveCSS("border-right-width", "0px");
+  await expect(entriesShell).toHaveCSS("border-left-width", "0px");
+  await expect(entriesShell).toHaveCSS("border-right-width", "0px");
+  await expect(entriesShell).toHaveCSS("border-bottom-width", "0px");
+});
+
+Then("the Backlog workspace fills the available page", async ({ page }) => {
+  await page.setViewportSize({ width: 2200, height: 900 });
+
+  const content = page.locator(".app-content-shell");
+  const pageContainer = page.locator(
+    ".page-container:has(> .backlog-page-stack)",
+  );
+  const backlogShell = page.locator(".entries-table-scroll-shell-backlog");
+  const backlogHeader = backlogShell.locator(".entries-table-header-table");
+  const backlogHeadingLabel = backlogHeader
+    .locator(".backlog-task-heading-content > span")
+    .first();
+  const [
+    contentBox,
+    pageContainerBox,
+    backlogShellBox,
+    backlogHeaderBox,
+    backlogHeadingLabelBox,
+  ] = await Promise.all([
+    content.boundingBox(),
+    pageContainer.boundingBox(),
+    backlogShell.boundingBox(),
+    backlogHeader.boundingBox(),
+    backlogHeadingLabel.boundingBox(),
+  ]);
+
+  expect(contentBox).not.toBeNull();
+  expect(pageContainerBox).not.toBeNull();
+  expect(backlogShellBox).not.toBeNull();
+  expect(backlogHeaderBox).not.toBeNull();
+  expect(backlogHeadingLabelBox).not.toBeNull();
+  expect(pageContainerBox?.x).toBe(contentBox?.x);
+  expect(pageContainerBox?.width).toBe(contentBox?.width);
+  expect(backlogShellBox?.x).toBe(contentBox?.x);
+  expect(backlogShellBox?.width).toBe(contentBox?.width);
+  expect(backlogShellBox?.height).toBe(contentBox?.height);
+  expect(backlogHeaderBox?.x).toBe(contentBox?.x);
+  expect(backlogHeaderBox?.width).toBe(contentBox?.width);
+
+  const centeredContentGutter = Math.max(
+    0,
+    ((contentBox?.width ?? 0) - 1440) / 2,
+  );
+  expect(backlogHeadingLabelBox?.x).toBeCloseTo(
+    (contentBox?.x ?? 0) + centeredContentGutter + 16,
+    0,
+  );
+  await expect(backlogShell).toHaveCSS("border-left-width", "0px");
+  await expect(backlogShell).toHaveCSS("border-right-width", "0px");
+  await expect(backlogShell).toHaveCSS("border-bottom-width", "0px");
+  await expect(backlogShell).toHaveCSS("border-radius", "0px");
+});
+
+Then(
+  "expanded and dragged Backlog rows keep their centered columns",
+  async ({ page }) => {
+    const rootRow = page.locator(
+      'tr[data-backlog-root-id="work-item-acceptance"]:not(.entry-edit-row):not(.backlog-row-child)',
+    );
+    const rootTaskCell = rootRow.locator(".backlog-task-cell");
+    const rootTaskCellBefore = await rootTaskCell.boundingBox();
+    expect(rootTaskCellBefore).not.toBeNull();
+
+    const rootTitle = rootRow.getByText("Backlog switch task", { exact: true });
+    const rootTitleBox = await rootTitle.boundingBox();
+    expect(rootTitleBox).not.toBeNull();
+
+    const dragX = (rootTitleBox?.x ?? 0) + 8;
+    const dragY = (rootTitleBox?.y ?? 0) + (rootTitleBox?.height ?? 0) / 2;
+    await page.mouse.move(dragX, dragY);
+    await page.mouse.down();
+    await page.mouse.move(dragX + 2, dragY + 14, { steps: 5 });
+
+    const dragPreview = page.locator(".backlog-task-drag-preview");
+    await expect(dragPreview).toBeVisible();
+    const dragPreviewTaskCell = await dragPreview
+      .locator(".backlog-task-drag-preview-cell")
+      .boundingBox();
+    const dragPreviewTitle = await dragPreview
+      .getByText("Backlog switch task", { exact: true })
+      .boundingBox();
+    expect(dragPreviewTaskCell).not.toBeNull();
+    expect(dragPreviewTitle).not.toBeNull();
+    expect(
+      Math.abs(
+        (dragPreviewTaskCell?.x ?? 0) - (rootTaskCellBefore?.x ?? 0),
+      ),
+    ).toBeLessThanOrEqual(1.5);
+    expect(
+      Math.abs((dragPreviewTitle?.x ?? 0) - (rootTitleBox?.x ?? 0)),
+    ).toBeLessThanOrEqual(1.5);
+    await page.mouse.up();
+
+    await page.waitForTimeout(100);
+    await rootRow
+      .getByRole("button", { name: "Show subtasks for Backlog switch task" })
+      .click();
+
+    const childRow = page
+      .locator("tr.backlog-row-child")
+      .filter({ hasText: "Backlog child task" });
+    await expect(childRow).toBeVisible();
+    const [rootTaskCellAfter, childTaskCell] = await Promise.all([
+      rootTaskCell.boundingBox(),
+      childRow.locator(".backlog-task-cell").boundingBox(),
+    ]);
+    expect(rootTaskCellAfter).not.toBeNull();
+    expect(childTaskCell).not.toBeNull();
+    expect(
+      Math.abs((rootTaskCellAfter?.x ?? 0) - (rootTaskCellBefore?.x ?? 0)),
+    ).toBeLessThanOrEqual(1.5);
+    expect(
+      Math.abs((childTaskCell?.x ?? 0) - (rootTaskCellBefore?.x ?? 0)),
+    ).toBeLessThanOrEqual(1.5);
+  },
+);
+
+Then("the Settings sections replace the primary navigation", async ({ page }) => {
+  await expect(
+    page.getByRole("navigation", { name: "Primary navigation" }),
+  ).toHaveCount(0);
+  const settingsNavigation = page.getByRole("navigation", {
+    name: "Settings sections",
+  });
+  await expect(settingsNavigation).toBeVisible();
+  await expect(
+    settingsNavigation.getByRole("link", { name: "General" }),
+  ).toHaveAttribute("aria-current", "page");
+  await expect(
+    settingsNavigation.getByRole("button", { name: "Back" }),
+  ).toBeVisible();
+});
+
+Then(
+  "the Settings navigation remains available as a compact rail",
+  async ({ page }) => {
+    const settingsNavigation = page.getByRole("navigation", {
+      name: "Settings sections",
+    });
+    const navigationBox = await settingsNavigation.boundingBox();
+    expect(navigationBox).not.toBeNull();
+    expect(navigationBox?.width).toBe(48);
+    await expect(
+      settingsNavigation.getByRole("link", { name: "Projects" }),
+    ).toBeVisible();
+    await expect(
+      settingsNavigation.getByRole("button", { name: "Back" }),
+    ).toBeVisible();
+  },
+);
+
+Then("the Time new-entry workspace sidebar is restored", async ({ page }) => {
+  await expect(page).toHaveURL(/\/time\/today\?entry=new$/);
+  await expect(page.locator(".harday-app-navigation-sidebar")).toBeVisible();
+  await expect(
+    page.getByText("New time entry", { exact: true }),
+  ).toBeVisible();
+});
+
+Then(
+  "the Projects sidebar remains expanded and left-aligned beside primary navigation",
+  async ({ page }) => {
+    await page.setViewportSize({ width: 1800, height: 900 });
+    await expect(
+      page.getByRole("navigation", { name: "Primary navigation" }),
+    ).toBeVisible();
+    const projectsNavigation = page.getByRole("navigation", {
+      name: "Projects",
+    });
+    await expect(projectsNavigation).toBeVisible();
+    await expect(
+      projectsNavigation.getByRole("link", { name: /aaa xyz/ }),
+    ).toBeVisible();
+
+    const [primaryNavigationBox, projectsNavigationBox] = await Promise.all([
+      page
+        .getByRole("navigation", { name: "Primary navigation" })
+        .boundingBox(),
+      projectsNavigation.boundingBox(),
+    ]);
+    expect(primaryNavigationBox).not.toBeNull();
+    expect(projectsNavigationBox).not.toBeNull();
+    expect(projectsNavigationBox?.x).toBe(
+      (primaryNavigationBox?.x ?? 0) + (primaryNavigationBox?.width ?? 0),
+    );
+  },
+);
+
+Then(
+  "the Projects navigation remains available as a compact rail",
+  async ({ page }) => {
+    await page.setViewportSize({ width: 800, height: 900 });
+    const primaryNavigation = page.getByRole("navigation", {
+      name: "Primary navigation",
+    });
+    const projectsNavigation = page.getByRole("navigation", {
+      name: "Projects",
+    });
+    await expect(primaryNavigation).toBeVisible();
+    await expect(projectsNavigation).toBeVisible();
+    const [primaryNavigationBox, projectsNavigationBox] = await Promise.all([
+      primaryNavigation.boundingBox(),
+      projectsNavigation.boundingBox(),
+    ]);
+    expect(primaryNavigationBox?.width).toBe(48);
+    expect(projectsNavigationBox?.width).toBe(48);
+    await expect(
+      projectsNavigation.getByRole("link", { name: "aaa xyz" }),
+    ).toBeVisible();
+    await expect(
+      projectsNavigation.getByRole("button", { name: "Project actions" }),
+    ).toBeVisible();
+  },
+);
 
 Then("the timesheet can be submitted", async ({ page }) => {
   const submitTimesheet = page.getByRole("button", {
@@ -479,7 +836,7 @@ When("I install a packaged connector from settings", async ({ page }) => {
   await page.goto("/settings/plugins");
 
   const installButton = page.getByRole("button", {
-    name: "Install connector",
+    name: "Install from file",
   });
   await expect(installButton).toBeVisible();
 
@@ -498,7 +855,7 @@ When("I deactivate the connector plugin with the keyboard", async ({ page }) => 
 });
 
 Then("the inactive connector plugin remains configurable", async ({ page }) => {
-  await page.getByRole("link", { name: "Configure Example" }).click();
+  await page.getByRole("link", { name: "View Example" }).click();
   await expect(page).toHaveURL(/\/settings\/plugins\/example$/);
   await expect(page.getByText("This plugin is inactive.")).toBeVisible();
   await expect(
@@ -520,7 +877,7 @@ Then("I arrive at the plugins catalog", async ({ page }) => {
 });
 
 Then("the empty plugin catalog is explained", async ({ page }) => {
-  await expect(page.getByText("No connector plugins installed")).toBeVisible();
+  await expect(page.getByText("No matching plugins")).toBeVisible();
 });
 
 Then("Outlook Calendar is not offered", async ({ page }) => {
@@ -530,11 +887,11 @@ Then("Outlook Calendar is not offered", async ({ page }) => {
 Then("the connector plugin is reported as installed", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Plugins" })).toBeVisible();
   await expect(page.getByText("Example 1.2.3 installed.")).toBeVisible();
-  await expect(page.getByText("Version 1.2.3")).toBeVisible();
+  await expect(page.getByText("v1.2.3", { exact: true })).toBeVisible();
 });
 
 Then("I can open the connector plugin configuration", async ({ page }) => {
-  await page.getByRole("link", { name: "Configure Example" }).click();
+  await page.getByRole("link", { name: "View Example" }).click();
 
   await expect(page).toHaveURL(/\/settings\/plugins\/example$/);
   await expect(page.getByRole("heading", { name: "Example" })).toBeVisible();
@@ -544,7 +901,7 @@ Then("I can open the connector plugin configuration", async ({ page }) => {
 });
 
 When("I open the connector plugin configuration", async ({ page }) => {
-  await page.getByRole("link", { name: "Configure Example" }).click();
+  await page.getByRole("link", { name: "View Example" }).click();
   await expect(page).toHaveURL(/\/settings\/plugins\/example$/);
 });
 
@@ -559,10 +916,10 @@ Then("the connector plugin is reported as uninstalled", async ({ page }) => {
     page.getByText("Example uninstalled. Imported backlog items were preserved."),
   ).toBeVisible();
   await expect(
-    page.getByRole("link", { name: "Configure Example" }),
+    page.getByRole("link", { name: "View Example" }),
   ).toHaveCount(0);
   await expect(
-    page.getByRole("link", { name: "Return to the catalog" }),
+    page.getByRole("link", { name: "All plugins" }),
   ).toBeVisible();
 });
 

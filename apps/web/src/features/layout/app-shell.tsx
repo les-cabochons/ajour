@@ -4,41 +4,40 @@ import {
   useMemo,
   useRef,
   useState,
+  type CSSProperties,
   type RefObject,
 } from "react";
 import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   RiAddLine as Plus,
-  RiArrowDownSLine as ChevronDown,
   RiArrowGoBackLine as ReturnIcon,
   RiCheckLine as Check,
   RiCloseLine as X,
-  RiFolderChartLine as FolderKanban,
   RiListCheck3 as ListTodo,
   RiPlayLine as Play,
-  RiSettings3Line as Settings,
   RiStopLine as Square,
   RiTimerLine as Timer,
 } from "@remixicon/react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
   Popover,
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { SidebarProvider } from "@/components/ui/sidebar";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import {
+  AppNavigationSidebar,
+  isAppNavigationItemActive,
+  isSettingsReturnPath,
+} from "@/features/layout/app-navigation-sidebar";
 import {
   ProjectTaskPicker,
   type ProjectTaskSelection,
 } from "@/features/projects/project-task-picker";
+import { SettingsNavigationSidebar } from "@/features/settings/settings-navigation-sidebar";
 import {
   formatClockDuration,
   normalizeHoursInput,
@@ -66,33 +65,12 @@ const isWindowsDesktopShell =
   typeof window !== "undefined" &&
   window.timetrackerDesktop?.runtime?.platform === "win32";
 
-const navItems = [
-  { to: "/time/$date", params: { date: "today" }, label: "Time", icon: Timer },
-  { to: "/backlog", label: "Backlog", icon: ListTodo },
-  { to: "/projects", label: "Projects", icon: FolderKanban },
-  { to: "/settings", label: "Settings", icon: Settings },
-] as const;
+const isMacDesktopShell =
+  isDesktopShell &&
+  typeof window !== "undefined" &&
+  window.timetrackerDesktop?.runtime?.platform === "darwin";
 
 const AUTO_SYNC_POLL_INTERVAL_MS = 30_000;
-
-function isNavItemActive(
-  pathname: string,
-  to: (typeof navItems)[number]["to"],
-) {
-  if (to === "/time/$date") {
-    return pathname.startsWith("/time/") || pathname.startsWith("/review/");
-  }
-
-  if (to === "/projects") {
-    return pathname === "/projects" || pathname.startsWith("/projects/");
-  }
-
-  if (to === "/settings") {
-    return pathname.startsWith("/settings");
-  }
-
-  return pathname === to;
-}
 
 function dateAtNoon(localDate: string) {
   return new Date(`${localDate}T12:00:00`);
@@ -819,14 +797,14 @@ export function AppShell() {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
+  const href = useRouterState({
+    select: (state) => state.location.href,
+  });
   const navigate = useNavigate();
-  const visibleNavItems = navItems;
-  const activeNavItem =
-    visibleNavItems.find((item) => isNavItemActive(pathname, item.to)) ??
-    visibleNavItems[0];
-  const ActiveNavIcon = activeNavItem.icon;
-  const isTimeActive = isNavItemActive(pathname, "/time/$date");
-  const isBacklogActive = isNavItemActive(pathname, "/backlog");
+  const isTimeActive = isAppNavigationItemActive(pathname, "/time/$date");
+  const isBacklogActive = isAppNavigationItemActive(pathname, "/backlog");
+  const isSettingsActive = isAppNavigationItemActive(pathname, "/settings");
+  const lastNonSettingsHrefRef = useRef("/time/today");
   const timeRouteDate = getTimeRouteDate(pathname);
   const [selectedTimeDate, setSelectedTimeDate] = useState(
     () => timeRouteDate ?? todayIsoDate(),
@@ -857,6 +835,12 @@ export function AppShell() {
   }, [timeRouteDate]);
 
   useEffect(() => {
+    if (isSettingsReturnPath(pathname)) {
+      lastNonSettingsHrefRef.current = href;
+    }
+  }, [href, pathname]);
+
+  useEffect(() => {
     const mediaQuery = window.matchMedia(
       `(max-width: ${MOBILE_BREAKPOINT}px)`,
     );
@@ -870,189 +854,176 @@ export function AppShell() {
       mediaQuery.removeEventListener("change", handleViewportChange);
   }, []);
 
+  const leaveSettings = useCallback(() => {
+    void navigate({ href: lastNonSettingsHrefRef.current, replace: true });
+  }, [navigate]);
+
   return (
     <div
       className={cn(
         "flex h-dvh min-h-0 flex-col bg-background",
         isDesktopShell && "desktop-shell-app",
         isWindowsDesktopShell && "desktop-shell-windows",
+        isMacDesktopShell && "desktop-shell-macos",
       )}
     >
       <ConnectorAutoSyncScheduler />
-      {/* Top sticky nav */}
-      <nav
-        className={cn(
-          "harday-nav",
-          isDesktopShell && "desktop-shell-nav desktop-drag-region",
-        )}
+      <SidebarProvider
+        className="harday-app-body"
+        keyboardShortcut={false}
+        style={
+          {
+            "--sidebar-width": "200px",
+            "--sidebar-width-icon": "200px",
+          } as CSSProperties
+        }
       >
-        <div
-          className={cn(
-            "harday-nav-inner",
-            isDesktopShell && "desktop-shell-nav-inner",
-          )}
-        >
-          <div
+        {isSettingsActive ? (
+          <SettingsNavigationSidebar
+            pathname={pathname}
+            onBack={leaveSettings}
+          />
+        ) : (
+          <AppNavigationSidebar
+            pathname={pathname}
+            selectedTimeDate={selectedTimeDate}
+          />
+        )}
+
+        <div className="harday-app-workspace">
+          {/* Workspace titlebar. The sidebar owns the window's left chrome. */}
+          <nav
             className={cn(
-              "harday-nav-main",
-              isDesktopShell && "desktop-shell-nav-main",
+              "harday-nav",
+              isDesktopShell && "desktop-shell-nav desktop-drag-region",
             )}
           >
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                className={cn(
-                  "harday-nav-menu-trigger",
-                  isDesktopShell && "desktop-no-drag",
-                )}
-                aria-label="Open primary navigation"
-              >
-                <ActiveNavIcon className="h-3.5 w-3.5" />
-                <span>{activeNavItem.label}</span>
-                <ChevronDown className="harday-nav-menu-trigger-arrow h-3.5 w-3.5" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent
-                className="harday-nav-menu-content"
-                align="start"
-                sideOffset={6}
-              >
-                {visibleNavItems.map((item) => {
-                  const Icon = item.icon;
-                  const isActive = isNavItemActive(pathname, item.to);
-                  return (
-                    <DropdownMenuItem
-                      key={item.label}
-                      className="harday-nav-menu-item"
-                      onClick={() => {
-                        void navigate({
-                          to: item.to as never,
-                          params: (item.to === "/time/$date"
-                            ? { date: selectedTimeDate }
-                            : "params" in item
-                              ? item.params
-                              : undefined) as never,
-                        });
-                      }}
-                    >
-                      <Icon className="h-4 w-4" />
-                      <span>{item.label}</span>
-                      {isActive ? <Check className="ml-auto h-4 w-4" /> : null}
-                    </DropdownMenuItem>
-                  );
-                })}
-              </DropdownMenuContent>
-            </DropdownMenu>
-            {showMobileModeToggle ? (
-              <ToggleGroup
-                className={cn(
-                  "harday-mobile-mode-toggle",
-                  isDesktopShell && "desktop-no-drag",
-                )}
-                aria-label="Primary navigation"
-                value={mobileModeValue}
-                onValueChange={(value) => {
-                  const nextValue = value[0];
-                  if (!nextValue) {
-                    return;
-                  }
-
-                  if (nextValue === "time") {
-                    void navigate({
-                      to: "/time/$date",
-                      params: { date: selectedTimeDate },
-                    });
-                    return;
-                  }
-
-                  void navigate({ to: "/backlog" });
-                }}
-              >
-                <ToggleGroupItem
-                  value="time"
-                  size="sm"
-                  variant="default"
-                  className={cn(
-                    "harday-mobile-mode-toggle-item !h-6 !w-7 !min-w-7 !gap-0 !rounded-[4px] !px-0",
-                    isDesktopShell && "desktop-no-drag",
-                  )}
-                  aria-label="Time"
-                  title="Time"
-                >
-                  <Timer className="h-4 w-4" />
-                  <span className="sr-only">Time</span>
-                </ToggleGroupItem>
-                <ToggleGroupItem
-                  value="backlog"
-                  size="sm"
-                  variant="default"
-                  className={cn(
-                    "harday-mobile-mode-toggle-item !h-6 !w-7 !min-w-7 !gap-0 !rounded-[4px] !px-0",
-                    isDesktopShell && "desktop-no-drag",
-                  )}
-                  aria-label="Backlog"
-                  title="Backlog"
-                >
-                  <ListTodo className="h-4 w-4" />
-                  <span className="sr-only">Backlog</span>
-                </ToggleGroupItem>
-              </ToggleGroup>
-            ) : null}
-            <CompactTimeDatePicker
-              date={selectedTimeDate}
-              onSelectDate={(nextDate) => {
-                setSelectedTimeDate(nextDate);
-                if (isTimeActive) {
-                  void navigate({
-                    to: "/time/$date",
-                    params: { date: nextDate },
-                  });
-                }
-              }}
-            />
-            {selectedTimeDate !== todayIsoDate() ? (
-              <button
-                type="button"
-                className={cn(
-                  "harday-nav-return-today",
-                  isDesktopShell && "desktop-no-drag",
-                )}
-                onClick={() => {
-                  const today = todayIsoDate();
-                  setSelectedTimeDate(today);
-                  if (isTimeActive) {
-                    void navigate({
-                      to: "/time/$date",
-                      params: { date: today },
-                    });
-                  }
-                }}
-                aria-label="Return to today"
-              >
-                <ReturnIcon className="h-2.5 w-2.5" />
-              </button>
-            ) : null}
-          </div>
-
-          <GlobalTimerBar selectedDate={selectedTimeDate} />
-        </div>
-      </nav>
-
-      {/* Page content */}
-      <main className="app-content-shell flex-1">
-        <ScrollArea className="app-content-scroll-area">
-          {pathname.startsWith("/settings") ? (
-            <Outlet />
-          ) : (
             <div
               className={cn(
-                "page-container",
-                isDesktopShell && "desktop-page-container",
+                "harday-nav-inner",
+                isDesktopShell && "desktop-shell-nav-inner",
               )}
             >
-              <Outlet />
+              <div
+                className={cn(
+                  "harday-nav-main",
+                  isDesktopShell && "desktop-shell-nav-main",
+                )}
+              >
+                {showMobileModeToggle ? (
+                  <ToggleGroup
+                    className={cn(
+                      "harday-mobile-mode-toggle",
+                      isDesktopShell && "desktop-no-drag",
+                    )}
+                    aria-label="Primary navigation"
+                    value={mobileModeValue}
+                    onValueChange={(value) => {
+                      const nextValue = value[0];
+                      if (!nextValue) {
+                        return;
+                      }
+
+                      if (nextValue === "time") {
+                        void navigate({
+                          to: "/time/$date",
+                          params: { date: selectedTimeDate },
+                        });
+                        return;
+                      }
+
+                      void navigate({ to: "/backlog" });
+                    }}
+                  >
+                    <ToggleGroupItem
+                      value="time"
+                      size="sm"
+                      variant="default"
+                      className={cn(
+                        "harday-mobile-mode-toggle-item !h-6 !w-7 !min-w-7 !gap-0 !rounded-[4px] !px-0",
+                        isDesktopShell && "desktop-no-drag",
+                      )}
+                      aria-label="Time"
+                      title="Time"
+                    >
+                      <Timer className="h-4 w-4" />
+                      <span className="sr-only">Time</span>
+                    </ToggleGroupItem>
+                    <ToggleGroupItem
+                      value="backlog"
+                      size="sm"
+                      variant="default"
+                      className={cn(
+                        "harday-mobile-mode-toggle-item !h-6 !w-7 !min-w-7 !gap-0 !rounded-[4px] !px-0",
+                        isDesktopShell && "desktop-no-drag",
+                      )}
+                      aria-label="Backlog"
+                      title="Backlog"
+                    >
+                      <ListTodo className="h-4 w-4" />
+                      <span className="sr-only">Backlog</span>
+                    </ToggleGroupItem>
+                  </ToggleGroup>
+                ) : null}
+                <CompactTimeDatePicker
+                  date={selectedTimeDate}
+                  onSelectDate={(nextDate) => {
+                    setSelectedTimeDate(nextDate);
+                    if (isTimeActive) {
+                      void navigate({
+                        to: "/time/$date",
+                        params: { date: nextDate },
+                      });
+                    }
+                  }}
+                />
+                {selectedTimeDate !== todayIsoDate() ? (
+                  <button
+                    type="button"
+                    className={cn(
+                      "harday-nav-return-today",
+                      isDesktopShell && "desktop-no-drag",
+                    )}
+                    onClick={() => {
+                      const today = todayIsoDate();
+                      setSelectedTimeDate(today);
+                      if (isTimeActive) {
+                        void navigate({
+                          to: "/time/$date",
+                          params: { date: today },
+                        });
+                      }
+                    }}
+                    aria-label="Return to today"
+                  >
+                    <ReturnIcon className="h-2.5 w-2.5" />
+                  </button>
+                ) : null}
+              </div>
+
+              <GlobalTimerBar selectedDate={selectedTimeDate} />
             </div>
-          )}
-        </ScrollArea>
-      </main>
+          </nav>
+
+          {/* Page content */}
+          <main className="app-content-shell flex-1">
+            <ScrollArea className="app-content-scroll-area">
+              {isSettingsActive ? (
+                <Outlet />
+              ) : (
+                <div
+                  className={cn(
+                    "page-container",
+                    isDesktopShell && "desktop-page-container",
+                  )}
+                >
+                  <Outlet />
+                </div>
+              )}
+            </ScrollArea>
+          </main>
+        </div>
+      </SidebarProvider>
     </div>
   );
 }

@@ -1,5 +1,4 @@
 import {
-  type CSSProperties,
   useCallback,
   useEffect,
   useMemo,
@@ -138,7 +137,6 @@ type ProjectModalState =
 
 type ProjectCommandView = "main" | "task-projects";
 type ProjectTaskFilter = "active" | "archived";
-const SECTION_SIDEBAR_COLLAPSE_BREAKPOINT = 1520;
 
 const defaultProjectDraft: ProjectDraft = {
   name: "",
@@ -1913,11 +1911,6 @@ export function ProjectsPage() {
     string | null
   >(null);
   const [taskCreationDraft, setTaskCreationDraft] = useState("");
-  const [isProjectSidebarOpen, setIsProjectSidebarOpen] = useState(() =>
-    typeof window === "undefined"
-      ? true
-      : window.innerWidth > SECTION_SIDEBAR_COLLAPSE_BREAKPOINT,
-  );
   const [pressedProjectId, setPressedProjectId] = useState<string | null>(null);
   const [projectDragState, setProjectDragState] =
     useState<ProjectDragState | null>(null);
@@ -2200,19 +2193,6 @@ export function ProjectsPage() {
     });
   }, [activeProjects, archivedProjects, navigate, pathname, selectedProject]);
 
-  useEffect(() => {
-    const mediaQuery = window.matchMedia(
-      `(max-width: ${SECTION_SIDEBAR_COLLAPSE_BREAKPOINT}px)`,
-    );
-    const handleViewportChange = () => {
-      setIsProjectSidebarOpen(!mediaQuery.matches);
-    };
-
-    handleViewportChange();
-    mediaQuery.addEventListener("change", handleViewportChange);
-    return () => mediaQuery.removeEventListener("change", handleViewportChange);
-  }, []);
-
   if (!teamState?.team) return null;
 
   const closeProjectModal = () => {
@@ -2302,21 +2282,21 @@ export function ProjectsPage() {
   return (
     <CustomSidebarLayout
       className="harday-project-layout"
-      style={
-        {
-          "--sidebar-width": "200px",
-          "--sidebar-width-icon": "48px",
-        } as CSSProperties
-      }
-      open={isProjectSidebarOpen}
-      onOpenChange={setIsProjectSidebarOpen}
+      keyboardShortcut={false}
     >
-      <CustomSidebar aria-label="Projects" collapsible="icon">
+      <CustomSidebar
+        className="harday-project-navigation-sidebar"
+        role="navigation"
+        aria-label="Projects"
+        collapsible="none"
+      >
         <SidebarHeader className="harday-project-sidebar-header">
           <div className="harday-project-sidebar-search-row">
             <button
               type="button"
               className="harday-project-sidebar-command-trigger"
+              aria-label="Search projects"
+              title="Search projects"
               onClick={() => setIsProjectCommandOpen(true)}
             >
               <span>Search</span>
@@ -2400,6 +2380,7 @@ export function ProjectsPage() {
                           <Link
                             to="/projects/$projectId"
                             params={{ projectId: project._id }}
+                            aria-label={getProjectDisplayName(project)}
                             title={project.name}
                             draggable={false}
                             onDragStart={(event) => {
