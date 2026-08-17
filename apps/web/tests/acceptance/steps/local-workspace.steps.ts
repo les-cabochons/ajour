@@ -519,6 +519,30 @@ Then("the Backlog workspace fills the available page", async ({ page }) => {
 });
 
 Then(
+  "hidden Backlog columns do not reserve mobile width",
+  async ({ page }) => {
+    const columnWidths = await page
+      .locator(".entries-table-body-table")
+      .evaluate((table) => {
+        const priorityColumn = table.querySelector<HTMLElement>(
+          ".backlog-priority-column",
+        );
+        const statusColumn = table.querySelector<HTMLElement>(
+          ".backlog-status-column",
+        );
+
+        return {
+          priority: priorityColumn?.getBoundingClientRect().width ?? -1,
+          status: statusColumn?.getBoundingClientRect().width ?? -1,
+        };
+      });
+
+    expect(columnWidths.priority).toBeLessThanOrEqual(0.5);
+    expect(columnWidths.status).toBeLessThanOrEqual(0.5);
+  },
+);
+
+Then(
   "expanded and dragged Backlog rows keep their centered columns",
   async ({ page }) => {
     const rootRow = page.locator(
@@ -842,7 +866,15 @@ When("I install a packaged connector from settings", async ({ page }) => {
     },
   );
 
-  await page.goto("/settings/plugins");
+  await page.goto("/time/today?entry=new");
+  await page
+    .getByRole("navigation", { name: "Primary navigation" })
+    .getByRole("link", { name: "Settings" })
+    .click();
+  await page
+    .getByRole("navigation", { name: "Settings sections" })
+    .getByRole("link", { name: "Plugins" })
+    .click();
 
   const installButton = page.getByRole("button", {
     name: "Install from file",

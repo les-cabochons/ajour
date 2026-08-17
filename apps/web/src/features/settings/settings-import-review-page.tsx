@@ -348,7 +348,7 @@ export function SettingsImportReviewPage() {
           <MessagePanel>Loading staged imports…</MessagePanel>
         ) : connectionGroups.length === 0 ? (
           <MessagePanel>
-            No staged imports yet. Go to <Link to="/settings/plugins">Plugins</Link> and sync one of your connector connections first.
+            No staged imports yet. Go to <Link to="/settings/plugins" replace>Plugins</Link> and sync one of your connector connections first.
           </MessagePanel>
         ) : (
           <div className="import-review-groups">

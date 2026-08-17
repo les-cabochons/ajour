@@ -7275,6 +7275,12 @@
     display: none;
   }
 
+  .backlog-priority-column,
+  .backlog-status-column {
+    width: 0;
+    visibility: collapse;
+  }
+
   .backlog-priority-heading,
   .backlog-priority-cell {
     display: none;

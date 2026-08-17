@@ -56,6 +56,7 @@ Feature: Open the local time workspace
     Given I have two saved entries with a timer running on the first
     When I start the timer on the Backlog task from mobile
     Then the first timer is saved and the Backlog timer is running
+    And hidden Backlog columns do not reserve mobile width
 
   Scenario: Find a time-entry task from project and task terms
     Given I have projects with searchable tasks
@@ -76,6 +77,10 @@ Feature: Open the local time workspace
     When I install a packaged connector from settings
     Then the connector plugin is reported as installed
     And I can open the connector plugin configuration
+    When I leave Settings from the sidebar
+    Then the Time new-entry workspace sidebar is restored
+    When I go back in the browser history
+    Then the Time new-entry workspace sidebar is restored
 
   Scenario: Deactivate a plugin without losing its configuration page
     Given I have no saved TimeTracker workspace
