@@ -253,6 +253,15 @@ When("I leave Settings from the sidebar", async ({ page }) => {
   await backButton.press("Enter");
 });
 
+When("I open Plugins from the Settings navigation", async ({ page }) => {
+  const pluginsLink = page
+    .getByRole("navigation", { name: "Settings sections" })
+    .getByRole("link", { name: "Plugins" });
+  await pluginsLink.click();
+  await expect(page).toHaveURL(/\/settings\/plugins$/);
+  await expect(pluginsLink).toHaveAttribute("aria-current", "page");
+});
+
 When("I go back in the browser history", async ({ page }) => {
   await page.goBack();
 });

@@ -63,6 +63,7 @@ export function SettingsNavigationSidebar({
                       render={
                         <Link
                           to={item.to}
+                          replace
                           aria-label={item.label}
                           aria-current={isActive ? "page" : undefined}
                           title={item.label}

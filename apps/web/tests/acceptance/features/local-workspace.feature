@@ -16,7 +16,8 @@ Feature: Open the local time workspace
     And I open Settings from the desktop sidebar
     Then the Settings sections replace the primary navigation
     And the Settings navigation remains available as a compact rail
-    When I leave Settings from the sidebar
+    When I open Plugins from the Settings navigation
+    And I leave Settings from the sidebar
     Then the Time new-entry workspace sidebar is restored
     When I go back in the browser history
     Then the Time new-entry workspace sidebar is restored
