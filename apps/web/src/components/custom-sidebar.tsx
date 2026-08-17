@@ -21,12 +21,20 @@ import { cn } from "@/lib/utils";
 
 function CustomSidebarLayout({
   className,
+  style,
   ...props
 }: React.ComponentProps<typeof SidebarProvider>) {
   return (
     <SidebarProvider
       className={cn("settings-layout", className)}
       defaultOpen
+      style={
+        {
+          "--sidebar-width": "200px",
+          "--sidebar-width-icon": "48px",
+          ...style,
+        } as React.CSSProperties
+      }
       {...props}
     />
   );

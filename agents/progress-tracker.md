@@ -81,6 +81,17 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
   leading return-to-Day navigation, attached Ledger totals/detail regions,
   fixed seven-day lane headers, project-color scanning cues, and a shared
   upper-right entry-options Popover with an anchored confirmed date picker.
+- [x] Desktop navigation uses a persistent 200px application sidebar, Settings
+  replaces it with section navigation and a bottom Back action, and Projects
+  keeps an expanded secondary rail aligned directly beside the primary sidebar.
+  The sidebar now owns the full window height with a distinct translucent tint,
+  while Windows caption controls and macOS traffic lights keep dedicated chrome
+  safe areas. Time and Backlog use centered 1440px content inside full-width
+  color bands, table backgrounds, and row separators; both remain continuous
+  and perimeter-free, and Backlog fills the available height. Between 641px and
+  1023px, application, Settings, and Projects navigation remains available as
+  compact 48px rails; Settings Back restores the full prior workspace URL
+  without leaving Settings in browser history.
 
 ## Standard Task Flow
 
@@ -134,4 +145,8 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] The Day-to-Weeks scope control was typechecked after replacing the old
   Week overview action; the scope menu intentionally omits Calendar until that
   feature exists.
+- [x] Verified the full workspace test suite: 52 files and 341 tests passed.
+- [x] Verified the Chromium acceptance suite: 15 scenarios passed.
+- [x] Verified the full workspace typecheck.
+- [x] Verified the production web and desktop renderer builds.
 - [ ] Assign an owner and record a manual result in `qa/routines/local-workspace-smoke.md`.

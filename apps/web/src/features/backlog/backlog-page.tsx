@@ -101,6 +101,17 @@ import { cn, todayIsoDate } from "@/lib/utils";
 const DESKTOP_ENTRY_MEDIA_QUERY = "(min-width: 641px)";
 const BACKLOG_TABLE_COLUMN_COUNT = 4;
 
+function BacklogTableColumns() {
+  return (
+    <colgroup>
+      <col className="backlog-priority-column" />
+      <col className="backlog-task-column" />
+      <col className="backlog-status-column" />
+      <col className="backlog-estimate-column" />
+    </colgroup>
+  );
+}
+
 type BacklogFilter = "active" | "archived";
 type ExpandedViewMode = "edit" | "subtasks";
 type ExpandedNoteModalTarget = "root" | "child";
@@ -3373,6 +3384,7 @@ export function BacklogPage() {
       <div className="entries-table-scroll-shell entries-table-scroll-shell-backlog">
         {isDesktopLayout ? (
           <table className="entries-table backlog-table entries-table-header-table animate-in">
+            <BacklogTableColumns />
             <thead>
               <tr>
                 <th
@@ -3413,6 +3425,7 @@ export function BacklogPage() {
               backlogDragState && "is-backlog-dragging",
             )}
           >
+            <BacklogTableColumns />
             <tbody className="entries-table-scroll-region">
               {isCreatingItem && isDesktopLayout ? (
                 <tr

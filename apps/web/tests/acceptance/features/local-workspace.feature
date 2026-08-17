@@ -5,7 +5,35 @@ Feature: Open the local time workspace
     Given I have no saved TimeTracker workspace
     When I open today's time workspace
     Then the Time workspace is visible
+    And the desktop sidebar owns the full left edge
+    And the day surfaces stretch around centered content
     And the timesheet can be submitted
+
+  Scenario: Replace the desktop application sidebar in Settings
+    Given I have no saved TimeTracker workspace
+    When I open today's new-entry workspace
+    And I resize the app to a compact desktop width
+    And I open Settings from the desktop sidebar
+    Then the Settings sections replace the primary navigation
+    And the Settings navigation remains available as a compact rail
+    When I open Plugins from the Settings navigation
+    And I leave Settings from the sidebar
+    Then the Time new-entry workspace sidebar is restored
+    When I go back in the browser history
+    Then the Time new-entry workspace sidebar is restored
+
+  Scenario: Leave Settings after using the legacy Rules route
+    Given I have no saved TimeTracker workspace
+    When I open the legacy Rules route
+    Then the Settings sections replace the primary navigation
+    When I leave Settings from the sidebar
+    Then the Time workspace is visible
+
+  Scenario: Keep the desktop Projects sidebar expanded
+    Given I have projects with searchable tasks
+    When I open the Projects workspace
+    Then the Projects sidebar remains expanded and left-aligned beside primary navigation
+    And the Projects navigation remains available as a compact rail
 
   Scenario: Switch directly from one time entry timer to another
     Given I have two saved entries with a timer running on the first
@@ -20,12 +48,15 @@ Feature: Open the local time workspace
   Scenario: Start a Backlog timer while another timer is running
     Given I have two saved entries with a timer running on the first
     When I start the timer on the Backlog task
-    Then the first timer is saved and the Backlog timer is running
+    Then the Backlog workspace fills the available page
+    And expanded and dragged Backlog rows keep their centered columns
+    And the first timer is saved and the Backlog timer is running
 
   Scenario: Start a Backlog timer from mobile while another timer is running
     Given I have two saved entries with a timer running on the first
     When I start the timer on the Backlog task from mobile
     Then the first timer is saved and the Backlog timer is running
+    And hidden Backlog columns do not reserve mobile width
 
   Scenario: Find a time-entry task from project and task terms
     Given I have projects with searchable tasks
@@ -46,6 +77,10 @@ Feature: Open the local time workspace
     When I install a packaged connector from settings
     Then the connector plugin is reported as installed
     And I can open the connector plugin configuration
+    When I leave Settings from the sidebar
+    Then the Time new-entry workspace sidebar is restored
+    When I go back in the browser history
+    Then the Time new-entry workspace sidebar is restored
 
   Scenario: Deactivate a plugin without losing its configuration page
     Given I have no saved TimeTracker workspace

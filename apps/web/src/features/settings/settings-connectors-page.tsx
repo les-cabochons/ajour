@@ -187,6 +187,7 @@ function PluginCatalogCard({
       <Link
         to="/settings/plugins/$pluginId"
         params={{ pluginId: catalog.id }}
+        replace
         className="flex w-full min-w-0 flex-1 items-start gap-3 rounded-[var(--control-radius)] outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
         aria-label={`View ${catalog.title}`}
       >
@@ -370,6 +371,7 @@ function PluginDetailHeader({
     <>
       <Link
         to="/settings/plugins"
+        replace
         className="inline-flex w-fit items-center gap-1.5 rounded-[var(--control-radius)] text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30"
       >
         <ArrowLeft className="size-4" />
@@ -1208,7 +1210,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
             installed ? (
               <Button
                 variant="outline"
-                render={<Link to="/settings/projects" />}
+                render={<Link to="/settings/projects" replace />}
               >
                 Use in Projects
               </Button>
@@ -1309,6 +1311,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                   <>
                     <Link
                       to="/settings/plugins"
+                      replace
                       className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground"
                     >
                       <ArrowLeft className="size-4" />
@@ -1322,6 +1325,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                   <>
                     <Link
                       to="/settings/plugins"
+                      replace
                       className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground"
                     >
                       <ArrowLeft className="size-4" />

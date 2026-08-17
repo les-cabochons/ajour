@@ -4,9 +4,13 @@ This registry captures reusable visual patterns already present in TimeTracker. 
 
 ## App Shell
 
-- Sticky top navigation with compact height and glass-like background.
-- Primary navigation uses icon + label entries for Time, Backlog, Projects, and Settings.
-- Date and new-entry controls are available from the titlebar area for time workflows.
+- Desktop uses a fixed 200px, full-height application sidebar with a quiet translucent surface distinct from the workspace. Its top chrome strip reserves native macOS traffic lights; Time, Backlog, and Projects are grouped below it, while Settings is anchored at the bottom.
+- Settings replaces the application sidebar with its section navigation and a bottom-aligned Back action. Projects keeps the application sidebar and adds a permanently expanded 200px project sidebar aligned directly against its right edge; the project detail pane continues left-to-right from that rail rather than centering the split layout.
+- Between 641px and 1023px, the application sidebar and the active Settings or Projects sidebar become 48px icon rails instead of disappearing; their links retain accessible names. The existing small-screen presentation remains in effect at 640px and below.
+- Desktop structural surfaces consume the full area beside the application sidebar. Readable Time and Backlog content stays centered in a column capped at 1440px, while their color bands, table backgrounds, and row separators stretch to the workspace edges; individual pages may apply narrower readable inner columns.
+- The daily Time view is a continuous page surface rather than an outer card: retain internal day and row separators, but do not draw a perimeter around the combined day strip and entry area.
+- Time and Backlog remove the generic page inset and meet the full workspace edges. Backlog fills the available workspace height and uses full-width internal header/row separators without a rounded outer card.
+- The compact titlebar begins beside the application sidebar. Date and new-entry controls remain clear of the native Windows caption-control area.
 
 ## Surfaces
 
