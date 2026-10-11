@@ -159,30 +159,70 @@ export function findNextFocusIndex(
   return target[Math.min(row, target.length - 1)] ?? null;
 }
 
+/**
+ * The index of the item that takes focus once the item at `removedIndex` is
+ * gone, or null when its column has nothing left. `isRemoved` tells which items
+ * the same action removed, such as a backlog item's subitems. The next surviving
+ * item in the column wins, else the nearest one before it.
+ */
+export function findFocusFallbackIndex(
+  columns: readonly number[],
+  removedIndex: number,
+  isRemoved: (index: number) => boolean,
+): number | null {
+  const column = columns[removedIndex];
+  const survivors = columns.flatMap((itemColumn, index) =>
+    itemColumn === column && !isRemoved(index) ? [index] : [],
+  );
+
+  const before = survivors.filter((index) => index < removedIndex);
+  return (
+    survivors.find((index) => index > removedIndex) ?? before.at(-1) ?? null
+  );
+}
+
 const FOCUS_SCOPE_SELECTOR = "[data-focus-scope]";
 /** Matches a focusable row, card or Grid cell. */
 export const FOCUS_ITEM_SELECTOR = "[data-focus-column]";
 
+/** The focusable items of `item`'s scope, in document order, with their columns. */
+function getScopeItems(item: HTMLElement) {
+  const scope = item.closest(FOCUS_SCOPE_SELECTOR);
+  const items = scope
+    ? [...scope.querySelectorAll<HTMLElement>(FOCUS_ITEM_SELECTOR)]
+    : [];
+  return {
+    items,
+    columns: items.map((element) => Number(element.dataset.focusColumn) || 0),
+    index: items.indexOf(item),
+  };
+}
+
 /** The item that an arrow in `direction` focuses from `item`, if any. */
 function findFocusNeighbor(item: HTMLElement, direction: FocusDirection) {
-  const scope = item.closest(FOCUS_SCOPE_SELECTOR);
-  if (!scope) {
-    return null;
-  }
-
-  const items = [...scope.querySelectorAll<HTMLElement>(FOCUS_ITEM_SELECTOR)];
-  const nextIndex = findNextFocusIndex(
-    items.map((element) => Number(element.dataset.focusColumn) || 0),
-    items.indexOf(item),
-    direction,
-  );
+  const { items, columns, index } = getScopeItems(item);
+  const nextIndex = findNextFocusIndex(columns, index, direction);
   return nextIndex === null ? null : (items[nextIndex] ?? null);
 }
 
-/** Puts focus back after React has rendered, once the action changed the list. */
-function refocusAfterRender(item: HTMLElement, fallback: HTMLElement | null) {
+/**
+ * Puts focus back after React has rendered the action's result. When the
+ * item is gone, focus goes to the next item that is still there, so deleting
+ * a backlog item skips the subitems removed with it.
+ */
+function refocusAfterRender(item: HTMLElement, { fallback = false } = {}) {
+  const before = fallback ? getScopeItems(item) : null;
   window.requestAnimationFrame(() => {
-    const target = item.isConnected ? item : fallback;
+    let target: HTMLElement | null | undefined = item;
+    if (!item.isConnected && before && before.index !== -1) {
+      const index = findFocusFallbackIndex(
+        before.columns,
+        before.index,
+        (candidate) => !before.items[candidate]?.isConnected,
+      );
+      target = index === null ? null : before.items[index];
+    }
+
     if (target?.isConnected && document.activeElement !== target) {
       target.focus();
     }
@@ -218,8 +258,8 @@ const platform = getShortcutPlatform();
  * Alt+arrows call `onReorder` when the item is sortable, ".", Shift+F10 and the
  * context menu key open its menu, and the other keys run the action that
  * `keys` maps them to. A disabled action swallows its key and does nothing.
- * After Delete removes the item, focus moves to the next item, or the previous
- * one at the end.
+ * After Delete removes the item, focus moves to the next item that is still
+ * there, or the previous one at the end.
  */
 export function handleItemKeyDown<Id extends string>(
   event: ReactKeyboardEvent<HTMLElement>,
@@ -260,7 +300,7 @@ export function handleItemKeyDown<Id extends string>(
         event.preventDefault();
         onReorder(command.step);
         // Moving a focused node in the DOM can drop its focus.
-        refocusAfterRender(item, null);
+        refocusAfterRender(item);
       }
       return;
     case "open-menu":
@@ -274,14 +314,12 @@ export function handleItemKeyDown<Id extends string>(
         return;
       }
 
-      const fallback =
-        command.shortcutId === "item.delete"
-          ? (findFocusNeighbor(item, "down") ?? findFocusNeighbor(item, "up"))
-          : null;
-      onAction(command.action.id);
-      if (fallback) {
-        refocusAfterRender(item, fallback);
+      // The scope is read before the action, the fallback picked after it.
+      const removesItem = command.shortcutId === "item.delete";
+      if (removesItem) {
+        refocusAfterRender(item, { fallback: true });
       }
+      onAction(command.action.id);
       return;
     }
     default:

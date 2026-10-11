@@ -8,6 +8,7 @@ import {
   BACKLOG_ITEM_ACTION_KEYS,
   TASK_ACTION_KEYS,
   TIME_ENTRY_ACTION_KEYS,
+  findFocusFallbackIndex,
   findNextFocusIndex,
   getItemKeyCommand,
 } from "@/lib/item-keys";
@@ -58,6 +59,35 @@ describe("findNextFocusIndex", () => {
     expect(findNextFocusIndex(grid, 4, "up")).toBe(1);
     expect(findNextFocusIndex(grid, 4, "right")).toBe(5);
     expect(findNextFocusIndex(grid, 3, "left")).toBeNull();
+  });
+});
+
+describe("findFocusFallbackIndex", () => {
+  it("skips the subitems deleted with their backlog item", () => {
+    // Rows: Parent, its two subitems, Next root. Deleting Parent removes 0 to 2.
+    const removed = new Set([0, 1, 2]);
+    expect(
+      findFocusFallbackIndex([0, 0, 0, 0], 0, (index) => removed.has(index)),
+    ).toBe(3);
+  });
+
+  it("takes the previous surviving row at the end of the list", () => {
+    // Rows: First root, Last root, its subitem. Deleting Last removes 1 and 2.
+    const removed = new Set([1, 2]);
+    expect(
+      findFocusFallbackIndex([0, 0, 0], 1, (index) => removed.has(index)),
+    ).toBe(0);
+    expect(findFocusFallbackIndex([0], 0, () => true)).toBeNull();
+  });
+
+  it("stays in the deleted card's day", () => {
+    // Monday has one card, Tuesday two. Deleting Tuesday's first card.
+    expect(findFocusFallbackIndex([0, 1, 1], 1, (index) => index === 1)).toBe(
+      2,
+    );
+    expect(
+      findFocusFallbackIndex([0, 1], 1, (index) => index === 1),
+    ).toBeNull();
   });
 });
 
