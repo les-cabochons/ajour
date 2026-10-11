@@ -72,9 +72,7 @@ describe("AppApiStorage", () => {
   });
 
   it("re-stages an imported connector item after it was previously committed", async () => {
-    const tempDir = await mkdtemp(
-      path.join(os.tmpdir(), "timetracker-storage-"),
-    );
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
     tempDirs.push(tempDir);
 
     const storage = new AppApiStorage(path.join(tempDir, "app-api-state.json"));
@@ -121,9 +119,7 @@ describe("AppApiStorage", () => {
   });
 
   it("dismisses staged imports and keeps them out of later syncs", async () => {
-    const tempDir = await mkdtemp(
-      path.join(os.tmpdir(), "timetracker-storage-"),
-    );
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
     tempDirs.push(tempDir);
 
     const storage = new AppApiStorage(path.join(tempDir, "app-api-state.json"));
@@ -150,9 +146,7 @@ describe("AppApiStorage", () => {
   });
 
   it("ignores legacy seenImportKeys so previously committed connector imports can stage again", async () => {
-    const tempDir = await mkdtemp(
-      path.join(os.tmpdir(), "timetracker-storage-"),
-    );
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
     tempDirs.push(tempDir);
 
     const statePath = path.join(tempDir, "app-api-state.json");
@@ -187,9 +181,7 @@ describe("AppApiStorage", () => {
   });
 
   it("stores plugin-shaped connections and groups them by plugin in the overview", async () => {
-    const tempDir = await mkdtemp(
-      path.join(os.tmpdir(), "timetracker-storage-"),
-    );
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
     tempDirs.push(tempDir);
 
     const storage = new AppApiStorage(path.join(tempDir, "app-api-state.json"));
@@ -269,9 +261,7 @@ describe("AppApiStorage", () => {
   });
 
   it("persists plugin activation without removing saved connections", async () => {
-    const tempDir = await mkdtemp(
-      path.join(os.tmpdir(), "timetracker-storage-"),
-    );
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
     tempDirs.push(tempDir);
 
     const statePath = path.join(tempDir, "app-api-state.json");
@@ -320,9 +310,7 @@ describe("AppApiStorage", () => {
   });
 
   it("deactivates every plugin globally without losing individual choices", async () => {
-    const tempDir = await mkdtemp(
-      path.join(os.tmpdir(), "timetracker-storage-"),
-    );
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
     tempDirs.push(tempDir);
     const statePath = path.join(tempDir, "app-api-state.json");
     const storage = new AppApiStorage(statePath);
@@ -355,9 +343,7 @@ describe("AppApiStorage", () => {
   });
 
   it("migrates version 5 activation state and tolerates invalid disabled IDs", async () => {
-    const tempDir = await mkdtemp(
-      path.join(os.tmpdir(), "timetracker-storage-"),
-    );
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
     tempDirs.push(tempDir);
     const statePath = path.join(tempDir, "app-api-state.json");
     await writeFile(
@@ -395,9 +381,7 @@ describe("AppApiStorage", () => {
   });
 
   it("removes connector configuration and credentials for an uninstalled plugin", async () => {
-    const tempDir = await mkdtemp(
-      path.join(os.tmpdir(), "timetracker-storage-"),
-    );
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
     tempDirs.push(tempDir);
     const statePath = path.join(tempDir, "app-api-state.json");
     const storage = new AppApiStorage(statePath);
@@ -445,9 +429,7 @@ describe("AppApiStorage", () => {
   });
 
   it("stores connector backlog statuses discovered by any plugin source", async () => {
-    const tempDir = await mkdtemp(
-      path.join(os.tmpdir(), "timetracker-storage-"),
-    );
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
     tempDirs.push(tempDir);
 
     const storage = new AppApiStorage(path.join(tempDir, "app-api-state.json"));

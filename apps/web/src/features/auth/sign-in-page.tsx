@@ -23,19 +23,19 @@ export function SignInPage() {
       {/* Standalone nav */}
       <nav
         className={cn(
-          "harday-nav",
+          "ajour-nav",
           isDesktopShell && "desktop-shell-nav desktop-drag-region",
         )}
       >
         <div
           className={cn(
-            "harday-nav-inner",
+            "ajour-nav-inner",
             isDesktopShell && "desktop-shell-nav-inner",
           )}
         >
           <BrandLogo
             className={cn(
-              "harday-nav-brand",
+              "ajour-nav-brand",
               isDesktopShell && "desktop-no-drag",
             )}
           />
@@ -47,7 +47,7 @@ export function SignInPage() {
           {/* Header */}
           <div className="flex flex-col gap-3 text-center">
             <h1 className="text-[20px] font-semibold tracking-[-0.025em] text-foreground">
-              Sign in to HarDay
+              Sign in to Ajour
             </h1>
             <p className="mx-auto max-w-xs text-[13px] leading-relaxed text-[var(--text-tertiary)]">
               Automatic daily drafts without creeping into private work.

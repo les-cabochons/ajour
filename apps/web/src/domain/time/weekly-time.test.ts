@@ -25,7 +25,7 @@ const weekDates = [
 const projects = [
   {
     _id: "project-1",
-    name: "HarDay",
+    name: "Ajour",
     color: "#000",
     icon: DEFAULT_PROJECT_ICON,
     status: "active" as const,
@@ -70,7 +70,7 @@ describe("weekly time projection", () => {
     expect(projection.totalMs).toBe(7);
     expect(projection.days[0]?.totalMs).toBe(7);
     expect(projection.ledgerRows[0]).toMatchObject({
-      projectName: "HarDay",
+      projectName: "Ajour",
       rowKey: "project-1::task-1",
       runningLocalDate: "2026-08-10",
       taskName: "Build",

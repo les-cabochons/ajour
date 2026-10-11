@@ -1,5 +1,5 @@
 import type * as appApi from "@/lib/app-api";
-import { pluginCatalogRefreshMinutesSchema } from "@timetracker/shared";
+import { pluginCatalogRefreshMinutesSchema } from "@ajour/shared";
 import type {
   ConnectorFieldValues,
   ConnectorOverviewGroup,
@@ -9,7 +9,7 @@ import type {
   PluginCatalogResponse,
   PluginCatalogSettings,
   ProjectDataShapePluginManifest,
-} from "@timetracker/shared";
+} from "@ajour/shared";
 
 export type PluginDisplayEntry = {
   catalog: PluginCatalogEntry;

@@ -1,6 +1,6 @@
 # UI Registry
 
-This registry captures reusable visual patterns already present in TimeTracker. Update it after meaningful UI additions.
+This registry captures reusable visual patterns already present in Ajour. Update it after meaningful UI additions.
 
 ## App Shell
 

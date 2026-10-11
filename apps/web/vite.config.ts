@@ -68,7 +68,7 @@ function internalAppApiPlugin(): Plugin {
   };
 
   return {
-    name: "timetracker-internal-app-api",
+    name: "ajour-internal-app-api",
     apply: "serve",
     configureServer(server) {
       if (apiProcess) {
@@ -82,10 +82,10 @@ function internalAppApiPlugin(): Plugin {
           cwd: path.resolve(__dirname, "..", ".."),
           env: {
             ...process.env,
-            TIMETRACKER_APP_API_HOST:
-              process.env.TIMETRACKER_APP_API_HOST ?? INTERNAL_APP_API_HOST,
-            TIMETRACKER_APP_API_PORT:
-              process.env.TIMETRACKER_APP_API_PORT ?? INTERNAL_APP_API_PORT,
+            AJOUR_APP_API_HOST:
+              process.env.AJOUR_APP_API_HOST ?? INTERNAL_APP_API_HOST,
+            AJOUR_APP_API_PORT:
+              process.env.AJOUR_APP_API_PORT ?? INTERNAL_APP_API_PORT,
           },
           stdio: ["ignore", "pipe", "pipe"],
         },
@@ -143,7 +143,7 @@ export default defineConfig(({ mode }) => {
     resolve: {
       alias: {
         "@": path.resolve(__dirname, "./src"),
-        "@timetracker/shared": path.resolve(
+        "@ajour/shared": path.resolve(
           __dirname,
           "../../packages/shared/src/index.ts",
         ),

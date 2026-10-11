@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 export const CONNECTOR_PLUGIN_API_VERSION = 1;
-export const CONNECTOR_PLUGIN_ARCHIVE_EXTENSION = ".harday-connector";
+export const CONNECTOR_PLUGIN_ARCHIVE_EXTENSION = ".ajour-connector";
 
 export const connectorSourceSchema = z.string().trim().min(1).max(120);
 export type ConnectorBacklogSource = z.infer<typeof connectorSourceSchema>;

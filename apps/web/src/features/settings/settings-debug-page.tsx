@@ -19,8 +19,7 @@ export function SettingsDebugPage() {
     useState(false);
 
   useEffect(() => {
-    const loadSettings =
-      window.timetrackerDesktop?.getDevelopmentPluginSettings;
+    const loadSettings = window.ajourDesktop?.getDevelopmentPluginSettings;
     if (!loadSettings) {
       return;
     }
@@ -38,7 +37,7 @@ export function SettingsDebugPage() {
 
   const chooseDevelopmentPluginDirectory = async () => {
     const chooseDirectory =
-      window.timetrackerDesktop?.selectDevelopmentPluginDirectory;
+      window.ajourDesktop?.selectDevelopmentPluginDirectory;
     if (!chooseDirectory) {
       return;
     }
@@ -63,7 +62,7 @@ export function SettingsDebugPage() {
 
   const resetDevelopmentPluginDirectories = async () => {
     const clearDirectories =
-      window.timetrackerDesktop?.clearDevelopmentPluginDirectories;
+      window.ajourDesktop?.clearDevelopmentPluginDirectories;
     if (!clearDirectories) {
       return;
     }

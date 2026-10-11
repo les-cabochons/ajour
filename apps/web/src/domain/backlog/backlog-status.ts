@@ -1,7 +1,7 @@
 import {
   normalizeConnectorStatusKey,
   type ConnectorBacklogSource,
-} from "@timetracker/shared";
+} from "@ajour/shared";
 import type {
   LocalAppState,
   LocalBacklogStatus,

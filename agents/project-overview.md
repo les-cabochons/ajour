@@ -1,6 +1,6 @@
 # Project Overview
 
-TimeTracker is a work-focused, local-first time tracker for daily timesheets, project/task tracking, backlog management, and connector-assisted imports.
+Ajour is a work-focused, local-first time tracker for daily timesheets, project/task tracking, backlog management, and connector-assisted imports.
 
 ## What Exists
 

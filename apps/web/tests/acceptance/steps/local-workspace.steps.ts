@@ -20,7 +20,7 @@ async function mockEmptyConnectorOverview(page: Page) {
   });
 }
 
-Given("I have no saved TimeTracker workspace", async ({ page }) => {
+Given("I have no saved Ajour workspace", async ({ page }) => {
   await mockEmptyConnectorOverview(page);
   await page.addInitScript(() => {
     window.localStorage.clear();
@@ -55,7 +55,7 @@ Given(
       const startedAt = Date.now() - 60_000;
 
       window.localStorage.setItem(
-        "timetracker.local-state.v2",
+        "ajour.local-state.v2",
         JSON.stringify({
           projects: [
             {
@@ -162,7 +162,7 @@ Given("I have projects with searchable tasks", async ({ page }) => {
     window.localStorage.clear();
     window.sessionStorage.clear();
     window.localStorage.setItem(
-      "timetracker.local-state.v2",
+      "ajour.local-state.v2",
       JSON.stringify({
         projects: [
           {
@@ -400,7 +400,7 @@ Then("the desktop sidebar owns the full left edge", async ({ page }) => {
   const primaryNavigation = page.getByRole("navigation", {
     name: "Primary navigation",
   });
-  const workspaceTitlebar = page.locator(".harday-nav");
+  const workspaceTitlebar = page.locator(".ajour-nav");
 
   const [sidebarBox, titlebarBox, viewport] = await Promise.all([
     primaryNavigation.boundingBox(),
@@ -423,7 +423,7 @@ Then("the desktop sidebar owns the full left edge", async ({ page }) => {
 Then("the day surfaces stretch around centered content", async ({ page }) => {
   await page.setViewportSize({ width: 1800, height: 900 });
 
-  const workspace = page.locator(".harday-app-workspace");
+  const workspace = page.locator(".ajour-app-workspace");
   const content = page.locator(".app-content-shell");
   const dayViewer = page.locator(".time-page-stack .day-viewer");
   const dayViewerStrip = dayViewer.locator(".day-viewer-strip");
@@ -654,7 +654,7 @@ Then(
 
 Then("the Time new-entry workspace sidebar is restored", async ({ page }) => {
   await expect(page).toHaveURL(/\/time\/today\?entry=new$/);
-  await expect(page.locator(".harday-app-navigation-sidebar")).toBeVisible();
+  await expect(page.locator(".ajour-app-navigation-sidebar")).toBeVisible();
   await expect(page.getByText("New time entry", { exact: true })).toBeVisible();
 });
 
@@ -727,9 +727,7 @@ Then(
   "the first timer is saved and the second timer is running",
   async ({ page }) => {
     const state = await page.evaluate(() =>
-      JSON.parse(
-        window.localStorage.getItem("timetracker.local-state.v2") ?? "null",
-      ),
+      JSON.parse(window.localStorage.getItem("ajour.local-state.v2") ?? "null"),
     );
 
     expect(state.timers).toHaveLength(1);
@@ -749,9 +747,7 @@ Then(
   "the first timer is saved and the fresh timer is running",
   async ({ page }) => {
     const state = await page.evaluate(() =>
-      JSON.parse(
-        window.localStorage.getItem("timetracker.local-state.v2") ?? "null",
-      ),
+      JSON.parse(window.localStorage.getItem("ajour.local-state.v2") ?? "null"),
     );
 
     expect(state.timers).toHaveLength(1);
@@ -771,9 +767,7 @@ Then(
   "the first timer is saved and the Backlog timer is running",
   async ({ page }) => {
     const state = await page.evaluate(() =>
-      JSON.parse(
-        window.localStorage.getItem("timetracker.local-state.v2") ?? "null",
-      ),
+      JSON.parse(window.localStorage.getItem("ajour.local-state.v2") ?? "null"),
     );
 
     expect(state.timers).toHaveLength(1);
@@ -853,7 +847,7 @@ When("I install a packaged connector from settings", async ({ page }) => {
         pluginId: string;
         overview: typeof response.overview;
       }>;
-      timetrackerDesktop: {
+      ajourDesktop: {
         bootstrapLocalState: null;
         runtime: { developmentBuild: false };
         installConnectorPlugin: () => Promise<typeof response>;
@@ -863,7 +857,7 @@ When("I install a packaged connector from settings", async ({ page }) => {
         }>;
       };
     };
-    desktopWindow.timetrackerDesktop = {
+    desktopWindow.ajourDesktop = {
       bootstrapLocalState: null,
       runtime: { developmentBuild: false },
       installConnectorPlugin: () => desktopWindow.acceptanceInstallPlugin(),
@@ -1001,7 +995,7 @@ When("I open development plugin settings", async ({ page }) => {
       directories: ["/workspace/connectors/selected"],
     };
     const desktopWindow = window as typeof window & {
-      timetrackerDesktop: {
+      ajourDesktop: {
         bootstrapLocalState: null;
         runtime: { developmentBuild: true };
         getDevelopmentPluginSettings: () => Promise<typeof initialSettings>;
@@ -1013,7 +1007,7 @@ When("I open development plugin settings", async ({ page }) => {
         >;
       };
     };
-    desktopWindow.timetrackerDesktop = {
+    desktopWindow.ajourDesktop = {
       bootstrapLocalState: null,
       runtime: { developmentBuild: true },
       getDevelopmentPluginSettings: async () => initialSettings,
@@ -1040,7 +1034,7 @@ Given("I have a saved entry with an unrounded duration", async ({ page }) => {
     window.localStorage.clear();
     window.sessionStorage.clear();
     window.localStorage.setItem(
-      "timetracker.local-state.v2",
+      "ajour.local-state.v2",
       JSON.stringify({
         projects: [],
         timers: [],
@@ -1094,7 +1088,7 @@ Then(
       .poll(async () =>
         page.evaluate(() => {
           const state = JSON.parse(
-            window.localStorage.getItem("timetracker.local-state.v2") ?? "null",
+            window.localStorage.getItem("ajour.local-state.v2") ?? "null",
           );
           return state?.timesheetEntries.find(
             (entry: { _id: string }) => entry._id === "entry-precision",

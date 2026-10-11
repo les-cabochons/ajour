@@ -8,8 +8,7 @@ export function usePluginSettingsWorkflow() {
     createPluginSettingsWorkflow({
       ...appApi,
       subscribeCatalog: (listener) =>
-        window.timetrackerDesktop?.onPluginCatalogUpdated?.(listener) ??
-        (() => {}),
+        window.ajourDesktop?.onPluginCatalogUpdated?.(listener) ?? (() => {}),
     }),
   );
   const snapshot = useSyncExternalStore(

@@ -1,4 +1,4 @@
-# Time Tracker Project Justfile
+# Ajour Project Justfile
 
 #---------------------
 # Config
@@ -22,7 +22,7 @@ default: help
 
 [doc("Displays this help and exits")]
 help:
-    echo >&2 "\nTime Tracker\n"
+    echo >&2 "\nAjour\n"
     echo >&2 "Usage:"
     echo >&2 "just RECIPE [PARAMETERS]\n"
     just --list --unsorted
@@ -37,7 +37,7 @@ init: install
 [arg("port", short="p", long="port")]
 start port=WEB_PORT:
     echo >&2 "[1/1] Starting the web app on http://{{WEB_HOST}}:{{port}}"
-    {{PNPM}} --filter @timetracker/web dev --host {{WEB_HOST}} --port {{port}}
+    {{PNPM}} --filter @ajour/web dev --host {{WEB_HOST}} --port {{port}}
 
 [doc("Stops locally managed services")]
 [group("common")]
@@ -89,7 +89,7 @@ install:
 [group("setup")]
 acceptance-install:
     echo >&2 "[1/1] Installing Playwright Chromium"
-    {{PNPM}} --filter @timetracker/web exec playwright install chromium
+    {{PNPM}} --filter @ajour/web exec playwright install chromium
 
 #-----------------------------------------------------------------------------------------------------------------------
 # App Recipes
@@ -99,7 +99,7 @@ acceptance-install:
 [group("app")]
 web-start:
     echo >&2 "[1/1] Starting the web app on http://{{WEB_HOST}}:{{WEB_PORT}}"
-    {{PNPM}} --filter @timetracker/web dev --host {{WEB_HOST}} --port {{WEB_PORT}}
+    {{PNPM}} --filter @ajour/web dev --host {{WEB_HOST}} --port {{WEB_PORT}}
 
 [doc("Starts the desktop app locally")]
 [group("app")]
@@ -111,7 +111,7 @@ desktop-start:
 [group("app")]
 api-start:
     echo >&2 "[1/1] Starting the API server"
-    {{PNPM}} --filter @timetracker/api dev
+    {{PNPM}} --filter @ajour/api dev
 
 [doc("Builds all workspace packages")]
 [group("app")]
@@ -172,11 +172,11 @@ test:
 [group("app")]
 acceptance-test:
     echo >&2 "[1/1] Running web acceptance tests"
-    {{PNPM}} --filter @timetracker/web acceptance-test
+    {{PNPM}} --filter @ajour/web acceptance-test
 
 [private]
 acceptance-server:
-    {{PNPM}} --filter @timetracker/web dev --host {{WEB_HOST}} --port {{ACCEPTANCE_WEB_PORT}} --strictPort --mode test
+    {{PNPM}} --filter @ajour/web dev --host {{WEB_HOST}} --port {{ACCEPTANCE_WEB_PORT}} --strictPort --mode test
 
 [doc("Formats the workspace with Prettier")]
 [group("app")]

@@ -3,7 +3,7 @@ import type {
   ConnectorsOverview,
   PluginCatalogResponse,
   ProjectDataShapePluginManifest,
-} from "@timetracker/shared";
+} from "@ajour/shared";
 import {
   createPluginSettingsWorkflow,
   type PluginSettingsDependencies,

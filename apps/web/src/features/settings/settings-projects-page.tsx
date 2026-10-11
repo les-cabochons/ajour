@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState, type ChangeEvent } from "react";
-import type { ProjectDataShapePluginManifest } from "@timetracker/shared";
+import type { ProjectDataShapePluginManifest } from "@ajour/shared";
 import {
   RiDownloadLine as Download,
   RiFolderChartLine as FolderKanban,

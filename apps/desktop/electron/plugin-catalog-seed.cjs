@@ -29,7 +29,7 @@ const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
     install: {
       method: "github-release",
       allowPrereleases: true,
-      assetPattern: "^azure_devops-[0-9A-Za-z.+-]+\\.harday-connector$",
+      assetPattern: "^azure_devops-[0-9A-Za-z.+-]+\\.ajour-connector$",
     },
     tags: ["azure-devops", "project-management", "synchronization"],
   },
@@ -61,7 +61,7 @@ const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
     install: {
       method: "github-release",
       allowPrereleases: true,
-      assetPattern: "^jira-[0-9A-Za-z.+-]+\\.harday-connector$",
+      assetPattern: "^jira-[0-9A-Za-z.+-]+\\.ajour-connector$",
     },
     tags: ["jira", "project-management", "synchronization"],
   },

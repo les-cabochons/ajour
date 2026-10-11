@@ -76,11 +76,11 @@ jobs:
         include:
           - name: macOS
             runner: macos-latest
-            artifact: harday-macos
+            artifact: ajour-macos
             command: corepack pnpm make:desktop:mac
           - name: Windows
             runner: windows-latest
-            artifact: harday-windows
+            artifact: ajour-windows
             command: corepack pnpm make:desktop:win
     runs-on: ${{ matrix.runner }}
     permissions:
@@ -114,7 +114,7 @@ jobs:
 
       - name: Create desktop distributable
         env:
-          HARDAY_UPDATE_CHANNEL: nightly
+          AJOUR_UPDATE_CHANNEL: nightly
         run: ${{ matrix.command }}
 
       - name: Upload desktop distributable
@@ -172,7 +172,7 @@ jobs:
           gh release create "$RELEASE_TAG" "${assets[@]}" \
             --repo "$GITHUB_REPOSITORY" \
             --verify-tag \
-            --title "HarDay $RELEASE_TAG" \
+            --title "Ajour $RELEASE_TAG" \
             --prerelease \
             --latest=false \
             "${notes_args[@]}"

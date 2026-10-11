@@ -37,7 +37,7 @@ describe("desktop connector file selection", () => {
     const dialog = {
       showOpenDialog: vi.fn().mockResolvedValue({
         canceled: false,
-        filePaths: ["/tmp/example.harday-connector"],
+        filePaths: ["/tmp/example.ajour-connector"],
       }),
     };
     let read = false;
@@ -62,7 +62,7 @@ describe("desktop connector file selection", () => {
       selectConnectorPluginArchive(dialog, parentWindow, { open }),
     ).resolves.toEqual({
       archiveBytes,
-      archiveFilename: "example.harday-connector",
+      archiveFilename: "example.ajour-connector",
     });
     expect(dialog.showOpenDialog).toHaveBeenCalledWith(
       parentWindow,
@@ -74,7 +74,7 @@ describe("desktop connector file selection", () => {
     const dialog = {
       showOpenDialog: vi.fn().mockResolvedValue({
         canceled: false,
-        filePaths: ["/tmp/oversized.harday-connector"],
+        filePaths: ["/tmp/oversized.ajour-connector"],
       }),
     };
     const archive = {

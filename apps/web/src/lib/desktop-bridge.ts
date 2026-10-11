@@ -4,7 +4,7 @@ import type {
   ConnectorPluginUninstallResponse,
   PluginCatalogResponse,
   PluginCatalogSettings,
-} from "@timetracker/shared";
+} from "@ajour/shared";
 import type { LocalAppState, UpdateTrack } from "@/domain/local-state";
 
 export interface DevelopmentPluginSettings {
@@ -26,7 +26,7 @@ export interface DesktopUpdateCheckResult {
 
 declare global {
   interface Window {
-    timetrackerDesktop?: {
+    ajourDesktop?: {
       bootstrapLocalState?: Partial<LocalAppState> | null;
       runtime?: {
         automaticUpdatesEnabled: boolean;

@@ -3,7 +3,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 
 export function SettingsLayout() {
   return (
-    <div className="settings-content-shell harday-settings-content-shell">
+    <div className="settings-content-shell ajour-settings-content-shell">
       <ScrollArea className="settings-content-scroll-area">
         <div className="settings-content">
           <Outlet />

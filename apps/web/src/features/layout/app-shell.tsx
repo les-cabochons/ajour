@@ -63,12 +63,12 @@ import { useApplyTheme } from "@/lib/use-theme";
 const isWindowsDesktopShell =
   isDesktopShell &&
   typeof window !== "undefined" &&
-  window.timetrackerDesktop?.runtime?.platform === "win32";
+  window.ajourDesktop?.runtime?.platform === "win32";
 
 const isMacDesktopShell =
   isDesktopShell &&
   typeof window !== "undefined" &&
-  window.timetrackerDesktop?.runtime?.platform === "darwin";
+  window.ajourDesktop?.runtime?.platform === "darwin";
 
 const AUTO_SYNC_POLL_INTERVAL_MS = 30_000;
 
@@ -115,13 +115,13 @@ function CompactTimeDatePicker({
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger
-        className="harday-titlebar-date-trigger desktop-no-drag"
+        className="ajour-titlebar-date-trigger desktop-no-drag"
         aria-label={`Select time entry date. Current date ${formatTitlebarDate(date)}`}
       >
         {formatTitlebarDate(date)}
       </PopoverTrigger>
       <PopoverContent
-        className="harday-titlebar-date-popover"
+        className="ajour-titlebar-date-popover"
         align="start"
         sideOffset={8}
       >
@@ -135,7 +135,7 @@ function CompactTimeDatePicker({
           }}
           captionLayout="label"
           buttonVariant="ghost"
-          className="harday-titlebar-calendar"
+          className="ajour-titlebar-calendar"
         />
       </PopoverContent>
     </Popover>
@@ -823,7 +823,7 @@ export function AppShell() {
   useApplyTheme();
 
   useEffect(() => {
-    void window.timetrackerDesktop
+    void window.ajourDesktop
       ?.configureAutomaticUpdates?.(updateTrack)
       .catch((error) =>
         console.error("Unable to configure automatic updates.", error),
@@ -868,7 +868,7 @@ export function AppShell() {
     >
       <ConnectorAutoSyncScheduler />
       <SidebarProvider
-        className="harday-app-body"
+        className="ajour-app-body"
         keyboardShortcut={false}
         style={
           {
@@ -889,30 +889,30 @@ export function AppShell() {
           />
         )}
 
-        <div className="harday-app-workspace">
+        <div className="ajour-app-workspace">
           {/* Workspace titlebar. The sidebar owns the window's left chrome. */}
           <nav
             className={cn(
-              "harday-nav",
+              "ajour-nav",
               isDesktopShell && "desktop-shell-nav desktop-drag-region",
             )}
           >
             <div
               className={cn(
-                "harday-nav-inner",
+                "ajour-nav-inner",
                 isDesktopShell && "desktop-shell-nav-inner",
               )}
             >
               <div
                 className={cn(
-                  "harday-nav-main",
+                  "ajour-nav-main",
                   isDesktopShell && "desktop-shell-nav-main",
                 )}
               >
                 {showMobileModeToggle ? (
                   <ToggleGroup
                     className={cn(
-                      "harday-mobile-mode-toggle",
+                      "ajour-mobile-mode-toggle",
                       isDesktopShell && "desktop-no-drag",
                     )}
                     aria-label="Primary navigation"
@@ -939,7 +939,7 @@ export function AppShell() {
                       size="sm"
                       variant="default"
                       className={cn(
-                        "harday-mobile-mode-toggle-item !h-6 !w-7 !min-w-7 !gap-0 !rounded-[4px] !px-0",
+                        "ajour-mobile-mode-toggle-item !h-6 !w-7 !min-w-7 !gap-0 !rounded-[4px] !px-0",
                         isDesktopShell && "desktop-no-drag",
                       )}
                       aria-label="Time"
@@ -953,7 +953,7 @@ export function AppShell() {
                       size="sm"
                       variant="default"
                       className={cn(
-                        "harday-mobile-mode-toggle-item !h-6 !w-7 !min-w-7 !gap-0 !rounded-[4px] !px-0",
+                        "ajour-mobile-mode-toggle-item !h-6 !w-7 !min-w-7 !gap-0 !rounded-[4px] !px-0",
                         isDesktopShell && "desktop-no-drag",
                       )}
                       aria-label="Backlog"
@@ -980,7 +980,7 @@ export function AppShell() {
                   <button
                     type="button"
                     className={cn(
-                      "harday-nav-return-today",
+                      "ajour-nav-return-today",
                       isDesktopShell && "desktop-no-drag",
                     )}
                     onClick={() => {

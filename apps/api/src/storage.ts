@@ -516,11 +516,11 @@ export class AppApiStorage {
   private cache?: AppApiState;
   private mutationQueue: Promise<unknown> = Promise.resolve();
 
-  constructor(statePath = process.env.TIMETRACKER_APP_API_STATE_PATH) {
+  constructor(statePath = process.env.AJOUR_APP_API_STATE_PATH) {
     this.statePath =
       statePath && statePath.trim().length > 0
         ? statePath
-        : path.join(os.homedir(), ".timetracker", "app-api-state.json");
+        : path.join(os.homedir(), ".ajour", "app-api-state.json");
   }
 
   async getConnectorsOverview(

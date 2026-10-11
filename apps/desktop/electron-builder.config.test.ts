@@ -20,11 +20,11 @@ describe("desktop electron-builder config", () => {
   it("builds NSIS updater artifacts without Squirrel packages", () => {
     const config = loadBuilderConfig();
 
-    expect(config.appId).toBe("com.timetracker.harday");
+    expect(config.appId).toBe("com.lescabochons.ajour");
     expect(config.electronVersion).toMatch(/^\d+\.\d+\.\d+$/);
     expect(config.win.target).toEqual([{ target: "nsis", arch: ["x64"] }]);
     expect(config.nsis).toMatchObject({
-      artifactName: "HarDay-${version}-${arch}.${ext}",
+      artifactName: "Ajour-${version}-${arch}.${ext}",
       oneClick: true,
       perMachine: false,
     });
@@ -46,11 +46,11 @@ describe("desktop electron-builder config", () => {
       { target: "dmg", arch: ["x64", "arm64"] },
       { target: "zip", arch: ["x64", "arm64"] },
     ]);
-    expect(config.mac.artifactName).toBe("HarDay-${version}-${arch}.${ext}");
+    expect(config.mac.artifactName).toBe("Ajour-${version}-${arch}.${ext}");
   });
 
   it("publishes prereleases on the nightly update channel", () => {
-    vi.stubEnv("HARDAY_UPDATE_CHANNEL", "nightly");
+    vi.stubEnv("AJOUR_UPDATE_CHANNEL", "nightly");
 
     const config = loadBuilderConfig();
 

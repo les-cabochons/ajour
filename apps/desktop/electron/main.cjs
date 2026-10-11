@@ -40,9 +40,9 @@ const {
   isAllowedReleaseUrl,
 } = require("./update-check.cjs");
 
-const DESKTOP_USER_DATA_DIRNAME = "HarDay";
+const DESKTOP_USER_DATA_DIRNAME = "Ajour";
 const stableUserDataPath =
-  process.env.TIMETRACKER_USER_DATA_PATH ??
+  process.env.AJOUR_USER_DATA_PATH ??
   path.join(app.getPath("appData"), DESKTOP_USER_DATA_DIRNAME);
 if (app.getPath("userData") !== stableUserDataPath) {
   app.setPath("userData", stableUserDataPath);
@@ -67,14 +67,11 @@ const staticRoot = app.isPackaged
   ? path.join(process.resourcesPath, "dist-desktop")
   : path.resolve(__dirname, "../../web/dist-desktop");
 const iconPath = app.isPackaged
-  ? path.join(process.resourcesPath, "assets", "harday-icon.png")
-  : path.resolve(__dirname, "../../../assets/harday-icon.png");
+  ? path.join(process.resourcesPath, "assets", "ajour-icon.png")
+  : path.resolve(__dirname, "../../../assets/ajour-icon.png");
 const preloadPath = path.resolve(__dirname, "preload.cjs");
-const INTERNAL_APP_API_HOST =
-  process.env.TIMETRACKER_APP_API_HOST ?? "127.0.0.1";
-const INTERNAL_APP_API_PORT = Number(
-  process.env.TIMETRACKER_APP_API_PORT ?? 8787,
-);
+const INTERNAL_APP_API_HOST = process.env.AJOUR_APP_API_HOST ?? "127.0.0.1";
+const INTERNAL_APP_API_PORT = Number(process.env.AJOUR_APP_API_PORT ?? 8787);
 const internalAppApiRuntimeRoot = app.isPackaged
   ? path.join(process.resourcesPath, "internal-app-runtime")
   : path.resolve(__dirname, "../../..");
@@ -128,10 +125,7 @@ function refreshPluginCatalog() {
   pluginCatalogRefreshPromise ??= pluginCatalogService
     .refresh()
     .then((catalog) => {
-      mainWindow?.webContents.send(
-        "timetracker:plugin-catalog-updated",
-        catalog,
-      );
+      mainWindow?.webContents.send("ajour:plugin-catalog-updated", catalog);
       return catalog;
     })
     .finally(() => {
@@ -159,7 +153,7 @@ function schedulePluginCatalogRefresh() {
   pluginCatalogRefreshTimer.unref?.();
 }
 
-ipcMain.on("timetracker:get-bootstrap-local-state", (event) => {
+ipcMain.on("ajour:get-bootstrap-local-state", (event) => {
   desktopBootstrapLocalState ??= loadDesktopBootstrapLocalState({
     appDataPath: app.getPath("appData"),
     currentUserDataPath: app.getPath("userData"),
@@ -167,7 +161,7 @@ ipcMain.on("timetracker:get-bootstrap-local-state", (event) => {
   event.returnValue = desktopBootstrapLocalState;
 });
 
-ipcMain.on("timetracker:get-runtime-info", (event) => {
+ipcMain.on("ajour:get-runtime-info", (event) => {
   event.returnValue = {
     automaticUpdatesEnabled,
     developmentBuild: !app.isPackaged,
@@ -176,7 +170,7 @@ ipcMain.on("timetracker:get-runtime-info", (event) => {
   };
 });
 
-ipcMain.on("timetracker:set-window-chrome-theme", (event, theme) => {
+ipcMain.on("ajour:set-window-chrome-theme", (event, theme) => {
   assertActiveDesktopWindow(event, "update the window chrome theme");
   if (process.platform !== "win32") {
     return;
@@ -188,7 +182,7 @@ ipcMain.on("timetracker:set-window-chrome-theme", (event, theme) => {
   mainWindow.setTitleBarOverlay(getWindowsTitleBarOverlay(theme));
 });
 
-ipcMain.handle("timetracker:check-for-updates", async (event, track) => {
+ipcMain.handle("ajour:check-for-updates", async (event, track) => {
   assertActiveDesktopWindow(event, "check for application updates");
   void automaticUpdateController.checkNow(track);
   return await checkForUpdatesCoordinated({
@@ -198,15 +192,12 @@ ipcMain.handle("timetracker:check-for-updates", async (event, track) => {
   });
 });
 
-ipcMain.handle(
-  "timetracker:configure-automatic-updates",
-  async (event, track) => {
-    assertActiveDesktopWindow(event, "configure automatic application updates");
-    await automaticUpdateController.configure(track);
-  },
-);
+ipcMain.handle("ajour:configure-automatic-updates", async (event, track) => {
+  assertActiveDesktopWindow(event, "configure automatic application updates");
+  await automaticUpdateController.configure(track);
+});
 
-ipcMain.handle("timetracker:open-update-release", async (event, releaseUrl) => {
+ipcMain.handle("ajour:open-update-release", async (event, releaseUrl) => {
   assertActiveDesktopWindow(event, "open an application update release");
   if (!isAllowedReleaseUrl(releaseUrl)) {
     throw new Error("The update release URL is not allowed.");
@@ -214,10 +205,10 @@ ipcMain.handle("timetracker:open-update-release", async (event, releaseUrl) => {
   await shell.openExternal(releaseUrl);
 });
 
-ipcMain.handle("timetracker:install-connector-plugin", async (event) => {
+ipcMain.handle("ajour:install-connector-plugin", async (event) => {
   if (!mainWindow || event.sender !== mainWindow.webContents) {
     throw new Error(
-      "Connector plugins can only be installed by the active TimeTracker window.",
+      "Connector plugins can only be installed by the active Ajour window.",
     );
   }
   if (!app.isPackaged) {
@@ -253,139 +244,119 @@ ipcMain.handle("timetracker:install-connector-plugin", async (event) => {
   );
 });
 
-ipcMain.handle("timetracker:get-plugin-catalog", async (event) => {
+ipcMain.handle("ajour:get-plugin-catalog", async (event) => {
   assertActiveDesktopWindow(event, "read the plugin catalog");
   return (
     pluginCatalogService.getCurrentCatalog() ?? (await refreshPluginCatalog())
   );
 });
 
-ipcMain.handle("timetracker:get-plugin-catalog-settings", async (event) => {
+ipcMain.handle("ajour:get-plugin-catalog-settings", async (event) => {
   assertActiveDesktopWindow(event, "read plugin catalog settings");
   return pluginCatalogSettings;
 });
 
-ipcMain.handle(
-  "timetracker:configure-plugin-catalog",
-  async (event, settings) => {
-    assertActiveDesktopWindow(event, "configure the plugin catalog");
-    pluginCatalogSettings = savePluginCatalogSettings(
-      pluginCatalogSettingsPath,
-      settings,
+ipcMain.handle("ajour:configure-plugin-catalog", async (event, settings) => {
+  assertActiveDesktopWindow(event, "configure the plugin catalog");
+  pluginCatalogSettings = savePluginCatalogSettings(
+    pluginCatalogSettingsPath,
+    settings,
+  );
+  schedulePluginCatalogRefresh();
+  return pluginCatalogSettings;
+});
+
+ipcMain.handle("ajour:download-catalog-plugin", async (event, pluginId) => {
+  assertActiveDesktopWindow(event, "download a plugin");
+  if (!app.isPackaged) {
+    throw new Error(
+      "Catalog plugin downloads are only available in production builds.",
     );
-    schedulePluginCatalogRefresh();
-    return pluginCatalogSettings;
-  },
-);
+  }
+  if (
+    typeof pluginId !== "string" ||
+    pluginId.length < 2 ||
+    pluginId.length > 64
+  ) {
+    throw new Error("The catalog plugin identifier is invalid.");
+  }
 
-ipcMain.handle(
-  "timetracker:download-catalog-plugin",
-  async (event, pluginId) => {
-    assertActiveDesktopWindow(event, "download a plugin");
-    if (!app.isPackaged) {
-      throw new Error(
-        "Catalog plugin downloads are only available in production builds.",
-      );
-    }
-    if (
-      typeof pluginId !== "string" ||
-      pluginId.length < 2 ||
-      pluginId.length > 64
-    ) {
-      throw new Error("The catalog plugin identifier is invalid.");
-    }
-
-    const downloaded =
-      await pluginCatalogService.downloadPluginArchive(pluginId);
-    await ensureInternalAppApiRunning();
-    if (!internalAppApiServer || !internalAppApiModulePromise) {
-      throw new Error("Internal connector API unavailable. Restart the app.");
-    }
-    const { installConnectorPluginForServer } =
-      await internalAppApiModulePromise;
-    if (typeof installConnectorPluginForServer !== "function") {
-      throw new Error(
-        "Internal connector API does not support plugin installation.",
-      );
-    }
-    const result = await installConnectorPluginForServer(
-      internalAppApiServer,
-      downloaded.archiveBytes,
-      downloaded.archiveFilename,
-      { enableAfterInstall: false },
+  const downloaded = await pluginCatalogService.downloadPluginArchive(pluginId);
+  await ensureInternalAppApiRunning();
+  if (!internalAppApiServer || !internalAppApiModulePromise) {
+    throw new Error("Internal connector API unavailable. Restart the app.");
+  }
+  const { installConnectorPluginForServer } = await internalAppApiModulePromise;
+  if (typeof installConnectorPluginForServer !== "function") {
+    throw new Error(
+      "Internal connector API does not support plugin installation.",
     );
-    return { type: "connector", result };
-  },
-);
+  }
+  const result = await installConnectorPluginForServer(
+    internalAppApiServer,
+    downloaded.archiveBytes,
+    downloaded.archiveFilename,
+    { enableAfterInstall: false },
+  );
+  return { type: "connector", result };
+});
 
-ipcMain.handle(
-  "timetracker:uninstall-connector-plugin",
-  async (event, pluginId) => {
-    if (!mainWindow || event.sender !== mainWindow.webContents) {
-      throw new Error(
-        "Connector plugins can only be uninstalled by the active TimeTracker window.",
-      );
-    }
-    if (!app.isPackaged) {
-      throw new Error(
-        "Development directory plugins cannot be uninstalled by the app.",
-      );
-    }
-
-    await ensureInternalAppApiRunning();
-    if (!internalAppApiServer || !internalAppApiModulePromise) {
-      throw new Error("Internal connector API unavailable. Restart the app.");
-    }
-
-    const { uninstallConnectorPluginForServer } =
-      await internalAppApiModulePromise;
-    if (typeof uninstallConnectorPluginForServer !== "function") {
-      throw new Error(
-        "Internal connector API does not support plugin uninstall.",
-      );
-    }
-
-    return await uninstallConnectorPluginForServer(
-      internalAppApiServer,
-      pluginId,
+ipcMain.handle("ajour:uninstall-connector-plugin", async (event, pluginId) => {
+  if (!mainWindow || event.sender !== mainWindow.webContents) {
+    throw new Error(
+      "Connector plugins can only be uninstalled by the active Ajour window.",
     );
-  },
-);
+  }
+  if (!app.isPackaged) {
+    throw new Error(
+      "Development directory plugins cannot be uninstalled by the app.",
+    );
+  }
 
-ipcMain.handle("timetracker:get-development-plugin-settings", async (event) => {
+  await ensureInternalAppApiRunning();
+  if (!internalAppApiServer || !internalAppApiModulePromise) {
+    throw new Error("Internal connector API unavailable. Restart the app.");
+  }
+
+  const { uninstallConnectorPluginForServer } =
+    await internalAppApiModulePromise;
+  if (typeof uninstallConnectorPluginForServer !== "function") {
+    throw new Error(
+      "Internal connector API does not support plugin uninstall.",
+    );
+  }
+
+  return await uninstallConnectorPluginForServer(
+    internalAppApiServer,
+    pluginId,
+  );
+});
+
+ipcMain.handle("ajour:get-development-plugin-settings", async (event) => {
   assertActiveDesktopWindow(event, "read development plugin settings");
   return getDevelopmentPluginSettings();
 });
 
-ipcMain.handle(
-  "timetracker:select-development-plugin-directory",
-  async (event) => {
-    assertDevelopmentBuild(event, "configure development plugin directories");
-    const directory = await selectDevelopmentPluginDirectory(
-      dialog,
-      mainWindow,
-    );
-    if (!directory) {
-      return null;
-    }
+ipcMain.handle("ajour:select-development-plugin-directory", async (event) => {
+  assertDevelopmentBuild(event, "configure development plugin directories");
+  const directory = await selectDevelopmentPluginDirectory(dialog, mainWindow);
+  if (!directory) {
+    return null;
+  }
 
-    await applyDevelopmentPluginDirectories([directory]);
-    return getDevelopmentPluginSettings();
-  },
-);
+  await applyDevelopmentPluginDirectories([directory]);
+  return getDevelopmentPluginSettings();
+});
 
-ipcMain.handle(
-  "timetracker:clear-development-plugin-directories",
-  async (event) => {
-    assertDevelopmentBuild(event, "reset development plugin directories");
-    await applyDevelopmentPluginDirectories(null);
-    return getDevelopmentPluginSettings();
-  },
-);
+ipcMain.handle("ajour:clear-development-plugin-directories", async (event) => {
+  assertDevelopmentBuild(event, "reset development plugin directories");
+  await applyDevelopmentPluginDirectories(null);
+  return getDevelopmentPluginSettings();
+});
 
 function assertActiveDesktopWindow(event, action) {
   if (!mainWindow || event.sender !== mainWindow.webContents) {
-    throw new Error(`Only the active TimeTracker window can ${action}.`);
+    throw new Error(`Only the active Ajour window can ${action}.`);
   }
 }
 
@@ -520,7 +491,7 @@ async function ensureInternalAppApiRunning() {
       host: INTERNAL_APP_API_HOST,
       port: INTERNAL_APP_API_PORT,
       statePath:
-        process.env.TIMETRACKER_APP_API_STATE_PATH ??
+        process.env.AJOUR_APP_API_STATE_PATH ??
         path.join(app.getPath("userData"), "app-api-state.json"),
       installedPluginDirectory: path.join(app.getPath("userData"), "plugins"),
       developmentPluginDirectories: app.isPackaged
@@ -593,8 +564,8 @@ async function stopInternalAppApi() {
 }
 
 async function resolveRendererUrl() {
-  if (process.env.TIMETRACKER_DESKTOP_RENDERER_URL) {
-    return process.env.TIMETRACKER_DESKTOP_RENDERER_URL;
+  if (process.env.AJOUR_DESKTOP_RENDERER_URL) {
+    return process.env.AJOUR_DESKTOP_RENDERER_URL;
   }
 
   return "app://local/";
@@ -634,7 +605,7 @@ function resolveAutomaticDevelopmentPluginDirectories() {
 
 function resolveEnvironmentDevelopmentPluginDirectories() {
   return (
-    process.env.TIMETRACKER_DEV_PLUGIN_DIRS?.split(path.delimiter)
+    process.env.AJOUR_DEV_PLUGIN_DIRS?.split(path.delimiter)
       .map((directory) => directory.trim())
       .filter(Boolean) ?? []
   );
@@ -709,7 +680,7 @@ async function createMainWindow() {
     autoHideMenuBar: true,
     backgroundColor: "#f4eee5",
     icon: iconPath,
-    title: "Time Tracker",
+    title: "Ajour",
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -760,7 +731,7 @@ if (!hasSingleInstanceLock) {
       app.dock.setIcon(nativeImage.createFromPath(iconPath));
     }
 
-    if (!process.env.TIMETRACKER_DESKTOP_RENDERER_URL) {
+    if (!process.env.AJOUR_DESKTOP_RENDERER_URL) {
       registerStaticProtocol();
     }
 

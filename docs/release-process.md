@@ -1,6 +1,6 @@
 # Desktop Release Process
 
-HarDay publishes Windows and macOS desktop distributables through two GitHub Actions workflows. Linux packaging is not part of the release matrix yet.
+Ajour publishes Windows and macOS desktop distributables through two GitHub Actions workflows. Linux packaging is not part of the release matrix yet.
 
 ## Nightly releases
 
@@ -18,11 +18,11 @@ The global counter is not zero-padded because numeric SemVer prerelease identifi
 
 Each release exposes only artifacts for supported platforms:
 
-- `HarDay-<version>-x64.exe` and its blockmap for Windows;
-- `HarDay-<version>-x64.dmg` / `.zip` and `HarDay-<version>-arm64.dmg` / `.zip`, with blockmaps, for macOS;
+- `Ajour-<version>-x64.exe` and its blockmap for Windows;
+- `Ajour-<version>-x64.dmg` / `.zip` and `Ajour-<version>-arm64.dmg` / `.zip`, with blockmaps, for macOS;
 - `latest.yml` and `latest-mac.yml` for stable updates, or `nightly.yml` and `nightly-mac.yml` for nightly updates.
 
-HarDay uses Electron Builder's NSIS updater target. Squirrel `.nupkg` packages and `RELEASES` manifests are no longer generated or published.
+Ajour uses Electron Builder's NSIS updater target. Squirrel `.nupkg` packages and `RELEASES` manifests are no longer generated or published.
 
 ## Stable releases
 
@@ -49,9 +49,9 @@ general network, updater, filesystem, or shell access.
 
 On packaged Windows builds, the main process uses `electron-updater` to check
 the matching GitHub channel at startup, after a track change, when the user
-selects **Check again**, and every four hours while HarDay remains open.
+selects **Check again**, and every four hours while Ajour remains open.
 Available updates download in the background. Once a download is verified,
-HarDay asks whether to restart now or later. **Restart now** shuts down the
+Ajour asks whether to restart now or later. **Restart now** shuts down the
 internal connector API before handing off to the installer. **Later** leaves
 the update pending and installs it on the next normal app quit. macOS continues
 to use the renderer-safe release check and manual release link until its builds
@@ -81,5 +81,5 @@ no published release yet, Settings reports that as an empty track rather than a
 network failure.
 
 The first release after the Squirrel-to-NSIS migration still requires one manual
-installation because older HarDay builds do not contain the updater. Subsequent
+installation because older Ajour builds do not contain the updater. Subsequent
 NSIS installations can update automatically.

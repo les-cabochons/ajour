@@ -60,17 +60,17 @@ export function AppNavigationSidebar({
 }) {
   return (
     <Sidebar
-      className="harday-shell-sidebar harday-app-navigation-sidebar"
-      innerClassName="harday-shell-sidebar-inner"
+      className="ajour-shell-sidebar ajour-app-navigation-sidebar"
+      innerClassName="ajour-shell-sidebar-inner"
       collapsible="none"
       role="navigation"
       aria-label="Primary navigation"
     >
       <div
-        className="harday-sidebar-window-drag-region desktop-drag-region"
+        className="ajour-sidebar-window-drag-region desktop-drag-region"
         aria-hidden="true"
       />
-      <SidebarHeader className="harday-app-sidebar-header">
+      <SidebarHeader className="ajour-app-sidebar-header">
         <BrandLogo linked />
       </SidebarHeader>
 
@@ -84,7 +84,7 @@ export function AppNavigationSidebar({
                 return (
                   <SidebarMenuItem key={item.to}>
                     <SidebarMenuButton
-                      className="harday-app-sidebar-button"
+                      className="ajour-app-sidebar-button"
                       render={
                         <Link
                           to={item.to}
@@ -115,7 +115,7 @@ export function AppNavigationSidebar({
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
-              className="harday-app-sidebar-button"
+              className="ajour-app-sidebar-button"
               render={
                 <Link
                   to="/settings"

@@ -4,7 +4,7 @@ import type {
   LocalProjectTask,
   LocalProjectTaskDraft,
 } from "@/domain/local-state";
-import type { ProjectDataShapeImportProject } from "@timetracker/shared";
+import type { ProjectDataShapeImportProject } from "@ajour/shared";
 import {
   durationHoursValueToMs,
   durationMsToHoursValue,

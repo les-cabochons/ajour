@@ -320,7 +320,7 @@ export async function installConnectorPluginArchive(options: {
   const stagingRoot = await mkdtemp(
     path.join(options.installRoot, ".install-"),
   );
-  const archivePath = path.join(stagingRoot, "plugin.harday-connector");
+  const archivePath = path.join(stagingRoot, "plugin.ajour-connector");
   const payloadDirectory = path.join(stagingRoot, "payload");
   await mkdir(payloadDirectory, { mode: 0o700 });
 

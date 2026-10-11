@@ -1,10 +1,10 @@
 {
-  "name": "@timetracker/api",
+  "name": "@ajour/api",
   "version": "0.1.0",
   "private": true,
   "type": "module",
   "scripts": {
-    "dev": "TIMETRACKER_ALLOW_DEVELOPMENT_PLUGINS=1 TIMETRACKER_APP_API_ALLOWED_ORIGINS=http://127.0.0.1:5173 node --watch --experimental-strip-types src/server.ts",
+    "dev": "AJOUR_ALLOW_DEVELOPMENT_PLUGINS=1 AJOUR_APP_API_ALLOWED_ORIGINS=http://127.0.0.1:5173 node --watch --experimental-strip-types src/server.ts",
     "start": "node --experimental-strip-types src/server.ts",
     "build": "tsc -p tsconfig.json --noEmit",
     "test": "vitest run",

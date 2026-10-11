@@ -1,7 +1,7 @@
 const { existsSync, readdirSync, readFileSync } = require("node:fs");
 const path = require("node:path");
 
-const STORAGE_KEY = "timetracker.local-state.v2";
+const STORAGE_KEY = "ajour.local-state.v2";
 const RECOVERY_FILE_NAME = "local-state-recovery.json";
 
 function readJsonFile(filePath) {
@@ -133,8 +133,8 @@ function loadDesktopBootstrapLocalState(options = {}) {
   }
 
   const legacyUserDataCandidates = [
-    path.join(appDataPath, "@timetracker", "desktop"),
-    path.join(appDataPath, "TimeTracker"),
+    path.join(appDataPath, "@ajour", "desktop"),
+    path.join(appDataPath, "Ajour"),
   ].filter((candidate) => candidate !== currentUserDataPath);
 
   let latestState = currentUserDataPath

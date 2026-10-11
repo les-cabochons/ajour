@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { ActivityBlockRecord, RuleRecord } from "@timetracker/shared";
+import type { ActivityBlockRecord, RuleRecord } from "@ajour/shared";
 import { MessagePanel } from "@/components/app-surface";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";

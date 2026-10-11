@@ -1,6 +1,6 @@
 # UI Rules
 
-TimeTracker is an operational desktop/web app. Build interfaces for scanning, repeated daily entry, correction, and review.
+Ajour is an operational desktop/web app. Build interfaces for scanning, repeated daily entry, correction, and review.
 
 ## Product Feel
 

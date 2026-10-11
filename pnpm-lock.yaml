@@ -91,6 +91,9 @@ importers:
 
   apps/web:
     dependencies:
+      '@ajour/shared':
+        specifier: workspace:*
+        version: link:../../packages/shared
       '@base-ui/react':
         specifier: ^1.4.1
         version: 1.4.1(@date-fns/tz@1.4.1)(@types/react@19.2.14)(date-fns@4.1.0)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
@@ -112,9 +115,6 @@ importers:
       '@tanstack/router-devtools':
         specifier: ^1.114.3
         version: 1.166.11(@tanstack/react-router@1.168.10(react-dom@19.2.5(react@19.2.5))(react@19.2.5))(@tanstack/router-core@1.168.9)(csstype@3.2.3)(react-dom@19.2.5(react@19.2.5))(react@19.2.5)
-      '@timetracker/shared':
-        specifier: workspace:*
-        version: link:../../packages/shared
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1

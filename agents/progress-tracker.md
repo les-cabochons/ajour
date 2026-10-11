@@ -43,7 +43,7 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
       in the standalone `les-cabochons/ajc-azure-devops` and
       `les-cabochons/ajc-jira` repositories.
 - [x] Development builds load connector directories while production installs
-      only validated `.harday-connector` archives.
+      only validated `.ajour-connector` archives.
 - [x] Development plugin directories are configurable from the Debug page, and
       managed production plugins can be uninstalled without deleting imported
       backlog items or being silently reinstalled on restart.

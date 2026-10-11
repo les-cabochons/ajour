@@ -82,7 +82,7 @@ describe("ConnectorPluginManager", () => {
   const tempDirs: string[] = [];
   const managers: ConnectorPluginManager[] = [];
 
-  async function tempDir(prefix = "timetracker-plugin-host-") {
+  async function tempDir(prefix = "ajour-plugin-host-") {
     const directory = await mkdtemp(path.join(os.tmpdir(), prefix));
     tempDirs.push(directory);
     return directory;
@@ -236,7 +236,7 @@ describe("ConnectorPluginManager", () => {
         "}",
       ].join("\n"),
     );
-    const archivePath = path.join(root, "jira-1.0.0.harday-connector");
+    const archivePath = path.join(root, "jira-1.0.0.ajour-connector");
     await packagePlugin(pluginDirectory, archivePath);
     const pluginManager = manager({
       installedPluginDirectory: path.join(root, "installed"),
@@ -267,7 +267,7 @@ describe("ConnectorPluginManager", () => {
       "jira",
       "export async function validateConnection(config) { return { normalizedConfig: config, connectionSummary: {} }; }",
     );
-    const archivePath = path.join(root, "jira-1.0.0.harday-connector");
+    const archivePath = path.join(root, "jira-1.0.0.ajour-connector");
     await packagePlugin(pluginDirectory, archivePath);
     const pluginManager = manager({
       installedPluginDirectory: path.join(root, "installed"),
@@ -297,7 +297,7 @@ describe("ConnectorPluginManager", () => {
       "jira",
       "export async function validateConnection() { await new Promise(() => setInterval(() => {}, 1000)); }",
     );
-    const archivePath = path.join(root, "jira-1.0.0.harday-connector");
+    const archivePath = path.join(root, "jira-1.0.0.ajour-connector");
     await packagePlugin(pluginDirectory, archivePath);
     const installedRoot = path.join(root, "installed");
     const pluginManager = manager({
@@ -373,7 +373,7 @@ describe("ConnectorPluginManager", () => {
       ].join("\n"),
       "utf8",
     );
-    const archivePath = path.join(root, "jira-1.0.0.harday-connector");
+    const archivePath = path.join(root, "jira-1.0.0.ajour-connector");
     await create(
       {
         cwd: pluginDirectory,
@@ -409,7 +409,7 @@ describe("ConnectorPluginManager", () => {
       "plugin.mjs",
       path.join(pluginDirectory, "linked-plugin.mjs"),
     );
-    const archivePath = path.join(root, "jira-1.0.0.harday-connector");
+    const archivePath = path.join(root, "jira-1.0.0.ajour-connector");
     await create(
       {
         cwd: pluginDirectory,

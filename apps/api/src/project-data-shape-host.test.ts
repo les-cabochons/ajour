@@ -57,7 +57,7 @@ describe("ProjectDataShapePluginManager", () => {
 
   async function tempDir() {
     const directory = await mkdtemp(
-      path.join(os.tmpdir(), "timetracker-project-shape-"),
+      path.join(os.tmpdir(), "ajour-project-shape-"),
     );
     tempDirectories.push(directory);
     return directory;

@@ -130,7 +130,7 @@ describe("desktop automatic updates", () => {
     expect(dialog.showMessageBox).toHaveBeenCalledWith(
       expect.objectContaining({
         buttons: ["Restart now", "Later"],
-        message: "HarDay 1.0.1 has been downloaded.",
+        message: "Ajour 1.0.1 has been downloaded.",
       }),
     );
     expect(autoUpdater.quitAndInstall).toHaveBeenCalledWith(false, true);

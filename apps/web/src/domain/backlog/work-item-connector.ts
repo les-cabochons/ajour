@@ -3,7 +3,7 @@ import {
   type ConnectorImportCandidate,
   type ConnectorSyncFieldUpdate,
   type ConnectorSyncWorkItemUpdate,
-} from "@timetracker/shared";
+} from "@ajour/shared";
 import type {
   LocalAppState,
   LocalWorkItem,

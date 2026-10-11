@@ -172,7 +172,7 @@ describe("connector plugin installation boundary", () => {
 
   async function tempDir() {
     const directory = await mkdtemp(
-      path.join(os.tmpdir(), "timetracker-plugin-api-"),
+      path.join(os.tmpdir(), "ajour-plugin-api-"),
     );
     tempDirs.push(directory);
     return directory;
@@ -202,7 +202,7 @@ describe("connector plugin installation boundary", () => {
         "}",
       ].join("\n"),
     );
-    const archivePath = path.join(root, "jira-1.0.0.harday-connector");
+    const archivePath = path.join(root, "jira-1.0.0.ajour-connector");
     await create(
       {
         cwd: pluginDirectory,

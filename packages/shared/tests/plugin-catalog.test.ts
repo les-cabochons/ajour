@@ -28,7 +28,7 @@ const azureDevOps = {
   install: {
     method: "github-release",
     allowPrereleases: true,
-    assetPattern: "^plugin-.+\\.harday-connector$",
+    assetPattern: "^plugin-.+\\.ajour-connector$",
   },
   tags: ["project-management"],
 } as const;

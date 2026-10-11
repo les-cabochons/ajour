@@ -4,7 +4,7 @@ Status: Implemented. The Workday implementation is standalone.
 
 ## Intent
 
-Plan TimeTracker's first plugin that is not a connector: the Workday plugin.
+Plan Ajour's first plugin that is not a connector: the Workday plugin.
 
 The Workday plugin does not authenticate with, connect to, read from, or write to
 Workday. It determines Workday-specific data shapes and transformations. The
@@ -20,7 +20,7 @@ only the generic contract and runtime surface.
 
 ## Existing Context
 
-- TimeTracker is local-first. Canonical projects, tasks, timesheet entries, and
+- Ajour is local-first. Canonical projects, tasks, timesheet entries, and
   submission state remain owned by the application.
 - Project import/export uses an Ajour-owned Excel adapter around a format-neutral
   dataset contract. The built-in default shape always remains available. Shape
@@ -32,7 +32,7 @@ only the generic contract and runtime surface.
   selected local entries as submitted and clears that state if the submitted
   data later changes.
 - The Plugins UI is generically named, but the only installable plugin contract
-  is connector-specific: `.harday-connector` packaging, connection fields,
+  is connector-specific: `.ajour-connector` packaging, connection fields,
   configuration validation, synchronization operations, API-side storage, and
   worker execution.
 - The Workday data-shaping plugin is not part of the connector contract. It is
@@ -48,7 +48,7 @@ only the generic contract and runtime surface.
   reads and writes, connections, and synchronization. Workday is not in this
   category.
 - **Data shape:** The Workday-specific schema, validation, mapping, grouping,
-  and formatting applied at a workflow boundary without owning TimeTracker's
+  and formatting applied at a workflow boundary without owning Ajour's
   canonical local records.
 - **Project import/export:** A selected data shape maps records entering or
   leaving the canonical project/task model. Ajour owns Excel and future CSV or

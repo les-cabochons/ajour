@@ -4,7 +4,7 @@ import {
   DEFAULT_CONNECTOR_TASK_ICON_DISPLAY_MODE,
   connectorTaskIconDisplayModes,
   type ConnectorTaskIconDisplayMode,
-} from "@timetracker/shared";
+} from "@ajour/shared";
 import type { LocalProject, LocalWorkItem } from "@/domain/local-state";
 import { getConnectorsOverview } from "@/lib/app-api";
 import { ProjectIcon } from "@/lib/project-icons";
