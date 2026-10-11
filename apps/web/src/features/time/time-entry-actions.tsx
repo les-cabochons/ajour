@@ -16,11 +16,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import {
-  closeUndoToast,
-  showToast,
-  showUndoToast,
-} from "@/components/ui/toast";
+import { offerUndo, skipUndo } from "@/features/feedback/undo-toast";
 import { localStore } from "@/lib/local-store";
 import { todayIsoDate } from "@/lib/utils";
 
@@ -76,28 +72,7 @@ export function formatToastDay(localDate: string) {
  * returned for the action; null means the action changed nothing.
  */
 export function offerTimeEntryUndo(token: string | null, title: string) {
-  if (!token) return;
-
-  showUndoToast({
-    title,
-    onUndo: () => {
-      if (localStore.undo(token) !== "restored") {
-        showToast("Can't undo. The entry changed after that action.");
-      }
-    },
-    onClose: () => localStore.forgetUndo(token),
-  });
-}
-
-/**
- * Ends Undo for an action that shows no toast. The store keeps only the last
- * action, so the toast of an earlier one closes too.
- */
-function skipTimeEntryUndo(token: string | null) {
-  if (!token) return;
-
-  localStore.forgetUndo(token);
-  closeUndoToast();
+  offerUndo(token, { title, subject: "entry" });
 }
 
 function savedValues(
@@ -169,7 +144,7 @@ export function useTimeEntryActions({
         `${kind === "move-to" ? "Moved" : "Duplicated"} to ${formatToastDay(localDate)}`,
       );
     } else {
-      skipTimeEntryUndo(token);
+      skipUndo(token);
     }
     onAfterAction?.();
   }

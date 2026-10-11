@@ -48,11 +48,11 @@ import {
   updateTimesheetEntry as applyUpdateTimesheetEntry,
 } from "@/domain/time/timesheet-entry";
 import {
-  captureTimeEntryUndo,
-  restoreTimeEntryUndo,
-  type TimeEntryUndo,
-  type TimeEntryUndoResult,
-} from "@/domain/time/time-entry-undo";
+  captureUndo,
+  restoreUndo,
+  type LocalStateUndo,
+  type LocalStateUndoResult,
+} from "@/domain/local-state-undo";
 import {
   clearTimesheetImportDrafts as applyClearTimesheetImportDrafts,
   commitReadyTimesheetImportDrafts as applyCommitReadyTimesheetImportDrafts,
@@ -721,10 +721,10 @@ function updateStateWithResult<T>(
  * The last undoable action. Only one action can be undone, so a new one
  * replaces it. It lives in memory: the Undo toast does not survive a reload.
  */
-let lastUndo: { token: string; undo: TimeEntryUndo } | undefined;
+let lastUndo: { token: string; undo: LocalStateUndo } | undefined;
 
 /**
- * Applies a time entry action and remembers what it changed. Returns the token
+ * Applies an undoable action and remembers what it changed. Returns the token
  * that Undo passes back, or null when the action changed nothing.
  */
 function updateStateWithUndo(
@@ -737,7 +737,7 @@ function updateStateWithUndo(
   }
 
   writeState(next);
-  const undo = captureTimeEntryUndo(current, next);
+  const undo = captureUndo(current, next);
   if (!undo) {
     return null;
   }
@@ -748,7 +748,7 @@ function updateStateWithUndo(
 }
 
 /** `expired` means a later action replaced this one, or its toast already closed. */
-export type UndoResult = TimeEntryUndoResult | "expired";
+export type UndoResult = LocalStateUndoResult | "expired";
 
 export const localStore = {
   subscribe(callback: () => void) {
@@ -817,8 +817,14 @@ export const localStore = {
       return projects === state.projects ? state : { ...state, projects };
     });
   },
+  /** Archives a project. Returns an undo token, or null when nothing changed. */
   archiveProject(projectId: string) {
-    this.updateProject(projectId, { status: "archived" });
+    return updateStateWithUndo((state) => ({
+      ...state,
+      projects: applyUpdateProject(state.projects, projectId, {
+        status: "archived",
+      }),
+    }));
   },
   unarchiveProject(projectId: string) {
     this.updateProject(projectId, { status: "active" });
@@ -938,8 +944,9 @@ export const localStore = {
       ),
     }));
   },
+  /** Archives a task. Returns an undo token, or null when nothing changed. */
   archiveProjectTask(projectId: string, taskId: string) {
-    updateState((state) => ({
+    return updateStateWithUndo((state) => ({
       ...state,
       projects: setProjectTaskStatus(
         state.projects,
@@ -976,8 +983,14 @@ export const localStore = {
   ) {
     updateState((state) => applyUpdateBacklogStatus(state, statusId, updates));
   },
+  /**
+   * Deletes a backlog status with its status mappings and clears it from work
+   * items. Returns an undo token, or null when nothing changed.
+   */
   deleteBacklogStatus(statusId: string) {
-    updateState((state) => applyDeleteBacklogStatus(state, statusId));
+    return updateStateWithUndo((state) =>
+      applyDeleteBacklogStatus(state, statusId),
+    );
   },
   setBacklogStatusMapping(mapping: BacklogStatusMappingInput) {
     updateState((state) => applyBacklogStatusMapping(state, mapping));
@@ -1024,14 +1037,17 @@ export const localStore = {
       }),
     );
   },
-  clearTimesheetImportDrafts() {
-    updateState((state) => applyClearTimesheetImportDrafts(state));
-  },
+  /** Dismisses one import draft. Returns an undo token, or null when nothing changed. */
   dismissTimesheetImportDraft(draftId: string) {
-    updateState((state) => applyDismissTimesheetImportDraft(state, draftId));
+    return updateStateWithUndo((state) =>
+      applyDismissTimesheetImportDraft(state, draftId),
+    );
   },
+  /** Dismisses every import draft. Returns an undo token, or null when there were none. */
   dismissAllTimesheetImportDrafts() {
-    this.clearTimesheetImportDrafts();
+    return updateStateWithUndo((state) =>
+      applyClearTimesheetImportDrafts(state),
+    );
   },
   commitTimesheetImportDraft(draftId: string) {
     updateState((state) =>
@@ -1134,11 +1150,20 @@ export const localStore = {
   restoreWorkItem(workItemId: string) {
     this.setWorkItemStatus(workItemId, "active");
   },
+  /** Archives a backlog item. Returns an undo token, or null when nothing changed. */
   archiveWorkItem(workItemId: string) {
-    this.setWorkItemStatus(workItemId, "archived");
+    return updateStateWithUndo((state) =>
+      applyWorkItemStatus(state, workItemId, "archived", Date.now),
+    );
   },
+  /**
+   * Deletes a backlog item and its subitems. Returns an undo token, or null
+   * when nothing changed.
+   */
   deleteWorkItem(workItemId: string) {
-    updateState((state) => applyDeleteWorkItem(state, workItemId));
+    return updateStateWithUndo((state) =>
+      applyDeleteWorkItem(state, workItemId),
+    );
   },
   updateTimesheetEntry(
     entryId: string,
@@ -1209,7 +1234,7 @@ export const localStore = {
 
     const { undo } = lastUndo;
     lastUndo = undefined;
-    return updateStateWithResult((state) => restoreTimeEntryUndo(state, undo));
+    return updateStateWithResult((state) => restoreUndo(state, undo));
   },
   /** Drops the undo for `token` once its toast closes. A newer undo is kept. */
   forgetUndo(token: string) {
