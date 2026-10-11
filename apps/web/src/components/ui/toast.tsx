@@ -148,8 +148,9 @@ function ToastList() {
 }
 
 /**
- * Renders the app's toasts: bottom right in a full window, bottom center below
- * 768px. At most three show, newest on top. Mount it once at the app root.
+ * Renders the app's toasts: bottom right in a full window, bottom center in the
+ * narrow view (the `narrow` variant from `lib/breakpoints.ts`). At most three
+ * show, newest on top. Mount it once at the app root.
  */
 export function Toaster() {
   return (
@@ -158,7 +159,7 @@ export function Toaster() {
         <ToastPrimitive.Viewport
           className={cn(
             "fixed right-4 bottom-4 z-[60] flex w-[min(360px,calc(100vw-2rem))] flex-col gap-2 outline-none",
-            "max-md:right-auto max-md:left-1/2 max-md:-translate-x-1/2",
+            "narrow:right-auto narrow:left-1/2 narrow:-translate-x-1/2",
           )}
         >
           <ToastList />
