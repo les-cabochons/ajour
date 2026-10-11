@@ -649,11 +649,20 @@ export function BacklogPage() {
     workItem: LocalWorkItem,
     actionId: BacklogItemActionId,
   ) {
-    if (editingWorkItemId === workItem._id && !leaveEditorDraft()) {
+    if (editingWorkItemId !== workItem._id) {
+      runWorkItemAction(workItem, actionId);
       return;
     }
 
-    runWorkItemAction(workItem, actionId);
+    if (!leaveEditorDraft()) {
+      return;
+    }
+
+    // The row rendered before the draft was saved; act on the saved item.
+    const savedWorkItem = localStore
+      .snapshot()
+      .workItems.find((item) => item._id === workItem._id);
+    runWorkItemAction(savedWorkItem ?? workItem, actionId);
   }
 
   /**
@@ -996,7 +1005,7 @@ export function BacklogPage() {
                     data-no-backlog-drag="true"
                     onClick={(event) => {
                       event.stopPropagation();
-                      handleStartWorkItemTimer(workItem);
+                      runRowAction("start-entry");
                     }}
                     onPointerDown={(event) => event.stopPropagation()}
                   >
@@ -1024,7 +1033,7 @@ export function BacklogPage() {
                 }}
                 onClick={(event) => {
                   event.stopPropagation();
-                  handleStartWorkItemTimer(workItem);
+                  runRowAction("start-entry");
                 }}
               >
                 <Play className="h-3.5 w-3.5" />
