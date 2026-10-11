@@ -3,6 +3,13 @@ const { contextBridge, ipcRenderer } = require("electron");
 contextBridge.exposeInMainWorld("ajourDesktop", {
   bootstrapLocalState: ipcRenderer.sendSync("ajour:get-bootstrap-local-state"),
   runtime: ipcRenderer.sendSync("ajour:get-runtime-info"),
+  appMenu: ipcRenderer.sendSync("ajour:get-app-menu"),
+  onMenuAction: (callback) => {
+    const listener = (_event, action) => callback(action);
+    ipcRenderer.on("ajour:menu-action", listener);
+    return () => ipcRenderer.removeListener("ajour:menu-action", listener);
+  },
+  runMenuItem: (itemId) => ipcRenderer.send("ajour:run-menu-item", itemId),
   setWindowChromeTheme: (theme) =>
     ipcRenderer.send("ajour:set-window-chrome-theme", theme),
   checkForUpdates: (track) =>

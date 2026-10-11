@@ -8,6 +8,7 @@ const {
   BrowserWindow,
   dialog,
   ipcMain,
+  Menu,
   nativeImage,
   nativeTheme,
   net,
@@ -15,6 +16,11 @@ const {
   shell,
 } = require("electron");
 const { autoUpdater } = require("electron-updater");
+const {
+  buildAppMenuTemplate,
+  findAppMenuRoleItem,
+  getAppMenuModel,
+} = require("./app-menu.cjs");
 const { createAutomaticUpdateController } = require("./automatic-update.cjs");
 const { selectConnectorPluginArchive } = require("./connector-install.cjs");
 const { createPluginCatalogService } = require("./plugin-catalog.cjs");
@@ -90,6 +96,11 @@ let gracefulQuitStarted = false;
 let pluginCatalogRefreshPromise = null;
 let pluginCatalogRefreshTimer = null;
 const automaticUpdatesEnabled = app.isPackaged && process.platform === "win32";
+const appMenuModel = getAppMenuModel({
+  platform: process.platform,
+  developmentBuild: !app.isPackaged,
+  appName: app.name,
+});
 const checkForUpdatesCoordinated = createUpdateCheckCoordinator();
 const automaticUpdateController = createAutomaticUpdateController({
   autoUpdater,
@@ -168,6 +179,23 @@ ipcMain.on("ajour:get-runtime-info", (event) => {
     platform: process.platform,
     version: app.getVersion(),
   };
+});
+
+ipcMain.on("ajour:get-app-menu", (event) => {
+  event.returnValue = appMenuModel;
+});
+
+// The Windows title bar menus run role items (Copy, Zoom in, Exit) through the
+// hidden native menu, so they behave like the macOS menu bar.
+ipcMain.on("ajour:run-menu-item", (event, itemId) => {
+  assertActiveDesktopWindow(event, "run a menu item");
+  if (!findAppMenuRoleItem(appMenuModel, itemId)) {
+    return;
+  }
+
+  Menu.getApplicationMenu()
+    ?.getMenuItemById(itemId)
+    ?.click(undefined, mainWindow, mainWindow.webContents);
 });
 
 ipcMain.on("ajour:set-window-chrome-theme", (event, theme) => {
@@ -353,6 +381,11 @@ ipcMain.handle("ajour:clear-development-plugin-directories", async (event) => {
   await applyDevelopmentPluginDirectories(null);
   return getDevelopmentPluginSettings();
 });
+
+/** Runs a registry action in the renderer, such as "time.day-view". */
+function sendMenuAction(action) {
+  mainWindow?.webContents.send("ajour:menu-action", action);
+}
 
 function assertActiveDesktopWindow(event, action) {
   if (!mainWindow || event.sender !== mainWindow.webContents) {
@@ -734,6 +767,15 @@ if (!hasSingleInstanceLock) {
     if (!process.env.AJOUR_DESKTOP_RENDERER_URL) {
       registerStaticProtocol();
     }
+
+    // Replaces Electron's default menu, which keeps Reload and DevTools in
+    // packaged builds. Windows hides it under the title bar overlay and draws
+    // the same menus in the renderer.
+    Menu.setApplicationMenu(
+      Menu.buildFromTemplate(
+        buildAppMenuTemplate(appMenuModel, { sendAction: sendMenuAction }),
+      ),
+    );
 
     void refreshPluginCatalog().catch((error) => {
       console.error("Unable to refresh the plugin catalog.", error);
