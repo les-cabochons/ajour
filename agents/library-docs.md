@@ -63,6 +63,7 @@ Keep React rendering and runtime adapters outside these modules. For example, th
 - Canonical backlog task editor fields, parsing, validation, drafts, patches, hierarchy exclusions, and time-note fallback: `apps/web/src/features/backlog/backlog-task-editor.ts`
 - Hierarchical project/task selection and capped mixed-term search for time entry: `apps/web/src/features/projects/project-task-picker.tsx` and `apps/web/src/features/projects/project-task-search.ts`
 - Shared pointer-reordering session, geometry, row shifts, overlay positioning, and document state: `apps/web/src/lib/table-drag.ts`
+- Keyboard shortcuts: `apps/web/src/lib/shortcuts.ts` is the registry (action id, keys, label, scope) with key matching, the text-field guard and key labels. Menus, tooltips and the palette read keys from it. `lib/shortcut-handlers.tsx` has the one window key listener (`ShortcutProvider`, mounted in the router root) and `useShortcut(id, handler, layer)`. A page handler wins over an app handler for the same action, so the Time page handles N and T while it is open and `features/layout/use-global-shortcuts.ts` handles them elsewhere. [, ], D and W only have Time page handlers. Add a key to the registry only when its handler ships.
 
 The backlog editor module is feature-local because its vocabulary and commands belong to the backlog workflow. The drag module is runtime-aware and cross-feature, so it belongs in `lib`.
 
