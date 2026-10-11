@@ -17,6 +17,7 @@ import {
   getConnectorBacklogStatuses,
   isConnectorApiMissing,
 } from "@/lib/app-api";
+import { useRetryWhileConnectorApiMissing } from "@/lib/use-connector-api-retry";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 
@@ -123,6 +124,8 @@ export function SettingsBacklogPage() {
   useEffect(() => {
     void refreshSourceStatuses();
   }, []);
+
+  useRetryWhileConnectorApiMissing(connectorApiMissing, refreshSourceStatuses);
 
   async function refreshSourceStatuses() {
     setIsRefreshing(true);

@@ -22,6 +22,7 @@ import {
   listConnectorImportCandidates,
   updateConnectorImportSelection,
 } from "@/lib/app-api";
+import { useRetryWhileConnectorApiMissing } from "@/lib/use-connector-api-retry";
 import { useLocalWorkItems } from "@/lib/local-hooks";
 import {
   hasWorkItemEstimateSyncIssue,
@@ -131,6 +132,8 @@ export function SettingsImportReviewPage() {
   useEffect(() => {
     void refresh();
   }, []);
+
+  useRetryWhileConnectorApiMissing(connectorApiMissing, refresh);
 
   const connectionGroups = useMemo(
     () => groupImportCandidatesByConnection(items),
