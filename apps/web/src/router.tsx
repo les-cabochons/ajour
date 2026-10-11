@@ -9,6 +9,7 @@ import {
 import { lazy, Suspense, type ReactNode } from "react";
 import { AppShell } from "@/features/layout/app-shell";
 import { todayIsoDate } from "@/lib/utils";
+import { SubmitFlowPrototypePage } from "@/features/time/submit-flow-prototype-page";
 
 const TimePage = lazy(async () => {
   const module = await import("@/features/time/time-page");
@@ -111,6 +112,13 @@ const timeRoute = createRoute({
       </RouteSuspense>
     );
   },
+});
+
+// PROTOTYPE (issue #24): throwaway submit flow route.
+const submitFlowPrototypeRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/prototype/submit",
+  component: SubmitFlowPrototypePage,
 });
 
 const projectsRoute = createRoute({
@@ -256,6 +264,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   appRoute.addChildren([
     timeRoute,
+    submitFlowPrototypeRoute,
     backlogRoute,
     projectsRoute,
     projectsArchiveRoute,
