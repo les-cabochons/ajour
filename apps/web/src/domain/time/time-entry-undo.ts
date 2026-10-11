@@ -3,6 +3,7 @@ import type {
   LocalAppState,
   LocalTimer,
   LocalTimesheetEntry,
+  LocalWorkItem,
 } from "@/domain/local-state";
 
 /**
@@ -19,13 +20,14 @@ export interface UndoRecordChange<T> {
 
 /**
  * What Undo needs after a time entry action (Delete, Discard, Move to…,
- * Duplicate to…): the time entries and timers as the action found and left them.
- * Work item estimates are not stored. Undo replays the logged time instead, so
- * estimate changes made in between are kept.
+ * Duplicate to…): the time entries, timers and work items as the action found
+ * and left them. Work items are stored because logged time can clamp estimates
+ * at zero, so replaying the inverse time would not give the old values back.
  */
 export interface TimeEntryUndo {
   entries: UndoRecordChange<LocalTimesheetEntry>[];
   timers: UndoRecordChange<LocalTimer>[];
+  workItems: UndoRecordChange<LocalWorkItem>[];
 }
 
 /**
@@ -96,7 +98,13 @@ export function captureTimeEntryUndo(
   const entries = diffRecords(before.timesheetEntries, after.timesheetEntries);
   const timers = diffRecords(before.timers, after.timers);
 
-  return entries.length > 0 || timers.length > 0 ? { entries, timers } : null;
+  if (entries.length === 0 && timers.length === 0) return null;
+
+  return {
+    entries,
+    timers,
+    workItems: diffRecords(before.workItems, after.workItems),
+  };
 }
 
 function isUnchangedSinceAction<T extends { _id: string }>(
@@ -153,9 +161,47 @@ function loggedTime(entry: LocalTimesheetEntry, sign: 1 | -1) {
 }
 
 /**
+ * Takes back the action's effect on work item estimates. A work item still as
+ * the action left it returns to its exact old values. One edited since, for
+ * example by a connector sync, gets the inverse logged time instead, so the
+ * later edit is kept. Work items the action did not change stay as they are.
+ */
+function restoreWorkItems(state: LocalAppState, undo: TimeEntryUndo) {
+  let replayed = state.workItems;
+  for (const change of undo.entries) {
+    if (change.after) {
+      replayed = applyLoggedTimeToWorkItems(
+        replayed,
+        loggedTime(change.after, -1),
+      );
+    }
+    if (change.before) {
+      replayed = applyLoggedTimeToWorkItems(
+        replayed,
+        loggedTime(change.before, 1),
+      );
+    }
+  }
+
+  const changesById = new Map(
+    undo.workItems.map((change) => [change.id, change]),
+  );
+  const replayedById = new Map(
+    replayed.map((workItem) => [workItem._id, workItem]),
+  );
+  return state.workItems.map((workItem) => {
+    const change = changesById.get(workItem._id);
+    if (!change?.before) return workItem;
+    if (recordsEqual(workItem, change.after)) return change.before;
+
+    return replayedById.get(workItem._id) ?? workItem;
+  });
+}
+
+/**
  * Undoes one time entry action. Time entries and timers return to their
- * recorded `before` values, and work item estimates take back the logged time
- * the action added or removed.
+ * recorded `before` values. Work item estimates return to theirs too, unless
+ * they changed again since the action (see `restoreWorkItems`).
  */
 export function restoreTimeEntryUndo(
   state: LocalAppState,
@@ -173,28 +219,12 @@ export function restoreTimeEntryUndo(
     return { state, result: "stale" };
   }
 
-  let workItems = state.workItems;
-  for (const change of undo.entries) {
-    if (change.after) {
-      workItems = applyLoggedTimeToWorkItems(
-        workItems,
-        loggedTime(change.after, -1),
-      );
-    }
-    if (change.before) {
-      workItems = applyLoggedTimeToWorkItems(
-        workItems,
-        loggedTime(change.before, 1),
-      );
-    }
-  }
-
   return {
     state: {
       ...state,
       timesheetEntries: restoreRecords(state.timesheetEntries, undo.entries),
       timers,
-      workItems,
+      workItems: restoreWorkItems(state, undo),
     },
     result: "restored",
   };

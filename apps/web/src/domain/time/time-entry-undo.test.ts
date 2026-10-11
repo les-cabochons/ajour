@@ -82,6 +82,17 @@ function createState(): LocalAppState {
   } as unknown as LocalAppState;
 }
 
+/** The fixture state with other estimates on its one work item. */
+function withWorkItem(
+  estimates: Partial<LocalAppState["workItems"][number]>,
+): LocalAppState {
+  const state = createState();
+  return {
+    ...state,
+    workItems: [{ ...state.workItems[0]!, ...estimates }],
+  };
+}
+
 const factories = { createId: () => "copy-1", now: () => 100 };
 
 function undoAction(
@@ -268,6 +279,64 @@ describe("time entry undo", () => {
 
     expect(restored.result).toBe("stale");
     expect(restored.state).toBe(restarted);
+  });
+
+  it("restores a completed estimate that the delete clamped at zero", () => {
+    const before = withWorkItem({
+      remainingEstimateHours: 2,
+      completedEstimateHours: 0.5,
+    });
+    const { after, undo } = undoAction(before, (state) =>
+      deleteTimesheetEntry(state, "entry-a"),
+    );
+    expect(after.workItems[0]?.completedEstimateHours).toBe(0);
+
+    const restored = restoreTimeEntryUndo(after, undo);
+
+    expect(restored.state.workItems).toEqual(before.workItems);
+  });
+
+  it("restores remaining and overrun estimates exactly", () => {
+    const before = withWorkItem({
+      remainingEstimateHours: 3,
+      remainingEstimateOverrunHours: 0.5,
+      completedEstimateHours: 4,
+    });
+    const { after, undo } = undoAction(before, (state) =>
+      deleteTimesheetEntry(state, "entry-a"),
+    );
+    // The refund pays back the overrun first, which replaying 1h would not undo.
+    expect(after.workItems[0]).toMatchObject({
+      remainingEstimateHours: 3.5,
+      remainingEstimateOverrunHours: undefined,
+    });
+
+    const restored = restoreTimeEntryUndo(after, undo);
+
+    expect(restored.state.workItems).toEqual(before.workItems);
+  });
+
+  it("replays the logged time on a work item edited after the action", () => {
+    const before = createState();
+    const { after, undo } = undoAction(before, (state) =>
+      deleteTimesheetEntry(state, "entry-a"),
+    );
+    expect(after.workItems[0]).toMatchObject({
+      remainingEstimateHours: 3,
+      completedEstimateHours: 2,
+    });
+    // A sync sets a new remaining estimate while the toast shows.
+    const synced = {
+      ...after,
+      workItems: [{ ...after.workItems[0]!, remainingEstimateHours: 5 }],
+    };
+
+    const restored = restoreTimeEntryUndo(synced, undo);
+
+    expect(restored.state.workItems[0]).toMatchObject({
+      remainingEstimateHours: 4,
+      completedEstimateHours: 3,
+    });
   });
 
   it("records nothing when the action was rejected", () => {
