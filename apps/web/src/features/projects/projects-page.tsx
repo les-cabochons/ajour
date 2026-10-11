@@ -1446,7 +1446,10 @@ export function ProjectsPage() {
     if (!task || !requested) return;
     if (requested.id === "edit") openTaskEditor(project._id, task);
     if (requested.id === "archive") {
-      localStore.archiveProjectTask(project._id, task._id);
+      offerUndo(localStore.archiveProjectTask(project._id, task._id), {
+        title: "Task archived",
+        subject: "project",
+      });
     }
     if (requested.id === "restore") {
       localStore.unarchiveProjectTask(project._id, task._id);
