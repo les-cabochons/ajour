@@ -80,6 +80,7 @@ describe("project task editor", () => {
       billable: true,
       budget: "-2",
       adjustment: "soon",
+      pinnedSlot: undefined,
     });
 
     expect(editor).toMatchObject({

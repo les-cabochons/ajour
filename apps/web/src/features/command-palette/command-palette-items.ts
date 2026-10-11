@@ -113,9 +113,12 @@ const NAVIGATION_SHORTCUTS: readonly ShortcutActionId[] = [
   "go.projects",
   "go.settings",
 ];
+// Pinned task digits need the pressed number; the palette reaches tasks by search.
 const HIDDEN_SHORTCUTS: readonly ShortcutActionId[] = [
   "app.command-palette",
   "app.settings",
+  "pinned.new-entry",
+  "pinned.start",
 ];
 
 // Primary text is the item's name; secondary text is its context, such as the

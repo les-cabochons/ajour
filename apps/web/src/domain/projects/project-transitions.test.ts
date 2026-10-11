@@ -381,6 +381,39 @@ describe("pinned task slots", () => {
     expect(cleared[1]).toBe(beta);
   });
 
+  it("moves a slot saved with a task edit or a new task", () => {
+    const projects = setProjectTaskPinnedSlot(
+      [createFixtureProject("alpha", ["active", "active"])],
+      "alpha",
+      "alpha-task-1",
+      "2",
+    );
+
+    const edited = updateProjectTask(projects, "alpha", "alpha-task-2", {
+      name: "Renamed",
+      pinnedSlot: "2",
+    });
+    const added = addProjectTask(
+      edited,
+      "alpha",
+      { name: "Fresh", pinnedSlot: "2" },
+      createFactories(),
+    );
+    const untouched = updateProjectTask(added, "alpha", "alpha-task-1", {
+      name: "Keeps no slot",
+    });
+
+    expect(slotsOf(edited)).toEqual([
+      ["alpha-task-1", undefined],
+      ["alpha-task-2", "2"],
+    ]);
+    expect(slotsOf(untouched)).toEqual([
+      ["alpha-task-1", undefined],
+      ["alpha-task-2", undefined],
+      ["task-1", "2"],
+    ]);
+  });
+
   it("keeps an archived task's slot but does not resolve it", () => {
     const projects = setProjectTaskPinnedSlot(
       [createFixtureProject("alpha", ["archived"])],

@@ -19,8 +19,12 @@ export interface ProjectFactories {
 
 export type ProjectPatch = Partial<Omit<LocalProject, "_id">>;
 
+/** A task edit. `pinnedSlot` moves the slot from any task that holds it. */
 export type ProjectTaskPatch = Partial<
-  Pick<LocalProjectTask, "name" | "billable" | "budgetMs" | "adjustmentMs">
+  Pick<
+    LocalProjectTask,
+    "name" | "billable" | "budgetMs" | "adjustmentMs" | "pinnedSlot"
+  >
 >;
 
 export function createProjectTask(
@@ -172,21 +176,31 @@ export function reorderProjects(
   return changed ? nextProjects : projects;
 }
 
-/** Appends a new task, with its billable flag, budget and adjustment, to a project. */
+/**
+ * Appends a new task, with its billable flag, budget and adjustment, to a
+ * project. A pinned slot in the draft moves from any task that holds it.
+ */
 export function addProjectTask(
   projects: LocalProject[],
   projectId: string,
   task: LocalProjectTaskDraft,
   factories: ProjectFactories,
 ) {
-  return projects.map((project) =>
+  const createdTask = createProjectTask(task, factories);
+  const nextProjects = projects.map((project) =>
     project._id === projectId
-      ? {
-          ...project,
-          tasks: [...project.tasks, createProjectTask(task, factories)],
-        }
+      ? { ...project, tasks: [...project.tasks, createdTask] }
       : project,
   );
+
+  return task.pinnedSlot
+    ? setProjectTaskPinnedSlot(
+        nextProjects,
+        projectId,
+        createdTask._id,
+        task.pinnedSlot,
+      )
+    : nextProjects;
 }
 
 function moveItem<T>(items: T[], fromIndex: number, toIndex: number) {
@@ -246,7 +260,7 @@ export function updateProjectTask(
   taskId: string,
   patch: ProjectTaskPatch,
 ) {
-  return projects.map((project) =>
+  const nextProjects = projects.map((project) =>
     project._id === projectId
       ? {
           ...project,
@@ -273,6 +287,15 @@ export function updateProjectTask(
         }
       : project,
   );
+
+  return "pinnedSlot" in patch
+    ? setProjectTaskPinnedSlot(
+        nextProjects,
+        projectId,
+        taskId,
+        patch.pinnedSlot,
+      )
+    : nextProjects;
 }
 
 export function setProjectTaskStatus(

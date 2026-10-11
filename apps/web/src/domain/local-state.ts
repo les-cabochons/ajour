@@ -103,6 +103,8 @@ export interface LocalProjectTaskDraft {
   billable?: boolean;
   budgetMs?: number;
   adjustmentMs?: number;
+  /** Only `addProjectTask` reads it, so the slot stays unique. */
+  pinnedSlot?: PinnedTaskSlot;
 }
 
 export interface LocalTeam {

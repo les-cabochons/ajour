@@ -104,6 +104,7 @@ import {
   setProjectTaskStatus,
   updateProject as applyUpdateProject,
   updateProjectTask as applyUpdateProjectTask,
+  type ProjectTaskPatch,
 } from "@/domain/projects/project-transitions";
 import type {
   BacklogSortMode,
@@ -932,9 +933,7 @@ export const localStore = {
   updateProjectTask(
     projectId: string,
     taskId: string,
-    patch: Partial<
-      Pick<LocalProjectTask, "name" | "billable" | "budgetMs" | "adjustmentMs">
-    >,
+    patch: ProjectTaskPatch,
   ) {
     updateState((state) => ({
       ...state,

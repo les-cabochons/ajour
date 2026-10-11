@@ -55,6 +55,7 @@ import {
   getLocalProjectDisplayName,
   type LocalProject,
   type LocalProjectTask,
+  type PinnedTaskSlot,
 } from "@/domain/local-state";
 import { openCommandPalette } from "@/features/command-palette/command-palette";
 import {
@@ -118,9 +119,17 @@ type TaskEditorSession = {
   /** The saved task being edited. Absent for a new task. */
   taskId?: string;
   fields: ProjectTaskEditorFields;
+  /**
+   * The task's slot when the panel opened. Save writes the slot only if the
+   * draft changed it, so a slot moved from a menu meanwhile is not undone.
+   */
+  openedPinnedSlot: PinnedTaskSlot | undefined;
   /** Set once Save or a switch was blocked, so a missing name shows its error. */
   showErrors: boolean;
 };
+
+/** The task whose Assign shortcut… picker is open, from its row menu or the palette. */
+type ShortcutRequest = { projectId: string; task: LocalProjectTask };
 
 type ProjectTaskFilter = "active" | "archived";
 
@@ -376,6 +385,7 @@ function ProjectDetail({
   onProjectAction,
   onOpenTask,
   onNewTask,
+  onAssignShortcut,
 }: {
   project: LocalProject;
   metrics: ProjectMetrics;
@@ -387,6 +397,8 @@ function ProjectDetail({
   onOpenTask: (task: LocalProjectTask) => void;
   /** Opens a blank task in the task editor. */
   onNewTask: () => void;
+  /** Opens the slot picker for a task, like the palette's Assign shortcut…. */
+  onAssignShortcut: (task: LocalProjectTask) => void;
 }) {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const taskRowRefs = useRef(new Map<string, HTMLTableRowElement>());
@@ -397,10 +409,6 @@ function ProjectDetail({
   const suppressTaskClickUntilRef = useRef(0);
   /** Task whose New entry… dialog is open. */
   const [newEntryTask, setNewEntryTask] = useState<LocalProjectTask | null>(
-    null,
-  );
-  /** Task whose Assign shortcut… picker is open. */
-  const [shortcutTask, setShortcutTask] = useState<LocalProjectTask | null>(
     null,
   );
   const [isImporting, setIsImporting] = useState(false);
@@ -607,7 +615,7 @@ function ProjectDetail({
         onOpenTask(task);
         return;
       case "assign-shortcut":
-        setShortcutTask(task);
+        onAssignShortcut(task);
         return;
       case "archive":
         offerUndo(localStore.archiveProjectTask(project._id, task._id), {
@@ -1086,13 +1094,6 @@ function ProjectDetail({
           onClose={() => setNewEntryTask(null)}
         />
       ) : null}
-      {shortcutTask ? (
-        <PinnedSlotDialog
-          projectId={project._id}
-          task={shortcutTask}
-          onClose={() => setShortcutTask(null)}
-        />
-      ) : null}
     </div>
   );
 }
@@ -1103,7 +1104,12 @@ function writeProjectTask(
   values: ProjectTaskValues,
 ) {
   if (session.taskId) {
-    localStore.updateProjectTask(session.projectId, session.taskId, values);
+    const { pinnedSlot, ...otherValues } = values;
+    localStore.updateProjectTask(
+      session.projectId,
+      session.taskId,
+      pinnedSlot === session.openedPinnedSlot ? otherValues : values,
+    );
     return;
   }
 
@@ -1131,6 +1137,8 @@ export function ProjectsPage() {
   const [projectModalState, setProjectModalState] =
     useState<ProjectModalState | null>(null);
   const [taskEditor, setTaskEditor] = useState<TaskEditorSession | null>(null);
+  const [shortcutRequest, setShortcutRequest] =
+    useState<ShortcutRequest | null>(null);
   const [pressedProjectId, setPressedProjectId] = useState<string | null>(null);
   const [projectDragState, setProjectDragState] =
     useState<ProjectDragState | null>(null);
@@ -1472,6 +1480,9 @@ export function ProjectsPage() {
     // Start entry and New entry… run in the palette, so only these reach the page.
     if (!task || !requested) return;
     if (requested.id === "edit") openTaskEditor(project._id, task);
+    if (requested.id === "assign-shortcut") {
+      setShortcutRequest({ projectId: project._id, task });
+    }
     if (requested.id === "archive") {
       offerUndo(localStore.archiveProjectTask(project._id, task._id), {
         title: "Task archived",
@@ -1533,6 +1544,7 @@ export function ProjectsPage() {
       projectId,
       taskId: task?._id,
       fields: createProjectTaskEditorFields(task),
+      openedPinnedSlot: task?.pinnedSlot,
       showErrors: false,
     });
     if (projectId !== selectedProjectId) {
@@ -1560,6 +1572,30 @@ export function ProjectsPage() {
   const updateTaskEditorFields = (patch: Partial<ProjectTaskEditorFields>) => {
     setTaskEditor((current) =>
       current ? { ...current, fields: { ...current.fields, ...patch } } : null,
+    );
+  };
+
+  /**
+   * Writes the slot chosen in the Assign shortcut… picker. When the task is
+   * open in the panel, its Shortcut field follows, so the panel's Save keeps it.
+   */
+  const assignShortcut = (
+    request: ShortcutRequest,
+    slot: PinnedTaskSlot | undefined,
+  ) => {
+    localStore.setProjectTaskPinnedSlot(
+      request.projectId,
+      request.task._id,
+      slot,
+    );
+    setTaskEditor((current) =>
+      current?.taskId === request.task._id
+        ? {
+            ...current,
+            fields: { ...current.fields, pinnedSlot: slot },
+            openedPinnedSlot: slot,
+          }
+        : current,
     );
   };
 
@@ -1671,6 +1707,7 @@ export function ProjectsPage() {
         editor={taskEditorState}
         showNameError={visibleTaskEditor.showErrors}
         projectName={getProjectDisplayName(taskEditorProject)}
+        taskId={visibleTaskEditor.taskId}
         trackedMs={
           visibleTaskEditor.taskId
             ? (taskMetricsByProject
@@ -1911,6 +1948,9 @@ export function ProjectsPage() {
               onProjectAction={runProjectAction}
               onOpenTask={(task) => openTaskEditor(selectedProject._id, task)}
               onNewTask={() => openTaskEditor(selectedProject._id)}
+              onAssignShortcut={(task) =>
+                setShortcutRequest({ projectId: selectedProject._id, task })
+              }
             />
           ) : (
             <div className="flex min-h-[400px] items-center justify-center">
@@ -1950,6 +1990,16 @@ export function ProjectsPage() {
             {taskEditorForm}
           </DialogContent>
         </Dialog>
+      ) : null}
+
+      {shortcutRequest ? (
+        <PinnedSlotDialog
+          taskName={shortcutRequest.task.name}
+          taskId={shortcutRequest.task._id}
+          slot={shortcutRequest.task.pinnedSlot}
+          onChoose={(slot) => assignShortcut(shortcutRequest, slot)}
+          onClose={() => setShortcutRequest(null)}
+        />
       ) : null}
 
       {projectModalState &&

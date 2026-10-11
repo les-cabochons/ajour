@@ -487,6 +487,45 @@ Then(
   },
 );
 
+When(
+  "I set key {string} in the panel of task {string} and save",
+  async ({ page }, key: string, task: string) => {
+    await page.getByText(task, { exact: true }).click();
+    const editor = page.getByRole("complementary", { name: "Task editor" });
+    await editor.getByRole("button", { name: /^Shortcut/ }).click();
+    await page
+      .getByRole("dialog", { name: "Assign shortcut" })
+      .getByRole("button", { name: new RegExp(`^${key}(,|$)`) })
+      .click();
+    // The panel's draft holds the slot until Save.
+    expect(await readPinnedSlots(page)).toEqual([]);
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toBeHidden();
+  },
+);
+
+When(
+  "I pick key {string} in the shortcut picker",
+  async ({ page }, key: string) => {
+    const picker = page.getByRole("dialog", { name: "Assign shortcut" });
+    await picker
+      .getByRole("button", { name: new RegExp(`^${key}(,|$)`) })
+      .click();
+    await expect(picker).toBeHidden();
+  },
+);
+
+Then(
+  "only task {string} holds key {string}",
+  async ({ page }, task: string, key: string) => {
+    await expect
+      .poll(async () =>
+        (await readPinnedSlots(page)).map(([, name, slot]) => [name, slot]),
+      )
+      .toEqual([[task, key]]);
+  },
+);
+
 Then("no task is pinned to key {string}", async ({ page }, key: string) => {
   expect(
     (await readPinnedSlots(page)).filter(([, , slot]) => slot === key),

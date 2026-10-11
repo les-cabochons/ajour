@@ -248,6 +248,7 @@ describe("buildPaletteSections", () => {
       "Start Development (Client Atlas)",
       "New entry…",
       "Edit",
+      "Assign shortcut…",
       "Archive",
     ]);
     expect(section!.items[0]!.command).toEqual({

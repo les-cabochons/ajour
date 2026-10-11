@@ -171,6 +171,18 @@ Feature: Open the local time workspace
     When I clear the key of task "222 000"
     Then no task is pinned to key "3"
 
+  Scenario: Assign shortcuts from the task panel and the command palette
+    Given I have projects with searchable tasks
+    When I open project "aaa xyz"
+    And I set key "5" in the panel of task "111 000" and save
+    Then only task "111 000" holds key "5"
+    When I open the command palette
+    And I search the command palette for "333 bbb"
+    And I choose "333 000" in the command palette
+    And I choose "Assign shortcut…" in the command palette
+    And I pick key "5" in the shortcut picker
+    Then only task "333 000" holds key "5"
+
   Scenario: Number keys do nothing in the entry editor
     Given I have projects with searchable tasks
     When I open project "aaa xyz"
