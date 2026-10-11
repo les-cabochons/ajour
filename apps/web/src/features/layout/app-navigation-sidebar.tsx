@@ -29,7 +29,7 @@ export function isAppNavigationItemActive(
   to: "/time/$date" | "/backlog" | "/projects" | "/settings",
 ) {
   if (to === "/time/$date") {
-    return pathname.startsWith("/time/") || pathname.startsWith("/review/");
+    return pathname.startsWith("/time/");
   }
 
   if (to === "/projects") {

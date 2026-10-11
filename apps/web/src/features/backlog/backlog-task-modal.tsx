@@ -236,7 +236,7 @@ export function BacklogTaskModal({
     () =>
       workItem
         ? [
-            isSubtaskWorkItem(workItem) ? "Subtask" : undefined,
+            isSubtaskWorkItem(workItem) ? "Subitem" : undefined,
             workItem.source !== "manual"
               ? workItem.sourceConnectionLabel
               : undefined,
@@ -589,12 +589,12 @@ export function BacklogTaskModal({
       <div ref={overlayRef} className="time-entry-modal-overlay">
         <div className="time-entry-modal">
           <div className="time-entry-modal-header">
-            <span className="time-entry-modal-title">New task</span>
+            <span className="time-entry-modal-title">New backlog item</span>
             <button
               type="button"
               className="time-entry-modal-close"
               onClick={onClose}
-              aria-label="Close task creation"
+              aria-label="Close item creation"
             >
               <X className="h-4 w-4" />
             </button>
@@ -602,7 +602,7 @@ export function BacklogTaskModal({
 
           <div className="time-entry-modal-form">
             <label className="field backlog-field-title-full">
-              <span className="field-label">Task</span>
+              <span className="field-label">Item</span>
               <input
                 className="field-input"
                 value={title}
@@ -613,8 +613,8 @@ export function BacklogTaskModal({
                     submitCreatedTask();
                   }
                 }}
-                placeholder="Task name"
-                aria-label="Task name"
+                placeholder="Item name"
+                aria-label="Item name"
                 autoFocus
               />
             </label>
@@ -681,7 +681,7 @@ export function BacklogTaskModal({
               disabled={!canCreateRootTask}
             >
               <Plus className="h-3.5 w-3.5" />
-              Add task
+              Add item
             </Button>
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
@@ -705,12 +705,12 @@ export function BacklogTaskModal({
       <div ref={overlayRef} className="time-entry-modal-overlay">
         <div className="time-entry-modal">
           <div className="time-entry-modal-header">
-            <span className="time-entry-modal-title">Add subtask</span>
+            <span className="time-entry-modal-title">Add subitem</span>
             <button
               type="button"
               className="time-entry-modal-close"
               onClick={onClose}
-              aria-label="Close subtask creation"
+              aria-label="Close subitem creation"
             >
               <X className="h-4 w-4" />
             </button>
@@ -729,21 +729,21 @@ export function BacklogTaskModal({
                     submitCreatedSubtask();
                   }
                 }}
-                placeholder="Subtask name"
-                aria-label="Subtask name"
+                placeholder="Subitem name"
+                aria-label="Subitem name"
                 autoFocus
               />
             </label>
 
             <label className="field backlog-field-parent">
-              <span className="field-label">Parent task</span>
+              <span className="field-label">Parent item</span>
               <SearchableSelect
                 value={parentTaskId}
                 options={parentTaskOptions}
                 onChange={setParentTaskId}
-                placeholder="Select parent task"
-                emptyMessage="No matching parent tasks"
-                ariaLabel="Parent task"
+                placeholder="Select parent item"
+                emptyMessage="No matching parent items"
+                ariaLabel="Parent item"
               />
             </label>
 
@@ -809,7 +809,7 @@ export function BacklogTaskModal({
               disabled={!canCreateSubtask}
             >
               <Plus className="h-3.5 w-3.5" />
-              Add subtask
+              Add subitem
             </Button>
             <Button type="button" variant="outline" onClick={onClose}>
               Cancel
@@ -822,9 +822,8 @@ export function BacklogTaskModal({
 
   const editingWorkItem = workItem as LocalWorkItem;
   const isArchived = editingWorkItem.status === "archived";
-  const dynamicSubtaskLabel = isSubtaskDraft ? "subtask" : "task";
   const timerTitle = isArchived
-    ? "Archived tasks cannot start timers"
+    ? "Archived items cannot start timers"
     : currentTimer
       ? `Switch timer to ${title.trim() || editingWorkItem.title}`
       : `Start timer for ${title.trim() || editingWorkItem.title}`;
@@ -861,7 +860,7 @@ export function BacklogTaskModal({
               type="button"
               className="time-entry-modal-close"
               onClick={saveAndClose}
-              aria-label="Close task editor"
+              aria-label="Close item editor"
             >
               <X className="h-4 w-4" />
             </button>
@@ -873,7 +872,7 @@ export function BacklogTaskModal({
             <div className="backlog-field-title-full">
               <span className="backlog-task-meta flex items-center gap-2 text-amber-300">
                 <AlertTriangle className="h-3.5 w-3.5" />
-                Estimate sync needs review in Sync Review.
+                Estimate sync needs review in Sync review.
               </span>
             </div>
           ) : null}

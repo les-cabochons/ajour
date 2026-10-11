@@ -42,7 +42,7 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
       themeMode: "system",
       updateTrack: "stable",
       projectDataShapeId: "default",
-      weeklyTimeViewStyle: "ledger",
+      weeklyTimeViewStyle: "grid",
       weeklyCapacityTargets: {
         monday: 8,
         tuesday: 8,
@@ -239,7 +239,7 @@ describe("work item transitions", () => {
       updateWorkItem(otherParent.state, parent.result, {
         parentWorkItemId: otherParent.result,
       }),
-    ).toThrow("Tasks with subtasks cannot be nested.");
+    ).toThrow("Items with subitems cannot be nested.");
   });
 
   it("archives deterministically and deletes a task with its direct children", () => {

@@ -66,8 +66,8 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Time-entry surfaces share a hierarchical shadcn project/task command picker
       with project drill-down, mixed-term direct task search, and bounded results.
 - [x] Day remains the default timer-first view and now exposes a compact date-
-      heading scope menu with `Day` and `Weeks`; the desktop-only Weeks view offers
-      Ledger and Lanes layouts, locally persisted capacity targets, hover-only
+      heading scope menu with `Day` and `Week`; the desktop-only Week view offers
+      Grid and Days layouts, locally persisted capacity targets, hover-only
       utilization details, and configurable warnings.
 - [x] Saved time entries share one Day-inline/Week-dialog editor with Duplicate,
       Duplicate to, and Move to actions; cross-day moves preserve identity and
@@ -101,6 +101,14 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Review follow-up: shared worker lifetime cases (startup failure, early exit, shutdown, per-plugin cancel) are tested once in `plugin-worker-lifetime.test.ts`; the host tests keep discovery, packaging, and schema cases. Catalog interval changes no longer wait on plugin operations, each command keeps its own error text, and mount reuses the cached connector overview.
 - [x] Local verification passed: `just test` (356 tests), `just typecheck`, `just build`, and `just acceptance-test` (18 Chromium scenarios). Browser checks covered Day, Weeks, mobile, and the web plugin catalog. The internal API started with Node's TypeScript stripping.
 - [x] The scoped security pattern scan returned no findings. This is a heuristic scan, not a complete security audit.
+
+## UX vocabulary, 2026-10-11
+
+- [x] The Backlog shows backlog items and subitems; "task" only means a project task.
+- [x] Week layouts are Grid and Days, persisted as `grid` and `days`. The scope menu says Week.
+- [x] Settings routes are `/settings/time-entries` (Import and export time entries) and `/settings/sync-review` (Sync review). The old `/settings/export`, `/settings/imports`, `/settings/connectors`, `/settings/projects/$projectId`, `/review/$date`, `/rules`, and `/sign-in` routes are removed without redirects.
+- [x] Plugins tabs are All, Connectors, and Schemas. User-facing text says schema, not data shape, and time entries, not time logs.
+- [x] Labels, headings, buttons, and aria-labels use sentence case.
 
 ## Standard Task Flow
 

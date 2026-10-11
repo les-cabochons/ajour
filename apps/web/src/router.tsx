@@ -7,14 +7,9 @@ import {
   createRouter,
 } from "@tanstack/react-router";
 import { lazy, Suspense, type ReactNode } from "react";
-import { z } from "zod";
 import { AppShell } from "@/features/layout/app-shell";
 import { todayIsoDate } from "@/lib/utils";
 
-const SignInPage = lazy(async () => {
-  const module = await import("@/features/auth/sign-in-page");
-  return { default: module.SignInPage };
-});
 const TimePage = lazy(async () => {
   const module = await import("@/features/time/time-page");
   return { default: module.TimePage };
@@ -47,11 +42,11 @@ const SettingsProjectsPage = lazy(async () => {
   const module = await import("@/features/settings/settings-projects-page");
   return { default: module.SettingsProjectsPage };
 });
-const SettingsExportPage = lazy(async () => {
+const SettingsTimeEntriesPage = lazy(async () => {
   const module = await import("@/features/settings/settings-export-page");
   return { default: module.SettingsExportPage };
 });
-const SettingsImportReviewPage = lazy(async () => {
+const SettingsSyncReviewPage = lazy(async () => {
   const module =
     await import("@/features/settings/settings-import-review-page");
   return { default: module.SettingsImportReviewPage };
@@ -68,12 +63,6 @@ const RouterDevtools = import.meta.env.DEV
     })
   : null;
 
-const reviewSearchSchema = z.object({
-  projectId: z.string().optional(),
-  show: z.enum(["all", "uncategorized", "micro"]).optional(),
-  group: z.enum(["none", "project"]).optional(),
-});
-
 function RootComponent() {
   return (
     <>
@@ -85,10 +74,6 @@ function RootComponent() {
       ) : null}
     </>
   );
-}
-
-function AuthGate() {
-  return <AppShell />;
 }
 
 function RouteSuspense({ children }: { children: ReactNode }) {
@@ -107,20 +92,10 @@ const indexRoute = createRoute({
   },
 });
 
-const signInRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: "/sign-in",
-  component: () => (
-    <RouteSuspense>
-      <SignInPage />
-    </RouteSuspense>
-  ),
-});
-
 const appRoute = createRoute({
   getParentRoute: () => rootRoute,
   id: "app",
-  component: AuthGate,
+  component: AppShell,
 });
 
 const timeRoute = createRoute({
@@ -135,16 +110,6 @@ const timeRoute = createRoute({
         />
       </RouteSuspense>
     );
-  },
-});
-
-const reviewRoute = createRoute({
-  getParentRoute: () => appRoute,
-  path: "/review/$date",
-  validateSearch: reviewSearchSchema,
-  component: () => {
-    const params = reviewRoute.useParams();
-    return <Navigate to="/time/$date" params={{ date: params.date }} replace />;
   },
 });
 
@@ -186,12 +151,6 @@ const backlogRoute = createRoute({
       <BacklogPage />
     </RouteSuspense>
   ),
-});
-
-const rulesRoute = createRoute({
-  getParentRoute: () => appRoute,
-  path: "/rules",
-  component: () => <Navigate to="/settings" replace />,
 });
 
 const settingsRoute = createRoute({
@@ -243,12 +202,6 @@ const settingsPluginDetailRoute = createRoute({
   },
 });
 
-const settingsConnectorsRedirectRoute = createRoute({
-  getParentRoute: () => settingsRoute,
-  path: "/connectors",
-  component: () => <Navigate to="/settings/plugins" replace />,
-});
-
 const settingsBacklogRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/backlog",
@@ -259,22 +212,22 @@ const settingsBacklogRoute = createRoute({
   ),
 });
 
-const settingsExportRoute = createRoute({
+const settingsTimeEntriesRoute = createRoute({
   getParentRoute: () => settingsRoute,
-  path: "/export",
+  path: "/time-entries",
   component: () => (
     <RouteSuspense>
-      <SettingsExportPage />
+      <SettingsTimeEntriesPage />
     </RouteSuspense>
   ),
 });
 
-const settingsImportReviewRoute = createRoute({
+const settingsSyncReviewRoute = createRoute({
   getParentRoute: () => settingsRoute,
-  path: "/imports",
+  path: "/sync-review",
   component: () => (
     <RouteSuspense>
-      <SettingsImportReviewPage />
+      <SettingsSyncReviewPage />
     </RouteSuspense>
   ),
 });
@@ -299,43 +252,23 @@ const settingsProjectsRoute = createRoute({
   ),
 });
 
-const settingsProjectDetailRoute = createRoute({
-  getParentRoute: () => settingsRoute,
-  path: "/projects/$projectId",
-  component: () => {
-    const params = settingsProjectDetailRoute.useParams();
-    return (
-      <Navigate
-        to="/projects/$projectId"
-        params={{ projectId: params.projectId }}
-        replace
-      />
-    );
-  },
-});
-
 const routeTree = rootRoute.addChildren([
   indexRoute,
-  signInRoute,
   appRoute.addChildren([
     timeRoute,
-    reviewRoute,
     backlogRoute,
     projectsRoute,
     projectsArchiveRoute,
     projectDetailRoute,
-    rulesRoute,
     settingsRoute.addChildren([
       settingsIndexRoute,
       settingsGeneralRoute,
       settingsPluginsRoute,
       settingsPluginDetailRoute,
-      settingsConnectorsRedirectRoute,
       settingsBacklogRoute,
       settingsProjectsRoute,
-      settingsProjectDetailRoute,
-      settingsExportRoute,
-      settingsImportReviewRoute,
+      settingsTimeEntriesRoute,
+      settingsSyncReviewRoute,
       settingsDebugRoute,
     ]),
   ]),

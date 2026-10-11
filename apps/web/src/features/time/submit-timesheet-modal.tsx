@@ -643,7 +643,7 @@ export function SubmitTimesheetModal({
                 disabled={visibleEntryIds.length === 0}
                 onClick={() => replaceSelection(visibleEntryIds)}
               >
-                Select All
+                Select all
               </Button>
               <Button
                 variant="outline"
@@ -651,7 +651,7 @@ export function SubmitTimesheetModal({
                 disabled={selectedEntryIds.length === 0}
                 onClick={() => replaceSelection([])}
               >
-                Clear Selection
+                Clear selection
               </Button>
             </div>
 
@@ -919,7 +919,7 @@ export function SubmitTimesheetModal({
                             setEntrySelection(group.entryIds, true)
                           }
                         >
-                          Check All
+                          Check all
                         </Button>
                         <Button
                           variant="outline"
@@ -932,7 +932,7 @@ export function SubmitTimesheetModal({
                             setEntrySelection(group.entryIds, false)
                           }
                         >
-                          Uncheck All
+                          Uncheck all
                         </Button>
                       </div>
                     </div>

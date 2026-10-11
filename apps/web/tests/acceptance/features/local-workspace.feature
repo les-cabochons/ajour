@@ -22,9 +22,9 @@ Feature: Open the local time workspace
     When I go back in the browser history
     Then the Time new-entry workspace sidebar is restored
 
-  Scenario: Leave Settings after using the legacy Rules route
+  Scenario: Leave Settings after opening it directly
     Given I have no saved Ajour workspace
-    When I open the legacy Rules route
+    When I open Settings directly
     Then the Settings sections replace the primary navigation
     When I leave Settings from the sidebar
     Then the Time workspace is visible
@@ -47,14 +47,14 @@ Feature: Open the local time workspace
 
   Scenario: Start a Backlog timer while another timer is running
     Given I have two saved entries with a timer running on the first
-    When I start the timer on the Backlog task
+    When I start the timer on the Backlog item
     Then the Backlog workspace fills the available page
     And expanded and dragged Backlog rows keep their centered columns
     And the first timer is saved and the Backlog timer is running
 
   Scenario: Start a Backlog timer from mobile while another timer is running
     Given I have two saved entries with a timer running on the first
-    When I start the timer on the Backlog task from mobile
+    When I start the timer on the Backlog item from mobile
     Then the first timer is saved and the Backlog timer is running
     And hidden Backlog columns do not reserve mobile width
 
@@ -88,11 +88,6 @@ Feature: Open the local time workspace
     And I deactivate the connector plugin with the keyboard
     Then the inactive connector plugin remains configurable
 
-  Scenario: Redirect the former connectors settings route
-    Given I have no saved Ajour workspace
-    When I open the former connectors settings route
-    Then I arrive at the plugins catalog
-
   Scenario: Explain an empty plugin catalog
     Given I have no saved Ajour workspace
     When I open the plugins catalog
@@ -119,5 +114,5 @@ Feature: Open the local time workspace
     Examples:
       | editor |
       | Day    |
-      | Weeks  |
+      | Week   |
       | mobile |

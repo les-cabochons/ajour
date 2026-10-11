@@ -69,9 +69,9 @@ const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
     schemaVersion: 1,
     id: "workday-project-data",
     type: "plugin",
-    title: "Workday project data shape",
+    title: "Workday schema",
     description:
-      "Shapes project and task records for Workday-compatible file transfers without connecting to Workday.",
+      "Maps project and task records to a Workday-compatible file layout without connecting to Workday.",
     author: {
       name: "Alex Trépanier",
       url: "https://github.com/alextrepa",

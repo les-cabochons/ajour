@@ -80,7 +80,7 @@ describe("localStore backlog status sync", () => {
       "default",
     );
     expect(localStore.snapshot().userPreferences).toMatchObject({
-      weeklyTimeViewStyle: "ledger",
+      weeklyTimeViewStyle: "grid",
       weeklyCapacityTargets: {
         monday: 8 * 60 * 60 * 1000,
         friday: 8 * 60 * 60 * 1000,
@@ -111,7 +111,7 @@ describe("localStore backlog status sync", () => {
 
     const { localStore } = await import("./local-store");
     expect(localStore.snapshot().userPreferences).toMatchObject({
-      weeklyTimeViewStyle: "ledger",
+      weeklyTimeViewStyle: "grid",
       weeklyCapacityTargets: {
         monday: 8 * 60 * 60 * 1000,
         tuesday: 123,

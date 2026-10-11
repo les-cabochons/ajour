@@ -168,17 +168,19 @@ export function SettingsExportPage() {
   return (
     <div className="settings-sections">
       <section className="settings-section">
-        <h2 className="settings-section-title">Export/Import Time Logs</h2>
+        <h2 className="settings-section-title">
+          Import and export time entries
+        </h2>
         <p className="settings-section-desc">
-          Export committed logs to Excel or import workbook rows into a staged
+          Export time entries to Excel or import workbook rows into a staged
           review queue before adding them to your local timesheet.
         </p>
 
         <AppPanel>
           <SurfaceCallout icon={FileSpreadsheet} title="Excel workbook export">
             {state.timesheetEntries.length === 0
-              ? "No committed time logs are available yet."
-              : `Committed logs available from ${availableRange.startDate} to ${availableRange.endDate}.`}
+              ? "No time entries are available yet."
+              : `Time entries available from ${availableRange.startDate} to ${availableRange.endDate}.`}
           </SurfaceCallout>
 
           <div className="grid gap-4 md:grid-cols-2">
@@ -258,7 +260,7 @@ export function SettingsExportPage() {
               <p className="text-sm text-foreground/65">
                 {selectedImportFile
                   ? selectedImportFile.name
-                  : "Choose a .xlsx file with a Time Logs sheet."}
+                  : "Choose a .xlsx file with a Time entries sheet."}
               </p>
             </div>
 

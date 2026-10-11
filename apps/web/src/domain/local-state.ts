@@ -140,7 +140,7 @@ export type BacklogSortMode = "custom" | "priority_asc" | "priority_desc";
 
 export type ThemeMode = "system" | "dark" | "light";
 export type UpdateTrack = "stable" | "nightly";
-export type WeeklyTimeViewStyle = "ledger" | "lanes";
+export type WeeklyTimeViewStyle = "grid" | "days";
 
 export interface WeeklyCapacityTargets {
   monday: number;

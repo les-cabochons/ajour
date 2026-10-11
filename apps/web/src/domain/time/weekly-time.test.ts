@@ -69,7 +69,7 @@ describe("weekly time projection", () => {
 
     expect(projection.totalMs).toBe(7);
     expect(projection.days[0]?.totalMs).toBe(7);
-    expect(projection.ledgerRows[0]).toMatchObject({
+    expect(projection.gridRows[0]).toMatchObject({
       projectName: "Ajour",
       rowKey: "project-1::task-1",
       runningLocalDate: "2026-08-10",
@@ -111,7 +111,7 @@ describe("weekly time projection", () => {
       weekDates,
     });
 
-    expect(projection.ledgerRows).toEqual(
+    expect(projection.gridRows).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           rowKey: "project-1::docs.example",
@@ -125,7 +125,7 @@ describe("weekly time projection", () => {
       ]),
     );
     expect(
-      projection.ledgerRows.find(
+      projection.gridRows.find(
         (row) => row.rowKey === "project-1::docs.example",
       )?.runningLocalDate,
     ).toBeUndefined();
@@ -188,7 +188,7 @@ describe("weekly time projection", () => {
       overCapacity: true,
       totalMs: 10,
     });
-    expect(projection.ledgerRows).toEqual(
+    expect(projection.gridRows).toEqual(
       expect.arrayContaining([
         expect.objectContaining({
           projectName: "No project",
@@ -201,9 +201,7 @@ describe("weekly time projection", () => {
       ]),
     );
     expect(
-      projection.ledgerRows.some((row) =>
-        row.entryIds.includes("outside-week"),
-      ),
+      projection.gridRows.some((row) => row.entryIds.includes("outside-week")),
     ).toBe(false);
   });
 });

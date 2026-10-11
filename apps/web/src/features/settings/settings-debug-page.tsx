@@ -137,9 +137,9 @@ export function SettingsDebugPage() {
         <MessagePanel tone="warning">{developmentPluginError}</MessagePanel>
       ) : null}
 
-      {/* ── Local Storage Status ──────────────────────────────────── */}
+      {/* ── Local storage status ──────────────────────────────────── */}
       <section className="settings-section">
-        <h2 className="settings-section-title">Local Storage Status</h2>
+        <h2 className="settings-section-title">Local storage status</h2>
 
         <div className="space-y-1 text-sm text-foreground/70">
           <p>{state.timesheetEntries.length} committed timesheet entries</p>

@@ -43,7 +43,7 @@ export class ProjectDataShapePluginManager {
   constructor(options: ProjectDataShapeHostOptions = {}) {
     this.pluginDirectories = options.pluginDirectories ?? [];
     this.workers = new PluginWorkerLifetime({
-      name: "Project data shape",
+      name: "Schema",
       requestTimeoutMs: options.requestTimeoutMs ?? 30_000,
       workerScriptUrl:
         options.workerScriptUrl ??
@@ -130,10 +130,7 @@ export class ProjectDataShapePluginManager {
         const plugin = await readProjectDataShapePlugin(directory);
         plugins.set(plugin.manifest.id, plugin);
       } catch (error) {
-        console.error(
-          `Skipping invalid project data shape plugin "${directory}".`,
-          error,
-        );
+        console.error(`Skipping invalid schema plugin "${directory}".`, error);
       }
     }
     return plugins;
@@ -142,9 +139,7 @@ export class ProjectDataShapePluginManager {
   private async getPlugin(pluginId: string) {
     const plugin = (await this.discoverPlugins()).get(pluginId);
     if (!plugin) {
-      throw new Error(
-        `Project data shape plugin "${pluginId}" is not available.`,
-      );
+      throw new Error(`Schema plugin "${pluginId}" is not available.`);
     }
     return plugin;
   }

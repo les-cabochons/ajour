@@ -122,10 +122,10 @@ export function validateBacklogTaskEditor(
     requireParent?: boolean;
   },
 ): BacklogTaskEditorValidation {
-  const titleError = fields.title.trim() ? null : "Enter a task name";
+  const titleError = fields.title.trim() ? null : "Enter an item name";
   const parentError =
     options.requireParent && !fields.parentWorkItemId
-      ? "Select a parent task"
+      ? "Select a parent item"
       : null;
   const priorityError =
     !options.isSubtask && parsePriorityInput(fields.priority) === null

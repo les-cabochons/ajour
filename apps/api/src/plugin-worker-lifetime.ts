@@ -17,7 +17,7 @@ interface Operation {
 }
 
 interface WorkerLifetimeOptions {
-  name: "Connector" | "Project data shape";
+  name: "Connector" | "Schema";
   workerScriptUrl: URL;
   requestTimeoutMs: number;
 }

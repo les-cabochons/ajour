@@ -222,11 +222,11 @@ describe("createTimesheetExportWorkbook", () => {
 
     const { sheetNames, rows } = await readWorkbookRows(
       workbookBytes,
-      "Time Logs",
+      "Time entries",
       5,
     );
 
-    expect(sheetNames).toEqual(["Time Logs"]);
+    expect(sheetNames).toEqual(["Time entries"]);
     expect(rows).toEqual([
       ["date", "project", "task", "note", "hours"],
       [
@@ -268,7 +268,7 @@ describe("createTimesheetExportWorkbook", () => {
 });
 
 describe("parseTimesheetImportWorkbook", () => {
-  it("parses workbook rows from the Time Logs sheet", async () => {
+  it("parses workbook rows from the Time entries sheet", async () => {
     const workbookBytes = await createTimesheetExportWorkbook({
       entries,
       projects,
@@ -315,7 +315,7 @@ describe("parseTimesheetImportWorkbook", () => {
 
   it("fails when the workbook does not expose the expected columns", async () => {
     const workbook = new ExcelJS.Workbook();
-    const sheet = workbook.addWorksheet("Time Logs");
+    const sheet = workbook.addWorksheet("Time entries");
     sheet.addRows([
       ["foo", "bar"],
       ["2026-04-10", "Project Mercury"],
@@ -323,7 +323,7 @@ describe("parseTimesheetImportWorkbook", () => {
     const workbookBytes = await workbook.xlsx.writeBuffer();
 
     await expect(parseTimesheetImportWorkbook(workbookBytes)).rejects.toThrow(
-      "The Time Logs sheet must contain the columns date, project, task, note, and hours.",
+      "The Time entries sheet must contain the columns date, project, task, note, and hours.",
     );
   });
 });
@@ -362,7 +362,7 @@ describe("downloadWorkbookFile", () => {
     const click = vi.fn();
     const remove = vi.fn();
     const appendChild = vi.fn();
-    const createObjectURL = vi.fn(() => "blob:timelogs");
+    const createObjectURL = vi.fn(() => "blob:time-entries");
     const revokeObjectURL = vi.fn();
 
     vi.stubGlobal("document", {
@@ -396,7 +396,7 @@ describe("downloadWorkbookFile", () => {
       },
     );
 
-    downloadWorkbookFile(new Uint8Array([1, 2, 3]), "timelogs.xlsx");
+    downloadWorkbookFile(new Uint8Array([1, 2, 3]), "time-entries.xlsx");
 
     expect(createObjectURL).toHaveBeenCalledTimes(1);
     expect(appendChild).toHaveBeenCalledTimes(1);
@@ -406,6 +406,6 @@ describe("downloadWorkbookFile", () => {
 
     vi.runAllTimers();
 
-    expect(revokeObjectURL).toHaveBeenCalledWith("blob:timelogs");
+    expect(revokeObjectURL).toHaveBeenCalledWith("blob:time-entries");
   });
 });

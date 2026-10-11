@@ -11,11 +11,11 @@ export const projectDataShapePluginIdSchema = z
   .max(120)
   .regex(
     /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/,
-    "Project data shape plugin identifiers must use lowercase letters, numbers, dots, underscores, or hyphens.",
+    "Schema plugin identifiers must use lowercase letters, numbers, dots, underscores, or hyphens.",
   )
   .refine(
     (value) => value !== BUILT_IN_PROJECT_DATA_SHAPE_ID,
-    `Project data shape plugin identifier "${BUILT_IN_PROJECT_DATA_SHAPE_ID}" is reserved for Ajour's built-in shape.`,
+    `Schema plugin identifier "${BUILT_IN_PROJECT_DATA_SHAPE_ID}" is reserved for Ajour's built-in shape.`,
   );
 
 export const projectDataShapeCellSchema = z.union([
@@ -229,12 +229,12 @@ export function validateProjectDataShapeDatasets(
     const datasetDefinition = definitionsById.get(dataset.id);
     if (!datasetDefinition) {
       throw new Error(
-        `Project data shape returned unknown dataset "${dataset.id}".`,
+        `Schema plugin returned unknown dataset "${dataset.id}".`,
       );
     }
     if (seenDatasetIds.has(dataset.id)) {
       throw new Error(
-        `Project data shape returned dataset "${dataset.id}" more than once.`,
+        `Schema plugin returned dataset "${dataset.id}" more than once.`,
       );
     }
     seenDatasetIds.add(dataset.id);
@@ -280,7 +280,7 @@ export function validateProjectDataShapeDatasets(
   for (const datasetDefinition of parsedDefinition.datasets) {
     if (!seenDatasetIds.has(datasetDefinition.id)) {
       throw new Error(
-        `Project data shape did not return required dataset "${datasetDefinition.id}".`,
+        `Schema plugin did not return required dataset "${datasetDefinition.id}".`,
       );
     }
   }

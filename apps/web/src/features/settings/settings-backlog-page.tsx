@@ -207,7 +207,7 @@ export function SettingsBacklogPage() {
   return (
     <div className="settings-sections">
       <section className="settings-section">
-        <h2 className="settings-section-title">Backlog Statuses</h2>
+        <h2 className="settings-section-title">Backlog statuses</h2>
         <p className="settings-section-desc">
           Create the statuses the app should use in backlog, then map synced
           connector statuses onto them.
@@ -321,7 +321,7 @@ export function SettingsBacklogPage() {
       </section>
 
       <section className="settings-section">
-        <h2 className="settings-section-title">Synced Status Mapping</h2>
+        <h2 className="settings-section-title">Synced status mapping</h2>
         <p className="settings-section-desc">
           Connector sync registers raw statuses first. Mapping them here
           controls which backlog status imported items display.
