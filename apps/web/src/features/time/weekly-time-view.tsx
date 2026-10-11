@@ -665,6 +665,7 @@ export function WeeklyTimeView({
                         render={
                           <button
                             type="button"
+                            data-entry-id={entry._id}
                             className={cn(
                               "weekly-tray-entry",
                               activeEntryId === entry._id && "is-selected",
