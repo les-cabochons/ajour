@@ -738,7 +738,6 @@ export function BacklogPage() {
     }
 
     localStore.startTimer({
-      localDate: todayIsoDate(),
       workItemId: workItem._id,
       projectId: workItem.projectId,
       taskId: workItem.taskId,

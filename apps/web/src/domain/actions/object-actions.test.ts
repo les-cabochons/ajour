@@ -59,7 +59,7 @@ describe("time entry actions", () => {
       "duplicate-to",
       "move-to",
     ]);
-    expect(disabled[0]?.disabledReason).toBe("Stop the timer first");
+    expect(disabled[0]?.disabledReason).toBe("Stop the running entry first");
   });
 
   it("keeps every action on a submitted entry and flags the ones that unsubmit it", () => {

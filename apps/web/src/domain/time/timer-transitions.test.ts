@@ -8,13 +8,14 @@ import type {
 import {
   normalizeTimer,
   continueTimesheetEntry,
+  editRunningEntry,
   saveTimer,
   startTimer,
-  startTimerWithEntry,
-  updateTimer,
   type TimerFactories,
 } from "@/domain/time/timer-transitions";
 import { createTimesheetEntrySubmissionFingerprint } from "@/domain/time/timesheet-entry";
+
+const TODAY = "2026-07-30";
 
 function createFactories(now = 1_000): TimerFactories {
   let nextId = 1;
@@ -69,7 +70,20 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
   } as LocalAppState;
 }
 
-describe("timer hydration and editing", () => {
+function createRunningTimer(overrides: Partial<LocalTimer> = {}): LocalTimer {
+  return {
+    _id: "timer-1",
+    startedAt: 700,
+    localDate: TODAY,
+    projectId: "project-1",
+    taskId: "task-1",
+    note: "Running work",
+    accumulatedDurationMs: 200,
+    ...overrides,
+  };
+}
+
+describe("timer hydration", () => {
   it("hydrates legacy labels, dates, and accumulated duration", () => {
     const timer = normalizeTimer({
       _id: "timer-1",
@@ -87,61 +101,64 @@ describe("timer hydration and editing", () => {
       accumulatedDurationMs: 0,
     });
   });
+});
 
-  it("starts one timer and allows its editable fields to change", () => {
+describe("starting a running entry", () => {
+  it("starts on today with no counted time when Hours is empty", () => {
     const started = startTimer(
       createState(),
-      {
-        localDate: "2026-07-30",
-        projectId: "project-1",
-        taskId: "task-1",
-      },
+      { projectId: "project-1", taskId: "task-1", note: "Build" },
+      TODAY,
       createFactories(),
     );
-    const updated = updateTimer(started, "timer-1", {
-      note: "Updated note",
-      accumulatedDurationMs: 250,
-    });
 
-    expect(updated.timers).toEqual([
+    expect(started.timers).toEqual([
       expect.objectContaining({
         _id: "timer-1",
         startedAt: 1_000,
-        note: "Updated note",
-        accumulatedDurationMs: 250,
+        localDate: TODAY,
+        projectId: "project-1",
+        note: "Build",
+        accumulatedDurationMs: 0,
       }),
     ]);
+    expect(started.timesheetEntries).toEqual([]);
   });
 
-  it("saves the active timer and starts a fresh timer at one boundary", () => {
+  it("counts on from typed Hours", () => {
+    const halfHourMs = 30 * 60_000;
+    const started = startTimer(
+      createState(),
+      { accumulatedDurationMs: halfHourMs },
+      TODAY,
+      createFactories(1_000),
+    );
+    const saved = saveTimer(started, "timer-1", createFactories(61_000));
+
+    expect(saved.timesheetEntries[0]).toMatchObject({
+      localDate: TODAY,
+      durationMs: halfHourMs + 60_000,
+    });
+  });
+
+  it("saves the running entry and switches at one boundary", () => {
     let clockCalls = 0;
     const factories: TimerFactories = {
       createId: (prefix) => `${prefix}-switched`,
       now: () => 1_000 + clockCalls++ * 100,
     };
     const switched = startTimer(
-      createState({
-        timers: [
-          {
-            _id: "active-timer",
-            startedAt: 700,
-            localDate: "2026-07-30",
-            projectId: "project-1",
-            taskId: "task-1",
-            accumulatedDurationMs: 200,
-          },
-        ],
-      }),
-      {
-        localDate: "2026-07-31",
-        note: "Fresh timer",
-      },
+      createState({ timers: [createRunningTimer({ _id: "active-timer" })] }),
+      { note: "Fresh entry" },
+      TODAY,
       factories,
     );
 
     expect(switched.timesheetEntries).toEqual([
       expect.objectContaining({
         _id: "timesheet-switched",
+        localDate: TODAY,
+        note: "Running work",
         durationMs: 500,
       }),
     ]);
@@ -149,92 +166,95 @@ describe("timer hydration and editing", () => {
       expect.objectContaining({
         _id: "timer-switched",
         startedAt: 1_000,
-        localDate: "2026-07-31",
-        note: "Fresh timer",
+        localDate: TODAY,
+        note: "Fresh entry",
       }),
     ]);
     expect(clockCalls).toBe(1);
   });
 
-  it("does not create a paired entry while another timer is active", () => {
+  it("keeps a running entry that started yesterday on yesterday when switching", () => {
+    const switched = startTimer(
+      createState({
+        timers: [createRunningTimer({ localDate: "2026-07-29" })],
+      }),
+      {},
+      TODAY,
+      createFactories(),
+    );
+
+    expect(switched.timesheetEntries[0]?.localDate).toBe("2026-07-29");
+    expect(switched.timers[0]?.localDate).toBe(TODAY);
+  });
+});
+
+describe("editing the running entry", () => {
+  it("saves the form and keeps counting without touching the count", () => {
+    const state = createState({ timers: [createRunningTimer()] });
+
+    const edited = editRunningEntry(
+      state,
+      "timer-1",
+      { projectId: "project-1", note: "Renamed" },
+      { now: () => 5_000 },
+    );
+
+    expect(edited.timers).toEqual([
+      {
+        ...createRunningTimer(),
+        taskId: undefined,
+        note: "Renamed",
+      },
+    ]);
+  });
+
+  it("counts on from corrected counted time", () => {
+    const state = createState({ timers: [createRunningTimer()] });
+
+    const edited = editRunningEntry(
+      state,
+      "timer-1",
+      { projectId: "project-1", taskId: "task-1", countedDurationMs: 3_000 },
+      { now: () => 5_000 },
+    );
+    const saved = saveTimer(edited, "timer-1", createFactories(6_000));
+
+    expect(edited.timers[0]).toMatchObject({
+      startedAt: 5_000,
+      accumulatedDurationMs: 3_000,
+    });
+    expect(saved.timesheetEntries[0]?.durationMs).toBe(4_000);
+  });
+
+  it("leaves the resumed entry's saved time alone until Stop", () => {
+    const entry = createEntry({ durationMs: 500 });
     const state = createState({
-      timers: [
-        {
-          _id: "active",
-          startedAt: 100,
-          localDate: "2026-07-30",
-          accumulatedDurationMs: 0,
-        },
-      ],
+      timesheetEntries: [entry],
+      timers: [createRunningTimer({ entryId: entry._id })],
     });
 
+    const edited = editRunningEntry(
+      state,
+      "timer-1",
+      { countedDurationMs: 2_000 },
+      { now: () => 5_000 },
+    );
+
+    expect(edited.timesheetEntries).toEqual([entry]);
+  });
+
+  it("rejects negative counted time and unknown running entries", () => {
+    const state = createState({ timers: [createRunningTimer()] });
+    const factories = { now: () => 5_000 };
+
     expect(
-      startTimerWithEntry(
-        state,
-        { localDate: "2026-07-30" },
-        createFactories(),
-      ),
+      editRunningEntry(state, "timer-1", { countedDurationMs: -1 }, factories),
     ).toBe(state);
+    expect(editRunningEntry(state, "missing", {}, factories)).toBe(state);
   });
 });
 
 describe("timer and timesheet entry lifecycle", () => {
-  it("creates a paired entry and timer with matching identity", () => {
-    const state = startTimerWithEntry(
-      createState(),
-      {
-        localDate: "2026-07-30",
-        projectId: "project-1",
-        taskId: "task-1",
-        durationMs: 400,
-      },
-      createFactories(),
-    );
-
-    expect(state.timesheetEntries[0]).toMatchObject({
-      _id: "timesheet-1",
-      label: "Build",
-      durationMs: 400,
-    });
-    expect(state.timers[0]).toMatchObject({
-      _id: "timer-2",
-      entryId: "timesheet-1",
-      accumulatedDurationMs: 400,
-    });
-  });
-
-  it("applies an initial timer duration to linked work-item estimates", () => {
-    const state = startTimerWithEntry(
-      createState({
-        workItems: [
-          {
-            _id: "work-item-1",
-            title: "Build",
-            status: "active",
-            source: "manual",
-            projectId: "project-1",
-            taskId: "task-1",
-            remainingEstimateHours: 2,
-            completedEstimateHours: 0,
-            createdAt: 1,
-          },
-        ],
-      }),
-      {
-        localDate: "2026-07-30",
-        projectId: "project-1",
-        taskId: "task-1",
-        durationMs: 60 * 60 * 1000,
-      },
-      createFactories(),
-    );
-
-    expect(state.workItems[0]).toMatchObject({
-      remainingEstimateHours: 1,
-      completedEstimateHours: 1,
-    });
-  });
-
   it("saves elapsed time as a new entry and removes the timer", () => {
     const state = createState({
       timers: [

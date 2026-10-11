@@ -38,7 +38,7 @@ Current deep domain modules demonstrate this boundary:
 - `domain/projects/project-transitions.ts` owns project and task creation, legacy hydration, ordering, edits, and archive state.
 - `domain/time/timesheet-entry.ts` owns manual entry creation, edits, deletion, ordering, submission state, and the corresponding work-item estimate adjustments.
 - `domain/time/timesheet-import.ts` owns import normalization, conflict detection, draft review, project/task recovery, and single or batch commit.
-- `domain/time/timer-transitions.ts` owns timer hydration, start/edit/cancel/save/continue behavior, elapsed-time calculation, and replacement of continued entries.
+- `domain/time/timer-transitions.ts` owns timer hydration, start/edit/cancel/save/continue behavior, elapsed-time calculation, and replacement of continued entries. A running entry always starts on today, and a counted time correction restarts its count from the corrected value.
 - `domain/time/timeline-transitions.ts` owns imported browser review preservation, timeline materialization, dismissal, idempotent commits, and rule creation.
 - `domain/time/time-entry-undo.ts` records which time entries, timers and work items an action changed and restores them for Undo. It refuses a restore when those entries or timers changed again since. A work item changed again since gets the inverse logged time instead of its old values. `local-store.ts` keeps only the last action's undo, in memory, behind a token.
 

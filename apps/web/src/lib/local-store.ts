@@ -63,13 +63,12 @@ import {
 } from "@/domain/time/timesheet-import";
 import {
   cancelTimer as applyCancelTimer,
+  editRunningEntry as applyEditRunningEntry,
   normalizeTimer,
   continueTimesheetEntry as applyContinueTimesheetEntry,
   saveTimer as applySaveTimer,
   startTimer as applyStartTimer,
-  startTimerWithEntry as applyStartTimerWithEntry,
-  updateTimer as applyUpdateTimer,
-  type StartTimerWithEntryValues,
+  type RunningEntryEdit,
 } from "@/domain/time/timer-transitions";
 import {
   buildSampleActivitySegment,
@@ -115,7 +114,6 @@ import type {
   LocalProjectTask,
   LocalProjectTaskDraft,
   LocalTeam,
-  LocalTimer,
   LocalTimerDraft,
   LocalTimesheetEntry,
   LocalWorkItem,
@@ -984,24 +982,20 @@ export const localStore = {
   setBacklogStatusMapping(mapping: BacklogStatusMappingInput) {
     updateState((state) => applyBacklogStatusMapping(state, mapping));
   },
+  /** Starts a running entry today, saving the one already running (Start or Switch). */
   startTimer(timer: LocalTimerDraft) {
     updateState((state) =>
-      applyStartTimer(state, timer, { createId, now: Date.now }),
-    );
-  },
-  startTimerWithEntry(values: StartTimerWithEntryValues) {
-    updateState((state) =>
-      applyStartTimerWithEntry(state, values, {
+      applyStartTimer(state, timer, todayIsoDate(), {
         createId,
         now: Date.now,
       }),
     );
   },
-  updateTimer(
-    timerId: string,
-    patch: Partial<Omit<LocalTimer, "_id" | "startedAt">>,
-  ) {
-    updateState((state) => applyUpdateTimer(state, timerId, patch));
+  /** Saves the running entry's form. It keeps running. */
+  editRunningEntry(timerId: string, edit: RunningEntryEdit) {
+    updateState((state) =>
+      applyEditRunningEntry(state, timerId, edit, { now: Date.now }),
+    );
   },
   /** Discards the running entry. Returns an undo token, or null when nothing changed. */
   cancelTimer(timerId: string) {

@@ -180,7 +180,7 @@ export function projectWeeklyTime({
         rowKey: runningRowKey,
         runningLocalDate: runningTime.localDate,
         taskId: runningTime.taskId,
-        taskName: task?.name ?? "Running timer",
+        taskName: task?.name ?? "Running",
         totalMs: runningTime.durationMs,
       });
     }
