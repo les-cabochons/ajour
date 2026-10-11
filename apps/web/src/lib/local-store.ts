@@ -100,6 +100,7 @@ import {
   normalizeProject,
   reorderProjects as applyReorderProjects,
   reorderProjectTask as applyReorderProjectTask,
+  setProjectTaskPinnedSlot as applySetProjectTaskPinnedSlot,
   setProjectTaskStatus,
   updateProject as applyUpdateProject,
   updateProjectTask as applyUpdateProjectTask,
@@ -121,6 +122,7 @@ import type {
   LocalWorkItemEstimateFieldConflict,
   LocalWorkItemEstimateFieldKey,
   PersistedLocalWorkItem,
+  PinnedTaskSlot,
   ThemeMode,
   TimelineMutationResult,
   UserPreferences,
@@ -941,6 +943,22 @@ export const localStore = {
         projectId,
         taskId,
         patch,
+      ),
+    }));
+  },
+  /** Sets or clears a task's pinned slot. A slot another task holds moves to this one. */
+  setProjectTaskPinnedSlot(
+    projectId: string,
+    taskId: string,
+    slot: PinnedTaskSlot | undefined,
+  ) {
+    updateState((state) => ({
+      ...state,
+      projects: applySetProjectTaskPinnedSlot(
+        state.projects,
+        projectId,
+        taskId,
+        slot,
       ),
     }));
   },

@@ -31,6 +31,31 @@ export interface LocalProjectTask {
   billable?: boolean;
   budgetMs?: number;
   adjustmentMs?: number;
+  /** The number key that opens or starts this pinned task. One task holds a slot at most. */
+  pinnedSlot?: PinnedTaskSlot;
+}
+
+/** The ten pinned task slots, in keyboard order: 1 to 9, then 0. */
+export const PINNED_TASK_SLOTS = [
+  "1",
+  "2",
+  "3",
+  "4",
+  "5",
+  "6",
+  "7",
+  "8",
+  "9",
+  "0",
+] as const;
+
+export type PinnedTaskSlot = (typeof PINNED_TASK_SLOTS)[number];
+
+export function isPinnedTaskSlot(value: unknown): value is PinnedTaskSlot {
+  return (
+    typeof value === "string" &&
+    (PINNED_TASK_SLOTS as readonly string[]).includes(value)
+  );
 }
 
 export type LocalWorkItemEstimateFieldKey =

@@ -4,9 +4,12 @@ import {
   addProject,
   addProjectTask,
   createProject,
+  findPinnedTask,
+  getPinnedTasksBySlot,
   normalizeProject,
   reorderProjects,
   reorderProjectTask,
+  setProjectTaskPinnedSlot,
   setProjectTaskStatus,
   updateProjectTask,
   type ProjectFactories,
@@ -281,5 +284,137 @@ describe("project task lifecycle", () => {
       status: "active",
       archivedAt: undefined,
     });
+  });
+});
+
+describe("pinned task slots", () => {
+  function slotsOf(projects: LocalProject[]) {
+    return projects.flatMap((project) =>
+      project.tasks.map((task) => [task._id, task.pinnedSlot]),
+    );
+  }
+
+  it("assigns a free slot to one task", () => {
+    const projects = [createFixtureProject("alpha", ["active", "active"])];
+
+    const pinned = setProjectTaskPinnedSlot(
+      projects,
+      "alpha",
+      "alpha-task-2",
+      "3",
+    );
+
+    expect(slotsOf(pinned)).toEqual([
+      ["alpha-task-1", undefined],
+      ["alpha-task-2", "3"],
+    ]);
+    expect(findPinnedTask(pinned, "3")?.task._id).toBe("alpha-task-2");
+  });
+
+  it("moves a taken slot to the new task, even across projects", () => {
+    const projects = setProjectTaskPinnedSlot(
+      [createFixtureProject("alpha"), createFixtureProject("beta")],
+      "alpha",
+      "alpha-task-1",
+      "1",
+    );
+
+    const moved = setProjectTaskPinnedSlot(
+      projects,
+      "beta",
+      "beta-task-1",
+      "1",
+    );
+
+    expect(slotsOf(moved)).toEqual([
+      ["alpha-task-1", undefined],
+      ["beta-task-1", "1"],
+    ]);
+    expect(getPinnedTasksBySlot(moved).size).toBe(1);
+  });
+
+  it("frees the old slot when a task changes slot", () => {
+    const projects = setProjectTaskPinnedSlot(
+      [createFixtureProject("alpha")],
+      "alpha",
+      "alpha-task-1",
+      "1",
+    );
+
+    const changed = setProjectTaskPinnedSlot(
+      projects,
+      "alpha",
+      "alpha-task-1",
+      "0",
+    );
+
+    expect(slotsOf(changed)).toEqual([["alpha-task-1", "0"]]);
+    expect(findPinnedTask(changed, "1")).toBeUndefined();
+  });
+
+  it("clears a slot and leaves other tasks and projects untouched", () => {
+    const beta = createFixtureProject("beta");
+    const projects = setProjectTaskPinnedSlot(
+      setProjectTaskPinnedSlot(
+        [createFixtureProject("alpha", ["active", "active"]), beta],
+        "alpha",
+        "alpha-task-1",
+        "1",
+      ),
+      "alpha",
+      "alpha-task-2",
+      "2",
+    );
+
+    const cleared = setProjectTaskPinnedSlot(
+      projects,
+      "alpha",
+      "alpha-task-1",
+      undefined,
+    );
+
+    expect(slotsOf(cleared)).toEqual([
+      ["alpha-task-1", undefined],
+      ["alpha-task-2", "2"],
+      ["beta-task-1", undefined],
+    ]);
+    expect(cleared[1]).toBe(beta);
+  });
+
+  it("keeps an archived task's slot but does not resolve it", () => {
+    const projects = setProjectTaskPinnedSlot(
+      [createFixtureProject("alpha", ["archived"])],
+      "alpha",
+      "alpha-task-1",
+      "4",
+    );
+    const archivedProject = setProjectTaskPinnedSlot(
+      [{ ...createFixtureProject("beta"), status: "archived" }],
+      "beta",
+      "beta-task-1",
+      "5",
+    );
+
+    expect(getPinnedTasksBySlot(projects).get("4")?.task._id).toBe(
+      "alpha-task-1",
+    );
+    expect(findPinnedTask(projects, "4")).toBeUndefined();
+    expect(findPinnedTask(archivedProject, "5")).toBeUndefined();
+  });
+
+  it("drops an unknown slot when hydrating a stored task", () => {
+    const project = createFixtureProject("alpha", ["active", "active"]);
+    const stored = {
+      ...project,
+      tasks: [
+        { ...project.tasks[0]!, pinnedSlot: "7" },
+        { ...project.tasks[1]!, pinnedSlot: "11" },
+      ],
+    } as LocalProject;
+
+    expect(slotsOf([normalizeProject(stored, () => 1)])).toEqual([
+      ["alpha-task-1", "7"],
+      ["alpha-task-2", undefined],
+    ]);
   });
 });

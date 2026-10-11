@@ -1,8 +1,10 @@
-import type {
-  LocalProject,
-  LocalProjectDraft,
-  LocalProjectTask,
-  LocalProjectTaskDraft,
+import {
+  isPinnedTaskSlot,
+  type LocalProject,
+  type LocalProjectDraft,
+  type LocalProjectTask,
+  type LocalProjectTaskDraft,
+  type PinnedTaskSlot,
 } from "@/domain/local-state";
 import { normalizeProjectIcon } from "@/domain/projects/project-icon";
 import {
@@ -91,6 +93,9 @@ export function normalizeProject(
         billable: task.billable ?? true,
         budgetMs: normalizeProjectTaskBudgetMs(task.budgetMs),
         adjustmentMs: normalizeProjectTaskAdjustmentMs(task.adjustmentMs),
+        pinnedSlot: isPinnedTaskSlot(task.pinnedSlot)
+          ? task.pinnedSlot
+          : undefined,
       };
     }),
   };
@@ -296,4 +301,77 @@ export function setProjectTaskStatus(
         }
       : project,
   );
+}
+
+/**
+ * Gives a task a pinned slot, or clears it when `slot` is undefined. A slot
+ * belongs to one task at most, so assigning a slot another task holds moves it:
+ * that task loses it. The task's previous slot becomes free.
+ */
+export function setProjectTaskPinnedSlot(
+  projects: LocalProject[],
+  projectId: string,
+  taskId: string,
+  slot: PinnedTaskSlot | undefined,
+) {
+  return projects.map((project) => {
+    const isTarget = (task: LocalProjectTask) =>
+      project._id === projectId && task._id === taskId;
+    const holdsSlot = (task: LocalProjectTask) =>
+      slot !== undefined && task.pinnedSlot === slot;
+
+    if (!project.tasks.some((task) => isTarget(task) || holdsSlot(task))) {
+      return project;
+    }
+
+    return {
+      ...project,
+      tasks: project.tasks.map((task) => {
+        if (isTarget(task)) {
+          return { ...task, pinnedSlot: slot };
+        }
+
+        return holdsSlot(task) ? { ...task, pinnedSlot: undefined } : task;
+      }),
+    };
+  });
+}
+
+export interface PinnedTask {
+  project: LocalProject;
+  task: LocalProjectTask;
+}
+
+/**
+ * The task holding each pinned slot, archived or not. A slot no task holds is
+ * missing from the map.
+ */
+export function getPinnedTasksBySlot(projects: LocalProject[]) {
+  const pinnedTasks = new Map<PinnedTaskSlot, PinnedTask>();
+
+  for (const project of projects) {
+    for (const task of project.tasks) {
+      if (task.pinnedSlot && !pinnedTasks.has(task.pinnedSlot)) {
+        pinnedTasks.set(task.pinnedSlot, { project, task });
+      }
+    }
+  }
+
+  return pinnedTasks;
+}
+
+/**
+ * The task a number key opens or starts. An archived task, or a task in an
+ * archived project, keeps its slot, but the key does nothing until it is restored.
+ */
+export function findPinnedTask(
+  projects: LocalProject[],
+  slot: PinnedTaskSlot,
+): PinnedTask | undefined {
+  const pinnedTask = getPinnedTasksBySlot(projects).get(slot);
+
+  return pinnedTask?.project.status === "active" &&
+    pinnedTask.task.status === "active"
+    ? pinnedTask
+    : undefined;
 }
