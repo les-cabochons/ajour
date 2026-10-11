@@ -54,7 +54,11 @@ import {
   SubmitWeekButton,
   WeekSubmittedBadge,
 } from "@/features/time/submit-week-controls";
-import { useTimeEntryActions } from "@/features/time/time-entry-actions";
+import {
+  formatToastDay,
+  offerTimeEntryUndo,
+  useTimeEntryActions,
+} from "@/features/time/time-entry-actions";
 import { localStore } from "@/lib/local-store";
 import {
   setSharedTableDragDocumentState,
@@ -279,13 +283,14 @@ export function WeeklyTimeView({
 
   function moveEntry(entry: LocalTimesheetEntry, localDate: string) {
     if (entry.localDate === localDate) return;
-    localStore.moveTimesheetEntry(entry._id, {
+    const token = localStore.moveTimesheetEntry(entry._id, {
       localDate,
       projectId: entry.projectId,
       taskId: entry.taskId,
       note: entry.note,
       durationMs: entry.durationMs,
     });
+    offerTimeEntryUndo(token, `Moved to ${formatToastDay(localDate)}`);
   }
 
   function registerDayTarget(localDate: string, node: HTMLElement | null) {

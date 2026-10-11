@@ -37,6 +37,7 @@ import {
   ProjectTaskPicker,
   type ProjectTaskSelection,
 } from "@/features/projects/project-task-picker";
+import { offerTimeEntryUndo } from "@/features/time/time-entry-actions";
 import {
   formatClockDuration,
   normalizeHoursInput,
@@ -479,7 +480,10 @@ function QuickTimerPopup({
 
   function handleCancel() {
     if (!currentTimer) return;
-    localStore.cancelTimer(currentTimer._id);
+    offerTimeEntryUndo(
+      localStore.cancelTimer(currentTimer._id),
+      "Running entry discarded",
+    );
     onClose();
   }
 
