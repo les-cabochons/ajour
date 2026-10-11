@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { APP_SIDEBAR_EXPANDED_MIN_WIDTH } from "@/lib/breakpoints";
 
 /**
  * The desktop app sidebar is either expanded (200px, logo and labels) or a
@@ -9,10 +10,12 @@ export type AppSidebarState = "expanded" | "rail";
 /** Per-device preference. It lives outside the local app state so it is never exported or bootstrapped. */
 export const APP_SIDEBAR_STORAGE_KEY = "ajour.app-sidebar";
 
-/** Below this width the sidebar shows as the rail on its own, without touching the saved preference. */
-export const APP_SIDEBAR_EXPANDED_MIN_WIDTH = 1100;
-
-const RAIL_FORCED_QUERY = `(max-width: ${APP_SIDEBAR_EXPANDED_MIN_WIDTH - 1}px)`;
+/**
+ * Below APP_SIDEBAR_EXPANDED_MIN_WIDTH the sidebar shows as the rail on its
+ * own, without touching the saved preference. The narrow view, below 768px,
+ * does not render the sidebar at all.
+ */
+const RAIL_FORCED_QUERY = `(width < ${APP_SIDEBAR_EXPANDED_MIN_WIDTH}px)`;
 
 type PreferenceStorage = Pick<Storage, "getItem" | "setItem">;
 

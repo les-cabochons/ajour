@@ -195,7 +195,7 @@ export function SettingsExportPage() {
               : `Time entries available from ${availableRange.startDate} to ${availableRange.endDate}.`}
           </SurfaceCallout>
 
-          <div className="grid gap-4 md:grid-cols-2">
+          <div className="grid gap-4 desktop:grid-cols-2">
             <div className="space-y-2">
               <Label>From</Label>
               <Input
@@ -266,7 +266,7 @@ export function SettingsExportPage() {
             is added locally.
           </SurfaceCallout>
 
-          <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+          <div className="grid gap-4 desktop:grid-cols-[minmax(0,1fr)_auto] desktop:items-end">
             <div className="space-y-2">
               <Label>Workbook</Label>
               <Input

@@ -59,6 +59,23 @@ Feature: Open the local time workspace
     Then the Projects sidebar remains expanded and left-aligned beside primary navigation
     And the Projects navigation remains available as a compact rail
 
+  Scenario: Move around the narrow view from its titlebar
+    Given I have projects with searchable tasks
+    When I open today's time workspace in a narrow window
+    Then the narrow view shows no sidebars
+    When I switch to Backlog from the titlebar
+    Then Backlog is the active section of the titlebar switcher
+    When I open Settings from the titlebar cog
+    Then Settings opens on its list of pages
+    When I open "Plugins" from the Settings list
+    And I go back to "Settings"
+    And I open "Projects" from the Settings list
+    Then the Projects list fills the page
+    When I open project "aaa xyz" from the Projects list
+    And I go back to "Projects"
+    And I open project import and export from the Projects list
+    Then the project import and export page leads back to Projects
+
   Scenario: Continue a second entry while the first one runs
     Given I have two saved entries with a timer running on the first
     When I continue the second entry

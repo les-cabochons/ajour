@@ -30,6 +30,10 @@ const SettingsLayout = lazy(async () => {
   const module = await import("@/features/settings/settings-layout");
   return { default: module.SettingsLayout };
 });
+const SettingsIndex = lazy(async () => {
+  const module = await import("@/features/settings/settings-layout");
+  return { default: module.SettingsIndex };
+});
 const SettingsGeneralPage = lazy(async () => {
   const module = await import("@/features/settings/settings-general-page");
   return { default: module.SettingsGeneralPage };
@@ -190,7 +194,11 @@ const settingsRoute = createRoute({
 const settingsIndexRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/",
-  component: () => <Navigate to="/settings/general" replace />,
+  component: () => (
+    <RouteSuspense>
+      <SettingsIndex />
+    </RouteSuspense>
+  ),
 });
 
 const settingsGeneralRoute = createRoute({

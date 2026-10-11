@@ -119,7 +119,7 @@ function PluginCatalogCard({
         : "Available";
 
   return (
-    <AppPanel className="group min-h-32 flex-col items-stretch gap-3 p-4 transition-colors hover:bg-[var(--surface-high)] sm:flex-row sm:items-start">
+    <AppPanel className="group min-h-32 flex-col items-stretch gap-3 p-4 transition-colors hover:bg-[var(--surface-high)] desktop:flex-row desktop:items-start">
       <Link
         to="/settings/plugins/$pluginId"
         params={{ pluginId: catalog.id }}
@@ -151,7 +151,7 @@ function PluginCatalogCard({
       </Link>
       {connectorGroup ? (
         <Switch
-          className="self-end sm:self-auto"
+          className="self-end desktop:self-auto"
           checked={connectorGroup.enabled}
           disabled={
             isMutating ||
@@ -163,7 +163,7 @@ function PluginCatalogCard({
         />
       ) : !installed && catalog.status === "available" ? (
         <Button
-          className="w-full sm:w-auto"
+          className="w-full desktop:w-auto"
           size="sm"
           variant="outline"
           disabled={!canDownload || isMutating || catalog.type !== "connector"}
@@ -245,8 +245,8 @@ function PluginsHeader({
           <TabsTrigger value="plugin">Schemas</TabsTrigger>
         </TabsList>
 
-        <div className="flex flex-col gap-3 border-y border-border/60 py-3 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex min-w-0 items-center justify-between gap-4 sm:justify-start">
+        <div className="flex flex-col gap-3 border-y border-border/60 py-3 desktop:flex-row desktop:items-center desktop:justify-between">
+          <div className="flex min-w-0 items-center justify-between gap-4 desktop:justify-start">
             <div>
               <p className="text-sm font-medium text-foreground">
                 Plugin system
@@ -263,7 +263,7 @@ function PluginsHeader({
               onCheckedChange={onPluginsEnabledChange}
             />
           </div>
-          <label className="flex items-center justify-between gap-3 text-xs text-muted-foreground sm:justify-end">
+          <label className="flex items-center justify-between gap-3 text-xs text-muted-foreground desktop:justify-end">
             Refresh catalog
             <NativeSelect
               className="w-36"
@@ -315,7 +315,7 @@ function PluginDetailHeader({
         All plugins
       </Link>
       <AppPanel as="section" className="gap-5 p-5">
-        <div className="flex flex-col items-start gap-4 sm:flex-row">
+        <div className="flex flex-col items-start gap-4 desktop:flex-row">
           <PluginIdentityMark
             entry={entry}
             iconSvg={iconSvg}
@@ -334,7 +334,9 @@ function PluginDetailHeader({
               {entry.license.spdxId}
             </p>
           </div>
-          {action ? <div className="w-full sm:w-auto">{action}</div> : null}
+          {action ? (
+            <div className="w-full desktop:w-auto">{action}</div>
+          ) : null}
         </div>
         <div className="flex flex-wrap gap-2">{badges}</div>
       </AppPanel>
@@ -509,7 +511,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
           entry={entry}
           iconSvg={group.plugin.iconSvg}
           action={
-            <div className="flex w-full items-center justify-between gap-3 sm:w-auto sm:justify-end">
+            <div className="flex w-full items-center justify-between gap-3 desktop:w-auto desktop:justify-end">
               <span className="text-sm text-muted-foreground">
                 {group.enabled ? "Active" : "Inactive"}
               </span>
@@ -603,7 +605,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                     : "The connection is validated by the plugin and stored locally."}
                 </p>
               </div>
-              <FieldGroup className="md:grid md:grid-cols-2 md:gap-x-6 md:gap-y-5">
+              <FieldGroup className="desktop:grid desktop:grid-cols-2 desktop:gap-x-6 desktop:gap-y-5">
                 {group.plugin.connectionFields.map((field) => {
                   if (
                     field.id === "autoSyncIntervalMinutes" &&
@@ -680,7 +682,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
               </Empty>
             </AppPanel>
           ) : (
-            <div className="grid gap-3 lg:grid-cols-2">
+            <div className="grid gap-3 desktop:grid-cols-2">
               {group.connections.map((connection) => (
                 <Card
                   key={connection.id}
@@ -869,7 +871,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
               </Button>
             ) : available ? (
               <Button
-                className="w-full sm:w-auto"
+                className="w-full desktop:w-auto"
                 disabled={!canDownloadThisEntry || isMutatingConnector}
                 title={
                   catalogEntry.type !== "connector"
@@ -884,7 +886,11 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                 Download
               </Button>
             ) : (
-              <Button className="w-full sm:w-auto" variant="outline" disabled>
+              <Button
+                className="w-full desktop:w-auto"
+                variant="outline"
+                disabled
+              >
                 {catalogEntry.status === "coming-soon"
                   ? "Coming soon"
                   : "Unavailable"}
@@ -1032,7 +1038,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
           {renderMessages()}
           <section className="settings-section">
             {filteredDisplayEntries.length > 0 ? (
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-3 desktop:grid-cols-2">
                 {filteredDisplayEntries.map((entry) => (
                   <PluginCatalogCard
                     key={entry.catalog.id}

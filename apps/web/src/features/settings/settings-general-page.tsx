@@ -270,7 +270,7 @@ export function SettingsGeneralPage() {
 
         <AppPanel>
           <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-3 md:grid-cols-4 xl:grid-cols-7">
+            <div className="grid grid-cols-2 gap-3 xl:grid-cols-7 desktop:grid-cols-4">
               {CAPACITY_DAYS.map((day) => (
                 <CapacityInput
                   key={day.key}
@@ -288,7 +288,7 @@ export function SettingsGeneralPage() {
               ))}
             </div>
 
-            <div className="grid gap-3 border-t border-border/70 pt-5 md:grid-cols-2">
+            <div className="grid gap-3 border-t border-border/70 pt-5 desktop:grid-cols-2">
               <Field
                 orientation="horizontal"
                 className="rounded-2xl border border-border/70 p-4"
@@ -349,7 +349,7 @@ export function SettingsGeneralPage() {
 
         <AppPanel>
           <div className="flex flex-col gap-5">
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+            <div className="flex flex-col gap-3 desktop:flex-row desktop:items-start desktop:justify-between">
               <div className="min-w-0 space-y-1">
                 <div className="flex items-center gap-2 text-sm font-medium text-foreground/90">
                   <GitBranch className="h-4 w-4 text-muted-foreground" />
@@ -389,7 +389,7 @@ export function SettingsGeneralPage() {
             </div>
 
             <div
-              className="flex min-h-16 flex-col gap-3 border-t border-border/70 pt-4 sm:flex-row sm:items-center sm:justify-between"
+              className="flex min-h-16 flex-col gap-3 border-t border-border/70 pt-4 desktop:flex-row desktop:items-center desktop:justify-between"
               aria-live="polite"
             >
               <div className="flex min-w-0 items-start gap-3">
@@ -473,7 +473,7 @@ export function SettingsGeneralPage() {
                 </div>
               </div>
 
-              <div className="flex shrink-0 items-center gap-2 pl-7 sm:pl-0">
+              <div className="flex shrink-0 items-center gap-2 pl-7 desktop:pl-0">
                 {updateCheck.status === "success" &&
                 updateCheck.result.updateAvailable &&
                 updateCheck.result.releaseUrl ? (

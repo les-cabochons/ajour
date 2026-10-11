@@ -376,11 +376,11 @@ export function TimerPanel({
           <thead>
             <tr>
               <th className="entry-project-heading">Project</th>
-              <th className="entry-notes-heading hidden lg:table-cell">
+              <th className="entry-notes-heading hidden desktop:table-cell">
                 Notes
               </th>
-              <th className="entry-notes-heading lg:hidden">Entries</th>
-              <th className="entry-hours-heading entry-hours-heading-create lg:hidden">
+              <th className="entry-notes-heading desktop:hidden">Entries</th>
+              <th className="entry-hours-heading entry-hours-heading-create desktop:hidden">
                 <div className="flex justify-end">
                   <button
                     type="button"
@@ -393,7 +393,7 @@ export function TimerPanel({
                   </button>
                 </div>
               </th>
-              <th className="entry-hours-heading entry-hours-heading-actions hidden lg:table-cell">
+              <th className="entry-hours-heading entry-hours-heading-actions hidden desktop:table-cell">
                 <button
                   type="button"
                   className="entries-header-add"
