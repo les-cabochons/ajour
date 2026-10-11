@@ -97,7 +97,12 @@ function TimeEntryEditorDialog({
       disablePointerDismissal
       onOpenChange={(open) => !open && onClose()}
     >
-      <DialogContent className="max-w-xl" showCloseButton={false}>
+      {/* The narrow view's full-width host: the dialog spans the window, less a
+          small margin, at every width below the desktop breakpoint. */}
+      <DialogContent
+        className="max-w-xl narrow:max-w-[calc(100%-1rem)]"
+        showCloseButton={false}
+      >
         <TimeEntryEditorForm
           target={
             entry
@@ -204,7 +209,7 @@ function RunningTimerModal({
 
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
-      <DialogContent className="max-w-xl gap-5">
+      <DialogContent className="max-w-xl gap-5 narrow:max-w-[calc(100%-1rem)]">
         <DialogHeader className="flex-row items-start justify-between gap-3 pr-9">
           <DialogTitle>Running timer</DialogTitle>
           <ObjectActionsButton
