@@ -72,7 +72,7 @@ import {
   useWorkItemIconData,
 } from "@/features/backlog/work-item-icons";
 import {
-  buildWorkItemTimerComment,
+  getWorkItemEntryValues,
   parseWorkItemReference,
 } from "@/features/backlog/work-item-timer-comment";
 import { offerUndo } from "@/features/feedback/undo-toast";
@@ -83,6 +83,7 @@ import {
   useLocalState,
   useLocalWorkItems,
 } from "@/lib/local-hooks";
+import { useActionRequest } from "@/lib/action-request";
 import { localStore } from "@/lib/local-store";
 import {
   createSharedTableDragPointerSession,
@@ -673,12 +674,7 @@ export function BacklogPage() {
         if (editingWorkItemId === workItem._id) {
           closeEditor();
         }
-        setNewEntryValues({
-          projectId: workItem.projectId,
-          taskId: workItem.taskId,
-          workItemId: workItem._id,
-          note: buildWorkItemTimerComment(workItem.title, workItem.sourceId),
-        });
+        setNewEntryValues(getWorkItemEntryValues(workItem));
         return;
       case "edit":
         openWorkItemFromRow(workItem, { ignoreClickSuppression: true });
@@ -716,16 +712,27 @@ export function BacklogPage() {
     });
   }
 
+  // The command palette asks for actions that need this page, such as Edit, with
+  // `?action=<id>&target=<item id>`. Only enabled actions of the item run.
+  useActionRequest(({ action, target }) => {
+    const workItem = workItems.find((item) => item._id === target);
+    const requested = workItem
+      ? getWorkItemActions(workItem).find(
+          (item) => item.id === action && !item.disabledReason,
+        )
+      : undefined;
+    if (workItem && requested) {
+      runRowWorkItemAction(workItem, requested.id);
+    }
+  });
+
   function handleStartWorkItemTimer(workItem: LocalWorkItem) {
     if (workItem.status === "archived") {
       return;
     }
 
     localStore.startTimer({
-      workItemId: workItem._id,
-      projectId: workItem.projectId,
-      taskId: workItem.taskId,
-      note: buildWorkItemTimerComment(workItem.title, workItem.sourceId),
+      ...getWorkItemEntryValues(workItem),
       accumulatedDurationMs: 0,
     });
   }
@@ -820,6 +827,7 @@ export function BacklogPage() {
         render={
           <tr
             data-backlog-root-id={rootSectionId}
+            data-backlog-item-id={workItem._id}
             ref={(node) => {
               if (!isReorderableRoot) {
                 backlogRowRefs.current.delete(workItem._id);

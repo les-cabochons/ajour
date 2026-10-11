@@ -64,6 +64,7 @@ describe("shortcut registry", () => {
       "G then S",
       "⌘,",
       "⌘B",
+      "⌘K",
       "?",
     ]);
     expect(new Set(SHORTCUTS.map((shortcut) => shortcut.id)).size).toBe(
@@ -101,7 +102,11 @@ describe("shortcut registry", () => {
 
     expect(ids("")).toHaveLength(SHORTCUTS.length);
     expect(ids("sidebar")).toEqual(["app.toggle-sidebar"]);
-    expect(ids("⌘")).toEqual(["app.settings", "app.toggle-sidebar"]);
+    expect(ids("⌘")).toEqual([
+      "app.settings",
+      "app.toggle-sidebar",
+      "app.command-palette",
+    ]);
     expect(ids("BACKLOG")).toEqual(["go.backlog"]);
     expect(ids("nothing like this")).toEqual([]);
   });

@@ -358,6 +358,74 @@ When(
   },
 );
 
+When("I open the Backlog workspace", async ({ page }) => {
+  await page.goto("/backlog");
+});
+
+When("I open the command palette", async ({ page }) => {
+  // The app picks Cmd or Ctrl from the user agent, like the sidebar shortcut.
+  const isMac = await page.evaluate(() =>
+    /Mac|iPhone|iPad/.test(navigator.userAgent),
+  );
+  await page.keyboard.press(isMac ? "Meta+k" : "Control+k");
+  await expect(
+    page.getByRole("dialog", { name: "Command palette" }),
+  ).toBeVisible();
+});
+
+When(
+  "I search the command palette for {string}",
+  async ({ page }, query: string) => {
+    await page
+      .getByRole("dialog", { name: "Command palette" })
+      .getByRole("combobox", { name: "Search commands" })
+      .fill(query);
+  },
+);
+
+When(
+  "I choose {string} in the command palette",
+  async ({ page }, label: string) => {
+    await page
+      .getByRole("dialog", { name: "Command palette" })
+      .getByRole("option")
+      .filter({ hasText: label })
+      .first()
+      .click();
+  },
+);
+
+Then(
+  "a running entry uses project {string} and task {string}",
+  async ({ page }, projectId: string, taskId: string) => {
+    await expect
+      .poll(async () => {
+        const state = await page.evaluate(() =>
+          JSON.parse(
+            window.localStorage.getItem("ajour.local-state.v2") ?? "null",
+          ),
+        );
+        return state?.timers?.[0];
+      })
+      .toMatchObject({ projectId, taskId });
+  },
+);
+
+When(
+  "I create project {string} in the project form",
+  async ({ page }, name: string) => {
+    const dialog = page.getByRole("dialog", { name: "New project" });
+    await dialog.getByRole("textbox", { name: "Full name" }).fill(name);
+    await dialog.getByRole("button", { name: "Create project" }).click();
+    await expect(dialog).toBeHidden();
+  },
+);
+
+Then("project {string} is open", async ({ page }, name: string) => {
+  await expect(page).toHaveURL(/\/projects\/[^/]+$/);
+  await expect(page.getByRole("heading", { name })).toBeVisible();
+});
+
 Then("the project lists task {string}", async ({ page }, task: string) => {
   await expect(
     page.getByRole("row").filter({ hasText: task }).first(),
