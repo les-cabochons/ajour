@@ -10,6 +10,7 @@ import { lazy, Suspense, type ReactNode } from "react";
 import { AppShell } from "@/features/layout/app-shell";
 import { todayIsoDate } from "@/lib/utils";
 import { EntryEditorPrototypePage } from "@/features/time/entry-editor-prototype-page";
+import { WeekGridPrototypePage } from "@/features/time/week-grid-prototype-page";
 
 const TimePage = lazy(async () => {
   const module = await import("@/features/time/time-page");
@@ -119,6 +120,13 @@ const entryEditorPrototypeRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/prototype/entry-editor",
   component: EntryEditorPrototypePage,
+});
+
+// PROTOTYPE (issue #16): throwaway week grid route.
+const weekGridPrototypeRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/prototype/week-grid",
+  component: WeekGridPrototypePage,
 });
 
 const projectsRoute = createRoute({
@@ -265,6 +273,7 @@ const routeTree = rootRoute.addChildren([
   appRoute.addChildren([
     timeRoute,
     entryEditorPrototypeRoute,
+    weekGridPrototypeRoute,
     backlogRoute,
     projectsRoute,
     projectsArchiveRoute,

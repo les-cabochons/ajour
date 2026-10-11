@@ -63,10 +63,10 @@ const VARIANTS: { key: EditorVariant; name: string }[] = [
 ];
 
 /** What the editor is open on: an entry, or a new entry for a date. */
-type EditorTarget = (
+export type EditorTarget = (
   | { kind: "edit"; entry: LocalTimesheetEntry }
-  | { kind: "create"; localDate: string }
-) & { anchor: HTMLElement | null; surface: "day" | "week" };
+  | { kind: "create"; localDate: string; projectId?: string; taskId?: string }
+) & { anchor: HTMLElement | null; surface: "day" | "week" | "grid" };
 
 function readVariant(): EditorVariant {
   const value = new URLSearchParams(window.location.search).get("editor");
@@ -83,7 +83,7 @@ function formatDay(localDate: string, options: Intl.DateTimeFormatOptions) {
 
 /* ── The one form, shared by every host ── */
 
-function EntryEditorForm({
+export function EntryEditorForm({
   target,
   onDone,
   compact = false,
@@ -99,7 +99,12 @@ function EntryEditorForm({
     entry?.localDate ??
     (target.kind === "create" ? target.localDate : todayIsoDate());
   const [fields, setFields] = useState(() =>
-    createTimeEntryEditorFields(entry),
+    createTimeEntryEditorFields(
+      entry ??
+        (target.kind === "create"
+          ? { projectId: target.projectId, taskId: target.taskId }
+          : undefined),
+    ),
   );
   const editor = evaluateTimeEntryEditor(fields, {
     original: entry,
