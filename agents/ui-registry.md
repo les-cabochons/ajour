@@ -34,7 +34,7 @@ This registry captures reusable visual patterns already present in Ajour. Update
 - Connector settings fields are rendered through `apps/web/src/features/settings/connector-settings-ui.tsx`, so plugin-driven field styling stays consistent.
 - Immediate on/off settings use `Switch` from `apps/web/src/components/ui/switch.tsx`; labels describe the action as Activate or Deactivate plus the capability name.
 - Reorderable tables and navigation lists use `apps/web/src/lib/table-drag.ts` for consistent mouse/touch thresholds, cancellation, row movement, and drag-preview positioning.
-- Saved time entries share `features/time/time-entry-fields.tsx`. Day hosts it inline; Week hosts it in a shadcn dialog. Entry actions come from `domain/actions/object-actions.ts` and render through `components/object-actions-menu.tsx` as a right-click menu and a "…" button.
+- Creating and editing a time entry use one form, `features/time/time-entry-editor-form.tsx`: header with title, date, "…" and ×; Project / task, Note, Hours (`time-entry-fields.tsx`); footer Cancel · Start or Continue · Save. Day and Week host it in `components/side-panel.tsx`, a panel docked on the right that keeps the page clickable and returns focus to the row or card on close. Clicking another entry saves a valid draft first; an invalid draft blocks the switch. At 640px and below, and for New entry… on tasks and backlog items, `features/timer/time-entry-modal.tsx` hosts the same form in a dialog. The running timer still uses its own dialog there. Entry actions come from `domain/actions/object-actions.ts` and render through `components/object-actions-menu.tsx` as a right-click menu and a "…" button.
 - Projects, tasks and backlog items use the same pattern. Project rows in the project sidebar, the archived list and the project header; task rows; and backlog rows, the backlog inline editor and the mobile item dialog all show their kind's action set. Archive and Restore act at once. Backlog Delete asks for confirmation and states the subitem count.
 - Logging time from a task or backlog item goes through New entry…, which opens `features/timer/time-entry-modal.tsx` prefilled with `initialValues`. The backlog has no inline hours field. Backlog rows keep the play button as the Start entry shortcut.
 - The narrow view always shows the "…" on task and backlog rows. The 48px project rail hides it; right-click on the rail and the project header "…" cover projects there.
@@ -127,15 +127,15 @@ day, shows project markers and daily totals, and reveals every contributing
 entry in a tray attached to the same continuous ruled surface. Days use seven
 equal-height headers, restrained weekend/today cues, and a project-color rail
 on each entry card. Both styles share thresholded pointer dragging, explicit
-weekday drop targets, Escape/pointer-cancel cleanup, and keyboard/double-click
-editing. Running entries stay locked. Normal headers show logged totals only;
+weekday drop targets, and Escape/pointer-cancel cleanup. A click or Enter on a
+card or tray row opens it in the side panel. Running entries stay locked. Normal headers show logged totals only;
 capacity target and utilization live in hover cards, with an optional compact
 over-target warning.
 
 The Week toolbar, grid or day columns, totals, and detail tray form one full-width
 desktop workspace rather than stacked cards. Return to Day is the leading
-left-arrow action. Every time entry surface (Day rows, Days cards, Grid tray rows,
-the Day inline editor and the entry dialog) exposes the same action set through a
+left-arrow action. Every time entry surface (Day rows, Days cards, Grid tray rows
+and the entry form) exposes the same action set through a
 right-click menu and a "…" button, which the narrow view always shows. Duplicate
 to and Move to open a calendar dialog; Delete and Discard ask for confirmation.
 `features/time/time-entry-actions.tsx` runs the actions for every surface.

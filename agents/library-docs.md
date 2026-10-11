@@ -58,7 +58,7 @@ Keep React rendering and runtime adapters outside these modules. For example, th
 
 ## Web Workflow Modules
 
-- Time-entry draft seeding, metadata normalization, exact-duration preservation, validation, and save/relocation values: `apps/web/src/features/time/time-entry-editor.ts`. Day inline and Week/mobile dialog editors consume this model while retaining their own close/save policies.
+- Time-entry draft seeding, metadata normalization, exact-duration preservation, validation, and save/relocation values: `apps/web/src/features/time/time-entry-editor.ts`. It also decides what Save and switching entries write. The one entry form, `features/time/time-entry-editor-form.tsx`, consumes this model in every host.
 - Plugin settings reconciliation, background snapshot subscriptions, stale-response rejection, and serialized commands: `apps/web/src/features/settings/plugin-settings-workflow.ts`. Its React adapter is `use-plugin-settings-workflow.ts`; secret form drafts stay in the page and transports stay in `lib/app-api.ts`.
 - Canonical backlog task editor fields, parsing, validation, drafts, patches, hierarchy exclusions, and time-note fallback: `apps/web/src/features/backlog/backlog-task-editor.ts`
 - Hierarchical project/task selection and capped mixed-term search for time entry: `apps/web/src/features/projects/project-task-picker.tsx` and `apps/web/src/features/projects/project-task-search.ts`

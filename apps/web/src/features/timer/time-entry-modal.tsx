@@ -1,10 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  RiDeleteBinLine as Trash2,
-  RiPlayLine as Play,
-  RiSaveLine as Save,
-  RiStopLine as Square,
-} from "@remixicon/react";
+import { RiStopLine as Square } from "@remixicon/react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -18,60 +13,126 @@ import {
   createTimeEntryEditorFields,
   evaluateTimeEntryEditor,
 } from "@/features/time/time-entry-editor";
+import {
+  TimeEntryEditorForm,
+  type NewTimeEntryValues,
+} from "@/features/time/time-entry-editor-form";
+import type { TimeEntryEditorFields } from "@/features/time/time-entry-editor";
 import { ObjectActionsButton } from "@/components/object-actions-menu";
 import type { TimeEntryActionId } from "@/domain/actions/object-actions";
 import { useTimeEntryActions } from "@/features/time/time-entry-actions";
 import type { ProjectTaskSelection } from "@/features/projects/project-task-picker";
 import { TimeEntryFields } from "@/features/time/time-entry-fields";
-import { syncBacklogWorkItemToSource } from "@/features/backlog/work-item-source-sync";
 import { useLocalProjects, useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
-
-/** Prefills a new entry, for example from a task's or backlog item's New entry… action. */
-export interface TimeEntryModalInitialValues {
-  projectId?: string;
-  taskId?: string;
-  note?: string;
-  /** Links the new entry or timer to a backlog item, whose estimates then follow it. */
-  workItemId?: string;
-}
 
 interface TimeEntryModalProps {
   date: string;
   entryId?: string;
   timerId?: string;
   /** Used only for a new entry. Read once when the dialog opens. */
-  initialValues?: TimeEntryModalInitialValues;
+  initialValues?: NewTimeEntryValues;
+  /** An unsaved draft carried over from another host, such as the side panel. */
+  initialFields?: TimeEntryEditorFields;
+  onFieldsChange?: (fields: TimeEntryEditorFields) => void;
   onClose: () => void;
 }
 
+/**
+ * Dialog host for the entry editor, used by the narrow Time view and by New entry…
+ * on tasks and backlog items. The running timer keeps its own live form here until
+ * running entries move to the shared form.
+ */
 export function TimeEntryModal({
   date,
   entryId,
   timerId,
   initialValues,
+  initialFields,
+  onFieldsChange,
   onClose,
 }: TimeEntryModalProps) {
+  if (timerId) {
+    return <RunningTimerModal timerId={timerId} onClose={onClose} />;
+  }
+
+  return (
+    <TimeEntryEditorDialog
+      date={date}
+      entryId={entryId}
+      initialValues={initialValues}
+      initialFields={initialFields}
+      onFieldsChange={onFieldsChange}
+      onClose={onClose}
+    />
+  );
+}
+
+function TimeEntryEditorDialog({
+  date,
+  entryId,
+  initialValues,
+  initialFields,
+  onFieldsChange,
+  onClose,
+}: Omit<TimeEntryModalProps, "timerId">) {
+  const state = useLocalState();
+  const entry = entryId
+    ? state.timesheetEntries.find((candidate) => candidate._id === entryId)
+    : undefined;
+  // Captured on open so a parent re-render cannot reset the draft.
+  const [newEntryValues] = useState(initialValues);
+
+  useEffect(() => {
+    if (entryId && !entry) onClose();
+  }, [entry, entryId, onClose]);
+
+  if (entryId && !entry) {
+    return null;
+  }
+
+  return (
+    <Dialog
+      open
+      disablePointerDismissal
+      onOpenChange={(open) => !open && onClose()}
+    >
+      <DialogContent className="max-w-xl" showCloseButton={false}>
+        <TimeEntryEditorForm
+          target={
+            entry
+              ? { kind: "edit", entry }
+              : {
+                  kind: "create",
+                  localDate: date,
+                  initialValues: newEntryValues,
+                }
+          }
+          titleAs={DialogTitle}
+          initialFields={initialFields}
+          onFieldsChange={onFieldsChange}
+          onClose={onClose}
+        />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function RunningTimerModal({
+  timerId,
+  onClose,
+}: {
+  timerId: string;
+  onClose: () => void;
+}) {
   const state = useLocalState();
   const projects = useLocalProjects();
   const [now, setNow] = useState(() => Date.now());
   const currentTimer = state.timers[0] ?? null;
   const editingTimer = useMemo(
-    () => (timerId && currentTimer?._id === timerId ? currentTimer : null),
+    () => (currentTimer?._id === timerId ? currentTimer : null),
     [currentTimer, timerId],
   );
-  const editingEntry = useMemo(
-    () =>
-      entryId
-        ? (state.timesheetEntries.find((entry) => entry._id === entryId) ??
-          null)
-        : null,
-    [entryId, state.timesheetEntries],
-  );
-  const entryDate = editingEntry?.localDate ?? editingTimer?.localDate ?? date;
-  // Captured on open so a parent re-render cannot reset the draft.
-  const [newEntryValues] = useState(initialValues);
-  const workItemId = newEntryValues?.workItemId;
   const runningDurationMs = editingTimer
     ? editingTimer.accumulatedDurationMs +
       Math.max(0, now - editingTimer.startedAt)
@@ -79,21 +140,29 @@ export function TimeEntryModal({
   const [projectId, setProjectId] = useState("");
   const [taskId, setTaskId] = useState("");
   const [note, setNote] = useState("");
-  const [durationHours, setDurationHours] = useState("");
   const editor = evaluateTimeEntryEditor(
-    { projectId, taskId, note, durationHours },
-    { original: editingEntry ?? undefined, allowEmptyDuration: true },
+    {
+      projectId,
+      taskId,
+      note,
+      durationHours: formatDurationHoursInput(runningDurationMs),
+    },
+    {
+      // Compared against the timer so an unchanged note is kept exactly.
+      original: editingTimer
+        ? {
+            projectId: editingTimer.projectId,
+            taskId: editingTimer.taskId,
+            note: editingTimer.note,
+            durationMs: runningDurationMs,
+          }
+        : undefined,
+    },
   );
-  const { canSave, isTimerMode } = editor;
   const entryActions = useTimeEntryActions({
     onEdit: () => undefined,
     onAfterAction: onClose,
   });
-  const title = editingTimer
-    ? "Running timer"
-    : editingEntry
-      ? "Edit time entry"
-      : "New time entry";
 
   useEffect(() => {
     if (!editingTimer) return;
@@ -103,59 +172,19 @@ export function TimeEntryModal({
   }, [editingTimer]);
 
   useEffect(() => {
-    const fields = createTimeEntryEditorFields(
-      editingTimer ?? editingEntry ?? newEntryValues,
-    );
+    const fields = createTimeEntryEditorFields(editingTimer ?? undefined);
     setProjectId(fields.projectId);
     setTaskId(fields.taskId);
     setNote(fields.note);
-    if (!editingTimer) setDurationHours(fields.durationHours);
-  }, [editingEntry, editingTimer, newEntryValues]);
+  }, [editingTimer]);
 
   useEffect(() => {
-    if (editingTimer)
-      setDurationHours(formatDurationHoursInput(runningDurationMs));
-  }, [editingTimer, runningDurationMs]);
-
-  useEffect(() => {
-    if (timerId && !editingTimer) onClose();
-  }, [editingTimer, onClose, timerId]);
+    if (!editingTimer) onClose();
+  }, [editingTimer, onClose]);
 
   function handleProjectTaskChange(selection: ProjectTaskSelection) {
     setProjectId(selection.projectId);
     setTaskId(selection.taskId);
-  }
-
-  function handleSave() {
-    if (editingTimer || !editor.canSave || !editor.values) return;
-    if (editingEntry) {
-      localStore.updateTimesheetEntry(editingEntry._id, editor.values);
-    } else {
-      localStore.saveManualTimeEntry({
-        ...editor.values,
-        localDate: date,
-        workItemId,
-      });
-      // Logged time changes the backlog item's estimates, so push them to its source.
-      const workItem = workItemId
-        ? state.workItems.find((item) => item._id === workItemId)
-        : undefined;
-      if (workItem) {
-        syncBacklogWorkItemToSource(workItem);
-      }
-    }
-    onClose();
-  }
-
-  /** Starts a timer from a new entry's draft. Saved entries use Continue instead. */
-  function handleStartTimer() {
-    if (editor.durationMs === null) return;
-    localStore.startTimer({
-      localDate: entryDate,
-      ...editor.metadata,
-      workItemId,
-    });
-    onClose();
   }
 
   function handleStopTimer() {
@@ -165,30 +194,11 @@ export function TimeEntryModal({
     onClose();
   }
 
-  /** Saves draft changes, then continues the entry's work (see Continue in GLOSSARY.md). */
-  function handleContinue() {
-    if (!editingEntry || !editor.canSave || !editor.values) return;
-    localStore.updateTimesheetEntry(editingEntry._id, editor.values);
-    localStore.continueTimesheetEntry(editingEntry._id);
-    onClose();
-  }
-
-  const actionTarget = editingTimer
-    ? { kind: "running" as const, timerId: editingTimer._id }
-    : editingEntry
-      ? { kind: "entry" as const, entry: editingEntry }
-      : null;
-
   function handleEntryAction(actionId: TimeEntryActionId) {
-    if (!actionTarget) return;
     if (actionId === "stop") {
       handleStopTimer();
-    } else if (actionId === "continue") {
-      handleContinue();
     } else {
-      entryActions.runAction(actionTarget, actionId, {
-        resolveValues: editor.relocationValues,
-      });
+      entryActions.runAction({ kind: "running", timerId }, actionId);
     }
   }
 
@@ -196,90 +206,36 @@ export function TimeEntryModal({
     <Dialog open onOpenChange={(open) => !open && onClose()}>
       <DialogContent className="max-w-xl gap-5">
         <DialogHeader className="flex-row items-start justify-between gap-3 pr-9">
-          <DialogTitle>{title}</DialogTitle>
-          {actionTarget ? (
-            <ObjectActionsButton
-              actions={entryActions.getActions(actionTarget, {
-                isEditing: true,
-                invalidDraftReason: canSave
-                  ? undefined
-                  : "Enter a valid duration first",
-              })}
-              onAction={handleEntryAction}
-              label="Entry actions"
-            />
-          ) : null}
+          <DialogTitle>Running timer</DialogTitle>
+          <ObjectActionsButton
+            actions={entryActions.getActions(
+              { kind: "running", timerId },
+              { isEditing: true },
+            )}
+            onAction={handleEntryAction}
+            label="Entry actions"
+          />
         </DialogHeader>
 
         <TimeEntryFields
-          idPrefix="time-entry-modal"
+          idPrefix="running-timer-modal"
           className="sm:grid sm:grid-cols-[minmax(0,1fr)_8rem]"
           projects={projects}
           projectId={projectId}
           taskId={taskId}
           note={note}
-          durationHours={durationHours}
-          durationDisabled={Boolean(editingTimer)}
-          durationError={editor.durationError}
+          durationHours={formatDurationHoursInput(runningDurationMs)}
+          durationDisabled
           onProjectTaskChange={handleProjectTaskChange}
           onNoteChange={setNote}
-          onDurationChange={setDurationHours}
+          onDurationChange={() => undefined}
         />
 
-        <DialogFooter className="sm:justify-between">
-          <div className="flex flex-wrap gap-2">
-            {editingEntry && !editingTimer ? (
-              <Button
-                type="button"
-                size="sm"
-                variant="danger"
-                onClick={() =>
-                  entryActions.runAction(
-                    { kind: "entry", entry: editingEntry },
-                    "delete",
-                  )
-                }
-              >
-                <Trash2 data-icon="inline-start" />
-                Delete
-              </Button>
-            ) : null}
-          </div>
-          <div className="flex flex-wrap justify-end gap-2">
-            {editingTimer ? (
-              <Button size="sm" onClick={handleStopTimer}>
-                <Square data-icon="inline-start" />
-                Stop timer
-              </Button>
-            ) : isTimerMode ? (
-              <Button size="sm" onClick={handleStartTimer}>
-                <Play data-icon="inline-start" />
-                {currentTimer ? "Switch timer" : "Start timer"}
-              </Button>
-            ) : (
-              <>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  disabled={
-                    editingEntry ? !canSave : editor.durationMs === null
-                  }
-                  onClick={editingEntry ? handleContinue : handleStartTimer}
-                >
-                  <Play data-icon="inline-start" />
-                  {editingEntry
-                    ? "Continue"
-                    : currentTimer
-                      ? "Switch timer"
-                      : "Start timer"}
-                </Button>
-                <Button size="sm" disabled={!canSave} onClick={handleSave}>
-                  <Save data-icon="inline-start" />
-                  Save
-                </Button>
-              </>
-            )}
-          </div>
+        <DialogFooter>
+          <Button size="sm" onClick={handleStopTimer}>
+            <Square data-icon="inline-start" />
+            Stop timer
+          </Button>
         </DialogFooter>
         {entryActions.dialogs}
       </DialogContent>

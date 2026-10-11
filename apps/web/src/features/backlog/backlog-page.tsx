@@ -81,10 +81,8 @@ import {
   buildWorkItemTimerComment,
   parseWorkItemReference,
 } from "@/features/backlog/work-item-timer-comment";
-import {
-  TimeEntryModal,
-  type TimeEntryModalInitialValues,
-} from "@/features/timer/time-entry-modal";
+import type { NewTimeEntryValues } from "@/features/time/time-entry-editor-form";
+import { TimeEntryModal } from "@/features/timer/time-entry-modal";
 import {
   useLocalProjects,
   useLocalState,
@@ -346,7 +344,7 @@ export function BacklogPage() {
     useState<PendingBacklogDelete | null>(null);
   /** Prefill of the New entry… dialog, or null while it is closed. */
   const [newEntryValues, setNewEntryValues] =
-    useState<TimeEntryModalInitialValues | null>(null);
+    useState<NewTimeEntryValues | null>(null);
   const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
   const [modalWorkItemId, setModalWorkItemId] = useState<string | null>(null);
   const [subtaskModalParentId, setSubtaskModalParentId] = useState<

@@ -887,17 +887,6 @@
   font-family: var(--font-mono);
 }
 
-.entry-edit-dropdown-content {
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.entry-edit-dropdown-actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .weekly-time-view,
   .weekly-time-view *,
@@ -1471,9 +1460,37 @@
       calc(50vw - var(--app-centered-workspace-right-offset))
     );
     display: flex;
-    flex-direction: column;
     gap: 0;
     margin-top: calc(-1.5rem - 1px);
+  }
+
+  .time-page-main {
+    display: flex;
+    min-width: 0;
+    min-height: 0;
+    flex: 1 1 auto;
+    flex-direction: column;
+  }
+
+  /* Docked on the right; the page next to it stays visible and clickable. */
+  .side-panel {
+    /* Leaves room for the seven 128px Week columns beside a 200px sidebar at 1440px. */
+    --side-panel-width: 340px;
+    position: sticky;
+    top: 0;
+    align-self: flex-start;
+    width: var(--side-panel-width);
+    max-width: 50%;
+    height: var(--app-content-height, 100dvh);
+    flex: 0 0 auto;
+    overflow-y: auto;
+    border-left: 1px solid var(--border);
+    background: var(--surface-low);
+    padding: 1rem;
+  }
+
+  .time-entry-row.is-editing {
+    background: var(--surface-low);
   }
 
   .backlog-page-stack {
@@ -3725,7 +3742,6 @@
       padding-right: calc(1rem + var(--app-workspace-content-gutter));
     }
 
-    .time-page-stack .entries-table-body-table tr.entry-edit-row > td,
     .backlog-page-stack .entries-table-body-table tr.entry-edit-row > td {
       padding-right: calc(1rem + var(--app-workspace-content-gutter));
       padding-left: calc(1rem + var(--app-workspace-content-gutter));
@@ -5502,53 +5518,6 @@
     box-shadow: inset 1px 0 0 color-mix(in srgb, white 72%, transparent);
   }
 
-  .inline-hours-input-shell {
-    position: relative;
-  }
-
-  .inline-hours-input {
-    padding-right: 4.9rem;
-  }
-
-  .inline-hours-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.35rem;
-    position: absolute;
-    top: 50%;
-    right: 0.6rem;
-    transform: translateY(-50%);
-  }
-
-  .inline-hours-action {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: color-mix(in srgb, var(--surface-lowest) 88%, transparent);
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition:
-      color 140ms var(--ease),
-      border-color 140ms var(--ease),
-      background 140ms var(--ease),
-      opacity 140ms var(--ease);
-  }
-
-  .inline-hours-action:hover {
-    color: var(--text);
-    border-color: var(--border-hover);
-    background: var(--surface-high);
-  }
-
-  .inline-hours-action:disabled {
-    cursor: not-allowed;
-    opacity: 0.45;
-  }
-
   .entry-edit-dropdown-child {
     margin-left: 0;
     border-left: 1px solid color-mix(in srgb, white 72%, transparent);
@@ -6323,7 +6292,7 @@
     overflow: hidden;
   }
 
-  .time-page-stack > .space-y-3 {
+  .time-page-main > .space-y-3 {
     display: flex;
     min-height: 0;
     flex: 1 1 auto;

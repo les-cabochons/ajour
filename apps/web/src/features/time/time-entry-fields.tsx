@@ -1,4 +1,4 @@
-import type { KeyboardEvent, FocusEvent } from "react";
+import type { KeyboardEvent } from "react";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -10,6 +10,7 @@ import {
 } from "@/features/projects/project-task-picker";
 import { cn } from "@/lib/utils";
 
+/** Project / task, Note and Hours, shared by every time entry editor. */
 export function TimeEntryFields({
   className,
   durationDisabled = false,
@@ -17,11 +18,10 @@ export function TimeEntryFields({
   durationHours,
   idPrefix,
   note,
-  onDurationBlur,
   onDurationChange,
   onDurationKeyDown,
-  onNoteBlur,
   onNoteChange,
+  onNoteKeyDown,
   onProjectTaskChange,
   projectId,
   projects,
@@ -33,11 +33,10 @@ export function TimeEntryFields({
   durationHours: string;
   idPrefix: string;
   note: string;
-  onDurationBlur?: (value: string, event: FocusEvent<HTMLInputElement>) => void;
   onDurationChange: (value: string) => void;
   onDurationKeyDown?: (event: KeyboardEvent<HTMLInputElement>) => void;
-  onNoteBlur?: (value: string) => void;
   onNoteChange: (value: string) => void;
+  onNoteKeyDown?: (event: KeyboardEvent<HTMLTextAreaElement>) => void;
   onProjectTaskChange: (selection: ProjectTaskSelection) => void;
   projectId: string;
   projects: LocalProject[];
@@ -64,7 +63,7 @@ export function TimeEntryFields({
           id={noteId}
           value={note}
           onChange={(event) => onNoteChange(event.target.value)}
-          onBlur={(event) => onNoteBlur?.(event.target.value)}
+          onKeyDown={onNoteKeyDown}
           placeholder="Notes (optional)"
           rows={3}
         />
@@ -80,11 +79,9 @@ export function TimeEntryFields({
           value={durationHours}
           disabled={durationDisabled}
           onChange={(event) => onDurationChange(event.target.value)}
-          onBlur={(event) => {
-            const normalized = normalizeHoursInput(event.target.value);
-            onDurationChange(normalized);
-            onDurationBlur?.(normalized, event);
-          }}
+          onBlur={(event) =>
+            onDurationChange(normalizeHoursInput(event.target.value))
+          }
           onKeyDown={onDurationKeyDown}
           placeholder="01:30"
           aria-invalid={Boolean(durationError)}
