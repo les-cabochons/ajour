@@ -24,8 +24,8 @@ interface TimeEntryModalProps {
 
 /**
  * Dialog host for the entry editor: a saved entry, a new entry, or the running entry.
- * The narrow view uses it everywhere, and New entry… on tasks and backlog items uses
- * it on every width. It closes on its own when the entry it shows goes away.
+ * The narrow view uses it everywhere, including New entry… on tasks and backlog
+ * items. It closes on its own when the entry it shows goes away.
  */
 export function TimeEntryModal({
   date,

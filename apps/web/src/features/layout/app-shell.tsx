@@ -30,6 +30,10 @@ import {
 } from "@/features/layout/narrow-titlebar";
 import { TimeEntryEditorPopover } from "@/features/time/time-entry-editor-popover";
 import type { NewTimeEntryValues } from "@/features/time/time-entry-editor-form";
+import {
+  useNewEntryRequests,
+  type NewEntryRequest,
+} from "@/features/time/new-entry-request";
 import { TimeEntryModal } from "@/features/timer/time-entry-modal";
 import { formatClockDuration } from "@/domain/time/duration";
 import { getLocalProjectDisplayName } from "@/domain/local-state";
@@ -302,7 +306,9 @@ type TitlebarEditor = "new" | "running" | null;
 /**
  * The titlebar's New entry (+), Start (▶), Running pill and totals pill. "+" and the
  * pill open the entry editor in a popover anchored to them, or in the dialog in the
- * narrow view. New entries default to today; the Start button starts one at once.
+ * narrow view. New entry… on a task or backlog item (`openNewEntryEditor`) opens the
+ * same popover, anchored to its row. New entries default to today; the Start button
+ * starts one at once.
  */
 function GlobalTimerBar() {
   const state = useLocalState();
@@ -312,6 +318,10 @@ function GlobalTimerBar() {
   const [editor, setEditor] = useState<TitlebarEditor>(null);
   /** The project and task a new entry starts with, such as a pinned task. */
   const [newEntryValues, setNewEntryValues] = useState<NewTimeEntryValues>();
+  /** The task or backlog row New entry… came from. Null anchors the popover to "+". */
+  const [newEntryAnchor, setNewEntryAnchor] = useState<HTMLElement | null>(
+    null,
+  );
 
   const currentTimer = state.timers[0] ?? null;
   const today = todayIsoDate();
@@ -325,10 +335,22 @@ function GlobalTimerBar() {
     [today, newEntryValues],
   );
 
-  function openNewEntry(values?: NewTimeEntryValues) {
-    setNewEntryValues(values);
-    setEditor("new");
-  }
+  const openNewEntry = useCallback(
+    (values?: NewTimeEntryValues, anchor: HTMLElement | null = null) => {
+      setNewEntryValues(values);
+      setNewEntryAnchor(anchor);
+      setEditor("new");
+    },
+    [],
+  );
+
+  // New entry… on a task or backlog item, from its page or the command palette.
+  useNewEntryRequests(
+    useCallback(
+      ({ values, anchor }: NewEntryRequest) => openNewEntry(values, anchor),
+      [openNewEntry],
+    ),
+  );
 
   // N and the pinned task digits off the Time pages. The Time page's own
   // handlers open its side panel instead.
@@ -457,6 +479,7 @@ function GlobalTimerBar() {
             triggerClassName="quick-timer-group-button"
             iconTrigger
             triggerShortcut="entry.new"
+            anchor={newEntryAnchor}
           >
             <Plus className="h-3.5 w-3.5" />
           </TimeEntryEditorPopover>

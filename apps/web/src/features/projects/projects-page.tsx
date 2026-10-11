@@ -93,14 +93,14 @@ import {
   type SharedTableDragPointerSession,
 } from "@/lib/table-drag";
 import { ProjectIcon } from "@/lib/project-icons";
-import { TimeEntryModal } from "@/features/timer/time-entry-modal";
+import { openNewEntryEditor } from "@/features/time/new-entry-request";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 import {
   formatAriaKeyShortcuts,
   getShortcut,
   getShortcutPlatform,
 } from "@/lib/shortcuts";
-import { cn, todayIsoDate } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 const commandPaletteAriaKeys = formatAriaKeyShortcuts(
   getShortcut("app.command-palette"),
@@ -403,10 +403,6 @@ function ProjectDetail({
   );
   const taskDragStateRef = useRef<TaskDragState | null>(null);
   const suppressTaskClickUntilRef = useRef(0);
-  /** Task whose New entry… dialog is open. */
-  const [newEntryTask, setNewEntryTask] = useState<LocalProjectTask | null>(
-    null,
-  );
   const [isImporting, setIsImporting] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
@@ -618,7 +614,10 @@ function ProjectDetail({
         });
         return;
       case "new-entry":
-        setNewEntryTask(task);
+        openNewEntryEditor(
+          { kind: "task", projectId: project._id, taskId: task._id },
+          { projectId: project._id, taskId: task._id },
+        );
         return;
       case "edit":
         onOpenTask(task);
@@ -1123,14 +1122,6 @@ function ProjectDetail({
           </div>
           {renderConsumedBadge(draggedTask)}
         </div>
-      ) : null}
-
-      {newEntryTask ? (
-        <TimeEntryModal
-          date={todayIsoDate()}
-          initialValues={{ projectId: project._id, taskId: newEntryTask._id }}
-          onClose={() => setNewEntryTask(null)}
-        />
       ) : null}
     </div>
   );
