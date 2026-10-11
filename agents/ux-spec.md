@@ -300,27 +300,28 @@ Frequent in-app actions use single keys. They only work when focus is not in a t
 
 ### Global shortcuts
 
-| Key                | Action                                                                                  |
-| ------------------ | --------------------------------------------------------------------------------------- |
-| N                  | New entry: side panel on the Time pages, popover elsewhere                              |
-| S                  | Stop the running entry, or start a new one when nothing runs                            |
-| C                  | Continue the focused entry, or the most recent entry when none is focused               |
-| T                  | Go to today                                                                             |
-| [ / ]              | Previous / next day, or week in the Week view                                           |
-| D / W              | Day view / Week view                                                                    |
-| G then T, B, P, S  | Go to Time, Backlog, Projects, Settings                                                 |
-| 1 to 0             | Start a running entry for the pinned task in that slot, switching if another entry runs |
-| Shift+1 to Shift+0 | Open the new entry form with that pinned task filled in                                 |
-| Cmd+B              | Show or hide the sidebar                                                                |
-| Cmd+Z              | Press Undo on the visible Undo toast                                                    |
-| Cmd+,              | Settings                                                                                |
-| Cmd+K              | Command palette                                                                         |
-| ?                  | Keyboard shortcuts                                                                      |
+| Key                | Action                                                                      |
+| ------------------ | --------------------------------------------------------------------------- |
+| N                  | New entry: side panel on the Time pages, popover elsewhere                  |
+| S                  | Stop the running entry, or start a new one when nothing runs                |
+| C                  | Continue the focused entry, or the most recent entry when none is focused   |
+| T                  | Go to today                                                                 |
+| [ / ]              | Previous / next day, or week in the Week view                               |
+| D / W              | Day view / Week view                                                        |
+| G then T, B, P, S  | Go to Time, Backlog, Projects, Settings                                     |
+| 1 to 0             | Open the new entry form with the pinned task in that slot filled in         |
+| Shift+1 to Shift+0 | Start a running entry for that pinned task, switching if another entry runs |
+| Cmd+B              | Show or hide the sidebar                                                    |
+| Cmd+Z              | Press Undo on the visible Undo toast                                        |
+| Cmd+,              | Settings                                                                    |
+| Cmd+K              | Command palette                                                             |
+| ?                  | Keyboard shortcuts                                                          |
 
 ### Pinned tasks
 
 - A pinned task has a number slot from 1 to 0, ten in all. "Assign shortcut…" on the task sets, changes or clears it. A slot belongs to at most one task.
 - The slot shows next to the task in the project task picker and on the task row.
+- The plain digit only opens the form, so a stray key press never stops the running entry. Starting needs Shift.
 - While an entry is being edited, the digits do nothing special.
 - When a Grid cell has focus, digits edit its hours instead. Anywhere else, digits start pinned tasks.
 
