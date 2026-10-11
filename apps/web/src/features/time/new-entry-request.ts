@@ -20,33 +20,53 @@ export interface AnchorCandidate {
   getBoundingClientRect(): Pick<DOMRect, "top" | "right" | "bottom" | "left">;
 }
 
-export interface ViewportSize {
-  width: number;
-  height: number;
-}
+/** A visible area in viewport coordinates: the window, or a scroll container. */
+export type ClipRect = Pick<DOMRect, "top" | "right" | "bottom" | "left">;
 
 /**
- * The row to anchor the popover to, when any of it shows in the viewport.
- * Otherwise null, and the popover falls back to the titlebar "+". A row can be
- * missing or scrolled away when the request comes from the command palette.
+ * The row to anchor the popover to, when any of it shows inside every clip
+ * rect (the viewport and each scroll container around the row). Otherwise
+ * null, and the popover falls back to the titlebar "+". A row can be missing
+ * or scrolled away when the request comes from the command palette.
  */
 export function pickOnScreenAnchor<T extends AnchorCandidate>(
   candidate: T | null | undefined,
-  viewport: ViewportSize,
+  clipRects: ClipRect[],
 ): T | null {
   if (!candidate) {
     return null;
   }
 
-  const rect = candidate.getBoundingClientRect();
-  const isOnScreen =
-    rect.bottom > 0 &&
-    rect.right > 0 &&
-    rect.top < viewport.height &&
-    rect.left < viewport.width &&
-    rect.bottom > rect.top &&
-    rect.right > rect.left;
-  return isOnScreen ? candidate : null;
+  const visible = clipRects.reduce<ClipRect>(
+    (area, clip) => ({
+      top: Math.max(area.top, clip.top),
+      left: Math.max(area.left, clip.left),
+      bottom: Math.min(area.bottom, clip.bottom),
+      right: Math.min(area.right, clip.right),
+    }),
+    candidate.getBoundingClientRect(),
+  );
+  return visible.bottom > visible.top && visible.right > visible.left
+    ? candidate
+    : null;
+}
+
+/** The viewport plus every ancestor that clips its overflow, such as a ScrollArea viewport. */
+function getClipRects(element: HTMLElement): ClipRect[] {
+  const rects: ClipRect[] = [
+    { top: 0, left: 0, bottom: window.innerHeight, right: window.innerWidth },
+  ];
+  for (
+    let ancestor = element.parentElement;
+    ancestor;
+    ancestor = ancestor.parentElement
+  ) {
+    const style = getComputedStyle(ancestor);
+    if (style.overflowX !== "visible" || style.overflowY !== "visible") {
+      rects.push(ancestor.getBoundingClientRect());
+    }
+  }
+  return rects;
 }
 
 /** The row that shows `object`, such as a Projects task row or a Backlog row. */
@@ -70,10 +90,8 @@ export function openNewEntryEditor(
   object: NewEntryObjectRef,
   values: NewTimeEntryValues,
 ) {
-  const anchor = pickOnScreenAnchor(findObjectRow(object), {
-    width: window.innerWidth,
-    height: window.innerHeight,
-  });
+  const row = findObjectRow(object);
+  const anchor = row ? pickOnScreenAnchor(row, getClipRects(row)) : null;
   requestListener?.({ values, anchor });
 }
 
