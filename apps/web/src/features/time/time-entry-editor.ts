@@ -22,8 +22,25 @@ export interface TimeEntryValues extends TimeEntryMetadata {
   durationMs: number;
 }
 
+/**
+ * What leaving a draft writes. `unchanged` writes nothing, `save` writes `values`,
+ * and `invalid` keeps the editor open with `error` shown.
+ */
+export type TimeEntryDraftCommit =
+  | { kind: "unchanged" }
+  | { kind: "save"; values: TimeEntryValues }
+  | { kind: "invalid"; error: string };
+
+/**
+ * Why the draft is being left. `save` is the Save button or its keys. `switch` is the
+ * side panel loading another entry, where an empty new entry is simply dropped.
+ */
+export type TimeEntryDraftCommitReason = "save" | "switch";
+
 /** What a draft means right now: command values, validation, and the actions it allows. */
 export interface TimeEntryEditorState {
+  /** The draft creates an entry instead of editing a saved one. */
+  isNew: boolean;
   metadata: TimeEntryMetadata;
   /** Values to save, or `null` while the duration does not parse. */
   values: TimeEntryValues | null;
@@ -41,7 +58,7 @@ export interface TimeEntryEditorState {
   ): (TimeEntryValues & { localDate: string }) | null;
 }
 
-/** Seeds the same draft for inline and dialog time-entry editing. */
+/** Seeds the draft shared by every entry editor host. */
 export function createTimeEntryEditorFields(
   entry?: Partial<TimeEntryValues>,
 ): TimeEntryEditorFields {
@@ -87,6 +104,7 @@ export function evaluateTimeEntryEditor(
     durationMs !== original.durationMs;
   const canSave = durationMs !== null && durationMs > 0;
   return {
+    isNew: !original,
     metadata,
     values,
     durationMs,
@@ -107,5 +125,37 @@ export function evaluateTimeEntryEditor(
           : null,
     relocationValues: (localDate) =>
       canSave && values ? { ...values, localDate } : null,
+  };
+}
+
+const EMPTY_NEW_ENTRY_ERROR = "Enter hours to save this entry";
+const NON_POSITIVE_DURATION_ERROR = "Enter a positive duration";
+
+/**
+ * Decides what Save, or switching to another entry, does with a draft. An unchanged
+ * saved entry writes nothing. A valid draft is saved. Anything else blocks with an error,
+ * except an untouched new entry, which a switch drops.
+ */
+export function commitTimeEntryDraft(
+  editor: TimeEntryEditorState,
+  reason: TimeEntryDraftCommitReason,
+): TimeEntryDraftCommit {
+  if (!editor.isNew && !editor.hasChanges) {
+    return { kind: "unchanged" };
+  }
+
+  if (editor.isNew && !editor.hasContent && reason === "switch") {
+    return { kind: "unchanged" };
+  }
+
+  if (editor.canSave && editor.values) {
+    return { kind: "save", values: editor.values };
+  }
+
+  return {
+    kind: "invalid",
+    error:
+      editor.durationError ??
+      (editor.isNew ? EMPTY_NEW_ENTRY_ERROR : NON_POSITIVE_DURATION_ERROR),
   };
 }

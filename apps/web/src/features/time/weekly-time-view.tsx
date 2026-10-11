@@ -164,6 +164,7 @@ function CapacityValue({
 }
 
 export function WeeklyTimeView({
+  activeEntryId,
   anchorDate,
   now,
   onNewEntry,
@@ -173,6 +174,8 @@ export function WeeklyTimeView({
   onSubmit,
   weekDates,
 }: {
+  /** The entry open in the editor, highlighted on its card or tray row. */
+  activeEntryId?: string;
   anchorDate: string;
   now: number;
   onNewEntry: (localDate: string) => void;
@@ -185,7 +188,6 @@ export function WeeklyTimeView({
   const state = useLocalState();
   const projects = useLocalProjects();
   const preferences = useUserPreferences();
-  const [selectedEntryId, setSelectedEntryId] = useState<string | null>(null);
   const [gridCell, setGridCell] = useState<GridCellSelection | null>(null);
   const [dragState, setDragState] = useState<CrossDayDragState | null>(null);
   const dragStateRef = useRef<CrossDayDragState | null>(null);
@@ -284,7 +286,6 @@ export function WeeklyTimeView({
       note: entry.note,
       durationMs: entry.durationMs,
     });
-    setSelectedEntryId(entry._id);
   }
 
   function registerDayTarget(localDate: string, node: HTMLElement | null) {
@@ -659,23 +660,11 @@ export function WeeklyTimeView({
                         render={
                           <button
                             type="button"
-                            aria-pressed={selectedEntryId === entry._id}
                             className={cn(
                               "weekly-tray-entry",
-                              selectedEntryId === entry._id && "is-selected",
+                              activeEntryId === entry._id && "is-selected",
                             )}
-                            onClick={() => {
-                              if (
-                                performance.now() >=
-                                suppressClickUntilRef.current
-                              ) {
-                                setSelectedEntryId(entry._id);
-                              }
-                            }}
-                            onDoubleClick={() => openEntry(entry._id)}
-                            onKeyDown={(event) =>
-                              event.key === "Enter" && openEntry(entry._id)
-                            }
+                            onClick={() => openEntry(entry._id)}
                             onPointerDown={(event) =>
                               handleEntryPointerDown(entry, event)
                             }
@@ -804,7 +793,6 @@ export function WeeklyTimeView({
                             tabIndex={0}
                             role="button"
                             aria-label={`${summary.projectName}, ${summary.taskName}, ${formatClockDuration(entry.durationMs)}`}
-                            aria-pressed={selectedEntryId === entry._id}
                             style={
                               {
                                 "--project-color": summary.projectColor,
@@ -812,24 +800,17 @@ export function WeeklyTimeView({
                             }
                             className={cn(
                               "weekly-entry-card",
-                              selectedEntryId === entry._id && "is-selected",
+                              activeEntryId === entry._id && "is-selected",
                               dragState?.entryId === entry._id && "is-dragging",
                             )}
-                            onClick={() => {
-                              if (
-                                performance.now() >=
-                                suppressClickUntilRef.current
-                              ) {
-                                setSelectedEntryId(entry._id);
-                              }
-                            }}
-                            onDoubleClick={() => openEntry(entry._id)}
+                            onClick={() => openEntry(entry._id)}
                             onKeyDown={(event) => {
-                              if (event.key === "Enter") {
-                                openEntry(entry._id);
-                              } else if (event.key === " ") {
+                              if (
+                                event.target === event.currentTarget &&
+                                (event.key === "Enter" || event.key === " ")
+                              ) {
                                 event.preventDefault();
-                                setSelectedEntryId(entry._id);
+                                openEntry(entry._id);
                               }
                             }}
                             onPointerDown={(event) =>

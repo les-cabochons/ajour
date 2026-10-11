@@ -7,8 +7,6 @@ import React, {
 } from "react";
 import {
   RiAddLine as Plus,
-  RiCheckLine as Check,
-  RiCloseLine as X,
   RiPlayLine as Play,
   RiTimerLine as Timer,
 } from "@remixicon/react";
@@ -26,27 +24,13 @@ import {
   ObjectContextMenu,
 } from "@/components/object-actions-menu";
 import { useTimeEntryActions } from "@/features/time/time-entry-actions";
-import { TimeEntryFields } from "@/features/time/time-entry-fields";
-import {
-  createTimeEntryEditorFields,
-  evaluateTimeEntryEditor,
-} from "@/features/time/time-entry-editor";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import {
-  ProjectTaskPicker,
-  type ProjectTaskSelection,
-} from "@/features/projects/project-task-picker";
-import {
-  formatClockDuration,
-  normalizeHoursInput,
-} from "@/domain/time/duration";
+import { formatClockDuration } from "@/domain/time/duration";
 import {
   getLocalProjectDisplayName,
   type LocalTimesheetEntry,
 } from "@/domain/local-state";
-import type { TimeEntryActionId } from "@/domain/actions/object-actions";
 import { localStore } from "@/lib/local-store";
-import { isInlineEditorOutsideClick } from "@/lib/inline-editor-close";
 import {
   createSharedTableDragPointerSession,
   getSharedTableDragOverlayTransform,
@@ -59,8 +43,6 @@ import {
 import { ProjectIcon } from "@/lib/project-icons";
 import { cn } from "@/lib/utils";
 import { useLocalProjects, useLocalState } from "@/lib/local-hooks";
-
-const DESKTOP_ENTRY_MEDIA_QUERY = "(min-width: 641px)";
 
 type EntryDragState = {
   entryId: string;
@@ -117,28 +99,24 @@ function moveId(ids: string[], fromIndex: number, toIndex: number) {
   return nextIds;
 }
 
+/**
+ * The Day view's entry list. Rows and "New entry" ask the page to open the entry
+ * editor through `onOpenEntry`; an empty target means a new entry on `date`.
+ */
 export function TimerPanel({
   date,
+  activeEntryId,
   onOpenEntry,
 }: {
   date: string;
-  onOpenEntry?: (target: { entryId?: string; timerId?: string }) => void;
+  /** The entry open in the editor, highlighted in the list. */
+  activeEntryId?: string;
+  onOpenEntry: (target: { entryId?: string; timerId?: string }) => void;
 }) {
   const state = useLocalState();
   const projects = useLocalProjects();
   const [now, setNow] = useState(() => Date.now());
-  const [expandedEntryId, setExpandedEntryId] = useState<string | null>(null);
-  const [expandedProjectId, setExpandedProjectId] = useState("");
-  const [expandedTaskId, setExpandedTaskId] = useState("");
-  const [expandedNote, setExpandedNote] = useState("");
-  const [expandedDurationHours, setExpandedDurationHours] = useState("");
-  const [isCreatingEntry, setIsCreatingEntry] = useState(false);
-  const [newProjectId, setNewProjectId] = useState("");
-  const [newTaskId, setNewTaskId] = useState("");
-  const [newNote, setNewNote] = useState("");
-  const [newDurationHours, setNewDurationHours] = useState("");
   const entryRowRefs = useRef(new Map<string, HTMLTableRowElement>());
-  const expandedEntryEditorRef = useRef<HTMLDivElement>(null);
   const entryPointerSessionRef = useRef<SharedTableDragPointerSession | null>(
     null,
   );
@@ -151,21 +129,13 @@ export function TimerPanel({
 
   const currentTimer = state.timers[0] ?? null;
   const entryActions = useTimeEntryActions({
-    onEdit: (target) => {
-      if (target.kind === "running") {
-        resetExpandedEntry();
-        onOpenEntry?.({ timerId: target.timerId });
-      } else if (expandedEntryId !== target.entry._id) {
-        handleToggleEntry(target.entry);
-      }
-    },
-    onAfterAction: () => resetExpandedEntry(),
+    onEdit: (target) =>
+      onOpenEntry(
+        target.kind === "running"
+          ? { timerId: target.timerId }
+          : { entryId: target.entry._id },
+      ),
   });
-  const expandedEntry = expandedEntryId
-    ? (state.timesheetEntries.find(
-        (entry) => entry._id === expandedEntryId && entry.localDate === date,
-      ) ?? null)
-    : null;
   const runningEntry = useMemo<RunningEntryRow | null>(() => {
     if (!currentTimer || currentTimer.localDate !== date) {
       return null;
@@ -186,42 +156,6 @@ export function TimerPanel({
       entryId: currentTimer.entryId,
     };
   }, [currentTimer, date, now]);
-  const expandedAvailableTasks = useMemo(
-    () =>
-      projects
-        .find((project) => project._id === expandedProjectId)
-        ?.tasks.filter((task) => task.status === "active") ?? [],
-    [expandedProjectId, projects],
-  );
-  const expandedEditor = evaluateTimeEntryEditor(
-    {
-      projectId: expandedProjectId,
-      taskId: expandedTaskId,
-      note: expandedNote,
-      durationHours: expandedDurationHours,
-    },
-    { original: expandedEntry ?? undefined },
-  );
-  const expandedDurationError = expandedEditor.durationError;
-  const newAvailableTasks = useMemo(
-    () =>
-      projects
-        .find((project) => project._id === newProjectId)
-        ?.tasks.filter((task) => task.status === "active") ?? [],
-    [newProjectId, projects],
-  );
-  const newEditor = evaluateTimeEntryEditor(
-    {
-      projectId: newProjectId,
-      taskId: newTaskId,
-      note: newNote,
-      durationHours: newDurationHours,
-    },
-    { allowEmptyDuration: true },
-  );
-  const newDurationError = newEditor.durationError;
-  const showNewTimeActions = newDurationHours.trim() !== "";
-
   const recentEntries = useMemo(
     () =>
       state.timesheetEntries
@@ -253,8 +187,7 @@ export function TimerPanel({
         : null,
     [entryDragState, visibleEntries],
   );
-  const canReorderEntries =
-    !isCreatingEntry && !expandedEntryId && draggableEntryIds.length > 1;
+  const canReorderEntries = draggableEntryIds.length > 1;
 
   useEffect(() => {
     if (!currentTimer || currentTimer.localDate !== date) {
@@ -265,45 +198,6 @@ export function TimerPanel({
     const intervalId = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(intervalId);
   }, [currentTimer?._id, currentTimer?.localDate, date]);
-
-  useEffect(() => {
-    if (!expandedEntryId) {
-      return;
-    }
-
-    if (!expandedEntry) {
-      resetExpandedEntry();
-    }
-  }, [expandedEntry, expandedEntryId]);
-
-  useEffect(() => {
-    if (!expandedEntry || !expandedProjectId) {
-      return;
-    }
-
-    if (expandedAvailableTasks.some((task) => task._id === expandedTaskId)) {
-      return;
-    }
-
-    setExpandedTaskId("");
-  }, [
-    expandedAvailableTasks,
-    expandedEntry,
-    expandedProjectId,
-    expandedTaskId,
-  ]);
-
-  useEffect(() => {
-    if (!isCreatingEntry || !newProjectId) {
-      return;
-    }
-
-    if (newAvailableTasks.some((task) => task._id === newTaskId)) {
-      return;
-    }
-
-    setNewTaskId("");
-  }, [isCreatingEntry, newAvailableTasks, newProjectId, newTaskId]);
 
   useEffect(() => {
     entryDragStateRef.current = entryDragState;
@@ -363,222 +257,19 @@ export function TimerPanel({
     };
   }, [clearEntryPointerSession, resetEntryDragVisuals]);
 
-  function resetExpandedEntry() {
-    setExpandedEntryId(null);
-    setExpandedProjectId("");
-    setExpandedTaskId("");
-    setExpandedNote("");
-    setExpandedDurationHours("");
-  }
-
-  function resetNewEntry() {
-    setIsCreatingEntry(false);
-    setNewProjectId("");
-    setNewTaskId("");
-    setNewNote("");
-    setNewDurationHours("");
-  }
-
-  function closeNewEntry() {
-    if (!newEditor.values) {
-      return;
-    }
-
-    if (newEditor.hasContent) {
-      localStore.saveManualTimeEntry({ ...newEditor.values, localDate: date });
-    }
-
-    resetNewEntry();
-  }
-
-  function discardNewEntry() {
-    resetNewEntry();
-  }
-
-  function closeExpandedEntry() {
-    if (!expandedEntry) {
-      resetExpandedEntry();
-      return true;
-    }
-
-    if (!expandedEditor.values) {
-      return false;
-    }
-
-    if (expandedEditor.hasChanges) {
-      localStore.updateTimesheetEntry(expandedEntry._id, expandedEditor.values);
-    }
-
-    resetExpandedEntry();
-    return true;
-  }
-
-  function discardExpandedEntry() {
-    resetExpandedEntry();
-  }
-
-  function handleExpandedEntryAction(actionId: TimeEntryActionId) {
-    if (!expandedEntry) {
-      return;
-    }
-
-    // Continue counts time on the saved entry, so keep the draft first.
-    if (actionId === "continue") {
-      if (closeExpandedEntry()) {
-        localStore.continueTimesheetEntry(expandedEntry._id);
-      }
-      return;
-    }
-
-    entryActions.runAction({ kind: "entry", entry: expandedEntry }, actionId, {
-      resolveValues: expandedEditor.relocationValues,
-    });
-  }
-
-  function handleCreateToggle() {
-    if (isCreatingEntry) {
-      closeNewEntry();
-      return;
-    }
-
-    if (expandedEntryId && !closeExpandedEntry()) {
-      return;
-    }
-
-    if (
-      typeof window !== "undefined" &&
-      !window.matchMedia(DESKTOP_ENTRY_MEDIA_QUERY).matches
-    ) {
-      resetExpandedEntry();
-      onOpenEntry?.({});
-      return;
-    }
-    setIsCreatingEntry(true);
-  }
-
-  function handleToggleEntry(entry: LocalTimesheetEntry | RunningEntryRow) {
+  function openEntry(entry: LocalTimesheetEntry | RunningEntryRow) {
     if (performance.now() < suppressEntryClickUntilRef.current) {
       return;
     }
 
-    if (isCreatingEntry) {
-      closeNewEntry();
-    }
-
-    if (isRunningEntry(entry)) {
-      resetExpandedEntry();
-      onOpenEntry?.({ entryId: entry.entryId, timerId: entry.timerId });
-      return;
-    }
-
-    if (
-      typeof window !== "undefined" &&
-      !window.matchMedia(DESKTOP_ENTRY_MEDIA_QUERY).matches
-    ) {
-      resetExpandedEntry();
-      onOpenEntry?.({ entryId: entry._id });
-      return;
-    }
-
-    if (expandedEntryId === entry._id) {
-      closeExpandedEntry();
-      return;
-    }
-
-    if (expandedEntryId && !closeExpandedEntry()) {
-      return;
-    }
-
-    setExpandedEntryId(entry._id);
-    const fields = createTimeEntryEditorFields(entry);
-    setExpandedProjectId(fields.projectId);
-    setExpandedTaskId(fields.taskId);
-    setExpandedNote(fields.note);
-    setExpandedDurationHours(fields.durationHours);
-  }
-
-  useEffect(() => {
-    if (!isCreatingEntry) {
-      return;
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        discardNewEntry();
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [isCreatingEntry]);
-
-  useEffect(() => {
-    if (!expandedEntryId) {
-      return;
-    }
-
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        discardExpandedEntry();
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [expandedEntryId]);
-
-  // The outside-click listener stays bound while the entry is open and reads
-  // the latest draft through this ref, so it saves what the user typed.
-  const closeExpandedEntryRef = useRef(closeExpandedEntry);
-  useEffect(() => {
-    closeExpandedEntryRef.current = closeExpandedEntry;
-  });
-
-  useEffect(() => {
-    if (!expandedEntryId) {
-      return;
-    }
-
-    function handleDocumentMouseDown(event: MouseEvent) {
-      if (
-        !isInlineEditorOutsideClick(
-          event.target,
-          expandedEntryEditorRef.current,
-          // Menus and dialogs opened from the editor's action set render in portals.
-          [
-            '[data-slot="dropdown-menu-content"]',
-            '[data-slot="context-menu-content"]',
-            '[role="dialog"]',
-            '[role="alertdialog"]',
-          ],
-        )
-      ) {
-        return;
-      }
-
-      closeExpandedEntryRef.current();
-    }
-
-    document.addEventListener("mousedown", handleDocumentMouseDown);
-    return () => {
-      document.removeEventListener("mousedown", handleDocumentMouseDown);
-    };
-  }, [expandedEntryId]);
-
-  function handleExpandedProjectTaskChange(selection: ProjectTaskSelection) {
-    setExpandedProjectId(selection.projectId);
-    setExpandedTaskId(selection.taskId);
-  }
-
-  function handleNewProjectTaskChange(selection: ProjectTaskSelection) {
-    setNewProjectId(selection.projectId);
-    setNewTaskId(selection.taskId);
+    onOpenEntry(
+      isRunningEntry(entry)
+        ? { entryId: entry.entryId, timerId: entry.timerId }
+        : { entryId: entry._id },
+    );
   }
 
   function handleContinueEntry(entryId: string) {
-    resetExpandedEntry();
     localStore.continueTimesheetEntry(entryId);
   }
 
@@ -693,14 +384,9 @@ export function TimerPanel({
                 <div className="flex justify-end">
                   <button
                     type="button"
-                    className={cn(
-                      "entries-header-add entries-header-bubble",
-                      isCreatingEntry && "is-open",
-                    )}
-                    aria-label={
-                      isCreatingEntry ? "Close new entry" : "Add new entry"
-                    }
-                    onClick={handleCreateToggle}
+                    className="entries-header-add entries-header-bubble"
+                    aria-label="New entry"
+                    onClick={() => onOpenEntry({})}
                   >
                     <span className="entries-header-add-label">New entry</span>
                     <Plus className="h-3.5 w-3.5" />
@@ -710,14 +396,9 @@ export function TimerPanel({
               <th className="entry-hours-heading entry-hours-heading-actions hidden lg:table-cell">
                 <button
                   type="button"
-                  className={cn(
-                    "entries-header-add",
-                    isCreatingEntry && "is-open",
-                  )}
-                  aria-label={
-                    isCreatingEntry ? "Close new entry" : "Add new entry"
-                  }
-                  onClick={handleCreateToggle}
+                  className="entries-header-add"
+                  aria-label="New entry"
+                  onClick={() => onOpenEntry({})}
                 >
                   <Plus className="h-3.5 w-3.5" />
                 </button>
@@ -733,95 +414,6 @@ export function TimerPanel({
             )}
           >
             <tbody className="entries-table-scroll-region">
-              {isCreatingEntry ? (
-                <tr
-                  className="entry-edit-row"
-                  onClick={(event) => event.stopPropagation()}
-                >
-                  <td colSpan={3}>
-                    <div className="entry-edit-dropdown entry-create-dropdown">
-                      <div className="entry-edit-dropdown-grid">
-                        <label className="field col-span-full">
-                          <span className="field-label">Project / task</span>
-                          <ProjectTaskPicker
-                            projects={projects}
-                            projectId={newProjectId}
-                            taskId={newTaskId}
-                            onChange={handleNewProjectTaskChange}
-                            placeholder="No project"
-                          />
-                        </label>
-
-                        <label className="field entry-field-note">
-                          <span className="field-label">Note</span>
-                          <textarea
-                            className="field-input entry-note-input"
-                            value={newNote}
-                            onChange={(event) => setNewNote(event.target.value)}
-                            placeholder="Notes (optional)"
-                            rows={2}
-                          />
-                        </label>
-
-                        <label className="field entry-field-hours">
-                          <span className="field-label">Hours</span>
-                          <div className="inline-hours-input-shell">
-                            <input
-                              className="field-input entry-hours-input inline-hours-input"
-                              type="text"
-                              placeholder="01:30"
-                              style={{ fontFamily: "var(--font-mono)" }}
-                              value={newDurationHours}
-                              onChange={(event) =>
-                                setNewDurationHours(event.target.value)
-                              }
-                              onBlur={(event) =>
-                                setNewDurationHours(
-                                  normalizeHoursInput(event.target.value),
-                                )
-                              }
-                              onKeyDown={(event) => {
-                                if (event.key === "Enter") {
-                                  event.preventDefault();
-                                  closeNewEntry();
-                                }
-                              }}
-                              aria-label="Hours"
-                            />
-                            {showNewTimeActions ? (
-                              <div className="inline-hours-actions">
-                                <button
-                                  type="button"
-                                  className="inline-hours-action"
-                                  aria-label="Save and close new entry"
-                                  disabled={Boolean(newDurationError)}
-                                  onClick={closeNewEntry}
-                                >
-                                  <Check className="h-3.5 w-3.5" />
-                                </button>
-                                <button
-                                  type="button"
-                                  className="inline-hours-action"
-                                  aria-label="Discard new entry"
-                                  onClick={discardNewEntry}
-                                >
-                                  <X className="h-3.5 w-3.5" />
-                                </button>
-                              </div>
-                            ) : null}
-                          </div>
-                          {newDurationError ? (
-                            <span className="field-error">
-                              {newDurationError}
-                            </span>
-                          ) : null}
-                        </label>
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              ) : null}
-
               {visibleEntries.length === 0 ? (
                 <tr className="entry-empty-row">
                   <td colSpan={3}>
@@ -842,7 +434,7 @@ export function TimerPanel({
                         <Button
                           size="sm"
                           className="gap-1.5"
-                          onClick={handleCreateToggle}
+                          onClick={() => onOpenEntry({})}
                         >
                           <Plus className="h-3.5 w-3.5" />
                           New entry
@@ -860,7 +452,8 @@ export function TimerPanel({
                   (item) => item._id === entry.taskId,
                 );
                 const isRunning = "isRunning" in entry && entry.isRunning;
-                const isExpanded = expandedEntry?._id === entry._id;
+                const isEditing =
+                  activeEntryId !== undefined && entry._id === activeEntryId;
                 const rowTarget = isRunningEntry(entry)
                   ? { kind: "running" as const, timerId: entry.timerId }
                   : { kind: "entry" as const, entry };
@@ -900,7 +493,7 @@ export function TimerPanel({
                           }}
                           className={cn(
                             "time-entry-row",
-                            isExpanded && "entry-row-expanded",
+                            isEditing && "is-editing",
                             canReorderEntries &&
                               !isRunning &&
                               draggableIndex !== -1 &&
@@ -917,7 +510,17 @@ export function TimerPanel({
                               : undefined
                           }
                           aria-grabbed={isDraggedEntry}
-                          onClick={() => handleToggleEntry(entry)}
+                          tabIndex={0}
+                          onClick={() => openEntry(entry)}
+                          onKeyDown={(event) => {
+                            if (
+                              event.key === "Enter" &&
+                              event.target === event.currentTarget
+                            ) {
+                              event.preventDefault();
+                              openEntry(entry);
+                            }
+                          }}
                           onPointerDown={(event) =>
                             handleEntryPointerDown(entry, event)
                           }
@@ -1015,58 +618,6 @@ export function TimerPanel({
                         </div>
                       </td>
                     </ObjectContextMenu>
-                    {!isRunning && isExpanded && expandedEntry ? (
-                      <tr
-                        className="entry-edit-row"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <td colSpan={3}>
-                          <div
-                            ref={expandedEntryEditorRef}
-                            className="entry-edit-dropdown"
-                          >
-                            <div className="entry-edit-dropdown-content">
-                              <div className="entry-edit-dropdown-actions">
-                                <ObjectActionsButton
-                                  actions={entryActions.getActions(
-                                    { kind: "entry", entry: expandedEntry },
-                                    {
-                                      isEditing: true,
-                                      invalidDraftReason: expandedEditor.canSave
-                                        ? undefined
-                                        : "Enter a valid duration first",
-                                    },
-                                  )}
-                                  onAction={handleExpandedEntryAction}
-                                  label="Entry actions"
-                                />
-                              </div>
-                              <TimeEntryFields
-                                idPrefix={`day-entry-${expandedEntry._id}`}
-                                className="entry-edit-dropdown-grid"
-                                projects={projects}
-                                projectId={expandedProjectId}
-                                taskId={expandedTaskId}
-                                note={expandedNote}
-                                durationHours={expandedDurationHours}
-                                durationError={expandedDurationError}
-                                onProjectTaskChange={
-                                  handleExpandedProjectTaskChange
-                                }
-                                onNoteChange={setExpandedNote}
-                                onDurationChange={setExpandedDurationHours}
-                                onDurationKeyDown={(event) => {
-                                  if (event.key === "Enter") {
-                                    event.preventDefault();
-                                    closeExpandedEntry();
-                                  }
-                                }}
-                              />
-                            </div>
-                          </div>
-                        </td>
-                      </tr>
-                    ) : null}
                   </React.Fragment>
                 );
               })}

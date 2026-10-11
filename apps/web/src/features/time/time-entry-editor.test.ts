@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  commitTimeEntryDraft,
   createTimeEntryEditorFields,
   evaluateTimeEntryEditor,
 } from "./time-entry-editor";
@@ -108,6 +109,100 @@ describe("time-entry editor", () => {
       canSave: false,
       isTimerMode: true,
       hasContent: true,
+    });
+  });
+
+  describe("leaving a draft", () => {
+    const original = {
+      projectId: "project-1",
+      note: "note",
+      durationMs: 75_123,
+    };
+
+    it("writes nothing for an unchanged saved entry, on save or switch", () => {
+      const editor = evaluateTimeEntryEditor(
+        createTimeEntryEditorFields(original),
+        { original },
+      );
+      expect(commitTimeEntryDraft(editor, "save")).toEqual({
+        kind: "unchanged",
+      });
+      expect(commitTimeEntryDraft(editor, "switch")).toEqual({
+        kind: "unchanged",
+      });
+    });
+
+    it("saves a valid edited draft before switching", () => {
+      const editor = evaluateTimeEntryEditor(
+        { ...createTimeEntryEditorFields(original), note: "changed" },
+        { original },
+      );
+      expect(commitTimeEntryDraft(editor, "switch")).toEqual({
+        kind: "save",
+        values: { projectId: "project-1", note: "changed", durationMs: 75_123 },
+      });
+    });
+
+    it("blocks the switch when an edited draft is invalid", () => {
+      const fields = createTimeEntryEditorFields(original);
+      expect(
+        commitTimeEntryDraft(
+          evaluateTimeEntryEditor(
+            { ...fields, durationHours: "abc" },
+            { original },
+          ),
+          "switch",
+        ),
+      ).toEqual({ kind: "invalid", error: "Enter a valid duration" });
+      expect(
+        commitTimeEntryDraft(
+          evaluateTimeEntryEditor(
+            { ...fields, durationHours: "0" },
+            { original },
+          ),
+          "switch",
+        ),
+      ).toEqual({ kind: "invalid", error: "Enter a positive duration" });
+    });
+
+    it("drops an untouched new entry on switch but asks for hours on save", () => {
+      const editor = evaluateTimeEntryEditor(createTimeEntryEditorFields(), {
+        allowEmptyDuration: true,
+      });
+      expect(commitTimeEntryDraft(editor, "switch")).toEqual({
+        kind: "unchanged",
+      });
+      expect(commitTimeEntryDraft(editor, "save")).toEqual({
+        kind: "invalid",
+        error: "Enter hours to save this entry",
+      });
+    });
+
+    it("blocks the switch for a new entry with content but no hours", () => {
+      const editor = evaluateTimeEntryEditor(
+        { ...createTimeEntryEditorFields(), note: "draft" },
+        { allowEmptyDuration: true },
+      );
+      expect(commitTimeEntryDraft(editor, "switch")).toEqual({
+        kind: "invalid",
+        error: "Enter hours to save this entry",
+      });
+    });
+
+    it("saves a new entry with hours", () => {
+      const editor = evaluateTimeEntryEditor(
+        { ...createTimeEntryEditorFields(), durationHours: "1:30" },
+        { allowEmptyDuration: true },
+      );
+      expect(commitTimeEntryDraft(editor, "save")).toEqual({
+        kind: "save",
+        values: {
+          projectId: undefined,
+          taskId: undefined,
+          note: undefined,
+          durationMs: 5_400_000,
+        },
+      });
     });
   });
 });

@@ -1,8 +1,14 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { DayViewerCard } from "@/components/day-viewer-card";
+import { SidePanel } from "@/components/side-panel";
 import { formatClockDuration } from "@/domain/time/duration";
 import { SubmitWeekButton } from "@/features/time/submit-week-controls";
+import {
+  TimeEntryEditorForm,
+  type TimeEntryEditorFormHandle,
+  type TimeEntryEditorTarget,
+} from "@/features/time/time-entry-editor-form";
 import { TimeViewScopeMenu } from "@/features/time/time-view-scope-menu";
 import { WeeklyTimeView } from "@/features/time/weekly-time-view";
 import { TimerPanel } from "@/features/timer/timer-panel";
@@ -13,6 +19,12 @@ import {
   getTimerDurationsMs,
 } from "@/lib/timer-totals";
 import { cn, getIsoWeekDates, todayIsoDate } from "@/lib/utils";
+
+/** Below this width the entry editor opens in a full-width dialog instead of the side panel. */
+const ENTRY_DIALOG_MEDIA_QUERY = "(max-width: 640px)";
+
+/** The entry to open: `entryId`, the running `timerId`, or a new entry when both are empty. */
+type EntryEditorRequest = { entryId?: string; timerId?: string };
 
 export function TimePage({ date }: { date: string }) {
   const navigate = useNavigate();
@@ -31,12 +43,26 @@ export function TimePage({ date }: { date: string }) {
       ? window.matchMedia("(min-width: 1024px)").matches
       : false,
   );
+  const [useEntryDialog, setUseEntryDialog] = useState(() =>
+    typeof window !== "undefined"
+      ? window.matchMedia(ENTRY_DIALOG_MEDIA_QUERY).matches
+      : false,
+  );
   const isWeekView = search.view === "week" && weekAvailable;
-  const modalEntryId =
-    search.entry && search.entry !== "new" ? search.entry : undefined;
-  const modalTimerId = search.timer;
-  const modalOpen =
-    search.entry === "new" || Boolean(modalEntryId) || Boolean(modalTimerId);
+  const editorFormRef = useRef<TimeEntryEditorFormHandle>(null);
+  const editingEntry =
+    search.entry && search.entry !== "new"
+      ? state.timesheetEntries.find((entry) => entry._id === search.entry)
+      : undefined;
+  // The running timer keeps its own dialog until running entries use the shared form.
+  const editorTarget: TimeEntryEditorTarget | null = search.timer
+    ? null
+    : editingEntry
+      ? { kind: "edit", entry: editingEntry }
+      : search.entry === "new"
+        ? { kind: "create", localDate: date }
+        : null;
+  const editorKey = editingEntry ? editingEntry._id : `new-${date}`;
 
   useEffect(() => {
     if (!currentTimer) {
@@ -51,6 +77,14 @@ export function TimePage({ date }: { date: string }) {
   useEffect(() => {
     const media = window.matchMedia("(min-width: 1024px)");
     const handleChange = () => setWeekAvailable(media.matches);
+    handleChange();
+    media.addEventListener("change", handleChange);
+    return () => media.removeEventListener("change", handleChange);
+  }, []);
+
+  useEffect(() => {
+    const media = window.matchMedia(ENTRY_DIALOG_MEDIA_QUERY);
+    const handleChange = () => setUseEntryDialog(media.matches);
     handleChange();
     media.addEventListener("change", handleChange);
     return () => media.removeEventListener("change", handleChange);
@@ -108,7 +142,16 @@ export function TimePage({ date }: { date: string }) {
     0,
   );
 
+  /**
+   * Saves a valid draft in the side panel before the page shows something else.
+   * Returns false when the draft is invalid; the form then shows why.
+   */
+  function leaveEditorDraft() {
+    return editorFormRef.current?.commitBeforeSwitch() ?? true;
+  }
+
   function goToDate(nextDate: string) {
+    if (!leaveEditorDraft()) return;
     navigate({
       to: "/time/$date",
       params: { date: nextDate },
@@ -119,7 +162,7 @@ export function TimePage({ date }: { date: string }) {
   }
 
   function changeTimeView(nextView: "day" | "week") {
-    if (nextView === "week") {
+    if (nextView === "week" && leaveEditorDraft()) {
       void navigate({
         to: "/time/$date",
         params: { date },
@@ -128,7 +171,7 @@ export function TimePage({ date }: { date: string }) {
     }
   }
 
-  function closeModal() {
+  function closeEditor() {
     void navigate({
       to: "/time/$date",
       params: { date },
@@ -139,24 +182,32 @@ export function TimePage({ date }: { date: string }) {
     });
   }
 
-  function openModal(target?: { entryId?: string; timerId?: string }) {
+  /**
+   * Opens an entry, or a new entry on `localDate`, in the editor. Another entry already
+   * in the side panel is saved first when valid; an invalid draft keeps it open.
+   */
+  function openEditor(request: EntryEditorRequest, localDate = date) {
+    const entry = request.timerId ? undefined : (request.entryId ?? "new");
+    if (entry !== undefined && entry === search.entry && localDate === date) {
+      return;
+    }
+    if (!leaveEditorDraft()) return;
+
     void navigate({
       to: "/time/$date",
-      params: { date },
-      search: target?.timerId
-        ? ({
-            entry: target.entryId,
-            timer: target.timerId,
-            view: isWeekView ? "week" : undefined,
-          } as never)
-        : ({
-            entry: target?.entryId ?? "new",
-            view: isWeekView ? "week" : undefined,
-          } as never),
+      params: { date: localDate },
+      search: {
+        entry: request.timerId ? request.entryId : entry,
+        timer: request.timerId,
+        view: isWeekView ? "week" : undefined,
+      } as never,
+      // Switching entries in the panel should not stack history entries.
+      replace: editorTarget !== null,
     });
   }
 
   function openSubmitPage() {
+    if (!leaveEditorDraft()) return;
     void navigate({
       to: "/time/$date/submit",
       params: { date },
@@ -164,69 +215,83 @@ export function TimePage({ date }: { date: string }) {
     });
   }
 
-  function openWeekNewEntry(localDate: string) {
-    void navigate({
-      to: "/time/$date",
-      params: { date: localDate },
-      search: { entry: "new", view: "week" } as never,
-    });
-  }
-
   return (
     <div className={cn("time-page-stack", isWeekView && "is-week-view")}>
-      {isWeekView ? (
-        <WeeklyTimeView
-          anchorDate={date}
-          now={now}
-          weekDates={weekDates}
-          onNewEntry={openWeekNewEntry}
-          onOpenEntry={openModal}
-          onReturnToDay={() => {
-            void navigate({
-              to: "/time/$date",
-              params: { date },
-              search: {
-                view: undefined,
-                entry: undefined,
-                timer: undefined,
-              } as never,
-            });
-          }}
-          onSelectWeek={goToDate}
-          onSubmit={openSubmitPage}
-        />
-      ) : (
-        <>
-          <DayViewerCard
-            date={date}
-            today={today}
+      <div className="time-page-main">
+        {isWeekView ? (
+          <WeeklyTimeView
+            anchorDate={date}
+            now={now}
             weekDates={weekDates}
-            totalLabel="Week total"
-            totalValue={formatClockDuration(weekTotalMs)}
-            getDayValue={(day) =>
-              formatClockDuration(totalsByDate.get(day) ?? 0)
-            }
-            onSelectDate={goToDate}
-            dateScopeControl={
-              <TimeViewScopeMenu value="day" onChange={changeTimeView} />
-            }
-            headerActions={<SubmitWeekButton onClick={openSubmitPage} />}
+            activeEntryId={editingEntry?._id}
+            onNewEntry={(localDate) => openEditor({}, localDate)}
+            onOpenEntry={openEditor}
+            onReturnToDay={() => {
+              if (!leaveEditorDraft()) return;
+              void navigate({
+                to: "/time/$date",
+                params: { date },
+                search: {
+                  view: undefined,
+                  entry: undefined,
+                  timer: undefined,
+                } as never,
+              });
+            }}
+            onSelectWeek={goToDate}
+            onSubmit={openSubmitPage}
           />
-          {/* Below lg the Day viewer strip is hidden, so the button gets its own row. */}
-          <div className="flex justify-end px-3 pt-2 lg:hidden">
-            <SubmitWeekButton onClick={openSubmitPage} />
-          </div>
+        ) : (
+          <>
+            <DayViewerCard
+              date={date}
+              today={today}
+              weekDates={weekDates}
+              totalLabel="Week total"
+              totalValue={formatClockDuration(weekTotalMs)}
+              getDayValue={(day) =>
+                formatClockDuration(totalsByDate.get(day) ?? 0)
+              }
+              onSelectDate={goToDate}
+              dateScopeControl={
+                <TimeViewScopeMenu value="day" onChange={changeTimeView} />
+              }
+              headerActions={<SubmitWeekButton onClick={openSubmitPage} />}
+            />
+            {/* Below lg the Day viewer strip is hidden, so the button gets its own row. */}
+            <div className="flex justify-end px-3 pt-2 lg:hidden">
+              <SubmitWeekButton onClick={openSubmitPage} />
+            </div>
 
-          <TimerPanel date={date} onOpenEntry={openModal} />
-        </>
-      )}
+            <TimerPanel
+              date={date}
+              activeEntryId={editingEntry?._id}
+              onOpenEntry={openEditor}
+            />
+          </>
+        )}
+      </div>
 
-      {modalOpen ? (
+      {editorTarget && !useEntryDialog ? (
+        <SidePanel
+          contentKey={editorKey}
+          className="time-entry-side-panel"
+          aria-label="Time entry editor"
+        >
+          <TimeEntryEditorForm
+            key={editorKey}
+            ref={editorFormRef}
+            target={editorTarget}
+            onClose={closeEditor}
+          />
+        </SidePanel>
+      ) : null}
+      {search.timer || (editorTarget && useEntryDialog) ? (
         <TimeEntryModal
           date={date}
-          entryId={modalEntryId}
-          timerId={modalTimerId}
-          onClose={closeModal}
+          entryId={editingEntry?._id}
+          timerId={search.timer}
+          onClose={closeEditor}
         />
       ) : null}
     </div>

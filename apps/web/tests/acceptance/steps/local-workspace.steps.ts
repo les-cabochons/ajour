@@ -318,7 +318,7 @@ When("I continue the second entry", async ({ page }) => {
 When("I start a fresh timer from the Time page", async ({ page }) => {
   await page.goto("/time/today?entry=new");
   const switchTimer = page.getByRole("button", {
-    name: "Switch timer",
+    name: "Switch",
     exact: true,
   });
   await expect(switchTimer).toBeEnabled();
@@ -1109,13 +1109,7 @@ When(
         .click();
     }
     await page.getByLabel("Note", { exact: true }).fill("Changed note");
-    if (editor === "Day") {
-      await page
-        .getByRole("columnheader", { name: "Notes", exact: true })
-        .click();
-    } else {
-      await page.getByRole("button", { name: "Save", exact: true }).click();
-    }
+    await page.getByRole("button", { name: "Save", exact: true }).click();
   },
 );
 
