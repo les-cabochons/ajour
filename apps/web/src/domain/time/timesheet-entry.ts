@@ -459,3 +459,33 @@ export function reorderTimesheetEntries(
 
   return { ...state, timesheetEntries };
 }
+
+/**
+ * The entry C continues when no entry has focus: the top entry of the latest
+ * day up to `today`. Within a day the top entry has the highest `committedAt`,
+ * the same order the Day view shows. `excludeEntryId` skips the entry that is
+ * already running.
+ */
+export function selectMostRecentTimesheetEntry(
+  entries: readonly LocalTimesheetEntry[],
+  today: string,
+  excludeEntryId?: string,
+): LocalTimesheetEntry | undefined {
+  let mostRecent: LocalTimesheetEntry | undefined;
+  for (const entry of entries) {
+    if (entry.localDate > today || entry._id === excludeEntryId) {
+      continue;
+    }
+
+    if (
+      !mostRecent ||
+      entry.localDate > mostRecent.localDate ||
+      (entry.localDate === mostRecent.localDate &&
+        entry.committedAt > mostRecent.committedAt)
+    ) {
+      mostRecent = entry;
+    }
+  }
+
+  return mostRecent;
+}

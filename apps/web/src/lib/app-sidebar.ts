@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useState, useSyncExternalStore } from "react";
+import { useCallback, useState, useSyncExternalStore } from "react";
 import { APP_SIDEBAR_EXPANDED_MIN_WIDTH } from "@/lib/breakpoints";
+import { useShortcut } from "@/lib/shortcut-handlers";
 
 /**
  * The desktop app sidebar is either expanded (200px, logo and labels) or a
@@ -18,8 +19,6 @@ export const APP_SIDEBAR_STORAGE_KEY = "ajour.app-sidebar";
 const RAIL_FORCED_QUERY = `(width < ${APP_SIDEBAR_EXPANDED_MIN_WIDTH}px)`;
 
 type PreferenceStorage = Pick<Storage, "getItem" | "setItem">;
-
-export type ShortcutPlatform = "mac" | "other";
 
 /** Unknown or missing values fall back to the expanded sidebar. */
 export function parseAppSidebarPreference(
@@ -60,33 +59,6 @@ export function resolveAppSidebarState(
   return isRailForced ? "rail" : preference;
 }
 
-/** Cmd+B on macOS, Ctrl+B elsewhere. Ctrl+B on macOS stays the text "back one character" binding. */
-export function isAppSidebarShortcut(
-  event: Pick<
-    KeyboardEvent,
-    "key" | "metaKey" | "ctrlKey" | "shiftKey" | "altKey" | "repeat"
-  >,
-  platform: ShortcutPlatform,
-) {
-  const commandKey = platform === "mac" ? event.metaKey : event.ctrlKey;
-  const otherCommandKey = platform === "mac" ? event.ctrlKey : event.metaKey;
-  return (
-    commandKey &&
-    !otherCommandKey &&
-    !event.shiftKey &&
-    !event.altKey &&
-    !event.repeat &&
-    event.key.toLowerCase() === "b"
-  );
-}
-
-export function getShortcutPlatform(): ShortcutPlatform {
-  return typeof navigator !== "undefined" &&
-    /Mac|iPhone|iPad/.test(navigator.userAgent)
-    ? "mac"
-    : "other";
-}
-
 function getLocalStorage(): Storage | undefined {
   try {
     return window.localStorage;
@@ -107,8 +79,9 @@ function getIsRailForced() {
 
 /**
  * Owns the app sidebar state: the saved preference, the narrow-window rail,
- * and the Cmd/Ctrl+B shortcut. Toggling does nothing while the rail is forced,
- * because the saved preference would change without any visible effect.
+ * and the handler for the Cmd/Ctrl+B shortcut registered in `lib/shortcuts.ts`.
+ * Toggling does nothing while the rail is forced, because the saved preference
+ * would change without any visible effect.
  */
 export function useAppSidebar() {
   const [preference, setPreference] = useState(() =>
@@ -131,18 +104,7 @@ export function useAppSidebar() {
     writeAppSidebarPreference(getLocalStorage(), next);
   }, [isRailForced, preference]);
 
-  useEffect(() => {
-    const platform = getShortcutPlatform();
-    function handleKeyDown(event: KeyboardEvent) {
-      if (isAppSidebarShortcut(event, platform)) {
-        event.preventDefault();
-        toggle();
-      }
-    }
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [toggle]);
+  useShortcut("app.toggle-sidebar", toggle, "app");
 
   return { state, isRailForced, toggle };
 }

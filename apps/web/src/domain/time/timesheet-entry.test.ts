@@ -10,6 +10,7 @@ import {
   normalizeTimesheetEntry,
   reorderTimesheetEntries,
   saveManualTimesheetEntry,
+  selectMostRecentTimesheetEntry,
   updateTimesheetEntry,
 } from "@/domain/time/timesheet-entry";
 
@@ -624,5 +625,43 @@ describe("timesheet entry lifecycle", () => {
       "entry-2",
       "entry-1",
     ]);
+  });
+});
+
+describe("selectMostRecentTimesheetEntry", () => {
+  function savedEntry(_id: string, localDate: string, committedAt: number) {
+    return {
+      _id,
+      localDate,
+      label: "",
+      durationMs: 60_000,
+      sourceBlockIds: [],
+      committedAt,
+    };
+  }
+
+  it("picks the top entry of the latest day up to today", () => {
+    const entries = [
+      savedEntry("monday-top", "2026-10-05", 50),
+      savedEntry("tuesday-bottom", "2026-10-06", 10),
+      savedEntry("tuesday-top", "2026-10-06", 20),
+      savedEntry("next-week", "2026-10-13", 99),
+    ];
+
+    expect(selectMostRecentTimesheetEntry(entries, "2026-10-11")?._id).toBe(
+      "tuesday-top",
+    );
+  });
+
+  it("skips the running entry and returns nothing without entries", () => {
+    const entries = [
+      savedEntry("older", "2026-10-05", 10),
+      savedEntry("running", "2026-10-06", 20),
+    ];
+
+    expect(
+      selectMostRecentTimesheetEntry(entries, "2026-10-11", "running")?._id,
+    ).toBe("older");
+    expect(selectMostRecentTimesheetEntry([], "2026-10-11")).toBeUndefined();
   });
 });

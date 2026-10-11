@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-router";
 import { lazy, Suspense, type ReactNode } from "react";
 import { AppShell } from "@/features/layout/app-shell";
+import { ShortcutProvider } from "@/lib/shortcut-handlers";
 import { todayIsoDate } from "@/lib/utils";
 
 const TimePage = lazy(async () => {
@@ -76,14 +77,14 @@ const RouterDevtools = import.meta.env.DEV
 
 function RootComponent() {
   return (
-    <>
+    <ShortcutProvider>
       <Outlet />
       {RouterDevtools ? (
         <Suspense fallback={null}>
           <RouterDevtools />
         </Suspense>
       ) : null}
-    </>
+    </ShortcutProvider>
   );
 }
 

@@ -24,6 +24,23 @@ Feature: Open the local time workspace
     When I widen the app back to a desktop width
     Then the app sidebar is expanded
 
+  Scenario: Use single-key shortcuts outside text fields
+    Given I have no saved Ajour workspace
+    When I open today's time workspace
+    Then the Time workspace is visible
+    When I press the "n" key
+    Then the entry editor is open
+    When I type "gb?" in the entry note
+    Then the entry note reads "gb?"
+    And the Time workspace is visible
+    When I press the "Escape" key
+    And I press the "g" key
+    And I press the "b" key
+    Then the Backlog workspace is open
+    When I press the "?" key
+    And I search the shortcut overlay for "sidebar"
+    Then the shortcut overlay lists only "Show or hide the sidebar"
+
   Scenario: Submit part of a week from the submit page
     Given I have a week of saved entries
     When I open the submit page from the Week header

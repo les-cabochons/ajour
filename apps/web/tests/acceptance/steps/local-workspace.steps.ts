@@ -272,6 +272,28 @@ When("I press the sidebar shortcut", async ({ page }) => {
   await page.keyboard.press(isMac ? "Meta+b" : "Control+b");
 });
 
+When("I press the {string} key", async ({ page }, key: string) => {
+  await page.keyboard.press(key);
+});
+
+When("I type {string} in the entry note", async ({ page }, text: string) => {
+  // Typing key by key sends the keydown events that shortcuts listen for.
+  await page
+    .getByRole("complementary", { name: "Time entry editor" })
+    .getByLabel("Note")
+    .pressSequentially(text);
+});
+
+When(
+  "I search the shortcut overlay for {string}",
+  async ({ page }, query: string) => {
+    await page
+      .getByRole("dialog", { name: "Keyboard shortcuts" })
+      .getByRole("searchbox", { name: "Search shortcuts" })
+      .fill(query);
+  },
+);
+
 When("I open Time from the app sidebar", async ({ page }) => {
   const timeLink = page
     .getByRole("navigation", { name: "Primary navigation" })
@@ -418,6 +440,39 @@ Then(
       page.getByText(project, { exact: true }).first(),
     ).toBeVisible();
     await expect(page.getByText(task, { exact: true }).first()).toBeVisible();
+  },
+);
+
+Then("the entry editor is open", async ({ page }) => {
+  await expect(
+    page.getByRole("complementary", { name: "Time entry editor" }),
+  ).toBeVisible();
+});
+
+Then("the entry note reads {string}", async ({ page }, text: string) => {
+  await expect(
+    page
+      .getByRole("complementary", { name: "Time entry editor" })
+      .getByLabel("Note"),
+  ).toHaveValue(text);
+  // "?" typed in the note must not open the shortcut overlay.
+  await expect(
+    page.getByRole("dialog", { name: "Keyboard shortcuts" }),
+  ).toHaveCount(0);
+});
+
+Then("the Backlog workspace is open", async ({ page }) => {
+  await expect(page).toHaveURL(/\/backlog$/);
+});
+
+Then(
+  "the shortcut overlay lists only {string}",
+  async ({ page }, label: string) => {
+    const items = page
+      .getByRole("dialog", { name: "Keyboard shortcuts" })
+      .getByRole("listitem");
+    await expect(items).toHaveCount(1);
+    await expect(items).toContainText(label);
   },
 );
 
