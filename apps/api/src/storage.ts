@@ -28,6 +28,8 @@ interface StoredConnection {
   connectedAt: number;
   lastSyncAt?: number;
   lastError?: string;
+  /** When the sync that set `lastError` failed. */
+  lastErrorAt?: number;
 }
 
 interface AppApiStateV1 {
@@ -93,6 +95,16 @@ interface AppApiStateV7 {
 }
 
 type AppApiState = AppApiStateV7;
+
+/**
+ * What one dismissal removed from review: the staged items as they were, and
+ * the dismissed keys it added. Keys dismissed before it stay dismissed on Undo.
+ */
+interface ImportDismissal {
+  token: string;
+  items: ConnectorImportCandidate[];
+  addedKeys: string[];
+}
 
 interface StageImportItemsResult {
   queuedCount: number;
@@ -269,6 +281,7 @@ function buildConnectionSummary(
     connectedAt: connection.connectedAt,
     lastSyncAt: connection.lastSyncAt,
     lastError: connection.lastError,
+    lastErrorAt: connection.lastErrorAt,
     pendingImportCount: connectionItems.length,
     selectedImportCount: connectionItems.filter((item) => item.selected).length,
     configSummary: connection.configSummary,
@@ -515,6 +528,11 @@ export class AppApiStorage {
   private readonly statePath: string;
   private cache?: AppApiState;
   private mutationQueue: Promise<unknown> = Promise.resolve();
+  /**
+   * The last Sync review dismissal, for Undo. Only the last one can be undone,
+   * and it lives in memory, so it does not survive a restart.
+   */
+  private lastDismissal?: ImportDismissal;
 
   constructor(statePath = process.env.AJOUR_APP_API_STATE_PATH) {
     this.statePath =
@@ -705,6 +723,7 @@ export class AppApiStorage {
         connectedAt: existing?.connectedAt ?? Date.now(),
         lastSyncAt: existing?.lastSyncAt,
         lastError: undefined,
+        lastErrorAt: undefined,
       };
 
       const nextState: AppApiState = {
@@ -856,6 +875,7 @@ export class AppApiStorage {
         ...connection,
         lastSyncAt: timestamp,
         lastError: undefined,
+        lastErrorAt: undefined,
       };
       const nextState = this.replaceConnection(state, nextConnection);
 
@@ -883,6 +903,7 @@ export class AppApiStorage {
       const nextConnection = {
         ...connection,
         lastError: message,
+        lastErrorAt: Date.now(),
       };
       const nextState = this.replaceConnection(state, nextConnection);
 
@@ -946,85 +967,154 @@ export class AppApiStorage {
     });
   }
 
-  async dismissImports(ids: string[]): Promise<number> {
-    return this.mutate(async (state) => {
-      const idSet = new Set(ids);
-      const itemsById = new Map(
-        state.stagedImports.map((item) => [item.id, item] as const),
-      );
-      const childrenByParentSourceId = new Map<
-        string,
-        ConnectorImportCandidate[]
-      >();
+  /**
+   * Removes staged items from review, with their subitems and context parents,
+   * and keeps their keys so later syncs skip them. Returns a token for
+   * `restoreDismissedImports` when anything was dismissed.
+   */
+  async dismissImports(
+    ids: string[],
+  ): Promise<{ dismissedCount: number; undoToken?: string }> {
+    const dismissal = await this.mutate<ImportDismissal | undefined>(
+      async (state) => {
+        const idSet = new Set(ids);
+        const itemsById = new Map(
+          state.stagedImports.map((item) => [item.id, item] as const),
+        );
+        const childrenByParentSourceId = new Map<
+          string,
+          ConnectorImportCandidate[]
+        >();
 
-      for (const item of state.stagedImports) {
-        if (!item.parentSourceId) {
-          continue;
+        for (const item of state.stagedImports) {
+          if (!item.parentSourceId) {
+            continue;
+          }
+
+          const siblings =
+            childrenByParentSourceId.get(item.parentSourceId) ?? [];
+          siblings.push(item);
+          childrenByParentSourceId.set(item.parentSourceId, siblings);
         }
 
-        const siblings =
-          childrenByParentSourceId.get(item.parentSourceId) ?? [];
-        siblings.push(item);
-        childrenByParentSourceId.set(item.parentSourceId, siblings);
-      }
+        const dismissedIds = new Set<string>();
+        const queue = [...idSet];
+        while (queue.length > 0) {
+          const nextId = queue.shift();
+          if (!nextId || dismissedIds.has(nextId)) {
+            continue;
+          }
 
-      const dismissedIds = new Set<string>();
-      const queue = [...idSet];
-      while (queue.length > 0) {
-        const nextId = queue.shift();
-        if (!nextId || dismissedIds.has(nextId)) {
-          continue;
-        }
+          const item = itemsById.get(nextId);
+          if (!item) {
+            continue;
+          }
 
-        const item = itemsById.get(nextId);
-        if (!item) {
-          continue;
-        }
+          dismissedIds.add(nextId);
 
-        dismissedIds.add(nextId);
+          const childItems = childrenByParentSourceId.get(item.sourceId) ?? [];
+          for (const child of childItems) {
+            if (!dismissedIds.has(child.id)) {
+              queue.push(child.id);
+            }
+          }
 
-        const childItems = childrenByParentSourceId.get(item.sourceId) ?? [];
-        for (const child of childItems) {
-          if (!dismissedIds.has(child.id)) {
-            queue.push(child.id);
+          if (item.parentSourceId) {
+            const parent = state.stagedImports.find(
+              (candidate) =>
+                candidate.connectionId === item.connectionId &&
+                candidate.sourceId === item.parentSourceId,
+            );
+            if (parent && !parent.selectable && !dismissedIds.has(parent.id)) {
+              queue.push(parent.id);
+            }
           }
         }
 
-        if (item.parentSourceId) {
-          const parent = state.stagedImports.find(
-            (candidate) =>
-              candidate.connectionId === item.connectionId &&
-              candidate.sourceId === item.parentSourceId,
-          );
-          if (parent && !parent.selectable && !dismissedIds.has(parent.id)) {
-            queue.push(parent.id);
+        if (dismissedIds.size === 0) {
+          return {
+            nextState: state,
+            result: undefined,
+          };
+        }
+
+        const dismissedImportKeys = new Set(state.dismissedImportKeys);
+        const items: ConnectorImportCandidate[] = [];
+        const addedKeys: string[] = [];
+        for (const item of state.stagedImports) {
+          if (dismissedIds.has(item.id)) {
+            items.push(item);
+            const key = importKey(item);
+            if (!dismissedImportKeys.has(key)) {
+              dismissedImportKeys.add(key);
+              addedKeys.push(key);
+            }
           }
         }
-      }
 
-      if (dismissedIds.size === 0) {
         return {
-          nextState: state,
-          result: 0,
+          nextState: {
+            ...state,
+            stagedImports: state.stagedImports.filter(
+              (item) => !dismissedIds.has(item.id),
+            ),
+            dismissedImportKeys: Array.from(dismissedImportKeys),
+          },
+          result: { token: `dismissal_${randomUUID()}`, items, addedKeys },
         };
+      },
+    );
+
+    if (!dismissal) {
+      return { dismissedCount: 0 };
+    }
+
+    this.lastDismissal = dismissal;
+    return {
+      dismissedCount: dismissal.items.length,
+      undoToken: dismissal.token,
+    };
+  }
+
+  /**
+   * Undoes the dismissal that returned `token`, if it is still the last one.
+   * The items return to the review queue as they were. `stale` means one of
+   * them was staged again or its dismissal was cleared since, and nothing
+   * changes.
+   */
+  async restoreDismissedImports(
+    token: string,
+  ): Promise<"restored" | "stale" | "expired"> {
+    const dismissal = this.lastDismissal;
+    if (dismissal?.token !== token) {
+      return "expired";
+    }
+    this.lastDismissal = undefined;
+
+    return this.mutate((state) => {
+      const dismissedKeys = new Set(state.dismissedImportKeys);
+      const stagedKeys = new Set(state.stagedImports.map(importKey));
+      const unchanged = dismissal.items.every(
+        (item) =>
+          dismissedKeys.has(importKey(item)) &&
+          !stagedKeys.has(importKey(item)),
+      );
+      if (!unchanged) {
+        return { nextState: state, result: "stale" as const };
       }
 
-      const dismissedImportKeys = new Set(state.dismissedImportKeys);
-      for (const item of state.stagedImports) {
-        if (dismissedIds.has(item.id)) {
-          dismissedImportKeys.add(importKey(item));
-        }
-      }
-
+      const addedKeys = new Set(dismissal.addedKeys);
       return {
         nextState: {
           ...state,
-          stagedImports: state.stagedImports.filter(
-            (item) => !dismissedIds.has(item.id),
+          stagedImports: [...state.stagedImports, ...dismissal.items].sort(
+            compareImports,
           ),
-          dismissedImportKeys: Array.from(dismissedImportKeys),
+          dismissedImportKeys: state.dismissedImportKeys.filter(
+            (key) => !addedKeys.has(key),
+          ),
         },
-        result: dismissedIds.size,
+        result: "restored" as const,
       };
     });
   }

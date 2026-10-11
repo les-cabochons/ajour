@@ -723,6 +723,14 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                         Last sync:{" "}
                         {formatConnectorTimestamp(connection.lastSyncAt)}
                       </span>
+                      {connection.lastError ? (
+                        <span className="text-destructive">
+                          Last sync failed
+                          {connection.lastErrorAt
+                            ? `: ${formatConnectorTimestamp(connection.lastErrorAt)}`
+                            : null}
+                        </span>
+                      ) : null}
                       {!connection.autoSync ? (
                         <span>
                           {connection.pendingImportCount} staged ·{" "}

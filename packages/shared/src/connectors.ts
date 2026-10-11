@@ -131,6 +131,8 @@ export const connectorConnectionSummarySchema = z.object({
   connectedAt: z.number().int().positive(),
   lastSyncAt: z.number().int().positive().optional(),
   lastError: z.string().max(1000).optional(),
+  /** When the sync that set `lastError` failed. */
+  lastErrorAt: z.number().int().positive().optional(),
   pendingImportCount: z.number().int().nonnegative(),
   selectedImportCount: z.number().int().nonnegative(),
   configSummary: connectorSummaryValuesSchema,
@@ -415,9 +417,29 @@ export type ConnectorImportDismissRequest = z.infer<
 
 export const connectorImportDismissResponseSchema = z.object({
   dismissedCount: z.number().int().nonnegative(),
+  /** Present when items were dismissed. Undo passes it back to restore them. */
+  undoToken: z.string().min(1).max(200).optional(),
 });
 export type ConnectorImportDismissResponse = z.infer<
   typeof connectorImportDismissResponseSchema
+>;
+
+export const connectorImportRestoreRequestSchema = z.object({
+  undoToken: z.string().min(1).max(200),
+});
+export type ConnectorImportRestoreRequest = z.infer<
+  typeof connectorImportRestoreRequestSchema
+>;
+
+/**
+ * `stale` means a dismissed item was staged again or un-dismissed since.
+ * `expired` means a later dismissal replaced this one, or the API restarted.
+ */
+export const connectorImportRestoreResponseSchema = z.object({
+  result: z.enum(["restored", "stale", "expired"]),
+});
+export type ConnectorImportRestoreResponse = z.infer<
+  typeof connectorImportRestoreResponseSchema
 >;
 
 export const connectorImportCommitResponseSchema = z.object({

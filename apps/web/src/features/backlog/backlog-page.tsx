@@ -20,16 +20,6 @@ import {
   ObjectContextMenu,
 } from "@/components/object-actions-menu";
 import { SidePanel } from "@/components/side-panel";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -85,6 +75,7 @@ import {
   buildWorkItemTimerComment,
   parseWorkItemReference,
 } from "@/features/backlog/work-item-timer-comment";
+import { offerUndo } from "@/features/feedback/undo-toast";
 import type { NewTimeEntryValues } from "@/features/time/time-entry-editor-form";
 import { TimeEntryModal } from "@/features/timer/time-entry-modal";
 import {
@@ -134,13 +125,6 @@ type BacklogDragState = {
   minTop: number;
   width: number;
   height: number;
-};
-
-/** A Delete waiting for confirmation. Deleting an item removes its subitems too. */
-type PendingBacklogDelete = {
-  workItemId: string;
-  title: string;
-  subitemCount: number;
 };
 
 /** What the item editor shows: a saved item, or a new item, under a parent for a subitem. */
@@ -236,8 +220,6 @@ export function BacklogPage() {
   const [expandedParentIds, setExpandedParentIds] = useState<
     ReadonlySet<string>
   >(() => new Set());
-  const [pendingDelete, setPendingDelete] =
-    useState<PendingBacklogDelete | null>(null);
   /** Prefill of the New entry… dialog, or null while it is closed. */
   const [newEntryValues, setNewEntryValues] =
     useState<NewTimeEntryValues | null>(null);
@@ -634,14 +616,19 @@ export function BacklogPage() {
     openEditor({ kind: "edit", workItemId: workItem._id });
   }
 
-  function confirmDeleteWorkItem() {
-    if (!pendingDelete) {
-      return;
-    }
-
+  /** Deletes an item and its subitems at once, with Undo in a toast. */
+  function deleteWorkItem(workItem: LocalWorkItem) {
+    const subitemCount = isSubtaskWorkItem(workItem)
+      ? 0
+      : getChildItems(workItem).length;
     // The editor closes itself once its item, or its new subitem's parent, is gone.
-    localStore.deleteWorkItem(pendingDelete.workItemId);
-    setPendingDelete(null);
+    offerUndo(localStore.deleteWorkItem(workItem._id), {
+      title:
+        subitemCount > 0
+          ? `Backlog item and ${subitemCount} ${subitemCount === 1 ? "subitem" : "subitems"} deleted`
+          : "Backlog item deleted",
+      subject: "backlog item",
+    });
   }
 
   /** Runs an action from a row. On the item in the editor, the draft is saved first. */
@@ -707,19 +694,16 @@ export function BacklogPage() {
         return;
       case "archive":
         closeEditorOf(workItem._id);
-        localStore.archiveWorkItem(workItem._id);
+        offerUndo(localStore.archiveWorkItem(workItem._id), {
+          title: "Backlog item archived",
+          subject: "backlog item",
+        });
         return;
       case "restore":
         localStore.restoreWorkItem(workItem._id);
         return;
       case "delete":
-        setPendingDelete({
-          workItemId: workItem._id,
-          title: workItem.title,
-          subitemCount: isSubtaskWorkItem(workItem)
-            ? 0
-            : getChildItems(workItem).length,
-        });
+        deleteWorkItem(workItem);
         return;
     }
   }
@@ -1407,27 +1391,6 @@ export function BacklogPage() {
           onClose={() => setNewEntryValues(null)}
         />
       ) : null}
-      <AlertDialog
-        open={pendingDelete !== null}
-        onOpenChange={(open) => !open && setPendingDelete(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>Delete this backlog item?</AlertDialogTitle>
-            <AlertDialogDescription>
-              {pendingDelete && pendingDelete.subitemCount > 0
-                ? `"${pendingDelete.title}" and its ${pendingDelete.subitemCount} ${pendingDelete.subitemCount === 1 ? "subitem" : "subitems"} will be deleted. This can't be undone.`
-                : `"${pendingDelete?.title ?? ""}" will be deleted. This can't be undone.`}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction variant="danger" onClick={confirmDeleteWorkItem}>
-              Delete
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
     </div>
   );
 }

@@ -492,6 +492,48 @@ When("I start the timer on the Backlog item", async ({ page }) => {
   await switchTimer.click();
 });
 
+When("I delete the Backlog item with its subitem", async ({ page }) => {
+  await page.goto("/backlog");
+  await page
+    .getByRole("row")
+    .filter({ hasText: "Backlog switch item" })
+    .click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Delete (and 1 subitem)" }).click();
+});
+
+Then("the Backlog item is gone and a toast offers Undo", async ({ page }) => {
+  // Delete happens at once, without a confirmation dialog.
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await expect(
+    page.getByRole("row").filter({ hasText: "Backlog switch item" }),
+  ).toHaveCount(0);
+  const toasts = page.getByRole("region", { name: "Notifications" });
+  await expect(toasts).toContainText("Backlog item and 1 subitem deleted");
+  await expect(toasts.getByRole("button", { name: "Undo" })).toBeVisible();
+});
+
+Then("the Backlog item and its subitem are back in place", async ({ page }) => {
+  await expect(
+    page.getByRole("row").filter({ hasText: "Backlog switch item" }),
+  ).toBeVisible();
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const state = JSON.parse(
+          window.localStorage.getItem("ajour.local-state.v2") ?? "null",
+        );
+        return state?.workItems?.map(
+          (workItem: { _id: string }) => workItem._id,
+        );
+      }),
+    )
+    .toEqual([
+      "work-item-acceptance",
+      "work-item-child-acceptance",
+      "work-item-second-root",
+    ]);
+});
+
 When("I start the timer on the Backlog item from mobile", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/backlog");

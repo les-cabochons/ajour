@@ -13,6 +13,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { offerUndo } from "@/features/feedback/undo-toast";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 import { todayIsoDate } from "@/lib/utils";
@@ -166,7 +167,10 @@ export function SettingsExportPage() {
   }
 
   function handleDismissDraft(draftId: string) {
-    localStore.dismissTimesheetImportDraft(draftId);
+    offerUndo(localStore.dismissTimesheetImportDraft(draftId), {
+      title: "Draft dismissed",
+      subject: "draft",
+    });
   }
 
   function handleAddAllReady() {
@@ -174,7 +178,10 @@ export function SettingsExportPage() {
   }
 
   function handleDismissAll() {
-    localStore.dismissAllTimesheetImportDrafts();
+    offerUndo(localStore.dismissAllTimesheetImportDrafts(), {
+      title: `${pendingImportCount} ${pendingImportCount === 1 ? "draft" : "drafts"} dismissed`,
+      subject: "drafts",
+    });
   }
 
   return (

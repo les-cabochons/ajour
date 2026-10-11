@@ -20,6 +20,7 @@ import {
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SidebarProvider } from "@/components/ui/sidebar";
+import { showErrorToast } from "@/components/ui/toast";
 import {
   AppNavigationSidebar,
   isAppNavigationItemActive,
@@ -136,11 +137,18 @@ function CompactTimeDatePicker({
   );
 }
 
+/**
+ * Syncs connections with automatic sync on when they are due. A failure shows
+ * one error toast. A due connection retries on every poll, so the same failure
+ * again shows nothing new until the connection syncs or fails differently.
+ */
 function ConnectorAutoSyncScheduler() {
   const loopStateRef = useRef({
     cancelled: false,
     running: false,
     timeoutId: undefined as number | undefined,
+    /** The last failure shown per connection, by `pluginId:connectionId`. */
+    shownFailures: new Map<string, string>(),
   });
 
   useEffect(() => {
@@ -196,17 +204,28 @@ function ConnectorAutoSyncScheduler() {
             break;
           }
 
+          const failureKey = `${dueConnection.pluginId}:${dueConnection.connection.id}`;
           try {
             await syncConnectorConnection(
               dueConnection.pluginId,
               dueConnection.connection.id,
               { trigger: "auto" },
             );
+            loopState.shownFailures.delete(failureKey);
           } catch (error) {
             console.error(
               `Connector auto sync failed for "${dueConnection.pluginId}".`,
               error,
             );
+            const message =
+              error instanceof Error ? error.message : "Unknown error";
+            if (loopState.shownFailures.get(failureKey) !== message) {
+              loopState.shownFailures.set(failureKey, message);
+              showErrorToast({
+                title: `${dueConnection.connection.label} sync failed`,
+                description: message,
+              });
+            }
           }
         }
       } catch (error) {
