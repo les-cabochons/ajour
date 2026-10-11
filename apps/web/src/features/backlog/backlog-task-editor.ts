@@ -1,7 +1,12 @@
 import type { LocalWorkItem, LocalWorkItemDraft } from "@/domain/local-state";
 import type { WorkItemPatch } from "@/domain/backlog/work-item-transitions";
-import { getDirectChildWorkItems } from "@/domain/backlog/work-item-hierarchy";
+import { isSubtaskWorkItem } from "@/domain/backlog/work-item-hierarchy";
 
+/**
+ * The editor model for backlog items. The side panel and the narrow dialog render the
+ * same form; this module owns its draft: seeding, parsing, validation, the patch or new
+ * item that Save writes, and the reset values the form offers.
+ */
 export interface BacklogTaskEditorFields {
   title: string;
   note: string;
@@ -25,6 +30,63 @@ export interface BacklogTaskEditorValidation {
   completedEstimateError: string | null;
   canSave: boolean;
 }
+
+/** What the editor works on: a saved item, or a new item, under `parent` for a subitem. */
+export type BacklogTaskEditorTarget =
+  | { kind: "edit"; workItem: LocalWorkItem }
+  | { kind: "create"; parent?: LocalWorkItem };
+
+export const BACKLOG_ESTIMATE_FIELD_KEYS = [
+  "originalEstimateHours",
+  "remainingEstimateHours",
+  "completedEstimateHours",
+] as const;
+
+export type BacklogEstimateFieldKey =
+  (typeof BACKLOG_ESTIMATE_FIELD_KEYS)[number];
+
+/** The sum of a parent's subitem estimates. Missing estimates count as 0. */
+export type SubitemEstimateTotals = Record<BacklogEstimateFieldKey, number>;
+
+/** What a draft means right now: validation, changes, and the resets the form offers. */
+export interface BacklogTaskEditorState {
+  isNew: boolean;
+  isSubitem: boolean;
+  /** The item came from a connector, so it has synced values to reset to. */
+  isSynced: boolean;
+  validation: BacklogTaskEditorValidation;
+  hasChanges: boolean;
+  /**
+   * Field values for "Reset to subitem total", keyed by the estimates that differ from
+   * the total. Empty for items without subitems.
+   */
+  estimateResets: Partial<Record<BacklogEstimateFieldKey, string>>;
+  /** The synced priority to restore, or `null` when there is nothing to reset. */
+  priorityReset: string | null;
+  /** The synced status to restore, or `null` when there is nothing to reset. */
+  statusReset: string | null;
+  /** The new item Save creates, when the target is new and the draft is valid. */
+  draft: LocalWorkItemDraft | null;
+  /** The changed fields Save writes, when the target is saved and the draft is valid. */
+  patch: WorkItemPatch | null;
+}
+
+/**
+ * What leaving a draft writes. `unchanged` writes nothing, `create` adds `draft`,
+ * `update` applies `patch`, and `invalid` keeps the editor open with `error` shown.
+ */
+export type BacklogTaskDraftCommit =
+  | { kind: "unchanged" }
+  | { kind: "create"; draft: LocalWorkItemDraft }
+  | { kind: "update"; patch: WorkItemPatch }
+  | { kind: "invalid"; error: string };
+
+/**
+ * Why the draft is being left. `save` is the Save button or its keys. `switch` is the
+ * side panel loading another item or running an action, where an untouched new item
+ * is simply dropped.
+ */
+export type BacklogTaskDraftCommitReason = "save" | "switch";
 
 export const EMPTY_BACKLOG_TASK_EDITOR_FIELDS: BacklogTaskEditorFields = {
   title: "",
@@ -55,13 +117,6 @@ export function parsePriorityInput(value: string) {
   }
 
   return parsedValue;
-}
-
-export function isSamePriorityValue(
-  left: number | undefined | null,
-  right: number | undefined,
-) {
-  return left === right;
 }
 
 export function formatEstimateInput(value?: number) {
@@ -112,6 +167,48 @@ export function createBacklogTaskEditorFields(
     ...fields,
     ...overrides,
   };
+}
+
+/**
+ * Seeds the draft for a target. A saved item starts from its own values. A new subitem
+ * starts under its parent with the parent's project and task.
+ */
+export function createBacklogTaskEditorSeed(
+  target: BacklogTaskEditorTarget,
+): BacklogTaskEditorFields {
+  if (target.kind === "edit") {
+    return createBacklogTaskEditorFields(target.workItem);
+  }
+
+  if (!target.parent) {
+    return EMPTY_BACKLOG_TASK_EDITOR_FIELDS;
+  }
+
+  return createBacklogTaskEditorFields(undefined, {
+    parentWorkItemId: target.parent._id,
+    projectId: target.parent.projectId ?? "",
+    taskId: target.parent.taskId ?? "",
+  });
+}
+
+export function sumSubitemEstimates(
+  subitems: LocalWorkItem[],
+): SubitemEstimateTotals {
+  return subitems.reduce(
+    (totals, subitem) => ({
+      originalEstimateHours:
+        totals.originalEstimateHours + (subitem.originalEstimateHours ?? 0),
+      remainingEstimateHours:
+        totals.remainingEstimateHours + (subitem.remainingEstimateHours ?? 0),
+      completedEstimateHours:
+        totals.completedEstimateHours + (subitem.completedEstimateHours ?? 0),
+    }),
+    {
+      originalEstimateHours: 0,
+      remainingEstimateHours: 0,
+      completedEstimateHours: 0,
+    },
+  );
 }
 
 export function validateBacklogTaskEditor(
@@ -188,47 +285,62 @@ function parseEditorEstimates(fields: BacklogTaskEditorFields) {
   };
 }
 
+/**
+ * Builds the patch for a saved item from the fields the user changed. Unchanged fields
+ * stay out of the patch, so saving never rewrites a note, title or precise estimate the
+ * user did not touch. Returns `null` when a changed field does not parse.
+ */
 export function buildBacklogTaskPatch(
   workItem: LocalWorkItem,
   fields: BacklogTaskEditorFields,
-  options: {
-    isSubtask: boolean;
-    preserveTitle?: boolean;
-    includeHierarchy?: boolean;
-    includeRetention?: boolean;
-  },
+  options: { isSubtask: boolean },
 ): WorkItemPatch | null {
-  const title = fields.title.trim();
-  if (!title && !options.preserveTitle) {
-    return null;
+  const saved = createBacklogTaskEditorFields(workItem);
+  const patch: WorkItemPatch = {};
+
+  if (fields.title !== saved.title) {
+    const title = fields.title.trim();
+    if (!title) {
+      return null;
+    }
+    patch.title = title;
   }
 
-  const priority = parsePriorityInput(fields.priority);
-  if (!options.isSubtask && priority === null) {
-    return null;
+  if (fields.note !== saved.note) {
+    patch.note = fields.note.trim() || undefined;
   }
 
-  const estimates = parseEditorEstimates(fields);
-  if (!estimates) {
-    return null;
+  if (!options.isSubtask && fields.priority !== saved.priority) {
+    const priority = parsePriorityInput(fields.priority);
+    if (priority === null) {
+      return null;
+    }
+    patch.priority = priority;
   }
 
-  const patch: WorkItemPatch = {
-    title: title || workItem.title,
-    note: fields.note.trim() || undefined,
-    priority: options.isSubtask ? undefined : (priority ?? undefined),
-    backlogStatusId: fields.backlogStatusId || undefined,
-    projectId: fields.projectId || undefined,
-    taskId: fields.taskId || undefined,
-    ...estimates,
-  };
-
-  if (options.includeHierarchy) {
-    patch.parentWorkItemId = fields.parentWorkItemId || undefined;
-    patch.parentSourceId = undefined;
+  if (fields.backlogStatusId !== saved.backlogStatusId) {
+    patch.backlogStatusId = fields.backlogStatusId || undefined;
   }
 
-  if (options.includeRetention) {
+  // Project and task change together so the parent mapping is inferred from both.
+  if (fields.projectId !== saved.projectId || fields.taskId !== saved.taskId) {
+    patch.projectId = fields.projectId || undefined;
+    patch.taskId = fields.taskId || undefined;
+  }
+
+  for (const key of BACKLOG_ESTIMATE_FIELD_KEYS) {
+    if (fields[key] === saved[key]) {
+      continue;
+    }
+
+    const value = parseEstimateInput(fields[key]);
+    if (value === null) {
+      return null;
+    }
+    patch[key] = value;
+  }
+
+  if (fields.keepWhenMissingFromSync !== saved.keepWhenMissingFromSync) {
     patch.keepWhenMissingFromSync = fields.keepWhenMissingFromSync;
   }
 
@@ -266,28 +378,107 @@ export function buildBacklogTaskDraft(
   };
 }
 
-export function collectBlockedParentIds(
-  workItem: LocalWorkItem,
-  workItems: LocalWorkItem[],
+function hasSameFields(
+  left: BacklogTaskEditorFields,
+  right: BacklogTaskEditorFields,
 ) {
-  const blockedParentIds = new Set<string>([workItem._id]);
-  const queue = [workItem];
+  return (Object.keys(left) as (keyof BacklogTaskEditorFields)[]).every(
+    (key) => left[key] === right[key],
+  );
+}
 
-  while (queue.length > 0) {
-    const current = queue.shift();
-    if (!current) {
-      continue;
-    }
+/**
+ * Evaluates a draft against its target. `subitemTotals` is the sum of the item's
+ * subitem estimates, or `null` when it has no subitems.
+ */
+export function evaluateBacklogTaskEditor(
+  fields: BacklogTaskEditorFields,
+  target: BacklogTaskEditorTarget,
+  options: { subitemTotals?: SubitemEstimateTotals | null } = {},
+): BacklogTaskEditorState {
+  const original = target.kind === "edit" ? target.workItem : undefined;
+  const isSubitem = original
+    ? isSubtaskWorkItem(original)
+    : Boolean(target.kind === "create" && target.parent);
+  const isSynced = Boolean(original && original.source !== "manual");
+  const validation = validateBacklogTaskEditor(fields, {
+    isSubtask: isSubitem,
+    requireParent: !original && isSubitem,
+  });
 
-    for (const childItem of getDirectChildWorkItems(current, workItems)) {
-      if (blockedParentIds.has(childItem._id)) {
-        continue;
+  const estimateResets: Partial<Record<BacklogEstimateFieldKey, string>> = {};
+  const subitemTotals = isSubitem ? null : options.subitemTotals;
+  if (subitemTotals) {
+    for (const key of BACKLOG_ESTIMATE_FIELD_KEYS) {
+      // An unparsable value differs from the total too, so the reset can fix it.
+      if ((parseEstimateInput(fields[key]) ?? 0) !== subitemTotals[key]) {
+        estimateResets[key] = formatEstimateInput(subitemTotals[key]);
       }
-
-      blockedParentIds.add(childItem._id);
-      queue.push(childItem);
     }
   }
 
-  return blockedParentIds;
+  const syncedPriority = formatPriorityInput(original?.importedPriority);
+  const syncedStatus = original?.importedBacklogStatusId ?? "";
+
+  return {
+    isNew: !original,
+    isSubitem,
+    isSynced,
+    validation,
+    hasChanges: !hasSameFields(fields, createBacklogTaskEditorSeed(target)),
+    estimateResets,
+    priorityReset:
+      isSynced && !isSubitem && fields.priority.trim() !== syncedPriority
+        ? syncedPriority
+        : null,
+    statusReset:
+      isSynced && fields.backlogStatusId !== syncedStatus ? syncedStatus : null,
+    draft:
+      !original && validation.canSave
+        ? buildBacklogTaskDraft(fields, {
+            isSubtask: isSubitem,
+            requireParent: isSubitem,
+          })
+        : null,
+    patch:
+      original && validation.canSave
+        ? buildBacklogTaskPatch(original, fields, { isSubtask: isSubitem })
+        : null,
+  };
+}
+
+function getFirstValidationError(validation: BacklogTaskEditorValidation) {
+  return (
+    validation.titleError ??
+    validation.parentError ??
+    validation.priorityError ??
+    validation.originalEstimateError ??
+    validation.remainingEstimateError ??
+    validation.completedEstimateError ??
+    "Check the highlighted fields"
+  );
+}
+
+/**
+ * Decides what Save, or leaving the draft for another item or an action, writes. An
+ * unchanged saved item writes nothing, and a switch drops an untouched new item. A valid
+ * draft is written. Anything else blocks with the first field error.
+ */
+export function commitBacklogTaskDraft(
+  editor: BacklogTaskEditorState,
+  reason: BacklogTaskDraftCommitReason,
+): BacklogTaskDraftCommit {
+  if (!editor.hasChanges && (!editor.isNew || reason === "switch")) {
+    return { kind: "unchanged" };
+  }
+
+  if (editor.draft) {
+    return { kind: "create", draft: editor.draft };
+  }
+
+  if (editor.patch) {
+    return { kind: "update", patch: editor.patch };
+  }
+
+  return { kind: "invalid", error: getFirstValidationError(editor.validation) };
 }

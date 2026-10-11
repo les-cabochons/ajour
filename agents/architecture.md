@@ -46,7 +46,7 @@ These modules are the Interface between workflow orchestration and persistence. 
 
 Feature and runtime seams follow the same principle:
 
-- `features/backlog/backlog-task-editor.ts` is the canonical editor model for desktop and mobile backlog experiences. It owns field seeding, parsing, validation, normalized drafts and patches, hierarchy exclusions, and time-entry note fallback.
+- `features/backlog/backlog-task-editor.ts` is the canonical editor model for the backlog item form in the side panel and the narrow dialog. It owns field seeding, parsing, validation, change detection, the new item or changed-field patch that Save writes, and the subitem total and synced value resets.
 - `lib/table-drag.ts` owns the shared pointer-reordering lifecycle and geometry. Features supply identity, rendered row references, visual state, and the persistence command that commits an order.
 
 Do not duplicate semantic editor rules between responsive renderers. Do not register feature-local pointer move/up/cancel listeners for table reordering; extend the shared interaction Interface when behavior must change across reorder surfaces.
