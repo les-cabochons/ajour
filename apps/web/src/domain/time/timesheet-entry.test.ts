@@ -183,6 +183,54 @@ describe("timesheet entry lifecycle", () => {
     expect(unchanged.timesheetEntries[0]?.committedAt).toBe(100);
   });
 
+  it("remembers the submission time of an edited entry until it is marked again", () => {
+    const saved = saveManualTimesheetEntry(
+      createState(),
+      {
+        localDate: "2026-07-30",
+        projectId: "project-1",
+        taskId: "task-1",
+        note: "Implementation",
+        durationMs: 60 * 60 * 1000,
+      },
+      factories,
+    );
+    const submitted = markTimesheetEntriesSubmitted(
+      saved,
+      ["timesheet-1"],
+      () => 200,
+    );
+    const edit = (state: LocalAppState, note: string) =>
+      updateTimesheetEntry(
+        state,
+        "timesheet-1",
+        {
+          projectId: "project-1",
+          taskId: "task-1",
+          note,
+          durationMs: 60 * 60 * 1000,
+        },
+        factories,
+      );
+    const changed = edit(submitted, "Changed");
+    const changedTwice = edit(changed, "Changed again");
+    const resubmitted = markTimesheetEntriesSubmitted(
+      changedTwice,
+      ["timesheet-1"],
+      () => 500,
+    );
+
+    expect(changed.timesheetEntries[0]).toMatchObject({
+      submittedAt: undefined,
+      previousSubmittedAt: 200,
+    });
+    expect(changedTwice.timesheetEntries[0]?.previousSubmittedAt).toBe(200);
+    expect(resubmitted.timesheetEntries[0]).toMatchObject({
+      submittedAt: 500,
+      previousSubmittedAt: undefined,
+    });
+  });
+
   it("hydrates legacy source IDs and preserves a zero submission timestamp", () => {
     const entry = normalizeTimesheetEntry({
       _id: "entry-1",
