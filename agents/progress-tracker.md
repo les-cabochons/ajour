@@ -116,6 +116,7 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Settings opens inside the shell with its pages listed in a second column. The settings sidebar that replaced the app sidebar, and its Back control, are removed.
 - [x] One breakpoint set: below 768px is the narrow view, 768px to 1099px the forced rail, 1100px and up the saved choice. `lib/breakpoints.ts` holds the numbers; `lib/tailwind-breakpoints.ts` exposes them to CSS as the `narrow`, `desktop` and `forced-rail` variants. The 640px and 1023px splits are removed.
 - [x] The narrow view has no rail and no sidebars. Its titlebar holds a Time and Backlog switcher and a Settings cog. Settings opens on its list of pages, and Projects lives inside it with project import and export as an action.
+- [x] The narrow view does not offer Week. A Week link shows Day with a note that Week needs a wider window. Long press opens a row's action menu on touch screens, and editing uses the entry dialog at the full window width.
 
 ## Standard Task Flow
 

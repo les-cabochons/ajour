@@ -1301,6 +1301,92 @@ When("I open the submit page from the narrow Day header", async ({ page }) => {
   await expect(page).toHaveURL(/\/time\/2026-10-05\/submit/);
 });
 
+When("I open a Week link in a narrow window", async ({ page }) => {
+  await page.setViewportSize({ width: 420, height: 860 });
+  await page.goto("/time/2026-10-05?view=week");
+});
+
+Then("the Day view notes that Week needs a wider window", async ({ page }) => {
+  await expect(page.getByRole("status")).toHaveText(
+    "Week needs a wider window. Showing Day instead.",
+  );
+  await expect(page.getByRole("region", { name: "Week" })).toHaveCount(0);
+  await expect(page.getByRole("row", { name: /API/ })).toBeVisible();
+  // The view menu is not offered, so it cannot offer Week.
+  await expect(page.getByRole("button", { name: /^Time view:/ })).toHaveCount(
+    0,
+  );
+});
+
+When("I widen the window to a desktop width", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 860 });
+});
+
+Then("the Week view is visible", async ({ page }) => {
+  await expect(page.getByRole("region", { name: "Week" })).toBeVisible();
+  await expect(page.getByRole("status")).toHaveCount(0);
+});
+
+When(
+  `I long press Monday's "API" entry on a narrow touch screen`,
+  async ({ page }) => {
+    await page.setViewportSize({ width: 420, height: 860 });
+    await page.goto("/time/2026-10-05");
+    const row = page.getByRole("row", { name: /API/ });
+    const box = await row.boundingBox();
+    if (!box) throw new Error("The API entry row is not rendered");
+
+    // Playwright has no long press, so the step sends raw touch events.
+    const cdp = await page.context().newCDPSession(page);
+    await cdp.send("Emulation.setTouchEmulationEnabled", {
+      enabled: true,
+      maxTouchPoints: 1,
+    });
+    const point = { x: box.x + 40, y: box.y + box.height / 2 };
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [point],
+    });
+    // Base UI opens the menu after 500ms of holding still.
+    await expect(page.getByRole("menu")).toBeVisible();
+    await cdp.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    });
+  },
+);
+
+Then("the entry's action menu is open", async ({ page }) => {
+  const menu = page.getByRole("menu");
+  await expect(menu).toBeVisible();
+  await expect(menu.getByRole("menuitem")).toHaveText([
+    "Edit",
+    "Continue",
+    "Duplicate",
+    "Duplicate to…",
+    "Move to…",
+    "Delete",
+  ]);
+  // Releasing the long press does not also open the row.
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+When(
+  "I choose {string} from the action menu",
+  async ({ page }, label: string) => {
+    await page.getByRole("menuitem", { name: label, exact: true }).click();
+  },
+);
+
+Then("the entry editor opens in a full-width dialog", async ({ page }) => {
+  const dialog = page.getByRole("dialog", { name: "Edit time entry" });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByLabel("Note")).toHaveValue("API");
+  // The dialog keeps an 8px margin on each side of the 420px window. Polling
+  // waits for the open animation, which scales the dialog up from 95%.
+  await expect.poll(async () => (await dialog.boundingBox())?.width).toBe(404);
+});
+
 Then("the submit page lists the week's entries", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "Submit week of Oct 5 to Oct 11" }),

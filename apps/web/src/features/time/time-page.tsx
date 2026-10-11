@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
+import { MessagePanel } from "@/components/app-surface";
 import { DayViewerCard } from "@/components/day-viewer-card";
 import { SidePanel } from "@/components/side-panel";
 import { formatClockDuration } from "@/domain/time/duration";
@@ -38,12 +39,15 @@ export function TimePage({ date }: { date: string }) {
   const today = todayIsoDate();
   const weekDates = useMemo(() => getIsoWeekDates(date), [date]);
   const currentTimer = state.timers[0] ?? null;
-  // Week needs a desktop width. The narrow view falls back to Day, and edits
-  // entries in a full-width dialog instead of the side panel.
+  // Week needs a desktop width. The narrow view does not offer it: a Week link
+  // shows Day with a note and keeps `view=week`, so widening the window shows
+  // Week. The narrow view also edits entries in a full-width dialog instead of
+  // the side panel.
   const isNarrowView = useIsNarrowView();
   const weekAvailable = !isNarrowView;
   const editsInDialog = isNarrowView;
   const isWeekView = search.view === "week" && weekAvailable;
+  const showsWeekUnavailableNote = search.view === "week" && !weekAvailable;
   const editorFormRef = useRef<TimeEntryEditorFormHandle>(null);
   // The unsaved draft of the open entry, kept above the side panel and the dialog so
   // crossing the dialog breakpoint mid-edit hands the draft to the other host.
@@ -74,19 +78,6 @@ export function TimePage({ date }: { date: string }) {
     const intervalId = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(intervalId);
   }, [currentTimer]);
-
-  useEffect(() => {
-    if (weekAvailable || search.view !== "week") {
-      return;
-    }
-
-    void navigate({
-      to: "/time/$date",
-      params: { date },
-      search: { view: undefined, entry: undefined, timer: undefined } as never,
-      replace: true,
-    });
-  }, [date, navigate, search.view, weekAvailable]);
 
   const totalsByDate = useMemo(() => {
     const totals = new Map(weekDates.map((day) => [day, 0]));
@@ -269,10 +260,17 @@ export function TimePage({ date }: { date: string }) {
               }
               onSelectDate={goToDate}
               dateScopeControl={
-                <TimeViewScopeMenu value="day" onChange={changeTimeView} />
+                weekAvailable ? (
+                  <TimeViewScopeMenu value="day" onChange={changeTimeView} />
+                ) : undefined
               }
               headerActions={<SubmitWeekButton onClick={openSubmitPage} />}
             />
+            {showsWeekUnavailableNote ? (
+              <MessagePanel role="status" className="mx-3 mt-2">
+                Week needs a wider window. Showing Day instead.
+              </MessagePanel>
+            ) : null}
             {/* The narrow view hides the Day viewer strip, so the button gets its own row. */}
             <div className="flex justify-end px-3 pt-2 desktop:hidden">
               <SubmitWeekButton onClick={openSubmitPage} />

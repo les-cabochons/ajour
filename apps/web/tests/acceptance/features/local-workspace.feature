@@ -68,6 +68,20 @@ Feature: Open the local time workspace
       | toast button   |
       | Cmd+Z shortcut |
 
+  Scenario: Open a Week link in the narrow view
+    Given I have a week of saved entries
+    When I open a Week link in a narrow window
+    Then the Day view notes that Week needs a wider window
+    When I widen the window to a desktop width
+    Then the Week view is visible
+
+  Scenario: Long press an entry in the narrow view
+    Given I have a week of saved entries
+    When I long press Monday's "API" entry on a narrow touch screen
+    Then the entry's action menu is open
+    When I choose "Edit" from the action menu
+    Then the entry editor opens in a full-width dialog
+
   Scenario: Open Settings inside the app shell
     Given I have no saved Ajour workspace
     When I open today's new-entry workspace

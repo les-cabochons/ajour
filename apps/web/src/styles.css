@@ -5979,3 +5979,13 @@
     display: none;
   }
 }
+
+/* On touch screens a long press opens the action menu of a row or card (Base UI
+   ContextMenu). iOS would also start a text selection on the same gesture, so
+   elements with an action menu do not select text there. */
+@media (pointer: coarse) {
+  [data-slot="context-menu-trigger"] {
+    -webkit-user-select: none;
+    user-select: none;
+  }
+}
