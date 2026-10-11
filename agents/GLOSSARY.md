@@ -29,7 +29,7 @@ Time spent on a task on one day, with an optional note.
 _Avoid_: Log, time log, session, record
 
 **Running**:
-The state of the one time entry the clock is currently counting. At most one time entry is running.
+The state of the one time entry the clock is currently counting. At most one time entry is running, and it is always on today's date.
 _Avoid_: Open, active, timer (as a separate thing the user sees)
 
 **Saved**:

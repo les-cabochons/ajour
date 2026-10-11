@@ -25,14 +25,14 @@ Decided in [Action model for entries, timers, projects, tasks and work items](ht
 
 ### Time entry
 
-| Slot             | Saved    | Submitted                                                | Running                          |
-| ---------------- | -------- | -------------------------------------------------------- | -------------------------------- |
-| Edit             | Enabled  | Enabled, with "Saving marks this entry as not submitted" | Enabled, changes apply live      |
-| Continue / Stop  | Continue | Continue                                                 | Stop                             |
-| Duplicate        | Enabled  | Enabled, the copy is saved                               | Disabled: "Stop the timer first" |
-| Duplicate to…    | Enabled  | Enabled, the copy is saved                               | Disabled: "Stop the timer first" |
-| Move to…         | Enabled  | Enabled, marks the entry as not submitted                | Disabled: "Stop the timer first" |
-| Delete / Discard | Delete   | Delete                                                   | Discard                          |
+| Slot             | Saved    | Submitted                                                | Running                                     |
+| ---------------- | -------- | -------------------------------------------------------- | ------------------------------------------- |
+| Edit             | Enabled  | Enabled, with "Saving marks this entry as not submitted" | Enabled, saved with the form, keeps running |
+| Continue / Stop  | Continue | Continue                                                 | Stop                                        |
+| Duplicate        | Enabled  | Enabled, the copy is saved                               | Disabled: "Stop the timer first"            |
+| Duplicate to…    | Enabled  | Enabled, the copy is saved                               | Disabled: "Stop the timer first"            |
+| Move to…         | Enabled  | Enabled, marks the entry as not submitted                | Disabled: "Stop the timer first"            |
+| Delete / Discard | Delete   | Delete                                                   | Discard                                     |
 
 - Continue on today's entry resumes that entry. Continue on another day's entry starts a new running entry today with the same task and note. Today the code adds the new time to the original entry, even on a past day. That changes.
 - Discard throws away the time counted since the entry last started. A running entry that started from nothing disappears.
@@ -166,8 +166,8 @@ Decided in [One entry editor for Day and Week](https://github.com/les-cabochons/
 Creating and editing a time entry always use the same form:
 
 - Header: the title ("New time entry" or "Edit time entry"), the entry's date, the "…" action menu for saved entries, and × to close.
-- Fields: Project / task, Note, Hours (`TimeEntryFields`), with the shared draft rules (`time-entry-editor.ts`).
-- Footer: Cancel · Start timer (Continue on a saved entry) · Save.
+- Fields: Project / task, Note, Hours, Date (`TimeEntryFields`), with the shared draft rules (`time-entry-editor.ts`). See the Running entries section for Date and empty Hours.
+- Footer: Cancel · Start (Switch while another entry runs, Continue on a saved entry, Stop on the running entry) · Save.
 
 The Day view's inline new row and the titlebar's own create form go away. What an empty Hours field means belongs to [Running timer editing and empty duration meaning](https://github.com/les-cabochons/ajour/issues/15).
 
@@ -189,3 +189,30 @@ The form is the same in every host. Only its container changes.
 - Clicking outside does nothing.
 - In the side panel, clicking another entry while the draft has valid changes saves it, then loads the new entry. An invalid draft blocks the switch and shows its error.
 - After saving, the editor closes and focus returns to the row or card it came from.
+
+## Running entries
+
+Decided in [Running timer editing and empty duration meaning](https://github.com/les-cabochons/ajour/issues/15).
+
+### Editing
+
+- The running entry opens in the same form as every entry. Edit from its menu, or a click on its row or card, opens the side panel in Day and Week. A click on the titlebar's Running pill opens the form in a popover anchored to the pill. The narrow view uses the full-width dialog.
+- The footer reads Cancel · Stop · Save. Save applies the changes and the entry keeps running. Nothing changes until the user saves. The old live-editing popup goes away.
+- Hours shows the time counted so far and stays editable, so the user can correct a late start before saving.
+- Discard follows [Undo, confirmation and feedback policy](https://github.com/les-cabochons/ajour/issues/17).
+
+### Starting
+
+- In a new entry with empty Hours, Save is disabled with "Enter hours, or press Start", and Enter presses Start. Ajour never saves a 0h entry.
+- With Hours filled, Start counts on from that time: typing 0:30 then Start gives a running entry at 0:30.
+- A running entry is always on today. Starting from another day's form starts the entry today, and the form says "Starts today". An entry that runs past midnight stays on the day it started; Move to… changes that.
+- Starting while another entry runs saves the running one and switches, without a prompt. The button reads Switch instead of Start. The feedback message follows [Undo, confirmation and feedback policy](https://github.com/les-cabochons/ajour/issues/17).
+- Start entry on tasks and backlog items starts on today, as it does now.
+
+### Date field
+
+The form gets a Date field after Hours. It defaults to the open day in Day, the clicked day in Week, and today everywhere else, such as the titlebar "+" or New entry… on a backlog item. The running entry hides it, because it is always today.
+
+### Labels
+
+Buttons read Start, Switch and Stop, and the titlebar pill reads Running. Users never see the word "timer". Tasks and backlog items keep "Start entry".
