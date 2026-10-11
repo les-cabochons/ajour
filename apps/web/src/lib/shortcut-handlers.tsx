@@ -11,7 +11,7 @@ import {
 import type { PinnedTaskSlot } from "@/domain/local-state";
 import { isEntryEditorOpen } from "@/lib/entry-editor-presence";
 import {
-  SHORTCUTS,
+  APP_SHORTCUTS,
   blocksDigitShortcuts,
   blocksSingleKeyShortcuts,
   getShortcutPlatform,
@@ -101,7 +101,12 @@ export function ShortcutProvider({ children }: { children: ReactNode }) {
         return;
       }
 
-      const resolution = resolveShortcut(SHORTCUTS, prefix, event, platform);
+      const resolution = resolveShortcut(
+        APP_SHORTCUTS,
+        prefix,
+        event,
+        platform,
+      );
       clearPrefix();
 
       if (resolution.kind === "pending") {

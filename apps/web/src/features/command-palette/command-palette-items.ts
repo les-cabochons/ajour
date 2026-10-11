@@ -31,7 +31,14 @@ import {
 import { parseWorkItemReference } from "@/features/backlog/work-item-timer-comment";
 import type { FocusedObjectRef } from "@/lib/focused-object";
 import {
+  BACKLOG_ITEM_ACTION_KEYS,
+  TASK_ACTION_KEYS,
+  TIME_ENTRY_ACTION_KEYS,
+  type ActionKeys,
+} from "@/lib/item-keys";
+import {
   formatShortcutKeys,
+  getShortcut,
   type ShortcutActionId,
   type ShortcutDefinition,
   type ShortcutPlatform,
@@ -61,7 +68,15 @@ export type PaletteCommand =
       actionId: TaskActionId;
     }
   | { kind: "project"; projectId: string; actionId: ProjectActionId }
-  | { kind: "backlog-item"; workItemId: string; actionId: BacklogItemActionId };
+  | { kind: "backlog-item"; workItemId: string; actionId: BacklogItemActionId }
+  /** Move up (-1) or Move down (1) on the focused sortable object. */
+  | { kind: "reorder"; target: SortableObjectRef; step: -1 | 1 };
+
+/** The focused objects that Move up and Move down apply to. */
+export type SortableObjectRef = Extract<
+  FocusedObjectRef,
+  { kind: "time-entry" | "backlog-item" | "task" | "project" }
+>;
 
 export interface PaletteItem {
   /** Unique within the palette. The list uses it as the item's value. */
@@ -250,19 +265,71 @@ export function formatStartTaskLabel(
   return `Start ${task.name} (${projectName(project)})`;
 }
 
+/**
+ * Lists an action set. `keys` adds each action's key, for the focused object
+ * only, where those keys work.
+ */
 function toItems<Id extends string>(
   prefix: string,
   actions: readonly ObjectAction<Id>[],
   toCommand: (actionId: Id) => PaletteCommand,
+  keys?: { map: ActionKeys<Id>; platform: ShortcutPlatform },
 ): PaletteItem[] {
-  return actions.map((action) => ({
-    id: `${prefix}:${action.id}`,
-    label: action.label,
-    disabledReason: action.disabledReason,
-    hint: action.hint,
-    destructive: action.destructive,
-    command: toCommand(action.id),
-  }));
+  return actions.map((action) => {
+    const shortcutId = keys?.map[action.id];
+    return {
+      id: `${prefix}:${action.id}`,
+      label: action.label,
+      keys:
+        shortcutId && keys
+          ? formatShortcutKeys(getShortcut(shortcutId), keys.platform)
+          : undefined,
+      disabledReason: action.disabledReason,
+      hint: action.hint,
+      destructive: action.destructive,
+      command: toCommand(action.id),
+    };
+  });
+}
+
+/**
+ * Adds Move up and Move down to the focused object's actions, before the
+ * destructive ones. They are listed only here and on the keyboard, never in
+ * the "…" or right-click menus.
+ */
+function withReorderItems(
+  section: PaletteSection,
+  target: SortableObjectRef,
+  platform: ShortcutPlatform,
+  disabledReason?: string,
+): PaletteSection {
+  const reorderItems = (
+    [
+      ["item.move-up", -1],
+      ["item.move-down", 1],
+    ] as const
+  ).map(([shortcutId, step]): PaletteItem => {
+    const shortcut = getShortcut(shortcutId);
+    return {
+      id: `${section.id}:${shortcutId}`,
+      label: shortcut.label,
+      keys: formatShortcutKeys(shortcut, platform),
+      disabledReason,
+      command: { kind: "reorder", target, step },
+    };
+  });
+  const firstDestructive = section.items.findIndex((item) => item.destructive);
+  const insertAt =
+    firstDestructive === -1 ? section.items.length : firstDestructive;
+
+  return {
+    ...section,
+    items: [
+      ...section.items.slice(0, insertAt),
+      ...reorderItems,
+      ...section.items.slice(insertAt),
+    ],
+  };
 }
 
 function findTask(
@@ -275,10 +342,12 @@ function findTask(
   return project && task ? { project, task } : null;
 }
 
+/** A task's actions. `keysPlatform` adds the keys, for the focused task. */
 function taskSection(
   prefix: string,
   project: LocalProject,
   task: LocalProjectTask,
+  keysPlatform?: ShortcutPlatform,
 ): PaletteSection {
   const items = toItems(
     prefix,
@@ -289,6 +358,9 @@ function taskSection(
       taskId: task._id,
       actionId,
     }),
+    keysPlatform
+      ? { map: TASK_ACTION_KEYS, platform: keysPlatform }
+      : undefined,
   ).map((item) =>
     item.command.kind === "task" && item.command.actionId === "start-entry"
       ? { ...item, label: formatStartTaskLabel(project, task) }
@@ -302,10 +374,12 @@ function taskSection(
   };
 }
 
+/** A backlog item's actions. `keysPlatform` adds the keys, for the focused item. */
 function backlogItemSection(
   prefix: string,
   workItem: LocalWorkItem,
   workItems: readonly LocalWorkItem[],
+  keysPlatform?: ShortcutPlatform,
 ): PaletteSection {
   const isSubitem = isSubtaskWorkItem(workItem);
   const actions = getBacklogItemActions(workItem, {
@@ -318,11 +392,18 @@ function backlogItemSection(
   return {
     id: prefix,
     heading: workItem.title,
-    items: toItems(prefix, actions, (actionId) => ({
-      kind: "backlog-item",
-      workItemId: workItem._id,
-      actionId,
-    })),
+    items: toItems(
+      prefix,
+      actions,
+      (actionId) => ({
+        kind: "backlog-item",
+        workItemId: workItem._id,
+        actionId,
+      }),
+      keysPlatform
+        ? { map: BACKLOG_ITEM_ACTION_KEYS, platform: keysPlatform }
+        : undefined,
+    ),
   };
 }
 
@@ -351,61 +432,98 @@ function describeEntry(
   return name || entry.note?.trim() || "Time entry";
 }
 
-/** The focused object's action set, or null when the object no longer exists. */
+/**
+ * The focused object's action set with its keys, or null when the object no
+ * longer exists. Sortable objects add Move up and Move down.
+ */
 function focusedSection(input: PaletteInput): PaletteSection | null {
-  const { focused, projects, timer } = input;
+  const { focused, platform, projects, timer } = input;
   const prefix = "focused";
+  const keys = { map: TIME_ENTRY_ACTION_KEYS, platform };
 
   switch (focused?.kind) {
     case "time-entry": {
       if (focused.isRunning) {
         if (!timer) return null;
-        return {
-          id: prefix,
-          heading: `Running · ${describeEntry(timer, projects)}`,
-          items: toItems(
-            prefix,
-            getTimeEntryActions("running"),
-            (actionId) => ({
-              kind: "running-entry",
-              timerId: timer._id,
-              actionId,
-            }),
-          ),
-        };
+        return withReorderItems(
+          {
+            id: prefix,
+            heading: `Running · ${describeEntry(timer, projects)}`,
+            items: toItems(
+              prefix,
+              getTimeEntryActions("running"),
+              (actionId) => ({
+                kind: "running-entry",
+                timerId: timer._id,
+                actionId,
+              }),
+              keys,
+            ),
+          },
+          focused,
+          platform,
+          "The running entry stays on top",
+        );
       }
 
       const entry = input.timesheetEntries.find(
         (item) => item._id === focused.entryId,
       );
       if (!entry) return null;
-      return {
-        id: prefix,
-        heading: describeEntry(entry, projects),
-        items: toItems(
-          prefix,
-          getTimeEntryActions(getTimeEntryActionState(entry), {
-            isToday: entry.localDate === input.today,
-          }),
-          (actionId) => ({ kind: "time-entry", entryId: entry._id, actionId }),
-        ),
-      };
+      return withReorderItems(
+        {
+          id: prefix,
+          heading: describeEntry(entry, projects),
+          items: toItems(
+            prefix,
+            getTimeEntryActions(getTimeEntryActionState(entry), {
+              isToday: entry.localDate === input.today,
+            }),
+            (actionId) => ({
+              kind: "time-entry",
+              entryId: entry._id,
+              actionId,
+            }),
+            keys,
+          ),
+        },
+        focused,
+        platform,
+      );
     }
     case "task": {
       const found = findTask(projects, focused.projectId, focused.taskId);
-      return found ? taskSection(prefix, found.project, found.task) : null;
+      if (!found) return null;
+      const section = taskSection(prefix, found.project, found.task, platform);
+      // Only active tasks of an active project have an order to change.
+      return found.project.status === "active" && found.task.status === "active"
+        ? withReorderItems(section, focused, platform)
+        : section;
     }
     case "backlog-item": {
       const workItem = input.workItems.find(
         (item) => item._id === focused.workItemId,
       );
-      return workItem
-        ? backlogItemSection(prefix, workItem, input.workItems)
-        : null;
+      if (!workItem) return null;
+      const section = backlogItemSection(
+        prefix,
+        workItem,
+        input.workItems,
+        platform,
+      );
+      // Subitems follow their parent; only top-level items are sortable.
+      return isSubtaskWorkItem(workItem)
+        ? section
+        : withReorderItems(section, focused, platform);
     }
     case "project": {
       const project = projects.find((item) => item._id === focused.projectId);
-      return project ? projectSection(prefix, project) : null;
+      if (!project) return null;
+      const section = projectSection(prefix, project);
+      // Only active projects are in the sidebar's order.
+      return project.status === "active"
+        ? withReorderItems(section, focused, platform)
+        : section;
     }
     default:
       return null;

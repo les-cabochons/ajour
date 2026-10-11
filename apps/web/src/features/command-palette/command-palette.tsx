@@ -16,6 +16,7 @@ import {
   type PaletteCommand,
   type PaletteItem,
   type PaletteView,
+  type SortableObjectRef,
 } from "@/features/command-palette/command-palette-items";
 import { ProjectFormDialog } from "@/features/projects/project-form-dialog";
 import { getSettingsPages } from "@/features/settings/settings-navigation";
@@ -31,6 +32,8 @@ import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 import { useShortcut, useShortcutRunner } from "@/lib/shortcut-handlers";
 import { SHORTCUTS, getShortcutPlatform } from "@/lib/shortcuts";
+import { getSharedTableStepOrder } from "@/lib/table-drag";
+import { selectSortableDayEntryIds } from "@/domain/time/timesheet-entry";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { cn, todayIsoDate } from "@/lib/utils";
 
@@ -271,6 +274,56 @@ export function CommandPalette() {
         }
         return;
       }
+      case "reorder":
+        runReorder(command.target, command.step);
+        return;
+    }
+  }
+
+  /**
+   * Move up and Move down. A time entry moves within its day here. Backlog
+   * items, tasks and projects go to their page, which owns the visible order
+   * and the task draft guard.
+   */
+  function runReorder(target: SortableObjectRef, step: -1 | 1) {
+    const action = step === -1 ? "move-up" : "move-down";
+    switch (target.kind) {
+      case "time-entry": {
+        const snapshot = localStore.snapshot();
+        const entry = snapshot.timesheetEntries.find(
+          (item) => item._id === target.entryId,
+        );
+        const next = entry
+          ? getSharedTableStepOrder(
+              selectSortableDayEntryIds(
+                snapshot.timesheetEntries,
+                entry.localDate,
+                snapshot.timers[0]?.entryId,
+              ),
+              entry._id,
+              step,
+            )
+          : null;
+        if (entry && next) {
+          localStore.reorderTimesheetEntries(entry.localDate, next.order);
+        }
+        return;
+      }
+      case "backlog-item":
+        requestPageAction("/backlog", { action, target: target.workItemId });
+        return;
+      case "task":
+        requestProjectsPage(
+          { action, target: target.taskId, parent: target.projectId },
+          target.projectId,
+        );
+        return;
+      case "project":
+        requestProjectsPage(
+          { action, target: target.projectId },
+          target.projectId,
+        );
+        return;
     }
   }
 

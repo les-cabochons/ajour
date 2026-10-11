@@ -42,6 +42,11 @@ import {
   CapacityValue,
   formatWeekDay,
 } from "@/features/time/weekly-capacity-value";
+import {
+  handleItemKeyDown,
+  TIME_ENTRY_ACTION_KEYS,
+  type ActionKeys,
+} from "@/lib/item-keys";
 import { localStore } from "@/lib/local-store";
 import { ProjectIcon } from "@/lib/project-icons";
 import { cn } from "@/lib/utils";
@@ -91,6 +96,12 @@ const ADD_ENTRY_ACTION: ObjectAction<WeekGridCellActionId> = {
 const OPEN_ENTRIES_ACTION: ObjectAction<WeekGridCellActionId> = {
   id: "open-entries",
   label: "Open entries",
+};
+
+/** A cell's keys: its entry's keys, and E or Enter lists a cell's several entries. */
+const CELL_ACTION_KEYS: ActionKeys<WeekGridCellActionId> = {
+  ...TIME_ENTRY_ACTION_KEYS,
+  "open-entries": "item.edit",
 };
 
 /**
@@ -212,6 +223,8 @@ function WeekGridCellInput({
  * `commitWeekGridCellText` for what the typed hours write. Cells with several
  * entries, or with the running entry, show their total and never edit in place.
  * Right-click lists Add entry, then the cell's entry actions or Open entries.
+ * Arrows move between cells, and the entry keys of `lib/item-keys.ts` act on a
+ * focused cell; Enter keeps editing in place where it can.
  */
 export function WeekGrid({
   activeCell,
@@ -495,6 +508,7 @@ export function WeekGrid({
         ) : (
           <ObjectContextMenu
             actions={getCellActions(model)}
+            keys={CELL_ACTION_KEYS}
             onAction={(actionId) => runCellAction(model, actionId)}
             render={
               <button
@@ -516,9 +530,17 @@ export function WeekGrid({
                 }
                 // A focused cell keeps the digits, so pinned tasks skip it (GRID_CELL_ATTRIBUTE).
                 data-grid-cell=""
+                data-focus-column={dayIndex}
                 aria-label={`${row.taskName}, ${dayLabel}, ${valueLabel}`}
                 onClick={(event) => handleCellClick(model, event.detail)}
-                onKeyDown={(event) => handleCellKeyDown(model, event)}
+                onKeyDown={(event) => {
+                  handleCellKeyDown(model, event);
+                  handleItemKeyDown(event, {
+                    actions: getCellActions(model),
+                    keys: CELL_ACTION_KEYS,
+                    onAction: (actionId) => runCellAction(model, actionId),
+                  });
+                }}
               />
             }
           >
@@ -576,7 +598,7 @@ export function WeekGrid({
               <TableHead className="weekly-grid-total-column">Total</TableHead>
             </TableRow>
           </TableHeader>
-          <TableBody>
+          <TableBody data-focus-scope>
             {projection.gridRows.map((row) => {
               const project = row.projectId
                 ? projectsById.get(row.projectId)

@@ -76,6 +76,7 @@ import { ProjectTaskEditorForm } from "@/features/projects/project-task-editor-f
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { useActionRequest } from "@/lib/action-request";
 import { FOCUS_ATTRIBUTES } from "@/lib/focused-object";
+import { handleItemKeyDown, TASK_ACTION_KEYS } from "@/lib/item-keys";
 import { useCurrentTeam } from "@/lib/session";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
@@ -84,6 +85,7 @@ import {
   getSharedTableDragOverlayTransform,
   getSharedTableDragRowShift,
   getSharedTableDragTargetIndex,
+  getSharedTableStepOrder,
   setSharedTableDragDocumentState,
   SHARED_TABLE_DRAG_CLICK_SUPPRESSION_MS,
   type SharedTableDragPointerSession,
@@ -598,6 +600,19 @@ function ProjectDetail({
     onOpenTask(task);
   }
 
+  /** Move up and Move down among the active tasks, persisted like a drag. */
+  function reorderTask(taskId: string, step: -1 | 1) {
+    if (!canReorderTasks) return;
+    const next = getSharedTableStepOrder(
+      activeTasks.map((task) => task._id),
+      taskId,
+      step,
+    );
+    if (next) {
+      localStore.reorderProjectTask(project._id, taskId, next.toIndex);
+    }
+  }
+
   /** Runs the task action set from the row's right-click menu and "…" button. */
   function runTaskAction(task: LocalProjectTask, actionId: TaskActionId) {
     switch (actionId) {
@@ -882,7 +897,7 @@ function ProjectDetail({
               taskDragState && "is-task-dragging",
             )}
           >
-            <tbody>
+            <tbody data-focus-scope>
               {(isArchivedTaskFilter ? archivedTasks : activeTasks).length ===
               0 ? (
                 <tr className="entry-empty-row">
@@ -936,11 +951,22 @@ function ProjectDetail({
                       <ObjectContextMenu
                         key={task._id}
                         actions={taskActions}
+                        keys={TASK_ACTION_KEYS}
                         onAction={(actionId) => runTaskAction(task, actionId)}
                         render={
                           <tr
                             className="project-task-row"
                             {...{ [FOCUS_ATTRIBUTES.task]: task._id }}
+                            data-focus-column="0"
+                            tabIndex={0}
+                            onKeyDown={(event) =>
+                              handleItemKeyDown(event, {
+                                actions: taskActions,
+                                keys: TASK_ACTION_KEYS,
+                                onAction: (actionId) =>
+                                  runTaskAction(task, actionId),
+                              })
+                            }
                           />
                         }
                       >
@@ -965,6 +991,7 @@ function ProjectDetail({
                             <div className="entry-row-actions">
                               <ObjectActionsButton
                                 actions={taskActions}
+                                keys={TASK_ACTION_KEYS}
                                 onAction={(actionId) =>
                                   runTaskAction(task, actionId)
                                 }
@@ -994,6 +1021,7 @@ function ProjectDetail({
                       <ObjectContextMenu
                         key={task._id}
                         actions={taskActions}
+                        keys={TASK_ACTION_KEYS}
                         onAction={(actionId) => runTaskAction(task, actionId)}
                         render={
                           <tr
@@ -1022,6 +1050,19 @@ function ProjectDetail({
                             }
                             aria-grabbed={isDraggedTask}
                             {...{ [FOCUS_ATTRIBUTES.task]: task._id }}
+                            data-focus-column="0"
+                            tabIndex={0}
+                            onKeyDown={(event) =>
+                              handleItemKeyDown(event, {
+                                actions: taskActions,
+                                keys: TASK_ACTION_KEYS,
+                                onAction: (actionId) =>
+                                  runTaskAction(task, actionId),
+                                onReorder: canReorderTasks
+                                  ? (step) => reorderTask(task._id, step)
+                                  : undefined,
+                              })
+                            }
                             onClick={() => handleTaskClick(task)}
                             onPointerDown={(event) =>
                               handleTaskPointerDown(task._id, event)
@@ -1047,6 +1088,7 @@ function ProjectDetail({
                             <div className="entry-row-actions">
                               <ObjectActionsButton
                                 actions={taskActions}
+                                keys={TASK_ACTION_KEYS}
                                 onAction={(actionId) =>
                                   runTaskAction(task, actionId)
                                 }
@@ -1464,6 +1506,12 @@ export function ProjectsPage() {
     if (!project) return;
 
     if (!parent) {
+      // Move up and Move down from the palette.
+      if (action === "move-up" || action === "move-down") {
+        reorderProject(project._id, action === "move-up" ? -1 : 1);
+        return;
+      }
+
       const requested = getProjectActions(project).find(
         (item) => item.id === action && !item.disabledReason,
       );
@@ -1472,6 +1520,24 @@ export function ProjectsPage() {
     }
 
     const task = project.tasks.find((item) => item._id === target);
+    // Move up and Move down from the palette, among the project's active tasks.
+    if (action === "move-up" || action === "move-down") {
+      const next =
+        task && project.status === "active" && task.status === "active"
+          ? getSharedTableStepOrder(
+              project.tasks
+                .filter((item) => item.status === "active")
+                .map((item) => item._id),
+              task._id,
+              action === "move-up" ? -1 : 1,
+            )
+          : null;
+      if (task && next) {
+        localStore.reorderProjectTask(project._id, task._id, next.toIndex);
+      }
+      return;
+    }
+
     const requested = task
       ? getTaskActions(project, task).find(
           (item) => item.id === action && !item.disabledReason,
@@ -1641,6 +1707,17 @@ export function ProjectsPage() {
 
   const openEditProjectModal = (project: LocalProject) => {
     setProjectModalState({ mode: "edit", projectId: project._id });
+  };
+
+  /**
+   * Move up and Move down among the active projects of the sidebar, persisted
+   * like a drag. Archived projects have no order to change.
+   */
+  const reorderProject = (projectId: string, step: -1 | 1) => {
+    const next = getSharedTableStepOrder(activeProjectIds, projectId, step);
+    if (next) {
+      localStore.reorderProjects(next.order);
+    }
   };
 
   /** Runs the project action set from the sidebar, the archive list and the detail header. */
@@ -1841,6 +1918,17 @@ export function ProjectsPage() {
                               aria-label={getProjectDisplayName(project)}
                               title={project.name}
                               draggable={false}
+                              // Alt+Up and Alt+Down reorder, like a drag. No other item key acts on projects.
+                              onKeyDown={(event) =>
+                                handleItemKeyDown(event, {
+                                  actions: projectActions,
+                                  keys: {},
+                                  onAction: (actionId) =>
+                                    runProjectAction(project, actionId),
+                                  onReorder: (step) =>
+                                    reorderProject(project._id, step),
+                                })
+                              }
                               onDragStart={(event) => {
                                 event.preventDefault();
                               }}

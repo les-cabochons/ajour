@@ -68,6 +68,20 @@ Feature: Open the local time workspace
       | toast button   |
       | Cmd+Z shortcut |
 
+  Scenario: Edit and delete a Day entry with the keyboard only
+    Given I have a week of saved entries
+    When I focus the top entry of Monday's Day list
+    And I press the "ArrowDown" key
+    And I press the "Enter" key
+    Then the side panel edits the "API" entry
+    When I press the "Escape" key
+    Then Monday's "API" entry has keyboard focus
+    When I press the "Backspace" key
+    Then the entry is gone and a toast offers Undo
+    And Monday's "Login form" entry has keyboard focus
+    When I press the "ControlOrMeta+z" key
+    Then the "API" entry is back exactly as it was
+
   Scenario: Open a Week link in the narrow view
     Given I have a week of saved entries
     When I open a Week link in a narrow window

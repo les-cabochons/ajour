@@ -84,12 +84,14 @@ import {
   useLocalWorkItems,
 } from "@/lib/local-hooks";
 import { useActionRequest } from "@/lib/action-request";
+import { BACKLOG_ITEM_ACTION_KEYS, handleItemKeyDown } from "@/lib/item-keys";
 import { localStore } from "@/lib/local-store";
 import {
   createSharedTableDragPointerSession,
   getSharedTableDragOverlayTransform,
   getSharedTableDragRowShift,
   getSharedTableDragTargetIndex,
+  getSharedTableStepOrder,
   setSharedTableDragDocumentState,
   SHARED_TABLE_DRAG_CLICK_SUPPRESSION_MS,
   type SharedTableDragPointerSession,
@@ -716,6 +718,13 @@ export function BacklogPage() {
   // `?action=<id>&target=<item id>`. Only enabled actions of the item run.
   useActionRequest(({ action, target }) => {
     const workItem = workItems.find((item) => item._id === target);
+    // Move up and Move down from the palette. Subitems are not in the order.
+    if (action === "move-up" || action === "move-down") {
+      if (workItem && !isSubtaskWorkItem(workItem)) {
+        reorderWorkItem(workItem._id, action === "move-up" ? -1 : 1);
+      }
+      return;
+    }
     const requested = workItem
       ? getWorkItemActions(workItem).find(
           (item) => item.id === action && !item.disabledReason,
@@ -735,6 +744,25 @@ export function BacklogPage() {
       ...getWorkItemEntryValues(workItem),
       accumulatedDurationMs: 0,
     });
+  }
+
+  /**
+   * Move up and Move down among the visible top-level items, persisted like a
+   * drag. Only the custom sort order can change.
+   */
+  function reorderWorkItem(workItemId: string, step: -1 | 1) {
+    if (!canReorderVisibleRootItems) {
+      return;
+    }
+
+    const next = getSharedTableStepOrder(
+      visibleRootItems.map((item) => item._id),
+      workItemId,
+      step,
+    );
+    if (next) {
+      localStore.reorderWorkItems(next.order);
+    }
   }
 
   function renderWorkItemRow(workItem: LocalWorkItem, forceChild = false) {
@@ -813,6 +841,7 @@ export function BacklogPage() {
     const rowActionsButton = (
       <ObjectActionsButton
         actions={rowActions}
+        keys={BACKLOG_ITEM_ACTION_KEYS}
         onAction={runRowAction}
         label={`Actions for ${workItem.title}`}
         className="entry-row-action"
@@ -823,11 +852,24 @@ export function BacklogPage() {
       <ObjectContextMenu
         key={workItem._id}
         actions={rowActions}
+        keys={BACKLOG_ITEM_ACTION_KEYS}
         onAction={runRowAction}
         render={
           <tr
             data-backlog-root-id={rootSectionId}
             data-backlog-item-id={workItem._id}
+            data-focus-column="0"
+            tabIndex={0}
+            onKeyDown={(event) =>
+              handleItemKeyDown(event, {
+                actions: rowActions,
+                keys: BACKLOG_ITEM_ACTION_KEYS,
+                onAction: runRowAction,
+                onReorder: isReorderableRoot
+                  ? (step) => reorderWorkItem(workItem._id, step)
+                  : undefined,
+              })
+            }
             ref={(node) => {
               if (!isReorderableRoot) {
                 backlogRowRefs.current.delete(workItem._id);
@@ -1237,7 +1279,7 @@ export function BacklogPage() {
               )}
             >
               <BacklogTableColumns />
-              <tbody className="entries-table-scroll-region">
+              <tbody className="entries-table-scroll-region" data-focus-scope>
                 {visibleRootItems.length === 0 ? (
                   <tr className="entry-empty-row">
                     <td colSpan={BACKLOG_TABLE_COLUMN_COUNT}>

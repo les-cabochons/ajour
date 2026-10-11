@@ -341,15 +341,29 @@ describe("buildPaletteSections", () => {
     )[0]!;
 
     expect(saved.heading).toBe("Development · Client Atlas");
-    expect(saved.items.map((item) => item.label)).toEqual([
-      "Edit",
-      "Continue",
-      "Duplicate",
-      "Duplicate to…",
-      "Move to…",
-      "Delete",
+    expect(
+      saved.items.map((item) => [item.label, item.keys?.join(" ")]),
+    ).toEqual([
+      ["Edit", "E"],
+      ["Continue", "C"],
+      ["Duplicate", "⌘D"],
+      ["Duplicate to…", undefined],
+      ["Move to…", "M"],
+      ["Move up", "⌥↑"],
+      ["Move down", "⌥↓"],
+      ["Delete", "⌫"],
     ]);
+    expect(
+      saved.items.find((item) => item.label === "Move down")?.command,
+    ).toEqual({
+      kind: "reorder",
+      target: { kind: "time-entry", entryId: "entry-1", isRunning: false },
+      step: 1,
+    });
     expect(running.heading).toBe("Running · Time entry");
+    expect(
+      running.items.find((item) => item.label === "Move up")?.disabledReason,
+    ).toBe("The running entry stays on top");
     expect(
       running.items.find((item) => item.label === "Duplicate"),
     ).toMatchObject({
@@ -360,6 +374,42 @@ describe("buildPaletteSections", () => {
         actionId: "duplicate",
       },
     });
+  });
+
+  it("offers Move up and Move down only on top-level backlog items", () => {
+    const parent = workItem("parent", "Atlas release");
+    const child = workItem("child", "Atlas notes", {
+      parentWorkItemId: "parent",
+    });
+    const labels = (workItemId: string) =>
+      buildPaletteSections(
+        input({
+          focused: { kind: "backlog-item", workItemId },
+          workItems: [parent, child],
+        }),
+      )[0]!.items.map((item) => item.label);
+
+    expect(labels("parent")).toContain("Move up");
+    expect(labels("child")).not.toContain("Move up");
+  });
+
+  it("offers Move up and Move down on active projects only", () => {
+    const labels = (status: "active" | "archived") =>
+      buildPaletteSections(
+        input({
+          focused: { kind: "project", projectId: "atlas" },
+          projects: [{ ...atlas, status }],
+        }),
+      )[0]!.items.map((item) => item.label);
+
+    expect(labels("active")).toEqual([
+      "Edit",
+      "New task",
+      "Move up",
+      "Move down",
+      "Archive",
+    ]);
+    expect(labels("archived")).not.toContain("Move up");
   });
 
   it("drops the focused section when the object is gone", () => {

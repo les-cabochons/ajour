@@ -11,8 +11,10 @@ import {
   reorderTimesheetEntries,
   saveManualTimesheetEntry,
   selectMostRecentTimesheetEntry,
+  selectSortableDayEntryIds,
   updateTimesheetEntry,
 } from "@/domain/time/timesheet-entry";
+import { getSharedTableStepOrder } from "@/lib/table-drag";
 
 function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
   return {
@@ -625,6 +627,56 @@ describe("timesheet entry lifecycle", () => {
       "entry-2",
       "entry-1",
     ]);
+  });
+});
+
+describe("Move up and Move down on time entries", () => {
+  function savedEntry(_id: string, localDate: string, committedAt: number) {
+    return {
+      _id,
+      localDate,
+      label: "",
+      durationMs: 60_000,
+      sourceBlockIds: [],
+      committedAt,
+    };
+  }
+
+  const entries = [
+    savedEntry("middle", "2026-07-30", 200),
+    savedEntry("top", "2026-07-30", 300),
+    savedEntry("other-day", "2026-07-29", 900),
+    savedEntry("bottom", "2026-07-30", 100),
+  ];
+
+  it("steps through the day's order as the Day list shows it", () => {
+    expect(selectSortableDayEntryIds(entries, "2026-07-30")).toEqual([
+      "top",
+      "middle",
+      "bottom",
+    ]);
+  });
+
+  it("leaves out the entry the running entry resumed", () => {
+    expect(selectSortableDayEntryIds(entries, "2026-07-30", "top")).toEqual([
+      "middle",
+      "bottom",
+    ]);
+  });
+
+  it("persists Move down like a drag, by trading committed timestamps", () => {
+    const state = createState({ timesheetEntries: entries });
+    const next = getSharedTableStepOrder(
+      selectSortableDayEntryIds(state.timesheetEntries, "2026-07-30"),
+      "top",
+      1,
+    );
+
+    const reordered = reorderTimesheetEntries(state, "2026-07-30", next!.order);
+
+    expect(
+      selectSortableDayEntryIds(reordered.timesheetEntries, "2026-07-30"),
+    ).toEqual(["middle", "top", "bottom"]);
   });
 });
 

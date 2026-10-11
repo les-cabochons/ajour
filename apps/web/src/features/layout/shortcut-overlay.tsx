@@ -11,6 +11,7 @@ import { useShortcut } from "@/lib/shortcut-handlers";
 import {
   SHORTCUTS,
   filterShortcuts,
+  formatAlternateKeys,
   formatShortcutKeys,
   getShortcutPlatform,
   type ShortcutScope,
@@ -21,11 +22,16 @@ const platform = getShortcutPlatform();
 const SCOPE_HEADINGS: Record<ShortcutScope, string> = {
   global: "Anywhere",
   time: "Time page",
+  item: "Focused row or card",
 };
+
+const KEY_CLASS_NAME =
+  "min-w-6 rounded-md border border-border bg-muted px-1.5 py-0.5 text-center font-mono text-foreground";
 
 /**
  * The "?" overlay. It lists every shortcut in `lib/shortcuts.ts`, grouped by
- * where it works, with a search field over labels and keys.
+ * where it works, with a search field over labels and keys. Alternate keys
+ * follow the main key, such as "E or ↩" for Edit.
  */
 export function ShortcutOverlay() {
   const [isOpen, setIsOpen] = useState(false);
@@ -92,9 +98,15 @@ export function ShortcutOverlay() {
                             (label, index) => (
                               <Fragment key={index}>
                                 {index > 0 ? <span>then</span> : null}
-                                <kbd className="min-w-6 rounded-md border border-border bg-muted px-1.5 py-0.5 text-center font-mono text-foreground">
-                                  {label}
-                                </kbd>
+                                <kbd className={KEY_CLASS_NAME}>{label}</kbd>
+                              </Fragment>
+                            ),
+                          )}
+                          {formatAlternateKeys(shortcut, platform).map(
+                            (label) => (
+                              <Fragment key={label}>
+                                <span>or</span>
+                                <kbd className={KEY_CLASS_NAME}>{label}</kbd>
                               </Fragment>
                             ),
                           )}

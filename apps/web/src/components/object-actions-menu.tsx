@@ -12,37 +12,67 @@ import {
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuSeparator,
+  DropdownMenuShortcut,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { FOCUS_ITEM_SELECTOR, type ActionKeys } from "@/lib/item-keys";
+import {
+  formatAriaKeyShortcuts,
+  formatShortcutKeys,
+  getShortcut,
+  getShortcutPlatform,
+} from "@/lib/shortcuts";
 import { cn } from "@/lib/utils";
 
 interface ObjectActionsProps<Id extends string> {
   actions: ObjectAction<Id>[];
   onAction: (id: Id) => void;
+  /**
+   * The shortcut of each action, shown next to its label so the menu teaches
+   * the keys. Pass it only where those keys work, such as on focusable rows.
+   */
+  keys?: ActionKeys<Id>;
 }
+
+const platform = getShortcutPlatform();
 
 /** Renders one action set as menu items. Shared by the "…" menu and the right-click menu. */
 function ObjectActionItems<Id extends string>({
   actions,
   onAction,
+  keys,
 }: ObjectActionsProps<Id>) {
   return actions.map((action, index) => {
     const startsDestructiveGroup =
       action.destructive && index > 0 && !actions[index - 1]?.destructive;
     const detail = action.disabledReason ?? action.hint;
+    const shortcut = keys?.[action.id]
+      ? getShortcut(keys[action.id]!)
+      : undefined;
     return (
       <React.Fragment key={action.id}>
         {startsDestructiveGroup ? <DropdownMenuSeparator /> : null}
         <DropdownMenuItem
           variant={action.destructive ? "destructive" : "default"}
           disabled={Boolean(action.disabledReason)}
+          aria-keyshortcuts={
+            shortcut ? formatAriaKeyShortcuts(shortcut, platform) : undefined
+          }
           onClick={(event) => {
             event.stopPropagation();
             onAction(action.id);
           }}
-          className="flex-col items-start gap-0"
+          className="flex-col items-stretch gap-0"
         >
-          <span>{action.label}</span>
+          <span className="flex items-center gap-6">
+            <span>{action.label}</span>
+            {shortcut ? (
+              // aria-keyshortcuts tells screen readers; the label stays the name.
+              <DropdownMenuShortcut aria-hidden="true">
+                {formatShortcutKeys(shortcut, platform).join(" ")}
+              </DropdownMenuShortcut>
+            ) : null}
+          </span>
           {detail ? (
             <span className="text-xs font-normal text-muted-foreground">
               {detail}
@@ -57,18 +87,24 @@ function ObjectActionItems<Id extends string>({
 /**
  * The "…" button that opens an object's action set. Rows show it on hover and focus;
  * the narrow view always shows it (see `.object-actions-button` in styles.css).
+ * Inside a focusable row or card, closing the menu gives focus back to the row,
+ * so its keys keep working.
  */
 export function ObjectActionsButton<Id extends string>({
   actions,
   onAction,
+  keys,
   label,
   className,
 }: ObjectActionsProps<Id> & { label: string; className?: string }) {
+  const triggerRef = React.useRef<HTMLButtonElement>(null);
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
         render={
           <Button
+            ref={triggerRef}
             type="button"
             variant="ghost"
             size="icon-sm"
@@ -82,8 +118,14 @@ export function ObjectActionsButton<Id extends string>({
       >
         <More />
       </DropdownMenuTrigger>
-      <DropdownMenuContent align="end" className="w-auto min-w-52">
-        <ObjectActionItems actions={actions} onAction={onAction} />
+      <DropdownMenuContent
+        align="end"
+        className="w-auto min-w-52"
+        finalFocus={() =>
+          triggerRef.current?.closest<HTMLElement>(FOCUS_ITEM_SELECTOR) ?? true
+        }
+      >
+        <ObjectActionItems actions={actions} onAction={onAction} keys={keys} />
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -96,6 +138,7 @@ export function ObjectActionsButton<Id extends string>({
 export function ObjectContextMenu<Id extends string>({
   actions,
   onAction,
+  keys,
   render,
   children,
 }: ObjectActionsProps<Id> & {
@@ -106,7 +149,7 @@ export function ObjectContextMenu<Id extends string>({
     <ContextMenu>
       <ContextMenuTrigger render={render}>{children}</ContextMenuTrigger>
       <ContextMenuContent>
-        <ObjectActionItems actions={actions} onAction={onAction} />
+        <ObjectActionItems actions={actions} onAction={onAction} keys={keys} />
       </ContextMenuContent>
     </ContextMenu>
   );

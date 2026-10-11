@@ -14,6 +14,7 @@ import {
   updateProjectTask,
   type ProjectFactories,
 } from "@/domain/projects/project-transitions";
+import { getSharedTableStepOrder } from "@/lib/table-drag";
 
 function createFactories(): ProjectFactories {
   let nextId = 1;
@@ -153,6 +154,26 @@ describe("project ordering", () => {
     const projects = [createFixtureProject("one"), createFixtureProject("two")];
 
     expect(reorderProjects(projects, ["two", "missing"])).toBe(projects);
+  });
+
+  it("persists Move up among active projects like a drag", () => {
+    const archived = { ...createFixtureProject("old"), status: "archived" };
+    const projects = [
+      createFixtureProject("one"),
+      archived as LocalProject,
+      createFixtureProject("two"),
+    ];
+    // The sidebar's order: active projects only.
+    const activeIds = projects
+      .filter((project) => project.status === "active")
+      .map((project) => project._id);
+
+    const next = getSharedTableStepOrder(activeIds, "two", -1);
+
+    expect(
+      reorderProjects(projects, next!.order).map(({ _id }) => _id),
+    ).toEqual(["two", "old", "one"]);
+    expect(getSharedTableStepOrder(activeIds, "one", -1)).toBeNull();
   });
 });
 

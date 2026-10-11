@@ -3737,6 +3737,13 @@
     background: var(--surface-low);
   }
 
+  /* Day, backlog and task rows take keyboard focus. See lib/item-keys.ts. */
+  .entries-table tbody tr[data-focus-column]:focus-visible {
+    background: var(--surface-low);
+    outline: 2px solid color-mix(in srgb, var(--ring) 60%, transparent);
+    outline-offset: -2px;
+  }
+
   .project-tasks-table tbody tr,
   .backlog-table tbody tr {
     cursor: default;
