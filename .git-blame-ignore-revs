@@ -1,0 +1,4 @@
+# Formatting-only commits. Use with: git config blame.ignoreRevsFile .git-blame-ignore-revs
+
+# style: format the workspace with prettier
+73a90bc09c2d8342fabea8687cfad75a86792c8e
