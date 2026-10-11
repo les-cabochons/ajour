@@ -167,17 +167,18 @@ export function reorderProjects(
   return changed ? nextProjects : projects;
 }
 
+/** Appends a new task, with its billable flag, budget and adjustment, to a project. */
 export function addProjectTask(
   projects: LocalProject[],
   projectId: string,
-  name: string,
+  task: LocalProjectTaskDraft,
   factories: ProjectFactories,
 ) {
   return projects.map((project) =>
     project._id === projectId
       ? {
           ...project,
-          tasks: [...project.tasks, createProjectTask({ name }, factories)],
+          tasks: [...project.tasks, createProjectTask(task, factories)],
         }
       : project,
   );

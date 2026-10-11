@@ -105,6 +105,14 @@ Feature: Open the local time workspace
     And I open project import and export from the Projects list
     Then the project import and export page leads back to Projects
 
+  Scenario: Edit a task in the side panel with explicit Save
+    Given I have projects with searchable tasks
+    When I open project "aaa xyz"
+    And I rename task "111 000" to "111 draft" and press Escape
+    Then the project lists task "111 000"
+    When I rename task "111 000" to "111 final" and save
+    Then the project lists task "111 final"
+
   Scenario: Continue a second entry while the first one runs
     Given I have two saved entries with a timer running on the first
     When I continue the second entry

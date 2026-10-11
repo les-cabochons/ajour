@@ -327,6 +327,43 @@ When("I open the Projects workspace", async ({ page }) => {
   await page.goto("/projects");
 });
 
+When("I open project {string}", async ({ page }, project: string) => {
+  await page.goto("/projects");
+  await page
+    .getByRole("navigation", { name: "Projects" })
+    .getByRole("link", { name: project })
+    .click();
+  await expect(page.getByRole("heading", { name: project })).toBeVisible();
+});
+
+When(
+  "I rename task {string} to {string} and press Escape",
+  async ({ page }, task: string, name: string) => {
+    await page.getByText(task, { exact: true }).click();
+    const editor = page.getByRole("complementary", { name: "Task editor" });
+    await editor.getByRole("textbox", { name: "Name" }).fill(name);
+    await editor.getByRole("textbox", { name: "Name" }).press("Escape");
+    await expect(editor).toBeHidden();
+  },
+);
+
+When(
+  "I rename task {string} to {string} and save",
+  async ({ page }, task: string, name: string) => {
+    await page.getByText(task, { exact: true }).click();
+    const editor = page.getByRole("complementary", { name: "Task editor" });
+    await editor.getByRole("textbox", { name: "Name" }).fill(name);
+    await editor.getByRole("button", { name: "Save" }).click();
+    await expect(editor).toBeHidden();
+  },
+);
+
+Then("the project lists task {string}", async ({ page }, task: string) => {
+  await expect(
+    page.getByRole("row").filter({ hasText: task }).first(),
+  ).toBeVisible();
+});
+
 When("I continue the second entry", async ({ page }) => {
   const secondEntryRow = page
     .getByRole("row")
@@ -811,7 +848,7 @@ Then(
       projectsNavigation.getByRole("link", { name: "aaa xyz" }),
     ).toBeVisible();
     await expect(
-      projectsNavigation.getByRole("button", { name: "Project actions" }),
+      projectsNavigation.getByRole("button", { name: "New project" }),
     ).toBeVisible();
   },
 );

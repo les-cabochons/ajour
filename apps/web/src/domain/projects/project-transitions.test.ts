@@ -159,7 +159,7 @@ describe("project task lifecycle", () => {
     const [updated] = addProjectTask(
       [project],
       project._id,
-      "Build",
+      { name: "Build" },
       createFactories(),
     );
 
@@ -169,6 +169,23 @@ describe("project task lifecycle", () => {
       status: "active",
       billable: true,
       createdAt: 500,
+    });
+  });
+
+  it("adds a task with its billable flag, budget and adjustment", () => {
+    const project = createFixtureProject("project-1", []);
+    const [updated] = addProjectTask(
+      [project],
+      project._id,
+      { name: "Review", billable: false, budgetMs: 7_200_000, adjustmentMs: 0 },
+      createFactories(),
+    );
+
+    expect(updated?.tasks[0]).toMatchObject({
+      name: "Review",
+      billable: false,
+      budgetMs: 7_200_000,
+      adjustmentMs: undefined,
     });
   });
 

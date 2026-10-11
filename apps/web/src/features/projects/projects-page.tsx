@@ -4,11 +4,9 @@ import {
   RiArchiveLine as Archive,
   RiArrowLeftSLine as ChevronLeft,
   RiArrowRightSLine as ChevronRight,
-  RiCloseLine as X,
   RiDownloadLine as Download,
   RiFileTransferLine as FileTransfer,
   RiFolderAddLine as FolderPlus,
-  RiSaveLine as Save,
 } from "@remixicon/react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { MessagePanel } from "@/components/app-surface";
@@ -16,9 +14,9 @@ import {
   ObjectActionsButton,
   ObjectContextMenu,
 } from "@/components/object-actions-menu";
+import { SidePanel } from "@/components/side-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Command,
   CommandDialog,
@@ -29,14 +27,7 @@ import {
   CommandList,
   CommandSeparator,
 } from "@/components/ui/command";
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog";
+import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   Empty,
   EmptyContent,
@@ -45,7 +36,6 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Input } from "@/components/ui/input";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   CustomSidebar,
@@ -62,36 +52,33 @@ import {
 import {
   getProjectActions,
   getTaskActions,
+  type ObjectAction,
   type ProjectActionId,
   type TaskActionId,
 } from "@/domain/actions/object-actions";
 import {
   formatProjectTaskConsumedBadge,
-  formatSignedDurationHoursInput,
   getProjectTaskConsumedTone,
-  parseSignedHoursInput,
   type ProjectTaskConsumedTone,
 } from "@/domain/projects/task-budget";
-import {
-  getProjectTaskBillableValueLabel,
-  isProjectTaskBillable,
-} from "@/features/projects/project-task-options";
+import { getProjectTaskBillableValueLabel } from "@/features/projects/project-task-options";
 import type { ProjectTaskImportResult } from "@/domain/projects/task-import";
-import {
-  DEFAULT_PROJECT_ICON,
-  type LocalProjectIcon,
-  type ProjectIconName,
-} from "@/domain/projects/project-icon";
-import {
-  formatClockDuration,
-  formatDurationHoursInput,
-  parseHoursInput,
-} from "@/domain/time/duration";
 import {
   getLocalProjectDisplayName,
   type LocalProject,
   type LocalProjectTask,
 } from "@/domain/local-state";
+import { ProjectFormDialog } from "@/features/projects/project-form-dialog";
+import type { ProjectFormValues } from "@/features/projects/project-form";
+import {
+  commitProjectTaskDraft,
+  createProjectTaskEditorFields,
+  evaluateProjectTaskEditor,
+  type ProjectTaskEditorFields,
+  type ProjectTaskEditorState,
+  type ProjectTaskValues,
+} from "@/features/projects/project-task-editor";
+import { ProjectTaskEditorForm } from "@/features/projects/project-task-editor-form";
 import { useCurrentTeam } from "@/lib/session";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
@@ -104,11 +91,7 @@ import {
   SHARED_TABLE_DRAG_CLICK_SUPPRESSION_MS,
   type SharedTableDragPointerSession,
 } from "@/lib/table-drag";
-import {
-  PROJECT_ICON_PRESETS,
-  prepareUploadedProjectIcon,
-  ProjectIcon,
-} from "@/lib/project-icons";
+import { ProjectIcon } from "@/lib/project-icons";
 import { TimeEntryModal } from "@/features/timer/time-entry-modal";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { cn, todayIsoDate } from "@/lib/utils";
@@ -120,41 +103,24 @@ type ProjectMetrics = {
 
 type TaskMetricsByProject = Map<string, Map<string, ProjectMetrics>>;
 
-type ProjectDraft = {
-  name: string;
-  displayName: string;
-  code: string;
-  color: string;
-  icon: LocalProjectIcon;
-};
-
-type TaskEditDraft = {
-  name: string;
-  billable: boolean;
-  budget: string;
-  adjustment: string;
-};
-
 type ProjectModalState =
   { mode: "create" } | { mode: "edit"; projectId: string };
+
+/** The task open in the editor and its unsaved draft. */
+type TaskEditorSession = {
+  projectId: string;
+  /** The saved task being edited. Absent for a new task. */
+  taskId?: string;
+  fields: ProjectTaskEditorFields;
+  /** Set once Save or a switch was blocked, so a missing name shows its error. */
+  showErrors: boolean;
+};
 
 type ProjectCommandView = "main" | "task-projects";
 type ProjectTaskFilter = "active" | "archived";
 
-const defaultProjectDraft: ProjectDraft = {
-  name: "",
-  displayName: "",
-  code: "",
-  color: "#1f7667",
-  icon: DEFAULT_PROJECT_ICON,
-};
-
-const defaultTaskEditDraft: TaskEditDraft = {
-  name: "",
-  billable: true,
-  budget: "",
-  adjustment: "",
-};
+/** The project header's "…" menu adds Import tasks… to the project's action set. */
+type ProjectHeaderActionId = ProjectActionId | "import-tasks";
 
 const projectTaskToneClassName: Record<ProjectTaskConsumedTone, string> = {
   default: "",
@@ -278,444 +244,35 @@ function moveId(ids: string[], fromIndex: number, toIndex: number) {
 
 /* ── Project detail content ───────────────────────────────────────── */
 
-function ProjectFormModal({
-  draft,
-  mode,
-  onChange,
-  onClose,
-  onSubmit,
-}: {
-  draft: ProjectDraft;
-  mode: ProjectModalState["mode"];
-  onChange: React.Dispatch<React.SetStateAction<ProjectDraft>>;
-  onClose: () => void;
-  onSubmit: () => void;
-}) {
-  const overlayRef = useRef<HTMLDivElement | null>(null);
-  const uploadInputRef = useRef<HTMLInputElement | null>(null);
-  const [iconError, setIconError] = useState<string | null>(null);
-  const [isProcessingUpload, setIsProcessingUpload] = useState(false);
-  const title = mode === "create" ? "Create project" : "Edit project";
-  const submitLabel = mode === "create" ? "Create project" : "Save changes";
-
-  useEffect(() => {
-    function handleMouseDown(event: MouseEvent) {
-      if (overlayRef.current === event.target) {
-        onClose();
-      }
-    }
-
-    document.addEventListener("mousedown", handleMouseDown);
-    return () => document.removeEventListener("mousedown", handleMouseDown);
-  }, [onClose]);
-
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
-
-  const handlePresetSelect = (name: ProjectIconName) => {
-    setIconError(null);
-    onChange((current) => ({
-      ...current,
-      icon: { kind: "preset", name },
-    }));
+/**
+ * The project header's "…" menu: the project's action set with Import tasks… before
+ * Archive, because destructive actions come last. Right-click menus keep the plain set.
+ */
+function getProjectHeaderActions(
+  project: LocalProject,
+  isImporting: boolean,
+): ObjectAction<ProjectHeaderActionId>[] {
+  const actions: ObjectAction<ProjectHeaderActionId>[] =
+    getProjectActions(project);
+  const importAction: ObjectAction<ProjectHeaderActionId> = {
+    id: "import-tasks",
+    label: "Import tasks…",
+    disabledReason:
+      project.status === "archived"
+        ? "Restore the project first"
+        : isImporting
+          ? "Importing tasks"
+          : undefined,
+    hint: "Task names from column C of an Excel file",
   };
+  const destructiveIndex = actions.findIndex((action) => action.destructive);
+  const insertAt = destructiveIndex === -1 ? actions.length : destructiveIndex;
 
-  const handleUploadChange = async (
-    event: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-
-    if (!file) {
-      return;
-    }
-
-    setIsProcessingUpload(true);
-    setIconError(null);
-
-    try {
-      const nextIconSrc = await prepareUploadedProjectIcon(file);
-      onChange((current) => ({
-        ...current,
-        icon: {
-          kind: "upload",
-          src: nextIconSrc.src,
-          maskSrc: nextIconSrc.maskSrc,
-          colorMode:
-            current.icon.kind === "upload" &&
-            current.icon.colorMode === "native"
-              ? "native"
-              : "tinted",
-        },
-      }));
-    } catch (error) {
-      setIconError(
-        error instanceof Error
-          ? error.message
-          : "The favicon could not be used.",
-      );
-    } finally {
-      setIsProcessingUpload(false);
-    }
-  };
-
-  const handleUploadPickerOpen = () => {
-    const input = uploadInputRef.current;
-    if (!input) {
-      return;
-    }
-
-    input.value = "";
-
-    const pickerInput = input as HTMLInputElement & {
-      showPicker?: () => void;
-    };
-
-    if (typeof pickerInput.showPicker === "function") {
-      try {
-        pickerInput.showPicker();
-        return;
-      } catch {
-        // Fall back to click() for environments that expose showPicker
-        // but still reject it for this interaction path.
-      }
-    }
-
-    input.click();
-  };
-
-  return (
-    <div ref={overlayRef} className="time-entry-modal-overlay">
-      <div
-        className="time-entry-modal project-form-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="project-form-modal-title"
-      >
-        <div className="time-entry-modal-header">
-          <div className="space-y-1">
-            <span
-              id="project-form-modal-title"
-              className="time-entry-modal-title"
-            >
-              {title}
-            </span>
-            <p className="project-form-modal-copy">
-              Add the project name, display name, short code, icon, and color.
-            </p>
-          </div>
-          <button
-            type="button"
-            className="time-entry-modal-close"
-            aria-label="Close project form"
-            onClick={onClose}
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        <div className="project-form-modal-fields">
-          <div className="space-y-2">
-            <label htmlFor="project-form-name" className="field-label">
-              Full name
-            </label>
-            <Input
-              id="project-form-name"
-              autoFocus
-              placeholder="Full name"
-              value={draft.name}
-              onChange={(event) =>
-                onChange((current) => {
-                  const nextName = event.target.value;
-                  const displayNameWasSynced =
-                    current.displayName.trim() === "" ||
-                    current.displayName.trim() === current.name.trim();
-
-                  return {
-                    ...current,
-                    name: nextName,
-                    displayName: displayNameWasSynced
-                      ? nextName
-                      : current.displayName,
-                  };
-                })
-              }
-            />
-          </div>
-          <div className="space-y-2">
-            <label htmlFor="project-form-display-name" className="field-label">
-              Display name
-            </label>
-            <Input
-              id="project-form-display-name"
-              placeholder="Display name"
-              value={draft.displayName}
-              onChange={(event) =>
-                onChange((current) => ({
-                  ...current,
-                  displayName: event.target.value,
-                }))
-              }
-            />
-          </div>
-          <div className="project-icon-field">
-            <div className="project-icon-field-copy">
-              <span className="project-icon-field-label">Project icon</span>
-              <p className="project-form-modal-copy">
-                Pick a preset or upload a favicon-sized icon. Uploaded icons can
-                use the project color or keep their native colors.
-              </p>
-            </div>
-
-            <div className="project-icon-field-toolbar">
-              <div className="project-icon-preview">
-                <ProjectIcon
-                  icon={draft.icon}
-                  color={draft.color}
-                  className="size-5"
-                />
-                <span className="project-icon-preview-label">
-                  {draft.icon.kind === "upload" ? "Uploaded favicon" : "Preset"}
-                </span>
-              </div>
-
-              <input
-                id="project-form-icon-upload"
-                ref={uploadInputRef}
-                type="file"
-                accept=".png,.svg,.ico,image/png,image/svg+xml,image/x-icon,image/vnd.microsoft.icon"
-                className="sr-only"
-                onChange={(event) => {
-                  void handleUploadChange(event);
-                }}
-              />
-              <Button
-                type="button"
-                variant={draft.icon.kind === "upload" ? "default" : "outline"}
-                size="sm"
-                disabled={isProcessingUpload}
-                onClick={handleUploadPickerOpen}
-              >
-                {isProcessingUpload ? "Preparing icon" : "Upload favicon"}
-              </Button>
-              <Button
-                type="button"
-                variant={
-                  draft.icon.kind === "upload" &&
-                  draft.icon.colorMode === "native"
-                    ? "default"
-                    : "outline"
-                }
-                size="sm"
-                disabled={draft.icon.kind !== "upload"}
-                onClick={() =>
-                  onChange((current) => {
-                    if (current.icon.kind !== "upload") {
-                      return current;
-                    }
-
-                    return {
-                      ...current,
-                      icon: {
-                        ...current.icon,
-                        colorMode:
-                          current.icon.colorMode === "native"
-                            ? "tinted"
-                            : "native",
-                      },
-                    };
-                  })
-                }
-              >
-                Keep native colors
-              </Button>
-            </div>
-
-            <div className="project-icon-preset-grid" role="list">
-              {PROJECT_ICON_PRESETS.map((preset) => {
-                const isSelected =
-                  draft.icon.kind === "preset" &&
-                  draft.icon.name === preset.name;
-
-                return (
-                  <button
-                    key={preset.name}
-                    type="button"
-                    role="listitem"
-                    className={cn(
-                      "project-icon-preset-button",
-                      isSelected && "is-selected",
-                    )}
-                    aria-label={`Use ${preset.label} icon`}
-                    title={preset.label}
-                    onClick={() => handlePresetSelect(preset.name)}
-                  >
-                    <ProjectIcon
-                      icon={{ kind: "preset", name: preset.name }}
-                      color={draft.color}
-                      className="size-4"
-                    />
-                  </button>
-                );
-              })}
-            </div>
-
-            {iconError ? (
-              <span className="field-error">{iconError}</span>
-            ) : null}
-          </div>
-          <div className="grid gap-3 desktop:grid-cols-[1fr_110px]">
-            <div className="space-y-2">
-              <label htmlFor="project-form-code" className="field-label">
-                Code
-              </label>
-              <Input
-                id="project-form-code"
-                placeholder="Code"
-                value={draft.code}
-                onChange={(event) =>
-                  onChange((current) => ({
-                    ...current,
-                    code: event.target.value,
-                  }))
-                }
-              />
-            </div>
-            <div className="space-y-2">
-              <label htmlFor="project-form-color" className="field-label">
-                Color
-              </label>
-              <label className="project-color-picker">
-                <span
-                  className="project-color-picker-swatch"
-                  style={{ backgroundColor: draft.color }}
-                  aria-hidden="true"
-                />
-                <input
-                  id="project-form-color"
-                  className="project-color-picker-input"
-                  aria-label="Project color"
-                  type="color"
-                  value={draft.color}
-                  onChange={(event) =>
-                    onChange((current) => ({
-                      ...current,
-                      color: event.target.value,
-                    }))
-                  }
-                />
-              </label>
-            </div>
-          </div>
-        </div>
-
-        <div className="time-entry-modal-actions project-form-modal-actions">
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button
-            className="gap-2"
-            disabled={!draft.name.trim()}
-            onClick={onSubmit}
-          >
-            {mode === "create" ? (
-              <FolderPlus className="h-4 w-4" />
-            ) : (
-              <Save className="h-4 w-4" />
-            )}
-            {submitLabel}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ProjectTaskCreateModal({
-  draft,
-  onChange,
-  onClose,
-  onSubmit,
-  project,
-}: {
-  draft: string;
-  onChange: React.Dispatch<React.SetStateAction<string>>;
-  onClose: () => void;
-  onSubmit: () => void;
-  project: LocalProject | null;
-}) {
-  return (
-    <Dialog open={Boolean(project)} onOpenChange={(open) => !open && onClose()}>
-      <DialogContent
-        className="project-task-create-dialog max-w-lg gap-4"
-        showCloseButton
-      >
-        <DialogHeader className="gap-1">
-          <DialogTitle>Create task</DialogTitle>
-          <DialogDescription>
-            {project
-              ? `Add a task to ${getProjectDisplayName(project)}${project.code ? ` (${project.code})` : ""}.`
-              : "Add a task to the selected project."}
-          </DialogDescription>
-        </DialogHeader>
-
-        <div className="space-y-3">
-          {project ? (
-            <div className="project-task-create-project">
-              <span className="project-task-create-project-label">Project</span>
-              <div className="flex items-center gap-2">
-                <ProjectIcon
-                  icon={project.icon}
-                  color={project.color}
-                  className="ajour-sidebar-icon"
-                />
-                <span className="font-medium text-foreground">
-                  {getProjectDisplayName(project)}
-                </span>
-                {project.code ? <Badge>{project.code}</Badge> : null}
-              </div>
-            </div>
-          ) : null}
-
-          <Input
-            autoFocus
-            placeholder="Task name"
-            value={draft}
-            onChange={(event) => onChange(event.target.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Enter" && draft.trim()) {
-                event.preventDefault();
-                onSubmit();
-              }
-
-              if (event.key === "Escape") {
-                event.preventDefault();
-                onClose();
-              }
-            }}
-          />
-        </div>
-
-        <DialogFooter>
-          <Button variant="outline" onClick={onClose}>
-            Cancel
-          </Button>
-          <Button disabled={!project || !draft.trim()} onClick={onSubmit}>
-            <Plus data-icon="inline-start" />
-            Create task
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-  );
+  return [
+    ...actions.slice(0, insertAt),
+    importAction,
+    ...actions.slice(insertAt),
+  ];
 }
 
 function ArchivedProjectsView({
@@ -810,25 +367,29 @@ function ProjectDetail({
   project,
   metrics,
   taskMetrics,
+  editingTaskId,
   onProjectAction,
+  onOpenTask,
+  onNewTask,
 }: {
   project: LocalProject;
   metrics: ProjectMetrics;
   taskMetrics: Map<string, ProjectMetrics>;
+  /** The task open in the side panel, highlighted in the list. */
+  editingTaskId?: string;
   onProjectAction: (project: LocalProject, actionId: ProjectActionId) => void;
+  /** Opens a saved task in the task editor. */
+  onOpenTask: (task: LocalProjectTask) => void;
+  /** Opens a blank task in the task editor. */
+  onNewTask: () => void;
 }) {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const taskRowRefs = useRef(new Map<string, HTMLTableRowElement>());
-  const taskEditDropdownRef = useRef<HTMLDivElement | null>(null);
   const taskPointerSessionRef = useRef<SharedTableDragPointerSession | null>(
     null,
   );
   const taskDragStateRef = useRef<TaskDragState | null>(null);
   const suppressTaskClickUntilRef = useRef(0);
-  const [showTaskForm, setShowTaskForm] = useState(false);
-  const [taskDraft, setTaskDraft] = useState("");
-  const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
-  const [taskEditDraft, setTaskEditDraft] = useState(defaultTaskEditDraft);
   /** Task whose New entry… dialog is open. */
   const [newEntryTask, setNewEntryTask] = useState<LocalProjectTask | null>(
     null,
@@ -843,6 +404,7 @@ function ProjectDetail({
   );
   const isArchived = project.status === "archived";
   const projectActions = getProjectActions(project);
+  const headerActions = getProjectHeaderActions(project, isImporting);
 
   const summary = taskSummary(project);
   const activeTasks = project.tasks.filter((task) => task.status === "active");
@@ -857,28 +419,6 @@ function ProjectDetail({
     { label: "Tracked", value: hoursLabel(metrics.durationMs) },
     { label: "Entries", value: `${metrics.entryCount}` },
   ];
-  const editingTask = editingTaskId
-    ? (project.tasks.find((task) => task._id === editingTaskId) ?? null)
-    : null;
-  const editingTaskTrackedMs = editingTask
-    ? (taskMetrics.get(editingTask._id)?.durationMs ?? 0)
-    : 0;
-  const parsedBudgetMs =
-    taskEditDraft.budget.trim().length === 0
-      ? undefined
-      : parseHoursInput(taskEditDraft.budget);
-  const parsedAdjustmentMs =
-    taskEditDraft.adjustment.trim().length === 0
-      ? undefined
-      : parseSignedHoursInput(taskEditDraft.adjustment);
-  const budgetError =
-    taskEditDraft.budget.trim().length > 0 && parsedBudgetMs === null
-      ? "Enter a valid non-negative duration."
-      : null;
-  const adjustmentError =
-    taskEditDraft.adjustment.trim().length > 0 && parsedAdjustmentMs === null
-      ? "Enter a valid signed duration."
-      : null;
   const taskFilters: {
     value: ProjectTaskFilter;
     label: string;
@@ -887,7 +427,6 @@ function ProjectDetail({
     { value: "active", label: "Active", count: summary.active },
     { value: "archived", label: "Archived", count: summary.archived },
   ];
-  const visibleTasks = taskFilter === "archived" ? archivedTasks : activeTasks;
   const isArchivedTaskFilter = taskFilter === "archived";
   const draggedTask = useMemo(
     () =>
@@ -898,18 +437,10 @@ function ProjectDetail({
     [activeTasks, taskDragState],
   );
   const canReorderTasks =
-    !isArchived &&
-    taskFilter === "active" &&
-    !showTaskForm &&
-    !editingTaskId &&
-    activeTasks.length > 1;
+    !isArchived && taskFilter === "active" && activeTasks.length > 1;
 
   useEffect(() => {
     setTaskFilter("active");
-    setShowTaskForm(false);
-    setTaskDraft("");
-    setEditingTaskId(null);
-    setTaskEditDraft(defaultTaskEditDraft);
     setImportMessage(null);
     setImportError(null);
     if (importInputRef.current) {
@@ -1032,27 +563,22 @@ function ProjectDetail({
     }
   };
 
-  function handleTaskClick(task: LocalProjectTask) {
-    if (performance.now() < suppressTaskClickUntilRef.current) return;
-    openTaskEditor(task);
+  function openImportPicker() {
+    importInputRef.current?.click();
   }
 
-  function openTaskEditor(task: LocalProjectTask) {
-    if (isArchived || task.status === "archived") return;
-    if (editingTaskId === task._id) return;
-    setEditingTaskId(task._id);
-    setTaskEditDraft({
-      name: task.name,
-      billable: isProjectTaskBillable(task),
-      budget:
-        typeof task.budgetMs === "number"
-          ? formatDurationHoursInput(task.budgetMs)
-          : "",
-      adjustment:
-        typeof task.adjustmentMs === "number"
-          ? formatSignedDurationHoursInput(task.adjustmentMs)
-          : "",
-    });
+  function runHeaderAction(actionId: ProjectHeaderActionId) {
+    if (actionId === "import-tasks") {
+      openImportPicker();
+      return;
+    }
+
+    onProjectAction(project, actionId);
+  }
+
+  function handleTaskClick(task: LocalProjectTask) {
+    if (performance.now() < suppressTaskClickUntilRef.current) return;
+    onOpenTask(task);
   }
 
   /** Runs the task action set from the row's right-click menu and "…" button. */
@@ -1070,7 +596,7 @@ function ProjectDetail({
         setNewEntryTask(task);
         return;
       case "edit":
-        openTaskEditor(task);
+        onOpenTask(task);
         return;
       case "archive":
         localStore.archiveProjectTask(project._id, task._id);
@@ -1081,78 +607,17 @@ function ProjectDetail({
     }
   }
 
-  function closeTaskEditor() {
-    setEditingTaskId(null);
-    setTaskEditDraft(defaultTaskEditDraft);
-  }
-
-  function commitTaskEdit() {
-    if (!editingTaskId) {
-      return false;
-    }
-    const trimmed = taskEditDraft.name.trim();
-    if (!trimmed || parsedBudgetMs === null || parsedAdjustmentMs === null) {
-      closeTaskEditor();
-      return false;
-    }
-
-    localStore.updateProjectTask(project._id, editingTaskId, {
-      name: trimmed,
-      billable: taskEditDraft.billable,
-      budgetMs: parsedBudgetMs,
-      adjustmentMs: parsedAdjustmentMs,
-    });
-    closeTaskEditor();
-    return true;
-  }
-
-  function autosaveTaskEditor() {
-    if (!editingTaskId) {
-      return;
-    }
-
-    commitTaskEdit();
-  }
-
-  useEffect(() => {
-    if (!editingTaskId) {
-      return;
-    }
-
-    function handleDocumentMouseDown(event: MouseEvent) {
-      const target = event.target;
-      if (!(target instanceof Node)) {
-        return;
-      }
-
-      const footerZone =
-        target instanceof Element
-          ? target.closest(".project-task-edit-footer")
-          : null;
-      if (footerZone) {
-        autosaveTaskEditor();
-        return;
-      }
-
-      if (taskEditDropdownRef.current?.contains(target)) {
-        return;
-      }
-
-      autosaveTaskEditor();
-    }
-
-    document.addEventListener("mousedown", handleDocumentMouseDown);
-    return () =>
-      document.removeEventListener("mousedown", handleDocumentMouseDown);
-  }, [autosaveTaskEditor, editingTaskId]);
-
   function handleTaskPointerDown(
     taskId: string,
     event: React.PointerEvent<HTMLTableRowElement>,
   ) {
+    // Row menus render in portals, but their React events still bubble to the row.
+    // Capturing the pointer for them would send the menu item's click to the row.
     if (
       !canReorderTasks ||
       event.button !== 0 ||
+      !(event.target instanceof Node) ||
+      !event.currentTarget.contains(event.target) ||
       isTaskDragBlockedTarget(event.target)
     ) {
       return;
@@ -1241,37 +706,70 @@ function ProjectDetail({
     });
   }
 
+  function renderConsumedBadge(task: LocalProjectTask) {
+    const options = {
+      budgetMs: task.budgetMs,
+      trackedMs: taskMetrics.get(task._id)?.durationMs ?? 0,
+      adjustmentMs: task.adjustmentMs,
+    };
+
+    return (
+      <span
+        className={cn(
+          "hours-badge",
+          projectTaskToneClassName[getProjectTaskConsumedTone(options)],
+        )}
+      >
+        {formatProjectTaskConsumedBadge(options)}
+      </span>
+    );
+  }
+
   return (
     <div className="space-y-6">
+      <input
+        ref={importInputRef}
+        type="file"
+        accept=".xlsx,.xls,.xlsm"
+        className="hidden"
+        onChange={(event) => {
+          void handleTaskImport(event);
+        }}
+      />
+
       {/* Project header */}
-      <div className="flex flex-col gap-4">
-        <div className="space-y-2">
-          <ObjectContextMenu
-            actions={projectActions}
-            onAction={(actionId) => onProjectAction(project, actionId)}
-            render={<div className="flex flex-wrap items-center gap-2" />}
-          >
-            <ProjectIcon
-              icon={project.icon}
-              color={project.color}
-              className="project-header-icon"
-            />
-            <div className="project-title-stack">
-              <h2 className="text-[15px] font-semibold">
-                {getProjectDisplayName(project)}
-              </h2>
-              {shouldShowProjectFullName(project) ? (
-                <span className="project-full-name">{project.name}</span>
-              ) : null}
-            </div>
-            {project.code ? <Badge>{project.code}</Badge> : null}
-            <ObjectActionsButton
-              actions={projectActions}
-              onAction={(actionId) => onProjectAction(project, actionId)}
-              label={`Actions for ${getProjectDisplayName(project)}`}
-            />
-          </ObjectContextMenu>
-        </div>
+      <div className="project-detail-header">
+        <ObjectContextMenu
+          actions={projectActions}
+          onAction={(actionId) => onProjectAction(project, actionId)}
+          render={<div className="flex min-w-0 flex-wrap items-center gap-2" />}
+        >
+          <ProjectIcon
+            icon={project.icon}
+            color={project.color}
+            className="project-header-icon"
+          />
+          <div className="project-title-stack">
+            <h2 className="text-[15px] font-semibold">
+              {getProjectDisplayName(project)}
+            </h2>
+            {shouldShowProjectFullName(project) ? (
+              <span className="project-full-name">{project.name}</span>
+            ) : null}
+          </div>
+          {project.code ? <Badge>{project.code}</Badge> : null}
+          <ObjectActionsButton
+            actions={headerActions}
+            onAction={runHeaderAction}
+            label={`Actions for ${getProjectDisplayName(project)}`}
+          />
+        </ObjectContextMenu>
+        {!isArchived ? (
+          <Button type="button" variant="outline" size="sm" onClick={onNewTask}>
+            <Plus data-icon="inline-start" />
+            New task
+          </Button>
+        ) : null}
       </div>
 
       {/* Stat pills */}
@@ -1306,12 +804,7 @@ function ProjectDetail({
                   "toggle-item backlog-filter-tab",
                   isActive && "toggle-item-active",
                 )}
-                onClick={() => {
-                  setTaskFilter(filter.value);
-                  setShowTaskForm(false);
-                  setTaskDraft("");
-                  setEditingTaskId(null);
-                }}
+                onClick={() => setTaskFilter(filter.value)}
               >
                 <span className="backlog-filter-label">{filter.label}</span>
                 <span className="backlog-filter-count">{filter.count}</span>
@@ -1329,6 +822,11 @@ function ProjectDetail({
       ) : null}
 
       {/* Import messages */}
+      {isImporting ? (
+        <MessagePanel className="border border-[var(--border)] text-foreground">
+          Importing tasks…
+        </MessagePanel>
+      ) : null}
       {importMessage ? (
         <MessagePanel className="border border-[var(--success-muted)] bg-[var(--success-muted)] text-foreground">
           {importMessage}
@@ -1343,59 +841,14 @@ function ProjectDetail({
         </MessagePanel>
       ) : null}
 
-      {/* Active tasks table */}
+      {/* Tasks table */}
       <div className="entries-table-scroll-shell entries-table-scroll-shell-project">
         <table className="entries-table project-tasks-table entries-table-header-table animate-in">
           <thead>
             <tr>
               <th>Task</th>
               <th className="entry-hours-heading entry-hours-heading-actions">
-                {!isArchived && !isArchivedTaskFilter ? (
-                  <div className="flex items-center justify-end gap-1">
-                    <input
-                      ref={importInputRef}
-                      type="file"
-                      accept=".xlsx,.xls,.xlsm"
-                      className="hidden"
-                      onChange={(event) => {
-                        void handleTaskImport(event);
-                      }}
-                    />
-                    <button
-                      type="button"
-                      className="entries-header-add"
-                      aria-label={
-                        isImporting
-                          ? "Importing tasks"
-                          : "Import tasks from Excel"
-                      }
-                      title={
-                        isImporting
-                          ? "Importing tasks"
-                          : "Import tasks from Excel"
-                      }
-                      disabled={isImporting}
-                      onClick={() => importInputRef.current?.click()}
-                    >
-                      <Download className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      className={cn(
-                        "entries-header-add entries-header-bubble",
-                        showTaskForm && "is-open",
-                      )}
-                      aria-label={showTaskForm ? "Cancel new task" : "Add task"}
-                      onClick={() => {
-                        setShowTaskForm((c) => !c);
-                        setTaskDraft("");
-                      }}
-                    >
-                      <span className="entries-header-add-label">New task</span>
-                      <Plus className="h-3.5 w-3.5" />
-                    </button>
-                  </div>
-                ) : null}
+                <span className="sr-only">Actions</span>
               </th>
             </tr>
           </thead>
@@ -1408,46 +861,8 @@ function ProjectDetail({
             )}
           >
             <tbody>
-              {showTaskForm && !isArchivedTaskFilter ? (
-                <tr
-                  className="entry-edit-row"
-                  onClick={(e) => e.stopPropagation()}
-                >
-                  <td colSpan={2}>
-                    <div className="entry-edit-dropdown entry-create-dropdown">
-                      <div className="entry-edit-dropdown-grid">
-                        <label className="field entry-field-span-2">
-                          <span className="field-label">Task name</span>
-                          <input
-                            autoFocus
-                            className="field-input"
-                            value={taskDraft}
-                            onChange={(e) => setTaskDraft(e.target.value)}
-                            placeholder="New task name"
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter" && taskDraft.trim()) {
-                                e.preventDefault();
-                                localStore.addProjectTask(
-                                  project._id,
-                                  taskDraft.trim(),
-                                );
-                                setTaskDraft("");
-                                setShowTaskForm(false);
-                              }
-                              if (e.key === "Escape") {
-                                setShowTaskForm(false);
-                                setTaskDraft("");
-                              }
-                            }}
-                          />
-                        </label>
-                      </div>
-                    </div>
-                  </td>
-                </tr>
-              ) : null}
-
-              {visibleTasks.length === 0 && !showTaskForm ? (
+              {(isArchivedTaskFilter ? archivedTasks : activeTasks).length ===
+              0 ? (
                 <tr className="entry-empty-row">
                   <td colSpan={2}>
                     <Empty className="entry-table-empty">
@@ -1470,26 +885,19 @@ function ProjectDetail({
                       </EmptyHeader>
                       {!isArchived && !isArchivedTaskFilter ? (
                         <EmptyContent className="max-w-none flex-row justify-center gap-2">
-                          <Button
-                            type="button"
-                            size="sm"
-                            onClick={() => {
-                              setShowTaskForm(true);
-                              setTaskDraft("");
-                            }}
-                          >
+                          <Button type="button" size="sm" onClick={onNewTask}>
                             <Plus data-icon="inline-start" />
-                            Create a task
+                            New task
                           </Button>
                           <Button
                             type="button"
                             variant="secondary"
                             size="sm"
                             disabled={isImporting}
-                            onClick={() => importInputRef.current?.click()}
+                            onClick={openImportPicker}
                           >
                             <Download data-icon="inline-start" />
-                            {isImporting ? "Importing" : "Import tasks"}
+                            Import tasks…
                           </Button>
                         </EmptyContent>
                       ) : null}
@@ -1500,10 +908,6 @@ function ProjectDetail({
 
               {isArchivedTaskFilter
                 ? archivedTasks.map((task) => {
-                    const trackedMetrics = taskMetrics.get(task._id) ?? {
-                      durationMs: 0,
-                      entryCount: 0,
-                    };
                     const taskActions = getTaskActions(project, task);
 
                     return (
@@ -1538,36 +942,14 @@ function ProjectDetail({
                                 className="entry-row-action"
                               />
                             </div>
-                            <span
-                              className={cn(
-                                "hours-badge",
-                                projectTaskToneClassName[
-                                  getProjectTaskConsumedTone({
-                                    budgetMs: task.budgetMs,
-                                    trackedMs: trackedMetrics.durationMs,
-                                    adjustmentMs: task.adjustmentMs,
-                                  })
-                                ],
-                              )}
-                            >
-                              {formatProjectTaskConsumedBadge({
-                                budgetMs: task.budgetMs,
-                                trackedMs: trackedMetrics.durationMs,
-                                adjustmentMs: task.adjustmentMs,
-                              })}
-                            </span>
+                            {renderConsumedBadge(task)}
                           </div>
                         </td>
                       </ObjectContextMenu>
                     );
                   })
                 : activeTasks.map((task, index) => {
-                    const isEditing = editingTaskId === task._id;
                     const taskActions = getTaskActions(project, task);
-                    const trackedMetrics = taskMetrics.get(task._id) ?? {
-                      durationMs: 0,
-                      entryCount: 0,
-                    };
                     const isDraggedTask = taskDragState?.taskId === task._id;
                     const rowShift = taskDragState
                       ? getSharedTableDragRowShift({
@@ -1578,154 +960,7 @@ function ProjectDetail({
                         })
                       : 0;
 
-                    return isEditing ? (
-                      <tr
-                        key={task._id}
-                        className="entry-edit-row"
-                        onClick={(e) => e.stopPropagation()}
-                      >
-                        <td colSpan={2}>
-                          <div
-                            ref={taskEditDropdownRef}
-                            className="entry-edit-dropdown"
-                            onBlur={(event) => {
-                              const nextTarget = event.relatedTarget;
-                              if (
-                                nextTarget instanceof Node &&
-                                event.currentTarget.contains(nextTarget)
-                              ) {
-                                return;
-                              }
-
-                              autosaveTaskEditor();
-                            }}
-                          >
-                            <div className="project-task-edit-layout">
-                              <div className="project-task-edit-primary">
-                                <label className="field">
-                                  <span className="field-label">Task name</span>
-                                  <input
-                                    autoFocus
-                                    className="field-input"
-                                    value={taskEditDraft.name}
-                                    onChange={(e) =>
-                                      setTaskEditDraft((current) => ({
-                                        ...current,
-                                        name: e.target.value,
-                                      }))
-                                    }
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter") {
-                                        e.preventDefault();
-                                        commitTaskEdit();
-                                      }
-                                      if (e.key === "Escape") {
-                                        autosaveTaskEditor();
-                                      }
-                                    }}
-                                  />
-                                </label>
-                                <div className="project-task-edit-billable">
-                                  <span className="field-label">Billable</span>
-                                  <label className="project-task-billable-toggle">
-                                    <Checkbox
-                                      checked={taskEditDraft.billable}
-                                      onCheckedChange={(checked) =>
-                                        setTaskEditDraft((current) => ({
-                                          ...current,
-                                          billable: checked,
-                                        }))
-                                      }
-                                    />
-                                    <span>
-                                      {taskEditDraft.billable
-                                        ? "Billable"
-                                        : "Non-billable"}
-                                    </span>
-                                  </label>
-                                </div>
-                              </div>
-                              <div className="project-task-edit-metrics">
-                                <label className="field">
-                                  <span className="field-label">
-                                    Tracked time
-                                  </span>
-                                  <input
-                                    className="field-input"
-                                    value={formatDurationHoursInput(
-                                      editingTaskTrackedMs,
-                                    )}
-                                    readOnly
-                                  />
-                                </label>
-                                <label className="field">
-                                  <span className="field-label">Budget</span>
-                                  <input
-                                    className="field-input"
-                                    value={taskEditDraft.budget}
-                                    placeholder="Optional"
-                                    onChange={(e) =>
-                                      setTaskEditDraft((current) => ({
-                                        ...current,
-                                        budget: e.target.value,
-                                      }))
-                                    }
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter") {
-                                        e.preventDefault();
-                                        commitTaskEdit();
-                                      }
-                                      if (e.key === "Escape") {
-                                        autosaveTaskEditor();
-                                      }
-                                    }}
-                                  />
-                                  {budgetError ? (
-                                    <span className="field-error">
-                                      {budgetError}
-                                    </span>
-                                  ) : null}
-                                </label>
-                                <label className="field">
-                                  <span className="field-label">
-                                    Adjustment
-                                  </span>
-                                  <input
-                                    className="field-input"
-                                    value={taskEditDraft.adjustment}
-                                    placeholder="Optional"
-                                    onChange={(e) =>
-                                      setTaskEditDraft((current) => ({
-                                        ...current,
-                                        adjustment: e.target.value,
-                                      }))
-                                    }
-                                    onKeyDown={(e) => {
-                                      if (e.key === "Enter") {
-                                        e.preventDefault();
-                                        commitTaskEdit();
-                                      }
-                                      if (e.key === "Escape") {
-                                        autosaveTaskEditor();
-                                      }
-                                    }}
-                                  />
-                                  {adjustmentError ? (
-                                    <span className="field-error">
-                                      {adjustmentError}
-                                    </span>
-                                  ) : null}
-                                </label>
-                              </div>
-                            </div>
-                            <div
-                              className="project-task-edit-footer"
-                              aria-hidden="true"
-                            />
-                          </div>
-                        </td>
-                      </tr>
-                    ) : (
+                    return (
                       <ObjectContextMenu
                         key={task._id}
                         actions={taskActions}
@@ -1746,6 +981,7 @@ function ProjectDetail({
                               pressedTaskId === task._id && "is-pressing",
                               rowShift !== 0 && "is-shifting",
                               isDraggedTask && "is-drag-source",
+                              editingTaskId === task._id && "is-editing",
                             )}
                             style={
                               rowShift !== 0
@@ -1784,24 +1020,7 @@ function ProjectDetail({
                                 className="entry-row-action"
                               />
                             </div>
-                            <span
-                              className={cn(
-                                "hours-badge",
-                                projectTaskToneClassName[
-                                  getProjectTaskConsumedTone({
-                                    budgetMs: task.budgetMs,
-                                    trackedMs: trackedMetrics.durationMs,
-                                    adjustmentMs: task.adjustmentMs,
-                                  })
-                                ],
-                              )}
-                            >
-                              {formatProjectTaskConsumedBadge({
-                                budgetMs: task.budgetMs,
-                                trackedMs: trackedMetrics.durationMs,
-                                adjustmentMs: task.adjustmentMs,
-                              })}
-                            </span>
+                            {renderConsumedBadge(task)}
                           </div>
                         </td>
                       </ObjectContextMenu>
@@ -1827,27 +1046,7 @@ function ProjectDetail({
               {getProjectTaskBillableValueLabel(draggedTask)}
             </Badge>
           </div>
-          <span
-            className={cn(
-              "hours-badge",
-              projectTaskToneClassName[
-                getProjectTaskConsumedTone({
-                  budgetMs: draggedTask.budgetMs,
-                  trackedMs: (
-                    taskMetrics.get(draggedTask._id) ?? { durationMs: 0 }
-                  ).durationMs,
-                  adjustmentMs: draggedTask.adjustmentMs,
-                })
-              ],
-            )}
-          >
-            {formatProjectTaskConsumedBadge({
-              budgetMs: draggedTask.budgetMs,
-              trackedMs: (taskMetrics.get(draggedTask._id) ?? { durationMs: 0 })
-                .durationMs,
-              adjustmentMs: draggedTask.adjustmentMs,
-            })}
-          </span>
+          {renderConsumedBadge(draggedTask)}
         </div>
       ) : null}
 
@@ -1862,6 +1061,19 @@ function ProjectDetail({
   );
 }
 
+/** Writes a task draft: updates the saved task, or adds the new one to its project. */
+function writeProjectTask(
+  session: TaskEditorSession,
+  values: ProjectTaskValues,
+) {
+  if (session.taskId) {
+    localStore.updateProjectTask(session.projectId, session.taskId, values);
+    return;
+  }
+
+  localStore.addProjectTask(session.projectId, values);
+}
+
 /* ── Projects page ────────────────────────────────────────────────── */
 
 export function ProjectsPage() {
@@ -1870,7 +1082,8 @@ export function ProjectsPage() {
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
   // The narrow view has no sidebars, so the project list is a page of its own
-  // at /projects, and project pages open without it.
+  // at /projects, and project pages open without it. Tasks edit in a full-width
+  // dialog there instead of the side panel.
   const isNarrowView = useIsNarrowView();
   const isNarrowProjectList = isNarrowView && pathname === "/projects";
   const projectRowRefs = useRef(new Map<string, HTMLLIElement>());
@@ -1881,15 +1094,11 @@ export function ProjectsPage() {
   const suppressProjectClickUntilRef = useRef(0);
   const [projectModalState, setProjectModalState] =
     useState<ProjectModalState | null>(null);
-  const [projectDraft, setProjectDraft] = useState(defaultProjectDraft);
+  const [taskEditor, setTaskEditor] = useState<TaskEditorSession | null>(null);
   const [isProjectCommandOpen, setIsProjectCommandOpen] = useState(false);
   const [projectCommandView, setProjectCommandView] =
     useState<ProjectCommandView>("main");
   const [projectCommandQuery, setProjectCommandQuery] = useState("");
-  const [taskCreationProjectId, setTaskCreationProjectId] = useState<
-    string | null
-  >(null);
-  const [taskCreationDraft, setTaskCreationDraft] = useState("");
   const [pressedProjectId, setPressedProjectId] = useState<string | null>(null);
   const [projectDragState, setProjectDragState] =
     useState<ProjectDragState | null>(null);
@@ -1986,9 +1195,18 @@ export function ProjectsPage() {
   const selectedProject = selectedProjectId
     ? (allProjects.find((project) => project._id === selectedProjectId) ?? null)
     : null;
-  const selectedTaskCreationProject = taskCreationProjectId
-    ? (allProjects.find((project) => project._id === taskCreationProjectId) ??
-      null)
+  const taskEditorProject = taskEditor
+    ? allProjects.find((project) => project._id === taskEditor.projectId)
+    : undefined;
+  const taskEditorTask = taskEditor?.taskId
+    ? taskEditorProject?.tasks.find((task) => task._id === taskEditor.taskId)
+    : undefined;
+  // Archiving the project or the task, from any menu, closes its editor.
+  const isTaskEditorTargetEditable =
+    taskEditorProject?.status === "active" &&
+    (!taskEditor?.taskId || taskEditorTask?.status === "active");
+  const taskEditorState = taskEditor
+    ? evaluateProjectTaskEditor(taskEditor.fields, taskEditorTask)
     : null;
   const primaryTaskProject =
     selectedProject?.status === "active"
@@ -2004,6 +1222,36 @@ export function ProjectsPage() {
   useEffect(() => {
     projectDragStateRef.current = projectDragState;
   }, [projectDragState]);
+
+  useEffect(() => {
+    if (taskEditor && !isTaskEditorTargetEditable) {
+      setTaskEditor(null);
+    }
+  }, [isTaskEditorTargetEditable, taskEditor]);
+
+  // Every in-page path out of a project goes through `leaveProject`. Route changes
+  // the page cannot guard, such as the browser's back button, land here after the
+  // fact: a valid draft is saved, and an invalid one can only be dropped.
+  const taskEditorDraftRef = useRef<{
+    session: TaskEditorSession;
+    editor: ProjectTaskEditorState;
+  } | null>(null);
+  taskEditorDraftRef.current =
+    taskEditor && taskEditorState
+      ? { session: taskEditor, editor: taskEditorState }
+      : null;
+  useEffect(() => {
+    const draft = taskEditorDraftRef.current;
+    if (!draft || draft.session.projectId === selectedProjectId) {
+      return;
+    }
+
+    const result = commitProjectTaskDraft(draft.editor, "switch");
+    if (result.kind === "save") {
+      writeProjectTask(draft.session, result.values);
+    }
+    setTaskEditor(null);
+  }, [selectedProjectId]);
 
   const clearProjectPointerSession = useCallback(() => {
     const session = projectPointerSessionRef.current;
@@ -2184,12 +1432,15 @@ export function ProjectsPage() {
   if (!teamState?.team) return null;
 
   const closeProjectModal = () => {
-    setProjectDraft({ ...defaultProjectDraft, icon: DEFAULT_PROJECT_ICON });
     setProjectModalState(null);
   };
 
+  /** Creating a project leaves the current one, so the task draft is settled first. */
   const openCreateProjectModal = () => {
-    setProjectDraft({ ...defaultProjectDraft, icon: DEFAULT_PROJECT_ICON });
+    closeProjectCommand();
+    if (!leaveProject()) {
+      return;
+    }
     setProjectModalState({ mode: "create" });
   };
 
@@ -2199,25 +1450,113 @@ export function ProjectsPage() {
     setProjectCommandQuery("");
   };
 
-  const openTaskCreateModal = (projectId: string) => {
-    closeProjectCommand();
-    setTaskCreationProjectId(projectId);
-    setTaskCreationDraft("");
+  /**
+   * Saves a valid draft in the task editor before it shows something else.
+   * Returns false when the draft is invalid; the editor stays open and shows why.
+   */
+  const leaveTaskDraft = () => {
+    if (!taskEditor || !taskEditorState) {
+      return true;
+    }
+
+    const result = commitProjectTaskDraft(taskEditorState, "switch");
+    if (result.kind === "invalid") {
+      setTaskEditor({ ...taskEditor, showErrors: true });
+      return false;
+    }
+
+    if (result.kind === "save") {
+      writeProjectTask(taskEditor, result.values);
+    }
+    return true;
   };
 
-  const closeTaskCreateModal = () => {
-    setTaskCreationProjectId(null);
-    setTaskCreationDraft("");
+  /** Opens a saved task, or a blank one, in the task editor, going to its project if needed. */
+  const openTaskEditor = (projectId: string, task?: LocalProjectTask) => {
+    closeProjectCommand();
+    if (task && taskEditor?.taskId === task._id) {
+      return;
+    }
+    if (!leaveTaskDraft()) {
+      return;
+    }
+
+    setTaskEditor({
+      projectId,
+      taskId: task?._id,
+      fields: createProjectTaskEditorFields(task),
+      showErrors: false,
+    });
+    if (projectId !== selectedProjectId) {
+      void navigate({ to: "/projects/$projectId", params: { projectId } });
+    }
+  };
+
+  const saveTaskEditor = () => {
+    if (!taskEditor || !taskEditorState) {
+      return;
+    }
+
+    const result = commitProjectTaskDraft(taskEditorState, "save");
+    if (result.kind === "invalid") {
+      setTaskEditor({ ...taskEditor, showErrors: true });
+      return;
+    }
+
+    if (result.kind === "save") {
+      writeProjectTask(taskEditor, result.values);
+    }
+    setTaskEditor(null);
+  };
+
+  const updateTaskEditorFields = (patch: Partial<ProjectTaskEditorFields>) => {
+    setTaskEditor((current) =>
+      current ? { ...current, fields: { ...current.fields, ...patch } } : null,
+    );
+  };
+
+  /**
+   * The guard for every path that leaves the selected project: saves a valid task
+   * draft and closes the editor. Returns false when an invalid draft blocks it.
+   */
+  const leaveProject = () => {
+    if (!leaveTaskDraft()) {
+      return false;
+    }
+    setTaskEditor(null);
+    return true;
+  };
+
+  /** Goes to a project, or to the archive with `null`, after `leaveProject`. */
+  const goToProject = (projectId: string | null) => {
+    closeProjectCommand();
+    if (projectId === selectedProjectId || !leaveProject()) {
+      return;
+    }
+
+    void navigate(
+      projectId
+        ? { to: "/projects/$projectId", params: { projectId } }
+        : { to: "/projects/archive" },
+    );
+  };
+
+  /** Runs `leaveProject` before a sidebar link changes project, or cancels the link. */
+  const handleLeaveProjectClick = (
+    event: React.MouseEvent,
+    nextProjectId: string | null,
+  ) => {
+    if (nextProjectId === selectedProjectId) {
+      return;
+    }
+
+    if (!leaveProject()) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
   };
 
   const openEditProjectModal = (project: LocalProject) => {
-    setProjectDraft({
-      name: project.name,
-      displayName: getProjectDisplayName(project),
-      code: project.code ?? "",
-      color: project.color,
-      icon: project.icon,
-    });
     setProjectModalState({ mode: "edit", projectId: project._id });
   };
 
@@ -2231,7 +1570,7 @@ export function ProjectsPage() {
         openEditProjectModal(project);
         return;
       case "new-task":
-        openTaskCreateModal(project._id);
+        openTaskEditor(project._id);
         return;
       case "archive":
         localStore.archiveProject(project._id);
@@ -2242,20 +1581,13 @@ export function ProjectsPage() {
     }
   };
 
-  const handleProjectSubmit = () => {
-    if (!projectModalState || !projectDraft.name.trim()) {
+  const handleProjectSubmit = (values: ProjectFormValues) => {
+    if (!projectModalState) {
       return;
     }
 
     if (projectModalState.mode === "create") {
-      const nextId = localStore.addProject({
-        name: projectDraft.name.trim(),
-        displayName:
-          projectDraft.displayName.trim() || projectDraft.name.trim(),
-        code: projectDraft.code.trim() || undefined,
-        color: projectDraft.color,
-        icon: projectDraft.icon,
-      });
+      const nextId = localStore.addProject(values);
       closeProjectModal();
       void navigate({
         to: "/projects/$projectId",
@@ -2264,29 +1596,44 @@ export function ProjectsPage() {
       return;
     }
 
-    localStore.updateProject(projectModalState.projectId, {
-      name: projectDraft.name.trim(),
-      displayName: projectDraft.displayName.trim() || projectDraft.name.trim(),
-      code: projectDraft.code.trim() || undefined,
-      color: projectDraft.color,
-      icon: projectDraft.icon,
-    });
+    localStore.updateProject(projectModalState.projectId, values);
     closeProjectModal();
   };
 
-  const handleTaskCreationSubmit = () => {
-    if (!taskCreationProjectId || !taskCreationDraft.trim()) {
-      return;
-    }
-
-    localStore.addProjectTask(taskCreationProjectId, taskCreationDraft.trim());
-    const nextProjectId = taskCreationProjectId;
-    closeTaskCreateModal();
-    void navigate({
-      to: "/projects/$projectId",
-      params: { projectId: nextProjectId },
-    });
-  };
+  const editedProject =
+    projectModalState?.mode === "edit"
+      ? allProjects.find(
+          (project) => project._id === projectModalState.projectId,
+        )
+      : undefined;
+  const visibleTaskEditor =
+    taskEditor &&
+    taskEditorState &&
+    taskEditorProject &&
+    isTaskEditorTargetEditable &&
+    taskEditor.projectId === selectedProjectId
+      ? taskEditor
+      : null;
+  const taskEditorForm =
+    visibleTaskEditor && taskEditorState && taskEditorProject ? (
+      <ProjectTaskEditorForm
+        fields={visibleTaskEditor.fields}
+        editor={taskEditorState}
+        showNameError={visibleTaskEditor.showErrors}
+        projectName={getProjectDisplayName(taskEditorProject)}
+        trackedMs={
+          visibleTaskEditor.taskId
+            ? (taskMetricsByProject
+                .get(visibleTaskEditor.projectId)
+                ?.get(visibleTaskEditor.taskId)?.durationMs ?? 0)
+            : undefined
+        }
+        onFieldsChange={updateTaskEditorFields}
+        onSave={saveTaskEditor}
+        onClose={() => setTaskEditor(null)}
+        titleAs={isNarrowView ? DialogTitle : undefined}
+      />
+    ) : null;
 
   return (
     <CustomSidebarLayout
@@ -2317,9 +1664,9 @@ export function ProjectsPage() {
                   "entries-header-add",
                   projectModalState?.mode === "create" && "is-open",
                 )}
-                aria-label="Project actions"
-                title="Project actions"
-                onClick={() => setIsProjectCommandOpen(true)}
+                aria-label="New project"
+                title="New project"
+                onClick={openCreateProjectModal}
               >
                 <Plus className="h-3.5 w-3.5" />
               </button>
@@ -2393,7 +1740,9 @@ export function ProjectsPage() {
                             ) {
                               event.preventDefault();
                               event.stopPropagation();
+                              return;
                             }
+                            handleLeaveProjectClick(event, project._id);
                           }}
                           render={
                             <Link
@@ -2446,6 +1795,7 @@ export function ProjectsPage() {
               }`}
               title="Archived projects"
               aria-label="Archived projects"
+              onClick={(event) => handleLeaveProjectClick(event, null)}
             >
               <Archive />
               <span data-sidebar-collapsed="hide">Archive</span>
@@ -2504,7 +1854,10 @@ export function ProjectsPage() {
               taskMetrics={
                 taskMetricsByProject.get(selectedProject._id) ?? new Map()
               }
+              editingTaskId={visibleTaskEditor?.taskId}
               onProjectAction={runProjectAction}
+              onOpenTask={(task) => openTaskEditor(selectedProject._id, task)}
+              onNewTask={() => openTaskEditor(selectedProject._id)}
             />
           ) : (
             <div className="flex min-h-[400px] items-center justify-center">
@@ -2517,7 +1870,7 @@ export function ProjectsPage() {
                 <p className="mt-2 text-sm text-foreground/65">
                   {allProjects.length > 0
                     ? "Select a project from the sidebar to consult it."
-                    : "Create your first project with the + button in the sidebar."}
+                    : "Create your first project with the + button in the project list."}
                 </p>
               </div>
             </div>
@@ -2525,23 +1878,35 @@ export function ProjectsPage() {
         </div>
       )}
 
-      {projectModalState ? (
-        <ProjectFormModal
-          draft={projectDraft}
-          mode={projectModalState.mode}
-          onChange={setProjectDraft}
+      {taskEditorForm && !isNarrowView ? (
+        <SidePanel
+          contentKey={visibleTaskEditor?.taskId ?? "new"}
+          className="project-task-side-panel"
+          aria-label="Task editor"
+        >
+          {taskEditorForm}
+        </SidePanel>
+      ) : null}
+      {taskEditorForm && isNarrowView ? (
+        <Dialog
+          open
+          disablePointerDismissal
+          onOpenChange={(open) => !open && setTaskEditor(null)}
+        >
+          <DialogContent className="max-w-xl" showCloseButton={false}>
+            {taskEditorForm}
+          </DialogContent>
+        </Dialog>
+      ) : null}
+
+      {projectModalState &&
+      (projectModalState.mode === "create" || editedProject) ? (
+        <ProjectFormDialog
+          project={editedProject}
           onClose={closeProjectModal}
           onSubmit={handleProjectSubmit}
         />
       ) : null}
-
-      <ProjectTaskCreateModal
-        draft={taskCreationDraft}
-        onChange={setTaskCreationDraft}
-        onClose={closeTaskCreateModal}
-        onSubmit={handleTaskCreationSubmit}
-        project={selectedTaskCreationProject}
-      />
 
       <CommandDialog
         open={isProjectCommandOpen}
@@ -2574,7 +1939,7 @@ export function ProjectsPage() {
                         <CommandItem
                           value={`create-task-current-${primaryTaskProject._id}`}
                           onSelect={() =>
-                            openTaskCreateModal(primaryTaskProject._id)
+                            openTaskEditor(primaryTaskProject._id)
                           }
                         >
                           <Plus className="h-4 w-4" />
@@ -2598,20 +1963,14 @@ export function ProjectsPage() {
                       </CommandItem>
                       <CommandItem
                         value="create-project"
-                        onSelect={() => {
-                          closeProjectCommand();
-                          openCreateProjectModal();
-                        }}
+                        onSelect={openCreateProjectModal}
                       >
                         <FolderPlus className="h-4 w-4" />
                         <span className="flex-1">Create project</span>
                       </CommandItem>
                       <CommandItem
                         value="see-archived-projects"
-                        onSelect={() => {
-                          closeProjectCommand();
-                          void navigate({ to: "/projects/archive" });
-                        }}
+                        onSelect={() => goToProject(null)}
                       >
                         <Archive className="h-4 w-4" />
                         <span className="flex-1">See archived projects</span>
@@ -2628,13 +1987,7 @@ export function ProjectsPage() {
                       <CommandItem
                         key={project._id}
                         value={`project-${getProjectDisplayName(project)}`}
-                        onSelect={() => {
-                          closeProjectCommand();
-                          void navigate({
-                            to: "/projects/$projectId",
-                            params: { projectId: project._id },
-                          });
-                        }}
+                        onSelect={() => goToProject(project._id)}
                       >
                         <ProjectIcon
                           icon={project.icon}
@@ -2650,13 +2003,7 @@ export function ProjectsPage() {
                       <CommandItem
                         key={project._id}
                         value={`archived-project-${getProjectDisplayName(project)}`}
-                        onSelect={() => {
-                          closeProjectCommand();
-                          void navigate({
-                            to: "/projects/$projectId",
-                            params: { projectId: project._id },
-                          });
-                        }}
+                        onSelect={() => goToProject(project._id)}
                       >
                         <ProjectIcon
                           icon={project.icon}
@@ -2686,7 +2033,7 @@ export function ProjectsPage() {
                     <CommandItem
                       key={project._id}
                       value={`task-project-${getProjectDisplayName(project)}`}
-                      onSelect={() => openTaskCreateModal(project._id)}
+                      onSelect={() => openTaskEditor(project._id)}
                     >
                       <ProjectIcon
                         icon={project.icon}
