@@ -61,6 +61,8 @@ export function SettingsExportPage() {
   );
   const [statusMessage, setStatusMessage] = useState("");
   const [error, setError] = useState("");
+  const [exportMessage, setExportMessage] = useState("");
+  const [exportError, setExportError] = useState("");
   const hasInvalidRange = startDate > endDate;
 
   const rows = useMemo(
@@ -97,17 +99,27 @@ export function SettingsExportPage() {
       return;
     }
 
-    const workbookBytes = await createTimesheetExportWorkbook({
-      entries: state.timesheetEntries,
-      projects: state.projects,
-      startDate,
-      endDate,
-    });
-
-    downloadWorkbookFile(
-      workbookBytes,
-      buildTimesheetExportFilename(startDate, endDate),
-    );
+    setExportMessage("");
+    setExportError("");
+    try {
+      const workbookBytes = await createTimesheetExportWorkbook({
+        entries: state.timesheetEntries,
+        projects: state.projects,
+        startDate,
+        endDate,
+      });
+      const filename = buildTimesheetExportFilename(startDate, endDate);
+      downloadWorkbookFile(workbookBytes, filename);
+      setExportMessage(
+        `Exported ${filename} · ${rows.length} ${rows.length === 1 ? "entry" : "entries"}.`,
+      );
+    } catch (nextError) {
+      setExportError(
+        nextError instanceof Error
+          ? nextError.message
+          : "Unable to export the workbook.",
+      );
+    }
   }
 
   function handleImportFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -241,6 +253,11 @@ export function SettingsExportPage() {
               Export to Excel
             </Button>
           </div>
+
+          {exportMessage ? <MessagePanel>{exportMessage}</MessagePanel> : null}
+          {exportError ? (
+            <MessagePanel tone="warning">{exportError}</MessagePanel>
+          ) : null}
         </AppPanel>
 
         <AppPanel>
