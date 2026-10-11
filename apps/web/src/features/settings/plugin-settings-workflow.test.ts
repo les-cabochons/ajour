@@ -50,6 +50,9 @@ function deferred<T>() {
   return { promise, resolve };
 }
 
+/** Stands in for the error the app API throws when it cannot be reached from the web build. */
+const missingApiError = new Error("Failed to fetch");
+
 function dependencies() {
   let receiveConnectors: (value: ConnectorsOverview) => void = () => {};
   const unused = vi.fn(async () => {
@@ -82,6 +85,7 @@ function dependencies() {
     configurePluginCatalog: vi.fn(async (settings) => settings),
     downloadCatalogPlugin: unused,
     uninstallConnectorPlugin: unused,
+    isConnectorApiMissing: (error) => error === missingApiError,
   };
   return {
     deps,
@@ -193,6 +197,38 @@ describe("plugin settings workflow", () => {
     expect(workflow.getSnapshot().connectorError).toBe(
       "Unable to update the plugin system.",
     );
+  });
+
+  it("flags a missing connector API instead of reporting an error, and clears it once connectors load", async () => {
+    const { deps, publish } = dependencies();
+    deps.getConnectorsOverview = vi.fn(async () => {
+      throw missingApiError;
+    });
+    const workflow = createPluginSettingsWorkflow(deps);
+    await workflow.refresh();
+    expect(workflow.getSnapshot()).toMatchObject({
+      connectorApiMissing: true,
+      connectorError: null,
+    });
+    const disconnect = workflow.connect();
+    publish(overview);
+    expect(workflow.getSnapshot().connectorApiMissing).toBe(false);
+    disconnect();
+  });
+
+  it("flags a missing connector API when a command cannot reach it", async () => {
+    const { deps } = dependencies();
+    deps.setPluginSystemEnabled = vi.fn(async () => {
+      throw missingApiError;
+    });
+    const workflow = createPluginSettingsWorkflow(deps);
+    await expect(
+      workflow.execute({ type: "system", enabled: false }),
+    ).resolves.toBe(false);
+    expect(workflow.getSnapshot()).toMatchObject({
+      connectorApiMissing: true,
+      connectorError: null,
+    });
   });
 
   it("uses the cached connector overview on mount instead of requesting it again", () => {

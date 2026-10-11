@@ -3,6 +3,7 @@ import type { ConnectorsOverview } from "@ajour/shared";
 import {
   cacheConnectorsOverview,
   getConnectorsOverview,
+  isConnectorApiMissing,
   subscribeConnectorsOverview,
 } from "./app-api";
 
@@ -69,5 +70,44 @@ describe("connector overview cache", () => {
     unsubscribe();
     cacheConnectorsOverview(overview);
     expect(receive).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("missing connector API", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+    vi.useRealTimers();
+  });
+
+  async function failedOverviewRequest(fetchImpl: () => Promise<Response>) {
+    vi.useFakeTimers();
+    vi.stubGlobal("fetch", vi.fn(fetchImpl));
+    const request = getConnectorsOverview().catch((error: unknown) => error);
+    // The default internal API retries twice before giving up.
+    await vi.runAllTimersAsync();
+    return request;
+  }
+
+  it("treats an unreachable API in the web build as missing", async () => {
+    const error = await failedOverviewRequest(async () => {
+      throw new TypeError("Failed to fetch");
+    });
+    expect(isConnectorApiMissing(error)).toBe(true);
+  });
+
+  it("keeps an unreachable API in the desktop app as a failure", async () => {
+    vi.stubGlobal("window", { ajourDesktop: {} });
+    const error = await failedOverviewRequest(async () => {
+      throw new TypeError("Failed to fetch");
+    });
+    expect(isConnectorApiMissing(error)).toBe(false);
+  });
+
+  it("keeps an API error response as a failure", async () => {
+    const error = await failedOverviewRequest(async () =>
+      Response.json({ error: "Broken" }, { status: 500 }),
+    );
+    expect(error).toBeInstanceOf(Error);
+    expect(isConnectorApiMissing(error)).toBe(false);
   });
 });

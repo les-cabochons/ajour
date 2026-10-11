@@ -13,7 +13,10 @@ import {
   buildBacklogStatusOptions,
   getBacklogStatusName,
 } from "@/features/backlog/backlog-status";
-import { getConnectorBacklogStatuses } from "@/lib/app-api";
+import {
+  getConnectorBacklogStatuses,
+  isConnectorApiMissing,
+} from "@/lib/app-api";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 
@@ -34,6 +37,8 @@ export function SettingsBacklogPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
+  // Synced statuses come from connectors, so the web build hides that section.
+  const [connectorApiMissing, setConnectorApiMissing] = useState(false);
 
   const backlogStatusOptions = useMemo(
     () => buildBacklogStatusOptions(state.backlogStatuses),
@@ -124,8 +129,13 @@ export function SettingsBacklogPage() {
     try {
       const result = await getConnectorBacklogStatuses();
       setSourceStatuses(result.items);
+      setConnectorApiMissing(false);
       setError(null);
     } catch (nextError) {
+      if (isConnectorApiMissing(nextError)) {
+        setConnectorApiMissing(true);
+        return;
+      }
       setError(
         nextError instanceof Error
           ? nextError.message
@@ -216,12 +226,16 @@ export function SettingsBacklogPage() {
         <AppPanel className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <Badge>{state.backlogStatuses.length} app statuses</Badge>
-            <Badge className="bg-muted">
-              {sourceStatuses.length} synced source statuses
-            </Badge>
-            <Badge className="bg-muted">
-              {state.backlogStatusMappings.length} mappings
-            </Badge>
+            {connectorApiMissing ? null : (
+              <>
+                <Badge className="bg-muted">
+                  {sourceStatuses.length} synced source statuses
+                </Badge>
+                <Badge className="bg-muted">
+                  {state.backlogStatusMappings.length} mappings
+                </Badge>
+              </>
+            )}
           </div>
 
           <div className="backlog-settings-status-create">
@@ -320,106 +334,108 @@ export function SettingsBacklogPage() {
         </AppPanel>
       </section>
 
-      <section className="settings-section">
-        <h2 className="settings-section-title">Synced status mapping</h2>
-        <p className="settings-section-desc">
-          Connector sync registers raw statuses first. Mapping them here
-          controls which backlog status imported items display.
-        </p>
+      {connectorApiMissing ? null : (
+        <section className="settings-section">
+          <h2 className="settings-section-title">Synced status mapping</h2>
+          <p className="settings-section-desc">
+            Connector sync registers raw statuses first. Mapping them here
+            controls which backlog status imported items display.
+          </p>
 
-        <AppPanel className="space-y-4">
-          <div className="flex flex-wrap gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              className="gap-1.5"
-              disabled={isRefreshing}
-              onClick={() => void refreshSourceStatuses()}
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              Refresh synced statuses
-            </Button>
-          </div>
-
-          {groupedSourceStatuses.length === 0 ? (
-            <MessagePanel>
-              No synced connector statuses yet. Run a connector sync first.
-            </MessagePanel>
-          ) : (
-            <div className="backlog-settings-source-groups">
-              {groupedSourceStatuses.map((group) => (
-                <section
-                  key={group.connectionId}
-                  className="backlog-settings-source-group"
-                >
-                  <div className="backlog-settings-source-header">
-                    <div className="backlog-settings-source-kicker">
-                      {group.tenantLabel}
-                    </div>
-                    <div className="backlog-settings-source-title">
-                      {group.connectionLabel}
-                    </div>
-                  </div>
-
-                  <div className="backlog-settings-source-list">
-                    {group.statuses.map((status) => {
-                      const mappingKey = `${status.source}:${status.connectionId}:${status.key}`;
-                      const mappedBacklogStatusId =
-                        mappingByKey.get(mappingKey) ?? "";
-
-                      return (
-                        <div
-                          key={mappingKey}
-                          className="backlog-settings-source-row"
-                        >
-                          <div>
-                            <div className="backlog-settings-source-label">
-                              {status.label}
-                            </div>
-                            <div className="backlog-settings-source-meta">
-                              Last seen{" "}
-                              {new Date(status.lastSeenAt).toLocaleString()}
-                            </div>
-                          </div>
-
-                          <SearchableSelect
-                            value={mappedBacklogStatusId}
-                            options={backlogStatusOptions}
-                            onChange={(nextValue) =>
-                              handleMappingChange(status, nextValue)
-                            }
-                            placeholder={
-                              state.backlogStatuses.length > 0
-                                ? "No mapping"
-                                : "Create app statuses first"
-                            }
-                            clearLabel={
-                              state.backlogStatuses.length > 0
-                                ? "No mapping"
-                                : undefined
-                            }
-                            emptyMessage={
-                              state.backlogStatuses.length > 0
-                                ? "No matching app statuses"
-                                : "Create app statuses first"
-                            }
-                            ariaLabel={`Map ${status.label} to an app backlog status`}
-                            disabled={state.backlogStatuses.length === 0}
-                            className="backlog-settings-source-select"
-                          />
-                        </div>
-                      );
-                    })}
-                  </div>
-                </section>
-              ))}
+          <AppPanel className="space-y-4">
+            <div className="flex flex-wrap gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                className="gap-1.5"
+                disabled={isRefreshing}
+                onClick={() => void refreshSourceStatuses()}
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Refresh synced statuses
+              </Button>
             </div>
-          )}
-        </AppPanel>
 
-        {message ? <MessagePanel>{message}</MessagePanel> : null}
-        {error ? <MessagePanel tone="warning">{error}</MessagePanel> : null}
-      </section>
+            {groupedSourceStatuses.length === 0 ? (
+              <MessagePanel>
+                No synced connector statuses yet. Run a connector sync first.
+              </MessagePanel>
+            ) : (
+              <div className="backlog-settings-source-groups">
+                {groupedSourceStatuses.map((group) => (
+                  <section
+                    key={group.connectionId}
+                    className="backlog-settings-source-group"
+                  >
+                    <div className="backlog-settings-source-header">
+                      <div className="backlog-settings-source-kicker">
+                        {group.tenantLabel}
+                      </div>
+                      <div className="backlog-settings-source-title">
+                        {group.connectionLabel}
+                      </div>
+                    </div>
+
+                    <div className="backlog-settings-source-list">
+                      {group.statuses.map((status) => {
+                        const mappingKey = `${status.source}:${status.connectionId}:${status.key}`;
+                        const mappedBacklogStatusId =
+                          mappingByKey.get(mappingKey) ?? "";
+
+                        return (
+                          <div
+                            key={mappingKey}
+                            className="backlog-settings-source-row"
+                          >
+                            <div>
+                              <div className="backlog-settings-source-label">
+                                {status.label}
+                              </div>
+                              <div className="backlog-settings-source-meta">
+                                Last seen{" "}
+                                {new Date(status.lastSeenAt).toLocaleString()}
+                              </div>
+                            </div>
+
+                            <SearchableSelect
+                              value={mappedBacklogStatusId}
+                              options={backlogStatusOptions}
+                              onChange={(nextValue) =>
+                                handleMappingChange(status, nextValue)
+                              }
+                              placeholder={
+                                state.backlogStatuses.length > 0
+                                  ? "No mapping"
+                                  : "Create app statuses first"
+                              }
+                              clearLabel={
+                                state.backlogStatuses.length > 0
+                                  ? "No mapping"
+                                  : undefined
+                              }
+                              emptyMessage={
+                                state.backlogStatuses.length > 0
+                                  ? "No matching app statuses"
+                                  : "Create app statuses first"
+                              }
+                              ariaLabel={`Map ${status.label} to an app backlog status`}
+                              disabled={state.backlogStatuses.length === 0}
+                              className="backlog-settings-source-select"
+                            />
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ))}
+              </div>
+            )}
+          </AppPanel>
+        </section>
+      )}
+
+      {message ? <MessagePanel>{message}</MessagePanel> : null}
+      {error ? <MessagePanel tone="warning">{error}</MessagePanel> : null}
     </div>
   );
 }
