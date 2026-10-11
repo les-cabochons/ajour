@@ -7,13 +7,14 @@ import {
   RiCloseLine as X,
   RiDownloadLine as Download,
   RiFolderAddLine as FolderPlus,
-  RiSearchLine as Search,
-  RiPencilLine as Pencil,
-  RiRefreshLine as RotateCcw,
   RiSaveLine as Save,
 } from "@remixicon/react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { MessagePanel } from "@/components/app-surface";
+import {
+  ObjectActionsButton,
+  ObjectContextMenu,
+} from "@/components/object-actions-menu";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -58,6 +59,12 @@ import {
   SidebarMenuItem,
 } from "@/components/custom-sidebar";
 import {
+  getProjectActions,
+  getTaskActions,
+  type ProjectActionId,
+  type TaskActionId,
+} from "@/domain/actions/object-actions";
+import {
   formatProjectTaskConsumedBadge,
   formatSignedDurationHoursInput,
   getProjectTaskConsumedTone,
@@ -101,7 +108,8 @@ import {
   prepareUploadedProjectIcon,
   ProjectIcon,
 } from "@/lib/project-icons";
-import { cn } from "@/lib/utils";
+import { TimeEntryModal } from "@/features/timer/time-entry-modal";
+import { cn, todayIsoDate } from "@/lib/utils";
 
 type ProjectMetrics = {
   durationMs: number;
@@ -272,36 +280,21 @@ function ProjectFormModal({
   draft,
   mode,
   onChange,
-  onArchive,
   onClose,
   onSubmit,
 }: {
   draft: ProjectDraft;
   mode: ProjectModalState["mode"];
   onChange: React.Dispatch<React.SetStateAction<ProjectDraft>>;
-  onArchive?: () => void;
   onClose: () => void;
   onSubmit: () => void;
 }) {
   const overlayRef = useRef<HTMLDivElement | null>(null);
   const uploadInputRef = useRef<HTMLInputElement | null>(null);
-  const [isArchivePending, setIsArchivePending] = useState(false);
   const [iconError, setIconError] = useState<string | null>(null);
   const [isProcessingUpload, setIsProcessingUpload] = useState(false);
   const title = mode === "create" ? "Create project" : "Edit project";
   const submitLabel = mode === "create" ? "Create project" : "Save changes";
-
-  useEffect(() => {
-    setIsArchivePending(false);
-  }, [mode, onArchive]);
-
-  useEffect(() => {
-    if (!isArchivePending) return;
-    const timeoutId = window.setTimeout(() => {
-      setIsArchivePending(false);
-    }, 2500);
-    return () => window.clearTimeout(timeoutId);
-  }, [isArchivePending]);
 
   useEffect(() => {
     function handleMouseDown(event: MouseEvent) {
@@ -623,31 +616,6 @@ function ProjectFormModal({
         </div>
 
         <div className="time-entry-modal-actions project-form-modal-actions">
-          {mode === "edit" && onArchive ? (
-            <Button
-              variant="outline"
-              className={cn(
-                "project-form-archive-action gap-2",
-                isArchivePending && "is-confirming",
-              )}
-              aria-label={
-                isArchivePending ? "Confirm archive project" : "Archive project"
-              }
-              title={
-                isArchivePending ? "Confirm archive project" : "Archive project"
-              }
-              onClick={() => {
-                if (isArchivePending) {
-                  onArchive();
-                  return;
-                }
-                setIsArchivePending(true);
-              }}
-            >
-              <Archive className="h-4 w-4" />
-              {isArchivePending ? "Confirm" : "Archive"}
-            </Button>
-          ) : null}
           <Button variant="outline" onClick={onClose}>
             Cancel
           </Button>
@@ -748,7 +716,13 @@ function ProjectTaskCreateModal({
   );
 }
 
-function ArchivedProjectsView({ projects }: { projects: LocalProject[] }) {
+function ArchivedProjectsView({
+  projects,
+  onProjectAction,
+}: {
+  projects: LocalProject[];
+  onProjectAction: (project: LocalProject, actionId: ProjectActionId) => void;
+}) {
   return (
     <div>
       <div className="entries-table-scroll-shell entries-table-scroll-shell-project">
@@ -766,38 +740,43 @@ function ArchivedProjectsView({ projects }: { projects: LocalProject[] }) {
           <table className="entries-table entries-table-body-table animate-in">
             <tbody className="entries-table-scroll-region">
               {projects.length > 0 ? (
-                projects.map((project) => (
-                  <tr key={project._id}>
-                    <td>
-                      <div className="project-task-name-cell">
-                        <ProjectIcon
-                          icon={project.icon}
-                          color={project.color}
-                          className="ajour-sidebar-icon"
-                        />
-                        <span className="project-task-name">
-                          {getProjectDisplayName(project)}
-                        </span>
-                        {project.code ? <Badge>{project.code}</Badge> : null}
-                      </div>
-                    </td>
-                    <td className="entry-hours-cell">
-                      <div className="entry-hours-content">
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          className="gap-2"
-                          onClick={() =>
-                            localStore.unarchiveProject(project._id)
-                          }
-                        >
-                          <RotateCcw className="h-3.5 w-3.5" />
-                          Unarchive
-                        </Button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                projects.map((project) => {
+                  const actions = getProjectActions(project);
+                  const onAction = (actionId: ProjectActionId) =>
+                    onProjectAction(project, actionId);
+
+                  return (
+                    <ObjectContextMenu
+                      key={project._id}
+                      actions={actions}
+                      onAction={onAction}
+                      render={<tr className="project-archived-row" />}
+                    >
+                      <td>
+                        <div className="project-task-name-cell">
+                          <ProjectIcon
+                            icon={project.icon}
+                            color={project.color}
+                            className="ajour-sidebar-icon"
+                          />
+                          <span className="project-task-name">
+                            {getProjectDisplayName(project)}
+                          </span>
+                          {project.code ? <Badge>{project.code}</Badge> : null}
+                        </div>
+                      </td>
+                      <td className="entry-hours-cell">
+                        <div className="entry-hours-content">
+                          <ObjectActionsButton
+                            actions={actions}
+                            onAction={onAction}
+                            label={`Actions for ${getProjectDisplayName(project)}`}
+                          />
+                        </div>
+                      </td>
+                    </ObjectContextMenu>
+                  );
+                })
               ) : (
                 <tr className="entry-empty-row">
                   <td colSpan={2}>
@@ -829,12 +808,12 @@ function ProjectDetail({
   project,
   metrics,
   taskMetrics,
-  onEditProject,
+  onProjectAction,
 }: {
   project: LocalProject;
   metrics: ProjectMetrics;
   taskMetrics: Map<string, ProjectMetrics>;
-  onEditProject: (project: LocalProject) => void;
+  onProjectAction: (project: LocalProject, actionId: ProjectActionId) => void;
 }) {
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const taskRowRefs = useRef(new Map<string, HTMLTableRowElement>());
@@ -848,9 +827,10 @@ function ProjectDetail({
   const [taskDraft, setTaskDraft] = useState("");
   const [editingTaskId, setEditingTaskId] = useState<string | null>(null);
   const [taskEditDraft, setTaskEditDraft] = useState(defaultTaskEditDraft);
-  const [pendingArchiveTaskId, setPendingArchiveTaskId] = useState<
-    string | null
-  >(null);
+  /** Task whose New entry… dialog is open. */
+  const [newEntryTask, setNewEntryTask] = useState<LocalProjectTask | null>(
+    null,
+  );
   const [isImporting, setIsImporting] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
@@ -860,6 +840,7 @@ function ProjectDetail({
     null,
   );
   const isArchived = project.status === "archived";
+  const projectActions = getProjectActions(project);
 
   const summary = taskSummary(project);
   const activeTasks = project.tasks.filter((task) => task.status === "active");
@@ -927,23 +908,12 @@ function ProjectDetail({
     setTaskDraft("");
     setEditingTaskId(null);
     setTaskEditDraft(defaultTaskEditDraft);
-    setPendingArchiveTaskId(null);
     setImportMessage(null);
     setImportError(null);
     if (importInputRef.current) {
       importInputRef.current.value = "";
     }
   }, [project._id, project.status]);
-
-  useEffect(() => {
-    if (!pendingArchiveTaskId) return;
-    const timeoutId = window.setTimeout(() => {
-      setPendingArchiveTaskId((current) =>
-        current === pendingArchiveTaskId ? null : current,
-      );
-    }, 2500);
-    return () => window.clearTimeout(timeoutId);
-  }, [pendingArchiveTaskId]);
 
   useEffect(() => {
     taskDragStateRef.current = taskDragState;
@@ -1060,21 +1030,14 @@ function ProjectDetail({
     }
   };
 
-  function handleArchiveTask(taskId: string) {
-    if (isArchived) return;
-    if (pendingArchiveTaskId === taskId) {
-      localStore.archiveProjectTask(project._id, taskId);
-      setPendingArchiveTaskId(null);
-      return;
-    }
-    setPendingArchiveTaskId(taskId);
+  function handleTaskClick(task: LocalProjectTask) {
+    if (performance.now() < suppressTaskClickUntilRef.current) return;
+    openTaskEditor(task);
   }
 
-  function handleTaskClick(task: LocalProjectTask) {
-    if (isArchived) return;
-    if (performance.now() < suppressTaskClickUntilRef.current) return;
+  function openTaskEditor(task: LocalProjectTask) {
+    if (isArchived || task.status === "archived") return;
     if (editingTaskId === task._id) return;
-    setPendingArchiveTaskId(null);
     setEditingTaskId(task._id);
     setTaskEditDraft({
       name: task.name,
@@ -1088,6 +1051,32 @@ function ProjectDetail({
           ? formatSignedDurationHoursInput(task.adjustmentMs)
           : "",
     });
+  }
+
+  /** Runs the task action set from the row's right-click menu and "…" button. */
+  function runTaskAction(task: LocalProjectTask, actionId: TaskActionId) {
+    switch (actionId) {
+      case "start-entry":
+        localStore.startTimer({
+          localDate: todayIsoDate(),
+          projectId: project._id,
+          taskId: task._id,
+          accumulatedDurationMs: 0,
+        });
+        return;
+      case "new-entry":
+        setNewEntryTask(task);
+        return;
+      case "edit":
+        openTaskEditor(task);
+        return;
+      case "archive":
+        localStore.archiveProjectTask(project._id, task._id);
+        return;
+      case "restore":
+        localStore.unarchiveProjectTask(project._id, task._id);
+        return;
+    }
   }
 
   function closeTaskEditor() {
@@ -1192,7 +1181,6 @@ function ProjectDetail({
       suppressTaskClickUntilRef.current =
         performance.now() + SHARED_TABLE_DRAG_CLICK_SUPPRESSION_MS;
       setPressedTaskId(null);
-      setPendingArchiveTaskId(null);
       const nextDragState: TaskDragState = {
         taskId,
         pointerId,
@@ -1256,7 +1244,11 @@ function ProjectDetail({
       {/* Project header */}
       <div className="flex flex-col gap-4">
         <div className="space-y-2">
-          <div className="flex flex-wrap items-center gap-2">
+          <ObjectContextMenu
+            actions={projectActions}
+            onAction={(actionId) => onProjectAction(project, actionId)}
+            render={<div className="flex flex-wrap items-center gap-2" />}
+          >
             <ProjectIcon
               icon={project.icon}
               color={project.color}
@@ -1271,29 +1263,12 @@ function ProjectDetail({
               ) : null}
             </div>
             {project.code ? <Badge>{project.code}</Badge> : null}
-            {!isArchived ? (
-              <Button
-                variant="ghost"
-                className="project-header-icon-button"
-                aria-label="Edit project"
-                title="Edit project"
-                onClick={() => onEditProject(project)}
-              >
-                <Pencil />
-              </Button>
-            ) : null}
-            {isArchived ? (
-              <Button
-                variant="ghost"
-                className="project-header-icon-button"
-                aria-label="Restore project"
-                title="Restore project"
-                onClick={() => localStore.unarchiveProject(project._id)}
-              >
-                <RotateCcw />
-              </Button>
-            ) : null}
-          </div>
+            <ObjectActionsButton
+              actions={projectActions}
+              onAction={(actionId) => onProjectAction(project, actionId)}
+              label={`Actions for ${getProjectDisplayName(project)}`}
+            />
+          </ObjectContextMenu>
         </div>
       </div>
 
@@ -1334,7 +1309,6 @@ function ProjectDetail({
                   setShowTaskForm(false);
                   setTaskDraft("");
                   setEditingTaskId(null);
-                  setPendingArchiveTaskId(null);
                 }}
               >
                 <span className="backlog-filter-label">{filter.label}</span>
@@ -1528,9 +1502,15 @@ function ProjectDetail({
                       durationMs: 0,
                       entryCount: 0,
                     };
+                    const taskActions = getTaskActions(project, task);
 
                     return (
-                      <tr key={task._id} className="project-task-row">
+                      <ObjectContextMenu
+                        key={task._id}
+                        actions={taskActions}
+                        onAction={(actionId) => runTaskAction(task, actionId)}
+                        render={<tr className="project-task-row" />}
+                      >
                         <td>
                           <div className="project-task-name-cell">
                             <span className="project-task-name">
@@ -1546,25 +1526,16 @@ function ProjectDetail({
                         </td>
                         <td className="entry-hours-cell">
                           <div className="entry-hours-content">
-                            {!isArchived ? (
-                              <div className="entry-row-actions">
-                                <span className="entry-row-action-slot">
-                                  <button
-                                    type="button"
-                                    className="entry-row-action"
-                                    aria-label="Unarchive task"
-                                    onClick={() => {
-                                      localStore.unarchiveProjectTask(
-                                        project._id,
-                                        task._id,
-                                      );
-                                    }}
-                                  >
-                                    <RotateCcw className="h-3.5 w-3.5" />
-                                  </button>
-                                </span>
-                              </div>
-                            ) : null}
+                            <div className="entry-row-actions">
+                              <ObjectActionsButton
+                                actions={taskActions}
+                                onAction={(actionId) =>
+                                  runTaskAction(task, actionId)
+                                }
+                                label={`Actions for ${task.name}`}
+                                className="entry-row-action"
+                              />
+                            </div>
                             <span
                               className={cn(
                                 "hours-badge",
@@ -1585,12 +1556,12 @@ function ProjectDetail({
                             </span>
                           </div>
                         </td>
-                      </tr>
+                      </ObjectContextMenu>
                     );
                   })
                 : activeTasks.map((task, index) => {
                     const isEditing = editingTaskId === task._id;
-                    const isArchivePending = pendingArchiveTaskId === task._id;
+                    const taskActions = getTaskActions(project, task);
                     const trackedMetrics = taskMetrics.get(task._id) ?? {
                       durationMs: 0,
                       entryCount: 0,
@@ -1753,32 +1724,40 @@ function ProjectDetail({
                         </td>
                       </tr>
                     ) : (
-                      <tr
+                      <ObjectContextMenu
                         key={task._id}
-                        ref={(node) => {
-                          if (node) {
-                            taskRowRefs.current.set(task._id, node);
-                            return;
-                          }
+                        actions={taskActions}
+                        onAction={(actionId) => runTaskAction(task, actionId)}
+                        render={
+                          <tr
+                            ref={(node) => {
+                              if (node) {
+                                taskRowRefs.current.set(task._id, node);
+                                return;
+                              }
 
-                          taskRowRefs.current.delete(task._id);
-                        }}
-                        className={cn(
-                          "project-task-row",
-                          canReorderTasks && "is-reorderable",
-                          pressedTaskId === task._id && "is-pressing",
-                          rowShift !== 0 && "is-shifting",
-                          isDraggedTask && "is-drag-source",
-                        )}
-                        style={
-                          rowShift !== 0
-                            ? { transform: `translate3d(0, ${rowShift}px, 0)` }
-                            : undefined
-                        }
-                        aria-grabbed={isDraggedTask}
-                        onClick={() => handleTaskClick(task)}
-                        onPointerDown={(event) =>
-                          handleTaskPointerDown(task._id, event)
+                              taskRowRefs.current.delete(task._id);
+                            }}
+                            className={cn(
+                              "project-task-row",
+                              canReorderTasks && "is-reorderable",
+                              pressedTaskId === task._id && "is-pressing",
+                              rowShift !== 0 && "is-shifting",
+                              isDraggedTask && "is-drag-source",
+                            )}
+                            style={
+                              rowShift !== 0
+                                ? {
+                                    transform: `translate3d(0, ${rowShift}px, 0)`,
+                                  }
+                                : undefined
+                            }
+                            aria-grabbed={isDraggedTask}
+                            onClick={() => handleTaskClick(task)}
+                            onPointerDown={(event) =>
+                              handleTaskPointerDown(task._id, event)
+                            }
+                          />
                         }
                       >
                         <td>
@@ -1793,40 +1772,16 @@ function ProjectDetail({
                         </td>
                         <td className="entry-hours-cell">
                           <div className="entry-hours-content">
-                            {!isArchived ? (
-                              <div
-                                className={cn(
-                                  "entry-row-actions",
-                                  isArchivePending && "is-confirming",
-                                )}
-                              >
-                                <span className="entry-row-action-slot">
-                                  <button
-                                    type="button"
-                                    className={cn(
-                                      "entry-row-action",
-                                      "entry-row-action-delete",
-                                      isArchivePending && "is-confirming",
-                                    )}
-                                    aria-label={
-                                      isArchivePending
-                                        ? "Confirm archive"
-                                        : "Archive task"
-                                    }
-                                    data-no-task-drag="true"
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      handleArchiveTask(task._id);
-                                    }}
-                                  >
-                                    <Archive className="h-3.5 w-3.5" />
-                                    {isArchivePending ? (
-                                      <span>Confirm</span>
-                                    ) : null}
-                                  </button>
-                                </span>
-                              </div>
-                            ) : null}
+                            <div className="entry-row-actions">
+                              <ObjectActionsButton
+                                actions={taskActions}
+                                onAction={(actionId) =>
+                                  runTaskAction(task, actionId)
+                                }
+                                label={`Actions for ${task.name}`}
+                                className="entry-row-action"
+                              />
+                            </div>
                             <span
                               className={cn(
                                 "hours-badge",
@@ -1847,7 +1802,7 @@ function ProjectDetail({
                             </span>
                           </div>
                         </td>
-                      </tr>
+                      </ObjectContextMenu>
                     );
                   })}
             </tbody>
@@ -1892,6 +1847,14 @@ function ProjectDetail({
             })}
           </span>
         </div>
+      ) : null}
+
+      {newEntryTask ? (
+        <TimeEntryModal
+          date={todayIsoDate()}
+          initialValues={{ projectId: project._id, taskId: newEntryTask._id }}
+          onClose={() => setNewEntryTask(null)}
+        />
       ) : null}
     </div>
   );
@@ -2243,6 +2206,27 @@ export function ProjectsPage() {
     setProjectModalState({ mode: "edit", projectId: project._id });
   };
 
+  /** Runs the project action set from the sidebar, the archive list and the detail header. */
+  const runProjectAction = (
+    project: LocalProject,
+    actionId: ProjectActionId,
+  ) => {
+    switch (actionId) {
+      case "edit":
+        openEditProjectModal(project);
+        return;
+      case "new-task":
+        openTaskCreateModal(project._id);
+        return;
+      case "archive":
+        localStore.archiveProject(project._id);
+        return;
+      case "restore":
+        localStore.unarchiveProject(project._id);
+        return;
+    }
+  };
+
   const handleProjectSubmit = () => {
     if (!projectModalState || !projectDraft.name.trim()) {
       return;
@@ -2343,34 +2327,43 @@ export function ProjectsPage() {
                         rowHeight: projectDragState.height,
                       })
                     : 0;
+                  const projectActions = getProjectActions(project);
                   return (
-                    <SidebarMenuItem
+                    <ObjectContextMenu
                       key={project._id}
-                      ref={(node) => {
-                        if (node) {
-                          projectRowRefs.current.set(project._id, node);
-                          return;
-                        }
-
-                        projectRowRefs.current.delete(project._id);
-                      }}
-                      className={cn(
-                        "ajour-project-sidebar-item",
-                        canReorderProjects && "is-reorderable",
-                        pressedProjectId === project._id && "is-pressing",
-                        rowShift !== 0 && "is-shifting",
-                        isDraggedProject && "is-drag-source",
-                      )}
-                      style={
-                        rowShift !== 0
-                          ? {
-                              transform: `translate3d(0, ${rowShift}px, 0)`,
-                            }
-                          : undefined
+                      actions={projectActions}
+                      onAction={(actionId) =>
+                        runProjectAction(project, actionId)
                       }
-                      aria-grabbed={isDraggedProject}
-                      onPointerDown={(event) =>
-                        handleProjectPointerDown(project._id, event)
+                      render={
+                        <SidebarMenuItem
+                          ref={(node) => {
+                            if (node) {
+                              projectRowRefs.current.set(project._id, node);
+                              return;
+                            }
+
+                            projectRowRefs.current.delete(project._id);
+                          }}
+                          className={cn(
+                            "ajour-project-sidebar-item",
+                            canReorderProjects && "is-reorderable",
+                            pressedProjectId === project._id && "is-pressing",
+                            rowShift !== 0 && "is-shifting",
+                            isDraggedProject && "is-drag-source",
+                          )}
+                          style={
+                            rowShift !== 0
+                              ? {
+                                  transform: `translate3d(0, ${rowShift}px, 0)`,
+                                }
+                              : undefined
+                          }
+                          aria-grabbed={isDraggedProject}
+                          onPointerDown={(event) =>
+                            handleProjectPointerDown(project._id, event)
+                          }
+                        />
                       }
                     >
                       <CustomSidebarMenuButton
@@ -2414,7 +2407,14 @@ export function ProjectsPage() {
                           </span>
                         ) : null}
                       </CustomSidebarMenuButton>
-                    </SidebarMenuItem>
+                      <ObjectActionsButton
+                        actions={projectActions}
+                        onAction={(actionId) =>
+                          runProjectAction(project, actionId)
+                        }
+                        label={`Actions for ${getProjectDisplayName(project)}`}
+                      />
+                    </ObjectContextMenu>
                   );
                 })}
               </SidebarMenu>
@@ -2460,7 +2460,10 @@ export function ProjectsPage() {
 
       <div className="settings-content">
         {isArchivePage ? (
-          <ArchivedProjectsView projects={archivedProjects} />
+          <ArchivedProjectsView
+            projects={archivedProjects}
+            onProjectAction={runProjectAction}
+          />
         ) : selectedProject ? (
           <ProjectDetail
             project={selectedProject}
@@ -2473,7 +2476,7 @@ export function ProjectsPage() {
             taskMetrics={
               taskMetricsByProject.get(selectedProject._id) ?? new Map()
             }
-            onEditProject={openEditProjectModal}
+            onProjectAction={runProjectAction}
           />
         ) : (
           <div className="flex min-h-[400px] items-center justify-center">
@@ -2498,14 +2501,6 @@ export function ProjectsPage() {
           draft={projectDraft}
           mode={projectModalState.mode}
           onChange={setProjectDraft}
-          onArchive={
-            projectModalState.mode === "edit"
-              ? () => {
-                  localStore.archiveProject(projectModalState.projectId);
-                  closeProjectModal();
-                }
-              : undefined
-          }
           onClose={closeProjectModal}
           onSubmit={handleProjectSubmit}
         />

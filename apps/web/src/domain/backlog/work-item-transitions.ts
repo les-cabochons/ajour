@@ -51,6 +51,7 @@ export function normalizePersistedWorkItem(
     status,
     source: isRetiredBuiltInSource ? "manual" : (workItem.source ?? "manual"),
     sourceId: isRetiredBuiltInSource ? undefined : workItem.sourceId,
+    sourceUrl: isRetiredBuiltInSource ? undefined : workItem.sourceUrl,
     sourceConnectionId: isRetiredBuiltInSource
       ? undefined
       : workItem.sourceConnectionId,

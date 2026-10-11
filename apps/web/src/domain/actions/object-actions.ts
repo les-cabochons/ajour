@@ -97,3 +97,135 @@ export function getTimeEntryActionState(entry: {
 
   return entry.submittedAt ? "submitted" : "saved";
 }
+
+type ArchiveStatus = "active" | "archived";
+
+export type ProjectActionId = "edit" | "new-task" | "archive" | "restore";
+
+const RESTORE_PROJECT_FIRST = "Restore the project first";
+const RESTORE_TASK_FIRST = "Restore the task first";
+const RESTORE_ITEM_FIRST = "Restore the item first";
+
+/** Lists a project's actions: Edit · New task · Archive/Restore. Projects have no Delete. */
+export function getProjectActions(project: {
+  status: ArchiveStatus;
+}): ObjectAction<ProjectActionId>[] {
+  const isArchived = project.status === "archived";
+  const reason = isArchived ? RESTORE_PROJECT_FIRST : undefined;
+
+  return [
+    { id: "edit", label: "Edit", disabledReason: reason },
+    { id: "new-task", label: "New task", disabledReason: reason },
+    isArchived
+      ? { id: "restore", label: "Restore" }
+      : { id: "archive", label: "Archive", destructive: true },
+  ];
+}
+
+export type TaskActionId =
+  "start-entry" | "new-entry" | "edit" | "archive" | "restore";
+
+/**
+ * Lists a task's actions: Start entry · New entry… · Edit · Archive/Restore.
+ * An archived project blocks every action, including Restore of the task.
+ */
+export function getTaskActions(
+  project: { status: ArchiveStatus },
+  task: { status: ArchiveStatus },
+): ObjectAction<TaskActionId>[] {
+  const projectReason =
+    project.status === "archived" ? RESTORE_PROJECT_FIRST : undefined;
+  const isTaskArchived = task.status === "archived";
+  const workReason =
+    projectReason ?? (isTaskArchived ? RESTORE_TASK_FIRST : undefined);
+
+  return [
+    { id: "start-entry", label: "Start entry", disabledReason: workReason },
+    { id: "new-entry", label: "New entry…", disabledReason: workReason },
+    { id: "edit", label: "Edit", disabledReason: workReason },
+    isTaskArchived
+      ? { id: "restore", label: "Restore", disabledReason: projectReason }
+      : {
+          id: "archive",
+          label: "Archive",
+          destructive: true,
+          disabledReason: projectReason,
+        },
+  ];
+}
+
+export type BacklogItemActionId =
+  | "start-entry"
+  | "new-entry"
+  | "edit"
+  | "add-subitem"
+  | "open-in-source"
+  | "archive"
+  | "restore"
+  | "delete";
+
+export interface BacklogItemActionOptions {
+  /** Subitems removed together with the item, stated in the Delete label. */
+  subitemCount: number;
+  isSubitem: boolean;
+  /** Set inside an editor, where Edit is the current mode. */
+  isEditing?: boolean;
+}
+
+function formatDeleteLabel(subitemCount: number) {
+  if (subitemCount <= 0) {
+    return "Delete";
+  }
+
+  return `Delete (and ${subitemCount} ${subitemCount === 1 ? "subitem" : "subitems"})`;
+}
+
+/**
+ * Lists a backlog item's actions:
+ * Start entry · New entry… · Edit · Add subitem · Open in source · Archive/Restore · Delete.
+ * Open in source is listed only when a connector provided the item's URL.
+ */
+export function getBacklogItemActions(
+  item: {
+    status: ArchiveStatus;
+    sourceUrl?: string;
+  },
+  options: BacklogItemActionOptions,
+): ObjectAction<BacklogItemActionId>[] {
+  const isArchived = item.status === "archived";
+  const archivedReason = isArchived ? RESTORE_ITEM_FIRST : undefined;
+  const actions: ObjectAction<BacklogItemActionId>[] = [
+    { id: "start-entry", label: "Start entry", disabledReason: archivedReason },
+    { id: "new-entry", label: "New entry…", disabledReason: archivedReason },
+    {
+      id: "edit",
+      label: "Edit",
+      disabledReason:
+        archivedReason ?? (options.isEditing ? "Already editing" : undefined),
+    },
+    {
+      id: "add-subitem",
+      label: "Add subitem",
+      disabledReason: options.isSubitem
+        ? "Subitems can't have subitems"
+        : archivedReason,
+    },
+  ];
+
+  if (item.sourceUrl) {
+    actions.push({ id: "open-in-source", label: "Open in source" });
+  }
+
+  actions.push(
+    isArchived
+      ? { id: "restore", label: "Restore" }
+      : { id: "archive", label: "Archive", destructive: true },
+    {
+      id: "delete",
+      label: formatDeleteLabel(options.subitemCount),
+      destructive: true,
+    },
+  );
+
+  return actions;
+}

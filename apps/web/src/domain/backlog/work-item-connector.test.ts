@@ -94,6 +94,29 @@ const factories = {
 };
 
 describe("connector work item imports", () => {
+  it("keeps the connector's source URL and refreshes it on the next import", () => {
+    const imported = importConnectorWorkItems(
+      createState(),
+      [createCandidate()],
+      undefined,
+      factories,
+    ).state;
+    expect(imported.workItems[0]?.sourceUrl).toBe(
+      "https://example.test/items/42",
+    );
+
+    const refreshed = importConnectorWorkItems(
+      imported,
+      [createCandidate({ sourceUrl: "https://example.test/items/42/moved" })],
+      undefined,
+      factories,
+    ).state;
+    expect(refreshed.workItems).toHaveLength(1);
+    expect(refreshed.workItems[0]?.sourceUrl).toBe(
+      "https://example.test/items/42/moved",
+    );
+  });
+
   it("creates mapped work items with estimate baselines", () => {
     const operation = importConnectorWorkItems(
       createState({

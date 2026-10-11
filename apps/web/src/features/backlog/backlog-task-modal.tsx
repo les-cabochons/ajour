@@ -2,12 +2,14 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   RiAddLine as Plus,
   RiAlarmWarningLine as AlertTriangle,
-  RiCheckLine as Check,
   RiCloseLine as X,
-  RiDeleteBinLine as Trash2,
-  RiPlayLine as Play,
 } from "@remixicon/react";
+import { ObjectActionsButton } from "@/components/object-actions-menu";
 import { Button } from "@/components/ui/button";
+import {
+  getBacklogItemActions,
+  type BacklogItemActionId,
+} from "@/domain/actions/object-actions";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { buildProjectTaskOptions } from "@/features/projects/project-task-options";
 import {
@@ -21,7 +23,6 @@ import {
 import {
   buildBacklogTaskDraft,
   buildBacklogTaskPatch,
-  buildManualTimeEntryNote,
   collectBlockedParentIds,
   createBacklogTaskEditorFields,
   validateBacklogTaskEditor,
@@ -32,12 +33,7 @@ import {
   resolveWorkItemIcon,
   useWorkItemIconData,
 } from "@/features/backlog/work-item-icons";
-import {
-  buildWorkItemTimerComment,
-  parseWorkItemReference,
-} from "@/features/backlog/work-item-timer-comment";
-import { syncBacklogWorkItemToSource } from "@/features/backlog/work-item-source-sync";
-import { normalizeHoursInput, parseHoursInput } from "@/domain/time/duration";
+import { parseWorkItemReference } from "@/features/backlog/work-item-timer-comment";
 import {
   useLocalProjects,
   useLocalState,
@@ -48,25 +44,29 @@ import {
   getLocalProjectDisplayName,
 } from "@/domain/local-state";
 import { localStore } from "@/lib/local-store";
-import { cn, todayIsoDate } from "@/lib/utils";
 
 interface BacklogTaskModalProps {
   workItemId?: string;
   parentWorkItemId?: string;
   onClose: () => void;
+  /**
+   * Runs an action from the item's "…" menu. The dialog saves its draft and closes
+   * first, then passes the item with the draft applied.
+   */
+  onAction?: (workItem: LocalWorkItem, actionId: BacklogItemActionId) => void;
 }
 
 export function BacklogTaskModal({
   workItemId,
   parentWorkItemId,
   onClose,
+  onAction,
 }: BacklogTaskModalProps) {
   const state = useLocalState();
   const projects = useLocalProjects();
   const workItemIconData = useWorkItemIconData(projects);
   const workItems = useLocalWorkItems();
   const overlayRef = useRef<HTMLDivElement>(null);
-  const currentTimer = state.timers[0] ?? null;
   const isCreateSubtaskMode = Boolean(parentWorkItemId && !workItemId);
   const isCreateRootMode = Boolean(!parentWorkItemId && !workItemId);
 
@@ -87,7 +87,6 @@ export function BacklogTaskModal({
 
   const [title, setTitle] = useState("");
   const [note, setNote] = useState("");
-  const [timeEntryNote, setTimeEntryNote] = useState("");
   const [priority, setPriority] = useState("");
   const [originalEstimateHours, setOriginalEstimateHours] = useState("");
   const [remainingEstimateHours, setRemainingEstimateHours] = useState("");
@@ -96,9 +95,6 @@ export function BacklogTaskModal({
   const [parentTaskId, setParentTaskId] = useState("");
   const [projectId, setProjectId] = useState("");
   const [taskId, setTaskId] = useState("");
-  const [durationHours, setDurationHours] = useState("");
-  const [isArchivePending, setIsArchivePending] = useState(false);
-  const [isDeletePending, setIsDeletePending] = useState(false);
 
   const projectOptions = useMemo(
     () =>
@@ -186,10 +182,6 @@ export function BacklogTaskModal({
     [availableTasks],
   );
 
-  const parsedDurationMs = useMemo(
-    () => parseHoursInput(durationHours),
-    [durationHours],
-  );
   const editorFields: BacklogTaskEditorFields = {
     title,
     note,
@@ -203,22 +195,12 @@ export function BacklogTaskModal({
     completedEstimateHours,
     keepWhenMissingFromSync: workItem?.keepWhenMissingFromSync ?? false,
   };
-  const hasDurationDraft = durationHours.trim().length > 0;
-  const durationError = !hasDurationDraft
-    ? null
-    : parsedDurationMs === null
-      ? "Enter a valid duration"
-      : parsedDurationMs <= 0
-        ? "Enter a positive duration"
-        : null;
   const isSubtaskDraft = isCreateSubtaskMode ? true : Boolean(parentTaskId);
   const editorValidation = validateBacklogTaskEditor(editorFields, {
     isSubtask: isSubtaskDraft,
     requireParent: isCreateSubtaskMode,
   });
   const { priorityError } = editorValidation;
-  const canSubmitDuration = Boolean(parsedDurationMs && parsedDurationMs > 0);
-  const canStartTimer = workItem?.status !== "archived";
   const canCreateSubtask = editorValidation.canSave;
   const canCreateRootTask = validateBacklogTaskEditor(editorFields, {
     isSubtask: false,
@@ -262,8 +244,7 @@ export function BacklogTaskModal({
     workItem?.source === "azure_devops"
       ? parseWorkItemReference(workItem.sourceId)
       : undefined;
-  const sourceUrl =
-    workItem && workItem.source !== "manual" ? workItem.sourceId : undefined;
+  const sourceUrl = workItem?.sourceUrl;
   const sourceMetaLabel = [
     sourceReference ? `#${sourceReference}` : undefined,
     ...sourceMetaParts,
@@ -293,10 +274,6 @@ export function BacklogTaskModal({
     setParentTaskId(fields.parentWorkItemId);
     setProjectId(fields.projectId);
     setTaskId(fields.taskId);
-    setTimeEntryNote("");
-    setDurationHours("");
-    setIsArchivePending(false);
-    setIsDeletePending(false);
   }, []);
 
   useEffect(() => {
@@ -358,24 +335,6 @@ export function BacklogTaskModal({
       setTaskId(availableTasks[0]?._id ?? "");
     }
   }, [availableTasks, projectId, taskId]);
-
-  useEffect(() => {
-    if (!isArchivePending) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => setIsArchivePending(false), 2500);
-    return () => window.clearTimeout(timeoutId);
-  }, [isArchivePending]);
-
-  useEffect(() => {
-    if (!isDeletePending) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => setIsDeletePending(false), 2500);
-    return () => window.clearTimeout(timeoutId);
-  }, [isDeletePending]);
 
   const buildDraftPatch = useCallback(
     (preserveTitle = false) => {
@@ -462,100 +421,19 @@ export function BacklogTaskModal({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [closeModal]);
 
-  function cancelDurationDraft() {
-    setDurationHours("");
-  }
-
-  function submitDuration() {
-    if (!workItem || !parsedDurationMs || parsedDurationMs <= 0) {
+  /** Saves the draft, closes the dialog, then runs the action on the saved item. */
+  function handleItemAction(actionId: BacklogItemActionId) {
+    if (!workItem) {
       return;
     }
 
     const patch = buildDraftPatch(true);
-    const nextTitle = patch?.title ?? workItem.title;
-
     if (patch) {
       localStore.updateWorkItem(workItem._id, patch);
     }
-
-    localStore.saveManualTimeEntry({
-      localDate: todayIsoDate(),
-      workItemId: workItem._id,
-      projectId: projectId || undefined,
-      taskId: taskId || undefined,
-      note: buildManualTimeEntryNote(
-        timeEntryNote,
-        nextTitle,
-        workItem.sourceId,
-      ),
-      durationMs: parsedDurationMs,
-    });
-    syncBacklogWorkItemToSource(workItem);
-    setDurationHours("");
-    setTimeEntryNote("");
-  }
-
-  function handleStartTimer() {
-    if (!workItem || !canStartTimer) {
-      return;
-    }
-
-    const patch = buildDraftPatch(true);
-    const nextTitle = patch?.title ?? workItem.title;
-
-    if (patch) {
-      localStore.updateWorkItem(workItem._id, patch);
-    }
-
-    localStore.startTimer({
-      localDate: todayIsoDate(),
-      workItemId: workItem._id,
-      projectId: projectId || undefined,
-      taskId: taskId || undefined,
-      note: buildWorkItemTimerComment(nextTitle, workItem.sourceId),
-      accumulatedDurationMs: 0,
-    });
 
     onClose();
-  }
-
-  function handleArchive() {
-    if (!workItem) {
-      return;
-    }
-
-    setIsDeletePending(false);
-
-    if (workItem.status === "archived") {
-      localStore.restoreWorkItem(workItem._id);
-      setIsArchivePending(false);
-      return;
-    }
-
-    if (isArchivePending) {
-      localStore.archiveWorkItem(workItem._id);
-      setIsArchivePending(false);
-      return;
-    }
-
-    setIsArchivePending(true);
-  }
-
-  function handleDeleteWorkItem() {
-    if (!workItem) {
-      return;
-    }
-
-    setIsArchivePending(false);
-
-    if (isDeletePending) {
-      localStore.deleteWorkItem(workItem._id);
-      setIsDeletePending(false);
-      onClose();
-      return;
-    }
-
-    setIsDeletePending(true);
+    onAction?.({ ...workItem, ...patch }, actionId);
   }
 
   function submitCreatedSubtask() {
@@ -821,12 +699,14 @@ export function BacklogTaskModal({
   }
 
   const editingWorkItem = workItem as LocalWorkItem;
-  const isArchived = editingWorkItem.status === "archived";
-  const timerTitle = isArchived
-    ? "Archived items cannot start timers"
-    : currentTimer
-      ? `Switch timer to ${title.trim() || editingWorkItem.title}`
-      : `Start timer for ${title.trim() || editingWorkItem.title}`;
+  const isSubitem = isSubtaskWorkItem(editingWorkItem);
+  const itemActions = getBacklogItemActions(editingWorkItem, {
+    isSubitem,
+    subitemCount: isSubitem
+      ? 0
+      : getDirectChildWorkItems(editingWorkItem, workItems).length,
+    isEditing: true,
+  });
 
   return (
     <div ref={overlayRef} className="time-entry-modal-overlay">
@@ -856,6 +736,13 @@ export function BacklogTaskModal({
             ) : null}
           </div>
           <div className="time-entry-modal-header-actions">
+            {onAction ? (
+              <ObjectActionsButton
+                actions={itemActions}
+                onAction={handleItemAction}
+                label={`Actions for ${editingWorkItem.title}`}
+              />
+            ) : null}
             <button
               type="button"
               className="time-entry-modal-close"
@@ -906,96 +793,11 @@ export function BacklogTaskModal({
             />
           </label>
 
-          {!isArchived ? (
-            <label className="field entry-field-note">
-              <span className="field-label">Note</span>
-              <textarea
-                className="field-input entry-note-input"
-                value={timeEntryNote}
-                onChange={(event) => setTimeEntryNote(event.target.value)}
-                placeholder="Time entry note (optional)"
-                rows={2}
-              />
-            </label>
-          ) : null}
-
           {priorityError ? (
             <div className="backlog-field-title-full">
               <span className="field-error">{priorityError}</span>
             </div>
           ) : null}
-
-          <div className="field entry-field-hours backlog-field-hours">
-            <span className="field-label">Hours</span>
-            <div className="inline-hours-input-shell">
-              <input
-                className="field-input entry-hours-input inline-hours-input"
-                type="text"
-                placeholder="01:30"
-                style={{ fontFamily: "var(--font-mono)" }}
-                value={durationHours}
-                onChange={(event) => setDurationHours(event.target.value)}
-                onBlur={(event) =>
-                  setDurationHours(normalizeHoursInput(event.target.value))
-                }
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    if (hasDurationDraft) {
-                      submitDuration();
-                      return;
-                    }
-
-                    handleStartTimer();
-                  }
-                }}
-                aria-label="Hours"
-              />
-              <div className="inline-hours-actions">
-                {hasDurationDraft ? (
-                  <>
-                    <button
-                      type="button"
-                      className="inline-hours-action"
-                      aria-label="Submit time"
-                      disabled={!canSubmitDuration}
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={submitDuration}
-                    >
-                      <Check className="h-3.5 w-3.5" />
-                    </button>
-                    <button
-                      type="button"
-                      className="inline-hours-action"
-                      aria-label="Cancel time"
-                      onMouseDown={(event) => event.preventDefault()}
-                      onClick={cancelDurationDraft}
-                    >
-                      <X className="h-3.5 w-3.5" />
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    type="button"
-                    className={cn(
-                      "inline-hours-action",
-                      "inline-hours-action-play",
-                    )}
-                    aria-label={timerTitle}
-                    title={timerTitle}
-                    disabled={!canStartTimer}
-                    onMouseDown={(event) => event.preventDefault()}
-                    onClick={handleStartTimer}
-                  >
-                    <Play className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </div>
-            </div>
-            {durationError ? (
-              <span className="field-error">{durationError}</span>
-            ) : null}
-          </div>
         </div>
       </div>
     </div>
