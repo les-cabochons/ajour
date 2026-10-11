@@ -26,7 +26,7 @@
 - Keep app-specific repeated surfaces under `apps/web/src/components` when they are not generic shadcn/Base UI primitives. Current examples are `AppPanel`, `MessagePanel`, and `SurfaceCallout` in `apps/web/src/components/app-surface.tsx`.
 - Feature pages should orchestrate workflow state and compose UI modules. Move repeated or plugin-driven rendering into feature-local UI modules such as `apps/web/src/features/settings/connector-settings-ui.tsx`.
 - Responsive renderers for the same workflow must share one semantic model. Backlog desktop and mobile editing use `features/backlog/backlog-task-editor.ts`; keep only rendering and transient presentation state in each component.
-- Day inline and Week/mobile dialog time editing use `features/time/time-entry-editor.ts` for draft interpretation. Keep save/close presentation policies in the caller and preserve unchanged saved milliseconds rather than re-parsing rounded display text.
+- Creating and editing a time entry use one form, `features/time/time-entry-editor-form.tsx`, in every host (the Day and Week side panel, the dialog). Its draft rules, including what Save and switching entries write (`commitTimeEntryDraft`), live in `features/time/time-entry-editor.ts`. Hosts only supply the container. Preserve unchanged saved milliseconds rather than re-parsing rounded display text.
 - Plugin settings operations and reconciliation belong to `features/settings/plugin-settings-workflow.ts`; pages keep form drafts and rendering.
 - Keep persistence, runtime adapters, hooks, and cross-feature application services under `apps/web/src/lib`.
 - Do not import feature modules from `apps/web/src/domain` or `apps/web/src/lib`.
