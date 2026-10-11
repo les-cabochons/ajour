@@ -37,3 +37,22 @@ just format
 just build
 just clean
 ```
+
+## Agent skills
+
+Write all repository documentation, tickets, comments, and pull requests in English.
+
+### Issue tracker
+
+Track work in GitHub Issues for `les-cabochons/ajour`. Before reading,
+creating, or updating tickets, read `agents/issue-tracker.md`.
+
+### Triage labels
+
+Use the five default triage labels. Before triaging tickets, read
+`agents/triage-labels.md`.
+
+### Domain docs
+
+Use a single-context glossary and ADR collection for all Ajour packages.
+Before exploring domain behavior, read `agents/domain.md`.
