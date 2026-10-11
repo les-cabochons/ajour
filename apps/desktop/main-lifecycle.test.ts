@@ -85,20 +85,16 @@ describe("desktop connector lifecycle", () => {
     ]);
 
     expect(preloadSource).toContain(
-      'ipcRenderer.invoke("timetracker:install-connector-plugin")',
+      'ipcRenderer.invoke("ajour:install-connector-plugin")',
     );
-    expect(mainSource).toMatch(
-      ipcHandler("timetracker:install-connector-plugin"),
-    );
+    expect(mainSource).toMatch(ipcHandler("ajour:install-connector-plugin"));
     expect(mainSource).toContain("event.sender !== mainWindow.webContents");
     expect(mainSource).toContain("selectConnectorPluginArchive(");
     expect(mainSource).toContain("installConnectorPluginForServer(");
     expect(preloadSource).toContain(
-      'ipcRenderer.invoke("timetracker:uninstall-connector-plugin"',
+      'ipcRenderer.invoke("ajour:uninstall-connector-plugin"',
     );
-    expect(mainSource).toMatch(
-      ipcHandler("timetracker:uninstall-connector-plugin"),
-    );
+    expect(mainSource).toMatch(ipcHandler("ajour:uninstall-connector-plugin"));
     expect(mainSource).toContain("uninstallConnectorPluginForServer(");
   });
 
@@ -109,18 +105,16 @@ describe("desktop connector lifecycle", () => {
     ]);
 
     expect(preloadSource).toContain(
-      'ipcRenderer.invoke("timetracker:check-for-updates", track)',
+      'ipcRenderer.invoke("ajour:check-for-updates", track)',
     );
     expect(preloadSource).toContain(
-      'ipcRenderer.invoke("timetracker:configure-automatic-updates", track)',
+      'ipcRenderer.invoke("ajour:configure-automatic-updates", track)',
     );
     expect(preloadSource).toContain(
-      'ipcRenderer.invoke("timetracker:open-update-release", releaseUrl)',
+      'ipcRenderer.invoke("ajour:open-update-release", releaseUrl)',
     );
-    expect(mainSource).toMatch(ipcHandler("timetracker:check-for-updates"));
-    expect(mainSource).toMatch(
-      ipcHandler("timetracker:configure-automatic-updates"),
-    );
+    expect(mainSource).toMatch(ipcHandler("ajour:check-for-updates"));
+    expect(mainSource).toMatch(ipcHandler("ajour:configure-automatic-updates"));
     expect(mainSource).toContain("createAutomaticUpdateController({");
     expect(mainSource).toContain(
       'app.isPackaged && process.platform === "win32"',
@@ -142,16 +136,14 @@ describe("desktop connector lifecycle", () => {
     expect(mainSource).toContain(
       "pluginCatalogSettings.refreshMinutes * 60 * 1000",
     );
-    expect(mainSource).toMatch(ipcHandler("timetracker:get-plugin-catalog"));
-    expect(mainSource).toMatch(
-      ipcHandler("timetracker:download-catalog-plugin"),
-    );
+    expect(mainSource).toMatch(ipcHandler("ajour:get-plugin-catalog"));
+    expect(mainSource).toMatch(ipcHandler("ajour:download-catalog-plugin"));
     expect(mainSource).toContain("{ enableAfterInstall: false }");
     expect(preloadSource).toContain(
-      'ipcRenderer.invoke("timetracker:configure-plugin-catalog", settings)',
+      'ipcRenderer.invoke("ajour:configure-plugin-catalog", settings)',
     );
     expect(preloadSource).toContain(
-      'ipcRenderer.on("timetracker:plugin-catalog-updated", listener)',
+      'ipcRenderer.on("ajour:plugin-catalog-updated", listener)',
     );
   });
 

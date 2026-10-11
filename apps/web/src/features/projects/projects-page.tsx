@@ -705,7 +705,7 @@ function ProjectTaskCreateModal({
                 <ProjectIcon
                   icon={project.icon}
                   color={project.color}
-                  className="harday-sidebar-icon"
+                  className="ajour-sidebar-icon"
                 />
                 <span className="font-medium text-foreground">
                   {getProjectDisplayName(project)}
@@ -773,7 +773,7 @@ function ArchivedProjectsView({ projects }: { projects: LocalProject[] }) {
                         <ProjectIcon
                           icon={project.icon}
                           color={project.color}
-                          className="harday-sidebar-icon"
+                          className="ajour-sidebar-icon"
                         />
                         <span className="project-task-name">
                           {getProjectDisplayName(project)}
@@ -2291,20 +2291,20 @@ export function ProjectsPage() {
 
   return (
     <CustomSidebarLayout
-      className="harday-project-layout"
+      className="ajour-project-layout"
       keyboardShortcut={false}
     >
       <CustomSidebar
-        className="harday-project-navigation-sidebar"
+        className="ajour-project-navigation-sidebar"
         role="navigation"
         aria-label="Projects"
         collapsible="none"
       >
-        <SidebarHeader className="harday-project-sidebar-header">
-          <div className="harday-project-sidebar-search-row">
+        <SidebarHeader className="ajour-project-sidebar-header">
+          <div className="ajour-project-sidebar-search-row">
             <button
               type="button"
-              className="harday-project-sidebar-command-trigger"
+              className="ajour-project-sidebar-command-trigger"
               aria-label="Search projects"
               title="Search projects"
               onClick={() => setIsProjectCommandOpen(true)}
@@ -2355,7 +2355,7 @@ export function ProjectsPage() {
                         projectRowRefs.current.delete(project._id);
                       }}
                       className={cn(
-                        "harday-project-sidebar-item",
+                        "ajour-project-sidebar-item",
                         canReorderProjects && "is-reorderable",
                         pressedProjectId === project._id && "is-pressing",
                         rowShift !== 0 && "is-shifting",
@@ -2403,13 +2403,13 @@ export function ProjectsPage() {
                         <ProjectIcon
                           icon={project.icon}
                           color={project.color}
-                          className="harday-sidebar-icon"
+                          className="ajour-sidebar-icon"
                         />
                         <span data-sidebar-collapsed="hide">
                           {getProjectDisplayName(project)}
                         </span>
                         {project.code ? (
-                          <span className="harday-sidebar-code">
+                          <span className="ajour-sidebar-code">
                             {project.code}
                           </span>
                         ) : null}
@@ -2422,10 +2422,10 @@ export function ProjectsPage() {
           </SidebarGroup>
         </SidebarContent>
 
-        <SidebarFooter className="harday-project-sidebar-footer">
+        <SidebarFooter className="ajour-project-sidebar-footer">
           <Link
             to="/projects/archive"
-            className={`harday-project-sidebar-archive-trigger ${
+            className={`ajour-project-sidebar-archive-trigger ${
               isArchivePage ? "is-active" : ""
             }`}
             title="Archived projects"
@@ -2439,7 +2439,7 @@ export function ProjectsPage() {
 
       {draggedProject && projectDragState ? (
         <div
-          className="harday-project-sidebar-drag-preview"
+          className="ajour-project-sidebar-drag-preview"
           style={{
             width: projectDragState.width,
             minHeight: projectDragState.height,
@@ -2449,11 +2449,11 @@ export function ProjectsPage() {
           <ProjectIcon
             icon={draggedProject.icon}
             color={draggedProject.color}
-            className="harday-sidebar-icon"
+            className="ajour-sidebar-icon"
           />
           <span className="min-w-0 flex-1 truncate">{draggedProject.name}</span>
           {draggedProject.code ? (
-            <span className="harday-sidebar-code">{draggedProject.code}</span>
+            <span className="ajour-sidebar-code">{draggedProject.code}</span>
           ) : null}
         </div>
       ) : null}
@@ -2530,15 +2530,15 @@ export function ProjectsPage() {
         }}
         title="Projects"
         description="Search projects and run project actions."
-        className="harday-project-command-dialog"
+        className="ajour-project-command-dialog"
       >
-        <Command shouldFilter={false} className="harday-project-command">
+        <Command shouldFilter={false} className="ajour-project-command">
           <CommandInput
             placeholder="Search projects and actions..."
             value={projectCommandQuery}
             onValueChange={setProjectCommandQuery}
           />
-          <CommandList className="harday-project-command-list">
+          <CommandList className="ajour-project-command-list">
             <CommandEmpty>No matching projects.</CommandEmpty>
 
             {projectCommandView === "main" ? (
@@ -2599,7 +2599,7 @@ export function ProjectsPage() {
                 ) : null}
 
                 <CommandGroup heading="Projects">
-                  <div className="harday-project-command-group-scroll">
+                  <div className="ajour-project-command-group-scroll">
                     {filteredCommandProjects.map((project) => (
                       <CommandItem
                         key={project._id}
@@ -2615,7 +2615,7 @@ export function ProjectsPage() {
                         <ProjectIcon
                           icon={project.icon}
                           color={project.color}
-                          className="harday-sidebar-icon"
+                          className="ajour-sidebar-icon"
                         />
                         <span className="flex-1 truncate">
                           {getProjectDisplayName(project)}
@@ -2637,7 +2637,7 @@ export function ProjectsPage() {
                         <ProjectIcon
                           icon={project.icon}
                           color={project.color}
-                          className="harday-sidebar-icon opacity-50"
+                          className="ajour-sidebar-icon opacity-50"
                         />
                         <span className="flex-1 truncate text-foreground/70">
                           {getProjectDisplayName(project)}
@@ -2657,7 +2657,7 @@ export function ProjectsPage() {
                   <span className="flex-1">Back to actions</span>
                 </CommandItem>
                 <CommandSeparator />
-                <div className="harday-project-command-group-scroll">
+                <div className="ajour-project-command-group-scroll">
                   {filteredCommandProjects.map((project) => (
                     <CommandItem
                       key={project._id}
@@ -2667,7 +2667,7 @@ export function ProjectsPage() {
                       <ProjectIcon
                         icon={project.icon}
                         color={project.color}
-                        className="harday-sidebar-icon"
+                        className="ajour-sidebar-icon"
                       />
                       <span className="flex-1 truncate">
                         {getProjectDisplayName(project)}

@@ -64,7 +64,7 @@ function githubRelease(
 ) {
   return {
     tag_name: tag,
-    name: `HarDay ${tag}`,
+    name: `Ajour ${tag}`,
     html_url: `https://github.com/les-cabochons/ajour/releases/tag/${tag}`,
     draft: false,
     prerelease,

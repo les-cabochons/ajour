@@ -4,12 +4,12 @@ import {
   type BrowserActivityBucket,
   type CaptureSettings,
   type TeamSettings,
-} from "@timetracker/shared";
+} from "@ajour/shared";
 import type {
   ConnectorImportCandidate,
   ConnectorSyncWorkItemUpdate,
   ProjectDataShapeImportProject,
-} from "@timetracker/shared";
+} from "@ajour/shared";
 import {
   addBacklogStatus as applyAddBacklogStatus,
   deleteBacklogStatus as applyDeleteBacklogStatus,
@@ -158,7 +158,7 @@ export type {
   UserPreferences,
 } from "@/domain/local-state";
 
-const STORAGE_KEY = "timetracker.local-state.v2";
+const STORAGE_KEY = "ajour.local-state.v2";
 const RETIRED_AUTH_CACHE_PREFIX = "msal.";
 
 const defaultCapture: CaptureSettings = {
@@ -221,7 +221,7 @@ function createDefaultState(): LocalAppState {
     user: {
       _id: "local_user",
       name: "Local User",
-      email: "local-only@timetracker.dev",
+      email: "local-only@ajour.dev",
     },
     projects: [],
     rules: [],
@@ -435,8 +435,8 @@ function ensureLocalWorkspace(state: LocalAppState): LocalAppState {
     ...state,
     team: {
       _id: "local_team",
-      name: "harday",
-      slug: "harday",
+      name: "ajour",
+      slug: "ajour",
       settings: defaultTeamSettings,
     },
     projects:
@@ -613,7 +613,7 @@ function purgeRetiredAuthCache() {
 
 function loadState(): LocalAppState {
   purgeRetiredAuthCache();
-  const bootstrapState = window.timetrackerDesktop?.bootstrapLocalState;
+  const bootstrapState = window.ajourDesktop?.bootstrapLocalState;
   let stored: string | null;
   try {
     stored = window.localStorage.getItem(STORAGE_KEY);
@@ -683,7 +683,7 @@ function writeState(state: LocalAppState) {
   const nextState = { ...state, updatedAt: Date.now() };
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
   cachedState = nextState;
-  window.dispatchEvent(new Event("timetracker-local-state"));
+  window.dispatchEvent(new Event("ajour-local-state"));
 }
 
 function updateState(
@@ -723,10 +723,10 @@ export const localStore = {
       }
     };
 
-    window.addEventListener("timetracker-local-state", notify);
+    window.addEventListener("ajour-local-state", notify);
     window.addEventListener("storage", notifyStorage);
     return () => {
-      window.removeEventListener("timetracker-local-state", notify);
+      window.removeEventListener("ajour-local-state", notify);
       window.removeEventListener("storage", notifyStorage);
     };
   },

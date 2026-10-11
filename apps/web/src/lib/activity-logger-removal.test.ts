@@ -25,7 +25,7 @@ function installLegacyWindow() {
   });
 
   storage.set(
-    "timetracker.local-state.v2",
+    "ajour.local-state.v2",
     JSON.stringify({
       activityLoggerEnabled: true,
     }),

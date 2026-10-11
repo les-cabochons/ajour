@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ConnectorsOverview } from "@timetracker/shared";
+import type { ConnectorsOverview } from "@ajour/shared";
 import {
   cacheConnectorsOverview,
   getConnectorsOverview,

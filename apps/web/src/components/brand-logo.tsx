@@ -1,7 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import { cn } from "@/lib/utils";
-import hardDayMarkUrl from "../../../../assets/hard-day-logo-png.png";
-import hardDayTextLogoUrl from "../../../../assets/hard-day-text-logo.svg";
+import logoMarkUrl from "../../../../assets/ajour-logo-mark.png";
 
 type BrandLogoProps = {
   className?: string;
@@ -10,14 +9,14 @@ type BrandLogoProps = {
 
 export function BrandLogo({ className, linked = false }: BrandLogoProps) {
   const logo = (
-    <span className="harday-logo-lockup">
+    <span className="ajour-logo-lockup">
       <img
-        src={hardDayMarkUrl}
+        src={logoMarkUrl}
         alt=""
         aria-hidden="true"
-        className="harday-logo-mark"
+        className="ajour-logo-mark"
       />
-      <img src={hardDayTextLogoUrl} alt="HarDay" className="harday-wordmark" />
+      <span className="ajour-wordmark">Ajour</span>
     </span>
   );
 
@@ -26,8 +25,8 @@ export function BrandLogo({ className, linked = false }: BrandLogoProps) {
       <Link
         to="/time/$date"
         params={{ date: "today" }}
-        aria-label="HarDay home"
-        className={cn("harday-brand-link", className)}
+        aria-label="Ajour home"
+        className={cn("ajour-brand-link", className)}
       >
         {logo}
       </Link>

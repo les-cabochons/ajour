@@ -38,7 +38,7 @@ describe("desktop development plugin settings", () => {
   });
 
   it("persists only normalized absolute plugin directories", async () => {
-    const root = await mkdtemp(path.join(os.tmpdir(), "harday-dev-plugin-"));
+    const root = await mkdtemp(path.join(os.tmpdir(), "ajour-dev-plugin-"));
     tempDirs.push(root);
     const settingsPath = path.join(root, "settings", "plugins.json");
     const pluginDirectory = path.join(root, "plugin");

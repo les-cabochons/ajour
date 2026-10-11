@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type {
-  ActivityBlockRecord,
-  BrowserActivityBucket,
-} from "@timetracker/shared";
+import type { ActivityBlockRecord, BrowserActivityBucket } from "@ajour/shared";
 import type { LocalAppState } from "@/domain/local-state";
 import {
   commitActivityBlock,

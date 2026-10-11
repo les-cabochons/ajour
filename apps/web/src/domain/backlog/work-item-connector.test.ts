@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import type {
   ConnectorImportCandidate,
   ConnectorSyncWorkItemUpdate,
-} from "@timetracker/shared";
+} from "@ajour/shared";
 import type { LocalAppState } from "@/domain/local-state";
 import {
   applyConnectorSyncWorkItemUpdates,

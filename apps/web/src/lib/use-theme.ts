@@ -50,7 +50,7 @@ export function useApplyTheme(): void {
       root.classList.remove("light");
     }
 
-    window.timetrackerDesktop?.setWindowChromeTheme?.(resolvedTheme);
+    window.ajourDesktop?.setWindowChromeTheme?.(resolvedTheme);
   }, [resolvedTheme]);
 }
 

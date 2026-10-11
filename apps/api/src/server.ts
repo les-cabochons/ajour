@@ -174,7 +174,7 @@ function isAllowedRequestOrigin(
 }
 
 function configuredAllowedOrigins() {
-  return (process.env.TIMETRACKER_APP_API_ALLOWED_ORIGINS ?? "")
+  return (process.env.AJOUR_APP_API_ALLOWED_ORIGINS ?? "")
     .split(",")
     .map((origin) => origin.trim())
     .filter(Boolean);
@@ -337,11 +337,11 @@ async function findConnectionSummary(
 function defaultInstalledPluginDirectory(statePath?: string) {
   return statePath
     ? path.join(path.dirname(statePath), "plugins")
-    : path.join(os.homedir(), ".timetracker", "plugins");
+    : path.join(os.homedir(), ".ajour", "plugins");
 }
 
 function defaultDevelopmentPluginDirectories() {
-  const configuredDirectories = process.env.TIMETRACKER_DEV_PLUGIN_DIRS?.split(
+  const configuredDirectories = process.env.AJOUR_DEV_PLUGIN_DIRS?.split(
     path.delimiter,
   )
     .map((directory) => directory.trim())
@@ -388,14 +388,12 @@ function defaultProjectDataShapePluginDirectories() {
 }
 
 export function createAppApiServer(options: AppApiServerOptions = {}) {
-  const host =
-    options.host ?? process.env.TIMETRACKER_APP_API_HOST ?? "127.0.0.1";
-  const port =
-    options.port ?? Number(process.env.TIMETRACKER_APP_API_PORT ?? 8787);
+  const host = options.host ?? process.env.AJOUR_APP_API_HOST ?? "127.0.0.1";
+  const port = options.port ?? Number(process.env.AJOUR_APP_API_PORT ?? 8787);
   const storage = new AppApiStorage(options.statePath);
   const allowDevelopmentPlugins =
     options.allowDevelopmentPlugins ??
-    process.env.TIMETRACKER_ALLOW_DEVELOPMENT_PLUGINS === "1";
+    process.env.AJOUR_ALLOW_DEVELOPMENT_PLUGINS === "1";
   const pluginManager = new ConnectorPluginManager({
     installedPluginDirectory:
       options.installedPluginDirectory ??
@@ -997,17 +995,15 @@ export async function uninstallConnectorPluginForServer(
 export async function startAppApiServer(
   options: AppApiServerOptions = {},
 ): Promise<Server> {
-  const host =
-    options.host ?? process.env.TIMETRACKER_APP_API_HOST ?? "127.0.0.1";
-  const port =
-    options.port ?? Number(process.env.TIMETRACKER_APP_API_PORT ?? 8787);
+  const host = options.host ?? process.env.AJOUR_APP_API_HOST ?? "127.0.0.1";
+  const port = options.port ?? Number(process.env.AJOUR_APP_API_PORT ?? 8787);
   const server = createAppApiServer(options);
 
   await new Promise<void>((resolve, reject) => {
     server.once("error", reject);
     server.listen(port, host, () => {
       server.off("error", reject);
-      console.log(`TimeTracker app API listening on http://${host}:${port}`);
+      console.log(`Ajour app API listening on http://${host}:${port}`);
       resolve();
     });
   });

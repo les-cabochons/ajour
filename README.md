@@ -1,6 +1,6 @@
-# Ajour - TimeTracker
+# Ajour - Ajour
 
-TimeTracker is a local-first time-tracking workspace with a web app, an Electron desktop shell, shared domain logic, and an optional local API for connector-driven imports.
+Ajour is a local-first time-tracking workspace with a web app, an Electron desktop shell, shared domain logic, and an optional local API for connector-driven imports.
 
 ## What Exists Today
 
@@ -157,20 +157,20 @@ application source at runtime.
 
 Each standalone connector repository owns its compilation and watch process.
 Run `just install` there, then keep `just dev` running while developing the
-connector. In HarDay, set `TIMETRACKER_DEV_PLUGIN_DIRS` to a platform-delimited
+connector. In Ajour, set `AJOUR_DEV_PLUGIN_DIRS` to a platform-delimited
 list of development plugin directories, or choose a directory from Settings →
 Debug in the development desktop app. A selected directory must contain
-`plugin.json` and its compiled manifest entrypoint. HarDay loads that output but
+`plugin.json` and its compiled manifest entrypoint. Ajour loads that output but
 does not compile or watch the external connector. The Debug setting is persisted
 for future development launches and is ignored by production builds. An explicit
-`TIMETRACKER_DEV_PLUGIN_DIRS` value overrides the saved Debug setting for that
+`AJOUR_DEV_PLUGIN_DIRS` value overrides the saved Debug setting for that
 launch.
 
 ```sh
-TIMETRACKER_DEV_PLUGIN_DIRS=/absolute/path/to/plugin just desktop-start
+AJOUR_DEV_PLUGIN_DIRS=/absolute/path/to/plugin just desktop-start
 ```
 
-Production desktop installs use one local `.harday-connector` archive at a time
+Production desktop installs use one local `.ajour-connector` archive at a time
 through Settings → Plugins. Archive installation is available only through the
 desktop bridge and its native file chooser, not the loopback HTTP API. Official
 connector implementations and their versioned builds are maintained in:
@@ -278,7 +278,7 @@ All project context now lives under `agents/`, with `agents.md` at the repositor
 - developers and coding agents maintain the active guidance in `agents/writing-plan.md` and status in `agents/progress-tracker.md`
 - developers maintain `agents/ui-tokens.md` and `agents/ui-rules.md`; UI workflows maintain `agents/ui-registry.md`
 
-No context file intentionally starts empty in this repository because all required files already existed with project-authored content. UI context files are included because TimeTracker ships React web and Electron interfaces.
+No context file intentionally starts empty in this repository because all required files already existed with project-authored content. UI context files are included because Ajour ships React web and Electron interfaces.
 
 ### Verification status
 

@@ -15,7 +15,7 @@ import type {
   ConnectorField,
   ConnectorFieldValue,
   ConnectorPluginManifest,
-} from "@timetracker/shared";
+} from "@ajour/shared";
 import { SAVED_SECRET_MASK } from "./connector-form-state";
 
 function ConnectorPluginIcon({

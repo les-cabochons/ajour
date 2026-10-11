@@ -144,9 +144,9 @@ export function SettingsGeneralPage() {
   const [releaseOpenError, setReleaseOpenError] = useState<string | null>(null);
   const updateRequestId = useRef(0);
   const releaseOpenRequestId = useRef(0);
-  const desktopUpdates = window.timetrackerDesktop?.checkForUpdates;
+  const desktopUpdates = window.ajourDesktop?.checkForUpdates;
   const automaticUpdatesEnabled =
-    window.timetrackerDesktop?.runtime?.automaticUpdatesEnabled === true;
+    window.ajourDesktop?.runtime?.automaticUpdatesEnabled === true;
 
   const handleThemeChange = (mode: ThemeMode) => {
     localStore.setUserPreferences({ themeMode: mode });
@@ -155,7 +155,7 @@ export function SettingsGeneralPage() {
   const runUpdateCheck = useCallback(async (track: UpdateTrack) => {
     releaseOpenRequestId.current += 1;
     setReleaseOpenError(null);
-    const checkForUpdates = window.timetrackerDesktop?.checkForUpdates;
+    const checkForUpdates = window.ajourDesktop?.checkForUpdates;
     if (!checkForUpdates) {
       setUpdateCheck({ status: "idle" });
       return;
@@ -196,7 +196,7 @@ export function SettingsGeneralPage() {
     const requestId = ++releaseOpenRequestId.current;
     setReleaseOpenError(null);
     try {
-      await window.timetrackerDesktop?.openUpdateRelease?.(releaseUrl);
+      await window.ajourDesktop?.openUpdateRelease?.(releaseUrl);
     } catch (error) {
       if (requestId === releaseOpenRequestId.current) {
         setReleaseOpenError(
@@ -265,7 +265,7 @@ export function SettingsGeneralPage() {
         <h2 className="settings-section-title">Time capacity</h2>
         <p className="settings-section-desc">
           Set the target for each weekday and choose which capacity warnings
-          HarDay shows.
+          Ajour shows.
         </p>
 
         <AppPanel>
@@ -343,8 +343,8 @@ export function SettingsGeneralPage() {
         <h2 className="settings-section-title">Application updates</h2>
         <p className="settings-section-desc">
           {automaticUpdatesEnabled
-            ? "Choose which GitHub release track HarDay follows. Updates download in the background, and HarDay asks before restarting to install them."
-            : "Choose which GitHub release track HarDay checks. Automatic installation is currently available on packaged Windows builds; use the release link to update this platform manually."}
+            ? "Choose which GitHub release track Ajour follows. Updates download in the background, and Ajour asks before restarting to install them."
+            : "Choose which GitHub release track Ajour checks. Automatic installation is currently available on packaged Windows builds; use the release link to update this platform manually."}
         </p>
 
         <AppPanel>
@@ -422,7 +422,7 @@ export function SettingsGeneralPage() {
                         Checking {preferences.updateTrack} releases…
                       </p>
                       <p className="text-sm leading-5 text-muted-foreground">
-                        Looking at the HarDay GitHub repository.
+                        Looking at the Ajour GitHub repository.
                       </p>
                     </>
                   ) : updateCheck.status === "success" ? (
@@ -432,11 +432,11 @@ export function SettingsGeneralPage() {
                           ? `No ${preferences.updateTrack} release has been published yet`
                           : updateCheck.result.updateAvailable
                             ? `${updateCheck.result.latestTag} is available`
-                            : `HarDay ${updateCheck.result.currentVersion} is up to date`}
+                            : `Ajour ${updateCheck.result.currentVersion} is up to date`}
                       </p>
                       <p className="text-sm leading-5 text-muted-foreground">
                         {!updateCheck.result.latestTag
-                          ? `Checked the HarDay GitHub repository ${formatCheckedAt(updateCheck.result.checkedAt)}`
+                          ? `Checked the Ajour GitHub repository ${formatCheckedAt(updateCheck.result.checkedAt)}`
                           : updateCheck.result.updateAvailable
                             ? `Installed ${updateCheck.result.currentVersion} · checked ${formatCheckedAt(updateCheck.result.checkedAt)}`
                             : `Latest ${preferences.updateTrack} release ${updateCheck.result.latestTag} · checked ${formatCheckedAt(updateCheck.result.checkedAt)}`}
@@ -458,9 +458,7 @@ export function SettingsGeneralPage() {
                       </p>
                       <p className="text-sm leading-5 text-muted-foreground">
                         Current version{" "}
-                        {window.timetrackerDesktop?.runtime?.version ??
-                          "unknown"}
-                        .
+                        {window.ajourDesktop?.runtime?.version ?? "unknown"}.
                       </p>
                     </>
                   )}

@@ -100,7 +100,7 @@ The backlog editor module is feature-local because its vocabulary and commands b
 - Connector packages live in the standalone `les-cabochons/ajc-azure-devops`
   and `les-cabochons/ajc-jira` repositories.
 - Each connector compiles to local JavaScript modules and packages
-  `plugin.json` plus `dist/` into one `.harday-connector` archive.
+  `plugin.json` plus `dist/` into one `.ajour-connector` archive.
 - Development builds load configured plugin directories; production builds
   only install packaged archives into the managed user-data plugin directory.
 - Desktop archive installation crosses the restricted preload/IPC bridge and
@@ -108,7 +108,7 @@ The backlog editor module is feature-local because its vocabulary and commands b
 
 ## Shared
 
-- Shared domain package: `@timetracker/shared`
+- Shared domain package: `@ajour/shared`
 - Contains validation schemas, connector contracts, timeline aggregation, activity normalization, rules, and time utilities.
 
 ## Documentation Lookup Rules

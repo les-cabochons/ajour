@@ -94,7 +94,7 @@ describe("localStore backlog status sync", () => {
 
   it("normalizes malformed weekly time preferences", async () => {
     window.localStorage.setItem(
-      "timetracker.local-state.v2",
+      "ajour.local-state.v2",
       JSON.stringify({
         userPreferences: {
           weeklyTimeViewStyle: "stream",
@@ -146,7 +146,7 @@ describe("localStore backlog status sync", () => {
 
   it("normalizes unsupported persisted update tracks to stable", async () => {
     window.localStorage.setItem(
-      "timetracker.local-state.v2",
+      "ajour.local-state.v2",
       JSON.stringify({
         userPreferences: {
           themeMode: "system",
@@ -227,12 +227,12 @@ describe("localStore backlog status sync", () => {
 
   it("hydrates a fallback color for legacy backlog statuses without one", async () => {
     window.localStorage.setItem(
-      "timetracker.local-state.v2",
+      "ajour.local-state.v2",
       JSON.stringify({
         user: {
           _id: "local_user",
           name: "Local User",
-          email: "local-only@timetracker.dev",
+          email: "local-only@ajour.dev",
         },
         projects: [],
         rules: [],
@@ -290,7 +290,7 @@ describe("localStore backlog status sync", () => {
       "pending",
     );
     window.localStorage.setItem(
-      "timetracker.local-state.v2",
+      "ajour.local-state.v2",
       JSON.stringify({
         outlookIntegration: {
           configured: true,
@@ -356,7 +356,7 @@ describe("localStore backlog status sync", () => {
       committedAt: 2,
     });
     const persistedState = JSON.parse(
-      window.localStorage.getItem("timetracker.local-state.v2")!,
+      window.localStorage.getItem("ajour.local-state.v2")!,
     );
     expect(persistedState).not.toHaveProperty("outlookIntegration");
     expect(persistedState).not.toHaveProperty("outlookMeetingDrafts");
@@ -752,12 +752,12 @@ describe("localStore backlog status sync", () => {
 
     const storage = new Map<string, string>();
     storage.set(
-      "timetracker.local-state.v2",
+      "ajour.local-state.v2",
       JSON.stringify({
         user: {
           _id: "local_user",
           name: "Local User",
-          email: "local-only@timetracker.dev",
+          email: "local-only@ajour.dev",
         },
         projects: [
           {
@@ -807,7 +807,7 @@ describe("localStore backlog status sync", () => {
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
         dispatchEvent: vi.fn(),
-        timetrackerDesktop: {
+        ajourDesktop: {
           bootstrapLocalState: bootstrapState,
         },
         localStorage: {
@@ -864,12 +864,12 @@ describe("localStore backlog status sync", () => {
 
     const storage = new Map<string, string>();
     storage.set(
-      "timetracker.local-state.v2",
+      "ajour.local-state.v2",
       JSON.stringify({
         user: {
           _id: "local_user",
           name: "Local User",
-          email: "local-only@timetracker.dev",
+          email: "local-only@ajour.dev",
         },
         projects: [
           {
@@ -928,7 +928,7 @@ describe("localStore backlog status sync", () => {
         addEventListener: vi.fn(),
         removeEventListener: vi.fn(),
         dispatchEvent: vi.fn(),
-        timetrackerDesktop: {
+        ajourDesktop: {
           bootstrapLocalState: bootstrapState,
         },
         localStorage: {
@@ -1322,7 +1322,7 @@ describe("localStore backlog status sync", () => {
   });
 
   it("recovers from malformed persisted JSON without overwriting it", async () => {
-    window.localStorage.setItem("timetracker.local-state.v2", "{not-json");
+    window.localStorage.setItem("ajour.local-state.v2", "{not-json");
     vi.mocked(window.localStorage.setItem).mockClear();
 
     const { localStore } = await import("./local-store");
@@ -1333,7 +1333,7 @@ describe("localStore backlog status sync", () => {
 
   it("normalizes malformed collection shapes and team settings", async () => {
     window.localStorage.setItem(
-      "timetracker.local-state.v2",
+      "ajour.local-state.v2",
       JSON.stringify({
         projects: "invalid",
         workItems: {},

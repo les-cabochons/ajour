@@ -13,8 +13,8 @@ async function selectConnectorPluginArchive(
     properties: ["openFile"],
     filters: [
       {
-        name: "HarDay connector plugins",
-        extensions: ["harday-connector"],
+        name: "Ajour connector plugins",
+        extensions: ["ajour-connector"],
       },
     ],
   });

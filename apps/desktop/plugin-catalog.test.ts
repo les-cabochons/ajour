@@ -73,7 +73,7 @@ capabilities:
 install:
   method: github-release
   allowPrereleases: true
-  assetPattern: '^azure_devops-[0-9A-Za-z.+-]+\\.harday-connector$'
+  assetPattern: '^azure_devops-[0-9A-Za-z.+-]+\\.ajour-connector$'
 images:
   thumbnail: thumbnail.png
 tags:
@@ -211,7 +211,7 @@ describe("desktop plugin catalog", () => {
   it("selects and bounds the newest matching GitHub release asset", async () => {
     const cacheDirectory = await tempDirectory();
     const downloadUrl =
-      "https://github.com/les-cabochons/ajc-azure-devops/releases/download/v1.2.3/azure_devops-1.2.3.harday-connector";
+      "https://github.com/les-cabochons/ajc-azure-devops/releases/download/v1.2.3/azure_devops-1.2.3.ajour-connector";
     const fetchImpl = vi.fn(async (input: string | URL | Request) => {
       const url = String(input);
       if (url === CATALOG_URL) return response(catalogYaml);
@@ -230,7 +230,7 @@ describe("desktop plugin catalog", () => {
               prerelease: true,
               assets: [
                 {
-                  name: "azure_devops-1.2.3.harday-connector",
+                  name: "azure_devops-1.2.3.ajour-connector",
                   browser_download_url: downloadUrl,
                 },
               ],
@@ -250,7 +250,7 @@ describe("desktop plugin catalog", () => {
     await expect(
       service.downloadPluginArchive("azure_devops"),
     ).resolves.toMatchObject({
-      archiveFilename: "azure_devops-1.2.3.harday-connector",
+      archiveFilename: "azure_devops-1.2.3.ajour-connector",
       archiveBytes: Buffer.from("archive"),
     });
   });

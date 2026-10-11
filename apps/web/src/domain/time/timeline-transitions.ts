@@ -5,7 +5,7 @@ import {
   type ActivityBlockRecord,
   type ActivitySegmentRecord,
   type BrowserActivityBucket,
-} from "@timetracker/shared";
+} from "@ajour/shared";
 import type {
   ImportedBrowserDraft,
   LocalAppState,

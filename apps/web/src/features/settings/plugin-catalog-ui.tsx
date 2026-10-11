@@ -6,7 +6,7 @@ import {
 import { AppPanel } from "@/components/app-surface";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import type { PluginCatalogEntry } from "@timetracker/shared";
+import type { PluginCatalogEntry } from "@ajour/shared";
 
 const capabilityDescriptions: Record<string, string> = {
   "estimate-update": "Update remote estimates from decisions made in Ajour.",

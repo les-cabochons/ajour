@@ -1,8 +1,8 @@
 Feature: Open the local time workspace
-  TimeTracker users can begin daily time entry without signing in to a remote service.
+  Ajour users can begin daily time entry without signing in to a remote service.
 
   Scenario: Open today's workspace from a clean browser
-    Given I have no saved TimeTracker workspace
+    Given I have no saved Ajour workspace
     When I open today's time workspace
     Then the Time workspace is visible
     And the desktop sidebar owns the full left edge
@@ -10,7 +10,7 @@ Feature: Open the local time workspace
     And the timesheet can be submitted
 
   Scenario: Replace the desktop application sidebar in Settings
-    Given I have no saved TimeTracker workspace
+    Given I have no saved Ajour workspace
     When I open today's new-entry workspace
     And I resize the app to a compact desktop width
     And I open Settings from the desktop sidebar
@@ -23,7 +23,7 @@ Feature: Open the local time workspace
     Then the Time new-entry workspace sidebar is restored
 
   Scenario: Leave Settings after using the legacy Rules route
-    Given I have no saved TimeTracker workspace
+    Given I have no saved Ajour workspace
     When I open the legacy Rules route
     Then the Settings sections replace the primary navigation
     When I leave Settings from the sidebar
@@ -73,7 +73,7 @@ Feature: Open the local time workspace
     Then the time entry uses project "aaa xyz" and task "222 000"
 
   Scenario: Install a packaged connector from local files
-    Given I have no saved TimeTracker workspace
+    Given I have no saved Ajour workspace
     When I install a packaged connector from settings
     Then the connector plugin is reported as installed
     And I can open the connector plugin configuration
@@ -83,31 +83,31 @@ Feature: Open the local time workspace
     Then the Time new-entry workspace sidebar is restored
 
   Scenario: Deactivate a plugin without losing its configuration page
-    Given I have no saved TimeTracker workspace
+    Given I have no saved Ajour workspace
     When I install a packaged connector from settings
     And I deactivate the connector plugin with the keyboard
     Then the inactive connector plugin remains configurable
 
   Scenario: Redirect the former connectors settings route
-    Given I have no saved TimeTracker workspace
+    Given I have no saved Ajour workspace
     When I open the former connectors settings route
     Then I arrive at the plugins catalog
 
   Scenario: Explain an empty plugin catalog
-    Given I have no saved TimeTracker workspace
+    Given I have no saved Ajour workspace
     When I open the plugins catalog
     Then the empty plugin catalog is explained
     And Outlook Calendar is not offered
 
   Scenario: Uninstall a packaged connector while preserving imported work
-    Given I have no saved TimeTracker workspace
+    Given I have no saved Ajour workspace
     When I install a packaged connector from settings
     And I open the connector plugin configuration
     And I uninstall the connector plugin
     Then the connector plugin is reported as uninstalled
 
   Scenario: Configure a development plugin directory from Debug settings
-    Given I have no saved TimeTracker workspace
+    Given I have no saved Ajour workspace
     When I open development plugin settings
     Then I can choose a development plugin directory
 

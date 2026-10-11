@@ -5,15 +5,15 @@ const repoRoot = path.resolve(desktopRoot, "../..");
 const packageVersion = require("./package.json").version;
 const electronVersion = require("electron/package.json").version;
 const updateChannel =
-  process.env.HARDAY_UPDATE_CHANNEL ??
+  process.env.AJOUR_UPDATE_CHANNEL ??
   (packageVersion.includes("-nightly.") ? "nightly" : "latest");
 if (updateChannel !== "latest" && updateChannel !== "nightly") {
-  throw new Error("HARDAY_UPDATE_CHANNEL must be latest or nightly.");
+  throw new Error("AJOUR_UPDATE_CHANNEL must be latest or nightly.");
 }
 
 module.exports = {
-  appId: "com.timetracker.harday",
-  productName: "HarDay",
+  appId: "com.lescabochons.ajour",
+  productName: "Ajour",
   electronVersion,
   asar: true,
   directories: {
@@ -58,11 +58,11 @@ module.exports = {
         arch: ["x64"],
       },
     ],
-    icon: path.resolve(repoRoot, "assets/harday-icon.ico"),
-    executableName: "HarDay",
+    icon: path.resolve(repoRoot, "assets/ajour-icon.ico"),
+    executableName: "Ajour",
   },
   nsis: {
-    artifactName: "HarDay-${version}-${arch}.${ext}",
+    artifactName: "Ajour-${version}-${arch}.${ext}",
     oneClick: true,
     perMachine: false,
     deleteAppDataOnUninstall: false,
@@ -78,9 +78,9 @@ module.exports = {
         arch: ["x64", "arm64"],
       },
     ],
-    icon: path.resolve(repoRoot, "assets/harday-icon.icns"),
+    icon: path.resolve(repoRoot, "assets/ajour-icon.icns"),
     category: "public.app-category.productivity",
-    artifactName: "HarDay-${version}-${arch}.${ext}",
+    artifactName: "Ajour-${version}-${arch}.${ext}",
   },
   dmg: {
     format: "ULFO",

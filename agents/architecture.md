@@ -1,6 +1,6 @@
 # Architecture
 
-TimeTracker is a local-first time-tracking workspace built as a pnpm monorepo. Keep architectural changes aligned with the privacy boundary in `docs/local-first-architecture.md`.
+Ajour is a local-first time-tracking workspace built as a pnpm monorepo. Keep architectural changes aligned with the privacy boundary in `docs/local-first-architecture.md`.
 
 ## Runtime Surfaces
 
@@ -66,7 +66,7 @@ Connectors are installable plugins and must remain physically and logically
 separate from the application. A plugin owns its external-system
 authentication, transport, field discovery, and remote read/write behavior. It
 must ship a manifest, a runnable entrypoint, its assets, and all required
-runtime dependencies without importing TimeTracker repository source or other
+runtime dependencies without importing Ajour repository source or other
 application internals.
 
 Plugin loading depends on the application build:
@@ -74,10 +74,10 @@ Plugin loading depends on the application build:
 - Development builds may point directly to a plugin directory so connector
   authors can iterate without packaging an archive. The active directory can
   be selected on Settings → Debug or supplied through
-  `TIMETRACKER_DEV_PLUGIN_DIRS`; changing it restarts only the parent-owned
+  `AJOUR_DEV_PLUGIN_DIRS`; changing it restarts only the parent-owned
   internal plugin host. Production builds never expose or honor this setting.
 - Production builds must not load loose plugin directories. They install one
-  packaged `.harday-connector` archive selected from the local filesystem,
+  packaged `.ajour-connector` archive selected from the local filesystem,
   validate it, and copy it into an application-managed plugin directory.
 - Archive installation is a desktop capability exposed through the restricted
   Electron preload/IPC bridge. The parent process owns the native single-file
@@ -209,7 +209,7 @@ Default to local-only diagnostics. Any remote event path must be explicitly priv
 
 ## Dependency Direction
 
-- Apps can depend on `@timetracker/shared`.
+- Apps can depend on `@ajour/shared`.
 - `packages/shared` must not depend on app packages.
 - `apps/web/src/domain` must stay pure and must not import React, `features`, or `lib`.
 - `apps/web/src/lib` may depend on `domain`, but must not depend on `features`.

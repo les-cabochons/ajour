@@ -278,10 +278,10 @@ function createAutomaticUpdateController({
       buttons: ["Restart now", "Later"],
       defaultId: 0,
       cancelId: 1,
-      title: "HarDay update ready",
-      message: `HarDay ${update.version} has been downloaded.`,
+      title: "Ajour update ready",
+      message: `Ajour ${update.version} has been downloaded.`,
       detail:
-        "Restart HarDay to finish installing the update. Choosing Later installs it when you next quit the app.",
+        "Restart Ajour to finish installing the update. Choosing Later installs it when you next quit the app.",
       noLink: true,
     };
     const window = getMainWindow();
@@ -306,10 +306,7 @@ function createAutomaticUpdateController({
     } catch (error) {
       installingUpdate = false;
       resetInstallPreparation();
-      logger.error(
-        "Unable to restart HarDay for the downloaded update.",
-        error,
-      );
+      logger.error("Unable to restart Ajour for the downloaded update.", error);
     }
   }
 

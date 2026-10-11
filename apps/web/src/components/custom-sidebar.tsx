@@ -48,8 +48,8 @@ function CustomSidebar({
   return (
     <Sidebar
       collapsible="none"
-      className={cn("harday-section-sidebar", className)}
-      innerClassName={cn("harday-section-sidebar-inner", innerClassName)}
+      className={cn("ajour-section-sidebar", className)}
+      innerClassName={cn("ajour-section-sidebar-inner", innerClassName)}
       {...props}
     />
   );
@@ -64,8 +64,8 @@ function CustomSidebarMenuButton({
     <SidebarMenuButton
       isActive={isActive}
       className={cn(
-        "harday-section-sidebar-button",
-        isActive && "harday-section-sidebar-button-active",
+        "ajour-section-sidebar-button",
+        isActive && "ajour-section-sidebar-button-active",
         className,
       )}
       {...props}

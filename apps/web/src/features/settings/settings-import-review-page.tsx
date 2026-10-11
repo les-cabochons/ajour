@@ -31,7 +31,7 @@ import { localStore } from "@/lib/local-store";
 import type {
   ConnectorImportCandidate,
   ConnectorsOverview,
-} from "@timetracker/shared";
+} from "@ajour/shared";
 import { cn } from "@/lib/utils";
 
 interface ImportConnectionGroup {

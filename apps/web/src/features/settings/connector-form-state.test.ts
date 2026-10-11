@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ConnectorPluginManifest } from "@timetracker/shared";
+import type { ConnectorPluginManifest } from "@ajour/shared";
 import {
   areConnectorFormValuesEqual,
   buildConnectorFormValues,

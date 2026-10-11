@@ -18,7 +18,7 @@ In this repo, "meaningful operation" does not mean every function call or UI ren
 
 We will not use scattered `console.log()` calls as the primary debugging model.
 
-## Why This Fits TimeTracker
+## Why This Fits Ajour
 
 This app is split across multiple runtimes:
 
@@ -132,7 +132,7 @@ Every wide event should include this envelope:
   "level": "info",
   "outcome": "success",
   "duration_ms": 42,
-  "service": "timetracker-web",
+  "service": "ajour-web",
   "runtime": "web",
   "env": "development",
   "app_version": "0.1.0",
@@ -234,7 +234,7 @@ First instrumentation points:
   "level": "info",
   "outcome": "success",
   "duration_ms": 31,
-  "service": "timetracker-web",
+  "service": "ajour-web",
   "runtime": "web",
   "privacy_tier": "local_only",
   "workspace": {

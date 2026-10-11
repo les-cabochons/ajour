@@ -3,7 +3,7 @@ import type {
   ConnectorFieldValue,
   ConnectorFieldValues,
   ConnectorPluginManifest,
-} from "@timetracker/shared";
+} from "@ajour/shared";
 
 export const SAVED_SECRET_MASK = "••••••••••••";
 

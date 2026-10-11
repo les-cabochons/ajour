@@ -39,14 +39,14 @@ export function SettingsNavigationSidebar({
 }) {
   return (
     <Sidebar
-      className="harday-shell-sidebar harday-settings-navigation-sidebar"
-      innerClassName="harday-shell-sidebar-inner"
+      className="ajour-shell-sidebar ajour-settings-navigation-sidebar"
+      innerClassName="ajour-shell-sidebar-inner"
       collapsible="none"
       role="navigation"
       aria-label="Settings sections"
     >
       <div
-        className="harday-sidebar-window-drag-region desktop-drag-region"
+        className="ajour-sidebar-window-drag-region desktop-drag-region"
         aria-hidden="true"
       />
       <SidebarContent>
@@ -59,7 +59,7 @@ export function SettingsNavigationSidebar({
                 return (
                   <SidebarMenuItem key={item.to}>
                     <SidebarMenuButton
-                      className="harday-app-sidebar-button"
+                      className="ajour-app-sidebar-button"
                       render={
                         <Link
                           to={item.to}
@@ -86,7 +86,7 @@ export function SettingsNavigationSidebar({
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
-              className="harday-app-sidebar-button harday-settings-back-button"
+              className="ajour-app-sidebar-button ajour-settings-back-button"
               aria-label="Back"
               title="Back"
               onClick={onBack}

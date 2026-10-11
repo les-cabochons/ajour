@@ -8,7 +8,7 @@ import type {
   ImportedDraftStatus,
   RuleRecord,
   TeamSettings,
-} from "@timetracker/shared";
+} from "@ajour/shared";
 import type { LocalProjectIcon } from "@/domain/projects/project-icon";
 
 export interface LocalProject {

@@ -26,13 +26,13 @@ import {
   type ConnectorSyncWorkItem,
   type ConnectorsOverview,
   type ConnectorSyncResult,
-} from "@timetracker/shared";
+} from "@ajour/shared";
 import {
   catalogConnectorDownloadResponseSchema,
   pluginCatalogResponseSchema,
   pluginCatalogSettingsSchema,
-} from "@timetracker/shared";
-import type { PluginCatalogSettings } from "@timetracker/shared";
+} from "@ajour/shared";
+import type { PluginCatalogSettings } from "@ajour/shared";
 import {
   projectDataShapeExportRequestSchema,
   projectDataShapeExportResponseSchema,
@@ -41,7 +41,7 @@ import {
   projectDataShapeListResponseSchema,
   type ProjectDataShapeDataset,
   type ProjectDataShapeExportProject,
-} from "@timetracker/shared";
+} from "@ajour/shared";
 import { localStore } from "@/lib/local-store";
 
 export type SyncConnectorConnectionResult = ConnectorSyncResult & {
@@ -161,7 +161,7 @@ export function getAppApiDescription() {
 }
 
 export async function getPluginCatalog() {
-  const getCatalog = window.timetrackerDesktop?.getPluginCatalog;
+  const getCatalog = window.ajourDesktop?.getPluginCatalog;
   if (!getCatalog) {
     throw new Error("The plugin catalog is available in the desktop app.");
   }
@@ -169,7 +169,7 @@ export async function getPluginCatalog() {
 }
 
 export async function getPluginCatalogSettings() {
-  const getSettings = window.timetrackerDesktop?.getPluginCatalogSettings;
+  const getSettings = window.ajourDesktop?.getPluginCatalogSettings;
   if (!getSettings) {
     return pluginCatalogSettingsSchema.parse({ refreshMinutes: 15 });
   }
@@ -177,7 +177,7 @@ export async function getPluginCatalogSettings() {
 }
 
 export async function configurePluginCatalog(settings: PluginCatalogSettings) {
-  const configure = window.timetrackerDesktop?.configurePluginCatalog;
+  const configure = window.ajourDesktop?.configurePluginCatalog;
   if (!configure) {
     throw new Error(
       "Plugin catalog settings are available in the desktop app.",
@@ -187,7 +187,7 @@ export async function configurePluginCatalog(settings: PluginCatalogSettings) {
 }
 
 export async function downloadCatalogPlugin(pluginId: string) {
-  const download = window.timetrackerDesktop?.downloadCatalogPlugin;
+  const download = window.ajourDesktop?.downloadCatalogPlugin;
   if (!download) {
     throw new Error(
       "Plugin downloads are available in the production desktop app.",
@@ -313,7 +313,7 @@ export async function setPluginSystemEnabled(
 }
 
 export async function installConnectorPlugin(): Promise<ConnectorPluginInstallResponse | null> {
-  const install = window.timetrackerDesktop?.installConnectorPlugin;
+  const install = window.ajourDesktop?.installConnectorPlugin;
   if (!install) {
     throw new Error(
       "Connector plugin installation is only available in the desktop app.",
@@ -331,7 +331,7 @@ export async function installConnectorPlugin(): Promise<ConnectorPluginInstallRe
 }
 
 export async function uninstallConnectorPlugin(pluginId: string) {
-  const uninstall = window.timetrackerDesktop?.uninstallConnectorPlugin;
+  const uninstall = window.ajourDesktop?.uninstallConnectorPlugin;
   if (!uninstall) {
     throw new Error(
       "Connector plugin uninstall is only available in the production desktop app.",

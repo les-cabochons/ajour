@@ -54,7 +54,7 @@ import type {
   ConnectorPluginManifest,
   PluginCatalogEntry,
   PluginCatalogSettings,
-} from "@timetracker/shared";
+} from "@ajour/shared";
 import {
   areConnectorFormValuesEqual,
   buildConnectorFormValues,
@@ -342,16 +342,14 @@ function PluginDetailHeader({
 export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
   const state = useLocalState();
   const isDevelopmentBuild =
-    window.timetrackerDesktop?.runtime?.developmentBuild === true;
+    window.ajourDesktop?.runtime?.developmentBuild === true;
   const canInstallConnectorPlugins =
-    Boolean(window.timetrackerDesktop?.installConnectorPlugin) &&
-    !isDevelopmentBuild;
+    Boolean(window.ajourDesktop?.installConnectorPlugin) && !isDevelopmentBuild;
   const canUninstallConnectorPlugins =
-    Boolean(window.timetrackerDesktop?.uninstallConnectorPlugin) &&
+    Boolean(window.ajourDesktop?.uninstallConnectorPlugin) &&
     !isDevelopmentBuild;
   const canDownloadCatalogPlugins =
-    Boolean(window.timetrackerDesktop?.downloadCatalogPlugin) &&
-    !isDevelopmentBuild;
+    Boolean(window.ajourDesktop?.downloadCatalogPlugin) && !isDevelopmentBuild;
   const {
     connectors,
     catalog,
@@ -1001,7 +999,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
         pluginsEnabled={connectors?.pluginsEnabled ?? true}
         refreshMinutes={catalogSettings.refreshMinutes}
         canConfigureRefresh={Boolean(
-          window.timetrackerDesktop?.configurePluginCatalog,
+          window.ajourDesktop?.configurePluginCatalog,
         )}
         onPluginsEnabledChange={(enabled) =>
           void workflow.execute({ type: "system", enabled })

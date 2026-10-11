@@ -5,7 +5,7 @@ import {
   type ProjectDataShapeDataset,
   type ProjectDataShapeDefinition,
   type ProjectDataShapeExportProject,
-} from "@timetracker/shared";
+} from "@ajour/shared";
 import {
   durationHoursValueToMs,
   durationMsToHoursValue,

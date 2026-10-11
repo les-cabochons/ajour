@@ -1,5 +1,5 @@
 import { useCallback, useSyncExternalStore } from "react";
-import type { ActivityBlockRecord } from "@timetracker/shared";
+import type { ActivityBlockRecord } from "@ajour/shared";
 import type { ImportedBrowserDraft } from "@/domain/local-state";
 import { localStore } from "@/lib/local-store";
 
