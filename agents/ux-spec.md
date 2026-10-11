@@ -68,7 +68,7 @@ Start entry · New entry… · Edit · Add subitem · Open in source · Archive 
 
 - How Edit opens and where the action set appears inside the editor: [One entry editor for Day and Week](https://github.com/les-cabochons/ajour/issues/14).
 - Which day Start entry and New entry… use from the backlog and tasks: [Running timer editing and empty duration meaning](https://github.com/les-cabochons/ajour/issues/15).
-- What right-click does on a Grid cell, which can hold several entries: [Adding and changing time in the week view](https://github.com/les-cabochons/ajour/issues/16).
+- What right-click does on a Grid cell, which can hold several entries: see the Week view section.
 - Undo or confirmation for Delete, Discard, Archive and moves: [Undo, confirmation and feedback policy](https://github.com/les-cabochons/ajour/issues/17).
 - Keys, palette layout and menu bar menus: [Keyboard model and command palette](https://github.com/les-cabochons/ajour/issues/18).
 
@@ -216,3 +216,25 @@ The form gets a Date field after Hours. It defaults to the open day in Day, the 
 ### Labels
 
 Buttons read Start, Switch and Stop, and the titlebar pill reads Running. Users never see the word "timer". Tasks and backlog items keep "Start entry".
+
+## Week view
+
+Decided in [Adding and changing time in the week view](https://github.com/les-cabochons/ajour/issues/16). Prototype: branch `prototype/week-grid`, route `/prototype/week-grid`, variant C. Editing and creating use the side panel from the Entry editor section.
+
+### Grid
+
+- A click on a cell opens it in the side panel:
+  - an empty cell opens a new entry with the row's task and the day filled in,
+  - a cell with one entry opens that entry, with an "Add another entry for <day>" button under the form,
+  - a cell with several entries lists them, with "Add another entry".
+- Double-click, Enter, or typing a digit on a focused cell edits its hours in place. Enter or Tab saves, Tab moves to the next day, Escape cancels. Clearing the hours of a one-entry cell deletes that entry. Undo or confirmation follows [Undo, confirmation and feedback policy](https://github.com/les-cabochons/ajour/issues/17).
+- A cell with several entries shows its total and a count, such as "3:30 ×2", and never edits in place.
+- The side panel's cell list replaces the old tray in the bottom-left corner.
+- "+ Add row" picks a project or task and shows an empty row. The row disappears when the user leaves the week unless it gets hours. Rows are never saved on their own.
+- Right-click on a cell starts with Add entry. On a one-entry cell, that entry's action set follows. On a cell with several entries, Open entries follows.
+
+### Days
+
+- "+ Add" in each column opens a new entry for that day in the side panel.
+- A click on a card opens it in the side panel. Cards keep "…" and right-click with the time entry action set.
+- Dragging a card to another day moves it. Move to… is the keyboard path. Shortcuts come from [Keyboard model and command palette](https://github.com/les-cabochons/ajour/issues/18), and undo after a move follows the feedback policy.
