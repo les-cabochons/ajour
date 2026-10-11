@@ -142,9 +142,20 @@ to and Move to open a calendar dialog; Delete and Discard ask for confirmation.
 
 Capacity targets and the two independent warning switches live in General
 Settings. Targets are Monday-first, default to eight hours on weekdays and zero
-on weekends, and remain local user preferences. Submitting below the week target
-adds a confirmation step only; the existing selection and submit command remain
-unchanged.
+on weekends, and remain local user preferences.
+
+### Submit Page
+
+Files: `apps/web/src/features/time/submit-page.tsx`, `apps/web/src/features/time/submit-week-controls.tsx`
+
+Route `/time/$date/submit` shows the week that holds `$date`. The Day and Week
+headers open it with the shared `SubmitWeekButton` at every width, and the Week
+header shows `WeekSubmittedBadge` once every entry is submitted. The page has a
+summary (total against target, progress bar, warnings, result in place) and the
+lines grouped by Day and task, Day or Task. Every value copies on click with an
+always-visible icon; hours copy as decimals. Grouping, selection, summary and
+status rules live in `domain/time/timesheet-submission.ts`. Submitting below the
+week target asks for confirmation.
 
 ### Project Import And Export
 

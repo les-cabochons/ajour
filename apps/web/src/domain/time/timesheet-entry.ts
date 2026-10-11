@@ -77,6 +77,12 @@ export function normalizeTimesheetEntry(
     typeof entry.submittedAt === "number" && Number.isFinite(entry.submittedAt)
       ? entry.submittedAt
       : undefined;
+  const previousSubmittedAt =
+    submittedAt === undefined &&
+    typeof entry.previousSubmittedAt === "number" &&
+    Number.isFinite(entry.previousSubmittedAt)
+      ? entry.previousSubmittedAt
+      : undefined;
   const normalizedEntry = {
     ...entry,
     taskId: entry.taskId,
@@ -85,6 +91,7 @@ export function normalizeTimesheetEntry(
       ? entry.sourceBlockIds
       : [],
     submittedAt,
+    previousSubmittedAt,
   };
 
   return {
@@ -118,12 +125,22 @@ export function createTimesheetEntry(
   };
 }
 
+/**
+ * Carries the submission state of an entry across an edit. An unchanged
+ * submitted entry stays submitted. A changed one returns to saved and keeps
+ * its old submission time in `previousSubmittedAt`.
+ */
 export function preserveTimesheetEntrySubmissionState(
   existingEntry: LocalTimesheetEntry | undefined,
   nextEntry: LocalTimesheetEntry,
 ): LocalTimesheetEntry {
   if (existingEntry?.submittedAt === undefined) {
-    return nextEntry;
+    return existingEntry?.previousSubmittedAt === undefined
+      ? nextEntry
+      : {
+          ...nextEntry,
+          previousSubmittedAt: existingEntry.previousSubmittedAt,
+        };
   }
 
   const previousFingerprint =
@@ -136,6 +153,7 @@ export function preserveTimesheetEntrySubmissionState(
       ...nextEntry,
       submittedAt: undefined,
       submittedFingerprint: undefined,
+      previousSubmittedAt: existingEntry.submittedAt,
     };
   }
 
@@ -143,6 +161,7 @@ export function preserveTimesheetEntrySubmissionState(
     ...nextEntry,
     submittedAt: existingEntry.submittedAt,
     submittedFingerprint: previousFingerprint,
+    previousSubmittedAt: undefined,
   };
 }
 
@@ -369,6 +388,7 @@ export function markTimesheetEntriesSubmitted(
       ...entry,
       submittedAt,
       submittedFingerprint: createTimesheetEntrySubmissionFingerprint(entry),
+      previousSubmittedAt: undefined,
     };
   });
 

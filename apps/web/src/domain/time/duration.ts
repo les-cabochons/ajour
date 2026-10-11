@@ -14,6 +14,16 @@ export function formatClockDuration(durationMs: number): string {
   return `${hours}:${String(minutes).padStart(2, "0")}`;
 }
 
+/**
+ * Formats a duration as decimal hours with two places, such as "5.00" or
+ * "1.25", for pasting into timesheet tools that expect decimals. Rounds to the
+ * minute first so the value matches the clock time shown on screen.
+ */
+export function formatDecimalHours(durationMs: number): string {
+  const { hours, minutes } = getRoundedDurationParts(durationMs);
+  return (hours + minutes / 60).toFixed(2);
+}
+
 export function formatDurationHoursInput(durationMs: number): string {
   const { hours, minutes } = getRoundedDurationParts(durationMs);
   return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;

@@ -122,6 +122,12 @@ export interface LocalTimesheetEntry {
   committedAt: number;
   submittedAt?: number;
   submittedFingerprint?: string;
+  /**
+   * When an edit returns a submitted entry to saved, this keeps the time it
+   * was submitted, so the submit page can count entries changed since then.
+   * Cleared when the entry is marked as submitted again.
+   */
+  previousSubmittedAt?: number;
 }
 
 export interface LocalTimesheetImportDraft {

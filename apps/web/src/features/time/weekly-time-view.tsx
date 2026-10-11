@@ -50,6 +50,10 @@ import {
   useLocalState,
   useUserPreferences,
 } from "@/lib/local-hooks";
+import {
+  SubmitWeekButton,
+  WeekSubmittedBadge,
+} from "@/features/time/submit-week-controls";
 import { useTimeEntryActions } from "@/features/time/time-entry-actions";
 import { localStore } from "@/lib/local-store";
 import {
@@ -429,6 +433,7 @@ export function WeeklyTimeView({
             </Button>
           </div>
           <h2 className="weekly-time-title">{formatWeekRange(weekDates)}</h2>
+          <WeekSubmittedBadge weekDates={weekDates} />
         </div>
         <div className="weekly-time-actions">
           <ToggleGroup
@@ -449,9 +454,7 @@ export function WeeklyTimeView({
             overCapacity={projection.overCapacity}
             showWarning={preferences.warnWhenOverCapacity}
           />
-          <Button size="sm" onClick={onSubmit}>
-            Submit
-          </Button>
+          <SubmitWeekButton onClick={onSubmit} />
         </div>
       </header>
 

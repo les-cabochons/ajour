@@ -24,6 +24,21 @@ Feature: Open the local time workspace
     When I widen the app back to a desktop width
     Then the app sidebar is expanded
 
+  Scenario: Submit part of a week from the submit page
+    Given I have a week of saved entries
+    When I open the submit page from the Week header
+    Then the submit page merges Monday's task entries
+    And copying the merged line gives decimal hours and merged comments
+    When I drop Tuesday from the submission
+    And I mark the selected entries as submitted under the target
+    Then only Monday's entries are submitted
+    And the submit page shows the week as partly submitted
+
+  Scenario: Open the submit page from the narrow view
+    Given I have a week of saved entries
+    When I open the submit page from the narrow Day header
+    Then the submit page lists the week's entries
+
   Scenario: Open Settings inside the app shell
     Given I have no saved Ajour workspace
     When I open today's new-entry workspace

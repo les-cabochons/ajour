@@ -14,6 +14,10 @@ const TimePage = lazy(async () => {
   const module = await import("@/features/time/time-page");
   return { default: module.TimePage };
 });
+const SubmitPage = lazy(async () => {
+  const module = await import("@/features/time/submit-page");
+  return { default: module.SubmitPage };
+});
 const BacklogPage = lazy(async () => {
   const module = await import("@/features/backlog/backlog-page");
   return { default: module.BacklogPage };
@@ -110,6 +114,23 @@ const timeRoute = createRoute({
       <RouteSuspense>
         <TimePage
           date={params.date === "today" ? todayIsoDate() : params.date}
+        />
+      </RouteSuspense>
+    );
+  },
+});
+
+const submitRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/time/$date/submit",
+  component: () => {
+    const params = submitRoute.useParams();
+    const search = submitRoute.useSearch() as { view?: string };
+    return (
+      <RouteSuspense>
+        <SubmitPage
+          date={params.date === "today" ? todayIsoDate() : params.date}
+          returnView={search.view === "week" ? "week" : undefined}
         />
       </RouteSuspense>
     );
@@ -263,6 +284,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   appRoute.addChildren([
     timeRoute,
+    submitRoute,
     backlogRoute,
     projectsRoute,
     projectsArchiveRoute,
