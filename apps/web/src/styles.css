@@ -1775,8 +1775,9 @@
     outline-offset: -1px;
   }
 
+  /* "New project" in the project list header. */
   .ajour-project-sidebar-header .entries-header-add {
-    display: none;
+    display: inline-flex;
     flex-shrink: 0;
   }
 
@@ -1836,28 +1837,6 @@
   }
 
   .ajour-project-command-code {
-    color: var(--text-secondary);
-    font-size: 11px;
-    font-weight: 500;
-    letter-spacing: 0;
-    text-transform: uppercase;
-  }
-
-  .project-task-create-dialog {
-    background: var(--surface);
-  }
-
-  .project-task-create-project {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    padding: 0.75rem 0.875rem;
-    border: 1px solid var(--border);
-    border-radius: 0;
-    background: var(--surface-high);
-  }
-
-  .project-task-create-project-label {
     color: var(--text-secondary);
     font-size: 11px;
     font-weight: 500;
@@ -2858,30 +2837,6 @@
     flex: 1;
   }
 
-  .project-form-modal {
-    width: 560px;
-  }
-
-  .project-form-modal-copy {
-    font-size: 12px;
-    color: var(--text-secondary);
-  }
-
-  .project-form-modal-fields {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    padding: 1rem 1.25rem 1.25rem;
-  }
-
-  .project-form-modal-actions > button {
-    flex: 0 0 auto;
-  }
-
-  .project-form-modal-actions {
-    justify-content: flex-end;
-  }
-
   @keyframes modal-overlay-in {
     from {
       opacity: 0;
@@ -3876,6 +3831,23 @@
       background var(--duration) var(--ease);
   }
 
+  .project-detail-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .project-task-row.is-editing {
+    background: var(--surface-low);
+  }
+
+  .project-icon-field-hint {
+    color: var(--text-secondary);
+    font-size: 12px;
+  }
+
   .project-summary-controls {
     display: flex;
     align-items: center;
@@ -3986,58 +3958,6 @@
 
   .project-task-billable-badge {
     flex-shrink: 0;
-  }
-
-  .project-task-edit-layout {
-    display: grid;
-    grid-template-columns: minmax(0, 1.2fr) minmax(0, 1.3fr);
-    gap: 1rem;
-  }
-
-  .project-task-edit-primary {
-    display: flex;
-    flex-direction: column;
-    gap: 0.85rem;
-    min-width: 0;
-  }
-
-  .project-task-edit-billable {
-    display: flex;
-    flex-direction: column;
-    gap: 0.35rem;
-  }
-
-  .project-task-billable-toggle {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.55rem;
-    min-height: 40px;
-    padding: 0.7rem 0.85rem;
-    border: 1px solid var(--field-border);
-    border-radius: var(--control-radius);
-    background: var(--field-bg);
-    color: var(--text);
-    font-size: 0.92rem;
-  }
-
-  .project-task-billable-toggle [data-slot="checkbox"] {
-    margin: 0;
-  }
-
-  .project-task-edit-metrics {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 0.75rem;
-    align-items: start;
-  }
-
-  .project-task-edit-footer {
-    margin: 0 -1rem -0.75rem;
-    padding: 0.9rem 1rem;
-    border-top: 1px solid var(--border);
-    background: color-mix(in srgb, var(--surface-high) 72%, black 28%);
-    border-bottom-left-radius: inherit;
-    border-bottom-right-radius: inherit;
   }
 
   .project-task-drag-preview {
@@ -5601,12 +5521,6 @@
     display: none;
   }
 
-  .ajour-project-navigation-sidebar
-    .ajour-project-sidebar-header
-    .entries-header-add {
-    display: inline-flex;
-  }
-
   .ajour-project-navigation-sidebar .ajour-section-sidebar-button,
   .ajour-project-navigation-sidebar .ajour-project-sidebar-archive-trigger {
     width: 100% !important;
@@ -5994,13 +5908,6 @@
   .entry-edit-dropdown-grid {
     grid-template-columns: 1fr;
   }
-  .project-task-edit-layout {
-    grid-template-columns: 1fr;
-  }
-  .project-task-edit-metrics {
-    grid-template-columns: 1fr;
-  }
-
   .backlog-task-row {
     grid-template-columns: minmax(0, 1fr);
   }
