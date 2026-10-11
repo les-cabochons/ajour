@@ -1,9 +1,8 @@
 import { useEffect, useMemo, useState } from "react";
-import { RiSendPlaneLine as SendHorizontal } from "@remixicon/react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { DayViewerCard } from "@/components/day-viewer-card";
 import { formatClockDuration } from "@/domain/time/duration";
-import { SubmitTimesheetModal } from "@/features/time/submit-timesheet-modal";
+import { SubmitWeekButton } from "@/features/time/submit-week-controls";
 import { TimeViewScopeMenu } from "@/features/time/time-view-scope-menu";
 import { WeeklyTimeView } from "@/features/time/weekly-time-view";
 import { TimerPanel } from "@/features/timer/timer-panel";
@@ -27,7 +26,6 @@ export function TimePage({ date }: { date: string }) {
   const today = todayIsoDate();
   const weekDates = useMemo(() => getIsoWeekDates(date), [date]);
   const currentTimer = state.timers[0] ?? null;
-  const [isSubmitModalOpen, setIsSubmitModalOpen] = useState(false);
   const [weekAvailable, setWeekAvailable] = useState(() =>
     typeof window !== "undefined"
       ? window.matchMedia("(min-width: 1024px)").matches
@@ -158,6 +156,14 @@ export function TimePage({ date }: { date: string }) {
     });
   }
 
+  function openSubmitPage() {
+    void navigate({
+      to: "/time/$date/submit",
+      params: { date },
+      search: { view: isWeekView ? "week" : undefined } as never,
+    });
+  }
+
   function openWeekNewEntry(localDate: string) {
     void navigate({
       to: "/time/$date",
@@ -187,7 +193,7 @@ export function TimePage({ date }: { date: string }) {
             });
           }}
           onSelectWeek={goToDate}
-          onSubmit={() => setIsSubmitModalOpen(true)}
+          onSubmit={openSubmitPage}
         />
       ) : (
         <>
@@ -204,20 +210,12 @@ export function TimePage({ date }: { date: string }) {
             dateScopeControl={
               <TimeViewScopeMenu value="day" onChange={changeTimeView} />
             }
-            headerActions={
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  className="day-viewer-submit-pill"
-                  aria-label="Submit timesheet"
-                  onClick={() => setIsSubmitModalOpen(true)}
-                >
-                  <SendHorizontal className="h-4 w-4" />
-                  <span>Submit</span>
-                </button>
-              </div>
-            }
+            headerActions={<SubmitWeekButton onClick={openSubmitPage} />}
           />
+          {/* Below lg the Day viewer strip is hidden, so the button gets its own row. */}
+          <div className="flex justify-end px-3 pt-2 lg:hidden">
+            <SubmitWeekButton onClick={openSubmitPage} />
+          </div>
 
           <TimerPanel date={date} onOpenEntry={openModal} />
         </>
@@ -229,12 +227,6 @@ export function TimePage({ date }: { date: string }) {
           entryId={modalEntryId}
           timerId={modalTimerId}
           onClose={closeModal}
-        />
-      ) : null}
-      {isSubmitModalOpen ? (
-        <SubmitTimesheetModal
-          weekDates={weekDates}
-          onClose={() => setIsSubmitModalOpen(false)}
         />
       ) : null}
     </div>

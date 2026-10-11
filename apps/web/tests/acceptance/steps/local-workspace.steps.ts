@@ -763,7 +763,7 @@ Then(
 
 Then("the timesheet can be submitted", async ({ page }) => {
   const submitTimesheet = page.getByRole("button", {
-    name: "Submit timesheet",
+    name: "Submit week",
   });
 
   await expect(submitTimesheet).toBeVisible();
@@ -1136,3 +1136,163 @@ Then(
       .toMatchObject({ note: "Changed note", durationMs: 75_123 });
   },
 );
+
+Given("I have a week of saved entries", async ({ page }) => {
+  await mockEmptyConnectorOverview(page);
+  await page.addInitScript(() => {
+    const hour = 60 * 60 * 1000;
+    const entry = (
+      _id: string,
+      localDate: string,
+      taskId: string,
+      durationMs: number,
+      note: string | undefined,
+      committedAt: number,
+    ) => ({
+      _id,
+      localDate,
+      projectId: "project-atlas",
+      taskId,
+      label: "",
+      note,
+      durationMs,
+      sourceBlockIds: [],
+      committedAt,
+    });
+    window.localStorage.setItem(
+      "ajour.local-state.v2",
+      JSON.stringify({
+        projects: [
+          {
+            _id: "project-atlas",
+            name: "Client Atlas",
+            color: "#1f7667",
+            icon: { kind: "preset", name: "dot" },
+            status: "active",
+            tasks: [
+              {
+                _id: "task-dev",
+                name: "Development",
+                status: "active",
+                createdAt: 1,
+              },
+              {
+                _id: "task-review",
+                name: "Code review",
+                status: "active",
+                createdAt: 1,
+              },
+            ],
+          },
+        ],
+        timers: [],
+        workItems: [],
+        timesheetEntries: [
+          entry("mon-dev-1", "2026-10-05", "task-dev", hour, "Login form", 1),
+          entry("mon-dev-2", "2026-10-05", "task-dev", 2 * hour, "API", 2),
+          entry("mon-review", "2026-10-05", "task-review", hour, undefined, 3),
+          entry("tue-dev", "2026-10-06", "task-dev", hour, "Login form", 4),
+        ],
+        updatedAt: 1,
+      }),
+    );
+  });
+});
+
+When("I open the submit page from the Week header", async ({ page }) => {
+  await page.goto("/time/2026-10-05?view=week");
+  await page
+    .getByRole("region", { name: "Week" })
+    .getByRole("button", { name: "Submit week" })
+    .click();
+  await expect(page).toHaveURL(/\/time\/2026-10-05\/submit/);
+});
+
+When("I open the submit page from the narrow Day header", async ({ page }) => {
+  await page.setViewportSize({ width: 420, height: 860 });
+  await page.goto("/time/2026-10-05");
+  await page.getByRole("button", { name: "Submit week" }).click();
+  await expect(page).toHaveURL(/\/time\/2026-10-05\/submit/);
+});
+
+Then("the submit page lists the week's entries", async ({ page }) => {
+  await expect(
+    page.getByRole("heading", { name: "Submit week of Oct 5 to Oct 11" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Mark 4 entries as submitted" }),
+  ).toBeVisible();
+  await expect(page.getByRole("checkbox", { name: /^Include / })).toHaveCount(
+    3,
+  );
+});
+
+Then("the submit page merges Monday's task entries", async ({ page }) => {
+  const monday = page.getByRole("region", { name: "Monday, Oct 5" });
+  await expect(monday.getByRole("checkbox", { name: /^Include / })).toHaveCount(
+    2,
+  );
+  await expect(
+    monday.getByRole("button", { name: "Copy hours: 3.00" }),
+  ).toHaveText("3:00");
+});
+
+Then(
+  "copying the merged line gives decimal hours and merged comments",
+  async ({ page, context }) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    const monday = page.getByRole("region", { name: "Monday, Oct 5" });
+    const readClipboard = () =>
+      page.evaluate(() => navigator.clipboard.readText());
+
+    await monday.getByRole("button", { name: "Copy hours: 3.00" }).click();
+    await expect.poll(readClipboard).toBe("3.00");
+    await monday
+      .getByRole("button", { name: "Copy comments: API | Login form" })
+      .click();
+    await expect.poll(readClipboard).toBe("API | Login form");
+  },
+);
+
+When("I drop Tuesday from the submission", async ({ page }) => {
+  await page
+    .getByRole("group", { name: "Days to submit" })
+    .getByRole("button", { name: "Tuesday, Oct 6" })
+    .click();
+});
+
+When(
+  "I mark the selected entries as submitted under the target",
+  async ({ page }) => {
+    await page
+      .getByRole("button", { name: "Mark 3 entries as submitted" })
+      .click();
+    await page.getByRole("button", { name: "Submit anyway" }).click();
+  },
+);
+
+Then("only Monday's entries are submitted", async ({ page }) => {
+  await expect
+    .poll(async () =>
+      page.evaluate(() => {
+        const state = JSON.parse(
+          window.localStorage.getItem("ajour.local-state.v2") ?? "null",
+        );
+        return state?.timesheetEntries
+          .filter((entry: { submittedAt?: number }) => entry.submittedAt)
+          .map((entry: { _id: string }) => entry._id)
+          .sort();
+      }),
+    )
+    .toEqual(["mon-dev-1", "mon-dev-2", "mon-review"]);
+});
+
+Then("the submit page shows the week as partly submitted", async ({ page }) => {
+  const result = page.getByRole("status");
+  await expect(result).toContainText("Partly submitted on");
+  await expect(result).toContainText("3 entries · 4:00");
+  // Tuesday stays out of the selection after the others are marked.
+  await expect(
+    page.getByRole("button", { name: "Mark 0 entries as submitted" }),
+  ).toBeDisabled();
+});
