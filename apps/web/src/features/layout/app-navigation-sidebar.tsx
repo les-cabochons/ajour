@@ -3,9 +3,11 @@ import {
   RiFolderChartLine as FolderKanban,
   RiListCheck3 as ListTodo,
   RiSettings3Line as Settings,
+  RiSideBarLine as SidebarIcon,
   RiTimerLine as Timer,
 } from "@remixicon/react";
 import { BrandLogo } from "@/components/brand-logo";
+import { Button } from "@/components/ui/button";
 import {
   Sidebar,
   SidebarContent,
@@ -17,12 +19,22 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { getShortcutPlatform, type AppSidebarState } from "@/lib/app-sidebar";
 
 const primaryItems = [
   { to: "/time/$date", label: "Time", icon: Timer },
   { to: "/backlog", label: "Backlog", icon: ListTodo },
   { to: "/projects", label: "Projects", icon: FolderKanban },
 ] as const;
+
+const isMacShortcut = getShortcutPlatform() === "mac";
+const toggleShortcutLabel = isMacShortcut ? "⌘B" : "Ctrl+B";
+const toggleShortcutAria = isMacShortcut ? "Meta+B" : "Control+B";
 
 export function isAppNavigationItemActive(
   pathname: string,
@@ -43,21 +55,60 @@ export function isAppNavigationItemActive(
   return pathname === to;
 }
 
-export function isSettingsReturnPath(pathname: string) {
+function SidebarToggleButton({
+  state,
+  onToggle,
+}: {
+  state: AppSidebarState;
+  onToggle: () => void;
+}) {
+  const label = state === "expanded" ? "Collapse sidebar" : "Expand sidebar";
   return (
-    isAppNavigationItemActive(pathname, "/time/$date") ||
-    isAppNavigationItemActive(pathname, "/backlog") ||
-    isAppNavigationItemActive(pathname, "/projects")
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            className="ajour-app-sidebar-toggle"
+            aria-label={label}
+            aria-keyshortcuts={toggleShortcutAria}
+            onClick={onToggle}
+          />
+        }
+      >
+        <SidebarIcon />
+      </TooltipTrigger>
+      <TooltipContent side="right">
+        {label}
+        <kbd className="ajour-tooltip-shortcut">{toggleShortcutLabel}</kbd>
+      </TooltipContent>
+    </Tooltip>
   );
 }
 
+/**
+ * The app sidebar on desktop widths. It stays visible on every page, Settings
+ * included. `state` comes from `useAppSidebar`; when the window is too narrow
+ * the rail is forced and the toggle gives way to the logo mark.
+ */
 export function AppNavigationSidebar({
   pathname,
   selectedTimeDate,
+  state,
+  isRailForced,
+  onToggle,
 }: {
   pathname: string;
   selectedTimeDate: string;
+  state: AppSidebarState;
+  isRailForced: boolean;
+  onToggle: () => void;
 }) {
+  const isSettingsActive = isAppNavigationItemActive(pathname, "/settings");
+  const showsLogo = state === "expanded" || isRailForced;
+  const showsToggle = !isRailForced;
+
   return (
     <Sidebar
       className="ajour-shell-sidebar ajour-app-navigation-sidebar"
@@ -71,7 +122,10 @@ export function AppNavigationSidebar({
         aria-hidden="true"
       />
       <SidebarHeader className="ajour-app-sidebar-header">
-        <BrandLogo linked />
+        {showsLogo ? <BrandLogo linked /> : null}
+        {showsToggle ? (
+          <SidebarToggleButton state={state} onToggle={onToggle} />
+        ) : null}
       </SidebarHeader>
 
       <SidebarContent>
@@ -85,6 +139,7 @@ export function AppNavigationSidebar({
                   <SidebarMenuItem key={item.to}>
                     <SidebarMenuButton
                       className="ajour-app-sidebar-button"
+                      tooltip={item.label}
                       render={
                         <Link
                           to={item.to}
@@ -95,7 +150,6 @@ export function AppNavigationSidebar({
                           }
                           aria-label={item.label}
                           aria-current={isActive ? "page" : undefined}
-                          title={item.label}
                         />
                       }
                       isActive={isActive}
@@ -116,19 +170,15 @@ export function AppNavigationSidebar({
           <SidebarMenuItem>
             <SidebarMenuButton
               className="ajour-app-sidebar-button"
+              tooltip="Settings"
               render={
                 <Link
                   to="/settings"
                   aria-label="Settings"
-                  aria-current={
-                    isAppNavigationItemActive(pathname, "/settings")
-                      ? "page"
-                      : undefined
-                  }
-                  title="Settings"
+                  aria-current={isSettingsActive ? "page" : undefined}
                 />
               }
-              isActive={isAppNavigationItemActive(pathname, "/settings")}
+              isActive={isSettingsActive}
             >
               <Settings />
               <span>Settings</span>

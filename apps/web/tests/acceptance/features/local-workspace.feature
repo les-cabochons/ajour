@@ -9,25 +9,34 @@ Feature: Open the local time workspace
     And the day surfaces stretch around centered content
     And the timesheet can be submitted
 
-  Scenario: Replace the desktop application sidebar in Settings
+  Scenario: Collapse the desktop sidebar to an icon rail
+    Given I have no saved Ajour workspace, even after a reload
+    When I open today's time workspace
+    Then the app sidebar is expanded
+    When I collapse the app sidebar with its button
+    Then the app sidebar is an icon rail
+    When I reload the app
+    Then the app sidebar is an icon rail
+    When I press the sidebar shortcut
+    Then the app sidebar is expanded
+    When I narrow the app below the expanded sidebar width
+    Then the app sidebar is an icon rail
+    When I widen the app back to a desktop width
+    Then the app sidebar is expanded
+
+  Scenario: Open Settings inside the app shell
     Given I have no saved Ajour workspace
     When I open today's new-entry workspace
-    And I resize the app to a compact desktop width
     And I open Settings from the desktop sidebar
-    Then the Settings sections replace the primary navigation
-    And the Settings navigation remains available as a compact rail
+    Then the Settings pages are listed beside the app sidebar
     When I open Plugins from the Settings navigation
-    And I leave Settings from the sidebar
-    Then the Time new-entry workspace sidebar is restored
-    When I go back in the browser history
-    Then the Time new-entry workspace sidebar is restored
+    And I open Time from the app sidebar
+    Then the Time workspace is visible
 
-  Scenario: Leave Settings after opening it directly
+  Scenario: Open Settings directly
     Given I have no saved Ajour workspace
     When I open Settings directly
-    Then the Settings sections replace the primary navigation
-    When I leave Settings from the sidebar
-    Then the Time workspace is visible
+    Then the Settings pages are listed beside the app sidebar
 
   Scenario: Keep the desktop Projects sidebar expanded
     Given I have projects with searchable tasks
@@ -77,10 +86,6 @@ Feature: Open the local time workspace
     When I install a packaged connector from settings
     Then the connector plugin is reported as installed
     And I can open the connector plugin configuration
-    When I leave Settings from the sidebar
-    Then the Time new-entry workspace sidebar is restored
-    When I go back in the browser history
-    Then the Time new-entry workspace sidebar is restored
 
   Scenario: Deactivate a plugin without losing its configuration page
     Given I have no saved Ajour workspace

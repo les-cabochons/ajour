@@ -115,7 +115,10 @@
     --app-sidebar-width: 200px;
     --app-workspace-max-width: 1440px;
     --app-workspace-half-width: 720px;
-    --app-centered-workspace-right-offset: 820px;
+    /* Half the sidebar plus half the capped workspace: 100px + 720px. */
+    --app-centered-workspace-right-offset: calc(
+      var(--app-sidebar-width) / 2 + var(--app-workspace-half-width)
+    );
     --windows-caption-controls-width: 150px;
     --field-bg: var(--surface-lowest);
     --field-border: color-mix(
@@ -904,6 +907,10 @@
     animation-iteration-count: 1 !important;
     transition-duration: 1ms !important;
   }
+
+  .ajour-shell-sidebar {
+    transition: none;
+  }
 }
 
 @media (max-width: 1023px) {
@@ -1373,9 +1380,13 @@
     height: 100% !important;
     min-height: 0;
     flex: 0 0 var(--app-sidebar-width);
+    overflow: hidden;
     border-right: 1px solid var(--app-sidebar-border);
     background: var(--app-sidebar-bg) !important;
     backdrop-filter: blur(18px) saturate(1.08);
+    transition:
+      width 150ms var(--ease),
+      flex-basis 150ms var(--ease);
   }
 
   .ajour-shell-sidebar-inner {
@@ -1390,10 +1401,6 @@
     display: block;
     min-height: var(--desktop-shell-chrome-height);
     flex: 0 0 var(--desktop-shell-chrome-height);
-  }
-
-  .ajour-app-sidebar-header {
-    padding: 0.75rem 1.25rem 1rem;
   }
 
   .ajour-shell-sidebar [data-sidebar="content"] {
@@ -1438,14 +1445,6 @@
 
   .ajour-app-sidebar-button[data-active="true"]:focus-visible {
     box-shadow: 0 0 0 1px var(--border-focus);
-  }
-
-  .ajour-settings-navigation-sidebar [data-sidebar="content"] {
-    padding-top: 1rem;
-  }
-
-  .ajour-settings-back-button {
-    color: var(--text-secondary);
   }
 
   .desktop-shell-app .app-content-shell {
@@ -6711,6 +6710,85 @@
    Responsive
    ---------------------------------------------------------------- */
 
+/* ----------------------------------------------------------------
+   App sidebar header and icon rail. These rules sit outside the
+   components layer so they win over the sidebar primitive's utilities.
+   ---------------------------------------------------------------- */
+
+.ajour-app-sidebar-header {
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  height: 3.25rem;
+  flex-shrink: 0;
+  padding: 0.25rem 0.5rem 0.5rem 1.25rem;
+}
+
+.ajour-app-sidebar-toggle {
+  color: var(--text-secondary);
+}
+
+.ajour-app-sidebar-toggle:hover {
+  color: var(--text);
+}
+
+.ajour-tooltip-shortcut {
+  font-family: inherit;
+  opacity: 0.7;
+}
+
+/* The 52px icon rail. useAppSidebar sets data-app-sidebar from the saved
+   preference, or forces "rail" below 1100px. */
+.ajour-app-body[data-app-sidebar="rail"] {
+  --app-sidebar-width: 52px;
+  /* Custom properties resolve where they are declared, so the rail restates
+     the centering offset with its own width: 26px + 720px. */
+  --app-centered-workspace-right-offset: calc(
+    var(--app-sidebar-width) / 2 + var(--app-workspace-half-width)
+  );
+}
+
+.ajour-app-body[data-app-sidebar="rail"] .ajour-app-sidebar-header {
+  justify-content: center;
+  padding-inline: 0;
+}
+
+.ajour-app-body[data-app-sidebar="rail"] .ajour-wordmark {
+  display: none;
+}
+
+.ajour-app-body[data-app-sidebar="rail"]
+  .ajour-shell-sidebar
+  [data-sidebar="group"],
+.ajour-app-body[data-app-sidebar="rail"]
+  .ajour-shell-sidebar
+  [data-sidebar="footer"] {
+  padding-inline: 0.375rem;
+}
+
+.ajour-app-body[data-app-sidebar="rail"] .ajour-app-sidebar-button {
+  width: 100%;
+  justify-content: center;
+  gap: 0;
+  padding-inline: 0;
+}
+
+.ajour-app-body[data-app-sidebar="rail"] .ajour-app-sidebar-button > span {
+  display: none;
+}
+
+/* The macOS traffic lights end near x=70px, past the 52px rail. Keep the
+   titlebar controls clear of them. */
+.desktop-shell-macos
+  .ajour-app-body[data-app-sidebar="rail"]
+  .desktop-shell-nav-inner {
+  padding-left: 2rem;
+}
+
+.ajour-settings-navigation [data-sidebar="content"] {
+  padding-top: 0.5rem;
+}
+
 @media (min-width: 1024px) {
   .backlog-task-drag-preview-grid {
     grid-template-columns:
@@ -6961,9 +7039,10 @@
   }
 }
 
+/* The app sidebar shows as the rail here. useAppSidebar forces the rail
+   below 1100px, so only its visibility is restored at this range. */
 @media (min-width: 641px) and (max-width: 1023px) {
   .ajour-app-body[data-slot="sidebar-wrapper"] {
-    --app-sidebar-width: 48px;
     display: flex;
   }
 
@@ -6973,38 +7052,6 @@
 
   .ajour-app-workspace {
     width: auto;
-  }
-
-  .ajour-app-sidebar-header {
-    align-items: center;
-    padding: 0.75rem 0.5rem 1rem;
-  }
-
-  .ajour-app-navigation-sidebar .ajour-wordmark {
-    display: none;
-  }
-
-  .ajour-app-navigation-sidebar .ajour-logo-lockup {
-    justify-content: center;
-  }
-
-  .ajour-shell-sidebar [data-sidebar="group"] {
-    padding-inline: 0.25rem;
-  }
-
-  .ajour-shell-sidebar [data-sidebar="footer"] {
-    padding-inline: 0.25rem;
-  }
-
-  .ajour-shell-sidebar .ajour-app-sidebar-button {
-    width: 100%;
-    justify-content: center;
-    gap: 0;
-    padding-inline: 0;
-  }
-
-  .ajour-shell-sidebar .ajour-app-sidebar-button > span {
-    display: none;
   }
 
   .ajour-project-layout[data-slot="sidebar-wrapper"]

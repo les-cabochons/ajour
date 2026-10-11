@@ -1,6 +1,5 @@
 import { Link } from "@tanstack/react-router";
 import {
-  RiArrowLeftLine as ArrowLeft,
   RiBugLine as Bug,
   RiDownloadLine as Download,
   RiFolderChartLine as FolderKanban,
@@ -10,15 +9,14 @@ import {
   RiSettings3Line as Settings,
 } from "@remixicon/react";
 import {
-  Sidebar,
+  CustomSidebar,
+  CustomSidebarMenuButton,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarMenu,
-  SidebarMenuButton,
   SidebarMenuItem,
-} from "@/components/ui/sidebar";
+} from "@/components/custom-sidebar";
 
 const settingsItems = [
   { to: "/settings/general", label: "General", icon: Settings },
@@ -33,25 +31,18 @@ const settingsItems = [
     : []),
 ] as const;
 
-export function SettingsNavigationSidebar({
-  pathname,
-  onBack,
-}: {
-  pathname: string;
-  onBack: () => void;
-}) {
+/**
+ * The list of settings pages, shown as a second column next to the app
+ * sidebar, like the Projects list. The app sidebar stays visible in Settings,
+ * so there is no Back control.
+ */
+export function SettingsNavigation({ pathname }: { pathname: string }) {
   return (
-    <Sidebar
-      className="ajour-shell-sidebar ajour-settings-navigation-sidebar"
-      innerClassName="ajour-shell-sidebar-inner"
-      collapsible="none"
+    <CustomSidebar
+      className="ajour-settings-navigation"
       role="navigation"
       aria-label="Settings sections"
     >
-      <div
-        className="ajour-sidebar-window-drag-region desktop-drag-region"
-        aria-hidden="true"
-      />
       <SidebarContent>
         <SidebarGroup>
           <SidebarGroupContent>
@@ -61,22 +52,19 @@ export function SettingsNavigationSidebar({
                 const isActive = pathname.startsWith(item.to);
                 return (
                   <SidebarMenuItem key={item.to}>
-                    <SidebarMenuButton
-                      className="ajour-app-sidebar-button"
+                    <CustomSidebarMenuButton
                       render={
                         <Link
                           to={item.to}
                           replace
-                          aria-label={item.label}
                           aria-current={isActive ? "page" : undefined}
-                          title={item.label}
                         />
                       }
                       isActive={isActive}
                     >
                       <Icon />
                       <span>{item.label}</span>
-                    </SidebarMenuButton>
+                    </CustomSidebarMenuButton>
                   </SidebarMenuItem>
                 );
               })}
@@ -84,22 +72,6 @@ export function SettingsNavigationSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-
-      <SidebarFooter>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              className="ajour-app-sidebar-button ajour-settings-back-button"
-              aria-label="Back"
-              title="Back"
-              onClick={onBack}
-            >
-              <ArrowLeft />
-              <span>Back</span>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarFooter>
-    </Sidebar>
+    </CustomSidebar>
   );
 }
