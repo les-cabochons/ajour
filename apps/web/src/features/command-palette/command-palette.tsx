@@ -282,8 +282,8 @@ export function CommandPalette() {
 
   /**
    * Move up and Move down. A time entry moves within its day here. Backlog
-   * items and tasks go to their page, which owns the visible order and the
-   * task draft guard.
+   * items, tasks and projects go to their page, which owns the visible order
+   * and the task draft guard.
    */
   function runReorder(target: SortableObjectRef, step: -1 | 1) {
     const action = step === -1 ? "move-up" : "move-down";
@@ -315,6 +315,12 @@ export function CommandPalette() {
       case "task":
         requestProjectsPage(
           { action, target: target.taskId, parent: target.projectId },
+          target.projectId,
+        );
+        return;
+      case "project":
+        requestProjectsPage(
+          { action, target: target.projectId },
           target.projectId,
         );
         return;

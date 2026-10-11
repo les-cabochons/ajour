@@ -393,6 +393,25 @@ describe("buildPaletteSections", () => {
     expect(labels("child")).not.toContain("Move up");
   });
 
+  it("offers Move up and Move down on active projects only", () => {
+    const labels = (status: "active" | "archived") =>
+      buildPaletteSections(
+        input({
+          focused: { kind: "project", projectId: "atlas" },
+          projects: [{ ...atlas, status }],
+        }),
+      )[0]!.items.map((item) => item.label);
+
+    expect(labels("active")).toEqual([
+      "Edit",
+      "New task",
+      "Move up",
+      "Move down",
+      "Archive",
+    ]);
+    expect(labels("archived")).not.toContain("Move up");
+  });
+
   it("drops the focused section when the object is gone", () => {
     const sections = buildPaletteSections(
       input({ focused: { kind: "backlog-item", workItemId: "missing" } }),

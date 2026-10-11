@@ -1506,6 +1506,12 @@ export function ProjectsPage() {
     if (!project) return;
 
     if (!parent) {
+      // Move up and Move down from the palette.
+      if (action === "move-up" || action === "move-down") {
+        reorderProject(project._id, action === "move-up" ? -1 : 1);
+        return;
+      }
+
       const requested = getProjectActions(project).find(
         (item) => item.id === action && !item.disabledReason,
       );
@@ -1701,6 +1707,17 @@ export function ProjectsPage() {
 
   const openEditProjectModal = (project: LocalProject) => {
     setProjectModalState({ mode: "edit", projectId: project._id });
+  };
+
+  /**
+   * Move up and Move down among the active projects of the sidebar, persisted
+   * like a drag. Archived projects have no order to change.
+   */
+  const reorderProject = (projectId: string, step: -1 | 1) => {
+    const next = getSharedTableStepOrder(activeProjectIds, projectId, step);
+    if (next) {
+      localStore.reorderProjects(next.order);
+    }
   };
 
   /** Runs the project action set from the sidebar, the archive list and the detail header. */
@@ -1901,6 +1918,17 @@ export function ProjectsPage() {
                               aria-label={getProjectDisplayName(project)}
                               title={project.name}
                               draggable={false}
+                              // Alt+Up and Alt+Down reorder, like a drag. No other item key acts on projects.
+                              onKeyDown={(event) =>
+                                handleItemKeyDown(event, {
+                                  actions: projectActions,
+                                  keys: {},
+                                  onAction: (actionId) =>
+                                    runProjectAction(project, actionId),
+                                  onReorder: (step) =>
+                                    reorderProject(project._id, step),
+                                })
+                              }
                               onDragStart={(event) => {
                                 event.preventDefault();
                               }}

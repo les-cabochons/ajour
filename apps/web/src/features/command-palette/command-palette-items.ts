@@ -75,7 +75,7 @@ export type PaletteCommand =
 /** The focused objects that Move up and Move down apply to. */
 export type SortableObjectRef = Extract<
   FocusedObjectRef,
-  { kind: "time-entry" | "backlog-item" | "task" }
+  { kind: "time-entry" | "backlog-item" | "task" | "project" }
 >;
 
 export interface PaletteItem {
@@ -518,7 +518,12 @@ function focusedSection(input: PaletteInput): PaletteSection | null {
     }
     case "project": {
       const project = projects.find((item) => item._id === focused.projectId);
-      return project ? projectSection(prefix, project) : null;
+      if (!project) return null;
+      const section = projectSection(prefix, project);
+      // Only active projects are in the sidebar's order.
+      return project.status === "active"
+        ? withReorderItems(section, focused, platform)
+        : section;
     }
     default:
       return null;
