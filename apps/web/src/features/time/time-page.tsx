@@ -9,6 +9,7 @@ import {
   type TimeEntryEditorFormHandle,
   type TimeEntryEditorTarget,
 } from "@/features/time/time-entry-editor-form";
+import type { TimeEntryEditorFields } from "@/features/time/time-entry-editor";
 import { TimeViewScopeMenu } from "@/features/time/time-view-scope-menu";
 import { WeeklyTimeView } from "@/features/time/weekly-time-view";
 import { TimerPanel } from "@/features/timer/timer-panel";
@@ -50,6 +51,12 @@ export function TimePage({ date }: { date: string }) {
   );
   const isWeekView = search.view === "week" && weekAvailable;
   const editorFormRef = useRef<TimeEntryEditorFormHandle>(null);
+  // The unsaved draft of the open entry, kept above the side panel and the dialog so
+  // crossing the dialog breakpoint mid-edit hands the draft to the other host.
+  const editorDraftRef = useRef<{
+    key: string;
+    fields: TimeEntryEditorFields;
+  } | null>(null);
   const editingEntry =
     search.entry && search.entry !== "new"
       ? state.timesheetEntries.find((entry) => entry._id === search.entry)
@@ -172,6 +179,7 @@ export function TimePage({ date }: { date: string }) {
   }
 
   function closeEditor() {
+    editorDraftRef.current = null;
     void navigate({
       to: "/time/$date",
       params: { date },
@@ -213,6 +221,15 @@ export function TimePage({ date }: { date: string }) {
       params: { date },
       search: { view: isWeekView ? "week" : undefined } as never,
     });
+  }
+
+  const carriedDraft =
+    editorDraftRef.current?.key === editorKey
+      ? editorDraftRef.current.fields
+      : undefined;
+
+  function keepEditorDraft(fields: TimeEntryEditorFields) {
+    editorDraftRef.current = { key: editorKey, fields };
   }
 
   return (
@@ -282,6 +299,8 @@ export function TimePage({ date }: { date: string }) {
             key={editorKey}
             ref={editorFormRef}
             target={editorTarget}
+            initialFields={carriedDraft}
+            onFieldsChange={keepEditorDraft}
             onClose={closeEditor}
           />
         </SidePanel>
@@ -291,6 +310,8 @@ export function TimePage({ date }: { date: string }) {
           date={date}
           entryId={editingEntry?._id}
           timerId={search.timer}
+          initialFields={carriedDraft}
+          onFieldsChange={keepEditorDraft}
           onClose={closeEditor}
         />
       ) : null}

@@ -66,6 +66,8 @@ function formatEntryDate(localDate: string) {
  * Escape, Cancel or × discard the draft.
  *
  * Keep the host remount keyed by target: the draft is seeded once, on mount.
+ * A host that can swap containers mid-edit (side panel and dialog across a
+ * breakpoint) passes the draft back in through `initialFields`.
  */
 export function TimeEntryEditorForm({
   target,
@@ -73,9 +75,15 @@ export function TimeEntryEditorForm({
   ref,
   titleAs: Title = "h2",
   className,
+  initialFields,
+  onFieldsChange,
 }: {
   target: TimeEntryEditorTarget;
   onClose: () => void;
+  /** An unsaved draft to resume instead of the target's saved values. */
+  initialFields?: TimeEntryEditorFields;
+  /** Reports every draft change, so a host can carry it to another container. */
+  onFieldsChange?: (fields: TimeEntryEditorFields) => void;
   ref?: Ref<TimeEntryEditorFormHandle>;
   /** A dialog host passes its title component so the heading labels the dialog. */
   titleAs?: ElementType;
@@ -88,11 +96,18 @@ export function TimeEntryEditorForm({
     target.kind === "edit" ? target.entry.localDate : target.localDate;
   const workItemId =
     target.kind === "create" ? target.initialValues?.workItemId : undefined;
-  const [fields, setFields] = useState(() =>
-    createTimeEntryEditorFields(
-      target.kind === "edit" ? target.entry : target.initialValues,
-    ),
+  const [fields, setFields] = useState(
+    () =>
+      initialFields ??
+      createTimeEntryEditorFields(
+        target.kind === "edit" ? target.entry : target.initialValues,
+      ),
   );
+  const onFieldsChangeRef = useRef(onFieldsChange);
+  onFieldsChangeRef.current = onFieldsChange;
+  useEffect(() => {
+    onFieldsChangeRef.current?.(fields);
+  }, [fields]);
   // A blocked save or switch shows its reason until the user changes a field.
   const [commitError, setCommitError] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);

@@ -17,6 +17,7 @@ import {
   TimeEntryEditorForm,
   type NewTimeEntryValues,
 } from "@/features/time/time-entry-editor-form";
+import type { TimeEntryEditorFields } from "@/features/time/time-entry-editor";
 import { ObjectActionsButton } from "@/components/object-actions-menu";
 import type { TimeEntryActionId } from "@/domain/actions/object-actions";
 import { useTimeEntryActions } from "@/features/time/time-entry-actions";
@@ -31,6 +32,9 @@ interface TimeEntryModalProps {
   timerId?: string;
   /** Used only for a new entry. Read once when the dialog opens. */
   initialValues?: NewTimeEntryValues;
+  /** An unsaved draft carried over from another host, such as the side panel. */
+  initialFields?: TimeEntryEditorFields;
+  onFieldsChange?: (fields: TimeEntryEditorFields) => void;
   onClose: () => void;
 }
 
@@ -44,6 +48,8 @@ export function TimeEntryModal({
   entryId,
   timerId,
   initialValues,
+  initialFields,
+  onFieldsChange,
   onClose,
 }: TimeEntryModalProps) {
   if (timerId) {
@@ -55,6 +61,8 @@ export function TimeEntryModal({
       date={date}
       entryId={entryId}
       initialValues={initialValues}
+      initialFields={initialFields}
+      onFieldsChange={onFieldsChange}
       onClose={onClose}
     />
   );
@@ -64,6 +72,8 @@ function TimeEntryEditorDialog({
   date,
   entryId,
   initialValues,
+  initialFields,
+  onFieldsChange,
   onClose,
 }: Omit<TimeEntryModalProps, "timerId">) {
   const state = useLocalState();
@@ -99,6 +109,8 @@ function TimeEntryEditorDialog({
                 }
           }
           titleAs={DialogTitle}
+          initialFields={initialFields}
+          onFieldsChange={onFieldsChange}
           onClose={onClose}
         />
       </DialogContent>
