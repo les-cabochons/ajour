@@ -616,6 +616,11 @@ Then("the Time workspace is visible", async ({ page }) => {
   await expect(
     primaryNavigation.getByRole("link", { name: "Time" }),
   ).toHaveAttribute("aria-current", "page");
+  // The Time page itself has rendered, so its own shortcuts (such as N opening
+  // the side panel instead of the titlebar popover) are registered.
+  await expect(
+    page.getByRole("button", { name: "Submit week" }).first(),
+  ).toBeVisible();
 });
 
 Then("the desktop sidebar owns the full left edge", async ({ page }) => {
