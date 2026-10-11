@@ -3,6 +3,7 @@ import {
   RiFolderAddLine as FolderPlus,
   RiSaveLine as Save,
 } from "@remixicon/react";
+import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -316,16 +317,15 @@ function ProjectIconField({
             fields.icon.kind === "preset" && fields.icon.name === preset.name;
 
           return (
-            <button
+            <TooltipButton
               key={preset.name}
-              type="button"
               role="listitem"
               className={cn(
                 "project-icon-preset-button",
                 isSelected && "is-selected",
               )}
+              label={preset.label}
               aria-label={`Use ${preset.label} icon`}
-              title={preset.label}
               onClick={() => handlePresetSelect(preset.name)}
             >
               <ProjectIcon
@@ -333,7 +333,7 @@ function ProjectIconField({
                 color={fields.color}
                 className="size-4"
               />
-            </button>
+            </TooltipButton>
           );
         })}
       </div>

@@ -20,34 +20,21 @@ import {
   SidebarMenuItem,
 } from "@/components/ui/sidebar";
 import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+  ShortcutTooltipLabel,
+  TooltipButton,
+} from "@/components/tooltip-button";
 import type { AppSidebarState } from "@/lib/app-sidebar";
-import {
-  formatAriaKeyShortcuts,
-  formatShortcutKeys,
-  getShortcut,
-  getShortcutPlatform,
-} from "@/lib/shortcuts";
 
 const primaryItems = [
-  { to: "/time/$date", label: "Time", icon: Timer },
-  { to: "/backlog", label: "Backlog", icon: ListTodo },
-  { to: "/projects", label: "Projects", icon: FolderKanban },
+  { to: "/time/$date", label: "Time", icon: Timer, shortcut: "go.time" },
+  { to: "/backlog", label: "Backlog", icon: ListTodo, shortcut: "go.backlog" },
+  {
+    to: "/projects",
+    label: "Projects",
+    icon: FolderKanban,
+    shortcut: "go.projects",
+  },
 ] as const;
-
-const shortcutPlatform = getShortcutPlatform();
-const toggleShortcut = getShortcut("app.toggle-sidebar");
-const toggleShortcutLabel = formatShortcutKeys(
-  toggleShortcut,
-  shortcutPlatform,
-).join(" ");
-const toggleShortcutAria = formatAriaKeyShortcuts(
-  toggleShortcut,
-  shortcutPlatform,
-);
 
 export function isAppNavigationItemActive(
   pathname: string,
@@ -77,26 +64,21 @@ function SidebarToggleButton({
 }) {
   const label = state === "expanded" ? "Collapse sidebar" : "Expand sidebar";
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Button
-            variant="ghost"
-            size="icon-sm"
-            className="ajour-app-sidebar-toggle"
-            aria-label={label}
-            aria-keyshortcuts={toggleShortcutAria}
-            onClick={onToggle}
-          />
-        }
-      >
-        <SidebarIcon />
-      </TooltipTrigger>
-      <TooltipContent side="right">
-        {label}
-        <kbd className="ajour-tooltip-shortcut">{toggleShortcutLabel}</kbd>
-      </TooltipContent>
-    </Tooltip>
+    <TooltipButton
+      label={label}
+      shortcut="app.toggle-sidebar"
+      side="right"
+      render={
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          className="ajour-app-sidebar-toggle"
+          onClick={onToggle}
+        />
+      }
+    >
+      <SidebarIcon />
+    </TooltipButton>
   );
 }
 
@@ -152,7 +134,14 @@ export function AppNavigationSidebar({
                   <SidebarMenuItem key={item.to}>
                     <SidebarMenuButton
                       className="ajour-app-sidebar-button"
-                      tooltip={item.label}
+                      tooltip={{
+                        children: (
+                          <ShortcutTooltipLabel
+                            label={item.label}
+                            shortcut={item.shortcut}
+                          />
+                        ),
+                      }}
                       render={
                         <Link
                           to={item.to}
@@ -183,7 +172,14 @@ export function AppNavigationSidebar({
           <SidebarMenuItem>
             <SidebarMenuButton
               className="ajour-app-sidebar-button"
-              tooltip="Settings"
+              tooltip={{
+                children: (
+                  <ShortcutTooltipLabel
+                    label="Settings"
+                    shortcut="app.settings"
+                  />
+                ),
+              }}
               render={
                 <Link
                   to="/settings"

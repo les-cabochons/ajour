@@ -4,6 +4,7 @@ import {
   getSharedTableDragOverlayTransform,
   getSharedTableDragRowShift,
   getSharedTableDragTargetIndex,
+  getSharedTableDropOrder,
   getSharedTableStepOrder,
   setSharedTableDragDocumentState,
 } from "@/lib/table-drag";
@@ -28,6 +29,32 @@ describe("getSharedTableStepOrder", () => {
     expect(getSharedTableStepOrder(ids, "z", 1)).toBeNull();
   });
 });
+
+describe("getSharedTableDropOrder", () => {
+  const ids = ["a", "b", "c", "d"];
+
+  it("moves the dragged item to the drop index", () => {
+    expect(getSharedTableDropOrder(ids, 0, 2)).toEqual(["b", "c", "a", "d"]);
+    expect(getSharedTableDropOrder(ids, 3, 1)).toEqual(["a", "d", "b", "c"]);
+  });
+
+  it("changes nothing when the item is dropped where it started", () => {
+    expect(getSharedTableDropOrder(ids, 2, 2)).toBeNull();
+  });
+
+  it("changes nothing for an origin outside the list", () => {
+    expect(getSharedTableDropOrder(ids, 4, 0)).toBeNull();
+    expect(getSharedTableDropOrder(ids, -1, 0)).toBeNull();
+  });
+});
+
+function dispatchEscape(target: EventTarget) {
+  const event = new Event("keydown", { cancelable: true });
+  Object.defineProperty(event, "key", { value: "Escape" });
+  const stopPropagation = vi.spyOn(event, "stopPropagation");
+  target.dispatchEvent(event);
+  return { event, stopPropagation };
+}
 
 function dispatchPointer(
   target: EventTarget,
@@ -61,6 +88,41 @@ describe("shared table drag geometry", () => {
     expect(getSharedTableDragTargetIndex(["a", "b", "c"], "c", 45, rows)).toBe(
       2,
     );
+  });
+
+  it("gives the original index back when the item returns over its own slot", () => {
+    // "b" has shifted up 20px to make room for "a" dragged below it. Its
+    // rectangle now sits in a's slot, but it still counts from its layout place.
+    class ShiftedRow {
+      constructor(
+        readonly top: number,
+        readonly transform: string,
+      ) {}
+      getBoundingClientRect() {
+        return { top: this.top, height: 20 };
+      }
+    }
+    vi.stubGlobal("Element", ShiftedRow);
+    vi.stubGlobal("getComputedStyle", (row: ShiftedRow) => ({
+      transform: row.transform,
+    }));
+    try {
+      const rows = new Map([
+        ["a", new ShiftedRow(0, "none")],
+        ["b", new ShiftedRow(0, "matrix(1, 0, 0, 1, 0, -20)")],
+        ["c", new ShiftedRow(40, "none")],
+      ]);
+
+      // The lower half of a's own slot.
+      expect(
+        getSharedTableDragTargetIndex(["a", "b", "c"], "a", 15, rows),
+      ).toBe(0);
+      expect(
+        getSharedTableDragTargetIndex(["a", "b", "c"], "a", 31, rows),
+      ).toBe(1);
+    } finally {
+      vi.unstubAllGlobals();
+    }
   });
 
   it("calculates sibling shifts and clamps the drag overlay", () => {
@@ -204,6 +266,178 @@ describe("shared table drag pointer session", () => {
     });
 
     expect(cancelEnd).toHaveBeenCalledWith(false);
+  });
+
+  it("cancels an active drag on Escape and keeps the key from reaching other handlers", () => {
+    const eventSource = new EventTarget();
+    let dragging = false;
+    const onEnd = vi.fn();
+    const onPressEnd = vi.fn();
+    const onMove = vi.fn();
+
+    createSharedTableDragPointerSession({
+      eventSource,
+      pointerId: 3,
+      pointerType: "mouse",
+      originX: 0,
+      originY: 0,
+      isDragging: () => dragging,
+      onStart: () => {
+        dragging = true;
+      },
+      onMove,
+      onEnd,
+      onPressEnd,
+    });
+    dispatchPointer(eventSource, "pointermove", {
+      pointerId: 3,
+      clientX: 0,
+      clientY: 20,
+    });
+
+    const { event, stopPropagation } = dispatchEscape(eventSource);
+
+    expect(onEnd).toHaveBeenCalledExactlyOnceWith(false);
+    expect(event.defaultPrevented).toBe(true);
+    expect(stopPropagation).toHaveBeenCalled();
+    expect(onPressEnd).not.toHaveBeenCalled();
+
+    // The session is over: releasing the pointer later commits nothing.
+    dispatchPointer(eventSource, "pointermove", {
+      pointerId: 3,
+      clientX: 0,
+      clientY: 40,
+    });
+    dispatchPointer(eventSource, "pointerup", {
+      pointerId: 3,
+      clientX: 0,
+      clientY: 40,
+    });
+    expect(onMove).not.toHaveBeenCalled();
+    expect(onEnd).toHaveBeenCalledOnce();
+  });
+
+  it.each([
+    { name: "a press below the threshold", moveY: 2 },
+    { name: "an active drag", moveY: 20 },
+  ])("swallows the release click after Escape cancels $name", ({ moveY }) => {
+    vi.useFakeTimers();
+    try {
+      const eventSource = new EventTarget();
+      const captureTarget = {
+        hasPointerCapture: vi.fn(() => true),
+        releasePointerCapture: vi.fn(),
+      };
+      let dragging = false;
+      const onEnd = vi.fn();
+      const onPressEnd = vi.fn();
+      createSharedTableDragPointerSession({
+        eventSource,
+        captureTarget,
+        pointerId: 5,
+        pointerType: "mouse",
+        originX: 0,
+        originY: 0,
+        isDragging: () => dragging,
+        onStart: () => {
+          dragging = true;
+        },
+        onMove: vi.fn(),
+        onEnd,
+        onPressEnd,
+      });
+      dispatchPointer(eventSource, "pointermove", {
+        pointerId: 5,
+        clientX: 0,
+        clientY: moveY,
+      });
+      dispatchEscape(eventSource);
+      expect(captureTarget.releasePointerCapture).toHaveBeenCalledWith(5);
+
+      dispatchPointer(eventSource, "pointerup", {
+        pointerId: 5,
+        clientX: 0,
+        clientY: moveY,
+      });
+      // Stands in for the row's own click handler, which opens the item. In
+      // the browser the row sits below window, so the window capture
+      // listener runs first; one EventTarget runs listeners in the order
+      // they were added, so this one is added after the release.
+      const openRow = vi.fn();
+      eventSource.addEventListener("click", openRow);
+      const click = new Event("click", { cancelable: true });
+      eventSource.dispatchEvent(click);
+
+      expect(openRow).not.toHaveBeenCalled();
+      expect(click.defaultPrevented).toBe(true);
+      expect(onEnd.mock.calls.length + onPressEnd.mock.calls.length).toBe(1);
+
+      // Only that one click: the next gesture's click goes through.
+      eventSource.dispatchEvent(new Event("click"));
+      expect(openRow).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("lets a later gesture's click through when the cancelled release produced none", () => {
+    vi.useFakeTimers();
+    try {
+      const eventSource = new EventTarget();
+      createSharedTableDragPointerSession({
+        eventSource,
+        pointerId: 6,
+        pointerType: "mouse",
+        originX: 0,
+        originY: 0,
+        isDragging: () => false,
+        onStart: vi.fn(),
+        onMove: vi.fn(),
+        onEnd: vi.fn(),
+        onPressEnd: vi.fn(),
+      });
+      dispatchEscape(eventSource);
+      // Released away from the row: the browser sends no click.
+      dispatchPointer(eventSource, "pointerup", {
+        pointerId: 6,
+        clientX: 0,
+        clientY: 0,
+      });
+      vi.runAllTimers();
+
+      const openRow = vi.fn();
+      eventSource.addEventListener("click", openRow);
+      eventSource.dispatchEvent(new Event("click"));
+      expect(openRow).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("ends a press that has not become a drag on Escape and lets the key through", () => {
+    const eventSource = new EventTarget();
+    const onEnd = vi.fn();
+    const onPressEnd = vi.fn();
+
+    createSharedTableDragPointerSession({
+      eventSource,
+      pointerId: 4,
+      pointerType: "mouse",
+      originX: 0,
+      originY: 0,
+      isDragging: () => false,
+      onStart: vi.fn(),
+      onMove: vi.fn(),
+      onEnd,
+      onPressEnd,
+    });
+
+    const { event, stopPropagation } = dispatchEscape(eventSource);
+
+    expect(onPressEnd).toHaveBeenCalledExactlyOnceWith(true);
+    expect(onEnd).not.toHaveBeenCalled();
+    expect(event.defaultPrevented).toBe(false);
+    expect(stopPropagation).not.toHaveBeenCalled();
   });
 });
 

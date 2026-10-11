@@ -4,6 +4,7 @@ import {
   RiArrowRightSLine as ChevronRight,
   RiArrowGoBackLine as ReturnIcon,
 } from "@remixicon/react";
+import { TooltipButton } from "@/components/tooltip-button";
 import { addDaysIsoDate, cn } from "@/lib/utils";
 
 function dateAtNoon(localDate: string) {
@@ -64,22 +65,22 @@ export function DayViewerCard({
       <div className="day-viewer-mobile desktop:hidden">
         <div className="day-viewer-date-section-mobile">
           <div className="day-viewer-arrows">
-            <button
-              type="button"
+            <TooltipButton
               className="day-viewer-arrow"
               onClick={() => onSelectDate(addDaysIsoDate(date, -1))}
-              aria-label="Previous day"
+              label="Previous day"
+              shortcut="time.previous"
             >
               <ChevronLeft className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
+            </TooltipButton>
+            <TooltipButton
               className="day-viewer-arrow"
               onClick={() => onSelectDate(addDaysIsoDate(date, 1))}
-              aria-label="Next day"
+              label="Next day"
+              shortcut="time.next"
             >
               <ChevronRight className="h-4 w-4" />
-            </button>
+            </TooltipButton>
           </div>
           <div>
             <p className="day-viewer-date-kicker">
@@ -112,22 +113,22 @@ export function DayViewerCard({
         {/* Left: arrows + date */}
         <div className="day-viewer-date-section">
           <div className="day-viewer-arrows">
-            <button
-              type="button"
+            <TooltipButton
               className="day-viewer-arrow"
               onClick={() => onSelectDate(addDaysIsoDate(date, -1))}
-              aria-label="Previous day"
+              label="Previous day"
+              shortcut="time.previous"
             >
               <ChevronLeft className="h-4 w-4" />
-            </button>
-            <button
-              type="button"
+            </TooltipButton>
+            <TooltipButton
               className="day-viewer-arrow"
               onClick={() => onSelectDate(addDaysIsoDate(date, 1))}
-              aria-label="Next day"
+              label="Next day"
+              shortcut="time.next"
             >
               <ChevronRight className="h-4 w-4" />
-            </button>
+            </TooltipButton>
           </div>
           <div className="day-viewer-date-text">
             <span className="day-viewer-date-kicker">
@@ -137,14 +138,14 @@ export function DayViewerCard({
               {date === today ? (
                 <span className="day-viewer-today-muted">Today</span>
               ) : (
-                <button
-                  type="button"
+                <TooltipButton
                   className="day-viewer-return-to-today"
                   onClick={() => onSelectDate(today)}
-                  aria-label="Return to today"
+                  label="Return to today"
+                  shortcut="time.today"
                 >
                   <ReturnIcon className="h-2.5 w-2.5" />
-                </button>
+                </TooltipButton>
               )}
             </span>
             <span className="day-viewer-date-big-row">

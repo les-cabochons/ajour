@@ -8,6 +8,7 @@ import {
   ObjectActionsButton,
   ObjectContextMenu,
 } from "@/components/object-actions-menu";
+import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { formatClockDuration } from "@/domain/time/duration";
 import { selectWeeklyGridCell } from "@/domain/time/weekly-time";
@@ -90,15 +91,12 @@ export function WeekGridCellPanel({
             })}
           </span>
         </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Close"
-          onClick={onClose}
+        <TooltipButton
+          label="Close"
+          render={<Button variant="ghost" size="icon-sm" onClick={onClose} />}
         >
           <X />
-        </Button>
+        </TooltipButton>
       </header>
 
       <div

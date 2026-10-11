@@ -1,5 +1,6 @@
 import {
   createSharedTableDragPointerSession,
+  type SharedTableDragEventSource,
   type SharedTableDragPointer,
   type SharedTableDragPointerSession,
 } from "@/lib/table-drag";
@@ -9,11 +10,6 @@ interface CrossDayDragTarget {
     DOMRect,
     "bottom" | "left" | "right" | "top"
   >;
-}
-
-interface CrossDayDragEventSource {
-  addEventListener: (type: string, listener: EventListener) => void;
-  removeEventListener: (type: string, listener: EventListener) => void;
 }
 
 export function getCrossDayDragTarget(
@@ -35,8 +31,13 @@ export function getCrossDayDragTarget(
   return null;
 }
 
+/**
+ * The shared pointer session, plus the weekday under the pointer. `onEnd`
+ * gets the day the entry was dropped on, or null when the drag was cancelled
+ * (pointer cancel or Escape) or ended outside every day.
+ */
 export function createCrossDayEntryDragPointerSession(options: {
-  eventSource?: CrossDayDragEventSource;
+  eventSource?: SharedTableDragEventSource;
   pointerId: number;
   pointerType: string;
   originX: number;
@@ -48,12 +49,10 @@ export function createCrossDayEntryDragPointerSession(options: {
   onEnd: (targetDate: string | null, commit: boolean) => void;
   onPressEnd: (cancelled: boolean) => void;
 }): SharedTableDragPointerSession {
-  const eventSource = options.eventSource ?? window;
   let latestTargetDate: string | null = null;
-  let disposed = false;
 
-  const sharedSession = createSharedTableDragPointerSession({
-    eventSource,
+  return createSharedTableDragPointerSession({
+    eventSource: options.eventSource,
     pointerId: options.pointerId,
     pointerType: options.pointerType,
     originX: options.originX,
@@ -68,44 +67,8 @@ export function createCrossDayEntryDragPointerSession(options: {
       options.onMove(pointer, latestTargetDate);
     },
     onEnd: (commit) => {
-      dispose();
-      options.onEnd(latestTargetDate, commit);
+      options.onEnd(commit ? latestTargetDate : null, commit);
     },
-    onPressEnd: (cancelled) => {
-      dispose();
-      options.onPressEnd(cancelled);
-    },
+    onPressEnd: options.onPressEnd,
   });
-
-  const handleKeyDown: EventListener = (event) => {
-    const keyboardEvent = event as KeyboardEvent;
-    if (keyboardEvent.key !== "Escape") {
-      return;
-    }
-
-    const wasDragging = options.isDragging();
-    dispose();
-    if (wasDragging) {
-      keyboardEvent.preventDefault();
-      options.onEnd(null, false);
-    } else {
-      options.onPressEnd(true);
-    }
-  };
-
-  function dispose() {
-    if (disposed) {
-      return;
-    }
-    disposed = true;
-    sharedSession.dispose();
-    eventSource.removeEventListener("keydown", handleKeyDown);
-  }
-
-  eventSource.addEventListener("keydown", handleKeyDown);
-
-  return {
-    pointerId: options.pointerId,
-    dispose,
-  };
 }

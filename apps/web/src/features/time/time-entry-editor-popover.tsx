@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import { TooltipButton } from "@/components/tooltip-button";
 import {
   Popover,
   PopoverContent,
@@ -9,6 +10,7 @@ import {
   TimeEntryEditorForm,
   type TimeEntryEditorTarget,
 } from "@/features/time/time-entry-editor-form";
+import type { ShortcutActionId } from "@/lib/shortcuts";
 
 /**
  * Popover host for the entry editor, anchored to its trigger: the titlebar "+" and
@@ -22,15 +24,21 @@ export function TimeEntryEditorPopover({
   onOpenChange,
   triggerLabel,
   triggerClassName,
+  iconTrigger = false,
+  triggerShortcut,
   children,
 }: {
   /** What the form edits. The popover shows nothing while this is null. */
   target: TimeEntryEditorTarget | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  /** Accessible name and tooltip of the trigger button. */
+  /** Accessible name of the trigger button, and its tooltip when `iconTrigger` is set. */
   triggerLabel: string;
   triggerClassName?: string;
+  /** The trigger shows only an icon, so it gets a tooltip like every icon button. */
+  iconTrigger?: boolean;
+  /** The registered shortcut the trigger's tooltip shows. */
+  triggerShortcut?: ShortcutActionId;
   /** The trigger button's content. */
   children: ReactNode;
 }) {
@@ -47,13 +55,19 @@ export function TimeEntryEditorPopover({
         onOpenChange(nextOpen);
       }}
     >
-      <PopoverTrigger
-        className={triggerClassName}
-        aria-label={triggerLabel}
-        title={triggerLabel}
-      >
-        {children}
-      </PopoverTrigger>
+      {iconTrigger ? (
+        <TooltipButton
+          label={triggerLabel}
+          shortcut={triggerShortcut}
+          render={<PopoverTrigger className={triggerClassName} />}
+        >
+          {children}
+        </TooltipButton>
+      ) : (
+        <PopoverTrigger className={triggerClassName} aria-label={triggerLabel}>
+          {children}
+        </PopoverTrigger>
+      )}
       <PopoverContent
         className="w-[min(26rem,calc(100vw-1rem))] p-4"
         align="end"

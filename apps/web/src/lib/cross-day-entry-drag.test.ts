@@ -91,6 +91,7 @@ describe("cross-day entry drag geometry", () => {
     listeners.get("keydown")?.({
       key: "Escape",
       preventDefault: vi.fn(),
+      stopPropagation: vi.fn(),
     } as unknown as Event);
     expect(onEnd).toHaveBeenCalledWith(null, false);
   });

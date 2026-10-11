@@ -36,9 +36,23 @@ export interface SharedTableDragPointer {
   eventType: string;
 }
 
-interface SharedTableDragEventSource {
-  addEventListener: (type: string, listener: EventListener) => void;
-  removeEventListener: (type: string, listener: EventListener) => void;
+/**
+ * Capture-phase listener options. An object rather than `true`: Node's
+ * EventTarget, which the tests use, ignores a boolean in removeEventListener.
+ */
+const CAPTURE = { capture: true };
+
+export interface SharedTableDragEventSource {
+  addEventListener: (
+    type: string,
+    listener: EventListener,
+    options?: { capture?: boolean },
+  ) => void;
+  removeEventListener: (
+    type: string,
+    listener: EventListener,
+    options?: { capture?: boolean },
+  ) => void;
 }
 
 export interface SharedTableDragPointerSession {
@@ -46,8 +60,25 @@ export interface SharedTableDragPointerSession {
   dispose: () => void;
 }
 
+/**
+ * Follows one press from pointer down to its end. Moving past the tolerance
+ * starts the drag (`onStart`), then `onMove` follows the pointer. The session
+ * ends once:
+ *
+ * - pointer up after a drag calls `onEnd(true)`, so the caller commits;
+ * - pointer cancel or Escape during a drag calls `onEnd(false)`, so the caller
+ *   puts the item back. Escape stops there, so it does not also close the
+ *   panel or dialog behind the drag;
+ * - a press that never became a drag calls `onPressEnd`, with `cancelled` true
+ *   for pointer cancel or Escape.
+ *
+ * After Escape, the click that the later release produces is swallowed, so
+ * a cancelled press or drag never opens the row.
+ */
 export function createSharedTableDragPointerSession(options: {
   eventSource?: SharedTableDragEventSource;
+  /** The element that took pointer capture on press. Escape releases it. */
+  captureTarget?: Pick<Element, "hasPointerCapture" | "releasePointerCapture">;
   pointerId: number;
   pointerType: string;
   originX: number;
@@ -70,6 +101,7 @@ export function createSharedTableDragPointerSession(options: {
     eventSource.removeEventListener("pointermove", handlePointerMove);
     eventSource.removeEventListener("pointerup", handlePointerEnd);
     eventSource.removeEventListener("pointercancel", handlePointerEnd);
+    eventSource.removeEventListener("keydown", handleKeyDown, CAPTURE);
   };
 
   const handlePointerMove: EventListener = (event) => {
@@ -117,14 +149,81 @@ export function createSharedTableDragPointerSession(options: {
     options.onPressEnd(pointerEvent.type === "pointercancel");
   };
 
+  const handleKeyDown: EventListener = (event) => {
+    const keyboardEvent = event as KeyboardEvent;
+    if (keyboardEvent.key !== "Escape") {
+      return;
+    }
+
+    const wasDragging = options.isDragging();
+    dispose();
+    // The button is still down. Its release must not reach the row as a click.
+    if (options.captureTarget?.hasPointerCapture(options.pointerId)) {
+      options.captureTarget.releasePointerCapture(options.pointerId);
+    }
+    swallowReleaseClick(eventSource, options.pointerId);
+
+    if (wasDragging) {
+      keyboardEvent.preventDefault();
+      keyboardEvent.stopPropagation();
+      options.onEnd(false);
+      return;
+    }
+
+    options.onPressEnd(true);
+  };
+
   eventSource.addEventListener("pointermove", handlePointerMove);
   eventSource.addEventListener("pointerup", handlePointerEnd);
   eventSource.addEventListener("pointercancel", handlePointerEnd);
+  // Capture runs before the listeners of panels, menus and dialogs.
+  eventSource.addEventListener("keydown", handleKeyDown, CAPTURE);
 
   return {
     pointerId: options.pointerId,
     dispose,
   };
+}
+
+/**
+ * After Escape cancels a press or a drag, the button is still down. Waits for
+ * that pointer's release and swallows the click it produces, so the cancelled
+ * gesture never opens the row. It lives apart from the session, because
+ * callers dispose the session as soon as Escape ends the drag.
+ */
+function swallowReleaseClick(
+  eventSource: SharedTableDragEventSource,
+  pointerId: number,
+) {
+  const handleRelease: EventListener = (event) => {
+    if ((event as PointerEvent).pointerId !== pointerId) {
+      return;
+    }
+
+    eventSource.removeEventListener("pointerup", handleRelease, CAPTURE);
+    eventSource.removeEventListener("pointercancel", handleRelease, CAPTURE);
+    // A cancelled pointer produces no click.
+    if (event.type !== "pointerup") {
+      return;
+    }
+
+    const handleClick: EventListener = (click) => {
+      click.preventDefault();
+      click.stopImmediatePropagation();
+      stop();
+    };
+    const stop = () => {
+      clearTimeout(timeoutId);
+      eventSource.removeEventListener("click", handleClick, CAPTURE);
+    };
+    eventSource.addEventListener("click", handleClick, CAPTURE);
+    // The browser sends the click in the same task as its pointerup, so a
+    // click after this timeout belongs to a new gesture.
+    const timeoutId = setTimeout(stop, 0);
+  };
+
+  eventSource.addEventListener("pointerup", handleRelease, CAPTURE);
+  eventSource.addEventListener("pointercancel", handleRelease, CAPTURE);
 }
 
 function toSharedPointer(event: PointerEvent): SharedTableDragPointer {
@@ -203,6 +302,30 @@ interface SharedTableDragRow {
   getBoundingClientRect: () => Pick<DOMRect, "top" | "height">;
 }
 
+/**
+ * The vertical translation in a computed `transform`, such as the row shift
+ * `translate3d(0, -40px, 0)`, which computes to `matrix(1, 0, 0, 1, 0, -40)`.
+ */
+function getComputedTranslateY(row: SharedTableDragRow) {
+  if (typeof Element === "undefined" || !(row instanceof Element)) {
+    return 0;
+  }
+
+  const match = /^matrix(3d)?\((.+)\)$/.exec(getComputedStyle(row).transform);
+  if (!match) {
+    return 0;
+  }
+
+  const values = match[2]!.split(",").map(Number);
+  return (match[1] ? values[13] : values[5]) ?? 0;
+}
+
+/**
+ * The index the dragged item would drop at: the number of other rows whose
+ * middle is above the pointer. It measures each row where the layout puts it,
+ * without the shift that makes room for the dragged item, so bringing the item
+ * back over its own slot always gives its original index.
+ */
 export function getSharedTableDragTargetIndex(
   itemIds: string[],
   sourceItemId: string,
@@ -222,7 +345,8 @@ export function getSharedTableDragTargetIndex(
     }
 
     const rect = row.getBoundingClientRect();
-    if (pointerY >= rect.top + rect.height / 2) {
+    const layoutTop = rect.top - getComputedTranslateY(row);
+    if (pointerY >= layoutTop + rect.height / 2) {
       nextIndex += 1;
     }
   }
@@ -265,6 +389,30 @@ export function getSharedTableDragOverlayTransform(options: {
 }) {
   const top = Math.max(options.minTop, options.pointerY - options.offsetY);
   return `translate3d(${Math.round(options.originLeft)}px, ${Math.round(top)}px, 0)`;
+}
+
+/**
+ * The order after a drop moves the item at `originIndex` to `targetIndex`.
+ * Returns null when the item lands where it started, or `originIndex` is not
+ * in `items`, so the caller commits nothing.
+ */
+export function getSharedTableDropOrder<T>(
+  items: readonly T[],
+  originIndex: number,
+  targetIndex: number,
+) {
+  if (
+    originIndex === targetIndex ||
+    originIndex < 0 ||
+    originIndex >= items.length
+  ) {
+    return null;
+  }
+
+  const order = [...items];
+  const [item] = order.splice(originIndex, 1) as [T];
+  order.splice(targetIndex, 0, item);
+  return order;
 }
 
 /**

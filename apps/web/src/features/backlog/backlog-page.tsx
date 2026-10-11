@@ -20,6 +20,7 @@ import {
   ObjectContextMenu,
 } from "@/components/object-actions-menu";
 import { SidePanel } from "@/components/side-panel";
+import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -88,6 +89,7 @@ import { BACKLOG_ITEM_ACTION_KEYS, handleItemKeyDown } from "@/lib/item-keys";
 import { localStore } from "@/lib/local-store";
 import {
   createSharedTableDragPointerSession,
+  getSharedTableDropOrder,
   getSharedTableDragOverlayTransform,
   getSharedTableDragRowShift,
   getSharedTableDragTargetIndex,
@@ -164,22 +166,6 @@ function getBacklogSortModeLabel(mode: BacklogSortMode) {
     default:
       return "custom";
   }
-}
-
-function moveItem<T>(items: T[], fromIndex: number, toIndex: number) {
-  if (fromIndex === toIndex) {
-    return [...items];
-  }
-
-  const nextItems = [...items];
-  const [item] = nextItems.splice(fromIndex, 1);
-
-  if (!item) {
-    return [...items];
-  }
-
-  nextItems.splice(toIndex, 0, item);
-  return nextItems;
 }
 
 function isBacklogDragBlockedTarget(target: EventTarget | null) {
@@ -390,14 +376,13 @@ export function BacklogPage() {
         return;
       }
 
-      if (shouldCommit && currentDrag.originIndex !== currentDrag.targetIndex) {
-        localStore.reorderWorkItems(
-          moveItem(
-            currentDrag.groupIds,
-            currentDrag.originIndex,
-            currentDrag.targetIndex,
-          ),
-        );
+      const order = getSharedTableDropOrder(
+        currentDrag.groupIds,
+        currentDrag.originIndex,
+        currentDrag.targetIndex,
+      );
+      if (shouldCommit && order) {
+        localStore.reorderWorkItems(order);
       }
 
       suppressWorkItemClickUntilRef.current =
@@ -514,7 +499,8 @@ export function BacklogPage() {
       return;
     }
 
-    event.currentTarget.setPointerCapture(event.pointerId);
+    const captureTarget = event.currentTarget;
+    captureTarget.setPointerCapture(event.pointerId);
     clearBacklogPointerSession();
     setPressedWorkItemId(workItem._id);
 
@@ -554,6 +540,7 @@ export function BacklogPage() {
     };
 
     backlogPointerSessionRef.current = createSharedTableDragPointerSession({
+      captureTarget,
       pointerId,
       pointerType,
       originX: clientX,
@@ -918,12 +905,12 @@ export function BacklogPage() {
                 <div className="backlog-task-title-content">
                   {!isLogicalChild ? (
                     showSubtasksPill ? (
-                      <button
-                        type="button"
+                      <TooltipButton
                         className={cn(
                           "backlog-task-subtasks-pill",
                           isRootExpanded && "is-active",
                         )}
+                        label={`${isRootExpanded ? "Hide" : "Show"} subitems`}
                         aria-label={`${isRootExpanded ? "Hide" : "Show"} subitems for ${workItem.title}`}
                         data-no-backlog-drag="true"
                         onPointerDown={(event) => {
@@ -936,7 +923,7 @@ export function BacklogPage() {
                         }}
                       >
                         <ChevronRight className="h-4 w-4" />
-                      </button>
+                      </TooltipButton>
                     ) : (
                       <span
                         className="backlog-task-subtasks-indicator backlog-task-subtasks-placeholder"
@@ -1029,11 +1016,9 @@ export function BacklogPage() {
             {!isMobileLayout ? (
               <div className="entry-row-actions backlog-entry-row-actions">
                 {!isArchived ? (
-                  <button
-                    type="button"
+                  <TooltipButton
                     className="entry-row-action entry-row-action-play"
-                    aria-label={startEntryTitle}
-                    title={startEntryTitle}
+                    label={startEntryTitle}
                     disabled={!canStartTimer}
                     data-no-backlog-drag="true"
                     onClick={(event) => {
@@ -1043,7 +1028,7 @@ export function BacklogPage() {
                     onPointerDown={(event) => event.stopPropagation()}
                   >
                     <Play className="h-3.5 w-3.5" />
-                  </button>
+                  </TooltipButton>
                 ) : null}
                 {rowActionsButton}
               </div>
@@ -1058,7 +1043,6 @@ export function BacklogPage() {
                 type="button"
                 className="backlog-task-start backlog-task-action-pill backlog-estimate-mobile-action"
                 aria-label={startEntryTitle}
-                title={startEntryTitle}
                 disabled={!canStartTimer}
                 data-no-backlog-drag="true"
                 onPointerDown={(event) => {
@@ -1215,18 +1199,23 @@ export function BacklogPage() {
                         ))}
                       </ToggleGroup>
                       <DropdownMenu>
-                        <DropdownMenuTrigger
+                        <TooltipButton
+                          label="Sort"
+                          aria-label={`Sort backlog items, now ${getBacklogSortModeLabel(backlogSortMode)}`}
                           render={
-                            <Button
-                              type="button"
-                              variant="ghost"
-                              size="icon-sm"
-                              aria-label={`Sort backlog items, now ${getBacklogSortModeLabel(backlogSortMode)}`}
+                            <DropdownMenuTrigger
+                              render={
+                                <Button
+                                  type="button"
+                                  variant="ghost"
+                                  size="icon-sm"
+                                />
+                              }
                             />
                           }
                         >
                           <SortIcon />
-                        </DropdownMenuTrigger>
+                        </TooltipButton>
                         <DropdownMenuContent align="end" className="w-auto">
                           <DropdownMenuGroup>
                             <DropdownMenuLabel>Sort by</DropdownMenuLabel>

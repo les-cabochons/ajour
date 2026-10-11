@@ -14,6 +14,7 @@ import {
 } from "@/components/object-actions-menu";
 import { SidePanel } from "@/components/side-panel";
 import { Badge } from "@/components/ui/badge";
+import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
@@ -82,6 +83,7 @@ import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 import {
   createSharedTableDragPointerSession,
+  getSharedTableDropOrder,
   getSharedTableDragOverlayTransform,
   getSharedTableDragRowShift,
   getSharedTableDragTargetIndex,
@@ -104,6 +106,9 @@ const commandPaletteAriaKeys = formatAriaKeyShortcuts(
   getShortcut("app.command-palette"),
   getShortcutPlatform(),
 );
+
+/** Tooltip classes that show a project sidebar tooltip only in the 48px rail, where names are hidden. */
+const RAIL_ONLY_TOOLTIP = "hidden forced-rail:inline-flex";
 
 type ProjectMetrics = {
   durationMs: number;
@@ -245,17 +250,6 @@ function isProjectDragBlockedTarget(target: EventTarget | null) {
         ),
       )
     : false;
-}
-
-function moveId(ids: string[], fromIndex: number, toIndex: number) {
-  const nextIds = [...ids];
-  const [id] = nextIds.splice(fromIndex, 1);
-  if (!id) {
-    return ids;
-  }
-
-  nextIds.splice(toIndex, 0, id);
-  return nextIds;
 }
 
 /* ── Project detail content ───────────────────────────────────────── */
@@ -665,7 +659,8 @@ function ProjectDetail({
       return;
     }
 
-    event.currentTarget.setPointerCapture(event.pointerId);
+    const captureTarget = event.currentTarget;
+    captureTarget.setPointerCapture(event.pointerId);
     clearTaskPointerSession();
     setPressedTaskId(taskId);
 
@@ -704,6 +699,7 @@ function ProjectDetail({
     };
 
     taskPointerSessionRef.current = createSharedTableDragPointerSession({
+      captureTarget,
       pointerId,
       pointerType,
       originX: clientX,
@@ -1329,14 +1325,13 @@ export function ProjectsPage() {
         return;
       }
 
-      if (shouldCommit && currentDrag.originIndex !== currentDrag.targetIndex) {
-        localStore.reorderProjects(
-          moveId(
-            activeProjectIds,
-            currentDrag.originIndex,
-            currentDrag.targetIndex,
-          ),
-        );
+      const order = getSharedTableDropOrder(
+        activeProjectIds,
+        currentDrag.originIndex,
+        currentDrag.targetIndex,
+      );
+      if (shouldCommit && order) {
+        localStore.reorderProjects(order);
       }
 
       suppressProjectClickUntilRef.current =
@@ -1421,6 +1416,8 @@ export function ProjectsPage() {
     };
 
     projectPointerSessionRef.current = createSharedTableDragPointerSession({
+      // startDrag gives the row pointer capture.
+      captureTarget: projectRowRefs.current.get(projectId),
       pointerId,
       pointerType,
       originX: clientX,
@@ -1824,18 +1821,16 @@ export function ProjectsPage() {
               >
                 <span>Search</span>
               </button>
-              <button
-                type="button"
+              <TooltipButton
                 className={cn(
                   "entries-header-add",
                   projectModalState?.mode === "create" && "is-open",
                 )}
-                aria-label="New project"
-                title="New project"
+                label="New project"
                 onClick={openCreateProjectModal}
               >
                 <Plus className="h-3.5 w-3.5" />
-              </button>
+              </TooltipButton>
             </div>
           </SidebarHeader>
 
@@ -1897,6 +1892,13 @@ export function ProjectsPage() {
                         }
                       >
                         <CustomSidebarMenuButton
+                          tooltip={{
+                            children: getProjectDisplayName(project),
+                            side: "right",
+                            // The sidebar never collapses; only the 48px rail hides the name.
+                            hidden: false,
+                            className: RAIL_ONLY_TOOLTIP,
+                          }}
                           onDragStart={(event) => {
                             event.preventDefault();
                           }}
@@ -1916,7 +1918,6 @@ export function ProjectsPage() {
                               to="/projects/$projectId"
                               params={{ projectId: project._id }}
                               aria-label={getProjectDisplayName(project)}
-                              title={project.name}
                               draggable={false}
                               // Alt+Up and Alt+Down reorder, like a drag. No other item key acts on projects.
                               onKeyDown={(event) =>
@@ -1966,18 +1967,23 @@ export function ProjectsPage() {
           </SidebarContent>
 
           <SidebarFooter className="ajour-project-sidebar-footer">
-            <Link
-              to="/projects/archive"
-              className={`ajour-project-sidebar-archive-trigger ${
-                isArchivePage ? "is-active" : ""
-              }`}
-              title="Archived projects"
-              aria-label="Archived projects"
-              onClick={(event) => handleLeaveProjectClick(event, null)}
+            <TooltipButton
+              label="Archived projects"
+              side="right"
+              tooltipClassName={RAIL_ONLY_TOOLTIP}
+              render={
+                <Link
+                  to="/projects/archive"
+                  className={`ajour-project-sidebar-archive-trigger ${
+                    isArchivePage ? "is-active" : ""
+                  }`}
+                  onClick={(event) => handleLeaveProjectClick(event, null)}
+                />
+              }
             >
               <Archive />
               <span data-sidebar-collapsed="hide">Archive</span>
-            </Link>
+            </TooltipButton>
             {/* Wide windows keep project import and export as a settings page. */}
             {isNarrowView ? (
               <Link
