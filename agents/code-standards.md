@@ -76,7 +76,7 @@
 - Keep logged-time estimate changes reversible. Persist hidden remaining-estimate overrun state instead of discarding time when the visible remaining estimate reaches zero.
 - A project/task fallback may update estimates only when it resolves to exactly one active work item. Prefer an explicit work-item ID whenever the caller has one.
 - Treat desktop bootstrap as a one-time recovery merge. Preserve locally referenced projects, normalize before persistence, and keep the complete merged state in memory when storage is unavailable.
-- Timer-linked entry edits must update the active timer baseline. Starting a fresh timer or restarting a saved entry may switch timers only by saving the active timer and starting the requested timer at one shared transition boundary.
+- Timer-linked entry edits must update the active timer baseline. Starting a fresh timer or continuing a saved entry may switch timers only by saving the active timer and starting the requested timer at one shared transition boundary.
 
 ## Testing
 

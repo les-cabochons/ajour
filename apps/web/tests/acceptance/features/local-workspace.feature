@@ -35,9 +35,9 @@ Feature: Open the local time workspace
     Then the Projects sidebar remains expanded and left-aligned beside primary navigation
     And the Projects navigation remains available as a compact rail
 
-  Scenario: Switch directly from one time entry timer to another
+  Scenario: Continue a second entry while the first one runs
     Given I have two saved entries with a timer running on the first
-    When I start the timer on the second entry
+    When I continue the second entry
     Then the first timer is saved and the second timer is running
 
   Scenario: Start a fresh timer while another timer is running

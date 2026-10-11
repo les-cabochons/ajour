@@ -232,9 +232,15 @@ export function saveTimer(
   };
 }
 
-export function restartTimesheetEntry(
+/**
+ * Continues a time entry's work. Today's entry resumes: the timer links to it and its
+ * saved time carries over. Another day's entry is left as is, and a new running entry
+ * starts today with the same work item, task and note.
+ */
+export function continueTimesheetEntry(
   state: LocalAppState,
   entryId: string,
+  today: string,
   factories: TimerFactories,
 ): LocalAppState {
   const entry = state.timesheetEntries.find((item) => item._id === entryId);
@@ -242,14 +248,21 @@ export function restartTimesheetEntry(
     return state;
   }
 
+  const sharedFields = {
+    workItemId: entry.workItemId,
+    projectId: entry.projectId,
+    taskId: entry.taskId,
+    note: entry.note,
+  };
+  if (entry.localDate !== today) {
+    return startTimer(state, { localDate: today, ...sharedFields }, factories);
+  }
+
   return startTimer(
     state,
     {
       localDate: entry.localDate,
-      workItemId: entry.workItemId,
-      projectId: entry.projectId,
-      taskId: entry.taskId,
-      note: entry.note,
+      ...sharedFields,
       accumulatedDurationMs: entry.durationMs,
       entryId: entry._id,
     },

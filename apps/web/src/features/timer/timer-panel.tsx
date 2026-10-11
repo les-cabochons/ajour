@@ -9,7 +9,6 @@ import {
   RiAddLine as Plus,
   RiCheckLine as Check,
   RiCloseLine as X,
-  RiDeleteBinLine as Trash2,
   RiPlayLine as Play,
   RiTimerLine as Timer,
 } from "@remixicon/react";
@@ -22,7 +21,11 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Button } from "@/components/ui/button";
-import { EntryActionsMenu } from "@/features/time/entry-actions-menu";
+import {
+  ObjectActionsButton,
+  ObjectContextMenu,
+} from "@/components/object-actions-menu";
+import { useTimeEntryActions } from "@/features/time/time-entry-actions";
 import { TimeEntryFields } from "@/features/time/time-entry-fields";
 import {
   createTimeEntryEditorFields,
@@ -41,6 +44,7 @@ import {
   getLocalProjectDisplayName,
   type LocalTimesheetEntry,
 } from "@/domain/local-state";
+import type { TimeEntryActionId } from "@/domain/actions/object-actions";
 import { localStore } from "@/lib/local-store";
 import { isInlineEditorOutsideClick } from "@/lib/inline-editor-close";
 import {
@@ -133,9 +137,6 @@ export function TimerPanel({
   const [newTaskId, setNewTaskId] = useState("");
   const [newNote, setNewNote] = useState("");
   const [newDurationHours, setNewDurationHours] = useState("");
-  const [pendingDeleteEntryId, setPendingDeleteEntryId] = useState<
-    string | null
-  >(null);
   const entryRowRefs = useRef(new Map<string, HTMLTableRowElement>());
   const expandedEntryEditorRef = useRef<HTMLDivElement>(null);
   const entryPointerSessionRef = useRef<SharedTableDragPointerSession | null>(
@@ -149,6 +150,17 @@ export function TimerPanel({
   );
 
   const currentTimer = state.timers[0] ?? null;
+  const entryActions = useTimeEntryActions({
+    onEdit: (target) => {
+      if (target.kind === "running") {
+        resetExpandedEntry();
+        onOpenEntry?.({ timerId: target.timerId });
+      } else if (expandedEntryId !== target.entry._id) {
+        handleToggleEntry(target.entry);
+      }
+    },
+    onAfterAction: () => resetExpandedEntry(),
+  });
   const expandedEntry = expandedEntryId
     ? (state.timesheetEntries.find(
         (entry) => entry._id === expandedEntryId && entry.localDate === date,
@@ -294,20 +306,6 @@ export function TimerPanel({
   }, [isCreatingEntry, newAvailableTasks, newProjectId, newTaskId]);
 
   useEffect(() => {
-    if (!pendingDeleteEntryId) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setPendingDeleteEntryId((current) =>
-        current === pendingDeleteEntryId ? null : current,
-      );
-    }, 2500);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [pendingDeleteEntryId]);
-
-  useEffect(() => {
     entryDragStateRef.current = entryDragState;
   }, [entryDragState]);
 
@@ -371,7 +369,6 @@ export function TimerPanel({
     setExpandedTaskId("");
     setExpandedNote("");
     setExpandedDurationHours("");
-    setPendingDeleteEntryId(null);
   }
 
   function resetNewEntry() {
@@ -420,24 +417,22 @@ export function TimerPanel({
     resetExpandedEntry();
   }
 
-  function duplicateExpandedEntry(localDate: string) {
-    const values = expandedEditor.relocationValues(localDate);
-    if (!expandedEntry || !values) {
+  function handleExpandedEntryAction(actionId: TimeEntryActionId) {
+    if (!expandedEntry) {
       return;
     }
 
-    localStore.duplicateTimesheetEntry(expandedEntry._id, values);
-    resetExpandedEntry();
-  }
-
-  function moveExpandedEntry(localDate: string) {
-    const values = expandedEditor.relocationValues(localDate);
-    if (!expandedEntry || !values) {
+    // Continue counts time on the saved entry, so keep the draft first.
+    if (actionId === "continue") {
+      if (closeExpandedEntry()) {
+        localStore.continueTimesheetEntry(expandedEntry._id);
+      }
       return;
     }
 
-    localStore.moveTimesheetEntry(expandedEntry._id, values);
-    resetExpandedEntry();
+    entryActions.runAction({ kind: "entry", entry: expandedEntry }, actionId, {
+      resolveValues: expandedEditor.relocationValues,
+    });
   }
 
   function handleCreateToggle() {
@@ -455,12 +450,9 @@ export function TimerPanel({
       !window.matchMedia(DESKTOP_ENTRY_MEDIA_QUERY).matches
     ) {
       resetExpandedEntry();
-      setPendingDeleteEntryId(null);
       onOpenEntry?.({});
       return;
     }
-
-    setPendingDeleteEntryId(null);
     setIsCreatingEntry(true);
   }
 
@@ -468,8 +460,6 @@ export function TimerPanel({
     if (performance.now() < suppressEntryClickUntilRef.current) {
       return;
     }
-
-    setPendingDeleteEntryId(null);
 
     if (isCreatingEntry) {
       closeNewEntry();
@@ -556,7 +546,13 @@ export function TimerPanel({
         !isInlineEditorOutsideClick(
           event.target,
           expandedEntryEditorRef.current,
-          [".entry-actions-menu-layer"],
+          // Menus and dialogs opened from the editor's action set render in portals.
+          [
+            '[data-slot="dropdown-menu-content"]',
+            '[data-slot="context-menu-content"]',
+            '[role="dialog"]',
+            '[role="alertdialog"]',
+          ],
         )
       ) {
         return;
@@ -581,24 +577,9 @@ export function TimerPanel({
     setNewTaskId(selection.taskId);
   }
 
-  function handleRestartEntry(entryId: string) {
-    setPendingDeleteEntryId(null);
+  function handleContinueEntry(entryId: string) {
     resetExpandedEntry();
-    localStore.restartTimesheetEntry(entryId);
-  }
-
-  function handleDeleteEntry(entryId: string) {
-    if (pendingDeleteEntryId === entryId) {
-      localStore.deleteTimesheetEntry(entryId);
-      if (expandedEntryId === entryId) {
-        resetExpandedEntry();
-      } else {
-        setPendingDeleteEntryId(null);
-      }
-      return;
-    }
-
-    setPendingDeleteEntryId(entryId);
+    localStore.continueTimesheetEntry(entryId);
   }
 
   function handleEntryPointerDown(
@@ -639,7 +620,6 @@ export function TimerPanel({
       suppressEntryClickUntilRef.current =
         performance.now() + SHARED_TABLE_DRAG_CLICK_SUPPRESSION_MS;
       setPressedEntryId(null);
-      setPendingDeleteEntryId(null);
       const nextDragState = {
         entryId: entry._id,
         pointerId,
@@ -881,7 +861,10 @@ export function TimerPanel({
                 );
                 const isRunning = "isRunning" in entry && entry.isRunning;
                 const isExpanded = expandedEntry?._id === entry._id;
-                const isDeletePending = pendingDeleteEntryId === entry._id;
+                const rowTarget = isRunningEntry(entry)
+                  ? { kind: "running" as const, timerId: entry.timerId }
+                  : { kind: "entry" as const, entry };
+                const rowActions = entryActions.getActions(rowTarget);
                 const draggableIndex = draggableEntryIds.indexOf(entry._id);
                 const isDraggedEntry = entryDragState?.entryId === entry._id;
                 const rowShift =
@@ -896,39 +879,49 @@ export function TimerPanel({
 
                 return (
                   <React.Fragment key={entry._id}>
-                    <tr
-                      ref={(node) => {
-                        if (isRunning) {
-                          return;
-                        }
-
-                        if (node) {
-                          entryRowRefs.current.set(entry._id, node);
-                          return;
-                        }
-
-                        entryRowRefs.current.delete(entry._id);
-                      }}
-                      className={cn(
-                        "time-entry-row",
-                        isExpanded && "entry-row-expanded",
-                        canReorderEntries &&
-                          !isRunning &&
-                          draggableIndex !== -1 &&
-                          "is-reorderable",
-                        pressedEntryId === entry._id && "is-pressing",
-                        rowShift !== 0 && "is-shifting",
-                        isDraggedEntry && "is-drag-source",
-                      )}
-                      style={
-                        rowShift !== 0
-                          ? { transform: `translate3d(0, ${rowShift}px, 0)` }
-                          : undefined
+                    <ObjectContextMenu
+                      actions={rowActions}
+                      onAction={(actionId) =>
+                        entryActions.runAction(rowTarget, actionId)
                       }
-                      aria-grabbed={isDraggedEntry}
-                      onClick={() => handleToggleEntry(entry)}
-                      onPointerDown={(event) =>
-                        handleEntryPointerDown(entry, event)
+                      render={
+                        <tr
+                          ref={(node) => {
+                            if (isRunning) {
+                              return;
+                            }
+
+                            if (node) {
+                              entryRowRefs.current.set(entry._id, node);
+                              return;
+                            }
+
+                            entryRowRefs.current.delete(entry._id);
+                          }}
+                          className={cn(
+                            "time-entry-row",
+                            isExpanded && "entry-row-expanded",
+                            canReorderEntries &&
+                              !isRunning &&
+                              draggableIndex !== -1 &&
+                              "is-reorderable",
+                            pressedEntryId === entry._id && "is-pressing",
+                            rowShift !== 0 && "is-shifting",
+                            isDraggedEntry && "is-drag-source",
+                          )}
+                          style={
+                            rowShift !== 0
+                              ? {
+                                  transform: `translate3d(0, ${rowShift}px, 0)`,
+                                }
+                              : undefined
+                          }
+                          aria-grabbed={isDraggedEntry}
+                          onClick={() => handleToggleEntry(entry)}
+                          onPointerDown={(event) =>
+                            handleEntryPointerDown(entry, event)
+                          }
+                        />
                       }
                     >
                       <td className="entry-project-column">
@@ -978,6 +971,34 @@ export function TimerPanel({
                       </td>
                       <td className="entry-hours-cell">
                         <div className="entry-hours-content">
+                          <div className="entry-row-actions">
+                            {isRunning ? null : (
+                              <button
+                                type="button"
+                                className="entry-row-action entry-row-action-play"
+                                aria-label={
+                                  currentTimer
+                                    ? "Continue and stop the running entry"
+                                    : "Continue"
+                                }
+                                data-no-entry-drag="true"
+                                onClick={(event) => {
+                                  event.stopPropagation();
+                                  handleContinueEntry(entry._id);
+                                }}
+                              >
+                                <Play className="h-3.5 w-3.5" />
+                              </button>
+                            )}
+                            <ObjectActionsButton
+                              actions={rowActions}
+                              onAction={(actionId) =>
+                                entryActions.runAction(rowTarget, actionId)
+                              }
+                              label="Entry actions"
+                              className="entry-row-action"
+                            />
+                          </div>
                           {isRunning ? (
                             <span className="stat-pill stat-pill-active entry-running-pill">
                               <span className="status-dot status-dot-pulse" />
@@ -985,56 +1006,7 @@ export function TimerPanel({
                                 {formatClockDuration(entry.durationMs)}
                               </span>
                             </span>
-                          ) : (
-                            <div
-                              className={cn(
-                                "entry-row-actions",
-                                isDeletePending && "is-confirming",
-                              )}
-                            >
-                              <button
-                                type="button"
-                                className="entry-row-action entry-row-action-play"
-                                aria-label={
-                                  currentTimer
-                                    ? "Switch timer to this entry"
-                                    : "Restart entry"
-                                }
-                                data-no-entry-drag="true"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  handleRestartEntry(entry._id);
-                                }}
-                              >
-                                <Play className="h-3.5 w-3.5" />
-                              </button>
-                              <span className="entry-row-action-slot">
-                                <button
-                                  type="button"
-                                  className={cn(
-                                    "entry-row-action",
-                                    "entry-row-action-delete",
-                                    isDeletePending && "is-confirming",
-                                  )}
-                                  aria-label={
-                                    isDeletePending
-                                      ? "Confirm delete entry"
-                                      : "Delete entry"
-                                  }
-                                  data-no-entry-drag="true"
-                                  onClick={(event) => {
-                                    event.stopPropagation();
-                                    handleDeleteEntry(entry._id);
-                                  }}
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                  {isDeletePending ? (
-                                    <span>Confirm</span>
-                                  ) : null}
-                                </button>
-                              </span>
-                            </div>
-                          )}
+                          ) : null}
                           {isRunning ? null : (
                             <span className="hours-badge">
                               {formatClockDuration(entry.durationMs)}
@@ -1042,7 +1014,7 @@ export function TimerPanel({
                           )}
                         </div>
                       </td>
-                    </tr>
+                    </ObjectContextMenu>
                     {!isRunning && isExpanded && expandedEntry ? (
                       <tr
                         className="entry-edit-row"
@@ -1055,16 +1027,18 @@ export function TimerPanel({
                           >
                             <div className="entry-edit-dropdown-content">
                               <div className="entry-edit-dropdown-actions">
-                                <EntryActionsMenu
-                                  currentDate={expandedEntry.localDate}
-                                  disabled={!expandedEditor.canSave}
-                                  onDuplicate={() =>
-                                    duplicateExpandedEntry(
-                                      expandedEntry.localDate,
-                                    )
-                                  }
-                                  onDuplicateTo={duplicateExpandedEntry}
-                                  onMoveTo={moveExpandedEntry}
+                                <ObjectActionsButton
+                                  actions={entryActions.getActions(
+                                    { kind: "entry", entry: expandedEntry },
+                                    {
+                                      isEditing: true,
+                                      invalidDraftReason: expandedEditor.canSave
+                                        ? undefined
+                                        : "Enter a valid duration first",
+                                    },
+                                  )}
+                                  onAction={handleExpandedEntryAction}
+                                  label="Entry actions"
                                 />
                               </div>
                               <TimeEntryFields
@@ -1157,6 +1131,7 @@ export function TimerPanel({
             );
           })()
         : null}
+      {entryActions.dialogs}
     </div>
   );
 }

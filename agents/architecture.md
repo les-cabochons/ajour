@@ -38,7 +38,7 @@ Current deep domain modules demonstrate this boundary:
 - `domain/projects/project-transitions.ts` owns project and task creation, legacy hydration, ordering, edits, and archive state.
 - `domain/time/timesheet-entry.ts` owns manual entry creation, edits, deletion, ordering, submission state, and the corresponding work-item estimate adjustments.
 - `domain/time/timesheet-import.ts` owns import normalization, conflict detection, draft review, project/task recovery, and single or batch commit.
-- `domain/time/timer-transitions.ts` owns timer hydration, start/edit/cancel/save/restart behavior, elapsed-time calculation, and replacement of restarted entries.
+- `domain/time/timer-transitions.ts` owns timer hydration, start/edit/cancel/save/continue behavior, elapsed-time calculation, and replacement of continued entries.
 - `domain/time/timeline-transitions.ts` owns imported browser review preservation, timeline materialization, dismissal, idempotent commits, and rule creation.
 
 These modules are the Interface between workflow orchestration and persistence. Keep their behavior deterministic and free of browser APIs. A domain module should be deep enough that removing it would force meaningful rules back into several callers; avoid shallow one-function wrappers that only rename an operation.

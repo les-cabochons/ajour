@@ -20,6 +20,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import {
+  ObjectActionsButton,
+  ObjectContextMenu,
+} from "@/components/object-actions-menu";
+import {
   HoverCard,
   HoverCardContent,
   HoverCardTrigger,
@@ -46,6 +50,7 @@ import {
   useLocalState,
   useUserPreferences,
 } from "@/lib/local-hooks";
+import { useTimeEntryActions } from "@/features/time/time-entry-actions";
 import { localStore } from "@/lib/local-store";
 import {
   setSharedTableDragDocumentState,
@@ -167,7 +172,7 @@ export function WeeklyTimeView({
   anchorDate: string;
   now: number;
   onNewEntry: (localDate: string) => void;
-  onOpenEntry: (entryId: string) => void;
+  onOpenEntry: (target: { entryId?: string; timerId?: string }) => void;
   onReturnToDay: () => void;
   onSelectWeek: (anchorDate: string) => void;
   onSubmit: () => void;
@@ -184,6 +189,17 @@ export function WeeklyTimeView({
   const dayTargetRefs = useRef(new Map<string, HTMLElement>());
   const suppressClickUntilRef = useRef(0);
   const currentTimer = state.timers[0] ?? null;
+  const entryActions = useTimeEntryActions({
+    onEdit: (target) =>
+      onOpenEntry(
+        target.kind === "running"
+          ? { timerId: target.timerId }
+          : { entryId: target.entry._id },
+      ),
+  });
+  const runningTarget = currentTimer
+    ? { kind: "running" as const, timerId: currentTimer._id }
+    : null;
   const today = todayIsoDate();
   const projectsById = useMemo(
     () => new Map(projects.map((project) => [project._id, project])),
@@ -340,7 +356,7 @@ export function WeeklyTimeView({
 
   function openEntry(entryId: string) {
     if (performance.now() >= suppressClickUntilRef.current) {
-      onOpenEntry(entryId);
+      onOpenEntry({ entryId });
     }
   }
 
@@ -597,48 +613,84 @@ export function WeeklyTimeView({
                 role="group"
                 aria-label="Time entries"
               >
-                {gridRunning ? (
-                  <div
-                    className="weekly-tray-entry is-running"
-                    data-running-entry="true"
-                  >
-                    <Lock />
-                    <span>Running timer</span>
-                    <strong>
-                      {formatClockDuration(runningTime!.displayDurationMs)}
-                    </strong>
+                {gridRunning && runningTarget ? (
+                  <div className="weekly-tray-entry-row">
+                    <ObjectContextMenu
+                      actions={entryActions.getActions(runningTarget)}
+                      onAction={(actionId) =>
+                        entryActions.runAction(runningTarget, actionId)
+                      }
+                      render={
+                        <div
+                          className="weekly-tray-entry is-running"
+                          data-running-entry="true"
+                        />
+                      }
+                    >
+                      <Lock />
+                      <span>Running</span>
+                      <strong>
+                        {formatClockDuration(runningTime!.displayDurationMs)}
+                      </strong>
+                    </ObjectContextMenu>
+                    <ObjectActionsButton
+                      actions={entryActions.getActions(runningTarget)}
+                      onAction={(actionId) =>
+                        entryActions.runAction(runningTarget, actionId)
+                      }
+                      label="Entry actions"
+                    />
                   </div>
                 ) : null}
                 {gridEntries.map((entry) => {
                   const summary = renderEntrySummary(entry);
+                  const target = { kind: "entry" as const, entry };
+                  const actions = entryActions.getActions(target);
                   return (
-                    <button
-                      key={entry._id}
-                      type="button"
-                      aria-pressed={selectedEntryId === entry._id}
-                      className={cn(
-                        "weekly-tray-entry",
-                        selectedEntryId === entry._id && "is-selected",
-                      )}
-                      onClick={() => {
-                        if (
-                          performance.now() >= suppressClickUntilRef.current
-                        ) {
-                          setSelectedEntryId(entry._id);
+                    <div key={entry._id} className="weekly-tray-entry-row">
+                      <ObjectContextMenu
+                        actions={actions}
+                        onAction={(actionId) =>
+                          entryActions.runAction(target, actionId)
                         }
-                      }}
-                      onDoubleClick={() => openEntry(entry._id)}
-                      onKeyDown={(event) =>
-                        event.key === "Enter" && openEntry(entry._id)
-                      }
-                      onPointerDown={(event) =>
-                        handleEntryPointerDown(entry, event)
-                      }
-                    >
-                      <span>{summary.projectName}</span>
-                      <span>{summary.note || summary.taskName}</span>
-                      <strong>{formatClockDuration(entry.durationMs)}</strong>
-                    </button>
+                        render={
+                          <button
+                            type="button"
+                            aria-pressed={selectedEntryId === entry._id}
+                            className={cn(
+                              "weekly-tray-entry",
+                              selectedEntryId === entry._id && "is-selected",
+                            )}
+                            onClick={() => {
+                              if (
+                                performance.now() >=
+                                suppressClickUntilRef.current
+                              ) {
+                                setSelectedEntryId(entry._id);
+                              }
+                            }}
+                            onDoubleClick={() => openEntry(entry._id)}
+                            onKeyDown={(event) =>
+                              event.key === "Enter" && openEntry(entry._id)
+                            }
+                            onPointerDown={(event) =>
+                              handleEntryPointerDown(entry, event)
+                            }
+                          />
+                        }
+                      >
+                        <span>{summary.projectName}</span>
+                        <span>{summary.note || summary.taskName}</span>
+                        <strong>{formatClockDuration(entry.durationMs)}</strong>
+                      </ObjectContextMenu>
+                      <ObjectActionsButton
+                        actions={actions}
+                        onAction={(actionId) =>
+                          entryActions.runAction(target, actionId)
+                        }
+                        label="Entry actions"
+                      />
+                    </div>
                   );
                 })}
               </div>
@@ -701,58 +753,86 @@ export function WeeklyTimeView({
                   role="group"
                   aria-label={`${formatDay(day.localDate, { weekday: "long" })} entries`}
                 >
-                  {runningHere ? (
-                    <Card
-                      size="sm"
-                      className="weekly-entry-card is-running"
-                      data-running-entry="true"
+                  {runningHere && runningTarget ? (
+                    <ObjectContextMenu
+                      actions={entryActions.getActions(runningTarget)}
+                      onAction={(actionId) =>
+                        entryActions.runAction(runningTarget, actionId)
+                      }
+                      render={
+                        <Card
+                          size="sm"
+                          className="weekly-entry-card is-running"
+                          data-running-entry="true"
+                        />
+                      }
                     >
-                      <Badge>
-                        <Lock data-icon="inline-start" /> Running
-                      </Badge>
+                      <div className="weekly-entry-card-project">
+                        <Badge>
+                          <Lock data-icon="inline-start" /> Running
+                        </Badge>
+                        <ObjectActionsButton
+                          actions={entryActions.getActions(runningTarget)}
+                          onAction={(actionId) =>
+                            entryActions.runAction(runningTarget, actionId)
+                          }
+                          label="Entry actions"
+                        />
+                      </div>
                       <strong>
                         {formatClockDuration(runningTime.displayDurationMs)}
                       </strong>
-                    </Card>
+                    </ObjectContextMenu>
                   ) : null}
                   {visibleEntries.map((entry) => {
                     const summary = renderEntrySummary(entry);
+                    const target = { kind: "entry" as const, entry };
+                    const actions = entryActions.getActions(target);
                     return (
-                      <Card
+                      <ObjectContextMenu
                         key={entry._id}
-                        size="sm"
-                        tabIndex={0}
-                        role="button"
-                        aria-label={`${summary.projectName}, ${summary.taskName}, ${formatClockDuration(entry.durationMs)}`}
-                        aria-pressed={selectedEntryId === entry._id}
-                        style={
-                          {
-                            "--project-color": summary.projectColor,
-                          } as CSSProperties
+                        actions={actions}
+                        onAction={(actionId) =>
+                          entryActions.runAction(target, actionId)
                         }
-                        className={cn(
-                          "weekly-entry-card",
-                          selectedEntryId === entry._id && "is-selected",
-                          dragState?.entryId === entry._id && "is-dragging",
-                        )}
-                        onClick={() => {
-                          if (
-                            performance.now() >= suppressClickUntilRef.current
-                          ) {
-                            setSelectedEntryId(entry._id);
-                          }
-                        }}
-                        onDoubleClick={() => openEntry(entry._id)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Enter") {
-                            openEntry(entry._id);
-                          } else if (event.key === " ") {
-                            event.preventDefault();
-                            setSelectedEntryId(entry._id);
-                          }
-                        }}
-                        onPointerDown={(event) =>
-                          handleEntryPointerDown(entry, event)
+                        render={
+                          <Card
+                            size="sm"
+                            tabIndex={0}
+                            role="button"
+                            aria-label={`${summary.projectName}, ${summary.taskName}, ${formatClockDuration(entry.durationMs)}`}
+                            aria-pressed={selectedEntryId === entry._id}
+                            style={
+                              {
+                                "--project-color": summary.projectColor,
+                              } as CSSProperties
+                            }
+                            className={cn(
+                              "weekly-entry-card",
+                              selectedEntryId === entry._id && "is-selected",
+                              dragState?.entryId === entry._id && "is-dragging",
+                            )}
+                            onClick={() => {
+                              if (
+                                performance.now() >=
+                                suppressClickUntilRef.current
+                              ) {
+                                setSelectedEntryId(entry._id);
+                              }
+                            }}
+                            onDoubleClick={() => openEntry(entry._id)}
+                            onKeyDown={(event) => {
+                              if (event.key === "Enter") {
+                                openEntry(entry._id);
+                              } else if (event.key === " ") {
+                                event.preventDefault();
+                                setSelectedEntryId(entry._id);
+                              }
+                            }}
+                            onPointerDown={(event) =>
+                              handleEntryPointerDown(entry, event)
+                            }
+                          />
                         }
                       >
                         <div className="weekly-entry-card-project">
@@ -773,8 +853,15 @@ export function WeeklyTimeView({
                           <span className="weekly-entry-card-status">
                             {entry.submittedAt ? "submitted" : "saved"}
                           </span>
+                          <ObjectActionsButton
+                            actions={actions}
+                            onAction={(actionId) =>
+                              entryActions.runAction(target, actionId)
+                            }
+                            label="Entry actions"
+                          />
                         </footer>
-                      </Card>
+                      </ObjectContextMenu>
                     );
                   })}
                   <Button
@@ -805,6 +892,7 @@ export function WeeklyTimeView({
           <strong>{formatClockDuration(draggedEntry.durationMs)}</strong>
         </div>
       ) : null}
+      {entryActions.dialogs}
     </section>
   );
 }

@@ -7,7 +7,7 @@ import type {
 } from "@/domain/local-state";
 import {
   normalizeTimer,
-  restartTimesheetEntry,
+  continueTimesheetEntry,
   saveTimer,
   startTimer,
   startTimerWithEntry,
@@ -319,7 +319,7 @@ describe("timer and timesheet entry lifecycle", () => {
     ]);
   });
 
-  it("saves the active timer and restarts the selected entry at one boundary", () => {
+  it("saves the active timer and continues the selected entry at one boundary", () => {
     const activeEntry = createEntry();
     const selectedEntry = createEntry({
       _id: "entry-2",
@@ -331,7 +331,7 @@ describe("timer and timesheet entry lifecycle", () => {
       createId: (prefix) => `${prefix}-switched`,
       now: () => 1_000 + clockCalls++ * 100,
     };
-    const restarted = restartTimesheetEntry(
+    const restarted = continueTimesheetEntry(
       createState({
         timesheetEntries: [activeEntry, selectedEntry],
         timers: [
@@ -348,6 +348,7 @@ describe("timer and timesheet entry lifecycle", () => {
         ],
       }),
       selectedEntry._id,
+      "2026-07-30",
       factories,
     );
 
@@ -382,9 +383,9 @@ describe("timer and timesheet entry lifecycle", () => {
       ],
     });
 
-    expect(restartTimesheetEntry(state, "missing", createFactories())).toBe(
-      state,
-    );
+    expect(
+      continueTimesheetEntry(state, "missing", "2026-07-30", createFactories()),
+    ).toBe(state);
   });
 
   it("preserves malformed multiple-timer state instead of losing tracked time", () => {
@@ -419,19 +420,20 @@ describe("timer and timesheet entry lifecycle", () => {
       },
     };
 
-    expect(restartTimesheetEntry(state, selectedEntry._id, factories)).toBe(
-      state,
-    );
+    expect(
+      continueTimesheetEntry(state, selectedEntry._id, "2026-07-30", factories),
+    ).toBe(state);
     expect(state.timers).toHaveLength(2);
     expect(clockCalls).toBe(0);
     expect(idCalls).toBe(0);
   });
 
-  it("restarts an entry when no timer is active", () => {
+  it("resumes today's entry when no timer is active", () => {
     const entry = createEntry();
-    const restarted = restartTimesheetEntry(
+    const restarted = continueTimesheetEntry(
       createState({ timesheetEntries: [entry] }),
       entry._id,
+      "2026-07-30",
       createFactories(),
     );
 
@@ -441,11 +443,35 @@ describe("timer and timesheet entry lifecycle", () => {
     });
   });
 
-  it("leaves state unchanged when saving or restarting an unknown record", () => {
+  it("continues another day's entry as a new running entry today", () => {
+    const entry = createEntry({ note: "Checkout refactor" });
+    const continued = continueTimesheetEntry(
+      createState({ timesheetEntries: [entry] }),
+      entry._id,
+      "2026-08-03",
+      createFactories(),
+    );
+
+    expect(continued.timers[0]).toMatchObject({
+      localDate: "2026-08-03",
+      projectId: entry.projectId,
+      taskId: entry.taskId,
+      note: "Checkout refactor",
+      accumulatedDurationMs: 0,
+    });
+    expect(continued.timers[0]?.entryId).not.toBe(entry._id);
+    expect(
+      continued.timesheetEntries.find((item) => item._id === entry._id),
+    ).toEqual(entry);
+  });
+
+  it("leaves state unchanged when saving or continuing an unknown record", () => {
     const state = createState();
     const factories = createFactories();
 
     expect(saveTimer(state, "missing", factories)).toBe(state);
-    expect(restartTimesheetEntry(state, "missing", factories)).toBe(state);
+    expect(
+      continueTimesheetEntry(state, "missing", "2026-07-30", factories),
+    ).toBe(state);
   });
 });

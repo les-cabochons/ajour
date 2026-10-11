@@ -32,7 +32,7 @@ This registry captures reusable visual patterns already present in Ajour. Update
 - Connector settings fields are rendered through `apps/web/src/features/settings/connector-settings-ui.tsx`, so plugin-driven field styling stays consistent.
 - Immediate on/off settings use `Switch` from `apps/web/src/components/ui/switch.tsx`; labels describe the action as Activate or Deactivate plus the capability name.
 - Reorderable tables and navigation lists use `apps/web/src/lib/table-drag.ts` for consistent mouse/touch thresholds, cancellation, row movement, and drag-preview positioning.
-- Saved time entries share `features/time/time-entry-fields.tsx`. Day hosts it inline; Week hosts it in a shadcn dialog. Entry actions use one dropdown/calendar surface for Duplicate, Duplicate to, and Move to.
+- Saved time entries share `features/time/time-entry-fields.tsx`. Day hosts it inline; Week hosts it in a shadcn dialog. Entry actions come from `domain/actions/object-actions.ts` and render through `components/object-actions-menu.tsx` as a right-click menu and a "…" button.
 - On mobile, backlog add and filter actions use a compact vertical pair of
   icon-only floating controls at the bottom right. Keep add as the lower primary
   action, open the filter menu upward, preserve safe-area spacing, and reserve
@@ -129,11 +129,11 @@ over-target warning.
 
 The Week toolbar, grid or day columns, totals, and detail tray form one full-width
 desktop workspace rather than stacked cards. Return to Day is the leading
-left-arrow action. The shared Day-inline/Week-dialog editor places an icon-only
-entry-options trigger at the form's upper right. Duplicate to and Move to swap
-that trigger's anchored Popover from actions to a Calendar with explicit
-confirmation, avoiding a second modal or backdrop while preserving the Day
-inline-editor outside-click boundary.
+left-arrow action. Every time entry surface (Day rows, Days cards, Grid tray rows,
+the Day inline editor and the entry dialog) exposes the same action set through a
+right-click menu and a "…" button, which the narrow view always shows. Duplicate
+to and Move to open a calendar dialog; Delete and Discard ask for confirmation.
+`features/time/time-entry-actions.tsx` runs the actions for every surface.
 
 Capacity targets and the two independent warning switches live in General
 Settings. Targets are Monday-first, default to eight hours on weekdays and zero
