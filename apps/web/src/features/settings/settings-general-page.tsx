@@ -270,7 +270,7 @@ export function SettingsGeneralPage() {
 
         <AppPanel>
           <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-3 xl:grid-cols-7 desktop:grid-cols-4">
+            <div className="grid grid-cols-2 gap-3 desktop:grid-cols-4 desktop:xl:grid-cols-7">
               {CAPACITY_DAYS.map((day) => (
                 <CapacityInput
                   key={day.key}
