@@ -18,9 +18,11 @@ import {
   commitSelectedConnectorImportsToLocalStore,
   dismissConnectorImportCandidates,
   getConnectorsOverview,
+  isConnectorApiMissing,
   listConnectorImportCandidates,
   updateConnectorImportSelection,
 } from "@/lib/app-api";
+import { useRetryWhileConnectorApiMissing } from "@/lib/use-connector-api-retry";
 import { useLocalWorkItems } from "@/lib/local-hooks";
 import {
   hasWorkItemEstimateSyncIssue,
@@ -95,6 +97,18 @@ export function SettingsImportReviewPage() {
   const [isMutating, setIsMutating] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
+  // Staged imports live in the connector API, so the web build hides them.
+  const [connectorApiMissing, setConnectorApiMissing] = useState(false);
+
+  /** Shows an operation error inline, or hides the connector sections when the API is missing. */
+  const showFailure = (nextError: unknown, fallback: string) => {
+    if (isConnectorApiMissing(nextError)) {
+      setConnectorApiMissing(true);
+      setError(null);
+      return;
+    }
+    setError(nextError instanceof Error ? nextError.message : fallback);
+  };
 
   const refresh = async () => {
     setIsLoading(true);
@@ -106,13 +120,10 @@ export function SettingsImportReviewPage() {
       setOverview(nextOverview);
       setItems(nextImports.items);
       setSelectedCount(nextImports.selectedCount);
+      setConnectorApiMissing(false);
       setError(null);
     } catch (nextError) {
-      setError(
-        nextError instanceof Error
-          ? nextError.message
-          : "Unable to load staged imports.",
-      );
+      showFailure(nextError, "Unable to load staged imports.");
     } finally {
       setIsLoading(false);
     }
@@ -121,6 +132,8 @@ export function SettingsImportReviewPage() {
   useEffect(() => {
     void refresh();
   }, []);
+
+  useRetryWhileConnectorApiMissing(connectorApiMissing, refresh);
 
   const connectionGroups = useMemo(
     () => groupImportCandidatesByConnection(items),
@@ -169,11 +182,7 @@ export function SettingsImportReviewPage() {
       await updateConnectorImportSelection(ids, selected);
       await refresh();
     } catch (nextError) {
-      setError(
-        nextError instanceof Error
-          ? nextError.message
-          : "Unable to update staged import selection.",
-      );
+      showFailure(nextError, "Unable to update staged import selection.");
     } finally {
       setIsMutating(false);
     }
@@ -194,11 +203,7 @@ export function SettingsImportReviewPage() {
         `${result.dismissedCount} staged item${result.dismissedCount === 1 ? "" : "s"} dismissed from ${successLabel}.`,
       );
     } catch (nextError) {
-      setError(
-        nextError instanceof Error
-          ? nextError.message
-          : "Unable to dismiss staged import items.",
-      );
+      showFailure(nextError, "Unable to dismiss staged import items.");
     } finally {
       setIsMutating(false);
     }
@@ -225,11 +230,7 @@ export function SettingsImportReviewPage() {
           : "No backlog items changed.",
       );
     } catch (nextError) {
-      setError(
-        nextError instanceof Error
-          ? nextError.message
-          : "Unable to import selected backlog items.",
-      );
+      showFailure(nextError, "Unable to import selected backlog items.");
     } finally {
       setIsMutating(false);
     }
@@ -329,100 +330,104 @@ export function SettingsImportReviewPage() {
               ))}
             </div>
           </AppPanel>
+        ) : connectorApiMissing ? (
+          <MessagePanel>Nothing to review.</MessagePanel>
         ) : null}
 
-        <AppPanel className="import-review-toolbar">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge>
-              {overview?.totalPendingImportCount ?? items.length} staged items
-            </Badge>
-            <Badge className="bg-muted">{selectedCount} selected</Badge>
-            <Badge className="bg-muted">
-              {overview?.connectionGroups.reduce(
-                (sum, group) => sum + group.connections.length,
-                0,
-              ) ?? 0}{" "}
-              connector connections
-            </Badge>
-          </div>
+        {connectorApiMissing ? null : (
+          <AppPanel className="import-review-toolbar">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge>
+                {overview?.totalPendingImportCount ?? items.length} staged items
+              </Badge>
+              <Badge className="bg-muted">{selectedCount} selected</Badge>
+              <Badge className="bg-muted">
+                {overview?.connectionGroups.reduce(
+                  (sum, group) => sum + group.connections.length,
+                  0,
+                ) ?? 0}{" "}
+                connector connections
+              </Badge>
+            </div>
 
-          <div className="flex flex-wrap gap-3">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={isLoading || isMutating}
-              onClick={() => void refresh()}
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              Refresh
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={
-                isLoading ||
-                isMutating ||
-                items.every((item) => !item.selectable)
-              }
-              onClick={() =>
-                void toggleItems(
-                  items
-                    .filter((item) => item.selectable)
-                    .map((item) => item.id),
-                  true,
-                )
-              }
-            >
-              <CheckSquare className="h-3.5 w-3.5" />
-              Select all
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={isLoading || isMutating || selectedCount === 0}
-              onClick={() =>
-                void dismissItems(
-                  items
-                    .filter((item) => item.selectable && item.selected)
-                    .map((item) => item.id),
-                  "review queue",
-                )
-              }
-            >
-              <X className="h-3.5 w-3.5" />
-              Dismiss selected
-            </Button>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={isLoading || isMutating || selectedCount === 0}
-              onClick={() =>
-                void toggleItems(
-                  items
-                    .filter((item) => item.selectable && item.selected)
-                    .map((item) => item.id),
-                  false,
-                )
-              }
-            >
-              <MinusSquare className="h-3.5 w-3.5" />
-              Clear selection
-            </Button>
-            <Button
-              size="sm"
-              disabled={isLoading || isMutating || selectedCount === 0}
-              onClick={() => void handleCommitSelected()}
-            >
-              <ArrowRight className="h-3.5 w-3.5" />
-              Sync selected to backlog
-            </Button>
-          </div>
-        </AppPanel>
+            <div className="flex flex-wrap gap-3">
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isLoading || isMutating}
+                onClick={() => void refresh()}
+              >
+                <RefreshCw className="h-3.5 w-3.5" />
+                Refresh
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={
+                  isLoading ||
+                  isMutating ||
+                  items.every((item) => !item.selectable)
+                }
+                onClick={() =>
+                  void toggleItems(
+                    items
+                      .filter((item) => item.selectable)
+                      .map((item) => item.id),
+                    true,
+                  )
+                }
+              >
+                <CheckSquare className="h-3.5 w-3.5" />
+                Select all
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isLoading || isMutating || selectedCount === 0}
+                onClick={() =>
+                  void dismissItems(
+                    items
+                      .filter((item) => item.selectable && item.selected)
+                      .map((item) => item.id),
+                    "review queue",
+                  )
+                }
+              >
+                <X className="h-3.5 w-3.5" />
+                Dismiss selected
+              </Button>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={isLoading || isMutating || selectedCount === 0}
+                onClick={() =>
+                  void toggleItems(
+                    items
+                      .filter((item) => item.selectable && item.selected)
+                      .map((item) => item.id),
+                    false,
+                  )
+                }
+              >
+                <MinusSquare className="h-3.5 w-3.5" />
+                Clear selection
+              </Button>
+              <Button
+                size="sm"
+                disabled={isLoading || isMutating || selectedCount === 0}
+                onClick={() => void handleCommitSelected()}
+              >
+                <ArrowRight className="h-3.5 w-3.5" />
+                Sync selected to backlog
+              </Button>
+            </div>
+          </AppPanel>
+        )}
 
         {statusMessage ? <MessagePanel>{statusMessage}</MessagePanel> : null}
         {error ? <MessagePanel tone="warning">{error}</MessagePanel> : null}
 
-        {isLoading ? (
+        {connectorApiMissing ? null : isLoading ? (
           <MessagePanel>Loading staged imports…</MessagePanel>
         ) : connectionGroups.length === 0 ? (
           <MessagePanel>

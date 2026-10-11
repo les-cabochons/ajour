@@ -27,7 +27,10 @@ const settingsItems = [
   { to: "/settings/projects", label: "Projects", icon: FolderKanban },
   { to: "/settings/time-entries", label: "Time entries", icon: Download },
   { to: "/settings/sync-review", label: "Sync review", icon: Inbox },
-  { to: "/settings/debug", label: "Debug", icon: Bug },
+  // Debug exists only in development builds.
+  ...(import.meta.env.DEV
+    ? ([{ to: "/settings/debug", label: "Debug", icon: Bug }] as const)
+    : []),
 ] as const;
 
 export function SettingsNavigationSidebar({

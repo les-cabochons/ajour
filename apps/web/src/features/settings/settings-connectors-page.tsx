@@ -78,6 +78,9 @@ type ConnectorFormState = {
 
 type PluginCatalogFilter = "all" | "connector" | "plugin";
 
+/** The one notice Plugins shows when the web build runs without the connector API. */
+const CONNECTORS_NEED_DESKTOP_APP = "Connectors need the desktop app.";
+
 function formatConnectorTimestamp(timestamp?: number) {
   return timestamp ? new Date(timestamp).toLocaleString() : "Never";
 }
@@ -357,6 +360,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
     displayEntries,
     catalogError,
     connectorError,
+    connectorApiMissing,
     statusMessage,
     isMutatingConnector,
     workflow,
@@ -471,23 +475,26 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
       setFormState(null);
   };
 
-  const renderMessages = () => (
-    <>
-      {statusMessage ? <MessagePanel>{statusMessage}</MessagePanel> : null}
-      {connectorError ? (
-        <MessagePanel tone="warning">{connectorError}</MessagePanel>
-      ) : null}
-      {catalog?.warning ? (
-        <MessagePanel tone="warning">
-          The catalog was loaded from its local cache. Artwork and metadata will
-          refresh when the index is reachable.
-        </MessagePanel>
-      ) : null}
-      {catalogError ? (
-        <MessagePanel tone="warning">{catalogError}</MessagePanel>
-      ) : null}
-    </>
-  );
+  const renderMessages = () =>
+    connectorApiMissing ? (
+      <MessagePanel>{CONNECTORS_NEED_DESKTOP_APP}</MessagePanel>
+    ) : (
+      <>
+        {statusMessage ? <MessagePanel>{statusMessage}</MessagePanel> : null}
+        {connectorError ? (
+          <MessagePanel tone="warning">{connectorError}</MessagePanel>
+        ) : null}
+        {catalog?.warning ? (
+          <MessagePanel tone="warning">
+            The catalog was loaded from its local cache. Artwork and metadata
+            will refresh when the index is reachable.
+          </MessagePanel>
+        ) : null}
+        {catalogError ? (
+          <MessagePanel tone="warning">{catalogError}</MessagePanel>
+        ) : null}
+      </>
+    );
 
   const renderConnectorDetail = (
     entry: PluginCatalogEntry,
@@ -965,7 +972,9 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
               All plugins
             </Link>
             {renderMessages()}
-            <MessagePanel>Loading plugin…</MessagePanel>
+            {connectorApiMissing ? null : (
+              <MessagePanel>Loading plugin…</MessagePanel>
+            )}
           </>
         ) : (
           <>
@@ -984,6 +993,17 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
             </MessagePanel>
           </>
         )}
+      </div>
+    );
+  }
+
+  if (connectorApiMissing) {
+    return (
+      <div className="settings-sections gap-6">
+        <section className="settings-section gap-4">
+          <h1 className="text-lg font-semibold text-foreground">Plugins</h1>
+          {renderMessages()}
+        </section>
       </div>
     );
   }

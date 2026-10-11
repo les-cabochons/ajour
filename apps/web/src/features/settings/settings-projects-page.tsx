@@ -76,6 +76,7 @@ export function SettingsProjectsPage() {
   >([]);
   const [isTransferring, setIsTransferring] = useState(false);
   const [statusMessage, setStatusMessage] = useState("");
+  const [exportMessage, setExportMessage] = useState("");
   const [exportError, setExportError] = useState("");
   const [error, setError] = useState("");
 
@@ -149,6 +150,7 @@ export function SettingsProjectsPage() {
     localStore.setUserPreferences({ projectDataShapeId: shapeId });
     setSelectedImportFile(null);
     setStatusMessage("");
+    setExportMessage("");
     setExportError("");
     setError("");
   }
@@ -159,6 +161,7 @@ export function SettingsProjectsPage() {
     }
 
     setIsTransferring(true);
+    setExportMessage("");
     setExportError("");
     try {
       const workbookBytes = selectedShapePlugin
@@ -179,9 +182,10 @@ export function SettingsProjectsPage() {
             projectIds: selectedProjectIds,
           });
 
-      downloadProjectTransferWorkbook(
-        workbookBytes,
-        buildProjectTransferFilename(),
+      const filename = buildProjectTransferFilename();
+      downloadProjectTransferWorkbook(workbookBytes, filename);
+      setExportMessage(
+        `Exported ${filename} · ${formatCount(selectedProjects.length, "project")}, ${formatCount(selectedTaskCount, "task")}.`,
       );
     } catch (nextError) {
       setExportError(
@@ -382,6 +386,7 @@ export function SettingsProjectsPage() {
               Export to Excel
             </Button>
           </div>
+          {exportMessage ? <MessagePanel>{exportMessage}</MessagePanel> : null}
           {exportError ? (
             <MessagePanel tone="warning">{exportError}</MessagePanel>
           ) : null}

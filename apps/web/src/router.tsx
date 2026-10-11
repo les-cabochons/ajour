@@ -51,10 +51,13 @@ const SettingsSyncReviewPage = lazy(async () => {
     await import("@/features/settings/settings-import-review-page");
   return { default: module.SettingsImportReviewPage };
 });
-const SettingsDebugPage = lazy(async () => {
-  const module = await import("@/features/settings/settings-debug-page");
-  return { default: module.SettingsDebugPage };
-});
+// Debug exists only in development builds, so production omits its chunk.
+const SettingsDebugPage = import.meta.env.DEV
+  ? lazy(async () => {
+      const module = await import("@/features/settings/settings-debug-page");
+      return { default: module.SettingsDebugPage };
+    })
+  : null;
 
 const RouterDevtools = import.meta.env.DEV
   ? lazy(async () => {
@@ -232,15 +235,19 @@ const settingsSyncReviewRoute = createRoute({
   ),
 });
 
-const settingsDebugRoute = createRoute({
-  getParentRoute: () => settingsRoute,
-  path: "/debug",
-  component: () => (
-    <RouteSuspense>
-      <SettingsDebugPage />
-    </RouteSuspense>
-  ),
-});
+const settingsDebugRoutes = SettingsDebugPage
+  ? [
+      createRoute({
+        getParentRoute: () => settingsRoute,
+        path: "/debug",
+        component: () => (
+          <RouteSuspense>
+            <SettingsDebugPage />
+          </RouteSuspense>
+        ),
+      }),
+    ]
+  : [];
 
 const settingsProjectsRoute = createRoute({
   getParentRoute: () => settingsRoute,
@@ -269,7 +276,7 @@ const routeTree = rootRoute.addChildren([
       settingsProjectsRoute,
       settingsTimeEntriesRoute,
       settingsSyncReviewRoute,
-      settingsDebugRoute,
+      ...settingsDebugRoutes,
     ]),
   ]),
 ]);

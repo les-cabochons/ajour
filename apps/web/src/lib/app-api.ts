@@ -61,8 +61,31 @@ const connectorsOverviewListeners = new Set<
   (overview: ConnectorsOverview) => void
 >();
 
-function appApiUnavailableMessage() {
-  return "Internal connector API unavailable. Restart the app.";
+/**
+ * Thrown when the local connector API cannot be reached at all, as in the web
+ * build that runs without the desktop app. Pages use it to hide connector
+ * features calmly instead of showing a failure.
+ */
+class AppApiUnavailableError extends Error {
+  constructor(cause: unknown) {
+    super(
+      `Internal connector API unavailable. Restart the app. ${cause instanceof Error ? cause.message : ""}`.trim(),
+      { cause },
+    );
+    this.name = "AppApiUnavailableError";
+  }
+}
+
+/**
+ * True when the connector API is unreachable because Ajour runs as a plain web
+ * app. In the desktop app the API is internal, so an unreachable API stays a
+ * real failure that the page reports.
+ */
+export function isConnectorApiMissing(error: unknown) {
+  return (
+    error instanceof AppApiUnavailableError &&
+    (typeof window === "undefined" || !window.ajourDesktop)
+  );
 }
 
 function isDefaultInternalAppApi() {
@@ -110,16 +133,12 @@ async function appApiRequest<T>(
         !isDefaultInternalAppApi() ||
         attempt === APP_API_RETRY_DELAYS_MS.length
       ) {
-        throw new Error(
-          `${appApiUnavailableMessage()} ${error instanceof Error ? error.message : ""}`.trim(),
-        );
+        throw new AppApiUnavailableError(error);
       }
 
       const retryDelayMs = APP_API_RETRY_DELAYS_MS[attempt];
       if (retryDelayMs === undefined) {
-        throw new Error(
-          `${appApiUnavailableMessage()} ${error instanceof Error ? error.message : ""}`.trim(),
-        );
+        throw new AppApiUnavailableError(error);
       }
 
       await delay(retryDelayMs);
@@ -127,9 +146,7 @@ async function appApiRequest<T>(
   }
 
   if (lastNetworkError !== undefined || !response) {
-    throw new Error(
-      `${appApiUnavailableMessage()} ${lastNetworkError instanceof Error ? lastNetworkError.message : ""}`.trim(),
-    );
+    throw new AppApiUnavailableError(lastNetworkError);
   }
 
   if (!response.ok) {

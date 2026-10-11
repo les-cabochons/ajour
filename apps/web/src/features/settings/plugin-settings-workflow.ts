@@ -34,6 +34,7 @@ export type PluginSettingsDependencies = Pick<
   | "configurePluginCatalog"
   | "downloadCatalogPlugin"
   | "uninstallConnectorPlugin"
+  | "isConnectorApiMissing"
 > & {
   subscribeCatalog(
     listener: (catalog: PluginCatalogResponse) => void,
@@ -78,6 +79,8 @@ interface PluginSettingsSnapshot {
   displayEntries: PluginDisplayEntry[];
   connectorError: string | null;
   catalogError: string | null;
+  /** The web build runs without the connector API; the page shows one calm notice instead of errors. */
+  connectorApiMissing: boolean;
   statusMessage: string | null;
   isMutatingConnector: boolean;
 }
@@ -154,6 +157,7 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
     displayEntries: [],
     connectorError: null,
     catalogError: null,
+    connectorApiMissing: false,
     statusMessage: null,
     isMutatingConnector: false,
   };
@@ -188,10 +192,18 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
   };
   const receiveConnectors = (connectors: ConnectorsOverview) => {
     revisions.connectors += 1;
-    update({ connectors, connectorError: null });
+    update({ connectors, connectorError: null, connectorApiMissing: false });
   };
   const errorMessage = (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback;
+  /** Patch for a failed API call: a missing API becomes the notice flag, anything else an error. */
+  const connectorFailure = (
+    error: unknown,
+    fallback: string,
+  ): Partial<PluginSettingsSnapshot> =>
+    deps.isConnectorApiMissing(error)
+      ? { connectorApiMissing: true, connectorError: null }
+      : { connectorError: errorMessage(error, fallback) };
 
   async function refreshConnectors() {
     const isLatest = beginRead("connectors");
@@ -200,9 +212,7 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
       if (isLatest()) receiveConnectors(connectors);
     } catch (error) {
       if (isLatest())
-        update({
-          connectorError: errorMessage(error, "Unable to reach the app API."),
-        });
+        update(connectorFailure(error, "Unable to reach the app API."));
     }
   }
 
@@ -367,12 +377,7 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
       return isCurrent();
     } catch (error) {
       if (epoch === generation)
-        update({
-          connectorError: errorMessage(
-            error,
-            commandFailureMessages[command.type],
-          ),
-        });
+        update(connectorFailure(error, commandFailureMessages[command.type]));
       return false;
     } finally {
       if (epoch === generation) update({ isMutatingConnector: false });
