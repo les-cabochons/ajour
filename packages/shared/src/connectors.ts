@@ -433,7 +433,8 @@ export type ConnectorImportRestoreRequest = z.infer<
 
 /**
  * `stale` means a dismissed item was staged again or un-dismissed since.
- * `expired` means a later dismissal replaced this one, or the API restarted.
+ * `expired` means a later dismissal replaced this one, its connection was
+ * deleted, or the API restarted.
  */
 export const connectorImportRestoreResponseSchema = z.object({
   result: z.enum(["restored", "stale", "expired"]),

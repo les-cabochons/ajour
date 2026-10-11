@@ -182,6 +182,37 @@ describe("AppApiStorage", () => {
     );
   });
 
+  it("refuses to restore a dismissal after its connection was deleted", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
+    tempDirs.push(tempDir);
+
+    const storage = new AppApiStorage(path.join(tempDir, "app-api-state.json"));
+    const connection = await storage.upsertConnection("azure_devops", {
+      label: "Main Azure",
+      tenantLabel: "Contoso",
+      autoSync: false,
+      autoSyncIntervalMinutes: 20,
+      config: {},
+      configSummary: {},
+    });
+    await storage.stageImportItems([
+      buildImportCandidate({ connectionId: connection.id }),
+    ]);
+    const staged = await storage.listStagedImports();
+    const { undoToken } = await storage.dismissImports(
+      staged.items.map((item) => item.id),
+    );
+    await storage.deleteConnection("azure_devops", connection.id);
+
+    await expect(storage.restoreDismissedImports(undoToken!)).resolves.toBe(
+      "expired",
+    );
+    await expect(storage.listStagedImports()).resolves.toMatchObject({
+      totalCount: 0,
+      items: [],
+    });
+  });
+
   it("refuses to restore a dismissal when the plugin data was removed since", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
     tempDirs.push(tempDir);

@@ -758,11 +758,16 @@ export class AppApiStorage {
     });
   }
 
+  /**
+   * Deletes a connection with its staged items and statuses. A pending
+   * dismissal of its items can no longer be undone, since Undo would bring
+   * back items for a connection that is gone.
+   */
   async deleteConnection(
     pluginId: string,
     connectionId: string,
   ): Promise<boolean> {
-    return this.mutate(async (state) => {
+    const deleted = await this.mutate(async (state) => {
       const exists = state.connections.some(
         (connection) =>
           connection.pluginId === pluginId && connection.id === connectionId,
@@ -798,6 +803,17 @@ export class AppApiStorage {
         result: true,
       };
     });
+
+    if (
+      deleted &&
+      this.lastDismissal?.items.some(
+        (item) =>
+          item.source === pluginId && item.connectionId === connectionId,
+      )
+    ) {
+      this.lastDismissal = undefined;
+    }
+    return deleted;
   }
 
   async upsertConnectorBacklogStatuses(
@@ -1080,7 +1096,7 @@ export class AppApiStorage {
    * Undoes the dismissal that returned `token`, if it is still the last one.
    * The items return to the review queue as they were. `stale` means one of
    * them was staged again or its dismissal was cleared since, and nothing
-   * changes.
+   * changes. `expired` also covers a dismissal whose connection was deleted.
    */
   async restoreDismissedImports(
     token: string,
