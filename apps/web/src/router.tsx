@@ -9,6 +9,7 @@ import {
 import { lazy, Suspense, type ReactNode } from "react";
 import { AppShell } from "@/features/layout/app-shell";
 import { todayIsoDate } from "@/lib/utils";
+import { EntryEditorPrototypePage } from "@/features/time/entry-editor-prototype-page";
 
 const TimePage = lazy(async () => {
   const module = await import("@/features/time/time-page");
@@ -111,6 +112,13 @@ const timeRoute = createRoute({
       </RouteSuspense>
     );
   },
+});
+
+// PROTOTYPE (issue #14): throwaway entry editor route.
+const entryEditorPrototypeRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/prototype/entry-editor",
+  component: EntryEditorPrototypePage,
 });
 
 const projectsRoute = createRoute({
@@ -256,6 +264,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   appRoute.addChildren([
     timeRoute,
+    entryEditorPrototypeRoute,
     backlogRoute,
     projectsRoute,
     projectsArchiveRoute,
