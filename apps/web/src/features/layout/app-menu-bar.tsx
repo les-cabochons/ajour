@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, type FocusEvent } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import {
   Menubar,
   MenubarContent,
@@ -16,6 +16,7 @@ import {
 import type { DesktopAppMenu, DesktopAppMenuItem } from "@/lib/desktop-bridge";
 import { isDesktopShell } from "@/lib/runtime";
 import { useRunShortcut } from "@/lib/shortcut-handlers";
+import { requestUpdateCheck } from "@/lib/update-check-request";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 
 const isWindowsDesktopShell =
@@ -25,6 +26,7 @@ const isWindowsDesktopShell =
 
 function useAppMenuActionRunner() {
   const navigate = useNavigate();
+  const router = useRouter();
   const runShortcut = useRunShortcut();
 
   return useCallback(
@@ -33,10 +35,15 @@ function useAppMenuActionRunner() {
       if (command?.kind === "shortcut") {
         runShortcut(command.id);
       } else if (command?.kind === "check-for-updates") {
-        void navigate({ to: "/settings/general" });
+        // Opening General checks for updates. When it is already open, ask it.
+        if (router.state.location.pathname === "/settings/general") {
+          requestUpdateCheck();
+        } else {
+          void navigate({ to: "/settings/general" });
+        }
       }
     },
-    [navigate, runShortcut],
+    [navigate, router, runShortcut],
   );
 }
 

@@ -28,6 +28,7 @@ import type { DesktopUpdateCheckResult } from "@/lib/desktop-bridge";
 import { cn } from "@/lib/utils";
 import { useUserPreferences } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
+import { onUpdateCheckRequest } from "@/lib/update-check-request";
 import { getThemeModeLabel, useResolvedTheme } from "@/lib/use-theme";
 
 const THEME_OPTIONS: Array<{
@@ -184,6 +185,13 @@ export function SettingsGeneralPage() {
   useEffect(() => {
     void runUpdateCheck(preferences.updateTrack);
   }, [preferences.updateTrack, runUpdateCheck]);
+
+  // The app menu's "Check for updates…" while this page is already open.
+  useEffect(
+    () =>
+      onUpdateCheckRequest(() => void runUpdateCheck(preferences.updateTrack)),
+    [preferences.updateTrack, runUpdateCheck],
+  );
 
   const handleTrackChange = (values: unknown[]) => {
     const track = values[0];

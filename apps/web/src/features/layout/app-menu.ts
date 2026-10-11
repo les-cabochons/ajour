@@ -2,8 +2,8 @@ import { SHORTCUTS, type ShortcutActionId } from "@/lib/shortcuts";
 
 /**
  * What an app menu action does in the renderer. Most actions run their
- * shortcut handler. Check for updates has no key, so it opens Settings, whose
- * General page checks for updates when it opens.
+ * shortcut handler. Check for updates has no key: it opens Settings General,
+ * which checks on open, or asks that page to check again when it is open.
  */
 export type AppMenuCommand =
   { kind: "shortcut"; id: ShortcutActionId } | { kind: "check-for-updates" };
