@@ -115,7 +115,10 @@
     --app-sidebar-width: 200px;
     --app-workspace-max-width: 1440px;
     --app-workspace-half-width: 720px;
-    --app-centered-workspace-right-offset: 820px;
+    /* Half the sidebar plus half the capped workspace: 100px + 720px. */
+    --app-centered-workspace-right-offset: calc(
+      var(--app-sidebar-width) / 2 + var(--app-workspace-half-width)
+    );
     --windows-caption-controls-width: 150px;
     --field-bg: var(--surface-lowest);
     --field-border: color-mix(
@@ -6738,6 +6741,11 @@
    preference, or forces "rail" below 1100px. */
 .ajour-app-body[data-app-sidebar="rail"] {
   --app-sidebar-width: 52px;
+  /* Custom properties resolve where they are declared, so the rail restates
+     the centering offset with its own width: 26px + 720px. */
+  --app-centered-workspace-right-offset: calc(
+    var(--app-sidebar-width) / 2 + var(--app-workspace-half-width)
+  );
 }
 
 .ajour-app-body[data-app-sidebar="rail"] .ajour-app-sidebar-header {
