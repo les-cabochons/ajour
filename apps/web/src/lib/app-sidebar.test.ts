@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   APP_SIDEBAR_STORAGE_KEY,
-  isAppSidebarShortcut,
   readAppSidebarPreference,
   resolveAppSidebarState,
   writeAppSidebarPreference,
@@ -24,15 +23,6 @@ const throwingStorage = {
   setItem: () => {
     throw new Error("blocked");
   },
-};
-
-const keyB = {
-  key: "b",
-  metaKey: false,
-  ctrlKey: false,
-  shiftKey: false,
-  altKey: false,
-  repeat: false,
 };
 
 describe("app sidebar preference", () => {
@@ -68,39 +58,5 @@ describe("resolveAppSidebarState", () => {
   it("shows the rail when the window is narrow, whatever the preference", () => {
     expect(resolveAppSidebarState("expanded", true)).toBe("rail");
     expect(resolveAppSidebarState("rail", true)).toBe("rail");
-  });
-});
-
-describe("isAppSidebarShortcut", () => {
-  it("uses Cmd+B on macOS and Ctrl+B elsewhere", () => {
-    expect(isAppSidebarShortcut({ ...keyB, metaKey: true }, "mac")).toBe(true);
-    expect(isAppSidebarShortcut({ ...keyB, ctrlKey: true }, "mac")).toBe(false);
-    expect(isAppSidebarShortcut({ ...keyB, ctrlKey: true }, "other")).toBe(
-      true,
-    );
-    expect(isAppSidebarShortcut({ ...keyB, metaKey: true }, "other")).toBe(
-      false,
-    );
-  });
-
-  it("ignores other modifiers, key repeat and other keys", () => {
-    const command = { ...keyB, metaKey: true };
-    expect(isAppSidebarShortcut({ ...command, shiftKey: true }, "mac")).toBe(
-      false,
-    );
-    expect(isAppSidebarShortcut({ ...command, altKey: true }, "mac")).toBe(
-      false,
-    );
-    expect(isAppSidebarShortcut({ ...command, repeat: true }, "mac")).toBe(
-      false,
-    );
-    expect(isAppSidebarShortcut({ ...command, key: "\\" }, "mac")).toBe(false);
-    expect(isAppSidebarShortcut(keyB, "mac")).toBe(false);
-  });
-
-  it("accepts B with caps lock on", () => {
-    expect(
-      isAppSidebarShortcut({ ...keyB, key: "B", ctrlKey: true }, "other"),
-    ).toBe(true);
   });
 });

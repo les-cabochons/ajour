@@ -24,7 +24,13 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import { getShortcutPlatform, type AppSidebarState } from "@/lib/app-sidebar";
+import type { AppSidebarState } from "@/lib/app-sidebar";
+import {
+  formatAriaKeyShortcuts,
+  formatShortcutKeys,
+  getShortcut,
+  getShortcutPlatform,
+} from "@/lib/shortcuts";
 
 const primaryItems = [
   { to: "/time/$date", label: "Time", icon: Timer },
@@ -32,9 +38,16 @@ const primaryItems = [
   { to: "/projects", label: "Projects", icon: FolderKanban },
 ] as const;
 
-const isMacShortcut = getShortcutPlatform() === "mac";
-const toggleShortcutLabel = isMacShortcut ? "⌘B" : "Ctrl+B";
-const toggleShortcutAria = isMacShortcut ? "Meta+B" : "Control+B";
+const shortcutPlatform = getShortcutPlatform();
+const toggleShortcut = getShortcut("app.toggle-sidebar");
+const toggleShortcutLabel = formatShortcutKeys(
+  toggleShortcut,
+  shortcutPlatform,
+).join(" ");
+const toggleShortcutAria = formatAriaKeyShortcuts(
+  toggleShortcut,
+  shortcutPlatform,
+);
 
 export function isAppNavigationItemActive(
   pathname: string,

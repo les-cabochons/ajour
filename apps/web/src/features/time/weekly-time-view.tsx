@@ -761,6 +761,7 @@ export function WeeklyTimeView({
                           size="sm"
                           className="weekly-entry-card is-running"
                           data-running-entry="true"
+                          data-entry-id={currentTimer?.entryId ?? ""}
                         />
                       }
                     >
@@ -797,6 +798,7 @@ export function WeeklyTimeView({
                             size="sm"
                             tabIndex={0}
                             role="button"
+                            data-entry-id={entry._id}
                             aria-label={`${summary.projectName}, ${summary.taskName}, ${formatClockDuration(entry.durationMs)}`}
                             style={
                               {

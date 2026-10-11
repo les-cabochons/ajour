@@ -15,12 +15,13 @@ import { WeeklyTimeView } from "@/features/time/weekly-time-view";
 import { TimerPanel } from "@/features/timer/timer-panel";
 import { TimeEntryModal } from "@/features/timer/time-entry-modal";
 import { useLocalState } from "@/lib/local-hooks";
+import { useShortcut } from "@/lib/shortcut-handlers";
 import {
   getTimerContributionMs,
   getTimerDurationsMs,
 } from "@/lib/timer-totals";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
-import { cn, getIsoWeekDates, todayIsoDate } from "@/lib/utils";
+import { addDaysIsoDate, cn, getIsoWeekDates, todayIsoDate } from "@/lib/utils";
 
 /** The entry to open: `entryId`, the running `timerId`, or a new entry when both are empty. */
 type EntryEditorRequest = { entryId?: string; timerId?: string };
@@ -155,6 +156,19 @@ export function TimePage({ date }: { date: string }) {
     }
   }
 
+  function returnToDayView() {
+    if (!leaveEditorDraft()) return;
+    void navigate({
+      to: "/time/$date",
+      params: { date },
+      search: {
+        view: undefined,
+        entry: undefined,
+        timer: undefined,
+      } as never,
+    });
+  }
+
   function closeEditor() {
     editorDraftRef.current = null;
     void navigate({
@@ -200,6 +214,24 @@ export function TimePage({ date }: { date: string }) {
     });
   }
 
+  // These win over the app shell's handlers while the Time page is open.
+  useShortcut("entry.new", () => openEditor({}));
+  useShortcut("time.today", () => {
+    if (date !== today) goToDate(today);
+  });
+  useShortcut("time.previous", () =>
+    goToDate(addDaysIsoDate(date, isWeekView ? -7 : -1)),
+  );
+  useShortcut("time.next", () =>
+    goToDate(addDaysIsoDate(date, isWeekView ? 7 : 1)),
+  );
+  useShortcut("time.day-view", () => {
+    if (isWeekView) returnToDayView();
+  });
+  useShortcut("time.week-view", () => {
+    if (weekAvailable && !isWeekView) changeTimeView("week");
+  });
+
   const carriedDraft =
     editorDraftRef.current?.key === editorKey
       ? editorDraftRef.current.fields
@@ -220,18 +252,7 @@ export function TimePage({ date }: { date: string }) {
             activeEntryId={editingEntry?._id}
             onNewEntry={(localDate) => openEditor({}, localDate)}
             onOpenEntry={openEditor}
-            onReturnToDay={() => {
-              if (!leaveEditorDraft()) return;
-              void navigate({
-                to: "/time/$date",
-                params: { date },
-                search: {
-                  view: undefined,
-                  entry: undefined,
-                  timer: undefined,
-                } as never,
-              });
-            }}
+            onReturnToDay={returnToDayView}
             onSelectWeek={goToDate}
             onSubmit={openSubmitPage}
           />

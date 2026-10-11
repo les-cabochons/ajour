@@ -28,6 +28,8 @@ import {
   AppNavigationSidebar,
   isAppNavigationItemActive,
 } from "@/features/layout/app-navigation-sidebar";
+import { ShortcutOverlay } from "@/features/layout/shortcut-overlay";
+import { useGlobalShortcuts } from "@/features/layout/use-global-shortcuts";
 import {
   NarrowBackBar,
   NarrowSectionSwitcher,
@@ -810,6 +812,7 @@ export function AppShell() {
   );
   const appSidebar = useAppSidebar();
   const isNarrowView = useIsNarrowView();
+  useGlobalShortcuts(selectedTimeDate);
 
   useApplyTheme();
 
@@ -837,6 +840,7 @@ export function AppShell() {
       )}
     >
       <ConnectorAutoSyncScheduler />
+      <ShortcutOverlay />
       {/* useAppSidebar owns the state, persistence and Cmd/Ctrl+B, so the
           provider is controlled and its own shortcut stays off. */}
       <SidebarProvider
