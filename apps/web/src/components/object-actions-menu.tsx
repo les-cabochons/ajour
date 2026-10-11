@@ -1,6 +1,7 @@
 import * as React from "react";
 import { RiMoreLine as More } from "@remixicon/react";
 import type { ObjectAction } from "@/domain/actions/object-actions";
+import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import {
   ContextMenu,
@@ -101,23 +102,29 @@ export function ObjectActionsButton<Id extends string>({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger
+      <TooltipButton
+        label={label}
+        // The "." key opens the menu only where the row's keys work.
+        shortcut={keys ? "item.open-menu" : undefined}
         render={
-          <Button
-            ref={triggerRef}
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            aria-label={label}
-            className={cn("object-actions-button", className)}
-            data-no-entry-drag="true"
-            onClick={(event) => event.stopPropagation()}
-            onPointerDown={(event) => event.stopPropagation()}
+          <DropdownMenuTrigger
+            render={
+              <Button
+                ref={triggerRef}
+                type="button"
+                variant="ghost"
+                size="icon-sm"
+                className={cn("object-actions-button", className)}
+                data-no-entry-drag="true"
+                onClick={(event) => event.stopPropagation()}
+                onPointerDown={(event) => event.stopPropagation()}
+              />
+            }
           />
         }
       >
         <More />
-      </DropdownMenuTrigger>
+      </TooltipButton>
       <DropdownMenuContent
         align="end"
         className="w-auto min-w-52"

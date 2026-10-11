@@ -14,6 +14,7 @@ import {
   RiArrowRightSLine as ChevronRight,
   RiLockLine as Lock,
 } from "@remixicon/react";
+import { TooltipButton } from "@/components/tooltip-button";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -377,22 +378,32 @@ export function WeeklyTimeView({
             Day
           </Button>
           <div className="weekly-time-navigation">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Previous week"
-              onClick={() => onSelectWeek(addDaysIsoDate(anchorDate, -7))}
+            <TooltipButton
+              label="Previous week"
+              shortcut="time.previous"
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => onSelectWeek(addDaysIsoDate(anchorDate, -7))}
+                />
+              }
             >
               <ChevronLeft />
-            </Button>
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              aria-label="Next week"
-              onClick={() => onSelectWeek(addDaysIsoDate(anchorDate, 7))}
+            </TooltipButton>
+            <TooltipButton
+              label="Next week"
+              shortcut="time.next"
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  onClick={() => onSelectWeek(addDaysIsoDate(anchorDate, 7))}
+                />
+              }
             >
               <ChevronRight />
-            </Button>
+            </TooltipButton>
           </div>
           <h2 className="weekly-time-title">{formatWeekRange(weekDates)}</h2>
           <WeekSubmittedBadge weekDates={weekDates} />

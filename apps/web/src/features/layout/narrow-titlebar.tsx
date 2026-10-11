@@ -6,11 +6,7 @@ import {
   RiTimerLine as Timer,
 } from "@remixicon/react";
 import { buttonVariants } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { TooltipButton } from "@/components/tooltip-button";
 import { isAppNavigationItemActive } from "@/features/layout/app-navigation-sidebar";
 import {
   getNarrowBackLink,
@@ -20,8 +16,8 @@ import { isDesktopShell } from "@/lib/runtime";
 import { cn } from "@/lib/utils";
 
 const sections = [
-  { to: "/time/$date", label: "Time", icon: Timer },
-  { to: "/backlog", label: "Backlog", icon: ListTodo },
+  { to: "/time/$date", label: "Time", icon: Timer, shortcut: "go.time" },
+  { to: "/backlog", label: "Backlog", icon: ListTodo, shortcut: "go.backlog" },
 ] as const;
 
 /**
@@ -53,14 +49,13 @@ export function NarrowSectionSwitcher({
             section.to === "/time/$date"
               ? { date: selectedTimeDate }
               : undefined,
-          "aria-label": section.label,
           "aria-current": isActive ? ("page" as const) : undefined,
           className: "ajour-narrow-switcher-item",
         };
 
         if (isActive) {
           return (
-            <Link key={section.to} {...linkProps}>
+            <Link key={section.to} aria-label={section.label} {...linkProps}>
               <Icon />
               <span>{section.label}</span>
             </Link>
@@ -68,12 +63,14 @@ export function NarrowSectionSwitcher({
         }
 
         return (
-          <Tooltip key={section.to}>
-            <TooltipTrigger render={<Link {...linkProps} />}>
-              <Icon />
-            </TooltipTrigger>
-            <TooltipContent side="bottom">{section.label}</TooltipContent>
-          </Tooltip>
+          <TooltipButton
+            key={section.to}
+            label={section.label}
+            shortcut={section.shortcut}
+            render={<Link {...linkProps} />}
+          >
+            <Icon />
+          </TooltipButton>
         );
       })}
     </nav>
@@ -84,26 +81,24 @@ export function NarrowSectionSwitcher({
 export function NarrowSettingsButton({ pathname }: { pathname: string }) {
   const isActive = isNarrowSettingsSection(pathname);
   return (
-    <Tooltip>
-      <TooltipTrigger
-        render={
-          <Link
-            to="/settings"
-            aria-label="Settings"
-            aria-current={isActive ? "page" : undefined}
-            className={cn(
-              buttonVariants({ variant: "ghost", size: "icon-sm" }),
-              "shrink-0 text-muted-foreground",
-              isActive && "bg-muted text-foreground",
-              isDesktopShell && "desktop-no-drag",
-            )}
-          />
-        }
-      >
-        <Settings className="size-4" />
-      </TooltipTrigger>
-      <TooltipContent side="bottom">Settings</TooltipContent>
-    </Tooltip>
+    <TooltipButton
+      label="Settings"
+      shortcut="app.settings"
+      render={
+        <Link
+          to="/settings"
+          aria-current={isActive ? "page" : undefined}
+          className={cn(
+            buttonVariants({ variant: "ghost", size: "icon-sm" }),
+            "shrink-0 text-muted-foreground",
+            isActive && "bg-muted text-foreground",
+            isDesktopShell && "desktop-no-drag",
+          )}
+        />
+      }
+    >
+      <Settings className="size-4" />
+    </TooltipButton>
   );
 }
 

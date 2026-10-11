@@ -1,5 +1,6 @@
 import { useEffect, useRef, type ElementType, type KeyboardEvent } from "react";
 import { RiCloseLine as X, RiSaveLine as Save } from "@remixicon/react";
+import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
@@ -94,15 +95,12 @@ export function ProjectTaskEditorForm({
             {projectName}
           </span>
         </div>
-        <Button
-          type="button"
-          variant="ghost"
-          size="icon-sm"
-          aria-label="Close"
-          onClick={onClose}
+        <TooltipButton
+          label="Close"
+          render={<Button variant="ghost" size="icon-sm" onClick={onClose} />}
         >
           <X />
-        </Button>
+        </TooltipButton>
       </header>
 
       <FieldGroup className="gap-4">

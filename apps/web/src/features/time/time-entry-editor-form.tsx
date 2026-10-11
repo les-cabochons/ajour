@@ -14,6 +14,7 @@ import {
   RiStopLine as Stop,
 } from "@remixicon/react";
 import { ObjectActionsButton } from "@/components/object-actions-menu";
+import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import type { TimeEntryActionId } from "@/domain/actions/object-actions";
 import type { LocalTimer, LocalTimesheetEntry } from "@/domain/local-state";
@@ -381,15 +382,12 @@ export function TimeEntryEditorForm({
               label="Entry actions"
             />
           ) : null}
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-sm"
-            aria-label="Close"
-            onClick={onClose}
+          <TooltipButton
+            label="Close"
+            render={<Button variant="ghost" size="icon-sm" onClick={onClose} />}
           >
             <X />
-          </Button>
+          </TooltipButton>
         </div>
       </header>
 

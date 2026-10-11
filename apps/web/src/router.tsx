@@ -7,6 +7,7 @@ import {
   createRouter,
 } from "@tanstack/react-router";
 import { lazy, Suspense, type ReactNode } from "react";
+import { PageSkeleton } from "@/components/page-skeleton";
 import { AppShell } from "@/features/layout/app-shell";
 import { ShortcutProvider } from "@/lib/shortcut-handlers";
 import { todayIsoDate } from "@/lib/utils";
@@ -88,8 +89,9 @@ function RootComponent() {
   );
 }
 
+/** Shows the page skeleton while a route's code loads. */
 function RouteSuspense({ children }: { children: ReactNode }) {
-  return <Suspense fallback={null}>{children}</Suspense>;
+  return <Suspense fallback={<PageSkeleton />}>{children}</Suspense>;
 }
 
 const rootRoute = createRootRoute({

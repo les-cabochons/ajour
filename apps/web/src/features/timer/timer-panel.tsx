@@ -18,6 +18,7 @@ import {
   EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import {
   ObjectActionsButton,
@@ -33,6 +34,7 @@ import {
 import { localStore } from "@/lib/local-store";
 import {
   createSharedTableDragPointerSession,
+  getSharedTableDropOrder,
   getSharedTableDragOverlayTransform,
   getSharedTableDragRowShift,
   getSharedTableDragTargetIndex,
@@ -88,17 +90,6 @@ function isEntryDragBlockedTarget(target: EventTarget | null) {
         ),
       )
     : false;
-}
-
-function moveId(ids: string[], fromIndex: number, toIndex: number) {
-  const nextIds = [...ids];
-  const [id] = nextIds.splice(fromIndex, 1);
-  if (!id) {
-    return ids;
-  }
-
-  nextIds.splice(toIndex, 0, id);
-  return nextIds;
 }
 
 /**
@@ -224,19 +215,15 @@ export function TimerPanel({
       const currentDrag = entryDragStateRef.current;
       clearEntryPointerSession();
 
-      if (
-        shouldCommit &&
-        currentDrag &&
-        currentDrag.originIndex !== currentDrag.targetIndex
-      ) {
-        localStore.reorderTimesheetEntries(
-          date,
-          moveId(
+      const order = currentDrag
+        ? getSharedTableDropOrder(
             draggableEntryIds,
             currentDrag.originIndex,
             currentDrag.targetIndex,
-          ),
-        );
+          )
+        : null;
+      if (shouldCommit && order) {
+        localStore.reorderTimesheetEntries(date, order);
       }
 
       suppressEntryClickUntilRef.current =
@@ -404,14 +391,14 @@ export function TimerPanel({
                 </div>
               </th>
               <th className="entry-hours-heading entry-hours-heading-actions hidden desktop:table-cell">
-                <button
-                  type="button"
+                <TooltipButton
                   className="entries-header-add"
-                  aria-label="New entry"
+                  label="New entry"
+                  shortcut="entry.new"
                   onClick={() => onOpenEntry({})}
                 >
                   <Plus className="h-3.5 w-3.5" />
-                </button>
+                </TooltipButton>
               </th>
             </tr>
           </thead>
@@ -592,14 +579,14 @@ export function TimerPanel({
                         <div className="entry-hours-content">
                           <div className="entry-row-actions">
                             {isRunning ? null : (
-                              <button
-                                type="button"
+                              <TooltipButton
                                 className="entry-row-action entry-row-action-play"
-                                aria-label={
+                                label={
                                   currentTimer
                                     ? "Continue and stop the running entry"
                                     : "Continue"
                                 }
+                                shortcut="entry.continue"
                                 data-no-entry-drag="true"
                                 onClick={(event) => {
                                   event.stopPropagation();
@@ -607,7 +594,7 @@ export function TimerPanel({
                                 }}
                               >
                                 <Play className="h-3.5 w-3.5" />
-                              </button>
+                              </TooltipButton>
                             )}
                             <ObjectActionsButton
                               actions={rowActions}

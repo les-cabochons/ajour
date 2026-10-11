@@ -2,6 +2,7 @@ import {
   RiArrowDownSLine as ChevronDown,
   RiCheckLine as Check,
 } from "@remixicon/react";
+import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -24,20 +25,24 @@ export function TimeViewScopeMenu({
 }) {
   return (
     <Popover>
-      <PopoverTrigger
+      <TooltipButton
+        label="Change time view"
+        aria-label={`Time view: ${value === "day" ? "Day" : "Week"}`}
         render={
-          <Button
-            type="button"
-            variant="ghost"
-            size="icon-xs"
-            className="day-viewer-date-scope-trigger"
-            aria-label={`Time view: ${value === "day" ? "Day" : "Week"}`}
-            title="Change time view"
+          <PopoverTrigger
+            render={
+              <Button
+                type="button"
+                variant="ghost"
+                size="icon-xs"
+                className="day-viewer-date-scope-trigger"
+              />
+            }
           />
         }
       >
         <ChevronDown data-icon="inline-end" />
-      </PopoverTrigger>
+      </TooltipButton>
       <PopoverContent
         className="time-view-scope-popover"
         align="start"

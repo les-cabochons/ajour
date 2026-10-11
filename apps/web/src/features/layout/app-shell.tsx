@@ -1,17 +1,11 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type RefObject,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   RiAddLine as Plus,
   RiArrowGoBackLine as ReturnIcon,
   RiPlayLine as Play,
 } from "@remixicon/react";
+import { TooltipButton } from "@/components/tooltip-button";
 import { Calendar } from "@/components/ui/calendar";
 import {
   Popover,
@@ -252,69 +246,51 @@ function ConnectorAutoSyncScheduler() {
   return null;
 }
 
-function DayTotalsPopup({
-  anchorRef,
+/**
+ * The Today pill in the titlebar. A click opens a popover with the day and week
+ * totals.
+ */
+function DayTotalsPill({
   dayTotalMs,
   weekTotalMs,
-  onClose,
 }: {
-  anchorRef: RefObject<HTMLDivElement | null>;
   dayTotalMs: number;
   weekTotalMs: number;
-  onClose: () => void;
 }) {
-  const popupRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    function handleMouseDown(event: MouseEvent) {
-      const target = event.target as Node;
-      if (
-        anchorRef.current?.contains(target) ||
-        popupRef.current?.contains(target)
-      ) {
-        return;
-      }
-
-      if (popupRef.current) {
-        onClose();
-      }
-    }
-
-    document.addEventListener("mousedown", handleMouseDown);
-    return () => document.removeEventListener("mousedown", handleMouseDown);
-  }, [anchorRef, onClose]);
-
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
-
   return (
-    <div
-      ref={popupRef}
-      className="day-totals-popup"
-      role="dialog"
-      aria-label="Current time totals"
-    >
-      <div className="day-totals-popup-row">
-        <span className="day-totals-popup-label">Week total</span>
-        <span className="day-totals-popup-value">
-          {formatClockDuration(weekTotalMs)}
-        </span>
-      </div>
-      <div className="day-totals-popup-row">
-        <span className="day-totals-popup-label">Day total</span>
-        <span className="day-totals-popup-value">
+    <Popover>
+      <PopoverTrigger
+        className={cn(
+          "stat-pill global-timer-today stat-pill-clickable shrink-0",
+          isDesktopShell && "desktop-no-drag",
+        )}
+        aria-label="Show day and week totals"
+      >
+        <span className="stat-pill-label">Today</span>
+        <span className="stat-pill-value">
           {formatClockDuration(dayTotalMs)}
         </span>
-      </div>
-    </div>
+      </PopoverTrigger>
+      <PopoverContent
+        align="end"
+        sideOffset={8}
+        className="w-auto min-w-38 gap-2 rounded-2xl px-3 py-2.5"
+        aria-label="Current time totals"
+      >
+        <div className="day-totals-popup-row">
+          <span className="day-totals-popup-label">Week total</span>
+          <span className="day-totals-popup-value">
+            {formatClockDuration(weekTotalMs)}
+          </span>
+        </div>
+        <div className="day-totals-popup-row">
+          <span className="day-totals-popup-label">Day total</span>
+          <span className="day-totals-popup-value">
+            {formatClockDuration(dayTotalMs)}
+          </span>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -336,8 +312,6 @@ function GlobalTimerBar() {
   const [editor, setEditor] = useState<TitlebarEditor>(null);
   /** The project and task a new entry starts with, such as a pinned task. */
   const [newEntryValues, setNewEntryValues] = useState<NewTimeEntryValues>();
-  const [dayTotalsOpen, setDayTotalsOpen] = useState(false);
-  const dayTotalsAnchorRef = useRef<HTMLDivElement>(null);
 
   const currentTimer = state.timers[0] ?? null;
   const today = todayIsoDate();
@@ -441,16 +415,8 @@ function GlobalTimerBar() {
     setEditor("running");
   }
 
-  function handleDayTotalsClick() {
-    setDayTotalsOpen((prev) => !prev);
-  }
-
   const handleEditorClose = useCallback(() => {
     setEditor(null);
-  }, []);
-
-  const handleDayTotalsClose = useCallback(() => {
-    setDayTotalsOpen(false);
   }, []);
 
   const runningPillContent = (
@@ -474,15 +440,14 @@ function GlobalTimerBar() {
         )}
       >
         {isNarrowView ? (
-          <button
-            type="button"
+          <TooltipButton
             className="quick-timer-group-button"
             onClick={() => openNewEntry()}
-            title="Create time entry"
-            aria-label="Create time entry"
+            label="Create time entry"
+            shortcut="entry.new"
           >
             <Plus className="h-3.5 w-3.5" />
-          </button>
+          </TooltipButton>
         ) : (
           <TimeEntryEditorPopover
             target={newEntryTarget}
@@ -490,20 +455,21 @@ function GlobalTimerBar() {
             onOpenChange={(open) => (open ? openNewEntry() : setEditor(null))}
             triggerLabel="Create time entry"
             triggerClassName="quick-timer-group-button"
+            iconTrigger
+            triggerShortcut="entry.new"
           >
             <Plus className="h-3.5 w-3.5" />
           </TimeEntryEditorPopover>
         )}
         {currentTimer ? null : (
-          <button
-            type="button"
+          <TooltipButton
             className="quick-timer-group-button quick-timer-group-button-play"
             onClick={handleStartClick}
-            title="Start"
-            aria-label="Start"
+            label="Start"
+            shortcut="entry.stop-or-start"
           >
             <Play className="h-3.5 w-3.5" />
-          </button>
+          </TooltipButton>
         )}
       </div>
       {currentTimer ? (
@@ -521,7 +487,6 @@ function GlobalTimerBar() {
               type="button"
               className={runningPillClassName}
               onClick={() => setEditor("running")}
-              title="Edit the running entry"
               aria-label="Edit the running entry"
             >
               {runningPillContent}
@@ -539,35 +504,7 @@ function GlobalTimerBar() {
           )}
         </div>
       ) : null}
-      <div
-        ref={dayTotalsAnchorRef}
-        className={cn(
-          "day-totals-popup-anchor",
-          isDesktopShell && "desktop-no-drag",
-        )}
-      >
-        <button
-          type="button"
-          className="stat-pill global-timer-today stat-pill-clickable"
-          onClick={handleDayTotalsClick}
-          aria-label="Show day and week totals"
-          aria-expanded={dayTotalsOpen}
-        >
-          <span className="stat-pill-label">Today</span>
-          <span className="stat-pill-value">
-            {formatClockDuration(todayTotalMs)}
-          </span>
-        </button>
-
-        {dayTotalsOpen ? (
-          <DayTotalsPopup
-            anchorRef={dayTotalsAnchorRef}
-            dayTotalMs={todayTotalMs}
-            weekTotalMs={weekTotalMs}
-            onClose={handleDayTotalsClose}
-          />
-        ) : null}
-      </div>
+      <DayTotalsPill dayTotalMs={todayTotalMs} weekTotalMs={weekTotalMs} />
       {isNarrowView && editor !== null ? (
         <TimeEntryModal
           date={today}
@@ -687,8 +624,7 @@ export function AppShell() {
                   }}
                 />
                 {selectedTimeDate !== todayIsoDate() ? (
-                  <button
-                    type="button"
+                  <TooltipButton
                     className={cn(
                       "ajour-nav-return-today",
                       isDesktopShell && "desktop-no-drag",
@@ -703,10 +639,11 @@ export function AppShell() {
                         });
                       }
                     }}
-                    aria-label="Return to today"
+                    label="Return to today"
+                    shortcut="time.today"
                   >
                     <ReturnIcon className="h-2.5 w-2.5" />
-                  </button>
+                  </TooltipButton>
                 ) : null}
               </div>
 
