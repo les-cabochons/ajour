@@ -504,7 +504,7 @@ describe("localStore backlog status sync", () => {
     const { localStore } = await import("./local-store");
 
     const projectId = localStore.snapshot().projects[0]!._id;
-    localStore.addProjectTask(projectId, "Imported task");
+    localStore.addProjectTask(projectId, { name: "Imported task" });
     const taskId = localStore.snapshot().projects[0]!.tasks.at(-1)!._id;
     localStore.importConnectorWorkItems([buildImportCandidate()]);
     const workItem = localStore.snapshot().workItems[0]!;
@@ -530,7 +530,7 @@ describe("localStore backlog status sync", () => {
     const { localStore } = await import("./local-store");
 
     const projectId = localStore.snapshot().projects[0]!._id;
-    localStore.addProjectTask(projectId, "Overrun task");
+    localStore.addProjectTask(projectId, { name: "Overrun task" });
     const taskId = localStore.snapshot().projects[0]!.tasks.at(-1)!._id;
     localStore.importConnectorWorkItems([
       buildImportCandidate({
@@ -1274,7 +1274,7 @@ describe("localStore backlog status sync", () => {
     const { localStore } = await import("./local-store");
 
     const projectId = localStore.snapshot().projects[0]!._id;
-    localStore.addProjectTask(projectId, "Submitted work");
+    localStore.addProjectTask(projectId, { name: "Submitted work" });
     const taskId = localStore.snapshot().projects[0]!.tasks.at(-1)!._id;
 
     localStore.saveManualTimeEntry({
@@ -1299,7 +1299,7 @@ describe("localStore backlog status sync", () => {
     const { localStore } = await import("./local-store");
 
     const projectId = localStore.snapshot().projects[0]!._id;
-    localStore.addProjectTask(projectId, "Stable work");
+    localStore.addProjectTask(projectId, { name: "Stable work" });
     const taskId = localStore.snapshot().projects[0]!.tasks.at(-1)!._id;
 
     localStore.saveManualTimeEntry({
@@ -1332,7 +1332,7 @@ describe("localStore backlog status sync", () => {
     const { localStore } = await import("./local-store");
 
     const projectId = localStore.snapshot().projects[0]!._id;
-    localStore.addProjectTask(projectId, "Changed work");
+    localStore.addProjectTask(projectId, { name: "Changed work" });
     const taskId = localStore.snapshot().projects[0]!.tasks.at(-1)!._id;
 
     localStore.saveManualTimeEntry({

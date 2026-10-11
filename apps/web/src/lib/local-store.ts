@@ -113,6 +113,7 @@ import type {
   LocalProject,
   LocalProjectDraft,
   LocalProjectTask,
+  LocalProjectTaskDraft,
   LocalTeam,
   LocalTimer,
   LocalTimerDraft,
@@ -824,10 +825,10 @@ export const localStore = {
   unarchiveProject(projectId: string) {
     this.updateProject(projectId, { status: "active" });
   },
-  addProjectTask(projectId: string, name: string) {
+  addProjectTask(projectId: string, task: LocalProjectTaskDraft) {
     updateState((state) => ({
       ...state,
-      projects: applyAddProjectTask(state.projects, projectId, name, {
+      projects: applyAddProjectTask(state.projects, projectId, task, {
         createId,
         now: Date.now,
       }),
