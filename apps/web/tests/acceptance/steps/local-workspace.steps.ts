@@ -29,6 +29,24 @@ Given("I have no saved Ajour workspace", async ({ page }) => {
 });
 
 Given(
+  "I have no saved Ajour workspace, even after a reload",
+  async ({ page }) => {
+    await mockEmptyConnectorOverview(page);
+    // Clear storage on the first load only, so a reload keeps what the app saved.
+    await page.addInitScript(() => {
+      const clearedKey = "ajour.acceptance.storage-cleared";
+      if (window.sessionStorage.getItem(clearedKey)) {
+        return;
+      }
+
+      window.localStorage.clear();
+      window.sessionStorage.clear();
+      window.sessionStorage.setItem(clearedKey, "true");
+    });
+  },
+);
+
+Given(
   "I have two saved entries with a timer running on the first",
   async ({ page }) => {
     await page.route("http://127.0.0.1:8787/api/connectors", async (route) => {
@@ -229,8 +247,37 @@ When("I open today's new-entry workspace", async ({ page }) => {
   await page.goto("/time/today?entry=new");
 });
 
-When("I resize the app to a compact desktop width", async ({ page }) => {
-  await page.setViewportSize({ width: 800, height: 900 });
+When("I narrow the app below the expanded sidebar width", async ({ page }) => {
+  await page.setViewportSize({ width: 1000, height: 900 });
+});
+
+When("I widen the app back to a desktop width", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 900 });
+});
+
+When("I collapse the app sidebar with its button", async ({ page }) => {
+  await page.getByRole("button", { name: "Collapse sidebar" }).click();
+});
+
+When("I reload the app", async ({ page }) => {
+  await page.reload();
+});
+
+When("I press the sidebar shortcut", async ({ page }) => {
+  // The app picks Cmd or Ctrl from the user agent, which the Desktop Chrome
+  // device sets to Windows whatever the host is.
+  const isMac = await page.evaluate(() =>
+    /Mac|iPhone|iPad/.test(navigator.userAgent),
+  );
+  await page.keyboard.press(isMac ? "Meta+b" : "Control+b");
+});
+
+When("I open Time from the app sidebar", async ({ page }) => {
+  const timeLink = page
+    .getByRole("navigation", { name: "Primary navigation" })
+    .getByRole("link", { name: "Time" });
+  await timeLink.focus();
+  await timeLink.press("Enter");
 });
 
 When("I open Settings directly", async ({ page }) => {
@@ -245,14 +292,6 @@ When("I open Settings from the desktop sidebar", async ({ page }) => {
   await settingsLink.press("Enter");
 });
 
-When("I leave Settings from the sidebar", async ({ page }) => {
-  const backButton = page
-    .getByRole("navigation", { name: "Settings sections" })
-    .getByRole("button", { name: "Back" });
-  await backButton.focus();
-  await backButton.press("Enter");
-});
-
 When("I open Plugins from the Settings navigation", async ({ page }) => {
   const pluginsLink = page
     .getByRole("navigation", { name: "Settings sections" })
@@ -260,10 +299,6 @@ When("I open Plugins from the Settings navigation", async ({ page }) => {
   await pluginsLink.click();
   await expect(page).toHaveURL(/\/settings\/plugins$/);
   await expect(pluginsLink).toHaveAttribute("aria-current", "page");
-});
-
-When("I go back in the browser history", async ({ page }) => {
-  await page.goBack();
 });
 
 When("I open the Projects workspace", async ({ page }) => {
@@ -615,48 +650,67 @@ Then(
   },
 );
 
+async function expectAppSidebarWidth(page: Page, width: number) {
+  const primaryNavigation = page.getByRole("navigation", {
+    name: "Primary navigation",
+  });
+  await expect(primaryNavigation).toBeVisible();
+  // The width animates, so wait for it to settle.
+  await expect
+    .poll(async () => (await primaryNavigation.boundingBox())?.width)
+    .toBe(width);
+}
+
+Then("the app sidebar is expanded", async ({ page }) => {
+  await expectAppSidebarWidth(page, 200);
+  await expect(
+    page
+      .getByRole("navigation", { name: "Primary navigation" })
+      .getByText("Time", { exact: true }),
+  ).toBeVisible();
+});
+
+Then("the app sidebar is an icon rail", async ({ page }) => {
+  await expectAppSidebarWidth(page, 52);
+  const primaryNavigation = page.getByRole("navigation", {
+    name: "Primary navigation",
+  });
+  await expect(
+    primaryNavigation.getByRole("link", { name: "Time" }),
+  ).toBeVisible();
+  await expect(
+    primaryNavigation.getByText("Time", { exact: true }),
+  ).toBeHidden();
+});
+
 Then(
-  "the Settings sections replace the primary navigation",
+  "the Settings pages are listed beside the app sidebar",
   async ({ page }) => {
-    await expect(
-      page.getByRole("navigation", { name: "Primary navigation" }),
-    ).toHaveCount(0);
+    const primaryNavigation = page.getByRole("navigation", {
+      name: "Primary navigation",
+    });
     const settingsNavigation = page.getByRole("navigation", {
       name: "Settings sections",
     });
+    await expect(primaryNavigation).toBeVisible();
+    await expect(
+      primaryNavigation.getByRole("link", { name: "Settings" }),
+    ).toHaveAttribute("aria-current", "page");
     await expect(settingsNavigation).toBeVisible();
     await expect(
       settingsNavigation.getByRole("link", { name: "General" }),
     ).toHaveAttribute("aria-current", "page");
-    await expect(
-      settingsNavigation.getByRole("button", { name: "Back" }),
-    ).toBeVisible();
+    await expect(page.getByRole("button", { name: "Back" })).toHaveCount(0);
+
+    const [primaryNavigationBox, settingsNavigationBox] = await Promise.all([
+      primaryNavigation.boundingBox(),
+      settingsNavigation.boundingBox(),
+    ]);
+    expect(settingsNavigationBox?.x).toBe(
+      (primaryNavigationBox?.x ?? 0) + (primaryNavigationBox?.width ?? 0),
+    );
   },
 );
-
-Then(
-  "the Settings navigation remains available as a compact rail",
-  async ({ page }) => {
-    const settingsNavigation = page.getByRole("navigation", {
-      name: "Settings sections",
-    });
-    const navigationBox = await settingsNavigation.boundingBox();
-    expect(navigationBox).not.toBeNull();
-    expect(navigationBox?.width).toBe(48);
-    await expect(
-      settingsNavigation.getByRole("link", { name: "Projects" }),
-    ).toBeVisible();
-    await expect(
-      settingsNavigation.getByRole("button", { name: "Back" }),
-    ).toBeVisible();
-  },
-);
-
-Then("the Time new-entry workspace sidebar is restored", async ({ page }) => {
-  await expect(page).toHaveURL(/\/time\/today\?entry=new$/);
-  await expect(page.locator(".ajour-app-navigation-sidebar")).toBeVisible();
-  await expect(page.getByText("New time entry", { exact: true })).toBeVisible();
-});
 
 Then(
   "the Projects sidebar remains expanded and left-aligned beside primary navigation",
@@ -691,19 +745,12 @@ Then(
   "the Projects navigation remains available as a compact rail",
   async ({ page }) => {
     await page.setViewportSize({ width: 800, height: 900 });
-    const primaryNavigation = page.getByRole("navigation", {
-      name: "Primary navigation",
-    });
     const projectsNavigation = page.getByRole("navigation", {
       name: "Projects",
     });
-    await expect(primaryNavigation).toBeVisible();
+    await expectAppSidebarWidth(page, 52);
     await expect(projectsNavigation).toBeVisible();
-    const [primaryNavigationBox, projectsNavigationBox] = await Promise.all([
-      primaryNavigation.boundingBox(),
-      projectsNavigation.boundingBox(),
-    ]);
-    expect(primaryNavigationBox?.width).toBe(48);
+    const projectsNavigationBox = await projectsNavigation.boundingBox();
     expect(projectsNavigationBox?.width).toBe(48);
     await expect(
       projectsNavigation.getByRole("link", { name: "aaa xyz" }),

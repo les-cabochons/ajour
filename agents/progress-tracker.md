@@ -110,6 +110,11 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Plugins tabs are All, Connectors, and Schemas. User-facing text says schema, not data shape, and time entries, not time logs.
 - [x] Labels, headings, buttons, and aria-labels use sentence case.
 
+## App shell, 2026-10-11
+
+- [x] The app sidebar collapses to a 52px icon rail from a button next to the logo or Cmd/Ctrl+B. The choice is saved per device, and below 1100px the rail is forced without changing it.
+- [x] Settings opens inside the shell with its pages listed in a second column. The settings sidebar that replaced the app sidebar, and its Back control, are removed.
+
 ## Standard Task Flow
 
 - [ ] Understand the requested outcome.

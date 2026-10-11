@@ -28,6 +28,8 @@ function CustomSidebarLayout({
     <SidebarProvider
       className={cn("settings-layout", className)}
       defaultOpen
+      // Section sidebars have no collapse control. Cmd/Ctrl+B belongs to the app sidebar.
+      keyboardShortcut={false}
       style={
         {
           "--sidebar-width": "200px",

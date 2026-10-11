@@ -4,7 +4,6 @@ import {
   useMemo,
   useRef,
   useState,
-  type CSSProperties,
   type RefObject,
 } from "react";
 import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
@@ -31,13 +30,11 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   AppNavigationSidebar,
   isAppNavigationItemActive,
-  isSettingsReturnPath,
 } from "@/features/layout/app-navigation-sidebar";
 import {
   ProjectTaskPicker,
   type ProjectTaskSelection,
 } from "@/features/projects/project-task-picker";
-import { SettingsNavigationSidebar } from "@/features/settings/settings-navigation-sidebar";
 import {
   formatClockDuration,
   normalizeHoursInput,
@@ -50,6 +47,7 @@ import {
   getTimerContributionMs,
   getTimerDurationsMs,
 } from "@/lib/timer-totals";
+import { useAppSidebar } from "@/lib/app-sidebar";
 import { isDesktopShell } from "@/lib/runtime";
 import { cn, getIsoWeekDates, todayIsoDate } from "@/lib/utils";
 import {
@@ -797,14 +795,10 @@ export function AppShell() {
   const pathname = useRouterState({
     select: (state) => state.location.pathname,
   });
-  const href = useRouterState({
-    select: (state) => state.location.href,
-  });
   const navigate = useNavigate();
   const isTimeActive = isAppNavigationItemActive(pathname, "/time/$date");
   const isBacklogActive = isAppNavigationItemActive(pathname, "/backlog");
   const isSettingsActive = isAppNavigationItemActive(pathname, "/settings");
-  const lastNonSettingsHrefRef = useRef("/time/today");
   const timeRouteDate = getTimeRouteDate(pathname);
   const [selectedTimeDate, setSelectedTimeDate] = useState(
     () => timeRouteDate ?? todayIsoDate(),
@@ -819,6 +813,8 @@ export function AppShell() {
     : isBacklogActive
       ? ["backlog"]
       : [];
+
+  const appSidebar = useAppSidebar();
 
   useApplyTheme();
 
@@ -837,12 +833,6 @@ export function AppShell() {
   }, [timeRouteDate]);
 
   useEffect(() => {
-    if (isSettingsReturnPath(pathname)) {
-      lastNonSettingsHrefRef.current = href;
-    }
-  }, [href, pathname]);
-
-  useEffect(() => {
     const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`);
     const handleViewportChange = () => {
       setShowMobileModeToggle(mediaQuery.matches);
@@ -852,10 +842,6 @@ export function AppShell() {
     mediaQuery.addEventListener("change", handleViewportChange);
     return () => mediaQuery.removeEventListener("change", handleViewportChange);
   }, []);
-
-  const leaveSettings = useCallback(() => {
-    void navigate({ href: lastNonSettingsHrefRef.current, replace: true });
-  }, [navigate]);
 
   return (
     <div
@@ -867,27 +853,21 @@ export function AppShell() {
       )}
     >
       <ConnectorAutoSyncScheduler />
+      {/* useAppSidebar owns the state, persistence and Cmd/Ctrl+B, so the
+          provider is controlled and its own shortcut stays off. */}
       <SidebarProvider
         className="ajour-app-body"
+        data-app-sidebar={appSidebar.state}
+        open={appSidebar.state === "expanded"}
         keyboardShortcut={false}
-        style={
-          {
-            "--sidebar-width": "200px",
-            "--sidebar-width-icon": "200px",
-          } as CSSProperties
-        }
       >
-        {isSettingsActive ? (
-          <SettingsNavigationSidebar
-            pathname={pathname}
-            onBack={leaveSettings}
-          />
-        ) : (
-          <AppNavigationSidebar
-            pathname={pathname}
-            selectedTimeDate={selectedTimeDate}
-          />
-        )}
+        <AppNavigationSidebar
+          pathname={pathname}
+          selectedTimeDate={selectedTimeDate}
+          state={appSidebar.state}
+          isRailForced={appSidebar.isRailForced}
+          onToggle={appSidebar.toggle}
+        />
 
         <div className="ajour-app-workspace">
           {/* Workspace titlebar. The sidebar owns the window's left chrome. */}
