@@ -14,9 +14,10 @@ import type { ShortcutActionId } from "@/lib/shortcuts";
 
 /**
  * Popover host for the entry editor, anchored to its trigger: the titlebar "+" and
- * the Running pill. Like every host, it only supplies the container. Clicking
- * outside does nothing; Escape, ×, Cancel or the trigger close it and drop the draft.
- * The form mounts each time the popover opens, so every opening starts fresh.
+ * the Running pill. New entry… on a task or backlog item passes `anchor`, its row,
+ * instead. Like every host, it only supplies the container. Clicking outside does
+ * nothing; Escape, ×, Cancel or the trigger close it and drop the draft. The form
+ * mounts each time the popover opens, so every opening starts fresh.
  */
 export function TimeEntryEditorPopover({
   target,
@@ -26,6 +27,7 @@ export function TimeEntryEditorPopover({
   triggerClassName,
   iconTrigger = false,
   triggerShortcut,
+  anchor,
   children,
 }: {
   /** What the form edits. The popover shows nothing while this is null. */
@@ -39,6 +41,11 @@ export function TimeEntryEditorPopover({
   iconTrigger?: boolean;
   /** The registered shortcut the trigger's tooltip shows. */
   triggerShortcut?: ShortcutActionId;
+  /**
+   * Where the popover shows instead of the trigger, such as the task or backlog
+   * row that New entry… came from. Closing gives focus back to it.
+   */
+  anchor?: HTMLElement | null;
   /** The trigger button's content. */
   children: ReactNode;
 }) {
@@ -72,16 +79,19 @@ export function TimeEntryEditorPopover({
         className="w-[min(26rem,calc(100vw-1rem))] p-4"
         align="end"
         sideOffset={8}
+        anchor={anchor ?? undefined}
+        // Without an anchor, Base UI gives focus back to the trigger.
+        finalFocus={anchor ? () => anchor : undefined}
       >
         {target ? (
           <TimeEntryEditorForm
             // A switch to another running entry, or a new entry for another
-            // pinned task, seeds a fresh draft.
+            // pinned task or backlog item, seeds a fresh draft.
             key={
               target.kind === "running"
                 ? target.timer._id
                 : target.kind === "create"
-                  ? `create-${target.initialValues?.taskId ?? ""}`
+                  ? `create-${target.initialValues?.taskId ?? ""}-${target.initialValues?.workItemId ?? ""}`
                   : target.kind
             }
             target={target}

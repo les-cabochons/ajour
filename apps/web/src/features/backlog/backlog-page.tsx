@@ -77,8 +77,7 @@ import {
   parseWorkItemReference,
 } from "@/features/backlog/work-item-timer-comment";
 import { offerUndo } from "@/features/feedback/undo-toast";
-import type { NewTimeEntryValues } from "@/features/time/time-entry-editor-form";
-import { TimeEntryModal } from "@/features/timer/time-entry-modal";
+import { openNewEntryEditor } from "@/features/time/new-entry-request";
 import {
   useLocalProjects,
   useLocalState,
@@ -99,7 +98,7 @@ import {
   type SharedTableDragPointerSession,
 } from "@/lib/table-drag";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
-import { cn, todayIsoDate } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 const BACKLOG_TABLE_COLUMN_COUNT = 4;
 
@@ -209,9 +208,6 @@ export function BacklogPage() {
   const [expandedParentIds, setExpandedParentIds] = useState<
     ReadonlySet<string>
   >(() => new Set());
-  /** Prefill of the New entry… dialog, or null while it is closed. */
-  const [newEntryValues, setNewEntryValues] =
-    useState<NewTimeEntryValues | null>(null);
   const [activeFilter, setActiveFilter] = useState<BacklogFilter>("active");
   const [pressedWorkItemId, setPressedWorkItemId] = useState<string | null>(
     null,
@@ -663,7 +659,10 @@ export function BacklogPage() {
         if (editingWorkItemId === workItem._id) {
           closeEditor();
         }
-        setNewEntryValues(getWorkItemEntryValues(workItem));
+        openNewEntryEditor(
+          { kind: "backlog-item", workItemId: workItem._id },
+          getWorkItemEntryValues(workItem),
+        );
         return;
       case "edit":
         openWorkItemFromRow(workItem, { ignoreClickSuppression: true });
@@ -1421,14 +1420,6 @@ export function BacklogPage() {
             </div>
           </div>
         </div>
-      ) : null}
-
-      {newEntryValues ? (
-        <TimeEntryModal
-          date={todayIsoDate()}
-          initialValues={newEntryValues}
-          onClose={() => setNewEntryValues(null)}
-        />
       ) : null}
     </div>
   );

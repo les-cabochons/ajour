@@ -20,9 +20,8 @@ import {
 } from "@/features/command-palette/command-palette-items";
 import { ProjectFormDialog } from "@/features/projects/project-form-dialog";
 import { getSettingsPages } from "@/features/settings/settings-navigation";
-import type { NewTimeEntryValues } from "@/features/time/time-entry-editor-form";
+import { openNewEntryEditor } from "@/features/time/new-entry-request";
 import { useTimeEntryActions } from "@/features/time/time-entry-actions";
-import { TimeEntryModal } from "@/features/timer/time-entry-modal";
 import type { ActionRequest } from "@/lib/action-request";
 import {
   resolveFocusedObject,
@@ -57,7 +56,9 @@ export function openCommandPalette() {
  * the registry's global actions with their keys, and navigation. Choosing a
  * task or a backlog item lists its actions.
  *
- * Start entry and New entry… run here, so they work from any page. Actions that
+ * Start entry and New entry… run here, so they work from any page. New entry…
+ * opens the titlebar's entry editor popover, anchored to the object's row when
+ * that row is still on screen, otherwise to the titlebar "+". Actions that
  * need a page's editor, confirmation or navigation guard go to that page as an
  * action request (`lib/action-request.ts`). While the Projects page is open,
  * every project and task command goes to it, so its task draft is saved first
@@ -75,8 +76,6 @@ export function CommandPalette() {
   const [query, setQuery] = useState("");
   const [view, setView] = useState<PaletteView>(ROOT_VIEW);
   const [focused, setFocused] = useState<FocusedObjectRef | null>(null);
-  const [newEntryValues, setNewEntryValues] =
-    useState<NewTimeEntryValues | null>(null);
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const originRef = useRef<HTMLElement | null>(null);
   const pendingCommandRef = useRef<PaletteCommand | null>(null);
@@ -229,10 +228,14 @@ export function CommandPalette() {
             accumulatedDurationMs: 0,
           });
         } else if (command.actionId === "new-entry") {
-          setNewEntryValues({
-            projectId: command.projectId,
-            taskId: command.taskId,
-          });
+          openNewEntryEditor(
+            {
+              kind: "task",
+              projectId: command.projectId,
+              taskId: command.taskId,
+            },
+            { projectId: command.projectId, taskId: command.taskId },
+          );
         } else {
           requestProjectsPage(
             {
@@ -261,7 +264,10 @@ export function CommandPalette() {
             accumulatedDurationMs: 0,
           });
         } else if (command.actionId === "new-entry") {
-          setNewEntryValues(getWorkItemEntryValues(workItem));
+          openNewEntryEditor(
+            { kind: "backlog-item", workItemId: workItem._id },
+            getWorkItemEntryValues(workItem),
+          );
         } else if (command.actionId === "open-in-source") {
           if (workItem.sourceUrl) {
             window.open(workItem.sourceUrl, "_blank", "noopener,noreferrer");
@@ -459,13 +465,6 @@ export function CommandPalette() {
       </CommandDialog>
 
       {entryActions.dialogs}
-      {newEntryValues ? (
-        <TimeEntryModal
-          date={todayIsoDate()}
-          initialValues={newEntryValues}
-          onClose={() => setNewEntryValues(null)}
-        />
-      ) : null}
       {isCreatingProject ? (
         <ProjectFormDialog
           onClose={() => setIsCreatingProject(false)}
