@@ -19,10 +19,8 @@ import {
   getTimerContributionMs,
   getTimerDurationsMs,
 } from "@/lib/timer-totals";
+import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { cn, getIsoWeekDates, todayIsoDate } from "@/lib/utils";
-
-/** Below this width the entry editor opens in a full-width dialog instead of the side panel. */
-const ENTRY_DIALOG_MEDIA_QUERY = "(max-width: 640px)";
 
 /** The entry to open: `entryId`, the running `timerId`, or a new entry when both are empty. */
 type EntryEditorRequest = { entryId?: string; timerId?: string };
@@ -39,16 +37,11 @@ export function TimePage({ date }: { date: string }) {
   const today = todayIsoDate();
   const weekDates = useMemo(() => getIsoWeekDates(date), [date]);
   const currentTimer = state.timers[0] ?? null;
-  const [weekAvailable, setWeekAvailable] = useState(() =>
-    typeof window !== "undefined"
-      ? window.matchMedia("(min-width: 1024px)").matches
-      : false,
-  );
-  const [useEntryDialog, setUseEntryDialog] = useState(() =>
-    typeof window !== "undefined"
-      ? window.matchMedia(ENTRY_DIALOG_MEDIA_QUERY).matches
-      : false,
-  );
+  // Week needs a desktop width. The narrow view falls back to Day, and edits
+  // entries in a full-width dialog instead of the side panel.
+  const isNarrowView = useIsNarrowView();
+  const weekAvailable = !isNarrowView;
+  const editsInDialog = isNarrowView;
   const isWeekView = search.view === "week" && weekAvailable;
   const editorFormRef = useRef<TimeEntryEditorFormHandle>(null);
   // The unsaved draft of the open entry, kept above the side panel and the dialog so
@@ -80,22 +73,6 @@ export function TimePage({ date }: { date: string }) {
     const intervalId = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(intervalId);
   }, [currentTimer]);
-
-  useEffect(() => {
-    const media = window.matchMedia("(min-width: 1024px)");
-    const handleChange = () => setWeekAvailable(media.matches);
-    handleChange();
-    media.addEventListener("change", handleChange);
-    return () => media.removeEventListener("change", handleChange);
-  }, []);
-
-  useEffect(() => {
-    const media = window.matchMedia(ENTRY_DIALOG_MEDIA_QUERY);
-    const handleChange = () => setUseEntryDialog(media.matches);
-    handleChange();
-    media.addEventListener("change", handleChange);
-    return () => media.removeEventListener("change", handleChange);
-  }, []);
 
   useEffect(() => {
     if (weekAvailable || search.view !== "week") {
@@ -275,8 +252,8 @@ export function TimePage({ date }: { date: string }) {
               }
               headerActions={<SubmitWeekButton onClick={openSubmitPage} />}
             />
-            {/* Below lg the Day viewer strip is hidden, so the button gets its own row. */}
-            <div className="flex justify-end px-3 pt-2 lg:hidden">
+            {/* The narrow view hides the Day viewer strip, so the button gets its own row. */}
+            <div className="flex justify-end px-3 pt-2 desktop:hidden">
               <SubmitWeekButton onClick={openSubmitPage} />
             </div>
 
@@ -289,7 +266,7 @@ export function TimePage({ date }: { date: string }) {
         )}
       </div>
 
-      {editorTarget && !useEntryDialog ? (
+      {editorTarget && !editsInDialog ? (
         <SidePanel
           contentKey={editorKey}
           className="time-entry-side-panel"
@@ -305,7 +282,7 @@ export function TimePage({ date }: { date: string }) {
           />
         </SidePanel>
       ) : null}
-      {search.timer || (editorTarget && useEntryDialog) ? (
+      {search.timer || (editorTarget && editsInDialog) ? (
         <TimeEntryModal
           date={date}
           entryId={editingEntry?._id}

@@ -219,7 +219,7 @@ function RunningTimerModal({
 
         <TimeEntryFields
           idPrefix="running-timer-modal"
-          className="sm:grid sm:grid-cols-[minmax(0,1fr)_8rem]"
+          className="desktop:grid desktop:grid-cols-[minmax(0,1fr)_8rem]"
           projects={projects}
           projectId={projectId}
           taskId={taskId}

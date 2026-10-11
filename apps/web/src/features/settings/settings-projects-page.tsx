@@ -260,7 +260,7 @@ export function SettingsProjectsPage() {
         </p>
 
         <AppPanel>
-          <div className="grid gap-4 md:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] md:items-end">
+          <div className="grid gap-4 desktop:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] desktop:items-end">
             <div className="space-y-2">
               <Label htmlFor="project-data-shape">Schema</Label>
               <NativeSelect
@@ -327,7 +327,7 @@ export function SettingsProjectsPage() {
                 </Button>
               </div>
 
-              <div className="grid gap-3 md:grid-cols-2">
+              <div className="grid gap-3 desktop:grid-cols-2">
                 {sortedProjects.map((project) => {
                   const isSelected = selectedProjectIds.includes(project._id);
                   return (
@@ -399,7 +399,7 @@ export function SettingsProjectsPage() {
             tasks.
           </SurfaceCallout>
 
-          <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+          <div className="grid gap-4 desktop:grid-cols-[minmax(0,1fr)_auto] desktop:items-end">
             <div className="space-y-2">
               <Label>Workbook</Label>
               <Input

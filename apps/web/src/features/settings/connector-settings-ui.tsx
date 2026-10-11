@@ -60,7 +60,7 @@ function ConnectorFieldInput({
     return (
       <Field
         orientation="horizontal"
-        className="rounded-3xl border border-border/60 bg-muted/10 p-4 md:col-span-2"
+        className="rounded-3xl border border-border/60 bg-muted/10 p-4 desktop:col-span-2"
       >
         <Checkbox
           id={field.id}
@@ -80,7 +80,7 @@ function ConnectorFieldInput({
 
   if (field.type === "select") {
     return (
-      <Field className={cn(isWideField && "md:col-span-2")}>
+      <Field className={cn(isWideField && "desktop:col-span-2")}>
         <FieldLabel htmlFor={field.id}>{field.label}</FieldLabel>
         <FieldContent>
           <NativeSelect
@@ -103,7 +103,7 @@ function ConnectorFieldInput({
   }
 
   return (
-    <Field className={cn(isWideField && "md:col-span-2")}>
+    <Field className={cn(isWideField && "desktop:col-span-2")}>
       <FieldLabel htmlFor={field.id}>{field.label}</FieldLabel>
       <FieldContent>
         <Input

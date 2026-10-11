@@ -1,0 +1,132 @@
+import { Link } from "@tanstack/react-router";
+import {
+  RiArrowLeftLine as ArrowLeft,
+  RiListCheck3 as ListTodo,
+  RiSettings3Line as Settings,
+  RiTimerLine as Timer,
+} from "@remixicon/react";
+import { buttonVariants } from "@/components/ui/button";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { isAppNavigationItemActive } from "@/features/layout/app-navigation-sidebar";
+import {
+  getNarrowBackLink,
+  isNarrowSettingsSection,
+} from "@/features/layout/narrow-navigation";
+import { isDesktopShell } from "@/lib/runtime";
+import { cn } from "@/lib/utils";
+
+const sections = [
+  { to: "/time/$date", label: "Time", icon: Timer },
+  { to: "/backlog", label: "Backlog", icon: ListTodo },
+] as const;
+
+/**
+ * The narrow view's primary navigation: a segmented switcher in the titlebar.
+ * The active section shows its label, the other only its icon. Projects and
+ * Settings are reached from the cog.
+ */
+export function NarrowSectionSwitcher({
+  pathname,
+  selectedTimeDate,
+}: {
+  pathname: string;
+  selectedTimeDate: string;
+}) {
+  return (
+    <nav
+      className={cn(
+        "ajour-narrow-switcher",
+        isDesktopShell && "desktop-no-drag",
+      )}
+      aria-label="Primary navigation"
+    >
+      {sections.map((section) => {
+        const Icon = section.icon;
+        const isActive = isAppNavigationItemActive(pathname, section.to);
+        const linkProps = {
+          to: section.to,
+          params:
+            section.to === "/time/$date"
+              ? { date: selectedTimeDate }
+              : undefined,
+          "aria-label": section.label,
+          "aria-current": isActive ? ("page" as const) : undefined,
+          className: "ajour-narrow-switcher-item",
+        };
+
+        if (isActive) {
+          return (
+            <Link key={section.to} {...linkProps}>
+              <Icon />
+              <span>{section.label}</span>
+            </Link>
+          );
+        }
+
+        return (
+          <Tooltip key={section.to}>
+            <TooltipTrigger render={<Link {...linkProps} />}>
+              <Icon />
+            </TooltipTrigger>
+            <TooltipContent side="bottom">{section.label}</TooltipContent>
+          </Tooltip>
+        );
+      })}
+    </nav>
+  );
+}
+
+/** The cog at the trailing edge of the narrow titlebar. Projects lives inside Settings there. */
+export function NarrowSettingsButton({ pathname }: { pathname: string }) {
+  const isActive = isNarrowSettingsSection(pathname);
+  return (
+    <Tooltip>
+      <TooltipTrigger
+        render={
+          <Link
+            to="/settings"
+            aria-label="Settings"
+            aria-current={isActive ? "page" : undefined}
+            className={cn(
+              buttonVariants({ variant: "ghost", size: "icon-sm" }),
+              "shrink-0 text-muted-foreground",
+              isActive && "bg-muted text-foreground",
+              isDesktopShell && "desktop-no-drag",
+            )}
+          />
+        }
+      >
+        <Settings className="size-4" />
+      </TooltipTrigger>
+      <TooltipContent side="bottom">Settings</TooltipContent>
+    </Tooltip>
+  );
+}
+
+/** The back arrow above a narrow-view page inside Settings, or nothing on other pages. */
+export function NarrowBackBar({ pathname }: { pathname: string }) {
+  const backLink = getNarrowBackLink(pathname);
+  if (!backLink) {
+    return null;
+  }
+
+  return (
+    <div className="flex h-10 shrink-0 items-center border-b border-border px-2">
+      <Link
+        to={backLink.to}
+        aria-label={`Back to ${backLink.label}`}
+        className={cn(
+          buttonVariants({ variant: "ghost", size: "sm" }),
+          "gap-1.5 text-muted-foreground hover:text-foreground",
+        )}
+      >
+        <ArrowLeft className="size-4" />
+        {backLink.label}
+      </Link>
+    </div>
+  );
+}

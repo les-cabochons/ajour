@@ -84,7 +84,7 @@ function PluginCapabilityBand({ entry }: { entry: PluginCatalogEntry }) {
 
   if (hero && !heroFailed) {
     return (
-      <div className="min-h-40 overflow-hidden rounded-lg border border-border/70 bg-[var(--surface-low)] sm:aspect-[16/5]">
+      <div className="min-h-40 overflow-hidden rounded-lg border border-border/70 bg-[var(--surface-low)] desktop:aspect-[16/5]">
         <img
           className="size-full min-h-40 object-cover"
           src={hero}
@@ -102,19 +102,19 @@ function PluginCapabilityBand({ entry }: { entry: PluginCatalogEntry }) {
   return (
     <AppPanel
       as="section"
-      className="min-h-40 justify-center gap-5 overflow-hidden bg-[var(--surface-low)] p-5 sm:aspect-[16/5]"
+      className="min-h-40 justify-center gap-5 overflow-hidden bg-[var(--surface-low)] p-5 desktop:aspect-[16/5]"
       aria-label={`${entry.title} capability overview`}
     >
-      <div className="flex min-w-0 items-center justify-center gap-2 text-xs text-muted-foreground sm:gap-4 sm:text-sm">
-        <span className="min-w-0 rounded-[var(--control-radius)] border border-border/70 bg-background px-2.5 py-2 text-center sm:px-4">
+      <div className="flex min-w-0 items-center justify-center gap-2 text-xs text-muted-foreground desktop:gap-4 desktop:text-sm">
+        <span className="min-w-0 rounded-[var(--control-radius)] border border-border/70 bg-background px-2.5 py-2 text-center desktop:px-4">
           {startLabel}
         </span>
         <ArrowRight className="size-4 shrink-0" aria-hidden="true" />
-        <span className="min-w-0 rounded-[var(--control-radius)] border border-border/70 bg-background px-2.5 py-2 text-center font-medium text-foreground sm:px-4">
+        <span className="min-w-0 rounded-[var(--control-radius)] border border-border/70 bg-background px-2.5 py-2 text-center font-medium text-foreground desktop:px-4">
           {entry.title}
         </span>
         <ArrowRight className="size-4 shrink-0" aria-hidden="true" />
-        <span className="min-w-0 rounded-[var(--control-radius)] border border-border/70 bg-background px-2.5 py-2 text-center sm:px-4">
+        <span className="min-w-0 rounded-[var(--control-radius)] border border-border/70 bg-background px-2.5 py-2 text-center desktop:px-4">
           {endLabel}
         </span>
       </div>
@@ -236,7 +236,7 @@ function PluginInfoList({
       {rows.map(([label, value]) => (
         <div
           key={label}
-          className="grid gap-1 border-b border-border/60 py-3 last:border-b-0 sm:grid-cols-[8rem_minmax(0,1fr)] sm:gap-4"
+          className="grid gap-1 border-b border-border/60 py-3 last:border-b-0 desktop:grid-cols-[8rem_minmax(0,1fr)] desktop:gap-4"
         >
           <dt className="text-xs text-[var(--text-tertiary)]">{label}</dt>
           <dd className="min-w-0 text-sm text-foreground">{value}</dd>

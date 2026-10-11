@@ -6,6 +6,7 @@ import {
   RiArrowRightSLine as ChevronRight,
   RiCloseLine as X,
   RiDownloadLine as Download,
+  RiFileTransferLine as FileTransfer,
   RiFolderAddLine as FolderPlus,
   RiSaveLine as Save,
 } from "@remixicon/react";
@@ -109,6 +110,7 @@ import {
   ProjectIcon,
 } from "@/lib/project-icons";
 import { TimeEntryModal } from "@/features/timer/time-entry-modal";
+import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { cn, todayIsoDate } from "@/lib/utils";
 
 type ProjectMetrics = {
@@ -570,7 +572,7 @@ function ProjectFormModal({
               <span className="field-error">{iconError}</span>
             ) : null}
           </div>
-          <div className="grid gap-3 sm:grid-cols-[1fr_110px]">
+          <div className="grid gap-3 desktop:grid-cols-[1fr_110px]">
             <div className="space-y-2">
               <label htmlFor="project-form-code" className="field-label">
                 Code
@@ -1867,6 +1869,10 @@ export function ProjectsPage() {
   const state = useLocalState();
   const navigate = useNavigate();
   const pathname = useRouterState({ select: (s) => s.location.pathname });
+  // The narrow view has no sidebars, so the project list is a page of its own
+  // at /projects, and project pages open without it.
+  const isNarrowView = useIsNarrowView();
+  const isNarrowProjectList = isNarrowView && pathname === "/projects";
   const projectRowRefs = useRef(new Map<string, HTMLLIElement>());
   const projectPointerSessionRef = useRef<SharedTableDragPointerSession | null>(
     null,
@@ -2153,9 +2159,11 @@ export function ProjectsPage() {
     });
   }
 
-  // Auto-select the first available project if the current URL does not resolve.
+  // Auto-select the first available project if the current URL does not
+  // resolve. The narrow view keeps /projects as the project list.
   useEffect(() => {
     if (pathname === "/projects/archive") return;
+    if (isNarrowProjectList) return;
     if (pathname !== "/projects" && !pathname.startsWith("/projects/")) return;
     const firstProject = activeProjects[0] ?? archivedProjects[0];
     if (!firstProject || selectedProject) return;
@@ -2164,7 +2172,14 @@ export function ProjectsPage() {
       params: { projectId: firstProject._id },
       replace: true,
     });
-  }, [activeProjects, archivedProjects, navigate, pathname, selectedProject]);
+  }, [
+    activeProjects,
+    archivedProjects,
+    isNarrowProjectList,
+    navigate,
+    pathname,
+    selectedProject,
+  ]);
 
   if (!teamState?.team) return null;
 
@@ -2278,164 +2293,176 @@ export function ProjectsPage() {
       className="ajour-project-layout"
       keyboardShortcut={false}
     >
-      <CustomSidebar
-        className="ajour-project-navigation-sidebar"
-        role="navigation"
-        aria-label="Projects"
-        collapsible="none"
-      >
-        <SidebarHeader className="ajour-project-sidebar-header">
-          <div className="ajour-project-sidebar-search-row">
-            <button
-              type="button"
-              className="ajour-project-sidebar-command-trigger"
-              aria-label="Search projects"
-              title="Search projects"
-              onClick={() => setIsProjectCommandOpen(true)}
-            >
-              <span>Search</span>
-            </button>
-            <button
-              type="button"
-              className={cn(
-                "entries-header-add",
-                projectModalState?.mode === "create" && "is-open",
-              )}
-              aria-label="Project actions"
-              title="Project actions"
-              onClick={() => setIsProjectCommandOpen(true)}
-            >
-              <Plus className="h-3.5 w-3.5" />
-            </button>
-          </div>
-        </SidebarHeader>
+      {isNarrowView && !isNarrowProjectList ? null : (
+        <CustomSidebar
+          className="ajour-project-navigation-sidebar"
+          role="navigation"
+          aria-label="Projects"
+          collapsible="none"
+        >
+          <SidebarHeader className="ajour-project-sidebar-header">
+            <div className="ajour-project-sidebar-search-row">
+              <button
+                type="button"
+                className="ajour-project-sidebar-command-trigger"
+                aria-label="Search projects"
+                title="Search projects"
+                onClick={() => setIsProjectCommandOpen(true)}
+              >
+                <span>Search</span>
+              </button>
+              <button
+                type="button"
+                className={cn(
+                  "entries-header-add",
+                  projectModalState?.mode === "create" && "is-open",
+                )}
+                aria-label="Project actions"
+                title="Project actions"
+                onClick={() => setIsProjectCommandOpen(true)}
+              >
+                <Plus className="h-3.5 w-3.5" />
+              </button>
+            </div>
+          </SidebarHeader>
 
-        <SidebarContent>
-          <SidebarGroup>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {activeProjects.map((project) => {
-                  const isActive = project._id === selectedProjectId;
-                  const projectIndex = activeProjectIds.indexOf(project._id);
-                  const isDraggedProject =
-                    projectDragState?.projectId === project._id;
-                  const rowShift = projectDragState
-                    ? getSharedTableDragRowShift({
-                        itemIndex: projectIndex,
-                        originIndex: projectDragState.originIndex,
-                        targetIndex: projectDragState.targetIndex,
-                        rowHeight: projectDragState.height,
-                      })
-                    : 0;
-                  const projectActions = getProjectActions(project);
-                  return (
-                    <ObjectContextMenu
-                      key={project._id}
-                      actions={projectActions}
-                      onAction={(actionId) =>
-                        runProjectAction(project, actionId)
-                      }
-                      render={
-                        <SidebarMenuItem
-                          ref={(node) => {
-                            if (node) {
-                              projectRowRefs.current.set(project._id, node);
-                              return;
-                            }
-
-                            projectRowRefs.current.delete(project._id);
-                          }}
-                          className={cn(
-                            "ajour-project-sidebar-item",
-                            canReorderProjects && "is-reorderable",
-                            pressedProjectId === project._id && "is-pressing",
-                            rowShift !== 0 && "is-shifting",
-                            isDraggedProject && "is-drag-source",
-                          )}
-                          style={
-                            rowShift !== 0
-                              ? {
-                                  transform: `translate3d(0, ${rowShift}px, 0)`,
-                                }
-                              : undefined
-                          }
-                          aria-grabbed={isDraggedProject}
-                          onPointerDown={(event) =>
-                            handleProjectPointerDown(project._id, event)
-                          }
-                        />
-                      }
-                    >
-                      <CustomSidebarMenuButton
-                        onDragStart={(event) => {
-                          event.preventDefault();
-                        }}
-                        onClick={(event) => {
-                          if (
-                            performance.now() <
-                            suppressProjectClickUntilRef.current
-                          ) {
-                            event.preventDefault();
-                            event.stopPropagation();
-                          }
-                        }}
-                        render={
-                          <Link
-                            to="/projects/$projectId"
-                            params={{ projectId: project._id }}
-                            aria-label={getProjectDisplayName(project)}
-                            title={project.name}
-                            draggable={false}
-                            onDragStart={(event) => {
-                              event.preventDefault();
-                            }}
-                          />
-                        }
-                        isActive={isActive}
-                      >
-                        <ProjectIcon
-                          icon={project.icon}
-                          color={project.color}
-                          className="ajour-sidebar-icon"
-                        />
-                        <span data-sidebar-collapsed="hide">
-                          {getProjectDisplayName(project)}
-                        </span>
-                        {project.code ? (
-                          <span className="ajour-sidebar-code">
-                            {project.code}
-                          </span>
-                        ) : null}
-                      </CustomSidebarMenuButton>
-                      <ObjectActionsButton
+          <SidebarContent>
+            <SidebarGroup>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {activeProjects.map((project) => {
+                    const isActive = project._id === selectedProjectId;
+                    const projectIndex = activeProjectIds.indexOf(project._id);
+                    const isDraggedProject =
+                      projectDragState?.projectId === project._id;
+                    const rowShift = projectDragState
+                      ? getSharedTableDragRowShift({
+                          itemIndex: projectIndex,
+                          originIndex: projectDragState.originIndex,
+                          targetIndex: projectDragState.targetIndex,
+                          rowHeight: projectDragState.height,
+                        })
+                      : 0;
+                    const projectActions = getProjectActions(project);
+                    return (
+                      <ObjectContextMenu
+                        key={project._id}
                         actions={projectActions}
                         onAction={(actionId) =>
                           runProjectAction(project, actionId)
                         }
-                        label={`Actions for ${getProjectDisplayName(project)}`}
-                      />
-                    </ObjectContextMenu>
-                  );
-                })}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        </SidebarContent>
+                        render={
+                          <SidebarMenuItem
+                            ref={(node) => {
+                              if (node) {
+                                projectRowRefs.current.set(project._id, node);
+                                return;
+                              }
 
-        <SidebarFooter className="ajour-project-sidebar-footer">
-          <Link
-            to="/projects/archive"
-            className={`ajour-project-sidebar-archive-trigger ${
-              isArchivePage ? "is-active" : ""
-            }`}
-            title="Archived projects"
-            aria-label="Archived projects"
-          >
-            <Archive />
-            <span data-sidebar-collapsed="hide">Archive</span>
-          </Link>
-        </SidebarFooter>
-      </CustomSidebar>
+                              projectRowRefs.current.delete(project._id);
+                            }}
+                            className={cn(
+                              "ajour-project-sidebar-item",
+                              canReorderProjects && "is-reorderable",
+                              pressedProjectId === project._id && "is-pressing",
+                              rowShift !== 0 && "is-shifting",
+                              isDraggedProject && "is-drag-source",
+                            )}
+                            style={
+                              rowShift !== 0
+                                ? {
+                                    transform: `translate3d(0, ${rowShift}px, 0)`,
+                                  }
+                                : undefined
+                            }
+                            aria-grabbed={isDraggedProject}
+                            onPointerDown={(event) =>
+                              handleProjectPointerDown(project._id, event)
+                            }
+                          />
+                        }
+                      >
+                        <CustomSidebarMenuButton
+                          onDragStart={(event) => {
+                            event.preventDefault();
+                          }}
+                          onClick={(event) => {
+                            if (
+                              performance.now() <
+                              suppressProjectClickUntilRef.current
+                            ) {
+                              event.preventDefault();
+                              event.stopPropagation();
+                            }
+                          }}
+                          render={
+                            <Link
+                              to="/projects/$projectId"
+                              params={{ projectId: project._id }}
+                              aria-label={getProjectDisplayName(project)}
+                              title={project.name}
+                              draggable={false}
+                              onDragStart={(event) => {
+                                event.preventDefault();
+                              }}
+                            />
+                          }
+                          isActive={isActive}
+                        >
+                          <ProjectIcon
+                            icon={project.icon}
+                            color={project.color}
+                            className="ajour-sidebar-icon"
+                          />
+                          <span data-sidebar-collapsed="hide">
+                            {getProjectDisplayName(project)}
+                          </span>
+                          {project.code ? (
+                            <span className="ajour-sidebar-code">
+                              {project.code}
+                            </span>
+                          ) : null}
+                        </CustomSidebarMenuButton>
+                        <ObjectActionsButton
+                          actions={projectActions}
+                          onAction={(actionId) =>
+                            runProjectAction(project, actionId)
+                          }
+                          label={`Actions for ${getProjectDisplayName(project)}`}
+                        />
+                      </ObjectContextMenu>
+                    );
+                  })}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </SidebarContent>
+
+          <SidebarFooter className="ajour-project-sidebar-footer">
+            <Link
+              to="/projects/archive"
+              className={`ajour-project-sidebar-archive-trigger ${
+                isArchivePage ? "is-active" : ""
+              }`}
+              title="Archived projects"
+              aria-label="Archived projects"
+            >
+              <Archive />
+              <span data-sidebar-collapsed="hide">Archive</span>
+            </Link>
+            {/* Wide windows keep project import and export as a settings page. */}
+            {isNarrowView ? (
+              <Link
+                to="/settings/projects"
+                className="ajour-project-sidebar-archive-trigger"
+              >
+                <FileTransfer />
+                <span>Import and export</span>
+              </Link>
+            ) : null}
+          </SidebarFooter>
+        </CustomSidebar>
+      )}
 
       {draggedProject && projectDragState ? (
         <div
@@ -2458,43 +2485,45 @@ export function ProjectsPage() {
         </div>
       ) : null}
 
-      <div className="settings-content">
-        {isArchivePage ? (
-          <ArchivedProjectsView
-            projects={archivedProjects}
-            onProjectAction={runProjectAction}
-          />
-        ) : selectedProject ? (
-          <ProjectDetail
-            project={selectedProject}
-            metrics={
-              metricsByProject.get(selectedProject._id) ?? {
-                durationMs: 0,
-                entryCount: 0,
+      {isNarrowProjectList ? null : (
+        <div className="settings-content">
+          {isArchivePage ? (
+            <ArchivedProjectsView
+              projects={archivedProjects}
+              onProjectAction={runProjectAction}
+            />
+          ) : selectedProject ? (
+            <ProjectDetail
+              project={selectedProject}
+              metrics={
+                metricsByProject.get(selectedProject._id) ?? {
+                  durationMs: 0,
+                  entryCount: 0,
+                }
               }
-            }
-            taskMetrics={
-              taskMetricsByProject.get(selectedProject._id) ?? new Map()
-            }
-            onProjectAction={runProjectAction}
-          />
-        ) : (
-          <div className="flex min-h-[400px] items-center justify-center">
-            <div className="max-w-md text-center">
-              <h2 className="text-[15px] font-semibold">
-                {allProjects.length > 0
-                  ? "No project selected"
-                  : "No projects yet"}
-              </h2>
-              <p className="mt-2 text-sm text-foreground/65">
-                {allProjects.length > 0
-                  ? "Select a project from the sidebar to consult it."
-                  : "Create your first project with the + button in the sidebar."}
-              </p>
+              taskMetrics={
+                taskMetricsByProject.get(selectedProject._id) ?? new Map()
+              }
+              onProjectAction={runProjectAction}
+            />
+          ) : (
+            <div className="flex min-h-[400px] items-center justify-center">
+              <div className="max-w-md text-center">
+                <h2 className="text-[15px] font-semibold">
+                  {allProjects.length > 0
+                    ? "No project selected"
+                    : "No projects yet"}
+                </h2>
+                <p className="mt-2 text-sm text-foreground/65">
+                  {allProjects.length > 0
+                    ? "Select a project from the sidebar to consult it."
+                    : "Create your first project with the + button in the sidebar."}
+                </p>
+              </div>
             </div>
-          </div>
-        )}
-      </div>
+          )}
+        </div>
+      )}
 
       {projectModalState ? (
         <ProjectFormModal

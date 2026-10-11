@@ -61,7 +61,7 @@ export function DayViewerCard({
   return (
     <div className="day-viewer">
       {/* Mobile layout */}
-      <div className="day-viewer-mobile lg:hidden">
+      <div className="day-viewer-mobile desktop:hidden">
         <div className="day-viewer-date-section-mobile">
           <div className="day-viewer-arrows">
             <button
@@ -108,7 +108,7 @@ export function DayViewerCard({
       </div>
 
       {/* Desktop layout: single horizontal strip */}
-      <div className="day-viewer-strip hidden lg:flex">
+      <div className="day-viewer-strip hidden desktop:flex">
         {/* Left: arrows + date */}
         <div className="day-viewer-date-section">
           <div className="day-viewer-arrows">

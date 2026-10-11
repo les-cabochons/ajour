@@ -400,10 +400,10 @@ export function SubmitPage({
         </h1>
       </header>
 
-      <div className="grid items-start gap-4 md:grid-cols-[300px_minmax(0,1fr)]">
+      <div className="grid items-start gap-4 desktop:grid-cols-[300px_minmax(0,1fr)]">
         <section
           aria-label="Week summary"
-          className="flex flex-col gap-3 rounded-[var(--radius-md)] border border-border p-4 md:sticky md:top-4"
+          className="flex flex-col gap-3 rounded-[var(--radius-md)] border border-border p-4 desktop:sticky desktop:top-4"
         >
           <span className="text-xs font-semibold tracking-wide text-muted-foreground uppercase">
             This week

@@ -1290,3 +1290,126 @@ Then("the submit page shows the week as partly submitted", async ({ page }) => {
     page.getByRole("button", { name: "Mark 0 entries as submitted" }),
   ).toBeDisabled();
 });
+
+function narrowPrimaryNavigation(page: Page) {
+  return page.getByRole("navigation", { name: "Primary navigation" });
+}
+
+When("I open today's time workspace in a narrow window", async ({ page }) => {
+  await page.setViewportSize({ width: 420, height: 844 });
+  await page.goto("/time/today");
+});
+
+Then("the narrow view shows no sidebars", async ({ page }) => {
+  await expect(page.locator(".ajour-app-navigation-sidebar")).toHaveCount(0);
+  await expect(page.locator(".ajour-section-sidebar")).toHaveCount(0);
+  const timeLink = narrowPrimaryNavigation(page).getByRole("link", {
+    name: "Time",
+  });
+  await expect(timeLink).toHaveAttribute("aria-current", "page");
+  await expect(timeLink).toContainText("Time");
+});
+
+When("I switch to Backlog from the titlebar", async ({ page }) => {
+  await narrowPrimaryNavigation(page)
+    .getByRole("link", { name: "Backlog" })
+    .click();
+});
+
+Then(
+  "Backlog is the active section of the titlebar switcher",
+  async ({ page }) => {
+    await expect(page).toHaveURL(/\/backlog$/);
+    const navigation = narrowPrimaryNavigation(page);
+    await expect(navigation.getByRole("link", { name: "Backlog" })).toHaveText(
+      "Backlog",
+    );
+    // The inactive section shows only its icon.
+    await expect(navigation.getByRole("link", { name: "Time" })).toHaveText("");
+  },
+);
+
+When("I open Settings from the titlebar cog", async ({ page }) => {
+  await page.getByRole("link", { name: "Settings", exact: true }).click();
+});
+
+Then("Settings opens on its list of pages", async ({ page }) => {
+  await expect(page).toHaveURL(/\/settings$/);
+  const settingsList = page.getByRole("navigation", {
+    name: "Settings sections",
+  });
+  for (const label of [
+    "General",
+    "Plugins",
+    "Backlog",
+    "Projects",
+    "Time entries",
+    "Sync review",
+  ]) {
+    await expect(settingsList.getByRole("link", { name: label })).toBeVisible();
+  }
+});
+
+When(
+  "I open {string} from the Settings list",
+  async ({ page }, label: string) => {
+    await page
+      .getByRole("navigation", { name: "Settings sections" })
+      .getByRole("link", { name: label })
+      .click();
+  },
+);
+
+When("I go back to {string}", async ({ page }, label: string) => {
+  await page.getByRole("link", { name: `Back to ${label}` }).click();
+  await expect(page).toHaveURL(
+    label === "Settings" ? /\/settings$/ : /\/projects$/,
+  );
+});
+
+Then("the Projects list fills the page", async ({ page }) => {
+  await expect(page).toHaveURL(/\/projects$/);
+  const projectsList = page.getByRole("navigation", { name: "Projects" });
+  await expect(
+    projectsList.getByRole("link", { name: "aaa xyz" }),
+  ).toBeVisible();
+  await expect(
+    projectsList.getByRole("link", { name: "Archived projects" }),
+  ).toBeVisible();
+  const listBox = await projectsList.boundingBox();
+  expect(listBox?.width).toBe(page.viewportSize()?.width);
+});
+
+When(
+  "I open project {string} from the Projects list",
+  async ({ page }, name: string) => {
+    await page
+      .getByRole("navigation", { name: "Projects" })
+      .getByRole("link", { name })
+      .click();
+    await expect(page).toHaveURL(/\/projects\/project-/);
+    await expect(
+      page.getByRole("navigation", { name: "Projects" }),
+    ).toHaveCount(0);
+  },
+);
+
+When(
+  "I open project import and export from the Projects list",
+  async ({ page }) => {
+    await page.getByRole("link", { name: "Import and export" }).click();
+  },
+);
+
+Then(
+  "the project import and export page leads back to Projects",
+  async ({ page }) => {
+    await expect(page).toHaveURL(/\/settings\/projects$/);
+    await expect(
+      page.getByRole("heading", { name: "Import and export projects" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", { name: "Back to Projects" }),
+    ).toBeVisible();
+  },
+);

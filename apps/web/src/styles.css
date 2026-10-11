@@ -5,6 +5,9 @@
 @import "@fontsource-variable/noto-serif";
 
 @custom-variant dark (&:is(.dark *));
+/* Layout breakpoints from src/lib/breakpoints.ts: the `narrow`, `desktop`
+   and `forced-rail` variants. Use them instead of width media queries. */
+@plugin "./lib/tailwind-breakpoints.ts";
 
 @layer base {
   :root {
@@ -902,7 +905,7 @@
   }
 }
 
-@media (max-width: 1023px) {
+@variant narrow {
   .weekly-time-view {
     display: none;
   }
@@ -1139,10 +1142,13 @@
     background: var(--popover);
   }
 
-  .ajour-mobile-mode-toggle {
+  /* Narrow view titlebar: the Time and Backlog switcher. The active
+     section shows its label, the other only its icon. */
+  .ajour-narrow-switcher {
     display: inline-flex;
+    flex-shrink: 0;
     align-items: center;
-    gap: 0;
+    gap: 2px;
     height: 32px;
     padding: 3px;
     border: 1px solid var(--border);
@@ -1151,33 +1157,42 @@
     box-shadow: inset 0 1px 0 color-mix(in srgb, white 4%, transparent);
   }
 
-  .ajour-mobile-mode-toggle-item {
-    position: relative;
-    width: 28px;
-    height: 24px;
-    padding: 0;
-    border-radius: 4px;
+  .ajour-narrow-switcher-item {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.375rem;
     min-width: 28px;
+    height: 24px;
+    padding: 0 0.4375rem;
+    border-radius: 4px;
     background: transparent;
     color: var(--text-secondary);
+    font-size: 12px;
+    font-weight: 600;
     transition:
       background-color 140ms var(--ease),
       color 140ms var(--ease),
       box-shadow 140ms var(--ease);
   }
 
-  .ajour-mobile-mode-toggle-item svg {
+  .ajour-narrow-switcher-item svg {
     width: 14px;
     height: 14px;
+    flex-shrink: 0;
   }
 
-  .ajour-mobile-mode-toggle-item[aria-pressed="true"] {
+  .ajour-narrow-switcher-item:hover {
+    color: var(--text);
+  }
+
+  .ajour-narrow-switcher-item[aria-current="page"] {
     background: var(--surface-high);
     color: var(--text);
     box-shadow: inset 0 0 0 1px color-mix(in srgb, white 6%, transparent);
   }
 
-  .ajour-mobile-mode-toggle-item:focus-visible {
+  .ajour-narrow-switcher-item:focus-visible {
     outline: 1px solid var(--focus-ring);
     outline-offset: 1px;
   }
@@ -2935,7 +2950,7 @@
     line-height: 1.65;
   }
 
-  @media (max-width: 640px) {
+  @variant narrow {
     .backlog-note-modal-overlay {
       padding: 0.75rem;
     }
@@ -3635,6 +3650,39 @@
     padding-inline: 1.35rem;
   }
 
+  /* The strip follows its own width, which the rail and the entry side
+     panel both reduce. Below 840px the padding tightens; below 720px the
+     seven days and the week total no longer fit, so they hide and the day
+     arrows remain. The week total stays in the titlebar's totals pill. */
+  .time-page-stack .day-viewer {
+    container: day-viewer / inline-size;
+  }
+
+  @container day-viewer (width < 840px) {
+    .time-page-stack .day-viewer-date-section {
+      padding-inline: 1rem;
+    }
+
+    .time-page-stack .day-viewer-day {
+      padding-inline: 0.25rem;
+    }
+
+    .time-page-stack .day-viewer-end {
+      padding-inline: 1rem;
+    }
+  }
+
+  @container day-viewer (width < 720px) {
+    .time-page-stack .day-viewer-days,
+    .time-page-stack .day-viewer-week-total {
+      display: none;
+    }
+
+    .time-page-stack .day-viewer-end {
+      margin-left: auto;
+    }
+  }
+
   .entries-header-add.is-open {
     transform: none;
   }
@@ -3725,7 +3773,7 @@
     border-top: 0;
   }
 
-  @media (min-width: 1024px) {
+  @variant desktop {
     .time-page-stack .entries-table-header-table th:first-child,
     .time-page-stack
       .entries-table-body-table
@@ -6191,7 +6239,7 @@
   padding-top: 0.5rem;
 }
 
-@media (min-width: 1024px) {
+@variant desktop {
   .backlog-task-drag-preview-grid {
     grid-template-columns:
       calc(
@@ -6241,14 +6289,11 @@
   }
 }
 
-@media (max-width: 1023px) {
+/* The narrow view. The app shell and Settings do not render their sidebars
+   here. The Projects list renders only as a page of its own. */
+@variant narrow {
   .ajour-app-body[data-slot="sidebar-wrapper"] {
     display: block;
-  }
-
-  .ajour-shell-sidebar,
-  .ajour-project-layout[data-slot="sidebar-wrapper"] .ajour-section-sidebar {
-    display: none;
   }
 
   .app-content-shell {
@@ -6349,7 +6394,7 @@
     display: none;
   }
 
-  /* Nav mobile layout - consolidated here from 640px */
+  /* Narrow titlebar */
   .ajour-nav {
     height: 48px;
     min-height: 48px;
@@ -6441,26 +6486,19 @@
   }
 }
 
-/* The app sidebar shows as the rail here. useAppSidebar forces the rail
-   below 1100px, so only its visibility is restored at this range. */
-@media (min-width: 641px) and (max-width: 1023px) {
-  .ajour-app-body[data-slot="sidebar-wrapper"] {
-    display: flex;
-  }
-
-  .ajour-shell-sidebar {
-    display: flex;
-  }
-
-  .ajour-app-workspace {
-    width: auto;
-  }
-
+/* Where useAppSidebar forces the app sidebar to the rail, the Projects list
+   is a 48px icon rail too. Its rows rely on right-click and the project
+   header's "…", so the rail hides their "…" buttons. */
+@variant forced-rail {
   .ajour-project-layout[data-slot="sidebar-wrapper"]
     .ajour-project-navigation-sidebar {
     display: flex;
     width: 48px !important;
     flex: 0 0 48px;
+  }
+
+  .ajour-project-navigation-sidebar .object-actions-button {
+    display: none;
   }
 
   .ajour-project-navigation-sidebar [data-sidebar="group"] {
@@ -6493,7 +6531,7 @@
   }
 }
 
-@media (max-width: 640px) {
+@variant narrow {
   .entries-table th,
   .entries-table td {
     padding: 0.625rem 0.75rem;
@@ -6754,9 +6792,12 @@
   }
 }
 
-@media (max-width: 640px) {
+@variant narrow {
+  /* The Settings and Projects lists fill the page. */
   .ajour-section-sidebar {
-    display: none;
+    width: 100%;
+    flex: 1 1 auto;
+    border-right: 0;
   }
 
   .ajour-project-layout[data-slot="sidebar-wrapper"] {
@@ -6764,12 +6805,17 @@
     margin-left: 0 !important;
   }
 
-  .ajour-project-layout[data-slot="sidebar-wrapper"] .settings-content {
-    padding: 0;
+  /* Rows always show their "…" here, so the project code sits beside it. */
+  .ajour-project-sidebar-item .ajour-sidebar-code {
+    margin-right: 1.75rem;
   }
 
   .settings-content {
     padding: 1rem;
+  }
+
+  .settings-content:has(> .ajour-settings-navigation) {
+    padding: 0;
   }
 
   .connector-form-grid,
@@ -7068,15 +7114,10 @@
 }
 
 /* Narrow view: the "…" button is always shown. Day, task and backlog rows keep only
-   it, without their Continue or Start entry shortcut. The project sidebar is an icon
-   rail there, so its rows rely on right-click and the project header's "…". */
-@media (max-width: 1023px) {
+   it, without their Continue or Start entry shortcut. */
+@variant narrow {
   .object-actions-button {
     opacity: 1 !important;
-  }
-
-  .ajour-project-navigation-sidebar .object-actions-button {
-    display: none;
   }
 
   .entries-table tbody tr .entry-row-actions {

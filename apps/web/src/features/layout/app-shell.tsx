@@ -12,10 +12,8 @@ import {
   RiArrowGoBackLine as ReturnIcon,
   RiCheckLine as Check,
   RiCloseLine as X,
-  RiListCheck3 as ListTodo,
   RiPlayLine as Play,
   RiStopLine as Square,
-  RiTimerLine as Timer,
 } from "@remixicon/react";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -26,11 +24,15 @@ import {
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { SidebarProvider } from "@/components/ui/sidebar";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   AppNavigationSidebar,
   isAppNavigationItemActive,
 } from "@/features/layout/app-navigation-sidebar";
+import {
+  NarrowBackBar,
+  NarrowSectionSwitcher,
+  NarrowSettingsButton,
+} from "@/features/layout/narrow-titlebar";
 import {
   ProjectTaskPicker,
   type ProjectTaskSelection,
@@ -48,6 +50,7 @@ import {
   getTimerDurationsMs,
 } from "@/lib/timer-totals";
 import { useAppSidebar } from "@/lib/app-sidebar";
+import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { isDesktopShell } from "@/lib/runtime";
 import { cn, getIsoWeekDates, todayIsoDate } from "@/lib/utils";
 import {
@@ -55,7 +58,6 @@ import {
   useLocalState,
   useUserPreferences,
 } from "@/lib/local-hooks";
-import { MOBILE_BREAKPOINT } from "@/hooks/use-mobile";
 import { useApplyTheme } from "@/lib/use-theme";
 
 const isWindowsDesktopShell =
@@ -797,24 +799,13 @@ export function AppShell() {
   });
   const navigate = useNavigate();
   const isTimeActive = isAppNavigationItemActive(pathname, "/time/$date");
-  const isBacklogActive = isAppNavigationItemActive(pathname, "/backlog");
   const isSettingsActive = isAppNavigationItemActive(pathname, "/settings");
   const timeRouteDate = getTimeRouteDate(pathname);
   const [selectedTimeDate, setSelectedTimeDate] = useState(
     () => timeRouteDate ?? todayIsoDate(),
   );
-  const [showMobileModeToggle, setShowMobileModeToggle] = useState(() =>
-    typeof window === "undefined"
-      ? false
-      : window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`).matches,
-  );
-  const mobileModeValue = isTimeActive
-    ? ["time"]
-    : isBacklogActive
-      ? ["backlog"]
-      : [];
-
   const appSidebar = useAppSidebar();
+  const isNarrowView = useIsNarrowView();
 
   useApplyTheme();
 
@@ -831,17 +822,6 @@ export function AppShell() {
       setSelectedTimeDate(timeRouteDate);
     }
   }, [timeRouteDate]);
-
-  useEffect(() => {
-    const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`);
-    const handleViewportChange = () => {
-      setShowMobileModeToggle(mediaQuery.matches);
-    };
-
-    handleViewportChange();
-    mediaQuery.addEventListener("change", handleViewportChange);
-    return () => mediaQuery.removeEventListener("change", handleViewportChange);
-  }, []);
 
   return (
     <div
@@ -861,16 +841,21 @@ export function AppShell() {
         open={appSidebar.state === "expanded"}
         keyboardShortcut={false}
       >
-        <AppNavigationSidebar
-          pathname={pathname}
-          selectedTimeDate={selectedTimeDate}
-          state={appSidebar.state}
-          isRailForced={appSidebar.isRailForced}
-          onToggle={appSidebar.toggle}
-        />
+        {/* The narrow view has no rail and no sidebars. Its titlebar holds
+            the navigation instead. */}
+        {isNarrowView ? null : (
+          <AppNavigationSidebar
+            pathname={pathname}
+            selectedTimeDate={selectedTimeDate}
+            state={appSidebar.state}
+            isRailForced={appSidebar.isRailForced}
+            onToggle={appSidebar.toggle}
+          />
+        )}
 
         <div className="ajour-app-workspace">
-          {/* Workspace titlebar. The sidebar owns the window's left chrome. */}
+          {/* Workspace titlebar. The sidebar owns the window's left chrome, except
+              in the narrow view where the titlebar spans the window. */}
           <nav
             className={cn(
               "ajour-nav",
@@ -889,60 +874,11 @@ export function AppShell() {
                   isDesktopShell && "desktop-shell-nav-main",
                 )}
               >
-                {showMobileModeToggle ? (
-                  <ToggleGroup
-                    className={cn(
-                      "ajour-mobile-mode-toggle",
-                      isDesktopShell && "desktop-no-drag",
-                    )}
-                    aria-label="Primary navigation"
-                    value={mobileModeValue}
-                    onValueChange={(value) => {
-                      const nextValue = value[0];
-                      if (!nextValue) {
-                        return;
-                      }
-
-                      if (nextValue === "time") {
-                        void navigate({
-                          to: "/time/$date",
-                          params: { date: selectedTimeDate },
-                        });
-                        return;
-                      }
-
-                      void navigate({ to: "/backlog" });
-                    }}
-                  >
-                    <ToggleGroupItem
-                      value="time"
-                      size="sm"
-                      variant="default"
-                      className={cn(
-                        "ajour-mobile-mode-toggle-item !h-6 !w-7 !min-w-7 !gap-0 !rounded-[4px] !px-0",
-                        isDesktopShell && "desktop-no-drag",
-                      )}
-                      aria-label="Time"
-                      title="Time"
-                    >
-                      <Timer className="h-4 w-4" />
-                      <span className="sr-only">Time</span>
-                    </ToggleGroupItem>
-                    <ToggleGroupItem
-                      value="backlog"
-                      size="sm"
-                      variant="default"
-                      className={cn(
-                        "ajour-mobile-mode-toggle-item !h-6 !w-7 !min-w-7 !gap-0 !rounded-[4px] !px-0",
-                        isDesktopShell && "desktop-no-drag",
-                      )}
-                      aria-label="Backlog"
-                      title="Backlog"
-                    >
-                      <ListTodo className="h-4 w-4" />
-                      <span className="sr-only">Backlog</span>
-                    </ToggleGroupItem>
-                  </ToggleGroup>
+                {isNarrowView ? (
+                  <NarrowSectionSwitcher
+                    pathname={pathname}
+                    selectedTimeDate={selectedTimeDate}
+                  />
                 ) : null}
                 <CompactTimeDatePicker
                   date={selectedTimeDate}
@@ -981,8 +917,13 @@ export function AppShell() {
               </div>
 
               <GlobalTimerBar selectedDate={selectedTimeDate} />
+              {isNarrowView ? (
+                <NarrowSettingsButton pathname={pathname} />
+              ) : null}
             </div>
           </nav>
+
+          {isNarrowView ? <NarrowBackBar pathname={pathname} /> : null}
 
           {/* Page content */}
           <main className="app-content-shell flex-1">

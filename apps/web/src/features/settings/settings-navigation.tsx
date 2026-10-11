@@ -18,25 +18,48 @@ import {
   SidebarMenuItem,
 } from "@/components/custom-sidebar";
 
-const settingsItems = [
-  { to: "/settings/general", label: "General", icon: Settings },
-  { to: "/settings/plugins", label: "Plugins", icon: Puzzle },
-  { to: "/settings/backlog", label: "Backlog", icon: ListTodo },
-  { to: "/settings/projects", label: "Projects", icon: FolderKanban },
-  { to: "/settings/time-entries", label: "Time entries", icon: Download },
-  { to: "/settings/sync-review", label: "Sync review", icon: Inbox },
-  // Debug exists only in development builds.
-  ...(import.meta.env.DEV
-    ? ([{ to: "/settings/debug", label: "Debug", icon: Bug }] as const)
-    : []),
-] as const;
+/**
+ * Wide windows show the settings pages in a column next to the app sidebar.
+ * The narrow view shows them as a full-width list that opens Settings.
+ */
+export type SettingsNavigationView = "wide" | "narrow";
 
 /**
- * The list of settings pages, shown as a second column next to the app
- * sidebar, like the Projects list. The app sidebar stays visible in Settings,
- * so there is no Back control.
+ * The settings pages in display order. The narrow view has no Projects
+ * sidebar, so its Projects entry opens the full Projects section, where
+ * project import and export is an action. Wide windows keep the separate
+ * import and export page.
  */
-export function SettingsNavigation({ pathname }: { pathname: string }) {
+export function getSettingsPages(view: SettingsNavigationView) {
+  return [
+    { to: "/settings/general", label: "General", icon: Settings },
+    { to: "/settings/plugins", label: "Plugins", icon: Puzzle },
+    { to: "/settings/backlog", label: "Backlog", icon: ListTodo },
+    view === "narrow"
+      ? { to: "/projects", label: "Projects", icon: FolderKanban }
+      : { to: "/settings/projects", label: "Projects", icon: FolderKanban },
+    { to: "/settings/time-entries", label: "Time entries", icon: Download },
+    { to: "/settings/sync-review", label: "Sync review", icon: Inbox },
+    // Debug exists only in development builds.
+    ...(import.meta.env.DEV
+      ? [{ to: "/settings/debug", label: "Debug", icon: Bug }]
+      : []),
+  ] as const;
+}
+
+/**
+ * The list of settings pages. In wide windows it is a second column next to
+ * the app sidebar, like the Projects list, and switching pages replaces the
+ * history entry. In the narrow view it fills the page, and each page it
+ * opens has a back arrow to it.
+ */
+export function SettingsNavigation({
+  pathname,
+  view,
+}: {
+  pathname: string;
+  view: SettingsNavigationView;
+}) {
   return (
     <CustomSidebar
       className="ajour-settings-navigation"
@@ -47,7 +70,7 @@ export function SettingsNavigation({ pathname }: { pathname: string }) {
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {settingsItems.map((item) => {
+              {getSettingsPages(view).map((item) => {
                 const Icon = item.icon;
                 const isActive = pathname.startsWith(item.to);
                 return (
@@ -56,7 +79,7 @@ export function SettingsNavigation({ pathname }: { pathname: string }) {
                       render={
                         <Link
                           to={item.to}
-                          replace
+                          replace={view === "wide"}
                           aria-current={isActive ? "page" : undefined}
                         />
                       }

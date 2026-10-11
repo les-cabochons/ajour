@@ -105,9 +105,9 @@ import {
   SHARED_TABLE_DRAG_CLICK_SUPPRESSION_MS,
   type SharedTableDragPointerSession,
 } from "@/lib/table-drag";
+import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { cn, todayIsoDate } from "@/lib/utils";
 
-const DESKTOP_ENTRY_MEDIA_QUERY = "(min-width: 641px)";
 const BACKLOG_TABLE_COLUMN_COUNT = 4;
 
 function BacklogTableColumns() {
@@ -291,11 +291,7 @@ export function BacklogPage() {
   const suppressWorkItemClickUntilRef = useRef(0);
   const currentTimer = state.timers[0] ?? null;
   const backlogSortMode = state.backlogSortMode ?? "custom";
-  const [isDesktopLayout, setIsDesktopLayout] = useState(() =>
-    typeof window === "undefined"
-      ? true
-      : window.matchMedia(DESKTOP_ENTRY_MEDIA_QUERY).matches,
-  );
+  const isDesktopLayout = !useIsNarrowView();
   const [isCreatingItem, setIsCreatingItem] = useState(false);
   const [newTitle, setNewTitle] = useState("");
   const [newNote, setNewNote] = useState("");
@@ -605,21 +601,6 @@ export function BacklogPage() {
     !expandedWorkItemId &&
     !isAnyModalOpen &&
     visibleRootItems.length > 1;
-
-  useEffect(() => {
-    if (typeof window === "undefined") {
-      return;
-    }
-
-    const mediaQuery = window.matchMedia(DESKTOP_ENTRY_MEDIA_QUERY);
-    const syncLayout = (event?: MediaQueryListEvent) => {
-      setIsDesktopLayout(event?.matches ?? mediaQuery.matches);
-    };
-
-    syncLayout();
-    mediaQuery.addEventListener("change", syncLayout);
-    return () => mediaQuery.removeEventListener("change", syncLayout);
-  }, []);
 
   useEffect(() => {
     if (isDesktopLayout || !isCreatingItem) {
