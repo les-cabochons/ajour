@@ -139,14 +139,16 @@ Today's splits at 640px and 1023px go away.
 
 ### Navigation
 
-- The titlebar holds a segmented switcher for Time, Backlog and Projects. The active section shows its label, the others show only their icon.
+- The titlebar holds a segmented switcher for Time and Backlog. The active section shows its label, the other shows only its icon.
 - The running entry pill, the totals pill and New entry stay in the titlebar.
 - A cog button at the trailing edge opens Settings. A search button may join it later. See [Keyboard model and command palette](https://github.com/les-cabochons/ajour/issues/18).
 - Settings opens on a list of its pages. Each page has a back arrow to that list.
+- Projects lives inside Settings in the narrow view. The Settings list has one Projects entry that opens the full Projects section: the project list, project detail and the archive. Importing and exporting projects is an action inside that section, not a separate settings page.
+- Wide windows keep Projects in the sidebar and keep the separate import and export settings page.
 
 ### Jobs and views
 
-- The narrow view covers the running entry, logging and fixing entries by day, browsing and starting backlog items, looking up projects, changing settings, and submitting a timesheet. The submit flow belongs to [Submit timesheet flow in full and narrow windows](https://github.com/les-cabochons/ajour/issues/24).
+- The narrow view covers the running entry, logging and fixing entries by day, browsing and starting backlog items, changing settings and projects, and submitting a timesheet. The submit flow belongs to [Submit timesheet flow in full and narrow windows](https://github.com/les-cabochons/ajour/issues/24).
 - Week is not available. The view menu does not offer it, and a Week link opens Day with a short note that Week needs a wider window.
 
 ### Actions and editing
