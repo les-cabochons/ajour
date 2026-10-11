@@ -78,6 +78,46 @@ describe("weekly time projection", () => {
     });
   });
 
+  it("applies a correction below the resumed entry's saved time to its row", () => {
+    const hour = 60 * 60 * 1000;
+    // Resumed a saved 2h entry, then corrected its counted time to 1h.
+    const projection = projectWeeklyTime({
+      capacityTargets,
+      entries: [
+        {
+          _id: "entry-1",
+          localDate: "2026-08-10",
+          projectId: "project-1",
+          taskId: "task-1",
+          label: "Build",
+          durationMs: 2 * hour,
+          sourceBlockIds: [],
+          committedAt: 1,
+        },
+      ],
+      projects,
+      runningTime: {
+        entryId: "entry-1",
+        localDate: "2026-08-10",
+        durationMs: -hour,
+        projectId: "project-1",
+        taskId: "task-1",
+      },
+      weekDates,
+    });
+
+    expect(projection.days[0]?.totalMs).toBe(hour);
+    expect(projection.totalMs).toBe(hour);
+    expect(projection.gridRows).toEqual([
+      expect.objectContaining({
+        rowKey: "project-1::task-1",
+        runningLocalDate: "2026-08-10",
+        totalMs: hour,
+      }),
+    ]);
+    expect(projection.gridRows[0]?.dayTotalsMs[0]).toBe(hour);
+  });
+
   it("uses the linked entry label to place running time in the correct taskless row", () => {
     const projection = projectWeeklyTime({
       capacityTargets,
