@@ -24,6 +24,7 @@ import {
   AppNavigationSidebar,
   isAppNavigationItemActive,
 } from "@/features/layout/app-navigation-sidebar";
+import { AppMenuBar } from "@/features/layout/app-menu-bar";
 import { ShortcutOverlay } from "@/features/layout/shortcut-overlay";
 import { useGlobalShortcuts } from "@/features/layout/use-global-shortcuts";
 import {
@@ -617,6 +618,7 @@ export function AppShell() {
                   isDesktopShell && "desktop-shell-nav-main",
                 )}
               >
+                <AppMenuBar />
                 {isNarrowView ? (
                   <NarrowSectionSwitcher
                     pathname={pathname}

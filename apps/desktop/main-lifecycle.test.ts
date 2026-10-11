@@ -161,4 +161,19 @@ describe("desktop connector lifecycle", () => {
     expect(source).toContain("await stopInternalAppApi()");
     expect(source).toContain("await ensureInternalAppApiRunning()");
   });
+
+  it("replaces the default menu before opening the window", async () => {
+    const source = await readFile(
+      new URL("./electron/main.cjs", import.meta.url),
+      "utf8",
+    );
+
+    const readyIndex = source.indexOf("app.whenReady()");
+    const menuIndex = source.indexOf("Menu.setApplicationMenu(", readyIndex);
+    const windowIndex = source.indexOf("await createMainWindow();", readyIndex);
+
+    expect(menuIndex).toBeGreaterThan(readyIndex);
+    expect(windowIndex).toBeGreaterThan(menuIndex);
+    expect(source).toContain("developmentBuild: !app.isPackaged");
+  });
 });

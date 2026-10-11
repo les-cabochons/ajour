@@ -1,5 +1,6 @@
 import {
   createContext,
+  useCallback,
   useContext,
   useEffect,
   useLayoutEffect,
@@ -144,5 +145,20 @@ export function useShortcut(
   useEffect(
     () => registry?.register(id, { layer, run: () => handlerRef.current() }),
     [id, layer, registry],
+  );
+}
+
+/**
+ * Returns a function that runs the handler for an action as if its shortcut
+ * were pressed, without the text-field guard. Menus use it, so a menu item
+ * does what its key does. It does nothing when no handler is mounted, as for
+ * Previous outside the Time page.
+ */
+export function useRunShortcut() {
+  const registry = useContext(ShortcutContext);
+
+  return useCallback(
+    (id: ShortcutActionId) => registry?.find(id)?.run(),
+    [registry],
   );
 }
