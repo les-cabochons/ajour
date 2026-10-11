@@ -726,6 +726,44 @@ describe("localStore backlog status sync", () => {
     });
   });
 
+  it("undoes only the last time entry action, once, while its token is kept", async () => {
+    const { localStore } = await import("./local-store");
+    localStore.saveManualTimeEntry({
+      localDate: "2026-10-07",
+      note: "Kept exactly",
+      durationMs: 75_123,
+    });
+    localStore.saveManualTimeEntry({
+      localDate: "2026-10-07",
+      note: "Second",
+      durationMs: 60_000,
+    });
+    const [first, second] = localStore.snapshot().timesheetEntries;
+    const before = localStore.snapshot().timesheetEntries;
+
+    const deleteToken = localStore.deleteTimesheetEntry(first!._id)!;
+    const moveToken = localStore.moveTimesheetEntry(second!._id, {
+      localDate: "2026-10-08",
+      note: "Second",
+      durationMs: 60_000,
+    })!;
+
+    expect(localStore.undo(deleteToken)).toBe("expired");
+    expect(localStore.undo(moveToken)).toBe("restored");
+    expect(localStore.undo(moveToken)).toBe("expired");
+
+    const nextDelete = localStore.deleteTimesheetEntry(first!._id)!;
+    localStore.forgetUndo(nextDelete);
+    expect(localStore.undo(nextDelete)).toBe("expired");
+
+    const finalDelete = localStore.deleteTimesheetEntry(second!._id)!;
+    expect(localStore.undo(finalDelete)).toBe("restored");
+    expect(
+      JSON.parse(window.localStorage.getItem("ajour.local-state.v2")!)
+        .timesheetEntries,
+    ).toEqual(JSON.parse(JSON.stringify(before.slice(1))));
+  });
+
   it("hydrates committed entries from desktop bootstrap state when the current profile was reset", async () => {
     const bootstrapState = {
       projects: [

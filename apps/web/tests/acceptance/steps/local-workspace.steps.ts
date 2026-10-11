@@ -1413,3 +1413,66 @@ Then(
     ).toBeVisible();
   },
 );
+
+When("I delete Monday's {string} entry", async ({ page }, note: string) => {
+  await page.goto("/time/2026-10-05");
+  await page.getByText(note, { exact: true }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Delete" }).click();
+});
+
+Then("the entry is gone and a toast offers Undo", async ({ page }) => {
+  // Delete happens at once, without a confirmation dialog.
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  await expect(
+    page.locator(".time-entry-row").filter({ hasText: "API" }),
+  ).toHaveCount(0);
+  const toasts = page.getByRole("region", { name: "Notifications" });
+  await expect(toasts).toContainText("Entry deleted");
+  await expect(toasts.getByRole("button", { name: "Undo" })).toBeVisible();
+});
+
+When("I undo with the toast button", async ({ page }) => {
+  await page
+    .getByRole("region", { name: "Notifications" })
+    .getByRole("button", { name: "Undo" })
+    .click();
+});
+
+When("I undo with the Cmd+Z shortcut", async ({ page }) => {
+  await page.locator("body").press("ControlOrMeta+z");
+});
+
+Then(
+  "the {string} entry is back exactly as it was",
+  async ({ page }, note: string) => {
+    await expect(
+      page.locator(".time-entry-row").filter({ hasText: note }),
+    ).toBeVisible();
+    // Same record in the same position: duration, note and order are unchanged.
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const state = JSON.parse(
+            window.localStorage.getItem("ajour.local-state.v2") ?? "null",
+          );
+          return state?.timesheetEntries;
+        }),
+      )
+      .toEqual([
+        expect.objectContaining({ _id: "mon-dev-1" }),
+        expect.objectContaining({
+          _id: "mon-dev-2",
+          localDate: "2026-10-05",
+          taskId: "task-dev",
+          note: "API",
+          durationMs: 2 * 60 * 60 * 1000,
+          committedAt: 2,
+        }),
+        expect.objectContaining({ _id: "mon-review" }),
+        expect.objectContaining({ _id: "tue-dev" }),
+      ]);
+    await expect(
+      page.getByRole("region", { name: "Notifications" }),
+    ).not.toContainText("Entry deleted");
+  },
+);

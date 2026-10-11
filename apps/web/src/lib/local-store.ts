@@ -48,6 +48,12 @@ import {
   updateTimesheetEntry as applyUpdateTimesheetEntry,
 } from "@/domain/time/timesheet-entry";
 import {
+  captureTimeEntryUndo,
+  restoreTimeEntryUndo,
+  type TimeEntryUndo,
+  type TimeEntryUndoResult,
+} from "@/domain/time/time-entry-undo";
+import {
   clearTimesheetImportDrafts as applyClearTimesheetImportDrafts,
   commitReadyTimesheetImportDrafts as applyCommitReadyTimesheetImportDrafts,
   commitTimesheetImportDraft as applyCommitTimesheetImportDraft,
@@ -712,6 +718,39 @@ function updateStateWithResult<T>(
   return result;
 }
 
+/**
+ * The last undoable action. Only one action can be undone, so a new one
+ * replaces it. It lives in memory: the Undo toast does not survive a reload.
+ */
+let lastUndo: { token: string; undo: TimeEntryUndo } | undefined;
+
+/**
+ * Applies a time entry action and remembers what it changed. Returns the token
+ * that Undo passes back, or null when the action changed nothing.
+ */
+function updateStateWithUndo(
+  mutator: (state: LocalAppState) => LocalAppState,
+): string | null {
+  const current = readState();
+  const next = mutator(current);
+  if (next === current) {
+    return null;
+  }
+
+  writeState(next);
+  const undo = captureTimeEntryUndo(current, next);
+  if (!undo) {
+    return null;
+  }
+
+  const token = createId("undo");
+  lastUndo = { token, undo };
+  return token;
+}
+
+/** `expired` means a later action replaced this one, or its toast already closed. */
+export type UndoResult = TimeEntryUndoResult | "expired";
+
 export const localStore = {
   subscribe(callback: () => void) {
     const notify = () => {
@@ -963,8 +1002,9 @@ export const localStore = {
   ) {
     updateState((state) => applyUpdateTimer(state, timerId, patch));
   },
+  /** Discards the running entry. Returns an undo token, or null when nothing changed. */
   cancelTimer(timerId: string) {
-    updateState((state) => applyCancelTimer(state, timerId));
+    return updateStateWithUndo((state) => applyCancelTimer(state, timerId));
   },
   saveManualTimeEntry(values: {
     localDate: string;
@@ -1121,9 +1161,13 @@ export const localStore = {
       }),
     );
   },
+  /** Deletes an entry. Returns an undo token, or null when nothing changed. */
   deleteTimesheetEntry(entryId: string) {
-    updateState((state) => applyDeleteTimesheetEntry(state, entryId));
+    return updateStateWithUndo((state) =>
+      applyDeleteTimesheetEntry(state, entryId),
+    );
   },
+  /** Copies an entry to a day. Returns an undo token that removes the copy. */
   duplicateTimesheetEntry(
     entryId: string,
     values: {
@@ -1134,13 +1178,14 @@ export const localStore = {
       durationMs: number;
     },
   ) {
-    updateState((state) =>
+    return updateStateWithUndo((state) =>
       applyDuplicateTimesheetEntry(state, entryId, values, {
         createId,
         now: Date.now,
       }),
     );
   },
+  /** Moves an entry to a day. Returns an undo token, or null when nothing changed. */
   moveTimesheetEntry(
     entryId: string,
     values: {
@@ -1151,12 +1196,31 @@ export const localStore = {
       durationMs: number;
     },
   ) {
-    updateState((state) =>
+    return updateStateWithUndo((state) =>
       applyMoveTimesheetEntry(state, entryId, values, {
         createId,
         now: Date.now,
       }),
     );
+  },
+  /**
+   * Undoes the action that returned `token`, if it is still the last one.
+   * Restored records keep their ids, values, submission state and order.
+   */
+  undo(token: string): UndoResult {
+    if (lastUndo?.token !== token) {
+      return "expired";
+    }
+
+    const { undo } = lastUndo;
+    lastUndo = undefined;
+    return updateStateWithResult((state) => restoreTimeEntryUndo(state, undo));
+  },
+  /** Drops the undo for `token` once its toast closes. A newer undo is kept. */
+  forgetUndo(token: string) {
+    if (lastUndo?.token === token) {
+      lastUndo = undefined;
+    }
   },
   saveTimer(timerId: string) {
     updateState((state) =>

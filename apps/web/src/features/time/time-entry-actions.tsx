@@ -6,16 +6,6 @@ import {
   type TimeEntryActionOptions,
 } from "@/domain/actions/object-actions";
 import type { LocalTimesheetEntry } from "@/domain/local-state";
-import {
-  AlertDialog,
-  AlertDialogAction,
-  AlertDialogCancel,
-  AlertDialogContent,
-  AlertDialogDescription,
-  AlertDialogFooter,
-  AlertDialogHeader,
-  AlertDialogTitle,
-} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -26,6 +16,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import {
+  closeUndoToast,
+  showToast,
+  showUndoToast,
+} from "@/components/ui/toast";
 import { localStore } from "@/lib/local-store";
 import { todayIsoDate } from "@/lib/utils";
 
@@ -59,15 +54,50 @@ interface PendingDateAction {
   resolveValues?: TimeEntryActionRunOptions["resolveValues"];
 }
 
-type PendingConfirmation =
-  { kind: "delete"; entryId: string } | { kind: "discard"; timerId: string };
-
 function dateAtNoon(localDate: string) {
   return new Date(`${localDate}T12:00:00`);
 }
 
 function formatIsoDate(date: Date) {
   return new Intl.DateTimeFormat("en-CA").format(date);
+}
+
+/** Formats a day for toasts, such as "Thu, Oct 8". */
+export function formatToastDay(localDate: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  }).format(dateAtNoon(localDate));
+}
+
+/**
+ * Shows the Undo toast for a time entry action. `token` is what the local store
+ * returned for the action; null means the action changed nothing.
+ */
+export function offerTimeEntryUndo(token: string | null, title: string) {
+  if (!token) return;
+
+  showUndoToast({
+    title,
+    onUndo: () => {
+      if (localStore.undo(token) !== "restored") {
+        showToast("Can't undo. The entry changed after that action.");
+      }
+    },
+    onClose: () => localStore.forgetUndo(token),
+  });
+}
+
+/**
+ * Ends Undo for an action that shows no toast. The store keeps only the last
+ * action, so the toast of an earlier one closes too.
+ */
+function skipTimeEntryUndo(token: string | null) {
+  if (!token) return;
+
+  localStore.forgetUndo(token);
+  closeUndoToast();
 }
 
 function savedValues(
@@ -86,7 +116,8 @@ function savedValues(
 /**
  * Runs the time entry action set from any surface: Day rows, Week cards, the Grid tray
  * and the entry editors. Each surface renders `dialogs` once and supplies how Edit
- * opens the entry there.
+ * opens the entry there. Delete, Discard, Move to… and Duplicate to… another day
+ * happen at once and show an Undo toast instead of asking first.
  */
 export function useTimeEntryActions({
   onEdit,
@@ -98,9 +129,6 @@ export function useTimeEntryActions({
 }) {
   const [dateAction, setDateAction] = useState<PendingDateAction | null>(null);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
-  const [confirmation, setConfirmation] = useState<PendingConfirmation | null>(
-    null,
-  );
 
   function getActions(
     target: TimeEntryActionTarget,
@@ -129,10 +157,19 @@ export function useTimeEntryActions({
       return;
     }
 
-    if (kind === "move-to") {
-      localStore.moveTimesheetEntry(entry._id, values);
+    const token =
+      kind === "move-to"
+        ? localStore.moveTimesheetEntry(entry._id, values)
+        : localStore.duplicateTimesheetEntry(entry._id, values);
+    // Undo covers moves and copies to another day. A copy on the same day
+    // shows where it happened.
+    if (kind !== "duplicate" && localDate !== entry.localDate) {
+      offerTimeEntryUndo(
+        token,
+        `${kind === "move-to" ? "Moved" : "Duplicated"} to ${formatToastDay(localDate)}`,
+      );
     } else {
-      localStore.duplicateTimesheetEntry(entry._id, values);
+      skipTimeEntryUndo(token);
     }
     onAfterAction?.();
   }
@@ -152,7 +189,11 @@ export function useTimeEntryActions({
         localStore.saveTimer(target.timerId);
         onAfterAction?.();
       } else if (actionId === "discard") {
-        setConfirmation({ kind: "discard", timerId: target.timerId });
+        offerTimeEntryUndo(
+          localStore.cancelTimer(target.timerId),
+          "Running entry discarded",
+        );
+        onAfterAction?.();
       }
       return;
     }
@@ -176,7 +217,11 @@ export function useTimeEntryActions({
         });
         return;
       case "delete":
-        setConfirmation({ kind: "delete", entryId: entry._id });
+        offerTimeEntryUndo(
+          localStore.deleteTimesheetEntry(entry._id),
+          "Entry deleted",
+        );
+        onAfterAction?.();
         return;
       default:
         return;
@@ -197,83 +242,39 @@ export function useTimeEntryActions({
     setDateAction(null);
   }
 
-  function confirmDestructiveAction() {
-    if (!confirmation) {
-      return;
-    }
-
-    if (confirmation.kind === "delete") {
-      localStore.deleteTimesheetEntry(confirmation.entryId);
-    } else {
-      localStore.cancelTimer(confirmation.timerId);
-    }
-    setConfirmation(null);
-    onAfterAction?.();
-  }
-
   const isMove = dateAction?.kind === "move-to";
   const dialogs = (
-    <>
-      <Dialog
-        open={dateAction !== null}
-        onOpenChange={(open) => !open && setDateAction(null)}
-      >
-        <DialogContent className="w-auto gap-4">
-          <DialogHeader>
-            <DialogTitle>
-              {isMove ? "Move time entry" : "Duplicate time entry"}
-            </DialogTitle>
-            <DialogDescription>Choose the destination date.</DialogDescription>
-          </DialogHeader>
-          <Calendar
-            mode="single"
-            selected={selectedDate}
-            onSelect={(date) => date && setSelectedDate(date)}
-          />
-          <DialogFooter>
-            <Button
-              type="button"
-              variant="ghost"
-              size="sm"
-              onClick={() => setDateAction(null)}
-            >
-              Cancel
-            </Button>
-            <Button type="button" size="sm" onClick={confirmDateAction}>
-              {isMove ? "Move" : "Duplicate"}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-      <AlertDialog
-        open={confirmation !== null}
-        onOpenChange={(open) => !open && setConfirmation(null)}
-      >
-        <AlertDialogContent>
-          <AlertDialogHeader>
-            <AlertDialogTitle>
-              {confirmation?.kind === "discard"
-                ? "Discard the running entry?"
-                : "Delete this time entry?"}
-            </AlertDialogTitle>
-            <AlertDialogDescription>
-              {confirmation?.kind === "discard"
-                ? "The time counted since it started will be lost."
-                : "This can't be undone."}
-            </AlertDialogDescription>
-          </AlertDialogHeader>
-          <AlertDialogFooter>
-            <AlertDialogCancel>Cancel</AlertDialogCancel>
-            <AlertDialogAction
-              variant="danger"
-              onClick={confirmDestructiveAction}
-            >
-              {confirmation?.kind === "discard" ? "Discard" : "Delete"}
-            </AlertDialogAction>
-          </AlertDialogFooter>
-        </AlertDialogContent>
-      </AlertDialog>
-    </>
+    <Dialog
+      open={dateAction !== null}
+      onOpenChange={(open) => !open && setDateAction(null)}
+    >
+      <DialogContent className="w-auto gap-4">
+        <DialogHeader>
+          <DialogTitle>
+            {isMove ? "Move time entry" : "Duplicate time entry"}
+          </DialogTitle>
+          <DialogDescription>Choose the destination date.</DialogDescription>
+        </DialogHeader>
+        <Calendar
+          mode="single"
+          selected={selectedDate}
+          onSelect={(date) => date && setSelectedDate(date)}
+        />
+        <DialogFooter>
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={() => setDateAction(null)}
+          >
+            Cancel
+          </Button>
+          <Button type="button" size="sm" onClick={confirmDateAction}>
+            {isMove ? "Move" : "Duplicate"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 
   return { getActions, runAction, dialogs };

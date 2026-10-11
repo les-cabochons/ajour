@@ -39,6 +39,18 @@ Feature: Open the local time workspace
     When I open the submit page from the narrow Day header
     Then the submit page lists the week's entries
 
+  Scenario Outline: Undo deleting a time entry
+    Given I have a week of saved entries
+    When I delete Monday's "API" entry
+    Then the entry is gone and a toast offers Undo
+    When I undo with the <control>
+    Then the "API" entry is back exactly as it was
+
+    Examples:
+      | control        |
+      | toast button   |
+      | Cmd+Z shortcut |
+
   Scenario: Open Settings inside the app shell
     Given I have no saved Ajour workspace
     When I open today's new-entry workspace
