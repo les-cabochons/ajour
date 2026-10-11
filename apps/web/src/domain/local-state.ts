@@ -87,6 +87,10 @@ export interface LocalTeam {
   settings: TeamSettings;
 }
 
+/**
+ * The running entry. Its counted time is `accumulatedDurationMs` plus the time since
+ * `startedAt`. `entryId` links the saved entry it resumed, if any.
+ */
 export interface LocalTimer {
   _id: string;
   startedAt: number;
@@ -99,8 +103,8 @@ export interface LocalTimer {
   entryId?: string;
 }
 
+/** What starting a running entry needs. It has no date: a running entry always starts today. */
 export interface LocalTimerDraft {
-  localDate: string;
   workItemId?: string;
   projectId?: string;
   taskId?: string;

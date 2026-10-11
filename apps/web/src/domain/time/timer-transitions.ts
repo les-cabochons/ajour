@@ -13,15 +13,16 @@ import { formatLocalDateFromTimestamp } from "@/domain/time/duration";
 
 export type TimerFactories = TimesheetEntryFactories;
 
-export type TimerPatch = Partial<Omit<LocalTimer, "_id" | "startedAt">>;
-
-export interface StartTimerWithEntryValues {
-  localDate: string;
-  workItemId?: string;
+/** What Save writes to the running entry. It keeps running. */
+export interface RunningEntryEdit {
   projectId?: string;
   taskId?: string;
   note?: string;
-  durationMs?: number;
+  /**
+   * Corrects the time counted so far, for example after a late start. The entry
+   * counts on from this value. Leave it out to keep the current count.
+   */
+  countedDurationMs?: number;
 }
 
 export function normalizeTimer(
@@ -46,12 +47,13 @@ export function normalizeTimer(
 
 function createTimer(
   timer: LocalTimerDraft,
+  today: string,
   factories: TimerFactories,
 ): LocalTimer {
   return {
     _id: factories.createId("timer"),
     startedAt: factories.now(),
-    localDate: timer.localDate,
+    localDate: today,
     workItemId: timer.workItemId,
     projectId: timer.projectId,
     taskId: timer.taskId,
@@ -61,9 +63,16 @@ function createTimer(
   };
 }
 
+/**
+ * Starts a running entry on `today`, whatever day the user started it from. A running
+ * entry is always on today. When another entry runs, it is saved first and the new one
+ * starts at the same instant, without a prompt (Switch). `accumulatedDurationMs` is
+ * the time typed in Hours: the entry counts on from it.
+ */
 export function startTimer(
   state: LocalAppState,
   timer: LocalTimerDraft,
+  today: string,
   factories: TimerFactories,
 ): LocalAppState {
   if (state.timers.length > 1) {
@@ -86,65 +95,49 @@ export function startTimer(
 
   return {
     ...stoppedState,
-    timers: [createTimer(timer, switchFactories)],
+    timers: [createTimer(timer, today, switchFactories)],
   };
 }
 
-export function startTimerWithEntry(
+/**
+ * Saves edits to the running entry and keeps it running. A counted time correction
+ * restarts the count from that value now. The linked saved entry, if any, keeps its
+ * last saved values until Stop, so Discard still returns to them.
+ */
+export function editRunningEntry(
   state: LocalAppState,
-  values: StartTimerWithEntryValues,
-  factories: TimerFactories,
+  timerId: string,
+  edit: RunningEntryEdit,
+  factories: Pick<TimerFactories, "now">,
 ): LocalAppState {
-  if (state.timers.length > 0) {
+  const timer = state.timers.find((item) => item._id === timerId);
+  if (
+    !timer ||
+    (edit.countedDurationMs !== undefined &&
+      !(Number.isFinite(edit.countedDurationMs) && edit.countedDurationMs >= 0))
+  ) {
     return state;
   }
 
-  const durationMs = values.durationMs ?? 0;
-  const entry = createTimesheetEntry(
-    state.projects,
-    {
-      localDate: values.localDate,
-      workItemId: values.workItemId,
-      projectId: values.projectId,
-      taskId: values.taskId,
-      note: values.note,
-      durationMs,
-      sourceBlockIds: [],
-    },
-    factories,
-  );
-
+  const counted =
+    edit.countedDurationMs === undefined
+      ? {}
+      : {
+          accumulatedDurationMs: edit.countedDurationMs,
+          startedAt: factories.now(),
+        };
   return {
     ...state,
-    timers: [
-      createTimer(
-        {
-          ...values,
-          accumulatedDurationMs: durationMs,
-          entryId: entry._id,
-        },
-        factories,
-      ),
-    ],
-    timesheetEntries: [...state.timesheetEntries, entry],
-    workItems: applyLoggedTimeToWorkItems(state.workItems, {
-      workItemId: values.workItemId,
-      projectId: values.projectId,
-      taskId: values.taskId,
-      durationMsDelta: durationMs,
-    }),
-  };
-}
-
-export function updateTimer(
-  state: LocalAppState,
-  timerId: string,
-  patch: TimerPatch,
-): LocalAppState {
-  return {
-    ...state,
-    timers: state.timers.map((timer) =>
-      timer._id === timerId ? { ...timer, ...patch } : timer,
+    timers: state.timers.map((item) =>
+      item._id === timerId
+        ? {
+            ...item,
+            projectId: edit.projectId,
+            taskId: edit.taskId,
+            note: edit.note,
+            ...counted,
+          }
+        : item,
     ),
   };
 }
@@ -255,17 +248,17 @@ export function continueTimesheetEntry(
     note: entry.note,
   };
   if (entry.localDate !== today) {
-    return startTimer(state, { localDate: today, ...sharedFields }, factories);
+    return startTimer(state, sharedFields, today, factories);
   }
 
   return startTimer(
     state,
     {
-      localDate: entry.localDate,
       ...sharedFields,
       accumulatedDurationMs: entry.durationMs,
       entryId: entry._id,
     },
+    today,
     factories,
   );
 }

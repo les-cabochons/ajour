@@ -586,7 +586,6 @@ function ProjectDetail({
     switch (actionId) {
       case "start-entry":
         localStore.startTimer({
-          localDate: todayIsoDate(),
           projectId: project._id,
           taskId: task._id,
           accumulatedDurationMs: 0,

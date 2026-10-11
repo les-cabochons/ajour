@@ -384,6 +384,101 @@ When("I start a fresh timer from the Time page", async ({ page }) => {
   await switchTimer.click();
 });
 
+When(
+  "I open the running entry from the titlebar on the Backlog page",
+  async ({ page }) => {
+    await page.goto("/backlog");
+    await page.getByRole("button", { name: "Edit the running entry" }).click();
+    await expect(
+      page
+        .getByRole("dialog")
+        .getByRole("button", { name: "Stop", exact: true }),
+    ).toBeVisible();
+    // The running entry is always today, so its form has no Date field.
+    await expect(
+      page.getByRole("dialog").getByLabel("Date", { exact: true }),
+    ).toHaveCount(0);
+  },
+);
+
+When(
+  "I change its hours to {string} and save",
+  async ({ page }, hours: string) => {
+    await page.getByRole("textbox", { name: "Hours" }).fill(hours);
+    await page.getByRole("button", { name: "Save", exact: true }).click();
+  },
+);
+
+Then("the running entry keeps running from one hour", async ({ page }) => {
+  await expect(
+    page.getByRole("button", { name: "Stop", exact: true }),
+  ).toHaveCount(0);
+  const state = await page.evaluate(() =>
+    JSON.parse(window.localStorage.getItem("ajour.local-state.v2") ?? "null"),
+  );
+
+  expect(state.timers).toEqual([
+    expect.objectContaining({
+      _id: "timer-first",
+      accumulatedDurationMs: 60 * 60_000,
+    }),
+  ]);
+  // The resumed entry keeps its saved time until the running entry stops.
+  expect(
+    state.timesheetEntries.find(
+      (entry: { _id: string }) => entry._id === "entry-first",
+    )?.durationMs,
+  ).toBe(60_000);
+});
+
+When(
+  "I open a new entry from the titlebar on the Backlog page",
+  async ({ page }) => {
+    await page.goto("/backlog");
+    await page.getByRole("button", { name: "Create time entry" }).click();
+  },
+);
+
+Then("Save waits for hours or Start", async ({ page }) => {
+  await expect(
+    page.getByRole("button", { name: "Save", exact: true }),
+  ).toBeDisabled();
+  await expect(page.getByText("Enter hours, or press Start")).toBeVisible();
+  await expect(
+    page
+      .getByRole("dialog")
+      .getByRole("button", { name: "Start", exact: true }),
+  ).toBeEnabled();
+});
+
+When("I press Enter in Hours", async ({ page }) => {
+  await page.getByRole("textbox", { name: "Hours" }).press("Enter");
+});
+
+Then("a running entry starts today with no time counted", async ({ page }) => {
+  await expect(
+    page.getByRole("button", { name: "Edit the running entry" }),
+  ).toBeVisible();
+  const { state, today } = await page.evaluate(() => {
+    const now = new Date();
+    return {
+      state: JSON.parse(
+        window.localStorage.getItem("ajour.local-state.v2") ?? "null",
+      ),
+      today: [
+        now.getFullYear(),
+        String(now.getMonth() + 1).padStart(2, "0"),
+        String(now.getDate()).padStart(2, "0"),
+      ].join("-"),
+    };
+  });
+
+  expect(state.timers).toEqual([
+    expect.objectContaining({ localDate: today, accumulatedDurationMs: 0 }),
+  ]);
+  expect(state.timesheetEntries).toEqual([]);
+});
+
 When("I start the timer on the Backlog item", async ({ page }) => {
   await page.goto("/backlog");
   const backlogRow = page
@@ -391,7 +486,7 @@ When("I start the timer on the Backlog item", async ({ page }) => {
     .filter({ hasText: "Backlog switch item" });
   await backlogRow.hover();
   const switchTimer = backlogRow.getByRole("button", {
-    name: "Switch timer to Backlog switch item",
+    name: "Switch to Backlog switch item",
   });
   await expect(switchTimer).toBeEnabled();
   await switchTimer.click();
@@ -401,10 +496,10 @@ When("I start the timer on the Backlog item from mobile", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/backlog");
   const switchTimer = page.getByRole("button", {
-    name: "Switch timer to Backlog switch item",
+    name: "Switch to Backlog switch item",
   });
   await expect(switchTimer).toBeEnabled();
-  await expect(switchTimer).toContainText("Switch timer");
+  await expect(switchTimer).toContainText("Switch");
   await switchTimer.click();
 });
 
@@ -521,6 +616,11 @@ Then("the Time workspace is visible", async ({ page }) => {
   await expect(
     primaryNavigation.getByRole("link", { name: "Time" }),
   ).toHaveAttribute("aria-current", "page");
+  // The Time page itself has rendered, so its own shortcuts (such as N opening
+  // the side panel instead of the titlebar popover) are registered.
+  await expect(
+    page.getByRole("button", { name: "Submit week" }).first(),
+  ).toBeVisible();
 });
 
 Then("the desktop sidebar owns the full left edge", async ({ page }) => {

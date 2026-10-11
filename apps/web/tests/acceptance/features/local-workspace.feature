@@ -137,6 +137,19 @@ Feature: Open the local time workspace
     When I start a fresh timer from the Time page
     Then the first timer is saved and the fresh timer is running
 
+  Scenario: Correct the running entry's hours from the titlebar
+    Given I have two saved entries with a timer running on the first
+    When I open the running entry from the titlebar on the Backlog page
+    And I change its hours to "1:00" and save
+    Then the running entry keeps running from one hour
+
+  Scenario: Start a new entry that has no hours
+    Given I have no saved Ajour workspace
+    When I open a new entry from the titlebar on the Backlog page
+    Then Save waits for hours or Start
+    When I press Enter in Hours
+    Then a running entry starts today with no time counted
+
   Scenario: Start a Backlog timer while another timer is running
     Given I have two saved entries with a timer running on the first
     When I start the timer on the Backlog item

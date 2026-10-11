@@ -2602,7 +2602,7 @@
   }
 
   /* ----------------------------------------------------------------
-     Quick-timer popup
+     Running pill and day totals popup
      ---------------------------------------------------------------- */
 
   .quick-timer-popup-anchor {
@@ -2660,89 +2660,6 @@
     font-weight: 600;
     color: var(--text);
     letter-spacing: -0.02em;
-  }
-
-  .quick-timer-popup {
-    position: absolute;
-    top: calc(100% + 8px);
-    right: 0;
-    z-index: 100;
-    width: min(300px, calc(100vw - 1rem));
-    max-width: calc(100vw - 1rem);
-    background: var(--popup-bg);
-    backdrop-filter: blur(16px) saturate(1.3);
-    border: 1px solid var(--border-hover);
-    border-radius: var(--radius-md);
-    padding: 1rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    box-shadow: var(--shadow-md);
-    animation: popup-enter 0.15s ease;
-  }
-
-  .quick-timer-popup-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .quick-timer-popup-title {
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--text);
-    letter-spacing: -0.01em;
-  }
-
-  .quick-timer-popup-duration {
-    font-family: var(--font-mono);
-    font-size: 13px;
-    font-weight: 600;
-    color: var(--success);
-  }
-
-  .quick-timer-popup-actions {
-    display: flex;
-    gap: 0.5rem;
-    padding-top: 0.25rem;
-  }
-
-  .quick-timer-popup-actions > button {
-    flex: 1;
-  }
-
-  .quick-timer-create-popover {
-    width: min(320px, calc(100vw - 1rem));
-    max-width: calc(100vw - 1rem);
-    gap: 0;
-    border: 1px solid var(--border-hover);
-    border-radius: var(--radius-md);
-    padding: 1rem;
-    background: var(--popup-bg);
-    backdrop-filter: blur(16px) saturate(1.3);
-  }
-
-  .quick-timer-create-form {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  .quick-timer-create-date {
-    color: var(--text-tertiary);
-    font-size: 12px;
-    font-weight: 600;
-  }
-
-  @keyframes popup-enter {
-    from {
-      opacity: 0;
-      transform: translateY(-4px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
   }
 
   @keyframes day-totals-enter {
@@ -5952,12 +5869,6 @@
 
   .quick-timer-popup-anchor {
     margin-left: auto;
-  }
-
-  .quick-timer-popup {
-    left: auto;
-    right: 0;
-    transform-origin: top right;
   }
 }
 

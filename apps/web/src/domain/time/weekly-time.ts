@@ -141,11 +141,11 @@ export function projectWeeklyTime({
   const runningDayIndex = runningTime
     ? dateIndex.get(runningTime.localDate)
     : undefined;
-  if (
-    runningTime &&
-    runningTime.durationMs > 0 &&
-    runningDayIndex !== undefined
-  ) {
+  // `durationMs` is what the running entry adds to its day. It is negative when a
+  // resumed entry's counted time was corrected below its saved time, so it always
+  // applies to the row that already holds the saved entry. Only positive time
+  // opens a row of its own.
+  if (runningTime && runningDayIndex !== undefined) {
     const project = runningTime.projectId
       ? projectMap.get(runningTime.projectId)
       : undefined;
@@ -168,7 +168,7 @@ export function projectWeeklyTime({
         runningTime.durationMs;
       existingRow.totalMs += runningTime.durationMs;
       existingRow.runningLocalDate = runningTime.localDate;
-    } else {
+    } else if (runningTime.durationMs > 0) {
       const dayTotalsMs = weekDates.map((_, index) =>
         index === runningDayIndex ? runningTime.durationMs : 0,
       );
@@ -180,7 +180,7 @@ export function projectWeeklyTime({
         rowKey: runningRowKey,
         runningLocalDate: runningTime.localDate,
         taskId: runningTime.taskId,
-        taskName: task?.name ?? "Running timer",
+        taskName: task?.name ?? "Running",
         totalMs: runningTime.durationMs,
       });
     }

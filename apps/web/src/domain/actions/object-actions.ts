@@ -37,7 +37,7 @@ export interface TimeEntryActionOptions {
   invalidDraftReason?: string;
 }
 
-const STOP_TIMER_FIRST = "Stop the timer first";
+const STOP_RUNNING_FIRST = "Stop the running entry first";
 const MARKS_NOT_SUBMITTED = "Marks it as not submitted";
 
 /** Lists a time entry's actions: Edit · Continue/Stop · Duplicate · Duplicate to… · Move to… · Delete/Discard. */
@@ -48,7 +48,7 @@ export function getTimeEntryActions(
   const isRunning = state === "running";
   const isSubmitted = state === "submitted";
   const relocationReason = isRunning
-    ? STOP_TIMER_FIRST
+    ? STOP_RUNNING_FIRST
     : options.invalidDraftReason;
 
   return [

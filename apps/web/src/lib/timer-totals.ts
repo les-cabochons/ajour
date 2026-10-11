@@ -7,7 +7,10 @@ type TimerDurationSource = Pick<
   "accumulatedDurationMs" | "startedAt"
 >;
 
-type TimesheetEntryIdentity = Pick<LocalTimesheetEntry, "_id" | "localDate">;
+type TimesheetEntryIdentity = Pick<
+  LocalTimesheetEntry,
+  "_id" | "localDate" | "durationMs"
+>;
 
 export function getTimerDurationsMs(
   timer: TimerDurationSource | null,
@@ -28,25 +31,30 @@ export function getTimerDurationsMs(
   };
 }
 
+/**
+ * How much the running entry adds to its day's total. When it resumed a saved entry
+ * on the same day, that entry is already counted, so only the difference is added.
+ * The difference also covers a counted time correction made since it resumed.
+ */
 export function getTimerContributionMs(values: {
   timer: TimerIdentity | null;
   timesheetEntries: TimesheetEntryIdentity[];
-  elapsedDurationMs: number;
   runningDurationMs: number;
 }) {
-  const { timer, timesheetEntries, elapsedDurationMs, runningDurationMs } =
-    values;
+  const { timer, timesheetEntries, runningDurationMs } = values;
 
   if (!timer) {
     return 0;
   }
 
-  const hasLinkedTimerEntry =
-    Boolean(timer.entryId) &&
-    timesheetEntries.some(
-      (entry) =>
-        entry._id === timer.entryId && entry.localDate === timer.localDate,
-    );
+  const linkedEntry = timer.entryId
+    ? timesheetEntries.find(
+        (entry) =>
+          entry._id === timer.entryId && entry.localDate === timer.localDate,
+      )
+    : undefined;
 
-  return hasLinkedTimerEntry ? elapsedDurationMs : runningDurationMs;
+  return linkedEntry
+    ? runningDurationMs - linkedEntry.durationMs
+    : runningDurationMs;
 }

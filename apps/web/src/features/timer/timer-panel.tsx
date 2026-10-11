@@ -426,8 +426,7 @@ export function TimerPanel({
                           No time entries
                         </EmptyTitle>
                         <EmptyDescription>
-                          Saved manual and timer-based entries for this day will
-                          appear here.
+                          Saved and running entries for this day appear here.
                         </EmptyDescription>
                       </EmptyHeader>
                       <EmptyContent>

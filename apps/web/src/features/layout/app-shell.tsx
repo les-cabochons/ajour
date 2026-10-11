@@ -10,12 +10,8 @@ import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   RiAddLine as Plus,
   RiArrowGoBackLine as ReturnIcon,
-  RiCheckLine as Check,
-  RiCloseLine as X,
   RiPlayLine as Play,
-  RiStopLine as Square,
 } from "@remixicon/react";
-import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
   Popover,
@@ -35,16 +31,9 @@ import {
   NarrowSectionSwitcher,
   NarrowSettingsButton,
 } from "@/features/layout/narrow-titlebar";
-import {
-  ProjectTaskPicker,
-  type ProjectTaskSelection,
-} from "@/features/projects/project-task-picker";
-import { offerTimeEntryUndo } from "@/features/time/time-entry-actions";
-import {
-  formatClockDuration,
-  normalizeHoursInput,
-  parseHoursInput,
-} from "@/domain/time/duration";
+import { TimeEntryEditorPopover } from "@/features/time/time-entry-editor-popover";
+import { TimeEntryModal } from "@/features/timer/time-entry-modal";
+import { formatClockDuration } from "@/domain/time/duration";
 import { getLocalProjectDisplayName } from "@/domain/local-state";
 import { getConnectorsOverview, syncConnectorConnection } from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
@@ -53,6 +42,7 @@ import {
   getTimerDurationsMs,
 } from "@/lib/timer-totals";
 import { useAppSidebar } from "@/lib/app-sidebar";
+import { useShortcut } from "@/lib/shortcut-handlers";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { isDesktopShell } from "@/lib/runtime";
 import { cn, getIsoWeekDates, todayIsoDate } from "@/lib/utils";
@@ -140,169 +130,6 @@ function CompactTimeDatePicker({
           buttonVariant="ghost"
           className="ajour-titlebar-calendar"
         />
-      </PopoverContent>
-    </Popover>
-  );
-}
-
-function TitlebarNewEntryPopover({ date }: { date: string }) {
-  const projects = useLocalProjects();
-  const [isOpen, setIsOpen] = useState(false);
-  const [projectId, setProjectId] = useState("");
-  const [taskId, setTaskId] = useState("");
-  const [note, setNote] = useState("");
-  const [durationHours, setDurationHours] = useState("");
-
-  const availableTasks = useMemo(
-    () =>
-      projects
-        .find((project) => project._id === projectId)
-        ?.tasks.filter((task) => task.status === "active") ?? [],
-    [projectId, projects],
-  );
-  const parsedDurationMs = useMemo(
-    () => parseHoursInput(durationHours),
-    [durationHours],
-  );
-  const durationError =
-    durationHours.trim() !== "" && parsedDurationMs === null
-      ? "Enter a valid duration"
-      : null;
-  const hasContent = Boolean(
-    projectId || taskId || note.trim() || durationHours.trim(),
-  );
-
-  useEffect(() => {
-    if (availableTasks.some((task) => task._id === taskId)) {
-      return;
-    }
-
-    setTaskId("");
-  }, [availableTasks, taskId]);
-
-  function reset() {
-    setProjectId("");
-    setTaskId("");
-    setNote("");
-    setDurationHours("");
-  }
-
-  function handleProjectTaskChange(selection: ProjectTaskSelection) {
-    setProjectId(selection.projectId);
-    setTaskId(selection.taskId);
-  }
-
-  function saveEntry() {
-    if (durationError || !hasContent) {
-      return;
-    }
-
-    localStore.saveManualTimeEntry({
-      localDate: date,
-      projectId: projectId || undefined,
-      taskId: taskId || undefined,
-      note: note.trim() || undefined,
-      durationMs: parsedDurationMs ?? 0,
-    });
-    reset();
-    setIsOpen(false);
-  }
-
-  function cancelEntry() {
-    reset();
-    setIsOpen(false);
-  }
-
-  return (
-    <Popover open={isOpen} onOpenChange={setIsOpen}>
-      <PopoverTrigger
-        className="quick-timer-group-button desktop-no-drag"
-        aria-label="Create time entry"
-        title="Create time entry"
-      >
-        <Plus className="h-3.5 w-3.5" />
-      </PopoverTrigger>
-      <PopoverContent
-        className="quick-timer-create-popover"
-        align="end"
-        sideOffset={8}
-      >
-        <div className="quick-timer-create-form">
-          <div className="quick-timer-popup-header">
-            <span className="quick-timer-popup-title">New time entry</span>
-            <span className="quick-timer-create-date">
-              {formatTitlebarDate(date)}
-            </span>
-          </div>
-
-          <label className="field">
-            <span className="field-label">Project / task</span>
-            <ProjectTaskPicker
-              projects={projects}
-              projectId={projectId}
-              taskId={taskId}
-              onChange={handleProjectTaskChange}
-              placeholder="No project"
-            />
-          </label>
-
-          <label className="field">
-            <span className="field-label">Note</span>
-            <textarea
-              className="field-input entry-note-input"
-              value={note}
-              onChange={(event) => setNote(event.target.value)}
-              placeholder="Notes (optional)"
-              rows={2}
-            />
-          </label>
-
-          <label className="field">
-            <span className="field-label">Hours</span>
-            <input
-              className="field-input entry-hours-input"
-              type="text"
-              placeholder="01:30"
-              style={{ fontFamily: "var(--font-mono)" }}
-              value={durationHours}
-              onChange={(event) => setDurationHours(event.target.value)}
-              onBlur={(event) =>
-                setDurationHours(normalizeHoursInput(event.target.value))
-              }
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  saveEntry();
-                }
-              }}
-              aria-label="Hours"
-            />
-            {durationError ? (
-              <span className="field-error">{durationError}</span>
-            ) : null}
-          </label>
-
-          <div className="quick-timer-popup-actions">
-            <Button
-              size="sm"
-              variant="outline"
-              className="gap-1.5"
-              onClick={cancelEntry}
-            >
-              <X className="h-3.5 w-3.5" />
-              Cancel
-            </Button>
-            <Button
-              size="sm"
-              className="gap-1.5"
-              disabled={Boolean(durationError) || !hasContent}
-              onClick={saveEntry}
-            >
-              <Check className="h-3.5 w-3.5" />
-              Save
-            </Button>
-          </div>
-        </div>
       </PopoverContent>
     </Popover>
   );
@@ -402,145 +229,6 @@ function ConnectorAutoSyncScheduler() {
   return null;
 }
 
-/* ── Quick Timer Popup ─────────────────────────────────────────────── */
-
-function QuickTimerPopup({
-  anchorRef,
-  runningDurationMs,
-  onClose,
-}: {
-  anchorRef: RefObject<HTMLDivElement | null>;
-  runningDurationMs: number;
-  onClose: () => void;
-}) {
-  const state = useLocalState();
-  const projects = useLocalProjects();
-  const popupRef = useRef<HTMLDivElement>(null);
-
-  const currentTimer = state.timers[0] ?? null;
-
-  const projectId = currentTimer?.projectId ?? "";
-  const taskId = currentTimer?.taskId ?? "";
-  const note = currentTimer?.note ?? "";
-
-  // Close on click outside
-  useEffect(() => {
-    function handleMouseDown(event: MouseEvent) {
-      const target = event.target as Node;
-      if (
-        anchorRef.current?.contains(target) ||
-        popupRef.current?.contains(target) ||
-        (target instanceof Element &&
-          target.closest(".project-task-picker-popover"))
-      ) {
-        return;
-      }
-
-      if (popupRef.current) {
-        onClose();
-      }
-    }
-
-    document.addEventListener("mousedown", handleMouseDown);
-    return () => document.removeEventListener("mousedown", handleMouseDown);
-  }, [anchorRef, onClose]);
-
-  // Close on Escape
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key === "Escape") {
-        onClose();
-      }
-    }
-
-    document.addEventListener("keydown", handleKeyDown);
-    return () => document.removeEventListener("keydown", handleKeyDown);
-  }, [onClose]);
-
-  if (!currentTimer) {
-    return null;
-  }
-
-  function handleProjectTaskChange(selection: ProjectTaskSelection) {
-    if (!currentTimer) return;
-    localStore.updateTimer(currentTimer._id, {
-      projectId: selection.projectId || undefined,
-      taskId: selection.taskId || undefined,
-    });
-  }
-
-  function handleNoteChange(nextNote: string) {
-    if (!currentTimer) return;
-    localStore.updateTimer(currentTimer._id, { note: nextNote || undefined });
-  }
-
-  function handleSave() {
-    if (!currentTimer) return;
-    localStore.saveTimer(currentTimer._id);
-    onClose();
-  }
-
-  function handleCancel() {
-    if (!currentTimer) return;
-    offerTimeEntryUndo(
-      localStore.cancelTimer(currentTimer._id),
-      "Running entry discarded",
-    );
-    onClose();
-  }
-
-  return (
-    <div ref={popupRef} className="quick-timer-popup">
-      {/* Header */}
-      <div className="quick-timer-popup-header">
-        <span className="quick-timer-popup-title">Running timer</span>
-        <span className="quick-timer-popup-duration">
-          {formatClockDuration(runningDurationMs)}
-        </span>
-      </div>
-
-      <label className="field">
-        <span className="field-label">Project / task</span>
-        <ProjectTaskPicker
-          projects={projects}
-          projectId={projectId}
-          taskId={taskId}
-          onChange={handleProjectTaskChange}
-          placeholder="No project"
-        />
-      </label>
-
-      {/* Note */}
-      <label className="field">
-        <span className="field-label">Note</span>
-        <input
-          className="field-input"
-          value={note}
-          onChange={(e) => handleNoteChange(e.target.value)}
-          placeholder="Optional note"
-        />
-      </label>
-
-      {/* Actions */}
-      <div className="quick-timer-popup-actions">
-        <Button
-          size="sm"
-          variant="outline"
-          className="gap-1.5"
-          onClick={handleCancel}
-        >
-          <X className="h-3.5 w-3.5" />
-          Cancel
-        </Button>
-        <Button size="sm" className="gap-1.5" onClick={handleSave}>
-          <Square className="h-3.5 w-3.5" />
-          Stop timer
-        </Button>
-      </div>
-    </div>
-  );
-}
-
 function DayTotalsPopup({
   anchorRef,
   dayTotalMs,
@@ -609,23 +297,38 @@ function DayTotalsPopup({
 
 /* ── Global Timer Bar ──────────────────────────────────────────────── */
 
-function GlobalTimerBar({ selectedDate }: { selectedDate: string }) {
+/** Which entry editor the titlebar has open: the "+" new entry, or the running entry. */
+type TitlebarEditor = "new" | "running" | null;
+
+/**
+ * The titlebar's New entry (+), Start (▶), Running pill and totals pill. "+" and the
+ * pill open the entry editor in a popover anchored to them, or in the dialog in the
+ * narrow view. New entries default to today; the Start button starts one at once.
+ */
+function GlobalTimerBar() {
   const state = useLocalState();
   const projects = useLocalProjects();
+  const isNarrowView = useIsNarrowView();
   const [now, setNow] = useState(() => Date.now());
-  const [popupOpen, setPopupOpen] = useState(false);
+  const [editor, setEditor] = useState<TitlebarEditor>(null);
   const [dayTotalsOpen, setDayTotalsOpen] = useState(false);
-  const quickTimerAnchorRef = useRef<HTMLDivElement>(null);
   const dayTotalsAnchorRef = useRef<HTMLDivElement>(null);
 
   const currentTimer = state.timers[0] ?? null;
   const today = todayIsoDate();
   const weekDates = useMemo(() => getIsoWeekDates(today), [today]);
+  const newEntryTarget = useMemo(
+    () => ({ kind: "create" as const, localDate: today }),
+    [today],
+  );
 
-  // Auto-close popup when timer stops (e.g. saved from the Time page)
+  // N off the Time pages. The Time page's own N opens its side panel instead.
+  useShortcut("entry.new", () => setEditor("new"), "app");
+
+  // Stop or Discard from another surface closes the running entry's editor.
   useEffect(() => {
     if (!currentTimer) {
-      setPopupOpen(false);
+      setEditor((current) => (current === "running" ? null : current));
     }
   }, [currentTimer]);
 
@@ -639,14 +342,10 @@ function GlobalTimerBar({ selectedDate }: { selectedDate: string }) {
     return () => window.clearInterval(intervalId);
   }, [currentTimer]);
 
-  const { elapsedDurationMs, runningDurationMs } = getTimerDurationsMs(
-    currentTimer,
-    now,
-  );
+  const { runningDurationMs } = getTimerDurationsMs(currentTimer, now);
   const timerContributionMs = getTimerContributionMs({
     timer: currentTimer,
     timesheetEntries: state.timesheetEntries,
-    elapsedDurationMs,
     runningDurationMs,
   });
 
@@ -686,34 +385,81 @@ function GlobalTimerBar({ selectedDate }: { selectedDate: string }) {
     : undefined;
   const timerMeta = [timerProjectLabel, timerTask?.name]
     .filter(Boolean)
-    .join(" \u00B7 ");
+    .join(" · ");
 
-  function handlePlayClick() {
-    localStore.startTimer({ localDate: selectedDate });
-    setPopupOpen(true);
-  }
-
-  function handleTimerPillClick() {
-    setPopupOpen((prev) => !prev);
+  /** Starts an empty running entry today, then opens it so the user can fill it in. */
+  function handleStartClick() {
+    localStore.startTimer({});
+    setEditor("running");
   }
 
   function handleDayTotalsClick() {
     setDayTotalsOpen((prev) => !prev);
   }
 
-  const handlePopupClose = useCallback(() => {
-    setPopupOpen(false);
+  const handleEditorClose = useCallback(() => {
+    setEditor(null);
   }, []);
 
   const handleDayTotalsClose = useCallback(() => {
     setDayTotalsOpen(false);
   }, []);
 
+  const runningPillContent = (
+    <>
+      <span className="status-dot status-dot-pulse" />
+      <span className="stat-pill-label">Running</span>
+      <span className="stat-pill-value">
+        {formatClockDuration(runningDurationMs)}
+      </span>
+    </>
+  );
+  const runningPillClassName =
+    "stat-pill stat-pill-active stat-pill-active-clickable";
+
   return (
     <div className="global-timer">
+      <div
+        className={cn(
+          "quick-timer-button-group",
+          isDesktopShell && "desktop-no-drag",
+        )}
+      >
+        {isNarrowView ? (
+          <button
+            type="button"
+            className="quick-timer-group-button"
+            onClick={() => setEditor("new")}
+            title="Create time entry"
+            aria-label="Create time entry"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </button>
+        ) : (
+          <TimeEntryEditorPopover
+            target={newEntryTarget}
+            open={editor === "new"}
+            onOpenChange={(open) => setEditor(open ? "new" : null)}
+            triggerLabel="Create time entry"
+            triggerClassName="quick-timer-group-button"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </TimeEntryEditorPopover>
+        )}
+        {currentTimer ? null : (
+          <button
+            type="button"
+            className="quick-timer-group-button quick-timer-group-button-play"
+            onClick={handleStartClick}
+            title="Start"
+            aria-label="Start"
+          >
+            <Play className="h-3.5 w-3.5" />
+          </button>
+        )}
+      </div>
       {currentTimer ? (
         <div
-          ref={quickTimerAnchorRef}
           className={cn(
             "quick-timer-popup-anchor",
             isDesktopShell && "desktop-no-drag",
@@ -722,47 +468,29 @@ function GlobalTimerBar({ selectedDate }: { selectedDate: string }) {
           {timerMeta ? (
             <span className="global-timer-meta">{timerMeta}</span>
           ) : null}
-          <div
-            className="stat-pill stat-pill-active stat-pill-active-clickable"
-            onClick={handleTimerPillClick}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === "Enter" || e.key === " ") handleTimerPillClick();
-            }}
-          >
-            <span className="status-dot status-dot-pulse" />
-            <span className="stat-pill-value">
-              {formatClockDuration(runningDurationMs)}
-            </span>
-          </div>
-          {popupOpen ? (
-            <QuickTimerPopup
-              anchorRef={quickTimerAnchorRef}
-              runningDurationMs={runningDurationMs}
-              onClose={handlePopupClose}
-            />
-          ) : null}
-        </div>
-      ) : (
-        <div
-          className={cn(
-            "quick-timer-button-group",
-            isDesktopShell && "desktop-no-drag",
+          {isNarrowView ? (
+            <button
+              type="button"
+              className={runningPillClassName}
+              onClick={() => setEditor("running")}
+              title="Edit the running entry"
+              aria-label="Edit the running entry"
+            >
+              {runningPillContent}
+            </button>
+          ) : (
+            <TimeEntryEditorPopover
+              target={{ kind: "running", timer: currentTimer }}
+              open={editor === "running"}
+              onOpenChange={(open) => setEditor(open ? "running" : null)}
+              triggerLabel="Edit the running entry"
+              triggerClassName={runningPillClassName}
+            >
+              {runningPillContent}
+            </TimeEntryEditorPopover>
           )}
-        >
-          <TitlebarNewEntryPopover date={selectedDate} />
-          <button
-            type="button"
-            className="quick-timer-group-button quick-timer-group-button-play"
-            onClick={handlePlayClick}
-            title="Start timer"
-            aria-label="Start timer"
-          >
-            <Play className="h-3.5 w-3.5" />
-          </button>
         </div>
-      )}
+      ) : null}
       <div
         ref={dayTotalsAnchorRef}
         className={cn(
@@ -792,6 +520,13 @@ function GlobalTimerBar({ selectedDate }: { selectedDate: string }) {
           />
         ) : null}
       </div>
+      {isNarrowView && editor !== null ? (
+        <TimeEntryModal
+          date={today}
+          timerId={editor === "running" ? (currentTimer?._id ?? "") : undefined}
+          onClose={handleEditorClose}
+        />
+      ) : null}
     </div>
   );
 }
@@ -924,7 +659,7 @@ export function AppShell() {
                 ) : null}
               </div>
 
-              <GlobalTimerBar selectedDate={selectedTimeDate} />
+              <GlobalTimerBar />
               {isNarrowView ? (
                 <NarrowSettingsButton pathname={pathname} />
               ) : null}
