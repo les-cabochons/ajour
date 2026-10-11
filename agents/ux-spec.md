@@ -156,3 +156,36 @@ Today's splits at 640px and 1023px go away.
 - Rows always show the "…" button. On touch screens, a long press opens the same menu.
 - Page actions that floated over the content, such as the Backlog filter and "+", move into the page header.
 - Editing an entry uses the full-width entry dialog. Its behavior comes from [One entry editor for Day and Week](https://github.com/les-cabochons/ajour/issues/14).
+
+## Entry editor
+
+Decided in [One entry editor for Day and Week](https://github.com/les-cabochons/ajour/issues/14). Prototype: branch `prototype/entry-editor`, route `/prototype/entry-editor`.
+
+### One form
+
+Creating and editing a time entry always use the same form:
+
+- Header: the title ("New time entry" or "Edit time entry"), the entry's date, the "…" action menu for saved entries, and × to close.
+- Fields: Project / task, Note, Hours (`TimeEntryFields`), with the shared draft rules (`time-entry-editor.ts`).
+- Footer: Cancel · Start timer (Continue on a saved entry) · Save.
+
+The Day view's inline new row and the titlebar's own create form go away. What an empty Hours field means belongs to [Running timer editing and empty duration meaning](https://github.com/les-cabochons/ajour/issues/15).
+
+### Hosts
+
+| Where                                                                         | Host                                                                                |
+| ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Day and Week views (rows, Days cards, Grid tray rows, "+ New entry", "+ Add") | Side panel docked on the right. The day or week stays visible.                      |
+| Titlebar "+", on any page                                                     | Popover anchored to the "+". Adding an entry never requires going to the Time page. |
+| New entry… on tasks and backlog items                                         | The same popover, anchored to the row or menu that opened it.                       |
+| Narrow view, everywhere                                                       | Full-width dialog.                                                                  |
+
+The form is the same in every host. Only its container changes.
+
+### Saving and closing
+
+- Save: the Save button, Enter in Hours or in Note, or Cmd/Ctrl+Enter anywhere in the form. Shift+Enter in Note inserts a line break.
+- Escape or × closes the editor and discards changes.
+- Clicking outside does nothing.
+- In the side panel, clicking another entry while the draft has valid changes saves it, then loads the new entry. An invalid draft blocks the switch and shows its error.
+- After saving, the editor closes and focus returns to the row or card it came from.
