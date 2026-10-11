@@ -389,3 +389,44 @@ One "Submit week" button, styled the same, sits in the Day and Week headers at e
 - After marking, the summary shows "Week submitted on Oct 11, 2:54 AM · 14 entries · 37:00" in place. No toast.
 - The Week header shows a Submitted badge for that week.
 - Editing a submitted entry returns it to saved. The submit page then shows "3 entries changed since you submitted", and the button reads "Mark changes as submitted".
+
+## Backlog
+
+Decided in [Backlog page under the new conventions](https://github.com/les-cabochons/ajour/issues/25).
+
+- Editing a backlog item uses the side panel, like time entries, with the same rules: explicit Save (button, Enter in the title, Cmd+Enter), Escape or × discards, outside clicks do nothing. The narrow view uses the full-width dialog. This replaces the inline expanded editor, the mobile modal, the title edit mode and the separate note modal. Escape no longer saves.
+- The panel holds title, status, priority (top-level items only), project and task mapping, note, the estimates with their "Reset to subitem total" buttons, and "Keep when missing from sync" for synced items. Its header has the "…" action menu.
+- "New backlog item" in the page header opens a blank panel. "Add subitem" opens the panel with the parent set.
+- Subitems stay listed under their parent row, expanded with the row's chevron.
+- The page header holds the Active / Archived switch and the sort menu at every width. The floating filter and "+" buttons go away.
+- The row's play button stays as the Start entry shortcut. Entries start on today.
+
+## Projects
+
+Decided in [Projects pages under the new conventions](https://github.com/les-cabochons/ajour/issues/26).
+
+- The project list keeps its search field and an "Archived" entry at the bottom. Wide windows show it next to the app sidebar. The narrow view shows it inside Settings.
+- "New project" in the list header and Edit from the project's action set open the project form as a standard dialog: name, display name, code, icon and color.
+- Editing a task uses the side panel, with the same Save and Escape rules as entries. It holds name, billable, budget and adjustment, and the pinned slot. The inline task editor that saved on outside click goes away.
+- "New task" in the project header opens a blank task panel. "Import tasks…" moves into the project header's "…" menu.
+- A task row shows its pinned slot, such as "3", next to its name.
+- The old Projects command dialog is removed. Cmd+K offers "Create project" and "Create task in…".
+
+## Settings
+
+Decided in [Settings and Sync review under the new conventions](https://github.com/les-cabochons/ajour/issues/27).
+
+- Pages keep their content, with sentence case and the labels from the Vocabulary section.
+- Results and errors of imports, exports and syncs show inline on their page, per the Feedback section.
+- When the local connector API is not running, as in the web build, Plugins shows one calm notice: "Connectors need the desktop app". Backlog and Sync review hide their connector sections instead of showing red error banners.
+- Sync review keeps its list with selection, "Sync selected to backlog", and Dismiss. Dismiss shows the Undo toast instead of asking.
+- The Debug page only exists in development builds.
+
+## Consistency
+
+Decided in [Consistent dialogs, tooltips, loading and drags](https://github.com/les-cabochons/ajour/issues/28).
+
+- Every modal surface uses the `Dialog`, `AlertDialog` or `Sheet` primitive. The hand-built overlays (backlog task and note, project form, the old submit modal) go away.
+- Icon-only buttons use the `Tooltip` primitive, showing the label and its shortcut, instead of `title=` attributes.
+- Route loading shows a `Skeleton` of the page layout after 150ms instead of a blank page.
+- Escape cancels every drag and puts the item back. Dropping an item where it started changes nothing. Moves between days show the Undo toast.
