@@ -3,10 +3,15 @@ import type { LocalWorkItem } from "@/domain/local-state";
 import {
   buildBacklogTaskDraft,
   buildBacklogTaskPatch,
-  collectBlockedParentIds,
+  commitBacklogTaskDraft,
   createBacklogTaskEditorFields,
-  validateBacklogTaskEditor,
+  createBacklogTaskEditorSeed,
+  evaluateBacklogTaskEditor,
   parseEstimateInput,
+  sumSubitemEstimates,
+  validateBacklogTaskEditor,
+  type BacklogTaskEditorFields,
+  type BacklogTaskEditorTarget,
 } from "@/features/backlog/backlog-task-editor";
 
 function createWorkItem(overrides: Partial<LocalWorkItem> = {}): LocalWorkItem {
@@ -23,6 +28,17 @@ function createWorkItem(overrides: Partial<LocalWorkItem> = {}): LocalWorkItem {
     createdAt: 1,
     ...overrides,
   };
+}
+
+/** Evaluates the target's seed with `changes` typed over it, as the panel would. */
+function editDraft(
+  target: BacklogTaskEditorTarget,
+  changes: Partial<BacklogTaskEditorFields> = {},
+) {
+  return evaluateBacklogTaskEditor(
+    { ...createBacklogTaskEditorSeed(target), ...changes },
+    target,
+  );
 }
 
 describe("backlog task editor", () => {
@@ -51,35 +67,34 @@ describe("backlog task editor", () => {
     });
   });
 
-  it("builds the same normalized patch for every editor surface", () => {
-    const workItem = createWorkItem();
+  it("patches only the fields the user changed, normalized", () => {
+    const workItem = createWorkItem({ note: "Keep my spacing  " });
     const fields = createBacklogTaskEditorFields(workItem, {
       title: "  Updated title  ",
-      note: "  Updated description  ",
       priority: "4",
       originalEstimateHours: "8.12345",
       remainingEstimateHours: "",
-      completedEstimateHours: "4.5",
-      keepWhenMissingFromSync: true,
     });
 
     expect(
-      buildBacklogTaskPatch(workItem, fields, {
-        isSubtask: false,
-        includeRetention: true,
-      }),
+      buildBacklogTaskPatch(workItem, fields, { isSubtask: false }),
     ).toEqual({
       title: "Updated title",
-      note: "Updated description",
       priority: 4,
-      backlogStatusId: undefined,
-      projectId: "project-1",
-      taskId: "task-1",
       originalEstimateHours: 8.1235,
       remainingEstimateHours: undefined,
-      completedEstimateHours: 4.5,
-      keepWhenMissingFromSync: true,
     });
+  });
+
+  it("changes project and task together", () => {
+    const workItem = createWorkItem();
+    const fields = createBacklogTaskEditorFields(workItem, {
+      taskId: "task-2",
+    });
+
+    expect(
+      buildBacklogTaskPatch(workItem, fields, { isSubtask: false }),
+    ).toEqual({ projectId: "project-1", taskId: "task-2" });
   });
 
   it("rejects invalid root values while allowing a subtask without priority", () => {
@@ -148,17 +163,150 @@ describe("backlog task editor", () => {
     });
   });
 
-  it("blocks the edited task and all descendants from parent selection", () => {
-    const root = createWorkItem();
-    const child = createWorkItem({
-      _id: "work-item-2",
-      parentWorkItemId: root._id,
-      hierarchyLevel: 1,
+  describe("panel draft", () => {
+    it("starts a new subitem under its parent with the parent's project and task", () => {
+      const parent = createWorkItem({ backlogStatusId: "status-1" });
+
+      expect(
+        createBacklogTaskEditorSeed({ kind: "create", parent }),
+      ).toMatchObject({
+        parentWorkItemId: "work-item-1",
+        projectId: "project-1",
+        taskId: "task-1",
+        backlogStatusId: "",
+        title: "",
+      });
     });
 
-    expect([...collectBlockedParentIds(root, [root, child])]).toEqual([
-      "work-item-1",
-      "work-item-2",
-    ]);
+    it("writes nothing for an unchanged saved item, on save or switch", () => {
+      const editor = editDraft({ kind: "edit", workItem: createWorkItem() });
+
+      expect(editor.hasChanges).toBe(false);
+      expect(commitBacklogTaskDraft(editor, "save")).toEqual({
+        kind: "unchanged",
+      });
+      expect(commitBacklogTaskDraft(editor, "switch")).toEqual({
+        kind: "unchanged",
+      });
+    });
+
+    it("saves an edited item as a patch of its changes", () => {
+      const editor = editDraft(
+        { kind: "edit", workItem: createWorkItem() },
+        { title: "Renamed", note: "New note" },
+      );
+
+      expect(commitBacklogTaskDraft(editor, "switch")).toEqual({
+        kind: "update",
+        patch: { title: "Renamed", note: "New note" },
+      });
+    });
+
+    it("blocks an invalid edit with the first field error", () => {
+      const editor = editDraft(
+        { kind: "edit", workItem: createWorkItem() },
+        { title: "  ", completedEstimateHours: "x" },
+      );
+
+      expect(commitBacklogTaskDraft(editor, "switch")).toEqual({
+        kind: "invalid",
+        error: "Enter an item name",
+      });
+    });
+
+    it("drops an untouched new item on switch but asks for a name on save", () => {
+      const editor = editDraft({ kind: "create" });
+
+      expect(commitBacklogTaskDraft(editor, "switch")).toEqual({
+        kind: "unchanged",
+      });
+      expect(commitBacklogTaskDraft(editor, "save")).toEqual({
+        kind: "invalid",
+        error: "Enter an item name",
+      });
+    });
+
+    it("creates a new subitem without a priority", () => {
+      const parent = createWorkItem();
+      const editor = editDraft(
+        { kind: "create", parent },
+        { title: "Child", priority: "7" },
+      );
+
+      expect(editor.isSubitem).toBe(true);
+      expect(commitBacklogTaskDraft(editor, "save")).toEqual({
+        kind: "create",
+        draft: expect.objectContaining({
+          title: "Child",
+          parentWorkItemId: "work-item-1",
+          priority: undefined,
+          projectId: "project-1",
+          taskId: "task-1",
+        }),
+      });
+    });
+
+    it("offers a reset only for estimates that differ from the subitem total", () => {
+      const parent = createWorkItem({
+        originalEstimateHours: 8,
+        remainingEstimateHours: 4,
+        completedEstimateHours: undefined,
+      });
+      const subitems = [
+        createWorkItem({
+          _id: "child-1",
+          parentWorkItemId: parent._id,
+          originalEstimateHours: 5,
+          remainingEstimateHours: 2,
+          completedEstimateHours: undefined,
+        }),
+        createWorkItem({
+          _id: "child-2",
+          parentWorkItemId: parent._id,
+          originalEstimateHours: 3,
+          remainingEstimateHours: 1.5,
+          completedEstimateHours: undefined,
+        }),
+      ];
+      const target: BacklogTaskEditorTarget = {
+        kind: "edit",
+        workItem: parent,
+      };
+      const editor = evaluateBacklogTaskEditor(
+        createBacklogTaskEditorSeed(target),
+        target,
+        { subitemTotals: sumSubitemEstimates(subitems) },
+      );
+
+      expect(editor.estimateResets).toEqual({ remainingEstimateHours: "3.5" });
+      expect(editor.hasChanges).toBe(false);
+    });
+
+    it("offers synced priority and status resets only for synced items", () => {
+      const synced = createWorkItem({
+        source: "azure_devops",
+        priority: 1,
+        importedPriority: 2,
+        backlogStatusId: "status-1",
+        importedBacklogStatusId: "status-1",
+      });
+
+      expect(editDraft({ kind: "edit", workItem: synced })).toMatchObject({
+        priorityReset: "2",
+        statusReset: null,
+      });
+      expect(
+        editDraft(
+          { kind: "edit", workItem: synced },
+          { backlogStatusId: "status-2" },
+        ).statusReset,
+      ).toBe("status-1");
+      expect(
+        editDraft({
+          kind: "edit",
+          workItem: createWorkItem({ priority: 1 }),
+        }).priorityReset,
+      ).toBeNull();
+    });
   });
 });
