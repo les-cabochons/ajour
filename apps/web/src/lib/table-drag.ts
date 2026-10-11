@@ -36,9 +36,17 @@ export interface SharedTableDragPointer {
   eventType: string;
 }
 
-interface SharedTableDragEventSource {
-  addEventListener: (type: string, listener: EventListener) => void;
-  removeEventListener: (type: string, listener: EventListener) => void;
+export interface SharedTableDragEventSource {
+  addEventListener: (
+    type: string,
+    listener: EventListener,
+    capture?: boolean,
+  ) => void;
+  removeEventListener: (
+    type: string,
+    listener: EventListener,
+    capture?: boolean,
+  ) => void;
 }
 
 export interface SharedTableDragPointerSession {
@@ -46,6 +54,18 @@ export interface SharedTableDragPointerSession {
   dispose: () => void;
 }
 
+/**
+ * Follows one press from pointer down to its end. Moving past the tolerance
+ * starts the drag (`onStart`), then `onMove` follows the pointer. The session
+ * ends once:
+ *
+ * - pointer up after a drag calls `onEnd(true)`, so the caller commits;
+ * - pointer cancel or Escape during a drag calls `onEnd(false)`, so the caller
+ *   puts the item back. Escape stops there, so it does not also close the
+ *   panel or dialog behind the drag;
+ * - a press that never became a drag calls `onPressEnd`, with `cancelled` true
+ *   for pointer cancel or Escape.
+ */
 export function createSharedTableDragPointerSession(options: {
   eventSource?: SharedTableDragEventSource;
   pointerId: number;
@@ -70,6 +90,7 @@ export function createSharedTableDragPointerSession(options: {
     eventSource.removeEventListener("pointermove", handlePointerMove);
     eventSource.removeEventListener("pointerup", handlePointerEnd);
     eventSource.removeEventListener("pointercancel", handlePointerEnd);
+    eventSource.removeEventListener("keydown", handleKeyDown, true);
   };
 
   const handlePointerMove: EventListener = (event) => {
@@ -117,9 +138,30 @@ export function createSharedTableDragPointerSession(options: {
     options.onPressEnd(pointerEvent.type === "pointercancel");
   };
 
+  const handleKeyDown: EventListener = (event) => {
+    const keyboardEvent = event as KeyboardEvent;
+    if (keyboardEvent.key !== "Escape") {
+      return;
+    }
+
+    const wasDragging = options.isDragging();
+    dispose();
+
+    if (wasDragging) {
+      keyboardEvent.preventDefault();
+      keyboardEvent.stopPropagation();
+      options.onEnd(false);
+      return;
+    }
+
+    options.onPressEnd(true);
+  };
+
   eventSource.addEventListener("pointermove", handlePointerMove);
   eventSource.addEventListener("pointerup", handlePointerEnd);
   eventSource.addEventListener("pointercancel", handlePointerEnd);
+  // Capture runs before the listeners of panels, menus and dialogs.
+  eventSource.addEventListener("keydown", handleKeyDown, true);
 
   return {
     pointerId: options.pointerId,
@@ -203,6 +245,30 @@ interface SharedTableDragRow {
   getBoundingClientRect: () => Pick<DOMRect, "top" | "height">;
 }
 
+/**
+ * The vertical translation in a computed `transform`, such as the row shift
+ * `translate3d(0, -40px, 0)`, which computes to `matrix(1, 0, 0, 1, 0, -40)`.
+ */
+function getComputedTranslateY(row: SharedTableDragRow) {
+  if (typeof Element === "undefined" || !(row instanceof Element)) {
+    return 0;
+  }
+
+  const match = /^matrix(3d)?\((.+)\)$/.exec(getComputedStyle(row).transform);
+  if (!match) {
+    return 0;
+  }
+
+  const values = match[2]!.split(",").map(Number);
+  return (match[1] ? values[13] : values[5]) ?? 0;
+}
+
+/**
+ * The index the dragged item would drop at: the number of other rows whose
+ * middle is above the pointer. It measures each row where the layout puts it,
+ * without the shift that makes room for the dragged item, so bringing the item
+ * back over its own slot always gives its original index.
+ */
 export function getSharedTableDragTargetIndex(
   itemIds: string[],
   sourceItemId: string,
@@ -222,7 +288,8 @@ export function getSharedTableDragTargetIndex(
     }
 
     const rect = row.getBoundingClientRect();
-    if (pointerY >= rect.top + rect.height / 2) {
+    const layoutTop = rect.top - getComputedTranslateY(row);
+    if (pointerY >= layoutTop + rect.height / 2) {
       nextIndex += 1;
     }
   }
@@ -265,6 +332,30 @@ export function getSharedTableDragOverlayTransform(options: {
 }) {
   const top = Math.max(options.minTop, options.pointerY - options.offsetY);
   return `translate3d(${Math.round(options.originLeft)}px, ${Math.round(top)}px, 0)`;
+}
+
+/**
+ * The order after a drop moves the item at `originIndex` to `targetIndex`.
+ * Returns null when the item lands where it started, or `originIndex` is not
+ * in `items`, so the caller commits nothing.
+ */
+export function getSharedTableDropOrder<T>(
+  items: readonly T[],
+  originIndex: number,
+  targetIndex: number,
+) {
+  if (
+    originIndex === targetIndex ||
+    originIndex < 0 ||
+    originIndex >= items.length
+  ) {
+    return null;
+  }
+
+  const order = [...items];
+  const [item] = order.splice(originIndex, 1) as [T];
+  order.splice(targetIndex, 0, item);
+  return order;
 }
 
 /**
