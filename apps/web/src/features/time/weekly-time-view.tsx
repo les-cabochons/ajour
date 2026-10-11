@@ -9,11 +9,9 @@ import {
 } from "react";
 import {
   RiAddLine as Plus,
-  RiAlertLine as AlertTriangle,
   RiArrowLeftLine as ArrowLeft,
   RiArrowLeftSLine as ChevronLeft,
   RiArrowRightSLine as ChevronRight,
-  RiCloseLine as X,
   RiLockLine as Lock,
 } from "@remixicon/react";
 import { Badge } from "@/components/ui/badge";
@@ -23,27 +21,16 @@ import {
   ObjectActionsButton,
   ObjectContextMenu,
 } from "@/components/object-actions-menu";
-import {
-  HoverCard,
-  HoverCardContent,
-  HoverCardTrigger,
-} from "@/components/ui/hover-card";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableFooter,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type {
   LocalTimesheetEntry,
   WeeklyTimeViewStyle,
 } from "@/domain/local-state";
 import { formatClockDuration } from "@/domain/time/duration";
-import { projectWeeklyTime } from "@/domain/time/weekly-time";
+import {
+  projectWeeklyTime,
+  type WeeklyGridAddedRow,
+} from "@/domain/time/weekly-time";
 import { createCrossDayEntryDragPointerSession } from "@/lib/cross-day-entry-drag";
 import {
   useLocalProjects,
@@ -69,15 +56,12 @@ import {
   getTimerContributionMs,
   getTimerDurationsMs,
 } from "@/lib/timer-totals";
-import { ProjectIcon } from "@/lib/project-icons";
+import { WeekGrid, type WeekGridCell } from "@/features/time/week-grid";
+import {
+  CapacityValue,
+  formatWeekDay,
+} from "@/features/time/weekly-capacity-value";
 import { addDaysIsoDate, cn, todayIsoDate } from "@/lib/utils";
-
-type GridCellSelection = {
-  entryIds: string[];
-  localDate: string;
-  rowKey: string;
-  taskName: string;
-};
 
 type CrossDayDragState = {
   entryId: string;
@@ -112,78 +96,42 @@ function formatWeekRange(weekDates: string[]) {
   return `${startLabel}–${endLabel}`;
 }
 
-function formatDay(localDate: string, options: Intl.DateTimeFormatOptions) {
-  return new Intl.DateTimeFormat("en-CA", options).format(
-    dateAtNoon(localDate),
-  );
-}
-
-function CapacityValue({
-  capacityMs,
-  label,
-  microLabel,
-  overCapacity,
-  showWarning,
-  totalMs,
-}: {
-  capacityMs: number;
-  label: string;
-  microLabel?: string;
-  overCapacity: boolean;
-  showWarning: boolean;
-  totalMs: number;
-}) {
-  const utilization =
-    capacityMs > 0 ? Math.round((totalMs / capacityMs) * 100) : null;
-  return (
-    <div className={cn("weekly-capacity-value", microLabel && "is-summary")}>
-      {microLabel ? (
-        <span className="weekly-capacity-label">{microLabel}</span>
-      ) : null}
-      <HoverCard>
-        <HoverCardTrigger className="weekly-capacity-trigger">
-          {formatClockDuration(totalMs)}
-        </HoverCardTrigger>
-        <HoverCardContent className="w-56" align="end">
-          <span className="font-medium">{label}</span>
-          <span className="text-muted-foreground">
-            {formatClockDuration(totalMs)} logged ·{" "}
-            {formatClockDuration(capacityMs)} target
-          </span>
-          <span className="text-muted-foreground">
-            {utilization === null
-              ? "No capacity target"
-              : `${utilization}% of capacity`}
-          </span>
-        </HoverCardContent>
-      </HoverCard>
-      {showWarning && overCapacity ? (
-        <AlertTriangle
-          className="weekly-capacity-warning"
-          aria-label="Over capacity"
-        />
-      ) : null}
-    </div>
-  );
-}
-
+/**
+ * The Week view: the Grid of project and task rows by day, or the Days columns of
+ * entry cards. Clicks open entries and cells in the page's side panel. Dragging a
+ * card to another day moves it.
+ */
 export function WeeklyTimeView({
+  activeCell,
   activeEntryId,
   anchorDate,
   now,
+  onClosePanel,
   onNewEntry,
+  onOpenCellEntries,
   onOpenEntry,
   onReturnToDay,
   onSelectWeek,
   onSubmit,
   weekDates,
 }: {
-  /** The entry open in the editor, highlighted on its card or tray row. */
+  /** The Grid cell shown in the side panel, highlighted in the Grid. */
+  activeCell?: WeekGridCell | null;
+  /** The entry open in the editor, highlighted on its card or Grid cell. */
   activeEntryId?: string;
   anchorDate: string;
   now: number;
+  /** Saves and closes the side panel. Returns false when its draft is invalid and stays open. */
+  onClosePanel: () => boolean;
   onNewEntry: (localDate: string) => void;
-  onOpenEntry: (target: { entryId?: string; timerId?: string }) => void;
+  /** Lists the entries of a Grid cell that holds several, in the side panel. */
+  onOpenCellEntries: (cell: WeekGridCell) => void;
+  /** Opens an entry or the running entry. With a Grid `cell` and no id, opens a new entry for that cell. */
+  onOpenEntry: (request: {
+    entryId?: string;
+    timerId?: string;
+    cell?: WeekGridCell;
+  }) => void;
   onReturnToDay: () => void;
   onSelectWeek: (anchorDate: string) => void;
   onSubmit: () => void;
@@ -192,7 +140,16 @@ export function WeeklyTimeView({
   const state = useLocalState();
   const projects = useLocalProjects();
   const preferences = useUserPreferences();
-  const [gridCell, setGridCell] = useState<GridCellSelection | null>(null);
+  // Rows added with "+ Add row" are dropped when the user leaves the week. A row
+  // that got hours stays, because its entries show it.
+  const [addedRows, setAddedRows] = useState<{
+    weekStart: string | undefined;
+    rows: WeeklyGridAddedRow[];
+  }>({ weekStart: weekDates[0], rows: [] });
+  if (addedRows.weekStart !== weekDates[0]) {
+    setAddedRows({ weekStart: weekDates[0], rows: [] });
+  }
+  const weekAddedRows = addedRows.rows;
   const [dragState, setDragState] = useState<CrossDayDragState | null>(null);
   const dragStateRef = useRef<CrossDayDragState | null>(null);
   const dragSessionRef = useRef<SharedTableDragPointerSession | null>(null);
@@ -234,6 +191,7 @@ export function WeeklyTimeView({
   const projection = useMemo(
     () =>
       projectWeeklyTime({
+        addedRows: weekAddedRows,
         capacityTargets: preferences.weeklyCapacityTargets,
         entries: state.timesheetEntries,
         projects,
@@ -245,6 +203,7 @@ export function WeeklyTimeView({
       projects,
       runningTime,
       state.timesheetEntries,
+      weekAddedRows,
       weekDates,
     ],
   );
@@ -257,10 +216,6 @@ export function WeeklyTimeView({
   useEffect(() => {
     dragStateRef.current = dragState;
   }, [dragState]);
-
-  useEffect(() => {
-    setGridCell(null);
-  }, [preferences.weeklyTimeViewStyle, anchorDate]);
 
   const clearDrag = useCallback(() => {
     dragSessionRef.current?.dispose();
@@ -385,27 +340,9 @@ export function WeeklyTimeView({
     };
   }
 
-  const gridEntries = gridCell
-    ? gridCell.entryIds
-        .map((entryId) =>
-          state.timesheetEntries.find((entry) => entry._id === entryId),
-        )
-        .filter((entry): entry is LocalTimesheetEntry => {
-          if (!entry) return false;
-          return (
-            entry.localDate === gridCell.localDate &&
-            entry._id !== currentTimer?.entryId
-          );
-        })
-    : [];
-  const gridRunning = Boolean(
-    gridCell &&
-    projection.gridRows.some(
-      (row) =>
-        row.rowKey === gridCell.rowKey &&
-        row.runningLocalDate === gridCell.localDate,
-    ),
-  );
+  function addGridRow(row: WeeklyGridAddedRow) {
+    setAddedRows({ weekStart: weekDates[0], rows: [...weekAddedRows, row] });
+  }
 
   return (
     <section className="weekly-time-view" aria-label="Week">
@@ -465,236 +402,21 @@ export function WeeklyTimeView({
       </header>
 
       {preferences.weeklyTimeViewStyle === "grid" ? (
-        <div className="weekly-grid-stack">
-          <div className="weekly-grid-table-scroll">
-            <Table>
-              <TableHeader>
-                <TableRow>
-                  <TableHead className="weekly-grid-task-column">
-                    Project / task
-                  </TableHead>
-                  {projection.days.map((day, index) => (
-                    <TableHead
-                      key={day.localDate}
-                      className={cn(
-                        "weekly-grid-day-column",
-                        index >= 5 && "is-weekend",
-                        day.localDate === today && "is-today",
-                      )}
-                    >
-                      <div
-                        ref={(node) => registerDayTarget(day.localDate, node)}
-                        className={cn(
-                          "weekly-grid-day-target",
-                          dragState?.targetDate === day.localDate &&
-                            "is-drop-target",
-                        )}
-                      >
-                        <span className="weekly-grid-weekday">
-                          {formatDay(day.localDate, { weekday: "short" })}
-                        </span>
-                        <span className="weekly-grid-day-number">
-                          {formatDay(day.localDate, { day: "numeric" })}
-                        </span>
-                        <CapacityValue
-                          capacityMs={day.capacityMs}
-                          totalMs={day.totalMs}
-                          label={formatDay(day.localDate, { weekday: "long" })}
-                          overCapacity={day.overCapacity}
-                          showWarning={preferences.warnWhenOverCapacity}
-                        />
-                      </div>
-                    </TableHead>
-                  ))}
-                  <TableHead className="weekly-grid-total-column">
-                    Total
-                  </TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {projection.gridRows.map((row) => {
-                  const project = row.projectId
-                    ? projectsById.get(row.projectId)
-                    : undefined;
-                  return (
-                    <TableRow key={row.rowKey}>
-                      <TableCell className="weekly-grid-task-cell">
-                        <ProjectIcon
-                          icon={project?.icon}
-                          color={project?.color ?? "#3b82f6"}
-                          className="weekly-project-mark"
-                          fallback="dot"
-                        />
-                        <div>
-                          <span>{row.projectName}</span>
-                          <strong>{row.taskName}</strong>
-                        </div>
-                      </TableCell>
-                      {row.dayTotalsMs.map((durationMs, index) => (
-                        <TableCell
-                          key={weekDates[index]}
-                          className={cn(
-                            "weekly-grid-time-cell",
-                            index >= 5 && "is-weekend",
-                            weekDates[index] === today && "is-today",
-                          )}
-                        >
-                          {durationMs > 0 ? (
-                            <button
-                              type="button"
-                              className={cn(
-                                "weekly-grid-time-button",
-                                gridCell?.localDate === weekDates[index] &&
-                                  gridCell?.rowKey === row.rowKey &&
-                                  "is-selected",
-                              )}
-                              onClick={() =>
-                                setGridCell({
-                                  entryIds: row.entryIds,
-                                  localDate: weekDates[index]!,
-                                  rowKey: row.rowKey,
-                                  taskName: row.taskName,
-                                })
-                              }
-                            >
-                              {formatClockDuration(durationMs)}
-                            </button>
-                          ) : (
-                            <span className="text-muted-foreground/45">—</span>
-                          )}
-                        </TableCell>
-                      ))}
-                      <TableCell className="weekly-grid-total-cell">
-                        {formatClockDuration(row.totalMs)}
-                      </TableCell>
-                    </TableRow>
-                  );
-                })}
-              </TableBody>
-              <TableFooter>
-                <TableRow className="weekly-grid-footer-row">
-                  <TableCell className="weekly-grid-task-cell">
-                    Daily totals
-                  </TableCell>
-                  {projection.days.map((day, index) => (
-                    <TableCell
-                      key={day.localDate}
-                      className={cn(
-                        "weekly-grid-time-cell",
-                        index >= 5 && "is-weekend",
-                      )}
-                    >
-                      {formatClockDuration(day.totalMs)}
-                    </TableCell>
-                  ))}
-                  <TableCell className="weekly-grid-total-cell">
-                    {formatClockDuration(projection.totalMs)}
-                  </TableCell>
-                </TableRow>
-              </TableFooter>
-            </Table>
-          </div>
-
-          {gridCell ? (
-            <div className="weekly-grid-tray">
-              <header className="weekly-grid-tray-header">
-                <div>
-                  <span>
-                    {formatDay(gridCell.localDate, {
-                      weekday: "long",
-                      month: "short",
-                      day: "numeric",
-                    })}
-                  </span>
-                  <strong>{gridCell.taskName}</strong>
-                </div>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  aria-label="Close entry tray"
-                  onClick={() => setGridCell(null)}
-                >
-                  <X />
-                </Button>
-              </header>
-              <div
-                className="weekly-grid-tray-entries"
-                role="group"
-                aria-label="Time entries"
-              >
-                {gridRunning && runningTarget ? (
-                  <div className="weekly-tray-entry-row">
-                    <ObjectContextMenu
-                      actions={entryActions.getActions(runningTarget)}
-                      onAction={(actionId) =>
-                        entryActions.runAction(runningTarget, actionId)
-                      }
-                      render={
-                        <div
-                          className="weekly-tray-entry is-running"
-                          data-running-entry="true"
-                        />
-                      }
-                    >
-                      <Lock />
-                      <span>Running</span>
-                      <strong>
-                        {formatClockDuration(runningTime!.displayDurationMs)}
-                      </strong>
-                    </ObjectContextMenu>
-                    <ObjectActionsButton
-                      actions={entryActions.getActions(runningTarget)}
-                      onAction={(actionId) =>
-                        entryActions.runAction(runningTarget, actionId)
-                      }
-                      label="Entry actions"
-                    />
-                  </div>
-                ) : null}
-                {gridEntries.map((entry) => {
-                  const summary = renderEntrySummary(entry);
-                  const target = { kind: "entry" as const, entry };
-                  const actions = entryActions.getActions(target);
-                  return (
-                    <div key={entry._id} className="weekly-tray-entry-row">
-                      <ObjectContextMenu
-                        actions={actions}
-                        onAction={(actionId) =>
-                          entryActions.runAction(target, actionId)
-                        }
-                        render={
-                          <button
-                            type="button"
-                            data-entry-id={entry._id}
-                            className={cn(
-                              "weekly-tray-entry",
-                              activeEntryId === entry._id && "is-selected",
-                            )}
-                            onClick={() => openEntry(entry._id)}
-                            onPointerDown={(event) =>
-                              handleEntryPointerDown(entry, event)
-                            }
-                          />
-                        }
-                      >
-                        <span>{summary.projectName}</span>
-                        <span>{summary.note || summary.taskName}</span>
-                        <strong>{formatClockDuration(entry.durationMs)}</strong>
-                      </ObjectContextMenu>
-                      <ObjectActionsButton
-                        actions={actions}
-                        onAction={(actionId) =>
-                          entryActions.runAction(target, actionId)
-                        }
-                        label="Entry actions"
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ) : null}
-        </div>
+        <WeekGrid
+          activeCell={activeCell}
+          activeEntryId={activeEntryId}
+          onAddRow={addGridRow}
+          onClosePanel={onClosePanel}
+          onOpen={onOpenEntry}
+          onOpenCellEntries={onOpenCellEntries}
+          projection={projection}
+          projects={projects}
+          projectsById={projectsById}
+          runningTimerId={currentTimer?._id}
+          showCapacityWarning={preferences.warnWhenOverCapacity}
+          today={today}
+          weekDates={weekDates}
+        />
       ) : (
         <div className="weekly-days-grid">
           {projection.days.map((day, index) => {
@@ -715,7 +437,7 @@ export function WeeklyTimeView({
                   isToday && "is-today",
                   dragState?.targetDate === day.localDate && "is-drop-target",
                 )}
-                aria-label={formatDay(day.localDate, {
+                aria-label={formatWeekDay(day.localDate, {
                   weekday: "long",
                   month: "long",
                   day: "numeric",
@@ -724,7 +446,7 @@ export function WeeklyTimeView({
                 <header className="weekly-days-column-header">
                   <div>
                     <span className="weekly-days-column-weekday">
-                      {formatDay(day.localDate, { weekday: "short" })}
+                      {formatWeekDay(day.localDate, { weekday: "short" })}
                     </span>
                     <span
                       className={cn(
@@ -732,7 +454,7 @@ export function WeeklyTimeView({
                         isToday && "is-today",
                       )}
                     >
-                      {formatDay(day.localDate, {
+                      {formatWeekDay(day.localDate, {
                         month: "short",
                         day: "numeric",
                       })}
@@ -741,7 +463,7 @@ export function WeeklyTimeView({
                   <CapacityValue
                     capacityMs={day.capacityMs}
                     totalMs={day.totalMs}
-                    label={formatDay(day.localDate, { weekday: "long" })}
+                    label={formatWeekDay(day.localDate, { weekday: "long" })}
                     overCapacity={day.overCapacity}
                     showWarning={preferences.warnWhenOverCapacity}
                   />
@@ -749,7 +471,7 @@ export function WeeklyTimeView({
                 <div
                   className="weekly-days-column-entries"
                   role="group"
-                  aria-label={`${formatDay(day.localDate, { weekday: "long" })} entries`}
+                  aria-label={`${formatWeekDay(day.localDate, { weekday: "long" })} entries`}
                 >
                   {runningHere && runningTarget ? (
                     <ObjectContextMenu

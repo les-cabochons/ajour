@@ -201,6 +201,29 @@ describe("time-entry editor", () => {
       });
     });
 
+    it("drops a prefilled new entry on switch until the user changes it", () => {
+      const prefill = createTimeEntryEditorFields(DAY, {
+        projectId: "project-1",
+        taskId: "task-1",
+      });
+      const untouched = evaluateTimeEntryEditor(prefill, {
+        allowEmptyDuration: true,
+        prefill,
+      });
+      expect(commitTimeEntryDraft(untouched, "switch")).toEqual({
+        kind: "unchanged",
+      });
+
+      const withNote = evaluateTimeEntryEditor(
+        { ...prefill, note: "draft" },
+        { allowEmptyDuration: true, prefill },
+      );
+      expect(commitTimeEntryDraft(withNote, "switch")).toEqual({
+        kind: "invalid",
+        error: "Enter hours, or press Start",
+      });
+    });
+
     it("saves a new entry with hours", () => {
       const editor = evaluateTimeEntryEditor(
         { ...createTimeEntryEditorFields(DAY), durationHours: "1:30" },

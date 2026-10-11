@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
+import { RiAddLine as Plus } from "@remixicon/react";
 import { MessagePanel } from "@/components/app-surface";
 import { DayViewerCard } from "@/components/day-viewer-card";
 import { SidePanel } from "@/components/side-panel";
+import { Button } from "@/components/ui/button";
 import { formatClockDuration } from "@/domain/time/duration";
 import { SubmitWeekButton } from "@/features/time/submit-week-controls";
 import {
@@ -12,10 +14,16 @@ import {
 } from "@/features/time/time-entry-editor-form";
 import type { TimeEntryEditorFields } from "@/features/time/time-entry-editor";
 import { TimeViewScopeMenu } from "@/features/time/time-view-scope-menu";
+import {
+  formatAddAnotherEntryLabel,
+  isSameWeekGridCell,
+  type WeekGridCell,
+} from "@/features/time/week-grid";
+import { WeekGridCellPanel } from "@/features/time/week-grid-cell-panel";
 import { WeeklyTimeView } from "@/features/time/weekly-time-view";
 import { TimerPanel } from "@/features/timer/timer-panel";
 import { TimeEntryModal } from "@/features/timer/time-entry-modal";
-import { useLocalState } from "@/lib/local-hooks";
+import { useLocalState, useUserPreferences } from "@/lib/local-hooks";
 import { useShortcut } from "@/lib/shortcut-handlers";
 import {
   getTimerContributionMs,
@@ -24,8 +32,16 @@ import {
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { addDaysIsoDate, cn, getIsoWeekDates, todayIsoDate } from "@/lib/utils";
 
-/** The entry to open: `entryId`, the running `timerId`, or a new entry when both are empty. */
-type EntryEditorRequest = { entryId?: string; timerId?: string };
+/**
+ * The entry to open: `entryId`, the running `timerId`, or a new entry when both are
+ * empty. `cell` is the Week Grid cell it came from: a new entry gets the cell's
+ * project, task and day, and the panel offers to add another entry to the cell.
+ */
+type EntryEditorRequest = {
+  entryId?: string;
+  timerId?: string;
+  cell?: WeekGridCell;
+};
 
 export function TimePage({ date }: { date: string }) {
   const navigate = useNavigate();
@@ -35,6 +51,7 @@ export function TimePage({ date }: { date: string }) {
     view?: string;
   };
   const state = useLocalState();
+  const preferences = useUserPreferences();
   const [now, setNow] = useState(() => Date.now());
   const today = todayIsoDate();
   const weekDates = useMemo(() => getIsoWeekDates(date), [date]);
@@ -60,6 +77,16 @@ export function TimePage({ date }: { date: string }) {
     search.timer && currentTimer?._id === search.timer
       ? currentTimer
       : undefined;
+  // Grid cells live in memory, not in the URL, and only count while the Grid shows
+  // their week. `gridCell` is the cell the editor came from; it only matters while
+  // the URL opens an editor, so Back past the editor closes the panel.
+  // `listedCell` is a cell with several entries, listed in the panel.
+  const [gridCell, setGridCell] = useState<WeekGridCell | null>(null);
+  const [listedCell, setListedCell] = useState<WeekGridCell | null>(null);
+  const showsGrid = isWeekView && preferences.weeklyTimeViewStyle === "grid";
+  const inShownWeek = (cell: WeekGridCell | null) =>
+    showsGrid && cell && weekDates.includes(cell.localDate) ? cell : null;
+  const panelCell = inShownWeek(gridCell);
   const editingEntry =
     !search.timer && search.entry && search.entry !== "new"
       ? state.timesheetEntries.find((entry) => entry._id === search.entry)
@@ -69,17 +96,34 @@ export function TimePage({ date }: { date: string }) {
     : editingEntry
       ? { kind: "edit", entry: editingEntry }
       : !search.timer && search.entry === "new"
-        ? { kind: "create", localDate: date }
+        ? {
+            kind: "create",
+            localDate: date,
+            initialValues: panelCell
+              ? { projectId: panelCell.projectId, taskId: panelCell.taskId }
+              : undefined,
+          }
         : null;
   const editorKey = editingTimer
     ? `running-${editingTimer._id}`
     : editingEntry
       ? editingEntry._id
-      : `new-${date}`;
+      : `new-${date}${panelCell ? `-${panelCell.rowKey}` : ""}`;
   // The Day list and Week cards key the running row by its resumed entry, if any.
   const activeEntryId = editingTimer
     ? (editingTimer.entryId ?? `running-${editingTimer._id}`)
     : editingEntry?._id;
+  // A Grid cell with several entries lists them in the panel instead of the editor.
+  const panelListedCell = editorTarget ? null : inShownWeek(listedCell);
+  const showsCellEntries = panelListedCell !== null;
+  const showsEditor = editorTarget !== null;
+
+  // Once the URL opens an editor, the listed cell is done, so Back past the editor
+  // closes the panel. It clears after the editor shows, so the panel never empties
+  // between the click and the navigation.
+  useEffect(() => {
+    if (showsEditor) setListedCell(null);
+  }, [showsEditor]);
 
   useEffect(() => {
     if (!currentTimer) {
@@ -134,8 +178,14 @@ export function TimePage({ date }: { date: string }) {
     return editorFormRef.current?.commitBeforeSwitch() ?? true;
   }
 
+  function clearGridCells() {
+    setGridCell(null);
+    setListedCell(null);
+  }
+
   function goToDate(nextDate: string) {
     if (!leaveEditorDraft()) return;
+    clearGridCells();
     navigate({
       to: "/time/$date",
       params: { date: nextDate },
@@ -157,6 +207,7 @@ export function TimePage({ date }: { date: string }) {
 
   function returnToDayView() {
     if (!leaveEditorDraft()) return;
+    clearGridCells();
     void navigate({
       to: "/time/$date",
       params: { date },
@@ -170,6 +221,7 @@ export function TimePage({ date }: { date: string }) {
 
   function closeEditor() {
     editorDraftRef.current = null;
+    clearGridCells();
     void navigate({
       to: "/time/$date",
       params: { date },
@@ -184,16 +236,25 @@ export function TimePage({ date }: { date: string }) {
    * Opens an entry, or a new entry on `localDate`, in the editor. Another entry already
    * in the side panel is saved first when valid; an invalid draft keeps it open.
    */
-  function openEditor(request: EntryEditorRequest, localDate = date) {
+  function openEditor(
+    request: EntryEditorRequest,
+    localDate = request.cell?.localDate ?? date,
+  ) {
     const entry = request.timerId ? undefined : (request.entryId ?? "new");
+    const cell = request.cell ?? null;
     const isAlreadyOpen = request.timerId
       ? request.timerId === search.timer
       : !search.timer && entry === search.entry;
-    if (isAlreadyOpen && localDate === date) {
+    if (
+      isAlreadyOpen &&
+      localDate === date &&
+      isSameWeekGridCell(cell, gridCell)
+    ) {
       return;
     }
     if (!leaveEditorDraft()) return;
 
+    setGridCell(cell);
     void navigate({
       to: "/time/$date",
       params: { date: localDate },
@@ -203,8 +264,32 @@ export function TimePage({ date }: { date: string }) {
         view: isWeekView ? "week" : undefined,
       } as never,
       // Switching entries in the panel should not stack history entries.
-      replace: editorTarget !== null,
+      replace: editorTarget !== null || showsCellEntries,
     });
+  }
+
+  /** Lists a Grid cell's entries in the side panel, after saving the open draft. */
+  function openCellEntries(cell: WeekGridCell) {
+    if (isSameWeekGridCell(cell, panelListedCell)) return;
+    if (!leaveEditorDraft()) return;
+
+    editorDraftRef.current = null;
+    setListedCell(cell);
+    if (search.entry || search.timer) {
+      void navigate({
+        to: "/time/$date",
+        params: { date },
+        search: { view: "week", entry: undefined, timer: undefined } as never,
+        replace: true,
+      });
+    }
+  }
+
+  /** Saves and closes the side panel. Returns false when its draft is invalid. */
+  function closePanel() {
+    if (!leaveEditorDraft()) return false;
+    closeEditor();
+    return true;
   }
 
   function openSubmitPage() {
@@ -255,8 +340,11 @@ export function TimePage({ date }: { date: string }) {
             now={now}
             weekDates={weekDates}
             activeEntryId={activeEntryId}
+            activeCell={editorTarget ? panelCell : panelListedCell}
+            onClosePanel={closePanel}
             onNewEntry={(localDate) => openEditor({}, localDate)}
-            onOpenEntry={openEditor}
+            onOpenCellEntries={openCellEntries}
+            onOpenEntry={(request) => openEditor(request)}
             onReturnToDay={returnToDayView}
             onSelectWeek={goToDate}
             onSubmit={openSubmitPage}
@@ -312,6 +400,33 @@ export function TimePage({ date }: { date: string }) {
             initialFields={carriedDraft}
             onFieldsChange={keepEditorDraft}
             onClose={closeEditor}
+          />
+          {panelCell && editorTarget.kind !== "create" ? (
+            <div className="weekly-grid-add-another">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => openEditor({ cell: panelCell })}
+              >
+                <Plus data-icon="inline-start" />
+                {formatAddAnotherEntryLabel(panelCell)}
+              </Button>
+            </div>
+          ) : null}
+        </SidePanel>
+      ) : panelListedCell ? (
+        <SidePanel
+          contentKey={`cell-${panelListedCell.rowKey}-${panelListedCell.localDate}`}
+          className="time-entry-side-panel"
+          aria-label="Cell entries"
+        >
+          <WeekGridCellPanel
+            key={`${panelListedCell.rowKey}-${panelListedCell.localDate}`}
+            cell={panelListedCell}
+            now={now}
+            onClose={closeEditor}
+            onOpen={openEditor}
           />
         </SidePanel>
       ) : null}

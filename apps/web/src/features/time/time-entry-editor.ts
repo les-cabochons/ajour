@@ -50,6 +50,7 @@ export interface TimeEntryEditorState {
   /** Parsed duration. `0` only when the caller allows an empty duration. */
   durationMs: number | null;
   hasChanges: boolean;
+  /** The draft has something typed, beyond what a new entry opened with. */
   hasContent: boolean;
   canSave: boolean;
   /**
@@ -89,6 +90,8 @@ export function createTimeEntryEditorFields(
  * Resolves draft values without changing precise saved values merely by opening an editor.
  * `allowEmptyDuration` lets a new entry leave Hours empty to Start it. `isRunning`
  * accepts 0h, because the running entry keeps counting from the time it shows.
+ * `prefill` is what a new entry opened with, such as a Week Grid cell's task; a
+ * switch drops a new entry left as it opened.
  */
 export function evaluateTimeEntryEditor(
   fields: TimeEntryEditorFields,
@@ -96,9 +99,10 @@ export function evaluateTimeEntryEditor(
     original?: TimeEntryValues;
     allowEmptyDuration?: boolean;
     isRunning?: boolean;
+    prefill?: TimeEntryEditorFields;
   } = {},
 ): TimeEntryEditorState {
-  const { original, isRunning = false } = options;
+  const { original, isRunning = false, prefill } = options;
   const unchangedDuration =
     original !== undefined &&
     fields.durationHours === formatDurationHoursInput(original.durationMs);
@@ -139,12 +143,18 @@ export function evaluateTimeEntryEditor(
     values,
     durationMs,
     hasChanges,
-    hasContent: Boolean(
-      fields.projectId ||
-      fields.taskId ||
-      fields.note.trim() ||
-      fields.durationHours.trim(),
-    ),
+    hasContent: prefill
+      ? fields.projectId !== prefill.projectId ||
+        fields.taskId !== prefill.taskId ||
+        fields.note.trim() !== prefill.note.trim() ||
+        fields.durationHours.trim() !== prefill.durationHours.trim() ||
+        fields.localDate !== prefill.localDate
+      : Boolean(
+          fields.projectId ||
+          fields.taskId ||
+          fields.note.trim() ||
+          fields.durationHours.trim(),
+        ),
     canSave,
     isTimerMode: !original && durationMs === 0,
     durationError:

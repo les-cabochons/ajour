@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_PROJECT_ICON } from "@/domain/projects/project-icon";
-import { projectWeeklyTime } from "@/domain/time/weekly-time";
+import {
+  projectWeeklyTime,
+  selectWeeklyGridCell,
+} from "@/domain/time/weekly-time";
 
 const capacityTargets = {
   monday: 8,
@@ -243,5 +246,230 @@ describe("weekly time projection", () => {
     expect(
       projection.gridRows.some((row) => row.entryIds.includes("outside-week")),
     ).toBe(false);
+  });
+  it("lists each cell's entries without the running entry's saved part", () => {
+    const projection = projectWeeklyTime({
+      capacityTargets,
+      entries: [
+        {
+          _id: "entry-1",
+          localDate: "2026-08-10",
+          projectId: "project-1",
+          taskId: "task-1",
+          label: "Build",
+          durationMs: 4,
+          sourceBlockIds: [],
+          committedAt: 1,
+        },
+        {
+          _id: "entry-2",
+          localDate: "2026-08-10",
+          projectId: "project-1",
+          taskId: "task-1",
+          label: "Build",
+          durationMs: 5,
+          sourceBlockIds: [],
+          committedAt: 2,
+        },
+      ],
+      projects,
+      runningTime: {
+        entryId: "entry-2",
+        localDate: "2026-08-10",
+        durationMs: 3,
+        projectId: "project-1",
+        taskId: "task-1",
+      },
+      weekDates,
+    });
+
+    const row = projection.gridRows[0]!;
+    expect(row.dayEntries[0]?.map((entry) => entry._id)).toEqual(["entry-1"]);
+    expect(row.dayEntries[1]).toEqual([]);
+    expect(row.runningLocalDate).toBe("2026-08-10");
+    expect(row.acceptsNewEntries).toBe(true);
+  });
+
+  it("keeps a resumed entry in its old cell after its task changes while running", () => {
+    const projectsWithTwoTasks = [
+      {
+        ...projects[0]!,
+        tasks: [
+          ...projects[0]!.tasks,
+          {
+            _id: "task-2",
+            name: "Review",
+            status: "active" as const,
+            createdAt: 1,
+          },
+        ],
+      },
+    ];
+    const resumed = {
+      _id: "resumed",
+      localDate: "2026-08-10",
+      projectId: "project-1",
+      taskId: "task-1",
+      label: "Build",
+      durationMs: 4,
+      sourceBlockIds: [],
+      committedAt: 1,
+    };
+    // The entry was resumed, then the running entry moved to task-2.
+    const running = {
+      entryId: "resumed",
+      localDate: "2026-08-10",
+      projectId: "project-1",
+      taskId: "task-2",
+    };
+    const projection = projectWeeklyTime({
+      capacityTargets,
+      entries: [resumed],
+      projects: projectsWithTwoTasks,
+      runningTime: { ...running, durationMs: 3 },
+      weekDates,
+    });
+
+    const oldRow = projection.gridRows.find(
+      (row) => row.rowKey === "project-1::task-1",
+    )!;
+    const newRow = projection.gridRows.find(
+      (row) => row.rowKey === "project-1::task-2",
+    )!;
+    expect(oldRow.dayEntries[0]?.map((entry) => entry._id)).toEqual([
+      "resumed",
+    ]);
+    expect(oldRow.dayTotalsMs[0]).toBe(4);
+    expect(oldRow.runningLocalDate).toBeUndefined();
+    expect(newRow.dayEntries[0]).toEqual([]);
+    expect(newRow.runningLocalDate).toBe("2026-08-10");
+
+    expect(
+      selectWeeklyGridCell({
+        entries: [resumed],
+        localDate: "2026-08-10",
+        rowKey: "project-1::task-1",
+        running,
+      }),
+    ).toEqual({ entries: [resumed], hasRunning: false });
+    expect(
+      selectWeeklyGridCell({
+        entries: [resumed],
+        localDate: "2026-08-10",
+        rowKey: "project-1::task-2",
+        running,
+      }),
+    ).toEqual({ entries: [], hasRunning: true });
+  });
+
+  it("selects one cell the same way the Grid rows group it", () => {
+    const entries = [
+      {
+        _id: "entry-1",
+        localDate: "2026-08-10",
+        projectId: "project-1",
+        taskId: "task-1",
+        label: "Build",
+        durationMs: 4,
+        sourceBlockIds: [],
+        committedAt: 1,
+      },
+      {
+        _id: "entry-2",
+        localDate: "2026-08-10",
+        projectId: "project-1",
+        taskId: "task-1",
+        label: "Build",
+        durationMs: 5,
+        sourceBlockIds: [],
+        committedAt: 2,
+      },
+      {
+        _id: "other-day",
+        localDate: "2026-08-11",
+        projectId: "project-1",
+        taskId: "task-1",
+        label: "Build",
+        durationMs: 5,
+        sourceBlockIds: [],
+        committedAt: 3,
+      },
+    ];
+    const running = {
+      entryId: "entry-2",
+      localDate: "2026-08-10",
+      projectId: "project-1",
+      taskId: "task-1",
+    };
+
+    const cell = selectWeeklyGridCell({
+      entries,
+      localDate: "2026-08-10",
+      rowKey: "project-1::task-1",
+      running,
+    });
+    expect(cell.entries.map((entry) => entry._id)).toEqual(["entry-1"]);
+    expect(cell.hasRunning).toBe(true);
+    expect(
+      selectWeeklyGridCell({
+        entries,
+        localDate: "2026-08-11",
+        rowKey: "project-1::task-1",
+        running,
+      }).hasRunning,
+    ).toBe(false);
+  });
+
+  it("shows added rows empty until they get time, without duplicating a row", () => {
+    const projection = projectWeeklyTime({
+      addedRows: [
+        { projectId: "project-1", taskId: "task-1" },
+        { projectId: "project-1" },
+      ],
+      capacityTargets,
+      entries: [
+        {
+          _id: "entry-1",
+          localDate: "2026-08-10",
+          projectId: "project-1",
+          taskId: "task-1",
+          label: "Build",
+          durationMs: 4,
+          sourceBlockIds: [],
+          committedAt: 1,
+        },
+      ],
+      projects,
+      weekDates,
+    });
+
+    expect(
+      projection.gridRows.map((row) => [row.rowKey, row.taskName, row.totalMs]),
+    ).toEqual([
+      ["project-1::task-1", "Build", 4],
+      ["project-1::", "No task", 0],
+    ]);
+    expect(projection.gridRows[1]?.dayEntries).toEqual(weekDates.map(() => []));
+  });
+
+  it("keeps typed time out of rows grouped by a legacy label", () => {
+    const projection = projectWeeklyTime({
+      capacityTargets,
+      entries: [
+        {
+          _id: "legacy",
+          localDate: "2026-08-10",
+          projectId: "project-1",
+          label: "docs.example",
+          durationMs: 2,
+          sourceBlockIds: [],
+          committedAt: 1,
+        },
+      ],
+      projects,
+      weekDates,
+    });
+
+    expect(projection.gridRows[0]?.acceptsNewEntries).toBe(false);
   });
 });

@@ -1796,3 +1796,67 @@ Then(
     ).not.toContainText("Entry deleted");
   },
 );
+
+/** A Week Grid cell, named "<task>, <weekday>, <hours>" for screen readers. */
+function weekGridCell(page: Page, task: string, day: string) {
+  return page
+    .getByRole("region", { name: "Week" })
+    .getByRole("button", { name: new RegExp(`^${task}, ${day},`) });
+}
+
+When("I open the Week Grid", async ({ page }) => {
+  // Grid is the default Week layout.
+  await page.goto("/time/2026-10-05?view=week");
+});
+
+Then(
+  "the {string} cell on {word} shows {string}",
+  async ({ page }, task: string, day: string, hours: string) => {
+    // "3:00 ×2" renders as the total followed by the count.
+    await expect(weekGridCell(page, task, day)).toHaveText(
+      hours.replace(" ", ""),
+    );
+  },
+);
+
+When(
+  "I type {string} in the {string} cell on {word} and press Tab",
+  async ({ page }, hours: string, task: string, day: string) => {
+    await weekGridCell(page, task, day).focus();
+    // A digit on a focused cell starts editing it in place with that digit.
+    await page.keyboard.type(hours);
+    await page.keyboard.press("Tab");
+  },
+);
+
+Then(
+  "the {string} cell on {word} is being edited",
+  async ({ page }, task: string, day: string) => {
+    await expect(
+      page.getByLabel(`Hours for ${task} on ${day}`, { exact: true }),
+    ).toBeFocused();
+  },
+);
+
+When(
+  "I clear the {string} cell on {word}",
+  async ({ page }, task: string, day: string) => {
+    await page.keyboard.press("Escape");
+    await weekGridCell(page, task, day).dblclick();
+    const input = page.getByLabel(`Hours for ${task} on ${day}`, {
+      exact: true,
+    });
+    await input.fill("");
+    await input.press("Enter");
+  },
+);
+
+Then(
+  "the {string} cell on {word} is empty and a toast offers Undo",
+  async ({ page }, task: string, day: string) => {
+    await expect(weekGridCell(page, task, day)).toHaveText("—");
+    const toasts = page.getByRole("region", { name: "Notifications" });
+    await expect(toasts).toContainText("Entry deleted");
+    await expect(toasts.getByRole("button", { name: "Undo" })).toBeVisible();
+  },
+);

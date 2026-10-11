@@ -172,6 +172,8 @@ export function TimeEntryEditorForm({
     original,
     allowEmptyDuration: target.kind === "create",
     isRunning: Boolean(runningTimer),
+    // A switch drops a new entry the user left as it opened, prefilled task included.
+    prefill: target.kind === "create" ? seed.fields : undefined,
   });
   const entryActions = useTimeEntryActions({
     onEdit: () => undefined,

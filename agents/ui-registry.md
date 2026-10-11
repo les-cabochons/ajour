@@ -123,8 +123,8 @@ update guidance while preserving the same release-track status and link.
 
 ### Weekly Time Overview
 
-Files: `apps/web/src/features/time/weekly-time-view.tsx`, `apps/web/src/features/time/time-entry-fields.tsx`
-Last updated: 2026-08-15
+Files: `apps/web/src/features/time/weekly-time-view.tsx`, `apps/web/src/features/time/week-grid.tsx`, `apps/web/src/features/time/week-grid-cell-panel.tsx`, `apps/web/src/features/time/time-entry-fields.tsx`
+Last updated: 2026-10-11
 
 Day remains the default, timer-first time surface. The date heading exposes a
 compact anchored scope menu with `Day` and `Week` at desktop widths of 768px
@@ -133,21 +133,26 @@ shows Day with a note that Week needs a wider window, and keeps `view=week`, so
 widening the window shows Week.
 Week offers Grid and Days through the shared toggle group,
 with the preference persisted locally as `grid` or `days`. Grid aggregates project/task time by
-day, shows project markers and daily totals, and reveals every contributing
-entry in a tray attached to the same continuous ruled surface. Days use seven
+day and shows project markers and daily totals. A click on a Grid cell opens it
+in the side panel: a new entry for an empty cell, the entry of a one-entry cell
+with "Add another entry for <day>", or the list of a cell with several entries
+(`week-grid-cell-panel.tsx`). Double-click, Enter or a digit edits an empty or
+one-entry cell in place; the typed-cell rules live in `domain/time/week-grid-cell.ts`.
+A cell with several entries shows "3:30 ×2" and never edits in place. "+ Add row"
+adds an empty row for the week, never saved on its own. Days use seven
 equal-height headers, restrained weekend/today cues, and a project-color rail
-on each entry card. Both styles share thresholded pointer dragging, explicit
-weekday drop targets, and Escape/pointer-cancel cleanup. A click or Enter on a
-card or tray row opens it in the side panel. Running entries stay locked. Normal headers show logged totals only;
+on each entry card. Cards drag between days with thresholded pointer dragging,
+explicit weekday drop targets, and Escape/pointer-cancel cleanup. A click or
+Enter on a card opens it in the side panel. Running entries stay locked. Normal headers show logged totals only;
 capacity target and utilization live in hover cards, with an optional compact
 over-target warning.
 
-The Week toolbar, grid or day columns, totals, and detail tray form one full-width
+The Week toolbar, grid or day columns, and totals form one full-width
 desktop workspace rather than stacked cards. Return to Day is the leading
-left-arrow action. Every time entry surface (Day rows, Days cards, Grid tray rows
-and the entry form) exposes the same action set through a
+left-arrow action. Every time entry surface (Day rows, Days cards, Grid cells,
+the Grid cell list and the entry form) exposes the same action set through a
 right-click menu and a "…" button, which the narrow view always shows. Duplicate
-to and Move to open a calendar dialog; Delete and Discard ask for confirmation.
+to and Move to open a calendar dialog; Delete and Discard happen at once and show an Undo toast.
 `features/time/time-entry-actions.tsx` runs the actions for every surface.
 
 Capacity targets and the two independent warning switches live in General
