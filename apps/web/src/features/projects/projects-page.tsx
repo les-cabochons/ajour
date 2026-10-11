@@ -75,6 +75,7 @@ import {
   createProjectTaskEditorFields,
   evaluateProjectTaskEditor,
   type ProjectTaskEditorFields,
+  type ProjectTaskEditorState,
   type ProjectTaskValues,
 } from "@/features/projects/project-task-editor";
 import { ProjectTaskEditorForm } from "@/features/projects/project-task-editor-form";
@@ -1060,6 +1061,19 @@ function ProjectDetail({
   );
 }
 
+/** Writes a task draft: updates the saved task, or adds the new one to its project. */
+function writeProjectTask(
+  session: TaskEditorSession,
+  values: ProjectTaskValues,
+) {
+  if (session.taskId) {
+    localStore.updateProjectTask(session.projectId, session.taskId, values);
+    return;
+  }
+
+  localStore.addProjectTask(session.projectId, values);
+}
+
 /* ── Projects page ────────────────────────────────────────────────── */
 
 export function ProjectsPage() {
@@ -1215,11 +1229,28 @@ export function ProjectsPage() {
     }
   }, [isTaskEditorTargetEditable, taskEditor]);
 
-  // Leaving the project by a path that did not save the draft first drops it.
+  // Every in-page path out of a project goes through `leaveProject`. Route changes
+  // the page cannot guard, such as the browser's back button, land here after the
+  // fact: a valid draft is saved, and an invalid one can only be dropped.
+  const taskEditorDraftRef = useRef<{
+    session: TaskEditorSession;
+    editor: ProjectTaskEditorState;
+  } | null>(null);
+  taskEditorDraftRef.current =
+    taskEditor && taskEditorState
+      ? { session: taskEditor, editor: taskEditorState }
+      : null;
   useEffect(() => {
-    setTaskEditor((current) =>
-      current && current.projectId !== selectedProjectId ? null : current,
-    );
+    const draft = taskEditorDraftRef.current;
+    if (!draft || draft.session.projectId === selectedProjectId) {
+      return;
+    }
+
+    const result = commitProjectTaskDraft(draft.editor, "switch");
+    if (result.kind === "save") {
+      writeProjectTask(draft.session, result.values);
+    }
+    setTaskEditor(null);
   }, [selectedProjectId]);
 
   const clearProjectPointerSession = useCallback(() => {
@@ -1404,7 +1435,12 @@ export function ProjectsPage() {
     setProjectModalState(null);
   };
 
+  /** Creating a project leaves the current one, so the task draft is settled first. */
   const openCreateProjectModal = () => {
+    closeProjectCommand();
+    if (!leaveProject()) {
+      return;
+    }
     setProjectModalState({ mode: "create" });
   };
 
@@ -1412,15 +1448,6 @@ export function ProjectsPage() {
     setIsProjectCommandOpen(false);
     setProjectCommandView("main");
     setProjectCommandQuery("");
-  };
-
-  const writeTask = (session: TaskEditorSession, values: ProjectTaskValues) => {
-    if (session.taskId) {
-      localStore.updateProjectTask(session.projectId, session.taskId, values);
-      return;
-    }
-
-    localStore.addProjectTask(session.projectId, values);
   };
 
   /**
@@ -1439,7 +1466,7 @@ export function ProjectsPage() {
     }
 
     if (result.kind === "save") {
-      writeTask(taskEditor, result.values);
+      writeProjectTask(taskEditor, result.values);
     }
     return true;
   };
@@ -1477,7 +1504,7 @@ export function ProjectsPage() {
     }
 
     if (result.kind === "save") {
-      writeTask(taskEditor, result.values);
+      writeProjectTask(taskEditor, result.values);
     }
     setTaskEditor(null);
   };
@@ -1488,21 +1515,45 @@ export function ProjectsPage() {
     );
   };
 
-  /** Saves the task draft before a sidebar link leaves the project, or cancels the link. */
+  /**
+   * The guard for every path that leaves the selected project: saves a valid task
+   * draft and closes the editor. Returns false when an invalid draft blocks it.
+   */
+  const leaveProject = () => {
+    if (!leaveTaskDraft()) {
+      return false;
+    }
+    setTaskEditor(null);
+    return true;
+  };
+
+  /** Goes to a project, or to the archive with `null`, after `leaveProject`. */
+  const goToProject = (projectId: string | null) => {
+    closeProjectCommand();
+    if (projectId === selectedProjectId || !leaveProject()) {
+      return;
+    }
+
+    void navigate(
+      projectId
+        ? { to: "/projects/$projectId", params: { projectId } }
+        : { to: "/projects/archive" },
+    );
+  };
+
+  /** Runs `leaveProject` before a sidebar link changes project, or cancels the link. */
   const handleLeaveProjectClick = (
     event: React.MouseEvent,
     nextProjectId: string | null,
   ) => {
-    if (nextProjectId === selectedProjectId || !taskEditor) {
+    if (nextProjectId === selectedProjectId) {
       return;
     }
 
-    if (!leaveTaskDraft()) {
+    if (!leaveProject()) {
       event.preventDefault();
       event.stopPropagation();
-      return;
     }
-    setTaskEditor(null);
   };
 
   const openEditProjectModal = (project: LocalProject) => {
@@ -1912,20 +1963,14 @@ export function ProjectsPage() {
                       </CommandItem>
                       <CommandItem
                         value="create-project"
-                        onSelect={() => {
-                          closeProjectCommand();
-                          openCreateProjectModal();
-                        }}
+                        onSelect={openCreateProjectModal}
                       >
                         <FolderPlus className="h-4 w-4" />
                         <span className="flex-1">Create project</span>
                       </CommandItem>
                       <CommandItem
                         value="see-archived-projects"
-                        onSelect={() => {
-                          closeProjectCommand();
-                          void navigate({ to: "/projects/archive" });
-                        }}
+                        onSelect={() => goToProject(null)}
                       >
                         <Archive className="h-4 w-4" />
                         <span className="flex-1">See archived projects</span>
@@ -1942,13 +1987,7 @@ export function ProjectsPage() {
                       <CommandItem
                         key={project._id}
                         value={`project-${getProjectDisplayName(project)}`}
-                        onSelect={() => {
-                          closeProjectCommand();
-                          void navigate({
-                            to: "/projects/$projectId",
-                            params: { projectId: project._id },
-                          });
-                        }}
+                        onSelect={() => goToProject(project._id)}
                       >
                         <ProjectIcon
                           icon={project.icon}
@@ -1964,13 +2003,7 @@ export function ProjectsPage() {
                       <CommandItem
                         key={project._id}
                         value={`archived-project-${getProjectDisplayName(project)}`}
-                        onSelect={() => {
-                          closeProjectCommand();
-                          void navigate({
-                            to: "/projects/$projectId",
-                            params: { projectId: project._id },
-                          });
-                        }}
+                        onSelect={() => goToProject(project._id)}
                       >
                         <ProjectIcon
                           icon={project.icon}
