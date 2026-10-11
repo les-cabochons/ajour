@@ -4,8 +4,30 @@ import {
   getSharedTableDragOverlayTransform,
   getSharedTableDragRowShift,
   getSharedTableDragTargetIndex,
+  getSharedTableStepOrder,
   setSharedTableDragDocumentState,
 } from "@/lib/table-drag";
+
+describe("getSharedTableStepOrder", () => {
+  const ids = ["a", "b", "c"];
+
+  it("moves an item one place up or down and gives its new index", () => {
+    expect(getSharedTableStepOrder(ids, "b", -1)).toEqual({
+      order: ["b", "a", "c"],
+      toIndex: 0,
+    });
+    expect(getSharedTableStepOrder(ids, "b", 1)).toEqual({
+      order: ["a", "c", "b"],
+      toIndex: 2,
+    });
+  });
+
+  it("stops at the edges and ignores unknown items", () => {
+    expect(getSharedTableStepOrder(ids, "a", -1)).toBeNull();
+    expect(getSharedTableStepOrder(ids, "c", 1)).toBeNull();
+    expect(getSharedTableStepOrder(ids, "z", 1)).toBeNull();
+  });
+});
 
 function dispatchPointer(
   target: EventTarget,

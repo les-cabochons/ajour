@@ -1,10 +1,11 @@
 /**
- * The keyboard shortcut registry. Key handling, the "?" overlay and the command
- * palette read it; menus and tooltips read it later. See "Keyboard" in
+ * The keyboard shortcut registry. Key handling, the "?" overlay, the command
+ * palette and the object action menus read it. See "Keyboard" in
  * agents/ux-spec.md.
  *
  * This module is pure: it only describes shortcuts and matches key events. The
- * handlers that run them live in `lib/shortcut-handlers.tsx`.
+ * handlers that run app shortcuts live in `lib/shortcut-handlers.tsx`; the
+ * focused row or card runs "item" shortcuts through `lib/item-keys.ts`.
  */
 
 // Type-only, so this module stays free of runtime imports: the desktop menu
@@ -14,12 +15,16 @@ import type { PinnedTaskSlot } from "@/domain/local-state";
 export type ShortcutPlatform = "mac" | "other";
 
 /**
- * One key press. `key` is a lowercase letter or the character the key types,
- * such as "[" or "?". `mod` is Cmd on macOS and Ctrl elsewhere.
+ * One key press. `key` is a lowercase letter, the character the key types, such
+ * as "[" or "?", or a named key from `KeyboardEvent.key`, such as "Enter" or
+ * "ArrowUp". `mod` is Cmd on macOS and Ctrl elsewhere.
  */
 export interface KeyChord {
   key: string;
   mod?: boolean;
+  alt?: boolean;
+  /** Only named keys read it, as in Shift+F10. */
+  shift?: boolean;
 }
 
 /**
@@ -38,8 +43,11 @@ export function isDigitChord(chord: ShortcutChord): chord is DigitChord {
   return "digit" in chord;
 }
 
-/** Where a shortcut works: anywhere in the app, or only on the Time page. */
-export type ShortcutScope = "global" | "time";
+/**
+ * Where a shortcut works: anywhere in the app, only on the Time page, or on the
+ * focused row, card or Grid cell ("item").
+ */
+export type ShortcutScope = "global" | "time" | "item";
 
 export type ShortcutActionId =
   | "entry.new"
@@ -59,7 +67,18 @@ export type ShortcutActionId =
   | "app.command-palette"
   | "app.shortcuts"
   | "pinned.new-entry"
-  | "pinned.start";
+  | "pinned.start"
+  | "item.edit"
+  | "item.duplicate"
+  | "item.move-to"
+  | "item.delete"
+  | "item.move-up"
+  | "item.move-down"
+  | "item.open-menu"
+  | "item.focus-up"
+  | "item.focus-down"
+  | "item.focus-left"
+  | "item.focus-right";
 
 export interface ShortcutDefinition {
   id: ShortcutActionId;
@@ -67,6 +86,11 @@ export interface ShortcutDefinition {
   scope: ShortcutScope;
   /** Chords pressed one after the other. Most shortcuts have one; "G then T" has two. */
   keys: readonly ShortcutChord[];
+  /**
+   * Other single chords that run the same action, such as Enter for Edit. Menus
+   * show `keys`; the "?" overlay shows both.
+   */
+  alternateKeys?: readonly KeyChord[];
 }
 
 // Cmd+Z (Undo toast, #31) joins this list when its feature lands, so the overlay
@@ -181,7 +205,87 @@ export const SHORTCUTS: readonly ShortcutDefinition[] = [
     scope: "global",
     keys: [{ digit: true, shift: true }],
   },
+  // The focused row's keys. None is a digit, so pinned tasks keep 1 to 0.
+  {
+    id: "item.edit",
+    label: "Edit",
+    scope: "item",
+    keys: [{ key: "e" }],
+    alternateKeys: [{ key: "Enter" }],
+  },
+  {
+    id: "item.duplicate",
+    label: "Duplicate",
+    scope: "item",
+    keys: [{ key: "d", mod: true }],
+  },
+  {
+    id: "item.move-to",
+    label: "Move to…",
+    scope: "item",
+    keys: [{ key: "m" }],
+  },
+  {
+    id: "item.delete",
+    label: "Delete, discard or archive",
+    scope: "item",
+    keys: [{ key: "Backspace" }],
+    alternateKeys: [{ key: "Delete" }],
+  },
+  {
+    id: "item.move-up",
+    label: "Move up",
+    scope: "item",
+    keys: [{ key: "ArrowUp", alt: true }],
+  },
+  {
+    id: "item.move-down",
+    label: "Move down",
+    scope: "item",
+    keys: [{ key: "ArrowDown", alt: true }],
+  },
+  {
+    id: "item.open-menu",
+    label: "Open the actions menu",
+    scope: "item",
+    keys: [{ key: "." }],
+    alternateKeys: [{ key: "ContextMenu" }, { key: "F10", shift: true }],
+  },
+  {
+    id: "item.focus-up",
+    label: "Focus the row or card above",
+    scope: "item",
+    keys: [{ key: "ArrowUp" }],
+  },
+  {
+    id: "item.focus-down",
+    label: "Focus the row or card below",
+    scope: "item",
+    keys: [{ key: "ArrowDown" }],
+  },
+  {
+    id: "item.focus-left",
+    label: "Focus the previous day",
+    scope: "item",
+    keys: [{ key: "ArrowLeft" }],
+  },
+  {
+    id: "item.focus-right",
+    label: "Focus the next day",
+    scope: "item",
+    keys: [{ key: "ArrowRight" }],
+  },
 ];
+
+/** The shortcuts the app-wide key listener runs. The focused row runs item shortcuts. */
+export const APP_SHORTCUTS = SHORTCUTS.filter(
+  (shortcut) => shortcut.scope !== "item",
+);
+
+/** The shortcuts of the focused row, card or Grid cell. */
+export const ITEM_SHORTCUTS = SHORTCUTS.filter(
+  (shortcut) => shortcut.scope === "item",
+);
 
 export type ShortcutKeyEvent = Pick<
   KeyboardEvent,
@@ -198,6 +302,11 @@ export function getPressedDigit(
 
 const LETTER = /^[a-z]$/;
 
+/** Named keys such as "Enter" or "F10", as opposed to the character a key types. */
+function isNamedKey(key: string) {
+  return key.length > 1;
+}
+
 /** True when the platform's command key is down: Cmd on macOS, Ctrl elsewhere. */
 export function isModifierPress(
   event: ShortcutKeyEvent,
@@ -207,10 +316,12 @@ export function isModifierPress(
 }
 
 /**
- * Whether a key event presses `chord`. Alt and the other platform's modifier
- * never match, so Ctrl+B on macOS keeps its text binding. Letters ignore caps
- * lock but not Shift. Symbols such as "?" or "[" ignore Shift, because keyboard
- * layouts need it to type them. Digit chords check Shift themselves.
+ * Whether a key event presses `chord`. Alt matches only a chord with `alt`, and
+ * the other platform's modifier never matches, so Ctrl+B on macOS keeps its
+ * text binding. Letters ignore caps lock but not Shift. Named keys such as F10
+ * take Shift only when the chord has `shift`. Symbols such as "?" or "[" ignore
+ * Shift, because keyboard layouts need it to type them. Digit chords check
+ * Shift themselves.
  */
 export function matchesChord(
   event: ShortcutKeyEvent,
@@ -219,8 +330,9 @@ export function matchesChord(
 ) {
   const otherModifier = platform === "mac" ? event.ctrlKey : event.metaKey;
   const chordMod = !isDigitChord(chord) && Boolean(chord.mod);
+  const chordAlt = !isDigitChord(chord) && Boolean(chord.alt);
   if (
-    event.altKey ||
+    event.altKey !== chordAlt ||
     otherModifier ||
     isModifierPress(event, platform) !== chordMod
   ) {
@@ -232,6 +344,10 @@ export function matchesChord(
       getPressedDigit(event) !== undefined &&
       event.shiftKey === Boolean(chord.shift)
     );
+  }
+
+  if (isNamedKey(chord.key)) {
+    return event.shiftKey === Boolean(chord.shift) && event.key === chord.key;
   }
 
   if (LETTER.test(chord.key) || chord.mod) {
@@ -250,7 +366,12 @@ function sameChord(left: ShortcutChord, right: ShortcutChord) {
     );
   }
 
-  return left.key === right.key && Boolean(left.mod) === Boolean(right.mod);
+  return (
+    left.key === right.key &&
+    Boolean(left.mod) === Boolean(right.mod) &&
+    Boolean(left.alt) === Boolean(right.alt) &&
+    Boolean(left.shift) === Boolean(right.shift)
+  );
 }
 
 export type ShortcutResolution =
@@ -288,7 +409,14 @@ export function resolveShortcut(
   // Shift+6 on Canadian French layouts. "?" still works on other layouts.
   const complete =
     completes.find((shortcut) => isDigitChord(shortcut.keys[prefix.length]!)) ??
-    completes[0];
+    completes[0] ??
+    (prefix.length === 0
+      ? shortcuts.find((shortcut) =>
+          shortcut.alternateKeys?.some((chord) =>
+            matchesChord(event, chord, platform),
+          ),
+        )
+      : undefined);
   if (complete) {
     const lastChord = complete.keys[prefix.length]!;
     return isDigitChord(lastChord)
@@ -364,6 +492,29 @@ export function blocksDigitShortcuts(target: unknown) {
   );
 }
 
+const NAMED_KEY_LABELS: Record<string, Record<ShortcutPlatform, string>> = {
+  ArrowUp: { mac: "↑", other: "↑" },
+  ArrowDown: { mac: "↓", other: "↓" },
+  ArrowLeft: { mac: "←", other: "←" },
+  ArrowRight: { mac: "→", other: "→" },
+  Enter: { mac: "↩", other: "Enter" },
+  Backspace: { mac: "⌫", other: "Backspace" },
+  Delete: { mac: "⌦", other: "Del" },
+  ContextMenu: { mac: "Menu", other: "Menu" },
+};
+
+/** One key chord's label, such as "⌘B", "Ctrl+B", "⌥↑" or "Shift+F10". */
+function formatKeyChord(chord: KeyChord, platform: ShortcutPlatform) {
+  const key =
+    NAMED_KEY_LABELS[chord.key]?.[platform] ??
+    (isNamedKey(chord.key) ? chord.key : chord.key.toUpperCase());
+  const modifiers =
+    platform === "mac"
+      ? [chord.shift && "⇧", chord.alt && "⌥", chord.mod && "⌘"]
+      : [chord.mod && "Ctrl+", chord.alt && "Alt+", chord.shift && "Shift+"];
+  return `${modifiers.filter(Boolean).join("")}${key}`;
+}
+
 /**
  * The labels to show for each chord, such as ["G", "T"], ["⌘B"] or ["Ctrl+B"].
  * A digit chord reads "1 to 0", or "⇧1 to ⇧0" with Shift.
@@ -378,13 +529,18 @@ export function formatShortcutKeys(
       return `${shift}1 to ${shift}0`;
     }
 
-    const key = chord.key.toUpperCase();
-    if (!chord.mod) {
-      return key;
-    }
-
-    return platform === "mac" ? `⌘${key}` : `Ctrl+${key}`;
+    return formatKeyChord(chord, platform);
   });
+}
+
+/** The labels of a shortcut's alternate keys, such as ["↩"] for Edit on macOS. */
+export function formatAlternateKeys(
+  shortcut: ShortcutDefinition,
+  platform: ShortcutPlatform,
+) {
+  return (shortcut.alternateKeys ?? []).map((chord) =>
+    formatKeyChord(chord, platform),
+  );
 }
 
 /**
@@ -402,16 +558,18 @@ export function filterShortcuts(
   }
 
   return shortcuts.filter((shortcut) =>
-    [shortcut.label, ...formatShortcutKeys(shortcut, platform)].some((text) =>
-      text.toLowerCase().includes(needle),
-    ),
+    [
+      shortcut.label,
+      ...formatShortcutKeys(shortcut, platform),
+      ...formatAlternateKeys(shortcut, platform),
+    ].some((text) => text.toLowerCase().includes(needle)),
   );
 }
 
 /**
- * The `aria-keyshortcuts` value for a one-chord shortcut, such as "Meta+B".
- * The attribute cannot describe sequences or digit ranges, so they return
- * undefined.
+ * The `aria-keyshortcuts` value for a one-chord shortcut, such as "Meta+B" or
+ * "Alt+ArrowUp". Alternate keys follow, separated by spaces. The attribute
+ * cannot describe sequences or digit ranges, so they return undefined.
  */
 export function formatAriaKeyShortcuts(
   shortcut: ShortcutDefinition,
@@ -422,12 +580,18 @@ export function formatAriaKeyShortcuts(
     return undefined;
   }
 
-  const key = chord.key.toUpperCase();
-  if (!chord.mod) {
-    return key;
-  }
-
-  return platform === "mac" ? `Meta+${key}` : `Control+${key}`;
+  return [chord, ...(shortcut.alternateKeys ?? [])]
+    .map((keyChord) =>
+      [
+        keyChord.mod && (platform === "mac" ? "Meta" : "Control"),
+        keyChord.alt && "Alt",
+        keyChord.shift && "Shift",
+        isNamedKey(keyChord.key) ? keyChord.key : keyChord.key.toUpperCase(),
+      ]
+        .filter(Boolean)
+        .join("+"),
+    )
+    .join(" ");
 }
 
 export function getShortcut(id: ShortcutActionId): ShortcutDefinition {

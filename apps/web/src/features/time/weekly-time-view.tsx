@@ -46,8 +46,10 @@ import {
   offerTimeEntryUndo,
   useTimeEntryActions,
 } from "@/features/time/time-entry-actions";
+import { handleItemKeyDown, TIME_ENTRY_ACTION_KEYS } from "@/lib/item-keys";
 import { localStore } from "@/lib/local-store";
 import {
+  getSharedTableStepOrder,
   setSharedTableDragDocumentState,
   SHARED_TABLE_DRAG_CLICK_SUPPRESSION_MS,
   type SharedTableDragPointerSession,
@@ -248,6 +250,23 @@ export function WeeklyTimeView({
     offerTimeEntryUndo(token, `Moved to ${formatToastDay(localDate)}`);
   }
 
+  /** Move up and Move down within a day's cards, persisted like the Day list's drag reorder. */
+  function reorderEntry(
+    localDate: string,
+    dayEntries: LocalTimesheetEntry[],
+    entryId: string,
+    step: -1 | 1,
+  ) {
+    const next = getSharedTableStepOrder(
+      dayEntries.map((entry) => entry._id),
+      entryId,
+      step,
+    );
+    if (next) {
+      localStore.reorderTimesheetEntries(localDate, next.order);
+    }
+  }
+
   function registerDayTarget(localDate: string, node: HTMLElement | null) {
     if (node) {
       dayTargetRefs.current.set(localDate, node);
@@ -418,7 +437,7 @@ export function WeeklyTimeView({
           weekDates={weekDates}
         />
       ) : (
-        <div className="weekly-days-grid">
+        <div className="weekly-days-grid" data-focus-scope>
           {projection.days.map((day, index) => {
             const visibleEntries = currentTimer?.entryId
               ? day.entries.filter(
@@ -476,15 +495,27 @@ export function WeeklyTimeView({
                   {runningHere && runningTarget ? (
                     <ObjectContextMenu
                       actions={entryActions.getActions(runningTarget)}
+                      keys={TIME_ENTRY_ACTION_KEYS}
                       onAction={(actionId) =>
                         entryActions.runAction(runningTarget, actionId)
                       }
                       render={
                         <Card
                           size="sm"
+                          tabIndex={0}
+                          aria-label={`Running entry, ${formatClockDuration(runningTime.displayDurationMs)}`}
                           className="weekly-entry-card is-running"
                           data-running-entry="true"
                           data-entry-id={currentTimer?.entryId ?? ""}
+                          data-focus-column={index}
+                          onKeyDown={(event) =>
+                            handleItemKeyDown(event, {
+                              actions: entryActions.getActions(runningTarget),
+                              keys: TIME_ENTRY_ACTION_KEYS,
+                              onAction: (actionId) =>
+                                entryActions.runAction(runningTarget, actionId),
+                            })
+                          }
                         />
                       }
                     >
@@ -494,6 +525,7 @@ export function WeeklyTimeView({
                         </Badge>
                         <ObjectActionsButton
                           actions={entryActions.getActions(runningTarget)}
+                          keys={TIME_ENTRY_ACTION_KEYS}
                           onAction={(actionId) =>
                             entryActions.runAction(runningTarget, actionId)
                           }
@@ -513,6 +545,7 @@ export function WeeklyTimeView({
                       <ObjectContextMenu
                         key={entry._id}
                         actions={actions}
+                        keys={TIME_ENTRY_ACTION_KEYS}
                         onAction={(actionId) =>
                           entryActions.runAction(target, actionId)
                         }
@@ -522,6 +555,7 @@ export function WeeklyTimeView({
                             tabIndex={0}
                             role="button"
                             data-entry-id={entry._id}
+                            data-focus-column={index}
                             aria-label={`${summary.projectName}, ${summary.taskName}, ${formatClockDuration(entry.durationMs)}`}
                             style={
                               {
@@ -535,13 +569,28 @@ export function WeeklyTimeView({
                             )}
                             onClick={() => openEntry(entry._id)}
                             onKeyDown={(event) => {
+                              // Space presses the card like a button; Enter is Edit.
                               if (
                                 event.target === event.currentTarget &&
-                                (event.key === "Enter" || event.key === " ")
+                                event.key === " "
                               ) {
                                 event.preventDefault();
                                 openEntry(entry._id);
+                                return;
                               }
+                              handleItemKeyDown(event, {
+                                actions,
+                                keys: TIME_ENTRY_ACTION_KEYS,
+                                onAction: (actionId) =>
+                                  entryActions.runAction(target, actionId),
+                                onReorder: (step) =>
+                                  reorderEntry(
+                                    day.localDate,
+                                    visibleEntries,
+                                    entry._id,
+                                    step,
+                                  ),
+                              });
                             }}
                             onPointerDown={(event) =>
                               handleEntryPointerDown(entry, event)
@@ -569,6 +618,7 @@ export function WeeklyTimeView({
                           </span>
                           <ObjectActionsButton
                             actions={actions}
+                            keys={TIME_ENTRY_ACTION_KEYS}
                             onAction={(actionId) =>
                               entryActions.runAction(target, actionId)
                             }

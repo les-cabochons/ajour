@@ -1,9 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
+  APP_SHORTCUTS,
+  ITEM_SHORTCUTS,
   SHORTCUTS,
   blocksDigitShortcuts,
   blocksSingleKeyShortcuts,
   filterShortcuts,
+  formatAlternateKeys,
   formatAriaKeyShortcuts,
   formatShortcutKeys,
   getShortcut,
@@ -40,7 +43,7 @@ function resolvedId(
   prefix = [] as { key: string; mod?: boolean }[],
   platform: "mac" | "other" = "mac",
 ) {
-  const resolution = resolveShortcut(SHORTCUTS, prefix, event, platform);
+  const resolution = resolveShortcut(APP_SHORTCUTS, prefix, event, platform);
   return resolution.kind === "action" ? resolution.shortcut.id : resolution;
 }
 
@@ -59,7 +62,7 @@ function element(
 
 describe("shortcut registry", () => {
   it("lists every global key from the UX spec once", () => {
-    const keys = SHORTCUTS.map((shortcut) =>
+    const keys = APP_SHORTCUTS.map((shortcut) =>
       formatShortcutKeys(shortcut, "mac").join(" then "),
     );
     expect(keys).toEqual([
@@ -87,6 +90,43 @@ describe("shortcut registry", () => {
     );
   });
 
+  it("lists the keys of focused rows and cards from the UX spec", () => {
+    const keys = (platform: "mac" | "other") =>
+      ITEM_SHORTCUTS.map((shortcut) =>
+        [
+          ...formatShortcutKeys(shortcut, platform),
+          ...formatAlternateKeys(shortcut, platform),
+        ].join(" or "),
+      );
+
+    expect(keys("mac")).toEqual([
+      "E or ↩",
+      "⌘D",
+      "M",
+      "⌫ or ⌦",
+      "⌥↑",
+      "⌥↓",
+      ". or Menu or ⇧F10",
+      "↑",
+      "↓",
+      "←",
+      "→",
+    ]);
+    expect(keys("other")).toEqual([
+      "E or Enter",
+      "Ctrl+D",
+      "M",
+      "Backspace or Del",
+      "Alt+↑",
+      "Alt+↓",
+      ". or Menu or Shift+F10",
+      "↑",
+      "↓",
+      "←",
+      "→",
+    ]);
+  });
+
   it("never uses the first key of a sequence as a shortcut on its own", () => {
     const keyOf = (chord: ShortcutChord) =>
       isDigitChord(chord) ? undefined : chord;
@@ -112,6 +152,12 @@ describe("shortcut registry", () => {
     expect(
       formatAriaKeyShortcuts(getShortcut("go.time"), "mac"),
     ).toBeUndefined();
+    expect(formatAriaKeyShortcuts(getShortcut("item.edit"), "mac")).toBe(
+      "E Enter",
+    );
+    expect(formatAriaKeyShortcuts(getShortcut("item.move-up"), "other")).toBe(
+      "Alt+ArrowUp",
+    );
   });
 
   it("filters by label or key, ignoring case", () => {
@@ -124,8 +170,10 @@ describe("shortcut registry", () => {
       "app.settings",
       "app.toggle-sidebar",
       "app.command-palette",
+      "item.duplicate",
     ]);
     expect(ids("BACKLOG")).toEqual(["go.backlog"]);
+    expect(ids("⇧F10")).toEqual(["item.open-menu"]);
     expect(ids("nothing like this")).toEqual([]);
   });
 });
@@ -177,6 +225,30 @@ describe("matchesChord", () => {
     ).toBe(true);
     expect(matchesChord(press("/"), { key: "?" }, "mac")).toBe(false);
   });
+
+  it("matches Alt and Shift on named keys only as the chord says", () => {
+    const moveUp = { key: "ArrowUp", alt: true };
+    expect(
+      matchesChord(press("ArrowUp", { altKey: true }), moveUp, "mac"),
+    ).toBe(true);
+    expect(matchesChord(press("ArrowUp"), moveUp, "mac")).toBe(false);
+    expect(
+      matchesChord(
+        press("ArrowUp", { altKey: true }),
+        { key: "ArrowUp" },
+        "mac",
+      ),
+    ).toBe(false);
+
+    const shiftF10 = { key: "F10", shift: true };
+    expect(
+      matchesChord(press("F10", { shiftKey: true }), shiftF10, "other"),
+    ).toBe(true);
+    expect(matchesChord(press("F10"), shiftF10, "other")).toBe(false);
+    expect(
+      matchesChord(press("Enter", { shiftKey: true }), { key: "Enter" }, "mac"),
+    ).toBe(false);
+  });
 });
 
 describe("resolveShortcut", () => {
@@ -198,6 +270,23 @@ describe("resolveShortcut", () => {
     expect(resolvedId(press("t"), [{ key: "g" }])).toBe("go.time");
     expect(resolvedId(press("s"), [{ key: "g" }])).toBe("go.settings");
     expect(resolvedId(press("t"))).toBe("time.today");
+  });
+
+  it("resolves alternate keys, and leaves item keys out of the app listener", () => {
+    const itemId = (event: ShortcutKeyEvent) => {
+      const resolution = resolveShortcut(ITEM_SHORTCUTS, [], event, "mac");
+      return resolution.kind === "action" ? resolution.shortcut.id : null;
+    };
+
+    expect(itemId(press("Enter"))).toBe("item.edit");
+    expect(itemId(press("e"))).toBe("item.edit");
+    expect(itemId(press("Delete"))).toBe("item.delete");
+    expect(itemId(press("F10", { shiftKey: true }))).toBe("item.open-menu");
+    expect(itemId(press("ArrowDown", { altKey: true }))).toBe("item.move-down");
+    expect(resolvedId(press("Enter"))).toEqual({ kind: "none" });
+    // Digits stay with pinned tasks and Grid cells.
+    expect(itemId(pressDigit("Digit1", "1"))).toBeNull();
+    expect(itemId(pressDigit("Digit1", "!", { shiftKey: true }))).toBeNull();
   });
 
   it("starts over when the next key does not continue the sequence", () => {

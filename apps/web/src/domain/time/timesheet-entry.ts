@@ -400,6 +400,25 @@ export function markTimesheetEntriesSubmitted(
     : state;
 }
 
+/**
+ * The ids of a day's saved entries in the order the Day list and the Week's
+ * Days cards show them, top first: the highest `committedAt` first.
+ * `excludeEntryId` leaves out the entry the running entry resumed, which stays
+ * on top and is not sortable. Move up and Move down step through this order.
+ */
+export function selectSortableDayEntryIds(
+  entries: readonly LocalTimesheetEntry[],
+  localDate: string,
+  excludeEntryId?: string,
+): string[] {
+  return entries
+    .filter(
+      (entry) => entry.localDate === localDate && entry._id !== excludeEntryId,
+    )
+    .sort((left, right) => right.committedAt - left.committedAt)
+    .map((entry) => entry._id);
+}
+
 export function reorderTimesheetEntries(
   state: LocalAppState,
   localDate: string,

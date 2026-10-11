@@ -1734,13 +1734,14 @@ When(
 Then("the entry's action menu is open", async ({ page }) => {
   const menu = page.getByRole("menu");
   await expect(menu).toBeVisible();
+  // Each item ends with its key, which differs between macOS and other platforms.
   await expect(menu.getByRole("menuitem")).toHaveText([
-    "Edit",
-    "Continue",
-    "Duplicate",
-    "Duplicate to…",
-    "Move to…",
-    "Delete",
+    /^EditE$/,
+    /^ContinueC$/,
+    /^Duplicate(⌘D|Ctrl\+D)$/,
+    /^Duplicate to…$/,
+    /^Move to…M$/,
+    /^Delete(⌫|Backspace)$/,
   ]);
   // Releasing the long press does not also open the row.
   await expect(page.getByRole("dialog")).toHaveCount(0);
@@ -1972,6 +1973,32 @@ When("I delete Monday's {string} entry", async ({ page }, note: string) => {
   await page.getByText(note, { exact: true }).click({ button: "right" });
   await page.getByRole("menuitem", { name: "Delete" }).click();
 });
+
+When("I focus the top entry of Monday's Day list", async ({ page }) => {
+  await page.goto("/time/2026-10-05");
+  // Focus only: the rest of the scenario uses the keyboard.
+  await page.locator(".time-entry-row").first().focus();
+});
+
+Then(
+  "the side panel edits the {string} entry",
+  async ({ page }, note: string) => {
+    await expect(
+      page
+        .getByRole("complementary", { name: "Time entry editor" })
+        .getByLabel("Note"),
+    ).toHaveValue(note);
+  },
+);
+
+Then(
+  "Monday's {string} entry has keyboard focus",
+  async ({ page }, note: string) => {
+    await expect(
+      page.locator(".time-entry-row").filter({ hasText: note }),
+    ).toBeFocused();
+  },
+);
 
 Then("the entry is gone and a toast offers Undo", async ({ page }) => {
   // Delete happens at once, without a confirmation dialog.

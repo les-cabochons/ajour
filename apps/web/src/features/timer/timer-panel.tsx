@@ -36,10 +36,12 @@ import {
   getSharedTableDragOverlayTransform,
   getSharedTableDragRowShift,
   getSharedTableDragTargetIndex,
+  getSharedTableStepOrder,
   setSharedTableDragDocumentState,
   SHARED_TABLE_DRAG_CLICK_SUPPRESSION_MS,
   type SharedTableDragPointerSession,
 } from "@/lib/table-drag";
+import { handleItemKeyDown, TIME_ENTRY_ACTION_KEYS } from "@/lib/item-keys";
 import { ProjectIcon } from "@/lib/project-icons";
 import { cn } from "@/lib/utils";
 import { useLocalProjects, useLocalState } from "@/lib/local-hooks";
@@ -269,6 +271,14 @@ export function TimerPanel({
     );
   }
 
+  /** Move up and Move down, persisted like a drag reorder. */
+  function reorderEntry(entryId: string, step: -1 | 1) {
+    const next = getSharedTableStepOrder(draggableEntryIds, entryId, step);
+    if (next) {
+      localStore.reorderTimesheetEntries(date, next.order);
+    }
+  }
+
   function handleContinueEntry(entryId: string) {
     localStore.continueTimesheetEntry(entryId);
   }
@@ -413,7 +423,7 @@ export function TimerPanel({
               entryDragState && "is-entry-dragging",
             )}
           >
-            <tbody className="entries-table-scroll-region">
+            <tbody className="entries-table-scroll-region" data-focus-scope>
               {visibleEntries.length === 0 ? (
                 <tr className="entry-empty-row">
                   <td colSpan={3}>
@@ -473,6 +483,7 @@ export function TimerPanel({
                   <React.Fragment key={entry._id}>
                     <ObjectContextMenu
                       actions={rowActions}
+                      keys={TIME_ENTRY_ACTION_KEYS}
                       onAction={(actionId) =>
                         entryActions.runAction(rowTarget, actionId)
                       }
@@ -511,17 +522,21 @@ export function TimerPanel({
                           aria-grabbed={isDraggedEntry}
                           data-entry-id={entry._id}
                           data-running-entry={isRunning ? "true" : undefined}
+                          data-focus-column="0"
                           tabIndex={0}
                           onClick={() => openEntry(entry)}
-                          onKeyDown={(event) => {
-                            if (
-                              event.key === "Enter" &&
-                              event.target === event.currentTarget
-                            ) {
-                              event.preventDefault();
-                              openEntry(entry);
-                            }
-                          }}
+                          onKeyDown={(event) =>
+                            handleItemKeyDown(event, {
+                              actions: rowActions,
+                              keys: TIME_ENTRY_ACTION_KEYS,
+                              onAction: (actionId) =>
+                                entryActions.runAction(rowTarget, actionId),
+                              // The running entry stays on top.
+                              onReorder: isRunning
+                                ? undefined
+                                : (step) => reorderEntry(entry._id, step),
+                            })
+                          }
                           onPointerDown={(event) =>
                             handleEntryPointerDown(entry, event)
                           }
@@ -596,6 +611,7 @@ export function TimerPanel({
                             )}
                             <ObjectActionsButton
                               actions={rowActions}
+                              keys={TIME_ENTRY_ACTION_KEYS}
                               onAction={(actionId) =>
                                 entryActions.runAction(rowTarget, actionId)
                               }

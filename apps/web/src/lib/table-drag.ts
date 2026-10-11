@@ -266,3 +266,26 @@ export function getSharedTableDragOverlayTransform(options: {
   const top = Math.max(options.minTop, options.pointerY - options.offsetY);
   return `translate3d(${Math.round(options.originLeft)}px, ${Math.round(top)}px, 0)`;
 }
+
+/**
+ * Move up and Move down (Alt+Up and Alt+Down): the order after `itemId` moves
+ * one place, and its new index. Returns null when the item is not in `itemIds`
+ * or already at that edge. Callers commit `order` or `toIndex` with the same
+ * persistence command as a drag.
+ */
+export function getSharedTableStepOrder(
+  itemIds: readonly string[],
+  itemId: string,
+  step: -1 | 1,
+) {
+  const fromIndex = itemIds.indexOf(itemId);
+  const toIndex = fromIndex + step;
+  if (fromIndex === -1 || toIndex < 0 || toIndex >= itemIds.length) {
+    return null;
+  }
+
+  const order = [...itemIds];
+  order.splice(fromIndex, 1);
+  order.splice(toIndex, 0, itemId);
+  return { order, toIndex };
+}
