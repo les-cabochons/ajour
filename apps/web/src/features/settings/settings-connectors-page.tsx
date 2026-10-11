@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   RiArrowLeftLine as ArrowLeft,
@@ -42,24 +42,9 @@ import { NativeSelect } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import {
-  getCachedConnectorsOverview,
-  deleteConnectorConnection,
-  getAppApiBaseUrl,
-  getAppApiDescription,
-  getConnectorsOverview,
-  getPluginCatalog,
-  getPluginCatalogSettings,
-  getProjectDataShapePlugins,
-  configurePluginCatalog,
-  downloadCatalogPlugin,
-  installConnectorPlugin,
-  saveConnectorConnection,
-  setConnectorPluginEnabled,
-  setPluginSystemEnabled,
-  syncConnectorConnection,
-  uninstallConnectorPlugin,
-} from "@/lib/app-api";
+import { getAppApiBaseUrl, getAppApiDescription } from "@/lib/app-api";
+import { usePluginSettingsWorkflow } from "./use-plugin-settings-workflow";
+import type { PluginDisplayEntry } from "./plugin-settings-workflow";
 import { useLocalState } from "@/lib/local-hooks";
 import { cn } from "@/lib/utils";
 import type {
@@ -67,11 +52,8 @@ import type {
   ConnectorFieldValues,
   ConnectorOverviewGroup,
   ConnectorPluginManifest,
-  ConnectorsOverview,
   PluginCatalogEntry,
-  PluginCatalogResponse,
   PluginCatalogSettings,
-  ProjectDataShapePluginManifest,
 } from "@timetracker/shared";
 import {
   areConnectorFormValuesEqual,
@@ -96,12 +78,6 @@ type ConnectorFormState = {
 
 type PluginCatalogFilter = "all" | "connector" | "plugin";
 
-type PluginDisplayEntry = {
-  catalog: PluginCatalogEntry;
-  connectorGroup?: ConnectorOverviewGroup;
-  dataShapePlugin?: ProjectDataShapePluginManifest;
-};
-
 function formatConnectorTimestamp(timestamp?: number) {
   return timestamp ? new Date(timestamp).toLocaleString() : "Never";
 }
@@ -111,40 +87,6 @@ function prettifySummaryKey(key: string) {
     .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
     .replace(/[_-]+/g, " ")
     .replace(/\b\w/g, (match) => match.toUpperCase());
-}
-
-function localCatalogEntry(
-  plugin: ConnectorPluginManifest | ProjectDataShapePluginManifest,
-  type: PluginCatalogEntry["type"],
-): PluginCatalogEntry {
-  return {
-    schemaVersion: 1,
-    id: plugin.id,
-    type,
-    title: plugin.displayName,
-    description:
-      plugin.description ?? "Locally installed Ajour plugin capability.",
-    author: {
-      name: "Local plugin",
-      url: "https://github.com/les-cabochons/ajour",
-    },
-    license: {
-      name: "See plugin package",
-      spdxId: "LicenseRef-Plugin",
-      url: "https://github.com/les-cabochons/ajour",
-    },
-    website: "https://github.com/les-cabochons/ajour",
-    repository: {
-      provider: "github",
-      slug: "les-cabochons/ajour",
-      url: "https://github.com/les-cabochons/ajour",
-    },
-    status: "available",
-    compatibility: { pluginApiVersion: plugin.apiVersion },
-    capabilities:
-      type === "connector" ? ["work-item-sync"] : ["project-data-shape"],
-    tags: [type === "connector" ? "connector" : "data-shape"],
-  };
 }
 
 function PluginCatalogCard({
@@ -410,24 +352,19 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
   const canDownloadCatalogPlugins =
     Boolean(window.timetrackerDesktop?.downloadCatalogPlugin) &&
     !isDevelopmentBuild;
-  const [connectors, setConnectors] = useState<ConnectorsOverview | null>(
-    getCachedConnectorsOverview,
-  );
-  const [catalog, setCatalog] = useState<PluginCatalogResponse | null>(null);
-  const [catalogSettings, setCatalogSettings] = useState<PluginCatalogSettings>(
-    {
-      refreshMinutes: 15,
-    },
-  );
-  const [dataShapePlugins, setDataShapePlugins] = useState<
-    ProjectDataShapePluginManifest[]
-  >([]);
+  const {
+    connectors,
+    catalog,
+    catalogSettings,
+    displayEntries,
+    catalogError,
+    connectorError,
+    statusMessage,
+    isMutatingConnector,
+    workflow,
+  } = usePluginSettingsWorkflow();
   const [catalogFilter, setCatalogFilter] =
     useState<PluginCatalogFilter>("all");
-  const [catalogError, setCatalogError] = useState<string | null>(null);
-  const [connectorError, setConnectorError] = useState<string | null>(null);
-  const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [isMutatingConnector, setIsMutatingConnector] = useState(false);
   const [formState, setFormState] = useState<ConnectorFormState | null>(null);
 
   const importedCountsByPlugin = useMemo(
@@ -443,81 +380,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
     [state.workItems],
   );
 
-  const refreshConnectors = async () => {
-    try {
-      const overview = await getConnectorsOverview();
-      setConnectors(overview);
-      setConnectorError(null);
-    } catch (error) {
-      setConnectorError(
-        error instanceof Error ? error.message : "Unable to reach the app API.",
-      );
-    }
-  };
-
-  const refreshCatalog = async () => {
-    try {
-      const nextCatalog = await getPluginCatalog();
-      setCatalog(nextCatalog);
-      setCatalogError(null);
-    } catch (error) {
-      setCatalogError(
-        error instanceof Error
-          ? error.message
-          : "Unable to load the plugin catalog.",
-      );
-    }
-  };
-
-  const refreshDataShapePlugins = async () => {
-    try {
-      setDataShapePlugins(await getProjectDataShapePlugins());
-    } catch {
-      setDataShapePlugins([]);
-    }
-  };
-
-  useEffect(() => {
-    if (!getCachedConnectorsOverview()) {
-      void refreshConnectors();
-    }
-    void refreshCatalog();
-    void refreshDataShapePlugins();
-    void getPluginCatalogSettings().then(setCatalogSettings);
-    const unsubscribe = window.timetrackerDesktop?.onPluginCatalogUpdated?.(
-      (nextCatalog) => setCatalog(nextCatalog),
-    );
-    return unsubscribe;
-  }, []);
-
   const connectorGroups = connectors?.connectionGroups ?? [];
-  const displayEntries = useMemo(() => {
-    const entries = new Map<string, PluginDisplayEntry>(
-      (catalog?.entries ?? []).map((entry) => [entry.id, { catalog: entry }]),
-    );
-
-    for (const group of connectorGroups) {
-      const current = entries.get(group.plugin.id);
-      entries.set(group.plugin.id, {
-        catalog:
-          current?.catalog ?? localCatalogEntry(group.plugin, "connector"),
-        connectorGroup: group,
-        dataShapePlugin: current?.dataShapePlugin,
-      });
-    }
-    for (const plugin of dataShapePlugins) {
-      const current = entries.get(plugin.id);
-      entries.set(plugin.id, {
-        catalog: current?.catalog ?? localCatalogEntry(plugin, "plugin"),
-        connectorGroup: current?.connectorGroup,
-        dataShapePlugin: plugin,
-      });
-    }
-
-    return Array.from(entries.values()).sort((left, right) =>
-      left.catalog.title.localeCompare(right.catalog.title),
-    );
-  }, [catalog?.entries, connectorGroups, dataShapePlugins]);
   const filteredDisplayEntries = displayEntries.filter(
     (entry) => catalogFilter === "all" || entry.catalog.type === catalogFilter,
   );
@@ -543,37 +406,14 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
         )
       : false;
 
-  const handlePluginActivation = async (
+  const handlePluginActivation = (
     group: ConnectorOverviewGroup,
     enabled: boolean,
-  ) => {
-    setIsMutatingConnector(true);
-    setStatusMessage(null);
-    setConnectorError(null);
-    try {
-      const overview = await setConnectorPluginEnabled(
-        group.plugin.id,
-        enabled,
-      );
-      setConnectors(overview);
-      setStatusMessage(
-        `${group.plugin.displayName} ${enabled ? "activated" : "deactivated"}.`,
-      );
-    } catch (error) {
-      setConnectorError(
-        error instanceof Error
-          ? error.message
-          : "Unable to update the connector plugin.",
-      );
-    } finally {
-      setIsMutatingConnector(false);
-    }
-  };
+  ) => workflow.execute({ type: "activate", plugin: group.plugin, enabled });
 
   const handleCreate = (plugin: ConnectorPluginManifest) => {
     const initialValues = buildConnectorFormValues(plugin);
-    setConnectorError(null);
-    setStatusMessage(null);
+    workflow.clearFeedback();
     setFormState({
       pluginId: plugin.id,
       editingConnectionId: null,
@@ -590,8 +430,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
       plugin,
       connection.editableValues,
     );
-    setConnectorError(null);
-    setStatusMessage(null);
+    workflow.clearFeedback();
     setFormState({
       pluginId: plugin.id,
       editingConnectionId: connection.id,
@@ -601,225 +440,37 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
   };
 
   const handleSave = async () => {
-    if (!formState || !activePlugin) {
-      return;
-    }
-
-    setIsMutatingConnector(true);
-    setStatusMessage(null);
-    setConnectorError(null);
-    try {
-      const result = await saveConnectorConnection(
-        formState.pluginId,
-        normalizeConnectorFormValuesForSave(activePlugin, formState.values, {
+    if (!formState || !activePlugin) return;
+    const completed = await workflow.execute({
+      type: "save",
+      pluginId: formState.pluginId,
+      values: normalizeConnectorFormValuesForSave(
+        activePlugin,
+        formState.values,
+        {
           allowSavedSecrets: Boolean(formState.editingConnectionId),
-        }),
-        formState.editingConnectionId ?? undefined,
-      );
-      setConnectors(result.overview);
-      setStatusMessage(
-        formState.editingConnectionId
-          ? `${result.connection.label} connection updated.`
-          : `${result.connection.label} connection added.`,
-      );
-      setFormState(null);
-    } catch (error) {
-      setConnectorError(
-        error instanceof Error
-          ? error.message
-          : "Unable to save the connector connection.",
-      );
-    } finally {
-      setIsMutatingConnector(false);
-    }
+        },
+      ),
+      connectionId: formState.editingConnectionId ?? undefined,
+    });
+    if (completed) setFormState(null);
   };
 
   const handleDelete = async (pluginId: string, connectionId: string) => {
-    setIsMutatingConnector(true);
-    setStatusMessage(null);
-    setConnectorError(null);
-    try {
-      const overview = await deleteConnectorConnection(pluginId, connectionId);
-      setConnectors(overview);
+    if (await workflow.execute({ type: "delete", pluginId, connectionId })) {
       if (
         formState?.editingConnectionId === connectionId &&
         formState.pluginId === pluginId
       ) {
         setFormState(null);
       }
-      setStatusMessage("Connection removed.");
-    } catch (error) {
-      setConnectorError(
-        error instanceof Error
-          ? error.message
-          : "Unable to delete the connector connection.",
-      );
-    } finally {
-      setIsMutatingConnector(false);
     }
   };
-
-  const handleSync = async (pluginId: string, connectionId: string) => {
-    setIsMutatingConnector(true);
-    setStatusMessage(null);
-    setConnectorError(null);
-    try {
-      const result = await syncConnectorConnection(pluginId, connectionId);
-      await refreshConnectors();
-      const conflictCount = result.workItemUpdates.reduce(
-        (sum, workItem) =>
-          sum +
-          Object.values(workItem.fields).filter(
-            (field) => field?.status === "conflict",
-          ).length,
-        0,
-      );
-      setStatusMessage(
-        result.mode === "backlog"
-          ? [
-              result.connection.label,
-              `${result.backlogImportedCount} imported`,
-              `${result.backlogUpdatedCount} updated`,
-              ...(conflictCount > 0
-                ? [`${conflictCount} conflict${conflictCount === 1 ? "" : "s"}`]
-                : []),
-            ].join(" · ")
-          : [
-              result.connection.label,
-              `${result.stagedCount} staged`,
-              `${result.updatedCount} refreshed`,
-              `${result.skippedCount} skipped`,
-              ...(conflictCount > 0
-                ? [`${conflictCount} conflict${conflictCount === 1 ? "" : "s"}`]
-                : []),
-            ].join(" · "),
-      );
-    } catch (error) {
-      setConnectorError(
-        error instanceof Error
-          ? error.message
-          : "Unable to sync connector items.",
-      );
-    } finally {
-      setIsMutatingConnector(false);
-    }
-  };
-
-  const handleInstallPlugin = async () => {
-    setIsMutatingConnector(true);
-    setStatusMessage(null);
-    setConnectorError(null);
-    try {
-      const result = await installConnectorPlugin();
-      if (!result) {
-        return;
-      }
-      setConnectors(result.overview);
-      setStatusMessage(
-        result.replaced
-          ? `${result.plugin.displayName} ${result.plugin.version} replaced the installed plugin.`
-          : `${result.plugin.displayName} ${result.plugin.version} installed.`,
-      );
-    } catch (error) {
-      setConnectorError(
-        error instanceof Error
-          ? error.message
-          : "Unable to install the connector plugin.",
-      );
-    } finally {
-      setIsMutatingConnector(false);
-    }
-  };
-
-  const handlePluginSystemActivation = async (enabled: boolean) => {
-    setIsMutatingConnector(true);
-    setStatusMessage(null);
-    setConnectorError(null);
-    try {
-      const overview = await setPluginSystemEnabled(enabled);
-      setConnectors(overview);
-      if (enabled) {
-        await refreshDataShapePlugins();
-      }
-      setStatusMessage(
-        enabled
-          ? "Plugins enabled. Each plugin has returned to its previous activation state."
-          : "Plugins deactivated. Sync and plugin-provided schemas are paused.",
-      );
-    } catch (error) {
-      setConnectorError(
-        error instanceof Error
-          ? error.message
-          : "Unable to update the plugin system.",
-      );
-    } finally {
-      setIsMutatingConnector(false);
-    }
-  };
-
-  const handleCatalogRefreshInterval = async (refreshMinutes: number) => {
-    const parsedMinutes = [0, 15, 30, 60, 240].includes(refreshMinutes)
-      ? (refreshMinutes as PluginCatalogSettings["refreshMinutes"])
-      : 15;
-    try {
-      setCatalogSettings(
-        await configurePluginCatalog({ refreshMinutes: parsedMinutes }),
-      );
-      setStatusMessage(
-        parsedMinutes === 0
-          ? "Catalog will refresh at app launch only."
-          : `Catalog refresh set to every ${parsedMinutes} minutes.`,
-      );
-    } catch (error) {
-      setConnectorError(
-        error instanceof Error
-          ? error.message
-          : "Unable to update catalog refresh settings.",
-      );
-    }
-  };
-
-  const handleDownloadPlugin = async (entry: PluginCatalogEntry) => {
-    setIsMutatingConnector(true);
-    setStatusMessage(null);
-    setConnectorError(null);
-    try {
-      const downloaded = await downloadCatalogPlugin(entry.id);
-      setConnectors(downloaded.result.overview);
-      setStatusMessage(
-        `${downloaded.result.plugin.displayName} ${downloaded.result.plugin.version} downloaded. Activate it when you are ready to configure it.`,
-      );
-    } catch (error) {
-      setConnectorError(
-        error instanceof Error
-          ? error.message
-          : "Unable to download the plugin.",
-      );
-    } finally {
-      setIsMutatingConnector(false);
-    }
-  };
-
+  const handleDownloadPlugin = (entry: PluginCatalogEntry) =>
+    workflow.execute({ type: "download", pluginId: entry.id });
   const handleUninstallPlugin = async (group: ConnectorOverviewGroup) => {
-    setIsMutatingConnector(true);
-    setStatusMessage(null);
-    setConnectorError(null);
-    try {
-      const result = await uninstallConnectorPlugin(group.plugin.id);
-      setConnectors(result.overview);
+    if (await workflow.execute({ type: "uninstall", plugin: group.plugin }))
       setFormState(null);
-      setStatusMessage(
-        `${group.plugin.displayName} uninstalled. Imported backlog items were preserved.`,
-      );
-    } catch (error) {
-      setConnectorError(
-        error instanceof Error
-          ? error.message
-          : "Unable to uninstall the connector plugin.",
-      );
-    } finally {
-      setIsMutatingConnector(false);
-    }
   };
 
   const renderMessages = () => (
@@ -1106,7 +757,11 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                           !group.enabled
                         }
                         onClick={() =>
-                          void handleSync(group.plugin.id, connection.id)
+                          void workflow.execute({
+                            type: "sync",
+                            pluginId: group.plugin.id,
+                            connectionId: connection.id,
+                          })
                         }
                       >
                         <RefreshCw data-icon="inline-start" />
@@ -1340,7 +995,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
       <PluginsHeader
         canInstall={canInstallConnectorPlugins}
         isMutating={isMutatingConnector}
-        onInstall={() => void handleInstallPlugin()}
+        onInstall={() => void workflow.execute({ type: "install" })}
         filter={catalogFilter}
         onFilterChange={setCatalogFilter}
         pluginsEnabled={connectors?.pluginsEnabled ?? true}
@@ -1349,10 +1004,10 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
           window.timetrackerDesktop?.configurePluginCatalog,
         )}
         onPluginsEnabledChange={(enabled) =>
-          void handlePluginSystemActivation(enabled)
+          void workflow.execute({ type: "system", enabled })
         }
         onRefreshMinutesChange={(refreshMinutes) =>
-          void handleCatalogRefreshInterval(refreshMinutes)
+          void workflow.setCatalogRefreshInterval(refreshMinutes)
         }
       >
         <>

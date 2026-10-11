@@ -24,6 +24,10 @@ import {
 import { Button } from "@/components/ui/button";
 import { EntryActionsMenu } from "@/features/time/entry-actions-menu";
 import { TimeEntryFields } from "@/features/time/time-entry-fields";
+import {
+  createTimeEntryEditorFields,
+  evaluateTimeEntryEditor,
+} from "@/features/time/time-entry-editor";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   ProjectTaskPicker,
@@ -31,9 +35,7 @@ import {
 } from "@/features/projects/project-task-picker";
 import {
   formatClockDuration,
-  formatDurationHoursInput,
   normalizeHoursInput,
-  parseHoursInput,
 } from "@/domain/time/duration";
 import {
   getLocalProjectDisplayName,
@@ -179,25 +181,16 @@ export function TimerPanel({
         ?.tasks.filter((task) => task.status === "active") ?? [],
     [expandedProjectId, projects],
   );
-  const expandedParsedDurationMs = useMemo(
-    () => parseHoursInput(expandedDurationHours),
-    [expandedDurationHours],
+  const expandedEditor = evaluateTimeEntryEditor(
+    {
+      projectId: expandedProjectId,
+      taskId: expandedTaskId,
+      note: expandedNote,
+      durationHours: expandedDurationHours,
+    },
+    { original: expandedEntry ?? undefined },
   );
-  const expandedOriginalDurationHours = useMemo(
-    () =>
-      expandedEntry ? formatDurationHoursInput(expandedEntry.durationMs) : "",
-    [expandedEntry],
-  );
-  const hasExpandedTimeChanged = Boolean(
-    expandedEntry && expandedDurationHours !== expandedOriginalDurationHours,
-  );
-  const expandedDurationError = !hasExpandedTimeChanged
-    ? null
-    : expandedParsedDurationMs === null
-      ? "Enter a valid duration"
-      : expandedParsedDurationMs <= 0
-        ? "Enter a positive duration"
-        : null;
+  const expandedDurationError = expandedEditor.durationError;
   const newAvailableTasks = useMemo(
     () =>
       projects
@@ -205,20 +198,16 @@ export function TimerPanel({
         ?.tasks.filter((task) => task.status === "active") ?? [],
     [newProjectId, projects],
   );
-  const newParsedDurationMs = useMemo(
-    () => parseHoursInput(newDurationHours),
-    [newDurationHours],
+  const newEditor = evaluateTimeEntryEditor(
+    {
+      projectId: newProjectId,
+      taskId: newTaskId,
+      note: newNote,
+      durationHours: newDurationHours,
+    },
+    { allowEmptyDuration: true },
   );
-  const newDurationError = useMemo(
-    () =>
-      newDurationHours.trim() !== "" && newParsedDurationMs === null
-        ? "Enter a valid duration"
-        : null,
-    [newDurationHours, newParsedDurationMs],
-  );
-  const hasNewEntryContent = Boolean(
-    newProjectId || newTaskId || newNote.trim() || newDurationHours.trim(),
-  );
+  const newDurationError = newEditor.durationError;
   const showNewTimeActions = newDurationHours.trim() !== "";
 
   const recentEntries = useMemo(
@@ -394,18 +383,12 @@ export function TimerPanel({
   }
 
   function closeNewEntry() {
-    if (newDurationHours.trim() !== "" && newParsedDurationMs === null) {
+    if (!newEditor.values) {
       return;
     }
 
-    if (hasNewEntryContent) {
-      localStore.saveManualTimeEntry({
-        localDate: date,
-        projectId: newProjectId || undefined,
-        taskId: newTaskId || undefined,
-        note: newNote.trim() || undefined,
-        durationMs: newParsedDurationMs ?? 0,
-      });
+    if (newEditor.hasContent) {
+      localStore.saveManualTimeEntry({ ...newEditor.values, localDate: date });
     }
 
     resetNewEntry();
@@ -421,26 +404,12 @@ export function TimerPanel({
       return true;
     }
 
-    if (expandedParsedDurationMs === null) {
+    if (!expandedEditor.values) {
       return false;
     }
 
-    const nextProjectId = expandedProjectId || undefined;
-    const nextTaskId = expandedTaskId || undefined;
-    const nextNote = expandedNote.trim() || undefined;
-    const hasChanges =
-      nextProjectId !== expandedEntry.projectId ||
-      nextTaskId !== expandedEntry.taskId ||
-      nextNote !== expandedEntry.note ||
-      expandedParsedDurationMs !== expandedEntry.durationMs;
-
-    if (hasChanges) {
-      localStore.updateTimesheetEntry(expandedEntry._id, {
-        projectId: nextProjectId,
-        taskId: nextTaskId,
-        note: nextNote,
-        durationMs: expandedParsedDurationMs,
-      });
+    if (expandedEditor.hasChanges) {
+      localStore.updateTimesheetEntry(expandedEntry._id, expandedEditor.values);
     }
 
     resetExpandedEntry();
@@ -451,26 +420,8 @@ export function TimerPanel({
     resetExpandedEntry();
   }
 
-  function getExpandedRelocationValues(localDate: string) {
-    if (
-      !expandedEntry ||
-      expandedParsedDurationMs === null ||
-      expandedParsedDurationMs <= 0
-    ) {
-      return null;
-    }
-
-    return {
-      localDate,
-      projectId: expandedProjectId || undefined,
-      taskId: expandedTaskId || undefined,
-      note: expandedNote.trim() || undefined,
-      durationMs: expandedParsedDurationMs,
-    };
-  }
-
   function duplicateExpandedEntry(localDate: string) {
-    const values = getExpandedRelocationValues(localDate);
+    const values = expandedEditor.relocationValues(localDate);
     if (!expandedEntry || !values) {
       return;
     }
@@ -480,7 +431,7 @@ export function TimerPanel({
   }
 
   function moveExpandedEntry(localDate: string) {
-    const values = getExpandedRelocationValues(localDate);
+    const values = expandedEditor.relocationValues(localDate);
     if (!expandedEntry || !values) {
       return;
     }
@@ -549,10 +500,11 @@ export function TimerPanel({
     }
 
     setExpandedEntryId(entry._id);
-    setExpandedProjectId(entry.projectId ?? "");
-    setExpandedTaskId(entry.taskId ?? "");
-    setExpandedNote(entry.note ?? "");
-    setExpandedDurationHours(formatDurationHoursInput(entry.durationMs));
+    const fields = createTimeEntryEditorFields(entry);
+    setExpandedProjectId(fields.projectId);
+    setExpandedTaskId(fields.taskId);
+    setExpandedNote(fields.note);
+    setExpandedDurationHours(fields.durationHours);
   }
 
   useEffect(() => {
@@ -587,6 +539,13 @@ export function TimerPanel({
     return () => document.removeEventListener("keydown", handleKeyDown);
   }, [expandedEntryId]);
 
+  // The outside-click listener stays bound while the entry is open and reads
+  // the latest draft through this ref, so it saves what the user typed.
+  const closeExpandedEntryRef = useRef(closeExpandedEntry);
+  useEffect(() => {
+    closeExpandedEntryRef.current = closeExpandedEntry;
+  });
+
   useEffect(() => {
     if (!expandedEntryId) {
       return;
@@ -603,7 +562,7 @@ export function TimerPanel({
         return;
       }
 
-      closeExpandedEntry();
+      closeExpandedEntryRef.current();
     }
 
     document.addEventListener("mousedown", handleDocumentMouseDown);
@@ -1098,7 +1057,7 @@ export function TimerPanel({
                               <div className="entry-edit-dropdown-actions">
                                 <EntryActionsMenu
                                   currentDate={expandedEntry.localDate}
-                                  disabled={Boolean(expandedDurationError)}
+                                  disabled={!expandedEditor.canSave}
                                   onDuplicate={() =>
                                     duplicateExpandedEntry(
                                       expandedEntry.localDate,

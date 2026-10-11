@@ -13,10 +13,11 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { formatDurationHoursInput } from "@/domain/time/duration";
 import {
-  formatDurationHoursInput,
-  parseHoursInput,
-} from "@/domain/time/duration";
+  createTimeEntryEditorFields,
+  evaluateTimeEntryEditor,
+} from "@/features/time/time-entry-editor";
 import { EntryActionsMenu } from "@/features/time/entry-actions-menu";
 import type { ProjectTaskSelection } from "@/features/projects/project-task-picker";
 import { TimeEntryFields } from "@/features/time/time-entry-fields";
@@ -61,12 +62,11 @@ export function TimeEntryModal({
   const [taskId, setTaskId] = useState("");
   const [note, setNote] = useState("");
   const [durationHours, setDurationHours] = useState("");
-  const parsedDurationMs = useMemo(
-    () => parseHoursInput(durationHours),
-    [durationHours],
+  const editor = evaluateTimeEntryEditor(
+    { projectId, taskId, note, durationHours },
+    { original: editingEntry ?? undefined, allowEmptyDuration: true },
   );
-  const canSave = (parsedDurationMs ?? 0) > 0;
-  const isTimerMode = durationHours.trim() === "" || parsedDurationMs === 0;
+  const { canSave, isTimerMode } = editor;
   const title = editingTimer
     ? "Running timer"
     : editingEntry
@@ -81,23 +81,13 @@ export function TimeEntryModal({
   }, [editingTimer]);
 
   useEffect(() => {
-    if (editingTimer) {
-      setProjectId(editingTimer.projectId ?? "");
-      setTaskId(editingTimer.taskId ?? "");
-      setNote(editingTimer.note ?? "");
-      return;
-    }
-    if (!editingEntry) {
-      setProjectId("");
-      setTaskId("");
-      setNote("");
-      setDurationHours("");
-      return;
-    }
-    setProjectId(editingEntry.projectId ?? "");
-    setTaskId(editingEntry.taskId ?? "");
-    setNote(editingEntry.note ?? "");
-    setDurationHours(formatDurationHoursInput(editingEntry.durationMs));
+    const fields = createTimeEntryEditorFields(
+      editingTimer ?? editingEntry ?? undefined,
+    );
+    setProjectId(fields.projectId);
+    setTaskId(fields.taskId);
+    setNote(fields.note);
+    if (!editingTimer) setDurationHours(fields.durationHours);
   }, [editingEntry, editingTimer]);
 
   useEffect(() => {
@@ -114,42 +104,22 @@ export function TimeEntryModal({
     setTaskId(selection.taskId);
   }
 
-  function currentValues(localDate = entryDate) {
-    if (!editingEntry || !parsedDurationMs || parsedDurationMs <= 0) {
-      return null;
-    }
-    return {
-      localDate,
-      projectId: projectId || undefined,
-      taskId: taskId || undefined,
-      note: note.trim() || undefined,
-      durationMs: parsedDurationMs,
-    };
-  }
-
   function handleSave() {
-    if (editingTimer || !parsedDurationMs || parsedDurationMs <= 0) return;
+    if (editingTimer || !editor.canSave || !editor.values) return;
     if (editingEntry) {
-      localStore.updateTimesheetEntry(editingEntry._id, currentValues()!);
+      localStore.updateTimesheetEntry(editingEntry._id, editor.values);
     } else {
-      localStore.saveManualTimeEntry({
-        localDate: date,
-        projectId: projectId || undefined,
-        taskId: taskId || undefined,
-        note: note.trim() || undefined,
-        durationMs: parsedDurationMs,
-      });
+      localStore.saveManualTimeEntry({ ...editor.values, localDate: date });
     }
     onClose();
   }
 
   function handleStartTimer() {
+    if (editor.durationMs === null) return;
     localStore.startTimer({
       localDate: entryDate,
-      projectId: projectId || undefined,
-      taskId: taskId || undefined,
-      note: note.trim() || undefined,
-      accumulatedDurationMs: editingEntry ? (parsedDurationMs ?? 0) : undefined,
+      ...editor.metadata,
+      accumulatedDurationMs: editingEntry ? editor.durationMs : undefined,
       entryId: editingEntry?._id,
     });
     onClose();
@@ -157,24 +127,20 @@ export function TimeEntryModal({
 
   function handleStopTimer() {
     if (!editingTimer) return;
-    localStore.updateTimer(editingTimer._id, {
-      projectId: projectId || undefined,
-      taskId: taskId || undefined,
-      note: note.trim() || undefined,
-    });
+    localStore.updateTimer(editingTimer._id, editor.metadata);
     localStore.saveTimer(editingTimer._id);
     onClose();
   }
 
   function duplicateTo(localDate: string) {
-    const values = currentValues(localDate);
+    const values = editor.relocationValues(localDate);
     if (!editingEntry || !values) return;
     localStore.duplicateTimesheetEntry(editingEntry._id, values);
     onClose();
   }
 
   function moveTo(localDate: string) {
-    const values = currentValues(localDate);
+    const values = editor.relocationValues(localDate);
     if (!editingEntry || !values) return;
     localStore.moveTimesheetEntry(editingEntry._id, values);
     onClose();
@@ -205,11 +171,7 @@ export function TimeEntryModal({
           note={note}
           durationHours={durationHours}
           durationDisabled={Boolean(editingTimer)}
-          durationError={
-            durationHours.trim() !== "" && parsedDurationMs === null
-              ? "Enter a valid duration"
-              : null
-          }
+          durationError={editor.durationError}
           onProjectTaskChange={handleProjectTaskChange}
           onNoteChange={setNote}
           onDurationChange={setDurationHours}
@@ -245,7 +207,12 @@ export function TimeEntryModal({
               </Button>
             ) : (
               <>
-                <Button size="sm" variant="outline" onClick={handleStartTimer}>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={editor.durationMs === null}
+                  onClick={handleStartTimer}
+                >
                   <Play data-icon="inline-start" />
                   {currentTimer ? "Switch timer" : "Start timer"}
                 </Button>

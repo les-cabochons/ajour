@@ -56,6 +56,10 @@ const APP_API_BASE_URL = (
 const APP_API_RETRY_DELAYS_MS = [150, 350] as const;
 let cachedConnectorsOverview: ConnectorsOverview | null = null;
 let connectorsOverviewRevision = 0;
+let latestConnectorsOverviewRequest = 0;
+const connectorsOverviewListeners = new Set<
+  (overview: ConnectorsOverview) => void
+>();
 
 function appApiUnavailableMessage() {
   return "Internal connector API unavailable. Restart the app.";
@@ -243,25 +247,36 @@ export function getCachedConnectorsOverview() {
 export function cacheConnectorsOverview(overview: ConnectorsOverview) {
   connectorsOverviewRevision += 1;
   cachedConnectorsOverview = overview;
+  for (const listener of connectorsOverviewListeners) listener(overview);
   return overview;
+}
+
+/** Observes validated snapshots, including background sync refreshes. */
+export function subscribeConnectorsOverview(
+  listener: (overview: ConnectorsOverview) => void,
+) {
+  connectorsOverviewListeners.add(listener);
+  return () => {
+    connectorsOverviewListeners.delete(listener);
+  };
 }
 
 export async function getConnectorsOverview(): Promise<ConnectorsOverview> {
   const requestRevision = connectorsOverviewRevision;
+  const requestId = ++latestConnectorsOverviewRequest;
   const overview = await appApiRequest(
     "/api/connectors",
     undefined,
     connectorsOverviewSchema,
   );
   if (
-    requestRevision !== connectorsOverviewRevision &&
-    cachedConnectorsOverview
+    requestRevision !== connectorsOverviewRevision ||
+    requestId !== latestConnectorsOverviewRequest
   ) {
-    return cachedConnectorsOverview;
+    return cachedConnectorsOverview ?? overview;
   }
 
-  cachedConnectorsOverview = overview;
-  return overview;
+  return cacheConnectorsOverview(overview);
 }
 
 export async function setConnectorPluginEnabled(

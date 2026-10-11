@@ -823,38 +823,51 @@ When("I install a packaged connector from settings", async ({ page }) => {
       totalSelectedImportCount: 0,
     },
   };
+  let currentOverview: typeof installResponse.overview = {
+    ...installResponse.overview,
+    plugins: [],
+    connectionGroups: [],
+  };
+  await page.exposeFunction("acceptanceInstallPlugin", async () => {
+    currentOverview = installResponse.overview;
+    return installResponse;
+  });
+  await page.exposeFunction("acceptanceUninstallPlugin", async () => {
+    currentOverview = {
+      ...installResponse.overview,
+      plugins: [],
+      connectionGroups: [],
+    };
+    return { pluginId: plugin.id, overview: currentOverview };
+  });
+  await page.route("http://127.0.0.1:8787/api/connectors", async (route) => {
+    await route.fulfill({
+      json: currentOverview,
+      headers: { "access-control-allow-origin": "*" },
+    });
+  });
   await page.addInitScript((response) => {
     const desktopWindow = window as typeof window & {
+      acceptanceInstallPlugin: () => Promise<typeof response>;
+      acceptanceUninstallPlugin: () => Promise<{
+        pluginId: string;
+        overview: typeof response.overview;
+      }>;
       timetrackerDesktop: {
         bootstrapLocalState: null;
         runtime: { developmentBuild: false };
         installConnectorPlugin: () => Promise<typeof response>;
         uninstallConnectorPlugin: () => Promise<{
           pluginId: string;
-          overview: {
-            pluginsEnabled: boolean;
-            plugins: never[];
-            connectionGroups: never[];
-            totalPendingImportCount: number;
-            totalSelectedImportCount: number;
-          };
+          overview: typeof response.overview;
         }>;
       };
     };
     desktopWindow.timetrackerDesktop = {
       bootstrapLocalState: null,
       runtime: { developmentBuild: false },
-      installConnectorPlugin: async () => response,
-      uninstallConnectorPlugin: async () => ({
-        pluginId: response.plugin.id,
-        overview: {
-          pluginsEnabled: true,
-          plugins: [],
-          connectionGroups: [],
-          totalPendingImportCount: 0,
-          totalSelectedImportCount: 0,
-        },
-      }),
+      installConnectorPlugin: () => desktopWindow.acceptanceInstallPlugin(),
+      uninstallConnectorPlugin: () => desktopWindow.acceptanceUninstallPlugin(),
     };
   }, installResponse);
 
@@ -862,13 +875,15 @@ When("I install a packaged connector from settings", async ({ page }) => {
     "http://127.0.0.1:8787/api/connectors/example/activation",
     async (route) => {
       const payload = route.request().postDataJSON() as { enabled: boolean };
+      currentOverview = {
+        ...currentOverview,
+        connectionGroups: currentOverview.connectionGroups.map((group) => ({
+          ...group,
+          enabled: payload.enabled,
+        })),
+      };
       await route.fulfill({
-        json: {
-          ...installResponse.overview,
-          connectionGroups: installResponse.overview.connectionGroups.map(
-            (group) => ({ ...group, enabled: payload.enabled }),
-          ),
-        },
+        json: currentOverview,
         headers: {
           "access-control-allow-origin": "*",
         },
@@ -1018,3 +1033,74 @@ Then("I can choose a development plugin directory", async ({ page }) => {
   await page.getByRole("button", { name: "Choose directory" }).click();
   await expect(page.getByText("/workspace/connectors/selected")).toBeVisible();
 });
+
+Given("I have a saved entry with an unrounded duration", async ({ page }) => {
+  await mockEmptyConnectorOverview(page);
+  await page.addInitScript(() => {
+    window.localStorage.clear();
+    window.sessionStorage.clear();
+    window.localStorage.setItem(
+      "timetracker.local-state.v2",
+      JSON.stringify({
+        projects: [],
+        timers: [],
+        workItems: [],
+        timesheetEntries: [
+          {
+            _id: "entry-precision",
+            localDate: "2026-10-05",
+            label: "Original note",
+            note: "Original note",
+            durationMs: 75_123,
+            sourceBlockIds: [],
+            committedAt: 1,
+          },
+        ],
+        updatedAt: 1,
+      }),
+    );
+  });
+});
+
+When(
+  "I edit the entry note in the {string} editor",
+  async ({ page }, editor: string) => {
+    if (editor === "mobile")
+      await page.setViewportSize({ width: 390, height: 844 });
+    if (editor === "Weeks") {
+      await page.goto("/time/2026-10-05?view=week&entry=entry-precision");
+    } else {
+      await page.goto("/time/2026-10-05");
+      await page
+        .locator(".time-entry-row")
+        .filter({ hasText: "Original note" })
+        .click();
+    }
+    await page.getByLabel("Note", { exact: true }).fill("Changed note");
+    if (editor === "Day") {
+      await page
+        .getByRole("columnheader", { name: "Notes", exact: true })
+        .click();
+    } else {
+      await page.getByRole("button", { name: "Save", exact: true }).click();
+    }
+  },
+);
+
+Then(
+  "the edited note is saved with the exact original duration",
+  async ({ page }) => {
+    await expect
+      .poll(async () =>
+        page.evaluate(() => {
+          const state = JSON.parse(
+            window.localStorage.getItem("timetracker.local-state.v2") ?? "null",
+          );
+          return state?.timesheetEntries.find(
+            (entry: { _id: string }) => entry._id === "entry-precision",
+          );
+        }),
+      )
+      .toMatchObject({ note: "Changed note", durationMs: 75_123 });
+  },
+);

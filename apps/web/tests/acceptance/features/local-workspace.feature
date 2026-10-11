@@ -110,3 +110,14 @@ Feature: Open the local time workspace
     Given I have no saved TimeTracker workspace
     When I open development plugin settings
     Then I can choose a development plugin directory
+
+  Scenario Outline: Preserve exact saved time when editing only a note
+    Given I have a saved entry with an unrounded duration
+    When I edit the entry note in the "<editor>" editor
+    Then the edited note is saved with the exact original duration
+
+    Examples:
+      | editor |
+      | Day    |
+      | Weeks  |
+      | mobile |

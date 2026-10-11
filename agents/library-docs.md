@@ -57,6 +57,8 @@ Keep React rendering and runtime adapters outside these modules. For example, th
 
 ## Web Workflow Modules
 
+- Time-entry draft seeding, metadata normalization, exact-duration preservation, validation, and save/relocation values: `apps/web/src/features/time/time-entry-editor.ts`. Day inline and Week/mobile dialog editors consume this model while retaining their own close/save policies.
+- Plugin settings reconciliation, background snapshot subscriptions, stale-response rejection, and serialized commands: `apps/web/src/features/settings/plugin-settings-workflow.ts`. Its React adapter is `use-plugin-settings-workflow.ts`; secret form drafts stay in the page and transports stay in `lib/app-api.ts`.
 - Canonical backlog task editor fields, parsing, validation, drafts, patches, hierarchy exclusions, and time-note fallback: `apps/web/src/features/backlog/backlog-task-editor.ts`
 - Hierarchical project/task selection and capped mixed-term search for time entry: `apps/web/src/features/projects/project-task-picker.tsx` and `apps/web/src/features/projects/project-task-search.ts`
 - Shared pointer-reordering session, geometry, row shifts, overlay positioning, and document state: `apps/web/src/lib/table-drag.ts`
@@ -86,7 +88,8 @@ The backlog editor module is feature-local because its vocabulary and commands b
 
 - Local API lives in `apps/api`
 - Connector package validation and installation: `apps/api/src/plugin-package.ts`
-- Ephemeral worker-thread orchestration: `apps/api/src/plugin-host.ts`
+- Connector discovery, request/reply validation, and package mutation coordination: `apps/api/src/plugin-host.ts`
+- Shared ephemeral worker admission, cancellation, timeout, termination, and shutdown drain: `apps/api/src/plugin-worker-lifetime.ts`. Each connector/data-shape manager owns a separate four-operation quota and its own worker script.
 - Worker entrypoint bridge: `apps/api/src/plugin-worker.mjs`
 - Project data-shape manifest and dataset contracts: `packages/shared/src/project-data-shapes.ts`
 - Project data-shape discovery and worker orchestration: `apps/api/src/project-data-shape-plugin.ts` and `apps/api/src/project-data-shape-host.ts`

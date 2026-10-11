@@ -93,6 +93,15 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
       compact 48px rails; Settings Back restores the full prior workspace URL
       without leaving Settings in browser history.
 
+## Architecture follow-up, 2026-10-10
+
+- [x] Day inline and Week/mobile dialog time editors share one draft interpretation module, preserve unchanged notes and exact milliseconds, and save the current inline draft on outside click.
+- [x] Plugin settings use one workflow for installed/catalog reconciliation, background connector updates, stale-response rejection, and serialized operations. Secret form drafts remain in the page.
+- [x] Connector and project-data-shape hosts share worker admission, timeout, cancellation, termination, and shutdown drain. Package coordination and schema validation remain in their owning hosts, with separate four-operation quotas.
+- [x] Review follow-up: shared worker lifetime cases (startup failure, early exit, shutdown, per-plugin cancel) are tested once in `plugin-worker-lifetime.test.ts`; the host tests keep discovery, packaging, and schema cases. Catalog interval changes no longer wait on plugin operations, each command keeps its own error text, and mount reuses the cached connector overview.
+- [x] Local verification passed: `just test` (356 tests), `just typecheck`, `just build`, and `just acceptance-test` (18 Chromium scenarios). Browser checks covered Day, Weeks, mobile, and the web plugin catalog. The internal API started with Node's TypeScript stripping.
+- [x] The scoped security pattern scan returned no findings. This is a heuristic scan, not a complete security audit.
+
 ## Standard Task Flow
 
 - [ ] Understand the requested outcome.

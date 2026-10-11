@@ -1,6 +1,6 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { Worker } from "node:worker_threads";
+import { PluginWorkerLifetime } from "./plugin-worker-lifetime.ts";
 import { readFile } from "node:fs/promises";
 import {
   CONNECTOR_PLUGIN_API_VERSION,
@@ -51,20 +51,6 @@ type PluginInvocationConnection = z.infer<
   typeof pluginInvocationConnectionSchema
 >;
 type PluginMethod = "validateConnection" | "syncConnection";
-const MAX_CONCURRENT_PLUGIN_OPERATIONS = 4;
-const MAX_CONNECTOR_PLUGIN_ERROR_MESSAGE_CHARACTERS = 4_096;
-
-interface WorkerReply {
-  ok: boolean;
-  result?: unknown;
-  error?: unknown;
-}
-
-interface ActiveWorker {
-  pluginId: string;
-  cancel(error: Error): Promise<void>;
-}
-
 function comparePlugins(
   left: ConnectorPluginManifest,
   right: ConnectorPluginManifest,
@@ -80,15 +66,10 @@ export class ConnectorPluginManager {
   private readonly developmentPluginDirectories: string[];
   private readonly bundledPluginArchives: string[];
   private readonly allowDevelopmentPlugins: boolean;
-  private readonly requestTimeoutMs: number;
-  private readonly workerScriptUrl: URL;
-  private readonly activeWorkers = new Map<Worker, ActiveWorker>();
-  private activeOperationReservations = 0;
+  private readonly workers: PluginWorkerLifetime<PluginMethod>;
   private activePackageReaders = 0;
   private packageReadersDrainedPromise?: Promise<void>;
   private resolvePackageReadersDrained?: () => void;
-  private operationsDrainedPromise?: Promise<void>;
-  private resolveOperationsDrained?: () => void;
   private initializationPromise?: Promise<void>;
   private packageMutationPromise?: Promise<unknown>;
   private shutdownPromise?: Promise<void>;
@@ -106,14 +87,17 @@ export class ConnectorPluginManager {
       (archive) => path.resolve(archive),
     );
     this.allowDevelopmentPlugins = options.allowDevelopmentPlugins ?? false;
-    this.requestTimeoutMs = options.requestTimeoutMs ?? 30_000;
-    this.workerScriptUrl =
-      options.workerScriptUrl ??
-      new URL("./plugin-worker.mjs", import.meta.url);
+    this.workers = new PluginWorkerLifetime({
+      name: "Connector",
+      requestTimeoutMs: options.requestTimeoutMs ?? 30_000,
+      workerScriptUrl:
+        options.workerScriptUrl ??
+        new URL("./plugin-worker.mjs", import.meta.url),
+    });
   }
 
   get activeOperationCount() {
-    return this.activeOperationReservations;
+    return this.workers.activeOperationCount;
   }
 
   async listPlugins(): Promise<ConnectorPluginManifest[]> {
@@ -131,7 +115,7 @@ export class ConnectorPluginManager {
     this.assertRunning();
     return await this.runPackageMutation(async () => {
       await this.ensureInitialized();
-      if (this.activeOperationReservations > 0) {
+      if (this.workers.activeOperationCount > 0) {
         throw new Error(
           "Wait for active connector operations to finish before installing a plugin.",
         );
@@ -150,15 +134,9 @@ export class ConnectorPluginManager {
     this.assertRunning();
     return await this.runPackageMutation(async () => {
       await this.ensureInitialized();
-      const activePluginWorkers = Array.from(
-        this.activeWorkers.values(),
-      ).filter((activeWorker) => activeWorker.pluginId === pluginId);
-      await Promise.allSettled(
-        activePluginWorkers.map((activeWorker) =>
-          activeWorker.cancel(
-            new Error(`Connector plugin "${pluginId}" was uninstalled.`),
-          ),
-        ),
+      await this.cancelPluginOperations(
+        pluginId,
+        new Error(`Connector plugin "${pluginId}" was uninstalled.`),
       );
 
       const removedPlugin = await uninstallConnectorPluginPackage({
@@ -176,12 +154,7 @@ export class ConnectorPluginManager {
   }
 
   async cancelPluginOperations(pluginId: string, error: Error): Promise<void> {
-    const operations = Array.from(this.activeWorkers.values()).filter(
-      (activeWorker) => activeWorker.pluginId === pluginId,
-    );
-    await Promise.allSettled(
-      operations.map((activeWorker) => activeWorker.cancel(error)),
-    );
+    await this.workers.cancel(error, pluginId);
   }
 
   async validateConnection(
@@ -222,20 +195,12 @@ export class ConnectorPluginManager {
       const pendingOperations = [
         this.initializationPromise,
         this.packageMutationPromise,
-        ...Array.from(this.activeWorkers.values()).map((activeWorker) =>
-          activeWorker.cancel(
-            new Error(
-              "Connector operation stopped because the app is shutting down.",
-            ),
-          ),
-        ),
+        this.workers.shutdown(),
       ].filter((operation): operation is Promise<unknown> =>
         Boolean(operation),
       );
       this.shutdownPromise = Promise.allSettled(pendingOperations).then(
-        async () => {
-          await this.waitForOperationsToDrain();
-        },
+        () => undefined,
       );
     }
 
@@ -248,119 +213,27 @@ export class ConnectorPluginManager {
     params: Record<string, unknown>,
     schema: { parse: (value: unknown) => T },
   ): Promise<T> {
-    const releaseOperation = this.reservePluginOperation();
-    try {
+    this.assertCanInvoke();
+    return await this.workers.run(pluginId, method, async () => {
       const plugin = await this.getPlugin(pluginId);
-      this.assertRunning();
-      if (this.mutatingPluginPackage) {
-        throw new Error("Connector plugin package change is in progress.");
-      }
+      // Discovery awaited, so shutdown or a package change may have started meanwhile.
+      this.assertCanInvoke();
+      return {
+        workerData: {
+          apiVersion: CONNECTOR_PLUGIN_API_VERSION,
+          entrypointUrl: pathToFileURL(plugin.entrypointPath).toString(),
+          method,
+          params,
+        },
+        parse: (result: unknown) => schema.parse(result),
+      };
+    });
+  }
 
-      return await new Promise<T>((resolve, reject) => {
-        let worker: Worker;
-        try {
-          worker = new Worker(this.workerScriptUrl, {
-            env: {},
-            execArgv: [],
-            stdout: true,
-            stderr: true,
-            workerData: {
-              apiVersion: CONNECTOR_PLUGIN_API_VERSION,
-              entrypointUrl: pathToFileURL(plugin.entrypointPath).toString(),
-              method,
-              params,
-            },
-            resourceLimits: {
-              maxOldGenerationSizeMb: 128,
-              maxYoungGenerationSizeMb: 32,
-              stackSizeMb: 4,
-            },
-          });
-        } catch (error) {
-          releaseOperation();
-          reject(error);
-          return;
-        }
-
-        let settled = false;
-        let timeout: ReturnType<typeof setTimeout> | undefined;
-
-        let finalizationPromise: Promise<void> | undefined;
-        const finalize = (error?: Error, result?: unknown) => {
-          finalizationPromise ??= (async () => {
-            settled = true;
-            if (timeout) {
-              clearTimeout(timeout);
-            }
-            worker.removeAllListeners();
-
-            try {
-              await worker.terminate();
-            } catch {
-              // The worker may already have exited after posting its result.
-            } finally {
-              this.activeWorkers.delete(worker);
-              releaseOperation();
-            }
-
-            if (error) {
-              reject(error);
-              return;
-            }
-
-            try {
-              resolve(schema.parse(result));
-            } catch (parseError) {
-              reject(parseError);
-            }
-          })();
-          return finalizationPromise;
-        };
-
-        worker.once("error", (error) => {
-          void finalize(error);
-        });
-        worker.once("message", (message: WorkerReply) => {
-          if (message?.ok === true) {
-            void finalize(undefined, message.result);
-            return;
-          }
-
-          const detail =
-            typeof message?.error === "string" && message.error.trim()
-              ? message.error
-                  .trim()
-                  .slice(0, MAX_CONNECTOR_PLUGIN_ERROR_MESSAGE_CHARACTERS)
-              : "Unknown connector plugin error.";
-          void finalize(new Error(detail));
-        });
-        worker.once("exit", (code) => {
-          if (!settled) {
-            void finalize(
-              new Error(
-                `Connector plugin "${pluginId}" exited before returning a result (code ${code}).`,
-              ),
-            );
-          }
-        });
-
-        this.activeWorkers.set(worker, {
-          pluginId,
-          cancel: async (error) => await finalize(error),
-        });
-        timeout = setTimeout(() => {
-          void finalize(
-            new Error(
-              `Connector plugin "${pluginId}" timed out while handling ${method}.`,
-            ),
-          );
-        }, this.requestTimeoutMs);
-        worker.stdout?.resume();
-        worker.stderr?.resume();
-      });
-    } catch (error) {
-      releaseOperation();
-      throw error;
+  private assertCanInvoke() {
+    this.assertRunning();
+    if (this.mutatingPluginPackage) {
+      throw new Error("Connector plugin package change is in progress.");
     }
   }
 
@@ -445,45 +318,6 @@ export class ConnectorPluginManager {
     if (this.shuttingDown) {
       throw new Error("Connector plugin host is shutting down.");
     }
-  }
-
-  private reservePluginOperation() {
-    this.assertRunning();
-    if (this.mutatingPluginPackage) {
-      throw new Error("Connector plugin package change is in progress.");
-    }
-    if (this.activeOperationReservations >= MAX_CONCURRENT_PLUGIN_OPERATIONS) {
-      throw new Error(
-        "Too many connector plugin operations are already running.",
-      );
-    }
-
-    this.activeOperationReservations += 1;
-    let released = false;
-    return () => {
-      if (released) {
-        return;
-      }
-      released = true;
-      this.activeOperationReservations -= 1;
-      if (this.activeOperationReservations === 0) {
-        this.resolveOperationsDrained?.();
-        this.resolveOperationsDrained = undefined;
-        this.operationsDrainedPromise = undefined;
-      }
-    };
-  }
-
-  private async waitForOperationsToDrain() {
-    if (this.activeOperationReservations === 0) {
-      return;
-    }
-    if (!this.operationsDrainedPromise) {
-      this.operationsDrainedPromise = new Promise<void>((resolve) => {
-        this.resolveOperationsDrained = resolve;
-      });
-    }
-    await this.operationsDrainedPromise;
   }
 
   private async runPackageRead<T>(operation: () => Promise<T>): Promise<T> {

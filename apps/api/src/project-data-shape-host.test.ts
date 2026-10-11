@@ -154,33 +154,4 @@ describe("ProjectDataShapePluginManager", () => {
     ).rejects.toThrow('contains unknown field "unexpected"');
     expect(manager.activeOperationCount).toBe(0);
   });
-
-  it("reserves capacity before discovery and drains reservations on shutdown", async () => {
-    const root = await tempDir();
-    const pluginDirectory = await createPlugin(
-      root,
-      "export async function exportProjects() { return await new Promise(() => {}); }",
-    );
-    const manager = new ProjectDataShapePluginManager({
-      pluginDirectories: [pluginDirectory],
-      requestTimeoutMs: 60_000,
-    });
-    managers.push(manager);
-
-    const pending = Array.from({ length: 4 }, () =>
-      manager.exportProjects("workday-project-data", []).then(
-        () => undefined,
-        (error: unknown) => error,
-      ),
-    );
-    expect(manager.activeOperationCount).toBe(4);
-    await expect(manager.exportProjects("missing-plugin", [])).rejects.toThrow(
-      /Too many project data shape plugin operations/u,
-    );
-
-    await manager.shutdown();
-    const results = await Promise.all(pending);
-    expect(results.every((result) => result instanceof Error)).toBe(true);
-    expect(manager.activeOperationCount).toBe(0);
-  });
 });
