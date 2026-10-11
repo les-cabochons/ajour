@@ -16,6 +16,7 @@ This registry captures reusable visual patterns already present in Ajour. Update
 - The daily Time view is a continuous page surface rather than an outer card: retain internal day and row separators, but do not draw a perimeter around the combined day strip and entry area. The day strip is a `day-viewer` size container: below 840px its padding tightens, and below 720px, as next to the entry side panel, it drops the seven days and the week total.
 - Time and Backlog remove the generic page inset and meet the full workspace edges. Backlog fills the available workspace height and uses full-width internal header/row separators without a rounded outer card.
 - The compact titlebar begins beside the application sidebar. Date and new-entry controls remain clear of the native Windows caption-control area.
+- The app menu comes from `apps/desktop/electron/app-menu.cjs`. macOS shows it in the native menu bar. On Windows at 768px and up, `features/layout/app-menu-bar.tsx` draws the same menus at the start of the titlebar with the `components/ui/menubar.tsx` wrapper. Items run once their menu has closed and focus is back on the element the user was in, so Copy and Continue act on it. The narrow view and the web build show no menu bar.
 
 ## Surfaces
 
