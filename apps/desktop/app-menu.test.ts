@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { describe, expect, it, vi } from "vitest";
-import { SHORTCUTS } from "../web/src/lib/shortcuts";
+import { SHORTCUTS, isDigitChord } from "../web/src/lib/shortcuts";
 
 type AppMenuItem =
   | { type: "separator" }
@@ -208,13 +208,16 @@ describe("desktop app menu model", () => {
 
   it("shows the same keys as the shortcut registry", () => {
     const registryAccelerators = new Map(
-      SHORTCUTS.filter((shortcut) => shortcut.keys.length === 1).map(
-        (shortcut) => {
-          const chord = shortcut.keys[0]!;
-          const key = chord.key.toUpperCase();
-          return [shortcut.id, chord.mod ? `CmdOrCtrl+${key}` : key];
-        },
-      ),
+      SHORTCUTS.flatMap((shortcut) => {
+        const chord = shortcut.keys[0]!;
+        // Pinned task digits are a key range that no menu item shows.
+        if (shortcut.keys.length !== 1 || isDigitChord(chord)) {
+          return [];
+        }
+
+        const key = chord.key.toUpperCase();
+        return [[shortcut.id, chord.mod ? `CmdOrCtrl+${key}` : key] as const];
+      }),
     );
     const actionItems = model("darwin", false)
       .flatMap((menu) => menu.items)

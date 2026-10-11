@@ -176,7 +176,7 @@ export function useRunShortcut() {
   const registry = useContext(ShortcutContext);
 
   return useCallback(
-    (id: ShortcutActionId) => registry?.find(id)?.run(),
+    (id: ShortcutActionId) => registry?.find(id)?.run({}),
     [registry],
   );
 }

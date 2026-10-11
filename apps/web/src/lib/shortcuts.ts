@@ -7,7 +7,9 @@
  * handlers that run them live in `lib/shortcut-handlers.tsx`.
  */
 
-import { isPinnedTaskSlot, type PinnedTaskSlot } from "@/domain/local-state";
+// Type-only, so this module stays free of runtime imports: the desktop menu
+// tests load it outside the web app's path aliases.
+import type { PinnedTaskSlot } from "@/domain/local-state";
 
 export type ShortcutPlatform = "mac" | "other";
 
@@ -191,8 +193,8 @@ export type ShortcutKeyEvent = Pick<
 export function getPressedDigit(
   event: Pick<KeyboardEvent, "code">,
 ): PinnedTaskSlot | undefined {
-  const digit = /^Digit(\d)$/.exec(event.code)?.[1];
-  return isPinnedTaskSlot(digit) ? digit : undefined;
+  // Every digit from 0 to 9 is a slot.
+  return /^Digit(\d)$/.exec(event.code)?.[1] as PinnedTaskSlot | undefined;
 }
 
 const LETTER = /^[a-z]$/;
