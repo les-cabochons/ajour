@@ -183,13 +183,12 @@ function formatDeleteLabel(subitemCount: number) {
 /**
  * Lists a backlog item's actions:
  * Start entry · New entry… · Edit · Add subitem · Open in source · Archive/Restore · Delete.
- * Open in source is listed only for items synced from a connector.
+ * Open in source is listed only when a connector provided the item's URL.
  */
 export function getBacklogItemActions(
   item: {
     status: ArchiveStatus;
-    source: string;
-    sourceId?: string;
+    sourceUrl?: string;
   },
   options: BacklogItemActionOptions,
 ): ObjectAction<BacklogItemActionId>[] {
@@ -213,7 +212,7 @@ export function getBacklogItemActions(
     },
   ];
 
-  if (item.source !== "manual" && item.sourceId) {
+  if (item.sourceUrl) {
     actions.push({ id: "open-in-source", label: "Open in source" });
   }
 

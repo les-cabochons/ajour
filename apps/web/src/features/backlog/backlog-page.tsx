@@ -1559,6 +1559,12 @@ export function BacklogPage() {
         if (workItem.status === "archived") {
           return;
         }
+        // Saving the entry updates the item's estimates. Commit and close the inline
+        // editors now, so their older estimate fields can't overwrite that update.
+        closeExpandedChildItem();
+        if (expandedViewMode === "edit") {
+          closeExpandedItem();
+        }
         setNewEntryValues({
           projectId: workItem.projectId,
           taskId: workItem.taskId,
@@ -1577,8 +1583,8 @@ export function BacklogPage() {
         }
         return;
       case "open-in-source":
-        if (workItem.sourceId) {
-          window.open(workItem.sourceId, "_blank", "noopener,noreferrer");
+        if (workItem.sourceUrl) {
+          window.open(workItem.sourceUrl, "_blank", "noopener,noreferrer");
         }
         return;
       case "archive":
@@ -1905,8 +1911,7 @@ export function BacklogPage() {
       workItem.source === "azure_devops"
         ? parseWorkItemReference(workItem.sourceId)
         : undefined;
-    const sourceUrl =
-      workItem.source !== "manual" ? workItem.sourceId : undefined;
+    const sourceUrl = workItem.sourceUrl;
     const sourceMetaLabel = [
       sourceReference ? `#${sourceReference}` : undefined,
       ...sourceMetaParts,

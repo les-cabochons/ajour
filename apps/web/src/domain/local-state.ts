@@ -184,6 +184,8 @@ export interface LocalWorkItem {
   sourceId?: string;
   sourceConnectionId?: string;
   sourceConnectionLabel?: string;
+  /** Link to the item in its source tool, when the connector provides one. `sourceId` is an opaque identity, not a URL. */
+  sourceUrl?: string;
   sourceProjectName?: string;
   sourceWorkItemType?: string;
   hierarchyLevel?: 0 | 1;

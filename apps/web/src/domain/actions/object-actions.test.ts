@@ -182,8 +182,8 @@ describe("backlog item actions", () => {
   const manualItem = { status: "active", source: "manual" } as const;
   const syncedItem = {
     status: "active",
-    source: "azure_devops",
-    sourceId: "https://dev.azure.com/org/project/_workitems/edit/42",
+    source: "jira",
+    sourceUrl: "https://example.atlassian.net/browse/ENG-42",
   } as const;
 
   it("lists a manual root item without Open in source, Archive then Delete last", () => {
@@ -204,7 +204,13 @@ describe("backlog item actions", () => {
     expect(actions.slice(-2).every((action) => action.destructive)).toBe(true);
   });
 
-  it("lists Open in source only for a connector item with a source id", () => {
+  it("lists Open in source only when the connector gave a source URL", () => {
+    // An opaque source id such as ENG-42 is not a link.
+    const opaqueSourceItem = {
+      status: "active",
+      source: "jira",
+      sourceId: "ENG-42",
+    } as const;
     expect(
       ids(
         getBacklogItemActions(syncedItem, {
@@ -215,10 +221,10 @@ describe("backlog item actions", () => {
     ).toContain("open-in-source");
     expect(
       ids(
-        getBacklogItemActions(
-          { status: "active", source: "azure_devops" },
-          { subitemCount: 0, isSubitem: false },
-        ),
+        getBacklogItemActions(opaqueSourceItem, {
+          subitemCount: 0,
+          isSubitem: false,
+        }),
       ),
     ).not.toContain("open-in-source");
   });

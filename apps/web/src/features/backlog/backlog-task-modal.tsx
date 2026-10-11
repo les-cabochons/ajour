@@ -244,8 +244,7 @@ export function BacklogTaskModal({
     workItem?.source === "azure_devops"
       ? parseWorkItemReference(workItem.sourceId)
       : undefined;
-  const sourceUrl =
-    workItem && workItem.source !== "manual" ? workItem.sourceId : undefined;
+  const sourceUrl = workItem?.sourceUrl;
   const sourceMetaLabel = [
     sourceReference ? `#${sourceReference}` : undefined,
     ...sourceMetaParts,
