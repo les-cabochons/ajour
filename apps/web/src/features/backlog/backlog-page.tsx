@@ -9,11 +9,9 @@ import {
 import {
   RiAddLine as Plus,
   RiAlarmWarningLine as AlertTriangle,
-  RiArchiveLine as Archive,
   RiArrowRightSLine as ChevronRight,
   RiCheckLine as Check,
   RiCloseLine as X,
-  RiDeleteBinLine as Trash2,
   RiExpandDiagonalLine as Maximize2,
   RiFileTextLine as FileText,
   RiFilter3Line as Filter,
@@ -22,6 +20,20 @@ import {
   RiPlayLine as Play,
   RiRefreshLine as RotateCcw,
 } from "@remixicon/react";
+import {
+  ObjectActionsButton,
+  ObjectContextMenu,
+} from "@/components/object-actions-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -47,9 +59,12 @@ import {
   useWorkItemIconData,
 } from "@/features/backlog/work-item-icons";
 import {
+  getBacklogItemActions,
+  type BacklogItemActionId,
+} from "@/domain/actions/object-actions";
+import {
   buildBacklogTaskDraft,
   buildBacklogTaskPatch,
-  buildManualTimeEntryNote,
   createBacklogTaskEditorFields,
   formatEstimateInput,
   formatPriorityInput,
@@ -61,16 +76,15 @@ import { SearchableSelect } from "@/components/ui/searchable-select";
 import { buildProjectTaskOptions } from "@/features/projects/project-task-options";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { BacklogTaskModal } from "@/features/backlog/backlog-task-modal";
-import {
-  applyLoggedTimeToEstimateValues,
-  getWorkItemEstimateBadgeLabel,
-} from "@/domain/backlog/work-item-estimates";
-import { syncBacklogWorkItemToSource } from "@/features/backlog/work-item-source-sync";
+import { getWorkItemEstimateBadgeLabel } from "@/domain/backlog/work-item-estimates";
 import {
   buildWorkItemTimerComment,
   parseWorkItemReference,
 } from "@/features/backlog/work-item-timer-comment";
-import { normalizeHoursInput, parseHoursInput } from "@/domain/time/duration";
+import {
+  TimeEntryModal,
+  type TimeEntryModalInitialValues,
+} from "@/features/timer/time-entry-modal";
 import {
   useLocalProjects,
   useLocalState,
@@ -138,15 +152,20 @@ type BacklogInlineEditorState = {
   titleDraft: string;
   isTitleEditing: boolean;
   note: string;
-  timeEntryNote: string;
   backlogStatusId: string;
   projectId: string;
   taskId: string;
   originalEstimateHours: string;
   remainingEstimateHours: string;
   completedEstimateHours: string;
-  durationHours: string;
   keepWhenMissingFromSync: boolean;
+};
+
+/** A Delete waiting for confirmation. Deleting an item removes its subitems too. */
+type PendingBacklogDelete = {
+  workItemId: string;
+  title: string;
+  subitemCount: number;
 };
 
 const EMPTY_BACKLOG_INLINE_EDITOR_STATE: BacklogInlineEditorState = {
@@ -154,14 +173,12 @@ const EMPTY_BACKLOG_INLINE_EDITOR_STATE: BacklogInlineEditorState = {
   titleDraft: "",
   isTitleEditing: false,
   note: "",
-  timeEntryNote: "",
   backlogStatusId: "",
   projectId: "",
   taskId: "",
   originalEstimateHours: "",
   remainingEstimateHours: "",
   completedEstimateHours: "",
-  durationHours: "",
   keepWhenMissingFromSync: false,
 };
 
@@ -175,14 +192,12 @@ function buildBacklogInlineEditorState(
     titleDraft: fields.title,
     isTitleEditing: false,
     note: fields.note,
-    timeEntryNote: "",
     backlogStatusId: fields.backlogStatusId,
     projectId: fields.projectId,
     taskId: fields.taskId,
     originalEstimateHours: fields.originalEstimateHours,
     remainingEstimateHours: fields.remainingEstimateHours,
     completedEstimateHours: fields.completedEstimateHours,
-    durationHours: "",
     keepWhenMissingFromSync: fields.keepWhenMissingFromSync,
   };
 }
@@ -300,7 +315,6 @@ export function BacklogPage() {
   const [expandedPriorityDraft, setExpandedPriorityDraft] = useState("");
   const [isExpandedTitleEditing, setIsExpandedTitleEditing] = useState(false);
   const [expandedNote, setExpandedNote] = useState("");
-  const [expandedTimeEntryNote, setExpandedTimeEntryNote] = useState("");
   const [expandedBacklogStatusId, setExpandedBacklogStatusId] = useState("");
   const [expandedProjectId, setExpandedProjectId] = useState("");
   const [expandedTaskId, setExpandedTaskId] = useState("");
@@ -310,7 +324,6 @@ export function BacklogPage() {
     useState("");
   const [expandedCompletedEstimateHours, setExpandedCompletedEstimateHours] =
     useState("");
-  const [expandedDurationHours, setExpandedDurationHours] = useState("");
   const [expandedKeepWhenMissingFromSync, setExpandedKeepWhenMissingFromSync] =
     useState(false);
   const [expandedNoteModalTarget, setExpandedNoteModalTarget] =
@@ -329,12 +342,11 @@ export function BacklogPage() {
   const [subtaskNote, setSubtaskNote] = useState("");
   const [subtaskProjectId, setSubtaskProjectId] = useState("");
   const [subtaskTaskId, setSubtaskTaskId] = useState("");
-  const [pendingArchiveWorkItemId, setPendingArchiveWorkItemId] = useState<
-    string | null
-  >(null);
-  const [pendingDeleteWorkItemId, setPendingDeleteWorkItemId] = useState<
-    string | null
-  >(null);
+  const [pendingDelete, setPendingDelete] =
+    useState<PendingBacklogDelete | null>(null);
+  /** Prefill of the New entry… dialog, or null while it is closed. */
+  const [newEntryValues, setNewEntryValues] =
+    useState<TimeEntryModalInitialValues | null>(null);
   const [isCreateTaskModalOpen, setIsCreateTaskModalOpen] = useState(false);
   const [modalWorkItemId, setModalWorkItemId] = useState<string | null>(null);
   const [subtaskModalParentId, setSubtaskModalParentId] = useState<
@@ -516,10 +528,6 @@ export function BacklogPage() {
     () => buildProjectTaskOptions(expandedAvailableTasks),
     [expandedAvailableTasks],
   );
-  const expandedParsedDurationMs = useMemo(
-    () => parseHoursInput(expandedDurationHours),
-    [expandedDurationHours],
-  );
   const expandedChildAvailableTasks = useMemo(
     () =>
       projects
@@ -530,10 +538,6 @@ export function BacklogPage() {
   const expandedChildTaskOptions = useMemo(
     () => buildProjectTaskOptions(expandedChildAvailableTasks),
     [expandedChildAvailableTasks],
-  );
-  const expandedChildParsedDurationMs = useMemo(
-    () => parseHoursInput(expandedChildEditor.durationHours),
-    [expandedChildEditor.durationHours],
   );
 
   const subtaskAvailableTasks = useMemo(
@@ -696,7 +700,14 @@ export function BacklogPage() {
         !isInlineEditorOutsideClick(
           event.target,
           activeInlineEditorRef.current,
-          [`[data-backlog-root-id="${expandedRootWorkItemId}"]`],
+          // Menus and dialogs opened from the editor's action set render in portals.
+          [
+            `[data-backlog-root-id="${expandedRootWorkItemId}"]`,
+            '[data-slot="dropdown-menu-content"]',
+            '[data-slot="context-menu-content"]',
+            '[role="dialog"]',
+            '[role="alertdialog"]',
+          ],
         )
       ) {
         return;
@@ -872,17 +883,13 @@ export function BacklogPage() {
     setExpandedPriorityDraft("");
     setIsExpandedTitleEditing(false);
     setExpandedNote("");
-    setExpandedTimeEntryNote("");
     setExpandedBacklogStatusId("");
     setExpandedProjectId("");
     setExpandedTaskId("");
     setExpandedOriginalEstimateHours("");
     setExpandedRemainingEstimateHours("");
     setExpandedCompletedEstimateHours("");
-    setExpandedDurationHours("");
     setExpandedKeepWhenMissingFromSync(false);
-    setPendingArchiveWorkItemId(null);
-    setPendingDeleteWorkItemId(null);
     resetSubtaskDraft();
   }
 
@@ -1023,7 +1030,6 @@ export function BacklogPage() {
     setExpandedPriorityDraft(formatPriorityInput(workItem.priority));
     setIsExpandedTitleEditing(false);
     setExpandedNote(workItem.note ?? "");
-    setExpandedTimeEntryNote("");
     setExpandedBacklogStatusId(workItem.backlogStatusId ?? "");
     setExpandedProjectId(workItem.projectId ?? "");
     setExpandedTaskId(workItem.taskId ?? "");
@@ -1051,8 +1057,6 @@ export function BacklogPage() {
     setExpandedKeepWhenMissingFromSync(
       workItem.keepWhenMissingFromSync ?? false,
     );
-    setExpandedDurationHours("");
-    setPendingArchiveWorkItemId(null);
     resetSubtaskDraft();
   }
 
@@ -1074,8 +1078,6 @@ export function BacklogPage() {
     setExpandedViewMode("subtasks");
     setExpandedChildWorkItemId(workItem._id);
     setExpandedChildEditor(buildBacklogInlineEditorState(workItem));
-    setPendingArchiveWorkItemId(null);
-    setPendingDeleteWorkItemId(null);
   }
 
   function beginSubtaskCreation(parent: LocalWorkItem) {
@@ -1092,7 +1094,6 @@ export function BacklogPage() {
     }
 
     closeExpandedChildItem();
-    setPendingArchiveWorkItemId(null);
     seedSubtaskDraft(parent);
   }
 
@@ -1145,62 +1146,6 @@ export function BacklogPage() {
 
     setStandaloneNoteModalState(null);
   }, [standaloneNoteModalState, workItemsById]);
-
-  useEffect(() => {
-    if (!pendingArchiveWorkItemId) {
-      return;
-    }
-
-    if (
-      workItems.some((workItem) => workItem._id === pendingArchiveWorkItemId)
-    ) {
-      return;
-    }
-
-    setPendingArchiveWorkItemId(null);
-  }, [pendingArchiveWorkItemId, workItems]);
-
-  useEffect(() => {
-    if (!pendingArchiveWorkItemId) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setPendingArchiveWorkItemId((current) =>
-        current === pendingArchiveWorkItemId ? null : current,
-      );
-    }, 2500);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [pendingArchiveWorkItemId]);
-
-  useEffect(() => {
-    if (!pendingDeleteWorkItemId) {
-      return;
-    }
-
-    if (
-      workItems.some((workItem) => workItem._id === pendingDeleteWorkItemId)
-    ) {
-      return;
-    }
-
-    setPendingDeleteWorkItemId(null);
-  }, [pendingDeleteWorkItemId, workItems]);
-
-  useEffect(() => {
-    if (!pendingDeleteWorkItemId) {
-      return;
-    }
-
-    const timeoutId = window.setTimeout(() => {
-      setPendingDeleteWorkItemId((current) =>
-        current === pendingDeleteWorkItemId ? null : current,
-      );
-    }, 2500);
-
-    return () => window.clearTimeout(timeoutId);
-  }, [pendingDeleteWorkItemId]);
 
   useEffect(() => {
     if (newBacklogStatusId && !backlogStatusNameById.has(newBacklogStatusId)) {
@@ -1295,8 +1240,6 @@ export function BacklogPage() {
 
       setIsSortMenuOpen(false);
       closeExpandedItem();
-      setPendingArchiveWorkItemId(null);
-      setPendingDeleteWorkItemId(null);
       setModalWorkItemId(null);
       setSubtaskModalParentId(null);
       setIsCreatingItem(false);
@@ -1311,8 +1254,6 @@ export function BacklogPage() {
 
     setIsSortMenuOpen(false);
     closeExpandedItem();
-    setPendingArchiveWorkItemId(null);
-    setPendingDeleteWorkItemId(null);
     setIsCreatingItem(true);
   }
 
@@ -1355,7 +1296,6 @@ export function BacklogPage() {
       suppressWorkItemClickUntilRef.current =
         performance.now() + SHARED_TABLE_DRAG_CLICK_SUPPRESSION_MS;
       setPressedWorkItemId(null);
-      setPendingArchiveWorkItemId(null);
       const nextDragState: BacklogDragState = {
         workItemId: workItem._id,
         groupIds,
@@ -1437,9 +1377,12 @@ export function BacklogPage() {
       closeNewItem();
     }
 
+    // Edit is unavailable on archived items until they are restored.
+    if (workItem.status === "archived") {
+      return;
+    }
+
     if (!isDesktopLayout) {
-      setPendingArchiveWorkItemId(null);
-      setPendingDeleteWorkItemId(null);
       handleOpenWorkItemModal(workItem._id);
       return;
     }
@@ -1509,8 +1452,6 @@ export function BacklogPage() {
     }
 
     setIsCreateTaskModalOpen(false);
-    setPendingArchiveWorkItemId(null);
-    setPendingDeleteWorkItemId(null);
     setModalWorkItemId(workItemId);
   }
 
@@ -1520,8 +1461,6 @@ export function BacklogPage() {
     }
 
     setIsCreateTaskModalOpen(false);
-    setPendingArchiveWorkItemId(null);
-    setPendingDeleteWorkItemId(null);
     setSubtaskModalParentId(parentWorkItemId);
   }
 
@@ -1534,8 +1473,6 @@ export function BacklogPage() {
       closeNewItem();
     }
 
-    setPendingArchiveWorkItemId(null);
-    setPendingDeleteWorkItemId(null);
     if (!isDesktopLayout) {
       handleOpenWorkItemModal(workItem._id);
       return;
@@ -1575,79 +1512,114 @@ export function BacklogPage() {
     setExpandedNote(value);
   }
 
-  function handleArchiveWorkItem(workItemId: string) {
-    setPendingDeleteWorkItemId(null);
+  /** Closes an open editor of the item before it leaves the current list. */
+  function closeEditorsOf(workItemId: string) {
+    if (expandedWorkItemId === workItemId) {
+      resetExpandedItem();
+    } else if (expandedChildWorkItemId === workItemId) {
+      resetExpandedChildItem();
+    }
+  }
 
-    if (pendingArchiveWorkItemId === workItemId) {
-      localStore.archiveWorkItem(workItemId);
-      setPendingArchiveWorkItemId(null);
-      if (expandedWorkItemId === workItemId) {
-        resetExpandedItem();
-      } else if (expandedChildWorkItemId === workItemId) {
-        resetExpandedChildItem();
-      }
+  function confirmDeleteWorkItem() {
+    if (!pendingDelete) {
       return;
     }
 
-    setPendingArchiveWorkItemId(workItemId);
+    closeEditorsOf(pendingDelete.workItemId);
+    localStore.deleteWorkItem(pendingDelete.workItemId);
+    setPendingDelete(null);
   }
 
-  function handleUnarchiveWorkItem(workItemId: string) {
-    localStore.restoreWorkItem(workItemId);
-    setPendingArchiveWorkItemId(null);
-    setPendingDeleteWorkItemId(null);
-  }
-
-  function handleDeleteWorkItem(workItemId: string) {
-    setPendingArchiveWorkItemId(null);
-
-    if (pendingDeleteWorkItemId === workItemId) {
-      localStore.deleteWorkItem(workItemId);
-      setPendingDeleteWorkItemId(null);
-      if (expandedWorkItemId === workItemId) {
-        resetExpandedItem();
-      } else if (expandedChildWorkItemId === workItemId) {
-        resetExpandedChildItem();
-      }
-      return;
+  /** Opens the item's editor, or keeps it open when it already is. */
+  function openWorkItemEditor(workItem: LocalWorkItem) {
+    const isOpen = isDesktopLayout
+      ? isSubtaskWorkItem(workItem)
+        ? expandedChildWorkItemId === workItem._id
+        : expandedViewMode === "edit" && expandedWorkItemId === workItem._id
+      : modalWorkItemId === workItem._id;
+    if (!isOpen) {
+      handleToggleWorkItem(workItem, { ignoreClickSuppression: true });
     }
-
-    setPendingDeleteWorkItemId(workItemId);
   }
 
-  function handleStartWorkItemTimer(
+  /**
+   * Runs the backlog item action set from a row, the inline editor or the item dialog.
+   * Callers that show a draft save it first and pass the item with the draft applied.
+   */
+  function runWorkItemAction(
     workItem: LocalWorkItem,
-    overrides?: {
-      title?: string;
-      note?: string;
-      projectId?: string;
-      taskId?: string;
-    },
+    actionId: BacklogItemActionId,
   ) {
-    const nextTitle = overrides?.title?.trim() || workItem.title;
-    const nextNote = overrides?.note?.trim() || undefined;
-    const nextProjectId = overrides?.projectId || workItem.projectId;
-    const nextTaskId = overrides?.taskId || workItem.taskId;
+    switch (actionId) {
+      case "start-entry":
+        handleStartWorkItemTimer(workItem);
+        return;
+      case "new-entry":
+        if (workItem.status === "archived") {
+          return;
+        }
+        setNewEntryValues({
+          projectId: workItem.projectId,
+          taskId: workItem.taskId,
+          workItemId: workItem._id,
+          note: buildWorkItemTimerComment(workItem.title, workItem.sourceId),
+        });
+        return;
+      case "edit":
+        openWorkItemEditor(workItem);
+        return;
+      case "add-subitem":
+        if (isDesktopLayout) {
+          beginSubtaskCreation(workItem);
+        } else {
+          handleOpenSubtaskModal(workItem._id);
+        }
+        return;
+      case "open-in-source":
+        if (workItem.sourceId) {
+          window.open(workItem.sourceId, "_blank", "noopener,noreferrer");
+        }
+        return;
+      case "archive":
+        closeEditorsOf(workItem._id);
+        localStore.archiveWorkItem(workItem._id);
+        return;
+      case "restore":
+        localStore.restoreWorkItem(workItem._id);
+        return;
+      case "delete":
+        setPendingDelete({
+          workItemId: workItem._id,
+          title: workItem.title,
+          subitemCount: isSubtaskWorkItem(workItem)
+            ? 0
+            : getChildItems(workItem).length,
+        });
+        return;
+    }
+  }
 
+  function getWorkItemActions(workItem: LocalWorkItem, isEditing = false) {
+    const isSubitem = isSubtaskWorkItem(workItem);
+    return getBacklogItemActions(workItem, {
+      isSubitem,
+      subitemCount: isSubitem ? 0 : getChildItems(workItem).length,
+      isEditing,
+    });
+  }
+
+  function handleStartWorkItemTimer(workItem: LocalWorkItem) {
     if (workItem.status === "archived") {
       return;
-    }
-
-    if (overrides) {
-      localStore.updateWorkItem(workItem._id, {
-        title: nextTitle,
-        note: nextNote,
-        projectId: nextProjectId,
-        taskId: nextTaskId,
-      });
     }
 
     localStore.startTimer({
       localDate: todayIsoDate(),
       workItemId: workItem._id,
-      projectId: nextProjectId,
-      taskId: nextTaskId,
-      note: buildWorkItemTimerComment(nextTitle, workItem.sourceId),
+      projectId: workItem.projectId,
+      taskId: workItem.taskId,
+      note: buildWorkItemTimerComment(workItem.title, workItem.sourceId),
       accumulatedDurationMs: 0,
     });
   }
@@ -1685,127 +1657,6 @@ export function BacklogPage() {
     setExpandedTitle(title);
     setExpandedTitleDraft(title);
     setIsExpandedTitleEditing(false);
-  }
-
-  function cancelExpandedTime() {
-    setExpandedDurationHours("");
-  }
-
-  function submitExpandedTime() {
-    if (
-      !expandedWorkItem ||
-      !expandedParsedDurationMs ||
-      expandedParsedDurationMs <= 0
-    ) {
-      return;
-    }
-
-    const hasSubtasks =
-      !isSubtaskWorkItem(expandedWorkItem) &&
-      getChildItems(expandedWorkItem).length > 0;
-    const timeEntryTitle = expandedTitle.trim() || expandedWorkItem.title;
-    const patch = buildExpandedWorkItemPatch(expandedWorkItem, true);
-    const nextEstimates = applyLoggedTimeToEstimateValues(
-      {
-        remainingEstimateHours:
-          patch?.remainingEstimateHours ??
-          expandedWorkItem.remainingEstimateHours,
-        completedEstimateHours:
-          patch?.completedEstimateHours ??
-          expandedWorkItem.completedEstimateHours,
-      },
-      {
-        projectId: patch?.projectId ?? (expandedProjectId || undefined),
-        taskId: patch?.taskId ?? (expandedTaskId || undefined),
-        durationMsDelta: expandedParsedDurationMs,
-      },
-    );
-    if (patch) {
-      localStore.updateWorkItem(expandedWorkItem._id, patch);
-    }
-
-    localStore.saveManualTimeEntry({
-      localDate: todayIsoDate(),
-      workItemId: expandedWorkItem._id,
-      projectId: (patch?.projectId ?? expandedProjectId) || undefined,
-      taskId: (patch?.taskId ?? expandedTaskId) || undefined,
-      note: buildManualTimeEntryNote(
-        expandedTimeEntryNote,
-        timeEntryTitle,
-        expandedWorkItem.sourceId,
-      ),
-      durationMs: expandedParsedDurationMs,
-    });
-    syncBacklogWorkItemToSource(expandedWorkItem);
-    if (!hasSubtasks) {
-      setExpandedRemainingEstimateHours(
-        formatEstimateInput(nextEstimates.remainingEstimateHours),
-      );
-      setExpandedCompletedEstimateHours(
-        formatEstimateInput(nextEstimates.completedEstimateHours),
-      );
-    }
-    setExpandedDurationHours("");
-    setExpandedTimeEntryNote("");
-  }
-
-  function submitExpandedChildTime() {
-    if (
-      !expandedChildWorkItem ||
-      !expandedChildParsedDurationMs ||
-      expandedChildParsedDurationMs <= 0
-    ) {
-      return;
-    }
-
-    const timeEntryTitle =
-      expandedChildEditor.title.trim() || expandedChildWorkItem.title;
-    const patch = buildExpandedChildWorkItemPatch(expandedChildWorkItem, true);
-    const nextEstimates = applyLoggedTimeToEstimateValues(
-      {
-        remainingEstimateHours:
-          patch?.remainingEstimateHours ??
-          expandedChildWorkItem.remainingEstimateHours,
-        completedEstimateHours:
-          patch?.completedEstimateHours ??
-          expandedChildWorkItem.completedEstimateHours,
-      },
-      {
-        projectId:
-          patch?.projectId ?? (expandedChildEditor.projectId || undefined),
-        taskId: patch?.taskId ?? (expandedChildEditor.taskId || undefined),
-        durationMsDelta: expandedChildParsedDurationMs,
-      },
-    );
-    if (patch) {
-      localStore.updateWorkItem(expandedChildWorkItem._id, patch);
-    }
-
-    localStore.saveManualTimeEntry({
-      localDate: todayIsoDate(),
-      workItemId: expandedChildWorkItem._id,
-      projectId:
-        (patch?.projectId ?? expandedChildEditor.projectId) || undefined,
-      taskId: (patch?.taskId ?? expandedChildEditor.taskId) || undefined,
-      note: buildManualTimeEntryNote(
-        expandedChildEditor.timeEntryNote,
-        timeEntryTitle,
-        expandedChildWorkItem.sourceId,
-      ),
-      durationMs: expandedChildParsedDurationMs,
-    });
-    syncBacklogWorkItemToSource(expandedChildWorkItem);
-    setExpandedChildEditor((current) => ({
-      ...current,
-      remainingEstimateHours: formatEstimateInput(
-        nextEstimates.remainingEstimateHours,
-      ),
-      completedEstimateHours: formatEstimateInput(
-        nextEstimates.completedEstimateHours,
-      ),
-      durationHours: "",
-      timeEntryNote: "",
-    }));
   }
 
   function renderSubtasksSectionHeader(workItem: LocalWorkItem) {
@@ -1974,8 +1825,6 @@ export function BacklogPage() {
     const showInlineEditor =
       (isEditingRootItem || isEditingChildItem) && isDesktopLayout;
     const isMobileLayout = !isDesktopLayout;
-    const isArchivePending = pendingArchiveWorkItemId === workItem._id;
-    const isDeletePending = pendingDeleteWorkItemId === workItem._id;
     const isArchived = workItem.status === "archived";
     const resolvedWorkItemIcon = resolveWorkItemIcon(
       workItem,
@@ -1996,9 +1845,6 @@ export function BacklogPage() {
     const editorNote = isEditingChildItem
       ? expandedChildEditor.note
       : expandedNote;
-    const editorTimeEntryNote = isEditingChildItem
-      ? expandedChildEditor.timeEntryNote
-      : expandedTimeEntryNote;
     const editorBacklogStatusId = isEditingChildItem
       ? expandedChildEditor.backlogStatusId
       : expandedBacklogStatusId;
@@ -2020,9 +1866,6 @@ export function BacklogPage() {
     const editorKeepWhenMissingFromSync = isEditingChildItem
       ? expandedChildEditor.keepWhenMissingFromSync
       : expandedKeepWhenMissingFromSync;
-    const editorDurationHours = isEditingChildItem
-      ? expandedChildEditor.durationHours
-      : expandedDurationHours;
     const editorPriority = isEditingChildItem ? "" : expandedPriority;
     const editorPriorityDraft = isEditingChildItem ? "" : expandedPriorityDraft;
     const importedPriorityValue = isLogicalChild
@@ -2042,28 +1885,12 @@ export function BacklogPage() {
     const editorAvailableTasks = isEditingChildItem
       ? expandedChildAvailableTasks
       : expandedAvailableTasks;
-    const editorParsedDurationMs = isEditingChildItem
-      ? expandedChildParsedDurationMs
-      : expandedParsedDurationMs;
-    const hasEditorTimeDraft =
-      showInlineEditor && editorDurationHours.trim().length > 0;
-    const canSubmitEditorTime = Boolean(
-      editorParsedDurationMs && editorParsedDurationMs > 0,
-    );
     const canSaveEditorTitle =
       editorTitleDraft.trim().length > 0 &&
       (isLogicalChild || parsePriorityInput(editorPriorityDraft) !== null) &&
       parseEstimateInput(editorOriginalEstimateHours) !== null &&
       parseEstimateInput(editorRemainingEstimateHours) !== null &&
       parseEstimateInput(editorCompletedEstimateHours) !== null;
-    const canStartEditorTimer = !isArchived;
-    const editorTimeFeedback = !hasEditorTimeDraft
-      ? null
-      : editorParsedDurationMs === null
-        ? "Enter a valid duration"
-        : editorParsedDurationMs <= 0
-          ? "Enter a positive duration"
-          : null;
     const sourceMetaParts = [
       isLogicalChild ? "Subitem" : undefined,
       workItem.source !== "manual" ? workItem.sourceConnectionLabel : undefined,
@@ -2112,11 +1939,6 @@ export function BacklogPage() {
         parseEstimateInput(editorCompletedEstimateHours) ?? undefined,
       ) !== childEstimateTotals.completedEstimateHours;
     const hasEstimateSyncIssue = hasWorkItemEstimateSyncIssue(workItem);
-    const editorStartTimerTitle = isArchived
-      ? "Archived items cannot start timers"
-      : currentTimer
-        ? `Switch timer to ${editorTitle.trim() || workItem.title}`
-        : `Start timer for ${editorTitle.trim() || workItem.title}`;
     const isDraggedWorkItem = backlogDragState?.workItemId === workItem._id;
     const rootIndex = visibleRootItems.findIndex(
       (item) => item._id === workItem._id,
@@ -2196,17 +2018,6 @@ export function BacklogPage() {
         }
 
         setExpandedNote(value);
-      };
-      const setInlineTimeEntryNote = (value: string) => {
-        if (isEditingChildItem) {
-          setExpandedChildEditor((current) => ({
-            ...current,
-            timeEntryNote: value,
-          }));
-          return;
-        }
-
-        setExpandedTimeEntryNote(value);
       };
       const setInlineBacklogStatusId = (value: string) => {
         if (isEditingChildItem) {
@@ -2339,43 +2150,16 @@ export function BacklogPage() {
           formatEstimateInput(childEstimateTotals.completedEstimateHours),
         );
       };
-      const setInlineDurationHours = (value: string) => {
-        if (isEditingChildItem) {
-          setExpandedChildEditor((current) => ({
-            ...current,
-            durationHours: value,
-          }));
-          return;
+      /** Saves the draft first so the action uses the values on screen. */
+      const runInlineEditorAction = (actionId: BacklogItemActionId) => {
+        const patch = isEditingChildItem
+          ? buildExpandedChildWorkItemPatch(workItem, true)
+          : buildExpandedWorkItemPatch(workItem, true);
+        if (patch) {
+          localStore.updateWorkItem(workItem._id, patch);
         }
-
-        setExpandedDurationHours(value);
+        runWorkItemAction({ ...workItem, ...patch }, actionId);
       };
-      const cancelInlineTime = () => {
-        if (isEditingChildItem) {
-          setExpandedChildEditor((current) => ({
-            ...current,
-            durationHours: "",
-          }));
-          return;
-        }
-
-        cancelExpandedTime();
-      };
-      const submitInlineTime = () => {
-        if (isEditingChildItem) {
-          submitExpandedChildTime();
-          return;
-        }
-
-        submitExpandedTime();
-      };
-      const startInlineTimer = () =>
-        handleStartWorkItemTimer(workItem, {
-          title: editorTitle,
-          note: editorNote,
-          projectId: editorProjectId,
-          taskId: editorTaskId,
-        });
 
       return (
         <tr
@@ -2559,63 +2343,12 @@ export function BacklogPage() {
                         >
                           <X className="h-3.5 w-3.5" />
                         </button>
-                      ) : !isArchived ? (
-                        <button
-                          type="button"
-                          className={cn(
-                            "backlog-task-inline-action",
-                            "backlog-task-archive",
-                            isDeletePending && "is-confirming",
-                          )}
-                          aria-label={
-                            isDeletePending
-                              ? `Confirm delete ${workItem.title}`
-                              : `Delete ${workItem.title}`
-                          }
-                          onClick={() => handleDeleteWorkItem(workItem._id)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                          {isDeletePending ? <span>Delete</span> : null}
-                        </button>
                       ) : (
-                        <button
-                          type="button"
-                          className={cn(
-                            "backlog-task-inline-action",
-                            "backlog-task-archive",
-                            "is-restore",
-                          )}
-                          aria-label={`Unarchive ${workItem.title}`}
-                          onClick={() => handleUnarchiveWorkItem(workItem._id)}
-                        >
-                          <ArchiveRestore className="h-3.5 w-3.5" />
-                          <span>Restore</span>
-                        </button>
-                      )}
-                    </span>
-                    <span className="backlog-editor-action-slot">
-                      {!isEditorTitleEditing && !isArchived ? (
-                        <button
-                          type="button"
-                          className={cn(
-                            "backlog-task-inline-action",
-                            "backlog-task-archive",
-                            isArchivePending && "is-confirming",
-                          )}
-                          aria-label={
-                            isArchivePending
-                              ? "Confirm archive item"
-                              : "Archive item"
-                          }
-                          onClick={() => handleArchiveWorkItem(workItem._id)}
-                        >
-                          <Archive className="h-3.5 w-3.5" />
-                          {isArchivePending ? <span>Confirm</span> : null}
-                        </button>
-                      ) : (
-                        <span
-                          className="backlog-editor-action-placeholder"
-                          aria-hidden="true"
+                        <ObjectActionsButton
+                          actions={getWorkItemActions(workItem, true)}
+                          onAction={runInlineEditorAction}
+                          label={`Actions for ${workItem.title}`}
+                          className="backlog-task-inline-action"
                         />
                       )}
                     </span>
@@ -2833,97 +2566,6 @@ export function BacklogPage() {
                     />
                   </label>
                 ) : null}
-
-                {!isArchived ? (
-                  <label className="field entry-field-note">
-                    <span className="field-label">Note</span>
-                    <textarea
-                      className="field-input entry-note-input"
-                      value={editorTimeEntryNote}
-                      onChange={(event) =>
-                        setInlineTimeEntryNote(event.target.value)
-                      }
-                      placeholder="Time entry note (optional)"
-                      rows={2}
-                    />
-                  </label>
-                ) : null}
-
-                <div className="field entry-field-hours backlog-field-hours">
-                  <span className="field-label">Hours</span>
-                  <div className="inline-hours-input-shell">
-                    <input
-                      className="field-input entry-hours-input inline-hours-input"
-                      type="text"
-                      placeholder="01:30"
-                      style={{ fontFamily: "var(--font-mono)" }}
-                      value={editorDurationHours}
-                      onChange={(event) =>
-                        setInlineDurationHours(event.target.value)
-                      }
-                      onBlur={(event) =>
-                        setInlineDurationHours(
-                          normalizeHoursInput(event.target.value),
-                        )
-                      }
-                      onKeyDown={(event) => {
-                        if (event.key === "Enter") {
-                          event.preventDefault();
-                          if (hasEditorTimeDraft) {
-                            submitInlineTime();
-                            return;
-                          }
-
-                          startInlineTimer();
-                        }
-                      }}
-                      aria-label="Hours"
-                    />
-                    <div className="inline-hours-actions">
-                      {hasEditorTimeDraft ? (
-                        <>
-                          <button
-                            type="button"
-                            className="inline-hours-action"
-                            aria-label="Submit time"
-                            disabled={!canSubmitEditorTime}
-                            onMouseDown={(event) => event.preventDefault()}
-                            onClick={submitInlineTime}
-                          >
-                            <Check className="h-3.5 w-3.5" />
-                          </button>
-                          <button
-                            type="button"
-                            className="inline-hours-action"
-                            aria-label="Cancel time"
-                            onMouseDown={(event) => event.preventDefault()}
-                            onClick={cancelInlineTime}
-                          >
-                            <X className="h-3.5 w-3.5" />
-                          </button>
-                        </>
-                      ) : (
-                        <button
-                          type="button"
-                          className={cn(
-                            "inline-hours-action",
-                            "inline-hours-action-play",
-                          )}
-                          aria-label={editorStartTimerTitle}
-                          title={editorStartTimerTitle}
-                          disabled={!canStartEditorTimer}
-                          onMouseDown={(event) => event.preventDefault()}
-                          onClick={startInlineTimer}
-                        >
-                          <Play className="h-3.5 w-3.5" />
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                  {editorTimeFeedback ? (
-                    <span className="field-error">{editorTimeFeedback}</span>
-                  ) : null}
-                </div>
               </div>
             </div>
           </td>
@@ -2931,39 +2573,59 @@ export function BacklogPage() {
       );
     }
 
+    const rowActions = getWorkItemActions(workItem);
+    const runRowAction = (actionId: BacklogItemActionId) =>
+      runWorkItemAction(workItem, actionId);
+    const rowActionsButton = (
+      <ObjectActionsButton
+        actions={rowActions}
+        onAction={runRowAction}
+        label={`Actions for ${workItem.title}`}
+        className="entry-row-action"
+      />
+    );
+
     return (
-      <tr
+      <ObjectContextMenu
         key={workItem._id}
-        data-backlog-root-id={rootSectionId}
-        ref={(node) => {
-          if (!isReorderableRoot) {
-            backlogRowRefs.current.delete(workItem._id);
-            return;
-          }
+        actions={rowActions}
+        onAction={runRowAction}
+        render={
+          <tr
+            data-backlog-root-id={rootSectionId}
+            ref={(node) => {
+              if (!isReorderableRoot) {
+                backlogRowRefs.current.delete(workItem._id);
+                return;
+              }
 
-          if (node) {
-            backlogRowRefs.current.set(workItem._id, node);
-            return;
-          }
+              if (node) {
+                backlogRowRefs.current.set(workItem._id, node);
+                return;
+              }
 
-          backlogRowRefs.current.delete(workItem._id);
-        }}
-        className={cn(
-          isRootExpanded && "entry-row-expanded",
-          isEditingRootItem && "backlog-row-edit-expanded",
-          isLogicalChild && "backlog-row-child",
-          isReorderableRoot && "backlog-row-draggable",
-          pressedWorkItemId === workItem._id && "is-pressing",
-          isDraggedWorkItem && "is-drag-source",
-        )}
-        style={
-          rowShift !== 0
-            ? { transform: `translate3d(0, ${rowShift}px, 0)` }
-            : undefined
+              backlogRowRefs.current.delete(workItem._id);
+            }}
+            className={cn(
+              isRootExpanded && "entry-row-expanded",
+              isEditingRootItem && "backlog-row-edit-expanded",
+              isLogicalChild && "backlog-row-child",
+              isReorderableRoot && "backlog-row-draggable",
+              pressedWorkItemId === workItem._id && "is-pressing",
+              isDraggedWorkItem && "is-drag-source",
+            )}
+            style={
+              rowShift !== 0
+                ? { transform: `translate3d(0, ${rowShift}px, 0)` }
+                : undefined
+            }
+            aria-grabbed={isDraggedWorkItem}
+            onClick={() => handleToggleWorkItem(workItem)}
+            onPointerDown={(event) =>
+              handleWorkItemPointerDown(workItem, event)
+            }
+          />
         }
-        aria-grabbed={isDraggedWorkItem}
-        onClick={() => handleToggleWorkItem(workItem)}
-        onPointerDown={(event) => handleWorkItemPointerDown(workItem, event)}
       >
         <td className="backlog-priority-cell">
           {!isLogicalChild ? (
@@ -3094,12 +2756,7 @@ export function BacklogPage() {
         <td className="entry-hours-cell backlog-estimate-cell">
           <div className="entry-hours-content backlog-estimate-content">
             {!isMobileLayout ? (
-              <div
-                className={cn(
-                  "entry-row-actions backlog-entry-row-actions",
-                  isArchivePending && "is-confirming",
-                )}
-              >
+              <div className="entry-row-actions backlog-entry-row-actions">
                 {!isArchived ? (
                   <button
                     type="button"
@@ -3133,52 +2790,7 @@ export function BacklogPage() {
                     <FileText className="h-3.5 w-3.5" />
                   </button>
                 ) : null}
-                {isArchived ? (
-                  <button
-                    type="button"
-                    className="entry-row-action backlog-entry-row-action-restore"
-                    aria-label={`Unarchive ${workItem.title}`}
-                    title={`Unarchive ${workItem.title}`}
-                    data-no-backlog-drag="true"
-                    onClick={(event) => {
-                      event.stopPropagation();
-                      handleUnarchiveWorkItem(workItem._id);
-                    }}
-                    onPointerDown={(event) => event.stopPropagation()}
-                  >
-                    <ArchiveRestore className="h-3.5 w-3.5" />
-                  </button>
-                ) : (
-                  <span className="entry-row-action-slot">
-                    <button
-                      type="button"
-                      className={cn(
-                        "entry-row-action",
-                        "entry-row-action-delete",
-                        isArchivePending && "is-confirming",
-                      )}
-                      aria-label={
-                        isArchivePending
-                          ? "Confirm archive item"
-                          : "Archive item"
-                      }
-                      title={
-                        isArchivePending
-                          ? "Confirm archive item"
-                          : "Archive item"
-                      }
-                      data-no-backlog-drag="true"
-                      onClick={(event) => {
-                        event.stopPropagation();
-                        handleArchiveWorkItem(workItem._id);
-                      }}
-                      onPointerDown={(event) => event.stopPropagation()}
-                    >
-                      <Archive className="h-3.5 w-3.5" />
-                      {isArchivePending ? <span>Confirm</span> : null}
-                    </button>
-                  </span>
-                )}
+                {rowActionsButton}
               </div>
             ) : null}
             {backlogEstimateBadgeLabel ? (
@@ -3206,9 +2818,10 @@ export function BacklogPage() {
                 <span>{currentTimer ? "Switch timer" : "Start timer"}</span>
               </button>
             ) : null}
+            {isMobileLayout ? rowActionsButton : null}
           </div>
         </td>
-      </tr>
+      </ObjectContextMenu>
     );
   }
 
@@ -3317,7 +2930,6 @@ export function BacklogPage() {
                     )}
                     onClick={() => {
                       setActiveFilter(filter.value);
-                      setPendingArchiveWorkItemId(null);
                       resetExpandedItem();
                     }}
                   >
@@ -3696,8 +3308,37 @@ export function BacklogPage() {
         <BacklogTaskModal
           workItemId={modalWorkItemId}
           onClose={() => setModalWorkItemId(null)}
+          onAction={runWorkItemAction}
         />
       ) : null}
+      {newEntryValues ? (
+        <TimeEntryModal
+          date={todayIsoDate()}
+          initialValues={newEntryValues}
+          onClose={() => setNewEntryValues(null)}
+        />
+      ) : null}
+      <AlertDialog
+        open={pendingDelete !== null}
+        onOpenChange={(open) => !open && setPendingDelete(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this backlog item?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {pendingDelete && pendingDelete.subitemCount > 0
+                ? `"${pendingDelete.title}" and its ${pendingDelete.subitemCount} ${pendingDelete.subitemCount === 1 ? "subitem" : "subitems"} will be deleted. This can't be undone.`
+                : `"${pendingDelete?.title ?? ""}" will be deleted. This can't be undone.`}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction variant="danger" onClick={confirmDeleteWorkItem}>
+              Delete
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
       {isCreateTaskModalOpen ? (
         <BacklogTaskModal onClose={() => setIsCreateTaskModalOpen(false)} />
       ) : null}

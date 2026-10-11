@@ -1,7 +1,6 @@
 import type { LocalWorkItem, LocalWorkItemDraft } from "@/domain/local-state";
 import type { WorkItemPatch } from "@/domain/backlog/work-item-transitions";
 import { getDirectChildWorkItems } from "@/domain/backlog/work-item-hierarchy";
-import { buildWorkItemTimerComment } from "@/features/backlog/work-item-timer-comment";
 
 export interface BacklogTaskEditorFields {
   title: string;
@@ -265,14 +264,6 @@ export function buildBacklogTaskDraft(
     taskId: fields.taskId || undefined,
     ...estimates,
   };
-}
-
-export function buildManualTimeEntryNote(
-  note: string,
-  title: string,
-  sourceId?: string,
-) {
-  return note.trim() || buildWorkItemTimerComment(title, sourceId);
 }
 
 export function collectBlockedParentIds(

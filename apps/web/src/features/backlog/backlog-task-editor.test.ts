@@ -3,7 +3,6 @@ import type { LocalWorkItem } from "@/domain/local-state";
 import {
   buildBacklogTaskDraft,
   buildBacklogTaskPatch,
-  buildManualTimeEntryNote,
   collectBlockedParentIds,
   createBacklogTaskEditorFields,
   validateBacklogTaskEditor,
@@ -147,13 +146,6 @@ describe("backlog task editor", () => {
       projectId: "project-1",
       taskId: "task-1",
     });
-  });
-
-  it("uses explicit time notes and otherwise falls back to the task reference", () => {
-    expect(buildManualTimeEntryNote("  Investigation  ", "Task", "123")).toBe(
-      "Investigation",
-    );
-    expect(buildManualTimeEntryNote("", "Task", "123")).toContain("Task");
   });
 
   it("blocks the edited task and all descendants from parent selection", () => {

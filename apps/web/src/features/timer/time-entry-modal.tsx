@@ -23,13 +23,25 @@ import type { TimeEntryActionId } from "@/domain/actions/object-actions";
 import { useTimeEntryActions } from "@/features/time/time-entry-actions";
 import type { ProjectTaskSelection } from "@/features/projects/project-task-picker";
 import { TimeEntryFields } from "@/features/time/time-entry-fields";
+import { syncBacklogWorkItemToSource } from "@/features/backlog/work-item-source-sync";
 import { useLocalProjects, useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
+
+/** Prefills a new entry, for example from a task's or backlog item's New entry… action. */
+export interface TimeEntryModalInitialValues {
+  projectId?: string;
+  taskId?: string;
+  note?: string;
+  /** Links the new entry or timer to a backlog item, whose estimates then follow it. */
+  workItemId?: string;
+}
 
 interface TimeEntryModalProps {
   date: string;
   entryId?: string;
   timerId?: string;
+  /** Used only for a new entry. Read once when the dialog opens. */
+  initialValues?: TimeEntryModalInitialValues;
   onClose: () => void;
 }
 
@@ -37,6 +49,7 @@ export function TimeEntryModal({
   date,
   entryId,
   timerId,
+  initialValues,
   onClose,
 }: TimeEntryModalProps) {
   const state = useLocalState();
@@ -56,6 +69,9 @@ export function TimeEntryModal({
     [entryId, state.timesheetEntries],
   );
   const entryDate = editingEntry?.localDate ?? editingTimer?.localDate ?? date;
+  // Captured on open so a parent re-render cannot reset the draft.
+  const [newEntryValues] = useState(initialValues);
+  const workItemId = newEntryValues?.workItemId;
   const runningDurationMs = editingTimer
     ? editingTimer.accumulatedDurationMs +
       Math.max(0, now - editingTimer.startedAt)
@@ -88,13 +104,13 @@ export function TimeEntryModal({
 
   useEffect(() => {
     const fields = createTimeEntryEditorFields(
-      editingTimer ?? editingEntry ?? undefined,
+      editingTimer ?? editingEntry ?? newEntryValues,
     );
     setProjectId(fields.projectId);
     setTaskId(fields.taskId);
     setNote(fields.note);
     if (!editingTimer) setDurationHours(fields.durationHours);
-  }, [editingEntry, editingTimer]);
+  }, [editingEntry, editingTimer, newEntryValues]);
 
   useEffect(() => {
     if (editingTimer)
@@ -115,7 +131,18 @@ export function TimeEntryModal({
     if (editingEntry) {
       localStore.updateTimesheetEntry(editingEntry._id, editor.values);
     } else {
-      localStore.saveManualTimeEntry({ ...editor.values, localDate: date });
+      localStore.saveManualTimeEntry({
+        ...editor.values,
+        localDate: date,
+        workItemId,
+      });
+      // Logged time changes the backlog item's estimates, so push them to its source.
+      const workItem = workItemId
+        ? state.workItems.find((item) => item._id === workItemId)
+        : undefined;
+      if (workItem) {
+        syncBacklogWorkItemToSource(workItem);
+      }
     }
     onClose();
   }
@@ -123,7 +150,11 @@ export function TimeEntryModal({
   /** Starts a timer from a new entry's draft. Saved entries use Continue instead. */
   function handleStartTimer() {
     if (editor.durationMs === null) return;
-    localStore.startTimer({ localDate: entryDate, ...editor.metadata });
+    localStore.startTimer({
+      localDate: entryDate,
+      ...editor.metadata,
+      workItemId,
+    });
     onClose();
   }
 

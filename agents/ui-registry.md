@@ -33,6 +33,9 @@ This registry captures reusable visual patterns already present in Ajour. Update
 - Immediate on/off settings use `Switch` from `apps/web/src/components/ui/switch.tsx`; labels describe the action as Activate or Deactivate plus the capability name.
 - Reorderable tables and navigation lists use `apps/web/src/lib/table-drag.ts` for consistent mouse/touch thresholds, cancellation, row movement, and drag-preview positioning.
 - Saved time entries share `features/time/time-entry-fields.tsx`. Day hosts it inline; Week hosts it in a shadcn dialog. Entry actions come from `domain/actions/object-actions.ts` and render through `components/object-actions-menu.tsx` as a right-click menu and a "…" button.
+- Projects, tasks and backlog items use the same pattern. Project rows in the project sidebar, the archived list and the project header; task rows; and backlog rows, the backlog inline editor and the mobile item dialog all show their kind's action set. Archive and Restore act at once. Backlog Delete asks for confirmation and states the subitem count.
+- Logging time from a task or backlog item goes through New entry…, which opens `features/timer/time-entry-modal.tsx` prefilled with `initialValues`. The backlog has no inline hours field. Backlog rows keep the play button as the Start entry shortcut.
+- The narrow view always shows the "…" on task and backlog rows. The 48px project rail hides it; right-click on the rail and the project header "…" cover projects there.
 - On mobile, backlog add and filter actions use a compact vertical pair of
   icon-only floating controls at the bottom right. Keep add as the lower primary
   action, open the filter menu upward, preserve safe-area spacing, and reserve
