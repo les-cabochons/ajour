@@ -1,4 +1,4 @@
-import type { LocalProjectTask } from "@/domain/local-state";
+import type { LocalProjectTask, PinnedTaskSlot } from "@/domain/local-state";
 import {
   formatSignedDurationHoursInput,
   parseSignedHoursInput,
@@ -17,19 +17,25 @@ export interface ProjectTaskEditorFields {
   budget: string;
   /** Signed hours text, such as "-1:30". Empty means no adjustment. */
   adjustment: string;
+  /** The pinned task slot. Undefined means no number key. */
+  pinnedSlot: PinnedTaskSlot | undefined;
 }
 
-/** What Save writes. `undefined` budget or adjustment clears the saved value. */
+/**
+ * What Save writes. `undefined` budget, adjustment or slot clears the saved
+ * value. A slot another task holds moves to this one.
+ */
 export interface ProjectTaskValues {
   name: string;
   billable: boolean;
   budgetMs: number | undefined;
   adjustmentMs: number | undefined;
+  pinnedSlot: PinnedTaskSlot | undefined;
 }
 
 type SavedTask = Pick<
   LocalProjectTask,
-  "name" | "billable" | "budgetMs" | "adjustmentMs"
+  "name" | "billable" | "budgetMs" | "adjustmentMs" | "pinnedSlot"
 >;
 
 /** What a draft means right now: values to save, field errors, and whether Save is allowed. */
@@ -75,6 +81,7 @@ export function createProjectTaskEditorFields(
       typeof task?.adjustmentMs === "number"
         ? formatSignedDurationHoursInput(task.adjustmentMs)
         : "",
+    pinnedSlot: task?.pinnedSlot,
   };
 }
 
@@ -124,12 +131,19 @@ export function evaluateProjectTaskEditor(
   const values =
     nameError || budgetMs === null || adjustmentMs === null
       ? null
-      : { name, billable: fields.billable, budgetMs, adjustmentMs };
+      : {
+          name,
+          billable: fields.billable,
+          budgetMs,
+          adjustmentMs,
+          pinnedSlot: fields.pinnedSlot,
+        };
   const hasChanges =
     fields.name.trim() !== seeded.name.trim() ||
     fields.billable !== seeded.billable ||
     fields.budget.trim() !== seeded.budget ||
-    fields.adjustment.trim() !== seeded.adjustment;
+    fields.adjustment.trim() !== seeded.adjustment ||
+    fields.pinnedSlot !== seeded.pinnedSlot;
 
   return {
     isNew: !original,

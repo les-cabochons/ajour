@@ -35,9 +35,11 @@ import {
   NarrowSettingsButton,
 } from "@/features/layout/narrow-titlebar";
 import { TimeEntryEditorPopover } from "@/features/time/time-entry-editor-popover";
+import type { NewTimeEntryValues } from "@/features/time/time-entry-editor-form";
 import { TimeEntryModal } from "@/features/timer/time-entry-modal";
 import { formatClockDuration } from "@/domain/time/duration";
 import { getLocalProjectDisplayName } from "@/domain/local-state";
+import { findPinnedTask } from "@/domain/projects/project-transitions";
 import { getConnectorsOverview, syncConnectorConnection } from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
 import {
@@ -332,6 +334,8 @@ function GlobalTimerBar() {
   const isNarrowView = useIsNarrowView();
   const [now, setNow] = useState(() => Date.now());
   const [editor, setEditor] = useState<TitlebarEditor>(null);
+  /** The project and task a new entry starts with, such as a pinned task. */
+  const [newEntryValues, setNewEntryValues] = useState<NewTimeEntryValues>();
   const [dayTotalsOpen, setDayTotalsOpen] = useState(false);
   const dayTotalsAnchorRef = useRef<HTMLDivElement>(null);
 
@@ -339,12 +343,35 @@ function GlobalTimerBar() {
   const today = todayIsoDate();
   const weekDates = useMemo(() => getIsoWeekDates(today), [today]);
   const newEntryTarget = useMemo(
-    () => ({ kind: "create" as const, localDate: today }),
-    [today],
+    () => ({
+      kind: "create" as const,
+      localDate: today,
+      initialValues: newEntryValues,
+    }),
+    [today, newEntryValues],
   );
 
-  // N off the Time pages. The Time page's own N opens its side panel instead.
-  useShortcut("entry.new", () => setEditor("new"), "app");
+  function openNewEntry(values?: NewTimeEntryValues) {
+    setNewEntryValues(values);
+    setEditor("new");
+  }
+
+  // N and the pinned task digits off the Time pages. The Time page's own
+  // handlers open its side panel instead.
+  useShortcut("entry.new", () => openNewEntry(), "app");
+  useShortcut(
+    "pinned.new-entry",
+    ({ digit }) => {
+      const pinned = digit && findPinnedTask(projects, digit);
+      if (pinned) {
+        openNewEntry({
+          projectId: pinned.project._id,
+          taskId: pinned.task._id,
+        });
+      }
+    },
+    "app",
+  );
 
   // Stop or Discard from another surface closes the running entry's editor.
   useEffect(() => {
@@ -450,7 +477,7 @@ function GlobalTimerBar() {
           <button
             type="button"
             className="quick-timer-group-button"
-            onClick={() => setEditor("new")}
+            onClick={() => openNewEntry()}
             title="Create time entry"
             aria-label="Create time entry"
           >
@@ -460,7 +487,7 @@ function GlobalTimerBar() {
           <TimeEntryEditorPopover
             target={newEntryTarget}
             open={editor === "new"}
-            onOpenChange={(open) => setEditor(open ? "new" : null)}
+            onOpenChange={(open) => (open ? openNewEntry() : setEditor(null))}
             triggerLabel="Create time entry"
             triggerClassName="quick-timer-group-button"
           >
@@ -545,6 +572,7 @@ function GlobalTimerBar() {
         <TimeEntryModal
           date={today}
           timerId={editor === "running" ? (currentTimer?._id ?? "") : undefined}
+          initialValues={editor === "new" ? newEntryValues : undefined}
           onClose={handleEditorClose}
         />
       ) : null}

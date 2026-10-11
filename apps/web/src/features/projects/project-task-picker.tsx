@@ -22,6 +22,7 @@ import {
 } from "@/components/ui/popover";
 import type { LocalProject } from "@/domain/local-state";
 import { getLocalProjectDisplayName } from "@/domain/local-state";
+import { PinnedSlotBadge } from "@/features/projects/pinned-slot";
 import {
   getProjectTaskBillableValueLabel,
   isProjectTaskBillable,
@@ -272,6 +273,9 @@ export function ProjectTaskPicker({
                               {getProjectLabel(project)}
                             </span>
                           </span>
+                          {task.pinnedSlot ? (
+                            <PinnedSlotBadge slot={task.pinnedSlot} />
+                          ) : null}
                           <span
                             className={cn(
                               "shrink-0 text-[11px] font-normal",
@@ -356,6 +360,9 @@ export function ProjectTaskPicker({
                           <span className="min-w-0 flex-1 truncate">
                             {task.name}
                           </span>
+                          {task.pinnedSlot ? (
+                            <PinnedSlotBadge slot={task.pinnedSlot} />
+                          ) : null}
                           <span
                             className={cn(
                               "shrink-0 text-[11px] font-normal",

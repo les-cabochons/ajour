@@ -61,8 +61,15 @@ export function TimeEntryEditorPopover({
       >
         {target ? (
           <TimeEntryEditorForm
-            // A switch to another running entry seeds a fresh draft.
-            key={target.kind === "running" ? target.timer._id : target.kind}
+            // A switch to another running entry, or a new entry for another
+            // pinned task, seeds a fresh draft.
+            key={
+              target.kind === "running"
+                ? target.timer._id
+                : target.kind === "create"
+                  ? `create-${target.initialValues?.taskId ?? ""}`
+                  : target.kind
+            }
             target={target}
             titleAs={PopoverTitle}
             onClose={() => onOpenChange(false)}

@@ -1,19 +1,32 @@
 import { describe, expect, it } from "vitest";
 import {
   SHORTCUTS,
+  blocksDigitShortcuts,
   blocksSingleKeyShortcuts,
   filterShortcuts,
   formatAriaKeyShortcuts,
   formatShortcutKeys,
   getShortcut,
+  isDigitChord,
   matchesChord,
   resolveShortcut,
+  type ShortcutChord,
   type ShortcutKeyEvent,
 } from "./shortcuts";
+
+/** A number key on the top row. `key` is what the layout types, such as "!" with Shift. */
+function pressDigit(
+  code: string,
+  key: string,
+  modifiers: Partial<ShortcutKeyEvent> = {},
+) {
+  return press(key, { code, ...modifiers });
+}
 
 function press(key: string, modifiers: Partial<ShortcutKeyEvent> = {}) {
   return {
     key,
+    code: "",
     metaKey: false,
     ctrlKey: false,
     altKey: false,
@@ -66,6 +79,8 @@ describe("shortcut registry", () => {
       "⌘B",
       "⌘K",
       "?",
+      "1 to 0",
+      "⇧1 to ⇧0",
     ]);
     expect(new Set(SHORTCUTS.map((shortcut) => shortcut.id)).size).toBe(
       SHORTCUTS.length,
@@ -73,12 +88,15 @@ describe("shortcut registry", () => {
   });
 
   it("never uses the first key of a sequence as a shortcut on its own", () => {
+    const keyOf = (chord: ShortcutChord) =>
+      isDigitChord(chord) ? undefined : chord;
     const sequenceStarts = SHORTCUTS.filter(
       (shortcut) => shortcut.keys.length > 1,
-    ).map((shortcut) => shortcut.keys[0]!.key);
+    ).map((shortcut) => keyOf(shortcut.keys[0]!)?.key);
     const singleKeys = SHORTCUTS.filter(
-      (shortcut) => shortcut.keys.length === 1 && !shortcut.keys[0]!.mod,
-    ).map((shortcut) => shortcut.keys[0]!.key);
+      (shortcut) =>
+        shortcut.keys.length === 1 && !keyOf(shortcut.keys[0]!)?.mod,
+    ).map((shortcut) => keyOf(shortcut.keys[0]!)?.key);
 
     expect(sequenceStarts.filter((key) => singleKeys.includes(key))).toEqual(
       [],
@@ -215,5 +233,67 @@ describe("blocksSingleKeyShortcuts", () => {
     expect(blocksSingleKeyShortcuts(element("TR"))).toBe(false);
     expect(blocksSingleKeyShortcuts(element("BODY"))).toBe(false);
     expect(blocksSingleKeyShortcuts(null)).toBe(false);
+  });
+});
+
+describe("pinned task digits", () => {
+  function resolveDigit(event: ShortcutKeyEvent) {
+    const resolution = resolveShortcut(SHORTCUTS, [], event, "mac");
+    return resolution.kind === "action"
+      ? { id: resolution.shortcut.id, digit: resolution.digit }
+      : resolution;
+  }
+
+  it("opens a new entry on a digit and starts on Shift+digit", () => {
+    expect(resolveDigit(pressDigit("Digit3", "3"))).toEqual({
+      id: "pinned.new-entry",
+      digit: "3",
+    });
+    expect(resolveDigit(pressDigit("Digit0", ")", { shiftKey: true }))).toEqual(
+      { id: "pinned.start", digit: "0" },
+    );
+  });
+
+  it("matches the physical key, whatever the layout types", () => {
+    // French AZERTY types "&" on the 1 key and needs Shift for the digit.
+    expect(resolveDigit(pressDigit("Digit1", "&"))).toEqual({
+      id: "pinned.new-entry",
+      digit: "1",
+    });
+    expect(resolveDigit(pressDigit("Digit1", "1", { shiftKey: true }))).toEqual(
+      { id: "pinned.start", digit: "1" },
+    );
+  });
+
+  it("ignores the numeric keypad and modified digits", () => {
+    expect(resolveDigit(pressDigit("Numpad1", "1"))).toEqual({
+      kind: "none",
+    });
+    expect(resolveDigit(pressDigit("Digit1", "1", { metaKey: true }))).toEqual({
+      kind: "none",
+    });
+    expect(resolveDigit(pressDigit("Digit1", "¡", { altKey: true }))).toEqual({
+      kind: "none",
+    });
+  });
+
+  it("starts the pinned task on Shift+6 even where it types ?", () => {
+    // Canadian French layouts type "?" with Shift+6.
+    expect(resolveDigit(pressDigit("Digit6", "?", { shiftKey: true }))).toEqual(
+      { id: "pinned.start", digit: "6" },
+    );
+    // US layouts type "?" with Shift+Slash, which still opens the list.
+    expect(resolveDigit(pressDigit("Slash", "?", { shiftKey: true }))).toEqual({
+      id: "app.shortcuts",
+      digit: undefined,
+    });
+  });
+
+  it("stays quiet while focus is on a Week Grid cell", () => {
+    expect(
+      blocksDigitShortcuts(element("BUTTON", { inside: ["data-grid-cell"] })),
+    ).toBe(true);
+    expect(blocksDigitShortcuts(element("BUTTON"))).toBe(false);
+    expect(blocksDigitShortcuts(null)).toBe(false);
   });
 });

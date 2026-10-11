@@ -32,6 +32,7 @@ import {
   type TimeEntryActionTarget,
 } from "@/features/time/time-entry-actions";
 import { TimeEntryFields } from "@/features/time/time-entry-fields";
+import { useOpenEntryEditor } from "@/lib/entry-editor-presence";
 import { useLocalProjects, useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 import { getTimerDurationsMs } from "@/lib/timer-totals";
@@ -168,6 +169,8 @@ export function TimeEntryEditorForm({
   // A blocked save or switch shows its reason until the user changes a field.
   const [commitError, setCommitError] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
+  // Pinned task digits do nothing while any entry editor is on screen.
+  useOpenEntryEditor();
   const editor = evaluateTimeEntryEditor(fields, {
     original,
     allowEmptyDuration: target.kind === "create",

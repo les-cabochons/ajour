@@ -5,6 +5,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { formatDurationHoursInput } from "@/domain/time/duration";
+import { PinnedSlotField } from "@/features/projects/pinned-slot";
 import type {
   ProjectTaskEditorFields,
   ProjectTaskEditorState,
@@ -12,7 +13,8 @@ import type {
 import { cn } from "@/lib/utils";
 
 /**
- * The form for creating and editing a task: name, billable, budget and adjustment.
+ * The form for creating and editing a task: name, billable, budget, adjustment
+ * and the pinned slot.
  * It follows the entry editor's rules. Save: the Save button, Enter in a text field,
  * or Cmd/Ctrl+Enter anywhere in the form. Escape, Cancel or × discard the draft.
  *
@@ -24,6 +26,7 @@ export function ProjectTaskEditorForm({
   editor,
   showNameError,
   projectName,
+  taskId,
   trackedMs,
   onFieldsChange,
   onSave,
@@ -36,6 +39,8 @@ export function ProjectTaskEditorForm({
   /** A new task hides "Enter a task name." until Save or a switch is blocked by it. */
   showNameError: boolean;
   projectName: string;
+  /** The saved task. Absent for a new task. */
+  taskId?: string;
   /** Time logged on a saved task. Absent for a new task. */
   trackedMs?: number;
   onFieldsChange: (patch: Partial<ProjectTaskEditorFields>) => void;
@@ -161,6 +166,12 @@ export function ProjectTaskEditorForm({
             ) : null}
           </Field>
         </div>
+        <PinnedSlotField
+          taskName={fields.name}
+          taskId={taskId}
+          slot={fields.pinnedSlot}
+          onChange={(pinnedSlot) => onFieldsChange({ pinnedSlot })}
+        />
         {trackedMs !== undefined ? (
           <p className="text-xs text-muted-foreground">
             Tracked{" "}

@@ -1,4 +1,5 @@
 import { useNavigate } from "@tanstack/react-router";
+import { findPinnedTask } from "@/domain/projects/project-transitions";
 import { selectMostRecentTimesheetEntry } from "@/domain/time/timesheet-entry";
 import { localStore } from "@/lib/local-store";
 import { useShortcut } from "@/lib/shortcut-handlers";
@@ -13,9 +14,9 @@ const ENTRY_ID_ATTRIBUTE = "data-entry-id";
 
 /**
  * The app-wide handlers for the global shortcuts in `lib/shortcuts.ts`. The Time
- * page registers its own N and T, which win while it is mounted; these run
- * everywhere else. N elsewhere opens the titlebar's new entry popover, so the
- * titlebar registers it. `selectedTimeDate` is the day the titlebar shows, which
+ * page registers its own N, T and pinned task digits, which win while it is
+ * mounted; these run everywhere else. N and the plain digits elsewhere open the
+ * titlebar's new entry popover, so the titlebar registers them. `selectedTimeDate` is the day the titlebar shows, which
  * "G then T" opens, like the sidebar's Time link.
  */
 export function useGlobalShortcuts(selectedTimeDate: string) {
@@ -58,6 +59,23 @@ export function useGlobalShortcuts(selectedTimeDate: string) {
         state.timesheetEntries.some((entry) => entry._id === entryId)
       ) {
         localStore.continueTimesheetEntry(entryId);
+      }
+    },
+    "app",
+  );
+
+  useShortcut(
+    "pinned.start",
+    ({ digit }) => {
+      const pinned =
+        digit && findPinnedTask(localStore.snapshot().projects, digit);
+      if (pinned) {
+        // Like Start entry on the task: today, saving any running entry first.
+        localStore.startTimer({
+          projectId: pinned.project._id,
+          taskId: pinned.task._id,
+          accumulatedDurationMs: 0,
+        });
       }
     },
     "app",

@@ -7,15 +7,35 @@
  * handlers that run them live in `lib/shortcut-handlers.tsx`.
  */
 
+// Type-only, so this module stays free of runtime imports: the desktop menu
+// tests load it outside the web app's path aliases.
+import type { PinnedTaskSlot } from "@/domain/local-state";
+
 export type ShortcutPlatform = "mac" | "other";
 
 /**
  * One key press. `key` is a lowercase letter or the character the key types,
  * such as "[" or "?". `mod` is Cmd on macOS and Ctrl elsewhere.
  */
-export interface ShortcutChord {
+export interface KeyChord {
   key: string;
   mod?: boolean;
+}
+
+/**
+ * Any number key from 1 to 0, with or without Shift. It matches on
+ * `event.code` (Digit1 to Digit0), because Shift+digit types a symbol that
+ * changes with the keyboard layout, and some layouts need Shift for the digit.
+ */
+export interface DigitChord {
+  digit: true;
+  shift?: boolean;
+}
+
+export type ShortcutChord = KeyChord | DigitChord;
+
+export function isDigitChord(chord: ShortcutChord): chord is DigitChord {
+  return "digit" in chord;
 }
 
 /** Where a shortcut works: anywhere in the app, or only on the Time page. */
@@ -37,7 +57,9 @@ export type ShortcutActionId =
   | "app.settings"
   | "app.toggle-sidebar"
   | "app.command-palette"
-  | "app.shortcuts";
+  | "app.shortcuts"
+  | "pinned.new-entry"
+  | "pinned.start";
 
 export interface ShortcutDefinition {
   id: ShortcutActionId;
@@ -146,12 +168,33 @@ export const SHORTCUTS: readonly ShortcutDefinition[] = [
     scope: "global",
     keys: [{ key: "?" }],
   },
+  // resolveShortcut prefers these over "?" when both match a key press.
+  {
+    id: "pinned.new-entry",
+    label: "New entry for a pinned task",
+    scope: "global",
+    keys: [{ digit: true }],
+  },
+  {
+    id: "pinned.start",
+    label: "Start a pinned task",
+    scope: "global",
+    keys: [{ digit: true, shift: true }],
+  },
 ];
 
 export type ShortcutKeyEvent = Pick<
   KeyboardEvent,
-  "key" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey"
+  "key" | "code" | "metaKey" | "ctrlKey" | "altKey" | "shiftKey"
 >;
+
+/** The pinned slot a key event's number key stands for, from Digit1 to Digit0. */
+export function getPressedDigit(
+  event: Pick<KeyboardEvent, "code">,
+): PinnedTaskSlot | undefined {
+  // Every digit from 0 to 9 is a slot.
+  return /^Digit(\d)$/.exec(event.code)?.[1] as PinnedTaskSlot | undefined;
+}
 
 const LETTER = /^[a-z]$/;
 
@@ -166,8 +209,8 @@ export function isModifierPress(
 /**
  * Whether a key event presses `chord`. Alt and the other platform's modifier
  * never match, so Ctrl+B on macOS keeps its text binding. Letters ignore caps
- * lock but not Shift, which pinned tasks use. Symbols such as "?" or "[" ignore
- * Shift, because keyboard layouts need it to type them.
+ * lock but not Shift. Symbols such as "?" or "[" ignore Shift, because keyboard
+ * layouts need it to type them. Digit chords check Shift themselves.
  */
 export function matchesChord(
   event: ShortcutKeyEvent,
@@ -175,12 +218,20 @@ export function matchesChord(
   platform: ShortcutPlatform,
 ) {
   const otherModifier = platform === "mac" ? event.ctrlKey : event.metaKey;
+  const chordMod = !isDigitChord(chord) && Boolean(chord.mod);
   if (
     event.altKey ||
     otherModifier ||
-    isModifierPress(event, platform) !== Boolean(chord.mod)
+    isModifierPress(event, platform) !== chordMod
   ) {
     return false;
+  }
+
+  if (isDigitChord(chord)) {
+    return (
+      getPressedDigit(event) !== undefined &&
+      event.shiftKey === Boolean(chord.shift)
+    );
   }
 
   if (LETTER.test(chord.key) || chord.mod) {
@@ -191,11 +242,24 @@ export function matchesChord(
 }
 
 function sameChord(left: ShortcutChord, right: ShortcutChord) {
+  if (isDigitChord(left) || isDigitChord(right)) {
+    return (
+      isDigitChord(left) &&
+      isDigitChord(right) &&
+      Boolean(left.shift) === Boolean(right.shift)
+    );
+  }
+
   return left.key === right.key && Boolean(left.mod) === Boolean(right.mod);
 }
 
 export type ShortcutResolution =
-  | { kind: "action"; shortcut: ShortcutDefinition }
+  | {
+      kind: "action";
+      shortcut: ShortcutDefinition;
+      /** The number key pressed, for digit shortcuts. */
+      digit?: PinnedTaskSlot;
+    }
   | { kind: "pending"; prefix: readonly ShortcutChord[] }
   | { kind: "none" };
 
@@ -217,11 +281,19 @@ export function resolveShortcut(
       matchesChord(event, shortcut.keys[prefix.length]!, platform),
   );
 
-  const complete = candidates.find(
+  const completes = candidates.filter(
     (shortcut) => shortcut.keys.length === prefix.length + 1,
   );
+  // Shift+digit always starts a pinned task, even where it types "?", such as
+  // Shift+6 on Canadian French layouts. "?" still works on other layouts.
+  const complete =
+    completes.find((shortcut) => isDigitChord(shortcut.keys[prefix.length]!)) ??
+    completes[0];
   if (complete) {
-    return { kind: "action", shortcut: complete };
+    const lastChord = complete.keys[prefix.length]!;
+    return isDigitChord(lastChord)
+      ? { kind: "action", shortcut: complete, digit: getPressedDigit(event) }
+      : { kind: "action", shortcut: complete };
   }
 
   const longer = candidates[0];
@@ -273,12 +345,39 @@ export function blocksSingleKeyShortcuts(target: unknown) {
   );
 }
 
-/** The labels to show for each chord, such as ["G", "T"], ["⌘B"] or ["Ctrl+B"]. */
+/**
+ * Week Grid cells carry this attribute. A focused cell keeps the digits for
+ * its hours, so pinned task digits do nothing there, even on a cell that does
+ * not edit in place. See "Pinned tasks" in the UX spec.
+ */
+export const GRID_CELL_ATTRIBUTE = "data-grid-cell";
+
+/**
+ * True when the digit shortcuts must stay quiet for this focus target, on top
+ * of `blocksSingleKeyShortcuts`: focus is on a Week Grid cell. The handler also
+ * skips digits while an entry editor is open (`lib/entry-editor-presence.ts`).
+ */
+export function blocksDigitShortcuts(target: unknown) {
+  return (
+    isGuardedElement(target) &&
+    target.closest(`[${GRID_CELL_ATTRIBUTE}]`) !== null
+  );
+}
+
+/**
+ * The labels to show for each chord, such as ["G", "T"], ["⌘B"] or ["Ctrl+B"].
+ * A digit chord reads "1 to 0", or "⇧1 to ⇧0" with Shift.
+ */
 export function formatShortcutKeys(
   shortcut: ShortcutDefinition,
   platform: ShortcutPlatform,
 ) {
   return shortcut.keys.map((chord) => {
+    if (isDigitChord(chord)) {
+      const shift = chord.shift ? (platform === "mac" ? "⇧" : "Shift+") : "";
+      return `${shift}1 to ${shift}0`;
+    }
+
     const key = chord.key.toUpperCase();
     if (!chord.mod) {
       return key;
@@ -311,14 +410,15 @@ export function filterShortcuts(
 
 /**
  * The `aria-keyshortcuts` value for a one-chord shortcut, such as "Meta+B".
- * The attribute cannot describe sequences, so they return undefined.
+ * The attribute cannot describe sequences or digit ranges, so they return
+ * undefined.
  */
 export function formatAriaKeyShortcuts(
   shortcut: ShortcutDefinition,
   platform: ShortcutPlatform,
 ) {
   const [chord, ...rest] = shortcut.keys;
-  if (!chord || rest.length > 0) {
+  if (!chord || rest.length > 0 || isDigitChord(chord)) {
     return undefined;
   }
 
