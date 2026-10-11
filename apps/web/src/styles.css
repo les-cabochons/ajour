@@ -621,6 +621,35 @@
   cursor: default;
 }
 
+.weekly-tray-entry-row {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.weekly-tray-entry-row > .weekly-tray-entry {
+  flex: 1;
+}
+
+/* The "…" button of an object's action set: shown on hover and focus, kept visible
+   while its menu is open, and always shown in the narrow view. */
+.weekly-tray-entry-row .object-actions-button,
+.weekly-entry-card .object-actions-button {
+  width: 22px;
+  height: 22px;
+  opacity: 0;
+  transition: opacity 140ms var(--ease);
+}
+
+.weekly-tray-entry-row:hover .object-actions-button,
+.weekly-tray-entry-row:focus-within .object-actions-button,
+.weekly-entry-card:hover .object-actions-button,
+.weekly-entry-card:focus-within .object-actions-button,
+.object-actions-button[data-popup-open] {
+  opacity: 1;
+}
+
 .weekly-days-grid {
   display: grid;
   min-height: 0;
@@ -831,47 +860,6 @@
 
 .weekly-entry-drag-preview strong {
   font-family: var(--font-mono);
-}
-
-.entry-actions-popover {
-  width: auto;
-  min-width: 190px;
-  gap: 0.5rem;
-  padding: 0.5rem;
-}
-
-.entry-actions-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.15rem;
-}
-
-.entry-actions-list > button {
-  width: 100%;
-  justify-content: flex-start;
-}
-
-.entry-actions-calendar-header {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  align-items: start;
-  gap: 0.5rem;
-  padding: 0.25rem 0.25rem 0;
-}
-
-.entry-actions-calendar-header [data-slot="popover-title"] {
-  font-size: 0.9rem;
-}
-
-.entry-actions-calendar-header [data-slot="popover-description"] {
-  font-size: 0.72rem;
-}
-
-.entry-actions-calendar-footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 0.5rem;
-  padding: 0 0.25rem 0.25rem;
 }
 
 .entry-edit-dropdown-content {
@@ -6334,7 +6322,7 @@
   .entries-table tbody tr:hover .entry-row-actions,
   .entries-table tbody tr:focus-within .entry-row-actions,
   .entry-row-actions:hover,
-  .entry-row-actions.is-confirming {
+  .entry-row-actions:has([data-popup-open]) {
     opacity: 1;
     pointer-events: auto;
     transform: translate(0, -50%);
@@ -7806,5 +7794,23 @@
     left: auto;
     right: 0;
     transform-origin: top right;
+  }
+}
+
+/* Narrow view: the "…" button is always shown. Day rows keep only it, without Continue. */
+@media (max-width: 1023px) {
+  .object-actions-button {
+    opacity: 1 !important;
+  }
+
+  .entries-table tbody tr .entry-row-actions {
+    display: inline-flex;
+    opacity: 1;
+    pointer-events: auto;
+    transform: translate(0, -50%);
+  }
+
+  .entries-table tbody tr .entry-row-actions .entry-row-action-play {
+    display: none;
   }
 }

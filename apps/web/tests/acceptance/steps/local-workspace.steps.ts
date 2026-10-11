@@ -270,13 +270,13 @@ When("I open the Projects workspace", async ({ page }) => {
   await page.goto("/projects");
 });
 
-When("I start the timer on the second entry", async ({ page }) => {
+When("I continue the second entry", async ({ page }) => {
   const secondEntryRow = page
     .getByRole("row")
     .filter({ hasText: "Second task" });
   await secondEntryRow.hover();
   await secondEntryRow
-    .getByRole("button", { name: "Switch timer to this entry" })
+    .getByRole("button", { name: "Continue and stop the running entry" })
     .click();
 });
 

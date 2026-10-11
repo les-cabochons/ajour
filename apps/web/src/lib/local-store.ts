@@ -5,6 +5,7 @@ import {
   type CaptureSettings,
   type TeamSettings,
 } from "@ajour/shared";
+import { todayIsoDate } from "@/lib/utils";
 import type {
   ConnectorImportCandidate,
   ConnectorSyncWorkItemUpdate,
@@ -57,7 +58,7 @@ import {
 import {
   cancelTimer as applyCancelTimer,
   normalizeTimer,
-  restartTimesheetEntry as applyRestartTimesheetEntry,
+  continueTimesheetEntry as applyContinueTimesheetEntry,
   saveTimer as applySaveTimer,
   startTimer as applyStartTimer,
   startTimerWithEntry as applyStartTimerWithEntry,
@@ -1171,9 +1172,9 @@ export const localStore = {
       applyMarkTimesheetEntriesSubmitted(state, entryIds, Date.now),
     );
   },
-  restartTimesheetEntry(entryId: string) {
+  continueTimesheetEntry(entryId: string) {
     updateState((state) =>
-      applyRestartTimesheetEntry(state, entryId, {
+      applyContinueTimesheetEntry(state, entryId, todayIsoDate(), {
         createId,
         now: Date.now,
       }),

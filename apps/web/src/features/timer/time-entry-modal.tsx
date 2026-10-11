@@ -18,7 +18,9 @@ import {
   createTimeEntryEditorFields,
   evaluateTimeEntryEditor,
 } from "@/features/time/time-entry-editor";
-import { EntryActionsMenu } from "@/features/time/entry-actions-menu";
+import { ObjectActionsButton } from "@/components/object-actions-menu";
+import type { TimeEntryActionId } from "@/domain/actions/object-actions";
+import { useTimeEntryActions } from "@/features/time/time-entry-actions";
 import type { ProjectTaskSelection } from "@/features/projects/project-task-picker";
 import { TimeEntryFields } from "@/features/time/time-entry-fields";
 import { useLocalProjects, useLocalState } from "@/lib/local-hooks";
@@ -67,6 +69,10 @@ export function TimeEntryModal({
     { original: editingEntry ?? undefined, allowEmptyDuration: true },
   );
   const { canSave, isTimerMode } = editor;
+  const entryActions = useTimeEntryActions({
+    onEdit: () => undefined,
+    onAfterAction: onClose,
+  });
   const title = editingTimer
     ? "Running timer"
     : editingEntry
@@ -114,14 +120,10 @@ export function TimeEntryModal({
     onClose();
   }
 
+  /** Starts a timer from a new entry's draft. Saved entries use Continue instead. */
   function handleStartTimer() {
     if (editor.durationMs === null) return;
-    localStore.startTimer({
-      localDate: entryDate,
-      ...editor.metadata,
-      accumulatedDurationMs: editingEntry ? editor.durationMs : undefined,
-      entryId: editingEntry?._id,
-    });
+    localStore.startTimer({ localDate: entryDate, ...editor.metadata });
     onClose();
   }
 
@@ -132,18 +134,31 @@ export function TimeEntryModal({
     onClose();
   }
 
-  function duplicateTo(localDate: string) {
-    const values = editor.relocationValues(localDate);
-    if (!editingEntry || !values) return;
-    localStore.duplicateTimesheetEntry(editingEntry._id, values);
+  /** Saves draft changes, then continues the entry's work (see Continue in GLOSSARY.md). */
+  function handleContinue() {
+    if (!editingEntry || !editor.canSave || !editor.values) return;
+    localStore.updateTimesheetEntry(editingEntry._id, editor.values);
+    localStore.continueTimesheetEntry(editingEntry._id);
     onClose();
   }
 
-  function moveTo(localDate: string) {
-    const values = editor.relocationValues(localDate);
-    if (!editingEntry || !values) return;
-    localStore.moveTimesheetEntry(editingEntry._id, values);
-    onClose();
+  const actionTarget = editingTimer
+    ? { kind: "running" as const, timerId: editingTimer._id }
+    : editingEntry
+      ? { kind: "entry" as const, entry: editingEntry }
+      : null;
+
+  function handleEntryAction(actionId: TimeEntryActionId) {
+    if (!actionTarget) return;
+    if (actionId === "stop") {
+      handleStopTimer();
+    } else if (actionId === "continue") {
+      handleContinue();
+    } else {
+      entryActions.runAction(actionTarget, actionId, {
+        resolveValues: editor.relocationValues,
+      });
+    }
   }
 
   return (
@@ -151,13 +166,16 @@ export function TimeEntryModal({
       <DialogContent className="max-w-xl gap-5">
         <DialogHeader className="flex-row items-start justify-between gap-3 pr-9">
           <DialogTitle>{title}</DialogTitle>
-          {editingEntry && !editingTimer ? (
-            <EntryActionsMenu
-              currentDate={editingEntry.localDate}
-              disabled={!canSave}
-              onDuplicate={() => duplicateTo(editingEntry.localDate)}
-              onDuplicateTo={duplicateTo}
-              onMoveTo={moveTo}
+          {actionTarget ? (
+            <ObjectActionsButton
+              actions={entryActions.getActions(actionTarget, {
+                isEditing: true,
+                invalidDraftReason: canSave
+                  ? undefined
+                  : "Enter a valid duration first",
+              })}
+              onAction={handleEntryAction}
+              label="Entry actions"
             />
           ) : null}
         </DialogHeader>
@@ -184,10 +202,12 @@ export function TimeEntryModal({
                 type="button"
                 size="sm"
                 variant="danger"
-                onClick={() => {
-                  localStore.deleteTimesheetEntry(editingEntry._id);
-                  onClose();
-                }}
+                onClick={() =>
+                  entryActions.runAction(
+                    { kind: "entry", entry: editingEntry },
+                    "delete",
+                  )
+                }
               >
                 <Trash2 data-icon="inline-start" />
                 Delete
@@ -210,11 +230,17 @@ export function TimeEntryModal({
                 <Button
                   size="sm"
                   variant="outline"
-                  disabled={editor.durationMs === null}
-                  onClick={handleStartTimer}
+                  disabled={
+                    editingEntry ? !canSave : editor.durationMs === null
+                  }
+                  onClick={editingEntry ? handleContinue : handleStartTimer}
                 >
                   <Play data-icon="inline-start" />
-                  {currentTimer ? "Switch timer" : "Start timer"}
+                  {editingEntry
+                    ? "Continue"
+                    : currentTimer
+                      ? "Switch timer"
+                      : "Start timer"}
                 </Button>
                 <Button size="sm" disabled={!canSave} onClick={handleSave}>
                   <Save data-icon="inline-start" />
@@ -224,6 +250,7 @@ export function TimeEntryModal({
             )}
           </div>
         </DialogFooter>
+        {entryActions.dialogs}
       </DialogContent>
     </Dialog>
   );

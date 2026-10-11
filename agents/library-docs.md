@@ -26,7 +26,7 @@ Use this file as the local index for important library choices. Check official d
 ## Web UI Usage
 
 - Feature code should import app controls from `apps/web/src/components/ui`, not directly from Base UI, shadcn internals, or other primitive packages.
-- Base UI is wrapped by local files such as `button.tsx`, `checkbox.tsx`, `dialog.tsx`, `dropdown-menu.tsx`, `input.tsx`, `popover.tsx`, `select.tsx`, `switch.tsx`, and `tabs.tsx`.
+- Base UI is wrapped by local files such as `button.tsx`, `checkbox.tsx`, `dialog.tsx`, `dropdown-menu.tsx`, `context-menu.tsx`, `input.tsx`, `popover.tsx`, `select.tsx`, `switch.tsx`, and `tabs.tsx`.
 - App-specific repeated surfaces live in `apps/web/src/components/app-surface.tsx`.
 - The settings connector form renders plugin fields through `apps/web/src/features/settings/connector-settings-ui.tsx`.
 - Settings exposes installed capabilities through `/settings/plugins`; the catalog owns activation and links to `/settings/plugins/$pluginId`, where connector-specific forms and connection actions live.
@@ -44,7 +44,7 @@ Use this file as the local index for important library choices. Check official d
 - Clock formatting and hours-input parsing: `apps/web/src/domain/time/duration.ts`
 - Timesheet entry creation, editing, deletion, ordering, submission state, and linked estimate adjustments: `apps/web/src/domain/time/timesheet-entry.ts`
 - Timesheet import normalization, conflict detection, draft lifecycle, project/task recovery, and commits: `apps/web/src/domain/time/timesheet-import.ts`
-- Timer hydration, single-active-timer enforcement, start/edit/cancel/save/restart transitions, elapsed duration, and restarted-entry replacement: `apps/web/src/domain/time/timer-transitions.ts`
+- Timer hydration, single-active-timer enforcement, start/edit/cancel/save/continue transitions, elapsed duration, and continued-entry replacement: `apps/web/src/domain/time/timer-transitions.ts`
 - Imported browser review preservation, timeline materialization, dismissals, commits, and rule creation: `apps/web/src/domain/time/timeline-transitions.ts`
 - Project task budgets and consumption: `apps/web/src/domain/projects/task-budget.ts`
 - Project task import normalization: `apps/web/src/domain/projects/task-import.ts`

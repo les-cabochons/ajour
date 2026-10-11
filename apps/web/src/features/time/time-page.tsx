@@ -158,14 +158,6 @@ export function TimePage({ date }: { date: string }) {
     });
   }
 
-  function openWeekEntry(entryId: string) {
-    void navigate({
-      to: "/time/$date",
-      params: { date },
-      search: { entry: entryId, view: "week" } as never,
-    });
-  }
-
   function openWeekNewEntry(localDate: string) {
     void navigate({
       to: "/time/$date",
@@ -182,7 +174,7 @@ export function TimePage({ date }: { date: string }) {
           now={now}
           weekDates={weekDates}
           onNewEntry={openWeekNewEntry}
-          onOpenEntry={openWeekEntry}
+          onOpenEntry={openModal}
           onReturnToDay={() => {
             void navigate({
               to: "/time/$date",
