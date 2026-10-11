@@ -67,7 +67,7 @@ describe("time entry actions", () => {
     expect(continueAction?.hint).toBeUndefined();
   });
 
-  it("disables Edit and relocation inside an editor with an invalid draft", () => {
+  it("disables Edit, Continue and relocation inside an editor with an invalid draft", () => {
     const actions = getTimeEntryActions("saved", {
       isEditing: true,
       invalidDraftReason: "Enter a valid duration first",
@@ -78,6 +78,10 @@ describe("time entry actions", () => {
     );
     expect(
       actions.find((action) => action.id === "duplicate")?.disabledReason,
+    ).toBe("Enter a valid duration first");
+    // Continue saves the draft first, so it needs a valid draft too.
+    expect(
+      actions.find((action) => action.id === "continue")?.disabledReason,
     ).toBe("Enter a valid duration first");
     expect(
       actions.find((action) => action.id === "delete")?.disabledReason,

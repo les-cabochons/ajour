@@ -62,6 +62,8 @@ export function getTimeEntryActions(
       : {
           id: "continue",
           label: "Continue",
+          // Editors save the draft before continuing, so an invalid draft blocks it.
+          disabledReason: options.invalidDraftReason,
           // Continuing today's entry adds time to it; another day's entry starts a new one.
           hint:
             isSubmitted && options.isToday ? MARKS_NOT_SUBMITTED : undefined,
