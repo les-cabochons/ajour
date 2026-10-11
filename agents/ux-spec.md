@@ -69,7 +69,7 @@ Start entry · New entry… · Edit · Add subitem · Open in source · Archive 
 - How Edit opens and where the action set appears inside the editor: [One entry editor for Day and Week](https://github.com/les-cabochons/ajour/issues/14).
 - Which day Start entry and New entry… use from the backlog and tasks: [Running timer editing and empty duration meaning](https://github.com/les-cabochons/ajour/issues/15).
 - What right-click does on a Grid cell, which can hold several entries: see the Week view section.
-- Undo or confirmation for Delete, Discard, Archive and moves: [Undo, confirmation and feedback policy](https://github.com/les-cabochons/ajour/issues/17).
+- Undo or confirmation for Delete, Discard, Archive and moves: see the Feedback section.
 - Keys, palette layout and menu bar menus: [Keyboard model and command palette](https://github.com/les-cabochons/ajour/issues/18).
 
 ## Vocabulary
@@ -199,14 +199,14 @@ Decided in [Running timer editing and empty duration meaning](https://github.com
 - The running entry opens in the same form as every entry. Edit from its menu, or a click on its row or card, opens the side panel in Day and Week. A click on the titlebar's Running pill opens the form in a popover anchored to the pill. The narrow view uses the full-width dialog.
 - The footer reads Cancel · Stop · Save. Save applies the changes and the entry keeps running. Nothing changes until the user saves. The old live-editing popup goes away.
 - Hours shows the time counted so far and stays editable, so the user can correct a late start before saving.
-- Discard follows [Undo, confirmation and feedback policy](https://github.com/les-cabochons/ajour/issues/17).
+- Discard happens at once and shows the Undo toast (see Feedback).
 
 ### Starting
 
 - In a new entry with empty Hours, Save is disabled with "Enter hours, or press Start", and Enter presses Start. Ajour never saves a 0h entry.
 - With Hours filled, Start counts on from that time: typing 0:30 then Start gives a running entry at 0:30.
 - A running entry is always on today. Starting from another day's form starts the entry today, and the form says "Starts today". An entry that runs past midnight stays on the day it started; Move to… changes that.
-- Starting while another entry runs saves the running one and switches, without a prompt. The button reads Switch instead of Start. The feedback message follows [Undo, confirmation and feedback policy](https://github.com/les-cabochons/ajour/issues/17).
+- Starting while another entry runs saves the running one and switches, without a prompt. The button reads Switch instead of Start. The Running pill and the rows show the switch; no message appears.
 - Start entry on tasks and backlog items starts on today, as it does now.
 
 ### Date field
@@ -227,7 +227,7 @@ Decided in [Adding and changing time in the week view](https://github.com/les-ca
   - an empty cell opens a new entry with the row's task and the day filled in,
   - a cell with one entry opens that entry, with an "Add another entry for <day>" button under the form,
   - a cell with several entries lists them, with "Add another entry".
-- Double-click, Enter, or typing a digit on a focused cell edits its hours in place. Enter or Tab saves, Tab moves to the next day, Escape cancels. Clearing the hours of a one-entry cell deletes that entry. Undo or confirmation follows [Undo, confirmation and feedback policy](https://github.com/les-cabochons/ajour/issues/17).
+- Double-click, Enter, or typing a digit on a focused cell edits its hours in place. Enter or Tab saves, Tab moves to the next day, Escape cancels. Clearing the hours of a one-entry cell deletes that entry and shows the Undo toast.
 - A cell with several entries shows its total and a count, such as "3:30 ×2", and never edits in place.
 - The side panel's cell list replaces the old tray in the bottom-left corner.
 - "+ Add row" picks a project or task and shows an empty row. The row disappears when the user leaves the week unless it gets hours. Rows are never saved on their own.
@@ -237,4 +237,54 @@ Decided in [Adding and changing time in the week view](https://github.com/les-ca
 
 - "+ Add" in each column opens a new entry for that day in the side panel.
 - A click on a card opens it in the side panel. Cards keep "…" and right-click with the time entry action set.
-- Dragging a card to another day moves it. Move to… is the keyboard path. Shortcuts come from [Keyboard model and command palette](https://github.com/les-cabochons/ajour/issues/18), and undo after a move follows the feedback policy.
+- Dragging a card to another day moves it. Move to… is the keyboard path. Shortcuts come from [Keyboard model and command palette](https://github.com/les-cabochons/ajour/issues/18), and a move shows the Undo toast.
+
+## Feedback
+
+Decided in [Undo, confirmation and feedback policy](https://github.com/les-cabochons/ajour/issues/17).
+
+### Principle
+
+Feedback appears where the action happened. Toasts are kept to two cases: Undo, and errors from background work that has no place on screen.
+
+### Undo instead of confirmation
+
+These actions happen at once and show a toast with Undo for about 8 seconds. No confirmation dialog.
+
+- Deleting a time entry, or clearing a one-entry Grid cell.
+- Discarding a running entry.
+- Moving an entry to another day, by drag or Move to….
+- Duplicate to… another day. Undo removes the copy. The toast names the day, such as "Duplicated to Thu, Oct 8".
+- Archiving a project, task or backlog item.
+- Deleting a backlog item and its subitems.
+- Deleting a backlog status.
+- Dismissing import drafts.
+
+Undo restores the records as they were before the action. Only the last action can be undone, and only while its toast shows. Cmd+Z (Ctrl+Z) presses Undo while the toast shows and focus is not in a text field. Saved edits have no undo.
+
+### Confirmation
+
+A confirmation dialog stays only for actions that cannot be undone or that reach outside Ajour:
+
+- Uninstalling a plugin.
+- Submitting under the week target.
+- Any future action that writes to Azure DevOps or Jira.
+
+### Success
+
+No success toasts. The result shows where the action happened:
+
+- Submitting a timesheet: the submit flow shows its own result. See [Submit timesheet flow in full and narrow windows](https://github.com/les-cabochons/ajour/issues/24).
+- Imports and exports: the page shows the result inline, such as the file name and counts.
+- A connector sync the user started: the connector shows that it is syncing, then when it last synced.
+- Starting or switching an entry from another page: the Running pill and the row update.
+
+### Errors
+
+- Form mistakes show next to the field, as now.
+- An operation the user started (import, export, sync, plugin install) shows its error inline on that page.
+- Background failures, such as an automatic connector sync, show one error toast per failure that stays until dismissed, and a "Last sync failed" line on that connector in Settings.
+
+### Toasts
+
+Bottom right in a full window, bottom center above the content in the narrow view. At most three, newest on top. Built on the Base UI toast component.
