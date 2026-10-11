@@ -369,7 +369,6 @@ function ProjectDetail({
   metrics,
   taskMetrics,
   editingTaskId,
-  canRunActionRequests,
   onProjectAction,
   onOpenTask,
   onNewTask,
@@ -379,11 +378,6 @@ function ProjectDetail({
   taskMetrics: Map<string, ProjectMetrics>;
   /** The task open in the side panel, highlighted in the list. */
   editingTaskId?: string;
-  /**
-   * False while the task editor still holds another project's draft. Action
-   * requests wait until the page has saved or dropped it.
-   */
-  canRunActionRequests: boolean;
   onProjectAction: (project: LocalProject, actionId: ProjectActionId) => void;
   /** Opens a saved task in the task editor. */
   onOpenTask: (task: LocalProjectTask) => void;
@@ -458,27 +452,6 @@ function ProjectDetail({
   useEffect(() => {
     taskDragStateRef.current = taskDragState;
   }, [taskDragState]);
-
-  // The command palette asks for actions that need this page, such as Edit or New
-  // task, with `?action=<id>` for the project or `&target=<task id>` for a task.
-  // Only enabled actions run.
-  useActionRequest(({ action, target }) => {
-    if (!target) {
-      const requested = projectActions.find(
-        (item) => item.id === action && !item.disabledReason,
-      );
-      if (requested) onProjectAction(project, requested.id);
-      return;
-    }
-
-    const task = project.tasks.find((item) => item._id === target);
-    const requested = task
-      ? getTaskActions(project, task).find(
-          (item) => item.id === action && !item.disabledReason,
-        )
-      : undefined;
-    if (task && requested) runTaskAction(task, requested.id);
-  }, canRunActionRequests);
 
   const clearTaskPointerSession = useCallback(() => {
     const session = taskPointerSessionRef.current;
@@ -1432,6 +1405,56 @@ export function ProjectsPage() {
     selectedProject,
   ]);
 
+  // The command palette sends its project and task commands here while this page
+  // is open, so they pass the same guards as the page's own controls: a valid
+  // task draft is saved first, and an invalid one blocks and shows its error.
+  // Object actions use `?action=<id>&target=<project id>`, or `&target=<task
+  // id>&parent=<project id>` for a task. Only enabled actions run.
+  useActionRequest(({ action, target, parent }) => {
+    switch (action) {
+      case "create-project":
+        openCreateProjectModal();
+        return;
+      case "open-archive":
+        goToProject(null);
+        return;
+      case "open-project":
+        if (allProjects.some((project) => project._id === target)) {
+          goToProject(target ?? null);
+        }
+        return;
+    }
+
+    const project = allProjects.find((item) => item._id === (parent ?? target));
+    if (!project) return;
+
+    if (!parent) {
+      const requested = getProjectActions(project).find(
+        (item) => item.id === action && !item.disabledReason,
+      );
+      if (requested) runProjectAction(project, requested.id);
+      return;
+    }
+
+    const task = project.tasks.find((item) => item._id === target);
+    const requested = task
+      ? getTaskActions(project, task).find(
+          (item) => item.id === action && !item.disabledReason,
+        )
+      : undefined;
+    // Start entry and New entry… run in the palette, so only these reach the page.
+    if (!task || !requested) return;
+    if (requested.id === "edit") openTaskEditor(project._id, task);
+    if (requested.id === "archive") {
+      localStore.archiveProjectTask(project._id, task._id);
+    }
+    if (requested.id === "restore") {
+      localStore.unarchiveProjectTask(project._id, task._id);
+    }
+    // The handlers are declared after the early return below, so a request
+    // waits until the page renders them.
+  }, Boolean(teamState?.team));
+
   if (!teamState?.team) return null;
 
   const closeProjectModal = () => {
@@ -1523,6 +1546,19 @@ export function ProjectsPage() {
   };
 
   /** Runs `leaveProject` before a sidebar link changes project, or cancels the link. */
+  /** Goes to a project, or to the archive with `null`, after `leaveProject`. */
+  const goToProject = (projectId: string | null) => {
+    if (projectId === selectedProjectId || !leaveProject()) {
+      return;
+    }
+
+    void navigate(
+      projectId
+        ? { to: "/projects/$projectId", params: { projectId } }
+        : { to: "/projects/archive" },
+    );
+  };
+
   const handleLeaveProjectClick = (
     event: React.MouseEvent,
     nextProjectId: string | null,
@@ -1842,9 +1878,6 @@ export function ProjectsPage() {
                 taskMetricsByProject.get(selectedProject._id) ?? new Map()
               }
               editingTaskId={visibleTaskEditor?.taskId}
-              canRunActionRequests={
-                !taskEditor || taskEditor.projectId === selectedProject._id
-              }
               onProjectAction={runProjectAction}
               onOpenTask={(task) => openTaskEditor(selectedProject._id, task)}
               onNewTask={() => openTaskEditor(selectedProject._id)}

@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import {
   Command,
   CommandDialog,
@@ -55,12 +55,16 @@ export function openCommandPalette() {
  * task or a backlog item lists its actions.
  *
  * Start entry and New entry… run here, so they work from any page. Actions that
- * need a page's editor or confirmation go to that page as an action request
- * (`lib/action-request.ts`). Commands run once the palette has closed and given
- * focus back, so shortcuts that read focus, such as Continue, see the row.
+ * need a page's editor, confirmation or navigation guard go to that page as an
+ * action request (`lib/action-request.ts`). While the Projects page is open,
+ * every project and task command goes to it, so its task draft is saved first
+ * or blocks the command, as with the page's own controls. Commands run once the
+ * palette has closed and given focus back, so shortcuts that read focus, such
+ * as Continue, see the row.
  */
 export function CommandPalette() {
   const navigate = useNavigate();
+  const router = useRouter();
   const state = useLocalState();
   const isNarrowView = useIsNarrowView();
   const shortcutRunner = useShortcutRunner();
@@ -145,6 +149,26 @@ export function CommandPalette() {
     } as never);
   }
 
+  /**
+   * Runs a project or task command on the Projects page. An open page gets the
+   * request on its current route and applies its draft guard. Otherwise no
+   * draft exists: `fallback` runs, or the request goes to `projectId`.
+   */
+  function requestProjectsPage(
+    request: ActionRequest,
+    projectId?: string,
+    fallback?: () => void,
+  ) {
+    const { pathname } = router.state.location;
+    if (pathname === "/projects" || pathname.startsWith("/projects/")) {
+      void navigate({ to: ".", search: request as never });
+    } else if (fallback) {
+      fallback();
+    } else if (projectId) {
+      requestPageAction("/projects/$projectId", request, projectId);
+    }
+  }
+
   function run(command: PaletteCommand) {
     const snapshot = localStore.snapshot();
     switch (command.kind) {
@@ -157,13 +181,27 @@ export function CommandPalette() {
       case "show":
         return;
       case "open-project":
-        void navigate({
-          to: "/projects/$projectId",
-          params: { projectId: command.projectId },
-        });
+        requestProjectsPage(
+          { action: "open-project", target: command.projectId },
+          undefined,
+          () =>
+            void navigate({
+              to: "/projects/$projectId",
+              params: { projectId: command.projectId },
+            }),
+        );
+        return;
+      case "open-archive":
+        requestProjectsPage(
+          { action: "open-archive" },
+          undefined,
+          () => void navigate({ to: "/projects/archive" }),
+        );
         return;
       case "create-project":
-        setIsCreatingProject(true);
+        requestProjectsPage({ action: "create-project" }, undefined, () =>
+          setIsCreatingProject(true),
+        );
         return;
       case "time-entry": {
         const entry = snapshot.timesheetEntries.find(
@@ -193,17 +231,19 @@ export function CommandPalette() {
             taskId: command.taskId,
           });
         } else {
-          requestPageAction(
-            "/projects/$projectId",
-            { action: command.actionId, target: command.taskId },
+          requestProjectsPage(
+            {
+              action: command.actionId,
+              target: command.taskId,
+              parent: command.projectId,
+            },
             command.projectId,
           );
         }
         return;
       case "project":
-        requestPageAction(
-          "/projects/$projectId",
-          { action: command.actionId },
+        requestProjectsPage(
+          { action: command.actionId, target: command.projectId },
           command.projectId,
         );
         return;
@@ -329,17 +369,19 @@ export function CommandPalette() {
                     onSelect={() => choose(item)}
                     className={cn(item.destructive && "text-destructive")}
                   >
-                    <span className="min-w-0 flex-1 truncate">
-                      {item.label}
-                      {item.disabledReason ? (
-                        <span className="text-muted-foreground">
-                          {" · "}
-                          {item.disabledReason}
-                        </span>
-                      ) : null}
-                      {item.detail ? (
-                        <span className="ml-2 text-xs font-normal text-muted-foreground">
-                          {item.detail}
+                    <span className="flex min-w-0 flex-1 flex-col">
+                      <span className="truncate">
+                        {item.label}
+                        {item.detail ? (
+                          <span className="ml-2 text-xs font-normal text-muted-foreground">
+                            {item.detail}
+                          </span>
+                        ) : null}
+                      </span>
+                      {/* Like the "…" menus: why it is disabled, else what it changes. */}
+                      {item.disabledReason || item.hint ? (
+                        <span className="text-xs font-normal text-muted-foreground">
+                          {item.disabledReason ?? item.hint}
                         </span>
                       ) : null}
                     </span>

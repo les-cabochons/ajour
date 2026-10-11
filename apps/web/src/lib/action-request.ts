@@ -2,20 +2,21 @@ import { useEffect, useLayoutEffect, useRef } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 
 /**
- * Search params that ask a page to run one of its object actions, such as
+ * Search params that ask a page to run one of its actions, such as
  * `/backlog?action=edit&target=<item id>`. The command palette uses them for
- * actions that need the page's editor, confirmation or undo, so each action
- * keeps one runner. `target` names the object when the route does not.
+ * actions that need the page's editor, confirmation or navigation guard, so
+ * each action keeps one runner. `target` names the object when the route does
+ * not, and `parent` the object that holds it, such as a task's project.
  */
 export interface ActionRequest {
   action: string;
   target?: string;
+  parent?: string;
 }
 
 /**
  * Runs `handler` once for each action request in the URL, then removes the
- * request from the URL. `ready` defers the request while the page settles, for
- * example while it saves a draft that belongs to the previous route.
+ * request from the URL. `ready` defers the request until the page can run it.
  *
  * The URL is outside input: the handler must look the target up and check the
  * action against the object's current action set before running it.
@@ -27,6 +28,7 @@ export function useActionRequest(
   const search = useSearch({ strict: false }) as {
     action?: unknown;
     target?: unknown;
+    parent?: unknown;
   };
   const navigate = useNavigate();
   const handlerRef = useRef(handler);
@@ -34,6 +36,7 @@ export function useActionRequest(
   const handledKeyRef = useRef<string | null>(null);
   const action = typeof search.action === "string" ? search.action : undefined;
   const target = typeof search.target === "string" ? search.target : undefined;
+  const parent = typeof search.parent === "string" ? search.parent : undefined;
 
   useLayoutEffect(() => {
     handlerRef.current = handler;
@@ -45,7 +48,7 @@ export function useActionRequest(
       return;
     }
 
-    const key = `${action}\n${target ?? ""}`;
+    const key = [action, target, parent].join("\n");
     if (!ready || handledKeyRef.current === key) {
       return;
     }
@@ -57,9 +60,10 @@ export function useActionRequest(
         ...previous,
         action: undefined,
         target: undefined,
+        parent: undefined,
       })) as never,
       replace: true,
     });
-    handlerRef.current({ action, target });
-  }, [action, navigate, ready, target]);
+    handlerRef.current({ action, target, parent });
+  }, [action, navigate, parent, ready, target]);
 }

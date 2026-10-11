@@ -50,6 +50,7 @@ export type PaletteCommand =
   | { kind: "navigate"; to: string }
   | { kind: "show"; view: PaletteView }
   | { kind: "open-project"; projectId: string }
+  | { kind: "open-archive" }
   | { kind: "create-project" }
   | { kind: "time-entry"; entryId: string; actionId: TimeEntryActionId }
   | { kind: "running-entry"; timerId: string; actionId: TimeEntryActionId }
@@ -535,7 +536,7 @@ function navigationItems(input: PaletteInput): PaletteItem[] {
       id: "navigate:/projects/archive",
       label: "Archived projects",
       detail: "Projects",
-      command: { kind: "navigate", to: "/projects/archive" },
+      command: { kind: "open-archive" },
     },
     ...input.settingsPages.map((page) => ({
       id: `navigate:${page.to}`,
