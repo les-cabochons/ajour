@@ -290,6 +290,78 @@ describe("weekly time projection", () => {
     expect(row.acceptsNewEntries).toBe(true);
   });
 
+  it("keeps a resumed entry in its old cell after its task changes while running", () => {
+    const projectsWithTwoTasks = [
+      {
+        ...projects[0]!,
+        tasks: [
+          ...projects[0]!.tasks,
+          {
+            _id: "task-2",
+            name: "Review",
+            status: "active" as const,
+            createdAt: 1,
+          },
+        ],
+      },
+    ];
+    const resumed = {
+      _id: "resumed",
+      localDate: "2026-08-10",
+      projectId: "project-1",
+      taskId: "task-1",
+      label: "Build",
+      durationMs: 4,
+      sourceBlockIds: [],
+      committedAt: 1,
+    };
+    // The entry was resumed, then the running entry moved to task-2.
+    const running = {
+      entryId: "resumed",
+      localDate: "2026-08-10",
+      projectId: "project-1",
+      taskId: "task-2",
+    };
+    const projection = projectWeeklyTime({
+      capacityTargets,
+      entries: [resumed],
+      projects: projectsWithTwoTasks,
+      runningTime: { ...running, durationMs: 3 },
+      weekDates,
+    });
+
+    const oldRow = projection.gridRows.find(
+      (row) => row.rowKey === "project-1::task-1",
+    )!;
+    const newRow = projection.gridRows.find(
+      (row) => row.rowKey === "project-1::task-2",
+    )!;
+    expect(oldRow.dayEntries[0]?.map((entry) => entry._id)).toEqual([
+      "resumed",
+    ]);
+    expect(oldRow.dayTotalsMs[0]).toBe(4);
+    expect(oldRow.runningLocalDate).toBeUndefined();
+    expect(newRow.dayEntries[0]).toEqual([]);
+    expect(newRow.runningLocalDate).toBe("2026-08-10");
+
+    expect(
+      selectWeeklyGridCell({
+        entries: [resumed],
+        localDate: "2026-08-10",
+        rowKey: "project-1::task-1",
+        running,
+      }),
+    ).toEqual({ entries: [resumed], hasRunning: false });
+    expect(
+      selectWeeklyGridCell({
+        entries: [resumed],
+        localDate: "2026-08-10",
+        rowKey: "project-1::task-2",
+        running,
+      }),
+    ).toEqual({ entries: [], hasRunning: true });
+  });
+
   it("selects one cell the same way the Grid rows group it", () => {
     const entries = [
       {

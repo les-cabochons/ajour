@@ -91,8 +91,9 @@ function getWeeklyRunningRowKey(
 
 /**
  * Lists what one Grid cell holds: its saved entries, and whether the running entry
- * is in it. The running entry's saved part is left out of `entries`, as in
- * `WeeklyGridRow.dayEntries`.
+ * is in it. When it is, the saved entry it continues is left out of `entries`, as in
+ * `WeeklyGridRow.dayEntries`. A running entry whose project or task changed shows
+ * in its new row, so its saved entry stays listed in the old one.
  */
 export function selectWeeklyGridCell({
   entries,
@@ -105,18 +106,19 @@ export function selectWeeklyGridCell({
   rowKey: string;
   running?: WeeklyRunningPlacement | null;
 }) {
+  const hasRunning = Boolean(
+    running &&
+    running.localDate === localDate &&
+    getWeeklyRunningRowKey(running, entries) === rowKey,
+  );
   return {
     entries: entries.filter(
       (entry) =>
         entry.localDate === localDate &&
-        entry._id !== running?.entryId &&
-        getWeeklyGridRowKey(entry) === rowKey,
+        getWeeklyGridRowKey(entry) === rowKey &&
+        !(hasRunning && entry._id === running?.entryId),
     ),
-    hasRunning: Boolean(
-      running &&
-      running.localDate === localDate &&
-      getWeeklyRunningRowKey(running, entries) === rowKey,
-    ),
+    hasRunning,
   };
 }
 
@@ -204,6 +206,9 @@ export function projectWeeklyTime({
     gridGroups.set(key, group);
   }
 
+  const runningRowKey = runningTime
+    ? getWeeklyRunningRowKey(runningTime, entries)
+    : undefined;
   const gridRows = Array.from(gridGroups.values()).map(
     (group): WeeklyGridRow => {
       const first = group[0]!;
@@ -224,11 +229,16 @@ export function projectWeeklyTime({
           first.projectId,
           first.taskId,
         ),
+        // The running entry's saved part leaves only the cell its time shows in.
         dayEntries: weekDates.map((localDate) =>
           group.filter(
             (entry) =>
               entry.localDate === localDate &&
-              entry._id !== runningTime?.entryId,
+              !(
+                rowKey === runningRowKey &&
+                localDate === runningTime?.localDate &&
+                entry._id === runningTime.entryId
+              ),
           ),
         ),
         dayTotalsMs,
@@ -280,12 +290,15 @@ export function projectWeeklyTime({
   // resumed entry's counted time was corrected below its saved time, so it always
   // applies to the row that already holds the saved entry. Only positive time
   // opens a row of its own.
-  if (runningTime && runningDayIndex !== undefined) {
+  if (
+    runningTime &&
+    runningRowKey !== undefined &&
+    runningDayIndex !== undefined
+  ) {
     const { projectName, taskName } = describeRow(
       runningTime.projectId,
       runningTime.taskId,
     );
-    const runningRowKey = getWeeklyRunningRowKey(runningTime, entries);
     const existingRow = gridRows.find((row) => row.rowKey === runningRowKey);
 
     if (existingRow) {

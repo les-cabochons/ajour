@@ -77,11 +77,16 @@ export function TimePage({ date }: { date: string }) {
     search.timer && currentTimer?._id === search.timer
       ? currentTimer
       : undefined;
-  // The Week Grid cell the side panel came from. It lives in memory, not in the URL,
-  // and only counts while the Grid shows.
+  // Grid cells live in memory, not in the URL, and only count while the Grid shows
+  // their week. `gridCell` is the cell the editor came from; it only matters while
+  // the URL opens an editor, so Back past the editor closes the panel.
+  // `listedCell` is a cell with several entries, listed in the panel.
   const [gridCell, setGridCell] = useState<WeekGridCell | null>(null);
-  const panelCell =
-    isWeekView && preferences.weeklyTimeViewStyle === "grid" ? gridCell : null;
+  const [listedCell, setListedCell] = useState<WeekGridCell | null>(null);
+  const showsGrid = isWeekView && preferences.weeklyTimeViewStyle === "grid";
+  const inShownWeek = (cell: WeekGridCell | null) =>
+    showsGrid && cell && weekDates.includes(cell.localDate) ? cell : null;
+  const panelCell = inShownWeek(gridCell);
   const editingEntry =
     !search.timer && search.entry && search.entry !== "new"
       ? state.timesheetEntries.find((entry) => entry._id === search.entry)
@@ -109,7 +114,16 @@ export function TimePage({ date }: { date: string }) {
     ? (editingTimer.entryId ?? `running-${editingTimer._id}`)
     : editingEntry?._id;
   // A Grid cell with several entries lists them in the panel instead of the editor.
-  const showsCellEntries = panelCell !== null && editorTarget === null;
+  const panelListedCell = editorTarget ? null : inShownWeek(listedCell);
+  const showsCellEntries = panelListedCell !== null;
+  const showsEditor = editorTarget !== null;
+
+  // Once the URL opens an editor, the listed cell is done, so Back past the editor
+  // closes the panel. It clears after the editor shows, so the panel never empties
+  // between the click and the navigation.
+  useEffect(() => {
+    if (showsEditor) setListedCell(null);
+  }, [showsEditor]);
 
   useEffect(() => {
     if (!currentTimer) {
@@ -164,9 +178,14 @@ export function TimePage({ date }: { date: string }) {
     return editorFormRef.current?.commitBeforeSwitch() ?? true;
   }
 
+  function clearGridCells() {
+    setGridCell(null);
+    setListedCell(null);
+  }
+
   function goToDate(nextDate: string) {
     if (!leaveEditorDraft()) return;
-    setGridCell(null);
+    clearGridCells();
     navigate({
       to: "/time/$date",
       params: { date: nextDate },
@@ -188,7 +207,7 @@ export function TimePage({ date }: { date: string }) {
 
   function returnToDayView() {
     if (!leaveEditorDraft()) return;
-    setGridCell(null);
+    clearGridCells();
     void navigate({
       to: "/time/$date",
       params: { date },
@@ -202,7 +221,7 @@ export function TimePage({ date }: { date: string }) {
 
   function closeEditor() {
     editorDraftRef.current = null;
-    setGridCell(null);
+    clearGridCells();
     void navigate({
       to: "/time/$date",
       params: { date },
@@ -251,11 +270,11 @@ export function TimePage({ date }: { date: string }) {
 
   /** Lists a Grid cell's entries in the side panel, after saving the open draft. */
   function openCellEntries(cell: WeekGridCell) {
-    if (showsCellEntries && isSameWeekGridCell(cell, gridCell)) return;
+    if (isSameWeekGridCell(cell, panelListedCell)) return;
     if (!leaveEditorDraft()) return;
 
     editorDraftRef.current = null;
-    setGridCell(cell);
+    setListedCell(cell);
     if (search.entry || search.timer) {
       void navigate({
         to: "/time/$date",
@@ -321,7 +340,7 @@ export function TimePage({ date }: { date: string }) {
             now={now}
             weekDates={weekDates}
             activeEntryId={activeEntryId}
-            activeCell={panelCell}
+            activeCell={editorTarget ? panelCell : panelListedCell}
             onClosePanel={closePanel}
             onNewEntry={(localDate) => openEditor({}, localDate)}
             onOpenCellEntries={openCellEntries}
@@ -396,15 +415,15 @@ export function TimePage({ date }: { date: string }) {
             </div>
           ) : null}
         </SidePanel>
-      ) : showsCellEntries && panelCell ? (
+      ) : panelListedCell ? (
         <SidePanel
-          contentKey={`cell-${panelCell.rowKey}-${panelCell.localDate}`}
+          contentKey={`cell-${panelListedCell.rowKey}-${panelListedCell.localDate}`}
           className="time-entry-side-panel"
           aria-label="Cell entries"
         >
           <WeekGridCellPanel
-            key={`${panelCell.rowKey}-${panelCell.localDate}`}
-            cell={panelCell}
+            key={`${panelListedCell.rowKey}-${panelListedCell.localDate}`}
+            cell={panelListedCell}
             now={now}
             onClose={closeEditor}
             onOpen={openEditor}
