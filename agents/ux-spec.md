@@ -121,4 +121,36 @@ Decided in [App shell and collapsible sidebar](https://github.com/les-cabochons/
 
 ### Narrow view
 
-At narrow-view widths there is no rail and no sidebar, including the Projects list. The threshold and the navigation that replaces the sidebars belong to [Narrow view](https://github.com/les-cabochons/ajour/issues/13).
+Below 768px there is no rail and no sidebar, including the Projects list. See the Narrow view section.
+
+## Narrow view
+
+Decided in [Narrow view](https://github.com/les-cabochons/ajour/issues/13). Prototype: branch `prototype/narrow-view`, variant C. The narrow view is a first-class layout, also used on desktop as a small companion window.
+
+### Breakpoints
+
+| Width           | Layout                                          |
+| --------------- | ----------------------------------------------- |
+| 1100px and up   | Desktop, sidebar expanded or rail by preference |
+| 768px to 1099px | Desktop, 52px rail                              |
+| Below 768px     | Narrow view, no rail and no sidebars            |
+
+Today's splits at 640px and 1023px go away.
+
+### Navigation
+
+- The titlebar holds a segmented switcher for Time, Backlog and Projects. The active section shows its label, the others show only their icon.
+- The running entry pill, the totals pill and New entry stay in the titlebar.
+- A cog button at the trailing edge opens Settings. A search button may join it later. See [Keyboard model and command palette](https://github.com/les-cabochons/ajour/issues/18).
+- Settings opens on a list of its pages. Each page has a back arrow to that list.
+
+### Jobs and views
+
+- The narrow view covers the running entry, logging and fixing entries by day, browsing and starting backlog items, looking up projects, changing settings, and submitting a timesheet. The submit flow belongs to [Submit timesheet flow in full and narrow windows](https://github.com/les-cabochons/ajour/issues/24).
+- Week is not available. The view menu does not offer it, and a Week link opens Day with a short note that Week needs a wider window.
+
+### Actions and editing
+
+- Rows always show the "…" button. On touch screens, a long press opens the same menu.
+- Page actions that floated over the content, such as the Backlog filter and "+", move into the page header.
+- Editing an entry uses the full-width entry dialog. Its behavior comes from [One entry editor for Day and Week](https://github.com/les-cabochons/ajour/issues/14).
