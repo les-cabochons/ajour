@@ -8,8 +8,10 @@ import {
   useState,
   type ReactNode,
 } from "react";
+import type { PinnedTaskSlot } from "@/domain/local-state";
 import {
   SHORTCUTS,
+  blocksDigitShortcuts,
   blocksSingleKeyShortcuts,
   getShortcutPlatform,
   isModifierPress,
@@ -27,7 +29,12 @@ const SEQUENCE_TIMEOUT_MS = 1500;
  */
 export type ShortcutHandlerLayer = "app" | "page";
 
-type ShortcutHandler = () => void;
+/** What the key press carried beyond its action: the number key, for digit shortcuts. */
+export interface ShortcutPress {
+  digit?: PinnedTaskSlot;
+}
+
+type ShortcutHandler = (press: ShortcutPress) => void;
 
 interface RegisteredHandler {
   layer: ShortcutHandlerLayer;
@@ -63,8 +70,8 @@ const ShortcutContext = createContext<ShortcutHandlerRegistry | null>(null);
 /**
  * Listens for every registered shortcut on the window and runs the handler that
  * `useShortcut` registered for it. Single keys stay quiet while focus is in a
- * text field, menu or dialog. A shortcut with no mounted handler does nothing
- * and leaves the key event alone.
+ * text field, menu or dialog, and digits stay quiet in the entry editor. A
+ * shortcut with no mounted handler does nothing and leaves the key event alone.
  */
 export function ShortcutProvider({ children }: { children: ReactNode }) {
   const [registry] = useState(() => new ShortcutHandlerRegistry());
@@ -103,10 +110,17 @@ export function ShortcutProvider({ children }: { children: ReactNode }) {
       }
 
       if (resolution.kind === "action") {
+        if (
+          resolution.digit !== undefined &&
+          blocksDigitShortcuts(document.activeElement)
+        ) {
+          return;
+        }
+
         const handler = registry.find(resolution.shortcut.id);
         if (handler) {
           event.preventDefault();
-          handler.run();
+          handler.run({ digit: resolution.digit });
         }
       }
     }
@@ -143,7 +157,11 @@ export function useShortcut(
   });
 
   useEffect(
-    () => registry?.register(id, { layer, run: () => handlerRef.current() }),
+    () =>
+      registry?.register(id, {
+        layer,
+        run: (press) => handlerRef.current(press),
+      }),
     [id, layer, registry],
   );
 }

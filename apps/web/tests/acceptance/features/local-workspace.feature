@@ -156,6 +156,31 @@ Feature: Open the local time workspace
     When I rename task "111 000" to "111 final" and save
     Then the project lists task "111 final"
 
+  Scenario: Pin tasks to number keys
+    Given I have projects with searchable tasks
+    When I open project "aaa xyz"
+    And I assign key "3" to task "111 000"
+    And I assign key "3" to task "222 000"
+    Then key "3" is saved on task "222 000" only
+    When I press the "Digit3" key
+    Then a new entry opens for "[AAA] aaa xyz · 222 000"
+    When I press the "Escape" key
+    Then the new entry form is closed
+    When I press the "Shift+Digit3" key
+    Then a running entry counts on task "222 000" of project "aaa xyz"
+    When I clear the key of task "222 000"
+    Then no task is pinned to key "3"
+
+  Scenario: Number keys do nothing in the entry editor
+    Given I have projects with searchable tasks
+    When I open project "aaa xyz"
+    And I assign key "3" to task "111 000"
+    And I open Time from the app sidebar
+    Then the Time workspace is visible
+    When I press the "n" key
+    And I press "Digit3" on the entry editor's Cancel button
+    Then the entry editor has no project or task
+
   Scenario: Continue a second entry while the first one runs
     Given I have two saved entries with a timer running on the first
     When I continue the second entry

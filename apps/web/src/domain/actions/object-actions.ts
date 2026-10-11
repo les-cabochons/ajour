@@ -123,10 +123,16 @@ export function getProjectActions(project: {
 }
 
 export type TaskActionId =
-  "start-entry" | "new-entry" | "edit" | "archive" | "restore";
+  | "start-entry"
+  | "new-entry"
+  | "edit"
+  | "assign-shortcut"
+  | "archive"
+  | "restore";
 
 /**
- * Lists a task's actions: Start entry · New entry… · Edit · Archive/Restore.
+ * Lists a task's actions:
+ * Start entry · New entry… · Edit · Assign shortcut… · Archive/Restore.
  * An archived project blocks every action, including Restore of the task.
  */
 export function getTaskActions(
@@ -143,6 +149,11 @@ export function getTaskActions(
     { id: "start-entry", label: "Start entry", disabledReason: workReason },
     { id: "new-entry", label: "New entry…", disabledReason: workReason },
     { id: "edit", label: "Edit", disabledReason: workReason },
+    {
+      id: "assign-shortcut",
+      label: "Assign shortcut…",
+      disabledReason: workReason,
+    },
     isTaskArchived
       ? { id: "restore", label: "Restore", disabledReason: projectReason }
       : {

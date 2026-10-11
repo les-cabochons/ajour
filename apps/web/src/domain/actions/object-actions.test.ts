@@ -141,6 +141,7 @@ describe("task actions", () => {
       "start-entry",
       "new-entry",
       "edit",
+      "assign-shortcut",
       "archive",
     ]);
     expect(disabledReasons(actions)).toEqual({});
@@ -154,12 +155,14 @@ describe("task actions", () => {
       "start-entry",
       "new-entry",
       "edit",
+      "assign-shortcut",
       "restore",
     ]);
     expect(disabledReasons(actions)).toEqual({
       "start-entry": "Restore the task first",
       "new-entry": "Restore the task first",
       edit: "Restore the task first",
+      "assign-shortcut": "Restore the task first",
     });
   });
 
@@ -168,6 +171,7 @@ describe("task actions", () => {
       "start-entry": "Restore the project first",
       "new-entry": "Restore the project first",
       edit: "Restore the project first",
+      "assign-shortcut": "Restore the project first",
       archive: "Restore the project first",
     });
     expect(

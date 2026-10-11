@@ -5,6 +5,7 @@ import { MessagePanel } from "@/components/app-surface";
 import { DayViewerCard } from "@/components/day-viewer-card";
 import { SidePanel } from "@/components/side-panel";
 import { Button } from "@/components/ui/button";
+import { findPinnedTask } from "@/domain/projects/project-transitions";
 import { formatClockDuration } from "@/domain/time/duration";
 import { SubmitWeekButton } from "@/features/time/submit-week-controls";
 import {
@@ -36,11 +37,13 @@ import { addDaysIsoDate, cn, getIsoWeekDates, todayIsoDate } from "@/lib/utils";
  * The entry to open: `entryId`, the running `timerId`, or a new entry when both are
  * empty. `cell` is the Week Grid cell it came from: a new entry gets the cell's
  * project, task and day, and the panel offers to add another entry to the cell.
+ * `task` fills in a new entry's project and task, as a pinned task's digit does.
  */
 type EntryEditorRequest = {
   entryId?: string;
   timerId?: string;
   cell?: WeekGridCell;
+  task?: { projectId: string; taskId: string };
 };
 
 export function TimePage({ date }: { date: string }) {
@@ -49,6 +52,9 @@ export function TimePage({ date }: { date: string }) {
     entry?: string;
     timer?: string;
     view?: string;
+    /** The project and task a new entry starts with, such as a pinned task. */
+    project?: string;
+    task?: string;
   };
   const state = useLocalState();
   const preferences = useUserPreferences();
@@ -91,6 +97,10 @@ export function TimePage({ date }: { date: string }) {
     !search.timer && search.entry && search.entry !== "new"
       ? state.timesheetEntries.find((entry) => entry._id === search.entry)
       : undefined;
+  const newEntryValues =
+    search.project && search.task
+      ? { projectId: search.project, taskId: search.task }
+      : undefined;
   const editorTarget: TimeEntryEditorTarget | null = editingTimer
     ? { kind: "running", timer: editingTimer }
     : editingEntry
@@ -101,14 +111,15 @@ export function TimePage({ date }: { date: string }) {
             localDate: date,
             initialValues: panelCell
               ? { projectId: panelCell.projectId, taskId: panelCell.taskId }
-              : undefined,
+              : newEntryValues,
           }
         : null;
+  // A new entry for another Grid row or pinned task is a new form, so its key names it.
   const editorKey = editingTimer
     ? `running-${editingTimer._id}`
     : editingEntry
       ? editingEntry._id
-      : `new-${date}${panelCell ? `-${panelCell.rowKey}` : ""}`;
+      : `new-${date}${panelCell ? `-${panelCell.rowKey}` : newEntryValues ? `-${newEntryValues.taskId}` : ""}`;
   // The Day list and Week cards key the running row by its resumed entry, if any.
   const activeEntryId = editingTimer
     ? (editingTimer.entryId ?? `running-${editingTimer._id}`)
@@ -242,9 +253,13 @@ export function TimePage({ date }: { date: string }) {
   ) {
     const entry = request.timerId ? undefined : (request.entryId ?? "new");
     const cell = request.cell ?? null;
+    const task = entry === "new" ? request.task : undefined;
     const isAlreadyOpen = request.timerId
       ? request.timerId === search.timer
-      : !search.timer && entry === search.entry;
+      : !search.timer &&
+        entry === search.entry &&
+        task?.taskId === search.task &&
+        task?.projectId === search.project;
     if (
       isAlreadyOpen &&
       localDate === date &&
@@ -261,6 +276,8 @@ export function TimePage({ date }: { date: string }) {
       search: {
         entry,
         timer: request.timerId,
+        project: task?.projectId,
+        task: task?.taskId,
         view: isWeekView ? "week" : undefined,
       } as never,
       // Switching entries in the panel should not stack history entries.
@@ -303,6 +320,14 @@ export function TimePage({ date }: { date: string }) {
 
   // These win over the app shell's handlers while the Time page is open.
   useShortcut("entry.new", () => openEditor({}));
+  useShortcut("pinned.new-entry", ({ digit }) => {
+    const pinned = digit && findPinnedTask(state.projects, digit);
+    if (pinned) {
+      openEditor({
+        task: { projectId: pinned.project._id, taskId: pinned.task._id },
+      });
+    }
+  });
   useShortcut("time.today", () => {
     if (date !== today) goToDate(today);
   });
@@ -435,6 +460,7 @@ export function TimePage({ date }: { date: string }) {
           date={date}
           entryId={editingEntry?._id}
           timerId={editingTimer?._id}
+          initialValues={newEntryValues}
           initialFields={carriedDraft}
           onFieldsChange={keepEditorDraft}
           onClose={closeEditor}

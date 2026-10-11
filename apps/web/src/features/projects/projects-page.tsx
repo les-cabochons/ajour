@@ -57,6 +57,10 @@ import {
   type LocalProjectTask,
 } from "@/domain/local-state";
 import { openCommandPalette } from "@/features/command-palette/command-palette";
+import {
+  PinnedSlotBadge,
+  PinnedSlotDialog,
+} from "@/features/projects/pinned-slot";
 import { ProjectFormDialog } from "@/features/projects/project-form-dialog";
 import type { ProjectFormValues } from "@/features/projects/project-form";
 import {
@@ -395,6 +399,10 @@ function ProjectDetail({
   const [newEntryTask, setNewEntryTask] = useState<LocalProjectTask | null>(
     null,
   );
+  /** Task whose Assign shortcut… picker is open. */
+  const [shortcutTask, setShortcutTask] = useState<LocalProjectTask | null>(
+    null,
+  );
   const [isImporting, setIsImporting] = useState(false);
   const [importMessage, setImportMessage] = useState<string | null>(null);
   const [importError, setImportError] = useState<string | null>(null);
@@ -597,6 +605,9 @@ function ProjectDetail({
         return;
       case "edit":
         onOpenTask(task);
+        return;
+      case "assign-shortcut":
+        setShortcutTask(task);
         return;
       case "archive":
         offerUndo(localStore.archiveProjectTask(project._id, task._id), {
@@ -930,6 +941,9 @@ function ProjectDetail({
                             <span className="project-task-name">
                               {task.name}
                             </span>
+                            {task.pinnedSlot ? (
+                              <PinnedSlotBadge slot={task.pinnedSlot} />
+                            ) : null}
                             <Badge className="project-task-billable-badge bg-muted">
                               {getProjectTaskBillableValueLabel(task)}
                             </Badge>
@@ -1012,6 +1026,9 @@ function ProjectDetail({
                             <span className="project-task-name">
                               {task.name}
                             </span>
+                            {task.pinnedSlot ? (
+                              <PinnedSlotBadge slot={task.pinnedSlot} />
+                            ) : null}
                             <Badge className="project-task-billable-badge bg-muted">
                               {getProjectTaskBillableValueLabel(task)}
                             </Badge>
@@ -1051,6 +1068,9 @@ function ProjectDetail({
         >
           <div className="project-task-name-cell">
             <span className="project-task-name">{draggedTask.name}</span>
+            {draggedTask.pinnedSlot ? (
+              <PinnedSlotBadge slot={draggedTask.pinnedSlot} />
+            ) : null}
             <Badge className="project-task-billable-badge bg-muted">
               {getProjectTaskBillableValueLabel(draggedTask)}
             </Badge>
@@ -1064,6 +1084,13 @@ function ProjectDetail({
           date={todayIsoDate()}
           initialValues={{ projectId: project._id, taskId: newEntryTask._id }}
           onClose={() => setNewEntryTask(null)}
+        />
+      ) : null}
+      {shortcutTask ? (
+        <PinnedSlotDialog
+          projectId={project._id}
+          task={shortcutTask}
+          onClose={() => setShortcutTask(null)}
         />
       ) : null}
     </div>

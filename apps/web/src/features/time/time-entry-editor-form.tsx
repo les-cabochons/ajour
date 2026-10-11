@@ -346,6 +346,9 @@ export function TimeEntryEditorForm({
   return (
     <div
       ref={rootRef}
+      // Pinned task digits stay quiet while focus is in the form. See
+      // ENTRY_EDITOR_ATTRIBUTE in lib/shortcuts.ts.
+      data-entry-editor=""
       className={cn("flex flex-col gap-4", className)}
       onKeyDown={handleKeyDown}
     >

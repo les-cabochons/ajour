@@ -426,6 +426,132 @@ Then("project {string} is open", async ({ page }, name: string) => {
   await expect(page.getByRole("heading", { name })).toBeVisible();
 });
 
+function taskRow(page: Page, task: string) {
+  return page.getByRole("row").filter({
+    has: page.getByText(task, { exact: true }),
+  });
+}
+
+async function chooseTaskAction(page: Page, task: string, action: string) {
+  await taskRow(page, task)
+    .getByText(task, { exact: true })
+    .click({ button: "right" });
+  await page.getByRole("menuitem", { name: action }).click();
+}
+
+async function readPinnedSlots(page: Page) {
+  const state = await page.evaluate(() =>
+    JSON.parse(window.localStorage.getItem("ajour.local-state.v2") ?? "null"),
+  );
+  return (
+    state.projects as {
+      name: string;
+      tasks: { name: string; pinnedSlot?: string }[];
+    }[]
+  ).flatMap((project) =>
+    project.tasks
+      .filter((task) => task.pinnedSlot)
+      .map((task) => [project.name, task.name, task.pinnedSlot]),
+  );
+}
+
+When(
+  "I assign key {string} to task {string}",
+  async ({ page }, key: string, task: string) => {
+    await chooseTaskAction(page, task, "Assign shortcut…");
+    const picker = page.getByRole("dialog", { name: "Assign shortcut" });
+    await picker
+      .getByRole("group", { name: "Number keys" })
+      // A taken slot's name reads "3, moves from <task>".
+      .getByRole("button", { name: new RegExp(`^${key}(,|$)`) })
+      .click();
+    await expect(picker).toBeHidden();
+    await expect(taskRow(page, task).locator("kbd")).toHaveText(key);
+  },
+);
+
+When("I clear the key of task {string}", async ({ page }, task: string) => {
+  await chooseTaskAction(page, task, "Assign shortcut…");
+  await page
+    .getByRole("dialog", { name: "Assign shortcut" })
+    .getByRole("button", { name: "Clear shortcut" })
+    .click();
+  await expect(taskRow(page, task).locator("kbd")).toHaveCount(0);
+});
+
+Then(
+  "key {string} is saved on task {string} only",
+  async ({ page }, key: string, task: string) => {
+    await expect(taskRow(page, "111 000").locator("kbd")).toHaveCount(0);
+    expect(await readPinnedSlots(page)).toEqual([["aaa xyz", task, key]]);
+  },
+);
+
+Then("no task is pinned to key {string}", async ({ page }, key: string) => {
+  expect(
+    (await readPinnedSlots(page)).filter(([, , slot]) => slot === key),
+  ).toEqual([]);
+});
+
+Then("a new entry opens for {string}", async ({ page }, label: string) => {
+  await expect(
+    page
+      .getByRole("dialog")
+      .filter({ hasText: "New time entry" })
+      .getByRole("button", { name: "Project or task" }),
+  ).toContainText(label);
+});
+
+Then("the new entry form is closed", async ({ page }) => {
+  await expect(
+    page.getByRole("dialog").filter({ hasText: "New time entry" }),
+  ).toHaveCount(0);
+});
+
+Then(
+  "a running entry counts on task {string} of project {string}",
+  async ({ page }, task: string, project: string) => {
+    await expect(page.getByText(`AAA · ${task}`)).toBeVisible();
+    const state = await page.evaluate(() =>
+      JSON.parse(window.localStorage.getItem("ajour.local-state.v2") ?? "null"),
+    );
+    const projectRecord = state.projects.find(
+      (candidate: { name: string }) => candidate.name === project,
+    );
+    const taskRecord = projectRecord.tasks.find(
+      (candidate: { name: string }) => candidate.name === task,
+    );
+    expect(state.timers).toEqual([
+      expect.objectContaining({
+        projectId: projectRecord._id,
+        taskId: taskRecord._id,
+      }),
+    ]);
+  },
+);
+
+When(
+  "I press {string} on the entry editor's Cancel button",
+  async ({ page }, key: string) => {
+    const cancel = page
+      .getByRole("complementary", { name: "Time entry editor" })
+      .getByRole("button", { name: "Cancel" });
+    await cancel.focus();
+    await cancel.press(key);
+  },
+);
+
+Then("the entry editor has no project or task", async ({ page }) => {
+  const editor = page.getByRole("complementary", {
+    name: "Time entry editor",
+  });
+  await expect(editor).toBeVisible();
+  await expect(
+    editor.getByRole("button", { name: "Project or task" }),
+  ).not.toContainText("111 000");
+  await expect(page).not.toHaveURL(/task=/);
+});
+
 Then("the project lists task {string}", async ({ page }, task: string) => {
   await expect(
     page.getByRole("row").filter({ hasText: task }).first(),
