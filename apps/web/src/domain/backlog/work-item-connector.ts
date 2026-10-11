@@ -107,9 +107,7 @@ function mergeConnectorWorkItem(
     createId,
     existingWorkItem._id,
   );
-  const followsImportedEstimate = (
-    fieldKey: LocalWorkItemEstimateFieldKey,
-  ) => {
+  const followsImportedEstimate = (fieldKey: LocalWorkItemEstimateFieldKey) => {
     const syncState = existingWorkItem.estimateSync?.[fieldKey];
     if (!syncState) {
       return true;
@@ -238,10 +236,9 @@ export function importConnectorWorkItems(
 ) {
   const uniqueWorkItems = Array.from(
     new Map(
-      workItems.map((workItem) => [
-        getWorkItemSourceKey(workItem),
-        workItem,
-      ] as const),
+      workItems.map(
+        (workItem) => [getWorkItemSourceKey(workItem), workItem] as const,
+      ),
     ).values(),
   );
   const result: ConnectorWorkItemImportResult = {
@@ -251,9 +248,8 @@ export function importConnectorWorkItems(
   };
   const existingItemsByKey = new Map<string, LocalWorkItem>(
     state.workItems
-      .filter(
-        (workItem): workItem is LocalWorkItem & { sourceId: string } =>
-          Boolean(workItem.sourceId),
+      .filter((workItem): workItem is LocalWorkItem & { sourceId: string } =>
+        Boolean(workItem.sourceId),
       )
       .map((workItem) => [getWorkItemSourceKey(workItem), workItem] as const),
   );
@@ -284,9 +280,7 @@ export function importConnectorWorkItems(
         mappedBacklogStatusId,
         factories.createId,
       );
-      if (
-        JSON.stringify(mergedWorkItem) === JSON.stringify(existingWorkItem)
-      ) {
+      if (JSON.stringify(mergedWorkItem) === JSON.stringify(existingWorkItem)) {
         continue;
       }
       if (!changedExistingItems) {
@@ -385,8 +379,7 @@ function applyConnectorFieldUpdateToWorkItem(
 
   switch (update.status) {
     case "pulled":
-      fieldState.baselineValue =
-        update.nextBaselineValue ?? update.remoteValue;
+      fieldState.baselineValue = update.nextBaselineValue ?? update.remoteValue;
       fieldState.remoteValue = update.remoteValue;
       fieldState.resolution = undefined;
       fieldState.conflict = undefined;
@@ -400,8 +393,7 @@ function applyConnectorFieldUpdateToWorkItem(
         },
       };
     case "pushed":
-      fieldState.baselineValue =
-        update.nextBaselineValue ?? update.localValue;
+      fieldState.baselineValue = update.nextBaselineValue ?? update.localValue;
       fieldState.remoteValue = update.localValue;
       fieldState.resolution = undefined;
       fieldState.conflict = undefined;
@@ -414,8 +406,7 @@ function applyConnectorFieldUpdateToWorkItem(
         },
       };
     case "noop":
-      fieldState.baselineValue =
-        update.nextBaselineValue ?? update.localValue;
+      fieldState.baselineValue = update.nextBaselineValue ?? update.localValue;
       fieldState.remoteValue = update.remoteValue;
       fieldState.resolution = undefined;
       fieldState.conflict = undefined;

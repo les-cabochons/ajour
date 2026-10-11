@@ -47,13 +47,15 @@ export function TimeEntryModal({
   const editingEntry = useMemo(
     () =>
       entryId
-        ? (state.timesheetEntries.find((entry) => entry._id === entryId) ?? null)
+        ? (state.timesheetEntries.find((entry) => entry._id === entryId) ??
+          null)
         : null,
     [entryId, state.timesheetEntries],
   );
   const entryDate = editingEntry?.localDate ?? editingTimer?.localDate ?? date;
   const runningDurationMs = editingTimer
-    ? editingTimer.accumulatedDurationMs + Math.max(0, now - editingTimer.startedAt)
+    ? editingTimer.accumulatedDurationMs +
+      Math.max(0, now - editingTimer.startedAt)
     : 0;
   const [projectId, setProjectId] = useState("");
   const [taskId, setTaskId] = useState("");
@@ -99,7 +101,8 @@ export function TimeEntryModal({
   }, [editingEntry, editingTimer]);
 
   useEffect(() => {
-    if (editingTimer) setDurationHours(formatDurationHoursInput(runningDurationMs));
+    if (editingTimer)
+      setDurationHours(formatDurationHoursInput(runningDurationMs));
   }, [editingTimer, runningDurationMs]);
 
   useEffect(() => {

@@ -37,10 +37,7 @@ import {
   parseWorkItemReference,
 } from "@/features/backlog/work-item-timer-comment";
 import { syncBacklogWorkItemToSource } from "@/features/backlog/work-item-source-sync";
-import {
-  normalizeHoursInput,
-  parseHoursInput,
-} from "@/domain/time/duration";
+import { normalizeHoursInput, parseHoursInput } from "@/domain/time/duration";
 import {
   useLocalProjects,
   useLocalState,
@@ -266,9 +263,7 @@ export function BacklogTaskModal({
       ? parseWorkItemReference(workItem.sourceId)
       : undefined;
   const sourceUrl =
-    workItem && workItem.source !== "manual"
-      ? workItem.sourceId
-      : undefined;
+    workItem && workItem.source !== "manual" ? workItem.sourceId : undefined;
   const sourceMetaLabel = [
     sourceReference ? `#${sourceReference}` : undefined,
     ...sourceMetaParts,
@@ -287,25 +282,22 @@ export function BacklogTaskModal({
     ? resolveWorkItemIcon(workItem, workItemIconData)
     : null;
 
-  const applyEditorFields = useCallback(
-    (fields: BacklogTaskEditorFields) => {
-      setTitle(fields.title);
-      setNote(fields.note);
-      setPriority(fields.priority);
-      setOriginalEstimateHours(fields.originalEstimateHours);
-      setRemainingEstimateHours(fields.remainingEstimateHours);
-      setCompletedEstimateHours(fields.completedEstimateHours);
-      setBacklogStatusId(fields.backlogStatusId);
-      setParentTaskId(fields.parentWorkItemId);
-      setProjectId(fields.projectId);
-      setTaskId(fields.taskId);
-      setTimeEntryNote("");
-      setDurationHours("");
-      setIsArchivePending(false);
-      setIsDeletePending(false);
-    },
-    [],
-  );
+  const applyEditorFields = useCallback((fields: BacklogTaskEditorFields) => {
+    setTitle(fields.title);
+    setNote(fields.note);
+    setPriority(fields.priority);
+    setOriginalEstimateHours(fields.originalEstimateHours);
+    setRemainingEstimateHours(fields.remainingEstimateHours);
+    setCompletedEstimateHours(fields.completedEstimateHours);
+    setBacklogStatusId(fields.backlogStatusId);
+    setParentTaskId(fields.parentWorkItemId);
+    setProjectId(fields.projectId);
+    setTaskId(fields.taskId);
+    setTimeEntryNote("");
+    setDurationHours("");
+    setIsArchivePending(false);
+    setIsDeletePending(false);
+  }, []);
 
   useEffect(() => {
     if (isCreateRootMode) {
@@ -409,8 +401,7 @@ export function BacklogTaskModal({
           originalEstimateHours,
           remainingEstimateHours,
           completedEstimateHours,
-          keepWhenMissingFromSync:
-            workItem.keepWhenMissingFromSync ?? false,
+          keepWhenMissingFromSync: workItem.keepWhenMissingFromSync ?? false,
         },
         {
           isSubtask: Boolean(parentTaskId),

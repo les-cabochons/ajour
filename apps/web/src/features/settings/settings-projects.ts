@@ -27,7 +27,8 @@ interface ProjectTransferOptions {
   projectIds: string[];
 }
 
-const workbookMimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const workbookMimeType =
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 export const DEFAULT_PROJECT_DATA_SHAPE_ID = BUILT_IN_PROJECT_DATA_SHAPE_ID;
 export const DEFAULT_PROJECT_DATA_SHAPE_DEFINITION = {
   apiVersion: 1,
@@ -36,15 +37,69 @@ export const DEFAULT_PROJECT_DATA_SHAPE_DEFINITION = {
       id: "projects",
       displayName: "Projects",
       columns: [
-        { key: "project", header: "project", type: "string", required: true, width: 28 },
-        { key: "code", header: "code", type: "string", required: false, width: 16 },
-        { key: "color", header: "color", type: "string", required: false, width: 14 },
-        { key: "status", header: "status", type: "string", required: true, width: 14 },
-        { key: "task", header: "task", type: "string", required: false, width: 28 },
-        { key: "taskStatus", header: "task_status", type: "string", required: false, width: 16 },
-        { key: "billable", header: "billable", type: "string", required: false, width: 16 },
-        { key: "budgetHours", header: "budget_hours", type: "number", required: false, width: 16 },
-        { key: "adjustmentHours", header: "adjustment_hours", type: "number", required: false, width: 18 },
+        {
+          key: "project",
+          header: "project",
+          type: "string",
+          required: true,
+          width: 28,
+        },
+        {
+          key: "code",
+          header: "code",
+          type: "string",
+          required: false,
+          width: 16,
+        },
+        {
+          key: "color",
+          header: "color",
+          type: "string",
+          required: false,
+          width: 14,
+        },
+        {
+          key: "status",
+          header: "status",
+          type: "string",
+          required: true,
+          width: 14,
+        },
+        {
+          key: "task",
+          header: "task",
+          type: "string",
+          required: false,
+          width: 28,
+        },
+        {
+          key: "taskStatus",
+          header: "task_status",
+          type: "string",
+          required: false,
+          width: 16,
+        },
+        {
+          key: "billable",
+          header: "billable",
+          type: "string",
+          required: false,
+          width: 16,
+        },
+        {
+          key: "budgetHours",
+          header: "budget_hours",
+          type: "number",
+          required: false,
+          width: 16,
+        },
+        {
+          key: "adjustmentHours",
+          header: "adjustment_hours",
+          type: "number",
+          required: false,
+          width: 18,
+        },
       ],
     },
   ],
@@ -70,7 +125,9 @@ function normalizeImportCell(value: unknown) {
   return formatTaskImportName(String(value ?? ""));
 }
 
-function workbookCellValue(value: ExcelJS.CellValue): string | number | boolean | null {
+function workbookCellValue(
+  value: ExcelJS.CellValue,
+): string | number | boolean | null {
   if (
     value === null ||
     typeof value === "string" ||
@@ -132,7 +189,9 @@ function normalizeBillableValue(
   value: unknown,
   options?: { allowBlank?: boolean },
 ): "billable" | "non_billable" | "" {
-  const normalized = normalizeImportCell(value).toLowerCase().replace(/\s+/g, "_");
+  const normalized = normalizeImportCell(value)
+    .toLowerCase()
+    .replace(/\s+/g, "_");
   if (!normalized) {
     return options?.allowBlank ? "" : "billable";
   }
@@ -154,7 +213,9 @@ function normalizeBillableValue(
     return "non_billable";
   }
 
-  throw new Error(`Invalid billable value "${normalized}". Expected billable or non_billable.`);
+  throw new Error(
+    `Invalid billable value "${normalized}". Expected billable or non_billable.`,
+  );
 }
 
 function normalizeStatus(
@@ -171,7 +232,9 @@ function normalizeStatus(
     return normalized;
   }
 
-  throw new Error(`Invalid status "${normalized}". Expected active or archived.`);
+  throw new Error(
+    `Invalid status "${normalized}". Expected active or archived.`,
+  );
 }
 
 export function buildProjectTransferRows({
@@ -247,9 +310,7 @@ function truncateExcelWorksheetName(value: string, maxLength: number): string {
   return result;
 }
 
-function excelWorksheetNames(
-  definition: ProjectDataShapeDefinition,
-): string[] {
+function excelWorksheetNames(definition: ProjectDataShapeDefinition): string[] {
   const usedNames = new Set<string>();
 
   return definition.datasets.map((dataset, datasetIndex) => {
@@ -295,7 +356,10 @@ export async function createProjectDataShapeWorkbook(
   const workbook = new ExcelJSModule.default.Workbook();
   const worksheetNames = excelWorksheetNames(definition);
 
-  for (const [datasetIndex, datasetDefinition] of definition.datasets.entries()) {
+  for (const [
+    datasetIndex,
+    datasetDefinition,
+  ] of definition.datasets.entries()) {
     const dataset = datasetsById.get(datasetDefinition.id)!;
     const sheet = workbook.addWorksheet(worksheetNames[datasetIndex]);
     sheet.columns = datasetDefinition.columns.map((column) => ({
@@ -374,7 +438,9 @@ export async function parseProjectDataShapeWorkbook(
   });
 }
 
-export async function createProjectTransferWorkbook(options: ProjectTransferOptions): Promise<ArrayBuffer> {
+export async function createProjectTransferWorkbook(
+  options: ProjectTransferOptions,
+): Promise<ArrayBuffer> {
   const rows = buildProjectTransferRows(options);
   return await createProjectDataShapeWorkbook(
     DEFAULT_PROJECT_DATA_SHAPE_DEFINITION,
@@ -419,21 +485,36 @@ export async function parseProjectTransferWorkbook(
     }
 
     if (!project) {
-      throw new Error(`Row ${rowNumber} is invalid. A project name is required.`);
+      throw new Error(
+        `Row ${rowNumber} is invalid. A project name is required.`,
+      );
     }
 
-    const status = normalizeStatus(rawStatus, { fallback: "active" }) as ProjectTransferStatus;
+    const status = normalizeStatus(rawStatus, {
+      fallback: "active",
+    }) as ProjectTransferStatus;
     const taskStatus = normalizeStatus(rawTaskStatus, { allowBlank: true });
     const billable = normalizeBillableValue(rawBillable, { allowBlank: true });
-    const budgetHours = normalizeHoursValue(rawBudgetHours, { allowBlank: true });
-    const adjustmentHours = normalizeHoursValue(rawAdjustmentHours, { allowBlank: true });
+    const budgetHours = normalizeHoursValue(rawBudgetHours, {
+      allowBlank: true,
+    });
+    const adjustmentHours = normalizeHoursValue(rawAdjustmentHours, {
+      allowBlank: true,
+    });
 
     if (!task && taskStatus) {
-      throw new Error(`Row ${rowNumber} is invalid. Task status requires a task name.`);
+      throw new Error(
+        `Row ${rowNumber} is invalid. Task status requires a task name.`,
+      );
     }
 
-    if (!task && (billable !== "" || budgetHours !== "" || adjustmentHours !== "")) {
-      throw new Error(`Row ${rowNumber} is invalid. Billable, budget, or adjustment requires a task name.`);
+    if (
+      !task &&
+      (billable !== "" || budgetHours !== "" || adjustmentHours !== "")
+    ) {
+      throw new Error(
+        `Row ${rowNumber} is invalid. Billable, budget, or adjustment requires a task name.`,
+      );
     }
 
     rows.push({
@@ -470,8 +551,13 @@ function toBlobPart(workbookBytes: ArrayBuffer | Uint8Array): ArrayBuffer {
   return normalized;
 }
 
-export function downloadProjectTransferWorkbook(workbookBytes: ArrayBuffer | Uint8Array, filename: string) {
-  const blob = new Blob([toBlobPart(workbookBytes)], { type: workbookMimeType });
+export function downloadProjectTransferWorkbook(
+  workbookBytes: ArrayBuffer | Uint8Array,
+  filename: string,
+) {
+  const blob = new Blob([toBlobPart(workbookBytes)], {
+    type: workbookMimeType,
+  });
   const url = window.URL.createObjectURL(blob);
   const link = document.createElement("a");
 

@@ -10,9 +10,7 @@ import {
   parseEstimateInput,
 } from "@/features/backlog/backlog-task-editor";
 
-function createWorkItem(
-  overrides: Partial<LocalWorkItem> = {},
-): LocalWorkItem {
+function createWorkItem(overrides: Partial<LocalWorkItem> = {}): LocalWorkItem {
   return {
     _id: "work-item-1",
     title: "Original title",

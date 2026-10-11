@@ -111,7 +111,9 @@ export function normalizeProjectIcon(icon: unknown): LocalProjectIcon {
       icon.src.trim()
     ) {
       const colorMode =
-        "colorMode" in icon && icon.colorMode === "native" ? "native" : "tinted";
+        "colorMode" in icon && icon.colorMode === "native"
+          ? "native"
+          : "tinted";
       const maskSrc =
         "maskSrc" in icon &&
         typeof icon.maskSrc === "string" &&

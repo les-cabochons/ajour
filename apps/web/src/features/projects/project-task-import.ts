@@ -23,7 +23,9 @@ function toArrayBuffer(workbookBytes: ArrayBuffer | Uint8Array) {
   return normalized;
 }
 
-export async function extractTaskNamesFromWorkbook(buffer: ArrayBuffer | Uint8Array) {
+export async function extractTaskNamesFromWorkbook(
+  buffer: ArrayBuffer | Uint8Array,
+) {
   let workbook: ExcelJS.Workbook;
 
   try {

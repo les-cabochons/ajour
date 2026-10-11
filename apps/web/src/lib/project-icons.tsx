@@ -85,7 +85,12 @@ export {
 
 function DotIcon({ className }: { className?: string }) {
   return (
-    <span className={cn("flex h-full w-full items-center justify-center", className)}>
+    <span
+      className={cn(
+        "flex h-full w-full items-center justify-center",
+        className,
+      )}
+    >
       <span className="h-[60%] w-[60%] rounded-full bg-current" />
     </span>
   );
@@ -276,7 +281,12 @@ export function ProjectIcon({
       return (
         <span
           aria-hidden="true"
-          className={cn("project-icon", "project-icon-upload", "project-icon-upload-native", className)}
+          className={cn(
+            "project-icon",
+            "project-icon-upload",
+            "project-icon-upload-native",
+            className,
+          )}
           style={{
             backgroundImage: `url("${normalizedIcon.src}")`,
           }}

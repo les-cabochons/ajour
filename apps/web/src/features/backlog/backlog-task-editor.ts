@@ -1,7 +1,4 @@
-import type {
-  LocalWorkItem,
-  LocalWorkItemDraft,
-} from "@/domain/local-state";
+import type { LocalWorkItem, LocalWorkItemDraft } from "@/domain/local-state";
 import type { WorkItemPatch } from "@/domain/backlog/work-item-transitions";
 import { getDirectChildWorkItems } from "@/domain/backlog/work-item-hierarchy";
 import { buildWorkItemTimerComment } from "@/features/backlog/work-item-timer-comment";

@@ -53,9 +53,7 @@ function createEntry(): LocalTimesheetEntry {
   };
 }
 
-function createState(
-  overrides: Partial<LocalAppState> = {},
-): LocalAppState {
+function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
   return {
     projects: [createProject()],
     timesheetEntries: [],

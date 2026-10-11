@@ -452,7 +452,11 @@ export function TimerPanel({
   }
 
   function getExpandedRelocationValues(localDate: string) {
-    if (!expandedEntry || expandedParsedDurationMs === null || expandedParsedDurationMs <= 0) {
+    if (
+      !expandedEntry ||
+      expandedParsedDurationMs === null ||
+      expandedParsedDurationMs <= 0
+    ) {
       return null;
     }
 
@@ -705,7 +709,7 @@ export function TimerPanel({
         startDrag(pointer.clientX, pointer.clientY);
       },
       onMove: (pointer) => {
-      const currentDrag = entryDragStateRef.current;
+        const currentDrag = entryDragStateRef.current;
         if (!currentDrag) {
           return;
         }
@@ -1096,7 +1100,9 @@ export function TimerPanel({
                                   currentDate={expandedEntry.localDate}
                                   disabled={Boolean(expandedDurationError)}
                                   onDuplicate={() =>
-                                    duplicateExpandedEntry(expandedEntry.localDate)
+                                    duplicateExpandedEntry(
+                                      expandedEntry.localDate,
+                                    )
                                   }
                                   onDuplicateTo={duplicateExpandedEntry}
                                   onMoveTo={moveExpandedEntry}
@@ -1111,7 +1117,9 @@ export function TimerPanel({
                                 note={expandedNote}
                                 durationHours={expandedDurationHours}
                                 durationError={expandedDurationError}
-                                onProjectTaskChange={handleExpandedProjectTaskChange}
+                                onProjectTaskChange={
+                                  handleExpandedProjectTaskChange
+                                }
                                 onNoteChange={setExpandedNote}
                                 onDurationChange={setExpandedDurationHours}
                                 onDurationKeyDown={(event) => {
@@ -1149,8 +1157,7 @@ export function TimerPanel({
                 style={{
                   width: entryDragState.width,
                   minHeight: entryDragState.height,
-                  transform:
-                    getSharedTableDragOverlayTransform(entryDragState),
+                  transform: getSharedTableDragOverlayTransform(entryDragState),
                 }}
               >
                 <div className="entry-project-column">

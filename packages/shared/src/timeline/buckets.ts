@@ -46,7 +46,10 @@ function displayLabel(title: string, domain: string) {
   }
 
   const firstPart = title.split(/[|\-]/)[0] ?? "";
-  return firstPart.trim().replace(/\b\w/g, (char: string) => char.toUpperCase()) || domainLabel;
+  return (
+    firstPart.trim().replace(/\b\w/g, (char: string) => char.toUpperCase()) ||
+    domainLabel
+  );
 }
 
 function displaySubtitle(domain: string, pathname: string) {
@@ -90,7 +93,8 @@ export function buildBrowserActivityBuckets(
       if (sliceEndAt > sliceStartAt) {
         const localDate = localDateAt(currentBucketStartAt);
         const key = bucketKey(localDate, currentBucketStartAt);
-        const bucketEvidence = grouped.get(key) ?? new Map<string, EvidenceAccumulator>();
+        const bucketEvidence =
+          grouped.get(key) ?? new Map<string, EvidenceAccumulator>();
         const existing = bucketEvidence.get(normalized.fingerprint);
         const durationMs = sliceEndAt - sliceStartAt;
 
@@ -117,9 +121,15 @@ export function buildBrowserActivityBuckets(
 
   return [...grouped.entries()]
     .map(([key, evidenceByFingerprint]) => {
-      const evidence = [...evidenceByFingerprint.values()]
-        .sort((left, right) => right.durationMs - left.durationMs || left.fingerprint.localeCompare(right.fingerprint));
-      const totalDurationMs = evidence.reduce((sum, item) => sum + item.durationMs, 0);
+      const evidence = [...evidenceByFingerprint.values()].sort(
+        (left, right) =>
+          right.durationMs - left.durationMs ||
+          left.fingerprint.localeCompare(right.fingerprint),
+      );
+      const totalDurationMs = evidence.reduce(
+        (sum, item) => sum + item.durationMs,
+        0,
+      );
       const dominant = evidence[0];
       if (!dominant || totalDurationMs <= 0) {
         return null;
@@ -139,7 +149,9 @@ export function buildBrowserActivityBuckets(
       const confidence = dominant.durationMs / totalDurationMs;
       const isMixed =
         confidence < mixedThreshold ||
-        Boolean(runnerUp && confidence - runnerUp.percentage < closeSecondThreshold);
+        Boolean(
+          runnerUp && confidence - runnerUp.percentage < closeSecondThreshold,
+        );
       const [localDate = "", startedAtValue] = key.split(":");
       const startedAt = Number(startedAtValue);
       const endedAt = startedAt + options.bucketSizeMs;

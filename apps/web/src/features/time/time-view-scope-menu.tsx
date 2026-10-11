@@ -1,4 +1,7 @@
-import { RiArrowDownSLine as ChevronDown, RiCheckLine as Check } from "@remixicon/react";
+import {
+  RiArrowDownSLine as ChevronDown,
+  RiCheckLine as Check,
+} from "@remixicon/react";
 import { Button } from "@/components/ui/button";
 import {
   Popover,
@@ -35,7 +38,11 @@ export function TimeViewScopeMenu({
       >
         <ChevronDown data-icon="inline-end" />
       </PopoverTrigger>
-      <PopoverContent className="time-view-scope-popover" align="start" sideOffset={8}>
+      <PopoverContent
+        className="time-view-scope-popover"
+        align="start"
+        sideOffset={8}
+      >
         <PopoverHeader className="sr-only">
           <PopoverTitle>Time view</PopoverTitle>
           <PopoverDescription>Choose Day or Weeks.</PopoverDescription>

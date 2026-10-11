@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { buildBrowserActivityBuckets } from "../src/timeline/buckets";
 import type { ActivitySegmentInput } from "../src/types/domain";
 
-function makeSegment(overrides: Partial<ActivitySegmentInput>): ActivitySegmentInput {
+function makeSegment(
+  overrides: Partial<ActivitySegmentInput>,
+): ActivitySegmentInput {
   return {
     externalSegmentId: crypto.randomUUID(),
     startedAt: 0,

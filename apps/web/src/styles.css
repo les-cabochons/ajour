@@ -76,11 +76,7 @@
     );
     --border-focus: var(--ring);
     --nav-bg: color-mix(in srgb, var(--background) 88%, transparent);
-    --app-sidebar-bg: color-mix(
-      in srgb,
-      var(--surface-low) 88%,
-      transparent
-    );
+    --app-sidebar-bg: color-mix(in srgb, var(--surface-low) 88%, transparent);
     --app-sidebar-border: color-mix(in srgb, var(--border) 82%, transparent);
     --app-sidebar-active-bg: color-mix(
       in srgb,
@@ -187,11 +183,7 @@
       var(--background) 22%
     );
     --dialog-footer-bg: var(--surface);
-    --app-sidebar-bg: color-mix(
-      in srgb,
-      var(--surface) 78%,
-      transparent
-    );
+    --app-sidebar-bg: color-mix(in srgb, var(--surface) 78%, transparent);
     --app-sidebar-border: color-mix(in srgb, var(--border) 86%, transparent);
     --app-sidebar-active-bg: oklch(1 0 0 / 9%);
   }
@@ -405,7 +397,9 @@
   margin: -0.55rem -0.45rem;
   padding: 0.45rem;
   border-radius: var(--radius-sm);
-  transition: background 120ms var(--ease), box-shadow 120ms var(--ease);
+  transition:
+    background 120ms var(--ease),
+    box-shadow 120ms var(--ease);
 }
 
 .weekly-ledger-weekday,
@@ -706,11 +700,18 @@
   gap: 0.35rem;
   padding: 0.7rem 0.7rem 0.65rem calc(0.7rem + var(--weekly-project-rail));
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--project-color, var(--text-tertiary)) 4%, var(--surface));
+  background: color-mix(
+    in srgb,
+    var(--project-color, var(--text-tertiary)) 4%,
+    var(--surface)
+  );
   cursor: grab;
   outline: none;
   box-shadow: none;
-  transition: transform 120ms var(--ease), background 120ms var(--ease), box-shadow 120ms var(--ease);
+  transition:
+    transform 120ms var(--ease),
+    background 120ms var(--ease),
+    box-shadow 120ms var(--ease);
 }
 
 .weekly-entry-card::before {
@@ -721,13 +722,21 @@
   left: 0;
   width: var(--weekly-project-rail);
   border-radius: var(--radius-sm) 0 0 var(--radius-sm);
-  background: color-mix(in srgb, var(--project-color, var(--text-tertiary)) 82%, transparent);
+  background: color-mix(
+    in srgb,
+    var(--project-color, var(--text-tertiary)) 82%,
+    transparent
+  );
 }
 
 .weekly-entry-card:hover,
 .weekly-entry-card:focus-visible,
 .weekly-entry-card.is-selected {
-  background: color-mix(in srgb, var(--project-color, var(--text-tertiary)) 8%, var(--surface-high));
+  background: color-mix(
+    in srgb,
+    var(--project-color, var(--text-tertiary)) 8%,
+    var(--surface-high)
+  );
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 40%, transparent);
 }
 
@@ -984,14 +993,15 @@
         min(
             100vw,
             calc(var(--app-sidebar-width) + var(--app-workspace-max-width))
-          ) - 100vw + var(--windows-caption-controls-width) + 1rem
+          ) -
+          100vw + var(--windows-caption-controls-width) + 1rem
       ),
       calc(
         min(
             100vw,
             calc(var(--app-sidebar-width) + var(--app-workspace-max-width))
-          ) - env(titlebar-area-x, 0px) -
-          env(titlebar-area-width, 100vw) + 1rem
+          ) -
+          env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 1rem
       )
     );
   }
@@ -1879,7 +1889,8 @@
   }
 
   [data-slot="sidebar"][data-collapsible="icon"]
-    .harday-project-sidebar-header .entries-header-add {
+    .harday-project-sidebar-header
+    .entries-header-add {
     display: inline-flex;
   }
 
@@ -1905,7 +1916,8 @@
     padding-inline: 0.25rem;
   }
 
-  [data-slot="sidebar"][data-collapsible="icon"] [data-slot="sidebar-menu-item"] {
+  [data-slot="sidebar"][data-collapsible="icon"]
+    [data-slot="sidebar-menu-item"] {
     width: 100%;
   }
 
@@ -6885,12 +6897,10 @@
       ),
       calc(
         50vw + var(--app-centered-workspace-right-offset) -
-          env(titlebar-area-x, 0px) -
-          env(titlebar-area-width, 100vw) + 1rem
+          env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 1rem
       )
     );
   }
-
 }
 
 @media (max-width: 1040px) {
@@ -6904,8 +6914,8 @@
       2rem,
       calc(var(--windows-caption-controls-width) + 1rem),
       calc(
-        100vw - env(titlebar-area-x, 0px) -
-          env(titlebar-area-width, 100vw) + 1rem
+        100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) +
+          1rem
       )
     );
   }
@@ -6917,8 +6927,7 @@
   }
 
   .harday-shell-sidebar,
-  .harday-project-layout[data-slot="sidebar-wrapper"]
-    .harday-section-sidebar {
+  .harday-project-layout[data-slot="sidebar-wrapper"] .harday-section-sidebar {
     display: none;
   }
 
@@ -7014,7 +7023,9 @@
     display: none;
   }
 
-  .time-page-stack .entries-table-scroll-shell-time .entries-table-header-table {
+  .time-page-stack
+    .entries-table-scroll-shell-time
+    .entries-table-header-table {
     display: none;
   }
 
@@ -7048,8 +7059,8 @@
       1rem,
       calc(var(--windows-caption-controls-width) + 0.75rem),
       calc(
-        100vw - env(titlebar-area-x, 0px) -
-          env(titlebar-area-width, 100vw) + 0.75rem
+        100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) +
+          0.75rem
       )
     );
   }
@@ -7172,8 +7183,7 @@
     justify-content: center;
   }
 
-  .harday-project-navigation-sidebar
-    .harday-project-sidebar-command-trigger,
+  .harday-project-navigation-sidebar .harday-project-sidebar-command-trigger,
   .harday-project-navigation-sidebar [data-sidebar-collapsed="hide"],
   .harday-project-navigation-sidebar .harday-sidebar-code {
     display: none;
@@ -7186,8 +7196,7 @@
   }
 
   .harday-project-navigation-sidebar .harday-section-sidebar-button,
-  .harday-project-navigation-sidebar
-    .harday-project-sidebar-archive-trigger {
+  .harday-project-navigation-sidebar .harday-project-sidebar-archive-trigger {
     width: 100% !important;
     justify-content: center !important;
     gap: 0 !important;
@@ -7644,9 +7653,7 @@
     padding-left: calc(14px + 0.45rem);
   }
 
-  .backlog-table.entries-table-body-table
-    tr.entry-edit-row
-    > td {
+  .backlog-table.entries-table-body-table tr.entry-edit-row > td {
     display: block;
     width: 100%;
     padding: 0 !important;

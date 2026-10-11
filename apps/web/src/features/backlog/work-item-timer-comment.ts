@@ -4,7 +4,9 @@ export function parseWorkItemReference(sourceId?: string) {
   }
 
   try {
-    const pathnameSegments = new URL(sourceId).pathname.split("/").filter(Boolean);
+    const pathnameSegments = new URL(sourceId).pathname
+      .split("/")
+      .filter(Boolean);
     const reference = pathnameSegments.at(-1);
     return reference && /^\d+$/.test(reference) ? reference : undefined;
   } catch {
@@ -15,5 +17,7 @@ export function parseWorkItemReference(sourceId?: string) {
 
 export function buildWorkItemTimerComment(title: string, sourceId?: string) {
   const reference = parseWorkItemReference(sourceId);
-  return [reference ? `#${reference}` : undefined, title.trim()].filter(Boolean).join(" ");
+  return [reference ? `#${reference}` : undefined, title.trim()]
+    .filter(Boolean)
+    .join(" ");
 }

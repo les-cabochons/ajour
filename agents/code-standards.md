@@ -7,6 +7,7 @@
 - Keep changes close to the feature or runtime that owns the behavior.
 - Move code into `packages/shared` only when multiple runtimes need the same domain behavior.
 - Add comments only when they explain non-obvious domain or runtime constraints.
+- Prettier owns formatting with its default settings, plus `prettier-plugin-tailwindcss` for class order, in `prettier.config.mjs`. This matches create-t3-app. Run `just format` before committing; `just format-check` must pass.
 
 ## TypeScript
 
@@ -106,6 +107,7 @@ Use `just`:
 just test
 just typecheck
 just build
+just format-check
 ```
 
 `just test` runs tests across workspace packages that expose a test script, including the web and shared suites.

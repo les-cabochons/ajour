@@ -9,9 +9,7 @@ import {
   importConnectorWorkItems,
 } from "@/domain/backlog/work-item-connector";
 
-function createState(
-  overrides: Partial<LocalAppState> = {},
-): LocalAppState {
+function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
   return {
     user: {
       _id: "local-user",
@@ -43,7 +41,15 @@ function createState(
       updateTrack: "stable",
       projectDataShapeId: "default",
       weeklyTimeViewStyle: "ledger",
-      weeklyCapacityTargets: { monday: 8, tuesday: 8, wednesday: 8, thursday: 8, friday: 8, saturday: 0, sunday: 0 },
+      weeklyCapacityTargets: {
+        monday: 8,
+        tuesday: 8,
+        wednesday: 8,
+        thursday: 8,
+        friday: 8,
+        saturday: 0,
+        sunday: 0,
+      },
       warnWhenOverCapacity: true,
       warnWhenSubmittingUnderCapacity: true,
     },

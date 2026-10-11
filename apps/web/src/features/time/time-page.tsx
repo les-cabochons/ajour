@@ -1,7 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import {
-  RiSendPlaneLine as SendHorizontal,
-} from "@remixicon/react";
+import { RiSendPlaneLine as SendHorizontal } from "@remixicon/react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { DayViewerCard } from "@/components/day-viewer-card";
 import { formatClockDuration } from "@/domain/time/duration";
@@ -36,9 +34,11 @@ export function TimePage({ date }: { date: string }) {
       : false,
   );
   const isWeekView = search.view === "week" && weekAvailable;
-  const modalEntryId = search.entry && search.entry !== "new" ? search.entry : undefined;
+  const modalEntryId =
+    search.entry && search.entry !== "new" ? search.entry : undefined;
   const modalTimerId = search.timer;
-  const modalOpen = search.entry === "new" || Boolean(modalEntryId) || Boolean(modalTimerId);
+  const modalOpen =
+    search.entry === "new" || Boolean(modalEntryId) || Boolean(modalTimerId);
 
   useEffect(() => {
     if (!currentTimer) {
@@ -79,7 +79,10 @@ export function TimePage({ date }: { date: string }) {
         continue;
       }
 
-      totals.set(entry.localDate, (totals.get(entry.localDate) ?? 0) + entry.durationMs);
+      totals.set(
+        entry.localDate,
+        (totals.get(entry.localDate) ?? 0) + entry.durationMs,
+      );
     }
 
     if (currentTimer && totals.has(currentTimer.localDate)) {
@@ -102,7 +105,10 @@ export function TimePage({ date }: { date: string }) {
     return totals;
   }, [currentTimer, now, state.timesheetEntries, weekDates]);
 
-  const weekTotalMs = Array.from(totalsByDate.values()).reduce((sum, value) => sum + value, 0);
+  const weekTotalMs = Array.from(totalsByDate.values()).reduce(
+    (sum, value) => sum + value,
+    0,
+  );
 
   function goToDate(nextDate: string) {
     navigate({
@@ -140,8 +146,15 @@ export function TimePage({ date }: { date: string }) {
       to: "/time/$date",
       params: { date },
       search: target?.timerId
-        ? ({ entry: target.entryId, timer: target.timerId, view: isWeekView ? "week" : undefined } as never)
-        : ({ entry: target?.entryId ?? "new", view: isWeekView ? "week" : undefined } as never),
+        ? ({
+            entry: target.entryId,
+            timer: target.timerId,
+            view: isWeekView ? "week" : undefined,
+          } as never)
+        : ({
+            entry: target?.entryId ?? "new",
+            view: isWeekView ? "week" : undefined,
+          } as never),
     });
   }
 
@@ -174,46 +187,64 @@ export function TimePage({ date }: { date: string }) {
             void navigate({
               to: "/time/$date",
               params: { date },
-              search: { view: undefined, entry: undefined, timer: undefined } as never,
+              search: {
+                view: undefined,
+                entry: undefined,
+                timer: undefined,
+              } as never,
             });
           }}
           onSelectWeek={goToDate}
           onSubmit={() => setIsSubmitModalOpen(true)}
         />
       ) : (
-      <>
-      <DayViewerCard
-        date={date}
-        today={today}
-        weekDates={weekDates}
-        totalLabel="Week total"
-        totalValue={formatClockDuration(weekTotalMs)}
-        getDayValue={(day) => formatClockDuration(totalsByDate.get(day) ?? 0)}
-        onSelectDate={goToDate}
-        dateScopeControl={<TimeViewScopeMenu value="day" onChange={changeTimeView} />}
-        headerActions={
-          <div className="flex items-center gap-2">
-            <button
-              type="button"
-              className="day-viewer-submit-pill"
-              aria-label="Submit timesheet"
-              onClick={() => setIsSubmitModalOpen(true)}
-            >
-              <SendHorizontal className="h-4 w-4" />
-              <span>Submit</span>
-            </button>
-          </div>
-        }
-      />
+        <>
+          <DayViewerCard
+            date={date}
+            today={today}
+            weekDates={weekDates}
+            totalLabel="Week total"
+            totalValue={formatClockDuration(weekTotalMs)}
+            getDayValue={(day) =>
+              formatClockDuration(totalsByDate.get(day) ?? 0)
+            }
+            onSelectDate={goToDate}
+            dateScopeControl={
+              <TimeViewScopeMenu value="day" onChange={changeTimeView} />
+            }
+            headerActions={
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  className="day-viewer-submit-pill"
+                  aria-label="Submit timesheet"
+                  onClick={() => setIsSubmitModalOpen(true)}
+                >
+                  <SendHorizontal className="h-4 w-4" />
+                  <span>Submit</span>
+                </button>
+              </div>
+            }
+          />
 
-      <TimerPanel date={date} onOpenEntry={openModal} />
-      </>
+          <TimerPanel date={date} onOpenEntry={openModal} />
+        </>
       )}
 
       {modalOpen ? (
-        <TimeEntryModal date={date} entryId={modalEntryId} timerId={modalTimerId} onClose={closeModal} />
+        <TimeEntryModal
+          date={date}
+          entryId={modalEntryId}
+          timerId={modalTimerId}
+          onClose={closeModal}
+        />
       ) : null}
-      {isSubmitModalOpen ? <SubmitTimesheetModal weekDates={weekDates} onClose={() => setIsSubmitModalOpen(false)} /> : null}
+      {isSubmitModalOpen ? (
+        <SubmitTimesheetModal
+          weekDates={weekDates}
+          onClose={() => setIsSubmitModalOpen(false)}
+        />
+      ) : null}
     </div>
   );
 }

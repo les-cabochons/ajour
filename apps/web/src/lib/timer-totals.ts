@@ -44,7 +44,8 @@ export function getTimerContributionMs(values: {
   const hasLinkedTimerEntry =
     Boolean(timer.entryId) &&
     timesheetEntries.some(
-      (entry) => entry._id === timer.entryId && entry.localDate === timer.localDate,
+      (entry) =>
+        entry._id === timer.entryId && entry.localDate === timer.localDate,
     );
 
   return hasLinkedTimerEntry ? elapsedDurationMs : runningDurationMs;

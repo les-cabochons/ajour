@@ -1,7 +1,9 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
 contextBridge.exposeInMainWorld("timetrackerDesktop", {
-  bootstrapLocalState: ipcRenderer.sendSync("timetracker:get-bootstrap-local-state"),
+  bootstrapLocalState: ipcRenderer.sendSync(
+    "timetracker:get-bootstrap-local-state",
+  ),
   runtime: ipcRenderer.sendSync("timetracker:get-runtime-info"),
   setWindowChromeTheme: (theme) =>
     ipcRenderer.send("timetracker:set-window-chrome-theme", theme),
@@ -13,8 +15,7 @@ contextBridge.exposeInMainWorld("timetrackerDesktop", {
     ipcRenderer.invoke("timetracker:open-update-release", releaseUrl),
   installConnectorPlugin: () =>
     ipcRenderer.invoke("timetracker:install-connector-plugin"),
-  getPluginCatalog: () =>
-    ipcRenderer.invoke("timetracker:get-plugin-catalog"),
+  getPluginCatalog: () => ipcRenderer.invoke("timetracker:get-plugin-catalog"),
   getPluginCatalogSettings: () =>
     ipcRenderer.invoke("timetracker:get-plugin-catalog-settings"),
   configurePluginCatalog: (settings) =>
@@ -22,7 +23,11 @@ contextBridge.exposeInMainWorld("timetrackerDesktop", {
   onPluginCatalogUpdated: (callback) => {
     const listener = (_event, catalog) => callback(catalog);
     ipcRenderer.on("timetracker:plugin-catalog-updated", listener);
-    return () => ipcRenderer.removeListener("timetracker:plugin-catalog-updated", listener);
+    return () =>
+      ipcRenderer.removeListener(
+        "timetracker:plugin-catalog-updated",
+        listener,
+      );
   },
   downloadCatalogPlugin: (pluginId) =>
     ipcRenderer.invoke("timetracker:download-catalog-plugin", pluginId),

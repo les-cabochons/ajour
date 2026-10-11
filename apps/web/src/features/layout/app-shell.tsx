@@ -773,7 +773,7 @@ function GlobalTimerBar({ selectedDate }: { selectedDate: string }) {
         >
           <span className="stat-pill-label">Today</span>
           <span className="stat-pill-value">
-                {formatClockDuration(todayTotalMs)}
+            {formatClockDuration(todayTotalMs)}
           </span>
         </button>
 
@@ -825,7 +825,9 @@ export function AppShell() {
   useEffect(() => {
     void window.timetrackerDesktop
       ?.configureAutomaticUpdates?.(updateTrack)
-      .catch((error) => console.error("Unable to configure automatic updates.", error));
+      .catch((error) =>
+        console.error("Unable to configure automatic updates.", error),
+      );
   }, [updateTrack]);
 
   useEffect(() => {
@@ -841,17 +843,14 @@ export function AppShell() {
   }, [href, pathname]);
 
   useEffect(() => {
-    const mediaQuery = window.matchMedia(
-      `(max-width: ${MOBILE_BREAKPOINT}px)`,
-    );
+    const mediaQuery = window.matchMedia(`(max-width: ${MOBILE_BREAKPOINT}px)`);
     const handleViewportChange = () => {
       setShowMobileModeToggle(mediaQuery.matches);
     };
 
     handleViewportChange();
     mediaQuery.addEventListener("change", handleViewportChange);
-    return () =>
-      mediaQuery.removeEventListener("change", handleViewportChange);
+    return () => mediaQuery.removeEventListener("change", handleViewportChange);
   }, []);
 
   const leaveSettings = useCallback(() => {

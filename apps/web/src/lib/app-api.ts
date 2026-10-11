@@ -50,7 +50,9 @@ export type SyncConnectorConnectionResult = ConnectorSyncResult & {
 };
 
 const DEFAULT_INTERNAL_APP_API_BASE_URL = "http://127.0.0.1:8787";
-const APP_API_BASE_URL = (import.meta.env.VITE_APP_API_BASE_URL ?? DEFAULT_INTERNAL_APP_API_BASE_URL).replace(/\/+$/, "");
+const APP_API_BASE_URL = (
+  import.meta.env.VITE_APP_API_BASE_URL ?? DEFAULT_INTERNAL_APP_API_BASE_URL
+).replace(/\/+$/, "");
 const APP_API_RETRY_DELAYS_MS = [150, 350] as const;
 let cachedConnectorsOverview: ConnectorsOverview | null = null;
 let connectorsOverviewRevision = 0;
@@ -83,7 +85,11 @@ async function appApiRequest<T>(
   let response: Response | null = null;
   let lastNetworkError: unknown;
 
-  for (let attempt = 0; attempt <= APP_API_RETRY_DELAYS_MS.length; attempt += 1) {
+  for (
+    let attempt = 0;
+    attempt <= APP_API_RETRY_DELAYS_MS.length;
+    attempt += 1
+  ) {
     try {
       response = await fetch(`${APP_API_BASE_URL}${path}`, {
         ...init,
@@ -96,7 +102,10 @@ async function appApiRequest<T>(
       break;
     } catch (error) {
       lastNetworkError = error;
-      if (!isDefaultInternalAppApi() || attempt === APP_API_RETRY_DELAYS_MS.length) {
+      if (
+        !isDefaultInternalAppApi() ||
+        attempt === APP_API_RETRY_DELAYS_MS.length
+      ) {
         throw new Error(
           `${appApiUnavailableMessage()} ${error instanceof Error ? error.message : ""}`.trim(),
         );
@@ -123,7 +132,10 @@ async function appApiRequest<T>(
     let detail = response.statusText || "Request failed";
     try {
       const payload = (await response.json()) as { error?: string };
-      if (typeof payload.error === "string" && payload.error.trim().length > 0) {
+      if (
+        typeof payload.error === "string" &&
+        payload.error.trim().length > 0
+      ) {
         detail = payload.error.trim();
       }
     } catch {
@@ -163,7 +175,9 @@ export async function getPluginCatalogSettings() {
 export async function configurePluginCatalog(settings: PluginCatalogSettings) {
   const configure = window.timetrackerDesktop?.configurePluginCatalog;
   if (!configure) {
-    throw new Error("Plugin catalog settings are available in the desktop app.");
+    throw new Error(
+      "Plugin catalog settings are available in the desktop app.",
+    );
   }
   return pluginCatalogSettingsSchema.parse(await configure(settings));
 }
@@ -171,7 +185,9 @@ export async function configurePluginCatalog(settings: PluginCatalogSettings) {
 export async function downloadCatalogPlugin(pluginId: string) {
   const download = window.timetrackerDesktop?.downloadCatalogPlugin;
   if (!download) {
-    throw new Error("Plugin downloads are available in the production desktop app.");
+    throw new Error(
+      "Plugin downloads are available in the production desktop app.",
+    );
   }
   const result = catalogConnectorDownloadResponseSchema.parse(
     await download(pluginId),
@@ -322,7 +338,9 @@ export function getConnectorBacklogStatuses() {
   );
 }
 
-export function upsertConnectorBacklogStatuses(items: ConnectorBacklogStatusInput[]) {
+export function upsertConnectorBacklogStatuses(
+  items: ConnectorBacklogStatusInput[],
+) {
   const payload = connectorBacklogStatusUpsertRequestSchema.parse({ items });
   return appApiRequest(
     "/api/backlog/source-statuses",
@@ -380,38 +398,58 @@ export function syncConnectorConnection(
         workItem.sourceConnectionId === connectionId &&
         typeof workItem.sourceId === "string",
     )
-    .map((workItem) => ({
-      localWorkItemId: workItem._id,
-      sourceId: workItem.sourceId!,
-      originalEstimateHours: workItem.originalEstimateHours,
-      remainingEstimateHours: workItem.remainingEstimateHours,
-      completedEstimateHours: workItem.completedEstimateHours,
-      estimateSync: workItem.estimateSync
-        ? {
-            originalEstimateHours: workItem.estimateSync.originalEstimateHours
-              ? {
-                  baselineValue: workItem.estimateSync.originalEstimateHours.baselineValue,
-                  remoteValue: workItem.estimateSync.originalEstimateHours.remoteValue,
-                  resolution: workItem.estimateSync.originalEstimateHours.resolution,
-                }
-              : undefined,
-            remainingEstimateHours: workItem.estimateSync.remainingEstimateHours
-              ? {
-                  baselineValue: workItem.estimateSync.remainingEstimateHours.baselineValue,
-                  remoteValue: workItem.estimateSync.remainingEstimateHours.remoteValue,
-                  resolution: workItem.estimateSync.remainingEstimateHours.resolution,
-                }
-              : undefined,
-            completedEstimateHours: workItem.estimateSync.completedEstimateHours
-              ? {
-                  baselineValue: workItem.estimateSync.completedEstimateHours.baselineValue,
-                  remoteValue: workItem.estimateSync.completedEstimateHours.remoteValue,
-                  resolution: workItem.estimateSync.completedEstimateHours.resolution,
-                }
-              : undefined,
-          }
-        : undefined,
-    } satisfies ConnectorSyncWorkItem));
+    .map(
+      (workItem) =>
+        ({
+          localWorkItemId: workItem._id,
+          sourceId: workItem.sourceId!,
+          originalEstimateHours: workItem.originalEstimateHours,
+          remainingEstimateHours: workItem.remainingEstimateHours,
+          completedEstimateHours: workItem.completedEstimateHours,
+          estimateSync: workItem.estimateSync
+            ? {
+                originalEstimateHours: workItem.estimateSync
+                  .originalEstimateHours
+                  ? {
+                      baselineValue:
+                        workItem.estimateSync.originalEstimateHours
+                          .baselineValue,
+                      remoteValue:
+                        workItem.estimateSync.originalEstimateHours.remoteValue,
+                      resolution:
+                        workItem.estimateSync.originalEstimateHours.resolution,
+                    }
+                  : undefined,
+                remainingEstimateHours: workItem.estimateSync
+                  .remainingEstimateHours
+                  ? {
+                      baselineValue:
+                        workItem.estimateSync.remainingEstimateHours
+                          .baselineValue,
+                      remoteValue:
+                        workItem.estimateSync.remainingEstimateHours
+                          .remoteValue,
+                      resolution:
+                        workItem.estimateSync.remainingEstimateHours.resolution,
+                    }
+                  : undefined,
+                completedEstimateHours: workItem.estimateSync
+                  .completedEstimateHours
+                  ? {
+                      baselineValue:
+                        workItem.estimateSync.completedEstimateHours
+                          .baselineValue,
+                      remoteValue:
+                        workItem.estimateSync.completedEstimateHours
+                          .remoteValue,
+                      resolution:
+                        workItem.estimateSync.completedEstimateHours.resolution,
+                    }
+                  : undefined,
+              }
+            : undefined,
+        }) satisfies ConnectorSyncWorkItem,
+    );
   const payload = connectorSyncRequestSchema.parse({
     ...(input ?? { trigger: "manual" }),
     workItems: connectorWorkItems,
@@ -427,7 +465,8 @@ export function syncConnectorConnection(
     const importResult =
       result.mode === "backlog"
         ? localStore.importConnectorWorkItems(result.items, {
-            archiveMissingFromConnectionId: payload.trigger === "auto" ? connectionId : undefined,
+            archiveMissingFromConnectionId:
+              payload.trigger === "auto" ? connectionId : undefined,
           })
         : { importedCount: 0, updatedCount: 0 };
     localStore.applyConnectorSyncWorkItemUpdates(result.workItemUpdates);
@@ -441,10 +480,17 @@ export function syncConnectorConnection(
 }
 
 export function listConnectorImportCandidates() {
-  return appApiRequest("/api/backlog/imports", undefined, connectorImportListResponseSchema);
+  return appApiRequest(
+    "/api/backlog/imports",
+    undefined,
+    connectorImportListResponseSchema,
+  );
 }
 
-export function updateConnectorImportSelection(ids: string[], selected: boolean) {
+export function updateConnectorImportSelection(
+  ids: string[],
+  selected: boolean,
+) {
   const payload = connectorImportSelectionUpdateSchema.parse({ ids, selected });
   return appApiRequest(
     "/api/backlog/imports/selection",
@@ -486,7 +532,9 @@ export async function commitSelectedConnectorImportsToLocalStore() {
 }
 
 export function buildImportHierarchy(items: ConnectorImportCandidate[]) {
-  const itemsBySourceId = new Map(items.map((item) => [item.sourceId, item] as const));
+  const itemsBySourceId = new Map(
+    items.map((item) => [item.sourceId, item] as const),
+  );
   const childrenByParent = new Map<string, ConnectorImportCandidate[]>();
 
   for (const item of items) {
@@ -503,7 +551,9 @@ export function buildImportHierarchy(items: ConnectorImportCandidate[]) {
     siblings.sort((left, right) => left.title.localeCompare(right.title));
   }
 
-  const roots = items.filter((item) => !item.parentSourceId || !itemsBySourceId.has(item.parentSourceId));
+  const roots = items.filter(
+    (item) => !item.parentSourceId || !itemsBySourceId.has(item.parentSourceId),
+  );
 
   return roots.map((item) => ({
     item,

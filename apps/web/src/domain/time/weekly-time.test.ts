@@ -201,7 +201,9 @@ describe("weekly time projection", () => {
       ]),
     );
     expect(
-      projection.ledgerRows.some((row) => row.entryIds.includes("outside-week")),
+      projection.ledgerRows.some((row) =>
+        row.entryIds.includes("outside-week"),
+      ),
     ).toBe(false);
   });
 });

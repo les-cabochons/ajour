@@ -1,4 +1,9 @@
-const { mkdirSync, readFileSync, renameSync, writeFileSync } = require("node:fs");
+const {
+  mkdirSync,
+  readFileSync,
+  renameSync,
+  writeFileSync,
+} = require("node:fs");
 const path = require("node:path");
 
 const DEFAULT_PLUGIN_CATALOG_SETTINGS = Object.freeze({

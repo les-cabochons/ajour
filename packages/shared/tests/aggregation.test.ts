@@ -2,7 +2,9 @@ import { describe, expect, it } from "vitest";
 import { aggregateSegmentsToBlocks } from "../src/timeline/aggregation";
 import type { ActivitySegmentRecord } from "../src/types/domain";
 
-function makeSegment(overrides: Partial<ActivitySegmentRecord>): ActivitySegmentRecord {
+function makeSegment(
+  overrides: Partial<ActivitySegmentRecord>,
+): ActivitySegmentRecord {
   return {
     externalSegmentId: crypto.randomUUID(),
     startedAt: 1000,
@@ -36,7 +38,11 @@ describe("aggregateSegmentsToBlocks", () => {
     const blocks = aggregateSegmentsToBlocks(
       [
         makeSegment({ startedAt: 0, endedAt: 1000 }),
-        makeSegment({ externalSegmentId: "s2", startedAt: 1200, endedAt: 2000 }),
+        makeSegment({
+          externalSegmentId: "s2",
+          startedAt: 1200,
+          endedAt: 2000,
+        }),
       ],
       { mergeGapMs: 500, microBlockThresholdMs: 3000 },
     );

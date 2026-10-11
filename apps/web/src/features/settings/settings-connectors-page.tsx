@@ -41,12 +41,7 @@ import { FieldGroup } from "@/components/ui/field";
 import { NativeSelect } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
-import {
-  Tabs,
-  TabsContent,
-  TabsList,
-  TabsTrigger,
-} from "@/components/ui/tabs";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   getCachedConnectorsOverview,
   deleteConnectorConnection,
@@ -119,9 +114,7 @@ function prettifySummaryKey(key: string) {
 }
 
 function localCatalogEntry(
-  plugin:
-    | ConnectorPluginManifest
-    | ProjectDataShapePluginManifest,
+  plugin: ConnectorPluginManifest | ProjectDataShapePluginManifest,
   type: PluginCatalogEntry["type"],
 ): PluginCatalogEntry {
   return {
@@ -149,9 +142,7 @@ function localCatalogEntry(
     status: "available",
     compatibility: { pluginApiVersion: plugin.apiVersion },
     capabilities:
-      type === "connector"
-        ? ["work-item-sync"]
-        : ["project-data-shape"],
+      type === "connector" ? ["work-item-sync"] : ["project-data-shape"],
     tags: [type === "connector" ? "connector" : "data-shape"],
   };
 }
@@ -292,11 +283,7 @@ function PluginsHeader({
             </p>
           </div>
           {canInstall ? (
-            <Button
-              size="sm"
-              disabled={isMutating}
-              onClick={onInstall}
-            >
+            <Button size="sm" disabled={isMutating} onClick={onInstall}>
               <Upload data-icon="inline-start" />
               Install from file
             </Button>
@@ -316,9 +303,12 @@ function PluginsHeader({
         <div className="flex flex-col gap-3 border-y border-border/60 py-3 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-center justify-between gap-4 sm:justify-start">
             <div>
-              <p className="text-sm font-medium text-foreground">Plugin system</p>
+              <p className="text-sm font-medium text-foreground">
+                Plugin system
+              </p>
               <p className="text-xs text-muted-foreground">
-                Deactivating pauses every installed plugin without removing its data.
+                Deactivating pauses every installed plugin without removing its
+                data.
               </p>
             </div>
             <Switch
@@ -336,7 +326,9 @@ function PluginsHeader({
               disabled={!canConfigureRefresh}
               onChange={(event) =>
                 onRefreshMinutesChange(
-                  Number(event.target.value) as PluginCatalogSettings["refreshMinutes"],
+                  Number(
+                    event.target.value,
+                  ) as PluginCatalogSettings["refreshMinutes"],
                 )
               }
             >
@@ -385,12 +377,16 @@ function PluginDetailHeader({
             className="size-14"
           />
           <div className="min-w-0 flex-1">
-            <h1 className="text-lg font-semibold text-foreground">{entry.title}</h1>
+            <h1 className="text-lg font-semibold text-foreground">
+              {entry.title}
+            </h1>
             <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">
               {entry.description}
             </p>
             <p className="mt-2 text-xs text-[var(--text-tertiary)]">
-              {entry.author.name} · {entry.type === "connector" ? "Connector" : "Plugin"} · {entry.license.spdxId}
+              {entry.author.name} ·{" "}
+              {entry.type === "connector" ? "Connector" : "Plugin"} ·{" "}
+              {entry.license.spdxId}
             </p>
           </div>
           {action ? <div className="w-full sm:w-auto">{action}</div> : null}
@@ -405,22 +401,24 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
   const state = useLocalState();
   const isDevelopmentBuild =
     window.timetrackerDesktop?.runtime?.developmentBuild === true;
-  const canInstallConnectorPlugins = Boolean(
-    window.timetrackerDesktop?.installConnectorPlugin,
-  ) && !isDevelopmentBuild;
-  const canUninstallConnectorPlugins = Boolean(
-    window.timetrackerDesktop?.uninstallConnectorPlugin,
-  ) && !isDevelopmentBuild;
-  const canDownloadCatalogPlugins = Boolean(
-    window.timetrackerDesktop?.downloadCatalogPlugin,
-  ) && !isDevelopmentBuild;
+  const canInstallConnectorPlugins =
+    Boolean(window.timetrackerDesktop?.installConnectorPlugin) &&
+    !isDevelopmentBuild;
+  const canUninstallConnectorPlugins =
+    Boolean(window.timetrackerDesktop?.uninstallConnectorPlugin) &&
+    !isDevelopmentBuild;
+  const canDownloadCatalogPlugins =
+    Boolean(window.timetrackerDesktop?.downloadCatalogPlugin) &&
+    !isDevelopmentBuild;
   const [connectors, setConnectors] = useState<ConnectorsOverview | null>(
     getCachedConnectorsOverview,
   );
   const [catalog, setCatalog] = useState<PluginCatalogResponse | null>(null);
-  const [catalogSettings, setCatalogSettings] = useState<PluginCatalogSettings>({
-    refreshMinutes: 15,
-  });
+  const [catalogSettings, setCatalogSettings] = useState<PluginCatalogSettings>(
+    {
+      refreshMinutes: 15,
+    },
+  );
   const [dataShapePlugins, setDataShapePlugins] = useState<
     ProjectDataShapePluginManifest[]
   >([]);
@@ -452,9 +450,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
       setConnectorError(null);
     } catch (error) {
       setConnectorError(
-        error instanceof Error
-          ? error.message
-          : "Unable to reach the app API.",
+        error instanceof Error ? error.message : "Unable to reach the app API.",
       );
     }
   };
@@ -497,10 +493,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
   const connectorGroups = connectors?.connectionGroups ?? [];
   const displayEntries = useMemo(() => {
     const entries = new Map<string, PluginDisplayEntry>(
-      (catalog?.entries ?? []).map((entry) => [
-        entry.id,
-        { catalog: entry },
-      ]),
+      (catalog?.entries ?? []).map((entry) => [entry.id, { catalog: entry }]),
     );
 
     for (const group of connectorGroups) {
@@ -526,8 +519,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
     );
   }, [catalog?.entries, connectorGroups, dataShapePlugins]);
   const filteredDisplayEntries = displayEntries.filter(
-    (entry) =>
-      catalogFilter === "all" || entry.catalog.type === catalogFilter,
+    (entry) => catalogFilter === "all" || entry.catalog.type === catalogFilter,
   );
   const pluginsById = useMemo(
     () =>
@@ -539,8 +531,8 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
     [connectors?.plugins],
   );
   const activePlugin = formState
-    ? connectorGroups.find((group) => group.plugin.id === formState.pluginId)
-        ?.plugin ?? pluginsById.get(formState.pluginId)
+    ? (connectorGroups.find((group) => group.plugin.id === formState.pluginId)
+        ?.plugin ?? pluginsById.get(formState.pluginId))
     : undefined;
   const isFormDirty =
     formState && activePlugin
@@ -689,9 +681,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
               `${result.backlogImportedCount} imported`,
               `${result.backlogUpdatedCount} updated`,
               ...(conflictCount > 0
-                ? [
-                    `${conflictCount} conflict${conflictCount === 1 ? "" : "s"}`,
-                  ]
+                ? [`${conflictCount} conflict${conflictCount === 1 ? "" : "s"}`]
                 : []),
             ].join(" · ")
           : [
@@ -700,9 +690,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
               `${result.updatedCount} refreshed`,
               `${result.skippedCount} skipped`,
               ...(conflictCount > 0
-                ? [
-                    `${conflictCount} conflict${conflictCount === 1 ? "" : "s"}`,
-                  ]
+                ? [`${conflictCount} conflict${conflictCount === 1 ? "" : "s"}`]
                 : []),
             ].join(" · "),
       );
@@ -1048,7 +1036,9 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                       <CardTitle className="font-sans tracking-normal">
                         {connection.label}
                       </CardTitle>
-                      <CardDescription>{connection.tenantLabel}</CardDescription>
+                      <CardDescription>
+                        {connection.tenantLabel}
+                      </CardDescription>
                     </div>
                     <CardAction>
                       <Badge
@@ -1072,7 +1062,8 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                         ),
                       )}
                       <span>
-                        Last sync: {formatConnectorTimestamp(connection.lastSyncAt)}
+                        Last sync:{" "}
+                        {formatConnectorTimestamp(connection.lastSyncAt)}
                       </span>
                       {!connection.autoSync ? (
                         <span>
@@ -1199,7 +1190,9 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
     const installed = Boolean(dataShapePlugin);
     const available = catalogEntry.status === "available";
     const canDownloadThisEntry =
-      available && catalogEntry.type === "connector" && canDownloadCatalogPlugins;
+      available &&
+      catalogEntry.type === "connector" &&
+      canDownloadCatalogPlugins;
 
     return (
       <>
@@ -1256,7 +1249,9 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                 Plugin API {catalogEntry.compatibility.pluginApiVersion}
               </Badge>
               {dataShapePlugin ? (
-                <Badge variant="outline">Version {dataShapePlugin.version}</Badge>
+                <Badge variant="outline">
+                  Version {dataShapePlugin.version}
+                </Badge>
               ) : null}
             </>
           }
@@ -1299,45 +1294,43 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
   if (pluginId) {
     return (
       <div className="settings-sections gap-6">
-        {selectedDisplayEntry?.connectorGroup
-          ? renderConnectorDetail(
-              selectedDisplayEntry.catalog,
-              selectedDisplayEntry.connectorGroup,
-            )
-          : selectedDisplayEntry
-            ? renderCatalogDetail(selectedDisplayEntry)
-            : catalog === null || connectors === null
-              ? (
-                  <>
-                    <Link
-                      to="/settings/plugins"
-                      replace
-                      className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground"
-                    >
-                      <ArrowLeft className="size-4" />
-                      All plugins
-                    </Link>
-                    {renderMessages()}
-                    <MessagePanel>Loading plugin…</MessagePanel>
-                  </>
-                )
-              : (
-                  <>
-                    <Link
-                      to="/settings/plugins"
-                      replace
-                      className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground"
-                    >
-                      <ArrowLeft className="size-4" />
-                      All plugins
-                    </Link>
-                    {renderMessages()}
-                    <MessagePanel tone="warning">
-                      That plugin is not present in the Ajour index or installed
-                      on this device.
-                    </MessagePanel>
-                  </>
-                )}
+        {selectedDisplayEntry?.connectorGroup ? (
+          renderConnectorDetail(
+            selectedDisplayEntry.catalog,
+            selectedDisplayEntry.connectorGroup,
+          )
+        ) : selectedDisplayEntry ? (
+          renderCatalogDetail(selectedDisplayEntry)
+        ) : catalog === null || connectors === null ? (
+          <>
+            <Link
+              to="/settings/plugins"
+              replace
+              className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground"
+            >
+              <ArrowLeft className="size-4" />
+              All plugins
+            </Link>
+            {renderMessages()}
+            <MessagePanel>Loading plugin…</MessagePanel>
+          </>
+        ) : (
+          <>
+            <Link
+              to="/settings/plugins"
+              replace
+              className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground"
+            >
+              <ArrowLeft className="size-4" />
+              All plugins
+            </Link>
+            {renderMessages()}
+            <MessagePanel tone="warning">
+              That plugin is not present in the Ajour index or installed on this
+              device.
+            </MessagePanel>
+          </>
+        )}
       </div>
     );
   }
@@ -1377,7 +1370,10 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                     onDownload={() => void handleDownloadPlugin(entry.catalog)}
                     onEnabledChange={(enabled) =>
                       entry.connectorGroup
-                        ? void handlePluginActivation(entry.connectorGroup, enabled)
+                        ? void handlePluginActivation(
+                            entry.connectorGroup,
+                            enabled,
+                          )
                         : undefined
                     }
                   />

@@ -948,10 +948,9 @@ describe("localStore backlog status sync", () => {
 
     const { localStore } = await import("./local-store");
 
-    expect(localStore.snapshot().timesheetEntries.map((entry) => entry._id)).toEqual([
-      "timesheet_current",
-      "timesheet_bootstrap",
-    ]);
+    expect(
+      localStore.snapshot().timesheetEntries.map((entry) => entry._id),
+    ).toEqual(["timesheet_current", "timesheet_bootstrap"]);
     expect(localStore.snapshot().projects[0]).toMatchObject({
       _id: "project_custom",
       name: "Recovered project",
@@ -983,7 +982,9 @@ describe("localStore backlog status sync", () => {
       expect.arrayContaining([
         expect.objectContaining({
           name: "Project Mercury",
-          tasks: expect.arrayContaining([expect.objectContaining({ name: "Feature Work" })]),
+          tasks: expect.arrayContaining([
+            expect.objectContaining({ name: "Feature Work" }),
+          ]),
         }),
       ]),
     );
@@ -1008,7 +1009,9 @@ describe("localStore backlog status sync", () => {
 
     expect(localStore.snapshot().timesheetImportDrafts).toHaveLength(0);
     expect(localStore.snapshot().projects).toHaveLength(initialProjectCount);
-    expect(localStore.snapshot().projects.map((project) => project.name)).not.toContain("");
+    expect(
+      localStore.snapshot().projects.map((project) => project.name),
+    ).not.toContain("");
     expect(localStore.snapshot().timesheetEntries).toEqual([
       expect.objectContaining({
         localDate: "2026-04-21",
@@ -1028,7 +1031,9 @@ describe("localStore backlog status sync", () => {
       color: "#123456",
       tasks: [{ name: "Feature Work" }],
     });
-    const taskId = localStore.snapshot().projects.find((project) => project._id === projectId)?.tasks[0]?._id;
+    const taskId = localStore
+      .snapshot()
+      .projects.find((project) => project._id === projectId)?.tasks[0]?._id;
 
     localStore.saveManualTimeEntry({
       localDate: "2026-04-21",
@@ -1081,7 +1086,9 @@ describe("localStore backlog status sync", () => {
       color: "#123456",
       tasks: [{ name: "Feature Work" }],
     });
-    const existingTaskId = localStore.snapshot().projects.find((project) => project._id === projectId)?.tasks[0]?._id;
+    const existingTaskId = localStore
+      .snapshot()
+      .projects.find((project) => project._id === projectId)?.tasks[0]?._id;
     expect(existingTaskId).toBeTruthy();
 
     const result = localStore.importProjectWorkbookRows([
@@ -1127,8 +1134,12 @@ describe("localStore backlog status sync", () => {
       updatedTaskCount: 1,
     });
 
-    const mercury = localStore.snapshot().projects.find((project) => project.name === "Project Mercury");
-    const apollo = localStore.snapshot().projects.find((project) => project.name === "Project Apollo");
+    const mercury = localStore
+      .snapshot()
+      .projects.find((project) => project.name === "Project Mercury");
+    const apollo = localStore
+      .snapshot()
+      .projects.find((project) => project.name === "Project Apollo");
 
     expect(mercury).toMatchObject({
       code: "MER",
@@ -1165,7 +1176,9 @@ describe("localStore backlog status sync", () => {
       color: "#123456",
       tasks: [{ name: "Feature Work" }],
     });
-    const taskId = localStore.snapshot().projects.find((project) => project._id === projectId)?.tasks[0]?._id;
+    const taskId = localStore
+      .snapshot()
+      .projects.find((project) => project._id === projectId)?.tasks[0]?._id;
 
     expect(taskId).toBeTruthy();
 
@@ -1176,7 +1189,9 @@ describe("localStore backlog status sync", () => {
     });
 
     expect(
-      localStore.snapshot().projects.find((project) => project._id === projectId)?.tasks[0],
+      localStore
+        .snapshot()
+        .projects.find((project) => project._id === projectId)?.tasks[0],
     ).toMatchObject({
       _id: taskId,
       billable: false,
@@ -1206,7 +1221,9 @@ describe("localStore backlog status sync", () => {
     });
 
     expect(
-      localStore.snapshot().projects.find((project) => project._id === projectId)?.tasks[0],
+      localStore
+        .snapshot()
+        .projects.find((project) => project._id === projectId)?.tasks[0],
     ).toMatchObject({
       _id: taskId,
       billable: true,

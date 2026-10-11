@@ -1,14 +1,15 @@
 import { z } from "zod";
 import { connectorPluginInstallResponseSchema } from "./connectors";
 
-const httpsUrlSchema = z.string().url().refine(
-  (value) => new URL(value).protocol === "https:",
-  "Catalog links must use HTTPS.",
-);
-
-const catalogSlugSchema = z
+const httpsUrlSchema = z
   .string()
-  .regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
+  .url()
+  .refine(
+    (value) => new URL(value).protocol === "https:",
+    "Catalog links must use HTTPS.",
+  );
+
+const catalogSlugSchema = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
 
 export const pluginCatalogEntrySchema = z.object({
   schemaVersion: z.literal(1),
@@ -45,8 +46,16 @@ export const pluginCatalogEntrySchema = z.object({
     .optional(),
   images: z
     .object({
-      thumbnailDataUrl: z.string().startsWith("data:image/").max(1_400_000).optional(),
-      heroDataUrl: z.string().startsWith("data:image/").max(1_400_000).optional(),
+      thumbnailDataUrl: z
+        .string()
+        .startsWith("data:image/")
+        .max(1_400_000)
+        .optional(),
+      heroDataUrl: z
+        .string()
+        .startsWith("data:image/")
+        .max(1_400_000)
+        .optional(),
     })
     .optional(),
   tags: z.array(catalogSlugSchema).min(1).max(12),

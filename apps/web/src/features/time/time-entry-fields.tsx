@@ -69,7 +69,10 @@ export function TimeEntryFields({
           rows={3}
         />
       </Field>
-      <Field className="entry-field-hours" data-invalid={Boolean(durationError)}>
+      <Field
+        className="entry-field-hours"
+        data-invalid={Boolean(durationError)}
+      >
         <FieldLabel htmlFor={durationId}>Hours</FieldLabel>
         <Input
           id={durationId}
@@ -86,7 +89,9 @@ export function TimeEntryFields({
           placeholder="01:30"
           aria-invalid={Boolean(durationError)}
         />
-        {durationError ? <span className="field-error">{durationError}</span> : null}
+        {durationError ? (
+          <span className="field-error">{durationError}</span>
+        ) : null}
       </Field>
     </FieldGroup>
   );

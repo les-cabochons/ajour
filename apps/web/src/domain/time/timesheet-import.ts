@@ -45,10 +45,7 @@ function isValidLocalDate(value: string) {
   );
 }
 
-function resolveImportedProject(
-  projects: LocalProject[],
-  projectName: string,
-) {
+function resolveImportedProject(projects: LocalProject[], projectName: string) {
   const normalizedProjectName = normalizeTaskImportName(projectName);
   return projects.find(
     (project) =>
@@ -189,10 +186,7 @@ function ensureImportedProjectAndTask(
     };
   }
 
-  const existingProject = resolveImportedProject(
-    state.projects,
-    projectName,
-  );
+  const existingProject = resolveImportedProject(state.projects, projectName);
   if (existingProject) {
     const existingTask = taskName
       ? resolveImportedTask(existingProject, taskName)

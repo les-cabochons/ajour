@@ -2,7 +2,9 @@ import ExcelJS from "exceljs";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { extractTaskNamesFromWorkbook } from "./project-task-import";
 
-async function buildWorkbookBuffer(...sheets: Array<{ name: string; rows: unknown[][] }>) {
+async function buildWorkbookBuffer(
+  ...sheets: Array<{ name: string; rows: unknown[][] }>
+) {
   const workbook = new ExcelJS.Workbook();
 
   for (const sheet of sheets) {
@@ -80,7 +82,10 @@ describe("localStore.importProjectTasks", () => {
       {
         name: "Project Mercury",
         color: "#123456",
-        tasks: [{ name: "Existing Task" }, { name: "Déjà fait", status: "archived" }],
+        tasks: [
+          { name: "Existing Task" },
+          { name: "Déjà fait", status: "archived" },
+        ],
       },
     ]);
 
@@ -102,12 +107,9 @@ describe("localStore.importProjectTasks", () => {
       headerCount: 0,
       importedNames: ["New Task", "Another Task"],
     });
-    expect(localStore.snapshot().projects[0]?.tasks.map((task) => task.name)).toEqual([
-      "Existing Task",
-      "Déjà fait",
-      "New Task",
-      "Another Task",
-    ]);
+    expect(
+      localStore.snapshot().projects[0]?.tasks.map((task) => task.name),
+    ).toEqual(["Existing Task", "Déjà fait", "New Task", "Another Task"]);
   });
 
   it("creates no new tasks when the same workbook is imported twice", async () => {
@@ -122,8 +124,13 @@ describe("localStore.importProjectTasks", () => {
 
     const projectId = localStore.snapshot().projects[0]!._id;
 
-    expect(localStore.importProjectTasks(projectId, ["Billet 1", "Billet 2"]).importedCount).toBe(2);
-    expect(localStore.importProjectTasks(projectId, ["Billet 1", "Billet 2"])).toEqual({
+    expect(
+      localStore.importProjectTasks(projectId, ["Billet 1", "Billet 2"])
+        .importedCount,
+    ).toBe(2);
+    expect(
+      localStore.importProjectTasks(projectId, ["Billet 1", "Billet 2"]),
+    ).toEqual({
       importedCount: 0,
       duplicateCount: 2,
       blankCount: 0,
@@ -153,7 +160,9 @@ describe("localStore.importProjectTasks", () => {
     localStore.archiveProject(projectId);
 
     expect(localStore.snapshot().projects[0]?.status).toBe("archived");
-    expect(localStore.snapshot().projects[0]?.tasks[0]?.status).toBe("archived");
+    expect(localStore.snapshot().projects[0]?.tasks[0]?.status).toBe(
+      "archived",
+    );
 
     localStore.unarchiveProject(projectId);
     localStore.unarchiveProjectTask(projectId, taskId);
@@ -178,7 +187,8 @@ describe("localStore.importProjectTasks", () => {
           tenantLabel: "Contoso",
           sourceId: "https://dev.azure.com/contoso/project/_workitems/edit/123",
           externalId: "123",
-          sourceUrl: "https://dev.azure.com/contoso/project/_workitems/edit/123",
+          sourceUrl:
+            "https://dev.azure.com/contoso/project/_workitems/edit/123",
           title: "Original title",
           note: "Original note",
           projectName: "Project Mercury",
@@ -212,7 +222,8 @@ describe("localStore.importProjectTasks", () => {
           tenantLabel: "Contoso",
           sourceId: "https://dev.azure.com/contoso/project/_workitems/edit/123",
           externalId: "123",
-          sourceUrl: "https://dev.azure.com/contoso/project/_workitems/edit/123",
+          sourceUrl:
+            "https://dev.azure.com/contoso/project/_workitems/edit/123",
           title: "Updated title",
           note: "Updated note",
           projectName: "Project Mercury",
@@ -260,7 +271,8 @@ describe("localStore.importProjectTasks", () => {
           tenantLabel: "Contoso",
           sourceId: "https://dev.azure.com/contoso/project/_workitems/edit/321",
           externalId: "321",
-          sourceUrl: "https://dev.azure.com/contoso/project/_workitems/edit/321",
+          sourceUrl:
+            "https://dev.azure.com/contoso/project/_workitems/edit/321",
           title: "No priority from Azure",
           projectName: "Project Mercury",
           workItemType: "Task",
@@ -296,7 +308,11 @@ describe("localStore.importProjectTasks", () => {
 
     localStore.updateWorkItem(workItemId, { priority: undefined });
 
-    expect(localStore.snapshot().workItems.find((workItem) => workItem._id === workItemId)).toMatchObject({
+    expect(
+      localStore
+        .snapshot()
+        .workItems.find((workItem) => workItem._id === workItemId),
+    ).toMatchObject({
       _id: workItemId,
       priority: undefined,
     });

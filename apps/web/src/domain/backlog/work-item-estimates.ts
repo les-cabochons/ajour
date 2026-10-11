@@ -29,9 +29,7 @@ export function normalizeWorkItemEstimateValue(value: number | undefined) {
 }
 
 function signedDurationMsToHours(durationMs: number) {
-  return Number.isFinite(durationMs)
-    ? durationMs / (60 * 60 * 1000)
-    : 0;
+  return Number.isFinite(durationMs) ? durationMs / (60 * 60 * 1000) : 0;
 }
 
 function hoursToDurationMs(hours: number) {
@@ -107,10 +105,7 @@ export function applyLoggedTimeToEstimateValues(
   }
 
   const refundedHours = -deltaHours;
-  const refundedOverrunHours = Math.min(
-    currentOverrunHours,
-    refundedHours,
-  );
+  const refundedOverrunHours = Math.min(currentOverrunHours, refundedHours);
   const restoredRemainingHours = refundedHours - refundedOverrunHours;
   return {
     ...values,
@@ -150,9 +145,7 @@ export function createImportedEstimateSyncState(
     };
   };
 
-  const originalEstimateHours = createFieldState(
-    values.originalEstimateHours,
-  );
+  const originalEstimateHours = createFieldState(values.originalEstimateHours);
   const remainingEstimateHours = createFieldState(
     values.remainingEstimateHours,
   );

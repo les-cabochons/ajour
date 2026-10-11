@@ -60,9 +60,9 @@ const projects = [
 
 describe("project and task search", () => {
   it("matches projects by normalized, order-independent terms", () => {
-    expect(findMatchingProjects(projects, "XYZ aaa").map((project) => project._id)).toEqual([
-      "project-aaa",
-    ]);
+    expect(
+      findMatchingProjects(projects, "XYZ aaa").map((project) => project._id),
+    ).toEqual(["project-aaa"]);
   });
 
   it("finds a task from mixed project and task terms in either order", () => {

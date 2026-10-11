@@ -59,9 +59,7 @@ function createEntry(overrides: Partial<LocalTimesheetEntry> = {}) {
   } satisfies LocalTimesheetEntry;
 }
 
-function createState(
-  overrides: Partial<LocalAppState> = {},
-): LocalAppState {
+function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
   return {
     projects: [createProject()],
     timers: [],
@@ -384,9 +382,9 @@ describe("timer and timesheet entry lifecycle", () => {
       ],
     });
 
-    expect(
-      restartTimesheetEntry(state, "missing", createFactories()),
-    ).toBe(state);
+    expect(restartTimesheetEntry(state, "missing", createFactories())).toBe(
+      state,
+    );
   });
 
   it("preserves malformed multiple-timer state instead of losing tracked time", () => {
@@ -421,9 +419,9 @@ describe("timer and timesheet entry lifecycle", () => {
       },
     };
 
-    expect(
-      restartTimesheetEntry(state, selectedEntry._id, factories),
-    ).toBe(state);
+    expect(restartTimesheetEntry(state, selectedEntry._id, factories)).toBe(
+      state,
+    );
     expect(state.timers).toHaveLength(2);
     expect(clockCalls).toBe(0);
     expect(idCalls).toBe(0);

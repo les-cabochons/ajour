@@ -62,17 +62,17 @@ This registry captures reusable visual patterns already present in TimeTracker. 
 File: `apps/web/src/features/settings/settings-connectors-page.tsx`
 Last updated: 2026-08-07
 
-| Property         | Class or token |
-| ---------------- | -------------- |
-| Background       | `AppPanel`, `--surface-high` on hover |
-| Border           | `AppPanel` border, `border-border/70` for tabs and connection cards |
+| Property         | Class or token                                                                    |
+| ---------------- | --------------------------------------------------------------------------------- |
+| Background       | `AppPanel`, `--surface-high` on hover                                             |
+| Border           | `AppPanel` border, `border-border/70` for tabs and connection cards               |
 | Border radius    | `rounded-lg` for icons and connection cards; `--control-radius` for focus targets |
-| Text — primary   | `text-sm font-semibold text-foreground` |
-| Text — secondary | `text-sm leading-5 text-muted-foreground` |
-| Spacing          | `p-4 gap-3` for catalog entries; `p-5 gap-5` for detail headers and forms |
-| Hover state      | `hover:bg-[var(--surface-high)]` |
-| Shadow           | none for catalog entries; connection cards use borders instead of elevation |
-| Accent usage     | `Badge variant="secondary"` for active state; status colors only for errors |
+| Text — primary   | `text-sm font-semibold text-foreground`                                           |
+| Text — secondary | `text-sm leading-5 text-muted-foreground`                                         |
+| Spacing          | `p-4 gap-3` for catalog entries; `p-5 gap-5` for detail headers and forms         |
+| Hover state      | `hover:bg-[var(--surface-high)]`                                                  |
+| Shadow           | none for catalog entries; connection cards use borders instead of elevation       |
+| Accent usage     | `Badge variant="secondary"` for active state; status colors only for errors       |
 
 **Pattern notes:**
 Plugin settings use a compact system-level activation switch and refresh-policy

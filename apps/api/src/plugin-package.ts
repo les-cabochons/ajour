@@ -45,7 +45,10 @@ export interface InstalledConnectorPlugin {
 
 function isPathInside(parent: string, candidate: string) {
   const relative = path.relative(parent, candidate);
-  return relative.length === 0 || (!relative.startsWith("..") && !path.isAbsolute(relative));
+  return (
+    relative.length === 0 ||
+    (!relative.startsWith("..") && !path.isAbsolute(relative))
+  );
 }
 
 async function pathExists(candidate: string) {
@@ -119,11 +122,15 @@ async function validateConnectorPluginArchive(archivePath: string) {
           }
           if (entry.type === "File") {
             if (entry.size > MAX_CONNECTOR_PLUGIN_FILE_BYTES) {
-              throw new Error(`Connector archive entry "${entry.path}" is too large.`);
+              throw new Error(
+                `Connector archive entry "${entry.path}" is too large.`,
+              );
             }
             extractedBytes += entry.size;
             if (extractedBytes > MAX_CONNECTOR_PLUGIN_EXTRACTED_BYTES) {
-              throw new Error("Connector archive expands beyond the allowed size.");
+              throw new Error(
+                "Connector archive expands beyond the allowed size.",
+              );
             }
           }
         } catch (error) {
@@ -148,16 +155,26 @@ export function resolveConnectorPluginEntrypoint(
   manifest: ConnectorPluginManifest,
 ) {
   if (path.isAbsolute(manifest.entrypoint)) {
-    throw new Error(`Connector plugin "${manifest.id}" entrypoint must be relative.`);
+    throw new Error(
+      `Connector plugin "${manifest.id}" entrypoint must be relative.`,
+    );
   }
 
   const entrypointPath = path.resolve(directory, manifest.entrypoint);
   if (!isPathInside(directory, entrypointPath)) {
-    throw new Error(`Connector plugin "${manifest.id}" entrypoint leaves its plugin directory.`);
+    throw new Error(
+      `Connector plugin "${manifest.id}" entrypoint leaves its plugin directory.`,
+    );
   }
 
-  if (!ALLOWED_ENTRYPOINT_EXTENSIONS.has(path.extname(entrypointPath).toLowerCase())) {
-    throw new Error(`Connector plugin "${manifest.id}" entrypoint must be compiled JavaScript.`);
+  if (
+    !ALLOWED_ENTRYPOINT_EXTENSIONS.has(
+      path.extname(entrypointPath).toLowerCase(),
+    )
+  ) {
+    throw new Error(
+      `Connector plugin "${manifest.id}" entrypoint must be compiled JavaScript.`,
+    );
   }
 
   return entrypointPath;
@@ -185,7 +202,10 @@ export async function readConnectorPlugin(
     );
   }
 
-  const entrypointPath = resolveConnectorPluginEntrypoint(pluginDirectory, manifest);
+  const entrypointPath = resolveConnectorPluginEntrypoint(
+    pluginDirectory,
+    manifest,
+  );
   await assertRegularPluginFile(
     pluginDirectory,
     canonicalPluginDirectory,
@@ -219,7 +239,10 @@ export async function discoverInstalledConnectorPlugins(
 
     try {
       plugins.push(
-        await readConnectorPlugin(path.join(pluginRoot, entry.name), "installed"),
+        await readConnectorPlugin(
+          path.join(pluginRoot, entry.name),
+          "installed",
+        ),
       );
     } catch (error) {
       console.error(
@@ -240,7 +263,10 @@ export async function reconcileConnectorPluginInstallRoot(pluginRoot: string) {
       continue;
     }
     const entryPath = path.join(pluginRoot, entry.name);
-    if (entry.name.startsWith(".install-") || entry.name.startsWith(".uninstall-")) {
+    if (
+      entry.name.startsWith(".install-") ||
+      entry.name.startsWith(".uninstall-")
+    ) {
       await rm(entryPath, { recursive: true, force: true });
       continue;
     }
@@ -257,7 +283,10 @@ export async function reconcileConnectorPluginInstallRoot(pluginRoot: string) {
         await rename(entryPath, targetDirectory);
       }
     } catch (error) {
-      console.error(`Unable to reconcile connector plugin backup "${entryPath}".`, error);
+      console.error(
+        `Unable to reconcile connector plugin backup "${entryPath}".`,
+        error,
+      );
     }
   }
 }
@@ -288,7 +317,9 @@ export async function installConnectorPluginArchive(options: {
   }
 
   await mkdir(options.installRoot, { recursive: true, mode: 0o700 });
-  const stagingRoot = await mkdtemp(path.join(options.installRoot, ".install-"));
+  const stagingRoot = await mkdtemp(
+    path.join(options.installRoot, ".install-"),
+  );
   const archivePath = path.join(stagingRoot, "plugin.harday-connector");
   const payloadDirectory = path.join(stagingRoot, "payload");
   await mkdir(payloadDirectory, { mode: 0o700 });
@@ -304,12 +335,21 @@ export async function installConnectorPluginArchive(options: {
       strict: true,
     });
 
-    const stagedPlugin = await readConnectorPlugin(payloadDirectory, "installed");
-    const targetDirectory = path.join(options.installRoot, stagedPlugin.manifest.id);
+    const stagedPlugin = await readConnectorPlugin(
+      payloadDirectory,
+      "installed",
+    );
+    const targetDirectory = path.join(
+      options.installRoot,
+      stagedPlugin.manifest.id,
+    );
     const targetExists = await pathExists(targetDirectory);
 
     if (targetExists && options.replaceExisting === false) {
-      const existingPlugin = await readConnectorPlugin(targetDirectory, "installed");
+      const existingPlugin = await readConnectorPlugin(
+        targetDirectory,
+        "installed",
+      );
       return {
         manifest: existingPlugin.manifest,
         directory: existingPlugin.directory,
@@ -337,9 +377,14 @@ export async function installConnectorPluginArchive(options: {
     }
 
     if (targetExists) {
-      await rm(backupDirectory, { recursive: true, force: true }).catch((error) => {
-        console.error(`Unable to remove connector plugin backup "${backupDirectory}".`, error);
-      });
+      await rm(backupDirectory, { recursive: true, force: true }).catch(
+        (error) => {
+          console.error(
+            `Unable to remove connector plugin backup "${backupDirectory}".`,
+            error,
+          );
+        },
+      );
     }
 
     return {
@@ -360,13 +405,17 @@ export async function uninstallConnectorPluginPackage(options: {
   const pluginId = connectorPluginIdSchema.parse(options.pluginId);
   const installRoot = path.resolve(options.installRoot);
   const installedPlugins = await discoverInstalledConnectorPlugins(installRoot);
-  const plugin = installedPlugins.find((candidate) => candidate.manifest.id === pluginId);
+  const plugin = installedPlugins.find(
+    (candidate) => candidate.manifest.id === pluginId,
+  );
   if (!plugin) {
     return null;
   }
 
   if (path.dirname(plugin.directory) !== installRoot) {
-    throw new Error(`Connector plugin "${pluginId}" is outside the managed plugin directory.`);
+    throw new Error(
+      `Connector plugin "${pluginId}" is outside the managed plugin directory.`,
+    );
   }
 
   const removedDirectory = path.join(
@@ -377,7 +426,10 @@ export async function uninstallConnectorPluginPackage(options: {
   try {
     await rm(removedDirectory, { recursive: true, force: true });
   } catch (error) {
-    if (!(await pathExists(plugin.directory)) && (await pathExists(removedDirectory))) {
+    if (
+      !(await pathExists(plugin.directory)) &&
+      (await pathExists(removedDirectory))
+    ) {
       await rename(removedDirectory, plugin.directory);
     }
     throw error;

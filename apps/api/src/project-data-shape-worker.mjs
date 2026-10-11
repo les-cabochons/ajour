@@ -43,7 +43,9 @@ function errorMessage(error) {
 try {
   const result = await run();
   if (serialize(result).byteLength > MAX_PLUGIN_RESULT_BYTES) {
-    throw new Error("Project data shape plugin result exceeds the allowed size.");
+    throw new Error(
+      "Project data shape plugin result exceeds the allowed size.",
+    );
   }
   parentPort.postMessage({ ok: true, result });
 } catch (error) {

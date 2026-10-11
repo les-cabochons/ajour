@@ -1,10 +1,6 @@
 import os from "node:os";
 import path from "node:path";
-import type {
-  IncomingMessage,
-  Server,
-  ServerResponse,
-} from "node:http";
+import type { IncomingMessage, Server, ServerResponse } from "node:http";
 import {
   access,
   mkdir,
@@ -126,50 +122,48 @@ async function dispatchJsonRequest(
     body?: Uint8Array | string;
   },
 ) {
-  return await new Promise<{ status: number; body: unknown }>(
-    (resolve) => {
-      const requestBody =
-        options.body === undefined
-          ? []
-          : [
-              typeof options.body === "string"
-                ? Buffer.from(options.body)
-                : Buffer.from(options.body),
-            ];
-      const request = {
-        method: options.method,
-        url: options.path,
-        headers: Object.fromEntries(
-          Object.entries(options.headers ?? {}).map(([key, value]) => [
-            key.toLowerCase(),
-            value,
-          ]),
-        ),
-        async *[Symbol.asyncIterator]() {
-          yield* requestBody;
-        },
-      } as unknown as IncomingMessage;
-      let status = 0;
-      const response = {
-        setHeader() {
-          return response;
-        },
-        writeHead(statusCode: number) {
-          status = statusCode;
-          return response;
-        },
-        end(payload?: string) {
-          resolve({
-            status,
-            body: payload ? JSON.parse(payload) : undefined,
-          });
-          return response;
-        },
-      } as unknown as ServerResponse;
+  return await new Promise<{ status: number; body: unknown }>((resolve) => {
+    const requestBody =
+      options.body === undefined
+        ? []
+        : [
+            typeof options.body === "string"
+              ? Buffer.from(options.body)
+              : Buffer.from(options.body),
+          ];
+    const request = {
+      method: options.method,
+      url: options.path,
+      headers: Object.fromEntries(
+        Object.entries(options.headers ?? {}).map(([key, value]) => [
+          key.toLowerCase(),
+          value,
+        ]),
+      ),
+      async *[Symbol.asyncIterator]() {
+        yield* requestBody;
+      },
+    } as unknown as IncomingMessage;
+    let status = 0;
+    const response = {
+      setHeader() {
+        return response;
+      },
+      writeHead(statusCode: number) {
+        status = statusCode;
+        return response;
+      },
+      end(payload?: string) {
+        resolve({
+          status,
+          body: payload ? JSON.parse(payload) : undefined,
+        });
+        return response;
+      },
+    } as unknown as ServerResponse;
 
-      server.emit("request", request, response);
-    },
-  );
+    server.emit("request", request, response);
+  });
 }
 
 describe("connector plugin installation boundary", () => {
@@ -189,9 +183,9 @@ describe("connector plugin installation boundary", () => {
       server.emit("close");
     }
     await Promise.all(
-      tempDirs.splice(0).map((directory) =>
-        rm(directory, { recursive: true, force: true }),
-      ),
+      tempDirs
+        .splice(0)
+        .map((directory) => rm(directory, { recursive: true, force: true })),
     );
   });
 
@@ -369,9 +363,7 @@ describe("connector plugin installation boundary", () => {
     ).resolves.toEqual({
       status: 200,
       body: {
-        datasets: [
-          { id: "projects", rows: [{ project: "Mercury" }] },
-        ],
+        datasets: [{ id: "projects", rows: [{ project: "Mercury" }] }],
       },
     });
 
@@ -380,9 +372,7 @@ describe("connector plugin installation boundary", () => {
         method: "POST",
         path: "/api/project-data-shapes/workday-project-data/import",
         body: JSON.stringify({
-          datasets: [
-            { id: "projects", rows: [{ project: "Mercury" }] },
-          ],
+          datasets: [{ id: "projects", rows: [{ project: "Mercury" }] }],
         }),
       }),
     ).resolves.toEqual({

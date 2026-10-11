@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { buildDominantActivityLog, splitSpansByLocalDate } from "../src/timeline/dominant-log";
+import {
+  buildDominantActivityLog,
+  splitSpansByLocalDate,
+} from "../src/timeline/dominant-log";
 import type { ActivityIdentity, ActivitySpan } from "../src/types/domain";
 
 const BUCKET_MS = 5 * 60 * 1000;
@@ -29,7 +32,9 @@ function makeSpan(overrides: Partial<ActivitySpan>): ActivitySpan {
 
 describe("buildDominantActivityLog", () => {
   it("keeps a bucket when one activity owns the full 5 minutes", () => {
-    const entries = buildDominantActivityLog([makeSpan({})], "2026-04-09", { bucketMs: BUCKET_MS });
+    const entries = buildDominantActivityLog([makeSpan({})], "2026-04-09", {
+      bucketMs: BUCKET_MS,
+    });
 
     expect(entries).toHaveLength(1);
     expect(entries[0]?.durationMs).toBe(BUCKET_MS);
@@ -117,7 +122,9 @@ describe("buildDominantActivityLog", () => {
     );
 
     expect(entries).toHaveLength(1);
-    expect(entries[0]?.identity.mergeKey).toBe("browser:url:github.com/myorg/payments/pulls/123");
+    expect(entries[0]?.identity.mergeKey).toBe(
+      "browser:url:github.com/myorg/payments/pulls/123",
+    );
   });
 
   it("does not merge desktop entries when app or title differs", () => {
@@ -208,7 +215,11 @@ describe("splitSpansByLocalDate", () => {
 
     expect(split["2026-04-09"]).toHaveLength(1);
     expect(split["2026-04-10"]).toHaveLength(1);
-    expect(split["2026-04-09"]?.[0]?.endedAt).toBe(new Date("2026-04-10T00:00:00").getTime());
-    expect(split["2026-04-10"]?.[0]?.startedAt).toBe(new Date("2026-04-10T00:00:00").getTime());
+    expect(split["2026-04-09"]?.[0]?.endedAt).toBe(
+      new Date("2026-04-10T00:00:00").getTime(),
+    );
+    expect(split["2026-04-10"]?.[0]?.startedAt).toBe(
+      new Date("2026-04-10T00:00:00").getTime(),
+    );
   });
 });

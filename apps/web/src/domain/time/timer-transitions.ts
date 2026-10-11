@@ -13,9 +13,7 @@ import { formatLocalDateFromTimestamp } from "@/domain/time/duration";
 
 export type TimerFactories = TimesheetEntryFactories;
 
-export type TimerPatch = Partial<
-  Omit<LocalTimer, "_id" | "startedAt">
->;
+export type TimerPatch = Partial<Omit<LocalTimer, "_id" | "startedAt">>;
 
 export interface StartTimerWithEntryValues {
   localDate: string;
@@ -32,8 +30,7 @@ export function normalizeTimer(
   return {
     _id: timer._id,
     startedAt: timer.startedAt,
-    localDate:
-      timer.localDate ?? formatLocalDateFromTimestamp(timer.startedAt),
+    localDate: timer.localDate ?? formatLocalDateFromTimestamp(timer.startedAt),
     workItemId: timer.workItemId,
     projectId: timer.projectId,
     taskId: timer.taskId,

@@ -31,9 +31,7 @@ function createFactories(): TimelineFactories {
   };
 }
 
-function createState(
-  overrides: Partial<LocalAppState> = {},
-): LocalAppState {
+function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
   return {
     user: {
       _id: "local-user",
@@ -65,7 +63,15 @@ function createState(
       updateTrack: "stable",
       projectDataShapeId: "default",
       weeklyTimeViewStyle: "ledger",
-      weeklyCapacityTargets: { monday: 8, tuesday: 8, wednesday: 8, thursday: 8, friday: 8, saturday: 0, sunday: 0 },
+      weeklyCapacityTargets: {
+        monday: 8,
+        tuesday: 8,
+        wednesday: 8,
+        thursday: 8,
+        friday: 8,
+        saturday: 0,
+        sunday: 0,
+      },
       warnWhenOverCapacity: true,
       warnWhenSubmittingUnderCapacity: true,
     },
@@ -149,16 +155,12 @@ describe("timeline imports", () => {
       defaults,
       () => 600,
     );
-    const edited = updateImportedBrowserDraft(
-      imported,
-      "browser_bucket-1",
-      {
-        projectId: "project-1",
-        note: "Keep this note",
-        status: "assigned",
-        assignmentSource: "manual",
-      },
-    );
+    const edited = updateImportedBrowserDraft(imported, "browser_bucket-1", {
+      projectId: "project-1",
+      note: "Keep this note",
+      status: "assigned",
+      assignmentSource: "manual",
+    });
     const reimported = importBrowserBuckets(
       edited,
       [createBucket({ durationMs: 450 })],
@@ -206,11 +208,7 @@ describe("timeline commits", () => {
 
   it("commits an activity block idempotently", () => {
     const block = createBlock();
-    const first = commitActivityBlock(
-      createState(),
-      block,
-      createFactories(),
-    );
+    const first = commitActivityBlock(createState(), block, createFactories());
     const second = commitActivityBlock(first, block, createFactories());
 
     expect(second).toBe(first);
@@ -297,11 +295,7 @@ describe("timeline read model and rules", () => {
       },
     ];
 
-    const timeline = materializeTimeline(
-      browserState,
-      "2026-07-30",
-      defaults,
-    );
+    const timeline = materializeTimeline(browserState, "2026-07-30", defaults);
 
     expect(timeline.trackedMs).toBe(300);
     expect(timeline.committedMs).toBe(250);

@@ -42,7 +42,9 @@ export function EntryActionsMenu({
 }) {
   const [open, setOpen] = useState(false);
   const [dateAction, setDateAction] = useState<DateAction | null>(null);
-  const [selectedDate, setSelectedDate] = useState(() => dateAtNoon(currentDate));
+  const [selectedDate, setSelectedDate] = useState(() =>
+    dateAtNoon(currentDate),
+  );
 
   function handleOpenChange(nextOpen: boolean) {
     setOpen(nextOpen);
@@ -75,7 +77,11 @@ export function EntryActionsMenu({
     <Popover
       open={open}
       onOpenChange={(nextOpen, eventDetails) => {
-        if (!nextOpen && dateAction !== null && eventDetails.reason === "escape-key") {
+        if (
+          !nextOpen &&
+          dateAction !== null &&
+          eventDetails.reason === "escape-key"
+        ) {
           eventDetails.cancel();
           setDateAction(null);
           return;
@@ -106,10 +112,21 @@ export function EntryActionsMenu({
           <>
             <PopoverHeader className="sr-only">
               <PopoverTitle>Entry options</PopoverTitle>
-              <PopoverDescription>Duplicate or move this time entry.</PopoverDescription>
+              <PopoverDescription>
+                Duplicate or move this time entry.
+              </PopoverDescription>
             </PopoverHeader>
-            <div className="entry-actions-list" role="group" aria-label="Entry options">
-              <Button type="button" variant="ghost" size="sm" onClick={duplicateEntry}>
+            <div
+              className="entry-actions-list"
+              role="group"
+              aria-label="Entry options"
+            >
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={duplicateEntry}
+              >
                 <Copy data-icon="inline-start" />
                 Duplicate
               </Button>
@@ -147,9 +164,13 @@ export function EntryActionsMenu({
               </Button>
               <div>
                 <PopoverTitle>
-                  {dateAction === "move" ? "Move time entry" : "Duplicate time entry"}
+                  {dateAction === "move"
+                    ? "Move time entry"
+                    : "Duplicate time entry"}
                 </PopoverTitle>
-                <PopoverDescription>Choose the destination date.</PopoverDescription>
+                <PopoverDescription>
+                  Choose the destination date.
+                </PopoverDescription>
               </div>
             </PopoverHeader>
             <Calendar
@@ -158,7 +179,12 @@ export function EntryActionsMenu({
               onSelect={(date) => date && setSelectedDate(date)}
             />
             <div className="entry-actions-calendar-footer">
-              <Button type="button" variant="ghost" size="sm" onClick={() => setDateAction(null)}>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={() => setDateAction(null)}
+              >
                 Cancel
               </Button>
               <Button type="button" size="sm" onClick={confirmDateAction}>

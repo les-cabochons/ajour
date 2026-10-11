@@ -141,16 +141,13 @@ describe("project ordering", () => {
       createFixtureProject("two"),
     ];
 
-    expect(reorderProjects(projects, ["two", "one"]).map(({ _id }) => _id)).toEqual(
-      ["two", "fixed", "one"],
-    );
+    expect(
+      reorderProjects(projects, ["two", "one"]).map(({ _id }) => _id),
+    ).toEqual(["two", "fixed", "one"]);
   });
 
   it("rejects an incomplete project order", () => {
-    const projects = [
-      createFixtureProject("one"),
-      createFixtureProject("two"),
-    ];
+    const projects = [createFixtureProject("one"), createFixtureProject("two")];
 
     expect(reorderProjects(projects, ["two", "missing"])).toBe(projects);
   });

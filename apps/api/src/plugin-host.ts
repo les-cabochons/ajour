@@ -47,7 +47,9 @@ const pluginInvocationConnectionSchema = z.object({
   config: connectorFieldValuesSchema,
 });
 
-type PluginInvocationConnection = z.infer<typeof pluginInvocationConnectionSchema>;
+type PluginInvocationConnection = z.infer<
+  typeof pluginInvocationConnectionSchema
+>;
 type PluginMethod = "validateConnection" | "syncConnection";
 const MAX_CONCURRENT_PLUGIN_OPERATIONS = 4;
 const MAX_CONNECTOR_PLUGIN_ERROR_MESSAGE_CHARACTERS = 4_096;
@@ -63,8 +65,14 @@ interface ActiveWorker {
   cancel(error: Error): Promise<void>;
 }
 
-function comparePlugins(left: ConnectorPluginManifest, right: ConnectorPluginManifest) {
-  return left.displayName.localeCompare(right.displayName) || left.id.localeCompare(right.id);
+function comparePlugins(
+  left: ConnectorPluginManifest,
+  right: ConnectorPluginManifest,
+) {
+  return (
+    left.displayName.localeCompare(right.displayName) ||
+    left.id.localeCompare(right.id)
+  );
 }
 
 export class ConnectorPluginManager {
@@ -88,16 +96,20 @@ export class ConnectorPluginManager {
   private shuttingDown = false;
 
   constructor(options: PluginHostOptions) {
-    this.installedPluginDirectory = path.resolve(options.installedPluginDirectory);
-    this.developmentPluginDirectories = (options.developmentPluginDirectories ?? []).map(
-      (directory) => path.resolve(directory),
+    this.installedPluginDirectory = path.resolve(
+      options.installedPluginDirectory,
     );
+    this.developmentPluginDirectories = (
+      options.developmentPluginDirectories ?? []
+    ).map((directory) => path.resolve(directory));
     this.bundledPluginArchives = (options.bundledPluginArchives ?? []).map(
       (archive) => path.resolve(archive),
     );
     this.allowDevelopmentPlugins = options.allowDevelopmentPlugins ?? false;
     this.requestTimeoutMs = options.requestTimeoutMs ?? 30_000;
-    this.workerScriptUrl = options.workerScriptUrl ?? new URL("./plugin-worker.mjs", import.meta.url);
+    this.workerScriptUrl =
+      options.workerScriptUrl ??
+      new URL("./plugin-worker.mjs", import.meta.url);
   }
 
   get activeOperationCount() {
@@ -120,7 +132,9 @@ export class ConnectorPluginManager {
     return await this.runPackageMutation(async () => {
       await this.ensureInitialized();
       if (this.activeOperationReservations > 0) {
-        throw new Error("Wait for active connector operations to finish before installing a plugin.");
+        throw new Error(
+          "Wait for active connector operations to finish before installing a plugin.",
+        );
       }
 
       return await installConnectorPluginArchive({
@@ -136,9 +150,9 @@ export class ConnectorPluginManager {
     this.assertRunning();
     return await this.runPackageMutation(async () => {
       await this.ensureInitialized();
-      const activePluginWorkers = Array.from(this.activeWorkers.values()).filter(
-        (activeWorker) => activeWorker.pluginId === pluginId,
-      );
+      const activePluginWorkers = Array.from(
+        this.activeWorkers.values(),
+      ).filter((activeWorker) => activeWorker.pluginId === pluginId);
       await Promise.allSettled(
         activePluginWorkers.map((activeWorker) =>
           activeWorker.cancel(
@@ -152,7 +166,9 @@ export class ConnectorPluginManager {
         pluginId,
       });
       if (!removedPlugin) {
-        throw new Error(`Connector plugin "${pluginId}" is not installed as a managed package.`);
+        throw new Error(
+          `Connector plugin "${pluginId}" is not installed as a managed package.`,
+        );
       }
 
       return removedPlugin.manifest;
@@ -187,7 +203,9 @@ export class ConnectorPluginManager {
   ): Promise<ConnectorPluginSyncResult> {
     const payload = {
       connection: pluginInvocationConnectionSchema.parse(connection),
-      workItems: workItems.map((workItem) => connectorSyncWorkItemSchema.parse(workItem)),
+      workItems: workItems.map((workItem) =>
+        connectorSyncWorkItemSchema.parse(workItem),
+      ),
     };
 
     return await this.invokePlugin(
@@ -205,12 +223,20 @@ export class ConnectorPluginManager {
         this.initializationPromise,
         this.packageMutationPromise,
         ...Array.from(this.activeWorkers.values()).map((activeWorker) =>
-          activeWorker.cancel(new Error("Connector operation stopped because the app is shutting down.")),
+          activeWorker.cancel(
+            new Error(
+              "Connector operation stopped because the app is shutting down.",
+            ),
+          ),
         ),
-      ].filter((operation): operation is Promise<unknown> => Boolean(operation));
-      this.shutdownPromise = Promise.allSettled(pendingOperations).then(async () => {
-        await this.waitForOperationsToDrain();
-      });
+      ].filter((operation): operation is Promise<unknown> =>
+        Boolean(operation),
+      );
+      this.shutdownPromise = Promise.allSettled(pendingOperations).then(
+        async () => {
+          await this.waitForOperationsToDrain();
+        },
+      );
     }
 
     await this.shutdownPromise;
@@ -348,7 +374,9 @@ export class ConnectorPluginManager {
     return plugin;
   }
 
-  private async discoverPlugins(): Promise<Map<string, ResolvedConnectorPlugin>> {
+  private async discoverPlugins(): Promise<
+    Map<string, ResolvedConnectorPlugin>
+  > {
     await this.ensureInitialized();
     return await this.runPackageRead(async () => {
       const plugins = new Map<string, ResolvedConnectorPlugin>();
@@ -405,7 +433,10 @@ export class ConnectorPluginManager {
           replaceExisting: false,
         });
       } catch (error) {
-        console.error(`Unable to install bundled connector plugin "${archivePath}".`, error);
+        console.error(
+          `Unable to install bundled connector plugin "${archivePath}".`,
+          error,
+        );
       }
     }
   }
@@ -422,7 +453,9 @@ export class ConnectorPluginManager {
       throw new Error("Connector plugin package change is in progress.");
     }
     if (this.activeOperationReservations >= MAX_CONCURRENT_PLUGIN_OPERATIONS) {
-      throw new Error("Too many connector plugin operations are already running.");
+      throw new Error(
+        "Too many connector plugin operations are already running.",
+      );
     }
 
     this.activeOperationReservations += 1;
@@ -486,7 +519,9 @@ export class ConnectorPluginManager {
   private async runPackageMutation<T>(operation: () => Promise<T>): Promise<T> {
     this.assertRunning();
     if (this.mutatingPluginPackage) {
-      throw new Error("Another connector plugin package change is already in progress.");
+      throw new Error(
+        "Another connector plugin package change is already in progress.",
+      );
     }
 
     this.mutatingPluginPackage = true;

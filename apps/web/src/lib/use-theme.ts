@@ -6,7 +6,9 @@ function getSystemTheme(): "dark" | "light" {
   if (typeof window === "undefined") {
     return "dark";
   }
-  return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  return window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
 }
 
 function subscribeToSystemTheme(callback: () => void): () => void {
@@ -16,7 +18,11 @@ function subscribeToSystemTheme(callback: () => void): () => void {
 }
 
 export function useSystemTheme(): "dark" | "light" {
-  return useSyncExternalStore(subscribeToSystemTheme, getSystemTheme, () => "dark");
+  return useSyncExternalStore(
+    subscribeToSystemTheme,
+    getSystemTheme,
+    () => "dark",
+  );
 }
 
 export function useResolvedTheme(): "dark" | "light" {

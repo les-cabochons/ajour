@@ -18,17 +18,29 @@ const featureWeights = {
   titleContains: 0.35,
 } as const;
 
-function matchesCondition(block: ActivityBlockRecord, condition: RuleCondition): boolean {
+function matchesCondition(
+  block: ActivityBlockRecord,
+  condition: RuleCondition,
+): boolean {
   if (condition.domain && block.domain !== condition.domain) {
     return false;
   }
-  if (condition.pathnamePrefix && !block.pathname.startsWith(condition.pathnamePrefix)) {
+  if (
+    condition.pathnamePrefix &&
+    !block.pathname.startsWith(condition.pathnamePrefix)
+  ) {
     return false;
   }
-  if (condition.titleContains && !block.title.includes(condition.titleContains.toLowerCase())) {
+  if (
+    condition.titleContains &&
+    !block.title.includes(condition.titleContains.toLowerCase())
+  ) {
     return false;
   }
-  if (condition.exactTitle && block.title !== condition.exactTitle.toLowerCase()) {
+  if (
+    condition.exactTitle &&
+    block.title !== condition.exactTitle.toLowerCase()
+  ) {
     return false;
   }
   return true;
@@ -37,21 +49,30 @@ function matchesCondition(block: ActivityBlockRecord, condition: RuleCondition):
 function explainRule(condition: RuleCondition): string {
   const parts = [
     condition.domain ? `domain=${condition.domain}` : undefined,
-    condition.pathnamePrefix ? `path starts with ${condition.pathnamePrefix}` : undefined,
-    condition.titleContains ? `title contains ${condition.titleContains}` : undefined,
+    condition.pathnamePrefix
+      ? `path starts with ${condition.pathnamePrefix}`
+      : undefined,
+    condition.titleContains
+      ? `title contains ${condition.titleContains}`
+      : undefined,
     condition.exactTitle ? `exact title ${condition.exactTitle}` : undefined,
   ].filter(Boolean);
 
   return `Matched rule: ${parts.join(" and ")}`;
 }
 
-export function extractFeatureSnapshots(block: Pick<ActivityBlockRecord, "domain" | "pathname" | "title">): FeatureSnapshot[] {
+export function extractFeatureSnapshots(
+  block: Pick<ActivityBlockRecord, "domain" | "pathname" | "title">,
+): FeatureSnapshot[] {
   const features: FeatureSnapshot[] = [
     { featureType: "domain", featureValue: block.domain },
   ];
 
   if (block.pathname && block.pathname !== "/") {
-    features.push({ featureType: "pathnamePrefix", featureValue: block.pathname });
+    features.push({
+      featureType: "pathnamePrefix",
+      featureValue: block.pathname,
+    });
     features.push({
       featureType: "domain+pathnamePrefix",
       featureValue: `${block.domain}|${block.pathname}`,
@@ -62,7 +83,10 @@ export function extractFeatureSnapshots(block: Pick<ActivityBlockRecord, "domain
     features.push({ featureType: "exactTitle", featureValue: block.title });
     const firstTokens = block.title.split(" ").slice(0, 4).join(" ");
     if (firstTokens) {
-      features.push({ featureType: "titleContains", featureValue: firstTokens });
+      features.push({
+        featureType: "titleContains",
+        featureValue: firstTokens,
+      });
       features.push({
         featureType: "domain+titleContains",
         featureValue: `${block.domain}|${firstTokens}`,
@@ -161,7 +185,10 @@ export function evaluateBlockAgainstRules(
       suggestion: {
         projectId: rule.targetProjectId,
         confidence: rule.baseConfidence,
-        source: rule.action === "auto_assign" && rule.baseConfidence >= 0.9 ? "auto" : "rule",
+        source:
+          rule.action === "auto_assign" && rule.baseConfidence >= 0.9
+            ? "auto"
+            : "rule",
         explanation: explainRule(rule.condition),
         ruleId: rule.id,
       },

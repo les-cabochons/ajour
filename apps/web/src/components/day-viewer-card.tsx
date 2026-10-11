@@ -11,21 +11,28 @@ function dateAtNoon(localDate: string) {
 }
 
 function formatWeekdayLong(localDate: string) {
-  return new Intl.DateTimeFormat("en-CA", { weekday: "long" }).format(dateAtNoon(localDate));
-}
-
-function formatMonthDay(localDate: string) {
-  return new Intl.DateTimeFormat("en-CA", { month: "short", day: "numeric" }).format(
+  return new Intl.DateTimeFormat("en-CA", { weekday: "long" }).format(
     dateAtNoon(localDate),
   );
 }
 
+function formatMonthDay(localDate: string) {
+  return new Intl.DateTimeFormat("en-CA", {
+    month: "short",
+    day: "numeric",
+  }).format(dateAtNoon(localDate));
+}
+
 function formatWeekday(localDate: string) {
-  return new Intl.DateTimeFormat("en-CA", { weekday: "short" }).format(dateAtNoon(localDate));
+  return new Intl.DateTimeFormat("en-CA", { weekday: "short" }).format(
+    dateAtNoon(localDate),
+  );
 }
 
 function formatDayNumber(localDate: string) {
-  return new Intl.DateTimeFormat("en-CA", { day: "2-digit" }).format(dateAtNoon(localDate));
+  return new Intl.DateTimeFormat("en-CA", { day: "2-digit" }).format(
+    dateAtNoon(localDate),
+  );
 }
 
 interface DayViewerCardProps {
@@ -76,10 +83,16 @@ export function DayViewerCard({
           </div>
           <div>
             <p className="day-viewer-date-kicker">
-              <span className="day-viewer-weekday-label">{formatWeekdayLong(date)}</span>
-              {date === today ? <span className="day-viewer-today-muted">Today</span> : null}
+              <span className="day-viewer-weekday-label">
+                {formatWeekdayLong(date)}
+              </span>
+              {date === today ? (
+                <span className="day-viewer-today-muted">Today</span>
+              ) : null}
             </p>
-            <p className="day-viewer-date-big">{formatMonthDay(date).toUpperCase()}</p>
+            <p className="day-viewer-date-big">
+              {formatMonthDay(date).toUpperCase()}
+            </p>
           </div>
         </div>
 
@@ -118,7 +131,9 @@ export function DayViewerCard({
           </div>
           <div className="day-viewer-date-text">
             <span className="day-viewer-date-kicker">
-              <span className="day-viewer-weekday-label">{formatWeekdayLong(date)}</span>
+              <span className="day-viewer-weekday-label">
+                {formatWeekdayLong(date)}
+              </span>
               {date === today ? (
                 <span className="day-viewer-today-muted">Today</span>
               ) : (
@@ -133,7 +148,9 @@ export function DayViewerCard({
               )}
             </span>
             <span className="day-viewer-date-big-row">
-              <span className="day-viewer-date-big">{formatMonthDay(date).toUpperCase()}</span>
+              <span className="day-viewer-date-big">
+                {formatMonthDay(date).toUpperCase()}
+              </span>
               {dateScopeControl}
             </span>
           </div>
@@ -150,7 +167,11 @@ export function DayViewerCard({
                 key={day}
                 type="button"
                 onClick={() => onSelectDate(day)}
-                className={cn("day-viewer-day", isSelected && "is-selected", isToday && "is-today")}
+                className={cn(
+                  "day-viewer-day",
+                  isSelected && "is-selected",
+                  isToday && "is-today",
+                )}
               >
                 <span
                   className={cn(
@@ -161,7 +182,9 @@ export function DayViewerCard({
                 >
                   {formatWeekday(day).toUpperCase()}
                 </span>
-                <span className="day-viewer-day-number">{formatDayNumber(day)}</span>
+                <span className="day-viewer-day-number">
+                  {formatDayNumber(day)}
+                </span>
                 <span className="day-viewer-day-hours">{getDayValue(day)}</span>
               </button>
             );
@@ -171,7 +194,9 @@ export function DayViewerCard({
         {/* Right: week total + actions */}
         <div className="day-viewer-end">
           <div className="day-viewer-week-total">
-            <span className="day-viewer-week-total-label">{totalLabel.toUpperCase()}</span>
+            <span className="day-viewer-week-total-label">
+              {totalLabel.toUpperCase()}
+            </span>
             <span className="day-viewer-week-total-value">{totalValue}</span>
           </div>
           {headerActions}

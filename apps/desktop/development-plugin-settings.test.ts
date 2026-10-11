@@ -31,9 +31,9 @@ describe("desktop development plugin settings", () => {
 
   afterEach(async () => {
     await Promise.all(
-      tempDirs.splice(0).map((directory) =>
-        rm(directory, { recursive: true, force: true }),
-      ),
+      tempDirs
+        .splice(0)
+        .map((directory) => rm(directory, { recursive: true, force: true })),
     );
   });
 
@@ -50,9 +50,9 @@ describe("desktop development plugin settings", () => {
 
     clearDevelopmentPluginDirectories(settingsPath);
     expect(loadDevelopmentPluginDirectories(settingsPath)).toBeNull();
-    expect(() => normalizeDevelopmentPluginDirectories(["relative/plugin"])).toThrow(
-      "absolute paths",
-    );
+    expect(() =>
+      normalizeDevelopmentPluginDirectories(["relative/plugin"]),
+    ).toThrow("absolute paths");
   });
 
   it("accepts one user-selected directory containing a plugin manifest", async () => {

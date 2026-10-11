@@ -1,6 +1,11 @@
 import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
+/** Matches an `ipcMain.handle("channel", ...)` registration however the call is wrapped. */
+function ipcHandler(channel: string) {
+  return new RegExp(`ipcMain\\.handle\\(\\s*"${channel}"`);
+}
+
 describe("desktop connector lifecycle", () => {
   it("acquires the single-instance lock before starting application services", async () => {
     const source = await readFile(
@@ -42,7 +47,9 @@ describe("desktop connector lifecycle", () => {
     expect(source).not.toContain("resolveBundledPluginArchives()");
     expect(source).toContain("installedPluginDirectory:");
     expect(source).toContain('app.on("before-quit"');
-    expect(source).toContain("automaticUpdateController.installPendingUpdate()");
+    expect(source).toContain(
+      "automaticUpdateController.installPendingUpdate()",
+    );
     expect(source).toContain("stopInternalAppApi().finally(() => {");
   });
 
@@ -53,7 +60,10 @@ describe("desktop connector lifecycle", () => {
     );
 
     const preparationStart = source.indexOf("prepareToInstall: async () => {");
-    const stopIndex = source.indexOf("await stopInternalAppApi();", preparationStart);
+    const stopIndex = source.indexOf(
+      "await stopInternalAppApi();",
+      preparationStart,
+    );
     const quitFlagIndex = source.indexOf(
       "gracefulQuitStarted = true;",
       preparationStart,
@@ -77,8 +87,8 @@ describe("desktop connector lifecycle", () => {
     expect(preloadSource).toContain(
       'ipcRenderer.invoke("timetracker:install-connector-plugin")',
     );
-    expect(mainSource).toContain(
-      'ipcMain.handle("timetracker:install-connector-plugin"',
+    expect(mainSource).toMatch(
+      ipcHandler("timetracker:install-connector-plugin"),
     );
     expect(mainSource).toContain("event.sender !== mainWindow.webContents");
     expect(mainSource).toContain("selectConnectorPluginArchive(");
@@ -86,8 +96,8 @@ describe("desktop connector lifecycle", () => {
     expect(preloadSource).toContain(
       'ipcRenderer.invoke("timetracker:uninstall-connector-plugin"',
     );
-    expect(mainSource).toContain(
-      'ipcMain.handle("timetracker:uninstall-connector-plugin"',
+    expect(mainSource).toMatch(
+      ipcHandler("timetracker:uninstall-connector-plugin"),
     );
     expect(mainSource).toContain("uninstallConnectorPluginForServer(");
   });
@@ -107,11 +117,9 @@ describe("desktop connector lifecycle", () => {
     expect(preloadSource).toContain(
       'ipcRenderer.invoke("timetracker:open-update-release", releaseUrl)',
     );
-    expect(mainSource).toContain(
-      'ipcMain.handle("timetracker:check-for-updates"',
-    );
-    expect(mainSource).toContain(
-      'ipcMain.handle("timetracker:configure-automatic-updates"',
+    expect(mainSource).toMatch(ipcHandler("timetracker:check-for-updates"));
+    expect(mainSource).toMatch(
+      ipcHandler("timetracker:configure-automatic-updates"),
     );
     expect(mainSource).toContain("createAutomaticUpdateController({");
     expect(mainSource).toContain(
@@ -131,9 +139,13 @@ describe("desktop connector lifecycle", () => {
     ]);
 
     expect(mainSource).toContain("createPluginCatalogService({");
-    expect(mainSource).toContain("pluginCatalogSettings.refreshMinutes * 60 * 1000");
-    expect(mainSource).toContain('ipcMain.handle("timetracker:get-plugin-catalog"');
-    expect(mainSource).toContain('ipcMain.handle("timetracker:download-catalog-plugin"');
+    expect(mainSource).toContain(
+      "pluginCatalogSettings.refreshMinutes * 60 * 1000",
+    );
+    expect(mainSource).toMatch(ipcHandler("timetracker:get-plugin-catalog"));
+    expect(mainSource).toMatch(
+      ipcHandler("timetracker:download-catalog-plugin"),
+    );
     expect(mainSource).toContain("{ enableAfterInstall: false }");
     expect(preloadSource).toContain(
       'ipcRenderer.invoke("timetracker:configure-plugin-catalog", settings)',

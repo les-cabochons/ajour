@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  getTimerContributionMs,
-  getTimerDurationsMs,
-} from "./timer-totals";
+import { getTimerContributionMs, getTimerDurationsMs } from "./timer-totals";
 
 describe("timer totals", () => {
   it("returns elapsed-only contribution when timer is linked to persisted entry", () => {

@@ -178,6 +178,18 @@ acceptance-test:
 acceptance-server:
     {{PNPM}} --filter @timetracker/web dev --host {{WEB_HOST}} --port {{ACCEPTANCE_WEB_PORT}} --strictPort --mode test
 
+[doc("Formats the workspace with Prettier")]
+[group("app")]
+format:
+    echo >&2 "[1/1] Formatting files"
+    {{PNPM}} format
+
+[doc("Fails when a file differs from Prettier formatting")]
+[group("app")]
+format-check:
+    echo >&2 "[1/1] Checking formatting"
+    {{PNPM}} format:check
+
 [doc("Runs TypeScript checks across the workspace")]
 [group("app")]
 typecheck:

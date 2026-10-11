@@ -1,4 +1,8 @@
-import type { CaptureSettings, NormalizedActivityContext, TitleMode } from "../types/domain";
+import type {
+  CaptureSettings,
+  NormalizedActivityContext,
+  TitleMode,
+} from "../types/domain";
 
 const HIGH_ENTROPY_SEGMENT = /^[0-9a-f]{6,}$|^\d{3,}$|^[A-Za-z0-9_-]{16,}$/;
 
@@ -27,7 +31,10 @@ function normalizeTitle(title: string, mode: TitleMode): string {
     .slice(0, 180);
 }
 
-function sanitizePathSegments(pathname: string, maxPathSegments: number): string[] {
+function sanitizePathSegments(
+  pathname: string,
+  maxPathSegments: number,
+): string[] {
   return pathname
     .split("/")
     .map((segment) => segment.trim())
@@ -46,7 +53,11 @@ function buildPathname(tokens: string[]): string {
   return `/${tokens.join("/")}`;
 }
 
-function makeFingerprint(domain: string, pathname: string, title: string): string {
+function makeFingerprint(
+  domain: string,
+  pathname: string,
+  title: string,
+): string {
   return [domain, pathname, title].filter(Boolean).join("|");
 }
 
@@ -87,7 +98,10 @@ export function normalizeActivityContext(
   return {
     domain,
     pathname,
-    url: options.capture.urlMode === "domain_only" || isSensitive ? domain : `${domain}${pathname}`,
+    url:
+      options.capture.urlMode === "domain_only" || isSensitive
+        ? domain
+        : `${domain}${pathname}`,
     title,
     pathTokens,
     fingerprint: makeFingerprint(domain, pathname, title),

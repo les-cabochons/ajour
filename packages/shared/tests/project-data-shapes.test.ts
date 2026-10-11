@@ -153,10 +153,7 @@ describe("project data shape plugin contract", () => {
         capabilities: {
           projectDataShape: {
             apiVersion: 1,
-            datasets: [
-              projectsDatasetDefinition,
-              projectsDatasetDefinition,
-            ],
+            datasets: [projectsDatasetDefinition, projectsDatasetDefinition],
           },
         },
       }),

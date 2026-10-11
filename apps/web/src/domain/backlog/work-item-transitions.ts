@@ -71,9 +71,10 @@ export function normalizePersistedWorkItem(
     priority: isSubtask
       ? undefined
       : normalizeWorkItemPriority(workItem.priority),
-    importedPriority: isSubtask || isRetiredBuiltInSource
-      ? undefined
-      : normalizeWorkItemPriority(workItem.importedPriority),
+    importedPriority:
+      isSubtask || isRetiredBuiltInSource
+        ? undefined
+        : normalizeWorkItemPriority(workItem.importedPriority),
     backlogStatusId: workItem.backlogStatusId,
     importedBacklogStatusId: isRetiredBuiltInSource
       ? undefined
@@ -333,9 +334,7 @@ export function updateWorkItem(
   const mappingProvided = hasOwn(patch, "projectId") || hasOwn(patch, "taskId");
   const inheritanceProvided = hasOwn(patch, "inheritsParentMapping");
   const nextParent = nextParentWorkItemId
-    ? state.workItems.find(
-        (workItem) => workItem._id === nextParentWorkItemId,
-      )
+    ? state.workItems.find((workItem) => workItem._id === nextParentWorkItemId)
     : undefined;
   let nextProjectId = hasOwn(patch, "projectId")
     ? patch.projectId
@@ -362,7 +361,7 @@ export function updateWorkItem(
     const shouldInherit = inheritanceProvided
       ? Boolean(patch.inheritsParentMapping)
       : mappingProvided || nextParentWorkItemId !== target.parentWorkItemId
-        ? inferInheritedParentMapping(
+        ? (inferInheritedParentMapping(
             {
               parentWorkItemId: nextParentWorkItemId,
               projectId: nextProjectId,
@@ -370,8 +369,8 @@ export function updateWorkItem(
               inheritsParentMapping: undefined,
             },
             nextParent,
-          ) ?? false
-        : nextInheritsParentMapping ?? false;
+          ) ?? false)
+        : (nextInheritsParentMapping ?? false);
 
     nextInheritsParentMapping = shouldInherit;
     if (shouldInherit) {
@@ -528,7 +527,9 @@ export function deleteWorkItem(
   state: LocalAppState,
   workItemId: string,
 ): LocalAppState {
-  const target = state.workItems.find((workItem) => workItem._id === workItemId);
+  const target = state.workItems.find(
+    (workItem) => workItem._id === workItemId,
+  );
   if (!target) {
     return state;
   }

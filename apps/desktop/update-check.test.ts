@@ -96,7 +96,9 @@ describe("desktop update checks", () => {
       githubRelease("v1.2.0", "2026-08-05T14:00:00Z", false),
     ]);
 
-    expect(selectLatestTrackRelease(releases, "stable")?.tagName).toBe("v1.2.0");
+    expect(selectLatestTrackRelease(releases, "stable")?.tagName).toBe(
+      "v1.2.0",
+    );
     expect(selectLatestTrackRelease(releases, "nightly")?.tagName).toBe(
       "v1.2.0-nightly.20260805.4",
     );
@@ -105,7 +107,10 @@ describe("desktop update checks", () => {
   it("ignores drafts, mismatched prerelease flags, unsupported tags, and unsafe URLs", () => {
     expect(
       normalizeReleases([
-        { ...githubRelease("v1.0.0", "2026-08-01T14:00:00Z", false), draft: true },
+        {
+          ...githubRelease("v1.0.0", "2026-08-01T14:00:00Z", false),
+          draft: true,
+        },
         githubRelease("v1.0.1", "2026-08-02T14:00:00Z", true),
         githubRelease("build-12", "2026-08-03T14:00:00Z", false),
         {
@@ -114,8 +119,14 @@ describe("desktop update checks", () => {
         },
       ]),
     ).toEqual([]);
-    expect(isAllowedReleaseUrl("https://github.com/les-cabochons/ajour/releases/tag/v1.0.0")).toBe(true);
-    expect(isAllowedReleaseUrl("https://github.com/other/repo/releases/tag/v1.0.0")).toBe(false);
+    expect(
+      isAllowedReleaseUrl(
+        "https://github.com/les-cabochons/ajour/releases/tag/v1.0.0",
+      ),
+    ).toBe(true);
+    expect(
+      isAllowedReleaseUrl("https://github.com/other/repo/releases/tag/v1.0.0"),
+    ).toBe(false);
   });
 
   it("uses publication order when switching between release tracks", () => {
@@ -127,16 +138,20 @@ describe("desktop update checks", () => {
 
     expect(isUpdateAvailable("1.0.0", releases[0]!, releases)).toBe(true);
     expect(isUpdateAvailable("1.0.0", releases[2]!, releases)).toBe(false);
-    expect(isUpdateAvailable("1.0.0-nightly.20260804.1", releases[1]!, releases)).toBe(true);
+    expect(
+      isUpdateAvailable("1.0.0-nightly.20260804.1", releases[1]!, releases),
+    ).toBe(true);
   });
 
   it("checks GitHub releases and returns a renderer-safe result", async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: vi.fn().mockResolvedValue([
-        githubRelease("v1.3.0-nightly.20260805.9", "2026-08-05T18:00:00Z"),
-      ]),
+      json: vi
+        .fn()
+        .mockResolvedValue([
+          githubRelease("v1.3.0-nightly.20260805.9", "2026-08-05T18:00:00Z"),
+        ]),
     });
 
     await expect(
@@ -169,9 +184,11 @@ describe("desktop update checks", () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,
       status: 200,
-      json: vi.fn().mockResolvedValue(
-        githubRelease("v2.1.0", "2026-08-05T18:00:00Z", false),
-      ),
+      json: vi
+        .fn()
+        .mockResolvedValue(
+          githubRelease("v2.1.0", "2026-08-05T18:00:00Z", false),
+        ),
     });
 
     await expect(
@@ -197,16 +214,20 @@ describe("desktop update checks", () => {
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue([
-          githubRelease("v1.0.0-nightly.20260806.11", "2026-08-06T18:00:00Z"),
-        ]),
+        json: vi
+          .fn()
+          .mockResolvedValue([
+            githubRelease("v1.0.0-nightly.20260806.11", "2026-08-06T18:00:00Z"),
+          ]),
       })
       .mockResolvedValueOnce({
         ok: true,
         status: 200,
-        json: vi.fn().mockResolvedValue(
-          githubRelease("v1.0.0", "2026-08-05T18:00:00Z", false),
-        ),
+        json: vi
+          .fn()
+          .mockResolvedValue(
+            githubRelease("v1.0.0", "2026-08-05T18:00:00Z", false),
+          ),
       });
 
     await expect(
@@ -306,9 +327,11 @@ describe("desktop update checks", () => {
       checkForUpdates({
         track: "nightly",
         currentVersion: "1.0.0-nightly.20260805.1",
-        fetchImpl: vi.fn().mockRejectedValue(
-          Object.assign(new Error("aborted"), { name: "TimeoutError" }),
-        ),
+        fetchImpl: vi
+          .fn()
+          .mockRejectedValue(
+            Object.assign(new Error("aborted"), { name: "TimeoutError" }),
+          ),
       }),
     ).rejects.toThrow("GitHub release check timed out");
   });

@@ -11,15 +11,25 @@ const path = require("node:path");
 const MAX_DEVELOPMENT_PLUGIN_DIRECTORIES = 32;
 
 function normalizeDevelopmentPluginDirectories(value) {
-  if (!Array.isArray(value) || value.length > MAX_DEVELOPMENT_PLUGIN_DIRECTORIES) {
-    throw new Error("Development plugin settings contain an invalid directory list.");
+  if (
+    !Array.isArray(value) ||
+    value.length > MAX_DEVELOPMENT_PLUGIN_DIRECTORIES
+  ) {
+    throw new Error(
+      "Development plugin settings contain an invalid directory list.",
+    );
   }
 
   return Array.from(
     new Set(
       value.map((directory) => {
-        if (typeof directory !== "string" || !path.isAbsolute(directory.trim())) {
-          throw new Error("Development plugin directories must use absolute paths.");
+        if (
+          typeof directory !== "string" ||
+          !path.isAbsolute(directory.trim())
+        ) {
+          throw new Error(
+            "Development plugin directories must use absolute paths.",
+          );
         }
         return path.resolve(directory.trim());
       }),
@@ -40,7 +50,8 @@ function loadDevelopmentPluginDirectories(settingsPath) {
 }
 
 function saveDevelopmentPluginDirectories(settingsPath, directories) {
-  const normalizedDirectories = normalizeDevelopmentPluginDirectories(directories);
+  const normalizedDirectories =
+    normalizeDevelopmentPluginDirectories(directories);
   mkdirSync(path.dirname(settingsPath), { recursive: true, mode: 0o700 });
   const temporaryPath = `${settingsPath}.${process.pid}.tmp`;
   writeFileSync(
@@ -72,7 +83,9 @@ async function selectDevelopmentPluginDirectory(
   const directory = path.resolve(selection.filePaths[0]);
   const manifestStat = await statPath(path.join(directory, "plugin.json"));
   if (!manifestStat.isFile()) {
-    throw new Error("The selected directory does not contain a plugin.json file.");
+    throw new Error(
+      "The selected directory does not contain a plugin.json file.",
+    );
   }
 
   return directory;

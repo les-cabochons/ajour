@@ -58,7 +58,9 @@ export function normalizeBacklogStatuses(
 ): LocalBacklogStatus[] {
   return statuses
     .filter(
-      (status): status is Partial<LocalBacklogStatus> &
+      (
+        status,
+      ): status is Partial<LocalBacklogStatus> &
         Pick<LocalBacklogStatus, "_id" | "name"> =>
         Boolean(status?._id && status.name),
     )
@@ -79,11 +81,7 @@ export function findMappedBacklogStatusId(
   connectionId: string | undefined,
   sourceStatusKey: string | undefined,
 ) {
-  if (
-    !connectionId ||
-    !sourceStatusKey ||
-    source === "manual"
-  ) {
+  if (!connectionId || !sourceStatusKey || source === "manual") {
     return undefined;
   }
 

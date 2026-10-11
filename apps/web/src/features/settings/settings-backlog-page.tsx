@@ -24,9 +24,13 @@ export function SettingsBacklogPage() {
   const [sourceStatuses, setSourceStatuses] = useState<
     Awaited<ReturnType<typeof getConnectorBacklogStatuses>>["items"]
   >([]);
-  const [statusDrafts, setStatusDrafts] = useState<Record<string, { name: string; color: string }>>({});
+  const [statusDrafts, setStatusDrafts] = useState<
+    Record<string, { name: string; color: string }>
+  >({});
   const [newStatusName, setNewStatusName] = useState("");
-  const [newStatusColor, setNewStatusColor] = useState(DEFAULT_NEW_BACKLOG_STATUS_COLOR);
+  const [newStatusColor, setNewStatusColor] = useState(
+    DEFAULT_NEW_BACKLOG_STATUS_COLOR,
+  );
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
@@ -36,7 +40,12 @@ export function SettingsBacklogPage() {
     [state.backlogStatuses],
   );
   const backlogStatusNameById = useMemo(
-    () => new Map(state.backlogStatuses.map((status) => [status._id, status.name] as const)),
+    () =>
+      new Map(
+        state.backlogStatuses.map(
+          (status) => [status._id, status.name] as const,
+        ),
+      ),
     [state.backlogStatuses],
   );
   const mappingByKey = useMemo(
@@ -117,7 +126,11 @@ export function SettingsBacklogPage() {
       setSourceStatuses(result.items);
       setError(null);
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Unable to load synced statuses.");
+      setError(
+        nextError instanceof Error
+          ? nextError.message
+          : "Unable to load synced statuses.",
+      );
     } finally {
       setIsRefreshing(false);
     }
@@ -131,17 +144,31 @@ export function SettingsBacklogPage() {
       setError(null);
       setMessage("Backlog status added.");
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Unable to add backlog status.");
+      setError(
+        nextError instanceof Error
+          ? nextError.message
+          : "Unable to add backlog status.",
+      );
     }
   }
 
   function handleSaveStatus(statusId: string) {
     try {
-      localStore.updateBacklogStatus(statusId, statusDrafts[statusId] ?? { name: "", color: DEFAULT_NEW_BACKLOG_STATUS_COLOR });
+      localStore.updateBacklogStatus(
+        statusId,
+        statusDrafts[statusId] ?? {
+          name: "",
+          color: DEFAULT_NEW_BACKLOG_STATUS_COLOR,
+        },
+      );
       setError(null);
       setMessage("Backlog status updated.");
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Unable to update backlog status.");
+      setError(
+        nextError instanceof Error
+          ? nextError.message
+          : "Unable to update backlog status.",
+      );
     }
   }
 
@@ -152,7 +179,7 @@ export function SettingsBacklogPage() {
   }
 
   function handleMappingChange(
-    source: typeof sourceStatuses[number],
+    source: (typeof sourceStatuses)[number],
     backlogStatusId: string,
   ) {
     try {
@@ -169,7 +196,11 @@ export function SettingsBacklogPage() {
           : `Cleared the mapping for ${source.label}.`,
       );
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Unable to update status mapping.");
+      setError(
+        nextError instanceof Error
+          ? nextError.message
+          : "Unable to update status mapping.",
+      );
     }
   }
 
@@ -178,14 +209,19 @@ export function SettingsBacklogPage() {
       <section className="settings-section">
         <h2 className="settings-section-title">Backlog Statuses</h2>
         <p className="settings-section-desc">
-          Create the statuses the app should use in backlog, then map synced connector statuses onto them.
+          Create the statuses the app should use in backlog, then map synced
+          connector statuses onto them.
         </p>
 
         <AppPanel className="space-y-4">
           <div className="flex flex-wrap items-center gap-2">
             <Badge>{state.backlogStatuses.length} app statuses</Badge>
-            <Badge className="bg-muted">{sourceStatuses.length} synced source statuses</Badge>
-            <Badge className="bg-muted">{state.backlogStatusMappings.length} mappings</Badge>
+            <Badge className="bg-muted">
+              {sourceStatuses.length} synced source statuses
+            </Badge>
+            <Badge className="bg-muted">
+              {state.backlogStatusMappings.length} mappings
+            </Badge>
           </div>
 
           <div className="backlog-settings-status-create">
@@ -202,14 +238,18 @@ export function SettingsBacklogPage() {
               onChange={(event) => setNewStatusColor(event.target.value)}
               className="w-14 p-1"
             />
-            <Button onClick={handleAddStatus} disabled={newStatusName.trim().length === 0}>
+            <Button
+              onClick={handleAddStatus}
+              disabled={newStatusName.trim().length === 0}
+            >
               Add status
             </Button>
           </div>
 
           {state.backlogStatuses.length === 0 ? (
             <MessagePanel>
-              Create at least one app status before mapping synced connector statuses.
+              Create at least one app status before mapping synced connector
+              statuses.
             </MessagePanel>
           ) : (
             <div className="backlog-settings-status-list">
@@ -218,7 +258,10 @@ export function SettingsBacklogPage() {
                   <span
                     className="status-dot"
                     aria-hidden="true"
-                    style={{ background: statusDrafts[status._id]?.color ?? status.color }}
+                    style={{
+                      background:
+                        statusDrafts[status._id]?.color ?? status.color,
+                    }}
                   />
                   <Input
                     value={statusDrafts[status._id]?.name ?? status.name}
@@ -253,7 +296,10 @@ export function SettingsBacklogPage() {
                     size="sm"
                     className="gap-1.5"
                     onClick={() => handleSaveStatus(status._id)}
-                    disabled={(statusDrafts[status._id]?.name ?? status.name).trim().length === 0}
+                    disabled={
+                      (statusDrafts[status._id]?.name ?? status.name).trim()
+                        .length === 0
+                    }
                   >
                     <Save className="h-3.5 w-3.5" />
                     Save
@@ -277,12 +323,19 @@ export function SettingsBacklogPage() {
       <section className="settings-section">
         <h2 className="settings-section-title">Synced Status Mapping</h2>
         <p className="settings-section-desc">
-          Connector sync registers raw statuses first. Mapping them here controls which backlog status imported items display.
+          Connector sync registers raw statuses first. Mapping them here
+          controls which backlog status imported items display.
         </p>
 
         <AppPanel className="space-y-4">
           <div className="flex flex-wrap gap-3">
-            <Button variant="outline" size="sm" className="gap-1.5" disabled={isRefreshing} onClick={() => void refreshSourceStatuses()}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5"
+              disabled={isRefreshing}
+              onClick={() => void refreshSourceStatuses()}
+            >
               <RefreshCw className="h-3.5 w-3.5" />
               Refresh synced statuses
             </Button>
@@ -295,32 +348,56 @@ export function SettingsBacklogPage() {
           ) : (
             <div className="backlog-settings-source-groups">
               {groupedSourceStatuses.map((group) => (
-                <section key={group.connectionId} className="backlog-settings-source-group">
+                <section
+                  key={group.connectionId}
+                  className="backlog-settings-source-group"
+                >
                   <div className="backlog-settings-source-header">
-                    <div className="backlog-settings-source-kicker">{group.tenantLabel}</div>
-                    <div className="backlog-settings-source-title">{group.connectionLabel}</div>
+                    <div className="backlog-settings-source-kicker">
+                      {group.tenantLabel}
+                    </div>
+                    <div className="backlog-settings-source-title">
+                      {group.connectionLabel}
+                    </div>
                   </div>
 
                   <div className="backlog-settings-source-list">
                     {group.statuses.map((status) => {
                       const mappingKey = `${status.source}:${status.connectionId}:${status.key}`;
-                      const mappedBacklogStatusId = mappingByKey.get(mappingKey) ?? "";
+                      const mappedBacklogStatusId =
+                        mappingByKey.get(mappingKey) ?? "";
 
                       return (
-                        <div key={mappingKey} className="backlog-settings-source-row">
+                        <div
+                          key={mappingKey}
+                          className="backlog-settings-source-row"
+                        >
                           <div>
-                            <div className="backlog-settings-source-label">{status.label}</div>
+                            <div className="backlog-settings-source-label">
+                              {status.label}
+                            </div>
                             <div className="backlog-settings-source-meta">
-                              Last seen {new Date(status.lastSeenAt).toLocaleString()}
+                              Last seen{" "}
+                              {new Date(status.lastSeenAt).toLocaleString()}
                             </div>
                           </div>
 
                           <SearchableSelect
                             value={mappedBacklogStatusId}
                             options={backlogStatusOptions}
-                            onChange={(nextValue) => handleMappingChange(status, nextValue)}
-                            placeholder={state.backlogStatuses.length > 0 ? "No mapping" : "Create app statuses first"}
-                            clearLabel={state.backlogStatuses.length > 0 ? "No mapping" : undefined}
+                            onChange={(nextValue) =>
+                              handleMappingChange(status, nextValue)
+                            }
+                            placeholder={
+                              state.backlogStatuses.length > 0
+                                ? "No mapping"
+                                : "Create app statuses first"
+                            }
+                            clearLabel={
+                              state.backlogStatuses.length > 0
+                                ? "No mapping"
+                                : undefined
+                            }
                             emptyMessage={
                               state.backlogStatuses.length > 0
                                 ? "No matching app statuses"

@@ -5,18 +5,25 @@ const UPDATE_CHECK_TIMEOUT_MS = 15_000;
 const UPDATE_CHECK_CACHE_TTL_MS = 5 * 60_000;
 const UPDATE_CHECK_FAILURE_TTL_MS = 30_000;
 const STABLE_TAG_PATTERN = /^v(\d+)\.(\d+)\.(\d+)$/;
-const NIGHTLY_TAG_PATTERN = /^v(\d+)\.(\d+)\.(\d+)-nightly\.(\d{8})\.([1-9]\d*)$/;
-const LEGACY_NIGHTLY_TAG_PATTERN = /^v(\d+)\.(\d+)\.(\d+)-nightly-(\d{8})\.(\d{3,})$/;
+const NIGHTLY_TAG_PATTERN =
+  /^v(\d+)\.(\d+)\.(\d+)-nightly\.(\d{8})\.([1-9]\d*)$/;
+const LEGACY_NIGHTLY_TAG_PATTERN =
+  /^v(\d+)\.(\d+)\.(\d+)-nightly-(\d{8})\.(\d{3,})$/;
 const STABLE_VERSION_PATTERN = /^(\d+)\.(\d+)\.(\d+)$/;
-const NIGHTLY_VERSION_PATTERN = /^(\d+)\.(\d+)\.(\d+)-nightly\.(\d{8})\.([1-9]\d*)$/;
-const LEGACY_NIGHTLY_VERSION_PATTERN = /^(\d+)\.(\d+)\.(\d+)-nightly-(\d{8})-(\d{3,})$/;
+const NIGHTLY_VERSION_PATTERN =
+  /^(\d+)\.(\d+)\.(\d+)-nightly\.(\d{8})\.([1-9]\d*)$/;
+const LEGACY_NIGHTLY_VERSION_PATTERN =
+  /^(\d+)\.(\d+)\.(\d+)-nightly-(\d{8})-(\d{3,})$/;
 
 function matchNightlyTag(tag) {
   return NIGHTLY_TAG_PATTERN.exec(tag) ?? LEGACY_NIGHTLY_TAG_PATTERN.exec(tag);
 }
 
 function matchNightlyVersion(version) {
-  return NIGHTLY_VERSION_PATTERN.exec(version) ?? LEGACY_NIGHTLY_VERSION_PATTERN.exec(version);
+  return (
+    NIGHTLY_VERSION_PATTERN.exec(version) ??
+    LEGACY_NIGHTLY_VERSION_PATTERN.exec(version)
+  );
 }
 
 function assertUpdateTrack(track) {
@@ -98,7 +105,8 @@ function normalizeRelease(value) {
   const tagName = typeof value.tag_name === "string" ? value.tag_name : "";
   const track = releaseTrackForTag(tagName);
   const packageVersion = packageVersionForTag(tagName);
-  const publishedAt = typeof value.published_at === "string" ? value.published_at : "";
+  const publishedAt =
+    typeof value.published_at === "string" ? value.published_at : "";
   const publishedTimestamp = Date.parse(publishedAt);
 
   if (
@@ -243,7 +251,9 @@ function isUpdateAvailable(currentVersion, latestRelease, releases) {
   const current = parsePackageVersion(currentVersion);
   const latest = parsePackageVersion(latestRelease.packageVersion);
   if (current && latest && current.track === latest.track) {
-    return comparePackageVersions(latestRelease.packageVersion, currentVersion) > 0;
+    return (
+      comparePackageVersions(latestRelease.packageVersion, currentVersion) > 0
+    );
   }
   if (currentRelease) {
     return latestRelease.publishedTimestamp > currentRelease.publishedTimestamp;
@@ -273,7 +283,8 @@ async function fetchGithubJson(fetchImpl, url, { allowNotFound = false } = {}) {
     return null;
   }
   if (!response?.ok) {
-    const status = typeof response?.status === "number" ? ` (${response.status})` : "";
+    const status =
+      typeof response?.status === "number" ? ` (${response.status})` : "";
     throw new Error(`GitHub release check failed${status}.`);
   }
 
@@ -282,9 +293,13 @@ async function fetchGithubJson(fetchImpl, url, { allowNotFound = false } = {}) {
 
 async function fetchTrackReleases(fetchImpl, track) {
   if (track === "stable") {
-    const value = await fetchGithubJson(fetchImpl, GITHUB_LATEST_STABLE_API_URL, {
-      allowNotFound: true,
-    });
+    const value = await fetchGithubJson(
+      fetchImpl,
+      GITHUB_LATEST_STABLE_API_URL,
+      {
+        allowNotFound: true,
+      },
+    );
     const release = normalizeRelease(value);
     return release?.track === "stable" ? [release] : [];
   }
@@ -316,7 +331,12 @@ async function fetchCurrentRelease(fetchImpl, currentVersion, releases) {
   return release?.packageVersion === currentVersion ? release : null;
 }
 
-async function checkForUpdates({ track, currentVersion, fetchImpl, now = Date.now }) {
+async function checkForUpdates({
+  track,
+  currentVersion,
+  fetchImpl,
+  now = Date.now,
+}) {
   assertUpdateTrack(track);
   if (typeof currentVersion !== "string" || !currentVersion.trim()) {
     throw new Error("The running app version is unavailable.");

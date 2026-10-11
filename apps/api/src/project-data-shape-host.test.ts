@@ -168,9 +168,10 @@ describe("ProjectDataShapePluginManager", () => {
     managers.push(manager);
 
     const pending = Array.from({ length: 4 }, () =>
-      manager
-        .exportProjects("workday-project-data", [])
-        .then(() => undefined, (error: unknown) => error),
+      manager.exportProjects("workday-project-data", []).then(
+        () => undefined,
+        (error: unknown) => error,
+      ),
     );
     expect(manager.activeOperationCount).toBe(4);
     await expect(manager.exportProjects("missing-plugin", [])).rejects.toThrow(

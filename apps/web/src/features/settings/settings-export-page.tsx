@@ -4,7 +4,11 @@ import {
   RiFileExcel2Line as FileSpreadsheet,
   RiUploadLine as Upload,
 } from "@remixicon/react";
-import { AppPanel, MessagePanel, SurfaceCallout } from "@/components/app-surface";
+import {
+  AppPanel,
+  MessagePanel,
+  SurfaceCallout,
+} from "@/components/app-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -22,7 +26,9 @@ import {
 } from "./settings-export";
 
 function getAvailableDateRange(localDates: string[]) {
-  const sortedDates = [...localDates].sort((left, right) => left.localeCompare(right));
+  const sortedDates = [...localDates].sort((left, right) =>
+    left.localeCompare(right),
+  );
   const fallbackDate = todayIsoDate();
 
   return {
@@ -42,12 +48,17 @@ function formatDraftHours(durationMs: number) {
 export function SettingsExportPage() {
   const state = useLocalState();
   const availableRange = useMemo(
-    () => getAvailableDateRange(state.timesheetEntries.map((entry) => entry.localDate)),
+    () =>
+      getAvailableDateRange(
+        state.timesheetEntries.map((entry) => entry.localDate),
+      ),
     [state.timesheetEntries],
   );
   const [startDate, setStartDate] = useState(availableRange.startDate);
   const [endDate, setEndDate] = useState(availableRange.endDate);
-  const [selectedImportFile, setSelectedImportFile] = useState<File | null>(null);
+  const [selectedImportFile, setSelectedImportFile] = useState<File | null>(
+    null,
+  );
   const [statusMessage, setStatusMessage] = useState("");
   const [error, setError] = useState("");
   const hasInvalidRange = startDate > endDate;
@@ -62,12 +73,23 @@ export function SettingsExportPage() {
             startDate,
             endDate,
           }),
-    [endDate, hasInvalidRange, startDate, state.projects, state.timesheetEntries],
+    [
+      endDate,
+      hasInvalidRange,
+      startDate,
+      state.projects,
+      state.timesheetEntries,
+    ],
   );
 
-  const totalHours = useMemo(() => rows.reduce((sum, row) => sum + row.hours, 0), [rows]);
+  const totalHours = useMemo(
+    () => rows.reduce((sum, row) => sum + row.hours, 0),
+    [rows],
+  );
   const pendingImportCount = state.timesheetImportDrafts.length;
-  const pendingConflictCount = state.timesheetImportDrafts.filter((draft) => draft.potentialConflict).length;
+  const pendingConflictCount = state.timesheetImportDrafts.filter(
+    (draft) => draft.potentialConflict,
+  ).length;
   const pendingReadyCount = pendingImportCount - pendingConflictCount;
 
   async function handleExport() {
@@ -82,7 +104,10 @@ export function SettingsExportPage() {
       endDate,
     });
 
-    downloadWorkbookFile(workbookBytes, buildTimesheetExportFilename(startDate, endDate));
+    downloadWorkbookFile(
+      workbookBytes,
+      buildTimesheetExportFilename(startDate, endDate),
+    );
   }
 
   function handleImportFileChange(event: ChangeEvent<HTMLInputElement>) {
@@ -108,12 +133,18 @@ export function SettingsExportPage() {
       localStore.stageTimesheetImportRows(reviewedRows);
       setStatusMessage(
         `${reviewedRows.length} row${reviewedRows.length === 1 ? "" : "s"} staged for review${
-          reviewedRows.some((row) => row.potentialConflict) ? ` · ${reviewedRows.filter((row) => row.potentialConflict).length} potential conflict${reviewedRows.filter((row) => row.potentialConflict).length === 1 ? "" : "s"}` : ""
+          reviewedRows.some((row) => row.potentialConflict)
+            ? ` · ${reviewedRows.filter((row) => row.potentialConflict).length} potential conflict${reviewedRows.filter((row) => row.potentialConflict).length === 1 ? "" : "s"}`
+            : ""
         }.`,
       );
       setError("");
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Unable to parse the workbook.");
+      setError(
+        nextError instanceof Error
+          ? nextError.message
+          : "Unable to parse the workbook.",
+      );
       setStatusMessage("");
     }
   }
@@ -139,8 +170,8 @@ export function SettingsExportPage() {
       <section className="settings-section">
         <h2 className="settings-section-title">Export/Import Time Logs</h2>
         <p className="settings-section-desc">
-          Export committed logs to Excel or import workbook rows into a staged review queue before adding
-          them to your local timesheet.
+          Export committed logs to Excel or import workbook rows into a staged
+          review queue before adding them to your local timesheet.
         </p>
 
         <AppPanel>
@@ -181,17 +212,29 @@ export function SettingsExportPage() {
               <p>
                 {rows.length} {rows.length === 1 ? "entry" : "entries"} selected
               </p>
-              <p>{formatDecimalHours(totalHours)} hours in decimal format will be exported.</p>
+              <p>
+                {formatDecimalHours(totalHours)} hours in decimal format will be
+                exported.
+              </p>
             </div>
           )}
 
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-[var(--border)] bg-[var(--surface-low)] p-4">
             <div className="space-y-1 text-sm text-foreground/65">
-              <p>Filename: {buildTimesheetExportFilename(startDate, endDate)}</p>
-              <p>Rows without an assigned project or task are exported with blank cells.</p>
+              <p>
+                Filename: {buildTimesheetExportFilename(startDate, endDate)}
+              </p>
+              <p>
+                Rows without an assigned project or task are exported with blank
+                cells.
+              </p>
             </div>
 
-            <Button type="button" onClick={handleExport} disabled={hasInvalidRange || rows.length === 0}>
+            <Button
+              type="button"
+              onClick={handleExport}
+              disabled={hasInvalidRange || rows.length === 0}
+            >
               <Download className="h-4 w-4" />
               Export to Excel
             </Button>
@@ -200,19 +243,30 @@ export function SettingsExportPage() {
 
         <AppPanel>
           <SurfaceCallout icon={Upload} title="Excel workbook import">
-            Upload the exported workbook format and review every row before it is added locally.
+            Upload the exported workbook format and review every row before it
+            is added locally.
           </SurfaceCallout>
 
           <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
             <div className="space-y-2">
               <Label>Workbook</Label>
-              <Input type="file" accept=".xlsx" onChange={handleImportFileChange} />
+              <Input
+                type="file"
+                accept=".xlsx"
+                onChange={handleImportFileChange}
+              />
               <p className="text-sm text-foreground/65">
-                {selectedImportFile ? selectedImportFile.name : "Choose a .xlsx file with a Time Logs sheet."}
+                {selectedImportFile
+                  ? selectedImportFile.name
+                  : "Choose a .xlsx file with a Time Logs sheet."}
               </p>
             </div>
 
-            <Button type="button" onClick={handleReviewImport} disabled={!selectedImportFile}>
+            <Button
+              type="button"
+              onClick={handleReviewImport}
+              disabled={!selectedImportFile}
+            >
               <Upload className="h-4 w-4" />
               Review import
             </Button>
@@ -224,22 +278,39 @@ export function SettingsExportPage() {
           <div className="flex flex-wrap items-center gap-2 text-sm text-foreground/70">
             <Badge className="bg-muted">{pendingImportCount} pending</Badge>
             <Badge className="bg-muted">{pendingReadyCount} ready</Badge>
-            <Badge className={pendingConflictCount > 0 ? "bg-[var(--danger-muted)] text-[var(--danger-light)]" : "bg-muted"}>
-              {pendingConflictCount} potential conflict{pendingConflictCount === 1 ? "" : "s"}
+            <Badge
+              className={
+                pendingConflictCount > 0
+                  ? "bg-[var(--danger-muted)] text-[var(--danger-light)]"
+                  : "bg-muted"
+              }
+            >
+              {pendingConflictCount} potential conflict
+              {pendingConflictCount === 1 ? "" : "s"}
             </Badge>
           </div>
 
           {pendingImportCount === 0 ? (
             <MessagePanel>
-              No staged workbook rows yet. Upload a workbook and review it before importing.
+              No staged workbook rows yet. Upload a workbook and review it
+              before importing.
             </MessagePanel>
           ) : (
             <div className="space-y-3">
               <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="secondary" onClick={handleAddAllReady} disabled={pendingReadyCount === 0}>
+                <Button
+                  type="button"
+                  variant="secondary"
+                  onClick={handleAddAllReady}
+                  disabled={pendingReadyCount === 0}
+                >
                   Add all ready
                 </Button>
-                <Button type="button" variant="outline" onClick={handleDismissAll}>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={handleDismissAll}
+                >
                   Dismiss all
                 </Button>
               </div>
@@ -253,9 +324,17 @@ export function SettingsExportPage() {
                     <div className="flex flex-wrap items-start justify-between gap-3">
                       <div className="space-y-1">
                         <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-medium text-foreground">{draft.localDate}</span>
-                          {draft.projectName ? <Badge className="bg-muted">{draft.projectName}</Badge> : null}
-                          {draft.taskName ? <Badge className="bg-muted">{draft.taskName}</Badge> : null}
+                          <span className="text-sm font-medium text-foreground">
+                            {draft.localDate}
+                          </span>
+                          {draft.projectName ? (
+                            <Badge className="bg-muted">
+                              {draft.projectName}
+                            </Badge>
+                          ) : null}
+                          {draft.taskName ? (
+                            <Badge className="bg-muted">{draft.taskName}</Badge>
+                          ) : null}
                           <Badge
                             className={
                               draft.potentialConflict
@@ -263,7 +342,9 @@ export function SettingsExportPage() {
                                 : "bg-muted"
                             }
                           >
-                            {draft.potentialConflict ? "Potential conflict" : "Ready to add"}
+                            {draft.potentialConflict
+                              ? "Potential conflict"
+                              : "Ready to add"}
                           </Badge>
                         </div>
                         <div className="text-sm text-foreground/65">
@@ -273,10 +354,20 @@ export function SettingsExportPage() {
                       </div>
 
                       <div className="flex flex-wrap gap-2">
-                        <Button type="button" variant={draft.potentialConflict ? "outline" : "secondary"} onClick={() => handleAddDraft(draft._id)}>
+                        <Button
+                          type="button"
+                          variant={
+                            draft.potentialConflict ? "outline" : "secondary"
+                          }
+                          onClick={() => handleAddDraft(draft._id)}
+                        >
                           Add
                         </Button>
-                        <Button type="button" variant="ghost" onClick={() => handleDismissDraft(draft._id)}>
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          onClick={() => handleDismissDraft(draft._id)}
+                        >
                           Dismiss
                         </Button>
                       </div>

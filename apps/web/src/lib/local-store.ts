@@ -35,9 +35,7 @@ import {
   applyConnectorSyncWorkItemUpdates as applyConnectorWorkItemUpdates,
   importConnectorWorkItems as applyConnectorWorkItemImport,
 } from "@/domain/backlog/work-item-connector";
-import {
-  type ProjectTaskImportResult,
-} from "@/domain/projects/task-import";
+import { type ProjectTaskImportResult } from "@/domain/projects/task-import";
 import {
   deleteTimesheetEntry as applyDeleteTimesheetEntry,
   duplicateTimesheetEntry as applyDuplicateTimesheetEntry,
@@ -279,9 +277,7 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
     ),
   );
   const persistedBacklogSortMode = persistedState.backlogSortMode as
-    | BacklogSortMode
-    | "priority"
-    | undefined;
+    BacklogSortMode | "priority" | undefined;
   const backlogSortMode =
     persistedBacklogSortMode === "priority"
       ? "priority_asc"
@@ -295,10 +291,9 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
         ...defaults.user,
         ...persistedState.user,
       },
-      projects: arrayOrDefault(
-        persistedState.projects,
-        defaults.projects,
-      ).map((project) => normalizeProject(project, Date.now)),
+      projects: arrayOrDefault(persistedState.projects, defaults.projects).map(
+        (project) => normalizeProject(project, Date.now),
+      ),
       rules: arrayOrDefault(persistedState.rules, defaults.rules),
       segments: arrayOrDefault(persistedState.segments, defaults.segments),
       dismissedSegmentIds: arrayOrDefault(
@@ -313,8 +308,8 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
         persistedState.importedBrowserDrafts,
         defaults.importedBrowserDrafts,
       ),
-      timers: arrayOrDefault(persistedState.timers, defaults.timers).map((timer) =>
-        normalizeTimer(timer),
+      timers: arrayOrDefault(persistedState.timers, defaults.timers).map(
+        (timer) => normalizeTimer(timer),
       ),
       timesheetEntries: arrayOrDefault(
         persistedState.timesheetEntries,
@@ -331,16 +326,14 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
       capture: {
         ...defaults.capture,
         ...persistedState.capture,
-        blockedDomains:
-          arrayOrDefault(
-            persistedState.capture?.blockedDomains,
-            defaults.capture.blockedDomains,
-          ),
-        sensitiveDomains:
-          arrayOrDefault(
-            persistedState.capture?.sensitiveDomains,
-            defaults.capture.sensitiveDomains,
-          ),
+        blockedDomains: arrayOrDefault(
+          persistedState.capture?.blockedDomains,
+          defaults.capture.blockedDomains,
+        ),
+        sensitiveDomains: arrayOrDefault(
+          persistedState.capture?.sensitiveDomains,
+          defaults.capture.sensitiveDomains,
+        ),
         maxPathSegments:
           typeof persistedState.capture?.maxPathSegments === "number" &&
           Number.isFinite(persistedState.capture.maxPathSegments)
@@ -399,7 +392,8 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
         warnWhenOverCapacity:
           persistedState.userPreferences?.warnWhenOverCapacity !== false,
         warnWhenSubmittingUnderCapacity:
-          persistedState.userPreferences?.warnWhenSubmittingUnderCapacity !== false,
+          persistedState.userPreferences?.warnWhenSubmittingUnderCapacity !==
+          false,
       },
     }),
   );
@@ -449,7 +443,7 @@ function ensureLocalWorkspace(state: LocalAppState): LocalAppState {
       state.projects.length > 0
         ? state.projects
         : defaultWorkspaceProjects.map((project) =>
-          createProject(project, { createId, now: Date.now }),
+            createProject(project, { createId, now: Date.now }),
           ),
   };
 }
@@ -601,13 +595,11 @@ function purgeRetiredAuthCache() {
   for (const storageName of ["localStorage", "sessionStorage"] as const) {
     try {
       const storage = window[storageName];
-      const retiredKeys = Array.from(
-        { length: storage.length },
-        (_, index) => storage.key(index),
+      const retiredKeys = Array.from({ length: storage.length }, (_, index) =>
+        storage.key(index),
       ).filter(
         (key): key is string =>
-          key?.toLowerCase().startsWith(RETIRED_AUTH_CACHE_PREFIX) ===
-          true,
+          key?.toLowerCase().startsWith(RETIRED_AUTH_CACHE_PREFIX) === true,
       );
 
       for (const key of retiredKeys) {
@@ -943,9 +935,7 @@ export const localStore = {
     statusId: string,
     updates: string | { name: string; color?: string },
   ) {
-    updateState((state) =>
-      applyUpdateBacklogStatus(state, statusId, updates),
-    );
+    updateState((state) => applyUpdateBacklogStatus(state, statusId, updates));
   },
   deleteBacklogStatus(statusId: string) {
     updateState((state) => applyDeleteBacklogStatus(state, statusId));
@@ -1002,9 +992,7 @@ export const localStore = {
     updateState((state) => applyClearTimesheetImportDrafts(state));
   },
   dismissTimesheetImportDraft(draftId: string) {
-    updateState((state) =>
-      applyDismissTimesheetImportDraft(state, draftId),
-    );
+    updateState((state) => applyDismissTimesheetImportDraft(state, draftId));
   },
   dismissAllTimesheetImportDrafts() {
     this.clearTimesheetImportDrafts();
@@ -1245,9 +1233,7 @@ export const localStore = {
     updateState((state) => applyDismissActivityBlock(state, block));
   },
   dismissImportedBrowserDraft(draftId: string) {
-    updateState((state) =>
-      applyDismissImportedBrowserDraft(state, draftId),
-    );
+    updateState((state) => applyDismissImportedBrowserDraft(state, draftId));
   },
   commitBlock(block: ActivityBlockRecord) {
     updateState((state) =>

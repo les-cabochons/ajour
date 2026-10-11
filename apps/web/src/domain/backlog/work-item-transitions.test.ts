@@ -11,9 +11,7 @@ import {
   updateWorkItem,
 } from "@/domain/backlog/work-item-transitions";
 
-function createState(
-  overrides: Partial<LocalAppState> = {},
-): LocalAppState {
+function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
   return {
     user: {
       _id: "local-user",
@@ -45,7 +43,15 @@ function createState(
       updateTrack: "stable",
       projectDataShapeId: "default",
       weeklyTimeViewStyle: "ledger",
-      weeklyCapacityTargets: { monday: 8, tuesday: 8, wednesday: 8, thursday: 8, friday: 8, saturday: 0, sunday: 0 },
+      weeklyCapacityTargets: {
+        monday: 8,
+        tuesday: 8,
+        wednesday: 8,
+        thursday: 8,
+        friday: 8,
+        saturday: 0,
+        sunday: 0,
+      },
       warnWhenOverCapacity: true,
       warnWhenSubmittingUnderCapacity: true,
     },
@@ -154,14 +160,10 @@ describe("work item transitions", () => {
       },
       factories,
     );
-    const updated = updateWorkItem(
-      independentChild.state,
-      parent.result,
-      {
-        projectId: "project-3",
-        taskId: "task-3",
-      },
-    );
+    const updated = updateWorkItem(independentChild.state, parent.result, {
+      projectId: "project-3",
+      taskId: "task-3",
+    });
 
     expect(
       updated.workItems.find((item) => item._id === inheritedChild.result),
@@ -218,11 +220,7 @@ describe("work item transitions", () => {
 
   it("rejects nesting a task that already owns a subtask", () => {
     const factories = createFactories();
-    const parent = addWorkItem(
-      createState(),
-      { title: "Parent" },
-      factories,
-    );
+    const parent = addWorkItem(createState(), { title: "Parent" }, factories);
     const child = addWorkItem(
       parent.state,
       {
@@ -246,11 +244,7 @@ describe("work item transitions", () => {
 
   it("archives deterministically and deletes a task with its direct children", () => {
     const factories = createFactories();
-    const parent = addWorkItem(
-      createState(),
-      { title: "Parent" },
-      factories,
-    );
+    const parent = addWorkItem(createState(), { title: "Parent" }, factories);
     const child = addWorkItem(
       parent.state,
       {

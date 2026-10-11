@@ -1,10 +1,4 @@
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-} from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   RiAddLine as Plus,
   RiArchiveLine as Archive,
@@ -132,8 +126,7 @@ type TaskEditDraft = {
 };
 
 type ProjectModalState =
-  | { mode: "create" }
-  | { mode: "edit"; projectId: string };
+  { mode: "create" } | { mode: "edit"; projectId: string };
 
 type ProjectCommandView = "main" | "task-projects";
 type ProjectTaskFilter = "active" | "archived";
@@ -362,14 +355,17 @@ function ProjectFormModal({
           src: nextIconSrc.src,
           maskSrc: nextIconSrc.maskSrc,
           colorMode:
-            current.icon.kind === "upload" && current.icon.colorMode === "native"
+            current.icon.kind === "upload" &&
+            current.icon.colorMode === "native"
               ? "native"
               : "tinted",
         },
       }));
     } catch (error) {
       setIconError(
-        error instanceof Error ? error.message : "The favicon could not be used.",
+        error instanceof Error
+          ? error.message
+          : "The favicon could not be used.",
       );
     } finally {
       setIsProcessingUpload(false);
@@ -551,7 +547,8 @@ function ProjectFormModal({
             <div className="project-icon-preset-grid" role="list">
               {PROJECT_ICON_PRESETS.map((preset) => {
                 const isSelected =
-                  draft.icon.kind === "preset" && draft.icon.name === preset.name;
+                  draft.icon.kind === "preset" &&
+                  draft.icon.name === preset.name;
 
                 return (
                   <button
@@ -576,7 +573,9 @@ function ProjectFormModal({
               })}
             </div>
 
-            {iconError ? <span className="field-error">{iconError}</span> : null}
+            {iconError ? (
+              <span className="field-error">{iconError}</span>
+            ) : null}
           </div>
           <div className="grid gap-3 sm:grid-cols-[1fr_110px]">
             <div className="space-y-2">
@@ -875,10 +874,9 @@ function ProjectDetail({
     { label: "Tracked", value: hoursLabel(metrics.durationMs) },
     { label: "Entries", value: `${metrics.entryCount}` },
   ];
-  const editingTask =
-    editingTaskId
-      ? (project.tasks.find((task) => task._id === editingTaskId) ?? null)
-      : null;
+  const editingTask = editingTaskId
+    ? (project.tasks.find((task) => task._id === editingTaskId) ?? null)
+    : null;
   const editingTaskTrackedMs = editingTask
     ? (taskMetrics.get(editingTask._id)?.durationMs ?? 0)
     : 0;
@@ -1031,7 +1029,9 @@ function ProjectDetail({
     try {
       const { extractTaskNamesFromWorkbook } =
         await import("@/features/projects/project-task-import");
-      const workbook = await extractTaskNamesFromWorkbook(await file.arrayBuffer());
+      const workbook = await extractTaskNamesFromWorkbook(
+        await file.arrayBuffer(),
+      );
       if (workbook.taskNames.length === 0) {
         throw new Error(
           "No usable task names were found in column C of the first worksheet.",
@@ -1151,7 +1151,8 @@ function ProjectDetail({
     }
 
     document.addEventListener("mousedown", handleDocumentMouseDown);
-    return () => document.removeEventListener("mousedown", handleDocumentMouseDown);
+    return () =>
+      document.removeEventListener("mousedown", handleDocumentMouseDown);
   }, [autosaveTaskEditor, editingTaskId]);
 
   function handleTaskPointerDown(
@@ -1358,7 +1359,10 @@ function ProjectDetail({
         </MessagePanel>
       ) : null}
       {importError ? (
-        <MessagePanel tone="warning" className="border border-[var(--danger-muted)] text-foreground">
+        <MessagePanel
+          tone="warning"
+          className="border border-[var(--danger-muted)] text-foreground"
+        >
           {importError}
         </MessagePanel>
       ) : null}
@@ -1670,7 +1674,9 @@ function ProjectDetail({
                               </div>
                               <div className="project-task-edit-metrics">
                                 <label className="field">
-                                  <span className="field-label">Tracked time</span>
+                                  <span className="field-label">
+                                    Tracked time
+                                  </span>
                                   <input
                                     className="field-input"
                                     value={formatDurationHoursInput(
@@ -1708,7 +1714,9 @@ function ProjectDetail({
                                   ) : null}
                                 </label>
                                 <label className="field">
-                                  <span className="field-label">Adjustment</span>
+                                  <span className="field-label">
+                                    Adjustment
+                                  </span>
                                   <input
                                     className="field-input"
                                     value={taskEditDraft.adjustment}
@@ -1737,7 +1745,10 @@ function ProjectDetail({
                                 </label>
                               </div>
                             </div>
-                            <div className="project-task-edit-footer" aria-hidden="true" />
+                            <div
+                              className="project-task-edit-footer"
+                              aria-hidden="true"
+                            />
                           </div>
                         </td>
                       </tr>
@@ -1865,9 +1876,9 @@ function ProjectDetail({
               projectTaskToneClassName[
                 getProjectTaskConsumedTone({
                   budgetMs: draggedTask.budgetMs,
-                  trackedMs:
-                    (taskMetrics.get(draggedTask._id) ?? { durationMs: 0 })
-                      .durationMs,
+                  trackedMs: (
+                    taskMetrics.get(draggedTask._id) ?? { durationMs: 0 }
+                  ).durationMs,
                   adjustmentMs: draggedTask.adjustmentMs,
                 })
               ],
@@ -1875,9 +1886,8 @@ function ProjectDetail({
           >
             {formatProjectTaskConsumedBadge({
               budgetMs: draggedTask.budgetMs,
-              trackedMs:
-                (taskMetrics.get(draggedTask._id) ?? { durationMs: 0 })
-                  .durationMs,
+              trackedMs: (taskMetrics.get(draggedTask._id) ?? { durationMs: 0 })
+                .durationMs,
               adjustmentMs: draggedTask.adjustmentMs,
             })}
           </span>
@@ -2425,7 +2435,6 @@ export function ProjectsPage() {
             <span data-sidebar-collapsed="hide">Archive</span>
           </Link>
         </SidebarFooter>
-
       </CustomSidebar>
 
       {draggedProject && projectDragState ? (

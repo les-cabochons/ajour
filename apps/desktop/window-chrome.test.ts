@@ -2,20 +2,18 @@ import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
-const {
-  getPlatformWindowChromeOptions,
-  getWindowsTitleBarOverlay,
-} = require("./electron/window-chrome.cjs") as {
-  getPlatformWindowChromeOptions: (
-    platform: NodeJS.Platform,
-    theme: "dark" | "light",
-  ) => Record<string, unknown>;
-  getWindowsTitleBarOverlay: (theme: "dark" | "light") => {
-    color: string;
-    symbolColor: string;
-    height: number;
+const { getPlatformWindowChromeOptions, getWindowsTitleBarOverlay } =
+  require("./electron/window-chrome.cjs") as {
+    getPlatformWindowChromeOptions: (
+      platform: NodeJS.Platform,
+      theme: "dark" | "light",
+    ) => Record<string, unknown>;
+    getWindowsTitleBarOverlay: (theme: "dark" | "light") => {
+      color: string;
+      symbolColor: string;
+      height: number;
+    };
   };
-};
 
 describe("desktop window chrome", () => {
   it("keeps the existing inset macOS traffic lights", () => {

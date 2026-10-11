@@ -40,9 +40,7 @@ declare global {
       ) => Promise<DesktopUpdateCheckResult>;
       configureAutomaticUpdates?: (track: UpdateTrack) => Promise<void>;
       openUpdateRelease?: (releaseUrl: string) => Promise<void>;
-      installConnectorPlugin?: () => Promise<
-        ConnectorPluginInstallResponse | null
-      >;
+      installConnectorPlugin?: () => Promise<ConnectorPluginInstallResponse | null>;
       getPluginCatalog?: () => Promise<PluginCatalogResponse>;
       getPluginCatalogSettings?: () => Promise<PluginCatalogSettings>;
       configurePluginCatalog?: (

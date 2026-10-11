@@ -12,16 +12,19 @@ const {
 } = require("./electron/plugin-catalog-settings.cjs") as {
   loadPluginCatalogSettings(file: string): { refreshMinutes: number };
   normalizePluginCatalogSettings(value: unknown): { refreshMinutes: number };
-  savePluginCatalogSettings(file: string, value: unknown): { refreshMinutes: number };
+  savePluginCatalogSettings(
+    file: string,
+    value: unknown,
+  ): { refreshMinutes: number };
 };
 
 const tempDirectories: string[] = [];
 
 afterEach(async () => {
   await Promise.all(
-    tempDirectories.splice(0).map((directory) =>
-      rm(directory, { recursive: true, force: true }),
-    ),
+    tempDirectories
+      .splice(0)
+      .map((directory) => rm(directory, { recursive: true, force: true })),
   );
 });
 
@@ -39,7 +42,9 @@ describe("plugin catalog settings", () => {
   });
 
   it("persists the launch-only refresh choice", async () => {
-    const directory = await mkdtemp(path.join(os.tmpdir(), "ajour-catalog-settings-"));
+    const directory = await mkdtemp(
+      path.join(os.tmpdir(), "ajour-catalog-settings-"),
+    );
     tempDirectories.push(directory);
     const file = path.join(directory, "settings.json");
 

@@ -1,4 +1,9 @@
-import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import {
+  createServer,
+  type IncomingMessage,
+  type Server,
+  type ServerResponse,
+} from "node:http";
 import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync } from "node:fs";
 import os from "node:os";
@@ -74,32 +79,46 @@ const RESERVED_CONNECTION_FIELDS = new Set([
   "autoSyncIntervalMinutes",
 ]);
 
-function materializeAutoSyncCandidates(items: ConnectorImportCandidateInput[]): ConnectorImportCandidate[] {
+function materializeAutoSyncCandidates(
+  items: ConnectorImportCandidateInput[],
+): ConnectorImportCandidate[] {
   const pushedAt = Date.now();
 
   return items.map((item) => ({
     id: `connector_${randomUUID()}`,
     ...item,
-    selected: item.selectable ? item.selected ?? true : false,
+    selected: item.selectable ? (item.selected ?? true) : false,
     pushedAt: item.pushedAt ?? pushedAt,
   }));
 }
 
-function collectAutoSyncItems(items: ConnectorImportCandidateInput[]): ConnectorImportCandidate[] {
+function collectAutoSyncItems(
+  items: ConnectorImportCandidateInput[],
+): ConnectorImportCandidate[] {
   const candidates = materializeAutoSyncCandidates(items);
   const candidatesBySourceKey = new Map(
-    candidates.map((item) => [`${item.connectionId}:${item.sourceId}`, item] as const),
+    candidates.map(
+      (item) => [`${item.connectionId}:${item.sourceId}`, item] as const,
+    ),
   );
   const committedIds = new Set(
-    candidates.filter((item) => item.selectable && item.selected).map((item) => item.id),
+    candidates
+      .filter((item) => item.selectable && item.selected)
+      .map((item) => item.id),
   );
 
   for (const item of candidates) {
-    if (!committedIds.has(item.id) || item.depth !== 1 || !item.parentSourceId) {
+    if (
+      !committedIds.has(item.id) ||
+      item.depth !== 1 ||
+      !item.parentSourceId
+    ) {
       continue;
     }
 
-    const parent = candidatesBySourceKey.get(`${item.connectionId}:${item.parentSourceId}`);
+    const parent = candidatesBySourceKey.get(
+      `${item.connectionId}:${item.parentSourceId}`,
+    );
     if (parent) {
       committedIds.add(parent.id);
     }
@@ -110,7 +129,9 @@ function collectAutoSyncItems(items: ConnectorImportCandidateInput[]): Connector
 
 function collectConnectorStatuses(items: ConnectorImportCandidateInput[]) {
   return items
-    .filter((item): item is ConnectorImportCandidateInput & { state: string } => Boolean(item.state?.trim()))
+    .filter((item): item is ConnectorImportCandidateInput & { state: string } =>
+      Boolean(item.state?.trim()),
+    )
     .map((item) => ({
       source: item.source,
       connectionId: item.connectionId,
@@ -120,7 +141,11 @@ function collectConnectorStatuses(items: ConnectorImportCandidateInput[]) {
     }));
 }
 
-function writeJson(response: ServerResponse, statusCode: number, body?: unknown) {
+function writeJson(
+  response: ServerResponse,
+  statusCode: number,
+  body?: unknown,
+) {
   const headers = {
     "Access-Control-Allow-Headers": "Content-Type",
     "Access-Control-Allow-Methods": "GET,POST,DELETE,OPTIONS",
@@ -199,7 +224,9 @@ function errorMessage(error: unknown) {
 }
 
 function matchConnectorRoute(pathname: string) {
-  return pathname.match(/^\/api\/connectors\/([^/]+)\/connections(?:\/([^/]+)(?:\/(sync))?)?$/);
+  return pathname.match(
+    /^\/api\/connectors\/([^/]+)\/connections(?:\/([^/]+)(?:\/(sync))?)?$/,
+  );
 }
 
 function matchConnectorPluginActivationRoute(pathname: string) {
@@ -207,7 +234,9 @@ function matchConnectorPluginActivationRoute(pathname: string) {
 }
 
 function matchProjectDataShapeRoute(pathname: string) {
-  return pathname.match(/^\/api\/project-data-shapes\/([^/]+)\/(export|import)$/);
+  return pathname.match(
+    /^\/api\/project-data-shapes\/([^/]+)\/(export|import)$/,
+  );
 }
 
 function parseBooleanValue(value: unknown, fieldId: string) {
@@ -227,22 +256,39 @@ function parseRequiredStringValue(value: unknown, fieldId: string) {
 }
 
 function parseAutoSyncIntervalValue(value: unknown) {
-  if (typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 1440) {
+  if (
+    typeof value === "number" &&
+    Number.isInteger(value) &&
+    value >= 1 &&
+    value <= 1440
+  ) {
     return value;
   }
 
-  throw new Error('Connector field "autoSyncIntervalMinutes" must be an integer between 1 and 1440.');
+  throw new Error(
+    'Connector field "autoSyncIntervalMinutes" must be an integer between 1 and 1440.',
+  );
 }
 
 function parseConnectionValues(values: ConnectorFieldValues) {
   const parsedValues = connectorFieldValuesSchema.parse(values);
   const label = parseRequiredStringValue(parsedValues.label, "label");
-  const tenantLabel = parseRequiredStringValue(parsedValues.tenantLabel, "tenantLabel");
-  const autoSync = parseBooleanValue(parsedValues.autoSync ?? false, "autoSync");
-  const autoSyncIntervalMinutes = parseAutoSyncIntervalValue(parsedValues.autoSyncIntervalMinutes ?? 15);
+  const tenantLabel = parseRequiredStringValue(
+    parsedValues.tenantLabel,
+    "tenantLabel",
+  );
+  const autoSync = parseBooleanValue(
+    parsedValues.autoSync ?? false,
+    "autoSync",
+  );
+  const autoSyncIntervalMinutes = parseAutoSyncIntervalValue(
+    parsedValues.autoSyncIntervalMinutes ?? 15,
+  );
 
   const config = Object.fromEntries(
-    Object.entries(parsedValues).filter(([key]) => !RESERVED_CONNECTION_FIELDS.has(key)),
+    Object.entries(parsedValues).filter(
+      ([key]) => !RESERVED_CONNECTION_FIELDS.has(key),
+    ),
   );
 
   return {
@@ -254,9 +300,14 @@ function parseConnectionValues(values: ConnectorFieldValues) {
   };
 }
 
-async function getOverview(storage: AppApiStorage, pluginManager: ConnectorPluginManager) {
+async function getOverview(
+  storage: AppApiStorage,
+  pluginManager: ConnectorPluginManager,
+) {
   const plugins = await pluginManager.listPlugins();
-  return connectorsOverviewSchema.parse(await storage.getConnectorsOverview(plugins));
+  return connectorsOverviewSchema.parse(
+    await storage.getConnectorsOverview(plugins),
+  );
 }
 
 async function findConnectionSummary(
@@ -268,7 +319,10 @@ async function findConnectionSummary(
   const overview = await getOverview(storage, pluginManager);
   const summary = overview.connectionGroups
     .flatMap((group) => group.connections)
-    .find((connection) => connection.pluginId === pluginId && connection.id === connectionId);
+    .find(
+      (connection) =>
+        connection.pluginId === pluginId && connection.id === connectionId,
+    );
 
   if (!summary) {
     throw new Error(`Connector connection "${connectionId}" not found.`);
@@ -287,8 +341,9 @@ function defaultInstalledPluginDirectory(statePath?: string) {
 }
 
 function defaultDevelopmentPluginDirectories() {
-  const configuredDirectories = process.env.TIMETRACKER_DEV_PLUGIN_DIRS
-    ?.split(path.delimiter)
+  const configuredDirectories = process.env.TIMETRACKER_DEV_PLUGIN_DIRS?.split(
+    path.delimiter,
+  )
     .map((directory) => directory.trim())
     .filter(Boolean);
   if (configuredDirectories?.length) {
@@ -333,8 +388,10 @@ function defaultProjectDataShapePluginDirectories() {
 }
 
 export function createAppApiServer(options: AppApiServerOptions = {}) {
-  const host = options.host ?? process.env.TIMETRACKER_APP_API_HOST ?? "127.0.0.1";
-  const port = options.port ?? Number(process.env.TIMETRACKER_APP_API_PORT ?? 8787);
+  const host =
+    options.host ?? process.env.TIMETRACKER_APP_API_HOST ?? "127.0.0.1";
+  const port =
+    options.port ?? Number(process.env.TIMETRACKER_APP_API_PORT ?? 8787);
   const storage = new AppApiStorage(options.statePath);
   const allowDevelopmentPlugins =
     options.allowDevelopmentPlugins ??
@@ -371,20 +428,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       writeJson(response, 503, { error: "App API is shutting down." });
       return;
     }
-    if (
-      request.headers.host &&
-      !isAllowedRequestHost(request.headers.host)
-    ) {
+    if (request.headers.host && !isAllowedRequestHost(request.headers.host)) {
       writeJson(response, 403, { error: "Request host is not allowed." });
       return;
     }
     const requestOrigin = request.headers.origin;
     if (
       requestOrigin &&
-      !isAllowedRequestOrigin(
-        requestOrigin,
-        allowedOrigins,
-      )
+      !isAllowedRequestOrigin(requestOrigin, allowedOrigins)
     ) {
       writeJson(response, 403, { error: "Request origin is not allowed." });
       return;
@@ -407,12 +458,18 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         return;
       }
 
-      if (request.method === "GET" && requestUrl.pathname === "/api/connectors") {
+      if (
+        request.method === "GET" &&
+        requestUrl.pathname === "/api/connectors"
+      ) {
         writeJson(response, 200, await getOverview(storage, pluginManager));
         return;
       }
 
-      if (request.method === "GET" && requestUrl.pathname === "/api/connectors/plugins") {
+      if (
+        request.method === "GET" &&
+        requestUrl.pathname === "/api/connectors/plugins"
+      ) {
         writeJson(response, 200, await pluginManager.listPlugins());
         return;
       }
@@ -536,17 +593,27 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         return;
       }
 
-      if (request.method === "GET" && requestUrl.pathname === "/api/backlog/source-statuses") {
+      if (
+        request.method === "GET" &&
+        requestUrl.pathname === "/api/backlog/source-statuses"
+      ) {
         writeJson(
           response,
           200,
-          connectorBacklogStatusListResponseSchema.parse(await storage.listConnectorBacklogStatuses()),
+          connectorBacklogStatusListResponseSchema.parse(
+            await storage.listConnectorBacklogStatuses(),
+          ),
         );
         return;
       }
 
-      if (request.method === "POST" && requestUrl.pathname === "/api/backlog/source-statuses") {
-        const payload = connectorBacklogStatusUpsertRequestSchema.parse(await readJsonBody(request));
+      if (
+        request.method === "POST" &&
+        requestUrl.pathname === "/api/backlog/source-statuses"
+      ) {
+        const payload = connectorBacklogStatusUpsertRequestSchema.parse(
+          await readJsonBody(request),
+        );
         writeJson(
           response,
           200,
@@ -565,7 +632,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         );
 
         if (request.method === "POST" && !rawConnectionId && !action) {
-          const payload = connectorConnectionSaveRequestSchema.parse(await readJsonBody(request));
+          const payload = connectorConnectionSaveRequestSchema.parse(
+            await readJsonBody(request),
+          );
           const parsedValues = parseConnectionValues(payload.values);
           const plugin = (await pluginManager.listPlugins()).find(
             (candidate) => candidate.id === pluginId,
@@ -613,14 +682,21 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
 
         const connectionId = decodeURIComponent(rawConnectionId ?? "");
         if (!connectionId) {
-          writeJson(response, 404, { error: "Connector connection not found." });
+          writeJson(response, 404, {
+            error: "Connector connection not found.",
+          });
           return;
         }
 
         if (request.method === "DELETE" && !action) {
-          const deleted = await storage.deleteConnection(pluginId, connectionId);
+          const deleted = await storage.deleteConnection(
+            pluginId,
+            connectionId,
+          );
           if (!deleted) {
-            writeJson(response, 404, { error: "Connector connection not found." });
+            writeJson(response, 404, {
+              error: "Connector connection not found.",
+            });
             return;
           }
 
@@ -632,37 +708,59 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           const availablePluginIds = new Set(
             (await pluginManager.listPlugins()).map((plugin) => plugin.id),
           );
-          if (!(await storage.isConnectorPluginEnabled(pluginId, availablePluginIds))) {
+          if (
+            !(await storage.isConnectorPluginEnabled(
+              pluginId,
+              availablePluginIds,
+            ))
+          ) {
             writeJson(response, 409, {
               error: "Activate this connector plugin before syncing.",
             });
             return;
           }
 
-          const connection = await storage.getConnection(pluginId, connectionId);
+          const connection = await storage.getConnection(
+            pluginId,
+            connectionId,
+          );
           if (!connection) {
-            writeJson(response, 404, { error: "Connector connection not found." });
+            writeJson(response, 404, {
+              error: "Connector connection not found.",
+            });
             return;
           }
 
-          const payload = connectorSyncRequestSchema.parse(await readJsonBody(request));
+          const payload = connectorSyncRequestSchema.parse(
+            await readJsonBody(request),
+          );
           const isSourceWriteOnly = payload.trigger === "source_write";
-          const shouldAutoSyncToBacklog = connection.autoSync && payload.trigger === "auto";
+          const shouldAutoSyncToBacklog =
+            connection.autoSync && payload.trigger === "auto";
 
           try {
-            const fetched = await pluginManager.syncConnection(pluginId, {
-              id: connection.id,
-              pluginId: connection.pluginId,
-              label: connection.label,
-              tenantLabel: connection.tenantLabel,
-              autoSync: connection.autoSync,
-              autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
-              connectedAt: connection.connectedAt,
-              lastSyncAt: connection.lastSyncAt,
-              lastError: connection.lastError,
-              config: connection.config,
-            }, payload.workItems);
-            if (!(await storage.isConnectorPluginEnabled(pluginId, availablePluginIds))) {
+            const fetched = await pluginManager.syncConnection(
+              pluginId,
+              {
+                id: connection.id,
+                pluginId: connection.pluginId,
+                label: connection.label,
+                tenantLabel: connection.tenantLabel,
+                autoSync: connection.autoSync,
+                autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
+                connectedAt: connection.connectedAt,
+                lastSyncAt: connection.lastSyncAt,
+                lastError: connection.lastError,
+                config: connection.config,
+              },
+              payload.workItems,
+            );
+            if (
+              !(await storage.isConnectorPluginEnabled(
+                pluginId,
+                availablePluginIds,
+              ))
+            ) {
               writeJson(response, 409, {
                 error: "Connector plugin was deactivated while syncing.",
               });
@@ -673,7 +771,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
               await storage.upsertConnectorBacklogStatuses(discoveredStatuses);
             }
 
-            const autoSyncItems = shouldAutoSyncToBacklog ? collectAutoSyncItems(fetched.items) : [];
+            const autoSyncItems = shouldAutoSyncToBacklog
+              ? collectAutoSyncItems(fetched.items)
+              : [];
             const stageResult = isSourceWriteOnly
               ? {
                   queuedCount: 0,
@@ -681,14 +781,23 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
                   skippedCount: 0,
                 }
               : shouldAutoSyncToBacklog
-              ? {
-                  queuedCount: autoSyncItems.length,
-                  updatedCount: 0,
-                  skippedCount: 0,
-                }
-              : await storage.stageImportItems(fetched.items);
-            await storage.recordConnectionSyncSuccess(pluginId, connectionId, Date.now());
-            const { summary } = await findConnectionSummary(storage, pluginManager, pluginId, connectionId);
+                ? {
+                    queuedCount: autoSyncItems.length,
+                    updatedCount: 0,
+                    skippedCount: 0,
+                  }
+                : await storage.stageImportItems(fetched.items);
+            await storage.recordConnectionSyncSuccess(
+              pluginId,
+              connectionId,
+              Date.now(),
+            );
+            const { summary } = await findConnectionSummary(
+              storage,
+              pluginManager,
+              pluginId,
+              connectionId,
+            );
 
             writeJson(
               response,
@@ -704,8 +813,17 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
               }),
             );
           } catch (error) {
-            await storage.recordConnectionError(pluginId, connectionId, errorMessage(error));
-            const { summary } = await findConnectionSummary(storage, pluginManager, pluginId, connectionId);
+            await storage.recordConnectionError(
+              pluginId,
+              connectionId,
+              errorMessage(error),
+            );
+            const { summary } = await findConnectionSummary(
+              storage,
+              pluginManager,
+              pluginId,
+              connectionId,
+            );
             writeJson(
               response,
               502,
@@ -725,39 +843,64 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         }
       }
 
-      if (request.method === "POST" && requestUrl.pathname === "/api/backlog/items") {
-        const payload = connectorImportPushRequestSchema.parse(await readJsonBody(request));
+      if (
+        request.method === "POST" &&
+        requestUrl.pathname === "/api/backlog/items"
+      ) {
+        const payload = connectorImportPushRequestSchema.parse(
+          await readJsonBody(request),
+        );
         writeJson(
           response,
           200,
-          connectorImportPushResponseSchema.parse(await storage.stageImportItems(payload.items)),
+          connectorImportPushResponseSchema.parse(
+            await storage.stageImportItems(payload.items),
+          ),
         );
         return;
       }
 
-      if (request.method === "GET" && requestUrl.pathname === "/api/backlog/imports") {
+      if (
+        request.method === "GET" &&
+        requestUrl.pathname === "/api/backlog/imports"
+      ) {
         writeJson(
           response,
           200,
-          connectorImportListResponseSchema.parse(await storage.listStagedImports()),
+          connectorImportListResponseSchema.parse(
+            await storage.listStagedImports(),
+          ),
         );
         return;
       }
 
-      if (request.method === "POST" && requestUrl.pathname === "/api/backlog/imports/selection") {
-        const payload = connectorImportSelectionUpdateSchema.parse(await readJsonBody(request));
+      if (
+        request.method === "POST" &&
+        requestUrl.pathname === "/api/backlog/imports/selection"
+      ) {
+        const payload = connectorImportSelectionUpdateSchema.parse(
+          await readJsonBody(request),
+        );
         writeJson(
           response,
           200,
           connectorImportSelectionResponseSchema.parse({
-            updatedCount: await storage.updateImportSelection(payload.ids, payload.selected),
+            updatedCount: await storage.updateImportSelection(
+              payload.ids,
+              payload.selected,
+            ),
           }),
         );
         return;
       }
 
-      if (request.method === "POST" && requestUrl.pathname === "/api/backlog/imports/dismiss") {
-        const payload = connectorImportDismissRequestSchema.parse(await readJsonBody(request));
+      if (
+        request.method === "POST" &&
+        requestUrl.pathname === "/api/backlog/imports/dismiss"
+      ) {
+        const payload = connectorImportDismissRequestSchema.parse(
+          await readJsonBody(request),
+        );
         writeJson(
           response,
           200,
@@ -768,7 +911,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         return;
       }
 
-      if (request.method === "POST" && requestUrl.pathname === "/api/backlog/imports/commit-selected") {
+      if (
+        request.method === "POST" &&
+        requestUrl.pathname === "/api/backlog/imports/commit-selected"
+      ) {
         const items = await storage.commitSelectedImports();
         writeJson(
           response,
@@ -807,7 +953,9 @@ export async function installConnectorPluginForServer(
 ) {
   const runtime = appApiRuntimesByServer.get(server);
   if (!runtime) {
-    throw new Error("Connector plugin installation requires an active app API runtime.");
+    throw new Error(
+      "Connector plugin installation requires an active app API runtime.",
+    );
   }
 
   const installedPlugin = await runtime.pluginManager.installPluginArchive(
@@ -833,7 +981,9 @@ export async function uninstallConnectorPluginForServer(
 ) {
   const runtime = appApiRuntimesByServer.get(server);
   if (!runtime) {
-    throw new Error("Connector plugin uninstall requires an active app API runtime.");
+    throw new Error(
+      "Connector plugin uninstall requires an active app API runtime.",
+    );
   }
 
   const removedPlugin = await runtime.pluginManager.uninstallPlugin(pluginId);
@@ -844,9 +994,13 @@ export async function uninstallConnectorPluginForServer(
   });
 }
 
-export async function startAppApiServer(options: AppApiServerOptions = {}): Promise<Server> {
-  const host = options.host ?? process.env.TIMETRACKER_APP_API_HOST ?? "127.0.0.1";
-  const port = options.port ?? Number(process.env.TIMETRACKER_APP_API_PORT ?? 8787);
+export async function startAppApiServer(
+  options: AppApiServerOptions = {},
+): Promise<Server> {
+  const host =
+    options.host ?? process.env.TIMETRACKER_APP_API_HOST ?? "127.0.0.1";
+  const port =
+    options.port ?? Number(process.env.TIMETRACKER_APP_API_PORT ?? 8787);
   const server = createAppApiServer(options);
 
   await new Promise<void>((resolve, reject) => {
@@ -886,7 +1040,8 @@ export async function stopAppApiServer(server: Server): Promise<void> {
 }
 
 const executedDirectly =
-  typeof process.argv[1] === "string" && import.meta.url === pathToFileURL(process.argv[1]).toString();
+  typeof process.argv[1] === "string" &&
+  import.meta.url === pathToFileURL(process.argv[1]).toString();
 
 if (executedDirectly) {
   void startAppApiServer();

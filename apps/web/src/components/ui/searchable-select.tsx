@@ -69,7 +69,9 @@ function matchesOption(option: SearchableSelectOption, query: string) {
   }
 
   const haystacks = [option.label, ...(option.keywords ?? [])];
-  return haystacks.some((candidate) => normalizeSearchText(candidate).includes(query));
+  return haystacks.some((candidate) =>
+    normalizeSearchText(candidate).includes(query),
+  );
 }
 
 export function SearchableSelect({
@@ -89,13 +91,18 @@ export function SearchableSelect({
   const popoverRef = useRef<HTMLDivElement>(null);
   const optionRefs = useRef<Array<HTMLElement | null>>([]);
   const listboxId = useId();
-  const selectedOption = useMemo(() => options.find((option) => option.value === value) ?? null, [options, value]);
+  const selectedOption = useMemo(
+    () => options.find((option) => option.value === value) ?? null,
+    [options, value],
+  );
   const selectedLabel = selectedOption?.label ?? "";
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
-  const [popoverLayout, setPopoverLayout] = useState<PopoverLayout | null>(null);
+  const [popoverLayout, setPopoverLayout] = useState<PopoverLayout | null>(
+    null,
+  );
 
   const normalizedQuery = isTyping ? normalizeSearchText(query) : "";
   const filteredOptions = useMemo(
@@ -103,7 +110,10 @@ export function SearchableSelect({
     [normalizedQuery, options],
   );
   const visibleOptions = useMemo(
-    () => (clearLabel && !normalizedQuery ? [{ value: "", label: clearLabel }, ...filteredOptions] : filteredOptions),
+    () =>
+      clearLabel && !normalizedQuery
+        ? [{ value: "", label: clearLabel }, ...filteredOptions]
+        : filteredOptions,
     [clearLabel, filteredOptions, normalizedQuery],
   );
   const groupedVisibleOptions = useMemo(() => {
@@ -134,7 +144,11 @@ export function SearchableSelect({
 
     return groups;
   }, [visibleOptions]);
-  const inputValue = isOpen ? (isTyping ? query : selectedLabel) : selectedLabel;
+  const inputValue = isOpen
+    ? isTyping
+      ? query
+      : selectedLabel
+    : selectedLabel;
 
   useEffect(() => {
     if (!disabled) {
@@ -168,7 +182,10 @@ export function SearchableSelect({
         return;
       }
 
-      if (containerRef.current?.contains(target) || popoverRef.current?.contains(target)) {
+      if (
+        containerRef.current?.contains(target) ||
+        popoverRef.current?.contains(target)
+      ) {
         return;
       }
 
@@ -176,7 +193,8 @@ export function SearchableSelect({
     }
 
     document.addEventListener("mousedown", handleDocumentMouseDown);
-    return () => document.removeEventListener("mousedown", handleDocumentMouseDown);
+    return () =>
+      document.removeEventListener("mousedown", handleDocumentMouseDown);
   }, [isOpen]);
 
   useLayoutEffect(() => {
@@ -199,16 +217,31 @@ export function SearchableSelect({
       const viewportOffsetLeft = viewport?.offsetLeft ?? 0;
       const viewportOffsetTop = viewport?.offsetTop ?? 0;
 
-      const width = Math.min(rect.width, Math.max(0, viewportWidth - POPOVER_MARGIN_PX * 2));
+      const width = Math.min(
+        rect.width,
+        Math.max(0, viewportWidth - POPOVER_MARGIN_PX * 2),
+      );
       const left = Math.min(
         Math.max(rect.left, viewportOffsetLeft + POPOVER_MARGIN_PX),
         viewportOffsetLeft + viewportWidth - width - POPOVER_MARGIN_PX,
       );
 
-      const contentHeight = Math.min(popoverElement.scrollHeight, POPOVER_MAX_HEIGHT_PX);
-      const spaceAbove = Math.max(0, rect.top - viewportOffsetTop - POPOVER_MARGIN_PX);
-      const spaceBelow = Math.max(0, viewportOffsetTop + viewportHeight - rect.bottom - POPOVER_MARGIN_PX);
-      const side: PopoverSide = spaceBelow >= contentHeight || spaceBelow >= spaceAbove ? "bottom" : "top";
+      const contentHeight = Math.min(
+        popoverElement.scrollHeight,
+        POPOVER_MAX_HEIGHT_PX,
+      );
+      const spaceAbove = Math.max(
+        0,
+        rect.top - viewportOffsetTop - POPOVER_MARGIN_PX,
+      );
+      const spaceBelow = Math.max(
+        0,
+        viewportOffsetTop + viewportHeight - rect.bottom - POPOVER_MARGIN_PX,
+      );
+      const side: PopoverSide =
+        spaceBelow >= contentHeight || spaceBelow >= spaceAbove
+          ? "bottom"
+          : "top";
       const availableHeight = side === "bottom" ? spaceBelow : spaceAbove;
       const maxHeight = Math.min(POPOVER_MAX_HEIGHT_PX, availableHeight);
       const renderedHeight = Math.min(popoverElement.scrollHeight, maxHeight);
@@ -216,9 +249,15 @@ export function SearchableSelect({
         side === "bottom"
           ? Math.min(
               rect.bottom + POPOVER_GAP_PX,
-              viewportOffsetTop + viewportHeight - renderedHeight - POPOVER_MARGIN_PX,
+              viewportOffsetTop +
+                viewportHeight -
+                renderedHeight -
+                POPOVER_MARGIN_PX,
             )
-          : Math.max(viewportOffsetTop + POPOVER_MARGIN_PX, rect.top - POPOVER_GAP_PX - renderedHeight);
+          : Math.max(
+              viewportOffsetTop + POPOVER_MARGIN_PX,
+              rect.top - POPOVER_GAP_PX - renderedHeight,
+            );
 
       setPopoverLayout({
         side,
@@ -272,7 +311,9 @@ export function SearchableSelect({
     setIsOpen(true);
     setIsTyping(false);
     setQuery(selectedLabel);
-    setHighlightedIndex(value ? visibleOptions.findIndex((option) => option.value === value) : -1);
+    setHighlightedIndex(
+      value ? visibleOptions.findIndex((option) => option.value === value) : -1,
+    );
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLInputElement>) {
@@ -288,7 +329,9 @@ export function SearchableSelect({
           return -1;
         }
 
-        return current < 0 ? 0 : Math.min(current + 1, visibleOptions.length - 1);
+        return current < 0
+          ? 0
+          : Math.min(current + 1, visibleOptions.length - 1);
       });
       return;
     }
@@ -317,8 +360,10 @@ export function SearchableSelect({
     }
 
     if (event.key === "Enter") {
-      const highlightedOption = highlightedIndex >= 0 ? visibleOptions[highlightedIndex] : null;
-      const singleFilteredOption = filteredOptions.length === 1 ? filteredOptions[0] : null;
+      const highlightedOption =
+        highlightedIndex >= 0 ? visibleOptions[highlightedIndex] : null;
+      const singleFilteredOption =
+        filteredOptions.length === 1 ? filteredOptions[0] : null;
       const nextOption = highlightedOption ?? singleFilteredOption;
 
       if (!nextOption) {
@@ -337,7 +382,10 @@ export function SearchableSelect({
       data-open={isOpen ? "true" : "false"}
     >
       <InputGroup
-        className={cn("searchable-select-input-group", disabled && "opacity-50")}
+        className={cn(
+          "searchable-select-input-group",
+          disabled && "opacity-50",
+        )}
         data-disabled={disabled ? "true" : undefined}
       >
         <InputGroupInput
@@ -352,7 +400,11 @@ export function SearchableSelect({
           aria-expanded={isOpen}
           aria-controls={listboxId}
           aria-autocomplete="list"
-          aria-activedescendant={highlightedIndex >= 0 ? `${listboxId}-option-${highlightedIndex}` : undefined}
+          aria-activedescendant={
+            highlightedIndex >= 0
+              ? `${listboxId}-option-${highlightedIndex}`
+              : undefined
+          }
           onFocus={(event) => {
             openMenu();
             event.currentTarget.select();
@@ -362,7 +414,8 @@ export function SearchableSelect({
             const nextTarget = event.relatedTarget;
             if (
               nextTarget instanceof Node &&
-              (containerRef.current?.contains(nextTarget) || popoverRef.current?.contains(nextTarget))
+              (containerRef.current?.contains(nextTarget) ||
+                popoverRef.current?.contains(nextTarget))
             ) {
               return;
             }
@@ -410,7 +463,9 @@ export function SearchableSelect({
                           role="option"
                           tabIndex={-1}
                           value={`${option.value || "empty"}-${option.label}`}
-                          data-checked={option.value === value ? "true" : undefined}
+                          data-checked={
+                            option.value === value ? "true" : undefined
+                          }
                           aria-selected={option.value === value}
                           className={cn(
                             "searchable-select-option",
@@ -431,7 +486,9 @@ export function SearchableSelect({
                   ))}
                 </CommandList>
               ) : (
-                <CommandEmpty className="searchable-select-empty">{emptyMessage}</CommandEmpty>
+                <CommandEmpty className="searchable-select-empty">
+                  {emptyMessage}
+                </CommandEmpty>
               )}
             </Command>,
             document.body,

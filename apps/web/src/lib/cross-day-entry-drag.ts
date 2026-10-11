@@ -5,7 +5,10 @@ import {
 } from "@/lib/table-drag";
 
 interface CrossDayDragTarget {
-  getBoundingClientRect: () => Pick<DOMRect, "bottom" | "left" | "right" | "top">;
+  getBoundingClientRect: () => Pick<
+    DOMRect,
+    "bottom" | "left" | "right" | "top"
+  >;
 }
 
 interface CrossDayDragEventSource {

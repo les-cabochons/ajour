@@ -7,19 +7,37 @@ export type TitleMode = (typeof titleModes)[number];
 export const activityKinds = ["browser", "desktop", "manual"] as const;
 export type ActivityKind = (typeof activityKinds)[number];
 
-export const browserFamilies = ["chrome", "firefox", "edge", "brave", "safari", "unknown"] as const;
+export const browserFamilies = [
+  "chrome",
+  "firefox",
+  "edge",
+  "brave",
+  "safari",
+  "unknown",
+] as const;
 export type BrowserFamily = (typeof browserFamilies)[number];
 
 export const membershipRoles = ["owner", "admin", "member"] as const;
 export type MembershipRole = (typeof membershipRoles)[number];
 
-export const blockStatuses = ["draft", "suggested", "edited", "confirmed"] as const;
+export const blockStatuses = [
+  "draft",
+  "suggested",
+  "edited",
+  "confirmed",
+] as const;
 export type BlockStatus = (typeof blockStatuses)[number];
 
 export const timelineDayStatuses = ["open", "confirmed", "reopened"] as const;
 export type TimelineDayStatus = (typeof timelineDayStatuses)[number];
 
-export const assignmentSources = ["none", "manual", "rule", "history", "auto"] as const;
+export const assignmentSources = [
+  "none",
+  "manual",
+  "rule",
+  "history",
+  "auto",
+] as const;
 export type AssignmentSource = (typeof assignmentSources)[number];
 
 export const ruleActions = ["suggest", "auto_assign"] as const;
@@ -48,7 +66,12 @@ export const feedbackActions = [
 ] as const;
 export type FeedbackAction = (typeof feedbackActions)[number];
 
-export const importedDraftStatuses = ["draft", "dismissed", "assigned", "committed"] as const;
+export const importedDraftStatuses = [
+  "draft",
+  "dismissed",
+  "assigned",
+  "committed",
+] as const;
 export type ImportedDraftStatus = (typeof importedDraftStatuses)[number];
 
 export type ReviewMode = "all" | "uncategorized" | "micro";

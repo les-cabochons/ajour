@@ -40,9 +40,17 @@ async function selectConnectorPluginArchive(
     let totalBytes = 0;
     while (totalBytes <= MAX_CONNECTOR_PLUGIN_ARCHIVE_BYTES) {
       const buffer = Buffer.allocUnsafe(
-        Math.min(64 * 1024, MAX_CONNECTOR_PLUGIN_ARCHIVE_BYTES + 1 - totalBytes),
+        Math.min(
+          64 * 1024,
+          MAX_CONNECTOR_PLUGIN_ARCHIVE_BYTES + 1 - totalBytes,
+        ),
       );
-      const { bytesRead } = await archive.read(buffer, 0, buffer.byteLength, null);
+      const { bytesRead } = await archive.read(
+        buffer,
+        0,
+        buffer.byteLength,
+        null,
+      );
       if (bytesRead === 0) {
         break;
       }

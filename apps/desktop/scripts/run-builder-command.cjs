@@ -6,14 +6,19 @@ const requestedPlatform = process.argv[3] ?? "host";
 const desktopRoot = path.resolve(__dirname, "..");
 const scriptRoot = path.resolve(__dirname);
 const repoRoot = path.resolve(desktopRoot, "../..");
-const targetPlatform = requestedPlatform === "host" ? process.platform : requestedPlatform;
+const targetPlatform =
+  requestedPlatform === "host" ? process.platform : requestedPlatform;
 const electronBuilderBin = path.join(
-  path.dirname(require.resolve("electron-builder/package.json", { paths: [repoRoot] })),
+  path.dirname(
+    require.resolve("electron-builder/package.json", { paths: [repoRoot] }),
+  ),
   "out/cli/cli.js",
 );
 
 if (!["package", "make"].includes(command)) {
-  console.error(`Unsupported desktop packaging command: ${command ?? "<missing>"}`);
+  console.error(
+    `Unsupported desktop packaging command: ${command ?? "<missing>"}`,
+  );
   process.exit(1);
 }
 
@@ -32,27 +37,34 @@ run(process.execPath, [path.join(scriptRoot, "prepare-internal-api.cjs")], {
   env: process.env,
 });
 
-const targetArgs = targetPlatform === "win32"
-  ? ["--win", ...(command === "package" ? ["dir"] : []), "--x64"]
-  : [
-      "--mac",
-      ...(command === "package" ? ["dir", "--x64"] : ["--x64", "--arm64"]),
-    ];
+const targetArgs =
+  targetPlatform === "win32"
+    ? ["--win", ...(command === "package" ? ["dir"] : []), "--x64"]
+    : [
+        "--mac",
+        ...(command === "package" ? ["dir", "--x64"] : ["--x64", "--arm64"]),
+      ];
 
-run(process.execPath, [
-  electronBuilderBin,
-  "--config=electron-builder.config.cjs",
-  ...targetArgs,
-  "--publish=never",
-], {
-  cwd: desktopRoot,
-  env: withDesktopBinOnPath(process.env),
-});
+run(
+  process.execPath,
+  [
+    electronBuilderBin,
+    "--config=electron-builder.config.cjs",
+    ...targetArgs,
+    "--publish=never",
+  ],
+  {
+    cwd: desktopRoot,
+    env: withDesktopBinOnPath(process.env),
+  },
+);
 
 function withDesktopBinOnPath(baseEnv) {
   return {
     ...baseEnv,
-    PATH: [path.join(desktopRoot, "bin"), baseEnv.PATH ?? ""].filter(Boolean).join(path.delimiter),
+    PATH: [path.join(desktopRoot, "bin"), baseEnv.PATH ?? ""]
+      .filter(Boolean)
+      .join(path.delimiter),
   };
 }
 

@@ -322,16 +322,23 @@ When("I open the new time-entry project and task picker", async ({ page }) => {
 Then(
   "the picker initially lists projects without expanding their tasks",
   async ({ page }) => {
-    await expect(page.getByText("[AAA] aaa xyz", { exact: true })).toBeVisible();
-    await expect(page.getByText("[BBB] bbb zyx", { exact: true })).toBeVisible();
+    await expect(
+      page.getByText("[AAA] aaa xyz", { exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByText("[BBB] bbb zyx", { exact: true }),
+    ).toBeVisible();
     await expect(page.getByText("111 000", { exact: true })).toHaveCount(0);
     await expect(page.getByText("222 000", { exact: true })).toHaveCount(0);
   },
 );
 
-When("I browse the tasks in project {string}", async ({ page }, project: string) => {
-  await page.getByText(`[AAA] ${project}`, { exact: true }).click();
-});
+When(
+  "I browse the tasks in project {string}",
+  async ({ page }, project: string) => {
+    await page.getByText(`[AAA] ${project}`, { exact: true }).click();
+  },
+);
 
 Then("the picker lists that project's tasks", async ({ page }) => {
   await expect(
@@ -346,9 +353,12 @@ When("I return to the project list", async ({ page }) => {
   await page.getByText("Back to projects", { exact: true }).click();
 });
 
-When("I search for project and task {string}", async ({ page }, query: string) => {
-  await page.getByPlaceholder("Search projects and tasks...").fill(query);
-});
+When(
+  "I search for project and task {string}",
+  async ({ page }, query: string) => {
+    await page.getByPlaceholder("Search projects and tasks...").fill(query);
+  },
+);
 
 When("I select the matching project and task", async ({ page }) => {
   await expect(page.getByText("222 000", { exact: true })).toBeVisible();
@@ -356,9 +366,9 @@ When("I select the matching project and task", async ({ page }) => {
 });
 
 Then("the combined project and task are selected", async ({ page }) => {
-  await expect(page.getByRole("button", { name: "Project or task" })).toContainText(
-    "[AAA] aaa xyz · 222 000",
-  );
+  await expect(
+    page.getByRole("button", { name: "Project or task" }),
+  ).toContainText("[AAA] aaa xyz · 222 000");
 });
 
 When("I save one hour to the selected project and task", async ({ page }) => {
@@ -369,7 +379,9 @@ When("I save one hour to the selected project and task", async ({ page }) => {
 Then(
   "the time entry uses project {string} and task {string}",
   async ({ page }, project: string, task: string) => {
-    await expect(page.getByText(project, { exact: true }).first()).toBeVisible();
+    await expect(
+      page.getByText(project, { exact: true }).first(),
+    ).toBeVisible();
     await expect(page.getByText(task, { exact: true }).first()).toBeVisible();
   },
 );
@@ -445,17 +457,19 @@ Then("the day surfaces stretch around centered content", async ({ page }) => {
   expect(entriesHeaderBox?.x).toBe(contentBox?.x);
   expect(entriesHeaderBox?.width).toBe(contentBox?.width);
 
-  const stripLeftInset =
-    (dayViewerStripBox?.x ?? 0) - (contentBox?.x ?? 0);
+  const stripLeftInset = (dayViewerStripBox?.x ?? 0) - (contentBox?.x ?? 0);
   const stripRightInset =
-    (contentBox?.x ?? 0) + (contentBox?.width ?? 0) -
+    (contentBox?.x ?? 0) +
+    (contentBox?.width ?? 0) -
     ((dayViewerStripBox?.x ?? 0) + (dayViewerStripBox?.width ?? 0));
   expect(dayViewerStripBox?.width).toBe(1440);
   expect(Math.abs(stripLeftInset - stripRightInset)).toBeLessThanOrEqual(1);
 
   const projectHeadingPadding = await entriesHeader
     .locator(".entry-project-heading")
-    .evaluate((element) => Number.parseFloat(getComputedStyle(element).paddingLeft));
+    .evaluate((element) =>
+      Number.parseFloat(getComputedStyle(element).paddingLeft),
+    );
   expect(projectHeadingPadding).toBeCloseTo(stripLeftInset + 16, 0);
 
   await expect(dayViewer).toHaveCSS("border-left-width", "0px");
@@ -518,29 +532,26 @@ Then("the Backlog workspace fills the available page", async ({ page }) => {
   await expect(backlogShell).toHaveCSS("border-radius", "0px");
 });
 
-Then(
-  "hidden Backlog columns do not reserve mobile width",
-  async ({ page }) => {
-    const columnWidths = await page
-      .locator(".entries-table-body-table")
-      .evaluate((table) => {
-        const priorityColumn = table.querySelector<HTMLElement>(
-          ".backlog-priority-column",
-        );
-        const statusColumn = table.querySelector<HTMLElement>(
-          ".backlog-status-column",
-        );
+Then("hidden Backlog columns do not reserve mobile width", async ({ page }) => {
+  const columnWidths = await page
+    .locator(".entries-table-body-table")
+    .evaluate((table) => {
+      const priorityColumn = table.querySelector<HTMLElement>(
+        ".backlog-priority-column",
+      );
+      const statusColumn = table.querySelector<HTMLElement>(
+        ".backlog-status-column",
+      );
 
-        return {
-          priority: priorityColumn?.getBoundingClientRect().width ?? -1,
-          status: statusColumn?.getBoundingClientRect().width ?? -1,
-        };
-      });
+      return {
+        priority: priorityColumn?.getBoundingClientRect().width ?? -1,
+        status: statusColumn?.getBoundingClientRect().width ?? -1,
+      };
+    });
 
-    expect(columnWidths.priority).toBeLessThanOrEqual(0.5);
-    expect(columnWidths.status).toBeLessThanOrEqual(0.5);
-  },
-);
+  expect(columnWidths.priority).toBeLessThanOrEqual(0.5);
+  expect(columnWidths.status).toBeLessThanOrEqual(0.5);
+});
 
 Then(
   "expanded and dragged Backlog rows keep their centered columns",
@@ -573,9 +584,7 @@ Then(
     expect(dragPreviewTaskCell).not.toBeNull();
     expect(dragPreviewTitle).not.toBeNull();
     expect(
-      Math.abs(
-        (dragPreviewTaskCell?.x ?? 0) - (rootTaskCellBefore?.x ?? 0),
-      ),
+      Math.abs((dragPreviewTaskCell?.x ?? 0) - (rootTaskCellBefore?.x ?? 0)),
     ).toBeLessThanOrEqual(1.5);
     expect(
       Math.abs((dragPreviewTitle?.x ?? 0) - (rootTitleBox?.x ?? 0)),
@@ -606,21 +615,24 @@ Then(
   },
 );
 
-Then("the Settings sections replace the primary navigation", async ({ page }) => {
-  await expect(
-    page.getByRole("navigation", { name: "Primary navigation" }),
-  ).toHaveCount(0);
-  const settingsNavigation = page.getByRole("navigation", {
-    name: "Settings sections",
-  });
-  await expect(settingsNavigation).toBeVisible();
-  await expect(
-    settingsNavigation.getByRole("link", { name: "General" }),
-  ).toHaveAttribute("aria-current", "page");
-  await expect(
-    settingsNavigation.getByRole("button", { name: "Back" }),
-  ).toBeVisible();
-});
+Then(
+  "the Settings sections replace the primary navigation",
+  async ({ page }) => {
+    await expect(
+      page.getByRole("navigation", { name: "Primary navigation" }),
+    ).toHaveCount(0);
+    const settingsNavigation = page.getByRole("navigation", {
+      name: "Settings sections",
+    });
+    await expect(settingsNavigation).toBeVisible();
+    await expect(
+      settingsNavigation.getByRole("link", { name: "General" }),
+    ).toHaveAttribute("aria-current", "page");
+    await expect(
+      settingsNavigation.getByRole("button", { name: "Back" }),
+    ).toBeVisible();
+  },
+);
 
 Then(
   "the Settings navigation remains available as a compact rail",
@@ -643,9 +655,7 @@ Then(
 Then("the Time new-entry workspace sidebar is restored", async ({ page }) => {
   await expect(page).toHaveURL(/\/time\/today\?entry=new$/);
   await expect(page.locator(".harday-app-navigation-sidebar")).toBeVisible();
-  await expect(
-    page.getByText("New time entry", { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByText("New time entry", { exact: true })).toBeVisible();
 });
 
 Then(
@@ -884,16 +894,19 @@ When("I install a packaged connector from settings", async ({ page }) => {
   await installButton.click();
 });
 
-When("I deactivate the connector plugin with the keyboard", async ({ page }) => {
-  const deactivateSwitch = page.getByRole("switch", {
-    name: "Deactivate Example",
-  });
-  await deactivateSwitch.focus();
-  await page.keyboard.press("Space");
-  await expect(
-    page.getByRole("switch", { name: "Activate Example" }),
-  ).toHaveAttribute("aria-checked", "false");
-});
+When(
+  "I deactivate the connector plugin with the keyboard",
+  async ({ page }) => {
+    const deactivateSwitch = page.getByRole("switch", {
+      name: "Deactivate Example",
+    });
+    await deactivateSwitch.focus();
+    await page.keyboard.press("Space");
+    await expect(
+      page.getByRole("switch", { name: "Activate Example" }),
+    ).toHaveAttribute("aria-checked", "false");
+  },
+);
 
 Then("the inactive connector plugin remains configurable", async ({ page }) => {
   await page.getByRole("link", { name: "View Example" }).click();
@@ -954,14 +967,12 @@ When("I uninstall the connector plugin", async ({ page }) => {
 Then("the connector plugin is reported as uninstalled", async ({ page }) => {
   await expect(page).toHaveURL(/\/settings\/plugins\/example$/);
   await expect(
-    page.getByText("Example uninstalled. Imported backlog items were preserved."),
+    page.getByText(
+      "Example uninstalled. Imported backlog items were preserved.",
+    ),
   ).toBeVisible();
-  await expect(
-    page.getByRole("link", { name: "View Example" }),
-  ).toHaveCount(0);
-  await expect(
-    page.getByRole("link", { name: "All plugins" }),
-  ).toBeVisible();
+  await expect(page.getByRole("link", { name: "View Example" })).toHaveCount(0);
+  await expect(page.getByRole("link", { name: "All plugins" })).toBeVisible();
 });
 
 When("I open development plugin settings", async ({ page }) => {
@@ -979,8 +990,12 @@ When("I open development plugin settings", async ({ page }) => {
         bootstrapLocalState: null;
         runtime: { developmentBuild: true };
         getDevelopmentPluginSettings: () => Promise<typeof initialSettings>;
-        selectDevelopmentPluginDirectory: () => Promise<typeof selectedSettings>;
-        clearDevelopmentPluginDirectories: () => Promise<typeof initialSettings>;
+        selectDevelopmentPluginDirectory: () => Promise<
+          typeof selectedSettings
+        >;
+        clearDevelopmentPluginDirectories: () => Promise<
+          typeof initialSettings
+        >;
       };
     };
     desktopWindow.timetrackerDesktop = {

@@ -91,7 +91,6 @@ describe("buildProjectTransferRows", () => {
       },
     ]);
   });
-
 });
 
 describe("project workbook round-trip", () => {
@@ -154,7 +153,9 @@ describe("project workbook round-trip", () => {
 
     const workbook = new ExcelJS.Workbook();
     await workbook.xlsx.load(workbookBytes);
-    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual(["Projects"]);
+    expect(workbook.worksheets.map((sheet) => sheet.name)).toEqual([
+      "Projects",
+    ]);
 
     const sheet = workbook.getWorksheet("Projects");
     expect(sheet).toBeTruthy();

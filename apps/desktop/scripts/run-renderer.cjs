@@ -5,8 +5,15 @@ const command = process.argv[2];
 const desktopRoot = path.resolve(__dirname, "..");
 const scriptRoot = path.resolve(__dirname);
 const repoRoot = path.resolve(desktopRoot, "../..");
-const viteBin = path.join(path.dirname(require.resolve("vite/package.json", { paths: [repoRoot] })), "bin", "vite.js");
-const electronCli = path.join(path.dirname(require.resolve("electron/package.json", { paths: [repoRoot] })), "cli.js");
+const viteBin = path.join(
+  path.dirname(require.resolve("vite/package.json", { paths: [repoRoot] })),
+  "bin",
+  "vite.js",
+);
+const electronCli = path.join(
+  path.dirname(require.resolve("electron/package.json", { paths: [repoRoot] })),
+  "cli.js",
+);
 
 const env = { ...process.env };
 

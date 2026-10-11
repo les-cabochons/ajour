@@ -1,6 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { evaluateBlockAgainstRules } from "../src/rules/engine";
-import type { ActivityBlockRecord, FeatureStat, RuleRecord } from "../src/types/domain";
+import type {
+  ActivityBlockRecord,
+  FeatureStat,
+  RuleRecord,
+} from "../src/types/domain";
 
 const block: ActivityBlockRecord = {
   userId: "u1",

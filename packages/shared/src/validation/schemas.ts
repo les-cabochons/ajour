@@ -23,7 +23,10 @@ export const ruleConditionSchema = z
     titleContains: z.string().min(1).optional(),
     exactTitle: z.string().min(1).optional(),
   })
-  .refine((value) => Object.keys(value).length > 0, "At least one rule condition is required");
+  .refine(
+    (value) => Object.keys(value).length > 0,
+    "At least one rule condition is required",
+  );
 
 export const captureSettingsSchema = z.object({
   urlMode: z.enum(captureModes),
@@ -174,7 +177,11 @@ export const updateProjectSchema = createProjectSchema.extend({
 
 export const createInitialTeamSchema = z.object({
   teamName: z.string().min(1).max(80),
-  teamSlug: z.string().min(2).max(40).regex(/^[a-z0-9-]+$/),
+  teamSlug: z
+    .string()
+    .min(2)
+    .max(40)
+    .regex(/^[a-z0-9-]+$/),
   projects: z.array(
     z.object({
       name: z.string().min(1).max(80),

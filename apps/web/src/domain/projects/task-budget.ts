@@ -6,11 +6,7 @@ import {
 const MS_PER_HOUR = 60 * 60 * 1000;
 
 export type ProjectTaskConsumedTone =
-  | "default"
-  | "success"
-  | "warning"
-  | "danger"
-  | "danger-strong";
+  "default" | "success" | "warning" | "danger" | "danger-strong";
 
 type ProjectTaskConsumedOptions = {
   budgetMs?: number;
@@ -76,7 +72,10 @@ export function getProjectTaskConsumedTone(
     return "default";
   }
 
-  const consumedMs = Math.max(0, getProjectTaskTrackedWithAdjustmentMs(options));
+  const consumedMs = Math.max(
+    0,
+    getProjectTaskTrackedWithAdjustmentMs(options),
+  );
   const ratio = consumedMs / budgetMs;
 
   if (ratio < 0.8) {

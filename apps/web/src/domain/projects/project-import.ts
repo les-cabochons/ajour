@@ -111,9 +111,7 @@ function groupWorkbookRows(rows: ProjectTransferRow[]) {
       const task = {
         name: taskName,
         status: row.taskStatus || undefined,
-        billable: row.billable
-          ? row.billable === "billable"
-          : undefined,
+        billable: row.billable ? row.billable === "billable" : undefined,
         budgetMs: durationHoursValueToMs(
           typeof row.budgetHours === "number" ? row.budgetHours : undefined,
         ),
@@ -209,10 +207,7 @@ export function importProjectWorkbookRows(
   const nextProjects = [...projects];
 
   for (const group of groupWorkbookRows(rows)) {
-    const existingProject = findProjectByName(
-      nextProjects,
-      group.projectName,
-    );
+    const existingProject = findProjectByName(nextProjects, group.projectName);
 
     if (!existingProject) {
       const nextProject = factories.createProject({
@@ -285,15 +280,15 @@ export function importProjectWorkbookRows(
     );
     if (projectIndex >= 0) {
       nextProjects[projectIndex] = {
-      ...existingProject,
-      name: group.projectName,
-      displayName:
-        existingProject.displayName === existingProject.name
-          ? group.projectName
-          : existingProject.displayName,
-      code: group.code ?? existingProject.code,
+        ...existingProject,
+        name: group.projectName,
+        displayName:
+          existingProject.displayName === existingProject.name
+            ? group.projectName
+            : existingProject.displayName,
+        code: group.code ?? existingProject.code,
         color: group.color || existingProject.color,
-      status: group.status ?? existingProject.status,
+        status: group.status ?? existingProject.status,
         tasks: nextTasks,
       };
     }

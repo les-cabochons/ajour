@@ -3,22 +3,20 @@ import { createRequire } from "node:module";
 import { describe, expect, it, vi } from "vitest";
 
 const require = createRequire(import.meta.url);
-const {
-  createAutomaticUpdateController,
-  isCandidateCoreAtLeastCurrent,
-} = require("./electron/automatic-update.cjs") as {
-  createAutomaticUpdateController: (options: Record<string, unknown>) => {
-    checkNow: (track?: "stable" | "nightly") => Promise<unknown>;
-    configure: (track: "stable" | "nightly") => Promise<unknown>;
-    dispose: () => void;
-    installPendingUpdate: () => boolean;
-    isInstallingUpdate: () => boolean;
+const { createAutomaticUpdateController, isCandidateCoreAtLeastCurrent } =
+  require("./electron/automatic-update.cjs") as {
+    createAutomaticUpdateController: (options: Record<string, unknown>) => {
+      checkNow: (track?: "stable" | "nightly") => Promise<unknown>;
+      configure: (track: "stable" | "nightly") => Promise<unknown>;
+      dispose: () => void;
+      installPendingUpdate: () => boolean;
+      isInstallingUpdate: () => boolean;
+    };
+    isCandidateCoreAtLeastCurrent: (
+      currentVersion: string | { major: number; minor: number; patch: number },
+      candidateVersion: string,
+    ) => boolean;
   };
-  isCandidateCoreAtLeastCurrent: (
-    currentVersion: string | { major: number; minor: number; patch: number },
-    candidateVersion: string,
-  ) => boolean;
-};
 
 function createCancellationToken() {
   return { cancel: vi.fn() };
@@ -121,7 +119,8 @@ describe("desktop automatic updates", () => {
   });
 
   it("asks before restarting and installs the current-track downloaded update", async () => {
-    const { autoUpdater, controller, dialog, prepareToInstall } = createController();
+    const { autoUpdater, controller, dialog, prepareToInstall } =
+      createController();
     dialog.showMessageBox.mockResolvedValue({ response: 0 });
     emitDownloadedUpdate(autoUpdater);
 
@@ -139,11 +138,14 @@ describe("desktop automatic updates", () => {
   });
 
   it("installs a current-track Later update only when the main process quits", async () => {
-    const { autoUpdater, controller, dialog, prepareToInstall } = createController();
+    const { autoUpdater, controller, dialog, prepareToInstall } =
+      createController();
     emitDownloadedUpdate(autoUpdater);
 
     await controller.configure("stable");
-    await vi.waitFor(() => expect(dialog.showMessageBox).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() =>
+      expect(dialog.showMessageBox).toHaveBeenCalledTimes(1),
+    );
 
     expect(prepareToInstall).not.toHaveBeenCalled();
     expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
@@ -156,7 +158,9 @@ describe("desktop automatic updates", () => {
     emitDownloadedUpdate(autoUpdater);
 
     await controller.configure("nightly");
-    await vi.waitFor(() => expect(dialog.showMessageBox).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() =>
+      expect(dialog.showMessageBox).toHaveBeenCalledTimes(1),
+    );
 
     autoUpdater.cancellationToken = createCancellationToken();
     await controller.configure("stable");
@@ -174,7 +178,9 @@ describe("desktop automatic updates", () => {
     autoUpdater.downloadUpdate.mockReturnValueOnce(downloadPromise);
 
     const nightlyCheck = controller.configure("nightly");
-    await vi.waitFor(() => expect(autoUpdater.downloadUpdate).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() =>
+      expect(autoUpdater.downloadUpdate).toHaveBeenCalledTimes(1),
+    );
     const nightlyToken = autoUpdater.cancellationToken;
     autoUpdater.cancellationToken = createCancellationToken();
     const stableCheck = controller.configure("stable");
@@ -184,7 +190,9 @@ describe("desktop automatic updates", () => {
     resolveDownload(["nightly.exe"]);
     await nightlyCheck;
     await stableCheck;
-    await vi.waitFor(() => expect(autoUpdater.checkForUpdates).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() =>
+      expect(autoUpdater.checkForUpdates).toHaveBeenCalledTimes(2),
+    );
 
     expect(dialog.showMessageBox).not.toHaveBeenCalled();
     expect(controller.installPendingUpdate()).toBe(false);
@@ -193,13 +201,17 @@ describe("desktop automatic updates", () => {
   it("restores install preparation state when shutdown preparation fails", async () => {
     const { autoUpdater, controller, dialog, resetInstallPreparation } =
       createController({
-        prepareToInstall: vi.fn().mockRejectedValue(new Error("API stop failed")),
+        prepareToInstall: vi
+          .fn()
+          .mockRejectedValue(new Error("API stop failed")),
       });
     dialog.showMessageBox.mockResolvedValue({ response: 0 });
     emitDownloadedUpdate(autoUpdater);
 
     await controller.configure("stable");
-    await vi.waitFor(() => expect(resetInstallPreparation).toHaveBeenCalledTimes(1));
+    await vi.waitFor(() =>
+      expect(resetInstallPreparation).toHaveBeenCalledTimes(1),
+    );
 
     expect(controller.isInstallingUpdate()).toBe(false);
     expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
@@ -224,18 +236,30 @@ describe("desktop automatic updates", () => {
 
     await controller.configure("nightly");
 
-    expect(await autoUpdater.isUpdateSupported({ version: "1.0.0-nightly.1" })).toBe(true);
-    expect(await autoUpdater.isUpdateSupported({ version: "0.9.9-nightly.99" })).toBe(false);
-    expect(await autoUpdater.isUpdateSupported({ version: "1.1.0-nightly.1" })).toBe(true);
+    expect(
+      await autoUpdater.isUpdateSupported({ version: "1.0.0-nightly.1" }),
+    ).toBe(true);
+    expect(
+      await autoUpdater.isUpdateSupported({ version: "0.9.9-nightly.99" }),
+    ).toBe(false);
+    expect(
+      await autoUpdater.isUpdateSupported({ version: "1.1.0-nightly.1" }),
+    ).toBe(true);
     expect(autoUpdater.defaultSupportCheck).toHaveBeenCalledTimes(3);
   });
 });
 
 describe("automatic update version-core guard", () => {
   it("accepts the same or a newer core and rejects an older core", () => {
-    expect(isCandidateCoreAtLeastCurrent("2.0.0", "2.0.0-nightly.1")).toBe(true);
-    expect(isCandidateCoreAtLeastCurrent("2.0.0", "2.1.0-nightly.1")).toBe(true);
-    expect(isCandidateCoreAtLeastCurrent("2.0.0", "1.99.99-nightly.99")).toBe(false);
+    expect(isCandidateCoreAtLeastCurrent("2.0.0", "2.0.0-nightly.1")).toBe(
+      true,
+    );
+    expect(isCandidateCoreAtLeastCurrent("2.0.0", "2.1.0-nightly.1")).toBe(
+      true,
+    );
+    expect(isCandidateCoreAtLeastCurrent("2.0.0", "1.99.99-nightly.99")).toBe(
+      false,
+    );
     expect(isCandidateCoreAtLeastCurrent("2.0.0", "invalid")).toBe(false);
   });
 });

@@ -61,7 +61,9 @@ function extractBalancedJson(text, startIndex) {
 function extractJsonFromBytes(bytes, searchStart) {
   const asciiStart = bytes.indexOf(0x7b, searchStart);
   const utf16Start = bytes.indexOf(Buffer.from("{\x00"), searchStart);
-  const candidates = [asciiStart, utf16Start].filter((index) => index >= 0).sort((left, right) => left - right);
+  const candidates = [asciiStart, utf16Start]
+    .filter((index) => index >= 0)
+    .sort((left, right) => left - right);
 
   for (const start of candidates) {
     const slice = bytes.subarray(start);
@@ -106,7 +108,10 @@ function readLatestLocalStateFromLevelDb(levelDbPath) {
       const parsed = extractJsonFromBytes(bytes, keyIndex + STORAGE_KEY.length);
       if (parsed && typeof parsed === "object") {
         const updatedAt =
-          typeof parsed.updatedAt === "number" && Number.isFinite(parsed.updatedAt) ? parsed.updatedAt : -1;
+          typeof parsed.updatedAt === "number" &&
+          Number.isFinite(parsed.updatedAt)
+            ? parsed.updatedAt
+            : -1;
         if (updatedAt >= latestUpdatedAt) {
           latestState = parsed;
           latestUpdatedAt = updatedAt;
@@ -132,15 +137,23 @@ function loadDesktopBootstrapLocalState(options = {}) {
     path.join(appDataPath, "TimeTracker"),
   ].filter((candidate) => candidate !== currentUserDataPath);
 
-  let latestState = currentUserDataPath ? readJsonFile(path.join(currentUserDataPath, RECOVERY_FILE_NAME)) : null;
+  let latestState = currentUserDataPath
+    ? readJsonFile(path.join(currentUserDataPath, RECOVERY_FILE_NAME))
+    : null;
   let latestUpdatedAt =
-    typeof latestState?.updatedAt === "number" && Number.isFinite(latestState.updatedAt)
+    typeof latestState?.updatedAt === "number" &&
+    Number.isFinite(latestState.updatedAt)
       ? latestState.updatedAt
       : -1;
 
   for (const userDataPath of legacyUserDataCandidates) {
-    const state = readLatestLocalStateFromLevelDb(path.join(userDataPath, "Local Storage", "leveldb"));
-    const updatedAt = typeof state?.updatedAt === "number" && Number.isFinite(state.updatedAt) ? state.updatedAt : -1;
+    const state = readLatestLocalStateFromLevelDb(
+      path.join(userDataPath, "Local Storage", "leveldb"),
+    );
+    const updatedAt =
+      typeof state?.updatedAt === "number" && Number.isFinite(state.updatedAt)
+        ? state.updatedAt
+        : -1;
     if (updatedAt >= latestUpdatedAt) {
       latestState = state;
       latestUpdatedAt = updatedAt;

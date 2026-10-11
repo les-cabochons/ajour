@@ -55,7 +55,9 @@ export function useWorkItemIconData(
       .then((overview) => {
         setConnectorIconsBySource(
           Object.fromEntries(
-            overview.plugins.map((plugin) => [plugin.id, plugin.iconSvg] as const),
+            overview.plugins.map(
+              (plugin) => [plugin.id, plugin.iconSvg] as const,
+            ),
           ),
         );
         setConnectorTaskIconModes(
@@ -117,7 +119,9 @@ export function resolveWorkItemIcon(
   const connectorIcon = iconData.connectorIconsBySource[workItem.source];
   const connectorTaskIconMode = normalizeConnectorTaskIconDisplayMode(
     workItem.sourceConnectionId
-      ? iconData.connectorTaskIconModesByConnectionId[workItem.sourceConnectionId]
+      ? iconData.connectorTaskIconModesByConnectionId[
+          workItem.sourceConnectionId
+        ]
       : undefined,
   );
 

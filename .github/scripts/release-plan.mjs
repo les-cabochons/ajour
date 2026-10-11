@@ -3,9 +3,13 @@ import { appendFileSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
-const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../..");
+const repositoryRoot = path.resolve(
+  path.dirname(fileURLToPath(import.meta.url)),
+  "../..",
+);
 const stableTagPattern = /^v(\d+)\.(\d+)\.(\d+)$/;
-const releaseTagPattern = /^v(\d+)\.(\d+)\.(\d+)(?:-(?:nightly(?:-\d{8}\.\d+|\.\d{8}\.[1-9]\d*)|alpha\.\d{8}\.\d+))?$/;
+const releaseTagPattern =
+  /^v(\d+)\.(\d+)\.(\d+)(?:-(?:nightly(?:-\d{8}\.\d+|\.\d{8}\.[1-9]\d*)|alpha\.\d{8}\.\d+))?$/;
 
 export function parseVersion(value) {
   const match = /^(\d+)\.(\d+)\.(\d+)$/.exec(value);
@@ -35,10 +39,13 @@ export function coreVersionFromTag(tag) {
 }
 
 export function parseNightlyTag(tag) {
-  const match = /^v(\d+\.\d+\.\d+)-nightly\.(\d{8})\.([1-9]\d*)$/.exec(tag)
-    ?? /^v(\d+\.\d+\.\d+)-nightly-(\d{8})\.(\d{3,})$/.exec(tag);
+  const match =
+    /^v(\d+\.\d+\.\d+)-nightly\.(\d{8})\.([1-9]\d*)$/.exec(tag) ??
+    /^v(\d+\.\d+\.\d+)-nightly-(\d{8})\.(\d{3,})$/.exec(tag);
   if (!match) {
-    throw new Error(`Invalid nightly tag: ${tag}. Expected vX.Y.Z-nightly.YYYYMMDD.N.`);
+    throw new Error(
+      `Invalid nightly tag: ${tag}. Expected vX.Y.Z-nightly.YYYYMMDD.N.`,
+    );
   }
 
   return {
@@ -50,7 +57,8 @@ export function parseNightlyTag(tag) {
 
 export function highestVersion(versions) {
   return versions.reduce(
-    (highest, candidate) => !highest || compareVersions(candidate, highest) > 0 ? candidate : highest,
+    (highest, candidate) =>
+      !highest || compareVersions(candidate, highest) > 0 ? candidate : highest,
     undefined,
   );
 }
@@ -113,14 +121,20 @@ export function classifyStableBump(commitMessages) {
   }
 
   const headers = commitMessages.map((message) => message.split(/\r?\n/, 1)[0]);
-  const breaking = commitMessages.some((message, index) =>
-    /(^|\n)BREAKING[ -]CHANGE\s*:/i.test(message) || /^[a-z][a-z0-9-]*(?:\([^\r\n)]*\))?!:/i.test(headers[index]),
+  const breaking = commitMessages.some(
+    (message, index) =>
+      /(^|\n)BREAKING[ -]CHANGE\s*:/i.test(message) ||
+      /^[a-z][a-z0-9-]*(?:\([^\r\n)]*\))?!:/i.test(headers[index]),
   );
   if (breaking) {
-    throw new Error("Breaking changes require a manual major release. Update VERSION to the intended X.0.0 version first.");
+    throw new Error(
+      "Breaking changes require a manual major release. Update VERSION to the intended X.0.0 version first.",
+    );
   }
 
-  return headers.some((header) => /^feat(?:\([^\r\n)]*\))?:/i.test(header)) ? "minor" : "patch";
+  return headers.some((header) => /^feat(?:\([^\r\n)]*\))?:/i.test(header))
+    ? "minor"
+    : "patch";
 }
 
 export function incrementVersion(version, bump) {
@@ -143,23 +157,32 @@ export function planStable({
   allTags = tags,
 }) {
   const stableVersions = publishedTags
-    .map((tag) => stableTagPattern.test(tag) ? tag.slice(1) : undefined)
+    .map((tag) => (stableTagPattern.test(tag) ? tag.slice(1) : undefined))
     .filter(Boolean);
   const latestStableVersion = highestVersion(stableVersions);
-  const latestStableTag = latestStableVersion ? `v${latestStableVersion}` : undefined;
+  const latestStableTag = latestStableVersion
+    ? `v${latestStableVersion}`
+    : undefined;
   const existingHeadStableVersions = headTags
-    .map((tag) => stableTagPattern.test(tag) ? tag.slice(1) : undefined)
+    .map((tag) => (stableTagPattern.test(tag) ? tag.slice(1) : undefined))
     .filter(Boolean);
   const existingHeadStableVersion = highestVersion(existingHeadStableVersions);
 
-  if (existingHeadStableVersion && existingHeadStableVersion === latestStableVersion) {
-    const previousStableVersion = highestVersion(stableVersions.filter((version) => version !== existingHeadStableVersion));
+  if (
+    existingHeadStableVersion &&
+    existingHeadStableVersion === latestStableVersion
+  ) {
+    const previousStableVersion = highestVersion(
+      stableVersions.filter((version) => version !== existingHeadStableVersion),
+    );
     return {
       version: existingHeadStableVersion,
       tag: `v${existingHeadStableVersion}`,
       packageVersion: existingHeadStableVersion,
       bump: "existing",
-      previousStableTag: previousStableVersion ? `v${previousStableVersion}` : undefined,
+      previousStableTag: previousStableVersion
+        ? `v${previousStableVersion}`
+        : undefined,
     };
   }
 
@@ -172,10 +195,17 @@ export function planStable({
     ]);
     bump = "initial";
   } else if (compareVersions(configuredVersion, latestStableVersion) > 0) {
-    const [configuredMajor, configuredMinor, configuredPatch] = parseVersion(configuredVersion);
+    const [configuredMajor, configuredMinor, configuredPatch] =
+      parseVersion(configuredVersion);
     const [stableMajor] = parseVersion(latestStableVersion);
-    if (configuredMajor <= stableMajor || configuredMinor !== 0 || configuredPatch !== 0) {
-      throw new Error("VERSION may bypass automatic bumps only for a manual X.0.0 major release.");
+    if (
+      configuredMajor <= stableMajor ||
+      configuredMinor !== 0 ||
+      configuredPatch !== 0
+    ) {
+      throw new Error(
+        "VERSION may bypass automatic bumps only for a manual X.0.0 major release.",
+      );
     }
     version = configuredVersion;
     bump = "manual";
@@ -195,7 +225,9 @@ export function planStable({
     };
   }
   if (allTags.includes(tag)) {
-    throw new Error(`Stable tag ${tag} is reserved on another commit. Recover or remove that pending reservation before retrying.`);
+    throw new Error(
+      `Stable tag ${tag} is reserved on another commit. Recover or remove that pending reservation before retrying.`,
+    );
   }
 
   return {
@@ -233,12 +265,17 @@ export function releaseDate(date = new Date()) {
     month: "2-digit",
     day: "2-digit",
   }).formatToParts(date);
-  const values = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  const values = Object.fromEntries(
+    parts.map((part) => [part.type, part.value]),
+  );
   return `${values.year}${values.month}${values.day}`;
 }
 
 function git(args) {
-  return execFileSync("git", args, { cwd: repositoryRoot, encoding: "utf8" }).trim();
+  return execFileSync("git", args, {
+    cwd: repositoryRoot,
+    encoding: "utf8",
+  }).trim();
 }
 
 function readTags() {
@@ -267,17 +304,28 @@ function readCommitMessages(previousTag, target = "HEAD") {
   }
 
   const output = git(["log", "--format=%B%x00", `${previousTag}..${target}`]);
-  return output ? output.split("\0").map((message) => message.trim()).filter(Boolean) : [];
+  return output
+    ? output
+        .split("\0")
+        .map((message) => message.trim())
+        .filter(Boolean)
+    : [];
 }
 
 function latestReleaseTag(tags, target = "HEAD") {
-  const releaseTags = new Set(tags.filter((tag) => releaseTagPattern.test(tag)));
+  const releaseTags = new Set(
+    tags.filter((tag) => releaseTagPattern.test(tag)),
+  );
   if (releaseTags.size === 0) {
     return undefined;
   }
 
   const tagsByCommit = new Map();
-  const references = git(["for-each-ref", "--format=%(refname:short)%09%(*objectname)%09%(objectname)", "refs/tags"]);
+  const references = git([
+    "for-each-ref",
+    "--format=%(refname:short)%09%(*objectname)%09%(objectname)",
+    "refs/tags",
+  ]);
   for (const reference of references.split(/\r?\n/)) {
     const [tag, peeledCommit, object] = reference.split("\t");
     if (!releaseTags.has(tag)) {
@@ -321,7 +369,10 @@ function writeOutputs(plan, previousTag, additionalOutputs = {}) {
 }
 
 function gitSucceeds(args) {
-  return spawnSync("git", args, { cwd: repositoryRoot, stdio: "ignore" }).status === 0;
+  return (
+    spawnSync("git", args, { cwd: repositoryRoot, stdio: "ignore" }).status ===
+    0
+  );
 }
 
 function resolveNightlyTarget(tag, promotionBase) {
@@ -333,7 +384,9 @@ function resolveNightlyTarget(tag, promotionBase) {
 
   const targetSha = git(["rev-list", "-n", "1", reference]);
   if (!gitSucceeds(["merge-base", "--is-ancestor", targetSha, promotionBase])) {
-    throw new Error(`Selected nightly ${tag} is not an ancestor of the dispatched main revision.`);
+    throw new Error(
+      `Selected nightly ${tag} is not an ancestor of the dispatched main revision.`,
+    );
   }
 
   return targetSha;
@@ -357,7 +410,10 @@ function run() {
     return;
   }
 
-  const configuredVersion = readFileSync(path.join(repositoryRoot, "VERSION"), "utf8").trim();
+  const configuredVersion = readFileSync(
+    path.join(repositoryRoot, "VERSION"),
+    "utf8",
+  ).trim();
   parseVersion(configuredVersion);
   const tags = readTags();
   const publishedTags = readPublishedReleaseTags(tags);
@@ -369,7 +425,9 @@ function run() {
     const mergedTagsOutput = git(["tag", "--merged", "HEAD", "--list", "v*"]);
     const mergedTags = mergedTagsOutput ? mergedTagsOutput.split(/\r?\n/) : [];
     const publishedTagSet = new Set(publishedTags);
-    const publishedMergedTags = mergedTags.filter((tag) => publishedTagSet.has(tag));
+    const publishedMergedTags = mergedTags.filter((tag) =>
+      publishedTagSet.has(tag),
+    );
     const plan = planNightly({
       configuredVersion,
       tags,
@@ -378,7 +436,10 @@ function run() {
       reachableTags: mergedTags,
       publishedTags,
     });
-    writeOutputs(plan, latestReleaseTag(publishedMergedTags.filter((tag) => tag !== plan.tag)));
+    writeOutputs(
+      plan,
+      latestReleaseTag(publishedMergedTags.filter((tag) => tag !== plan.tag)),
+    );
     return;
   }
 
@@ -387,23 +448,59 @@ function run() {
       throw new Error("stable requires the nightly tag to promote.");
     }
 
-    const targetSha = resolveNightlyTarget(value, process.env.PROMOTION_BASE_SHA ?? "HEAD");
-    const targetConfiguredVersion = git(["show", `${targetSha}:VERSION`]).trim();
+    const targetSha = resolveNightlyTarget(
+      value,
+      process.env.PROMOTION_BASE_SHA ?? "HEAD",
+    );
+    const targetConfiguredVersion = git([
+      "show",
+      `${targetSha}:VERSION`,
+    ]).trim();
     parseVersion(targetConfiguredVersion);
     const publishedTagSet = new Set(publishedTags);
-    const globalStableTags = publishedTags.filter((tag) => stableTagPattern.test(tag));
-    const globalLatestStableVersion = highestVersion(globalStableTags.map((tag) => tag.slice(1)));
-    const globalLatestStableTag = globalLatestStableVersion ? `v${globalLatestStableVersion}` : undefined;
-    if (globalLatestStableTag && !gitSucceeds(["merge-base", "--is-ancestor", globalLatestStableTag, targetSha])) {
-      throw new Error(`Selected nightly ${value} predates the latest stable release ${globalLatestStableTag}.`);
+    const globalStableTags = publishedTags.filter((tag) =>
+      stableTagPattern.test(tag),
+    );
+    const globalLatestStableVersion = highestVersion(
+      globalStableTags.map((tag) => tag.slice(1)),
+    );
+    const globalLatestStableTag = globalLatestStableVersion
+      ? `v${globalLatestStableVersion}`
+      : undefined;
+    if (
+      globalLatestStableTag &&
+      !gitSucceeds([
+        "merge-base",
+        "--is-ancestor",
+        globalLatestStableTag,
+        targetSha,
+      ])
+    ) {
+      throw new Error(
+        `Selected nightly ${value} predates the latest stable release ${globalLatestStableTag}.`,
+      );
     }
 
-    const mergedTagsOutput = git(["tag", "--merged", targetSha, "--list", "v*"]);
+    const mergedTagsOutput = git([
+      "tag",
+      "--merged",
+      targetSha,
+      "--list",
+      "v*",
+    ]);
     const mergedTags = mergedTagsOutput ? mergedTagsOutput.split(/\r?\n/) : [];
-    const publishedMergedTags = mergedTags.filter((tag) => publishedTagSet.has(tag));
-    const stableTags = publishedMergedTags.filter((tag) => stableTagPattern.test(tag));
-    const latestStableVersion = highestVersion(stableTags.map((tag) => tag.slice(1)));
-    const latestStableTag = latestStableVersion ? `v${latestStableVersion}` : undefined;
+    const publishedMergedTags = mergedTags.filter((tag) =>
+      publishedTagSet.has(tag),
+    );
+    const stableTags = publishedMergedTags.filter((tag) =>
+      stableTagPattern.test(tag),
+    );
+    const latestStableVersion = highestVersion(
+      stableTags.map((tag) => tag.slice(1)),
+    );
+    const latestStableTag = latestStableVersion
+      ? `v${latestStableVersion}`
+      : undefined;
     const tagsAtHeadOutput = git(["tag", "--points-at", targetSha]);
     const headTags = tagsAtHeadOutput ? tagsAtHeadOutput.split(/\r?\n/) : [];
     const plan = planStable({
@@ -416,19 +513,27 @@ function run() {
     });
     writeOutputs(
       plan,
-      plan.previousStableTag ?? latestReleaseTag(
-        publishedMergedTags.filter((tag) => tag !== plan.tag && tag !== value),
-        targetSha,
-      ),
+      plan.previousStableTag ??
+        latestReleaseTag(
+          publishedMergedTags.filter(
+            (tag) => tag !== plan.tag && tag !== value,
+          ),
+          targetSha,
+        ),
       { target_sha: targetSha, nightly_tag: value },
     );
     return;
   }
 
-  throw new Error("Usage: node .github/scripts/release-plan.mjs <nightly|stable NIGHTLY_TAG|set-package-version TAG>");
+  throw new Error(
+    "Usage: node .github/scripts/release-plan.mjs <nightly|stable NIGHTLY_TAG|set-package-version TAG>",
+  );
 }
 
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+if (
+  process.argv[1] &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
   try {
     run();
   } catch (error) {

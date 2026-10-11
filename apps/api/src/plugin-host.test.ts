@@ -88,15 +88,23 @@ describe("ConnectorPluginManager", () => {
     return directory;
   }
 
-  function manager(options: ConstructorParameters<typeof ConnectorPluginManager>[0]) {
+  function manager(
+    options: ConstructorParameters<typeof ConnectorPluginManager>[0],
+  ) {
     const pluginManager = new ConnectorPluginManager(options);
     managers.push(pluginManager);
     return pluginManager;
   }
 
   afterEach(async () => {
-    await Promise.allSettled(managers.splice(0).map((pluginManager) => pluginManager.shutdown()));
-    await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+    await Promise.allSettled(
+      managers.splice(0).map((pluginManager) => pluginManager.shutdown()),
+    );
+    await Promise.all(
+      tempDirs
+        .splice(0)
+        .map((dir) => rm(dir, { recursive: true, force: true })),
+    );
   });
 
   it("loads a development plugin and executes each operation in a worker", async () => {
@@ -211,10 +219,12 @@ describe("ConnectorPluginManager", () => {
       allowDevelopmentPlugins: true,
     });
 
-    await expect(pluginManager.validateConnection("jira", {})).resolves.toEqual({
-      normalizedConfig: {},
-      connectionSummary: {},
-    });
+    await expect(pluginManager.validateConnection("jira", {})).resolves.toEqual(
+      {
+        normalizedConfig: {},
+        connectionSummary: {},
+      },
+    );
     expect(pluginManager.activeOperationCount).toBe(0);
   });
 
@@ -263,8 +273,12 @@ describe("ConnectorPluginManager", () => {
         : [],
     );
 
-    expect(errors.filter((message) => message.includes("Too many connector"))).toHaveLength(1);
-    expect(errors.filter((message) => message.includes("timed out"))).toHaveLength(4);
+    expect(
+      errors.filter((message) => message.includes("Too many connector")),
+    ).toHaveLength(1);
+    expect(
+      errors.filter((message) => message.includes("timed out")),
+    ).toHaveLength(4);
     expect(pluginManager.activeOperationCount).toBe(0);
   });
 
@@ -459,7 +473,9 @@ describe("ConnectorPluginManager", () => {
     await expect(pluginManager.uninstallPlugin("jira")).rejects.toThrow(
       "is not installed as a managed package",
     );
-    await expect(access(path.join(pluginDirectory, "plugin.json"))).resolves.toBeUndefined();
+    await expect(
+      access(path.join(pluginDirectory, "plugin.json")),
+    ).resolves.toBeUndefined();
   });
 
   it("executes compiled ESM JavaScript from an installed archive", async () => {
@@ -503,12 +519,12 @@ describe("ConnectorPluginManager", () => {
       await readFile(archivePath),
       path.basename(archivePath),
     );
-    await expect(
-      pluginManager.validateConnection("jira", {}),
-    ).resolves.toEqual({
-      normalizedConfig: {},
-      connectionSummary: { runtime: "esm" },
-    });
+    await expect(pluginManager.validateConnection("jira", {})).resolves.toEqual(
+      {
+        normalizedConfig: {},
+        connectionSummary: { runtime: "esm" },
+      },
+    );
   });
 
   it("rejects packaged archives containing symbolic links", async () => {
@@ -518,7 +534,10 @@ describe("ConnectorPluginManager", () => {
       "jira",
       "export async function validateConnection() {}",
     );
-    await symlink("plugin.mjs", path.join(pluginDirectory, "linked-plugin.mjs"));
+    await symlink(
+      "plugin.mjs",
+      path.join(pluginDirectory, "linked-plugin.mjs"),
+    );
     const archivePath = path.join(root, "jira-1.0.0.harday-connector");
     await create(
       {

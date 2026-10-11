@@ -5,7 +5,11 @@ import {
   RiFolderChartLine as FolderKanban,
   RiUploadLine as Upload,
 } from "@remixicon/react";
-import { AppPanel, MessagePanel, SurfaceCallout } from "@/components/app-surface";
+import {
+  AppPanel,
+  MessagePanel,
+  SurfaceCallout,
+} from "@/components/app-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -61,8 +65,12 @@ function formatProjectImportSummary(result: {
 
 export function SettingsProjectsPage() {
   const state = useLocalState();
-  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>(() => state.projects.map((project) => project._id));
-  const [selectedImportFile, setSelectedImportFile] = useState<File | null>(null);
+  const [selectedProjectIds, setSelectedProjectIds] = useState<string[]>(() =>
+    state.projects.map((project) => project._id),
+  );
+  const [selectedImportFile, setSelectedImportFile] = useState<File | null>(
+    null,
+  );
   const [shapePlugins, setShapePlugins] = useState<
     ProjectDataShapePluginManifest[]
   >([]);
@@ -95,8 +103,12 @@ export function SettingsProjectsPage() {
         return state.projects.map((project) => project._id);
       }
 
-      const validProjectIds = new Set(state.projects.map((project) => project._id));
-      const next = current.filter((projectId) => validProjectIds.has(projectId));
+      const validProjectIds = new Set(
+        state.projects.map((project) => project._id),
+      );
+      const next = current.filter((projectId) =>
+        validProjectIds.has(projectId),
+      );
       return next.length === current.length ? current : next;
     });
   }, [state.projects]);
@@ -112,12 +124,16 @@ export function SettingsProjectsPage() {
   );
 
   const selectedProjects = useMemo(
-    () => sortedProjects.filter((project) => selectedProjectIds.includes(project._id)),
+    () =>
+      sortedProjects.filter((project) =>
+        selectedProjectIds.includes(project._id),
+      ),
     [selectedProjectIds, sortedProjects],
   );
 
   const selectedTaskCount = useMemo(
-    () => selectedProjects.reduce((sum, project) => sum + project.tasks.length, 0),
+    () =>
+      selectedProjects.reduce((sum, project) => sum + project.tasks.length, 0),
     [selectedProjects],
   );
 
@@ -209,7 +225,11 @@ export function SettingsProjectsPage() {
       setStatusMessage(formatProjectImportSummary(result));
       setError("");
     } catch (nextError) {
-      setError(nextError instanceof Error ? nextError.message : "Unable to import the workbook.");
+      setError(
+        nextError instanceof Error
+          ? nextError.message
+          : "Unable to import the workbook.",
+      );
       setStatusMessage("");
     } finally {
       setIsTransferring(false);
@@ -268,8 +288,12 @@ export function SettingsProjectsPage() {
           </SurfaceCallout>
 
           <div className="flex flex-wrap items-center gap-2 text-sm text-foreground/70">
-            <Badge className="bg-muted">{formatCount(selectedProjects.length, "project")} selected</Badge>
-            <Badge className="bg-muted">{formatCount(selectedTaskCount, "task")} included</Badge>
+            <Badge className="bg-muted">
+              {formatCount(selectedProjects.length, "project")} selected
+            </Badge>
+            <Badge className="bg-muted">
+              {formatCount(selectedTaskCount, "task")} included
+            </Badge>
           </div>
 
           {sortedProjects.length === 0 ? (
@@ -281,7 +305,11 @@ export function SettingsProjectsPage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  onClick={() => setSelectedProjectIds(sortedProjects.map((project) => project._id))}
+                  onClick={() =>
+                    setSelectedProjectIds(
+                      sortedProjects.map((project) => project._id),
+                    )
+                  }
                 >
                   Select all
                 </Button>
@@ -305,7 +333,9 @@ export function SettingsProjectsPage() {
                     >
                       <Checkbox
                         checked={isSelected}
-                        onCheckedChange={(checked) => setProjectSelection(project._id, checked)}
+                        onCheckedChange={(checked) =>
+                          setProjectSelection(project._id, checked)
+                        }
                         className="mt-1"
                       />
                       <div className="min-w-0 space-y-1">
@@ -315,8 +345,12 @@ export function SettingsProjectsPage() {
                             color={project.color}
                             className="size-3.5"
                           />
-                          <span className="text-sm font-medium text-foreground">{project.name}</span>
-                          {project.code ? <Badge className="bg-muted">{project.code}</Badge> : null}
+                          <span className="text-sm font-medium text-foreground">
+                            {project.name}
+                          </span>
+                          {project.code ? (
+                            <Badge className="bg-muted">{project.code}</Badge>
+                          ) : null}
                           <Badge className="bg-muted">{project.status}</Badge>
                         </div>
                         <p className="text-sm text-foreground/65">
@@ -333,7 +367,10 @@ export function SettingsProjectsPage() {
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-[var(--border)] bg-[var(--surface-low)] p-4">
             <div className="space-y-1 text-sm text-foreground/65">
               <p>Filename: {buildProjectTransferFilename()}</p>
-              <p>Projects without tasks still export one row so they can be re-imported later.</p>
+              <p>
+                Projects without tasks still export one row so they can be
+                re-imported later.
+              </p>
             </div>
 
             <Button
@@ -352,8 +389,8 @@ export function SettingsProjectsPage() {
 
         <AppPanel>
           <SurfaceCallout icon={Upload} title="Excel workbook import">
-            Import an Excel workbook using the {selectedShapeName} schema
-            to merge projects by name, update project metadata, and add missing
+            Import an Excel workbook using the {selectedShapeName} schema to
+            merge projects by name, update project metadata, and add missing
             tasks.
           </SurfaceCallout>
 
@@ -367,7 +404,9 @@ export function SettingsProjectsPage() {
                 onChange={handleImportFileChange}
               />
               <p className="text-sm text-foreground/65">
-                {selectedImportFile ? selectedImportFile.name : "Choose a .xlsx file with a Projects sheet."}
+                {selectedImportFile
+                  ? selectedImportFile.name
+                  : "Choose a .xlsx file with a Projects sheet."}
               </p>
             </div>
 

@@ -92,14 +92,18 @@ function getUint16(bytes: Uint8Array, offset: number) {
 
 function getUint32(bytes: Uint8Array, offset: number) {
   return (
-    bytes[offset]! |
-    (bytes[offset + 1]! << 8) |
-    (bytes[offset + 2]! << 16) |
-    (bytes[offset + 3]! << 24)
-  ) >>> 0;
+    (bytes[offset]! |
+      (bytes[offset + 1]! << 8) |
+      (bytes[offset + 2]! << 16) |
+      (bytes[offset + 3]! << 24)) >>>
+    0
+  );
 }
 
-function findZipEntry(workbookBytes: ArrayBuffer | Uint8Array, entryName: string) {
+function findZipEntry(
+  workbookBytes: ArrayBuffer | Uint8Array,
+  entryName: string,
+) {
   const bytes = new Uint8Array(toArrayBuffer(workbookBytes));
   const decoder = new TextDecoder();
 
@@ -129,7 +133,8 @@ function findZipEntry(workbookBytes: ArrayBuffer | Uint8Array, entryName: string
 
     const localNameLength = getUint16(bytes, localHeaderOffset + 26);
     const localExtraLength = getUint16(bytes, localHeaderOffset + 28);
-    const dataStart = localHeaderOffset + 30 + localNameLength + localExtraLength;
+    const dataStart =
+      localHeaderOffset + 30 + localNameLength + localExtraLength;
     const compressed = bytes.slice(dataStart, dataStart + compressedSize);
 
     if (compressionMethod === 0) {
@@ -140,13 +145,19 @@ function findZipEntry(workbookBytes: ArrayBuffer | Uint8Array, entryName: string
       return inflateRawSync(compressed);
     }
 
-    throw new Error(`Unsupported zip compression method ${compressionMethod} for ${entryName}.`);
+    throw new Error(
+      `Unsupported zip compression method ${compressionMethod} for ${entryName}.`,
+    );
   }
 
   return null;
 }
 
-async function readWorkbookRows(workbookBytes: ArrayBuffer | Uint8Array, sheetName: string, columnCount: number) {
+async function readWorkbookRows(
+  workbookBytes: ArrayBuffer | Uint8Array,
+  sheetName: string,
+  columnCount: number,
+) {
   const workbook = new ExcelJS.Workbook();
   await workbook.xlsx.load(toArrayBuffer(workbookBytes));
   const sheet = workbook.getWorksheet(sheetName);
@@ -209,12 +220,22 @@ describe("createTimesheetExportWorkbook", () => {
       endDate: "2026-04-11",
     });
 
-    const { sheetNames, rows } = await readWorkbookRows(workbookBytes, "Time Logs", 5);
+    const { sheetNames, rows } = await readWorkbookRows(
+      workbookBytes,
+      "Time Logs",
+      5,
+    );
 
     expect(sheetNames).toEqual(["Time Logs"]);
     expect(rows).toEqual([
       ["date", "project", "task", "note", "hours"],
-      ["2026-04-10", "Project Mercury", "Feature Work", "Polish export UX", 1.5],
+      [
+        "2026-04-10",
+        "Project Mercury",
+        "Feature Work",
+        "Polish export UX",
+        1.5,
+      ],
       ["2026-04-11", "Project Gemini", "", "", 0.75],
     ]);
   });
@@ -229,13 +250,20 @@ describe("createTimesheetExportWorkbook", () => {
 
     expect(findZipEntry(workbookBytes, "xl/metadata.xml")).toBeNull();
 
-    const workbookRels = findZipEntry(workbookBytes, "xl/_rels/workbook.xml.rels");
+    const workbookRels = findZipEntry(
+      workbookBytes,
+      "xl/_rels/workbook.xml.rels",
+    );
     expect(workbookRels).toBeTruthy();
-    expect(new TextDecoder().decode(workbookRels!)).not.toContain("sheetMetadata");
+    expect(new TextDecoder().decode(workbookRels!)).not.toContain(
+      "sheetMetadata",
+    );
 
     const contentTypes = findZipEntry(workbookBytes, "[Content_Types].xml");
     expect(contentTypes).toBeTruthy();
-    expect(new TextDecoder().decode(contentTypes!)).not.toContain("/xl/metadata.xml");
+    expect(new TextDecoder().decode(contentTypes!)).not.toContain(
+      "/xl/metadata.xml",
+    );
   });
 });
 
@@ -355,15 +383,18 @@ describe("downloadWorkbookFile", () => {
       },
       setTimeout,
     });
-    vi.stubGlobal("Blob", class MockBlob {
-      parts: unknown[];
-      options?: BlobPropertyBag;
+    vi.stubGlobal(
+      "Blob",
+      class MockBlob {
+        parts: unknown[];
+        options?: BlobPropertyBag;
 
-      constructor(parts: unknown[], options?: BlobPropertyBag) {
-        this.parts = parts;
-        this.options = options;
-      }
-    });
+        constructor(parts: unknown[], options?: BlobPropertyBag) {
+          this.parts = parts;
+          this.options = options;
+        }
+      },
+    );
 
     downloadWorkbookFile(new Uint8Array([1, 2, 3]), "timelogs.xlsx");
 

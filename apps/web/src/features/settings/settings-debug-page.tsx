@@ -102,7 +102,7 @@ export function SettingsDebugPage() {
                 developmentPlugins.directories.map((directory) => (
                   <code
                     key={directory}
-                    className="block break-all rounded-md bg-muted px-3 py-2 text-xs text-foreground"
+                    className="block rounded-md bg-muted px-3 py-2 text-xs break-all text-foreground"
                   >
                     {directory}
                   </code>
@@ -148,7 +148,8 @@ export function SettingsDebugPage() {
         </div>
 
         <MessagePanel>
-          Sync should stay limited to committed timesheets, project metadata, and any explicitly accepted rules if shared storage returns later.
+          Sync should stay limited to committed timesheets, project metadata,
+          and any explicitly accepted rules if shared storage returns later.
         </MessagePanel>
       </section>
     </div>

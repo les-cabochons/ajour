@@ -13,9 +13,7 @@ import {
   updateTimesheetEntry,
 } from "@/domain/time/timesheet-entry";
 
-function createState(
-  overrides: Partial<LocalAppState> = {},
-): LocalAppState {
+function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
   return {
     user: {
       _id: "local-user",
@@ -76,7 +74,15 @@ function createState(
       updateTrack: "stable",
       projectDataShapeId: "default",
       weeklyTimeViewStyle: "ledger",
-      weeklyCapacityTargets: { monday: 8, tuesday: 8, wednesday: 8, thursday: 8, friday: 8, saturday: 0, sunday: 0 },
+      weeklyCapacityTargets: {
+        monday: 8,
+        tuesday: 8,
+        wednesday: 8,
+        thursday: 8,
+        friday: 8,
+        saturday: 0,
+        sunday: 0,
+      },
       warnWhenOverCapacity: true,
       warnWhenSubmittingUnderCapacity: true,
     },
@@ -166,10 +172,9 @@ describe("timesheet entry lifecycle", () => {
 
     expect(unchanged.timesheetEntries[0]).toMatchObject({
       submittedAt: 200,
-      submittedFingerprint:
-        createTimesheetEntrySubmissionFingerprint(
-          submitted.timesheetEntries[0]!,
-        ),
+      submittedFingerprint: createTimesheetEntrySubmissionFingerprint(
+        submitted.timesheetEntries[0]!,
+      ),
     });
     expect(changed.timesheetEntries[0]).toMatchObject({
       submittedAt: undefined,
@@ -321,7 +326,9 @@ describe("timesheet entry lifecycle", () => {
       durationMs: 60 * 60 * 1000,
     };
 
-    expect(deleteTimesheetEntry(runningState, "timesheet-1")).toBe(runningState);
+    expect(deleteTimesheetEntry(runningState, "timesheet-1")).toBe(
+      runningState,
+    );
     expect(
       duplicateTimesheetEntry(
         runningState,
@@ -331,7 +338,12 @@ describe("timesheet entry lifecycle", () => {
       ),
     ).toBe(runningState);
     expect(
-      moveTimesheetEntry(runningState, "timesheet-1", relocateValues, factories),
+      moveTimesheetEntry(
+        runningState,
+        "timesheet-1",
+        relocateValues,
+        factories,
+      ),
     ).toBe(runningState);
   });
 
@@ -431,7 +443,8 @@ describe("timesheet entry lifecycle", () => {
       submittedAt: 20,
       submittedFingerprint: "",
     };
-    entry.submittedFingerprint = createTimesheetEntrySubmissionFingerprint(entry);
+    entry.submittedFingerprint =
+      createTimesheetEntrySubmissionFingerprint(entry);
     const baseline = createState();
     const state = createState({
       timesheetEntries: [entry],
@@ -528,10 +541,7 @@ describe("timesheet entry lifecycle", () => {
     });
 
     expect(
-      reorderTimesheetEntries(state, "2026-07-30", [
-        "entry-1",
-        "missing",
-      ]),
+      reorderTimesheetEntries(state, "2026-07-30", ["entry-1", "missing"]),
     ).toBe(state);
   });
 

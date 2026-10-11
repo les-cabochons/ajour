@@ -89,10 +89,11 @@ export function normalizeTimesheetEntry(
 
   return {
     ...normalizedEntry,
-    submittedFingerprint: submittedAt !== undefined
-      ? (normalizedEntry.submittedFingerprint ??
-        createTimesheetEntrySubmissionFingerprint(normalizedEntry))
-      : undefined,
+    submittedFingerprint:
+      submittedAt !== undefined
+        ? (normalizedEntry.submittedFingerprint ??
+          createTimesheetEntrySubmissionFingerprint(normalizedEntry))
+        : undefined,
   };
 }
 
@@ -321,7 +322,9 @@ export function moveTimesheetEntry(
   }
 
   const updated = updateTimesheetEntry(state, entryId, values, factories);
-  const updatedEntry = updated.timesheetEntries.find((item) => item._id === entryId);
+  const updatedEntry = updated.timesheetEntries.find(
+    (item) => item._id === entryId,
+  );
   if (!updatedEntry) {
     return state;
   }
@@ -365,8 +368,7 @@ export function markTimesheetEntriesSubmitted(
     return {
       ...entry,
       submittedAt,
-      submittedFingerprint:
-        createTimesheetEntrySubmissionFingerprint(entry),
+      submittedFingerprint: createTimesheetEntrySubmissionFingerprint(entry),
     };
   });
 
@@ -390,8 +392,7 @@ export function reorderTimesheetEntries(
   const orderedIdSet = new Set(orderedIds);
   const selectedEntries = state.timesheetEntries
     .filter(
-      (entry) =>
-        entry.localDate === localDate && orderedIdSet.has(entry._id),
+      (entry) => entry.localDate === localDate && orderedIdSet.has(entry._id),
     )
     .sort(
       (left, right) =>
@@ -406,10 +407,7 @@ export function reorderTimesheetEntries(
 
   const committedAtSlots = selectedEntries.map((entry) => entry.committedAt);
   const nextCommittedAtById = new Map(
-    orderedIds.map((entryId, index) => [
-      entryId,
-      committedAtSlots[index]!,
-    ]),
+    orderedIds.map((entryId, index) => [entryId, committedAtSlots[index]!]),
   );
   const currentIds = selectedEntries.map((entry) => entry._id);
   const orderChanged = currentIds.some(

@@ -27,7 +27,12 @@ export const projectDataShapeCellSchema = z.union([
 export type ProjectDataShapeCell = z.infer<typeof projectDataShapeCellSchema>;
 
 export const projectDataShapeColumnSchema = z.object({
-  key: z.string().trim().min(1).max(120).regex(/^[A-Za-z][A-Za-z0-9_]*$/),
+  key: z
+    .string()
+    .trim()
+    .min(1)
+    .max(120)
+    .regex(/^[A-Za-z][A-Za-z0-9_]*$/),
   header: z.string().trim().min(1).max(120),
   type: z.enum(["string", "number", "boolean"]),
   required: z.boolean().default(false),
@@ -38,7 +43,12 @@ export type ProjectDataShapeColumn = z.infer<
 >;
 
 export const projectDataShapeDatasetDefinitionSchema = z.object({
-  id: z.string().trim().min(1).max(120).regex(/^[A-Za-z][A-Za-z0-9_-]*$/),
+  id: z
+    .string()
+    .trim()
+    .min(1)
+    .max(120)
+    .regex(/^[A-Za-z][A-Za-z0-9_-]*$/),
   displayName: z.string().trim().min(1).max(120),
   columns: z.array(projectDataShapeColumnSchema).min(1).max(100),
 });
@@ -82,7 +92,10 @@ export type ProjectDataShapeDefinition = z.infer<
 
 export const projectDataShapePluginManifestSchema = z.object({
   id: projectDataShapePluginIdSchema,
-  version: z.string().trim().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/),
+  version: z
+    .string()
+    .trim()
+    .regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/),
   apiVersion: z.literal(PROJECT_DATA_SHAPE_PLUGIN_API_VERSION),
   displayName: z.string().trim().min(1).max(120),
   description: z.string().trim().max(500).optional(),
@@ -115,10 +128,12 @@ export type ProjectDataShapeStatus = z.infer<
   typeof projectDataShapeStatusSchema
 >;
 
-const canonicalNameSchema = z.string().refine(
-  (value) => value.trim().length > 0,
-  "Canonical names must contain non-whitespace characters.",
-);
+const canonicalNameSchema = z
+  .string()
+  .refine(
+    (value) => value.trim().length > 0,
+    "Canonical names must contain non-whitespace characters.",
+  );
 
 export const projectDataShapeExportTaskSchema = z.object({
   name: canonicalNameSchema,
@@ -196,7 +211,10 @@ export type ProjectDataShapeImportResponse = z.infer<
 export function validateProjectDataShapeDatasets(
   definition: ProjectDataShapeDefinition,
   datasets: ProjectDataShapeDataset[],
-  options: { validateRequiredValues?: boolean; validateValueTypes?: boolean } = {},
+  options: {
+    validateRequiredValues?: boolean;
+    validateValueTypes?: boolean;
+  } = {},
 ) {
   const parsedDefinition = projectDataShapeDefinitionSchema.parse(definition);
   const parsedDatasets = datasets.map((dataset) =>
@@ -210,10 +228,14 @@ export function validateProjectDataShapeDatasets(
   for (const dataset of parsedDatasets) {
     const datasetDefinition = definitionsById.get(dataset.id);
     if (!datasetDefinition) {
-      throw new Error(`Project data shape returned unknown dataset "${dataset.id}".`);
+      throw new Error(
+        `Project data shape returned unknown dataset "${dataset.id}".`,
+      );
     }
     if (seenDatasetIds.has(dataset.id)) {
-      throw new Error(`Project data shape returned dataset "${dataset.id}" more than once.`);
+      throw new Error(
+        `Project data shape returned dataset "${dataset.id}" more than once.`,
+      );
     }
     seenDatasetIds.add(dataset.id);
 

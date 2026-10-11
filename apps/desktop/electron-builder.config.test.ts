@@ -46,9 +46,7 @@ describe("desktop electron-builder config", () => {
       { target: "dmg", arch: ["x64", "arm64"] },
       { target: "zip", arch: ["x64", "arm64"] },
     ]);
-    expect(config.mac.artifactName).toBe(
-      "HarDay-${version}-${arch}.${ext}",
-    );
+    expect(config.mac.artifactName).toBe("HarDay-${version}-${arch}.${ext}");
   });
 
   it("publishes prereleases on the nightly update channel", () => {

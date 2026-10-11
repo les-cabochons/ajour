@@ -12,9 +12,7 @@ async function run() {
   const pluginModule = await import(workerData.entrypointUrl);
   const handler = pluginModule[workerData.method];
   if (typeof handler !== "function") {
-    throw new Error(
-      `Connector plugin does not export ${workerData.method}().`,
-    );
+    throw new Error(`Connector plugin does not export ${workerData.method}().`);
   }
 
   if (workerData.method === "validateConnection") {
@@ -33,9 +31,7 @@ async function run() {
 
 function errorMessage(error) {
   const message =
-    error instanceof Error
-      ? error.message
-      : "Unknown connector plugin error.";
+    error instanceof Error ? error.message : "Unknown connector plugin error.";
   if (message.length <= MAX_CONNECTOR_PLUGIN_ERROR_MESSAGE_CHARACTERS) {
     return message;
   }

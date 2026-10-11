@@ -33,7 +33,10 @@ function internalAppApiPlugin(): Plugin {
 
   const pipePrefixedOutput = (
     stream: NodeJS.ReadableStream | null,
-    logger: { info: (message: string) => void; error: (message: string) => void },
+    logger: {
+      info: (message: string) => void;
+      error: (message: string) => void;
+    },
     level: "info" | "error",
   ) => {
     if (!stream) {
@@ -72,15 +75,21 @@ function internalAppApiPlugin(): Plugin {
         return;
       }
 
-      apiProcess = spawn(process.execPath, ["--watch", "--experimental-strip-types", apiServerEntry], {
-        cwd: path.resolve(__dirname, "..", ".."),
-        env: {
-          ...process.env,
-          TIMETRACKER_APP_API_HOST: process.env.TIMETRACKER_APP_API_HOST ?? INTERNAL_APP_API_HOST,
-          TIMETRACKER_APP_API_PORT: process.env.TIMETRACKER_APP_API_PORT ?? INTERNAL_APP_API_PORT,
+      apiProcess = spawn(
+        process.execPath,
+        ["--watch", "--experimental-strip-types", apiServerEntry],
+        {
+          cwd: path.resolve(__dirname, "..", ".."),
+          env: {
+            ...process.env,
+            TIMETRACKER_APP_API_HOST:
+              process.env.TIMETRACKER_APP_API_HOST ?? INTERNAL_APP_API_HOST,
+            TIMETRACKER_APP_API_PORT:
+              process.env.TIMETRACKER_APP_API_PORT ?? INTERNAL_APP_API_PORT,
+          },
+          stdio: ["ignore", "pipe", "pipe"],
         },
-        stdio: ["ignore", "pipe", "pipe"],
-      });
+      );
 
       pipePrefixedOutput(apiProcess.stdout, server.config.logger, "info");
       pipePrefixedOutput(apiProcess.stderr, server.config.logger, "error");

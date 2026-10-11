@@ -18,7 +18,9 @@
     "build:extension:firefox": "corepack pnpm --filter @timetracker/extension build:firefox",
     "start:desktop": "corepack pnpm --filter @timetracker/desktop start",
     "test": "corepack pnpm -r --if-present test",
-    "typecheck": "corepack pnpm -r typecheck"
+    "typecheck": "corepack pnpm -r typecheck",
+    "format": "prettier --write .",
+    "format:check": "prettier --check ."
   },
   "devDependencies": {
     "@crxjs/vite-plugin": "^2.4.0",
@@ -28,6 +30,8 @@
     "@vitejs/plugin-react": "^6.0.1",
     "autoprefixer": "^10.5.0",
     "postcss": "^8.5.12",
+    "prettier": "^3",
+    "prettier-plugin-tailwindcss": "^0.8.1",
     "tailwindcss": "^4.2.4",
     "tar": "^7.5.13",
     "typescript": "^5.8.2",

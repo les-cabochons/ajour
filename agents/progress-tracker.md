@@ -13,14 +13,14 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Connector settings plugin field rendering is extracted to a feature-local UI module.
 - [x] Settings presents connectors as activatable Plugins catalog entries with dedicated configuration detail routes.
 - [x] The Plugins catalog is populated from the Ajour plugin index, caches and
-  conditionally refreshes catalog artwork in the desktop main process, and uses
-  deterministic thumbnail and capability-band fallbacks when artwork is absent.
+      conditionally refreshes catalog artwork in the desktop main process, and uses
+      deterministic thumbnail and capability-band fallbacks when artwork is absent.
 - [x] Catalog packages download through the managed connector installer in an
-  inactive state; manual archive installation and Debug plugin directories keep
-  their existing behavior.
+      inactive state; manual archive installation and Debug plugin directories keep
+      their existing behavior.
 - [x] A persisted plugin-system master switch blocks all connector and
-  project-data-shape execution while preserving individual activation choices,
-  and catalog refresh defaults to a configurable 15-minute interval.
+      project-data-shape execution while preserving individual activation choices,
+      and catalog refresh defaults to a configurable 15-minute interval.
 - [x] Web-domain contracts and pure calculations are separated from persistence and feature UI.
 - [x] Local state, duration, task budget/import, and project icon contracts have canonical domain modules.
 - [x] `apps/web/src/lib` no longer depends on feature modules.
@@ -40,58 +40,58 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Backlog, timesheet, project-task, and project-navigation reordering share one tested pointer lifecycle and geometry module.
 - [x] Adversarial review regressions cover connector identity and archive provenance, reversible estimate overruns, timer-linked edits, import validation, one-time desktop recovery, and overlapping drag state.
 - [x] Azure DevOps and Jira connectors are maintained and independently built
-  in the standalone `les-cabochons/ajc-azure-devops` and
-  `les-cabochons/ajc-jira` repositories.
+      in the standalone `les-cabochons/ajc-azure-devops` and
+      `les-cabochons/ajc-jira` repositories.
 - [x] Development builds load connector directories while production installs
-  only validated `.harday-connector` archives.
+      only validated `.harday-connector` archives.
 - [x] Development plugin directories are configurable from the Debug page, and
-  managed production plugins can be uninstalled without deleting imported
-  backlog items or being silently reinstalled on restart.
+      managed production plugins can be uninstalled without deleting imported
+      backlog items or being silently reinstalled on restart.
 - [x] Connector operations use parent-owned ephemeral worker threads with
-  timeout and shutdown termination.
+      timeout and shutdown termination.
 - [x] Plugin worker admission, package mutation, origin authorization, canonical
-  path validation, and reply-size limits cover the reviewed race and local
-  boundary cases.
+      path validation, and reply-size limits cover the reviewed race and local
+      boundary cases.
 - [x] Desktop startup enforces a single application instance before starting
-  the local API or connector workers.
+      the local API or connector workers.
 - [x] Pushes to `main` publish collision-safe Toronto-dated nightly desktop releases,
-  and a manual workflow promotes a selected published nightly commit into a
-  commit-classified stable release for macOS and Windows with generated changelogs.
+      and a manual workflow promotes a selected published nightly commit into a
+      commit-classified stable release for macOS and Windows with generated changelogs.
 - [x] General Settings persists a stable/nightly update track and the desktop
-  checks the matching published GitHub releases through a restricted IPC bridge.
+      checks the matching published GitHub releases through a restricted IPC bridge.
 - [x] Packaged Windows builds automatically check and download the selected
-  update channel, cancel stale-track downloads, reject older-core nightlies, and
-  ask before restarting. Releases publish NSIS/macOS updater artifacts without
-  Squirrel `.nupkg` packages; macOS stays manual until signing and notarization.
+      update channel, cancel stale-track downloads, reject older-core nightlies, and
+      ask before restarting. Releases publish NSIS/macOS updater artifacts without
+      Squirrel `.nupkg` packages; macOS stays manual until signing and notarization.
 - [x] Time-entry surfaces share a hierarchical shadcn project/task command picker
-  with project drill-down, mixed-term direct task search, and bounded results.
+      with project drill-down, mixed-term direct task search, and bounded results.
 - [x] Day remains the default timer-first view and now exposes a compact date-
-  heading scope menu with `Day` and `Weeks`; the desktop-only Weeks view offers
-  Ledger and Lanes layouts, locally persisted capacity targets, hover-only
-  utilization details, and configurable warnings.
+      heading scope menu with `Day` and `Weeks`; the desktop-only Weeks view offers
+      Ledger and Lanes layouts, locally persisted capacity targets, hover-only
+      utilization details, and configurable warnings.
 - [x] Saved time entries share one Day-inline/Week-dialog editor with Duplicate,
-  Duplicate to, and Move to actions; cross-day moves preserve identity and
-  provenance while invalidating changed submissions through the existing
-  fingerprint lifecycle.
+      Duplicate to, and Move to actions; cross-day moves preserve identity and
+      provenance while invalidating changed submissions through the existing
+      fingerprint lifecycle.
 - [x] Weekly-view adversarial review fixes lock running linked entries at the UI
-  and domain boundaries, preserve taskless labels on duplicate, use stable
-  Ledger row identities, and harden nested dialogs, drag ownership, keyboard
-  focus, and entry-group semantics.
+      and domain boundaries, preserve taskless labels on duplicate, use stable
+      Ledger row identities, and harden nested dialogs, drag ownership, keyboard
+      focus, and entry-group semantics.
 - [x] Weekly time visual refinement now uses one full-width continuous surface,
-  leading return-to-Day navigation, attached Ledger totals/detail regions,
-  fixed seven-day lane headers, project-color scanning cues, and a shared
-  upper-right entry-options Popover with an anchored confirmed date picker.
+      leading return-to-Day navigation, attached Ledger totals/detail regions,
+      fixed seven-day lane headers, project-color scanning cues, and a shared
+      upper-right entry-options Popover with an anchored confirmed date picker.
 - [x] Desktop navigation uses a persistent 200px application sidebar, Settings
-  replaces it with section navigation and a bottom Back action, and Projects
-  keeps an expanded secondary rail aligned directly beside the primary sidebar.
-  The sidebar now owns the full window height with a distinct translucent tint,
-  while Windows caption controls and macOS traffic lights keep dedicated chrome
-  safe areas. Time and Backlog use centered 1440px content inside full-width
-  color bands, table backgrounds, and row separators; both remain continuous
-  and perimeter-free, and Backlog fills the available height. Between 641px and
-  1023px, application, Settings, and Projects navigation remains available as
-  compact 48px rails; Settings Back restores the full prior workspace URL
-  without leaving Settings in browser history.
+      replaces it with section navigation and a bottom Back action, and Projects
+      keeps an expanded secondary rail aligned directly beside the primary sidebar.
+      The sidebar now owns the full window height with a distinct translucent tint,
+      while Windows caption controls and macOS traffic lights keep dedicated chrome
+      safe areas. Time and Backlog use centered 1440px content inside full-width
+      color bands, table backgrounds, and row separators; both remain continuous
+      and perimeter-free, and Backlog fills the available height. Between 641px and
+      1023px, application, Settings, and Projects navigation remains available as
+      compact 48px rails; Settings Back restores the full prior workspace URL
+      without leaving Settings in browser history.
 
 ## Standard Task Flow
 
@@ -127,24 +127,24 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Verified `just typecheck`.
 - [x] Verified `just build`.
 - [x] Weekly time implementation verification: 210 web tests and 317 tests
-  repository-wide passed; repository typecheck and production builds passed.
-  Real-browser checks covered Day to Week navigation, Ledger, Lanes, the Week
-  entry dialog, General capacity settings, visible keyboard focus, nested date
-  dialog dismissal, corrected entry-group semantics, and the sub-1024px Day
-  fallback. The Windows `just` parser rejected the repository's existing
-  `short=` annotation, so equivalent locked pnpm commands were used for this
-  pass.
+      repository-wide passed; repository typecheck and production builds passed.
+      Real-browser checks covered Day to Week navigation, Ledger, Lanes, the Week
+      entry dialog, General capacity settings, visible keyboard focus, nested date
+      dialog dismissal, corrected entry-group semantics, and the sub-1024px Day
+      fallback. The Windows `just` parser rejected the repository's existing
+      `short=` annotation, so equivalent locked pnpm commands were used for this
+      pass.
 - [x] Weekly visual refinement verification: all 210 web tests and 328 tests
-  repository-wide passed; repository typecheck and production builds passed.
-  Real-browser checks covered the unified Ledger/Lanes surface, seven visible
-  lanes without horizontal overflow at 1280px, project markers and rails, the
-  Week modal and Day inline editor, and the single-layer anchored date picker.
-  The broader Playwright suite passed 8 of 12 scenarios on an isolated port;
-  four pre-existing plugin-catalog scenarios still expect removed connector
-  controls/copy and do not exercise the time view.
+      repository-wide passed; repository typecheck and production builds passed.
+      Real-browser checks covered the unified Ledger/Lanes surface, seven visible
+      lanes without horizontal overflow at 1280px, project markers and rails, the
+      Week modal and Day inline editor, and the single-layer anchored date picker.
+      The broader Playwright suite passed 8 of 12 scenarios on an isolated port;
+      four pre-existing plugin-catalog scenarios still expect removed connector
+      controls/copy and do not exercise the time view.
 - [x] The Day-to-Weeks scope control was typechecked after replacing the old
-  Week overview action; the scope menu intentionally omits Calendar until that
-  feature exists.
+      Week overview action; the scope menu intentionally omits Calendar until that
+      feature exists.
 - [x] Verified the full workspace test suite: 52 files and 341 tests passed.
 - [x] Verified the Chromium acceptance suite: 15 scenarios passed.
 - [x] Verified the full workspace typecheck.

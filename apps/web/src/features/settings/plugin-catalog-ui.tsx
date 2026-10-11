@@ -95,7 +95,8 @@ function PluginCapabilityBand({ entry }: { entry: PluginCatalogEntry }) {
     );
   }
 
-  const startLabel = entry.type === "connector" ? "External service" : "Ajour projects";
+  const startLabel =
+    entry.type === "connector" ? "External service" : "Ajour projects";
   const endLabel = entry.type === "connector" ? "Local backlog" : "Excel files";
 
   return (
@@ -154,7 +155,13 @@ function PluginCapabilityList({ entry }: { entry: PluginCatalogEntry }) {
   );
 }
 
-function ExternalValue({ href, children }: { href: string; children: ReactNode }) {
+function ExternalValue({
+  href,
+  children,
+}: {
+  href: string;
+  children: ReactNode;
+}) {
   return (
     <a
       href={href}
@@ -175,20 +182,42 @@ function PluginInfoLedger({
   version?: string;
 }) {
   const rows: Array<[string, ReactNode]> = [
-    ["Author", <ExternalValue href={entry.author.url}>{entry.author.name}</ExternalValue>],
+    [
+      "Author",
+      <ExternalValue href={entry.author.url}>
+        {entry.author.name}
+      </ExternalValue>,
+    ],
     ["Type", entry.type === "connector" ? "Connector" : "Plugin"],
-    ["License", <ExternalValue href={entry.license.url}>{entry.license.name}</ExternalValue>],
+    [
+      "License",
+      <ExternalValue href={entry.license.url}>
+        {entry.license.name}
+      </ExternalValue>,
+    ],
     [
       "Compatibility",
-      <span className="font-mono text-xs">Plugin API {entry.compatibility.pluginApiVersion}</span>,
+      <span className="font-mono text-xs">
+        Plugin API {entry.compatibility.pluginApiVersion}
+      </span>,
     ],
     ...(version
-      ? [["Version", <span className="font-mono text-xs">{version}</span>] as [string, ReactNode]]
+      ? [
+          ["Version", <span className="font-mono text-xs">{version}</span>] as [
+            string,
+            ReactNode,
+          ],
+        ]
       : []),
-    ["Website", <ExternalValue href={entry.website}>Visit website</ExternalValue>],
+    [
+      "Website",
+      <ExternalValue href={entry.website}>Visit website</ExternalValue>,
+    ],
     [
       "Repository",
-      <ExternalValue href={entry.repository.url}>{entry.repository.slug}</ExternalValue>,
+      <ExternalValue href={entry.repository.url}>
+        {entry.repository.slug}
+      </ExternalValue>,
     ],
     [
       "Tags",

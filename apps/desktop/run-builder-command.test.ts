@@ -39,7 +39,8 @@ describe("run-builder-command", () => {
       expect.arrayContaining(["--win", "--x64", "--publish=never"]),
     );
 
-    const options = builderInvocation?.[2] as { env?: NodeJS.ProcessEnv } | undefined;
+    const options = builderInvocation?.[2] as
+      { env?: NodeJS.ProcessEnv } | undefined;
     expect(options?.env?.PATH?.split(path.delimiter)[0]).toBe(
       path.join(path.dirname(scriptPath), "..", "bin"),
     );
@@ -55,12 +56,7 @@ describe("run-builder-command", () => {
 
     const builderInvocation = spawnSyncMock.mock.calls.at(-1);
     expect(builderInvocation?.[1]).toEqual(
-      expect.arrayContaining([
-        "--mac",
-        "--x64",
-        "--arm64",
-        "--publish=never",
-      ]),
+      expect.arrayContaining(["--mac", "--x64", "--arm64", "--publish=never"]),
     );
   });
 

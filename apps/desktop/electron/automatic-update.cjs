@@ -75,7 +75,10 @@ function createAutomaticUpdateController({
     ) {
       return false;
     }
-    return isCandidateCoreAtLeastCurrent(autoUpdater.currentVersion, info?.version);
+    return isCandidateCoreAtLeastCurrent(
+      autoUpdater.currentVersion,
+      info?.version,
+    );
   };
 
   const handleUpdaterError = (error) => {
@@ -87,7 +90,8 @@ function createAutomaticUpdateController({
   };
 
   const handleUpdateDownloaded = (info) => {
-    const version = typeof info?.version === "string" ? info.version : "unknown";
+    const version =
+      typeof info?.version === "string" ? info.version : "unknown";
     const download = activeDownload;
     if (
       !download ||
@@ -129,7 +133,10 @@ function createAutomaticUpdateController({
     try {
       activeCancellationToken?.cancel?.();
     } catch (error) {
-      logger.warn?.("Unable to cancel the previous automatic update download.", error);
+      logger.warn?.(
+        "Unable to cancel the previous automatic update download.",
+        error,
+      );
     }
     activeCancellationToken = null;
     activeDownload = null;
@@ -273,13 +280,15 @@ function createAutomaticUpdateController({
       cancelId: 1,
       title: "HarDay update ready",
       message: `HarDay ${update.version} has been downloaded.`,
-      detail: "Restart HarDay to finish installing the update. Choosing Later installs it when you next quit the app.",
+      detail:
+        "Restart HarDay to finish installing the update. Choosing Later installs it when you next quit the app.",
       noLink: true,
     };
     const window = getMainWindow();
-    const result = window && !window.isDestroyed?.()
-      ? await dialog.showMessageBox(window, options)
-      : await dialog.showMessageBox(options);
+    const result =
+      window && !window.isDestroyed?.()
+        ? await dialog.showMessageBox(window, options)
+        : await dialog.showMessageBox(options);
 
     if (result.response !== 0 || installingUpdate || !isCurrentUpdate(update)) {
       return;
@@ -297,7 +306,10 @@ function createAutomaticUpdateController({
     } catch (error) {
       installingUpdate = false;
       resetInstallPreparation();
-      logger.error("Unable to restart HarDay for the downloaded update.", error);
+      logger.error(
+        "Unable to restart HarDay for the downloaded update.",
+        error,
+      );
     }
   }
 
@@ -314,7 +326,10 @@ function createAutomaticUpdateController({
     } catch (error) {
       installingUpdate = false;
       resetInstallPreparation();
-      logger.error("Unable to install the downloaded update while quitting.", error);
+      logger.error(
+        "Unable to install the downloaded update while quitting.",
+        error,
+      );
       return false;
     }
   }

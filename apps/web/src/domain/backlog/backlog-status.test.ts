@@ -8,9 +8,7 @@ import {
   updateBacklogStatus,
 } from "@/domain/backlog/backlog-status";
 
-function createState(
-  overrides: Partial<LocalAppState> = {},
-): LocalAppState {
+function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
   return {
     user: {
       _id: "local-user",
@@ -42,7 +40,15 @@ function createState(
       updateTrack: "stable",
       projectDataShapeId: "default",
       weeklyTimeViewStyle: "ledger",
-      weeklyCapacityTargets: { monday: 8, tuesday: 8, wednesday: 8, thursday: 8, friday: 8, saturday: 0, sunday: 0 },
+      weeklyCapacityTargets: {
+        monday: 8,
+        tuesday: 8,
+        wednesday: 8,
+        thursday: 8,
+        friday: 8,
+        saturday: 0,
+        sunday: 0,
+      },
       warnWhenOverCapacity: true,
       warnWhenSubmittingUnderCapacity: true,
     },
@@ -101,11 +107,7 @@ describe("backlog status operations", () => {
         now: () => 100,
       },
     );
-    const updated = updateBacklogStatus(
-      added.state,
-      added.result,
-      "Ready",
-    );
+    const updated = updateBacklogStatus(added.state, added.result, "Ready");
 
     expect(added.result).toBe("status-1");
     expect(updated.backlogStatuses).toEqual([

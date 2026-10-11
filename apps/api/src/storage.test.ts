@@ -64,16 +64,24 @@ describe("AppApiStorage", () => {
   const tempDirs: string[] = [];
 
   afterEach(async () => {
-    await Promise.all(tempDirs.splice(0).map((dir) => rm(dir, { recursive: true, force: true })));
+    await Promise.all(
+      tempDirs
+        .splice(0)
+        .map((dir) => rm(dir, { recursive: true, force: true })),
+    );
   });
 
   it("re-stages an imported connector item after it was previously committed", async () => {
-    const tempDir = await mkdtemp(path.join(os.tmpdir(), "timetracker-storage-"));
+    const tempDir = await mkdtemp(
+      path.join(os.tmpdir(), "timetracker-storage-"),
+    );
     tempDirs.push(tempDir);
 
     const storage = new AppApiStorage(path.join(tempDir, "app-api-state.json"));
 
-    await expect(storage.stageImportItems([buildImportCandidate()])).resolves.toEqual({
+    await expect(
+      storage.stageImportItems([buildImportCandidate()]),
+    ).resolves.toEqual({
       queuedCount: 1,
       updatedCount: 0,
       skippedCount: 0,
@@ -113,7 +121,9 @@ describe("AppApiStorage", () => {
   });
 
   it("dismisses staged imports and keeps them out of later syncs", async () => {
-    const tempDir = await mkdtemp(path.join(os.tmpdir(), "timetracker-storage-"));
+    const tempDir = await mkdtemp(
+      path.join(os.tmpdir(), "timetracker-storage-"),
+    );
     tempDirs.push(tempDir);
 
     const storage = new AppApiStorage(path.join(tempDir, "app-api-state.json"));
@@ -121,14 +131,18 @@ describe("AppApiStorage", () => {
     await storage.stageImportItems([buildImportCandidate()]);
     const staged = await storage.listStagedImports();
 
-    await expect(storage.dismissImports(staged.items.map((item) => item.id))).resolves.toBe(1);
+    await expect(
+      storage.dismissImports(staged.items.map((item) => item.id)),
+    ).resolves.toBe(1);
     await expect(storage.listStagedImports()).resolves.toMatchObject({
       totalCount: 0,
       selectedCount: 0,
       items: [],
     });
 
-    await expect(storage.stageImportItems([buildImportCandidate()])).resolves.toEqual({
+    await expect(
+      storage.stageImportItems([buildImportCandidate()]),
+    ).resolves.toEqual({
       queuedCount: 0,
       updatedCount: 0,
       skippedCount: 1,
@@ -136,7 +150,9 @@ describe("AppApiStorage", () => {
   });
 
   it("ignores legacy seenImportKeys so previously committed connector imports can stage again", async () => {
-    const tempDir = await mkdtemp(path.join(os.tmpdir(), "timetracker-storage-"));
+    const tempDir = await mkdtemp(
+      path.join(os.tmpdir(), "timetracker-storage-"),
+    );
     tempDirs.push(tempDir);
 
     const statePath = path.join(tempDir, "app-api-state.json");
@@ -149,7 +165,9 @@ describe("AppApiStorage", () => {
             azureDevOpsConnections: [],
           },
           stagedImports: [],
-          seenImportKeys: ["azure_devops:ado-1:https://dev.azure.com/contoso/project/_workitems/edit/123"],
+          seenImportKeys: [
+            "azure_devops:ado-1:https://dev.azure.com/contoso/project/_workitems/edit/123",
+          ],
         },
         null,
         2,
@@ -159,7 +177,9 @@ describe("AppApiStorage", () => {
 
     const storage = new AppApiStorage(statePath);
 
-    await expect(storage.stageImportItems([buildImportCandidate()])).resolves.toEqual({
+    await expect(
+      storage.stageImportItems([buildImportCandidate()]),
+    ).resolves.toEqual({
       queuedCount: 1,
       updatedCount: 0,
       skippedCount: 0,
@@ -167,7 +187,9 @@ describe("AppApiStorage", () => {
   });
 
   it("stores plugin-shaped connections and groups them by plugin in the overview", async () => {
-    const tempDir = await mkdtemp(path.join(os.tmpdir(), "timetracker-storage-"));
+    const tempDir = await mkdtemp(
+      path.join(os.tmpdir(), "timetracker-storage-"),
+    );
     tempDirs.push(tempDir);
 
     const storage = new AppApiStorage(path.join(tempDir, "app-api-state.json"));
@@ -203,9 +225,14 @@ describe("AppApiStorage", () => {
       },
     });
 
-    await expect(storage.getConnectorsOverview([azurePlugin, jiraPlugin])).resolves.toMatchObject({
+    await expect(
+      storage.getConnectorsOverview([azurePlugin, jiraPlugin]),
+    ).resolves.toMatchObject({
       plugins: [
-        expect.objectContaining({ id: "azure_devops", displayName: "Azure DevOps" }),
+        expect.objectContaining({
+          id: "azure_devops",
+          displayName: "Azure DevOps",
+        }),
         expect.objectContaining({ id: "jira", displayName: "Jira" }),
       ],
       connectionGroups: [
@@ -242,7 +269,9 @@ describe("AppApiStorage", () => {
   });
 
   it("persists plugin activation without removing saved connections", async () => {
-    const tempDir = await mkdtemp(path.join(os.tmpdir(), "timetracker-storage-"));
+    const tempDir = await mkdtemp(
+      path.join(os.tmpdir(), "timetracker-storage-"),
+    );
     tempDirs.push(tempDir);
 
     const statePath = path.join(tempDir, "app-api-state.json");
@@ -264,7 +293,9 @@ describe("AppApiStorage", () => {
     await expect(
       storage.isConnectorPluginEnabled("jira", availablePluginIds),
     ).resolves.toBe(false);
-    await expect(storage.getConnectorsOverview([jiraPlugin])).resolves.toMatchObject({
+    await expect(
+      storage.getConnectorsOverview([jiraPlugin]),
+    ).resolves.toMatchObject({
       connectionGroups: [
         {
           plugin: expect.objectContaining({ id: "jira" }),
@@ -289,7 +320,9 @@ describe("AppApiStorage", () => {
   });
 
   it("deactivates every plugin globally without losing individual choices", async () => {
-    const tempDir = await mkdtemp(path.join(os.tmpdir(), "timetracker-storage-"));
+    const tempDir = await mkdtemp(
+      path.join(os.tmpdir(), "timetracker-storage-"),
+    );
     tempDirs.push(tempDir);
     const statePath = path.join(tempDir, "app-api-state.json");
     const storage = new AppApiStorage(statePath);
@@ -297,7 +330,9 @@ describe("AppApiStorage", () => {
     const availablePluginIds = new Set(["jira"]);
 
     await storage.setPluginSystemEnabled(false);
-    await expect(storage.getConnectorsOverview([jiraPlugin])).resolves.toMatchObject({
+    await expect(
+      storage.getConnectorsOverview([jiraPlugin]),
+    ).resolves.toMatchObject({
       pluginsEnabled: false,
       connectionGroups: [{ enabled: false }],
     });
@@ -320,7 +355,9 @@ describe("AppApiStorage", () => {
   });
 
   it("migrates version 5 activation state and tolerates invalid disabled IDs", async () => {
-    const tempDir = await mkdtemp(path.join(os.tmpdir(), "timetracker-storage-"));
+    const tempDir = await mkdtemp(
+      path.join(os.tmpdir(), "timetracker-storage-"),
+    );
     tempDirs.push(tempDir);
     const statePath = path.join(tempDir, "app-api-state.json");
     await writeFile(
@@ -347,16 +384,20 @@ describe("AppApiStorage", () => {
     );
 
     const storage = new AppApiStorage(statePath);
-    await expect(storage.listConnectorBacklogStatuses()).resolves.toMatchObject({
-      items: [{ source: "Legacy Source", label: "Active" }],
-    });
+    await expect(storage.listConnectorBacklogStatuses()).resolves.toMatchObject(
+      {
+        items: [{ source: "Legacy Source", label: "Active" }],
+      },
+    );
     await expect(
       storage.isConnectorPluginEnabled("jira", new Set(["jira"])),
     ).resolves.toBe(true);
   });
 
   it("removes connector configuration and credentials for an uninstalled plugin", async () => {
-    const tempDir = await mkdtemp(path.join(os.tmpdir(), "timetracker-storage-"));
+    const tempDir = await mkdtemp(
+      path.join(os.tmpdir(), "timetracker-storage-"),
+    );
     tempDirs.push(tempDir);
     const statePath = path.join(tempDir, "app-api-state.json");
     const storage = new AppApiStorage(statePath);
@@ -404,7 +445,9 @@ describe("AppApiStorage", () => {
   });
 
   it("stores connector backlog statuses discovered by any plugin source", async () => {
-    const tempDir = await mkdtemp(path.join(os.tmpdir(), "timetracker-storage-"));
+    const tempDir = await mkdtemp(
+      path.join(os.tmpdir(), "timetracker-storage-"),
+    );
     tempDirs.push(tempDir);
 
     const storage = new AppApiStorage(path.join(tempDir, "app-api-state.json"));

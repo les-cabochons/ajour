@@ -72,7 +72,11 @@ function formatWeekRange(weekDates: string[]) {
   return `${formatter.format(new Date(`${firstDay}T12:00:00`))} to ${formatter.format(new Date(`${lastDay}T12:00:00`))}`;
 }
 
-function createTaskKey(projectId: string | undefined, taskId: string | undefined, taskLabel: string) {
+function createTaskKey(
+  projectId: string | undefined,
+  taskId: string | undefined,
+  taskLabel: string,
+) {
   return `${projectId ?? "no-project"}::${taskId ?? taskLabel}`;
 }
 
@@ -133,13 +137,7 @@ function copyTextToClipboard(value: string) {
   void navigator.clipboard?.writeText(value);
 }
 
-function CopyHoverRow({
-  label,
-  value,
-}: {
-  label: string;
-  value: string;
-}) {
+function CopyHoverRow({ label, value }: { label: string; value: string }) {
   return (
     <div className="submit-timesheet-comment-card-row">
       <span className="submit-timesheet-comment-card-row-label">{label}</span>
@@ -228,7 +226,10 @@ function mergeEntries(entries: EnrichedEntry[]): EntryCollection {
   };
 }
 
-export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModalProps) {
+export function SubmitTimesheetModal({
+  weekDates,
+  onClose,
+}: SubmitTimesheetModalProps) {
   const state = useLocalState();
   const projects = useLocalProjects();
   const overlayRef = useRef<HTMLDivElement>(null);
@@ -236,9 +237,11 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
   const initializedSelectionRef = useRef(false);
   const [selectedEntryIds, setSelectedEntryIds] = useState<string[]>([]);
   const [viewMode, setViewMode] = useState<SubmitViewMode>("day");
-  const [groupingMode, setGroupingMode] = useState<SubmitGroupingMode>("single");
+  const [groupingMode, setGroupingMode] =
+    useState<SubmitGroupingMode>("single");
   const [isFilterOpen, setIsFilterOpen] = useState(false);
-  const [isUnderTargetWarningOpen, setIsUnderTargetWarningOpen] = useState(false);
+  const [isUnderTargetWarningOpen, setIsUnderTargetWarningOpen] =
+    useState(false);
 
   const weekDateSet = useMemo(() => new Set(weekDates), [weekDates]);
   const projectMap = useMemo(
@@ -248,18 +251,27 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
   const weekEntries = useMemo(
     () =>
       state.timesheetEntries
-        .filter((entry) => weekDateSet.has(entry.localDate) && !entry.submittedAt)
+        .filter(
+          (entry) => weekDateSet.has(entry.localDate) && !entry.submittedAt,
+        )
         .sort((left, right) => right.committedAt - left.committedAt),
     [state.timesheetEntries, weekDateSet],
   );
   const enrichedEntries = useMemo<EnrichedEntry[]>(
     () =>
       weekEntries.map((entry) => {
-        const project = entry.projectId ? projectMap.get(entry.projectId) : undefined;
-        const task = entry.taskId ? project?.tasks.find((item) => item._id === entry.taskId) : undefined;
+        const project = entry.projectId
+          ? projectMap.get(entry.projectId)
+          : undefined;
+        const task = entry.taskId
+          ? project?.tasks.find((item) => item._id === entry.taskId)
+          : undefined;
         const projectName = project?.name ?? "No project";
         const taskLabel =
-          task?.name ?? (entry.label && entry.label !== projectName ? entry.label : "No task");
+          task?.name ??
+          (entry.label && entry.label !== projectName
+            ? entry.label
+            : "No task");
 
         return {
           entry,
@@ -282,7 +294,9 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
     () =>
       new Set(
         state.timesheetEntries
-          .filter((entry) => weekDateSet.has(entry.localDate) && entry.submittedAt)
+          .filter(
+            (entry) => weekDateSet.has(entry.localDate) && entry.submittedAt,
+          )
           .map((entry) => entry._id),
       ),
     [state.timesheetEntries, weekDateSet],
@@ -291,15 +305,23 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
     () => enrichedEntries.map((entry) => entry.entry._id),
     [enrichedEntries],
   );
-  const visibleEntryIdsKey = useMemo(() => visibleEntryIds.join("|"), [visibleEntryIds]);
-  const selectedEntryIdSet = useMemo(() => new Set(selectedEntryIds), [selectedEntryIds]);
+  const visibleEntryIdsKey = useMemo(
+    () => visibleEntryIds.join("|"),
+    [visibleEntryIds],
+  );
+  const selectedEntryIdSet = useMemo(
+    () => new Set(selectedEntryIds),
+    [selectedEntryIds],
+  );
   const activeGroupingMode = viewMode === "task" ? "grouped" : groupingMode;
 
   const daySections = useMemo<DaySection[]>(
     () =>
       weekDates
         .map((localDate) => {
-          const entries = enrichedEntries.filter((entry) => entry.entry.localDate === localDate);
+          const entries = enrichedEntries.filter(
+            (entry) => entry.entry.localDate === localDate,
+          );
           const rows =
             activeGroupingMode === "single"
               ? entries.map((entry) => mergeEntries([entry]))
@@ -316,7 +338,10 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
             entryIds: entries.map((entry) => entry.entry._id),
             localDate,
             rows,
-            totalMs: entries.reduce((sum, entry) => sum + entry.entry.durationMs, 0),
+            totalMs: entries.reduce(
+              (sum, entry) => sum + entry.entry.durationMs,
+              0,
+            ),
           };
         })
         .filter((group) => group.rows.length > 0),
@@ -336,7 +361,11 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
         .map(([, taskEntries]) => {
           const mergedRow = mergeEntries(taskEntries);
           const cells = weekDates.map((localDate) =>
-            mergeEntries(taskEntries.filter((entry) => entry.entry.localDate === localDate)),
+            mergeEntries(
+              taskEntries.filter(
+                (entry) => entry.entry.localDate === localDate,
+              ),
+            ),
           );
 
           return {
@@ -348,7 +377,9 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
           };
         })
         .sort((left, right) => {
-          const projectCompare = left.projectName.localeCompare(right.projectName);
+          const projectCompare = left.projectName.localeCompare(
+            right.projectName,
+          );
           if (projectCompare !== 0) {
             return projectCompare;
           }
@@ -363,7 +394,11 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
   const selectedDurationMs = useMemo(
     () =>
       enrichedEntries.reduce(
-        (sum, entry) => sum + (selectedEntryIdSet.has(entry.entry._id) ? entry.entry.durationMs : 0),
+        (sum, entry) =>
+          sum +
+          (selectedEntryIdSet.has(entry.entry._id)
+            ? entry.entry.durationMs
+            : 0),
         0,
       ),
     [enrichedEntries, selectedEntryIdSet],
@@ -386,7 +421,9 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
   useEffect(() => {
     const nextVisibleEntryIdSet = new Set(visibleEntryIds);
     setSelectedEntryIds((current) => {
-      const nextSelectedIds = current.filter((entryId) => nextVisibleEntryIdSet.has(entryId));
+      const nextSelectedIds = current.filter((entryId) =>
+        nextVisibleEntryIdSet.has(entryId),
+      );
       if (!initializedSelectionRef.current) {
         initializedSelectionRef.current = true;
         return visibleEntryIds;
@@ -405,7 +442,11 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
 
   useEffect(() => {
     function handleMouseDown(event: MouseEvent) {
-      if (filterRef.current && event.target instanceof Node && !filterRef.current.contains(event.target)) {
+      if (
+        filterRef.current &&
+        event.target instanceof Node &&
+        !filterRef.current.contains(event.target)
+      ) {
         setIsFilterOpen(false);
       }
 
@@ -435,24 +476,31 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
 
   function replaceSelection(nextEntryIds: string[]) {
     const nextIdSet = new Set(nextEntryIds);
-    setSelectedEntryIds(visibleEntryIds.filter((entryId) => nextIdSet.has(entryId)));
+    setSelectedEntryIds(
+      visibleEntryIds.filter((entryId) => nextIdSet.has(entryId)),
+    );
   }
 
   function setEntrySelection(entryIds: string[], checked: boolean) {
     const entryIdSet = new Set(entryIds);
     setSelectedEntryIds((current) => {
       const nextSelectedSet = new Set(
-        checked ? [...current, ...entryIds] : current.filter((entryId) => !entryIdSet.has(entryId)),
+        checked
+          ? [...current, ...entryIds]
+          : current.filter((entryId) => !entryIdSet.has(entryId)),
       );
       return visibleEntryIds.filter((entryId) => nextSelectedSet.has(entryId));
     });
   }
 
   function getSelectionState(entryIds: string[]) {
-    const selectedCountForGroup = entryIds.filter((entryId) => selectedEntryIdSet.has(entryId)).length;
+    const selectedCountForGroup = entryIds.filter((entryId) =>
+      selectedEntryIdSet.has(entryId),
+    ).length;
     return {
       checked: entryIds.length > 0 && selectedCountForGroup === entryIds.length,
-      indeterminate: selectedCountForGroup > 0 && selectedCountForGroup < entryIds.length,
+      indeterminate:
+        selectedCountForGroup > 0 && selectedCountForGroup < entryIds.length,
     };
   }
 
@@ -478,8 +526,15 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
     setIsUnderTargetWarningOpen(false);
   }
 
-  function renderTimeHover(collection: EntryCollection, cellLabel: string, triggerClassName: string) {
-    const commentSummary = collection.comments.length > 0 ? collection.comments.join(" || ") : "No comments";
+  function renderTimeHover(
+    collection: EntryCollection,
+    cellLabel: string,
+    triggerClassName: string,
+  ) {
+    const commentSummary =
+      collection.comments.length > 0
+        ? collection.comments.join(" || ")
+        : "No comments";
     const durationLabel = formatClockDuration(collection.durationMs);
 
     return (
@@ -527,14 +582,26 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
   }
 
   return (
-    <div ref={overlayRef} className="time-entry-modal-overlay submit-timesheet-modal-overlay">
+    <div
+      ref={overlayRef}
+      className="time-entry-modal-overlay submit-timesheet-modal-overlay"
+    >
       <div className="submit-timesheet-modal">
         <div className="submit-timesheet-modal-header">
           <div className="submit-timesheet-modal-title-wrap">
-            <span className="submit-timesheet-modal-title">Submit timesheet</span>
-            <span className="submit-timesheet-modal-subtitle">Review and select the current week&apos;s unsubmitted entries.</span>
+            <span className="submit-timesheet-modal-title">
+              Submit timesheet
+            </span>
+            <span className="submit-timesheet-modal-subtitle">
+              Review and select the current week&apos;s unsubmitted entries.
+            </span>
           </div>
-          <button type="button" className="time-entry-modal-close" onClick={onClose} aria-label="Close submit timesheet modal">
+          <button
+            type="button"
+            className="time-entry-modal-close"
+            onClick={onClose}
+            aria-label="Close submit timesheet modal"
+          >
             <X className="h-4 w-4" />
           </button>
         </div>
@@ -542,17 +609,30 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
         <div className="submit-timesheet-toolbar">
           <div className="submit-timesheet-toolbar-head">
             <div className="submit-timesheet-toolbar-copy">
-              <span className="submit-timesheet-toolbar-label">Week of {formatWeekRange(weekDates)}</span>
+              <span className="submit-timesheet-toolbar-label">
+                Week of {formatWeekRange(weekDates)}
+              </span>
               <span className="submit-timesheet-toolbar-value">
-                {selectedCount} selected · {formatClockDuration(selectedDurationMs)}
+                {selectedCount} selected ·{" "}
+                {formatClockDuration(selectedDurationMs)}
               </span>
             </div>
           </div>
 
           <div className="submit-timesheet-toolbar-badges">
-            <span className="submit-timesheet-toolbar-badge">{formatCountLabel(visibleEntryIds.length, "unsubmitted entry", "unsubmitted entries")}</span>
-            <span className="submit-timesheet-toolbar-badge">{formatCountLabel(submittedWeekCount, "submitted", "submitted")}</span>
-            <span className="submit-timesheet-toolbar-badge">{primaryCountLabel}</span>
+            <span className="submit-timesheet-toolbar-badge">
+              {formatCountLabel(
+                visibleEntryIds.length,
+                "unsubmitted entry",
+                "unsubmitted entries",
+              )}
+            </span>
+            <span className="submit-timesheet-toolbar-badge">
+              {formatCountLabel(submittedWeekCount, "submitted", "submitted")}
+            </span>
+            <span className="submit-timesheet-toolbar-badge">
+              {primaryCountLabel}
+            </span>
           </div>
 
           <div className="submit-timesheet-toolbar-footer">
@@ -565,7 +645,12 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
               >
                 Select All
               </Button>
-              <Button variant="outline" size="sm" disabled={selectedEntryIds.length === 0} onClick={() => replaceSelection([])}>
+              <Button
+                variant="outline"
+                size="sm"
+                disabled={selectedEntryIds.length === 0}
+                onClick={() => replaceSelection([])}
+              >
                 Clear Selection
               </Button>
             </div>
@@ -583,9 +668,15 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
               </Button>
 
               {isFilterOpen ? (
-                <div className="submit-timesheet-filter-menu" role="dialog" aria-label="Submit view options">
+                <div
+                  className="submit-timesheet-filter-menu"
+                  role="dialog"
+                  aria-label="Submit view options"
+                >
                   <fieldset className="submit-timesheet-option-group">
-                    <legend className="submit-timesheet-option-group-label">View</legend>
+                    <legend className="submit-timesheet-option-group-label">
+                      View
+                    </legend>
                     <label
                       className="submit-timesheet-option-row"
                       htmlFor="submit-timesheet-view-day"
@@ -633,9 +724,14 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
                   </fieldset>
                   <div className="submit-timesheet-filter-divider" />
                   <fieldset className="submit-timesheet-option-group">
-                    <legend className="submit-timesheet-option-group-label">Grouping</legend>
+                    <legend className="submit-timesheet-option-group-label">
+                      Grouping
+                    </legend>
                     <label
-                      className={cn("submit-timesheet-option-row", viewMode === "task" && "is-disabled")}
+                      className={cn(
+                        "submit-timesheet-option-row",
+                        viewMode === "task" && "is-disabled",
+                      )}
                       htmlFor="submit-timesheet-grouping-single"
                       onClick={() => {
                         if (viewMode !== "task") {
@@ -660,7 +756,10 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
                       <span>Single</span>
                     </label>
                     <label
-                      className={cn("submit-timesheet-option-row", viewMode === "task" && "is-disabled")}
+                      className={cn(
+                        "submit-timesheet-option-row",
+                        viewMode === "task" && "is-disabled",
+                      )}
                       htmlFor="submit-timesheet-grouping-grouped"
                       onClick={() => {
                         if (viewMode !== "task") {
@@ -708,19 +807,27 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
                   <Table className="submit-timesheet-task-table">
                     <TableHeader>
                       <TableRow>
-                        <TableHead className="submit-timesheet-task-main-head">Task</TableHead>
+                        <TableHead className="submit-timesheet-task-main-head">
+                          Task
+                        </TableHead>
                         {weekDates.map((localDate) => (
-                          <TableHead key={localDate} className="submit-timesheet-task-day-head">
+                          <TableHead
+                            key={localDate}
+                            className="submit-timesheet-task-day-head"
+                          >
                             {formatDayColumnHeading(localDate)}
                           </TableHead>
                         ))}
-                        <TableHead className="submit-timesheet-task-total-head">Total</TableHead>
+                        <TableHead className="submit-timesheet-task-total-head">
+                          Total
+                        </TableHead>
                       </TableRow>
                     </TableHeader>
                     <TableBody>
                       {taskRows.map((row) => {
                         const selectionState = getSelectionState(row.entryIds);
-                        const rowLabel = `${row.projectName} ${row.taskLabel}`.trim();
+                        const rowLabel =
+                          `${row.projectName} ${row.taskLabel}`.trim();
 
                         return (
                           <TableRow key={row.taskKey}>
@@ -729,7 +836,9 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
                                 <SelectionCheckbox
                                   checked={selectionState.checked}
                                   indeterminate={selectionState.indeterminate}
-                                  onChange={(checked) => setEntrySelection(row.entryIds, checked)}
+                                  onChange={(checked) =>
+                                    setEntrySelection(row.entryIds, checked)
+                                  }
                                   ariaLabel={`Select ${rowLabel}`}
                                 />
                                 <div className="submit-timesheet-task-copy">
@@ -740,20 +849,30 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
                                       className="entry-project-dot"
                                       fallback="dot"
                                     />
-                                    <span className="submit-timesheet-entry-project">{row.projectName}</span>
+                                    <span className="submit-timesheet-entry-project">
+                                      {row.projectName}
+                                    </span>
                                   </div>
-                                  <div className="submit-timesheet-entry-secondary" title={row.taskLabel}>
+                                  <div
+                                    className="submit-timesheet-entry-secondary"
+                                    title={row.taskLabel}
+                                  >
                                     {truncateLabel(row.taskLabel)}
                                   </div>
                                 </div>
                               </div>
                             </TableCell>
                             {row.cells.map((cell) => (
-                              <TableCell key={`${row.taskKey}-${cell.localDate}`} className="submit-timesheet-task-day-cell">
+                              <TableCell
+                                key={`${row.taskKey}-${cell.localDate}`}
+                                className="submit-timesheet-task-day-cell"
+                              >
                                 {renderTaskCell(cell, rowLabel)}
                               </TableCell>
                             ))}
-                            <TableCell className="submit-timesheet-task-total-cell">{formatClockDuration(row.durationMs)}</TableCell>
+                            <TableCell className="submit-timesheet-task-total-cell">
+                              {formatClockDuration(row.durationMs)}
+                            </TableCell>
                           </TableRow>
                         );
                       })}
@@ -770,13 +889,23 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
                 const selectionState = getSelectionState(group.entryIds);
 
                 return (
-                  <section key={group.localDate} className="submit-timesheet-group">
+                  <section
+                    key={group.localDate}
+                    className="submit-timesheet-group"
+                  >
                     <div className="submit-timesheet-group-header">
                       <div className="submit-timesheet-group-main">
                         <div className="submit-timesheet-group-copy">
-                          <h3 className="submit-timesheet-group-title">{formatDayHeading(group.localDate)}</h3>
+                          <h3 className="submit-timesheet-group-title">
+                            {formatDayHeading(group.localDate)}
+                          </h3>
                           <p className="submit-timesheet-group-meta">
-                            {formatCountLabel(group.entryIds.length, "entry", "entries")} · {formatClockDuration(group.totalMs)}
+                            {formatCountLabel(
+                              group.entryIds.length,
+                              "entry",
+                              "entries",
+                            )}{" "}
+                            · {formatClockDuration(group.totalMs)}
                           </p>
                         </div>
                       </div>
@@ -786,15 +915,22 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
                           variant="outline"
                           size="sm"
                           disabled={selectionState.checked}
-                          onClick={() => setEntrySelection(group.entryIds, true)}
+                          onClick={() =>
+                            setEntrySelection(group.entryIds, true)
+                          }
                         >
                           Check All
                         </Button>
                         <Button
                           variant="outline"
                           size="sm"
-                          disabled={!selectionState.checked && !selectionState.indeterminate}
-                          onClick={() => setEntrySelection(group.entryIds, false)}
+                          disabled={
+                            !selectionState.checked &&
+                            !selectionState.indeterminate
+                          }
+                          onClick={() =>
+                            setEntrySelection(group.entryIds, false)
+                          }
                         >
                           Uncheck All
                         </Button>
@@ -803,15 +939,25 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
 
                     <div className="submit-timesheet-entry-list">
                       {group.rows.map((row, index) => {
-                        const rowSelectionState = getSelectionState(row.entryIds);
+                        const rowSelectionState = getSelectionState(
+                          row.entryIds,
+                        );
                         const noteSummary = formatCommentSummary(row.comments);
 
                         return (
-                          <div key={`${group.localDate}-${row.taskKey}-${index}`} className={cn("submit-timesheet-entry", rowSelectionState.checked && "is-selected")}>
+                          <div
+                            key={`${group.localDate}-${row.taskKey}-${index}`}
+                            className={cn(
+                              "submit-timesheet-entry",
+                              rowSelectionState.checked && "is-selected",
+                            )}
+                          >
                             <SelectionCheckbox
                               checked={rowSelectionState.checked}
                               indeterminate={rowSelectionState.indeterminate}
-                              onChange={(checked) => setEntrySelection(row.entryIds, checked)}
+                              onChange={(checked) =>
+                                setEntrySelection(row.entryIds, checked)
+                              }
                               ariaLabel={`Select ${row.projectName} ${row.taskLabel}`.trim()}
                             />
                             <div className="submit-timesheet-entry-body">
@@ -822,12 +968,21 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
                                   className="entry-project-dot"
                                   fallback="dot"
                                 />
-                                <span className="submit-timesheet-entry-project">{row.projectName}</span>
+                                <span className="submit-timesheet-entry-project">
+                                  {row.projectName}
+                                </span>
                               </div>
-                              <div className="submit-timesheet-entry-secondary" title={row.taskLabel}>
+                              <div
+                                className="submit-timesheet-entry-secondary"
+                                title={row.taskLabel}
+                              >
                                 {row.taskLabel}
                               </div>
-                              {noteSummary ? <div className="submit-timesheet-entry-note">{noteSummary}</div> : null}
+                              {noteSummary ? (
+                                <div className="submit-timesheet-entry-note">
+                                  {noteSummary}
+                                </div>
+                              ) : null}
                             </div>
                             {renderTimeHover(
                               row,
@@ -849,7 +1004,10 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
           <Button variant="ghost" onClick={onClose}>
             Close
           </Button>
-          <Button onClick={handleSubmit} disabled={selectedEntryIds.length === 0}>
+          <Button
+            onClick={handleSubmit}
+            disabled={selectedEntryIds.length === 0}
+          >
             Submit
           </Button>
         </div>
@@ -858,19 +1016,20 @@ export function SubmitTimesheetModal({ weekDates, onClose }: SubmitTimesheetModa
         open={isUnderTargetWarningOpen}
         onOpenChange={setIsUnderTargetWarningOpen}
       >
-        <AlertDialogContent
-          className="z-[240]"
-          overlayClassName="z-[230]"
-        >
+        <AlertDialogContent className="z-[240]" overlayClassName="z-[230]">
           <AlertDialogHeader>
             <AlertDialogTitle>Submit below the week target?</AlertDialogTitle>
             <AlertDialogDescription>
-              This week has {formatClockDuration(loggedWeekDurationMs)} logged against a {formatClockDuration(weekCapacityMs)} target. You can continue without changing the selected entries.
+              This week has {formatClockDuration(loggedWeekDurationMs)} logged
+              against a {formatClockDuration(weekCapacityMs)} target. You can
+              continue without changing the selected entries.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
             <AlertDialogCancel>Review</AlertDialogCancel>
-            <AlertDialogAction onClick={confirmSubmit}>Submit anyway</AlertDialogAction>
+            <AlertDialogAction onClick={confirmSubmit}>
+              Submit anyway
+            </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>

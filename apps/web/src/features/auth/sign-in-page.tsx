@@ -21,14 +21,29 @@ export function SignInPage() {
   return (
     <div className="flex min-h-screen flex-col bg-background">
       {/* Standalone nav */}
-      <nav className={cn("harday-nav", isDesktopShell && "desktop-shell-nav desktop-drag-region")}>
-        <div className={cn("harday-nav-inner", isDesktopShell && "desktop-shell-nav-inner")}>
-          <BrandLogo className={cn("harday-nav-brand", isDesktopShell && "desktop-no-drag")} />
+      <nav
+        className={cn(
+          "harday-nav",
+          isDesktopShell && "desktop-shell-nav desktop-drag-region",
+        )}
+      >
+        <div
+          className={cn(
+            "harday-nav-inner",
+            isDesktopShell && "desktop-shell-nav-inner",
+          )}
+        >
+          <BrandLogo
+            className={cn(
+              "harday-nav-brand",
+              isDesktopShell && "desktop-no-drag",
+            )}
+          />
         </div>
       </nav>
 
       <div className="flex flex-1 items-center justify-center p-6">
-        <div className="flex w-full max-w-[400px] flex-col gap-6 animate-in">
+        <div className="flex w-full max-w-[400px] animate-in flex-col gap-6">
           {/* Header */}
           <div className="flex flex-col gap-3 text-center">
             <h1 className="text-[20px] font-semibold tracking-[-0.025em] text-foreground">
@@ -47,8 +62,12 @@ export function SignInPage() {
                 <div
                   key={text}
                   className={cn(
-                    "flex items-center gap-2 text-[13px] text-[var(--text-secondary)] animate-in",
-                    i === 0 ? "animate-in-delay-1" : i === 1 ? "animate-in-delay-2" : "animate-in-delay-3",
+                    "flex animate-in items-center gap-2 text-[13px] text-[var(--text-secondary)]",
+                    i === 0
+                      ? "animate-in-delay-1"
+                      : i === 1
+                        ? "animate-in-delay-2"
+                        : "animate-in-delay-3",
                   )}
                 >
                   <div className="status-dot" />

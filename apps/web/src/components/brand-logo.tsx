@@ -11,7 +11,12 @@ type BrandLogoProps = {
 export function BrandLogo({ className, linked = false }: BrandLogoProps) {
   const logo = (
     <span className="harday-logo-lockup">
-      <img src={hardDayMarkUrl} alt="" aria-hidden="true" className="harday-logo-mark" />
+      <img
+        src={hardDayMarkUrl}
+        alt=""
+        aria-hidden="true"
+        className="harday-logo-mark"
+      />
       <img src={hardDayTextLogoUrl} alt="HarDay" className="harday-wordmark" />
     </span>
   );

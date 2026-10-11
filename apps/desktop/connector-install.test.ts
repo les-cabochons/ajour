@@ -2,27 +2,22 @@ import { createRequire } from "node:module";
 import { describe, expect, it, vi } from "vitest";
 
 const require = createRequire(import.meta.url);
-const {
-  MAX_CONNECTOR_PLUGIN_ARCHIVE_BYTES,
-  selectConnectorPluginArchive,
-} = require("./electron/connector-install.cjs") as {
-  MAX_CONNECTOR_PLUGIN_ARCHIVE_BYTES: number;
-  selectConnectorPluginArchive: (
-    dialog: {
-      showOpenDialog: ReturnType<typeof vi.fn>;
-    },
-    parentWindow: object,
-    dependencies?: {
-      open: ReturnType<typeof vi.fn>;
-    },
-  ) => Promise<
-    | {
-        archiveBytes: Buffer;
-        archiveFilename: string;
-      }
-    | null
-  >;
-};
+const { MAX_CONNECTOR_PLUGIN_ARCHIVE_BYTES, selectConnectorPluginArchive } =
+  require("./electron/connector-install.cjs") as {
+    MAX_CONNECTOR_PLUGIN_ARCHIVE_BYTES: number;
+    selectConnectorPluginArchive: (
+      dialog: {
+        showOpenDialog: ReturnType<typeof vi.fn>;
+      },
+      parentWindow: object,
+      dependencies?: {
+        open: ReturnType<typeof vi.fn>;
+      },
+    ) => Promise<{
+      archiveBytes: Buffer;
+      archiveFilename: string;
+    } | null>;
+  };
 
 describe("desktop connector file selection", () => {
   it("returns no archive when the native file chooser is cancelled", async () => {

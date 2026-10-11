@@ -34,9 +34,7 @@ export interface LocalProjectTask {
 }
 
 export type LocalWorkItemEstimateFieldKey =
-  | "originalEstimateHours"
-  | "remainingEstimateHours"
-  | "completedEstimateHours";
+  "originalEstimateHours" | "remainingEstimateHours" | "completedEstimateHours";
 
 export interface LocalWorkItemEstimateFieldConflict {
   detectedAt: number;

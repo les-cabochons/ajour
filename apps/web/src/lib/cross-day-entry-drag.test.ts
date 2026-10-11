@@ -9,13 +9,23 @@ describe("cross-day entry drag geometry", () => {
     [
       "2026-08-10",
       {
-        getBoundingClientRect: () => ({ left: 0, right: 99, top: 0, bottom: 200 }),
+        getBoundingClientRect: () => ({
+          left: 0,
+          right: 99,
+          top: 0,
+          bottom: 200,
+        }),
       },
     ],
     [
       "2026-08-11",
       {
-        getBoundingClientRect: () => ({ left: 100, right: 199, top: 0, bottom: 200 }),
+        getBoundingClientRect: () => ({
+          left: 100,
+          right: 199,
+          top: 0,
+          bottom: 200,
+        }),
       },
     ],
   ]);
@@ -27,7 +37,9 @@ describe("cross-day entry drag geometry", () => {
   });
 
   it("returns no target outside the weekly surface", () => {
-    expect(getCrossDayDragTarget({ clientX: 250, clientY: 100 }, targets)).toBeNull();
+    expect(
+      getCrossDayDragTarget({ clientX: 250, clientY: 100 }, targets),
+    ).toBeNull();
   });
 
   it("waits for the shared press threshold and cancels an active drag with Escape", () => {

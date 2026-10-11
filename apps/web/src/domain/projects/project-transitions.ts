@@ -18,10 +18,7 @@ export interface ProjectFactories {
 export type ProjectPatch = Partial<Omit<LocalProject, "_id">>;
 
 export type ProjectTaskPatch = Partial<
-  Pick<
-    LocalProjectTask,
-    "name" | "billable" | "budgetMs" | "adjustmentMs"
-  >
+  Pick<LocalProjectTask, "name" | "billable" | "budgetMs" | "adjustmentMs">
 >;
 
 export function createProjectTask(
@@ -90,9 +87,7 @@ export function normalizeProject(
         status,
         createdAt,
         archivedAt:
-          status === "archived"
-            ? (task.archivedAt ?? createdAt)
-            : undefined,
+          status === "archived" ? (task.archivedAt ?? createdAt) : undefined,
         billable: task.billable ?? true,
         budgetMs: normalizeProjectTaskBudgetMs(task.budgetMs),
         adjustmentMs: normalizeProjectTaskAdjustmentMs(task.adjustmentMs),
@@ -211,7 +206,9 @@ export function reorderProjectTask(
       return project;
     }
 
-    const activeTasks = project.tasks.filter((task) => task.status === "active");
+    const activeTasks = project.tasks.filter(
+      (task) => task.status === "active",
+    );
     if (
       activeTasks.length < 2 ||
       !Number.isFinite(toIndex) ||
@@ -254,7 +251,7 @@ export function updateProjectTask(
                   name: patch.name ?? task.name,
                   billable:
                     "billable" in patch
-                      ? patch.billable ?? true
+                      ? (patch.billable ?? true)
                       : (task.billable ?? true),
                   budgetMs:
                     "budgetMs" in patch

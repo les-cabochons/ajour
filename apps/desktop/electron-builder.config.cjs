@@ -4,8 +4,9 @@ const desktopRoot = __dirname;
 const repoRoot = path.resolve(desktopRoot, "../..");
 const packageVersion = require("./package.json").version;
 const electronVersion = require("electron/package.json").version;
-const updateChannel = process.env.HARDAY_UPDATE_CHANNEL
-  ?? (packageVersion.includes("-nightly.") ? "nightly" : "latest");
+const updateChannel =
+  process.env.HARDAY_UPDATE_CHANNEL ??
+  (packageVersion.includes("-nightly.") ? "nightly" : "latest");
 if (updateChannel !== "latest" && updateChannel !== "nightly") {
   throw new Error("HARDAY_UPDATE_CHANNEL must be latest or nightly.");
 }

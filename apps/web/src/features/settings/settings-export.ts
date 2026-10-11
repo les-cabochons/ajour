@@ -32,8 +32,15 @@ interface TimesheetExportOptions {
   endDate: string;
 }
 
-const workbookMimeType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
-const expectedImportHeaders = ["date", "project", "task", "note", "hours"] as const;
+const workbookMimeType =
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+const expectedImportHeaders = [
+  "date",
+  "project",
+  "task",
+  "note",
+  "hours",
+] as const;
 
 function roundDecimalHours(durationMs: number) {
   return Math.round((durationMs / (60 * 60 * 1000)) * 100) / 100;
@@ -66,7 +73,9 @@ export function buildTimesheetExportRows({
   endDate,
 }: TimesheetExportOptions): TimesheetExportRow[] {
   return [...entries]
-    .filter((entry) => entry.localDate >= startDate && entry.localDate <= endDate)
+    .filter(
+      (entry) => entry.localDate >= startDate && entry.localDate <= endDate,
+    )
     .sort((left, right) => {
       if (left.localDate !== right.localDate) {
         return left.localDate.localeCompare(right.localDate);
@@ -92,7 +101,9 @@ export function buildTimesheetExportRows({
     });
 }
 
-export async function parseTimesheetImportWorkbook(buffer: ArrayBuffer | Uint8Array): Promise<TimesheetImportRow[]> {
+export async function parseTimesheetImportWorkbook(
+  buffer: ArrayBuffer | Uint8Array,
+): Promise<TimesheetImportRow[]> {
   let workbook: ExcelJS.Workbook;
 
   try {
@@ -113,9 +124,13 @@ export async function parseTimesheetImportWorkbook(buffer: ArrayBuffer | Uint8Ar
   }
 
   const headerRow = sheet.getRow(1);
-  const headers = expectedImportHeaders.map((_, index) => normalizeImportCell(headerRow.getCell(index + 1).value));
+  const headers = expectedImportHeaders.map((_, index) =>
+    normalizeImportCell(headerRow.getCell(index + 1).value),
+  );
   if (headers.join("|") !== expectedImportHeaders.join("|")) {
-    throw new Error("The Time Logs sheet must contain the columns date, project, task, note, and hours.");
+    throw new Error(
+      "The Time Logs sheet must contain the columns date, project, task, note, and hours.",
+    );
   }
 
   const rows: TimesheetImportRow[] = [];
@@ -131,13 +146,20 @@ export async function parseTimesheetImportWorkbook(buffer: ArrayBuffer | Uint8Ar
         ? hoursValue
         : Number(String(hoursValue ?? "").trim());
 
-    const isBlankRow = !date && !project && !task && !note && (!Number.isFinite(hours) || hours === 0);
+    const isBlankRow =
+      !date &&
+      !project &&
+      !task &&
+      !note &&
+      (!Number.isFinite(hours) || hours === 0);
     if (isBlankRow) {
       continue;
     }
 
     if (!date || !Number.isFinite(hours) || hours <= 0 || (!project && task)) {
-      throw new Error(`Row ${rowNumber} is invalid. Date and a positive hours value are required. A task also requires a project.`);
+      throw new Error(
+        `Row ${rowNumber} is invalid. Date and a positive hours value are required. A task also requires a project.`,
+      );
     }
 
     rows.push({
@@ -191,7 +213,9 @@ function toArrayBuffer(workbookBytes: ArrayBuffer | Uint8Array) {
   return normalized;
 }
 
-export async function createTimesheetExportWorkbook(options: TimesheetExportOptions): Promise<ArrayBuffer> {
+export async function createTimesheetExportWorkbook(
+  options: TimesheetExportOptions,
+): Promise<ArrayBuffer> {
   const rows = buildTimesheetExportRows(options);
   const ExcelJSModule = await import("exceljs");
   const workbook = new ExcelJSModule.default.Workbook();
@@ -213,7 +237,10 @@ export async function createTimesheetExportWorkbook(options: TimesheetExportOpti
   return toArrayBuffer(workbookBytes as ArrayBuffer | Uint8Array);
 }
 
-export function buildTimesheetExportFilename(startDate: string, endDate: string) {
+export function buildTimesheetExportFilename(
+  startDate: string,
+  endDate: string,
+) {
   return startDate === endDate
     ? `timelogs-${startDate}.xlsx`
     : `timelogs-${startDate}-to-${endDate}.xlsx`;
@@ -229,8 +256,13 @@ function toBlobPart(workbookBytes: ArrayBuffer | Uint8Array): ArrayBuffer {
   return normalized;
 }
 
-export function downloadWorkbookFile(workbookBytes: ArrayBuffer | Uint8Array, filename: string) {
-  const blob = new Blob([toBlobPart(workbookBytes)], { type: workbookMimeType });
+export function downloadWorkbookFile(
+  workbookBytes: ArrayBuffer | Uint8Array,
+  filename: string,
+) {
+  const blob = new Blob([toBlobPart(workbookBytes)], {
+    type: workbookMimeType,
+  });
   const url = window.URL.createObjectURL(blob);
   const link = document.createElement("a");
 

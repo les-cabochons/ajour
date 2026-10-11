@@ -50,9 +50,7 @@ interface ProjectTaskPickerProps {
   className?: string;
 }
 
-type PickerView =
-  | { kind: "projects" }
-  | { kind: "tasks"; projectId: string };
+type PickerView = { kind: "projects" } | { kind: "tasks"; projectId: string };
 
 const projectsView: PickerView = { kind: "projects" };
 
@@ -78,9 +76,7 @@ export function ProjectTaskPicker({
     () => projects.filter((project) => project.status === "active"),
     [projects],
   );
-  const selectedProject = projects.find(
-    (project) => project._id === projectId,
-  );
+  const selectedProject = projects.find((project) => project._id === projectId);
   const selectedTask = selectedProject?.tasks.find(
     (task) => task._id === taskId,
   );
@@ -103,9 +99,7 @@ export function ProjectTaskPicker({
   );
   const matchingProjectTasks = useMemo(
     () =>
-      browsingProject
-        ? findMatchingTasksInProject(browsingProject, query)
-        : [],
+      browsingProject ? findMatchingTasksInProject(browsingProject, query) : [],
     [browsingProject, query],
   );
   const hasQuery = query.trim().length > 0;
@@ -150,7 +144,7 @@ export function ProjectTaskPicker({
     <Popover open={isOpen} onOpenChange={handleOpenChange}>
       <PopoverTrigger
         className={cn(
-          "flex h-9 w-full min-w-0 items-center gap-2 rounded-[var(--control-radius)] border border-[var(--field-border)] bg-[var(--field-bg)] px-3 text-left text-[length:var(--control-font-size)] text-[var(--text)] outline-none transition-[border-color,box-shadow,background-color] hover:bg-[var(--surface-high)] focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30",
+          "flex h-9 w-full min-w-0 items-center gap-2 rounded-[var(--control-radius)] border border-[var(--field-border)] bg-[var(--field-bg)] px-3 text-left text-[length:var(--control-font-size)] text-[var(--text)] transition-[border-color,box-shadow,background-color] outline-none hover:bg-[var(--surface-high)] focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/30",
           className,
         )}
         aria-label={ariaLabel}
@@ -184,7 +178,10 @@ export function ProjectTaskPicker({
         sideOffset={6}
         className="project-task-picker-popover w-[min(26rem,calc(100vw-1rem))] gap-0 overflow-hidden rounded-[var(--radius-md)] border border-[var(--border-hover)] bg-[var(--surface-low)] p-0 shadow-[var(--shadow-lg)]"
       >
-        <Command shouldFilter={false} className="rounded-none bg-transparent p-0">
+        <Command
+          shouldFilter={false}
+          className="rounded-none bg-transparent p-0"
+        >
           <CommandInput
             autoFocus
             placeholder={
@@ -234,7 +231,11 @@ export function ProjectTaskPicker({
                           {getProjectLabel(project)}
                         </span>
                         <span className="shrink-0 text-xs font-normal text-[var(--text-tertiary)]">
-                          {project.tasks.filter((task) => task.status === "active").length}
+                          {
+                            project.tasks.filter(
+                              (task) => task.status === "active",
+                            ).length
+                          }
                         </span>
                         <ChevronRight className="size-4 shrink-0 text-[var(--text-tertiary)]" />
                       </CommandItem>
@@ -286,7 +287,8 @@ export function ProjectTaskPicker({
                     </CommandGroup>
                     {taskResults.total > taskResults.matches.length ? (
                       <p className="px-4 py-2 text-xs text-[var(--text-tertiary)]">
-                        {taskResults.total - taskResults.matches.length} more matches. Refine your search.
+                        {taskResults.total - taskResults.matches.length} more
+                        matches. Refine your search.
                       </p>
                     ) : null}
                   </>
@@ -324,7 +326,9 @@ export function ProjectTaskPicker({
                         onSelect={() => commitSelection(browsingProject._id)}
                       >
                         <NoTask className="size-4 text-[var(--text-tertiary)]" />
-                        <span className="flex-1">Use project without a task</span>
+                        <span className="flex-1">
+                          Use project without a task
+                        </span>
                       </CommandItem>
                     </>
                   ) : null}
@@ -367,7 +371,9 @@ export function ProjectTaskPicker({
                     </CommandGroup>
                   </>
                 ) : hasQuery ? (
-                  <CommandEmpty>No matching tasks in this project.</CommandEmpty>
+                  <CommandEmpty>
+                    No matching tasks in this project.
+                  </CommandEmpty>
                 ) : null}
               </>
             ) : (

@@ -5,39 +5,40 @@ import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const require = createRequire(import.meta.url);
-const { CATALOG_URL, createPluginCatalogService } = require(
-  "./electron/plugin-catalog.cjs",
-) as {
-  CATALOG_URL: string;
-  createPluginCatalogService(options: {
-    cacheDirectory: string;
-    fetchImpl: typeof fetch;
-    now?: () => Date;
-  }): {
-    refresh(): Promise<{
-      entries: Array<{ id: string; images?: { thumbnailDataUrl?: string } }>;
-      source: "network" | "cache";
-      warning?: string;
-    }>;
-    downloadPluginArchive(pluginId: string): Promise<{
-      archiveBytes: Buffer;
-      archiveFilename: string;
-    }>;
+const { CATALOG_URL, createPluginCatalogService } =
+  require("./electron/plugin-catalog.cjs") as {
+    CATALOG_URL: string;
+    createPluginCatalogService(options: {
+      cacheDirectory: string;
+      fetchImpl: typeof fetch;
+      now?: () => Date;
+    }): {
+      refresh(): Promise<{
+        entries: Array<{ id: string; images?: { thumbnailDataUrl?: string } }>;
+        source: "network" | "cache";
+        warning?: string;
+      }>;
+      downloadPluginArchive(pluginId: string): Promise<{
+        archiveBytes: Buffer;
+        archiveFilename: string;
+      }>;
+    };
   };
-};
 
 const temporaryDirectories: string[] = [];
 
 afterEach(async () => {
   await Promise.all(
-    temporaryDirectories.splice(0).map((directory) =>
-      rm(directory, { recursive: true, force: true }),
-    ),
+    temporaryDirectories
+      .splice(0)
+      .map((directory) => rm(directory, { recursive: true, force: true })),
   );
 });
 
 async function tempDirectory() {
-  const directory = await mkdtemp(path.join(os.tmpdir(), "ajour-plugin-catalog-"));
+  const directory = await mkdtemp(
+    path.join(os.tmpdir(), "ajour-plugin-catalog-"),
+  );
   temporaryDirectories.push(directory);
   return directory;
 }
@@ -96,32 +97,42 @@ describe("desktop plugin catalog", () => {
   it("caches artwork and conditionally checks it again on refresh", async () => {
     const cacheDirectory = await tempDirectory();
     let refreshNumber = 0;
-    const fetchImpl = vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
-      const url = String(input);
-      if (refreshNumber === 1) {
-        expect(init?.headers).toMatchObject({ "If-None-Match": expect.any(String) });
-        if (url === imageUrl) {
-          return response(Buffer.from("updated-image"), {
+    const fetchImpl = vi.fn(
+      async (input: string | URL | Request, init?: RequestInit) => {
+        const url = String(input);
+        if (refreshNumber === 1) {
+          expect(init?.headers).toMatchObject({
+            "If-None-Match": expect.any(String),
+          });
+          if (url === imageUrl) {
+            return response(Buffer.from("updated-image"), {
+              status: 200,
+              headers: { "content-type": "image/png", etag: '"image-2"' },
+            });
+          }
+          return response(null, { status: 304 });
+        }
+        if (url === CATALOG_URL) {
+          return response(catalogYaml, {
             status: 200,
-            headers: { "content-type": "image/png", etag: '"image-2"' },
+            headers: { etag: '"catalog-1"' },
           });
         }
-        return response(null, { status: 304 });
-      }
-      if (url === CATALOG_URL) {
-        return response(catalogYaml, { status: 200, headers: { etag: '"catalog-1"' } });
-      }
-      if (url === definitionUrl) {
-        return response(pluginYaml, { status: 200, headers: { etag: '"plugin-1"' } });
-      }
-      if (url === imageUrl) {
-        return response(Buffer.from("first-image"), {
-          status: 200,
-          headers: { "content-type": "image/png", etag: '"image-1"' },
-        });
-      }
-      throw new Error(`Unexpected URL ${url}`);
-    });
+        if (url === definitionUrl) {
+          return response(pluginYaml, {
+            status: 200,
+            headers: { etag: '"plugin-1"' },
+          });
+        }
+        if (url === imageUrl) {
+          return response(Buffer.from("first-image"), {
+            status: 200,
+            headers: { "content-type": "image/png", etag: '"image-1"' },
+          });
+        }
+        throw new Error(`Unexpected URL ${url}`);
+      },
+    );
     const service = createPluginCatalogService({
       cacheDirectory,
       fetchImpl: fetchImpl as unknown as typeof fetch,
@@ -236,7 +247,9 @@ describe("desktop plugin catalog", () => {
     });
 
     await service.refresh();
-    await expect(service.downloadPluginArchive("azure_devops")).resolves.toMatchObject({
+    await expect(
+      service.downloadPluginArchive("azure_devops"),
+    ).resolves.toMatchObject({
       archiveFilename: "azure_devops-1.2.3.harday-connector",
       archiveBytes: Buffer.from("archive"),
     });

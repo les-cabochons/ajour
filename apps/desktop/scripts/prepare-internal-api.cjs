@@ -1,4 +1,10 @@
-const { cpSync, existsSync, mkdirSync, readFileSync, rmSync } = require("node:fs");
+const {
+  cpSync,
+  existsSync,
+  mkdirSync,
+  readFileSync,
+  rmSync,
+} = require("node:fs");
 const path = require("node:path");
 
 const desktopRoot = path.resolve(__dirname, "..");
@@ -31,7 +37,9 @@ for (const target of copyTargets) {
     recursive: true,
     force: true,
     dereference: true,
-    filter: (source) => !target.excludePackageNodeModules || path.basename(source) !== "node_modules",
+    filter: (source) =>
+      !target.excludePackageNodeModules ||
+      path.basename(source) !== "node_modules",
   });
 }
 

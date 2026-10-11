@@ -3,7 +3,17 @@ const { stat } = require("node:fs/promises");
 const http = require("node:http");
 const path = require("node:path");
 const { pathToFileURL } = require("node:url");
-const { app, BrowserWindow, dialog, ipcMain, nativeImage, nativeTheme, net, protocol, shell } = require("electron");
+const {
+  app,
+  BrowserWindow,
+  dialog,
+  ipcMain,
+  nativeImage,
+  nativeTheme,
+  net,
+  protocol,
+  shell,
+} = require("electron");
 const { autoUpdater } = require("electron-updater");
 const { createAutomaticUpdateController } = require("./automatic-update.cjs");
 const { selectConnectorPluginArchive } = require("./connector-install.cjs");
@@ -18,7 +28,9 @@ const {
   saveDevelopmentPluginDirectories,
   selectDevelopmentPluginDirectory,
 } = require("./development-plugin-settings.cjs");
-const { loadDesktopBootstrapLocalState } = require("./local-state-bootstrap.cjs");
+const {
+  loadDesktopBootstrapLocalState,
+} = require("./local-state-bootstrap.cjs");
 const {
   getPlatformWindowChromeOptions,
   getWindowsTitleBarOverlay,
@@ -30,7 +42,8 @@ const {
 
 const DESKTOP_USER_DATA_DIRNAME = "HarDay";
 const stableUserDataPath =
-  process.env.TIMETRACKER_USER_DATA_PATH ?? path.join(app.getPath("appData"), DESKTOP_USER_DATA_DIRNAME);
+  process.env.TIMETRACKER_USER_DATA_PATH ??
+  path.join(app.getPath("appData"), DESKTOP_USER_DATA_DIRNAME);
 if (app.getPath("userData") !== stableUserDataPath) {
   app.setPath("userData", stableUserDataPath);
 }
@@ -57,8 +70,11 @@ const iconPath = app.isPackaged
   ? path.join(process.resourcesPath, "assets", "harday-icon.png")
   : path.resolve(__dirname, "../../../assets/harday-icon.png");
 const preloadPath = path.resolve(__dirname, "preload.cjs");
-const INTERNAL_APP_API_HOST = process.env.TIMETRACKER_APP_API_HOST ?? "127.0.0.1";
-const INTERNAL_APP_API_PORT = Number(process.env.TIMETRACKER_APP_API_PORT ?? 8787);
+const INTERNAL_APP_API_HOST =
+  process.env.TIMETRACKER_APP_API_HOST ?? "127.0.0.1";
+const INTERNAL_APP_API_PORT = Number(
+  process.env.TIMETRACKER_APP_API_PORT ?? 8787,
+);
 const internalAppApiRuntimeRoot = app.isPackaged
   ? path.join(process.resourcesPath, "internal-app-runtime")
   : path.resolve(__dirname, "../../..");
@@ -112,7 +128,10 @@ function refreshPluginCatalog() {
   pluginCatalogRefreshPromise ??= pluginCatalogService
     .refresh()
     .then((catalog) => {
-      mainWindow?.webContents.send("timetracker:plugin-catalog-updated", catalog);
+      mainWindow?.webContents.send(
+        "timetracker:plugin-catalog-updated",
+        catalog,
+      );
       return catalog;
     })
     .finally(() => {
@@ -129,11 +148,14 @@ function schedulePluginCatalogRefresh() {
   if (pluginCatalogSettings.refreshMinutes === 0) {
     return;
   }
-  pluginCatalogRefreshTimer = setInterval(() => {
-    void refreshPluginCatalog().catch((error) => {
-      console.error("Unable to refresh the plugin catalog.", error);
-    });
-  }, pluginCatalogSettings.refreshMinutes * 60 * 1000);
+  pluginCatalogRefreshTimer = setInterval(
+    () => {
+      void refreshPluginCatalog().catch((error) => {
+        console.error("Unable to refresh the plugin catalog.", error);
+      });
+    },
+    pluginCatalogSettings.refreshMinutes * 60 * 1000,
+  );
   pluginCatalogRefreshTimer.unref?.();
 }
 
@@ -176,10 +198,13 @@ ipcMain.handle("timetracker:check-for-updates", async (event, track) => {
   });
 });
 
-ipcMain.handle("timetracker:configure-automatic-updates", async (event, track) => {
-  assertActiveDesktopWindow(event, "configure automatic application updates");
-  await automaticUpdateController.configure(track);
-});
+ipcMain.handle(
+  "timetracker:configure-automatic-updates",
+  async (event, track) => {
+    assertActiveDesktopWindow(event, "configure automatic application updates");
+    await automaticUpdateController.configure(track);
+  },
+);
 
 ipcMain.handle("timetracker:open-update-release", async (event, releaseUrl) => {
   assertActiveDesktopWindow(event, "open an application update release");
@@ -191,10 +216,14 @@ ipcMain.handle("timetracker:open-update-release", async (event, releaseUrl) => {
 
 ipcMain.handle("timetracker:install-connector-plugin", async (event) => {
   if (!mainWindow || event.sender !== mainWindow.webContents) {
-    throw new Error("Connector plugins can only be installed by the active TimeTracker window.");
+    throw new Error(
+      "Connector plugins can only be installed by the active TimeTracker window.",
+    );
   }
   if (!app.isPackaged) {
-    throw new Error("Packaged connector installation is only available in production builds.");
+    throw new Error(
+      "Packaged connector installation is only available in production builds.",
+    );
   }
 
   const selectedArchive = await selectConnectorPluginArchive(
@@ -212,7 +241,9 @@ ipcMain.handle("timetracker:install-connector-plugin", async (event) => {
 
   const { installConnectorPluginForServer } = await internalAppApiModulePromise;
   if (typeof installConnectorPluginForServer !== "function") {
-    throw new Error("Internal connector API does not support plugin installation.");
+    throw new Error(
+      "Internal connector API does not support plugin installation.",
+    );
   }
 
   return await installConnectorPluginForServer(
@@ -224,7 +255,9 @@ ipcMain.handle("timetracker:install-connector-plugin", async (event) => {
 
 ipcMain.handle("timetracker:get-plugin-catalog", async (event) => {
   assertActiveDesktopWindow(event, "read the plugin catalog");
-  return pluginCatalogService.getCurrentCatalog() ?? (await refreshPluginCatalog());
+  return (
+    pluginCatalogService.getCurrentCatalog() ?? (await refreshPluginCatalog())
+  );
 });
 
 ipcMain.handle("timetracker:get-plugin-catalog-settings", async (event) => {
@@ -232,85 +265,123 @@ ipcMain.handle("timetracker:get-plugin-catalog-settings", async (event) => {
   return pluginCatalogSettings;
 });
 
-ipcMain.handle("timetracker:configure-plugin-catalog", async (event, settings) => {
-  assertActiveDesktopWindow(event, "configure the plugin catalog");
-  pluginCatalogSettings = savePluginCatalogSettings(
-    pluginCatalogSettingsPath,
-    settings,
-  );
-  schedulePluginCatalogRefresh();
-  return pluginCatalogSettings;
-});
+ipcMain.handle(
+  "timetracker:configure-plugin-catalog",
+  async (event, settings) => {
+    assertActiveDesktopWindow(event, "configure the plugin catalog");
+    pluginCatalogSettings = savePluginCatalogSettings(
+      pluginCatalogSettingsPath,
+      settings,
+    );
+    schedulePluginCatalogRefresh();
+    return pluginCatalogSettings;
+  },
+);
 
-ipcMain.handle("timetracker:download-catalog-plugin", async (event, pluginId) => {
-  assertActiveDesktopWindow(event, "download a plugin");
-  if (!app.isPackaged) {
-    throw new Error("Catalog plugin downloads are only available in production builds.");
-  }
-  if (typeof pluginId !== "string" || pluginId.length < 2 || pluginId.length > 64) {
-    throw new Error("The catalog plugin identifier is invalid.");
-  }
+ipcMain.handle(
+  "timetracker:download-catalog-plugin",
+  async (event, pluginId) => {
+    assertActiveDesktopWindow(event, "download a plugin");
+    if (!app.isPackaged) {
+      throw new Error(
+        "Catalog plugin downloads are only available in production builds.",
+      );
+    }
+    if (
+      typeof pluginId !== "string" ||
+      pluginId.length < 2 ||
+      pluginId.length > 64
+    ) {
+      throw new Error("The catalog plugin identifier is invalid.");
+    }
 
-  const downloaded = await pluginCatalogService.downloadPluginArchive(pluginId);
-  await ensureInternalAppApiRunning();
-  if (!internalAppApiServer || !internalAppApiModulePromise) {
-    throw new Error("Internal connector API unavailable. Restart the app.");
-  }
-  const { installConnectorPluginForServer } = await internalAppApiModulePromise;
-  if (typeof installConnectorPluginForServer !== "function") {
-    throw new Error("Internal connector API does not support plugin installation.");
-  }
-  const result = await installConnectorPluginForServer(
-    internalAppApiServer,
-    downloaded.archiveBytes,
-    downloaded.archiveFilename,
-    { enableAfterInstall: false },
-  );
-  return { type: "connector", result };
-});
+    const downloaded =
+      await pluginCatalogService.downloadPluginArchive(pluginId);
+    await ensureInternalAppApiRunning();
+    if (!internalAppApiServer || !internalAppApiModulePromise) {
+      throw new Error("Internal connector API unavailable. Restart the app.");
+    }
+    const { installConnectorPluginForServer } =
+      await internalAppApiModulePromise;
+    if (typeof installConnectorPluginForServer !== "function") {
+      throw new Error(
+        "Internal connector API does not support plugin installation.",
+      );
+    }
+    const result = await installConnectorPluginForServer(
+      internalAppApiServer,
+      downloaded.archiveBytes,
+      downloaded.archiveFilename,
+      { enableAfterInstall: false },
+    );
+    return { type: "connector", result };
+  },
+);
 
-ipcMain.handle("timetracker:uninstall-connector-plugin", async (event, pluginId) => {
-  if (!mainWindow || event.sender !== mainWindow.webContents) {
-    throw new Error("Connector plugins can only be uninstalled by the active TimeTracker window.");
-  }
-  if (!app.isPackaged) {
-    throw new Error("Development directory plugins cannot be uninstalled by the app.");
-  }
+ipcMain.handle(
+  "timetracker:uninstall-connector-plugin",
+  async (event, pluginId) => {
+    if (!mainWindow || event.sender !== mainWindow.webContents) {
+      throw new Error(
+        "Connector plugins can only be uninstalled by the active TimeTracker window.",
+      );
+    }
+    if (!app.isPackaged) {
+      throw new Error(
+        "Development directory plugins cannot be uninstalled by the app.",
+      );
+    }
 
-  await ensureInternalAppApiRunning();
-  if (!internalAppApiServer || !internalAppApiModulePromise) {
-    throw new Error("Internal connector API unavailable. Restart the app.");
-  }
+    await ensureInternalAppApiRunning();
+    if (!internalAppApiServer || !internalAppApiModulePromise) {
+      throw new Error("Internal connector API unavailable. Restart the app.");
+    }
 
-  const { uninstallConnectorPluginForServer } = await internalAppApiModulePromise;
-  if (typeof uninstallConnectorPluginForServer !== "function") {
-    throw new Error("Internal connector API does not support plugin uninstall.");
-  }
+    const { uninstallConnectorPluginForServer } =
+      await internalAppApiModulePromise;
+    if (typeof uninstallConnectorPluginForServer !== "function") {
+      throw new Error(
+        "Internal connector API does not support plugin uninstall.",
+      );
+    }
 
-  return await uninstallConnectorPluginForServer(internalAppApiServer, pluginId);
-});
+    return await uninstallConnectorPluginForServer(
+      internalAppApiServer,
+      pluginId,
+    );
+  },
+);
 
 ipcMain.handle("timetracker:get-development-plugin-settings", async (event) => {
   assertActiveDesktopWindow(event, "read development plugin settings");
   return getDevelopmentPluginSettings();
 });
 
-ipcMain.handle("timetracker:select-development-plugin-directory", async (event) => {
-  assertDevelopmentBuild(event, "configure development plugin directories");
-  const directory = await selectDevelopmentPluginDirectory(dialog, mainWindow);
-  if (!directory) {
-    return null;
-  }
+ipcMain.handle(
+  "timetracker:select-development-plugin-directory",
+  async (event) => {
+    assertDevelopmentBuild(event, "configure development plugin directories");
+    const directory = await selectDevelopmentPluginDirectory(
+      dialog,
+      mainWindow,
+    );
+    if (!directory) {
+      return null;
+    }
 
-  await applyDevelopmentPluginDirectories([directory]);
-  return getDevelopmentPluginSettings();
-});
+    await applyDevelopmentPluginDirectories([directory]);
+    return getDevelopmentPluginSettings();
+  },
+);
 
-ipcMain.handle("timetracker:clear-development-plugin-directories", async (event) => {
-  assertDevelopmentBuild(event, "reset development plugin directories");
-  await applyDevelopmentPluginDirectories(null);
-  return getDevelopmentPluginSettings();
-});
+ipcMain.handle(
+  "timetracker:clear-development-plugin-directories",
+  async (event) => {
+    assertDevelopmentBuild(event, "reset development plugin directories");
+    await applyDevelopmentPluginDirectories(null);
+    return getDevelopmentPluginSettings();
+  },
+);
 
 function assertActiveDesktopWindow(event, action) {
   if (!mainWindow || event.sender !== mainWindow.webContents) {
@@ -321,7 +392,9 @@ function assertActiveDesktopWindow(event, action) {
 function assertDevelopmentBuild(event, action) {
   assertActiveDesktopWindow(event, action);
   if (app.isPackaged) {
-    throw new Error("Development plugin directories are unavailable in production builds.");
+    throw new Error(
+      "Development plugin directories are unavailable in production builds.",
+    );
   }
 }
 
@@ -330,7 +403,10 @@ async function resolveAssetPath(requestPath) {
   const candidate = path.resolve(staticRoot, `.${normalizedPath}`);
   const relativeCandidate = path.relative(staticRoot, candidate);
 
-  if (relativeCandidate.startsWith("..") || path.isAbsolute(relativeCandidate)) {
+  if (
+    relativeCandidate.startsWith("..") ||
+    path.isAbsolute(relativeCandidate)
+  ) {
     return path.join(staticRoot, "index.html");
   }
 
@@ -349,7 +425,9 @@ async function resolveAssetPath(requestPath) {
 function registerStaticProtocol() {
   protocol.handle("app", async (request) => {
     const requestUrl = new URL(request.url);
-    const assetPath = await resolveAssetPath(decodeURIComponent(requestUrl.pathname));
+    const assetPath = await resolveAssetPath(
+      decodeURIComponent(requestUrl.pathname),
+    );
     return net.fetch(pathToFileURL(assetPath).toString());
   });
 }
@@ -423,20 +501,27 @@ async function ensureInternalAppApiRunning() {
     }
 
     if (!existsSync(internalAppApiEntryPath)) {
-      throw new Error(`Internal connector API entry missing: ${internalAppApiEntryPath}`);
+      throw new Error(
+        `Internal connector API entry missing: ${internalAppApiEntryPath}`,
+      );
     }
 
-    internalAppApiModulePromise ??= import(pathToFileURL(internalAppApiEntryPath).toString());
+    internalAppApiModulePromise ??= import(
+      pathToFileURL(internalAppApiEntryPath).toString()
+    );
     const { startAppApiServer } = await internalAppApiModulePromise;
     if (typeof startAppApiServer !== "function") {
-      throw new Error(`Internal connector API module is missing startAppApiServer: ${internalAppApiEntryPath}`);
+      throw new Error(
+        `Internal connector API module is missing startAppApiServer: ${internalAppApiEntryPath}`,
+      );
     }
 
     const apiServer = await startAppApiServer({
       host: INTERNAL_APP_API_HOST,
       port: INTERNAL_APP_API_PORT,
       statePath:
-        process.env.TIMETRACKER_APP_API_STATE_PATH ?? path.join(app.getPath("userData"), "app-api-state.json"),
+        process.env.TIMETRACKER_APP_API_STATE_PATH ??
+        path.join(app.getPath("userData"), "app-api-state.json"),
       installedPluginDirectory: path.join(app.getPath("userData"), "plugins"),
       developmentPluginDirectories: app.isPackaged
         ? []
@@ -517,10 +602,14 @@ async function resolveRendererUrl() {
 
 function resolveDevelopmentPluginDirectories() {
   if (developmentPluginDirectoriesOverride !== undefined) {
-    return developmentPluginDirectoriesOverride ?? resolveAutomaticDevelopmentPluginDirectories();
+    return (
+      developmentPluginDirectoriesOverride ??
+      resolveAutomaticDevelopmentPluginDirectories()
+    );
   }
 
-  const configuredDirectories = resolveEnvironmentDevelopmentPluginDirectories();
+  const configuredDirectories =
+    resolveEnvironmentDevelopmentPluginDirectories();
   if (configuredDirectories.length > 0) {
     return configuredDirectories;
   }
@@ -536,17 +625,19 @@ function resolveDevelopmentPluginDirectories() {
 }
 
 function resolveAutomaticDevelopmentPluginDirectories() {
-  const configuredDirectories = resolveEnvironmentDevelopmentPluginDirectories();
+  const configuredDirectories =
+    resolveEnvironmentDevelopmentPluginDirectories();
   return configuredDirectories.length > 0
     ? configuredDirectories
     : resolveRepositoryDevelopmentPluginDirectories();
 }
 
 function resolveEnvironmentDevelopmentPluginDirectories() {
-  return process.env.TIMETRACKER_DEV_PLUGIN_DIRS
-    ?.split(path.delimiter)
-    .map((directory) => directory.trim())
-    .filter(Boolean) ?? [];
+  return (
+    process.env.TIMETRACKER_DEV_PLUGIN_DIRS?.split(path.delimiter)
+      .map((directory) => directory.trim())
+      .filter(Boolean) ?? []
+  );
 }
 
 function resolveRepositoryDevelopmentPluginDirectories() {

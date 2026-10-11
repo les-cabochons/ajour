@@ -157,99 +157,97 @@ export class ProjectDataShapePluginManager {
     schema: { parse(value: unknown): T },
   ): Promise<T> {
     return await new Promise<T>((resolve, reject) => {
-        let worker: Worker;
-        try {
-          worker = new Worker(this.workerScriptUrl, {
-            env: {},
-            execArgv: [],
-            stdout: true,
-            stderr: true,
-            workerData: {
-              apiVersion: PROJECT_DATA_SHAPE_PLUGIN_API_VERSION,
-              entrypointUrl: pathToFileURL(plugin.entrypointPath).toString(),
-              method,
-              params,
-            },
-            resourceLimits: {
-              maxOldGenerationSizeMb: 128,
-              maxYoungGenerationSizeMb: 32,
-              stackSizeMb: 4,
-            },
-          });
-        } catch (error) {
-          reject(error);
-          return;
-        }
+      let worker: Worker;
+      try {
+        worker = new Worker(this.workerScriptUrl, {
+          env: {},
+          execArgv: [],
+          stdout: true,
+          stderr: true,
+          workerData: {
+            apiVersion: PROJECT_DATA_SHAPE_PLUGIN_API_VERSION,
+            entrypointUrl: pathToFileURL(plugin.entrypointPath).toString(),
+            method,
+            params,
+          },
+          resourceLimits: {
+            maxOldGenerationSizeMb: 128,
+            maxYoungGenerationSizeMb: 32,
+            stackSizeMb: 4,
+          },
+        });
+      } catch (error) {
+        reject(error);
+        return;
+      }
 
-        let settled = false;
-        let timeout: ReturnType<typeof setTimeout> | undefined;
-        let finalizationPromise: Promise<void> | undefined;
-        const finalize = (error?: Error, result?: unknown) => {
-          finalizationPromise ??= (async () => {
-            settled = true;
-            if (timeout) {
-              clearTimeout(timeout);
-            }
-            worker.removeAllListeners();
-            try {
-              await worker.terminate();
-            } catch {
-              // The worker may already have exited after posting its result.
-            } finally {
-              this.activeWorkers.delete(worker);
-            }
+      let settled = false;
+      let timeout: ReturnType<typeof setTimeout> | undefined;
+      let finalizationPromise: Promise<void> | undefined;
+      const finalize = (error?: Error, result?: unknown) => {
+        finalizationPromise ??= (async () => {
+          settled = true;
+          if (timeout) {
+            clearTimeout(timeout);
+          }
+          worker.removeAllListeners();
+          try {
+            await worker.terminate();
+          } catch {
+            // The worker may already have exited after posting its result.
+          } finally {
+            this.activeWorkers.delete(worker);
+          }
 
-            if (error) {
-              reject(error);
-              return;
-            }
-            try {
-              resolve(schema.parse(result));
-            } catch (parseError) {
-              reject(parseError);
-            }
-          })();
-          return finalizationPromise;
-        };
-
-        worker.once("error", (error) => void finalize(error));
-        worker.once("message", (message: WorkerReply) => {
-          if (message?.ok === true) {
-            void finalize(undefined, message.result);
+          if (error) {
+            reject(error);
             return;
           }
-          const detail =
-            typeof message?.error === "string" && message.error.trim()
-              ? message.error
-                  .trim()
-                  .slice(0, MAX_PLUGIN_ERROR_MESSAGE_CHARACTERS)
-              : "Unknown project data shape plugin error.";
-          void finalize(new Error(detail));
-        });
-        worker.once("exit", (code) => {
-          if (!settled) {
-            void finalize(
-              new Error(
-                `Project data shape plugin "${plugin.manifest.id}" exited before returning a result (code ${code}).`,
-              ),
-            );
+          try {
+            resolve(schema.parse(result));
+          } catch (parseError) {
+            reject(parseError);
           }
-        });
+        })();
+        return finalizationPromise;
+      };
 
-        this.activeWorkers.set(worker, {
-          pluginId: plugin.manifest.id,
-          cancel: async (error) => await finalize(error),
-        });
-        timeout = setTimeout(() => {
+      worker.once("error", (error) => void finalize(error));
+      worker.once("message", (message: WorkerReply) => {
+        if (message?.ok === true) {
+          void finalize(undefined, message.result);
+          return;
+        }
+        const detail =
+          typeof message?.error === "string" && message.error.trim()
+            ? message.error.trim().slice(0, MAX_PLUGIN_ERROR_MESSAGE_CHARACTERS)
+            : "Unknown project data shape plugin error.";
+        void finalize(new Error(detail));
+      });
+      worker.once("exit", (code) => {
+        if (!settled) {
           void finalize(
             new Error(
-              `Project data shape plugin "${plugin.manifest.id}" timed out while handling ${method}.`,
+              `Project data shape plugin "${plugin.manifest.id}" exited before returning a result (code ${code}).`,
             ),
           );
-        }, this.requestTimeoutMs);
-        worker.stdout?.resume();
-        worker.stderr?.resume();
+        }
       });
+
+      this.activeWorkers.set(worker, {
+        pluginId: plugin.manifest.id,
+        cancel: async (error) => await finalize(error),
+      });
+      timeout = setTimeout(() => {
+        void finalize(
+          new Error(
+            `Project data shape plugin "${plugin.manifest.id}" timed out while handling ${method}.`,
+          ),
+        );
+      }, this.requestTimeoutMs);
+      worker.stdout?.resume();
+      worker.stderr?.resume();
+    });
   }
 
   private async discoverPlugins() {

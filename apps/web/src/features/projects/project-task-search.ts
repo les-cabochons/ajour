@@ -29,9 +29,11 @@ function getSearchTerms(query: string) {
 
 function getProjectSearchText(project: LocalProject) {
   return normalizeSearchText(
-    [project.name, getLocalProjectDisplayName(project), project.code ?? ""].join(
-      " ",
-    ),
+    [
+      project.name,
+      getLocalProjectDisplayName(project),
+      project.code ?? "",
+    ].join(" "),
   );
 }
 
@@ -45,10 +47,7 @@ function matchesAllTerms(searchText: string, terms: string[]) {
   return terms.every((term) => searchText.includes(term));
 }
 
-export function findMatchingProjects(
-  projects: LocalProject[],
-  query: string,
-) {
+export function findMatchingProjects(projects: LocalProject[], query: string) {
   const terms = getSearchTerms(query);
   const activeProjects = projects.filter(
     (project) => project.status === "active",
@@ -115,10 +114,7 @@ export function findMatchingProjectTasks(
             taskSearchText.includes(term),
           );
 
-          if (
-            !hasTaskTerm ||
-            !matchesAllTerms(combinedSearchText, terms)
-          ) {
+          if (!hasTaskTerm || !matchesAllTerms(combinedSearchText, terms)) {
             return [];
           }
 
@@ -140,7 +136,9 @@ export function findMatchingProjectTasks(
     );
 
   return {
-    matches: rankedMatches.slice(0, Math.max(0, limit)).map(({ match }) => match),
+    matches: rankedMatches
+      .slice(0, Math.max(0, limit))
+      .map(({ match }) => match),
     total: rankedMatches.length,
   };
 }
@@ -154,7 +152,6 @@ export function findMatchingTasksInProject(
   return project.tasks.filter(
     (task) =>
       task.status === "active" &&
-      (terms.length === 0 ||
-        matchesAllTerms(getTaskSearchText(task), terms)),
+      (terms.length === 0 || matchesAllTerms(getTaskSearchText(task), terms)),
   );
 }

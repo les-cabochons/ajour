@@ -24,14 +24,22 @@ function displayLabel(segment: ActivitySegmentRecord): string {
     return domainLabel;
   }
   const firstPart = segment.normalized.title.split(/[|\-]/)[0] ?? "";
-  return firstPart.trim().replace(/\b\w/g, (char: string) => char.toUpperCase()) || domainLabel;
+  return (
+    firstPart.trim().replace(/\b\w/g, (char: string) => char.toUpperCase()) ||
+    domainLabel
+  );
 }
 
 function displaySubtitle(segment: ActivitySegmentRecord): string {
-  return segment.normalized.pathname === "/" ? segment.normalized.domain : `${segment.normalized.domain}${segment.normalized.pathname}`;
+  return segment.normalized.pathname === "/"
+    ? segment.normalized.domain
+    : `${segment.normalized.domain}${segment.normalized.pathname}`;
 }
 
-function createBlock(segment: ActivitySegmentRecord, options: AggregationOptions): ActivityBlockRecord {
+function createBlock(
+  segment: ActivitySegmentRecord,
+  options: AggregationOptions,
+): ActivityBlockRecord {
   const durationMs = segment.endedAt - segment.startedAt;
   return {
     userId: segment.userId,
@@ -97,7 +105,11 @@ export function aggregateSegmentsToBlocks(
   }));
 }
 
-export function mergeBlocks(blocks: ActivityBlockRecord[], leftIndex: number, rightIndex: number): ActivityBlockRecord[] {
+export function mergeBlocks(
+  blocks: ActivityBlockRecord[],
+  leftIndex: number,
+  rightIndex: number,
+): ActivityBlockRecord[] {
   const left = blocks[leftIndex];
   const right = blocks[rightIndex];
   if (!left || !right) {
@@ -117,10 +129,16 @@ export function mergeBlocks(blocks: ActivityBlockRecord[], leftIndex: number, ri
     locked: true,
   };
 
-  return blocks.filter((_, index) => index !== leftIndex && index !== rightIndex).concat(merged).sort((a, b) => a.startedAt - b.startedAt);
+  return blocks
+    .filter((_, index) => index !== leftIndex && index !== rightIndex)
+    .concat(merged)
+    .sort((a, b) => a.startedAt - b.startedAt);
 }
 
-export function splitBlock(block: ActivityBlockRecord, splitAt: number): [ActivityBlockRecord, ActivityBlockRecord] {
+export function splitBlock(
+  block: ActivityBlockRecord,
+  splitAt: number,
+): [ActivityBlockRecord, ActivityBlockRecord] {
   if (splitAt <= block.startedAt || splitAt >= block.endedAt) {
     throw new Error("splitAt must be inside the block range");
   }

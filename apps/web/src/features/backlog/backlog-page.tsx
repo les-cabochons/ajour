@@ -70,10 +70,7 @@ import {
   buildWorkItemTimerComment,
   parseWorkItemReference,
 } from "@/features/backlog/work-item-timer-comment";
-import {
-  normalizeHoursInput,
-  parseHoursInput,
-} from "@/domain/time/duration";
+import { normalizeHoursInput, parseHoursInput } from "@/domain/time/duration";
 import {
   useLocalProjects,
   useLocalState,
@@ -696,9 +693,11 @@ export function BacklogPage() {
 
     function handleDocumentMouseDown(event: MouseEvent) {
       if (
-        !isInlineEditorOutsideClick(event.target, activeInlineEditorRef.current, [
-          `[data-backlog-root-id="${expandedRootWorkItemId}"]`,
-        ])
+        !isInlineEditorOutsideClick(
+          event.target,
+          activeInlineEditorRef.current,
+          [`[data-backlog-root-id="${expandedRootWorkItemId}"]`],
+        )
       ) {
         return;
       }
@@ -969,8 +968,7 @@ export function BacklogPage() {
         originalEstimateHours: expandedChildEditor.originalEstimateHours,
         remainingEstimateHours: expandedChildEditor.remainingEstimateHours,
         completedEstimateHours: expandedChildEditor.completedEstimateHours,
-        keepWhenMissingFromSync:
-          expandedChildEditor.keepWhenMissingFromSync,
+        keepWhenMissingFromSync: expandedChildEditor.keepWhenMissingFromSync,
       }),
       {
         isSubtask: true,
@@ -1011,7 +1009,9 @@ export function BacklogPage() {
   }
 
   function openEditPanel(workItem: LocalWorkItem) {
-    const childItems = isSubtaskWorkItem(workItem) ? [] : getChildItems(workItem);
+    const childItems = isSubtaskWorkItem(workItem)
+      ? []
+      : getChildItems(workItem);
     const childEstimateTotals =
       childItems.length > 0 ? sumChildEstimateTotals(childItems) : null;
     closeExpandedChildItem();
@@ -1380,8 +1380,7 @@ export function BacklogPage() {
       pointerType,
       originX: clientX,
       originY: clientY,
-      isDragging: () =>
-        backlogDragStateRef.current?.pointerId === pointerId,
+      isDragging: () => backlogDragStateRef.current?.pointerId === pointerId,
       onStart: (pointer) => {
         startDrag(pointer.clientX, pointer.clientY);
       },
@@ -1822,7 +1821,7 @@ export function BacklogPage() {
             type="button"
             size="sm"
             variant="outline"
-            className="gap-1.5 backlog-subtasks-add-btn"
+            className="backlog-subtasks-add-btn gap-1.5"
             onClick={(event) => {
               event.stopPropagation();
               if (isDesktopLayout) {
@@ -1978,7 +1977,10 @@ export function BacklogPage() {
     const isArchivePending = pendingArchiveWorkItemId === workItem._id;
     const isDeletePending = pendingDeleteWorkItemId === workItem._id;
     const isArchived = workItem.status === "archived";
-    const resolvedWorkItemIcon = resolveWorkItemIcon(workItem, workItemIconData);
+    const resolvedWorkItemIcon = resolveWorkItemIcon(
+      workItem,
+      workItemIconData,
+    );
     const showWorkItemIcon = true;
     const showSubtasksPill = !isLogicalChild && hasSubtasks;
     const canStartTimer = !isArchived;
@@ -2064,12 +2066,8 @@ export function BacklogPage() {
           : null;
     const sourceMetaParts = [
       isLogicalChild ? "Task" : undefined,
-      workItem.source !== "manual"
-        ? workItem.sourceConnectionLabel
-        : undefined,
-      workItem.source !== "manual"
-        ? workItem.sourceProjectName
-        : undefined,
+      workItem.source !== "manual" ? workItem.sourceConnectionLabel : undefined,
+      workItem.source !== "manual" ? workItem.sourceProjectName : undefined,
       workItem.sourceWorkItemType,
     ].filter(Boolean);
     const timeEntryMetaParts = [
@@ -2081,9 +2079,7 @@ export function BacklogPage() {
         ? parseWorkItemReference(workItem.sourceId)
         : undefined;
     const sourceUrl =
-      workItem.source !== "manual"
-        ? workItem.sourceId
-        : undefined;
+      workItem.source !== "manual" ? workItem.sourceId : undefined;
     const sourceMetaLabel = [
       sourceReference ? `#${sourceReference}` : undefined,
       ...sourceMetaParts,
@@ -3399,7 +3395,8 @@ export function BacklogPage() {
                         type="button"
                         className={cn(
                           "entries-header-add entries-header-bubble",
-                          (isCreatingItem || isCreateTaskModalOpen) && "is-open",
+                          (isCreatingItem || isCreateTaskModalOpen) &&
+                            "is-open",
                         )}
                         aria-label={
                           isCreatingItem || isCreateTaskModalOpen
@@ -3408,7 +3405,9 @@ export function BacklogPage() {
                         }
                         onClick={handleCreateToggle}
                       >
-                        <span className="entries-header-add-label">New task</span>
+                        <span className="entries-header-add-label">
+                          New task
+                        </span>
                         <Plus className="h-3.5 w-3.5" />
                       </button>
                     </div>
@@ -3719,11 +3718,11 @@ export function BacklogPage() {
             aria-labelledby="backlog-note-modal-title"
           >
             <div className="time-entry-modal-header backlog-note-modal-header">
-                <div className="backlog-note-modal-heading">
-                  <div className="backlog-note-modal-title-row">
-                    {expandedNoteModalIcon ? (
-                      <WorkItemIcon icon={expandedNoteModalIcon} />
-                    ) : null}
+              <div className="backlog-note-modal-heading">
+                <div className="backlog-note-modal-title-row">
+                  {expandedNoteModalIcon ? (
+                    <WorkItemIcon icon={expandedNoteModalIcon} />
+                  ) : null}
                   <span
                     id="backlog-note-modal-title"
                     className="backlog-note-modal-task-title"

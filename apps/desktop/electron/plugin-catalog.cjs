@@ -1,10 +1,5 @@
 const { randomUUID } = require("node:crypto");
-const {
-  mkdir,
-  readFile,
-  rename,
-  writeFile,
-} = require("node:fs/promises");
+const { mkdir, readFile, rename, writeFile } = require("node:fs/promises");
 const path = require("node:path");
 const YAML = require("yaml");
 const {
@@ -94,7 +89,12 @@ function assertSlugList(value, label) {
 }
 
 function normalizeNamedLink(value, label) {
-  const record = assertExactKeys(value, ["name", "url"], ["name", "url"], label);
+  const record = assertExactKeys(
+    value,
+    ["name", "url"],
+    ["name", "url"],
+    label,
+  );
   return {
     name: assertString(record.name, `${label}.name`, { maximum: 100 }),
     url: assertHttpsUrl(record.url, `${label}.url`),
@@ -119,17 +119,23 @@ function normalizeCatalogEntry(value, expectedId) {
     "images",
     "tags",
   ];
-  const required = allowed.filter((key) => key !== "install" && key !== "images");
+  const required = allowed.filter(
+    (key) => key !== "install" && key !== "images",
+  );
   const raw = assertExactKeys(value, allowed, required, `plugin ${expectedId}`);
   if (raw.schemaVersion !== 1) {
-    throw new Error(`Plugin "${expectedId}" uses an unsupported catalog schema.`);
+    throw new Error(
+      `Plugin "${expectedId}" uses an unsupported catalog schema.`,
+    );
   }
   const id = assertString(raw.id, "plugin.id", {
     maximum: 64,
     pattern: /^[a-z0-9][a-z0-9_-]{1,63}$/u,
   });
   if (id !== expectedId) {
-    throw new Error(`Plugin id "${id}" does not match catalog path "${expectedId}".`);
+    throw new Error(
+      `Plugin id "${id}" does not match catalog path "${expectedId}".`,
+    );
   }
   if (raw.type !== "connector" && raw.type !== "plugin") {
     throw new Error(`Plugin "${id}" has an unsupported type.`);
@@ -153,10 +159,14 @@ function normalizeCatalogEntry(value, expectedId) {
   if (repository.provider !== "github") {
     throw new Error(`Plugin "${id}" must use a GitHub repository.`);
   }
-  const repositorySlug = assertString(repository.slug, "plugin.repository.slug", {
-    maximum: 200,
-    pattern: REPOSITORY_SLUG,
-  });
+  const repositorySlug = assertString(
+    repository.slug,
+    "plugin.repository.slug",
+    {
+      maximum: 200,
+      pattern: REPOSITORY_SLUG,
+    },
+  );
   const repositoryUrl = assertHttpsUrl(repository.url, "plugin.repository.url");
   if (repositoryUrl !== `https://github.com/${repositorySlug}`) {
     throw new Error(`Plugin "${id}" repository URL does not match its slug.`);
@@ -199,7 +209,9 @@ function normalizeCatalogEntry(value, expectedId) {
     }
     const compiledPattern = new RegExp(assetPattern, "u");
     if (compiledPattern.test("")) {
-      throw new Error(`Plugin "${id}" asset pattern must not match an empty name.`);
+      throw new Error(
+        `Plugin "${id}" asset pattern must not match an empty name.`,
+      );
     }
     install = {
       method: "github-release",
@@ -240,10 +252,14 @@ function normalizeCatalogEntry(value, expectedId) {
       id,
       type: raw.type,
       title: assertString(raw.title, "plugin.title", { maximum: 80 }),
-      description: assertString(raw.description, "plugin.description", { maximum: 500 }),
+      description: assertString(raw.description, "plugin.description", {
+        maximum: 500,
+      }),
       author: normalizeNamedLink(raw.author, "plugin.author"),
       license: {
-        name: assertString(license.name, "plugin.license.name", { maximum: 80 }),
+        name: assertString(license.name, "plugin.license.name", {
+          maximum: 80,
+        }),
         spdxId: assertString(license.spdxId, "plugin.license.spdxId", {
           maximum: 80,
           pattern: /^[A-Za-z0-9-.+]+$/u,
@@ -267,8 +283,17 @@ function normalizeCatalogEntry(value, expectedId) {
 }
 
 function parseCatalog(value) {
-  const raw = assertExactKeys(value, ["schemaVersion", "entries"], ["schemaVersion", "entries"], "catalog");
-  if (raw.schemaVersion !== 1 || !Array.isArray(raw.entries) || raw.entries.length < 1) {
+  const raw = assertExactKeys(
+    value,
+    ["schemaVersion", "entries"],
+    ["schemaVersion", "entries"],
+    "catalog",
+  );
+  if (
+    raw.schemaVersion !== 1 ||
+    !Array.isArray(raw.entries) ||
+    raw.entries.length < 1
+  ) {
     throw new Error("The plugin catalog has an unsupported schema.");
   }
   if (raw.entries.length > 256) {
@@ -276,7 +301,9 @@ function parseCatalog(value) {
   }
   const seen = new Set();
   return raw.entries.map((entry, index) => {
-    const text = assertString(entry, `catalog.entries[${index}]`, { maximum: 120 });
+    const text = assertString(entry, `catalog.entries[${index}]`, {
+      maximum: 120,
+    });
     const match = text.match(CATALOG_ENTRY_PATH);
     if (!match || seen.has(text)) {
       throw new Error(`Catalog entry "${text}" is invalid or duplicated.`);
@@ -321,7 +348,8 @@ async function readBoundedResponse(response, maximumBytes) {
 function conditionalHeaders(resource) {
   const headers = {};
   if (resource?.etag) headers["If-None-Match"] = resource.etag;
-  if (resource?.lastModified) headers["If-Modified-Since"] = resource.lastModified;
+  if (resource?.lastModified)
+    headers["If-Modified-Since"] = resource.lastModified;
   return headers;
 }
 
@@ -345,7 +373,8 @@ async function atomicWrite(file, contents) {
 async function loadCache(cacheFile) {
   try {
     const parsed = JSON.parse(await readFile(cacheFile, "utf8"));
-    if (!isRecord(parsed) || !isRecord(parsed.resources)) return { resources: {} };
+    if (!isRecord(parsed) || !isRecord(parsed.resources))
+      return { resources: {} };
     return parsed;
   } catch {
     return { resources: {} };
@@ -378,7 +407,9 @@ function createPluginCatalogService(options) {
       if (!response.ok) {
         throw new Error(`Request returned HTTP ${response.status}.`);
       }
-      const body = (await readBoundedResponse(response, MAX_CATALOG_BYTES)).toString("utf8");
+      const body = (
+        await readBoundedResponse(response, MAX_CATALOG_BYTES)
+      ).toString("utf8");
       cache.resources[url] = {
         body,
         etag: response.headers.get("etag") ?? undefined,
@@ -387,7 +418,9 @@ function createPluginCatalogService(options) {
       return body;
     } catch (error) {
       if (typeof previous?.body === "string") {
-        warnings.push(`Using cached catalog metadata for ${url}: ${error.message}`);
+        warnings.push(
+          `Using cached catalog metadata for ${url}: ${error.message}`,
+        );
         return previous.body;
       }
       throw error;
@@ -411,9 +444,13 @@ function createPluginCatalogService(options) {
         if (!response.ok) {
           throw new Error(`Request returned HTTP ${response.status}.`);
         }
-        const responseType = response.headers.get("content-type")?.split(";", 1)[0];
+        const responseType = response.headers
+          .get("content-type")
+          ?.split(";", 1)[0];
         if (responseType && responseType !== contentType) {
-          throw new Error(`Image response used unexpected type ${responseType}.`);
+          throw new Error(
+            `Image response used unexpected type ${responseType}.`,
+          );
         }
         bytes = await readBoundedResponse(response, MAX_IMAGE_BYTES);
         await atomicWrite(file, bytes);
@@ -428,7 +465,9 @@ function createPluginCatalogService(options) {
       if (previous?.fileName === fileName) {
         try {
           bytes = await readFile(file);
-          warnings.push(`Using cached artwork for ${pluginId}: ${error.message}`);
+          warnings.push(
+            `Using cached artwork for ${pluginId}: ${error.message}`,
+          );
         } catch {
           throw error;
         }
@@ -447,17 +486,32 @@ function createPluginCatalogService(options) {
     const cache = await loadCache(cacheFile);
     const warnings = [];
     const catalogText = await fetchText(CATALOG_URL, cache, warnings);
-    const catalogEntries = parseCatalog(YAML.parse(catalogText, { schema: "core", strict: true, uniqueKeys: true }));
+    const catalogEntries = parseCatalog(
+      YAML.parse(catalogText, {
+        schema: "core",
+        strict: true,
+        uniqueKeys: true,
+      }),
+    );
     const entries = [];
     for (const catalogEntry of catalogEntries) {
-      const definitionUrl = new URL(catalogEntry.path, CATALOG_BASE_URL).toString();
+      const definitionUrl = new URL(
+        catalogEntry.path,
+        CATALOG_BASE_URL,
+      ).toString();
       const definitionText = await fetchText(definitionUrl, cache, warnings);
       const normalized = normalizeCatalogEntry(
-        YAML.parse(definitionText, { schema: "core", strict: true, uniqueKeys: true }),
+        YAML.parse(definitionText, {
+          schema: "core",
+          strict: true,
+          uniqueKeys: true,
+        }),
         catalogEntry.id,
       );
       const images = {};
-      for (const [role, imagePath] of Object.entries(normalized.imagePaths ?? {})) {
+      for (const [role, imagePath] of Object.entries(
+        normalized.imagePaths ?? {},
+      )) {
         const imageUrl = new URL(
           `${path.posix.dirname(catalogEntry.path)}/${imagePath}`,
           CATALOG_BASE_URL,
@@ -472,7 +526,9 @@ function createPluginCatalogService(options) {
             warnings,
           );
         } catch (error) {
-          warnings.push(`Artwork unavailable for ${normalized.entry.id}: ${error.message}`);
+          warnings.push(
+            `Artwork unavailable for ${normalized.entry.id}: ${error.message}`,
+          );
         }
       }
       entries.push({
@@ -489,7 +545,9 @@ function createPluginCatalogService(options) {
       entries,
       checkedAt,
       source: warnings.length > 0 ? "cache" : "network",
-      ...(warnings.length > 0 ? { warning: warnings.join(" ").slice(0, 1_000) } : {}),
+      ...(warnings.length > 0
+        ? { warning: warnings.join(" ").slice(0, 1_000) }
+        : {}),
     };
     return currentCatalog;
   }
@@ -502,10 +560,11 @@ function createPluginCatalogService(options) {
         ...currentCatalog,
         checkedAt: now().toISOString(),
         source: "cache",
-        warning: `The Ajour plugin index could not be refreshed. ${error.message}`.slice(
-          0,
-          1_000,
-        ),
+        warning:
+          `The Ajour plugin index could not be refreshed. ${error.message}`.slice(
+            0,
+            1_000,
+          ),
       };
       return currentCatalog;
     }
@@ -519,19 +578,29 @@ function createPluginCatalogService(options) {
       },
     });
     if (!response.ok) {
-      throw new Error(`GitHub release lookup returned HTTP ${response.status}.`);
+      throw new Error(
+        `GitHub release lookup returned HTTP ${response.status}.`,
+      );
     }
-    return JSON.parse((await readBoundedResponse(response, MAX_RELEASE_RESPONSE_BYTES)).toString("utf8"));
+    return JSON.parse(
+      (
+        await readBoundedResponse(response, MAX_RELEASE_RESPONSE_BYTES)
+      ).toString("utf8"),
+    );
   }
 
   async function downloadPluginArchive(pluginId) {
     const catalog = currentCatalog ?? (await refresh());
-    const entry = catalog.entries.find((candidate) => candidate.id === pluginId);
+    const entry = catalog.entries.find(
+      (candidate) => candidate.id === pluginId,
+    );
     if (!entry || entry.status !== "available" || !entry.install) {
       throw new Error(`Plugin "${pluginId}" is not available for download.`);
     }
     if (entry.type !== "connector") {
-      throw new Error("This Ajour version cannot install packaged data-shape plugins yet.");
+      throw new Error(
+        "This Ajour version cannot install packaged data-shape plugins yet.",
+      );
     }
     const releasesUrl = `https://api.github.com/repos/${entry.repository.slug}/releases?per_page=30`;
     const releases = await fetchJson(releasesUrl);
@@ -550,10 +619,15 @@ function createPluginCatalogService(options) {
         continue;
       }
       const matchingAssets = release.assets.filter(
-        (asset) => isRecord(asset) && typeof asset.name === "string" && pattern.test(asset.name),
+        (asset) =>
+          isRecord(asset) &&
+          typeof asset.name === "string" &&
+          pattern.test(asset.name),
       );
       if (matchingAssets.length > 1) {
-        throw new Error(`Release ${release.tag_name ?? "unknown"} has multiple matching plugin assets.`);
+        throw new Error(
+          `Release ${release.tag_name ?? "unknown"} has multiple matching plugin assets.`,
+        );
       }
       if (matchingAssets.length === 1) {
         selectedAsset = matchingAssets[0];
@@ -561,10 +635,19 @@ function createPluginCatalogService(options) {
       }
     }
     if (!selectedAsset) {
-      throw new Error(`No compatible release asset is available for ${entry.title}.`);
+      throw new Error(
+        `No compatible release asset is available for ${entry.title}.`,
+      );
     }
-    const archiveFilename = assertString(selectedAsset.name, "release asset name", { maximum: 240 });
-    const downloadUrl = assertHttpsUrl(selectedAsset.browser_download_url, "release download URL");
+    const archiveFilename = assertString(
+      selectedAsset.name,
+      "release asset name",
+      { maximum: 240 },
+    );
+    const downloadUrl = assertHttpsUrl(
+      selectedAsset.browser_download_url,
+      "release download URL",
+    );
     const expectedPrefix = `https://github.com/${entry.repository.slug}/releases/download/`;
     if (!downloadUrl.startsWith(expectedPrefix)) {
       throw new Error("GitHub returned an unexpected plugin download URL.");
@@ -575,7 +658,10 @@ function createPluginCatalogService(options) {
     if (!response.ok) {
       throw new Error(`Plugin download returned HTTP ${response.status}.`);
     }
-    const archiveBytes = await readBoundedResponse(response, MAX_PLUGIN_ARCHIVE_BYTES);
+    const archiveBytes = await readBoundedResponse(
+      response,
+      MAX_PLUGIN_ARCHIVE_BYTES,
+    );
     if (archiveBytes.byteLength < 1) {
       throw new Error("The downloaded plugin archive is empty.");
     }

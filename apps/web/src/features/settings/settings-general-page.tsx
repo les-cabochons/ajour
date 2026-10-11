@@ -102,7 +102,9 @@ function CapacityInput({
 
   return (
     <Field>
-      <FieldLabel htmlFor={`capacity-${label.toLowerCase()}`}>{label}</FieldLabel>
+      <FieldLabel htmlFor={`capacity-${label.toLowerCase()}`}>
+        {label}
+      </FieldLabel>
       <Input
         id={`capacity-${label.toLowerCase()}`}
         className="font-mono"
@@ -211,14 +213,17 @@ export function SettingsGeneralPage() {
       <section className="settings-section">
         <h2 className="settings-section-title">Appearance</h2>
         <p className="settings-section-desc">
-          Customize how the app looks. Choose between light and dark modes, or let it follow your system settings.
+          Customize how the app looks. Choose between light and dark modes, or
+          let it follow your system settings.
         </p>
 
         <AppPanel>
           <div className="space-y-4">
             <div>
-              <label className="text-sm font-medium text-foreground/90">Theme</label>
-              <p className="text-sm text-foreground/60 mt-0.5">
+              <label className="text-sm font-medium text-foreground/90">
+                Theme
+              </label>
+              <p className="mt-0.5 text-sm text-foreground/60">
                 {preferences.themeMode === "system"
                   ? `Currently using ${resolvedTheme} mode based on system preference`
                   : `Using ${preferences.themeMode} mode`}
@@ -242,8 +247,12 @@ export function SettingsGeneralPage() {
                     <div className="theme-option-icon-wrapper">
                       <Icon className="theme-option-icon" />
                     </div>
-                    <div className="theme-option-label">{getThemeModeLabel(option.value)}</div>
-                    <div className="theme-option-description">{option.description}</div>
+                    <div className="theme-option-label">
+                      {getThemeModeLabel(option.value)}
+                    </div>
+                    <div className="theme-option-description">
+                      {option.description}
+                    </div>
                   </button>
                 );
               })}
@@ -255,7 +264,8 @@ export function SettingsGeneralPage() {
       <section className="settings-section">
         <h2 className="settings-section-title">Time capacity</h2>
         <p className="settings-section-desc">
-          Set the target for each weekday and choose which capacity warnings HarDay shows.
+          Set the target for each weekday and choose which capacity warnings
+          HarDay shows.
         </p>
 
         <AppPanel>
@@ -279,9 +289,14 @@ export function SettingsGeneralPage() {
             </div>
 
             <div className="grid gap-3 border-t border-border/70 pt-5 md:grid-cols-2">
-              <Field orientation="horizontal" className="rounded-2xl border border-border/70 p-4">
+              <Field
+                orientation="horizontal"
+                className="rounded-2xl border border-border/70 p-4"
+              >
                 <div className="flex-1">
-                  <FieldLabel htmlFor="warn-over-capacity">Over-capacity warning</FieldLabel>
+                  <FieldLabel htmlFor="warn-over-capacity">
+                    Over-capacity warning
+                  </FieldLabel>
                   <p className="mt-1 text-sm text-muted-foreground">
                     Show a compact warning when logged time exceeds a target.
                   </p>
@@ -290,15 +305,23 @@ export function SettingsGeneralPage() {
                   id="warn-over-capacity"
                   checked={preferences.warnWhenOverCapacity}
                   onCheckedChange={(checked) =>
-                    localStore.setUserPreferences({ warnWhenOverCapacity: checked })
+                    localStore.setUserPreferences({
+                      warnWhenOverCapacity: checked,
+                    })
                   }
                 />
               </Field>
-              <Field orientation="horizontal" className="rounded-2xl border border-border/70 p-4">
+              <Field
+                orientation="horizontal"
+                className="rounded-2xl border border-border/70 p-4"
+              >
                 <div className="flex-1">
-                  <FieldLabel htmlFor="warn-under-capacity">Under-target submit warning</FieldLabel>
+                  <FieldLabel htmlFor="warn-under-capacity">
+                    Under-target submit warning
+                  </FieldLabel>
                   <p className="mt-1 text-sm text-muted-foreground">
-                    Ask for confirmation when submitted time is below the week target.
+                    Ask for confirmation when submitted time is below the week
+                    target.
                   </p>
                 </div>
                 <Switch
@@ -408,15 +431,15 @@ export function SettingsGeneralPage() {
                         {!updateCheck.result.latestTag
                           ? `No ${preferences.updateTrack} release has been published yet`
                           : updateCheck.result.updateAvailable
-                          ? `${updateCheck.result.latestTag} is available`
-                          : `HarDay ${updateCheck.result.currentVersion} is up to date`}
+                            ? `${updateCheck.result.latestTag} is available`
+                            : `HarDay ${updateCheck.result.currentVersion} is up to date`}
                       </p>
                       <p className="text-sm leading-5 text-muted-foreground">
                         {!updateCheck.result.latestTag
                           ? `Checked the HarDay GitHub repository ${formatCheckedAt(updateCheck.result.checkedAt)}`
                           : updateCheck.result.updateAvailable
-                          ? `Installed ${updateCheck.result.currentVersion} · checked ${formatCheckedAt(updateCheck.result.checkedAt)}`
-                          : `Latest ${preferences.updateTrack} release ${updateCheck.result.latestTag} · checked ${formatCheckedAt(updateCheck.result.checkedAt)}`}
+                            ? `Installed ${updateCheck.result.currentVersion} · checked ${formatCheckedAt(updateCheck.result.checkedAt)}`
+                            : `Latest ${preferences.updateTrack} release ${updateCheck.result.latestTag} · checked ${formatCheckedAt(updateCheck.result.checkedAt)}`}
                       </p>
                     </>
                   ) : updateCheck.status === "error" ? (
@@ -434,12 +457,18 @@ export function SettingsGeneralPage() {
                         Ready to check
                       </p>
                       <p className="text-sm leading-5 text-muted-foreground">
-                        Current version {window.timetrackerDesktop?.runtime?.version ?? "unknown"}.
+                        Current version{" "}
+                        {window.timetrackerDesktop?.runtime?.version ??
+                          "unknown"}
+                        .
                       </p>
                     </>
                   )}
                   {releaseOpenError ? (
-                    <p className="mt-1 text-sm leading-5 text-destructive" role="alert">
+                    <p
+                      className="mt-1 text-sm leading-5 text-destructive"
+                      role="alert"
+                    >
                       Release page could not be opened: {releaseOpenError}
                     </p>
                   ) : null}
@@ -465,11 +494,15 @@ export function SettingsGeneralPage() {
                   type="button"
                   variant="outline"
                   size="sm"
-                  disabled={!desktopUpdates || updateCheck.status === "checking"}
+                  disabled={
+                    !desktopUpdates || updateCheck.status === "checking"
+                  }
                   onClick={() => void runUpdateCheck(preferences.updateTrack)}
                 >
                   <Refresh data-icon="inline-start" />
-                  {updateCheck.status === "checking" ? "Checking" : "Check again"}
+                  {updateCheck.status === "checking"
+                    ? "Checking"
+                    : "Check again"}
                 </Button>
               </div>
             </div>

@@ -33,6 +33,7 @@ just install
 just start
 just test
 just typecheck
+just format
 just build
 just clean
 ```

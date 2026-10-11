@@ -103,7 +103,12 @@ interface StageImportItemsResult {
 const MISSING_PLUGIN_ICON_SVG =
   "<svg viewBox='0 0 16 16' xmlns='http://www.w3.org/2000/svg'><rect width='16' height='16' rx='3' fill='currentColor' opacity='0.18'/><path d='M5 5h6v6H5z' fill='currentColor'/></svg>";
 
-function importKey(item: Pick<ConnectorImportCandidateInput, "source" | "connectionId" | "sourceId">) {
+function importKey(
+  item: Pick<
+    ConnectorImportCandidateInput,
+    "source" | "connectionId" | "sourceId"
+  >,
+) {
   return `${item.source}:${item.connectionId}:${item.sourceId}`;
 }
 
@@ -127,7 +132,10 @@ function compareConnections(left: StoredConnection, right: StoredConnection) {
   );
 }
 
-function compareImports(left: ConnectorImportCandidate, right: ConnectorImportCandidate) {
+function compareImports(
+  left: ConnectorImportCandidate,
+  right: ConnectorImportCandidate,
+) {
   if (left.connectionId !== right.connectionId) {
     return left.connectionId.localeCompare(right.connectionId);
   }
@@ -137,13 +145,20 @@ function compareImports(left: ConnectorImportCandidate, right: ConnectorImportCa
   }
 
   if (left.parentSourceId !== right.parentSourceId) {
-    return (left.parentSourceId ?? "").localeCompare(right.parentSourceId ?? "");
+    return (left.parentSourceId ?? "").localeCompare(
+      right.parentSourceId ?? "",
+    );
   }
 
-  return right.pushedAt - left.pushedAt || left.title.localeCompare(right.title);
+  return (
+    right.pushedAt - left.pushedAt || left.title.localeCompare(right.title)
+  );
 }
 
-function compareBacklogStatuses(left: ConnectorBacklogStatus, right: ConnectorBacklogStatus) {
+function compareBacklogStatuses(
+  left: ConnectorBacklogStatus,
+  right: ConnectorBacklogStatus,
+) {
   if (left.tenantLabel !== right.tenantLabel) {
     return left.tenantLabel.localeCompare(right.tenantLabel);
   }
@@ -155,21 +170,34 @@ function compareBacklogStatuses(left: ConnectorBacklogStatus, right: ConnectorBa
   return left.label.localeCompare(right.label);
 }
 
-function comparePluginManifests(left: ConnectorPluginManifest, right: ConnectorPluginManifest) {
-  return left.displayName.localeCompare(right.displayName) || left.id.localeCompare(right.id);
+function comparePluginManifests(
+  left: ConnectorPluginManifest,
+  right: ConnectorPluginManifest,
+) {
+  return (
+    left.displayName.localeCompare(right.displayName) ||
+    left.id.localeCompare(right.id)
+  );
 }
 
 function normalizeOrganizationUrl(value: string) {
   return value.replace(/\/+$/, "");
 }
 
-function compactFieldValues(values: Record<string, string | number | boolean | undefined>): ConnectorFieldValues {
+function compactFieldValues(
+  values: Record<string, string | number | boolean | undefined>,
+): ConnectorFieldValues {
   return Object.fromEntries(
-    Object.entries(values).filter((entry): entry is [string, string | number | boolean] => entry[1] !== undefined),
+    Object.entries(values).filter(
+      (entry): entry is [string, string | number | boolean] =>
+        entry[1] !== undefined,
+    ),
   );
 }
 
-function createMissingPluginManifest(pluginId: string): ConnectorPluginManifest {
+function createMissingPluginManifest(
+  pluginId: string,
+): ConnectorPluginManifest {
   return {
     id: pluginId,
     version: "0.0.0",
@@ -197,7 +225,10 @@ function createMissingPluginManifest(pluginId: string): ConnectorPluginManifest 
   };
 }
 
-function toEditableValues(connection: StoredConnection, plugin: ConnectorPluginManifest): ConnectorFieldValues {
+function toEditableValues(
+  connection: StoredConnection,
+  plugin: ConnectorPluginManifest,
+): ConnectorFieldValues {
   const editableValues: ConnectorFieldValues = {
     label: connection.label,
     tenantLabel: connection.tenantLabel,
@@ -224,7 +255,9 @@ function buildConnectionSummary(
   connection: StoredConnection,
   plugin: ConnectorPluginManifest,
 ): ConnectorConnectionSummary {
-  const connectionItems = state.stagedImports.filter((item) => item.connectionId === connection.id);
+  const connectionItems = state.stagedImports.filter(
+    (item) => item.connectionId === connection.id,
+  );
 
   return {
     id: connection.id,
@@ -254,13 +287,17 @@ function migrateLegacyState(raw: AppApiStateV1): AppApiState {
         autoSync: false,
         autoSyncIntervalMinutes: 15,
         config: compactFieldValues({
-          organizationUrl: normalizeOrganizationUrl(raw.connectors.azureDevOps.organizationUrl),
+          organizationUrl: normalizeOrganizationUrl(
+            raw.connectors.azureDevOps.organizationUrl,
+          ),
           project: raw.connectors.azureDevOps.project,
           personalAccessToken: raw.connectors.azureDevOps.personalAccessToken,
           queryScope: raw.connectors.azureDevOps.queryScope,
         }),
         configSummary: compactFieldValues({
-          organizationUrl: normalizeOrganizationUrl(raw.connectors.azureDevOps.organizationUrl),
+          organizationUrl: normalizeOrganizationUrl(
+            raw.connectors.azureDevOps.organizationUrl,
+          ),
           queryScope: raw.connectors.azureDevOps.queryScope,
         }),
         connectedAt: raw.connectors.azureDevOps.connectedAt ?? Date.now(),
@@ -270,27 +307,31 @@ function migrateLegacyState(raw: AppApiStateV1): AppApiState {
     : undefined;
 
   const stagedImports = (raw.backlogInbox ?? [])
-    .filter((item): item is NonNullable<AppApiStateV1["backlogInbox"]>[number] =>
-      Boolean(item?.source && item.sourceId && item.title),
+    .filter(
+      (item): item is NonNullable<AppApiStateV1["backlogInbox"]>[number] =>
+        Boolean(item?.source && item.sourceId && item.title),
     )
-    .map((item) => ({
-      id: item.id ?? `connector_${randomUUID()}`,
-      source: "azure_devops",
-      connectionId: legacyConnection?.id ?? "legacy_azure_devops",
-      connectionLabel: legacyConnection?.label ?? "Legacy Azure DevOps",
-      tenantLabel: legacyConnection?.tenantLabel ?? "Legacy tenant",
-      sourceId: item.sourceId!,
-      externalId: item.sourceId!.split("/").pop() ?? item.sourceId!,
-      sourceUrl: item.sourceUrl,
-      title: item.title!,
-      note: item.note,
-      workItemType: "Task",
-      depth: 0,
-      selectable: true,
-      selected: true,
-      childCount: 0,
-      pushedAt: item.pushedAt ?? Date.now(),
-    } satisfies ConnectorImportCandidate));
+    .map(
+      (item) =>
+        ({
+          id: item.id ?? `connector_${randomUUID()}`,
+          source: "azure_devops",
+          connectionId: legacyConnection?.id ?? "legacy_azure_devops",
+          connectionLabel: legacyConnection?.label ?? "Legacy Azure DevOps",
+          tenantLabel: legacyConnection?.tenantLabel ?? "Legacy tenant",
+          sourceId: item.sourceId!,
+          externalId: item.sourceId!.split("/").pop() ?? item.sourceId!,
+          sourceUrl: item.sourceUrl,
+          title: item.title!,
+          note: item.note,
+          workItemType: "Task",
+          depth: 0,
+          selectable: true,
+          selected: true,
+          childCount: 0,
+          pushedAt: item.pushedAt ?? Date.now(),
+        }) satisfies ConnectorImportCandidate,
+    );
 
   return {
     ...defaults,
@@ -299,7 +340,9 @@ function migrateLegacyState(raw: AppApiStateV1): AppApiState {
   };
 }
 
-function normalizeState(raw: Partial<AppApiState | AppApiStateV1 | AppApiStateV2> | undefined): AppApiState {
+function normalizeState(
+  raw: Partial<AppApiState | AppApiStateV1 | AppApiStateV2> | undefined,
+): AppApiState {
   if (!raw) {
     return createDefaultState();
   }
@@ -310,24 +353,28 @@ function normalizeState(raw: Partial<AppApiState | AppApiStateV1 | AppApiStateV2
     return {
       version: 7,
       connections: raw.connections
-        .filter(
-          (connection): connection is StoredConnection =>
-            Boolean(
-              connection?.id &&
-                connection.pluginId &&
-                connection.label &&
-                connection.tenantLabel &&
-                connection.config &&
-                typeof connection.autoSync === "boolean" &&
-                connection.autoSyncIntervalMinutes &&
-                connection.connectedAt,
-            ),
+        .filter((connection): connection is StoredConnection =>
+          Boolean(
+            connection?.id &&
+            connection.pluginId &&
+            connection.label &&
+            connection.tenantLabel &&
+            connection.config &&
+            typeof connection.autoSync === "boolean" &&
+            connection.autoSyncIntervalMinutes &&
+            connection.connectedAt,
+          ),
         )
         .sort(compareConnections),
       stagedImports: (raw.stagedImports ?? defaults.stagedImports)
-        .filter(
-          (item): item is ConnectorImportCandidate =>
-            Boolean(item?.id && item.source && item.connectionId && item.sourceId && item.title),
+        .filter((item): item is ConnectorImportCandidate =>
+          Boolean(
+            item?.id &&
+            item.source &&
+            item.connectionId &&
+            item.sourceId &&
+            item.title,
+          ),
         )
         .map((item) => ({
           ...item,
@@ -335,29 +382,36 @@ function normalizeState(raw: Partial<AppApiState | AppApiStateV1 | AppApiStateV2
         }))
         .sort(compareImports),
       dismissedImportKeys: Array.from(
-        new Set((raw.dismissedImportKeys as string[] | undefined) ?? defaults.dismissedImportKeys),
+        new Set(
+          (raw.dismissedImportKeys as string[] | undefined) ??
+            defaults.dismissedImportKeys,
+        ),
       ),
-      connectorBacklogStatuses: ((raw as AppApiState).connectorBacklogStatuses ?? defaults.connectorBacklogStatuses)
-        .filter(
-          (status): status is ConnectorBacklogStatus =>
-            Boolean(
-              status?.source &&
-                status.connectionId &&
-                status.connectionLabel &&
-                status.tenantLabel &&
-                status.key &&
-                status.label &&
-                status.lastSeenAt,
-            ),
+      connectorBacklogStatuses: (
+        (raw as AppApiState).connectorBacklogStatuses ??
+        defaults.connectorBacklogStatuses
+      )
+        .filter((status): status is ConnectorBacklogStatus =>
+          Boolean(
+            status?.source &&
+            status.connectionId &&
+            status.connectionLabel &&
+            status.tenantLabel &&
+            status.key &&
+            status.label &&
+            status.lastSeenAt,
+          ),
         )
         .sort(compareBacklogStatuses),
       disabledPluginIds: Array.from(
         new Set(
           (Array.isArray((raw as Partial<AppApiState>).disabledPluginIds)
             ? (raw as Partial<AppApiState>).disabledPluginIds!
-            : defaults.disabledPluginIds)
-            .filter((pluginId): pluginId is string =>
-              typeof pluginId === "string" && pluginId.trim().length > 0,
+            : defaults.disabledPluginIds
+          )
+            .filter(
+              (pluginId): pluginId is string =>
+                typeof pluginId === "string" && pluginId.trim().length > 0,
             )
             .map((pluginId) => pluginId.trim()),
         ),
@@ -372,41 +426,53 @@ function normalizeState(raw: Partial<AppApiState | AppApiStateV1 | AppApiStateV2
   if ("stagedImports" in raw || raw.version === 2) {
     const defaults = createDefaultState();
     const legacyConnections =
-      (((raw as AppApiStateV2).connectors?.azureDevOpsConnections ?? []).map((connection) => ({
-        id: connection.id,
-        pluginId: "azure_devops",
-        label: connection.label,
-        tenantLabel: connection.tenantLabel,
-        autoSync: connection.autoSync ?? false,
-        autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes ?? 15,
-        config: compactFieldValues({
-          organizationUrl: normalizeOrganizationUrl(connection.organizationUrl),
-          project: connection.project,
-          personalAccessToken: connection.personalAccessToken,
-          queryScope: connection.queryScope,
-          priorityFieldName: connection.priorityFieldName,
+      ((raw as AppApiStateV2).connectors?.azureDevOpsConnections ?? []).map(
+        (connection) => ({
+          id: connection.id,
+          pluginId: "azure_devops",
+          label: connection.label,
+          tenantLabel: connection.tenantLabel,
+          autoSync: connection.autoSync ?? false,
+          autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes ?? 15,
+          config: compactFieldValues({
+            organizationUrl: normalizeOrganizationUrl(
+              connection.organizationUrl,
+            ),
+            project: connection.project,
+            personalAccessToken: connection.personalAccessToken,
+            queryScope: connection.queryScope,
+            priorityFieldName: connection.priorityFieldName,
+          }),
+          configSummary: compactFieldValues({
+            organizationUrl: normalizeOrganizationUrl(
+              connection.organizationUrl,
+            ),
+            queryScope: connection.queryScope,
+            priorityFieldName: connection.priorityFieldName,
+            priorityFieldResolvedName: connection.priorityFieldResolvedName,
+            priorityFieldResolvedReferenceName:
+              connection.priorityFieldResolvedReferenceName,
+            priorityFieldType: connection.priorityFieldType,
+            priorityFieldIsQueryable: connection.priorityFieldIsQueryable,
+          }),
+          connectedAt: connection.connectedAt,
+          lastSyncAt: connection.lastSyncAt,
+          lastError: connection.lastError,
         }),
-        configSummary: compactFieldValues({
-          organizationUrl: normalizeOrganizationUrl(connection.organizationUrl),
-          queryScope: connection.queryScope,
-          priorityFieldName: connection.priorityFieldName,
-          priorityFieldResolvedName: connection.priorityFieldResolvedName,
-          priorityFieldResolvedReferenceName: connection.priorityFieldResolvedReferenceName,
-          priorityFieldType: connection.priorityFieldType,
-          priorityFieldIsQueryable: connection.priorityFieldIsQueryable,
-        }),
-        connectedAt: connection.connectedAt,
-        lastSyncAt: connection.lastSyncAt,
-        lastError: connection.lastError,
-      })) ?? defaults.connections);
+      ) ?? defaults.connections;
 
     return {
       version: 7,
       connections: legacyConnections.sort(compareConnections),
       stagedImports: (raw.stagedImports ?? defaults.stagedImports)
-        .filter(
-          (item): item is ConnectorImportCandidate =>
-            Boolean(item?.id && item.source && item.connectionId && item.sourceId && item.title),
+        .filter((item): item is ConnectorImportCandidate =>
+          Boolean(
+            item?.id &&
+            item.source &&
+            item.connectionId &&
+            item.sourceId &&
+            item.title,
+          ),
         )
         .map((item) => ({
           ...item,
@@ -416,22 +482,25 @@ function normalizeState(raw: Partial<AppApiState | AppApiStateV1 | AppApiStateV2
       dismissedImportKeys: Array.from(
         new Set(
           "dismissedImportKeys" in raw
-            ? ((raw.dismissedImportKeys as string[] | undefined) ?? defaults.dismissedImportKeys)
+            ? ((raw.dismissedImportKeys as string[] | undefined) ??
+                defaults.dismissedImportKeys)
             : defaults.dismissedImportKeys,
         ),
       ),
-      connectorBacklogStatuses: ((raw as AppApiState).connectorBacklogStatuses ?? defaults.connectorBacklogStatuses)
-        .filter(
-          (status): status is ConnectorBacklogStatus =>
-            Boolean(
-              status?.source &&
-                status.connectionId &&
-                status.connectionLabel &&
-                status.tenantLabel &&
-                status.key &&
-                status.label &&
-                status.lastSeenAt,
-            ),
+      connectorBacklogStatuses: (
+        (raw as AppApiState).connectorBacklogStatuses ??
+        defaults.connectorBacklogStatuses
+      )
+        .filter((status): status is ConnectorBacklogStatus =>
+          Boolean(
+            status?.source &&
+            status.connectionId &&
+            status.connectionLabel &&
+            status.tenantLabel &&
+            status.key &&
+            status.label &&
+            status.lastSeenAt,
+          ),
         )
         .sort(compareBacklogStatuses),
       disabledPluginIds: defaults.disabledPluginIds,
@@ -454,17 +523,26 @@ export class AppApiStorage {
         : path.join(os.homedir(), ".timetracker", "app-api-state.json");
   }
 
-  async getConnectorsOverview(plugins: ConnectorPluginManifest[]): Promise<ConnectorsOverview> {
+  async getConnectorsOverview(
+    plugins: ConnectorPluginManifest[],
+  ): Promise<ConnectorsOverview> {
     const state = await this.readState();
-    const pluginMap = new Map(plugins.map((plugin) => [plugin.id, plugin] as const));
+    const pluginMap = new Map(
+      plugins.map((plugin) => [plugin.id, plugin] as const),
+    );
 
     for (const connection of state.connections) {
       if (!pluginMap.has(connection.pluginId)) {
-        pluginMap.set(connection.pluginId, createMissingPluginManifest(connection.pluginId));
+        pluginMap.set(
+          connection.pluginId,
+          createMissingPluginManifest(connection.pluginId),
+        );
       }
     }
 
-    const allPlugins = Array.from(pluginMap.values()).sort(comparePluginManifests);
+    const allPlugins = Array.from(pluginMap.values()).sort(
+      comparePluginManifests,
+    );
     const connectionGroups = allPlugins.map((plugin) => ({
       plugin,
       enabled:
@@ -481,11 +559,21 @@ export class AppApiStorage {
       plugins: allPlugins,
       connectionGroups,
       totalPendingImportCount: connectionGroups.reduce(
-        (sum, group) => sum + group.connections.reduce((groupSum, connection) => groupSum + connection.pendingImportCount, 0),
+        (sum, group) =>
+          sum +
+          group.connections.reduce(
+            (groupSum, connection) => groupSum + connection.pendingImportCount,
+            0,
+          ),
         0,
       ),
       totalSelectedImportCount: connectionGroups.reduce(
-        (sum, group) => sum + group.connections.reduce((groupSum, connection) => groupSum + connection.selectedImportCount, 0),
+        (sum, group) =>
+          sum +
+          group.connections.reduce(
+            (groupSum, connection) => groupSum + connection.selectedImportCount,
+            0,
+          ),
         0,
       ),
     };
@@ -566,14 +654,22 @@ export class AppApiStorage {
 
   async listConnections(pluginId?: string): Promise<StoredConnection[]> {
     const state = await this.readState();
-    return pluginId ? state.connections.filter((connection) => connection.pluginId === pluginId) : state.connections;
+    return pluginId
+      ? state.connections.filter(
+          (connection) => connection.pluginId === pluginId,
+        )
+      : state.connections;
   }
 
-  async getConnection(pluginId: string, connectionId: string): Promise<StoredConnection | null> {
+  async getConnection(
+    pluginId: string,
+    connectionId: string,
+  ): Promise<StoredConnection | null> {
     const state = await this.readState();
     return (
       state.connections.find(
-        (connection) => connection.pluginId === pluginId && connection.id === connectionId,
+        (connection) =>
+          connection.pluginId === pluginId && connection.id === connectionId,
       ) ?? null
     );
   }
@@ -593,7 +689,8 @@ export class AppApiStorage {
     return this.mutate(async (state) => {
       const connectionId = input.id ?? `${pluginId}_${randomUUID()}`;
       const existing = state.connections.find(
-        (connection) => connection.pluginId === pluginId && connection.id === connectionId,
+        (connection) =>
+          connection.pluginId === pluginId && connection.id === connectionId,
       );
 
       const nextConnection: StoredConnection = {
@@ -614,7 +711,11 @@ export class AppApiStorage {
         ...state,
         connections: [
           ...state.connections.filter(
-            (connection) => !(connection.pluginId === pluginId && connection.id === connectionId),
+            (connection) =>
+              !(
+                connection.pluginId === pluginId &&
+                connection.id === connectionId
+              ),
           ),
           nextConnection,
         ].sort(compareConnections),
@@ -638,10 +739,14 @@ export class AppApiStorage {
     });
   }
 
-  async deleteConnection(pluginId: string, connectionId: string): Promise<boolean> {
+  async deleteConnection(
+    pluginId: string,
+    connectionId: string,
+  ): Promise<boolean> {
     return this.mutate(async (state) => {
       const exists = state.connections.some(
-        (connection) => connection.pluginId === pluginId && connection.id === connectionId,
+        (connection) =>
+          connection.pluginId === pluginId && connection.id === connectionId,
       );
       if (!exists) {
         return {
@@ -653,11 +758,19 @@ export class AppApiStorage {
       const nextState: AppApiState = {
         ...state,
         connections: state.connections.filter(
-          (connection) => !(connection.pluginId === pluginId && connection.id === connectionId),
+          (connection) =>
+            !(
+              connection.pluginId === pluginId && connection.id === connectionId
+            ),
         ),
-        stagedImports: state.stagedImports.filter((item) => item.connectionId !== connectionId),
+        stagedImports: state.stagedImports.filter(
+          (item) => item.connectionId !== connectionId,
+        ),
         connectorBacklogStatuses: state.connectorBacklogStatuses.filter(
-          (status) => !(status.source === pluginId && status.connectionId === connectionId),
+          (status) =>
+            !(
+              status.source === pluginId && status.connectionId === connectionId
+            ),
         ),
       };
 
@@ -725,10 +838,15 @@ export class AppApiStorage {
     });
   }
 
-  async recordConnectionSyncSuccess(pluginId: string, connectionId: string, timestamp: number): Promise<StoredConnection> {
+  async recordConnectionSyncSuccess(
+    pluginId: string,
+    connectionId: string,
+    timestamp: number,
+  ): Promise<StoredConnection> {
     return this.mutate(async (state) => {
       const connection = state.connections.find(
-        (candidate) => candidate.pluginId === pluginId && candidate.id === connectionId,
+        (candidate) =>
+          candidate.pluginId === pluginId && candidate.id === connectionId,
       );
       if (!connection) {
         throw new Error(`Connector connection "${connectionId}" not found.`);
@@ -748,10 +866,15 @@ export class AppApiStorage {
     });
   }
 
-  async recordConnectionError(pluginId: string, connectionId: string, message: string): Promise<StoredConnection> {
+  async recordConnectionError(
+    pluginId: string,
+    connectionId: string,
+    message: string,
+  ): Promise<StoredConnection> {
     return this.mutate(async (state) => {
       const connection = state.connections.find(
-        (candidate) => candidate.pluginId === pluginId && candidate.id === connectionId,
+        (candidate) =>
+          candidate.pluginId === pluginId && candidate.id === connectionId,
       );
       if (!connection) {
         throw new Error(`Connector connection "${connectionId}" not found.`);
@@ -770,10 +893,14 @@ export class AppApiStorage {
     });
   }
 
-  async stageImportItems(items: ConnectorImportCandidateInput[]): Promise<StageImportItemsResult> {
+  async stageImportItems(
+    items: ConnectorImportCandidateInput[],
+  ): Promise<StageImportItemsResult> {
     return this.mutate(async (state) => {
       const dismissedKeys = new Set(state.dismissedImportKeys);
-      const stagedByKey = new Map(state.stagedImports.map((item) => [importKey(item), item] as const));
+      const stagedByKey = new Map(
+        state.stagedImports.map((item) => [importKey(item), item] as const),
+      );
 
       let queuedCount = 0;
       let updatedCount = 0;
@@ -803,7 +930,7 @@ export class AppApiStorage {
         stagedByKey.set(key, {
           id: `connector_${randomUUID()}`,
           ...item,
-          selected: item.selectable ? item.selected ?? true : false,
+          selected: item.selectable ? (item.selected ?? true) : false,
           pushedAt,
         });
         queuedCount += 1;
@@ -822,15 +949,21 @@ export class AppApiStorage {
   async dismissImports(ids: string[]): Promise<number> {
     return this.mutate(async (state) => {
       const idSet = new Set(ids);
-      const itemsById = new Map(state.stagedImports.map((item) => [item.id, item] as const));
-      const childrenByParentSourceId = new Map<string, ConnectorImportCandidate[]>();
+      const itemsById = new Map(
+        state.stagedImports.map((item) => [item.id, item] as const),
+      );
+      const childrenByParentSourceId = new Map<
+        string,
+        ConnectorImportCandidate[]
+      >();
 
       for (const item of state.stagedImports) {
         if (!item.parentSourceId) {
           continue;
         }
 
-        const siblings = childrenByParentSourceId.get(item.parentSourceId) ?? [];
+        const siblings =
+          childrenByParentSourceId.get(item.parentSourceId) ?? [];
         siblings.push(item);
         childrenByParentSourceId.set(item.parentSourceId, siblings);
       }
@@ -886,7 +1019,9 @@ export class AppApiStorage {
       return {
         nextState: {
           ...state,
-          stagedImports: state.stagedImports.filter((item) => !dismissedIds.has(item.id)),
+          stagedImports: state.stagedImports.filter(
+            (item) => !dismissedIds.has(item.id),
+          ),
           dismissedImportKeys: Array.from(dismissedImportKeys),
         },
         result: dismissedIds.size,
@@ -905,13 +1040,20 @@ export class AppApiStorage {
     };
   }
 
-  async updateImportSelection(ids: string[], selected: boolean): Promise<number> {
+  async updateImportSelection(
+    ids: string[],
+    selected: boolean,
+  ): Promise<number> {
     return this.mutate(async (state) => {
       const idSet = new Set(ids);
       let updatedCount = 0;
 
       const nextItems = state.stagedImports.map((item) => {
-        if (!idSet.has(item.id) || !item.selectable || item.selected === selected) {
+        if (
+          !idSet.has(item.id) ||
+          !item.selectable ||
+          item.selected === selected
+        ) {
           return item;
         }
 
@@ -934,7 +1076,9 @@ export class AppApiStorage {
 
   async commitSelectedImports(): Promise<ConnectorImportCandidate[]> {
     return this.mutate(async (state) => {
-      const selectedItems = state.stagedImports.filter((item) => item.selectable && item.selected);
+      const selectedItems = state.stagedImports.filter(
+        (item) => item.selectable && item.selected,
+      );
       if (selectedItems.length === 0) {
         return {
           nextState: state,
@@ -943,7 +1087,9 @@ export class AppApiStorage {
       }
 
       const stagedByParentKey = new Map(
-        state.stagedImports.map((item) => [`${item.connectionId}:${item.sourceId}`, item] as const),
+        state.stagedImports.map(
+          (item) => [`${item.connectionId}:${item.sourceId}`, item] as const,
+        ),
       );
       const committedIds = new Set(selectedItems.map((item) => item.id));
 
@@ -952,7 +1098,9 @@ export class AppApiStorage {
           continue;
         }
 
-        const parent = stagedByParentKey.get(`${item.connectionId}:${item.parentSourceId}`);
+        const parent = stagedByParentKey.get(
+          `${item.connectionId}:${item.parentSourceId}`,
+        );
         if (parent) {
           committedIds.add(parent.id);
         }
@@ -965,19 +1113,28 @@ export class AppApiStorage {
       return {
         nextState: {
           ...state,
-          stagedImports: state.stagedImports.filter((item) => !committedIds.has(item.id)),
+          stagedImports: state.stagedImports.filter(
+            (item) => !committedIds.has(item.id),
+          ),
         },
         result: committedItems,
       };
     });
   }
 
-  private replaceConnection(state: AppApiState, connection: StoredConnection): AppApiState {
+  private replaceConnection(
+    state: AppApiState,
+    connection: StoredConnection,
+  ): AppApiState {
     return {
       ...state,
       connections: [
         ...state.connections.filter(
-          (candidate) => !(candidate.pluginId === connection.pluginId && candidate.id === connection.id),
+          (candidate) =>
+            !(
+              candidate.pluginId === connection.pluginId &&
+              candidate.id === connection.id
+            ),
         ),
         connection,
       ].sort(compareConnections),
@@ -995,7 +1152,9 @@ export class AppApiStorage {
     }
 
     const raw = await readFile(this.statePath, "utf8");
-    this.cache = normalizeState(JSON.parse(raw) as Partial<AppApiState | AppApiStateV1 | AppApiStateV2>);
+    this.cache = normalizeState(
+      JSON.parse(raw) as Partial<AppApiState | AppApiStateV1 | AppApiStateV2>,
+    );
     return this.cache;
   }
 

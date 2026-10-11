@@ -95,8 +95,11 @@ function materializeBlocks(
       state.team?.settings.microBlockThresholdMs ??
       defaults.microBlockThresholdMs,
   }).map((block) => {
-    const suggestion = evaluateBlockAgainstRules(block, state.rules, [])
-      .suggestion;
+    const suggestion = evaluateBlockAgainstRules(
+      block,
+      state.rules,
+      [],
+    ).suggestion;
 
     return {
       ...block,
@@ -299,9 +302,7 @@ export function upsertEditedBlock(
   return {
     ...state,
     editedBlocks: [
-      ...state.editedBlocks.filter(
-        (item) => getActivityBlockId(item) !== id,
-      ),
+      ...state.editedBlocks.filter((item) => getActivityBlockId(item) !== id),
       { ...block, id, status: "edited", locked: true },
     ],
   };
@@ -476,8 +477,7 @@ export function saveRuleFromBlock(
         targetProjectId: block.projectId,
         condition: {
           domain,
-          pathnamePrefix:
-            block.pathname === "/" ? undefined : block.pathname,
+          pathnamePrefix: block.pathname === "/" ? undefined : block.pathname,
         },
         baseConfidence: 0.9,
       },

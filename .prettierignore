@@ -1,0 +1,16 @@
+# Generated, vendored, or lock files
+pnpm-lock.yaml
+**/dist/
+**/dist-desktop/
+**/out/
+**/out-embedded/
+**/build/internal-app-runtime/
+**/build/embedded-agent/
+**/.features-gen/
+playwright-report/
+test-results/
+coverage/
+connectors/*/package/
+
+# Release pipelines are changed only on purpose
+.github/workflows/

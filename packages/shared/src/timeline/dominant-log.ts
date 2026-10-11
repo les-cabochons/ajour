@@ -1,4 +1,9 @@
-import type { ActivityIdentity, ActivityLogEntry, ActivitySpan, DominantActivityBucket } from "../types/domain";
+import type {
+  ActivityIdentity,
+  ActivityLogEntry,
+  ActivitySpan,
+  DominantActivityBucket,
+} from "../types/domain";
 
 export interface DominantActivityOptions {
   bucketMs: number;
@@ -12,7 +17,9 @@ function dayStartAt(localDate: string): number {
   return new Date(`${localDate}T00:00:00`).getTime();
 }
 
-function mergeEntryId(entry: Pick<ActivityLogEntry, "localDate" | "startedAt" | "identity">): string {
+function mergeEntryId(
+  entry: Pick<ActivityLogEntry, "localDate" | "startedAt" | "identity">,
+): string {
   return `${entry.localDate}:${entry.startedAt}:${entry.identity.mergeKey}`;
 }
 
@@ -21,7 +28,10 @@ function sumOverlapByMergeKey(
   bucketStartAt: number,
   bucketEndAt: number,
 ): Map<string, { identity: ActivityIdentity; durationMs: number }> {
-  const totals = new Map<string, { identity: ActivityIdentity; durationMs: number }>();
+  const totals = new Map<
+    string,
+    { identity: ActivityIdentity; durationMs: number }
+  >();
 
   for (const span of spans) {
     const overlapStartAt = Math.max(bucketStartAt, span.startedAt);
@@ -51,21 +61,30 @@ export function buildDominantActivityBuckets(
   localDate: string,
   options: DominantActivityOptions,
 ): DominantActivityBucket[] {
-  const sorted = [...spans].sort((left, right) => left.startedAt - right.startedAt);
+  const sorted = [...spans].sort(
+    (left, right) => left.startedAt - right.startedAt,
+  );
   const buckets: DominantActivityBucket[] = [];
   const bucketMs = options.bucketMs;
   const dateStartAt = dayStartAt(localDate);
   const dateEndAt = dateStartAt + 24 * 60 * 60 * 1000;
 
-  for (let bucketStartAt = dateStartAt; bucketStartAt < dateEndAt; bucketStartAt += bucketMs) {
+  for (
+    let bucketStartAt = dateStartAt;
+    bucketStartAt < dateEndAt;
+    bucketStartAt += bucketMs
+  ) {
     const bucketEndAt = Math.min(bucketStartAt + bucketMs, dateEndAt);
     const totals = sumOverlapByMergeKey(sorted, bucketStartAt, bucketEndAt);
     if (totals.size === 0) {
       continue;
     }
 
-    const winner = [...totals.entries()]
-      .sort((left, right) => right[1].durationMs - left[1].durationMs || left[0].localeCompare(right[0]))[0];
+    const winner = [...totals.entries()].sort(
+      (left, right) =>
+        right[1].durationMs - left[1].durationMs ||
+        left[0].localeCompare(right[0]),
+    )[0];
 
     if (!winner) {
       continue;
@@ -89,7 +108,9 @@ export function mergeDominantActivityBuckets(
 ): ActivityLogEntry[] {
   const entries: ActivityLogEntry[] = [];
 
-  for (const bucket of [...buckets].sort((left, right) => left.bucketStartAt - right.bucketStartAt)) {
+  for (const bucket of [...buckets].sort(
+    (left, right) => left.bucketStartAt - right.bucketStartAt,
+  )) {
     const current = entries.at(-1);
 
     if (
@@ -128,13 +149,20 @@ export function buildDominantActivityLog(
   options: DominantActivityOptions,
 ): ActivityLogEntry[] {
   const filtered = spans.filter(
-    (span) => span.startedAt < dayStartAt(localDate) + 24 * 60 * 60 * 1000 && span.endedAt > dayStartAt(localDate),
+    (span) =>
+      span.startedAt < dayStartAt(localDate) + 24 * 60 * 60 * 1000 &&
+      span.endedAt > dayStartAt(localDate),
   );
 
-  return mergeDominantActivityBuckets(buildDominantActivityBuckets(filtered, localDate, options), localDate);
+  return mergeDominantActivityBuckets(
+    buildDominantActivityBuckets(filtered, localDate, options),
+    localDate,
+  );
 }
 
-export function splitSpansByLocalDate(spans: ActivitySpan[]): Record<string, ActivitySpan[]> {
+export function splitSpansByLocalDate(
+  spans: ActivitySpan[],
+): Record<string, ActivitySpan[]> {
   const byDate: Record<string, ActivitySpan[]> = {};
 
   for (const span of spans) {

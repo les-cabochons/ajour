@@ -109,7 +109,9 @@ export function projectWeeklyTime({
   const ledgerRows = Array.from(ledgerGroups.values())
     .map((group): WeeklyLedgerRow => {
       const first = group[0]!;
-      const project = first.projectId ? projectMap.get(first.projectId) : undefined;
+      const project = first.projectId
+        ? projectMap.get(first.projectId)
+        : undefined;
       const task = first.taskId
         ? project?.tasks.find((candidate) => candidate._id === first.taskId)
         : undefined;
@@ -162,7 +164,8 @@ export function projectWeeklyTime({
 
     if (existingRow) {
       existingRow.dayTotalsMs[runningDayIndex] =
-        (existingRow.dayTotalsMs[runningDayIndex] ?? 0) + runningTime.durationMs;
+        (existingRow.dayTotalsMs[runningDayIndex] ?? 0) +
+        runningTime.durationMs;
       existingRow.totalMs += runningTime.durationMs;
       existingRow.runningLocalDate = runningTime.localDate;
     } else {

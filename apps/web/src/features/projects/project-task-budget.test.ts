@@ -63,7 +63,7 @@ describe("getProjectTaskConsumedTone", () => {
       getProjectTaskConsumedTone({
         budgetMs: 5 * 60 * 60 * 1000,
         trackedMs: 5 * 60 * 60 * 1000,
-        adjustmentMs: 60 * 60 * 60 * 1000 / 50,
+        adjustmentMs: (60 * 60 * 60 * 1000) / 50,
       }),
     ).toBe("danger-strong");
   });
