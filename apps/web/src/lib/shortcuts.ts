@@ -168,8 +168,7 @@ export const SHORTCUTS: readonly ShortcutDefinition[] = [
     scope: "global",
     keys: [{ key: "?" }],
   },
-  // The digit shortcuts stay last: the first match wins, and on Canadian French
-  // layouts Shift+6 types "?", which must keep opening the shortcut list.
+  // resolveShortcut prefers these over "?" when both match a key press.
   {
     id: "pinned.new-entry",
     label: "New entry for a pinned task",
@@ -282,9 +281,14 @@ export function resolveShortcut(
       matchesChord(event, shortcut.keys[prefix.length]!, platform),
   );
 
-  const complete = candidates.find(
+  const completes = candidates.filter(
     (shortcut) => shortcut.keys.length === prefix.length + 1,
   );
+  // Shift+digit always starts a pinned task, even where it types "?", such as
+  // Shift+6 on Canadian French layouts. "?" still works on other layouts.
+  const complete =
+    completes.find((shortcut) => isDigitChord(shortcut.keys[prefix.length]!)) ??
+    completes[0];
   if (complete) {
     const lastChord = complete.keys[prefix.length]!;
     return isDigitChord(lastChord)
@@ -342,21 +346,21 @@ export function blocksSingleKeyShortcuts(target: unknown) {
 }
 
 /**
- * The entry editor form carries this attribute in every host. While focus is
- * inside it, the digits do nothing special. See "Pinned tasks" in the UX spec.
+ * Week Grid cells carry this attribute. A focused cell keeps the digits for
+ * its hours, so pinned task digits do nothing there, even on a cell that does
+ * not edit in place. See "Pinned tasks" in the UX spec.
  */
-export const ENTRY_EDITOR_ATTRIBUTE = "data-entry-editor";
+export const GRID_CELL_ATTRIBUTE = "data-grid-cell";
 
 /**
  * True when the digit shortcuts must stay quiet for this focus target, on top
- * of `blocksSingleKeyShortcuts`: focus is inside an entry editor. A focused Week
- * Grid cell handles its own digits and prevents the event's default, so the
- * registry never sees them.
+ * of `blocksSingleKeyShortcuts`: focus is on a Week Grid cell. The handler also
+ * skips digits while an entry editor is open (`lib/entry-editor-presence.ts`).
  */
 export function blocksDigitShortcuts(target: unknown) {
   return (
     isGuardedElement(target) &&
-    target.closest(`[${ENTRY_EDITOR_ATTRIBUTE}]`) !== null
+    target.closest(`[${GRID_CELL_ATTRIBUTE}]`) !== null
   );
 }
 

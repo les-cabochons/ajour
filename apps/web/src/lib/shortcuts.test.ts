@@ -277,18 +277,21 @@ describe("pinned task digits", () => {
     });
   });
 
-  it("keeps ? for the shortcut list where Shift+6 types it", () => {
+  it("starts the pinned task on Shift+6 even where it types ?", () => {
     // Canadian French layouts type "?" with Shift+6.
     expect(resolveDigit(pressDigit("Digit6", "?", { shiftKey: true }))).toEqual(
-      { id: "app.shortcuts", digit: undefined },
+      { id: "pinned.start", digit: "6" },
     );
+    // US layouts type "?" with Shift+Slash, which still opens the list.
+    expect(resolveDigit(pressDigit("Slash", "?", { shiftKey: true }))).toEqual({
+      id: "app.shortcuts",
+      digit: undefined,
+    });
   });
 
-  it("stays quiet while focus is in the entry editor", () => {
+  it("stays quiet while focus is on a Week Grid cell", () => {
     expect(
-      blocksDigitShortcuts(
-        element("BUTTON", { inside: ["data-entry-editor"] }),
-      ),
+      blocksDigitShortcuts(element("BUTTON", { inside: ["data-grid-cell"] })),
     ).toBe(true);
     expect(blocksDigitShortcuts(element("BUTTON"))).toBe(false);
     expect(blocksDigitShortcuts(null)).toBe(false);

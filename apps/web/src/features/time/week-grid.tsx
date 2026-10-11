@@ -514,6 +514,8 @@ export function WeekGrid({
                     ? model.entries[0]!._id
                     : ""
                 }
+                // A focused cell keeps the digits, so pinned tasks skip it (GRID_CELL_ATTRIBUTE).
+                data-grid-cell=""
                 aria-label={`${row.taskName}, ${dayLabel}, ${valueLabel}`}
                 onClick={(event) => handleCellClick(model, event.detail)}
                 onKeyDown={(event) => handleCellKeyDown(model, event)}
