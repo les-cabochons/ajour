@@ -162,3 +162,18 @@ export function useRunShortcut() {
     [registry],
   );
 }
+
+/**
+ * Runs shortcut actions without a key press, as the command palette does.
+ * `isAvailable` is false when no mounted component handles the action, such as
+ * "Day view" outside the Time page. The registry is not reactive: read it when
+ * the caller renders, not in a memo that outlives page changes.
+ */
+export function useShortcutRunner() {
+  const registry = useContext(ShortcutContext);
+
+  return {
+    isAvailable: (id: ShortcutActionId) => Boolean(registry?.find(id)),
+    run: (id: ShortcutActionId) => registry?.find(id)?.run(),
+  };
+}

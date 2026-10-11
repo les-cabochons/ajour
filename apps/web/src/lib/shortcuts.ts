@@ -1,6 +1,7 @@
 /**
- * The keyboard shortcut registry. Key handling reads it today; menus, tooltips
- * and the command palette read it later. See "Keyboard" in agents/ux-spec.md.
+ * The keyboard shortcut registry. Key handling, the "?" overlay and the command
+ * palette read it; menus and tooltips read it later. See "Keyboard" in
+ * agents/ux-spec.md.
  *
  * This module is pure: it only describes shortcuts and matches key events. The
  * handlers that run them live in `lib/shortcut-handlers.tsx`.
@@ -35,6 +36,7 @@ export type ShortcutActionId =
   | "go.settings"
   | "app.settings"
   | "app.toggle-sidebar"
+  | "app.command-palette"
   | "app.shortcuts";
 
 export interface ShortcutDefinition {
@@ -45,8 +47,8 @@ export interface ShortcutDefinition {
   keys: readonly ShortcutChord[];
 }
 
-// Cmd+K (command palette, #43) and Cmd+Z (Undo toast, #31) join this list when
-// their features land, so the overlay never lists a key that does nothing.
+// Cmd+Z (Undo toast, #31) joins this list when its feature lands, so the overlay
+// never lists a key that does nothing.
 export const SHORTCUTS: readonly ShortcutDefinition[] = [
   {
     id: "entry.new",
@@ -131,6 +133,12 @@ export const SHORTCUTS: readonly ShortcutDefinition[] = [
     label: "Show or hide the sidebar",
     scope: "global",
     keys: [{ key: "b", mod: true }],
+  },
+  {
+    id: "app.command-palette",
+    label: "Command palette",
+    scope: "global",
+    keys: [{ key: "k", mod: true }],
   },
   {
     id: "app.shortcuts",

@@ -1,0 +1,389 @@
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { useNavigate } from "@tanstack/react-router";
+import {
+  Command,
+  CommandDialog,
+  CommandEmpty,
+  CommandGroup,
+  CommandInput,
+  CommandItem,
+  CommandList,
+  CommandShortcut,
+} from "@/components/ui/command";
+import { getWorkItemEntryValues } from "@/features/backlog/work-item-timer-comment";
+import {
+  buildPaletteSections,
+  type PaletteCommand,
+  type PaletteItem,
+  type PaletteView,
+} from "@/features/command-palette/command-palette-items";
+import { ProjectFormDialog } from "@/features/projects/project-form-dialog";
+import { getSettingsPages } from "@/features/settings/settings-navigation";
+import type { NewTimeEntryValues } from "@/features/time/time-entry-editor-form";
+import { useTimeEntryActions } from "@/features/time/time-entry-actions";
+import { TimeEntryModal } from "@/features/timer/time-entry-modal";
+import type { ActionRequest } from "@/lib/action-request";
+import {
+  resolveFocusedObject,
+  type FocusedObjectRef,
+} from "@/lib/focused-object";
+import { useLocalState } from "@/lib/local-hooks";
+import { localStore } from "@/lib/local-store";
+import { useShortcut, useShortcutRunner } from "@/lib/shortcut-handlers";
+import { SHORTCUTS, getShortcutPlatform } from "@/lib/shortcuts";
+import { useIsNarrowView } from "@/lib/use-narrow-view";
+import { cn, todayIsoDate } from "@/lib/utils";
+
+const platform = getShortcutPlatform();
+const ROOT_VIEW: PaletteView = { kind: "root" };
+
+let openListener: (() => void) | null = null;
+
+/**
+ * Opens the command palette, as Cmd+K does. For buttons such as the Projects
+ * list's Search and the narrow view's search button. Does nothing until the app
+ * shell has mounted the palette.
+ */
+export function openCommandPalette() {
+  openListener?.();
+}
+
+/**
+ * The app-wide command palette (Cmd+K, Ctrl+K elsewhere). It lists the focused
+ * object's actions, search results across tasks, backlog items and projects,
+ * the registry's global actions with their keys, and navigation. Choosing a
+ * task or a backlog item lists its actions.
+ *
+ * Start entry and New entry… run here, so they work from any page. Actions that
+ * need a page's editor or confirmation go to that page as an action request
+ * (`lib/action-request.ts`). Commands run once the palette has closed and given
+ * focus back, so shortcuts that read focus, such as Continue, see the row.
+ */
+export function CommandPalette() {
+  const navigate = useNavigate();
+  const state = useLocalState();
+  const isNarrowView = useIsNarrowView();
+  const shortcutRunner = useShortcutRunner();
+  const [isOpen, setIsOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const [view, setView] = useState<PaletteView>(ROOT_VIEW);
+  const [focused, setFocused] = useState<FocusedObjectRef | null>(null);
+  const [newEntryValues, setNewEntryValues] =
+    useState<NewTimeEntryValues | null>(null);
+  const [isCreatingProject, setIsCreatingProject] = useState(false);
+  const originRef = useRef<HTMLElement | null>(null);
+  const pendingCommandRef = useRef<PaletteCommand | null>(null);
+
+  const timer = state.timers[0] ?? null;
+
+  function editEntry(localDate: string, search: Record<string, unknown>) {
+    void navigate({
+      to: "/time/$date",
+      params: { date: localDate },
+      // Keep the Week view when the entry is edited from it.
+      search: ((previous: Record<string, unknown>) => ({
+        view: previous.view,
+        ...search,
+      })) as never,
+    });
+  }
+
+  const entryActions = useTimeEntryActions({
+    onEdit: (target) => {
+      if (target.kind === "entry") {
+        editEntry(target.entry.localDate, { entry: target.entry._id });
+        return;
+      }
+
+      const runningTimer = localStore
+        .snapshot()
+        .timers.find((item) => item._id === target.timerId);
+      if (runningTimer) {
+        editEntry(runningTimer.localDate, {
+          timer: runningTimer._id,
+          entry: runningTimer.entryId,
+        });
+      }
+    },
+  });
+
+  const open = useCallback(() => {
+    const origin =
+      document.activeElement instanceof HTMLElement
+        ? document.activeElement
+        : null;
+    originRef.current = origin;
+    setFocused(resolveFocusedObject(origin));
+    setQuery("");
+    setView(ROOT_VIEW);
+    setIsOpen(true);
+  }, []);
+
+  useEffect(() => {
+    openListener = open;
+    return () => {
+      if (openListener === open) openListener = null;
+    };
+  }, [open]);
+
+  useShortcut(
+    "app.command-palette",
+    () => (isOpen ? setIsOpen(false) : open()),
+    "app",
+  );
+
+  /** Sends an action to the page that owns it. See `lib/action-request.ts`. */
+  function requestPageAction(
+    to: "/backlog" | "/projects/$projectId",
+    request: ActionRequest,
+    projectId?: string,
+  ) {
+    void navigate({
+      to,
+      params: projectId ? { projectId } : undefined,
+      search: request as never,
+    } as never);
+  }
+
+  function run(command: PaletteCommand) {
+    const snapshot = localStore.snapshot();
+    switch (command.kind) {
+      case "shortcut":
+        shortcutRunner.run(command.shortcutId);
+        return;
+      case "navigate":
+        void navigate({ to: command.to as never });
+        return;
+      case "show":
+        return;
+      case "open-project":
+        void navigate({
+          to: "/projects/$projectId",
+          params: { projectId: command.projectId },
+        });
+        return;
+      case "create-project":
+        setIsCreatingProject(true);
+        return;
+      case "time-entry": {
+        const entry = snapshot.timesheetEntries.find(
+          (item) => item._id === command.entryId,
+        );
+        if (entry) {
+          entryActions.runAction({ kind: "entry", entry }, command.actionId);
+        }
+        return;
+      }
+      case "running-entry":
+        entryActions.runAction(
+          { kind: "running", timerId: command.timerId },
+          command.actionId,
+        );
+        return;
+      case "task":
+        if (command.actionId === "start-entry") {
+          localStore.startTimer({
+            projectId: command.projectId,
+            taskId: command.taskId,
+            accumulatedDurationMs: 0,
+          });
+        } else if (command.actionId === "new-entry") {
+          setNewEntryValues({
+            projectId: command.projectId,
+            taskId: command.taskId,
+          });
+        } else {
+          requestPageAction(
+            "/projects/$projectId",
+            { action: command.actionId, target: command.taskId },
+            command.projectId,
+          );
+        }
+        return;
+      case "project":
+        requestPageAction(
+          "/projects/$projectId",
+          { action: command.actionId },
+          command.projectId,
+        );
+        return;
+      case "backlog-item": {
+        const workItem = snapshot.workItems.find(
+          (item) => item._id === command.workItemId,
+        );
+        if (!workItem) return;
+        if (command.actionId === "start-entry") {
+          localStore.startTimer({
+            ...getWorkItemEntryValues(workItem),
+            accumulatedDurationMs: 0,
+          });
+        } else if (command.actionId === "new-entry") {
+          setNewEntryValues(getWorkItemEntryValues(workItem));
+        } else if (command.actionId === "open-in-source") {
+          if (workItem.sourceUrl) {
+            window.open(workItem.sourceUrl, "_blank", "noopener,noreferrer");
+          }
+        } else {
+          requestPageAction("/backlog", {
+            action: command.actionId,
+            target: workItem._id,
+          });
+        }
+        return;
+      }
+    }
+  }
+
+  function choose(item: PaletteItem) {
+    if (item.disabledReason) return;
+    if (item.command.kind === "show") {
+      setView(item.command.view);
+      setQuery("");
+      return;
+    }
+
+    pendingCommandRef.current = item.command;
+    setIsOpen(false);
+  }
+
+  function runPendingCommand() {
+    const command = pendingCommandRef.current;
+    pendingCommandRef.current = null;
+    if (!command) return;
+
+    const origin = originRef.current;
+    if (origin?.isConnected && document.activeElement !== origin) {
+      origin.focus({ preventScroll: true });
+    }
+    run(command);
+  }
+
+  // The registry is not reactive, so the list reads it while the palette is open.
+  const sections = isOpen
+    ? buildPaletteSections({
+        query,
+        view,
+        focused,
+        projects: state.projects,
+        workItems: state.workItems,
+        timesheetEntries: state.timesheetEntries,
+        timer,
+        today: todayIsoDate(),
+        shortcuts: SHORTCUTS.filter((shortcut) =>
+          shortcutRunner.isAvailable(shortcut.id),
+        ),
+        // The narrow view's Projects page is the section itself, already listed.
+        settingsPages: getSettingsPages(
+          isNarrowView ? "narrow" : "wide",
+        ).filter((page) => page.to.startsWith("/settings/")),
+        platform,
+      })
+    : [];
+
+  return (
+    <>
+      <CommandDialog
+        open={isOpen}
+        onOpenChange={setIsOpen}
+        onOpenChangeComplete={(nextOpen) => {
+          if (!nextOpen) runPendingCommand();
+        }}
+        title="Command palette"
+        description="Search commands, projects, tasks and backlog items."
+        className="sm:max-w-xl"
+      >
+        <Command
+          shouldFilter={false}
+          loop
+          onKeyDown={(event) => {
+            // Backspace in an empty field goes back to the main list.
+            if (
+              event.key === "Backspace" &&
+              query === "" &&
+              view.kind !== "root"
+            ) {
+              event.preventDefault();
+              setView(ROOT_VIEW);
+            }
+          }}
+        >
+          <CommandInput
+            value={query}
+            onValueChange={setQuery}
+            placeholder={
+              view.kind === "root"
+                ? "Search commands, projects, tasks and backlog items"
+                : "Filter actions"
+            }
+            aria-label="Search commands"
+          />
+          <CommandList className="max-h-[min(28rem,60dvh)]">
+            <CommandEmpty>No results.</CommandEmpty>
+            {sections.map((section) => (
+              <CommandGroup key={section.id} heading={section.heading}>
+                {section.items.map((item) => (
+                  <CommandItem
+                    key={item.id}
+                    value={item.id}
+                    disabled={Boolean(item.disabledReason)}
+                    onSelect={() => choose(item)}
+                    className={cn(item.destructive && "text-destructive")}
+                  >
+                    <span className="min-w-0 flex-1 truncate">
+                      {item.label}
+                      {item.disabledReason ? (
+                        <span className="text-muted-foreground">
+                          {" · "}
+                          {item.disabledReason}
+                        </span>
+                      ) : null}
+                      {item.detail ? (
+                        <span className="ml-2 text-xs font-normal text-muted-foreground">
+                          {item.detail}
+                        </span>
+                      ) : null}
+                    </span>
+                    {item.keys ? (
+                      <CommandShortcut className="flex items-center gap-1 tracking-normal">
+                        {item.keys.map((key, index) => (
+                          <Fragment key={index}>
+                            {index > 0 ? <span>then</span> : null}
+                            <kbd className="min-w-5 rounded-md border border-border bg-muted px-1 text-center font-mono">
+                              {key}
+                            </kbd>
+                          </Fragment>
+                        ))}
+                      </CommandShortcut>
+                    ) : null}
+                  </CommandItem>
+                ))}
+              </CommandGroup>
+            ))}
+          </CommandList>
+        </Command>
+      </CommandDialog>
+
+      {entryActions.dialogs}
+      {newEntryValues ? (
+        <TimeEntryModal
+          date={todayIsoDate()}
+          initialValues={newEntryValues}
+          onClose={() => setNewEntryValues(null)}
+        />
+      ) : null}
+      {isCreatingProject ? (
+        <ProjectFormDialog
+          onClose={() => setIsCreatingProject(false)}
+          onSubmit={(values) => {
+            const projectId = localStore.addProject(values);
+            setIsCreatingProject(false);
+            void navigate({
+              to: "/projects/$projectId",
+              params: { projectId },
+            });
+          }}
+        />
+      ) : null}
+    </>
+  );
+}

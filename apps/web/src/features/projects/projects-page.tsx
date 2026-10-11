@@ -2,8 +2,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   RiAddLine as Plus,
   RiArchiveLine as Archive,
-  RiArrowLeftSLine as ChevronLeft,
-  RiArrowRightSLine as ChevronRight,
   RiDownloadLine as Download,
   RiFileTransferLine as FileTransfer,
   RiFolderAddLine as FolderPlus,
@@ -17,16 +15,6 @@ import {
 import { SidePanel } from "@/components/side-panel";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import {
-  Command,
-  CommandDialog,
-  CommandEmpty,
-  CommandGroup,
-  CommandInput,
-  CommandItem,
-  CommandList,
-  CommandSeparator,
-} from "@/components/ui/command";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   Empty,
@@ -68,6 +56,7 @@ import {
   type LocalProject,
   type LocalProjectTask,
 } from "@/domain/local-state";
+import { openCommandPalette } from "@/features/command-palette/command-palette";
 import { ProjectFormDialog } from "@/features/projects/project-form-dialog";
 import type { ProjectFormValues } from "@/features/projects/project-form";
 import {
@@ -80,6 +69,8 @@ import {
 } from "@/features/projects/project-task-editor";
 import { ProjectTaskEditorForm } from "@/features/projects/project-task-editor-form";
 import { offerUndo } from "@/features/feedback/undo-toast";
+import { useActionRequest } from "@/lib/action-request";
+import { FOCUS_ATTRIBUTES } from "@/lib/focused-object";
 import { useCurrentTeam } from "@/lib/session";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
@@ -95,7 +86,17 @@ import {
 import { ProjectIcon } from "@/lib/project-icons";
 import { TimeEntryModal } from "@/features/timer/time-entry-modal";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
+import {
+  formatAriaKeyShortcuts,
+  getShortcut,
+  getShortcutPlatform,
+} from "@/lib/shortcuts";
 import { cn, todayIsoDate } from "@/lib/utils";
+
+const commandPaletteAriaKeys = formatAriaKeyShortcuts(
+  getShortcut("app.command-palette"),
+  getShortcutPlatform(),
+);
 
 type ProjectMetrics = {
   durationMs: number;
@@ -117,7 +118,6 @@ type TaskEditorSession = {
   showErrors: boolean;
 };
 
-type ProjectCommandView = "main" | "task-projects";
 type ProjectTaskFilter = "active" | "archived";
 
 /** The project header's "…" menu adds Import tasks… to the project's action set. */
@@ -369,6 +369,7 @@ function ProjectDetail({
   metrics,
   taskMetrics,
   editingTaskId,
+  canRunActionRequests,
   onProjectAction,
   onOpenTask,
   onNewTask,
@@ -378,6 +379,11 @@ function ProjectDetail({
   taskMetrics: Map<string, ProjectMetrics>;
   /** The task open in the side panel, highlighted in the list. */
   editingTaskId?: string;
+  /**
+   * False while the task editor still holds another project's draft. Action
+   * requests wait until the page has saved or dropped it.
+   */
+  canRunActionRequests: boolean;
   onProjectAction: (project: LocalProject, actionId: ProjectActionId) => void;
   /** Opens a saved task in the task editor. */
   onOpenTask: (task: LocalProjectTask) => void;
@@ -452,6 +458,27 @@ function ProjectDetail({
   useEffect(() => {
     taskDragStateRef.current = taskDragState;
   }, [taskDragState]);
+
+  // The command palette asks for actions that need this page, such as Edit or New
+  // task, with `?action=<id>` for the project or `&target=<task id>` for a task.
+  // Only enabled actions run.
+  useActionRequest(({ action, target }) => {
+    if (!target) {
+      const requested = projectActions.find(
+        (item) => item.id === action && !item.disabledReason,
+      );
+      if (requested) onProjectAction(project, requested.id);
+      return;
+    }
+
+    const task = project.tasks.find((item) => item._id === target);
+    const requested = task
+      ? getTaskActions(project, task).find(
+          (item) => item.id === action && !item.disabledReason,
+        )
+      : undefined;
+    if (task && requested) runTaskAction(task, requested.id);
+  }, canRunActionRequests);
 
   const clearTaskPointerSession = useCallback(() => {
     const session = taskPointerSessionRef.current;
@@ -729,7 +756,7 @@ function ProjectDetail({
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6" {...{ [FOCUS_ATTRIBUTES.project]: project._id }}>
       <input
         ref={importInputRef}
         type="file"
@@ -918,7 +945,12 @@ function ProjectDetail({
                         key={task._id}
                         actions={taskActions}
                         onAction={(actionId) => runTaskAction(task, actionId)}
-                        render={<tr className="project-task-row" />}
+                        render={
+                          <tr
+                            className="project-task-row"
+                            {...{ [FOCUS_ATTRIBUTES.task]: task._id }}
+                          />
+                        }
                       >
                         <td>
                           <div className="project-task-name-cell">
@@ -994,6 +1026,7 @@ function ProjectDetail({
                                 : undefined
                             }
                             aria-grabbed={isDraggedTask}
+                            {...{ [FOCUS_ATTRIBUTES.task]: task._id }}
                             onClick={() => handleTaskClick(task)}
                             onPointerDown={(event) =>
                               handleTaskPointerDown(task._id, event)
@@ -1098,15 +1131,10 @@ export function ProjectsPage() {
   const [projectModalState, setProjectModalState] =
     useState<ProjectModalState | null>(null);
   const [taskEditor, setTaskEditor] = useState<TaskEditorSession | null>(null);
-  const [isProjectCommandOpen, setIsProjectCommandOpen] = useState(false);
-  const [projectCommandView, setProjectCommandView] =
-    useState<ProjectCommandView>("main");
-  const [projectCommandQuery, setProjectCommandQuery] = useState("");
   const [pressedProjectId, setPressedProjectId] = useState<string | null>(null);
   const [projectDragState, setProjectDragState] =
     useState<ProjectDragState | null>(null);
   const allProjects = state.projects;
-  const hasProjectCommandQuery = projectCommandQuery.trim() !== "";
 
   const activeProjects = useMemo(
     () => state.projects.filter((project) => project.status === "active"),
@@ -1120,30 +1148,6 @@ export function ProjectsPage() {
     () => state.projects.filter((project) => project.status === "archived"),
     [state.projects],
   );
-
-  const projectMatchesQuery = (
-    project: LocalProject,
-    normalizedQuery: string,
-  ) =>
-    [project.name, getProjectDisplayName(project), project.code ?? ""].some(
-      (value) => value.toLowerCase().includes(normalizedQuery),
-    );
-
-  const filteredCommandProjects = useMemo(() => {
-    const normalizedQuery = projectCommandQuery.trim().toLowerCase();
-    if (!normalizedQuery) return activeProjects;
-    return activeProjects.filter((project) =>
-      projectMatchesQuery(project, normalizedQuery),
-    );
-  }, [activeProjects, projectCommandQuery]);
-
-  const filteredCommandArchivedProjects = useMemo(() => {
-    const normalizedQuery = projectCommandQuery.trim().toLowerCase();
-    if (!normalizedQuery) return archivedProjects;
-    return archivedProjects.filter((project) =>
-      projectMatchesQuery(project, normalizedQuery),
-    );
-  }, [archivedProjects, projectCommandQuery]);
 
   const metricsByProject = useMemo(() => {
     const metrics = new Map<string, ProjectMetrics>();
@@ -1211,10 +1215,6 @@ export function ProjectsPage() {
   const taskEditorState = taskEditor
     ? evaluateProjectTaskEditor(taskEditor.fields, taskEditorTask)
     : null;
-  const primaryTaskProject =
-    selectedProject?.status === "active"
-      ? selectedProject
-      : (activeProjects[0] ?? null);
   const draggedProject = projectDragState
     ? (activeProjects.find(
         (project) => project._id === projectDragState.projectId,
@@ -1440,17 +1440,10 @@ export function ProjectsPage() {
 
   /** Creating a project leaves the current one, so the task draft is settled first. */
   const openCreateProjectModal = () => {
-    closeProjectCommand();
     if (!leaveProject()) {
       return;
     }
     setProjectModalState({ mode: "create" });
-  };
-
-  const closeProjectCommand = () => {
-    setIsProjectCommandOpen(false);
-    setProjectCommandView("main");
-    setProjectCommandQuery("");
   };
 
   /**
@@ -1476,7 +1469,6 @@ export function ProjectsPage() {
 
   /** Opens a saved task, or a blank one, in the task editor, going to its project if needed. */
   const openTaskEditor = (projectId: string, task?: LocalProjectTask) => {
-    closeProjectCommand();
     if (task && taskEditor?.taskId === task._id) {
       return;
     }
@@ -1528,20 +1520,6 @@ export function ProjectsPage() {
     }
     setTaskEditor(null);
     return true;
-  };
-
-  /** Goes to a project, or to the archive with `null`, after `leaveProject`. */
-  const goToProject = (projectId: string | null) => {
-    closeProjectCommand();
-    if (projectId === selectedProjectId || !leaveProject()) {
-      return;
-    }
-
-    void navigate(
-      projectId
-        ? { to: "/projects/$projectId", params: { projectId } }
-        : { to: "/projects/archive" },
-    );
   };
 
   /** Runs `leaveProject` before a sidebar link changes project, or cancels the link. */
@@ -1655,12 +1633,14 @@ export function ProjectsPage() {
         >
           <SidebarHeader className="ajour-project-sidebar-header">
             <div className="ajour-project-sidebar-search-row">
+              {/* Search opens the command palette, which also finds tasks
+                  and backlog items. */}
               <button
                 type="button"
                 className="ajour-project-sidebar-command-trigger"
-                aria-label="Search projects"
-                title="Search projects"
-                onClick={() => setIsProjectCommandOpen(true)}
+                aria-label="Search"
+                aria-keyshortcuts={commandPaletteAriaKeys}
+                onClick={openCommandPalette}
               >
                 <span>Search</span>
               </button>
@@ -1729,6 +1709,7 @@ export function ProjectsPage() {
                                 : undefined
                             }
                             aria-grabbed={isDraggedProject}
+                            {...{ [FOCUS_ATTRIBUTES.project]: project._id }}
                             onPointerDown={(event) =>
                               handleProjectPointerDown(project._id, event)
                             }
@@ -1861,6 +1842,9 @@ export function ProjectsPage() {
                 taskMetricsByProject.get(selectedProject._id) ?? new Map()
               }
               editingTaskId={visibleTaskEditor?.taskId}
+              canRunActionRequests={
+                !taskEditor || taskEditor.projectId === selectedProject._id
+              }
               onProjectAction={runProjectAction}
               onOpenTask={(task) => openTaskEditor(selectedProject._id, task)}
               onNewTask={() => openTaskEditor(selectedProject._id)}
@@ -1913,150 +1897,6 @@ export function ProjectsPage() {
           onSubmit={handleProjectSubmit}
         />
       ) : null}
-
-      <CommandDialog
-        open={isProjectCommandOpen}
-        onOpenChange={(open) => {
-          if (open) {
-            setIsProjectCommandOpen(true);
-            return;
-          }
-          closeProjectCommand();
-        }}
-        title="Projects"
-        description="Search projects and run project actions."
-        className="ajour-project-command-dialog"
-      >
-        <Command shouldFilter={false} className="ajour-project-command">
-          <CommandInput
-            placeholder="Search projects and actions..."
-            value={projectCommandQuery}
-            onValueChange={setProjectCommandQuery}
-          />
-          <CommandList className="ajour-project-command-list">
-            <CommandEmpty>No matching projects.</CommandEmpty>
-
-            {projectCommandView === "main" ? (
-              <>
-                {!hasProjectCommandQuery ? (
-                  <>
-                    <CommandGroup heading="Actions">
-                      {primaryTaskProject ? (
-                        <CommandItem
-                          value={`create-task-current-${primaryTaskProject._id}`}
-                          onSelect={() =>
-                            openTaskEditor(primaryTaskProject._id)
-                          }
-                        >
-                          <Plus className="h-4 w-4" />
-                          <span className="flex-1">
-                            Create a task in project{" "}
-                            <span className="font-semibold">
-                              {getProjectDisplayName(primaryTaskProject)}
-                            </span>
-                          </span>
-                        </CommandItem>
-                      ) : null}
-                      <CommandItem
-                        value="create-task-other-project"
-                        onSelect={() => setProjectCommandView("task-projects")}
-                      >
-                        <Plus className="h-4 w-4" />
-                        <span className="flex-1">
-                          Create a task in project...
-                        </span>
-                        <ChevronRight className="h-4 w-4 text-foreground/55" />
-                      </CommandItem>
-                      <CommandItem
-                        value="create-project"
-                        onSelect={openCreateProjectModal}
-                      >
-                        <FolderPlus className="h-4 w-4" />
-                        <span className="flex-1">Create project</span>
-                      </CommandItem>
-                      <CommandItem
-                        value="see-archived-projects"
-                        onSelect={() => goToProject(null)}
-                      >
-                        <Archive className="h-4 w-4" />
-                        <span className="flex-1">See archived projects</span>
-                      </CommandItem>
-                    </CommandGroup>
-
-                    <CommandSeparator />
-                  </>
-                ) : null}
-
-                <CommandGroup heading="Projects">
-                  <div className="ajour-project-command-group-scroll">
-                    {filteredCommandProjects.map((project) => (
-                      <CommandItem
-                        key={project._id}
-                        value={`project-${getProjectDisplayName(project)}`}
-                        onSelect={() => goToProject(project._id)}
-                      >
-                        <ProjectIcon
-                          icon={project.icon}
-                          color={project.color}
-                          className="ajour-sidebar-icon"
-                        />
-                        <span className="flex-1 truncate">
-                          {getProjectDisplayName(project)}
-                        </span>
-                      </CommandItem>
-                    ))}
-                    {filteredCommandArchivedProjects.map((project) => (
-                      <CommandItem
-                        key={project._id}
-                        value={`archived-project-${getProjectDisplayName(project)}`}
-                        onSelect={() => goToProject(project._id)}
-                      >
-                        <ProjectIcon
-                          icon={project.icon}
-                          color={project.color}
-                          className="ajour-sidebar-icon opacity-50"
-                        />
-                        <span className="flex-1 truncate text-foreground/70">
-                          {getProjectDisplayName(project)}
-                        </span>
-                      </CommandItem>
-                    ))}
-                  </div>
-                </CommandGroup>
-              </>
-            ) : (
-              <CommandGroup heading="Select project">
-                <CommandItem
-                  value="back-to-actions"
-                  onSelect={() => setProjectCommandView("main")}
-                >
-                  <ChevronLeft className="h-4 w-4" />
-                  <span className="flex-1">Back to actions</span>
-                </CommandItem>
-                <CommandSeparator />
-                <div className="ajour-project-command-group-scroll">
-                  {filteredCommandProjects.map((project) => (
-                    <CommandItem
-                      key={project._id}
-                      value={`task-project-${getProjectDisplayName(project)}`}
-                      onSelect={() => openTaskEditor(project._id)}
-                    >
-                      <ProjectIcon
-                        icon={project.icon}
-                        color={project.color}
-                        className="ajour-sidebar-icon"
-                      />
-                      <span className="flex-1 truncate">
-                        {getProjectDisplayName(project)}
-                      </span>
-                    </CommandItem>
-                  ))}
-                </div>
-              </CommandGroup>
-            )}
-          </CommandList>
-        </Command>
-      </CommandDialog>
     </CustomSidebarLayout>
   );
 }

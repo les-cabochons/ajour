@@ -1,3 +1,5 @@
+import type { LocalWorkItem } from "@/domain/local-state";
+
 export function parseWorkItemReference(sourceId?: string) {
   if (!sourceId) {
     return undefined;
@@ -20,4 +22,23 @@ export function buildWorkItemTimerComment(title: string, sourceId?: string) {
   return [reference ? `#${reference}` : undefined, title.trim()]
     .filter(Boolean)
     .join(" ");
+}
+
+/**
+ * What a new or running entry takes from a backlog item: the item, its project
+ * and task mapping, and a note naming it. Start entry and New entry… use it on
+ * the Backlog page and in the command palette.
+ */
+export function getWorkItemEntryValues(
+  workItem: Pick<
+    LocalWorkItem,
+    "_id" | "title" | "sourceId" | "projectId" | "taskId"
+  >,
+) {
+  return {
+    workItemId: workItem._id,
+    projectId: workItem.projectId,
+    taskId: workItem.taskId,
+    note: buildWorkItemTimerComment(workItem.title, workItem.sourceId),
+  };
 }

@@ -510,6 +510,7 @@ export function TimerPanel({
                           }
                           aria-grabbed={isDraggedEntry}
                           data-entry-id={entry._id}
+                          data-running-entry={isRunning ? "true" : undefined}
                           tabIndex={0}
                           onClick={() => openEntry(entry)}
                           onKeyDown={(event) => {

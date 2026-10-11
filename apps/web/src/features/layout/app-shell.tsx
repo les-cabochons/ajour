@@ -26,6 +26,7 @@ import {
   isAppNavigationItemActive,
 } from "@/features/layout/app-navigation-sidebar";
 import { AppMenuBar } from "@/features/layout/app-menu-bar";
+import { CommandPalette } from "@/features/command-palette/command-palette";
 import { ShortcutOverlay } from "@/features/layout/shortcut-overlay";
 import { useGlobalShortcuts } from "@/features/layout/use-global-shortcuts";
 import {
@@ -596,6 +597,7 @@ export function AppShell() {
     >
       <ConnectorAutoSyncScheduler />
       <ShortcutOverlay />
+      <CommandPalette />
       {/* useAppSidebar owns the state, persistence and Cmd/Ctrl+B, so the
           provider is controlled and its own shortcut stays off. */}
       <SidebarProvider

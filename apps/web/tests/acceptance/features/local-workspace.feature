@@ -131,6 +131,23 @@ Feature: Open the local time workspace
     And I open project import and export from the Projects list
     Then the project import and export page leads back to Projects
 
+  Scenario: Start a task from the command palette
+    Given I have projects with searchable tasks
+    When I open the Backlog workspace
+    And I open the command palette
+    And I search the command palette for "333 bbb"
+    And I choose "333 000" in the command palette
+    And I choose "Start 333 000 (bbb zyx)" in the command palette
+    Then a running entry uses project "project-bbb" and task "task-333"
+
+  Scenario: Create a project from the command palette
+    Given I have projects with searchable tasks
+    When I open today's time workspace
+    And I open the command palette
+    And I choose "Create project" in the command palette
+    And I create project "ccc new" in the project form
+    Then project "ccc new" is open
+
   Scenario: Edit a task in the side panel with explicit Save
     Given I have projects with searchable tasks
     When I open project "aaa xyz"
