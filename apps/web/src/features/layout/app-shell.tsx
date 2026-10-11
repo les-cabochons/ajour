@@ -39,6 +39,11 @@ import {
 } from "@/features/projects/project-task-picker";
 import { SettingsNavigationSidebar } from "@/features/settings/settings-navigation-sidebar";
 import {
+  NarrowPrototype,
+  NarrowPrototypeSwitcher,
+  useNarrowPrototypeVariant,
+} from "@/features/layout/narrow-view-prototype";
+import {
   formatClockDuration,
   normalizeHoursInput,
   parseHoursInput,
@@ -857,6 +862,37 @@ export function AppShell() {
     void navigate({ href: lastNonSettingsHrefRef.current, replace: true });
   }, [navigate]);
 
+  // PROTOTYPE (issue #13): narrow view variants, dev builds only.
+  const narrowPrototype = useNarrowPrototypeVariant();
+  if (narrowPrototype.variant !== "current") {
+    return (
+      <div className="flex h-dvh min-h-0 flex-col bg-background">
+        <ConnectorAutoSyncScheduler />
+        <NarrowPrototype
+          variant={narrowPrototype.variant}
+          pathname={pathname}
+          selectedTimeDate={selectedTimeDate}
+          datePicker={
+            <CompactTimeDatePicker
+              date={selectedTimeDate}
+              onSelectDate={(nextDate) => {
+                setSelectedTimeDate(nextDate);
+                if (isTimeActive) {
+                  void navigate({
+                    to: "/time/$date",
+                    params: { date: nextDate },
+                  });
+                }
+              }}
+            />
+          }
+          timerBar={<GlobalTimerBar selectedDate={selectedTimeDate} />}
+        />
+        <NarrowPrototypeSwitcher {...narrowPrototype} />
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
@@ -1023,6 +1059,7 @@ export function AppShell() {
           </main>
         </div>
       </SidebarProvider>
+      <NarrowPrototypeSwitcher {...narrowPrototype} />
     </div>
   );
 }
