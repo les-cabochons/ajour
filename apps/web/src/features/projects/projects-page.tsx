@@ -659,7 +659,8 @@ function ProjectDetail({
       return;
     }
 
-    event.currentTarget.setPointerCapture(event.pointerId);
+    const captureTarget = event.currentTarget;
+    captureTarget.setPointerCapture(event.pointerId);
     clearTaskPointerSession();
     setPressedTaskId(taskId);
 
@@ -698,6 +699,7 @@ function ProjectDetail({
     };
 
     taskPointerSessionRef.current = createSharedTableDragPointerSession({
+      captureTarget,
       pointerId,
       pointerType,
       originX: clientX,
@@ -1414,6 +1416,8 @@ export function ProjectsPage() {
     };
 
     projectPointerSessionRef.current = createSharedTableDragPointerSession({
+      // startDrag gives the row pointer capture.
+      captureTarget: projectRowRefs.current.get(projectId),
       pointerId,
       pointerType,
       originX: clientX,

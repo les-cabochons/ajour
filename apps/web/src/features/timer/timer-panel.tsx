@@ -288,7 +288,8 @@ export function TimerPanel({
       return;
     }
 
-    event.currentTarget.setPointerCapture(event.pointerId);
+    const captureTarget = event.currentTarget;
+    captureTarget.setPointerCapture(event.pointerId);
     clearEntryPointerSession();
     setPressedEntryId(entry._id);
 
@@ -327,6 +328,7 @@ export function TimerPanel({
     };
 
     entryPointerSessionRef.current = createSharedTableDragPointerSession({
+      captureTarget,
       pointerId,
       pointerType,
       originX: clientX,

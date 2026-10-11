@@ -36,16 +36,22 @@ export interface SharedTableDragPointer {
   eventType: string;
 }
 
+/**
+ * Capture-phase listener options. An object rather than `true`: Node's
+ * EventTarget, which the tests use, ignores a boolean in removeEventListener.
+ */
+const CAPTURE = { capture: true };
+
 export interface SharedTableDragEventSource {
   addEventListener: (
     type: string,
     listener: EventListener,
-    capture?: boolean,
+    options?: { capture?: boolean },
   ) => void;
   removeEventListener: (
     type: string,
     listener: EventListener,
-    capture?: boolean,
+    options?: { capture?: boolean },
   ) => void;
 }
 
@@ -65,9 +71,14 @@ export interface SharedTableDragPointerSession {
  *   panel or dialog behind the drag;
  * - a press that never became a drag calls `onPressEnd`, with `cancelled` true
  *   for pointer cancel or Escape.
+ *
+ * After Escape, the click that the later release produces is swallowed, so
+ * a cancelled press or drag never opens the row.
  */
 export function createSharedTableDragPointerSession(options: {
   eventSource?: SharedTableDragEventSource;
+  /** The element that took pointer capture on press. Escape releases it. */
+  captureTarget?: Pick<Element, "hasPointerCapture" | "releasePointerCapture">;
   pointerId: number;
   pointerType: string;
   originX: number;
@@ -90,7 +101,7 @@ export function createSharedTableDragPointerSession(options: {
     eventSource.removeEventListener("pointermove", handlePointerMove);
     eventSource.removeEventListener("pointerup", handlePointerEnd);
     eventSource.removeEventListener("pointercancel", handlePointerEnd);
-    eventSource.removeEventListener("keydown", handleKeyDown, true);
+    eventSource.removeEventListener("keydown", handleKeyDown, CAPTURE);
   };
 
   const handlePointerMove: EventListener = (event) => {
@@ -146,6 +157,11 @@ export function createSharedTableDragPointerSession(options: {
 
     const wasDragging = options.isDragging();
     dispose();
+    // The button is still down. Its release must not reach the row as a click.
+    if (options.captureTarget?.hasPointerCapture(options.pointerId)) {
+      options.captureTarget.releasePointerCapture(options.pointerId);
+    }
+    swallowReleaseClick(eventSource, options.pointerId);
 
     if (wasDragging) {
       keyboardEvent.preventDefault();
@@ -161,12 +177,53 @@ export function createSharedTableDragPointerSession(options: {
   eventSource.addEventListener("pointerup", handlePointerEnd);
   eventSource.addEventListener("pointercancel", handlePointerEnd);
   // Capture runs before the listeners of panels, menus and dialogs.
-  eventSource.addEventListener("keydown", handleKeyDown, true);
+  eventSource.addEventListener("keydown", handleKeyDown, CAPTURE);
 
   return {
     pointerId: options.pointerId,
     dispose,
   };
+}
+
+/**
+ * After Escape cancels a press or a drag, the button is still down. Waits for
+ * that pointer's release and swallows the click it produces, so the cancelled
+ * gesture never opens the row. It lives apart from the session, because
+ * callers dispose the session as soon as Escape ends the drag.
+ */
+function swallowReleaseClick(
+  eventSource: SharedTableDragEventSource,
+  pointerId: number,
+) {
+  const handleRelease: EventListener = (event) => {
+    if ((event as PointerEvent).pointerId !== pointerId) {
+      return;
+    }
+
+    eventSource.removeEventListener("pointerup", handleRelease, CAPTURE);
+    eventSource.removeEventListener("pointercancel", handleRelease, CAPTURE);
+    // A cancelled pointer produces no click.
+    if (event.type !== "pointerup") {
+      return;
+    }
+
+    const handleClick: EventListener = (click) => {
+      click.preventDefault();
+      click.stopImmediatePropagation();
+      stop();
+    };
+    const stop = () => {
+      clearTimeout(timeoutId);
+      eventSource.removeEventListener("click", handleClick, CAPTURE);
+    };
+    eventSource.addEventListener("click", handleClick, CAPTURE);
+    // The browser sends the click in the same task as its pointerup, so a
+    // click after this timeout belongs to a new gesture.
+    const timeoutId = setTimeout(stop, 0);
+  };
+
+  eventSource.addEventListener("pointerup", handleRelease, CAPTURE);
+  eventSource.addEventListener("pointercancel", handleRelease, CAPTURE);
 }
 
 function toSharedPointer(event: PointerEvent): SharedTableDragPointer {

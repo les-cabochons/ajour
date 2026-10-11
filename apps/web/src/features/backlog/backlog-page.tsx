@@ -499,7 +499,8 @@ export function BacklogPage() {
       return;
     }
 
-    event.currentTarget.setPointerCapture(event.pointerId);
+    const captureTarget = event.currentTarget;
+    captureTarget.setPointerCapture(event.pointerId);
     clearBacklogPointerSession();
     setPressedWorkItemId(workItem._id);
 
@@ -539,6 +540,7 @@ export function BacklogPage() {
     };
 
     backlogPointerSessionRef.current = createSharedTableDragPointerSession({
+      captureTarget,
       pointerId,
       pointerType,
       originX: clientX,

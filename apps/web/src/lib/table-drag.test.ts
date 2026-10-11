@@ -317,6 +317,103 @@ describe("shared table drag pointer session", () => {
     expect(onEnd).toHaveBeenCalledOnce();
   });
 
+  it.each([
+    { name: "a press below the threshold", moveY: 2 },
+    { name: "an active drag", moveY: 20 },
+  ])("swallows the release click after Escape cancels $name", ({ moveY }) => {
+    vi.useFakeTimers();
+    try {
+      const eventSource = new EventTarget();
+      const captureTarget = {
+        hasPointerCapture: vi.fn(() => true),
+        releasePointerCapture: vi.fn(),
+      };
+      let dragging = false;
+      const onEnd = vi.fn();
+      const onPressEnd = vi.fn();
+      createSharedTableDragPointerSession({
+        eventSource,
+        captureTarget,
+        pointerId: 5,
+        pointerType: "mouse",
+        originX: 0,
+        originY: 0,
+        isDragging: () => dragging,
+        onStart: () => {
+          dragging = true;
+        },
+        onMove: vi.fn(),
+        onEnd,
+        onPressEnd,
+      });
+      dispatchPointer(eventSource, "pointermove", {
+        pointerId: 5,
+        clientX: 0,
+        clientY: moveY,
+      });
+      dispatchEscape(eventSource);
+      expect(captureTarget.releasePointerCapture).toHaveBeenCalledWith(5);
+
+      dispatchPointer(eventSource, "pointerup", {
+        pointerId: 5,
+        clientX: 0,
+        clientY: moveY,
+      });
+      // Stands in for the row's own click handler, which opens the item. In
+      // the browser the row sits below window, so the window capture
+      // listener runs first; one EventTarget runs listeners in the order
+      // they were added, so this one is added after the release.
+      const openRow = vi.fn();
+      eventSource.addEventListener("click", openRow);
+      const click = new Event("click", { cancelable: true });
+      eventSource.dispatchEvent(click);
+
+      expect(openRow).not.toHaveBeenCalled();
+      expect(click.defaultPrevented).toBe(true);
+      expect(onEnd.mock.calls.length + onPressEnd.mock.calls.length).toBe(1);
+
+      // Only that one click: the next gesture's click goes through.
+      eventSource.dispatchEvent(new Event("click"));
+      expect(openRow).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("lets a later gesture's click through when the cancelled release produced none", () => {
+    vi.useFakeTimers();
+    try {
+      const eventSource = new EventTarget();
+      createSharedTableDragPointerSession({
+        eventSource,
+        pointerId: 6,
+        pointerType: "mouse",
+        originX: 0,
+        originY: 0,
+        isDragging: () => false,
+        onStart: vi.fn(),
+        onMove: vi.fn(),
+        onEnd: vi.fn(),
+        onPressEnd: vi.fn(),
+      });
+      dispatchEscape(eventSource);
+      // Released away from the row: the browser sends no click.
+      dispatchPointer(eventSource, "pointerup", {
+        pointerId: 6,
+        clientX: 0,
+        clientY: 0,
+      });
+      vi.runAllTimers();
+
+      const openRow = vi.fn();
+      eventSource.addEventListener("click", openRow);
+      eventSource.dispatchEvent(new Event("click"));
+      expect(openRow).toHaveBeenCalledOnce();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("ends a press that has not become a drag on Escape and lets the key through", () => {
     const eventSource = new EventTarget();
     const onEnd = vi.fn();
