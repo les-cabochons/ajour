@@ -551,7 +551,7 @@ export function BacklogPage() {
     if (standaloneNoteModalState) {
       return (
         workItemsById.get(standaloneNoteModalState.workItemId)?.title ||
-        "Untitled task"
+        "Untitled item"
       );
     }
 
@@ -560,7 +560,7 @@ export function BacklogPage() {
         expandedChildEditor.titleDraft.trim() ||
         expandedChildEditor.title.trim() ||
         expandedChildWorkItem?.title ||
-        "Untitled subtask"
+        "Untitled subitem"
       );
     }
 
@@ -568,7 +568,7 @@ export function BacklogPage() {
       expandedTitleDraft.trim() ||
       expandedTitle.trim() ||
       expandedWorkItem?.title ||
-      "Untitled task"
+      "Untitled item"
     );
   }, [
     expandedChildEditor.title,
@@ -1814,7 +1814,7 @@ export function BacklogPage() {
     return (
       <div className="backlog-subtasks-header">
         <div className="backlog-subtasks-heading">
-          <span className="backlog-subtasks-title">Tasks</span>
+          <span className="backlog-subtasks-title">Subitems</span>
         </div>
         {!showComposer ? (
           <Button
@@ -1833,7 +1833,7 @@ export function BacklogPage() {
             }}
           >
             <Plus className="h-3.5 w-3.5" />
-            Add task
+            Add subitem
           </Button>
         ) : null}
       </div>
@@ -1848,7 +1848,7 @@ export function BacklogPage() {
       <div className="backlog-subtasks-composer">
         <div className="entry-edit-dropdown-grid">
           <label className="field backlog-field-title">
-            <span className="field-label">Subtask</span>
+            <span className="field-label">Subitem</span>
             <input
               className="field-input"
               value={subtaskTitle}
@@ -1859,7 +1859,7 @@ export function BacklogPage() {
                   submitSubtask(workItem);
                 }
               }}
-              placeholder="Subtask name"
+              placeholder="Subitem name"
             />
           </label>
 
@@ -1872,7 +1872,7 @@ export function BacklogPage() {
               placeholder="No project"
               clearLabel="No project"
               emptyMessage="No matching projects"
-              ariaLabel="Subtask project"
+              ariaLabel="Subitem project"
             />
           </label>
 
@@ -1889,7 +1889,7 @@ export function BacklogPage() {
               emptyMessage={
                 subtaskProjectId ? "No matching tasks" : "Pick a project first"
               }
-              ariaLabel="Subtask task mapping"
+              ariaLabel="Subitem task mapping"
               disabled={!subtaskProjectId || subtaskAvailableTasks.length === 0}
             />
           </label>
@@ -1915,7 +1915,7 @@ export function BacklogPage() {
             disabled={!subtaskTitle.trim()}
           >
             <Plus className="h-3.5 w-3.5" />
-            Add subtask
+            Add subitem
           </Button>
           <Button
             type="button"
@@ -2065,7 +2065,7 @@ export function BacklogPage() {
           ? "Enter a positive duration"
           : null;
     const sourceMetaParts = [
-      isLogicalChild ? "Task" : undefined,
+      isLogicalChild ? "Subitem" : undefined,
       workItem.source !== "manual" ? workItem.sourceConnectionLabel : undefined,
       workItem.source !== "manual" ? workItem.sourceProjectName : undefined,
       workItem.sourceWorkItemType,
@@ -2113,7 +2113,7 @@ export function BacklogPage() {
       ) !== childEstimateTotals.completedEstimateHours;
     const hasEstimateSyncIssue = hasWorkItemEstimateSyncIssue(workItem);
     const editorStartTimerTitle = isArchived
-      ? "Archived tasks cannot start timers"
+      ? "Archived items cannot start timers"
       : currentTimer
         ? `Switch timer to ${editorTitle.trim() || workItem.title}`
         : `Start timer for ${editorTitle.trim() || workItem.title}`;
@@ -2430,7 +2430,7 @@ export function BacklogPage() {
                             onChange={(event) =>
                               setExpandedPriorityDraft(event.target.value)
                             }
-                            aria-label="Task priority"
+                            aria-label="Item priority"
                           />
                         ) : null}
                         <input
@@ -2451,10 +2451,10 @@ export function BacklogPage() {
                             }
                           }}
                           placeholder={
-                            isLogicalChild ? "Subtask name" : "Task name"
+                            isLogicalChild ? "Subitem name" : "Item name"
                           }
                           aria-label={
-                            isLogicalChild ? "Subtask name" : "Task name"
+                            isLogicalChild ? "Subitem name" : "Item name"
                           }
                           autoFocus
                         />
@@ -2532,7 +2532,7 @@ export function BacklogPage() {
                         <button
                           type="button"
                           className="backlog-task-inline-action"
-                          aria-label={`Save ${isLogicalChild ? "subtask" : "task"} name`}
+                          aria-label={`Save ${isLogicalChild ? "subitem" : "item"} name`}
                           disabled={!canSaveEditorTitle}
                           onClick={saveInlineTitleEdit}
                         >
@@ -2542,7 +2542,7 @@ export function BacklogPage() {
                         <button
                           type="button"
                           className="backlog-task-inline-action"
-                          aria-label={`Edit ${isLogicalChild ? "subtask" : "task"} name`}
+                          aria-label={`Edit ${isLogicalChild ? "subitem" : "item"} name`}
                           onClick={beginInlineTitleEdit}
                         >
                           <Pencil className="h-3.5 w-3.5" />
@@ -2554,7 +2554,7 @@ export function BacklogPage() {
                         <button
                           type="button"
                           className="backlog-task-inline-action"
-                          aria-label={`Cancel ${isLogicalChild ? "subtask" : "task"} name changes`}
+                          aria-label={`Cancel ${isLogicalChild ? "subitem" : "item"} name changes`}
                           onClick={cancelInlineTitleEdit}
                         >
                           <X className="h-3.5 w-3.5" />
@@ -2604,8 +2604,8 @@ export function BacklogPage() {
                           )}
                           aria-label={
                             isArchivePending
-                              ? "Confirm archive task"
-                              : "Archive task"
+                              ? "Confirm archive item"
+                              : "Archive item"
                           }
                           onClick={() => handleArchiveWorkItem(workItem._id)}
                         >
@@ -2732,8 +2732,8 @@ export function BacklogPage() {
                             <button
                               type="button"
                               className="backlog-estimate-reset-field"
-                              aria-label="Reset original estimate to subtask total"
-                              title="Reset original estimate to subtask total"
+                              aria-label="Reset original estimate to subitem total"
+                              title="Reset original estimate to subitem total"
                               onClick={resetInlineOriginalEstimate}
                             >
                               <RotateCcw className="h-3.5 w-3.5" />
@@ -2762,8 +2762,8 @@ export function BacklogPage() {
                             <button
                               type="button"
                               className="backlog-estimate-reset-field"
-                              aria-label="Reset remaining estimate to subtask total"
-                              title="Reset remaining estimate to subtask total"
+                              aria-label="Reset remaining estimate to subitem total"
+                              title="Reset remaining estimate to subitem total"
                               onClick={resetInlineRemainingEstimate}
                             >
                               <RotateCcw className="h-3.5 w-3.5" />
@@ -2792,8 +2792,8 @@ export function BacklogPage() {
                             <button
                               type="button"
                               className="backlog-estimate-reset-field"
-                              aria-label="Reset completed estimate to subtask total"
-                              title="Reset completed estimate to subtask total"
+                              aria-label="Reset completed estimate to subitem total"
+                              title="Reset completed estimate to subitem total"
                               onClick={resetInlineCompletedEstimate}
                             >
                               <RotateCcw className="h-3.5 w-3.5" />
@@ -2985,7 +2985,7 @@ export function BacklogPage() {
                           "backlog-task-subtasks-pill",
                           isRootExpanded && "is-active",
                         )}
-                        aria-label={`${isRootExpanded ? "Hide" : "Show"} subtasks for ${workItem.title}`}
+                        aria-label={`${isRootExpanded ? "Hide" : "Show"} subitems for ${workItem.title}`}
                         data-no-backlog-drag="true"
                         onPointerDown={(event) => {
                           event.stopPropagation();
@@ -3159,13 +3159,13 @@ export function BacklogPage() {
                       )}
                       aria-label={
                         isArchivePending
-                          ? "Confirm archive task"
-                          : "Archive task"
+                          ? "Confirm archive item"
+                          : "Archive item"
                       }
                       title={
                         isArchivePending
-                          ? "Confirm archive task"
-                          : "Archive task"
+                          ? "Confirm archive item"
+                          : "Archive item"
                       }
                       data-no-backlog-drag="true"
                       onClick={(event) => {
@@ -3203,7 +3203,7 @@ export function BacklogPage() {
                 }}
               >
                 <Play className="h-3.5 w-3.5" />
-                <span>{currentTimer ? "Switch Timer" : "Start Timer"}</span>
+                <span>{currentTimer ? "Switch timer" : "Start timer"}</span>
               </button>
             ) : null}
           </div>
@@ -3388,7 +3388,7 @@ export function BacklogPage() {
                   colSpan={BACKLOG_TABLE_COLUMN_COUNT}
                 >
                   <div className="backlog-task-heading-content">
-                    <span>Backlog Items</span>
+                    <span>Backlog items</span>
                     <div className="backlog-header-actions">
                       {renderBacklogSortControl()}
                       <button
@@ -3400,13 +3400,13 @@ export function BacklogPage() {
                         )}
                         aria-label={
                           isCreatingItem || isCreateTaskModalOpen
-                            ? "Close new task"
-                            : "Add new task"
+                            ? "Close new backlog item"
+                            : "Add new backlog item"
                         }
                         onClick={handleCreateToggle}
                       >
                         <span className="entries-header-add-label">
-                          New task
+                          New backlog item
                         </span>
                         <Plus className="h-3.5 w-3.5" />
                       </button>
@@ -3433,10 +3433,10 @@ export function BacklogPage() {
                 >
                   <td colSpan={BACKLOG_TABLE_COLUMN_COUNT}>
                     <div className="entry-edit-dropdown entry-create-dropdown">
-                      <div className="entry-create-label">New task</div>
+                      <div className="entry-create-label">New backlog item</div>
                       <div className="entry-edit-dropdown-grid">
                         <label className="field backlog-field-title">
-                          <span className="field-label">Task</span>
+                          <span className="field-label">Item</span>
                           <input
                             className="field-input"
                             value={newTitle}
@@ -3449,7 +3449,7 @@ export function BacklogPage() {
                                 closeNewItem();
                               }
                             }}
-                            placeholder="Task name"
+                            placeholder="Item name"
                           />
                         </label>
 
@@ -3533,13 +3533,13 @@ export function BacklogPage() {
                         </EmptyMedia>
                         <EmptyTitle>
                           {activeFilter === "active"
-                            ? "No active tasks"
-                            : "No archived tasks"}
+                            ? "No active backlog items"
+                            : "No archived backlog items"}
                         </EmptyTitle>
                         <EmptyDescription>
                           {activeFilter === "active"
                             ? "Create one with the + button."
-                            : "Archived tasks will appear here."}
+                            : "Archived backlog items will appear here."}
                         </EmptyDescription>
                       </EmptyHeader>
                     </Empty>
@@ -3587,9 +3587,15 @@ export function BacklogPage() {
               isCreateTaskModalOpen && "is-open",
             )}
             aria-label={
-              isCreateTaskModalOpen ? "Close new task" : "Add new task"
+              isCreateTaskModalOpen
+                ? "Close new backlog item"
+                : "Add new backlog item"
             }
-            title={isCreateTaskModalOpen ? "Close new task" : "Add new task"}
+            title={
+              isCreateTaskModalOpen
+                ? "Close new backlog item"
+                : "Add new backlog item"
+            }
             onClick={handleCreateToggle}
           >
             <Plus />

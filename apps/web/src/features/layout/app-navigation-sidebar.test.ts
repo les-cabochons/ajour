@@ -5,11 +5,8 @@ import {
 } from "./app-navigation-sidebar";
 
 describe("isAppNavigationItemActive", () => {
-  it("matches Time and review routes", () => {
+  it("matches Time routes", () => {
     expect(isAppNavigationItemActive("/time/2026-08-15", "/time/$date")).toBe(
-      true,
-    );
-    expect(isAppNavigationItemActive("/review/2026-08-15", "/time/$date")).toBe(
       true,
     );
   });
@@ -35,7 +32,6 @@ describe("isSettingsReturnPath", () => {
   it.each([
     "/time/today",
     "/time/2026-08-15",
-    "/review/2026-08-15",
     "/backlog",
     "/projects",
     "/projects/project-1",
@@ -43,8 +39,8 @@ describe("isSettingsReturnPath", () => {
     expect(isSettingsReturnPath(pathname)).toBe(true);
   });
 
-  it.each(["/rules", "/settings", "/settings/general", "/sign-in"])(
-    "rejects redirect and non-workspace route %s",
+  it.each(["/settings", "/settings/general"])(
+    "rejects non-workspace route %s",
     (pathname) => {
       expect(isSettingsReturnPath(pathname)).toBe(false);
     },

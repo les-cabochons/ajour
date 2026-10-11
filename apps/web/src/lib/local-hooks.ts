@@ -28,10 +28,6 @@ export function useLocalWorkItems() {
   return useLocalState().workItems;
 }
 
-export function useLocalRules() {
-  return useLocalState().rules;
-}
-
 export function useExtensionBridgeStatus() {
   return useLocalState().extensionBridgeStatus;
 }

@@ -57,7 +57,7 @@ export async function readProjectDataShapePlugin(
     pluginDirectory,
     canonicalPluginDirectory,
     manifestPath,
-    "Project data shape plugin manifest",
+    "Schema plugin manifest",
   );
 
   const manifest = projectDataShapePluginManifestSchema.parse(
@@ -65,19 +65,19 @@ export async function readProjectDataShapePlugin(
   );
   if (manifest.apiVersion !== PROJECT_DATA_SHAPE_PLUGIN_API_VERSION) {
     throw new Error(
-      `Project data shape plugin "${manifest.id}" requires API version ${manifest.apiVersion}; this app supports version ${PROJECT_DATA_SHAPE_PLUGIN_API_VERSION}.`,
+      `Schema plugin "${manifest.id}" requires API version ${manifest.apiVersion}; this app supports version ${PROJECT_DATA_SHAPE_PLUGIN_API_VERSION}.`,
     );
   }
   if (path.isAbsolute(manifest.entrypoint)) {
     throw new Error(
-      `Project data shape plugin "${manifest.id}" entrypoint must be relative.`,
+      `Schema plugin "${manifest.id}" entrypoint must be relative.`,
     );
   }
 
   const entrypointPath = path.resolve(pluginDirectory, manifest.entrypoint);
   if (!isPathInside(pluginDirectory, entrypointPath)) {
     throw new Error(
-      `Project data shape plugin "${manifest.id}" entrypoint leaves its plugin directory.`,
+      `Schema plugin "${manifest.id}" entrypoint leaves its plugin directory.`,
     );
   }
   if (
@@ -86,14 +86,14 @@ export async function readProjectDataShapePlugin(
     )
   ) {
     throw new Error(
-      `Project data shape plugin "${manifest.id}" entrypoint must be compiled JavaScript.`,
+      `Schema plugin "${manifest.id}" entrypoint must be compiled JavaScript.`,
     );
   }
   await assertRegularPluginFile(
     pluginDirectory,
     canonicalPluginDirectory,
     entrypointPath,
-    `Project data shape plugin "${manifest.id}" entrypoint`,
+    `Schema plugin "${manifest.id}" entrypoint`,
   );
 
   return {

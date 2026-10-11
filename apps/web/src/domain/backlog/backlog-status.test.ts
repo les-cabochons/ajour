@@ -39,7 +39,7 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
       themeMode: "system",
       updateTrack: "stable",
       projectDataShapeId: "default",
-      weeklyTimeViewStyle: "ledger",
+      weeklyTimeViewStyle: "grid",
       weeklyCapacityTargets: {
         monday: 8,
         tuesday: 8,

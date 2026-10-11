@@ -186,7 +186,7 @@ export function addWorkItem(
     }
 
     if (isSubtaskWorkItem(parent)) {
-      throw new Error("Subtasks cannot have subtasks.");
+      throw new Error("Subitems cannot have subitems.");
     }
 
     inheritsParentMapping =

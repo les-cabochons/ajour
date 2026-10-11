@@ -120,7 +120,7 @@ Given(
           workItems: [
             {
               _id: "work-item-acceptance",
-              title: "Backlog switch task",
+              title: "Backlog switch item",
               status: "active",
               source: "manual",
               priority: 1,
@@ -130,7 +130,7 @@ Given(
             },
             {
               _id: "work-item-child-acceptance",
-              title: "Backlog child task",
+              title: "Backlog child item",
               status: "active",
               source: "manual",
               parentWorkItemId: "work-item-acceptance",
@@ -233,8 +233,8 @@ When("I resize the app to a compact desktop width", async ({ page }) => {
   await page.setViewportSize({ width: 800, height: 900 });
 });
 
-When("I open the legacy Rules route", async ({ page }) => {
-  await page.goto("/rules");
+When("I open Settings directly", async ({ page }) => {
+  await page.goto("/settings");
 });
 
 When("I open Settings from the desktop sidebar", async ({ page }) => {
@@ -290,27 +290,27 @@ When("I start a fresh timer from the Time page", async ({ page }) => {
   await switchTimer.click();
 });
 
-When("I start the timer on the Backlog task", async ({ page }) => {
+When("I start the timer on the Backlog item", async ({ page }) => {
   await page.goto("/backlog");
   const backlogRow = page
     .getByRole("row")
-    .filter({ hasText: "Backlog switch task" });
+    .filter({ hasText: "Backlog switch item" });
   await backlogRow.hover();
   const switchTimer = backlogRow.getByRole("button", {
-    name: "Switch timer to Backlog switch task",
+    name: "Switch timer to Backlog switch item",
   });
   await expect(switchTimer).toBeEnabled();
   await switchTimer.click();
 });
 
-When("I start the timer on the Backlog task from mobile", async ({ page }) => {
+When("I start the timer on the Backlog item from mobile", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/backlog");
   const switchTimer = page.getByRole("button", {
-    name: "Switch timer to Backlog switch task",
+    name: "Switch timer to Backlog switch item",
   });
   await expect(switchTimer).toBeEnabled();
-  await expect(switchTimer).toContainText("Switch Timer");
+  await expect(switchTimer).toContainText("Switch timer");
   await switchTimer.click();
 });
 
@@ -563,7 +563,7 @@ Then(
     const rootTaskCellBefore = await rootTaskCell.boundingBox();
     expect(rootTaskCellBefore).not.toBeNull();
 
-    const rootTitle = rootRow.getByText("Backlog switch task", { exact: true });
+    const rootTitle = rootRow.getByText("Backlog switch item", { exact: true });
     const rootTitleBox = await rootTitle.boundingBox();
     expect(rootTitleBox).not.toBeNull();
 
@@ -579,7 +579,7 @@ Then(
       .locator(".backlog-task-drag-preview-cell")
       .boundingBox();
     const dragPreviewTitle = await dragPreview
-      .getByText("Backlog switch task", { exact: true })
+      .getByText("Backlog switch item", { exact: true })
       .boundingBox();
     expect(dragPreviewTaskCell).not.toBeNull();
     expect(dragPreviewTitle).not.toBeNull();
@@ -593,12 +593,12 @@ Then(
 
     await page.waitForTimeout(100);
     await rootRow
-      .getByRole("button", { name: "Show subtasks for Backlog switch task" })
+      .getByRole("button", { name: "Show subitems for Backlog switch item" })
       .click();
 
     const childRow = page
       .locator("tr.backlog-row-child")
-      .filter({ hasText: "Backlog child task" });
+      .filter({ hasText: "Backlog child item" });
     await expect(childRow).toBeVisible();
     const [rootTaskCellAfter, childTaskCell] = await Promise.all([
       rootTaskCell.boundingBox(),
@@ -926,17 +926,8 @@ Then("the inactive connector plugin remains configurable", async ({ page }) => {
   ).toBeVisible();
 });
 
-When("I open the former connectors settings route", async ({ page }) => {
-  await page.goto("/settings/connectors");
-});
-
 When("I open the plugins catalog", async ({ page }) => {
   await page.goto("/settings/plugins");
-});
-
-Then("I arrive at the plugins catalog", async ({ page }) => {
-  await expect(page).toHaveURL(/\/settings\/plugins$/);
-  await expect(page.getByRole("heading", { name: "Plugins" })).toBeVisible();
 });
 
 Then("the empty plugin catalog is explained", async ({ page }) => {
@@ -1061,7 +1052,7 @@ When(
   async ({ page }, editor: string) => {
     if (editor === "mobile")
       await page.setViewportSize({ width: 390, height: 844 });
-    if (editor === "Weeks") {
+    if (editor === "Week") {
       await page.goto("/time/2026-10-05?view=week&entry=entry-precision");
     } else {
       await page.goto("/time/2026-10-05");

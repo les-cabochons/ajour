@@ -104,11 +104,11 @@ export function assertValidParentWorkItem(
   }
 
   if (isSubtaskWorkItem(parent)) {
-    throw new Error("Subtasks cannot have subtasks.");
+    throw new Error("Subitems cannot have subitems.");
   }
 
   if (hasDirectChildWorkItems(workItems, target)) {
-    throw new Error("Tasks with subtasks cannot be nested.");
+    throw new Error("Items with subitems cannot be nested.");
   }
 
   const workItemsById = new Map(

@@ -30,7 +30,7 @@ export interface WeeklyDayProjection {
   totalMs: number;
 }
 
-export interface WeeklyLedgerRow {
+export interface WeeklyGridRow {
   dayTotalsMs: number[];
   entryIds: string[];
   projectId?: string;
@@ -42,7 +42,7 @@ export interface WeeklyLedgerRow {
   totalMs: number;
 }
 
-function createLedgerRowKey(
+function createGridRowKey(
   value: Pick<LocalTimesheetEntry, "label" | "projectId" | "taskId">,
 ) {
   return `${value.projectId ?? "none"}::${value.taskId ?? value.label}`;
@@ -51,7 +51,7 @@ function createLedgerRowKey(
 export interface WeeklyTimeProjection {
   capacityMs: number;
   days: WeeklyDayProjection[];
-  ledgerRows: WeeklyLedgerRow[];
+  gridRows: WeeklyGridRow[];
   overCapacity: boolean;
   totalMs: number;
 }
@@ -94,20 +94,20 @@ export function projectWeeklyTime({
     };
   });
 
-  const ledgerGroups = new Map<string, LocalTimesheetEntry[]>();
+  const gridGroups = new Map<string, LocalTimesheetEntry[]>();
   for (const entry of entries) {
     if (!dateIndex.has(entry.localDate)) {
       continue;
     }
 
-    const key = createLedgerRowKey(entry);
-    const group = ledgerGroups.get(key) ?? [];
+    const key = createGridRowKey(entry);
+    const group = gridGroups.get(key) ?? [];
     group.push(entry);
-    ledgerGroups.set(key, group);
+    gridGroups.set(key, group);
   }
 
-  const ledgerRows = Array.from(ledgerGroups.values())
-    .map((group): WeeklyLedgerRow => {
+  const gridRows = Array.from(gridGroups.values())
+    .map((group): WeeklyGridRow => {
       const first = group[0]!;
       const project = first.projectId
         ? projectMap.get(first.projectId)
@@ -126,7 +126,7 @@ export function projectWeeklyTime({
         entryIds: group.map((entry) => entry._id),
         projectId: first.projectId,
         projectName: project?.displayName ?? project?.name ?? "No project",
-        rowKey: createLedgerRowKey(first),
+        rowKey: createGridRowKey(first),
         taskId: first.taskId,
         taskName: task?.name ?? (first.label || "No task"),
         totalMs: dayTotalsMs.reduce((total, value) => total + value, 0),
@@ -155,12 +155,12 @@ export function projectWeeklyTime({
     const linkedEntry = runningTime.entryId
       ? entries.find((entry) => entry._id === runningTime.entryId)
       : undefined;
-    const runningRowKey = createLedgerRowKey({
+    const runningRowKey = createGridRowKey({
       label: linkedEntry?.label ?? "",
       projectId: runningTime.projectId,
       taskId: runningTime.taskId,
     });
-    const existingRow = ledgerRows.find((row) => row.rowKey === runningRowKey);
+    const existingRow = gridRows.find((row) => row.rowKey === runningRowKey);
 
     if (existingRow) {
       existingRow.dayTotalsMs[runningDayIndex] =
@@ -172,7 +172,7 @@ export function projectWeeklyTime({
       const dayTotalsMs = weekDates.map((_, index) =>
         index === runningDayIndex ? runningTime.durationMs : 0,
       );
-      ledgerRows.push({
+      gridRows.push({
         dayTotalsMs,
         entryIds: runningTime.entryId ? [runningTime.entryId] : [],
         projectId: runningTime.projectId,
@@ -192,7 +192,7 @@ export function projectWeeklyTime({
   return {
     capacityMs,
     days,
-    ledgerRows,
+    gridRows,
     overCapacity: capacityMs > 0 && totalMs > capacityMs,
     totalMs,
   };

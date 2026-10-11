@@ -12,7 +12,7 @@ const capabilityDescriptions: Record<string, string> = {
   "estimate-update": "Update remote estimates from decisions made in Ajour.",
   "project-data-shape":
     "Apply a project and task schema while Ajour keeps ownership of the file format.",
-  "work-item-sync": "Bring remote work items into Ajour's local backlog.",
+  "work-item-sync": "Bring remote items into Ajour's local backlog.",
 };
 
 function titleCaseSlug(value: string) {
@@ -174,7 +174,7 @@ function ExternalValue({
   );
 }
 
-function PluginInfoLedger({
+function PluginInfoList({
   entry,
   version,
 }: {
@@ -188,7 +188,7 @@ function PluginInfoLedger({
         {entry.author.name}
       </ExternalValue>,
     ],
-    ["Type", entry.type === "connector" ? "Connector" : "Plugin"],
+    ["Type", entry.type === "connector" ? "Connector" : "Schema"],
     [
       "License",
       <ExternalValue href={entry.license.url}>
@@ -250,6 +250,6 @@ export {
   PluginCapabilityBand,
   PluginCapabilityList,
   PluginIdentityMark,
-  PluginInfoLedger,
+  PluginInfoList,
   titleCaseSlug,
 };

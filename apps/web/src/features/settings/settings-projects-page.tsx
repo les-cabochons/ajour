@@ -249,7 +249,7 @@ export function SettingsProjectsPage() {
   return (
     <div className="settings-sections">
       <section className="settings-section">
-        <h2 className="settings-section-title">Project Import/Export</h2>
+        <h2 className="settings-section-title">Import and export projects</h2>
         <p className="settings-section-desc">
           Choose a schema, then export projects and tasks to Excel or import the
           same structured workbook to merge projects by name.

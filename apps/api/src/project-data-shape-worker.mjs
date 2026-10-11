@@ -5,16 +5,14 @@ const MAX_PLUGIN_RESULT_BYTES = 8 * 1024 * 1024;
 const MAX_PLUGIN_ERROR_MESSAGE_CHARACTERS = 4_096;
 
 if (!parentPort) {
-  throw new Error("Project data shape plugin worker requires a parent port.");
+  throw new Error("Schema plugin worker requires a parent port.");
 }
 
 async function run() {
   const pluginModule = await import(workerData.entrypointUrl);
   const handler = pluginModule[workerData.method];
   if (typeof handler !== "function") {
-    throw new Error(
-      `Project data shape plugin does not export ${workerData.method}().`,
-    );
+    throw new Error(`Schema plugin does not export ${workerData.method}().`);
   }
 
   if (workerData.method === "exportProjects") {
@@ -24,16 +22,12 @@ async function run() {
     return await handler(workerData.params.datasets);
   }
 
-  throw new Error(
-    `Unknown project data shape plugin method: ${workerData.method}`,
-  );
+  throw new Error(`Unknown schema plugin method: ${workerData.method}`);
 }
 
 function errorMessage(error) {
   const message =
-    error instanceof Error
-      ? error.message
-      : "Unknown project data shape plugin error.";
+    error instanceof Error ? error.message : "Unknown schema plugin error.";
   if (message.length <= MAX_PLUGIN_ERROR_MESSAGE_CHARACTERS) {
     return message;
   }
@@ -43,9 +37,7 @@ function errorMessage(error) {
 try {
   const result = await run();
   if (serialize(result).byteLength > MAX_PLUGIN_RESULT_BYTES) {
-    throw new Error(
-      "Project data shape plugin result exceeds the allowed size.",
-    );
+    throw new Error("Schema plugin result exceeds the allowed size.");
   }
   parentPort.postMessage({ ok: true, result });
 } catch (error) {

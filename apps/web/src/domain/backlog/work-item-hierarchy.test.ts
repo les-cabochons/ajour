@@ -106,7 +106,7 @@ describe("work item hierarchy", () => {
 
     expect(() =>
       assertValidParentWorkItem([root, child, otherRoot], "root", "other-root"),
-    ).toThrow("Tasks with subtasks cannot be nested.");
+    ).toThrow("Items with subitems cannot be nested.");
   });
 
   it("infers inherited mapping only when a subtask follows its parent", () => {

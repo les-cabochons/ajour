@@ -186,7 +186,7 @@ const defaultUserPreferences: UserPreferences = {
   themeMode: "system",
   updateTrack: "stable",
   projectDataShapeId: BUILT_IN_PROJECT_DATA_SHAPE_ID,
-  weeklyTimeViewStyle: "ledger",
+  weeklyTimeViewStyle: "grid",
   weeklyCapacityTargets: {
     monday: 8 * 60 * 60 * 1000,
     tuesday: 8 * 60 * 60 * 1000,
@@ -356,9 +356,9 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
                 .slice(0, 120)
             : defaults.userPreferences.projectDataShapeId,
         weeklyTimeViewStyle:
-          persistedState.userPreferences?.weeklyTimeViewStyle === "lanes"
-            ? "lanes"
-            : "ledger",
+          persistedState.userPreferences?.weeklyTimeViewStyle === "days"
+            ? "days"
+            : "grid",
         weeklyCapacityTargets: {
           monday: normalizeCapacityTarget(
             persistedState.userPreferences?.weeklyCapacityTargets?.monday,

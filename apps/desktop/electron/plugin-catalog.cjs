@@ -599,7 +599,7 @@ function createPluginCatalogService(options) {
     }
     if (entry.type !== "connector") {
       throw new Error(
-        "This Ajour version cannot install packaged data-shape plugins yet.",
+        "This Ajour version cannot install packaged schema plugins yet.",
       );
     }
     const releasesUrl = `https://api.github.com/repos/${entry.repository.slug}/releases?per_page=30`;

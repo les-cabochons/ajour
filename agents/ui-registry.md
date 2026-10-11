@@ -78,14 +78,15 @@ Last updated: 2026-08-07
 Plugin settings use a compact system-level activation switch and refresh-policy
 selector above a category tab bar and responsive two-column catalog. Catalog
 entries merge normalized Ajour-index metadata with installed connector and
-schema capabilities. The catalog calls non-connector extensions Plugins and
-labels the project-data-shape capability Schema. An available remote connector shows Download;
+schema capabilities. The category tabs are All, Connectors, and Schemas, and
+the catalog labels non-connector plugins and the project-data-shape capability
+Schema. An available remote connector shows Download;
 only an installed plugin can be activated. Manual file installation remains a
 separate action.
 
 Opening an entry moves to a dedicated detail route with a back link,
 identity-first header, status-driven primary action, capability band, capability
-list, and information ledger before plugin-owned configuration. Cached catalog
+list, and information list before plugin-owned configuration. Cached catalog
 artwork is optional: the identity mark supplies a consistent generated default
 thumbnail, while the capability band supplies an equally sized operational-flow
 fallback when no hero exists. Never fetch remote images from the renderer.
@@ -113,12 +114,12 @@ Files: `apps/web/src/features/time/weekly-time-view.tsx`, `apps/web/src/features
 Last updated: 2026-08-15
 
 Day remains the default, timer-first time surface. The date heading exposes a
-compact anchored scope menu with `Day` and `Weeks`; choosing `Weeks` is available
+compact anchored scope menu with `Day` and `Week`; choosing `Week` is available
 at desktop widths of 1024px and above, while narrower layouts fall back to Day.
-Week offers Ledger and Lanes through the shared toggle group,
-with the preference persisted locally. Ledger aggregates project/task time by
+Week offers Grid and Days through the shared toggle group,
+with the preference persisted locally as `grid` or `days`. Grid aggregates project/task time by
 day, shows project markers and daily totals, and reveals every contributing
-entry in a tray attached to the same continuous ruled surface. Lanes use seven
+entry in a tray attached to the same continuous ruled surface. Days use seven
 equal-height headers, restrained weekend/today cues, and a project-color rail
 on each entry card. Both styles share thresholded pointer dragging, explicit
 weekday drop targets, Escape/pointer-cancel cleanup, and keyboard/double-click
@@ -126,7 +127,7 @@ editing. Running entries stay locked. Normal headers show logged totals only;
 capacity target and utilization live in hover cards, with an optional compact
 over-target warning.
 
-The Week toolbar, table or lanes, totals, and detail tray form one full-width
+The Week toolbar, grid or day columns, totals, and detail tray form one full-width
 desktop workspace rather than stacked cards. Return to Day is the leading
 left-arrow action. The shared Day-inline/Week-dialog editor places an icon-only
 entry-options trigger at the form's upper right. Duplicate to and Move to swap

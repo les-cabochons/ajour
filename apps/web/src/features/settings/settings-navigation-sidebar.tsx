@@ -25,8 +25,8 @@ const settingsItems = [
   { to: "/settings/plugins", label: "Plugins", icon: Puzzle },
   { to: "/settings/backlog", label: "Backlog", icon: ListTodo },
   { to: "/settings/projects", label: "Projects", icon: FolderKanban },
-  { to: "/settings/export", label: "Time Logs", icon: Download },
-  { to: "/settings/imports", label: "Sync Review", icon: Inbox },
+  { to: "/settings/time-entries", label: "Time entries", icon: Download },
+  { to: "/settings/sync-review", label: "Sync review", icon: Inbox },
   { to: "/settings/debug", label: "Debug", icon: Bug },
 ] as const;
 

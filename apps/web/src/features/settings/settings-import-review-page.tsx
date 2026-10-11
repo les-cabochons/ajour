@@ -238,7 +238,7 @@ export function SettingsImportReviewPage() {
   return (
     <div className="settings-sections">
       <section className="settings-section">
-        <h2 className="settings-section-title">Sync Review</h2>
+        <h2 className="settings-section-title">Sync review</h2>
         <p className="settings-section-desc">
           Review staged connector imports and resolve estimate conflicts before
           the next sync pass. Child items stay one level deep and inherit their
@@ -295,7 +295,7 @@ export function SettingsImportReviewPage() {
                               )
                             }
                           >
-                            Keep Local
+                            Keep local
                           </Button>
                           <Button
                             size="sm"
@@ -307,7 +307,7 @@ export function SettingsImportReviewPage() {
                               )
                             }
                           >
-                            Accept Remote
+                            Accept remote
                           </Button>
                         </>
                       ) : null}
@@ -374,7 +374,7 @@ export function SettingsImportReviewPage() {
               }
             >
               <CheckSquare className="h-3.5 w-3.5" />
-              Select All
+              Select all
             </Button>
             <Button
               variant="outline"
@@ -390,7 +390,7 @@ export function SettingsImportReviewPage() {
               }
             >
               <X className="h-3.5 w-3.5" />
-              Dismiss Selected
+              Dismiss selected
             </Button>
             <Button
               variant="outline"
@@ -406,7 +406,7 @@ export function SettingsImportReviewPage() {
               }
             >
               <MinusSquare className="h-3.5 w-3.5" />
-              Clear Selection
+              Clear selection
             </Button>
             <Button
               size="sm"
@@ -414,7 +414,7 @@ export function SettingsImportReviewPage() {
               onClick={() => void handleCommitSelected()}
             >
               <ArrowRight className="h-3.5 w-3.5" />
-              Sync Selected To Backlog
+              Sync selected to backlog
             </Button>
           </div>
         </AppPanel>
@@ -476,7 +476,7 @@ export function SettingsImportReviewPage() {
                       onClick={() => void toggleItems(selectableIds, true)}
                     >
                       <CheckSquare className="h-3.5 w-3.5" />
-                      Select Connection
+                      Select connection
                     </Button>
                     <Button
                       variant="outline"
@@ -490,7 +490,7 @@ export function SettingsImportReviewPage() {
                       }
                     >
                       <X className="h-3.5 w-3.5" />
-                      Dismiss Connection
+                      Dismiss connection
                     </Button>
                     <Button
                       variant="outline"
@@ -499,7 +499,7 @@ export function SettingsImportReviewPage() {
                       onClick={() => void toggleItems(selectedIds, false)}
                     >
                       <MinusSquare className="h-3.5 w-3.5" />
-                      Clear Connection
+                      Clear connection
                     </Button>
                   </div>
 

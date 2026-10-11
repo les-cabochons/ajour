@@ -66,7 +66,7 @@ import {
   PluginCapabilityBand,
   PluginCapabilityList,
   PluginIdentityMark,
-  PluginInfoLedger,
+  PluginInfoList,
 } from "./plugin-catalog-ui";
 
 type ConnectorFormState = {
@@ -137,7 +137,7 @@ function PluginCatalogCard({
           </span>
           <span className="mt-3 flex flex-wrap gap-2">
             <Badge variant="outline">
-              {catalog.type === "connector" ? "Connector" : "Plugin"}
+              {catalog.type === "connector" ? "Connector" : "Schema"}
             </Badge>
             <Badge variant={installed ? "secondary" : "outline"}>
               {statusLabel}
@@ -239,7 +239,7 @@ function PluginsHeader({
         >
           <TabsTrigger value="all">All</TabsTrigger>
           <TabsTrigger value="connector">Connectors</TabsTrigger>
-          <TabsTrigger value="plugin">Plugins</TabsTrigger>
+          <TabsTrigger value="plugin">Schemas</TabsTrigger>
         </TabsList>
 
         <div className="flex flex-col gap-3 border-y border-border/60 py-3 sm:flex-row sm:items-center sm:justify-between">
@@ -327,7 +327,7 @@ function PluginDetailHeader({
             </p>
             <p className="mt-2 text-xs text-[var(--text-tertiary)]">
               {entry.author.name} ·{" "}
-              {entry.type === "connector" ? "Connector" : "Plugin"} ·{" "}
+              {entry.type === "connector" ? "Connector" : "Schema"} ·{" "}
               {entry.license.spdxId}
             </p>
           </div>
@@ -548,7 +548,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
 
         <section className="settings-section">
           <h2 className="settings-section-title">Information</h2>
-          <PluginInfoLedger entry={entry} version={group.plugin.version} />
+          <PluginInfoList entry={entry} version={group.plugin.version} />
         </section>
 
         {connectors?.pluginsEnabled === false ? (
@@ -896,7 +896,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                       : "Available"}
               </Badge>
               <Badge variant="outline">
-                {catalogEntry.type === "connector" ? "Connector" : "Plugin"}
+                {catalogEntry.type === "connector" ? "Connector" : "Schema"}
               </Badge>
               <Badge variant="outline">
                 Plugin API {catalogEntry.compatibility.pluginApiVersion}
@@ -919,7 +919,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
 
         <section className="settings-section">
           <h2 className="settings-section-title">Information</h2>
-          <PluginInfoLedger
+          <PluginInfoList
             entry={catalogEntry}
             version={dataShapePlugin?.version}
           />

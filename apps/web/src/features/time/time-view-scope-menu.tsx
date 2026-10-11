@@ -31,7 +31,7 @@ export function TimeViewScopeMenu({
             variant="ghost"
             size="icon-xs"
             className="day-viewer-date-scope-trigger"
-            aria-label={`Time view: ${value === "day" ? "Day" : "Weeks"}`}
+            aria-label={`Time view: ${value === "day" ? "Day" : "Week"}`}
             title="Change time view"
           />
         }
@@ -45,7 +45,7 @@ export function TimeViewScopeMenu({
       >
         <PopoverHeader className="sr-only">
           <PopoverTitle>Time view</PopoverTitle>
-          <PopoverDescription>Choose Day or Weeks.</PopoverDescription>
+          <PopoverDescription>Choose Day or Week.</PopoverDescription>
         </PopoverHeader>
         <ToggleGroup
           value={[value]}
@@ -67,7 +67,7 @@ export function TimeViewScopeMenu({
           </ToggleGroupItem>
           <ToggleGroupItem value="week" className="time-view-scope-option">
             <Check data-icon="inline-start" className="time-view-scope-check" />
-            <span>Weeks</span>
+            <span>Week</span>
           </ToggleGroupItem>
         </ToggleGroup>
       </PopoverContent>

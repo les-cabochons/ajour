@@ -118,7 +118,7 @@ export async function parseTimesheetImportWorkbook(
     );
   }
 
-  const sheet = workbook.getWorksheet("Time Logs") ?? workbook.worksheets[0];
+  const sheet = workbook.getWorksheet("Time entries") ?? workbook.worksheets[0];
   if (!sheet) {
     throw new Error("The workbook does not contain any worksheets.");
   }
@@ -129,7 +129,7 @@ export async function parseTimesheetImportWorkbook(
   );
   if (headers.join("|") !== expectedImportHeaders.join("|")) {
     throw new Error(
-      "The Time Logs sheet must contain the columns date, project, task, note, and hours.",
+      "The Time entries sheet must contain the columns date, project, task, note, and hours.",
     );
   }
 
@@ -219,7 +219,7 @@ export async function createTimesheetExportWorkbook(
   const rows = buildTimesheetExportRows(options);
   const ExcelJSModule = await import("exceljs");
   const workbook = new ExcelJSModule.default.Workbook();
-  const sheet = workbook.addWorksheet("Time Logs");
+  const sheet = workbook.addWorksheet("Time entries");
 
   sheet.columns = [
     { header: "date", key: "date", width: 12 },
@@ -242,8 +242,8 @@ export function buildTimesheetExportFilename(
   endDate: string,
 ) {
   return startDate === endDate
-    ? `timelogs-${startDate}.xlsx`
-    : `timelogs-${startDate}-to-${endDate}.xlsx`;
+    ? `time-entries-${startDate}.xlsx`
+    : `time-entries-${startDate}-to-${endDate}.xlsx`;
 }
 
 function toBlobPart(workbookBytes: ArrayBuffer | Uint8Array): ArrayBuffer {
