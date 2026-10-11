@@ -14,6 +14,10 @@ _Avoid_: Client, account
 A unit of work inside one project. A task always belongs to exactly one project.
 _Avoid_: Project task (in user-facing text), activity
 
+**Pinned task**:
+A task the user reaches with a number key from 1 to 0.
+_Avoid_: Favorite, shortcut task
+
 **Backlog item**:
 A piece of planned work in the user's backlog, optionally mapped to a project and task.
 _Avoid_: Task, work item, issue, to-do

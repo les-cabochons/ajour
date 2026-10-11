@@ -48,9 +48,10 @@ Edit · New task · Archive (Restore when archived)
 
 ### Task
 
-Start entry · New entry… · Edit · Archive (Restore when archived)
+Start entry · New entry… · Edit · Assign shortcut… · Archive (Restore when archived)
 
 - Start entry starts a new running entry for this task.
+- Assign shortcut… makes the task a pinned task with a number slot from 1 to 0, or changes or clears its slot. See the Keyboard section.
 - New entry… opens the entry editor with this task filled in.
 - An archived task, or a task in an archived project, disables Start entry, New entry… and Edit: "Restore the task first" or "Restore the project first".
 
@@ -70,7 +71,7 @@ Start entry · New entry… · Edit · Add subitem · Open in source · Archive 
 - Which day Start entry and New entry… use from the backlog and tasks: [Running timer editing and empty duration meaning](https://github.com/les-cabochons/ajour/issues/15).
 - What right-click does on a Grid cell, which can hold several entries: see the Week view section.
 - Undo or confirmation for Delete, Discard, Archive and moves: see the Feedback section.
-- Keys, palette layout and menu bar menus: [Keyboard model and command palette](https://github.com/les-cabochons/ajour/issues/18).
+- Keys, palette layout and menu bar menus: see the Keyboard section.
 
 ## Vocabulary
 
@@ -288,3 +289,66 @@ No success toasts. The result shows where the action happened:
 ### Toasts
 
 Bottom right in a full window, bottom center above the content in the narrow view. At most three, newest on top. Built on the Base UI toast component.
+
+## Keyboard
+
+Decided in [Keyboard model and command palette](https://github.com/les-cabochons/ajour/issues/18).
+
+### Style
+
+Frequent in-app actions use single keys. They only work when focus is not in a text field. Modifier shortcuts are kept for OS conventions and app-wide commands: Cmd+K, Cmd+B, Cmd+Z, Cmd+, and Cmd+Enter. Cmd means Ctrl on Windows. The web build uses the same keys.
+
+### Global shortcuts
+
+| Key                | Action                                                                                  |
+| ------------------ | --------------------------------------------------------------------------------------- |
+| N                  | New entry: side panel on the Time pages, popover elsewhere                              |
+| S                  | Stop the running entry, or start a new one when nothing runs                            |
+| C                  | Continue the focused entry, or the most recent entry when none is focused               |
+| T                  | Go to today                                                                             |
+| [ / ]              | Previous / next day, or week in the Week view                                           |
+| D / W              | Day view / Week view                                                                    |
+| G then T, B, P, S  | Go to Time, Backlog, Projects, Settings                                                 |
+| 1 to 0             | Start a running entry for the pinned task in that slot, switching if another entry runs |
+| Shift+1 to Shift+0 | Open the new entry form with that pinned task filled in                                 |
+| Cmd+B              | Show or hide the sidebar                                                                |
+| Cmd+Z              | Press Undo on the visible Undo toast                                                    |
+| Cmd+,              | Settings                                                                                |
+| Cmd+K              | Command palette                                                                         |
+| ?                  | Keyboard shortcuts                                                                      |
+
+### Pinned tasks
+
+- A pinned task has a number slot from 1 to 0, ten in all. "Assign shortcut…" on the task sets, changes or clears it. A slot belongs to at most one task.
+- The slot shows next to the task in the project task picker and on the task row.
+- While an entry is being edited, the digits do nothing special.
+- When a Grid cell has focus, digits edit its hours instead. Anywhere else, digits start pinned tasks.
+
+### Focused rows and cards
+
+- Day rows become focusable, like Week cards.
+- ↑ and ↓ move focus between rows or cards. ← and → move between days in Days and between cells in the Grid.
+- Enter or E opens Edit. Delete or Backspace deletes, with the Undo toast. Cmd+D duplicates. M opens Move to…. Alt+↑ and Alt+↓ reorder.
+- The context menu key, Shift+F10 or "." opens the "…" menu. Escape closes whatever is open.
+- Every item in the "…" and right-click menus shows its key, so the menus teach the shortcuts.
+
+### Command palette
+
+Cmd+K opens one palette with navigation, global actions, the focused item's actions, and search across projects, tasks and backlog items, so "Start Development" works from anywhere. The narrow view's future search button opens it. It replaces the Projects command dialog. Searching time entry notes is left for later.
+
+### Menu bar
+
+- Menus:
+  - Ajour: About, Settings… (Cmd+,), Check for updates, Quit.
+  - Edit: the standard Undo, Cut, Copy, Paste and Select All. macOS needs them for clipboard shortcuts.
+  - View: Day, Week, Show or Hide sidebar, Today, Previous, Next, zoom.
+  - Entry: the focused entry's action set.
+  - Window, and Help with Keyboard shortcuts.
+- macOS uses the native menu bar. On Windows the menus live in the app's title bar at full widths, like the ChatGPT app, and disappear in the narrow view.
+- Production builds drop Reload and DevTools. Development builds keep them.
+- Single-key shortcuts show in the menus as labels without being registered, so they never fire while the user types.
+- The web build has no menu bar. The palette and the "?" overlay cover everything the menus offer.
+
+### Shortcut reference
+
+"?" opens an overlay listing every shortcut, with a search field.
