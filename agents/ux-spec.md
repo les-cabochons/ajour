@@ -105,3 +105,20 @@ Each nav label matches its page title. Old routes are removed, not redirected.
 | Debug        | Debug                          | `/settings/debug`        |
 
 The Plugins page tabs are **All · Connectors · Schemas**.
+
+## App shell
+
+Decided in [App shell and collapsible sidebar](https://github.com/les-cabochons/ajour/issues/12). Prototype: branch `prototype/app-shell`, variant A.
+
+### Desktop widths
+
+- The app sidebar has two states: expanded (200px, logo and labels) and a 52px icon rail (icons with tooltips). Time, Backlog and Projects sit at the top, and Settings at the bottom.
+- Cmd+B (Ctrl+B on Windows) and a button next to the logo toggle it. The View menu gets "Show sidebar" or "Hide sidebar" once the menu bar exists. There is no second shortcut.
+- The state is saved per device. Below 1100px the sidebar collapses to the rail on its own, without changing the saved preference.
+- Settings opens inside the shell. The app sidebar stays visible with Settings active, and the settings pages are listed in a second column next to the page. There is no separate "back" control, because the user never leaves the app.
+- Projects keeps its own list of projects next to the app sidebar, with no collapse control of its own.
+- The titlebar keeps New entry (+), Start (▶), the running entry pill and the totals pill. The date picker only shows in the narrow view.
+
+### Narrow view
+
+At narrow-view widths there is no rail and no sidebar, including the Projects list. The threshold and the navigation that replaces the sidebars belong to [Narrow view](https://github.com/les-cabochons/ajour/issues/13).
