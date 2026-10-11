@@ -26,6 +26,38 @@ _Avoid_: Task, work item, issue, to-do
 A backlog item nested one level under another backlog item.
 _Avoid_: Subtask, child item
 
+**Settle**:
+To record that the user has nothing left to do on a backlog item for now. A manual item becomes archived. A synced item becomes settled, and the user can change its state or priority in its source tool at the same time.
+_Avoid_: Complete, close, finish, resolve
+
+**Settled**:
+The state of a synced backlog item that waits on someone or something else, such as another person, a client's answer, QA or a deployment.
+_Avoid_: Waiting, blocked, on hold (as the Ajour state)
+
+**Source project**:
+The project in a connector's source tool that a synced backlog item belongs to. It is separate from an Ajour project.
+_Avoid_: Remote project, connector project
+
+**Settle rule**:
+How settling behaves for the backlog items of one source project: ask each time, or apply a fixed change.
+_Avoid_: Settle preset, settle config
+
+**Archived**:
+The state of a backlog item that is done. An archived item rarely comes back.
+_Avoid_: Closed, completed, deleted
+
+**Unsettle**:
+To put a settled backlog item back on the user's plate.
+_Avoid_: Reopen, restore (for a settled item)
+
+**Snooze**:
+To hide a backlog item from the sidebar until a chosen moment, after which it returns on its own. A snoozed item stays active, and its connector's source tool never learns about it.
+_Avoid_: Defer, postpone, hide
+
+**Returned**:
+The state of a backlog item that came back to the sidebar on its own, because its snooze ended or its source tool changed it after it was settled, and that the user has not opened since.
+_Avoid_: Unread, new, woken
+
 ### Time entries
 
 **Time entry**:
