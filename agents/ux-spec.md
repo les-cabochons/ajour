@@ -353,3 +353,39 @@ Cmd+K opens one palette with navigation, global actions, the focused item's acti
 ### Shortcut reference
 
 "?" opens an overlay listing every shortcut, with a search field.
+
+## Submit timesheet
+
+Decided in [Submit timesheet flow in full and narrow windows](https://github.com/les-cabochons/ajour/issues/24). Prototype: branch `prototype/submit-flow`, route `/prototype/submit`, variant B. Submitting means copying the week into Workday by hand, then marking the entries as submitted in Ajour.
+
+### Entry point
+
+One "Submit week" button, styled the same, sits in the Day and Week headers at every width, including the narrow view. It opens the submit page for the selected week. The submit page replaces the modal.
+
+### Summary
+
+- The page leads with the week's total against its target, a progress bar, and warnings such as days under target or entries without a task.
+- The total and warnings follow the current selection.
+- Submitting under the week target still asks for confirmation.
+
+### Grouping and copying
+
+- A "Group by" control offers three options:
+  - Day and task (the default): one section per day, one line per task in that day, hours added up, comments merged with " | ".
+  - Day: one section per day, one line per entry.
+  - Task: one line per task for the whole week, no days, hours added up, comments merged.
+- Every line shows project, task, hours and comments. Each value has an always-visible copy icon. Clicking the value or the icon copies it, and a checkmark replaces the icon for a second. There is no hover reveal and no popover.
+- Copied hours use decimals, such as 5.00. The screen shows clock time, such as 5:00.
+
+### Selection
+
+- All the week's unsubmitted entries start selected.
+- Day chips, Mon to Sun, drop or add a whole day's entries, for partial weeks.
+- Each line has one checkbox that includes or excludes all the entries behind it.
+- The button reads "Mark 9 entries as submitted".
+
+### Result
+
+- After marking, the summary shows "Week submitted on Oct 11, 2:54 AM · 14 entries · 37:00" in place. No toast.
+- The Week header shows a Submitted badge for that week.
+- Editing a submitted entry returns it to saved. The submit page then shows "3 entries changed since you submitted", and the button reads "Mark changes as submitted".
