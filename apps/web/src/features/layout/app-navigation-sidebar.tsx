@@ -7,6 +7,11 @@ import {
   RiTimerLine as Timer,
 } from "@remixicon/react";
 import { BrandLogo } from "@/components/brand-logo";
+// PROTOTYPE (issue #69): throwaway backlog sidebar variants.
+import {
+  BacklogPrototypeChrome,
+  BacklogSidebarPrototype,
+} from "@/features/backlog/backlog-sidebar-prototype";
 import { Button } from "@/components/ui/button";
 import {
   Sidebar,
@@ -165,6 +170,10 @@ export function AppNavigationSidebar({
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
+        {state === "expanded" ? (
+          <BacklogSidebarPrototype pathname={pathname} />
+        ) : null}
+        <BacklogPrototypeChrome />
       </SidebarContent>
 
       <SidebarFooter>

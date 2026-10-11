@@ -9,6 +9,7 @@ import {
 import { lazy, Suspense, type ReactNode } from "react";
 import { PageSkeleton } from "@/components/page-skeleton";
 import { AppShell } from "@/features/layout/app-shell";
+import { BacklogItemPrototypePage } from "@/features/backlog/backlog-sidebar-prototype";
 import { ShortcutProvider } from "@/lib/shortcut-handlers";
 import { todayIsoDate } from "@/lib/utils";
 
@@ -184,6 +185,16 @@ const backlogRoute = createRoute({
   ),
 });
 
+// PROTOTYPE (issue #69): throwaway backlog item page.
+const backlogItemPrototypeRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/backlog/$itemId",
+  component: function BacklogItemPrototypeRoute() {
+    const { itemId } = backlogItemPrototypeRoute.useParams();
+    return <BacklogItemPrototypePage itemId={itemId} />;
+  },
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/settings",
@@ -297,6 +308,7 @@ const routeTree = rootRoute.addChildren([
     timeRoute,
     submitRoute,
     backlogRoute,
+    backlogItemPrototypeRoute,
     projectsRoute,
     projectsArchiveRoute,
     projectDetailRoute,
