@@ -39,6 +39,11 @@ import {
 } from "@/features/projects/project-task-picker";
 import { SettingsNavigationSidebar } from "@/features/settings/settings-navigation-sidebar";
 import {
+  ShellPrototype,
+  ShellPrototypeSwitcher,
+  useShellPrototypeVariant,
+} from "@/features/layout/app-shell-prototype";
+import {
   formatClockDuration,
   normalizeHoursInput,
   parseHoursInput,
@@ -857,6 +862,41 @@ export function AppShell() {
     void navigate({ href: lastNonSettingsHrefRef.current, replace: true });
   }, [navigate]);
 
+  // PROTOTYPE (issue #12): alternative shells, dev builds only.
+  const shellVariant = useShellPrototypeVariant();
+  if (shellVariant !== "current") {
+    return (
+      <div className="flex h-dvh min-h-0 flex-col bg-background">
+        <ConnectorAutoSyncScheduler />
+        <ShellPrototype
+          variant={shellVariant}
+          pathname={pathname}
+          selectedTimeDate={selectedTimeDate}
+          isSettingsActive={isSettingsActive}
+          onLeaveSettings={leaveSettings}
+          titlebarControls={
+            <>
+              <CompactTimeDatePicker
+                date={selectedTimeDate}
+                onSelectDate={(nextDate) => {
+                  setSelectedTimeDate(nextDate);
+                  if (isTimeActive) {
+                    void navigate({
+                      to: "/time/$date",
+                      params: { date: nextDate },
+                    });
+                  }
+                }}
+              />
+              <GlobalTimerBar selectedDate={selectedTimeDate} />
+            </>
+          }
+        />
+        <ShellPrototypeSwitcher variant={shellVariant} />
+      </div>
+    );
+  }
+
   return (
     <div
       className={cn(
@@ -1023,6 +1063,7 @@ export function AppShell() {
           </main>
         </div>
       </SidebarProvider>
+      <ShellPrototypeSwitcher variant={shellVariant} />
     </div>
   );
 }
