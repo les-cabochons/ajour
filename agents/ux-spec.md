@@ -21,7 +21,7 @@ Decided in [Action model for entries, timers, projects, tasks and work items](ht
 4. Delete, Discard and Archive come last and use the destructive style.
 5. Every action has a shortcut slot. The keyboard section assigns the keys.
 6. Selection is single. Focus and selection are the same thing, and actions apply to the focused object. Multi-select and bulk actions are out of scope.
-7. Exception to rule 1: Move up and Move down (Alt+Up and Alt+Down) reorder sortable objects. They exist as keyboard shortcuts and palette commands only, not in the right-click or "…" menus. Sortable objects are time entries within a day, projects, project tasks and top-level work items.
+7. Exception to rule 1: Move up and Move down (Alt+Up and Alt+Down) reorder sortable objects. They exist as keyboard shortcuts and palette commands only, not in the right-click or "…" menus. Sortable objects are time entries within a day, projects, tasks and top-level backlog items.
 
 ### Time entry
 
@@ -34,7 +34,7 @@ Decided in [Action model for entries, timers, projects, tasks and work items](ht
 | Move to…         | Enabled  | Enabled, marks the entry as not submitted                | Disabled: "Stop the timer first" |
 | Delete / Discard | Delete   | Delete                                                   | Discard                          |
 
-- Continue on today's entry resumes that entry. Continue on another day's entry starts a new running entry today with the same project task and note. Today the code adds the new time to the original entry, even on a past day. That changes.
+- Continue on today's entry resumes that entry. Continue on another day's entry starts a new running entry today with the same task and note. Today the code adds the new time to the original entry, even on a past day. That changes.
 - Discard throws away the time counted since the entry last started. A running entry that started from nothing disappears.
 - Move up and Move down apply to saved and submitted entries. The running entry stays first in its day, so Move up and Move down are disabled on it: "The running entry stays on top".
 
@@ -46,7 +46,7 @@ Edit · New task · Archive (Restore when archived)
 - Archive leaves the edit form and moves into the action set.
 - Projects have no Delete.
 
-### Project task
+### Task
 
 Start entry · New entry… · Edit · Archive (Restore when archived)
 
@@ -54,21 +54,54 @@ Start entry · New entry… · Edit · Archive (Restore when archived)
 - New entry… opens the entry editor with this task filled in.
 - An archived task, or a task in an archived project, disables Start entry, New entry… and Edit: "Restore the task first" or "Restore the project first".
 
-### Backlog work item
+### Backlog item
 
-Start entry · New entry… · Edit · Add subtask · Open in source · Archive (Restore when archived) · Delete
+Start entry · New entry… · Edit · Add subitem · Open in source · Archive (Restore when archived) · Delete
 
 - Open in source is listed only for items synced from a connector.
 - New entry… replaces the inline "Log time" field as the action for logging time.
-- An archived item disables Start entry, New entry…, Edit and Add subtask: "Restore the item first".
-- A subtask disables Add subtask: "Subtasks can't have subtasks".
-- Delete removes the item's subtasks too, and its label states the count, for example "Delete (and 2 subtasks)".
+- An archived item disables Start entry, New entry…, Edit and Add subitem: "Restore the item first".
+- A subitem disables Add subitem: "Subitems can't have subitems".
+- Delete removes the item's subitems too, and its label states the count, for example "Delete (and 2 subitems)".
 
 ### Decided elsewhere
 
 - How Edit opens and where the action set appears inside the editor: [One entry editor for Day and Week](https://github.com/les-cabochons/ajour/issues/14).
-- Which day Start entry and New entry… use from the backlog and project tasks: [Running timer editing and empty duration meaning](https://github.com/les-cabochons/ajour/issues/15).
-- What right-click does on a Ledger cell, which can hold several entries: [Adding and changing time in the week view](https://github.com/les-cabochons/ajour/issues/16).
+- Which day Start entry and New entry… use from the backlog and tasks: [Running timer editing and empty duration meaning](https://github.com/les-cabochons/ajour/issues/15).
+- What right-click does on a Grid cell, which can hold several entries: [Adding and changing time in the week view](https://github.com/les-cabochons/ajour/issues/16).
 - Undo or confirmation for Delete, Discard, Archive and moves: [Undo, confirmation and feedback policy](https://github.com/les-cabochons/ajour/issues/17).
 - Keys, palette layout and menu bar menus: [Keyboard model and command palette](https://github.com/les-cabochons/ajour/issues/18).
-- Final labels: [Product name and vocabulary](https://github.com/les-cabochons/ajour/issues/11).
+
+## Vocabulary
+
+Decided in [Product name and vocabulary](https://github.com/les-cabochons/ajour/issues/11). Domain terms live in [`GLOSSARY.md`](GLOSSARY.md). This section covers names and labels.
+
+### Product name
+
+The product is **Ajour** everywhere: window title, tab title, sidebar logo, installer and app bundle (`Ajour.app`), artifact names, copy, docs, the Electron app id, the desktop data folder, storage keys and package names. "HarDay", "Time Tracker" and "TimeTracker" disappear.
+
+The app is not in production. The rename ships with no migration code, no redirects and no aliases. The release note tells users to export time entries and projects to Excel from Settings before upgrading, then import them again. Backlog items and preferences start fresh.
+
+### Labels
+
+- All labels, headings and buttons use sentence case.
+- "Task" only ever means a task inside a project. Pickers keep the "Project / task" label.
+- The Backlog page shows **backlog items** and **subitems**, never "tasks" or "subtasks".
+- Time views are **Day** and **Week**. The Week view layouts are **Grid** (the project-by-day table, formerly Ledger) and **Days** (one column of cards per day, formerly Lanes).
+- The user sees **Schema**, never "data shape". Code identifiers may keep `dataShape`.
+
+### Settings navigation
+
+Each nav label matches its page title. Old routes are removed, not redirected.
+
+| Nav label    | Page title                     | Route                    |
+| ------------ | ------------------------------ | ------------------------ |
+| General      | General                        | `/settings/general`      |
+| Plugins      | Plugins                        | `/settings/plugins`      |
+| Backlog      | Backlog                        | `/settings/backlog`      |
+| Projects     | Projects                       | `/settings/projects`     |
+| Time entries | Import and export time entries | `/settings/time-entries` |
+| Sync review  | Sync review                    | `/settings/sync-review`  |
+| Debug        | Debug                          | `/settings/debug`        |
+
+The Plugins page tabs are **All · Connectors · Schemas**.
