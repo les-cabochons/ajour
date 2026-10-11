@@ -797,9 +797,9 @@ export function BacklogPage() {
     const backlogEstimateBadgeLabel = getWorkItemEstimateBadgeLabel(
       childEstimateTotals ?? workItem,
     );
-    const startTimerTitle = currentTimer
-      ? `Switch timer to ${workItem.title}`
-      : `Start timer for ${workItem.title}`;
+    const startEntryTitle = currentTimer
+      ? `Switch to ${workItem.title}`
+      : `Start entry for ${workItem.title}`;
     const hasEstimateSyncIssue = hasWorkItemEstimateSyncIssue(workItem);
     const isDraggedWorkItem = backlogDragState?.workItemId === workItem._id;
     const rootIndex = visibleRootItems.findIndex(
@@ -998,8 +998,8 @@ export function BacklogPage() {
                   <button
                     type="button"
                     className="entry-row-action entry-row-action-play"
-                    aria-label={startTimerTitle}
-                    title={startTimerTitle}
+                    aria-label={startEntryTitle}
+                    title={startEntryTitle}
                     disabled={!canStartTimer}
                     data-no-backlog-drag="true"
                     onClick={(event) => {
@@ -1023,8 +1023,8 @@ export function BacklogPage() {
               <button
                 type="button"
                 className="backlog-task-start backlog-task-action-pill backlog-estimate-mobile-action"
-                aria-label={startTimerTitle}
-                title={startTimerTitle}
+                aria-label={startEntryTitle}
+                title={startEntryTitle}
                 disabled={!canStartTimer}
                 data-no-backlog-drag="true"
                 onPointerDown={(event) => {
@@ -1036,7 +1036,7 @@ export function BacklogPage() {
                 }}
               >
                 <Play className="h-3.5 w-3.5" />
-                <span>{currentTimer ? "Switch timer" : "Start timer"}</span>
+                <span>{currentTimer ? "Switch" : "Start entry"}</span>
               </button>
             ) : null}
             {isMobileLayout ? rowActionsButton : null}

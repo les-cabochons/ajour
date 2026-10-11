@@ -14,23 +14,12 @@ const ENTRY_ID_ATTRIBUTE = "data-entry-id";
 /**
  * The app-wide handlers for the global shortcuts in `lib/shortcuts.ts`. The Time
  * page registers its own N and T, which win while it is mounted; these run
- * everywhere else. `selectedTimeDate` is the day the titlebar shows, which
+ * everywhere else. N elsewhere opens the titlebar's new entry popover, so the
+ * titlebar registers it. `selectedTimeDate` is the day the titlebar shows, which
  * "G then T" opens, like the sidebar's Time link.
  */
 export function useGlobalShortcuts(selectedTimeDate: string) {
   const navigate = useNavigate();
-
-  // Until the titlebar popover (#34) exists, N opens today's Time page editor.
-  useShortcut(
-    "entry.new",
-    () =>
-      void navigate({
-        to: "/time/$date",
-        params: { date: todayIsoDate() },
-        search: { entry: "new" } as never,
-      }),
-    "app",
-  );
 
   useShortcut(
     "entry.stop-or-start",
@@ -39,8 +28,8 @@ export function useGlobalShortcuts(selectedTimeDate: string) {
       if (runningTimer) {
         localStore.saveTimer(runningTimer._id);
       } else {
-        // A running entry is always on today. See "Running entries" in the UX spec.
-        localStore.startTimer({ localDate: todayIsoDate() });
+        // startTimer puts it on today. See "Running entries" in the UX spec.
+        localStore.startTimer({});
       }
     },
     "app",

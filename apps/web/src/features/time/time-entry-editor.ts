@@ -8,6 +8,8 @@ export interface TimeEntryEditorFields {
   taskId: string;
   note: string;
   durationHours: string;
+  /** The entry's date, `YYYY-MM-DD`. The running entry hides it: it is always today. */
+  localDate: string;
 }
 
 /** Project, task, and note as stored on an entry. Empty draft fields become `undefined`. */
@@ -20,6 +22,7 @@ export interface TimeEntryMetadata {
 /** The saved values a draft is compared against and written back to. */
 export interface TimeEntryValues extends TimeEntryMetadata {
   durationMs: number;
+  localDate: string;
 }
 
 /**
@@ -49,18 +52,26 @@ export interface TimeEntryEditorState {
   hasChanges: boolean;
   hasContent: boolean;
   canSave: boolean;
-  /** An empty duration on a new entry starts a timer instead of saving. */
+  /**
+   * A new entry with no hours. It can only start: Save is disabled, and Enter
+   * presses Start. Ajour never saves a 0h entry.
+   */
   isTimerMode: boolean;
   durationError: string | null;
+  dateError: string | null;
   /** Values for moving or duplicating to `localDate`, or `null` when the draft cannot be saved. */
-  relocationValues(
-    localDate: string,
-  ): (TimeEntryValues & { localDate: string }) | null;
+  relocationValues(localDate: string): TimeEntryValues | null;
 }
+
+/** Shown under Hours, and as the blocked Save reason, for a new entry with no hours. */
+export const START_OR_ENTER_HOURS_HINT = "Enter hours, or press Start";
+const NON_POSITIVE_DURATION_ERROR = "Enter a positive duration";
+const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Seeds the draft shared by every entry editor host. */
 export function createTimeEntryEditorFields(
-  entry?: Partial<TimeEntryValues>,
+  localDate: string,
+  entry?: Partial<Omit<TimeEntryValues, "localDate">>,
 ): TimeEntryEditorFields {
   return {
     projectId: entry?.projectId ?? "",
@@ -70,15 +81,24 @@ export function createTimeEntryEditorFields(
       entry?.durationMs === undefined
         ? ""
         : formatDurationHoursInput(entry.durationMs),
+    localDate,
   };
 }
 
-/** Resolves draft values without changing precise saved values merely by opening an editor. */
+/**
+ * Resolves draft values without changing precise saved values merely by opening an editor.
+ * `allowEmptyDuration` lets a new entry leave Hours empty to Start it. `isRunning`
+ * accepts 0h, because the running entry keeps counting from the time it shows.
+ */
 export function evaluateTimeEntryEditor(
   fields: TimeEntryEditorFields,
-  options: { original?: TimeEntryValues; allowEmptyDuration?: boolean } = {},
+  options: {
+    original?: TimeEntryValues;
+    allowEmptyDuration?: boolean;
+    isRunning?: boolean;
+  } = {},
 ): TimeEntryEditorState {
-  const original = options.original;
+  const { original, isRunning = false } = options;
   const unchangedDuration =
     original !== undefined &&
     fields.durationHours === formatDurationHoursInput(original.durationMs);
@@ -95,14 +115,24 @@ export function evaluateTimeEntryEditor(
         ? original.note
         : fields.note.trim() || undefined,
   };
-  const values = durationMs === null ? null : { ...metadata, durationMs };
+  const values =
+    durationMs === null
+      ? null
+      : { ...metadata, durationMs, localDate: fields.localDate };
   const hasChanges =
     !original ||
     metadata.projectId !== original.projectId ||
     metadata.taskId !== original.taskId ||
     metadata.note !== original.note ||
-    durationMs !== original.durationMs;
-  const canSave = durationMs !== null && durationMs > 0;
+    durationMs !== original.durationMs ||
+    fields.localDate !== original.localDate;
+  const dateError = ISO_DATE_PATTERN.test(fields.localDate)
+    ? null
+    : "Enter a date";
+  const canSave =
+    durationMs !== null &&
+    (durationMs > 0 || (isRunning && durationMs === 0)) &&
+    dateError === null;
   return {
     isNew: !original,
     metadata,
@@ -116,20 +146,18 @@ export function evaluateTimeEntryEditor(
       fields.durationHours.trim(),
     ),
     canSave,
-    isTimerMode: durationMs === 0,
+    isTimerMode: !original && durationMs === 0,
     durationError:
       durationMs === null
         ? "Enter a valid duration"
-        : original && !unchangedDuration && durationMs <= 0
-          ? "Enter a positive duration"
+        : original && !isRunning && !unchangedDuration && durationMs <= 0
+          ? NON_POSITIVE_DURATION_ERROR
           : null,
+    dateError,
     relocationValues: (localDate) =>
       canSave && values ? { ...values, localDate } : null,
   };
 }
-
-const EMPTY_NEW_ENTRY_ERROR = "Enter hours to save this entry";
-const NON_POSITIVE_DURATION_ERROR = "Enter a positive duration";
 
 /**
  * Decides what Save, or switching to another entry, does with a draft. An unchanged
@@ -156,6 +184,7 @@ export function commitTimeEntryDraft(
     kind: "invalid",
     error:
       editor.durationError ??
-      (editor.isNew ? EMPTY_NEW_ENTRY_ERROR : NON_POSITIVE_DURATION_ERROR),
+      editor.dateError ??
+      (editor.isNew ? START_OR_ENTER_HOURS_HINT : NON_POSITIVE_DURATION_ERROR),
   };
 }

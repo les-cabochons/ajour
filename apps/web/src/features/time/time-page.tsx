@@ -55,19 +55,31 @@ export function TimePage({ date }: { date: string }) {
     key: string;
     fields: TimeEntryEditorFields;
   } | null>(null);
+  // `timer` opens the running entry; it takes precedence over `entry`.
+  const editingTimer =
+    search.timer && currentTimer?._id === search.timer
+      ? currentTimer
+      : undefined;
   const editingEntry =
-    search.entry && search.entry !== "new"
+    !search.timer && search.entry && search.entry !== "new"
       ? state.timesheetEntries.find((entry) => entry._id === search.entry)
       : undefined;
-  // The running timer keeps its own dialog until running entries use the shared form.
-  const editorTarget: TimeEntryEditorTarget | null = search.timer
-    ? null
+  const editorTarget: TimeEntryEditorTarget | null = editingTimer
+    ? { kind: "running", timer: editingTimer }
     : editingEntry
       ? { kind: "edit", entry: editingEntry }
-      : search.entry === "new"
+      : !search.timer && search.entry === "new"
         ? { kind: "create", localDate: date }
         : null;
-  const editorKey = editingEntry ? editingEntry._id : `new-${date}`;
+  const editorKey = editingTimer
+    ? `running-${editingTimer._id}`
+    : editingEntry
+      ? editingEntry._id
+      : `new-${date}`;
+  // The Day list and Week cards key the running row by its resumed entry, if any.
+  const activeEntryId = editingTimer
+    ? (editingTimer.entryId ?? `running-${editingTimer._id}`)
+    : editingEntry?._id;
 
   useEffect(() => {
     if (!currentTimer) {
@@ -94,14 +106,10 @@ export function TimePage({ date }: { date: string }) {
     }
 
     if (currentTimer && totals.has(currentTimer.localDate)) {
-      const { elapsedDurationMs, runningDurationMs } = getTimerDurationsMs(
-        currentTimer,
-        now,
-      );
+      const { runningDurationMs } = getTimerDurationsMs(currentTimer, now);
       const timerContribution = getTimerContributionMs({
         timer: currentTimer,
         timesheetEntries: state.timesheetEntries,
-        elapsedDurationMs,
         runningDurationMs,
       });
       totals.set(
@@ -178,7 +186,10 @@ export function TimePage({ date }: { date: string }) {
    */
   function openEditor(request: EntryEditorRequest, localDate = date) {
     const entry = request.timerId ? undefined : (request.entryId ?? "new");
-    if (entry !== undefined && entry === search.entry && localDate === date) {
+    const isAlreadyOpen = request.timerId
+      ? request.timerId === search.timer
+      : !search.timer && entry === search.entry;
+    if (isAlreadyOpen && localDate === date) {
       return;
     }
     if (!leaveEditorDraft()) return;
@@ -187,7 +198,7 @@ export function TimePage({ date }: { date: string }) {
       to: "/time/$date",
       params: { date: localDate },
       search: {
-        entry: request.timerId ? request.entryId : entry,
+        entry,
         timer: request.timerId,
         view: isWeekView ? "week" : undefined,
       } as never,
@@ -229,6 +240,9 @@ export function TimePage({ date }: { date: string }) {
       : undefined;
 
   function keepEditorDraft(fields: TimeEntryEditorFields) {
+    // The running entry's form reseeds its counted time on open, so a carried Hours
+    // would read as a correction. Its draft is not carried across hosts.
+    if (editingTimer) return;
     editorDraftRef.current = { key: editorKey, fields };
   }
 
@@ -240,7 +254,7 @@ export function TimePage({ date }: { date: string }) {
             anchorDate={date}
             now={now}
             weekDates={weekDates}
-            activeEntryId={editingEntry?._id}
+            activeEntryId={activeEntryId}
             onNewEntry={(localDate) => openEditor({}, localDate)}
             onOpenEntry={openEditor}
             onReturnToDay={returnToDayView}
@@ -278,7 +292,7 @@ export function TimePage({ date }: { date: string }) {
 
             <TimerPanel
               date={date}
-              activeEntryId={editingEntry?._id}
+              activeEntryId={activeEntryId}
               onOpenEntry={openEditor}
             />
           </>
@@ -301,11 +315,11 @@ export function TimePage({ date }: { date: string }) {
           />
         </SidePanel>
       ) : null}
-      {search.timer || (editorTarget && editsInDialog) ? (
+      {editorTarget && editsInDialog ? (
         <TimeEntryModal
           date={date}
           entryId={editingEntry?._id}
-          timerId={search.timer}
+          timerId={editingTimer?._id}
           initialFields={carriedDraft}
           onFieldsChange={keepEditorDraft}
           onClose={closeEditor}

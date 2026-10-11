@@ -5,15 +5,18 @@ import {
   evaluateTimeEntryEditor,
 } from "./time-entry-editor";
 
+const DAY = "2026-10-05";
+
 describe("time-entry editor", () => {
   it("preserves exact saved duration and note when changing only the project", () => {
     const original = {
+      localDate: DAY,
       projectId: "project-1",
       note: "  original note  ",
       durationMs: 75_123,
     };
     const fields = {
-      ...createTimeEntryEditorFields(original),
+      ...createTimeEntryEditorFields(DAY, original),
       projectId: "project-2",
     };
     expect(evaluateTimeEntryEditor(fields, { original }).values).toEqual({
@@ -21,18 +24,19 @@ describe("time-entry editor", () => {
       taskId: undefined,
       note: original.note,
       durationMs: 75_123,
+      localDate: DAY,
     });
     expect(
-      evaluateTimeEntryEditor(createTimeEntryEditorFields(original), {
+      evaluateTimeEntryEditor(createTimeEntryEditorFields(DAY, original), {
         original,
       }).hasChanges,
     ).toBe(false);
   });
 
   it("preserves a positive subminute entry even when its display rounds to zero", () => {
-    const original = { durationMs: 12_345 };
+    const original = { durationMs: 12_345, localDate: DAY };
     const result = evaluateTimeEntryEditor(
-      { ...createTimeEntryEditorFields(original), note: "edited" },
+      { ...createTimeEntryEditorFields(DAY, original), note: "edited" },
       { original },
     );
     expect(result.values).toMatchObject({ durationMs: 12_345, note: "edited" });
@@ -42,13 +46,14 @@ describe("time-entry editor", () => {
 
   it("prepares changed values for save, duplicate, and move through the same seam", () => {
     const original = {
+      localDate: DAY,
       projectId: "project-1",
       taskId: "task-1",
       durationMs: 75_123,
     };
     const result = evaluateTimeEntryEditor(
       {
-        ...createTimeEntryEditorFields(original),
+        ...createTimeEntryEditorFields(DAY, original),
         taskId: "",
         note: "  updated  ",
         durationHours: "1,5",
@@ -60,6 +65,7 @@ describe("time-entry editor", () => {
       taskId: undefined,
       note: "updated",
       durationMs: 5_400_000,
+      localDate: DAY,
     });
     expect(result.canSave).toBe(true);
     expect(result.hasChanges).toBe(true);
@@ -70,8 +76,8 @@ describe("time-entry editor", () => {
   });
 
   it("refuses to move or duplicate a draft that cannot be saved", () => {
-    const original = { durationMs: 75_123 };
-    const fields = createTimeEntryEditorFields(original);
+    const original = { durationMs: 75_123, localDate: DAY };
+    const fields = createTimeEntryEditorFields(DAY, original);
     expect(
       evaluateTimeEntryEditor(
         { ...fields, durationHours: "invalid" },
@@ -88,7 +94,7 @@ describe("time-entry editor", () => {
 
   it("rejects invalid duration and retains the caller's empty-duration policy", () => {
     const fields = {
-      ...createTimeEntryEditorFields(),
+      ...createTimeEntryEditorFields(DAY),
       note: "draft",
       durationHours: "invalid",
     };
@@ -114,6 +120,7 @@ describe("time-entry editor", () => {
 
   describe("leaving a draft", () => {
     const original = {
+      localDate: DAY,
       projectId: "project-1",
       note: "note",
       durationMs: 75_123,
@@ -121,7 +128,7 @@ describe("time-entry editor", () => {
 
     it("writes nothing for an unchanged saved entry, on save or switch", () => {
       const editor = evaluateTimeEntryEditor(
-        createTimeEntryEditorFields(original),
+        createTimeEntryEditorFields(DAY, original),
         { original },
       );
       expect(commitTimeEntryDraft(editor, "save")).toEqual({
@@ -134,17 +141,22 @@ describe("time-entry editor", () => {
 
     it("saves a valid edited draft before switching", () => {
       const editor = evaluateTimeEntryEditor(
-        { ...createTimeEntryEditorFields(original), note: "changed" },
+        { ...createTimeEntryEditorFields(DAY, original), note: "changed" },
         { original },
       );
       expect(commitTimeEntryDraft(editor, "switch")).toEqual({
         kind: "save",
-        values: { projectId: "project-1", note: "changed", durationMs: 75_123 },
+        values: {
+          projectId: "project-1",
+          note: "changed",
+          durationMs: 75_123,
+          localDate: DAY,
+        },
       });
     });
 
     it("blocks the switch when an edited draft is invalid", () => {
-      const fields = createTimeEntryEditorFields(original);
+      const fields = createTimeEntryEditorFields(DAY, original);
       expect(
         commitTimeEntryDraft(
           evaluateTimeEntryEditor(
@@ -166,7 +178,7 @@ describe("time-entry editor", () => {
     });
 
     it("drops an untouched new entry on switch but asks for hours on save", () => {
-      const editor = evaluateTimeEntryEditor(createTimeEntryEditorFields(), {
+      const editor = evaluateTimeEntryEditor(createTimeEntryEditorFields(DAY), {
         allowEmptyDuration: true,
       });
       expect(commitTimeEntryDraft(editor, "switch")).toEqual({
@@ -174,24 +186,24 @@ describe("time-entry editor", () => {
       });
       expect(commitTimeEntryDraft(editor, "save")).toEqual({
         kind: "invalid",
-        error: "Enter hours to save this entry",
+        error: "Enter hours, or press Start",
       });
     });
 
     it("blocks the switch for a new entry with content but no hours", () => {
       const editor = evaluateTimeEntryEditor(
-        { ...createTimeEntryEditorFields(), note: "draft" },
+        { ...createTimeEntryEditorFields(DAY), note: "draft" },
         { allowEmptyDuration: true },
       );
       expect(commitTimeEntryDraft(editor, "switch")).toEqual({
         kind: "invalid",
-        error: "Enter hours to save this entry",
+        error: "Enter hours, or press Start",
       });
     });
 
     it("saves a new entry with hours", () => {
       const editor = evaluateTimeEntryEditor(
-        { ...createTimeEntryEditorFields(), durationHours: "1:30" },
+        { ...createTimeEntryEditorFields(DAY), durationHours: "1:30" },
         { allowEmptyDuration: true },
       );
       expect(commitTimeEntryDraft(editor, "save")).toEqual({
@@ -201,7 +213,58 @@ describe("time-entry editor", () => {
           taskId: undefined,
           note: undefined,
           durationMs: 5_400_000,
+          localDate: DAY,
         },
+      });
+    });
+  });
+
+  describe("date and running rules", () => {
+    const original = { localDate: DAY, note: "note", durationMs: 75_123 };
+
+    it("saves a changed date as a change", () => {
+      const editor = evaluateTimeEntryEditor(
+        {
+          ...createTimeEntryEditorFields(DAY, original),
+          localDate: "2026-10-06",
+        },
+        { original },
+      );
+      expect(commitTimeEntryDraft(editor, "save")).toEqual({
+        kind: "save",
+        values: { note: "note", durationMs: 75_123, localDate: "2026-10-06" },
+      });
+    });
+
+    it("blocks a cleared date", () => {
+      const editor = evaluateTimeEntryEditor(
+        { ...createTimeEntryEditorFields(DAY, original), localDate: "" },
+        { original },
+      );
+      expect(commitTimeEntryDraft(editor, "save")).toEqual({
+        kind: "invalid",
+        error: "Enter a date",
+      });
+    });
+
+    it("never offers Save for a new entry with 0h", () => {
+      const editor = evaluateTimeEntryEditor(
+        { ...createTimeEntryEditorFields(DAY), durationHours: "0" },
+        { allowEmptyDuration: true },
+      );
+      expect(editor).toMatchObject({ canSave: false, isTimerMode: true });
+    });
+
+    it("lets the running entry keep a 0h count", () => {
+      const running = { localDate: DAY, durationMs: 0 };
+      const editor = evaluateTimeEntryEditor(
+        { ...createTimeEntryEditorFields(DAY, running), note: "renamed" },
+        { original: running, isRunning: true },
+      );
+      expect(editor).toMatchObject({
+        canSave: true,
+        isTimerMode: false,
+        durationError: null,
       });
     });
   });

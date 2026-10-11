@@ -6,11 +6,7 @@ import {
   moveTimesheetEntry,
   updateTimesheetEntry,
 } from "@/domain/time/timesheet-entry";
-import {
-  cancelTimer,
-  startTimer,
-  startTimerWithEntry,
-} from "@/domain/time/timer-transitions";
+import { cancelTimer, startTimer } from "@/domain/time/timer-transitions";
 import {
   captureTimeEntryUndo,
   restoreTimeEntryUndo,
@@ -119,10 +115,11 @@ describe("time entry undo", () => {
     expect(restored.state.workItems).toEqual(before.workItems);
   });
 
-  it("restores a discarded running entry and its provisional entry", () => {
-    const before = startTimerWithEntry(
+  it("restores a discarded running entry that started from nothing", () => {
+    const before = startTimer(
       createState(),
-      { localDate: "2026-10-07", projectId: "project-1", taskId: "task-1" },
+      { projectId: "project-1", taskId: "task-1" },
+      "2026-10-07",
       { createId: (prefix) => `${prefix}-running`, now: () => 500 },
     );
     const { after, undo } = undoAction(before, (state) =>
@@ -141,12 +138,12 @@ describe("time entry undo", () => {
     const before = startTimer(
       createState(),
       {
-        localDate: "2026-10-07",
         projectId: "project-1",
         taskId: "task-1",
         accumulatedDurationMs: HOUR,
         entryId: "entry-a",
       },
+      "2026-10-07",
       { createId: (prefix) => `${prefix}-continue`, now: () => 500 },
     );
     const { after, undo } = undoAction(before, (state) =>
@@ -263,7 +260,8 @@ describe("time entry undo", () => {
   it("does not bring a discarded timer back while another timer runs", () => {
     const before = startTimer(
       createState(),
-      { localDate: "2026-10-07", note: "First timer" },
+      { note: "First timer" },
+      "2026-10-07",
       { createId: () => "timer-first", now: () => 500 },
     );
     const { after, undo } = undoAction(before, (state) =>
@@ -271,7 +269,8 @@ describe("time entry undo", () => {
     );
     const restarted = startTimer(
       after,
-      { localDate: "2026-10-07", note: "Second timer" },
+      { note: "Second timer" },
+      "2026-10-07",
       { createId: () => "timer-second", now: () => 600 },
     );
 
