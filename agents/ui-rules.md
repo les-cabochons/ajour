@@ -29,7 +29,8 @@ Ajour is an operational desktop/web app. Build interfaces for scanning, repeated
 - Feature pages should not directly reference `settings-panel` or `message-panel`; those classes are owned by the app-surface module.
 - Use Remix icons already present in the app for icon buttons and navigation.
 - Use icon-only buttons for common commands when the icon is familiar and an accessible label is provided.
-- Use tooltips for compact or unfamiliar icon controls.
+- Every icon-only button shows a tooltip with its label and, when the action has a shortcut in `lib/shortcuts.ts`, its key. Use `TooltipButton` from `apps/web/src/components/tooltip-button.tsx`; its `render` prop takes a `Button`, a `Link` or a menu or popover trigger. Do not use `title=` on icon buttons.
+- Every modal surface uses `Dialog`, `AlertDialog` or `Sheet` from `apps/web/src/components/ui`, and anchored surfaces use `Popover`. Do not build overlays by hand: no `role="dialog"` divs, fixed backdrops or `*-modal-overlay` classes.
 - Use segmented controls, toggles, selects, tabs, popovers, dialogs, and menus according to their existing local patterns.
 
 ## Typography
@@ -51,6 +52,8 @@ Ajour is an operational desktop/web app. Build interfaces for scanning, repeated
 - Make destructive actions explicit and reversible where practical.
 - Connector sync and import actions must communicate side effects.
 - Preserve user-entered values during validation errors.
+- Escape cancels every drag and puts the item back. Dropping an item where it started changes nothing. Reorder and cross-day drags get both from `lib/table-drag.ts`.
+- Route loading shows `PageSkeleton` from `apps/web/src/components/page-skeleton.tsx`, the page layout in `Skeleton` blocks, after 150ms. Faster loads show nothing.
 
 ## Accessibility
 
