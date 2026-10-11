@@ -66,6 +66,26 @@ export function showToast(title: string) {
   toastManager.add({ title });
 }
 
+/**
+ * Shows an error from background work that has no place on screen, such as an
+ * automatic connector sync. It stays until the user dismisses it.
+ */
+export function showErrorToast({
+  title,
+  description,
+}: {
+  title: string;
+  description?: string;
+}) {
+  toastManager.add({
+    title,
+    description,
+    type: "error",
+    timeout: 0,
+    priority: "high",
+  });
+}
+
 /** True when keys typed in `target` edit text, so Cmd+Z belongs to the field. */
 function isTextField(target: EventTarget | null) {
   if (!(target instanceof HTMLElement)) return false;
@@ -124,10 +144,21 @@ function ToastList() {
     <ToastPrimitive.Root
       key={toast.id}
       toast={toast}
-      className="flex w-full items-center gap-3 rounded-[var(--radius-md)] border border-border bg-popover py-2 pr-2 pl-4 text-[length:var(--control-font-size)] text-popover-foreground shadow-[var(--shadow-popup)] transition-[opacity,transform] duration-150 data-ending-style:opacity-0 data-limited:hidden data-starting-style:translate-y-2 data-starting-style:opacity-0"
+      className={cn(
+        "flex w-full items-center gap-3 rounded-[var(--radius-md)] border border-border bg-popover py-2 pr-2 pl-4 text-[length:var(--control-font-size)] text-popover-foreground shadow-[var(--shadow-popup)] transition-[opacity,transform] duration-150 data-ending-style:opacity-0 data-limited:hidden data-starting-style:translate-y-2 data-starting-style:opacity-0",
+        toast.type === "error" && "items-start border-destructive/50",
+      )}
     >
       <ToastPrimitive.Content className="flex min-w-0 flex-1 items-center gap-3">
-        <ToastPrimitive.Title className="min-w-0 flex-1 truncate font-medium" />
+        <div className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <ToastPrimitive.Title
+            className={cn(
+              "truncate font-medium",
+              toast.type === "error" && "text-destructive",
+            )}
+          />
+          <ToastPrimitive.Description className="[overflow-wrap:anywhere] text-muted-foreground" />
+        </div>
         {toast.data?.onUndo ? (
           <ToastPrimitive.Action
             className={cn(buttonVariants({ variant: "outline", size: "sm" }))}

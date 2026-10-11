@@ -32,6 +32,8 @@ import {
   connectorImportListResponseSchema,
   connectorImportPushRequestSchema,
   connectorImportPushResponseSchema,
+  connectorImportRestoreRequestSchema,
+  connectorImportRestoreResponseSchema,
   connectorImportSelectionResponseSchema,
   connectorImportSelectionUpdateSchema,
   connectorsOverviewSchema,
@@ -811,10 +813,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
               }),
             );
           } catch (error) {
+            const message = errorMessage(error);
             await storage.recordConnectionError(
               pluginId,
               connectionId,
-              errorMessage(error),
+              message,
             );
             const { summary } = await findConnectionSummary(
               storage,
@@ -822,10 +825,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
               pluginId,
               connectionId,
             );
-            writeJson(
-              response,
-              502,
-              connectorSyncResultSchema.parse({
+            // `error` gives the client the reason, as other failed requests do.
+            writeJson(response, 502, {
+              ...connectorSyncResultSchema.parse({
                 connection: summary,
                 mode: shouldAutoSyncToBacklog ? "backlog" : "review",
                 items: [],
@@ -834,7 +836,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
                 skippedCount: 0,
                 workItemUpdates: [],
               }),
-            );
+              error: message,
+            });
           }
 
           return;
@@ -902,8 +905,25 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(
           response,
           200,
-          connectorImportDismissResponseSchema.parse({
-            dismissedCount: await storage.dismissImports(payload.ids),
+          connectorImportDismissResponseSchema.parse(
+            await storage.dismissImports(payload.ids),
+          ),
+        );
+        return;
+      }
+
+      if (
+        request.method === "POST" &&
+        requestUrl.pathname === "/api/backlog/imports/restore"
+      ) {
+        const payload = connectorImportRestoreRequestSchema.parse(
+          await readJsonBody(request),
+        );
+        writeJson(
+          response,
+          200,
+          connectorImportRestoreResponseSchema.parse({
+            result: await storage.restoreDismissedImports(payload.undoToken),
           }),
         );
         return;

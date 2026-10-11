@@ -132,6 +132,13 @@ Feature: Open the local time workspace
     When I continue the second entry
     Then the first timer is saved and the second timer is running
 
+  Scenario: Undo deleting a backlog item and its subitem
+    Given I have two saved entries with a timer running on the first
+    When I delete the Backlog item with its subitem
+    Then the Backlog item is gone and a toast offers Undo
+    When I undo with the toast button
+    Then the Backlog item and its subitem are back in place
+
   Scenario: Start a fresh timer while another timer is running
     Given I have two saved entries with a timer running on the first
     When I start a fresh timer from the Time page

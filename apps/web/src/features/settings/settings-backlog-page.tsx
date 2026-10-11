@@ -17,6 +17,7 @@ import {
   getConnectorBacklogStatuses,
   isConnectorApiMissing,
 } from "@/lib/app-api";
+import { offerUndo } from "@/features/feedback/undo-toast";
 import { useRetryWhileConnectorApiMissing } from "@/lib/use-connector-api-retry";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
@@ -186,9 +187,12 @@ export function SettingsBacklogPage() {
   }
 
   function handleDeleteStatus(statusId: string) {
-    localStore.deleteBacklogStatus(statusId);
+    offerUndo(localStore.deleteBacklogStatus(statusId), {
+      title: "Status deleted",
+      subject: "status",
+    });
     setError(null);
-    setMessage("Backlog status removed.");
+    setMessage(null);
   }
 
   function handleMappingChange(

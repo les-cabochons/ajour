@@ -13,6 +13,7 @@ import { AppPanel, MessagePanel } from "@/components/app-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { showToast, showUndoToast } from "@/components/ui/toast";
 import {
   buildImportHierarchy,
   commitSelectedConnectorImportsToLocalStore,
@@ -20,6 +21,7 @@ import {
   getConnectorsOverview,
   isConnectorApiMissing,
   listConnectorImportCandidates,
+  restoreDismissedConnectorImports,
   updateConnectorImportSelection,
 } from "@/lib/app-api";
 import { useRetryWhileConnectorApiMissing } from "@/lib/use-connector-api-retry";
@@ -188,7 +190,20 @@ export function SettingsImportReviewPage() {
     }
   };
 
-  const dismissItems = async (ids: string[], successLabel: string) => {
+  /** Puts the items of the last dismissal back in review, for its Undo toast. */
+  const undoDismissal = async (undoToken: string) => {
+    try {
+      if ((await restoreDismissedConnectorImports(undoToken)) !== "restored") {
+        showToast("Can't undo. The staged items changed after that action.");
+      }
+      await refresh();
+    } catch (nextError) {
+      showFailure(nextError, "Unable to restore dismissed import items.");
+    }
+  };
+
+  /** Dismisses staged items at once and offers Undo in a toast. */
+  const dismissItems = async (ids: string[]) => {
     if (ids.length === 0) {
       return;
     }
@@ -197,11 +212,15 @@ export function SettingsImportReviewPage() {
     setStatusMessage(null);
     setError(null);
     try {
-      const result = await dismissConnectorImportCandidates(ids);
+      const { dismissedCount, undoToken } =
+        await dismissConnectorImportCandidates(ids);
       await refresh();
-      setStatusMessage(
-        `${result.dismissedCount} staged item${result.dismissedCount === 1 ? "" : "s"} dismissed from ${successLabel}.`,
-      );
+      if (undoToken) {
+        showUndoToast({
+          title: `${dismissedCount} staged ${dismissedCount === 1 ? "item" : "items"} dismissed`,
+          onUndo: () => void undoDismissal(undoToken),
+        });
+      }
     } catch (nextError) {
       showFailure(nextError, "Unable to dismiss staged import items.");
     } finally {
@@ -389,7 +408,6 @@ export function SettingsImportReviewPage() {
                     items
                       .filter((item) => item.selectable && item.selected)
                       .map((item) => item.id),
-                    "review queue",
                   )
                 }
               >
@@ -488,10 +506,7 @@ export function SettingsImportReviewPage() {
                       size="sm"
                       disabled={isMutating || group.items.length === 0}
                       onClick={() =>
-                        void dismissItems(
-                          group.items.map((item) => item.id),
-                          `${group.connectionLabel} sync`,
-                        )
+                        void dismissItems(group.items.map((item) => item.id))
                       }
                     >
                       <X className="h-3.5 w-3.5" />

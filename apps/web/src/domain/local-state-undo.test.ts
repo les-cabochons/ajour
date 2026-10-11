@@ -1,5 +1,24 @@
 import { describe, expect, it } from "vitest";
-import type { LocalAppState, LocalTimesheetEntry } from "@/domain/local-state";
+import type {
+  LocalAppState,
+  LocalTimesheetEntry,
+  LocalTimesheetImportDraft,
+  LocalWorkItem,
+} from "@/domain/local-state";
+import {
+  deleteBacklogStatus,
+  setBacklogStatusMapping,
+} from "@/domain/backlog/backlog-status";
+import {
+  deleteWorkItem,
+  setWorkItemStatus,
+  updateWorkItem,
+} from "@/domain/backlog/work-item-transitions";
+import {
+  setProjectTaskStatus,
+  updateProject,
+  updateProjectTask,
+} from "@/domain/projects/project-transitions";
 import {
   deleteTimesheetEntry,
   duplicateTimesheetEntry,
@@ -8,9 +27,10 @@ import {
 } from "@/domain/time/timesheet-entry";
 import { cancelTimer, startTimer } from "@/domain/time/timer-transitions";
 import {
-  captureTimeEntryUndo,
-  restoreTimeEntryUndo,
-} from "@/domain/time/time-entry-undo";
+  clearTimesheetImportDrafts,
+  dismissTimesheetImportDraft,
+} from "@/domain/time/timesheet-import";
+import { captureUndo, restoreUndo } from "@/domain/local-state-undo";
 
 const HOUR = 60 * 60 * 1000;
 
@@ -75,6 +95,9 @@ function createState(): LocalAppState {
         createdAt: 1,
       },
     ],
+    timesheetImportDrafts: [],
+    backlogStatuses: [],
+    backlogStatusMappings: [],
   } as unknown as LocalAppState;
 }
 
@@ -96,7 +119,7 @@ function undoAction(
   action: (state: LocalAppState) => LocalAppState,
 ) {
   const after = action(before);
-  const undo = captureTimeEntryUndo(before, after);
+  const undo = captureUndo(before, after);
   if (!undo) throw new Error("The action changed nothing.");
   return { after, undo };
 }
@@ -108,7 +131,7 @@ describe("time entry undo", () => {
       deleteTimesheetEntry(state, "entry-b"),
     );
 
-    const restored = restoreTimeEntryUndo(after, undo);
+    const restored = restoreUndo(after, undo);
 
     expect(restored.result).toBe("restored");
     expect(restored.state.timesheetEntries).toEqual(before.timesheetEntries);
@@ -127,7 +150,7 @@ describe("time entry undo", () => {
     );
     expect(after.timers).toEqual([]);
 
-    const restored = restoreTimeEntryUndo(after, undo);
+    const restored = restoreUndo(after, undo);
 
     expect(restored.result).toBe("restored");
     expect(restored.state.timers).toEqual(before.timers);
@@ -150,7 +173,7 @@ describe("time entry undo", () => {
       cancelTimer(state, "timer-continue"),
     );
 
-    const restored = restoreTimeEntryUndo(after, undo);
+    const restored = restoreUndo(after, undo);
 
     expect(restored.state.timers).toEqual(before.timers);
     expect(restored.state.timesheetEntries).toEqual(before.timesheetEntries);
@@ -177,7 +200,7 @@ describe("time entry undo", () => {
       committedAt: 100,
     });
 
-    const restored = restoreTimeEntryUndo(after, undo);
+    const restored = restoreUndo(after, undo);
 
     expect(restored.state.timesheetEntries).toEqual(before.timesheetEntries);
     expect(restored.state.workItems).toEqual(before.workItems);
@@ -201,7 +224,7 @@ describe("time entry undo", () => {
     );
     expect(after.workItems).not.toEqual(before.workItems);
 
-    const restored = restoreTimeEntryUndo(after, undo);
+    const restored = restoreUndo(after, undo);
 
     expect(restored.state.timesheetEntries).toEqual(before.timesheetEntries);
     expect(restored.state.workItems).toEqual(before.workItems);
@@ -225,7 +248,7 @@ describe("time entry undo", () => {
     );
     const reloaded = JSON.parse(JSON.stringify(after)) as LocalAppState;
 
-    expect(restoreTimeEntryUndo(reloaded, undo).result).toBe("restored");
+    expect(restoreUndo(reloaded, undo).result).toBe("restored");
   });
 
   it("leaves the state alone when the entry changed after the action", () => {
@@ -251,7 +274,7 @@ describe("time entry undo", () => {
       factories,
     );
 
-    const restored = restoreTimeEntryUndo(edited, undo);
+    const restored = restoreUndo(edited, undo);
 
     expect(restored.result).toBe("stale");
     expect(restored.state).toBe(edited);
@@ -274,7 +297,7 @@ describe("time entry undo", () => {
       { createId: () => "timer-second", now: () => 600 },
     );
 
-    const restored = restoreTimeEntryUndo(restarted, undo);
+    const restored = restoreUndo(restarted, undo);
 
     expect(restored.result).toBe("stale");
     expect(restored.state).toBe(restarted);
@@ -290,7 +313,7 @@ describe("time entry undo", () => {
     );
     expect(after.workItems[0]?.completedEstimateHours).toBe(0);
 
-    const restored = restoreTimeEntryUndo(after, undo);
+    const restored = restoreUndo(after, undo);
 
     expect(restored.state.workItems).toEqual(before.workItems);
   });
@@ -310,7 +333,7 @@ describe("time entry undo", () => {
       remainingEstimateOverrunHours: undefined,
     });
 
-    const restored = restoreTimeEntryUndo(after, undo);
+    const restored = restoreUndo(after, undo);
 
     expect(restored.state.workItems).toEqual(before.workItems);
   });
@@ -330,7 +353,7 @@ describe("time entry undo", () => {
       workItems: [{ ...after.workItems[0]!, remainingEstimateHours: 5 }],
     };
 
-    const restored = restoreTimeEntryUndo(synced, undo);
+    const restored = restoreUndo(synced, undo);
 
     expect(restored.state.workItems[0]).toMatchObject({
       remainingEstimateHours: 4,
@@ -342,7 +365,232 @@ describe("time entry undo", () => {
     const state = createState();
 
     expect(
-      captureTimeEntryUndo(state, deleteTimesheetEntry(state, "missing")),
+      captureUndo(state, deleteTimesheetEntry(state, "missing")),
     ).toBeNull();
+  });
+});
+
+function workItem(
+  overrides: Partial<LocalWorkItem> & { _id: string },
+): LocalWorkItem {
+  return {
+    title: overrides._id,
+    status: "active",
+    source: "manual",
+    createdAt: 1,
+    ...overrides,
+  };
+}
+
+function importDraft(_id: string): LocalTimesheetImportDraft {
+  return {
+    _id,
+    localDate: "2026-10-07",
+    projectName: "Mercury",
+    taskName: "Feature work",
+    durationMs: HOUR,
+    potentialConflict: false,
+    conflictEntryIds: [],
+    importedAt: 5,
+  };
+}
+
+/**
+ * A parent backlog item whose two subitems sit apart in the list, two backlog
+ * statuses with one connector mapping, a second project task and three import
+ * drafts.
+ */
+function createBacklogState(): LocalAppState {
+  const state = createState();
+  const project = state.projects[0]!;
+  return setBacklogStatusMapping(
+    {
+      ...state,
+      projects: [
+        {
+          ...project,
+          tasks: [
+            ...project.tasks,
+            { _id: "task-2", name: "Review", status: "active", createdAt: 2 },
+          ],
+        },
+      ],
+      workItems: [
+        workItem({ _id: "item-first", backlogStatusId: "status-doing" }),
+        workItem({ _id: "item-parent", note: "Parent notes" }),
+        workItem({ _id: "subitem-1", parentWorkItemId: "item-parent" }),
+        workItem({
+          _id: "item-synced",
+          source: "azure_devops",
+          sourceId: "42",
+          sourceConnectionId: "connection-1",
+          sourceStatusKey: "active",
+        }),
+        workItem({ _id: "subitem-2", parentWorkItemId: "item-parent" }),
+      ],
+      backlogStatuses: [
+        { _id: "status-doing", name: "Doing", color: "#2563eb", createdAt: 1 },
+        { _id: "status-done", name: "Done", color: "#059669", createdAt: 2 },
+      ],
+      timesheetImportDrafts: [
+        importDraft("draft-1"),
+        importDraft("draft-2"),
+        importDraft("draft-3"),
+      ],
+    },
+    {
+      source: "azure_devops",
+      connectionId: "connection-1",
+      sourceStatusKey: "active",
+      backlogStatusId: "status-doing",
+    },
+  );
+}
+
+describe("backlog and project undo", () => {
+  it("restores a deleted backlog item and its subitems in their old places", () => {
+    const before = createBacklogState();
+    const { after, undo } = undoAction(before, (state) =>
+      deleteWorkItem(state, "item-parent"),
+    );
+    expect(after.workItems.map((item) => item._id)).toEqual([
+      "item-first",
+      "item-synced",
+    ]);
+
+    const restored = restoreUndo(after, undo);
+
+    expect(restored.result).toBe("restored");
+    expect(restored.state.workItems).toEqual(before.workItems);
+  });
+
+  it("keeps later edits to records the action did not change", () => {
+    const before = createBacklogState();
+    const { after, undo } = undoAction(before, (state) =>
+      deleteWorkItem(state, "item-parent"),
+    );
+    const edited = updateWorkItem(after, "item-first", { title: "Renamed" });
+
+    const restored = restoreUndo(edited, undo);
+
+    expect(restored.result).toBe("restored");
+    expect(restored.state.workItems.map((item) => item._id)).toEqual(
+      before.workItems.map((item) => item._id),
+    );
+    expect(restored.state.workItems[0]?.title).toBe("Renamed");
+  });
+
+  it("restores an archived backlog item to active", () => {
+    const before = createBacklogState();
+    const { after, undo } = undoAction(before, (state) =>
+      setWorkItemStatus(state, "item-parent", "archived", () => 100),
+    );
+    expect(after.workItems[1]).toMatchObject({
+      status: "archived",
+      archivedAt: 100,
+    });
+
+    const restored = restoreUndo(after, undo);
+
+    expect(restored.state.workItems).toEqual(before.workItems);
+  });
+
+  it("refuses to undo an archive when the item changed after it", () => {
+    const before = createBacklogState();
+    const { after, undo } = undoAction(before, (state) =>
+      setWorkItemStatus(state, "item-parent", "archived", () => 100),
+    );
+    const edited = updateWorkItem(after, "item-parent", { note: "Edited" });
+
+    const restored = restoreUndo(edited, undo);
+
+    expect(restored.result).toBe("stale");
+    expect(restored.state).toBe(edited);
+  });
+
+  it("restores a deleted backlog status with its mapping and the items that used it", () => {
+    const before = createBacklogState();
+    expect(before.workItems[3]).toMatchObject({
+      backlogStatusId: "status-doing",
+      importedBacklogStatusId: "status-doing",
+    });
+    const { after, undo } = undoAction(before, (state) =>
+      deleteBacklogStatus(state, "status-doing"),
+    );
+    expect(after.backlogStatusMappings).toEqual([]);
+    expect(after.workItems[0]?.backlogStatusId).toBeUndefined();
+
+    const restored = restoreUndo(after, undo);
+
+    expect(restored.result).toBe("restored");
+    expect(restored.state.backlogStatuses).toEqual(before.backlogStatuses);
+    expect(restored.state.backlogStatusMappings).toEqual(
+      before.backlogStatusMappings,
+    );
+    expect(restored.state.workItems).toEqual(before.workItems);
+  });
+
+  it("restores an archived project", () => {
+    const before = createBacklogState();
+    const { after, undo } = undoAction(before, (state) => ({
+      ...state,
+      projects: updateProject(state.projects, "project-1", {
+        status: "archived",
+      }),
+    }));
+
+    const restored = restoreUndo(after, undo);
+
+    expect(restored.result).toBe("restored");
+    expect(restored.state.projects).toEqual(before.projects);
+  });
+
+  it("restores an archived task, and refuses once its project changed again", () => {
+    const before = createBacklogState();
+    const { after, undo } = undoAction(before, (state) => ({
+      ...state,
+      projects: setProjectTaskStatus(
+        state.projects,
+        "project-1",
+        "task-2",
+        "archived",
+        () => 100,
+      ),
+    }));
+
+    expect(restoreUndo(after, undo).state.projects).toEqual(before.projects);
+
+    const renamed = {
+      ...after,
+      projects: updateProjectTask(after.projects, "project-1", "task-1", {
+        name: "Renamed",
+      }),
+    };
+    expect(restoreUndo(renamed, undo).result).toBe("stale");
+  });
+
+  it("restores one dismissed import draft in its old place", () => {
+    const before = createBacklogState();
+    const { after, undo } = undoAction(before, (state) =>
+      dismissTimesheetImportDraft(state, "draft-2"),
+    );
+
+    const restored = restoreUndo(after, undo);
+
+    expect(restored.state.timesheetImportDrafts).toEqual(
+      before.timesheetImportDrafts,
+    );
+  });
+
+  it("restores every draft after Dismiss all", () => {
+    const before = createBacklogState();
+    const { after, undo } = undoAction(before, clearTimesheetImportDrafts);
+    expect(after.timesheetImportDrafts).toEqual([]);
+
+    const restored = restoreUndo(after, undo);
+
+    expect(restored.state.timesheetImportDrafts).toEqual(
+      before.timesheetImportDrafts,
+    );
   });
 });

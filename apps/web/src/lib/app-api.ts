@@ -15,6 +15,8 @@ import {
   connectorImportDismissRequestSchema,
   connectorImportDismissResponseSchema,
   connectorImportListResponseSchema,
+  connectorImportRestoreRequestSchema,
+  connectorImportRestoreResponseSchema,
   connectorImportSelectionResponseSchema,
   connectorImportSelectionUpdateSchema,
   connectorsOverviewSchema,
@@ -534,6 +536,7 @@ export function updateConnectorImportSelection(
   );
 }
 
+/** Dismisses staged items. The response's `undoToken` restores them. */
 export function dismissConnectorImportCandidates(ids: string[]) {
   const payload = connectorImportDismissRequestSchema.parse({ ids });
   return appApiRequest(
@@ -544,6 +547,20 @@ export function dismissConnectorImportCandidates(ids: string[]) {
     },
     connectorImportDismissResponseSchema,
   );
+}
+
+/** Puts the staged items of the last dismissal back in review. */
+export async function restoreDismissedConnectorImports(undoToken: string) {
+  const payload = connectorImportRestoreRequestSchema.parse({ undoToken });
+  const { result } = await appApiRequest(
+    "/api/backlog/imports/restore",
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+    connectorImportRestoreResponseSchema,
+  );
+  return result;
 }
 
 export async function commitSelectedConnectorImportsToLocalStore() {

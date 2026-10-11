@@ -129,7 +129,7 @@ describe("AppApiStorage", () => {
 
     await expect(
       storage.dismissImports(staged.items.map((item) => item.id)),
-    ).resolves.toBe(1);
+    ).resolves.toMatchObject({ dismissedCount: 1 });
     await expect(storage.listStagedImports()).resolves.toMatchObject({
       totalCount: 0,
       selectedCount: 0,
@@ -142,6 +142,95 @@ describe("AppApiStorage", () => {
       queuedCount: 0,
       updatedCount: 0,
       skippedCount: 1,
+    });
+  });
+
+  it("restores the last dismissal exactly, so later syncs update the items again", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
+    tempDirs.push(tempDir);
+
+    const storage = new AppApiStorage(path.join(tempDir, "app-api-state.json"));
+
+    await storage.stageImportItems([
+      buildImportCandidate(),
+      buildImportCandidate({ sourceId: "other-1", externalId: "124" }),
+    ]);
+    // An unselected item comes back unselected.
+    await storage.updateImportSelection(
+      (await storage.listStagedImports()).items
+        .filter((item) => item.sourceId === "other-1")
+        .map((item) => item.id),
+      false,
+    );
+    const before = await storage.listStagedImports();
+
+    const { undoToken } = await storage.dismissImports(
+      before.items.map((item) => item.id),
+    );
+    await expect(storage.restoreDismissedImports(undoToken!)).resolves.toBe(
+      "restored",
+    );
+
+    await expect(storage.listStagedImports()).resolves.toEqual(before);
+    // The keys are no longer dismissed, so a sync updates the items.
+    await expect(
+      storage.stageImportItems([buildImportCandidate()]),
+    ).resolves.toMatchObject({ updatedCount: 1, skippedCount: 0 });
+    // Undo runs once.
+    await expect(storage.restoreDismissedImports(undoToken!)).resolves.toBe(
+      "expired",
+    );
+  });
+
+  it("refuses to restore a dismissal after its connection was deleted", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
+    tempDirs.push(tempDir);
+
+    const storage = new AppApiStorage(path.join(tempDir, "app-api-state.json"));
+    const connection = await storage.upsertConnection("azure_devops", {
+      label: "Main Azure",
+      tenantLabel: "Contoso",
+      autoSync: false,
+      autoSyncIntervalMinutes: 20,
+      config: {},
+      configSummary: {},
+    });
+    await storage.stageImportItems([
+      buildImportCandidate({ connectionId: connection.id }),
+    ]);
+    const staged = await storage.listStagedImports();
+    const { undoToken } = await storage.dismissImports(
+      staged.items.map((item) => item.id),
+    );
+    await storage.deleteConnection("azure_devops", connection.id);
+
+    await expect(storage.restoreDismissedImports(undoToken!)).resolves.toBe(
+      "expired",
+    );
+    await expect(storage.listStagedImports()).resolves.toMatchObject({
+      totalCount: 0,
+      items: [],
+    });
+  });
+
+  it("refuses to restore a dismissal when the plugin data was removed since", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
+    tempDirs.push(tempDir);
+
+    const storage = new AppApiStorage(path.join(tempDir, "app-api-state.json"));
+
+    await storage.stageImportItems([buildImportCandidate()]);
+    const staged = await storage.listStagedImports();
+    const { undoToken } = await storage.dismissImports(
+      staged.items.map((item) => item.id),
+    );
+    await storage.removeConnectorPluginData("azure_devops");
+
+    await expect(storage.restoreDismissedImports(undoToken!)).resolves.toBe(
+      "stale",
+    );
+    await expect(storage.listStagedImports()).resolves.toMatchObject({
+      totalCount: 0,
     });
   });
 
@@ -177,6 +266,39 @@ describe("AppApiStorage", () => {
       queuedCount: 1,
       updatedCount: 0,
       skippedCount: 0,
+    });
+  });
+
+  it("records when a connection's sync failed and clears it on the next success", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
+    tempDirs.push(tempDir);
+
+    const storage = new AppApiStorage(path.join(tempDir, "app-api-state.json"));
+    const connection = await storage.upsertConnection("azure_devops", {
+      label: "Main Azure",
+      tenantLabel: "Contoso",
+      autoSync: true,
+      autoSyncIntervalMinutes: 20,
+      config: {},
+      configSummary: {},
+    });
+
+    const failed = await storage.recordConnectionError(
+      "azure_devops",
+      connection.id,
+      "Token rejected",
+    );
+    expect(failed).toMatchObject({
+      lastError: "Token rejected",
+      lastErrorAt: expect.any(Number),
+    });
+
+    await expect(
+      storage.recordConnectionSyncSuccess("azure_devops", connection.id, 50),
+    ).resolves.toMatchObject({
+      lastSyncAt: 50,
+      lastError: undefined,
+      lastErrorAt: undefined,
     });
   });
 

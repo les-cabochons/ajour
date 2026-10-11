@@ -79,6 +79,7 @@ import {
   type ProjectTaskValues,
 } from "@/features/projects/project-task-editor";
 import { ProjectTaskEditorForm } from "@/features/projects/project-task-editor-form";
+import { offerUndo } from "@/features/feedback/undo-toast";
 import { useCurrentTeam } from "@/lib/session";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
@@ -598,7 +599,10 @@ function ProjectDetail({
         onOpenTask(task);
         return;
       case "archive":
-        localStore.archiveProjectTask(project._id, task._id);
+        offerUndo(localStore.archiveProjectTask(project._id, task._id), {
+          title: "Task archived",
+          subject: "project",
+        });
         return;
       case "restore":
         localStore.unarchiveProjectTask(project._id, task._id);
@@ -1572,7 +1576,10 @@ export function ProjectsPage() {
         openTaskEditor(project._id);
         return;
       case "archive":
-        localStore.archiveProject(project._id);
+        offerUndo(localStore.archiveProject(project._id), {
+          title: "Project archived",
+          subject: "project",
+        });
         return;
       case "restore":
         localStore.unarchiveProject(project._id);
