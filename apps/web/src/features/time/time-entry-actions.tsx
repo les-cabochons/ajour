@@ -89,7 +89,7 @@ function savedValues(
 }
 
 /**
- * Runs the time entry action set from any surface: Day rows, Week cards, the Grid tray
+ * Runs the time entry action set from any surface: Day rows, Week cards, Grid cells
  * and the entry editors. Each surface renders `dialogs` once and supplies how Edit
  * opens the entry there. Delete, Discard, Move to… and Duplicate to… another day
  * happen at once and show an Undo toast instead of asking first.

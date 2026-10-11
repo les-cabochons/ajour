@@ -82,6 +82,18 @@ Feature: Open the local time workspace
     When I choose "Edit" from the action menu
     Then the entry editor opens in a full-width dialog
 
+  Scenario: Type hours in the Week Grid
+    Given I have a week of saved entries
+    When I open the Week Grid
+    Then the "Development" cell on Monday shows "3:00 ×2"
+    When I type "1:30" in the "Code review" cell on Tuesday and press Tab
+    Then the "Code review" cell on Tuesday shows "1:30"
+    And the "Code review" cell on Wednesday is being edited
+    When I clear the "Code review" cell on Monday
+    Then the "Code review" cell on Monday is empty and a toast offers Undo
+    When I undo with the toast button
+    Then the "Code review" cell on Monday shows "1:00"
+
   Scenario: Open Settings inside the app shell
     Given I have no saved Ajour workspace
     When I open today's new-entry workspace

@@ -31,6 +31,13 @@ export interface WeeklyDayProjection {
 }
 
 export interface WeeklyGridRow {
+  /** True when a new entry with this row's project and task lands in this row. Rows grouped by a legacy label get false. */
+  acceptsNewEntries: boolean;
+  /**
+   * Saved entries per day, in `weekDates` order. The running entry's saved part is
+   * left out: `runningLocalDate` marks its cell and `dayTotalsMs` includes its time.
+   */
+  dayEntries: LocalTimesheetEntry[][];
   dayTotalsMs: number[];
   entryIds: string[];
   projectId?: string;
@@ -42,10 +49,75 @@ export interface WeeklyGridRow {
   totalMs: number;
 }
 
-function createGridRowKey(
+/** A Grid row the user added with "+ Add row". It shows even while it has no time. */
+export interface WeeklyGridAddedRow {
+  projectId?: string;
+  taskId?: string;
+}
+
+/**
+ * Names the Grid row an entry belongs to: its project and task, or its label when
+ * it has no task.
+ */
+export function getWeeklyGridRowKey(
   value: Pick<LocalTimesheetEntry, "label" | "projectId" | "taskId">,
 ) {
   return `${value.projectId ?? "none"}::${value.taskId ?? value.label}`;
+}
+
+/** Where the running entry sits: its day, its project and task, and the saved entry it continues. */
+type WeeklyRunningPlacement = Pick<
+  WeeklyRunningTime,
+  "entryId" | "localDate" | "projectId" | "taskId"
+>;
+
+/**
+ * Names the Grid row of the running entry. A continued entry without a task keeps
+ * the row of the entry it continues, which is grouped by label.
+ */
+function getWeeklyRunningRowKey(
+  running: WeeklyRunningPlacement,
+  entries: LocalTimesheetEntry[],
+) {
+  const linkedEntry = running.entryId
+    ? entries.find((entry) => entry._id === running.entryId)
+    : undefined;
+  return getWeeklyGridRowKey({
+    label: linkedEntry?.label ?? "",
+    projectId: running.projectId,
+    taskId: running.taskId,
+  });
+}
+
+/**
+ * Lists what one Grid cell holds: its saved entries, and whether the running entry
+ * is in it. The running entry's saved part is left out of `entries`, as in
+ * `WeeklyGridRow.dayEntries`.
+ */
+export function selectWeeklyGridCell({
+  entries,
+  localDate,
+  rowKey,
+  running,
+}: {
+  entries: LocalTimesheetEntry[];
+  localDate: string;
+  rowKey: string;
+  running?: WeeklyRunningPlacement | null;
+}) {
+  return {
+    entries: entries.filter(
+      (entry) =>
+        entry.localDate === localDate &&
+        entry._id !== running?.entryId &&
+        getWeeklyGridRowKey(entry) === rowKey,
+    ),
+    hasRunning: Boolean(
+      running &&
+      running.localDate === localDate &&
+      getWeeklyRunningRowKey(running, entries) === rowKey,
+    ),
+  };
 }
 
 export interface WeeklyTimeProjection {
@@ -56,13 +128,20 @@ export interface WeeklyTimeProjection {
   totalMs: number;
 }
 
+/**
+ * Projects a week for the Week view: day columns with their entries and capacity,
+ * and Grid rows grouping entries by project and task. `addedRows` are rows the user
+ * added with "+ Add row"; they show empty until they get time.
+ */
 export function projectWeeklyTime({
+  addedRows = [],
   capacityTargets,
   entries,
   projects,
   runningTime,
   weekDates,
 }: {
+  addedRows?: WeeklyGridAddedRow[];
   capacityTargets: WeeklyCapacityTargets;
   entries: LocalTimesheetEntry[];
   projects: LocalProject[];
@@ -94,27 +173,45 @@ export function projectWeeklyTime({
     };
   });
 
+  function describeRow(projectId?: string, taskId?: string) {
+    const project = projectId ? projectMap.get(projectId) : undefined;
+    const task = taskId
+      ? project?.tasks.find((candidate) => candidate._id === taskId)
+      : undefined;
+    return {
+      projectName: project?.displayName ?? project?.name ?? "No project",
+      taskName: task?.name,
+    };
+  }
+
+  function acceptsNewEntries(
+    rowKey: string,
+    projectId?: string,
+    taskId?: string,
+  ) {
+    return rowKey === getWeeklyGridRowKey({ label: "", projectId, taskId });
+  }
+
   const gridGroups = new Map<string, LocalTimesheetEntry[]>();
   for (const entry of entries) {
     if (!dateIndex.has(entry.localDate)) {
       continue;
     }
 
-    const key = createGridRowKey(entry);
+    const key = getWeeklyGridRowKey(entry);
     const group = gridGroups.get(key) ?? [];
     group.push(entry);
     gridGroups.set(key, group);
   }
 
-  const gridRows = Array.from(gridGroups.values())
-    .map((group): WeeklyGridRow => {
+  const gridRows = Array.from(gridGroups.values()).map(
+    (group): WeeklyGridRow => {
       const first = group[0]!;
-      const project = first.projectId
-        ? projectMap.get(first.projectId)
-        : undefined;
-      const task = first.taskId
-        ? project?.tasks.find((candidate) => candidate._id === first.taskId)
-        : undefined;
+      const rowKey = getWeeklyGridRowKey(first);
+      const { projectName, taskName } = describeRow(
+        first.projectId,
+        first.taskId,
+      );
       const dayTotalsMs = weekDates.map((localDate) =>
         group
           .filter((entry) => entry.localDate === localDate)
@@ -122,21 +219,59 @@ export function projectWeeklyTime({
       );
 
       return {
+        acceptsNewEntries: acceptsNewEntries(
+          rowKey,
+          first.projectId,
+          first.taskId,
+        ),
+        dayEntries: weekDates.map((localDate) =>
+          group.filter(
+            (entry) =>
+              entry.localDate === localDate &&
+              entry._id !== runningTime?.entryId,
+          ),
+        ),
         dayTotalsMs,
         entryIds: group.map((entry) => entry._id),
         projectId: first.projectId,
-        projectName: project?.displayName ?? project?.name ?? "No project",
-        rowKey: createGridRowKey(first),
+        projectName,
+        rowKey,
         taskId: first.taskId,
-        taskName: task?.name ?? (first.label || "No task"),
+        taskName: taskName ?? (first.label || "No task"),
         totalMs: dayTotalsMs.reduce((total, value) => total + value, 0),
       };
-    })
-    .sort((left, right) =>
-      `${left.projectName}\u0000${left.taskName}`.localeCompare(
-        `${right.projectName}\u0000${right.taskName}`,
-      ),
+    },
+  );
+
+  for (const added of addedRows) {
+    const rowKey = getWeeklyGridRowKey({ label: "", ...added });
+    if (gridRows.some((row) => row.rowKey === rowKey)) {
+      continue;
+    }
+
+    const { projectName, taskName } = describeRow(
+      added.projectId,
+      added.taskId,
     );
+    gridRows.push({
+      acceptsNewEntries: true,
+      dayEntries: weekDates.map(() => []),
+      dayTotalsMs: weekDates.map(() => 0),
+      entryIds: [],
+      projectId: added.projectId,
+      projectName,
+      rowKey,
+      taskId: added.taskId,
+      taskName: taskName ?? "No task",
+      totalMs: 0,
+    });
+  }
+
+  gridRows.sort((left, right) =>
+    `${left.projectName}\u0000${left.taskName}`.localeCompare(
+      `${right.projectName}\u0000${right.taskName}`,
+    ),
+  );
 
   const runningDayIndex = runningTime
     ? dateIndex.get(runningTime.localDate)
@@ -146,20 +281,11 @@ export function projectWeeklyTime({
   // applies to the row that already holds the saved entry. Only positive time
   // opens a row of its own.
   if (runningTime && runningDayIndex !== undefined) {
-    const project = runningTime.projectId
-      ? projectMap.get(runningTime.projectId)
-      : undefined;
-    const task = runningTime.taskId
-      ? project?.tasks.find((candidate) => candidate._id === runningTime.taskId)
-      : undefined;
-    const linkedEntry = runningTime.entryId
-      ? entries.find((entry) => entry._id === runningTime.entryId)
-      : undefined;
-    const runningRowKey = createGridRowKey({
-      label: linkedEntry?.label ?? "",
-      projectId: runningTime.projectId,
-      taskId: runningTime.taskId,
-    });
+    const { projectName, taskName } = describeRow(
+      runningTime.projectId,
+      runningTime.taskId,
+    );
+    const runningRowKey = getWeeklyRunningRowKey(runningTime, entries);
     const existingRow = gridRows.find((row) => row.rowKey === runningRowKey);
 
     if (existingRow) {
@@ -173,14 +299,20 @@ export function projectWeeklyTime({
         index === runningDayIndex ? runningTime.durationMs : 0,
       );
       gridRows.push({
+        acceptsNewEntries: acceptsNewEntries(
+          runningRowKey,
+          runningTime.projectId,
+          runningTime.taskId,
+        ),
+        dayEntries: weekDates.map(() => []),
         dayTotalsMs,
         entryIds: runningTime.entryId ? [runningTime.entryId] : [],
         projectId: runningTime.projectId,
-        projectName: project?.displayName ?? project?.name ?? "No project",
+        projectName,
         rowKey: runningRowKey,
         runningLocalDate: runningTime.localDate,
         taskId: runningTime.taskId,
-        taskName: task?.name ?? "Running",
+        taskName: taskName ?? "Running",
         totalMs: runningTime.durationMs,
       });
     }

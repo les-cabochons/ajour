@@ -174,12 +174,12 @@ The Day view's inline new row and the titlebar's own create form go away. What a
 
 ### Hosts
 
-| Where                                                                         | Host                                                                                |
-| ----------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
-| Day and Week views (rows, Days cards, Grid tray rows, "+ New entry", "+ Add") | Side panel docked on the right. The day or week stays visible.                      |
-| Titlebar "+", on any page                                                     | Popover anchored to the "+". Adding an entry never requires going to the Time page. |
-| New entry… on tasks and backlog items                                         | The same popover, anchored to the row or menu that opened it.                       |
-| Narrow view, everywhere                                                       | Full-width dialog.                                                                  |
+| Where                                                                     | Host                                                                                |
+| ------------------------------------------------------------------------- | ----------------------------------------------------------------------------------- |
+| Day and Week views (rows, Days cards, Grid cells, "+ New entry", "+ Add") | Side panel docked on the right. The day or week stays visible.                      |
+| Titlebar "+", on any page                                                 | Popover anchored to the "+". Adding an entry never requires going to the Time page. |
+| New entry… on tasks and backlog items                                     | The same popover, anchored to the row or menu that opened it.                       |
+| Narrow view, everywhere                                                   | Full-width dialog.                                                                  |
 
 The form is the same in every host. Only its container changes.
 
