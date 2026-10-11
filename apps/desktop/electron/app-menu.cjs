@@ -13,8 +13,9 @@
  * - separators.
  *
  * The renderer's key listener is the only binding path for registry shortcuts.
- * Their accelerators here are labels, and single keys never fire from the menu,
- * so typing "d" in a field cannot switch to the Day view.
+ * Single keys never become native accelerators, so typing "d" in a field still
+ * types "d". macOS shows them in the label, as "Day (D)"; Windows and Linux
+ * show them as unregistered accelerators.
  */
 
 /**
@@ -167,23 +168,26 @@ function getAppMenuModel({ platform, developmentBuild, appName }) {
 
 /**
  * The Electron menu template for `model`. Action items call `sendAction` with
- * their registry id; role items run their Electron role.
+ * their registry id; role items run their Electron role. `platform` must be the
+ * one the model was built for.
  *
  * @param {AppMenu[]} model
- * @param {{ sendAction: (action: string) => void }} handlers
+ * @param {{ platform: NodeJS.Platform, sendAction: (action: string) => void }} options
  * @returns {Electron.MenuItemConstructorOptions[]}
  */
-function buildAppMenuTemplate(model, { sendAction }) {
+function buildAppMenuTemplate(model, { platform, sendAction }) {
   return model.map((menu) => ({
     id: `menu:${menu.id}`,
     label: menu.label,
     ...(menu.role ? { role: menu.role } : {}),
-    submenu: menu.items.map((item) => toTemplateItem(item, sendAction)),
+    submenu: menu.items.map((item) =>
+      toTemplateItem(item, platform, sendAction),
+    ),
   }));
 }
 
 /** @returns {Electron.MenuItemConstructorOptions} */
-function toTemplateItem(item, sendAction) {
+function toTemplateItem(item, platform, sendAction) {
   if (item.type === "separator") {
     return { type: "separator" };
   }
@@ -197,24 +201,40 @@ function toTemplateItem(item, sendAction) {
     };
   }
 
-  const singleKey = isSingleKeyAccelerator(item.accelerator);
+  if (!item.accelerator) {
+    return {
+      id: item.id,
+      label: item.label,
+      click: () => sendAction(item.action),
+    };
+  }
+
+  if (!isSingleKeyAccelerator(item.accelerator)) {
+    return {
+      id: item.id,
+      label: item.label,
+      accelerator: item.accelerator,
+      click: () => sendAction(item.action),
+    };
+  }
+
+  // macOS ignores `registerAccelerator` and would take the key from text
+  // fields, so its single keys go in the label and bind nothing.
+  if (platform === "darwin") {
+    return {
+      id: item.id,
+      label: `${item.label} (${item.accelerator})`,
+      click: () => sendAction(item.action),
+    };
+  }
+
+  // Windows and Linux show the key without binding it.
   return {
     id: item.id,
     label: item.label,
-    ...(item.accelerator
-      ? {
-          accelerator: item.accelerator,
-          // Windows and Linux show the key without binding it. macOS ignores
-          // this option, so the click below drops key presses instead.
-          ...(singleKey ? { registerAccelerator: false } : {}),
-        }
-      : {}),
-    click: (_menuItem, _window, event) => {
-      if (singleKey && event?.triggeredByAccelerator) {
-        return;
-      }
-      sendAction(item.action);
-    },
+    accelerator: item.accelerator,
+    registerAccelerator: false,
+    click: () => sendAction(item.action),
   };
 }
 

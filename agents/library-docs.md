@@ -88,9 +88,10 @@ The backlog editor module is feature-local because its vocabulary and commands b
 - Catalog refresh persistence: `apps/desktop/electron/plugin-catalog-settings.cjs`
 - Application menu per platform and build type: `apps/desktop/electron/app-menu.cjs`.
   Action items send shortcut registry ids to the renderer over
-  `ajour:menu-action`; role items run Electron roles in main. Registry keys are
-  labels only: the renderer key listener stays the one binding path, and single
-  keys never fire from the menu. Production builds have no Reload or DevTools.
+  `ajour:menu-action`; role items run Electron roles in main. The renderer key
+  listener stays the one binding path for registry keys. Single keys never
+  become native accelerators: macOS shows them in the label, as "Day (D)", and
+  Windows shows them unregistered. Production builds have no Reload or DevTools.
 
 ## API
 

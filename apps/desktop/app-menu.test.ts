@@ -50,7 +50,10 @@ const {
 } = require("./electron/app-menu.cjs") as {
   buildAppMenuTemplate: (
     model: AppMenu[],
-    handlers: { sendAction: (action: string) => void },
+    options: {
+      platform: NodeJS.Platform;
+      sendAction: (action: string) => void;
+    },
   ) => TemplateItem[];
   findAppMenuRoleItem: (model: AppMenu[], itemId: unknown) => unknown;
   getAppMenuModel: (options: {
@@ -229,6 +232,7 @@ describe("desktop app menu template", () => {
   it("sends an action item's registry id when clicked", () => {
     const sendAction = vi.fn();
     const template = buildAppMenuTemplate(model("darwin", false), {
+      platform: "darwin",
       sendAction,
     });
 
@@ -239,23 +243,51 @@ describe("desktop app menu template", () => {
     expect(sendAction).toHaveBeenCalledWith("app.toggle-sidebar");
   });
 
-  it("shows single-key shortcuts as labels that never fire from the keyboard", () => {
+  it("shows single keys on Windows as accelerators it does not register", () => {
     const sendAction = vi.fn();
     const template = buildAppMenuTemplate(model("win32", false), {
+      platform: "win32",
       sendAction,
     });
     const day = templateItem(template, "action:time.day-view");
 
-    expect(day).toMatchObject({ accelerator: "D", registerAccelerator: false });
-    day.click?.(null, null, { triggeredByAccelerator: true });
-    expect(sendAction).not.toHaveBeenCalled();
-
-    day.click?.(null, null, { triggeredByAccelerator: false });
+    expect(day).toMatchObject({
+      label: "Day",
+      accelerator: "D",
+      registerAccelerator: false,
+    });
+    day.click?.(null, null, {});
     expect(sendAction).toHaveBeenCalledWith("time.day-view");
   });
 
+  it.each([false, true])(
+    "binds no single key on macOS, development build %s",
+    (developmentBuild) => {
+      const template = buildAppMenuTemplate(model("darwin", developmentBuild), {
+        platform: "darwin",
+        sendAction: vi.fn(),
+      });
+      const items = template.flatMap((menu) => menu.submenu ?? []);
+
+      for (const item of items) {
+        expect(
+          item.accelerator === undefined ||
+            !isSingleKeyAccelerator(item.accelerator),
+          item.id,
+        ).toBe(true);
+      }
+      expect(templateItem(template, "action:time.day-view").label).toBe(
+        "Day (D)",
+      );
+      expect(templateItem(template, "action:app.shortcuts").label).toBe(
+        "Keyboard shortcuts (?)",
+      );
+    },
+  );
+
   it("registers modifier shortcuts as accelerators", () => {
     const template = buildAppMenuTemplate(model("darwin", false), {
+      platform: "darwin",
       sendAction: vi.fn(),
     });
 
@@ -266,6 +298,7 @@ describe("desktop app menu template", () => {
 
   it("passes roles through to Electron and keeps the menu roles", () => {
     const template = buildAppMenuTemplate(model("darwin", false), {
+      platform: "darwin",
       sendAction: vi.fn(),
     });
 
@@ -287,6 +320,7 @@ describe("desktop app menu template", () => {
 
   it("builds no Reload or DevTools items for production builds", () => {
     const template = buildAppMenuTemplate(model("win32", false), {
+      platform: "win32",
       sendAction: vi.fn(),
     });
     const accelerators = template

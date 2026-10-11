@@ -773,7 +773,10 @@ if (!hasSingleInstanceLock) {
     // the same menus in the renderer.
     Menu.setApplicationMenu(
       Menu.buildFromTemplate(
-        buildAppMenuTemplate(appMenuModel, { sendAction: sendMenuAction }),
+        buildAppMenuTemplate(appMenuModel, {
+          platform: process.platform,
+          sendAction: sendMenuAction,
+        }),
       ),
     );
 
