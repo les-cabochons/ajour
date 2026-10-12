@@ -57,11 +57,16 @@ Start entry · New entry… · Edit · Assign shortcut… · Archive (Restore wh
 
 ### Backlog item
 
-Start entry · New entry… · Edit · Add subitem · Open in source · Archive (Restore when archived) · Delete
+Start entry · New entry… · Edit · Add subitem · Snooze… (Unsnooze when snoozed) · Settle… (Unsettle when settled, Restore when archived) · Open in source · Archive · Delete
+
+Changed in [#69](https://github.com/les-cabochons/ajour/issues/69). See the Backlog sidebar section for what Snooze and Settle do.
 
 - Open in source is listed only for items synced from a connector.
+- Archive is listed only for synced items. It archives the item in Ajour and leaves the source tool as it is. On a manual item, Settle already archives. An archived item disables Archive: "The item is archived".
+- Settle shows as "Settle…" when it opens the settle dialog, and as "Settle" when a settle rule applies a fixed change.
 - New entry… replaces the inline "Log time" field as the action for logging time.
-- An archived item disables Start entry, New entry…, Edit and Add subitem: "Restore the item first".
+- An archived item disables Start entry, New entry…, Edit, Add subitem and Snooze…: "Restore the item first".
+- A settled item disables Snooze…: "Unsettle the item first".
 - A subitem disables Add subitem: "Subitems can't have subitems".
 - Delete removes the item's subitems too, and its label states the count, for example "Delete (and 2 subitems)".
 
@@ -113,7 +118,8 @@ Decided in [App shell and collapsible sidebar](https://github.com/les-cabochons/
 
 ### Desktop widths
 
-- The app sidebar has two states: expanded (200px, logo and labels) and a 52px icon rail (icons with tooltips). Time, Backlog and Projects sit at the top, and Settings at the bottom.
+- The app sidebar has two states: expanded (logo and labels, resizable, see the Backlog sidebar section for widths) and a 52px icon rail (icons with tooltips). Time, Backlog and Projects sit at the top, and Settings at the bottom.
+- The expanded sidebar lists backlog items below Time, Backlog and Projects. The rail does not. See the Backlog sidebar section.
 - Cmd+B (Ctrl+B on Windows) and a button next to the logo toggle it. The View menu gets "Show sidebar" or "Hide sidebar" once the menu bar exists. There is no second shortcut.
 - The state is saved per device. Below 1100px the sidebar collapses to the rail on its own, without changing the saved preference.
 - Settings opens inside the shell. The app sidebar stays visible with Settings active, and the settings pages are listed in a second column next to the page. There is no separate "back" control, because the user never leaves the app.
@@ -257,6 +263,7 @@ These actions happen at once and show a toast with Undo for about 8 seconds. No 
 - Moving an entry to another day, by drag or Move to….
 - Duplicate to… another day. Undo removes the copy. The toast names the day, such as "Duplicated to Thu, Oct 8".
 - Archiving a project, task or backlog item.
+- Snoozing or settling a backlog item. A settle that writes to the source tool sends the write when the toast closes, so Undo cancels it.
 - Deleting a backlog item and its subitems.
 - Deleting a backlog status.
 - Dismissing import drafts.
@@ -269,7 +276,7 @@ A confirmation dialog stays only for actions that cannot be undone or that reach
 
 - Uninstalling a plugin.
 - Submitting under the week target.
-- Any future action that writes to Azure DevOps or Jira.
+- Any other action that writes to Azure DevOps or Jira. Settle is the exception: its dialog is the confirmation, then the Undo toast gives a few seconds to cancel before the write. A settle rule set to Apply skips the dialog, because the user chose that change in Settings.
 
 ### Success
 
@@ -285,6 +292,7 @@ No success toasts. The result shows where the action happened:
 - Form mistakes show next to the field, as now.
 - An operation the user started (import, export, sync, plugin install) shows its error inline on that page.
 - Background failures, such as an automatic connector sync, show one error toast per failure that stays until dismissed, and a "Last sync failed" line on that connector in Settings.
+- A settle write that fails after the Undo window puts the item back to active and shows an error toast, naming the item and the reason, that stays until dismissed.
 
 ### Toasts
 
@@ -329,7 +337,8 @@ Frequent in-app actions use single keys. They only work when focus is not in a t
 
 - Day rows become focusable, like Week cards.
 - ↑ and ↓ move focus between rows or cards. ← and → move between days in Days and between cells in the Grid.
-- Enter or E opens Edit. Delete or Backspace deletes, with the Undo toast. Cmd+D duplicates. M opens Move to…. Alt+↑ and Alt+↓ reorder.
+- Enter goes one level deeper. On a time entry, task or project it opens Edit. On a backlog item row it opens the backlog item page, and on that page it opens Edit. E no longer opens Edit. Delete or Backspace deletes, with the Undo toast.
+- On a focused backlog item, or on its page, E settles and B snoozes, as in Gmail. Shift+E opens the settle dialog even when a settle rule applies a fixed change. Cmd+D duplicates. M opens Move to…. Alt+↑ and Alt+↓ reorder.
 - The context menu key, Shift+F10 or "." opens the "…" menu. Escape closes whatever is open.
 - Every item in the "…" and right-click menus shows its key, so the menus teach the shortcuts.
 
@@ -395,11 +404,120 @@ One "Submit week" button, styled the same, sits in the Day and Week headers at e
 Decided in [Backlog page under the new conventions](https://github.com/les-cabochons/ajour/issues/25).
 
 - Editing a backlog item uses the side panel, like time entries, with the same rules: explicit Save (button, Enter in the title, Cmd+Enter), Escape or × discards, outside clicks do nothing. The narrow view uses the full-width dialog. This replaces the inline expanded editor, the mobile modal, the title edit mode and the separate note modal. Escape no longer saves.
-- The panel holds title, status, priority (top-level items only), project and task mapping, note, the estimates with their "Reset to subitem total" buttons, and "Keep when missing from sync" for synced items. Its header has the "…" action menu.
+- The panel holds title, status, priority, project and task mapping, note, the estimates with their "Reset to subitem total" buttons, and "Keep when missing from sync" for synced items. Its header has the "…" action menu.
 - "New backlog item" in the page header opens a blank panel. "Add subitem" opens the panel with the parent set.
 - Subitems stay listed under their parent row, expanded with the row's chevron.
-- The page header holds the Active / Archived switch and the sort menu at every width. The floating filter and "+" buttons go away.
+- The page header holds the Active / Settled / Archived switch and the sort menu at every width. Snoozed items stay under Active with a snoozed marker. The floating filter and "+" buttons go away.
+- Clicking a row or pressing Enter opens the backlog item page. Edit opens the side panel.
 - The row's play button stays as the Start entry shortcut. Entries start on today.
+
+## Backlog sidebar
+
+Decided in [Backlog sidebar with settle, snooze and a backlog item page](https://github.com/les-cabochons/ajour/issues/69). The connector side is [#70](https://github.com/les-cabochons/ajour/issues/70). Delayed writes are recorded in [ADR 0001](adr/0001-connector-writes-after-undo-window.md).
+
+The sidebar works like the T3 Code sidebar: navigation at the top, then the work itself.
+
+### List
+
+- Below Time, Backlog and Projects, the expanded sidebar lists active backlog items in the Backlog page's current order, custom or priority. There is one ordering.
+- The list holds top-level items and subitems that have their own priority. A subitem without a priority follows its parent and does not show.
+- With priority order, a subitem with its own priority mixes with top-level items by priority. With custom order, it sits right below its parent. If its parent is snoozed or settled, it takes the parent's place.
+- Snoozed, settled and archived items leave the list.
+- The rail and the narrow view have no item list. The Backlog page is the way in.
+
+### Layout options
+
+Decided after the prototype on branch `prototype/backlog-sidebar`: variant B is the default, variant A is the compact layout, and variant C's Up next card is an option.
+
+- Density has two values. Comfortable is the default. Compact fits more items.
+- Show Up next is on by default. It works with both densities.
+- Both live in a "Sidebar" group in Settings > General and as View menu entries next to Show or Hide sidebar. They are saved per device.
+- The Snoozed and Settled sections are the same in every layout.
+
+### Width
+
+- Dragging the sidebar's edge resizes it from 200px to 400px.
+- The default width is 272px for Comfortable and 200px for Compact. It applies until the user drags the edge, or after a double-click on the edge resets it.
+- One dragged width is saved per device. Switching density keeps it.
+- Dragging the edge below 200px snaps the sidebar to the rail, as in VS Code. Dragging the rail's edge outward expands it again at the saved width.
+- The toggle button next to the logo stays visible in both states, so there is always a visible control to show the sidebar again. Cmd+B still toggles it.
+
+### Rows
+
+- Comfortable: the type icon, the title on up to two lines, and a muted meta line with the external id ("Local" for a manual item), the source state and the remaining estimate, such as "#48213 · Active · 2.5h left". A subitem's meta line shows its parent instead, such as "↳ Login page".
+- Compact: one line with the type icon and the title. A subitem shows its parent after the title in muted text, such as "Fix token refresh · Login page". The title comes first because 200px leaves about 18 characters, and about 8 once the hover actions show.
+- In Comfortable, the hover actions float over the row's top right corner. In Compact, they replace the markers at the end of the line.
+- A marker shows on the item with the running entry.
+- A dot shows on a returned item. Opening the item from anywhere, or clicking the dot, clears it.
+- Clicking a row opens the backlog item page.
+- With Show Up next on, the first item of the list shows as a card above the others: type icon, external id, title, markers, and Start entry, Snooze and Settle buttons. Compact shows the buttons as icons only. The list below starts at the second item.
+- Hover and keyboard focus show Start entry, Snooze and Settle. The button always says Settle. Right-click and "…" open the full action set.
+
+### Snoozed and Settled sections
+
+- Two collapsible sections follow the list: "Snoozed (n)", then "Settled". Both start collapsed. Their state is saved per device.
+- Snoozed lists items by the time they return, and each row shows it, such as "Tomorrow 9:00". The hover action is Unsnooze. An unsnoozed item goes back to the list with no dot.
+- Settled lists every settled item, newest first, 20 at a time with "Show more". Subitems settled along with their parent have no row of their own: they show on the parent's page. A subitem that has its own priority and isn't in a done state keeps its own state, so it gets its own row when it is settled. The hover action is Unsettle. Archived items are not listed. They live in the Backlog page's Archived view.
+- Clicking a row in either section opens the backlog item page.
+
+### Snooze
+
+- Snooze… offers: In an hour, In 3 hours, This afternoon (13:00, offered only before noon), Tomorrow (9:00 the next calendar day), Next week (Monday 9:00), and Custom (date and time).
+- Snooze is local. The source tool never learns about it. It shows the Undo toast.
+- A running entry on the item keeps running.
+- When the snooze ends, the item returns to the list as returned, at its normal place in the order. A snooze that ended while Ajour was closed returns at the next launch.
+- Any item that can show in the list can be snoozed, including subitems with their own priority.
+
+### Settle
+
+Settle means the user has nothing left to do on the item for now.
+
+- A manual item becomes archived.
+- A synced item becomes settled. Its source project's settle rule decides how:
+  - Ask, the default, opens the settle dialog: a state picker grouped by state category and a priority field, both starting at the item's current values. Settling with nothing changed is allowed and stays local, such as for "waiting on the client" when no matching state exists.
+  - Apply sets a fixed state, priority or both without a dialog.
+- Settling into a state in a done category archives the item instead. Done categories are Azure DevOps Completed and Removed, and Jira Done. Azure DevOps Resolved is not done, because it usually means waiting on QA.
+- Only changed fields are written, and only after the Undo toast closes. If Ajour quits during the window, the write is sent at the next launch. There is no offline queue beyond that.
+- Settling stops and saves the running entry on the item. Undo restores the entry as it was, still running from its original start.
+- A plugin without the settle capability settles its items locally, with no write.
+- Settling a parent carries its subitems that have no priority of their own: they settle or archive with it, and Undo restores them together. Subitems with their own priority keep their own state. Settling a synced subitem writes that subitem, under its own source project's settle rule.
+- The dialog does not offer an assignee yet. Ajour does not import assignees. See [#71](https://github.com/les-cabochons/ajour/issues/71).
+- Settle is the only action that writes priority to the source. Priority edits in the side panel stay local.
+
+### Unsettle and restore
+
+- Unsettle puts a settled item back to active. It is local, with no dialog and no write.
+- Restore puts an archived item back to active, as before.
+
+### Sync
+
+Syncs move synced items between states:
+
+| What the sync shows                                     | Result                                         |
+| ------------------------------------------------------- | ---------------------------------------------- |
+| An active or settled item reached a done category       | Archived                                       |
+| Someone else changed a settled item's state or priority | Active, as returned                            |
+| An item dropped out of the sync                         | Archived, as today. It returns if it reappears |
+
+### Settle rules
+
+- Settings > Backlog lists, for each connection, the source projects seen in syncs. Each has a settle rule: Ask or Apply, and for Apply the target state, priority or both.
+- Manual items have no settle rule. They always archive.
+- With Apply, E and the sidebar's Settle button use the rule. Shift+E or Shift-click opens the dialog prefilled with it.
+
+### Backlog item page
+
+- The page lives at `/backlog/$itemId`. Clicking a row in the sidebar or on the Backlog page, or pressing Enter on it, opens it.
+- V1 shows only what Ajour stores: title, type and external id with Open in source, source state and backlog status, project and task mapping, priority, estimates with their sync state, note, parent and subitems, and the time entries logged on it.
+- Layout, from the prototype: variant C's header over variant A's body.
+  - Header: the type icon in a square tile, the title, and a muted line with the external id (linked to the source), the source project and the source state. The actions sit on the right: Start entry, Snooze, Settle and "…", or Unsnooze, Unsettle or Restore depending on the state.
+  - A notice under the header when the item is snoozed, settled, archived or returned, such as "Settled today 7:51 p.m. · waiting in "Waiting for client"".
+  - Four tiles: Original, Remaining, Completed and Logged in Ajour. A tile shows the estimate's sync conflict when there is one.
+  - A progress bar: completed over original.
+  - Two columns below. The main column has the note, the subitems and the time entries. The right panel lists state, backlog status and priority, then project, task and source project.
+- The right panel leaves room for fields not imported yet, such as assignee, iteration, area path, tags, acceptance criteria and comments. See [#71](https://github.com/les-cabochons/ajour/issues/71).
+- The page is designed for Azure DevOps first, then Jira.
+- The page header has the "…" action menu. Edit opens the side panel over the page.
 
 ## Projects
 
@@ -421,6 +539,7 @@ Decided in [Settings and Sync review under the new conventions](https://github.c
 - When the local connector API is not running, as in the web build, Plugins shows one calm notice: "Connectors need the desktop app". Backlog and Sync review hide their connector sections instead of showing red error banners.
 - Sync review keeps its list with selection, "Sync selected to backlog", and Dismiss. Dismiss shows the Undo toast instead of asking.
 - The Debug page only exists in development builds.
+- Settings > Backlog lists, for each connection, the source projects seen in syncs, each with its settle rule. See the Backlog sidebar section.
 
 ## Consistency
 
