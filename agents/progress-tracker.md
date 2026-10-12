@@ -199,6 +199,13 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Two regressions reproduce stale IDs after a failed Settle write, including JSON reload and a preserved local workflow override. Both failed before the fix.
 - [ ] Complete verification and fresh Codex review of the updated stack. The integration thread owns merging.
 
+### Legacy source-write recovery provenance, 2026-10-12
+
+- [x] Hydration fills missing archive-provenance markers in older pending recovery and carried-child snapshots. Source markers and pre-close history identify explicit closes; manual children remain explicit, and stored boolean markers take precedence.
+- [x] Carried recovery compares snapshot fields, so JSON property order cannot invalidate an unchanged child.
+- [x] Six persisted upgrade cases cover missing-sync archives, synced and manual children, explicit archives after a Done flag change and unknown source states. Reload, failed startup writes, source returns and Restore are checked.
+- [ ] Verify the rebased stack and request fresh reviews of the pushed heads.
+
 ### Archived recovery after clearing Done, 2026-10-12
 
 - [x] Failed or undone reopens move recovered explicit archives to the remaining Done state when their old state loses its Done flag. Carried children retain the archive markers and pre-close state for Restore.

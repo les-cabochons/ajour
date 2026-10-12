@@ -35,6 +35,53 @@ export function normalizeWorkItemPriority(priority?: number) {
   return Math.max(0, Math.round(priority));
 }
 
+/** Older move snapshots omitted archive provenance, including carried items. */
+export function normalizeSourceWriteRecovery(workItems: LocalWorkItem[]) {
+  const sources = new Map(workItems.map((item) => [item._id, item.source]));
+  function normalize<
+    T extends Pick<
+      LocalWorkItem,
+      | "status"
+      | "archivedByMissingSync"
+      | "archivedSourceStatusKey"
+      | "workflowStateIdBeforeClose"
+    >,
+  >(snapshot: T, source: LocalWorkItem["source"]): T {
+    if (typeof snapshot.archivedByMissingSync === "boolean") return snapshot;
+    // Explicit closes record the source state or pre-close workflow state.
+    // Missing-sync archives lack those markers. Manual archives are explicit.
+    return {
+      ...snapshot,
+      archivedByMissingSync:
+        snapshot.status === "archived" &&
+        source !== "manual" &&
+        snapshot.archivedSourceStatusKey === undefined &&
+        snapshot.workflowStateIdBeforeClose === undefined,
+    };
+  }
+  return workItems.map((item) => {
+    const write = item.pendingSourceWrite;
+    if (!write) return item;
+    return {
+      ...item,
+      pendingSourceWrite: {
+        ...write,
+        previous: {
+          ...write.previous,
+          lifecycle: write.previous.lifecycle
+            ? normalize(write.previous.lifecycle, item.source)
+            : undefined,
+          carriedChildren: write.previous.carriedChildren?.map((child) => ({
+            ...child,
+            before: normalize(child.before, sources.get(child.id) ?? "manual"),
+            after: normalize(child.after, sources.get(child.id) ?? "manual"),
+          })),
+        },
+      },
+    };
+  });
+}
+
 export function normalizePersistedWorkItem(
   workItem: PersistedLocalWorkItem,
   now: () => number,

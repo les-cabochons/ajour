@@ -63,6 +63,7 @@ import {
   dismissEstimateIssue as applyDismissEstimateIssue,
   keepLocalEstimateConflict as applyKeepLocalEstimateConflict,
   normalizePersistedWorkItem,
+  normalizeSourceWriteRecovery,
   reorderWorkItems as applyReorderWorkItems,
   setBacklogSortMode as applyBacklogSortMode,
   updateWorkItem as applyUpdateWorkItem,
@@ -320,11 +321,13 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
     persistedState.workItems,
     defaults.workItems,
   );
-  const workItems = rawWorkItems.map((workItem) =>
-    normalizePersistedWorkItem(workItem, Date.now, {
-      priorityScales: normalizePriorityScales(persistedState.priorityScales),
-      priorityFormat: persistedState.priorityFormat,
-    }),
+  const workItems = normalizeSourceWriteRecovery(
+    rawWorkItems.map((workItem) =>
+      normalizePersistedWorkItem(workItem, Date.now, {
+        priorityScales: normalizePriorityScales(persistedState.priorityScales),
+        priorityFormat: persistedState.priorityFormat,
+      }),
+    ),
   );
   const workflowStates = normalizeWorkflowStates(
     arrayOrDefault(

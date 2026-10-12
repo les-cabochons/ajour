@@ -910,7 +910,12 @@ export function failSourceWrite(
           ? { ...current, settledWithParentId: undefined }
           : current;
       }
-      if (JSON.stringify(moveSnapshot(current)) !== JSON.stringify(child.after))
+      if (
+        !Object.entries(moveSnapshot(current)).every(
+          ([key, value]) =>
+            child.after[key as keyof LocalWorkItemMoveSnapshot] === value,
+        )
+      )
         return current;
       return { ...item, ...child.before };
     }),
