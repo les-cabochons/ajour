@@ -1068,6 +1068,83 @@ describe("writing a move to the source", () => {
     });
   });
 
+  it.each(["doing", undefined])(
+    "retains workflow %s when a move extends a priority-only write",
+    (workflowStateId) => {
+      const before = state();
+      before.workItems[0] = {
+        ...before.workItems[0]!,
+        workflowStateId,
+        importedWorkflowStateId: workflowStateId,
+        priority: 2,
+        importedPriority: 2,
+      };
+      const priority = settleBacklogItem(before, "a", factories, {
+        priority: 1,
+      });
+      expect(
+        find(priority, "a")?.pendingSourceWrite?.previous,
+      ).not.toHaveProperty("workflowStateId");
+      const moved = moveBacklogItemToState(priority, "a", "review", factories, {
+        sourceWrites: { a: "Resolved" },
+      });
+      const reloaded: LocalAppState = JSON.parse(JSON.stringify(moved));
+      expect(find(failSourceWrite(reloaded, "a"), "a")).toMatchObject({
+        workflowStateId,
+        importedWorkflowStateId: workflowStateId,
+        importedPriority: 2,
+        priority: 2,
+        sourceStatusKey: "active",
+      });
+    },
+  );
+
+  it.each([
+    "child succeeds first",
+    "parent fails first",
+    "child fails first",
+    "both fail, parent first",
+  ])("recovers independent parent and child source writes when %s", (order) => {
+    const before = state();
+    before.workItems.push(
+      synced("child", {
+        parentWorkItemId: "a",
+        workflowStateId: "doing",
+        importedWorkflowStateId: "doing",
+      }),
+    );
+    const closed = moveBacklogItemToState(before, "a", "done", factories, {
+      includeSubitems: true,
+      sourceWrites: { a: "Closed", child: "Closed" },
+    });
+    const sent = closed.workItems;
+    let next: LocalAppState;
+    if (order === "child succeeds first") {
+      const confirmed = completeSourceWrite(closed, "child", sent);
+      next = failSourceWrite(JSON.parse(JSON.stringify(confirmed)), "a");
+    } else if (order === "parent fails first") {
+      next = completeSourceWrite(failSourceWrite(closed, "a"), "child", sent);
+    } else if (order === "child fails first") {
+      next = failSourceWrite(failSourceWrite(closed, "child"), "a");
+    } else {
+      next = failSourceWrite(failSourceWrite(closed, "a"), "child");
+    }
+    const succeeded =
+      order === "child succeeds first" || order === "parent fails first";
+    expect(find(next, "a")).toMatchObject({
+      status: "active",
+      workflowStateId: "doing",
+      pendingSourceWrite: undefined,
+    });
+    expect(find(next, "child")).toMatchObject({
+      status: succeeded ? "archived" : "active",
+      workflowStateId: succeeded ? "done" : "doing",
+      sourceStatusLabel: succeeded ? "Closed" : "Active",
+      settledWithParentId: undefined,
+    });
+    expect(find(next, "child")?.pendingSourceWrite).toBeUndefined();
+  });
+
   it("puts a closed item back where it was when the write fails", () => {
     const closed = moveBacklogItemToState(state(), "a", "done", factories, {
       sourceWrites: { a: "Closed" },

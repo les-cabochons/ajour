@@ -1,5 +1,6 @@
 import { showErrorToast } from "@/components/ui/toast";
 import type { LocalWorkItem } from "@/domain/local-state";
+import { hasSameSourceWriteRequest } from "@/domain/backlog/backlog-item-lifecycle";
 import {
   getCachedConnectorsOverview,
   writeConnectorSettle,
@@ -69,10 +70,11 @@ async function sendSourceWrite(
     return;
   }
   const stillCurrent = () =>
-    JSON.stringify(
+    hasSameSourceWriteRequest(
       localStore.snapshot().workItems.find((item) => item._id === workItem._id)
         ?.pendingSourceWrite,
-    ) === JSON.stringify(write);
+      write,
+    );
 
   sending.add(workItem._id);
   try {

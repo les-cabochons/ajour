@@ -81,3 +81,29 @@ it("reports the successful old snapshot before sending its replacement", async (
   await vi.advanceTimersByTimeAsync(8000);
   expect(mocks.write).toHaveBeenCalledTimes(2);
 });
+
+it("handles a failed current request even when a child acknowledgement advanced recovery", async () => {
+  const { sendPendingSourceWrites } = await import("./backlog-source-writes");
+  item.pendingSourceWrite!.readyAt = 1000;
+  let rejectWrite!: (error: Error) => void;
+  mocks.write.mockReturnValueOnce(
+    new Promise((_resolve, reject) => {
+      rejectWrite = reject;
+    }),
+  );
+  const request = sendPendingSourceWrites(["a"]);
+  item = {
+    ...item,
+    pendingSourceWrite: {
+      ...item.pendingSourceWrite!,
+      previous: {
+        ...item.pendingSourceWrite!.previous,
+        workflowStateId: "confirmed",
+      },
+    },
+  };
+  rejectWrite(new Error("Parent write failed"));
+  await request;
+  expect(mocks.fail).toHaveBeenCalledWith("a");
+  expect(mocks.write).toHaveBeenCalledTimes(1);
+});

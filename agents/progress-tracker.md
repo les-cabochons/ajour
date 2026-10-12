@@ -249,6 +249,14 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] The foundation passes 692 unit tests, workspace typechecking and a Chromium regression covering Save, cancellation and retry with Include subitem.
 - [ ] Carry the fixes through the mapping and view layers, verify the stack and request fresh reviews.
 
+### Source write races and persisted recovery, 2026-10-12
+
+- [x] Source state choices revalidate the item's workflow, source identity, lifecycle and mapping after both the lookup and dialog.
+- [x] State writes restore No state after JSON persistence. A move extending a priority-only write captures its pre-move workflow baseline.
+- [x] Independent child source acknowledgements advance the parent's child recovery baseline. A failed parent keeps a child's own pending write, and a confirmed child close stays closed in either completion order.
+- [x] Recovery updates leave in-flight requests current when their state, priority and Undo deadline are unchanged.
+- [x] The updated mapping layer passes 748 unit tests and workspace typechecking. View-layer verification follows before pushing the stack.
+
 ### Settle mapping recovery, 2026-10-12
 
 - [x] Settle derives closure from the selected source state's workflow mapping, including a connector-open state mapped to Done and a connector-done state mapped to an open state.
