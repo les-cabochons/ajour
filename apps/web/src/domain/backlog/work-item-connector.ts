@@ -13,7 +13,7 @@ import type {
   LocalWorkItemEstimateSyncState,
 } from "@/domain/local-state";
 import { archiveBacklogItem } from "@/domain/backlog/backlog-item-lifecycle";
-import { findMappedBacklogStatusId } from "@/domain/backlog/backlog-status";
+import { findMappedWorkflowStateId } from "@/domain/backlog/workflow-states";
 import {
   createImportedEstimateSyncState,
   normalizeWorkItemEstimateValue,
@@ -44,7 +44,7 @@ function getWorkItemSourceKey(workItem: {
 
 function createConnectorWorkItem(
   workItem: ConnectorImportCandidate,
-  mappedBacklogStatusId: string | undefined,
+  mappedWorkflowStateId: string | undefined,
   createId: (prefix: string) => string,
   existingId?: string,
 ): LocalWorkItem {
@@ -68,8 +68,8 @@ function createConnectorWorkItem(
     parentSourceId: workItem.parentSourceId,
     priority: normalizeWorkItemPriority(workItem.priority),
     importedPriority: normalizeWorkItemPriority(workItem.priority),
-    backlogStatusId: mappedBacklogStatusId,
-    importedBacklogStatusId: mappedBacklogStatusId,
+    workflowStateId: mappedWorkflowStateId,
+    importedWorkflowStateId: mappedWorkflowStateId,
     sourceStatusKey,
     sourceStatusLabel,
     projectId: undefined,
@@ -95,12 +95,12 @@ function createConnectorWorkItem(
 function mergeConnectorWorkItem(
   existingWorkItem: LocalWorkItem,
   importedWorkItem: ConnectorImportCandidate,
-  mappedBacklogStatusId: string | undefined,
+  mappedWorkflowStateId: string | undefined,
   factories: ConnectorWorkItemFactories,
 ): LocalWorkItem {
   const nextImportedState = createConnectorWorkItem(
     importedWorkItem,
-    mappedBacklogStatusId,
+    mappedWorkflowStateId,
     factories.createId,
     existingWorkItem._id,
   );
@@ -116,9 +116,17 @@ function mergeConnectorWorkItem(
   };
   const followsImportedPriority =
     existingWorkItem.priority === existingWorkItem.importedPriority;
-  const followsImportedBacklogStatus =
-    existingWorkItem.backlogStatusId ===
-    existingWorkItem.importedBacklogStatusId;
+  // A local move stays until the source shows a different state; then the
+  // mapping wins again.
+  const followsImportedWorkflowState =
+    existingWorkItem.workflowStateId ===
+      existingWorkItem.importedWorkflowStateId ||
+    nextImportedState.sourceStatusKey !== existingWorkItem.sourceStatusKey;
+  const reopened = reopenedInSource(
+    existingWorkItem,
+    importedWorkItem,
+    nextImportedState,
+  );
   const followsImportedOriginalEstimate = followsImportedEstimate(
     "originalEstimateHours",
   );
@@ -194,10 +202,16 @@ function mergeConnectorWorkItem(
       ? nextImportedState.importedPriority
       : existingWorkItem.priority,
     importedPriority: nextImportedState.importedPriority,
-    backlogStatusId: followsImportedBacklogStatus
-      ? nextImportedState.importedBacklogStatusId
-      : existingWorkItem.backlogStatusId,
-    importedBacklogStatusId: nextImportedState.importedBacklogStatusId,
+    // An archived item stays in its done state unless the source reopened it.
+    workflowStateId:
+      existingWorkItem.status === "archived" &&
+      !existingWorkItem.archivedByMissingSync &&
+      !reopened
+        ? existingWorkItem.workflowStateId
+        : followsImportedWorkflowState
+          ? nextImportedState.importedWorkflowStateId
+          : existingWorkItem.workflowStateId,
+    importedWorkflowStateId: nextImportedState.importedWorkflowStateId,
     sourceStatusKey: nextImportedState.sourceStatusKey,
     sourceStatusLabel: nextImportedState.sourceStatusLabel,
     originalEstimateHours: followsImportedOriginalEstimate
@@ -226,6 +240,20 @@ function mergeConnectorWorkItem(
           importedPriority: existingWorkItem.importedPriority,
           sourceStatusKey: existingWorkItem.sourceStatusKey,
           sourceStatusLabel: existingWorkItem.sourceStatusLabel,
+          workflowStateId: existingWorkItem.workflowStateId,
+        }
+      : {}),
+    ...(reopened
+      ? {
+          status: "active" as const,
+          returnedAt: factories.now(),
+          archivedAt: undefined,
+          archivedSourceStatusKey: undefined,
+          settledWithParentId: undefined,
+          workflowStateIdBeforeClose: undefined,
+          workflowStateId:
+            nextImportedState.importedWorkflowStateId ??
+            existingWorkItem.workflowStateIdBeforeClose,
         }
       : {}),
     ...(!existingWorkItem.pendingSourceWrite &&
@@ -240,6 +268,27 @@ function mergeConnectorWorkItem(
         }
       : {}),
   };
+}
+
+/**
+ * An archived item comes back when the source shows it open in a state other
+ * than the one it had when it was archived, such as a reopened bug. Items
+ * archived by a local Archive keep that state in the source, so they stay.
+ */
+function reopenedInSource(
+  existingWorkItem: LocalWorkItem,
+  importedWorkItem: ConnectorImportCandidate,
+  importedState: LocalWorkItem,
+) {
+  return (
+    existingWorkItem.status === "archived" &&
+    !existingWorkItem.archivedByMissingSync &&
+    !existingWorkItem.pendingSourceWrite &&
+    importedWorkItem.stateDone !== true &&
+    existingWorkItem.archivedSourceStatusKey !== undefined &&
+    importedState.sourceStatusKey !== undefined &&
+    importedState.sourceStatusKey !== existingWorkItem.archivedSourceStatusKey
+  );
 }
 
 /**
@@ -293,9 +342,9 @@ export function importConnectorWorkItems(
 
   for (const workItem of uniqueWorkItems) {
     const key = getWorkItemSourceKey(workItem);
-    const mappedBacklogStatusId = workItem.state?.trim()
-      ? findMappedBacklogStatusId(
-          state.backlogStatusMappings,
+    const mappedWorkflowStateId = workItem.state?.trim()
+      ? findMappedWorkflowStateId(
+          state.workflowStateMappings,
           workItem.source,
           workItem.connectionId,
           normalizeConnectorStatusKey(workItem.state),
@@ -310,7 +359,7 @@ export function importConnectorWorkItems(
       const mergedWorkItem = mergeConnectorWorkItem(
         existingWorkItem,
         workItem,
-        mappedBacklogStatusId,
+        mappedWorkflowStateId,
         factories,
       );
       if (JSON.stringify(mergedWorkItem) === JSON.stringify(existingWorkItem)) {
@@ -341,7 +390,7 @@ export function importConnectorWorkItems(
 
     const importedItem = createConnectorWorkItem(
       workItem,
-      mappedBacklogStatusId,
+      mappedWorkflowStateId,
       factories.createId,
     );
     existingItemsByKey.set(key, importedItem);

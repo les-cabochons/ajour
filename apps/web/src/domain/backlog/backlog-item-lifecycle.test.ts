@@ -7,6 +7,7 @@ import {
   isBacklogItemReturned,
   isBacklogItemSnoozed,
   markBacklogItemOpened,
+  moveBacklogItemToState,
   restoreBacklogItem,
   selectSidebarBacklogItems,
   settleBacklogItem,
@@ -32,8 +33,8 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
     timesheetEntries: [],
     timesheetImportDrafts: [],
     workItems: [],
-    backlogStatuses: [],
-    backlogStatusMappings: [],
+    workflowStates: [],
+    workflowStateMappings: [],
     backlogSortMode: "custom",
     capture: {
       urlMode: "sanitized_path",
@@ -58,6 +59,7 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
       },
       warnWhenOverCapacity: true,
       warnWhenSubmittingUnderCapacity: true,
+      closeParentSubitems: "ask",
     },
     updatedAt: 0,
     ...overrides,
@@ -128,7 +130,7 @@ describe("settling a backlog item", () => {
     });
   });
 
-  it("carries subitems without their own priority and leaves the others", () => {
+  it("carries its active subitems only when asked", () => {
     const state = createState({
       workItems: [
         synced("parent"),
@@ -144,13 +146,21 @@ describe("settling a backlog item", () => {
       ],
     });
 
-    const next = settleBacklogItem(state, "parent", factories);
+    const alone = settleBacklogItem(state, "parent", factories);
+    expect(find(alone, "follows")?.status).toBe("active");
+    expect(find(alone, "own")?.status).toBe("active");
 
+    const next = settleBacklogItem(state, "parent", factories, undefined, {
+      includeSubitems: true,
+    });
     expect(find(next, "follows")).toMatchObject({
       status: "settled",
       settledWithParentId: "parent",
     });
-    expect(find(next, "own")?.status).toBe("active");
+    expect(find(next, "own")).toMatchObject({
+      status: "settled",
+      settledWithParentId: "parent",
+    });
   });
 
   it("stops and saves the running entry on the item", () => {
@@ -247,9 +257,13 @@ describe("settling with a change to the source", () => {
   });
 
   it("archives the item and its carried subitems when the state is done", () => {
-    const next = settleBacklogItem(state(), "parent", factories, {
-      state: { name: "Closed", done: true },
-    });
+    const next = settleBacklogItem(
+      state(),
+      "parent",
+      factories,
+      { state: { name: "Closed", done: true } },
+      { includeSubitems: true },
+    );
 
     expect(find(next, "parent")).toMatchObject({
       status: "archived",
@@ -286,6 +300,7 @@ describe("sending a settle's write", () => {
       "parent",
       factories,
       { state: { name: "Waiting", done: false }, priority: 1 },
+      { includeSubitems: true },
     );
 
   it("keeps the settle's values once the write is sent", () => {
@@ -368,6 +383,8 @@ describe("archiving a settled backlog item", () => {
       }),
       "parent",
       factories,
+      undefined,
+      { includeSubitems: true },
     );
 
     const archived = archiveBacklogItem(settled, "parent", factories);
@@ -393,6 +410,8 @@ describe("unsettling and restoring a backlog item", () => {
       }),
       "parent",
       factories,
+      undefined,
+      { includeSubitems: true },
     );
 
     const next = unsettleBacklogItem(settled, "parent");
@@ -413,6 +432,8 @@ describe("unsettling and restoring a backlog item", () => {
       }),
       "parent",
       factories,
+      undefined,
+      { includeSubitems: true },
     );
 
     const next = restoreBacklogItem(archived, "parent");
@@ -539,5 +560,173 @@ describe("the sidebar's backlog items", () => {
       "p3",
       "none",
     ]);
+  });
+});
+
+describe("moving a backlog item between workflow states", () => {
+  const workflowStates: LocalAppState["workflowStates"] = [
+    { _id: "todo", name: "To do", color: "#64748b", createdAt: 1 },
+    { _id: "doing", name: "In progress", color: "#d97706", createdAt: 1 },
+    { _id: "done", name: "Done", color: "#059669", done: true, createdAt: 1 },
+    {
+      _id: "canceled",
+      name: "Canceled",
+      color: "#dc2626",
+      done: true,
+      createdAt: 1,
+    },
+  ];
+  const withItems = (
+    workItems: LocalWorkItem[],
+    extra: Partial<LocalAppState> = {},
+  ) => createState({ workflowStates, workItems, ...extra });
+
+  it("changes only the state between states that aren't done", () => {
+    const next = moveBacklogItemToState(
+      withItems([synced("a", { status: "settled", workflowStateId: "todo" })]),
+      "a",
+      "doing",
+      factories,
+    );
+
+    expect(find(next, "a")).toMatchObject({
+      status: "settled",
+      workflowStateId: "doing",
+    });
+  });
+
+  it("closes an item moved into a done state and remembers where it was", () => {
+    const next = moveBacklogItemToState(
+      withItems(
+        [item("a", { workflowStateId: "doing", snoozedUntil: 5_000 })],
+        {
+          timers: [
+            {
+              _id: "timer-1",
+              startedAt: 400,
+              localDate: "2026-10-11",
+              workItemId: "a",
+              accumulatedDurationMs: 0,
+            },
+          ],
+        },
+      ),
+      "a",
+      "done",
+      factories,
+    );
+
+    expect(find(next, "a")).toMatchObject({
+      status: "archived",
+      archivedAt: 1_000,
+      workflowStateId: "done",
+      workflowStateIdBeforeClose: "doing",
+    });
+    expect(find(next, "a")?.snoozedUntil).toBeUndefined();
+    expect(next.timers).toEqual([]);
+  });
+
+  it("closes open subitems only when asked, and reopens them with the parent", () => {
+    const state = withItems([
+      synced("parent", { workflowStateId: "doing" }),
+      synced("open", {
+        parentSourceId: "source-parent",
+        hierarchyLevel: 1,
+        workflowStateId: "todo",
+      }),
+      synced("waiting", {
+        parentSourceId: "source-parent",
+        hierarchyLevel: 1,
+        status: "settled",
+        workflowStateId: "doing",
+      }),
+    ]);
+
+    const alone = moveBacklogItemToState(state, "parent", "done", factories);
+    expect(find(alone, "open")?.status).toBe("active");
+
+    const closed = moveBacklogItemToState(state, "parent", "done", factories, {
+      includeSubitems: true,
+    });
+    expect(find(closed, "open")).toMatchObject({
+      status: "archived",
+      workflowStateId: "done",
+      settledWithParentId: "parent",
+    });
+    expect(find(closed, "waiting")?.status).toBe("archived");
+
+    const reopened = moveBacklogItemToState(
+      closed,
+      "parent",
+      "todo",
+      factories,
+    );
+    expect(find(reopened, "parent")).toMatchObject({
+      status: "active",
+      workflowStateId: "todo",
+    });
+    expect(find(reopened, "open")).toMatchObject({
+      status: "active",
+      workflowStateId: "todo",
+    });
+    expect(find(reopened, "waiting")).toMatchObject({
+      status: "active",
+      workflowStateId: "doing",
+    });
+  });
+
+  it("moves an archived item between done states without reopening it", () => {
+    const next = moveBacklogItemToState(
+      withItems([item("a", { status: "archived", workflowStateId: "done" })]),
+      "a",
+      "canceled",
+      factories,
+    );
+
+    expect(find(next, "a")).toMatchObject({
+      status: "archived",
+      workflowStateId: "canceled",
+    });
+  });
+
+  it("archives into the first done state, and Restore puts the item back", () => {
+    const archived = archiveBacklogItem(
+      withItems([item("a", { workflowStateId: "doing" })]),
+      "a",
+      factories,
+    );
+    expect(find(archived, "a")).toMatchObject({
+      status: "archived",
+      workflowStateId: "done",
+    });
+
+    expect(find(restoreBacklogItem(archived, "a"), "a")).toMatchObject({
+      status: "active",
+      workflowStateId: "doing",
+    });
+  });
+
+  it("closes a settle into a done source state in the state it maps to", () => {
+    const next = settleBacklogItem(
+      withItems([synced("a", { workflowStateId: "doing" })], {
+        workflowStateMappings: [
+          {
+            source: "azure_devops",
+            connectionId: "connection-1",
+            sourceStatusKey: "removed",
+            workflowStateId: "canceled",
+          },
+        ],
+      }),
+      "a",
+      factories,
+      { state: { name: "Removed", done: true } },
+    );
+
+    expect(find(next, "a")).toMatchObject({
+      status: "archived",
+      workflowStateId: "canceled",
+      archivedSourceStatusKey: "removed",
+    });
   });
 });

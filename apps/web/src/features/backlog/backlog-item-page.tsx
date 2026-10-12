@@ -217,8 +217,8 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
     : undefined;
   const project = state.projects.find((entry) => entry._id === item.projectId);
   const task = project?.tasks.find((entry) => entry._id === item.taskId);
-  const backlogStatus = state.backlogStatuses.find(
-    (status) => status._id === item.backlogStatusId,
+  const workflowState = state.workflowStates.find(
+    (status) => status._id === item.workflowStateId,
   );
   const reference =
     item.source === "azure_devops"
@@ -527,7 +527,9 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                 <Property label="State">
                   {item.sourceStatusLabel ?? "–"}
                 </Property>
-                <Property label="Status">{backlogStatus?.name ?? "–"}</Property>
+                <Property label="Workflow state">
+                  {workflowState?.name ?? "–"}
+                </Property>
                 <Property label="Priority">{item.priority ?? "–"}</Property>
               </div>
               <div className="py-1">

@@ -28,8 +28,8 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
     timesheetEntries: [],
     timesheetImportDrafts: [],
     workItems: [],
-    backlogStatuses: [],
-    backlogStatusMappings: [],
+    workflowStates: [],
+    workflowStateMappings: [],
     backlogSortMode: "custom",
     capture: {
       urlMode: "sanitized_path",
@@ -54,6 +54,7 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
       },
       warnWhenOverCapacity: true,
       warnWhenSubmittingUnderCapacity: true,
+      closeParentSubitems: "ask",
     },
     updatedAt: 0,
     ...overrides,

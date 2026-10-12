@@ -11,7 +11,7 @@ export interface BacklogTaskEditorFields {
   title: string;
   note: string;
   priority: string;
-  backlogStatusId: string;
+  workflowStateId: string;
   parentWorkItemId: string;
   projectId: string;
   taskId: string;
@@ -92,7 +92,7 @@ export const EMPTY_BACKLOG_TASK_EDITOR_FIELDS: BacklogTaskEditorFields = {
   title: "",
   note: "",
   priority: "",
-  backlogStatusId: "",
+  workflowStateId: "",
   parentWorkItemId: "",
   projectId: "",
   taskId: "",
@@ -146,7 +146,7 @@ export function createBacklogTaskEditorFields(
         title: workItem.title,
         note: workItem.note ?? "",
         priority: formatPriorityInput(workItem.priority),
-        backlogStatusId: workItem.backlogStatusId ?? "",
+        workflowStateId: workItem.workflowStateId ?? "",
         parentWorkItemId: workItem.parentWorkItemId ?? "",
         projectId: workItem.projectId ?? "",
         taskId: workItem.taskId ?? "",
@@ -318,8 +318,8 @@ export function buildBacklogTaskPatch(
     patch.priority = priority;
   }
 
-  if (fields.backlogStatusId !== saved.backlogStatusId) {
-    patch.backlogStatusId = fields.backlogStatusId || undefined;
+  if (fields.workflowStateId !== saved.workflowStateId) {
+    patch.workflowStateId = fields.workflowStateId || undefined;
   }
 
   // Project and task change together so the parent mapping is inferred from both.
@@ -371,7 +371,7 @@ export function buildBacklogTaskDraft(
     priority: options.isSubtask
       ? undefined
       : (parsePriorityInput(fields.priority) ?? undefined),
-    backlogStatusId: fields.backlogStatusId || undefined,
+    workflowStateId: fields.workflowStateId || undefined,
     projectId: fields.projectId || undefined,
     taskId: fields.taskId || undefined,
     ...estimates,
@@ -418,7 +418,7 @@ export function evaluateBacklogTaskEditor(
   }
 
   const syncedPriority = formatPriorityInput(original?.importedPriority);
-  const syncedStatus = original?.importedBacklogStatusId ?? "";
+  const syncedStatus = original?.importedWorkflowStateId ?? "";
 
   return {
     isNew: !original,
@@ -432,7 +432,7 @@ export function evaluateBacklogTaskEditor(
         ? syncedPriority
         : null,
     statusReset:
-      isSynced && fields.backlogStatusId !== syncedStatus ? syncedStatus : null,
+      isSynced && fields.workflowStateId !== syncedStatus ? syncedStatus : null,
     draft:
       !original && validation.canSave
         ? buildBacklogTaskDraft(fields, {

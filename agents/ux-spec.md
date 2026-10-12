@@ -105,6 +105,7 @@ Each nav label matches its page title. Old routes are removed, not redirected.
 | General      | General                        | `/settings/general`      |
 | Plugins      | Plugins                        | `/settings/plugins`      |
 | Backlog      | Backlog                        | `/settings/backlog`      |
+| Workflow     | Workflow                       | `/settings/workflow`     |
 | Projects     | Projects                       | `/settings/projects`     |
 | Time entries | Import and export time entries | `/settings/time-entries` |
 | Sync review  | Sync review                    | `/settings/sync-review`  |

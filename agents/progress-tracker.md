@@ -26,7 +26,8 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] `apps/web/src/lib` no longer depends on feature modules.
 - [x] `just test` includes both web and shared workspace tests.
 - [x] Project task and workbook import transitions are isolated from browser persistence and have direct domain tests.
-- [x] Backlog status hydration, CRUD, and connector mapping transitions are isolated from browser persistence and have direct domain tests.
+- [x] Workflow state hydration (including data saved as backlog statuses), CRUD, ordering, the Done flag, and source state mapping transitions are isolated from browser persistence and have direct domain tests.
+- [x] Moving a backlog item into a done state closes it and leaving one reopens it, with the open-subitems prompt and its Settings > Backlog choice (#85, #89).
 - [x] Work-item hierarchy, estimates, manual lifecycle, and connector reconciliation have canonical domain modules with direct tests.
 - [x] Timesheet entry lifecycle and linked estimate adjustments are isolated from browser persistence and have direct tests.
 - [x] Project/task creation, hydration, ordering, edits, and archive transitions are isolated from browser persistence and have direct domain tests.

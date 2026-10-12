@@ -2205,7 +2205,8 @@
   }
 
   .backlog-settings-status-row {
-    grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+    grid-template-columns: auto auto minmax(0, 1fr) auto auto auto auto;
+    align-items: center;
   }
 
   .backlog-settings-status-list,

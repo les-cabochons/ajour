@@ -189,6 +189,9 @@ export interface WeeklyCapacityTargets {
   sunday: number;
 }
 
+/** What closing or settling a parent does with its open subitems. */
+export type CloseParentSubitems = "ask" | "include" | "leave";
+
 export interface UserPreferences {
   themeMode: ThemeMode;
   updateTrack: UpdateTrack;
@@ -197,20 +200,24 @@ export interface UserPreferences {
   weeklyCapacityTargets: WeeklyCapacityTargets;
   warnWhenOverCapacity: boolean;
   warnWhenSubmittingUnderCapacity: boolean;
+  closeParentSubitems: CloseParentSubitems;
 }
 
-export interface LocalBacklogStatus {
+/** One step of the user's workflow. The workflow's order is the array order. */
+export interface LocalWorkflowState {
   _id: string;
   name: string;
   color: string;
+  /** Moving an item into a done state closes it: it becomes archived. */
+  done?: boolean;
   createdAt: number;
 }
 
-export interface LocalBacklogStatusMapping {
+export interface LocalWorkflowStateMapping {
   source: ConnectorBacklogSource;
   connectionId: string;
   sourceStatusKey: string;
-  backlogStatusId: string;
+  workflowStateId: string;
 }
 
 export interface LocalWorkItem {
@@ -234,8 +241,8 @@ export interface LocalWorkItem {
   parentSourceId?: string;
   priority?: number;
   importedPriority?: number;
-  backlogStatusId?: string;
-  importedBacklogStatusId?: string;
+  workflowStateId?: string;
+  importedWorkflowStateId?: string;
   sourceStatusKey?: string;
   sourceStatusLabel?: string;
   projectId?: string;
@@ -257,8 +264,15 @@ export interface LocalWorkItem {
   /** Set when a sync brings a settled item back. Cleared when the user opens it. */
   returnedAt?: number;
   settledAt?: number;
-  /** The parent whose settle carried this subitem along, so they come back together. */
+  /**
+   * The parent whose settle or close carried this subitem along, so they come
+   * back together.
+   */
   settledWithParentId?: string;
+  /** The workflow state the item had before it moved into a done state. */
+  workflowStateIdBeforeClose?: string;
+  /** The source state key when the item was archived, to notice a reopen in the source. */
+  archivedSourceStatusKey?: string;
   /** The source state key when the item was settled, to notice changes made in the source since. */
   settledSourceStatusKey?: string;
   /** The imported priority when the item was settled, to notice changes made in the source since. */
@@ -304,6 +318,9 @@ export type PersistedLocalWorkItem = Omit<
   status?: LocalWorkItem["status"] | "open" | "done";
   archivedAt?: number;
   completedAt?: number;
+  /** Workflow states were called backlog statuses before. */
+  backlogStatusId?: string;
+  importedBacklogStatusId?: string;
 };
 
 export interface LocalWorkItemDraft {
@@ -314,7 +331,7 @@ export interface LocalWorkItemDraft {
   inheritsParentMapping?: boolean;
   parentWorkItemId?: string;
   priority?: number;
-  backlogStatusId?: string;
+  workflowStateId?: string;
   originalEstimateHours?: number;
   remainingEstimateHours?: number;
   completedEstimateHours?: number;
@@ -372,8 +389,8 @@ export interface LocalAppState {
   timesheetEntries: LocalTimesheetEntry[];
   timesheetImportDrafts: LocalTimesheetImportDraft[];
   workItems: LocalWorkItem[];
-  backlogStatuses: LocalBacklogStatus[];
-  backlogStatusMappings: LocalBacklogStatusMapping[];
+  workflowStates: LocalWorkflowState[];
+  workflowStateMappings: LocalWorkflowStateMapping[];
   backlogSortMode: BacklogSortMode;
   /** Apply rules by source project. A source project without one asks. */
   settleRules?: LocalSettleRule[];

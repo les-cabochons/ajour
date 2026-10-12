@@ -45,7 +45,8 @@ import {
   type LocalWorkItem,
 } from "@/domain/local-state";
 import { settleOpensDialog } from "@/features/backlog/settle-dialog";
-import { buildBacklogStatusOptions } from "@/features/backlog/backlog-status";
+import { buildWorkflowStateOptions } from "@/features/backlog/workflow-states";
+import { isDoneWorkflowState } from "@/domain/backlog/workflow-states";
 import {
   BACKLOG_ESTIMATE_FIELD_KEYS,
   commitBacklogTaskDraft,
@@ -57,6 +58,7 @@ import {
   type BacklogTaskEditorFields,
   type BacklogTaskEditorTarget,
 } from "@/features/backlog/backlog-task-editor";
+import { moveBacklogItemWithUndo } from "@/features/backlog/backlog-item-moves";
 import { parseWorkItemReference } from "@/features/backlog/work-item-timer-comment";
 import { buildProjectTaskOptions } from "@/features/projects/project-task-options";
 import {
@@ -202,8 +204,8 @@ export function BacklogItemEditorForm({
     [availableTasks],
   );
   const statusOptions = useMemo(
-    () => buildBacklogStatusOptions(state.backlogStatuses),
-    [state.backlogStatuses],
+    () => buildWorkflowStateOptions(state.workflowStates),
+    [state.workflowStates],
   );
 
   useImperativeHandle(ref, () => ({
@@ -233,12 +235,45 @@ export function BacklogItemEditorForm({
       case "invalid":
         setShowErrors(true);
         return false;
-      case "create":
-        localStore.addWorkItem(result.draft);
+      case "create": {
+        // A new item created in a done state closes like a moved one.
+        const closes = isDoneWorkflowState(
+          localStore.snapshot().workflowStates,
+          result.draft.workflowStateId,
+        );
+        const createdId = localStore.addWorkItem(
+          closes
+            ? { ...result.draft, workflowStateId: undefined }
+            : result.draft,
+        );
+        const created = localStore
+          .snapshot()
+          .workItems.find((item) => item._id === createdId);
+        if (closes && created && result.draft.workflowStateId) {
+          void moveBacklogItemWithUndo(created, result.draft.workflowStateId);
+        }
         return true;
+      }
       case "update":
         if (workItem) {
-          localStore.updateWorkItem(workItem._id, result.patch);
+          // Moving into or out of a done state closes or reopens the item.
+          const { workflowStateId, ...patch } = result.patch;
+          const states = localStore.snapshot().workflowStates;
+          const changesLifecycle =
+            "workflowStateId" in result.patch &&
+            workflowStateId !== undefined &&
+            (isDoneWorkflowState(states, workflowStateId) ||
+              isDoneWorkflowState(states, workItem.workflowStateId));
+          localStore.updateWorkItem(
+            workItem._id,
+            changesLifecycle ? patch : result.patch,
+          );
+          const saved = localStore
+            .snapshot()
+            .workItems.find((item) => item._id === workItem._id);
+          if (changesLifecycle && saved && workflowStateId) {
+            void moveBacklogItemWithUndo(saved, workflowStateId);
+          }
         }
         return true;
       case "unchanged":
@@ -401,15 +436,15 @@ export function BacklogItemEditorForm({
             </Field>
           ) : null}
           <Field>
-            <FieldLabel>Status</FieldLabel>
+            <FieldLabel>Workflow state</FieldLabel>
             <SearchableSelect
-              value={fields.backlogStatusId}
+              value={fields.workflowStateId}
               options={statusOptions}
-              onChange={(backlogStatusId) => updateFields({ backlogStatusId })}
-              placeholder="No status"
-              clearLabel="No status"
-              emptyMessage="No matching statuses"
-              ariaLabel="Backlog status"
+              onChange={(workflowStateId) => updateFields({ workflowStateId })}
+              placeholder="No state"
+              clearLabel="No state"
+              emptyMessage="No matching workflow states"
+              ariaLabel="Workflow state"
             />
           </Field>
         </div>
@@ -436,10 +471,10 @@ export function BacklogItemEditorForm({
                 variant="ghost"
                 size="xs"
                 onClick={() =>
-                  updateFields({ backlogStatusId: editor.statusReset ?? "" })
+                  updateFields({ workflowStateId: editor.statusReset ?? "" })
                 }
               >
-                Reset status to synced
+                Reset state to synced
               </Button>
             ) : null}
           </div>

@@ -13,14 +13,15 @@ import type {
   ProjectDataShapeImportProject,
 } from "@ajour/shared";
 import {
-  addBacklogStatus as applyAddBacklogStatus,
-  deleteBacklogStatus as applyDeleteBacklogStatus,
-  normalizeBacklogStatuses,
-  reconcileImportedBacklogStatuses,
-  setBacklogStatusMapping as applyBacklogStatusMapping,
-  updateBacklogStatus as applyUpdateBacklogStatus,
-  type BacklogStatusMappingInput,
-} from "@/domain/backlog/backlog-status";
+  addWorkflowState as applyAddWorkflowState,
+  deleteWorkflowState as applyDeleteWorkflowState,
+  moveWorkflowState as applyMoveWorkflowState,
+  normalizeWorkflowStates,
+  reconcileImportedWorkflowStates,
+  setWorkflowStateMapping as applyWorkflowStateMapping,
+  updateWorkflowState as applyUpdateWorkflowState,
+  type WorkflowStateMappingInput,
+} from "@/domain/backlog/workflow-states";
 import {
   archiveBacklogItem as applyArchiveBacklogItem,
   completeSourceWrite as applyCompleteSourceWrite,
@@ -28,10 +29,12 @@ import {
   markBacklogItemOpened as applyMarkBacklogItemOpened,
   restoreBacklogItem as applyRestoreBacklogItem,
   settleBacklogItem as applySettleBacklogItem,
+  moveBacklogItemToState as applyMoveBacklogItemToState,
   snoozeBacklogItem as applySnoozeBacklogItem,
   unsettleBacklogItem as applyUnsettleBacklogItem,
   unsnoozeBacklogItem as applyUnsnoozeBacklogItem,
   type BacklogSettleChange,
+  type CloseSubitemsOptions,
 } from "@/domain/backlog/backlog-item-lifecycle";
 import {
   applySettleRule,
@@ -128,7 +131,8 @@ import type {
   BacklogSortMode,
   ExtensionBridgeStatus,
   LocalAppState,
-  LocalBacklogStatusMapping,
+  LocalWorkflowStateMapping,
+
   LocalSettleRule,
   LocalProject,
   LocalProjectDraft,
@@ -163,8 +167,8 @@ export type {
   ExtensionBridgeStatus,
   ImportedBrowserDraft,
   LocalAppState,
-  LocalBacklogStatus,
-  LocalBacklogStatusMapping,
+  LocalWorkflowState,
+  LocalWorkflowStateMapping,
   LocalProject,
   LocalProjectDraft,
   LocalProjectTask,
@@ -226,6 +230,7 @@ const defaultUserPreferences: UserPreferences = {
   },
   warnWhenOverCapacity: true,
   warnWhenSubmittingUnderCapacity: true,
+  closeParentSubitems: "ask",
 };
 
 function normalizeCapacityTarget(value: unknown, fallback: number) {
@@ -261,8 +266,8 @@ function createDefaultState(): LocalAppState {
     timesheetEntries: [],
     timesheetImportDrafts: [],
     workItems: [],
-    backlogStatuses: [],
-    backlogStatusMappings: [],
+    workflowStates: [],
+    workflowStateMappings: [],
     backlogSortMode: "custom",
     capture: defaultCapture,
     userPreferences: defaultUserPreferences,
@@ -276,11 +281,20 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
     activityLoggerEnabled: _removedActivityLoggerEnabled,
     outlookIntegration: _removedOutlookIntegration,
     outlookMeetingDrafts: _removedOutlookMeetingDrafts,
+    // Workflow states were called backlog statuses before.
+    backlogStatuses: legacyWorkflowStates,
+    backlogStatusMappings: legacyWorkflowStateMappings,
     ...persistedState
   } = state as Partial<LocalAppState> & {
     activityLoggerEnabled?: boolean;
     outlookIntegration?: unknown;
     outlookMeetingDrafts?: unknown;
+    backlogStatuses?: LocalAppState["workflowStates"];
+    backlogStatusMappings?: Array<
+      Omit<LocalWorkflowStateMapping, "workflowStateId"> & {
+        backlogStatusId?: string;
+      }
+    >;
   };
   const rawWorkItems = arrayOrDefault<PersistedLocalWorkItem>(
     persistedState.workItems,
@@ -289,19 +303,26 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
   const workItems = rawWorkItems.map((workItem) =>
     normalizePersistedWorkItem(workItem, Date.now),
   );
-  const backlogStatuses = normalizeBacklogStatuses(
-    arrayOrDefault(persistedState.backlogStatuses, defaults.backlogStatuses),
+  const workflowStates = normalizeWorkflowStates(
+    arrayOrDefault(
+      persistedState.workflowStates ?? legacyWorkflowStates,
+      defaults.workflowStates,
+    ),
     Date.now,
   );
-  const backlogStatusMappings = arrayOrDefault(
-    persistedState.backlogStatusMappings,
-    defaults.backlogStatusMappings,
-  ).filter((mapping): mapping is LocalBacklogStatusMapping =>
+  const workflowStateMappings = arrayOrDefault(
+    persistedState.workflowStateMappings ??
+      legacyWorkflowStateMappings?.map(({ backlogStatusId, ...mapping }) => ({
+        ...mapping,
+        workflowStateId: backlogStatusId ?? "",
+      })),
+    defaults.workflowStateMappings,
+  ).filter((mapping): mapping is LocalWorkflowStateMapping =>
     Boolean(
       mapping?.source &&
       mapping.connectionId &&
       mapping.sourceStatusKey &&
-      mapping.backlogStatusId,
+      mapping.workflowStateId,
     ),
   );
   const persistedBacklogSortMode = persistedState.backlogSortMode as
@@ -312,7 +333,7 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
       : (persistedBacklogSortMode ?? defaults.backlogSortMode);
 
   return ensureLocalWorkspace(
-    reconcileImportedBacklogStatuses({
+    reconcileImportedWorkflowStates({
       ...defaults,
       ...persistedState,
       user: {
@@ -348,8 +369,8 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
         defaults.timesheetImportDrafts,
       ),
       workItems,
-      backlogStatuses,
-      backlogStatusMappings,
+      workflowStates,
+      workflowStateMappings,
       settleRules: normalizeSettleRules(persistedState.settleRules),
       backlogSortMode,
       capture: {
@@ -423,6 +444,11 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
         warnWhenSubmittingUnderCapacity:
           persistedState.userPreferences?.warnWhenSubmittingUnderCapacity !==
           false,
+        closeParentSubitems:
+          persistedState.userPreferences?.closeParentSubitems === "include" ||
+          persistedState.userPreferences?.closeParentSubitems === "leave"
+            ? persistedState.userPreferences.closeParentSubitems
+            : "ask",
       },
     }),
   );
@@ -1006,31 +1032,37 @@ export const localStore = {
       ),
     }));
   },
-  addBacklogStatus(name: string, color?: string) {
+  addWorkflowState(name: string, color?: string) {
     return updateStateWithResult((state) => {
-      return applyAddBacklogStatus(state, name, color, {
+      return applyAddWorkflowState(state, name, color, {
         createId,
         now: Date.now,
       });
     });
   },
-  updateBacklogStatus(
+  updateWorkflowState(
     statusId: string,
-    updates: string | { name: string; color?: string },
+    updates: string | { name: string; color?: string; done?: boolean },
   ) {
-    updateState((state) => applyUpdateBacklogStatus(state, statusId, updates));
+    updateState((state) => applyUpdateWorkflowState(state, statusId, updates));
   },
   /**
-   * Deletes a backlog status with its status mappings and clears it from work
+   * Deletes a workflow state with its source state mappings and clears it from work
    * items. Returns an undo token, or null when nothing changed.
    */
-  deleteBacklogStatus(statusId: string) {
+  deleteWorkflowState(statusId: string) {
     return updateStateWithUndo((state) =>
-      applyDeleteBacklogStatus(state, statusId),
+      applyDeleteWorkflowState(state, statusId),
     );
   },
-  setBacklogStatusMapping(mapping: BacklogStatusMappingInput) {
-    updateState((state) => applyBacklogStatusMapping(state, mapping));
+  /** Moves a workflow state one place up or down in the board order. */
+  moveWorkflowState(workflowStateId: string, step: -1 | 1) {
+    updateState((state) =>
+      applyMoveWorkflowState(state, workflowStateId, step),
+    );
+  },
+  setWorkflowStateMapping(mapping: WorkflowStateMappingInput) {
+    updateState((state) => applyWorkflowStateMapping(state, mapping));
   },
   /** Starts a running entry today, saving the one already running (Start or Switch). */
   startTimer(timer: LocalTimerDraft) {
@@ -1202,13 +1234,37 @@ export const localStore = {
    * settled. `change` records a pending write to the source. Stops and saves
    * its running entry. Returns an undo token, or null when nothing changed.
    */
-  settleWorkItem(workItemId: string, change?: BacklogSettleChange) {
+  settleWorkItem(
+    workItemId: string,
+    change?: BacklogSettleChange,
+    options?: CloseSubitemsOptions,
+  ) {
     return updateStateWithUndo((state) =>
       applySettleBacklogItem(
         state,
         workItemId,
         { createId, now: Date.now },
         change,
+        options,
+      ),
+    );
+  },
+  /**
+   * Moves a backlog item to a workflow state. A done state closes it and
+   * leaving one reopens it. Returns an undo token, or null when nothing changed.
+   */
+  moveWorkItemToState(
+    workItemId: string,
+    workflowStateId: string,
+    options?: CloseSubitemsOptions,
+  ) {
+    return updateStateWithUndo((state) =>
+      applyMoveBacklogItemToState(
+        state,
+        workItemId,
+        workflowStateId,
+        { createId, now: Date.now },
+        options,
       ),
     );
   },

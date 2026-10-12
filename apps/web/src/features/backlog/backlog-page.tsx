@@ -64,7 +64,7 @@ import {
   BacklogItemEditorForm,
   type BacklogItemEditorFormHandle,
 } from "@/features/backlog/backlog-item-editor-form";
-import { buildBacklogStatusLookup } from "@/features/backlog/backlog-status";
+import { buildWorkflowStateLookup } from "@/features/backlog/workflow-states";
 import {
   sumSubitemEstimates,
   type BacklogTaskEditorFields,
@@ -334,9 +334,9 @@ export function BacklogPage() {
     () => new Map(workItems.map((workItem) => [workItem._id, workItem])),
     [workItems],
   );
-  const backlogStatusById = useMemo(
-    () => buildBacklogStatusLookup(state.backlogStatuses),
-    [state.backlogStatuses],
+  const workflowStateById = useMemo(
+    () => buildWorkflowStateLookup(state.workflowStates),
+    [state.workflowStates],
   );
 
   // Resolved against live state, so the editor closes when its item disappears.
@@ -832,10 +832,10 @@ export function BacklogPage() {
     ]
       .filter(Boolean)
       .join(" · ");
-    const backlogStatus = workItem.backlogStatusId
-      ? backlogStatusById.get(workItem.backlogStatusId)
+    const workflowState = workItem.workflowStateId
+      ? workflowStateById.get(workItem.workflowStateId)
       : undefined;
-    const backlogStatusLabel = backlogStatus?.name;
+    const workflowStateLabel = workflowState?.name;
     const backlogEstimateBadgeLabel = getWorkItemEstimateBadgeLabel(
       childEstimateTotals ?? workItem,
     );
@@ -1048,14 +1048,14 @@ export function BacklogPage() {
         </td>
         {!isLogicalChild ? (
           <td className="backlog-status-cell">
-            {backlogStatusLabel ? (
+            {workflowStateLabel ? (
               <div className="backlog-status-cell-content">
                 <span
                   className="status-dot backlog-status-dot"
-                  style={{ background: backlogStatus?.color }}
+                  style={{ background: workflowState?.color }}
                 />
                 <span className="backlog-status-cell-label">
-                  {backlogStatusLabel}
+                  {workflowStateLabel}
                 </span>
               </div>
             ) : null}
@@ -1152,8 +1152,8 @@ export function BacklogPage() {
       : undefined,
     draggedWorkItemTask?.name,
   ].filter(Boolean);
-  const draggedWorkItemStatus = draggedWorkItem?.backlogStatusId
-    ? backlogStatusById.get(draggedWorkItem.backlogStatusId)
+  const draggedWorkItemStatus = draggedWorkItem?.workflowStateId
+    ? workflowStateById.get(draggedWorkItem.workflowStateId)
     : undefined;
   const draggedWorkItemEstimateBadgeLabel = useMemo(() => {
     if (!draggedWorkItem) {

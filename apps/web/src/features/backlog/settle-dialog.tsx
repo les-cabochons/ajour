@@ -25,6 +25,7 @@ import {
   canWriteSettle,
   sendPendingSourceWrites,
 } from "@/features/backlog/backlog-source-writes";
+import { resolveIncludeSubitems } from "@/features/backlog/backlog-item-moves";
 import { formatPriorityInput } from "@/features/backlog/backlog-task-editor";
 import {
   buildSettleChange,
@@ -98,14 +99,20 @@ export function settleBacklogItem(
 }
 
 /**
- * Settles the item, with Undo in a toast. A change to the source is sent when
- * the toast closes, so Undo cancels it (ADR 0001).
+ * Settles the item, with Undo in a toast. A parent with open subitems asks
+ * whether they settle too, unless the user's setting answers. A change to the
+ * source is sent when the toast closes, so Undo cancels it (ADR 0001).
  */
-export function settleBacklogItemWithUndo(
+export async function settleBacklogItemWithUndo(
   workItem: LocalWorkItem,
   change?: BacklogSettleChange,
 ) {
-  const token = localStore.settleWorkItem(workItem._id, change);
+  const includeSubitems = await resolveIncludeSubitems(workItem, "settle");
+  if (includeSubitems === null) return;
+
+  const token = localStore.settleWorkItem(workItem._id, change, {
+    includeSubitems,
+  });
   const settled = localStore
     .snapshot()
     .workItems.find((candidate) => candidate._id === workItem._id);
@@ -192,8 +199,8 @@ export function SettleDialogHost() {
 
   function settle() {
     if (!workItem || !change) return;
-    settleBacklogItemWithUndo(workItem, change);
     setWorkItem(null);
+    void settleBacklogItemWithUndo(workItem, change);
   }
 
   return (
