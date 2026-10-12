@@ -262,7 +262,8 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Connector returns carry subitems only when the parent remains in an open workflow state. Source changes mapped Done leave its carried archived subitems unchanged.
 - [x] A missing-sync return closed into Done remembers its former open workflow when no pre-close state exists.
 - [x] The foundation passes 712 unit tests and workspace typecheck. Connector regressions cover closed-parent child retention, later genuine reopening and Restore after a missing-sync return.
-- [ ] Carry the fixes through the stack, run the full checks and request fresh reviews.
+- [x] Carried the fixes through the stack. All 791 unit tests and 66 Chromium scenarios pass, along with workspace typecheck, production build and formatting.
+- [ ] Fresh Codex reviews of the pushed heads are pending. Merging remains owned by the integration thread.
 
 ### Reactivation in an unchanged Done state, 2026-10-12
 
