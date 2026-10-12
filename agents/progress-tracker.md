@@ -400,3 +400,11 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Each project swimlane owns its keyboard focus scope. Arrow navigation stays in that lane despite uneven columns in earlier projects.
 - [x] Verification passed: 706 unit tests, all 54 Chromium acceptance scenarios, workspace typecheck, production build and formatting. Four new browser scenarios cover workflow drafts followed by Archive or Settle, cancellation and swimlane focus.
 - [ ] Complete Codex re-review of the new stack heads before integration.
+
+## Backlog capability migration integration, 2026-10-12
+
+- [x] Rebased the stack onto main at `af1e48b`, including the API v2 capability migration and packaged plugin recovery.
+- [x] Connector priority scales live under `capabilities.connector`. Import defaults, source write availability and Workflow settings use the migrated contract.
+- [x] Preserved main's capability validation and tests alongside the priority-range tests.
+- [x] Verification passed: all 725 unit tests and all 57 Chromium acceptance scenarios, workspace typecheck, production build and formatting.
+- [ ] Complete Codex review on the rebased heads. The integration thread owns merging.
