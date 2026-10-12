@@ -237,11 +237,25 @@ export function BacklogPage() {
       )
       .find((t) => t.key === key);
     if (!item || !found || !(await leaveDraft())) return;
+    closeEditor();
+    const committed = localStore
+      .snapshot()
+      .workItems.find((i) => i._id === itemId);
+    if (!committed) return;
     const { group, lane } = found;
     // A swimlane is a display partition. Drops stay in the item's project;
     // project grouping is the explicit path for changing its project.
-    if (lane.kind === "project" && lane.projectId !== item.projectId) return;
-    if (group.items.some((i) => i._id === itemId)) {
+    if (lane.kind === "project" && lane.projectId !== committed.projectId)
+      return;
+    const sameGroup =
+      group.kind === "state"
+        ? committed.workflowStateId === group.workflowStateId
+        : group.kind === "priority"
+          ? committed.priority === group.priority
+          : group.kind === "project"
+            ? committed.projectId === group.projectId
+            : true;
+    if (sameGroup) {
       if (order)
         offerUndo(localStore.reorderWorkItemsWithUndo(order), {
           title: "Backlog item reordered",
@@ -251,20 +265,20 @@ export function BacklogPage() {
     }
     if (group.kind === "state")
       await moveBacklogItemWithUndo(
-        item,
+        committed,
         group.workflowStateId,
         { orderedIds: order ?? undefined },
       );
     if (group.kind === "priority")
       patchBacklogItemWithUndo(
-        item,
+        committed,
         { priority: group.priority },
         `Priority changed to ${getPriorityLevelName(group.priority)}`,
         order ?? undefined,
       );
     if (group.kind === "project")
       patchBacklogItemWithUndo(
-        item,
+        committed,
         { projectId: group.projectId, taskId: undefined },
         "Project changed",
         order ?? undefined,
@@ -347,12 +361,17 @@ export function BacklogPage() {
       if (id === "item.state-previous" || id === "item.state-next") {
         e.preventDefault();
         if (archive) return;
-        const index = state.workflowStates.findIndex(
-          (s) => s._id === item.workflowStateId,
+        if (!(await leaveDraft())) return;
+        closeEditor();
+        const current = localStore.snapshot();
+        const committed = current.workItems.find((i) => i._id === item._id);
+        if (!committed) return;
+        const index = current.workflowStates.findIndex(
+          (s) => s._id === committed.workflowStateId,
         );
         const next =
-          state.workflowStates[index + (id === "item.state-next" ? 1 : -1)];
-        if (next) void moveBacklogItemWithUndo(item, next._id);
+          current.workflowStates[index + (id === "item.state-next" ? 1 : -1)];
+        if (next) await moveBacklogItemWithUndo(committed, next._id);
         return;
       }
     }

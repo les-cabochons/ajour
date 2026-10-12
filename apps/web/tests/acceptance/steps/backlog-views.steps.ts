@@ -218,6 +218,65 @@ When("I drag the subitem to In progress", async ({ page }) => {
   await page.mouse.move(to!.x + 40, to!.y + 18, { steps: 10 });
   await page.mouse.up();
 });
+
+When("I edit the subitem from its peek", async ({ page }) => {
+  await page.locator('[data-work-item-id="child"] .backlog-item-title').click();
+  await page
+    .getByRole("complementary", { name: "Backlog item peek" })
+    .getByRole("button", { name: "Edit", exact: true })
+    .click();
+});
+When(
+  "I rename the open editor draft to {string}",
+  async ({ page }, title: string) => {
+    await page
+      .getByRole("complementary", { name: "Backlog item editor" })
+      .getByRole("textbox", { name: "Item", exact: true })
+      .fill(title);
+  },
+);
+When("I save the open Backlog editor", async ({ page }) => {
+  await page
+    .getByRole("complementary", { name: "Backlog item editor" })
+    .getByRole("button", { name: "Save", exact: true })
+    .click();
+});
+Then("the Backlog editor is closed", async ({ page }) => {
+  await expect(
+    page.getByRole("complementary", { name: "Backlog item editor" }),
+  ).toHaveCount(0);
+});
+Then("the saved subitem title is {string}", async ({ page }, title: string) => {
+  await expect(
+    page.locator('[data-work-item-id="child"] .backlog-item-title'),
+  ).toHaveText(title);
+});
+When(
+  "I press {string} on the other Backlog row",
+  async ({ page }, key: string) => {
+    await page.locator('[data-work-item-id="other"]').focus();
+    await page.keyboard.press(key);
+  },
+);
+Then(
+  "the other item retains its draft in {string} with status {string}",
+  async ({ page }, workflowStateId: string, status: string) => {
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const item = JSON.parse(
+            localStorage.getItem("ajour.local-state.v2")!,
+          ).workItems.find((item: { _id: string }) => item._id === "other");
+          return {
+            title: item.title,
+            workflowStateId: item.workflowStateId,
+            status: item.status,
+          };
+        }),
+      )
+      .toEqual({ title: "Saved arrow draft", workflowStateId, status });
+  },
+);
 Then("the subitem is in In progress", async ({ page }) => {
   await expect(
     page.locator(

@@ -113,3 +113,27 @@ Feature: Backlog list and board views
     Then the other card has focus
     When I press ArrowLeft on the other card
     Then the parent card has focus
+
+  Scenario: Keep a board drop after committing its open editor
+    When I choose the Backlog board
+    And I edit the subitem from its peek
+    And I rename the open editor draft to "Saved subitem draft"
+    And I drag the subitem to In progress
+    Then the subitem is in In progress
+    And the Backlog editor is closed
+    When I edit the subitem from its peek
+    And I save the open Backlog editor
+    Then the subitem is in In progress
+    And the saved subitem title is "Saved subitem draft"
+
+  Scenario Outline: Commit the open editor before an Alt-arrow move
+    When I edit the other item from the Backlog peek
+    And I rename the open editor draft to "Saved arrow draft"
+    And I press "<key>" on the other Backlog row
+    Then the Backlog editor is closed
+    And the other item retains its draft in "<state>" with status "<status>"
+
+    Examples:
+      | key       | state | status   |
+      | Alt+Left  | todo  | active   |
+      | Alt+Right | done  | archived |
