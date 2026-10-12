@@ -345,9 +345,17 @@ describe("the done flag", () => {
     },
   );
 
-  it.each(["todo", "done"])(
-    "recovers carried children after deleting %s during a pending close",
-    (deletedStateId) => {
+  it.each([
+    {
+      change: "deleting an open state",
+      deletedStateId: "todo",
+      clearDone: false,
+    },
+    { change: "deleting Done", deletedStateId: "done", clearDone: false },
+    { change: "clearing Done", deletedStateId: "done", clearDone: true },
+  ])(
+    "recovers carried children after $change during a pending close",
+    ({ deletedStateId, clearDone }) => {
       const state = createState({
         ...workflow(),
         workflowStates: [
@@ -383,7 +391,12 @@ describe("the done flag", () => {
         },
         { includeSubitems: true, sourceWrites: { "work-item-1": "Closed" } },
       );
-      const deleted = deleteWorkflowState(moved, deletedStateId);
+      const deleted = clearDone
+        ? updateWorkflowState(moved, deletedStateId, {
+            name: "Done",
+            done: false,
+          })
+        : deleteWorkflowState(moved, deletedStateId);
       expect(deleted.workItems[1]?.workflowStateId).toBe(
         deletedStateId === "done" ? "done2" : "done",
       );

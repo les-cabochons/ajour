@@ -588,18 +588,44 @@ export function updateWorkflowState(
   const replacementDoneId = getFirstDoneWorkflowState(
     state.workflowStates.filter((status) => status._id !== statusId),
   )?._id;
+  const replaceArchivedState = <
+    T extends Pick<
+      LocalWorkItem,
+      "status" | "workflowStateId" | "archivedByMissingSync"
+    >,
+  >(
+    workItem: T,
+  ): T =>
+    workItem.status === "archived" &&
+    !workItem.archivedByMissingSync &&
+    workItem.workflowStateId === statusId
+      ? { ...workItem, workflowStateId: replacementDoneId }
+      : workItem;
 
   return {
     ...state,
     workItems:
       target.done && !done
-        ? state.workItems.map((workItem) =>
-            workItem.status === "archived" &&
-            !workItem.archivedByMissingSync &&
-            workItem.workflowStateId === statusId
-              ? { ...workItem, workflowStateId: replacementDoneId }
-              : workItem,
-          )
+        ? state.workItems.map((workItem) => {
+            const replaced = replaceArchivedState(workItem);
+            const write = workItem.pendingSourceWrite;
+            if (!write?.previous.carriedChildren) return replaced;
+            return {
+              ...replaced,
+              pendingSourceWrite: {
+                ...write,
+                previous: {
+                  ...write.previous,
+                  carriedChildren: write.previous.carriedChildren.map(
+                    (child) => ({
+                      ...child,
+                      after: replaceArchivedState(child.after),
+                    }),
+                  ),
+                },
+              },
+            };
+          })
         : state.workItems,
     workflowStates: state.workflowStates.map((status) => {
       if (status._id !== statusId) return status;
@@ -624,7 +650,10 @@ function isLastDoneState(state: LocalAppState, statusId: string) {
 function clearDeletedWorkflowReferences<
   T extends Pick<
     LocalWorkItem,
-    "workflowStateId" | "importedWorkflowStateId" | "workflowStateIdBeforeClose"
+    | "workflowStateId"
+    | "importedWorkflowStateId"
+    | "workflowStateIdBeforeClose"
+    | "archivedByMissingSync"
   > & { status?: LocalWorkItem["status"] },
 >(snapshot: T, statusId: string, replacementDoneId?: string): T {
   return {
@@ -632,7 +661,9 @@ function clearDeletedWorkflowReferences<
     ...(snapshot.workflowStateId === statusId
       ? {
           workflowStateId:
-            snapshot.status === "archived" ? replacementDoneId : undefined,
+            snapshot.status === "archived" && !snapshot.archivedByMissingSync
+              ? replacementDoneId
+              : undefined,
         }
       : {}),
     ...(snapshot.importedWorkflowStateId === statusId
