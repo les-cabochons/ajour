@@ -248,14 +248,16 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Newer pending writes and local workflow overrides remain protected.
 - [x] The UX specification retains the explicit Settle rules introduced in #95 and distinguishes them from workflow move write rules.
 - [x] The mapping layer passes 783 unit tests and workspace typecheck. Regressions cover Done, open and unmapped destinations, carried children, newer writes, local overrides and reload.
-- [ ] Rebase the view layer, verify the final stack and request fresh reviews.
+- [x] Rebased the view layer. The complete stack passes 818 unit tests, all 87 Chromium scenarios, workspace typecheck, production builds and formatting.
+- [ ] Fresh Codex reviews of the pushed heads are pending. Merging remains owned by the integration thread.
 
 ### Settle confirmation and archive warning, 2026-10-12
 
 - [x] Settle keeps its selected state and priority until the subitem confirmation succeeds. Cancellation and a changed subitem set leave the draft open.
 - [x] The archive warning and submit label use the same workflow mapping as the lifecycle transition.
 - [x] The foundation passes 710 unit tests, workspace typecheck and three Chromium confirmation scenarios.
-- [ ] Carry the fixes through the stack, verify the final heads and request fresh reviews.
+- [x] Carried the fixes through the stack and verified all 87 Chromium scenarios, including the three Settle confirmation cases.
+- [ ] Fresh Codex reviews of the pushed heads are pending. Merging remains owned by the integration thread.
 
 ### Peek Start disabled reason, 2026-10-12
 
