@@ -96,6 +96,46 @@ const factories = {
 };
 
 describe("connector work item imports", () => {
+  it.each([false, true])(
+    "source state and priority changes honor changesEndSnoozeEarly=%s",
+    (enabled) => {
+      const original = importConnectorWorkItems(
+        createState(),
+        [createCandidate()],
+        undefined,
+        factories,
+      ).state;
+      const state = {
+        ...original,
+        userPreferences: {
+          ...original.userPreferences,
+          changesEndSnoozeEarly: enabled,
+        },
+        workItems: original.workItems.map((item) => ({
+          ...item,
+          snoozedUntil: 1000,
+        })),
+      };
+      for (const patch of [{ state: "Review" }, { priority: 9 }]) {
+        const result = importConnectorWorkItems(
+          state,
+          [createCandidate(patch)],
+          undefined,
+          factories,
+        ).state.workItems[0]!;
+        expect(result.snoozedUntil).toBe(enabled ? undefined : 1000);
+        expect(result.returnedAt).toBe(enabled ? 500 : undefined);
+      }
+      expect(
+        importConnectorWorkItems(
+          state,
+          [createCandidate({ title: "New title" })],
+          undefined,
+          factories,
+        ).state.workItems[0]?.snoozedUntil,
+      ).toBe(1000);
+    },
+  );
   it("keeps the connector's source URL and refreshes it on the next import", () => {
     const imported = importConnectorWorkItems(
       createState(),

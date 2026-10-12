@@ -10,6 +10,7 @@ import type {
   TeamSettings,
 } from "@ajour/shared";
 import type { LocalProjectIcon } from "@/domain/projects/project-icon";
+import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
 
 export interface LocalProject {
   _id: string;
@@ -197,6 +198,7 @@ export interface UserPreferences {
   weeklyCapacityTargets: WeeklyCapacityTargets;
   warnWhenOverCapacity: boolean;
   warnWhenSubmittingUnderCapacity: boolean;
+  changesEndSnoozeEarly?: boolean;
 }
 
 export interface LocalBacklogStatus {
@@ -372,6 +374,7 @@ export interface LocalAppState {
   timesheetEntries: LocalTimesheetEntry[];
   timesheetImportDrafts: LocalTimesheetImportDraft[];
   workItems: LocalWorkItem[];
+  pullRequests?: LocalPullRequest[];
   backlogStatuses: LocalBacklogStatus[];
   backlogStatusMappings: LocalBacklogStatusMapping[];
   backlogSortMode: BacklogSortMode;

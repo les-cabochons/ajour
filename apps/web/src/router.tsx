@@ -25,6 +25,10 @@ const BacklogPage = lazy(async () => {
   const module = await import("@/features/backlog/backlog-page");
   return { default: module.BacklogPage };
 });
+const PullRequestsPage = lazy(async () => {
+  const module = await import("@/features/pull-requests/pull-requests-page");
+  return { default: module.PullRequestsPage };
+});
 const BacklogItemPage = lazy(async () => {
   const module = await import("@/features/backlog/backlog-item-page");
   return { default: module.BacklogItemPage };
@@ -155,6 +159,25 @@ const projectsRoute = createRoute({
   component: () => (
     <RouteSuspense>
       <ProjectsPage />
+    </RouteSuspense>
+  ),
+});
+
+const pullRequestsRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/pull-requests",
+  component: () => (
+    <RouteSuspense>
+      <PullRequestsPage />
+    </RouteSuspense>
+  ),
+});
+const pullRequestDetailRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/pull-requests/$itemId",
+  component: () => (
+    <RouteSuspense>
+      <PullRequestsPage itemId={pullRequestDetailRoute.useParams().itemId} />
     </RouteSuspense>
   ),
 });
@@ -317,6 +340,8 @@ const routeTree = rootRoute.addChildren([
     submitRoute,
     backlogRoute,
     backlogItemRoute,
+    pullRequestsRoute,
+    pullRequestDetailRoute,
     projectsRoute,
     projectsArchiveRoute,
     projectDetailRoute,

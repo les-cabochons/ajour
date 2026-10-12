@@ -35,6 +35,7 @@ Current deep domain modules demonstrate this boundary:
 
 - `domain/backlog/work-item-transitions.ts` owns manual work-item creation, hierarchy-aware mapping changes, ordering, deletion, and estimate-conflict decisions.
 - `domain/backlog/backlog-item-lifecycle.ts` owns backlog item status: settle, unsettle, archive, restore, snooze, the Returned mark, and the sidebar's item order.
+- `domain/pull-requests/pull-request-lifecycle.ts` owns provider-neutral pull request reconciliation, local settle and snooze choices, Returned, enabled-connection visibility and closed-item retention. Sync facts exclude bodies and diffs.
 - `domain/backlog/work-item-connector.ts` owns connector import, merge, disappearance, reactivation, and estimate-sync transitions.
 - `domain/projects/project-transitions.ts` owns project and task creation, legacy hydration, ordering, edits, and archive state.
 - `domain/time/timesheet-entry.ts` owns manual entry creation, edits, deletion, ordering, submission state, and the corresponding work-item estimate adjustments.
@@ -184,6 +185,7 @@ Primary surfaces:
 
 - `/time/$date`
 - `/backlog`
+- `/pull-requests` and `/pull-requests/$itemId`, visible while a code host plugin is enabled
 - `/projects`
 - `/projects/$projectId`
 - `/settings/*`

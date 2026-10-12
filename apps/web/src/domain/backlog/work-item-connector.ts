@@ -12,7 +12,10 @@ import type {
   LocalWorkItemEstimateFieldState,
   LocalWorkItemEstimateSyncState,
 } from "@/domain/local-state";
-import { archiveBacklogItem } from "@/domain/backlog/backlog-item-lifecycle";
+import {
+  archiveBacklogItem,
+  sourceChangeSnooze,
+} from "@/domain/backlog/backlog-item-lifecycle";
 import { findMappedBacklogStatusId } from "@/domain/backlog/backlog-status";
 import {
   createImportedEstimateSyncState,
@@ -97,6 +100,7 @@ function mergeConnectorWorkItem(
   importedWorkItem: ConnectorImportCandidate,
   mappedBacklogStatusId: string | undefined,
   factories: ConnectorWorkItemFactories,
+  changesEndSnoozeEarly: boolean,
 ): LocalWorkItem {
   const nextImportedState = createConnectorWorkItem(
     importedWorkItem,
@@ -180,6 +184,12 @@ function mergeConnectorWorkItem(
 
   return {
     ...existingWorkItem,
+    ...sourceChangeSnooze(
+      existingWorkItem,
+      nextImportedState,
+      changesEndSnoozeEarly,
+      factories.now(),
+    ),
     title: nextImportedState.title,
     note: existingWorkItem.note,
     sourceId: nextImportedState.sourceId,
@@ -312,6 +322,7 @@ export function importConnectorWorkItems(
         workItem,
         mappedBacklogStatusId,
         factories,
+        state.userPreferences.changesEndSnoozeEarly === true,
       );
       if (JSON.stringify(mergedWorkItem) === JSON.stringify(existingWorkItem)) {
         continue;

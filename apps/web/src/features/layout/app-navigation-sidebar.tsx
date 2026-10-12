@@ -6,6 +6,7 @@ import {
   RiSettings3Line as Settings,
   RiSideBarLine as SidebarIcon,
   RiTimerLine as Timer,
+  RiGitPullRequestLine as PullRequestIcon,
 } from "@remixicon/react";
 import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
@@ -26,6 +27,8 @@ import {
 } from "@/components/tooltip-button";
 import type { AppSidebarState } from "@/lib/app-sidebar";
 import { SidebarBacklogList } from "@/features/layout/sidebar-backlog-list";
+import { SidebarPullRequests } from "@/features/layout/sidebar-pull-requests";
+import { useCodeHostConnections } from "@/lib/code-host-connections";
 import {
   SIDEBAR_MIN_WIDTH,
   clampSidebarWidth,
@@ -136,7 +139,7 @@ const primaryItems = [
 
 export function isAppNavigationItemActive(
   pathname: string,
-  to: "/time/$date" | "/backlog" | "/projects" | "/settings",
+  to: "/time/$date" | "/backlog" | "/projects" | "/settings" | "/pull-requests",
 ) {
   if (to === "/time/$date") {
     return pathname.startsWith("/time/");
@@ -149,6 +152,8 @@ export function isAppNavigationItemActive(
   if (to === "/settings") {
     return pathname.startsWith("/settings");
   }
+  if (to === "/pull-requests")
+    return pathname === to || pathname.startsWith(`${to}/`);
 
   return pathname === to;
 }
@@ -203,6 +208,18 @@ export function AppNavigationSidebar({
   const isSettingsActive = isAppNavigationItemActive(pathname, "/settings");
   const showsLogo = state === "expanded" || isRailForced;
   const showsToggle = !isRailForced;
+  const { groups } = useCodeHostConnections();
+  const items = groups.length
+    ? [
+        ...primaryItems,
+        {
+          to: "/pull-requests",
+          label: "Pull requests",
+          icon: PullRequestIcon,
+          shortcut: undefined,
+        } as const,
+      ]
+    : primaryItems;
 
   return (
     <Sidebar
@@ -227,7 +244,7 @@ export function AppNavigationSidebar({
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {primaryItems.map((item) => {
+              {items.map((item) => {
                 const Icon = item.icon;
                 const isActive = isAppNavigationItemActive(pathname, item.to);
                 return (
@@ -266,7 +283,10 @@ export function AppNavigationSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
         {state === "expanded" ? (
-          <SidebarBacklogList pathname={pathname} />
+          <>
+            <SidebarPullRequests pathname={pathname} />
+            <SidebarBacklogList pathname={pathname} />
+          </>
         ) : null}
       </SidebarContent>
 

@@ -98,6 +98,7 @@ import {
 } from "@/lib/item-keys";
 import { useNow } from "@/lib/use-now";
 import { localStore } from "@/lib/local-store";
+import { openModifiedSourceClick } from "@/lib/source-navigation";
 import {
   createSharedTableDragPointerSession,
   getSharedTableDropOrder,
@@ -504,6 +505,8 @@ export function BacklogPage() {
     if (
       !canReorderVisibleRootItems ||
       event.button !== 0 ||
+      event.ctrlKey ||
+      event.metaKey ||
       isSubtaskWorkItem(workItem) ||
       isBacklogDragBlockedTarget(event.target) ||
       // React bubbles events from portals, such as the row's open "…" menu.
@@ -927,7 +930,10 @@ export function BacklogPage() {
                 : undefined
             }
             aria-grabbed={isDraggedWorkItem}
-            onClick={() => openWorkItemFromRow(workItem)}
+            onClick={(event) => {
+              if (!openModifiedSourceClick(event, workItem.sourceUrl))
+                openWorkItemFromRow(workItem);
+            }}
             onPointerDown={(event) =>
               handleWorkItemPointerDown(workItem, event)
             }

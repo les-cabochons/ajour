@@ -151,6 +151,7 @@ Today's splits at 640px and 1023px go away.
 - A cog button at the trailing edge opens Settings. A search button may join it later. See [Keyboard model and command palette](https://github.com/les-cabochons/ajour/issues/18).
 - Settings opens on a list of its pages. Each page has a back arrow to that list.
 - Projects lives inside Settings in the narrow view. The Settings list has one Projects entry that opens the full Projects section: the project list, project detail and the archive. Importing and exporting projects is an action inside that section, not a separate settings page.
+- Pull requests also has a Settings-list entry in the narrow view, shown only while a code host plugin is enabled. Its Active, Settled and Recently closed groups use the same local actions as desktop.
 - Wide windows keep Projects in the sidebar and keep the separate import and export settings page.
 
 ### Jobs and views

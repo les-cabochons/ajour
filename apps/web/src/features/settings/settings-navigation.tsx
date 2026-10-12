@@ -7,6 +7,7 @@ import {
   RiListCheck3 as ListTodo,
   RiPuzzle2Line as Puzzle,
   RiSettings3Line as Settings,
+  RiGitPullRequestLine as PullRequestIcon,
 } from "@remixicon/react";
 import {
   CustomSidebar,
@@ -17,6 +18,7 @@ import {
   SidebarMenu,
   SidebarMenuItem,
 } from "@/components/custom-sidebar";
+import { useCodeHostConnections } from "@/lib/code-host-connections";
 
 /**
  * Wide windows show the settings pages in a column next to the app sidebar.
@@ -30,11 +32,23 @@ export type SettingsNavigationView = "wide" | "narrow";
  * project import and export is an action. Wide windows keep the separate
  * import and export page.
  */
-export function getSettingsPages(view: SettingsNavigationView) {
+export function getSettingsPages(
+  view: SettingsNavigationView,
+  hasCodeHost = false,
+) {
   return [
     { to: "/settings/general", label: "General", icon: Settings },
     { to: "/settings/plugins", label: "Plugins", icon: Puzzle },
     { to: "/settings/backlog", label: "Backlog", icon: ListTodo },
+    ...(view === "narrow" && hasCodeHost
+      ? [
+          {
+            to: "/pull-requests",
+            label: "Pull requests",
+            icon: PullRequestIcon,
+          } as const,
+        ]
+      : []),
     view === "narrow"
       ? { to: "/projects", label: "Projects", icon: FolderKanban }
       : { to: "/settings/projects", label: "Projects", icon: FolderKanban },
@@ -60,6 +74,7 @@ export function SettingsNavigation({
   pathname: string;
   view: SettingsNavigationView;
 }) {
+  const { groups } = useCodeHostConnections();
   return (
     <CustomSidebar
       className="ajour-settings-navigation"
@@ -70,7 +85,7 @@ export function SettingsNavigation({
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {getSettingsPages(view).map((item) => {
+              {getSettingsPages(view, groups.length > 0).map((item) => {
                 const Icon = item.icon;
                 const isActive = pathname.startsWith(item.to);
                 return (

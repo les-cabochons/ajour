@@ -7,6 +7,7 @@ import { getWorkItemEntryValues } from "@/features/backlog/work-item-timer-comme
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { openNewEntryEditor } from "@/features/time/new-entry-request";
 import { localStore } from "@/lib/local-store";
+import { openSourceUrl } from "@/lib/source-navigation";
 
 /** The actions only a host with an editor can run. */
 export type HostedBacklogItemActionId = Extract<
@@ -62,7 +63,7 @@ export function runBacklogItemAction(
       return;
     case "open-in-source":
       if (workItem.sourceUrl) {
-        window.open(workItem.sourceUrl, "_blank", "noopener,noreferrer");
+        openSourceUrl(workItem.sourceUrl);
       }
       return;
     case "archive":

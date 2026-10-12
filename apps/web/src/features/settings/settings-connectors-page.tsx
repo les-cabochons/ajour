@@ -803,17 +803,66 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                           Sync
                         </Button>
                       ) : null}
-                      <Button
-                        size="sm"
-                        variant="destructive"
-                        disabled={isMutatingConnector}
-                        onClick={() =>
-                          void handleDelete(group.plugin.id, connection.id)
-                        }
-                      >
-                        <Trash2 data-icon="inline-start" />
-                        Remove
-                      </Button>
+                      {group.plugin.capabilities.codeHost ? (
+                        <AlertDialog>
+                          <AlertDialogTrigger
+                            render={
+                              <Button
+                                size="sm"
+                                variant="destructive"
+                                disabled={isMutatingConnector}
+                              >
+                                <Trash2 data-icon="inline-start" />
+                                Remove
+                              </Button>
+                            }
+                          />
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>
+                                Remove {connection.label}?
+                              </AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This removes the connection and its{" "}
+                                {
+                                  (state.pullRequests ?? []).filter(
+                                    (item) =>
+                                      item.pluginId === group.plugin.id &&
+                                      item.connectionId === connection.id,
+                                  ).length
+                                }{" "}
+                                saved pull requests from this device.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                variant="destructive"
+                                onClick={() =>
+                                  void handleDelete(
+                                    group.plugin.id,
+                                    connection.id,
+                                  )
+                                }
+                              >
+                                Remove connection
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      ) : (
+                        <Button
+                          size="sm"
+                          variant="destructive"
+                          disabled={isMutatingConnector}
+                          onClick={() =>
+                            void handleDelete(group.plugin.id, connection.id)
+                          }
+                        >
+                          <Trash2 data-icon="inline-start" />
+                          Remove
+                        </Button>
+                      )}
                     </div>
                   </CardFooter>
                 </Card>

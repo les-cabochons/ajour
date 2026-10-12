@@ -45,6 +45,7 @@ import {
 } from "@/lib/item-keys";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
+import { openModifiedSourceClick } from "@/lib/source-navigation";
 import {
   updateSidebarLayout,
   useSidebarLayout,
@@ -257,7 +258,10 @@ function BacklogItemRow({
             isCompact ? "h-7 items-center gap-2" : "items-start gap-2 py-1.5",
             isActive && "bg-foreground/[0.07]",
           )}
-          onClick={() => rows.open(workItem)}
+          onClick={(event) => {
+            if (!openModifiedSourceClick(event, workItem.sourceUrl))
+              rows.open(workItem);
+          }}
           onKeyDown={(event) =>
             handleItemKeyDown(event, {
               actions: [...actions, OPEN_BACKLOG_ITEM_ACTION],
@@ -362,7 +366,10 @@ function UpNextCard({
             "mb-1 cursor-pointer rounded-lg border bg-background p-2.5 shadow-xs outline-none focus-visible:ring-1 focus-visible:ring-ring",
             isActive && "border-foreground/30",
           )}
-          onClick={() => rows.open(workItem)}
+          onClick={(event) => {
+            if (!openModifiedSourceClick(event, workItem.sourceUrl))
+              rows.open(workItem);
+          }}
           onKeyDown={(event) =>
             handleItemKeyDown(event, {
               actions: [...actions, OPEN_BACKLOG_ITEM_ACTION],
@@ -480,7 +487,10 @@ function OffListRow({
       data-focus-column="0"
       data-backlog-item-id={workItem._id}
       className="group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-[13px] text-muted-foreground outline-none hover:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring"
-      onClick={() => rows.open(workItem)}
+      onClick={(event) => {
+        if (!openModifiedSourceClick(event, workItem.sourceUrl))
+          rows.open(workItem);
+      }}
       onKeyDown={(event) => {
         if (event.key === "Enter" && event.target === event.currentTarget) {
           rows.open(workItem);
