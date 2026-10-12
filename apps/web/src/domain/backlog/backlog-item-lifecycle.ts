@@ -150,7 +150,8 @@ export function applyWorkflowStateLifecycle(
       const before = previousById.get(workItem._id);
       const previousStateId =
         before?.status === "archived"
-          ? before.workflowStateIdBeforeClose
+          ? (before.workflowStateIdBeforeClose ??
+            (before.archivedByMissingSync ? before.workflowStateId : undefined))
           : before?.workflowStateId;
       return {
         ...closeWorkItem(

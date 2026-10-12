@@ -387,7 +387,11 @@ export function importConnectorWorkItems(
       }
       if (
         existingWorkItem.status !== "active" &&
-        mergedWorkItem.status === "active"
+        mergedWorkItem.status === "active" &&
+        !isDoneWorkflowState(
+          state.workflowStates,
+          mergedWorkItem.workflowStateId,
+        )
       ) {
         returnedIds.add(mergedWorkItem._id);
       }

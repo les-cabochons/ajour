@@ -175,6 +175,13 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Project Health Notes
 
+### Parent return propagation and missing-sync restore history, 2026-10-12
+
+- [x] Connector returns carry subitems only when the parent remains in an open workflow state. Source changes mapped Done leave its carried archived subitems unchanged.
+- [x] A missing-sync return closed into Done remembers its former open workflow when no pre-close state exists.
+- [x] The foundation passes 712 unit tests and workspace typecheck. Connector regressions cover closed-parent child retention, later genuine reopening and Restore after a missing-sync return.
+- [ ] Carry the fixes through the stack, run the full checks and request fresh reviews.
+
 ### Reactivation in an unchanged Done state, 2026-10-12
 
 - [x] Lifecycle reconciliation closes every open item in Done, including missing-sync returns, carried subitems and legacy records whose workflow ID stays unchanged.
