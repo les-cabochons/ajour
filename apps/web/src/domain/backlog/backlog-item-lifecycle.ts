@@ -473,7 +473,8 @@ export function failSourceWrite(
     target.status === "active"
       ? restored
       : reactivate(restored, workItemId, target.status);
-  return "workflowStateId" in sourceWrite.previous
+  return sourceWrite.state !== undefined ||
+    "workflowStateId" in sourceWrite.previous
     ? updateOne(recovered, workItemId, (workItem) => ({
         ...workItem,
         workflowStateId: sourceWrite.previous.workflowStateId,

@@ -369,6 +369,45 @@ describe("settling with a change to the source", () => {
 });
 
 describe("sending a settle's write", () => {
+  it.each([false, true])(
+    "restores No state after persisting a settle mapped to Done=%s",
+    (done) => {
+      const state = createState({
+        workItems: [synced("a")],
+        workflowStates: [
+          {
+            _id: "destination",
+            name: "Destination",
+            done,
+            color: "#000000",
+            createdAt: 1,
+          },
+        ],
+        workflowStateMappings: [
+          {
+            source: "azure_devops",
+            connectionId: "connection-1",
+            sourceStatusKey: "resolved",
+            workflowStateId: "destination",
+          },
+        ],
+      });
+      const next = settleBacklogItem(state, "a", factories, {
+        state: { name: "Resolved", done: !done },
+      });
+      const reloaded: LocalAppState = JSON.parse(JSON.stringify(next));
+      expect(find(reloaded, "a")?.workflowStateId).toBe("destination");
+      expect(
+        find(reloaded, "a")?.pendingSourceWrite?.previous,
+      ).not.toHaveProperty("workflowStateId");
+      expect(find(failSourceWrite(reloaded, "a"), "a")).toMatchObject({
+        status: "active",
+        workflowStateId: undefined,
+        importedWorkflowStateId: undefined,
+        sourceStatusKey: "active",
+      });
+    },
+  );
   const settled = () =>
     settleBacklogItem(
       createState({
