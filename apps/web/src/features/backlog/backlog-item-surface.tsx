@@ -242,6 +242,13 @@ export function BacklogItemSurface({
   );
   const actions = getBacklogSurfaceActions(item, state, now);
   const running = state.timers.some((t) => t.workItemId === item._id);
+  const startDisabledReason = actions.find(
+    (action) => action.id === "start-entry",
+  )?.disabledReason;
+  const startLabel =
+    !startDisabledReason && state.timers.length
+      ? `Switch to ${item.title}`
+      : `Start ${item.title}`;
   const reference = parseWorkItemReference(item.sourceId) ?? item.sourceId;
   const click = (e: React.MouseEvent) => {
     if (
@@ -400,15 +407,23 @@ export function BacklogItemSurface({
           {item.status !== "archived" && (
             <TooltipButton
               label={
-                state.timers.length
-                  ? `Switch to ${item.title}`
-                  : `Start ${item.title}`
+                startDisabledReason
+                  ? `${startLabel}. ${startDisabledReason}`
+                  : startLabel
               }
-              render={<Button variant="ghost" size="icon-sm" />}
-              disabled={running}
+              aria-label={startLabel}
+              aria-description={startDisabledReason}
+              aria-disabled={Boolean(startDisabledReason)}
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="aria-disabled:opacity-50"
+                />
+              }
               onClick={(e) => {
                 e.stopPropagation();
-                onAction("start-entry");
+                if (!startDisabledReason) onAction("start-entry");
               }}
             >
               <RiPlayLine className="size-3.5" />

@@ -257,6 +257,14 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] The foundation passes 710 unit tests, workspace typecheck and three Chromium confirmation scenarios.
 - [ ] Carry the fixes through the stack, verify the final heads and request fresh reviews.
 
+### Running-item Start tooltips in rows and cards, 2026-10-12
+
+- [x] Rows and cards expose the shared Start disabled reason in their tooltip and accessible description. The running item says Start instead of offering to switch to itself.
+- [x] Start remains focusable with `aria-disabled`; its activation guard blocks clicks, Enter and Space. Other items retain Switch, and Stop enables the control again.
+- [x] List and board Chromium regressions cover tooltip access, blocked activation, timer identity, the other item's enabled control and the cleared reason after Stop.
+- [x] All 804 unit tests and 75 Chromium scenarios pass, along with workspace typecheck, production build and formatting. Keyboard tooltip assertions select the open popup so closing animations do not match.
+- [ ] Fresh Codex review is pending. Merging remains owned by the integration thread.
+
 ### Failed source drag order recovery, 2026-10-12
 
 - [x] Pending source moves retain the drag's affected custom order, including across persistence and coalesced moves. Recovery advances when an older source write succeeds.

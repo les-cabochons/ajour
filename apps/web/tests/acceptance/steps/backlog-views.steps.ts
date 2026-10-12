@@ -302,17 +302,26 @@ Then(
     const start = row.getByRole("button", { name: "Start entry", exact: true });
     await expect(start).toBeDisabled();
     await expect(start).toHaveAccessibleDescription("Already running");
+    await start.focus();
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Shift+Tab");
+    await expect(start).toBeFocused();
+    await expect(
+      page.locator('[data-slot="tooltip-content"][data-open]'),
+    ).toContainText("Already running");
     await start.hover();
-    await expect(page.locator('[data-slot="tooltip-content"]')).toContainText(
-      "Start entry. Already running",
-    );
+    await expect(
+      page.locator('[data-slot="tooltip-content"][data-open]'),
+    ).toContainText("Start entry. Already running");
     await start.click({ force: true });
     await start.focus();
     await page.keyboard.press("Enter");
     await page.keyboard.press("Space");
     await page.keyboard.press("Escape");
     await page.getByRole("main").hover();
-    await expect(page.locator('[data-slot="tooltip-content"]')).toHaveCount(0);
+    await expect(
+      page.locator('[data-slot="tooltip-content"][data-open]'),
+    ).toHaveCount(0);
   },
 );
 Then(
@@ -326,9 +335,73 @@ Then(
     await expect(start).toBeEnabled();
     await expect(start).toHaveAccessibleDescription("");
     await start.hover();
-    await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText(
-      "Start entry",
-    );
+    await expect(
+      page.locator('[data-slot="tooltip-content"][data-open]'),
+    ).toHaveText("Start entry");
+  },
+);
+When("I use the Backlog {string} layout", async ({ page }, layout: string) => {
+  await page
+    .getByRole("button", { name: `${layout} layout`, exact: true })
+    .click();
+});
+Then(
+  "the parent Start icon explains that it is already running",
+  async ({ page }) => {
+    const row = page.locator('[data-work-item-id="parent"]');
+    await row.hover();
+    const start = row.getByRole("button", {
+      name: "Start Backlog parent",
+      exact: true,
+    });
+    await expect(start).toBeDisabled();
+    await expect(start).toHaveAccessibleDescription("Already running");
+    await start.focus();
+    await page.keyboard.press("Tab");
+    await page.keyboard.press("Shift+Tab");
+    await expect(start).toBeFocused();
+    await expect(
+      page.locator('[data-slot="tooltip-content"][data-open]'),
+    ).toContainText("Already running");
+    await start.hover();
+    await expect(
+      page.locator('[data-slot="tooltip-content"][data-open]'),
+    ).toHaveText("Start Backlog parent. Already running");
+    await start.click({ force: true });
+    await start.focus();
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Space");
+    await expect(start).toBeFocused();
+    await page.keyboard.press("Escape");
+    const other = page.locator('[data-work-item-id="other"]');
+    await other.hover();
+    await expect(
+      other.getByRole("button", {
+        name: "Switch to Other backlog item",
+        exact: true,
+      }),
+    ).toBeEnabled();
+    await page.getByRole("main").hover();
+    await expect(
+      page.locator('[data-slot="tooltip-content"][data-open]'),
+    ).toHaveCount(0);
+  },
+);
+Then(
+  "the parent Start icon is enabled without a disabled reason",
+  async ({ page }) => {
+    const row = page.locator('[data-work-item-id="parent"]');
+    await row.hover();
+    const start = row.getByRole("button", {
+      name: "Start Backlog parent",
+      exact: true,
+    });
+    await expect(start).toBeEnabled();
+    await expect(start).toHaveAccessibleDescription("");
+    await start.hover();
+    await expect(
+      page.locator('[data-slot="tooltip-content"][data-open]'),
+    ).toHaveText("Start Backlog parent");
   },
 );
 async function inspectBacklogStart(

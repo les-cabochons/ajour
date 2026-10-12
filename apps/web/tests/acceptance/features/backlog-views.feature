@@ -52,6 +52,20 @@ Feature: Backlog list and board views
     When I stop the Backlog running entry from the titlebar
     Then the sidebar Start icon enables the parent without a disabled reason
 
+  Scenario Outline: Explain the running item's Start icon in rows and cards
+    When I use the Backlog "<layout>" layout
+    And I peek at the Backlog parent
+    And I start an entry from the Backlog peek
+    Then the parent Start icon explains that it is already running
+    And the running entry has not restarted
+    When I stop the Backlog running entry from the titlebar
+    Then the parent Start icon is enabled without a disabled reason
+
+    Examples:
+      | layout |
+      | List   |
+      | Board  |
+
   Scenario Outline: Show running ownership in every Backlog action set
     When I peek at the Backlog parent
     And I start an entry from the Backlog peek
