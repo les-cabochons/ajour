@@ -7,6 +7,7 @@ import {
   type CSSProperties,
 } from "react";
 import { createPortal } from "react-dom";
+import { pluginHasConnector } from "@ajour/shared";
 import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   RiAddLine as Plus,
@@ -202,7 +203,7 @@ function ConnectorAutoSyncScheduler() {
         const overview = await getConnectorsOverview();
         const now = Date.now();
         const dueConnections = overview.connectionGroups.flatMap((group) =>
-          !group.enabled
+          !group.enabled || !pluginHasConnector(group.plugin)
             ? []
             : group.connections
                 .filter((connection) => {

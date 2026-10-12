@@ -218,6 +218,7 @@ function createMissingPluginManifest(
     description: "Plugin unavailable.",
     iconSvg: MISSING_PLUGIN_ICON_SVG,
     entrypoint: "",
+    capabilities: { connector: {} },
     connectionFields: [
       {
         id: "label",

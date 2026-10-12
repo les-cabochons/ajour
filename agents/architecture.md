@@ -64,8 +64,10 @@ The local API is a boundary for connector-driven work. Connector behavior should
 
 ## Connector Plugins
 
-Connectors are installable plugins and must remain physically and logically
-separate from the application. A plugin owns its external-system
+Connectors and code hosts are capabilities of installable plugins. A plugin
+declares one or both in its manifest, and its connections serve all of them.
+The rules in this section apply to every such plugin, which must remain
+physically and logically separate from the application. A plugin owns its external-system
 authentication, transport, field discovery, and remote read/write behavior. It
 must ship a manifest, a runnable entrypoint, its assets, and all required
 runtime dependencies without importing Ajour repository source or other

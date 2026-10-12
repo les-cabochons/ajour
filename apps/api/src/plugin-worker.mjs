@@ -4,6 +4,22 @@ import { serialize } from "node:v8";
 const MAX_CONNECTOR_PLUGIN_RESULT_BYTES = 8 * 1024 * 1024;
 const MAX_CONNECTOR_PLUGIN_ERROR_MESSAGE_CHARACTERS = 4_096;
 
+// Keep in sync with `codeHostOperations` in packages/shared/src/code-host.ts.
+const CODE_HOST_METHODS = new Set([
+  "syncPullRequests",
+  "getPullRequestContent",
+  "getFileContent",
+  "getPullRequestConversation",
+  "browsePullRequests",
+  "submitReview",
+  "postComment",
+  "replyToThread",
+  "setThreadResolved",
+  "setFileViewed",
+  "updatePullRequest",
+  "mergePullRequest",
+]);
+
 if (!parentPort) {
   throw new Error("Connector plugin worker requires a parent port.");
 }
@@ -28,7 +44,8 @@ async function run() {
 
   if (
     workerData.method === "listSettleStates" ||
-    workerData.method === "writeSettle"
+    workerData.method === "writeSettle" ||
+    CODE_HOST_METHODS.has(workerData.method)
   ) {
     return await handler(
       workerData.params.connection,

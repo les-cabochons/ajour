@@ -22,6 +22,12 @@ import {
   type ConnectorSettleWriteResult,
   type ConnectorSyncWorkItem,
 } from "../../../packages/shared/src/connectors.ts";
+import {
+  codeHostOperations,
+  type CodeHostOperation,
+  type CodeHostOperationRequest,
+  type CodeHostOperationResult,
+} from "../../../packages/shared/src/code-host.ts";
 import { z } from "zod";
 import {
   discoverInstalledConnectorPlugins,
@@ -59,7 +65,11 @@ type PluginInvocationConnection = z.infer<
   typeof pluginInvocationConnectionSchema
 >;
 type PluginMethod =
-  "validateConnection" | "syncConnection" | "listSettleStates" | "writeSettle";
+  | "validateConnection"
+  | "syncConnection"
+  | "listSettleStates"
+  | "writeSettle"
+  | CodeHostOperation;
 function comparePlugins(
   left: ConnectorPluginManifest,
   right: ConnectorPluginManifest,
@@ -183,6 +193,7 @@ export class ConnectorPluginManager {
     connection: PluginInvocationConnection,
     workItems: ConnectorSyncWorkItem[] = [],
   ): Promise<ConnectorPluginSyncResult> {
+    await this.assertCapability(pluginId, "connector");
     const payload = {
       connection: pluginInvocationConnectionSchema.parse(connection),
       workItems: workItems.map((workItem) =>
@@ -202,7 +213,40 @@ export class ConnectorPluginManager {
   async supportsSettle(pluginId: string): Promise<boolean> {
     this.assertRunning();
     const plugin = (await this.discoverPlugins()).get(pluginId);
-    return plugin?.manifest.capabilities?.settle ?? false;
+    return plugin?.manifest.capabilities.connector?.settle ?? false;
+  }
+
+  /** Whether the plugin declares the given capability. */
+  async hasCapability(
+    pluginId: string,
+    capability: "connector" | "codeHost",
+  ): Promise<boolean> {
+    this.assertRunning();
+    const plugin = (await this.discoverPlugins()).get(pluginId);
+    return plugin?.manifest.capabilities[capability] !== undefined;
+  }
+
+  /** Runs one code host operation. See `codeHostOperations`. */
+  async runCodeHostOperation<Operation extends CodeHostOperation>(
+    pluginId: string,
+    operation: Operation,
+    connection: PluginInvocationConnection,
+    request: CodeHostOperationRequest<Operation>,
+  ): Promise<CodeHostOperationResult<Operation>> {
+    await this.assertCapability(pluginId, "codeHost");
+    const contract = codeHostOperations[operation];
+    const resultSchema = contract.result as {
+      parse: (value: unknown) => CodeHostOperationResult<Operation>;
+    };
+    return await this.invokePlugin(
+      pluginId,
+      operation,
+      {
+        connection: pluginInvocationConnectionSchema.parse(connection),
+        request: contract.request.parse(request),
+      },
+      resultSchema,
+    );
   }
 
   async listSettleStates(
@@ -280,9 +324,23 @@ export class ConnectorPluginManager {
     });
   }
 
+  private async assertCapability(
+    pluginId: string,
+    capability: "connector" | "codeHost",
+  ) {
+    const plugin = await this.getPlugin(pluginId);
+    if (plugin.manifest.capabilities[capability] === undefined) {
+      throw new Error(
+        capability === "connector"
+          ? `Plugin "${pluginId}" does not sync backlog items.`
+          : `Plugin "${pluginId}" does not provide pull requests.`,
+      );
+    }
+  }
+
   private async assertSupportsSettle(pluginId: string) {
     const plugin = await this.getPlugin(pluginId);
-    if (!plugin.manifest.capabilities?.settle) {
+    if (!plugin.manifest.capabilities.connector?.settle) {
       throw new Error(
         `Connector plugin "${pluginId}" does not support settling backlog items.`,
       );

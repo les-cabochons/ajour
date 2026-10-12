@@ -32,11 +32,12 @@ async function createPlugin(
     JSON.stringify({
       id: "jira",
       version: "1.0.0",
-      apiVersion: 1,
+      apiVersion: 2,
       displayName: "Jira",
       description: "Test connector.",
       iconSvg: ICON,
       entrypoint,
+      capabilities: { connector: {} },
       connectionFields: [
         {
           id: "label",
@@ -590,7 +591,7 @@ describe("connector settle routes", () => {
       path.join(root, "source"),
       settlePluginSource,
       "plugin.mjs",
-      capabilities ? { capabilities } : {},
+      capabilities ? { capabilities: { connector: capabilities } } : {},
     );
     const server = createAppApiServer({
       statePath: path.join(root, "state.json"),
@@ -717,5 +718,148 @@ describe("connector settle routes", () => {
         (item) => item.sourceId,
       ),
     ).toEqual(["OPEN-1"]);
+  });
+});
+
+describe("code host routes", () => {
+  const tempDirs: string[] = [];
+  const servers: Server[] = [];
+
+  afterEach(async () => {
+    for (const server of servers.splice(0)) {
+      server.emit("close");
+    }
+    await Promise.all(
+      tempDirs
+        .splice(0)
+        .map((directory) => rm(directory, { recursive: true, force: true })),
+    );
+  });
+
+  const codeHostPluginSource = [
+    "export async function validateConnection(config) {",
+    "  return { normalizedConfig: config, connectionSummary: {} };",
+    "}",
+    "export async function syncPullRequests(connection, request) {",
+    "  if (request.tracked.some((ref) => ref.number === 500)) throw new Error('Bad credentials.');",
+    "  return { viewer: { login: 'octocat', isBot: false }, pullRequests: [] };",
+    "}",
+  ].join("\n");
+
+  async function createServer(capabilities: Record<string, unknown>) {
+    const root = await mkdtemp(path.join(os.tmpdir(), "ajour-code-host-api-"));
+    tempDirs.push(root);
+    const pluginDirectory = await createPlugin(
+      path.join(root, "source"),
+      codeHostPluginSource,
+      "plugin.mjs",
+      { capabilities },
+    );
+    const server = createAppApiServer({
+      statePath: path.join(root, "state.json"),
+      installedPluginDirectory: path.join(root, "installed"),
+      developmentPluginDirectories: [pluginDirectory],
+      allowDevelopmentPlugins: true,
+    });
+    servers.push(server);
+    const connectionResponse = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: "/api/connectors/jira/connections",
+      body: JSON.stringify({
+        values: {
+          label: "Work",
+          tenantLabel: "github.com",
+          autoSync: true,
+          autoSyncIntervalMinutes: 5,
+          baseUrl: "https://github.com",
+        },
+      }),
+    });
+    const connectionId = (
+      connectionResponse.body as { connection: { id: string } }
+    ).connection.id;
+    return { server, connectionId };
+  }
+
+  it("syncs pull requests through a code host plugin and records the sync", async () => {
+    const { server, connectionId } = await createServer({ codeHost: {} });
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/code-hosts/jira/connections/${connectionId}/syncPullRequests`,
+        body: JSON.stringify({ tracked: [] }),
+      }),
+    ).resolves.toEqual({
+      status: 200,
+      body: { viewer: { login: "octocat", isBot: false }, pullRequests: [] },
+    });
+
+    const overview = await dispatchJsonRequest(server, {
+      method: "GET",
+      path: "/api/connectors",
+    });
+    const connection = (
+      overview.body as {
+        connectionGroups: { connections: { lastSyncAt?: number }[] }[];
+      }
+    ).connectionGroups[0]?.connections[0];
+    expect(connection?.lastSyncAt).toEqual(expect.any(Number));
+  });
+
+  it("refuses backlog sync for a plugin without the connector capability", async () => {
+    const { server, connectionId } = await createServer({ codeHost: {} });
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/connectors/jira/connections/${connectionId}/sync`,
+        body: JSON.stringify({ trigger: "manual" }),
+      }),
+    ).resolves.toEqual({
+      status: 409,
+      body: { error: "This plugin does not sync backlog items." },
+    });
+  });
+
+  it("rejects unknown operations, connector-only plugins and malformed requests", async () => {
+    const connectorOnly = await createServer({ connector: {} });
+    await expect(
+      dispatchJsonRequest(connectorOnly.server, {
+        method: "POST",
+        path: `/api/code-hosts/jira/connections/${connectorOnly.connectionId}/syncPullRequests`,
+        body: JSON.stringify({ tracked: [] }),
+      }),
+    ).resolves.toMatchObject({ status: 404 });
+
+    const { server, connectionId } = await createServer({ codeHost: {} });
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/code-hosts/jira/connections/${connectionId}/deleteRepository`,
+        body: JSON.stringify({}),
+      }),
+    ).resolves.toMatchObject({ status: 404 });
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/code-hosts/jira/connections/${connectionId}/syncPullRequests`,
+        body: JSON.stringify({ tracked: "all" }),
+      }),
+    ).resolves.toMatchObject({ status: 400 });
+  });
+
+  it("reports a failed sync as a gateway error and records it", async () => {
+    const { server, connectionId } = await createServer({ codeHost: {} });
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/code-hosts/jira/connections/${connectionId}/syncPullRequests`,
+        body: JSON.stringify({
+          tracked: [{ repository: "acme/api", number: 500 }],
+        }),
+      }),
+    ).resolves.toEqual({ status: 502, body: { error: "Bad credentials." } });
   });
 });

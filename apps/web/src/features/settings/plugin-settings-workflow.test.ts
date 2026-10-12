@@ -12,11 +12,12 @@ import {
 const plugin = {
   id: "test-connector",
   version: "1.0.0",
-  apiVersion: 1 as const,
+  apiVersion: 2 as const,
   displayName: "Test connector",
   description: "Test",
   iconSvg: "<svg />",
   entrypoint: "plugin.mjs",
+  capabilities: { connector: {} },
   connectionFields: [],
 };
 const overview: ConnectorsOverview = {

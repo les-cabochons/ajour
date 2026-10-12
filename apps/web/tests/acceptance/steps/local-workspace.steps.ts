@@ -1306,12 +1306,13 @@ When("I install a packaged connector from settings", async ({ page }) => {
   const plugin = {
     id: "example",
     version: "1.2.3",
-    apiVersion: 1,
+    apiVersion: 2,
     displayName: "Example",
     description: "Example connector used by the acceptance test.",
     iconSvg:
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/></svg>',
     entrypoint: "dist/plugin.js",
+    capabilities: { connector: {} },
     connectionFields: [
       {
         id: "url",
