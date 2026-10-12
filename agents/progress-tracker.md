@@ -195,6 +195,13 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Project Health Notes
 
+### Combined review fixes verification, 2026-10-12
+
+- [x] The rebased stack passes all 849 unit tests and all 90 Chromium acceptance scenarios, workspace typecheck, production builds and formatting.
+- [x] The view-only head `c04a91c` passed Codex review with no major issues. Parent review fixes required rebasing the view layer, so all three updated heads need fresh reviews.
+- [x] Deleted workflow IDs no longer return through parent or carried-child rollback after a failed source write. Settle retains its displayed priority intent when a connector refresh changes the imported value.
+- [ ] Complete Codex review of the updated stack before integration. The integration thread owns merging.
+
 ### Settle refresh and carried recovery, 2026-10-12
 
 - [x] Settle compares its priority draft with the current item's imported priority and range, rather than the item captured when the dialog opened. A connector refresh preserves the draft and submission writes its displayed value.
