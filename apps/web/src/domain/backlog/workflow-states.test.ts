@@ -1,4 +1,8 @@
 import { describe, expect, it } from "vitest";
+import {
+  moveBacklogItemToState,
+  restoreBacklogItem,
+} from "@/domain/backlog/backlog-item-lifecycle";
 import type { LocalAppState, LocalWorkItem } from "@/domain/local-state";
 import {
   addWorkflowState,
@@ -151,6 +155,40 @@ describe("the done flag", () => {
     expect(() => deleteWorkflowState(workflow(), "done")).toThrow(
       "The workflow needs at least one done state.",
     );
+  });
+
+  it("restores the pre-close state after deleting the occupied done state", () => {
+    const state = createState({
+      ...workflow(),
+      workflowStates: [
+        ...workflow().workflowStates,
+        {
+          _id: "shipped",
+          name: "Shipped",
+          color: "#059669",
+          done: true,
+          createdAt: 1,
+        },
+      ],
+      workItems: [createImportedWorkItem({ workflowStateId: "todo" })],
+    });
+    const closed = moveBacklogItemToState(state, "work-item-1", "done", {
+      createId: () => "entry",
+      now: () => 500,
+    });
+    const deleted = deleteWorkflowState(closed, "done");
+    expect(deleted.workItems[0]).toMatchObject({
+      status: "archived",
+      workflowStateId: "shipped",
+      workflowStateIdBeforeClose: "todo",
+    });
+    expect(
+      restoreBacklogItem(deleted, "work-item-1").workItems[0],
+    ).toMatchObject({
+      status: "active",
+      workflowStateId: "todo",
+      workflowStateIdBeforeClose: undefined,
+    });
   });
 
   it("refuses to clear the done flag of the last done state", () => {

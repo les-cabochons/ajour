@@ -864,6 +864,53 @@ describe("connector sync of workflow states", () => {
 
     expect(sync(archived).workItems[0]?.status).toBe("archived");
   });
+
+  it.each(["doing", "done"])(
+    "refreshes the imported baseline when a changed done source state maps to %s",
+    (destination) => {
+      const mapped = {
+        ...workflow(),
+        workflowStateMappings: [
+          ...workflow().workflowStateMappings,
+          {
+            source: "azure_devops" as const,
+            connectionId: "connection-1",
+            sourceStatusKey: "closed",
+            workflowStateId: destination,
+          },
+        ],
+      };
+      const imported = sync(mapped);
+      const moved = {
+        ...imported,
+        workItems: imported.workItems.map((item) => ({
+          ...item,
+          workflowStateId: "review",
+        })),
+      };
+      const result = archiveDoneConnectorWorkItems(
+        moved,
+        [
+          {
+            source: "azure_devops",
+            connectionId: "connection-1",
+            sourceId: "source-1",
+            state: "Closed",
+          },
+        ],
+        factories,
+      );
+      expect(result.state.workItems[0]).toMatchObject({
+        workflowStateId: destination,
+        importedWorkflowStateId: destination,
+        status: destination === "done" ? "archived" : "active",
+      });
+      if (destination === "done")
+        expect(result.state.workItems[0]?.workflowStateIdBeforeClose).toBe(
+          "review",
+        );
+    },
+  );
 });
 
 describe("connector estimate sync", () => {

@@ -535,12 +535,13 @@ export function archiveDoneConnectorWorkItems(
                   ...workItem,
                   sourceStatusKey,
                   sourceStatusLabel: stateLabel,
+                  importedWorkflowStateId: mappedWorkflowStateId,
                   ...(keepsOpen
                     ? {
-                        importedWorkflowStateId: mappedWorkflowStateId,
                         workflowStateId:
                           workItem.workflowStateId ===
-                          workItem.importedWorkflowStateId
+                            workItem.importedWorkflowStateId ||
+                          workItem.sourceStatusKey !== sourceStatusKey
                             ? mappedWorkflowStateId
                             : workItem.workflowStateId,
                       }

@@ -333,6 +333,11 @@ export function deleteWorkflowState(
   if (isLastDoneState(state, statusId)) {
     throw new Error(LAST_DONE_STATE_MESSAGE);
   }
+  const replacementDoneId = getFirstDoneWorkflowState(
+    state.workflowStates.filter(
+      (workflowState) => workflowState._id !== statusId,
+    ),
+  )?._id;
 
   return reconcileImportedWorkflowStates({
     ...state,
@@ -346,7 +351,10 @@ export function deleteWorkflowState(
       ...workItem,
       workflowStateId:
         workItem.workflowStateId === statusId
-          ? undefined
+          ? workItem.status === "archived" &&
+            isDoneWorkflowState(state.workflowStates, statusId)
+            ? replacementDoneId
+            : undefined
           : workItem.workflowStateId,
       workflowStateIdBeforeClose:
         workItem.workflowStateIdBeforeClose === statusId

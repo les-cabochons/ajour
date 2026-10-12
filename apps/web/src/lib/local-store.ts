@@ -133,7 +133,6 @@ import type {
   ExtensionBridgeStatus,
   LocalAppState,
   LocalWorkflowStateMapping,
-
   LocalSettleRule,
   LocalProject,
   LocalProjectDraft,
