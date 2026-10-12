@@ -708,6 +708,82 @@ describe("connector sync of workflow states", () => {
     });
   });
 
+  it("closes an item whose source state now maps to a done state", () => {
+    const withDoneMapping = {
+      ...workflow(),
+      workflowStateMappings: [
+        ...workflow().workflowStateMappings,
+        {
+          source: "azure_devops" as const,
+          connectionId: "connection-1",
+          sourceStatusKey: "closed",
+          workflowStateId: "done",
+        },
+      ],
+    };
+    const imported = sync(withDoneMapping);
+    const running = {
+      ...imported,
+      timers: [
+        {
+          _id: "timer-1",
+          startedAt: 100,
+          localDate: "2026-10-11",
+          workItemId: imported.workItems[0]!._id,
+          accumulatedDurationMs: 0,
+        },
+      ],
+    };
+
+    const closed = sync(running, { state: "Closed" });
+    expect(closed.workItems[0]).toMatchObject({
+      status: "archived",
+      workflowStateId: "done",
+      workflowStateIdBeforeClose: "doing",
+    });
+    expect(closed.timers).toEqual([]);
+
+    const fresh = sync(
+      { ...withDoneMapping, workItems: [] },
+      { state: "Closed" },
+    );
+    expect(fresh.workItems[0]?.status).toBe("archived");
+  });
+
+  it("keeps a done source state open when the user mapped it to a state that isn't done", () => {
+    const mapped = {
+      ...workflow(),
+      workflowStateMappings: [
+        ...workflow().workflowStateMappings,
+        {
+          source: "azure_devops" as const,
+          connectionId: "connection-1",
+          sourceStatusKey: "closed",
+          workflowStateId: "review",
+        },
+      ],
+    };
+    const result = archiveDoneConnectorWorkItems(
+      sync(mapped),
+      [
+        {
+          source: "azure_devops",
+          connectionId: "connection-1",
+          sourceId: "source-1",
+          state: "Closed",
+        },
+      ],
+      factories,
+    );
+
+    expect(result.archivedCount).toBe(0);
+    expect(result.state.workItems[0]).toMatchObject({
+      status: "active",
+      workflowStateId: "review",
+      sourceStatusLabel: "Closed",
+    });
+  });
+
   it("keeps a local Archive when the source still shows the same state", () => {
     const imported = sync(workflow());
     const archived = archiveBacklogItem(

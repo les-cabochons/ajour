@@ -240,12 +240,18 @@ export function SettingsWorkflowPage() {
     workflowStateId: string,
   ) {
     try {
-      localStore.setWorkflowStateMapping({
+      const { closedCount, undoToken } = localStore.setWorkflowStateMapping({
         source: source.source,
         connectionId: source.connectionId,
         sourceStatusKey: source.key,
         workflowStateId: workflowStateId || undefined,
       });
+      if (undoToken) {
+        offerUndo(undoToken, {
+          title: `${closedCount} ${closedCount === 1 ? "item" : "items"} closed`,
+          subject: "mapping",
+        });
+      }
       setError(null);
       setMessage(
         workflowStateId

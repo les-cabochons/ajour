@@ -12,8 +12,14 @@ import type {
   LocalWorkItemEstimateFieldState,
   LocalWorkItemEstimateSyncState,
 } from "@/domain/local-state";
-import { archiveBacklogItem } from "@/domain/backlog/backlog-item-lifecycle";
-import { findMappedWorkflowStateId } from "@/domain/backlog/workflow-states";
+import {
+  applyWorkflowStateLifecycle,
+  archiveBacklogItem,
+} from "@/domain/backlog/backlog-item-lifecycle";
+import {
+  findMappedWorkflowStateId,
+  isDoneWorkflowState,
+} from "@/domain/backlog/workflow-states";
 import {
   createImportedEstimateSyncState,
   normalizeWorkItemEstimateValue,
@@ -459,11 +465,13 @@ export function importConnectorWorkItems(
     return { state, result };
   }
 
+  // Items whose source state now maps to a done state close.
   return {
-    state: {
-      ...state,
-      workItems: [...importedItems, ...nextWorkItems],
-    },
+    state: applyWorkflowStateLifecycle(
+      state,
+      { ...state, workItems: [...importedItems, ...nextWorkItems] },
+      factories,
+    ),
     result,
   };
 }
@@ -496,6 +504,20 @@ export function archiveDoneConnectorWorkItems(
     }
 
     const stateLabel = doneItem.state?.trim();
+    const sourceStatusKey = stateLabel
+      ? normalizeConnectorStatusKey(stateLabel)
+      : undefined;
+    const mappedWorkflowStateId = findMappedWorkflowStateId(
+      nextState.workflowStateMappings,
+      target.source,
+      target.sourceConnectionId,
+      sourceStatusKey,
+    );
+    // A user who mapped this source state to a state that isn't done keeps
+    // the item open there.
+    const keepsOpen =
+      mappedWorkflowStateId !== undefined &&
+      !isDoneWorkflowState(nextState.workflowStates, mappedWorkflowStateId);
     const withSourceState = stateLabel
       ? {
           ...nextState,
@@ -503,13 +525,27 @@ export function archiveDoneConnectorWorkItems(
             workItem._id === target._id
               ? {
                   ...workItem,
-                  sourceStatusKey: normalizeConnectorStatusKey(stateLabel),
+                  sourceStatusKey,
                   sourceStatusLabel: stateLabel,
+                  ...(keepsOpen
+                    ? {
+                        importedWorkflowStateId: mappedWorkflowStateId,
+                        workflowStateId:
+                          workItem.workflowStateId ===
+                          workItem.importedWorkflowStateId
+                            ? mappedWorkflowStateId
+                            : workItem.workflowStateId,
+                      }
+                    : {}),
                 }
               : workItem,
           ),
         }
       : nextState;
+    if (keepsOpen) {
+      nextState = withSourceState;
+      continue;
+    }
     nextState = archiveBacklogItem(withSourceState, target._id, factories);
     archivedCount += 1;
   }

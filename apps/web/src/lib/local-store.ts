@@ -30,6 +30,7 @@ import {
   restoreBacklogItem as applyRestoreBacklogItem,
   settleBacklogItem as applySettleBacklogItem,
   moveBacklogItemToState as applyMoveBacklogItemToState,
+  applyWorkflowStateLifecycle,
   snoozeBacklogItem as applySnoozeBacklogItem,
   unsettleBacklogItem as applyUnsettleBacklogItem,
   unsnoozeBacklogItem as applyUnsnoozeBacklogItem,
@@ -1061,8 +1062,26 @@ export const localStore = {
       applyMoveWorkflowState(state, workflowStateId, step),
     );
   },
+  /**
+   * Maps a source state to a workflow state. Open items that land in a done
+   * state close. Returns how many closed, with an undo token when any did.
+   */
   setWorkflowStateMapping(mapping: WorkflowStateMappingInput) {
-    updateState((state) => applyWorkflowStateMapping(state, mapping));
+    let closedCount = 0;
+    const token = updateStateWithUndo((state) => {
+      const mapped = applyWorkflowStateMapping(state, mapping);
+      const next = applyWorkflowStateLifecycle(state, mapped, {
+        createId,
+        now: Date.now,
+      });
+      closedCount = next.workItems.filter(
+        (workItem, index) =>
+          workItem.status === "archived" &&
+          mapped.workItems[index]?.status !== "archived",
+      ).length;
+      return next;
+    });
+    return { closedCount, undoToken: closedCount > 0 ? token : null };
   },
   /** Starts a running entry today, saving the one already running (Start or Switch). */
   startTimer(timer: LocalTimerDraft) {

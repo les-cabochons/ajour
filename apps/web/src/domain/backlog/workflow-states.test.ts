@@ -175,6 +175,62 @@ describe("the done flag", () => {
     ]);
   });
 
+  it("clears a deleted state from where closed items came from", () => {
+    const state = {
+      ...workflow(),
+      workflowStates: [
+        ...workflow().workflowStates,
+        { _id: "doing", name: "Doing", color: "#d97706", createdAt: 1 },
+      ],
+      workItems: [
+        {
+          _id: "a",
+          title: "A",
+          status: "archived" as const,
+          source: "manual" as const,
+          createdAt: 1,
+          workflowStateId: "done",
+          workflowStateIdBeforeClose: "doing",
+        },
+      ],
+    };
+
+    expect(
+      deleteWorkflowState(state, "doing").workItems[0]
+        ?.workflowStateIdBeforeClose,
+    ).toBeUndefined();
+  });
+
+  it("keeps archived items in their done state when a mapping changes", () => {
+    const state = {
+      ...workflow(),
+      workItems: [
+        {
+          _id: "a",
+          title: "A",
+          status: "archived" as const,
+          source: "azure_devops" as const,
+          sourceConnectionId: "c1",
+          sourceStatusKey: "closed",
+          createdAt: 1,
+          workflowStateId: "done",
+          importedWorkflowStateId: "done",
+        },
+      ],
+    };
+
+    const next = setWorkflowStateMapping(state, {
+      source: "azure_devops",
+      connectionId: "c1",
+      sourceStatusKey: "closed",
+      workflowStateId: "todo",
+    });
+    expect(next.workItems[0]).toMatchObject({
+      workflowStateId: "done",
+      importedWorkflowStateId: "todo",
+    });
+  });
+
   it("moves a state up and down, and stops at the ends", () => {
     const moved = moveWorkflowState(workflow(), "done", -1);
     expect(moved.workflowStates.map((state) => state._id)).toEqual([

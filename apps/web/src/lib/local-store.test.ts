@@ -199,6 +199,29 @@ describe("localStore workflow state sync", () => {
     });
   });
 
+  it("closes open items when their source state is mapped to a done state, with Undo", async () => {
+    const { localStore } = await import("./local-store");
+    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    const doneStateId = localStore
+      .snapshot()
+      .workflowStates.find((workflowState) => workflowState.done)!._id;
+
+    const { closedCount, undoToken } = localStore.setWorkflowStateMapping({
+      source: "azure_devops",
+      connectionId: "ado-1",
+      sourceStatusKey: "active",
+      workflowStateId: doneStateId,
+    });
+
+    expect(closedCount).toBe(1);
+    expect(localStore.snapshot().workItems[0]).toMatchObject({
+      status: "archived",
+      workflowStateId: doneStateId,
+    });
+    localStore.undo(undoToken!);
+    expect(localStore.snapshot().workItems[0]?.status).toBe("active");
+  });
+
   it("stores workflow state colors and lets them be updated", async () => {
     const { localStore } = await import("./local-store");
 

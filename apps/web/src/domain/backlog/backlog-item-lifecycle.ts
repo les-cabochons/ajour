@@ -49,7 +49,8 @@ export function getOpenSubitems(
 
 /**
  * The done state an item closes into: the one its source state maps to, the
- * done state it is already in, or the workflow's first done state.
+ * done state it is already in, or the workflow's first done state. Callers
+ * that honor a mapping to a state that isn't done check that first.
  */
 function getClosingWorkflowStateId(
   state: LocalAppState,
@@ -112,6 +113,61 @@ function saveRunningEntries(
       (current, timer) => saveTimer(current, timer._id, factories),
       state,
     );
+}
+
+/**
+ * Applies the done rules to items whose workflow state changed without a move,
+ * such as a sync or a mapping edit that maps their source state elsewhere: an
+ * open item that lands in a done state closes, with its running entry saved.
+ * Archived items keep their done state: a mapping edit never reopens history.
+ */
+export function applyWorkflowStateLifecycle(
+  previous: LocalAppState,
+  next: LocalAppState,
+  factories: WorkItemFactories,
+): LocalAppState {
+  if (previous === next) return next;
+
+  const previousById = new Map(
+    previous.workItems.map((workItem) => [workItem._id, workItem]),
+  );
+  const closingIds = new Set(
+    next.workItems
+      .filter((workItem) => {
+        const before = previousById.get(workItem._id);
+        return (
+          workItem.status !== "archived" &&
+          before?.workflowStateId !== workItem.workflowStateId &&
+          isDoneWorkflowState(next.workflowStates, workItem.workflowStateId)
+        );
+      })
+      .map((workItem) => workItem._id),
+  );
+  if (closingIds.size === 0) return next;
+
+  const now = factories.now();
+  const saved = saveRunningEntries(next, closingIds, factories);
+  return {
+    ...saved,
+    workItems: saved.workItems.map((workItem) => {
+      if (!closingIds.has(workItem._id)) return workItem;
+      const before = previousById.get(workItem._id);
+      return {
+        ...closeWorkItem(
+          workItem,
+          workItem.workflowStateId,
+          next.workflowStates,
+          now,
+        ),
+        workflowStateIdBeforeClose: isDoneWorkflowState(
+          previous.workflowStates,
+          before?.workflowStateId,
+        )
+          ? undefined
+          : before?.workflowStateId,
+      };
+    }),
+  };
 }
 
 /**

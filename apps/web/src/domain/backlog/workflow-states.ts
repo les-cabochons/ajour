@@ -174,7 +174,9 @@ export function syncImportedWorkflowState(
     workItem.sourceConnectionId,
     workItem.sourceStatusKey,
   );
+  // An archived item stays in its done state when a mapping changes.
   const followsImportedWorkflowState =
+    workItem.status !== "archived" &&
     workItem.workflowStateId === workItem.importedWorkflowStateId;
 
   return {
@@ -346,6 +348,10 @@ export function deleteWorkflowState(
         workItem.workflowStateId === statusId
           ? undefined
           : workItem.workflowStateId,
+      workflowStateIdBeforeClose:
+        workItem.workflowStateIdBeforeClose === statusId
+          ? undefined
+          : workItem.workflowStateIdBeforeClose,
       importedWorkflowStateId:
         workItem.importedWorkflowStateId === statusId
           ? undefined
