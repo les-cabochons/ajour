@@ -257,6 +257,14 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] The foundation passes 710 unit tests, workspace typecheck and three Chromium confirmation scenarios.
 - [ ] Carry the fixes through the stack, verify the final heads and request fresh reviews.
 
+### Running ownership in every backlog action set, 2026-10-12
+
+- [x] Item-page, editor, sidebar and both command-palette paths supply running ownership to the action model. The input is required, so omitted callers fail typechecking.
+- [x] Item-page and sidebar Start controls use the same disabled reason as their menus.
+- [x] Palette regressions cover focused and selected items with their own timer, another item's timer or none. Chromium checks every remaining control while running and after Stop, with timer identity preserved.
+- [x] All 797 unit tests and 71 Chromium scenarios pass, along with workspace typecheck, production build and formatting.
+- [ ] Fresh Codex review of the pushed view-layer head is pending. Merging remains owned by the integration thread.
+
 ### Running-item Start entry in action menus, 2026-10-12
 
 - [x] The shared backlog action rules disable Start entry for the running item in peek and row menus. The peek button uses the same action set.

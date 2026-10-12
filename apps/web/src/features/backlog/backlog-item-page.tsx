@@ -164,12 +164,16 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
   // `?action=`. Only enabled actions of the item run.
   useActionRequest(({ action }) => {
     if (action !== "edit" && action !== "add-subitem") return;
-    const current = localStore
-      .snapshot()
-      .workItems.find((candidate) => candidate._id === itemId);
+    const currentState = localStore.snapshot();
+    const current = currentState.workItems.find(
+      (candidate) => candidate._id === itemId,
+    );
     if (!current) return;
     const isSubitem = isSubtaskWorkItem(current);
     const requested = getBacklogItemActions(current, {
+      isRunning: currentState.timers.some(
+        (timer) => timer.workItemId === current._id,
+      ),
       isSubitem,
       subitemCount: 0,
       otherSourceStateCount: getOtherSourceStates(current).length,
@@ -208,12 +212,14 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
   const isSubitem = isSubtaskWorkItem(item);
   const isSnoozed = isBacklogItemSnoozed(item, now);
   const actions = getBacklogItemActions(item, {
+    isRunning: state.timers.some((timer) => timer.workItemId === item._id),
     isSubitem,
     isSnoozed,
     subitemCount: isSubitem ? 0 : subitems.length,
     settleOpensDialog: settleOpensDialog(item),
     otherSourceStateCount: getOtherSourceStates(item).length,
   });
+  const startAction = actions.find((action) => action.id === "start-entry");
   const parentKey = getWorkItemParentKey(item);
   const parent = parentKey
     ? state.workItems.find((candidate) =>
@@ -293,6 +299,8 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
           size="sm"
           variant="outline"
           onClick={() => runAction("start-entry")}
+          disabled={Boolean(startAction?.disabledReason)}
+          title={startAction?.disabledReason}
         >
           <PlayIcon /> Start entry
         </Button>

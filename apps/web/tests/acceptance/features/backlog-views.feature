@@ -43,6 +43,21 @@ Feature: Backlog list and board views
     When I stop the Backlog running entry from the titlebar
     Then the parent peek can start a new entry after Stop
 
+  Scenario Outline: Show running ownership in every Backlog action set
+    When I peek at the Backlog parent
+    And I start an entry from the Backlog peek
+    Then Start entry is disabled for the running item in the "<control>"
+    And the running entry has not restarted
+    When I stop the Backlog running entry from the titlebar
+    Then Start entry is enabled after Stop in the "<control>"
+
+    Examples:
+      | control         |
+      | item page       |
+      | editor          |
+      | sidebar         |
+      | command palette |
+
   Scenario: Drag a subitem to another state and undo it
     When I choose the Backlog board
     And I drag the subitem to In progress

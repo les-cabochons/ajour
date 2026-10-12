@@ -89,6 +89,9 @@ function useBacklogItemRow(state: LocalAppState, now: number) {
   function actionsFor(workItem: LocalWorkItem) {
     const isSubitem = isSubtaskWorkItem(workItem);
     return getBacklogItemActions(workItem, {
+      isRunning: state.timers.some(
+        (timer) => timer.workItemId === workItem._id,
+      ),
       isSubitem,
       isSnoozed: isBacklogItemSnoozed(workItem, now),
       subitemCount: isSubitem
@@ -147,6 +150,9 @@ function RowActions({
       <TooltipButton
         label="Start entry"
         className={iconButton}
+        disabled={Boolean(
+          actions.find((action) => action.id === "start-entry")?.disabledReason,
+        )}
         onClick={() => rows.run(workItem, "start-entry")}
       >
         <PlayIcon className="size-3.5" />
@@ -406,7 +412,15 @@ function UpNextCard({
           <>
             <button
               type="button"
-              className={cn(button, "border")}
+              className={cn(button, "border disabled:opacity-50")}
+              disabled={Boolean(
+                actions.find((action) => action.id === "start-entry")
+                  ?.disabledReason,
+              )}
+              title={
+                actions.find((action) => action.id === "start-entry")
+                  ?.disabledReason
+              }
               onClick={() => rows.run(workItem, "start-entry")}
             >
               <PlayIcon className="size-3.5" /> Start

@@ -194,6 +194,7 @@ describe("backlog item actions", () => {
     const actions = getBacklogItemActions(manualItem, {
       subitemCount: 0,
       isSubitem: false,
+      isRunning: false,
     });
 
     expect(ids(actions)).toEqual([
@@ -213,6 +214,7 @@ describe("backlog item actions", () => {
     const actions = getBacklogItemActions(syncedItem, {
       subitemCount: 0,
       isSubitem: false,
+      isRunning: false,
     });
 
     expect(ids(actions).slice(-4)).toEqual([
@@ -251,6 +253,7 @@ describe("backlog item actions", () => {
       getBacklogItemActions(syncedItem, {
         subitemCount: 0,
         isSubitem: false,
+        isRunning: false,
         settleOpensDialog,
       }).find((action) => action.id === "settle")?.label;
 
@@ -262,6 +265,7 @@ describe("backlog item actions", () => {
     const actions = getBacklogItemActions(manualItem, {
       subitemCount: 0,
       isSubitem: false,
+      isRunning: false,
       isSnoozed: true,
     });
 
@@ -272,7 +276,7 @@ describe("backlog item actions", () => {
   it("swaps Settle for Unsettle and blocks Snooze on a settled item", () => {
     const actions = getBacklogItemActions(
       { ...syncedItem, status: "settled" },
-      { subitemCount: 0, isSubitem: false },
+      { subitemCount: 0, isSubitem: false, isRunning: false },
     );
 
     expect(ids(actions)).toContain("unsettle");
@@ -293,6 +297,7 @@ describe("backlog item actions", () => {
         getBacklogItemActions(syncedItem, {
           subitemCount: 0,
           isSubitem: false,
+          isRunning: false,
         }),
       ),
     ).toContain("open-in-source");
@@ -301,6 +306,7 @@ describe("backlog item actions", () => {
         getBacklogItemActions(opaqueSourceItem, {
           subitemCount: 0,
           isSubitem: false,
+          isRunning: false,
         }),
       ),
     ).not.toContain("open-in-source");
@@ -308,9 +314,11 @@ describe("backlog item actions", () => {
 
   it("states the subitem count in the Delete label", () => {
     const deleteLabel = (subitemCount: number) =>
-      getBacklogItemActions(manualItem, { subitemCount, isSubitem: false }).at(
-        -1,
-      )?.label;
+      getBacklogItemActions(manualItem, {
+        subitemCount,
+        isSubitem: false,
+        isRunning: false,
+      }).at(-1)?.label;
 
     expect(deleteLabel(0)).toBe("Delete");
     expect(deleteLabel(1)).toBe("Delete (and 1 subitem)");
@@ -321,6 +329,7 @@ describe("backlog item actions", () => {
     const actions = getBacklogItemActions(manualItem, {
       subitemCount: 0,
       isSubitem: true,
+      isRunning: false,
     });
 
     expect(disabledReasons(actions)).toEqual({
@@ -331,7 +340,7 @@ describe("backlog item actions", () => {
   it("puts Restore in the Settle slot and blocks the work actions on an archived item", () => {
     const actions = getBacklogItemActions(
       { ...syncedItem, status: "archived" },
-      { subitemCount: 2, isSubitem: false },
+      { subitemCount: 2, isSubitem: false, isRunning: false },
     );
 
     expect(ids(actions)).toEqual([
@@ -362,6 +371,7 @@ describe("backlog item actions", () => {
     const actions = getBacklogItemActions(manualItem, {
       subitemCount: 0,
       isSubitem: false,
+      isRunning: false,
       isEditing: true,
     });
 

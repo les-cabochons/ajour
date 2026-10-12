@@ -383,11 +383,13 @@ function backlogItemSection(
   prefix: string,
   workItem: LocalWorkItem,
   workItems: readonly LocalWorkItem[],
+  runningWorkItemId: string | undefined,
   settleOpensDialog: PaletteInput["settleOpensDialog"],
   keysPlatform?: ShortcutPlatform,
 ): PaletteSection {
   const isSubitem = isSubtaskWorkItem(workItem);
   const actions = getBacklogItemActions(workItem, {
+    isRunning: runningWorkItemId === workItem._id,
     isSubitem,
     isSnoozed: isBacklogItemSnoozed(workItem, Date.now()),
     subitemCount: isSubitem
@@ -517,6 +519,7 @@ function focusedSection(input: PaletteInput): PaletteSection | null {
         prefix,
         workItem,
         input.workItems,
+        input.timer?.workItemId,
         input.settleOpensDialog,
         platform,
       );
@@ -740,6 +743,7 @@ export function buildPaletteSections(input: PaletteInput): PaletteSection[] {
                 "backlog-item",
                 workItem,
                 input.workItems,
+                input.timer?.workItemId,
                 input.settleOpensDialog,
               )
             : null,

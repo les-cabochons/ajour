@@ -1,4 +1,4 @@
-import { expect } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 const { Given, When, Then } = createBdd();
 Given("I have a backlog view fixture", async ({ page }) => {
@@ -283,6 +283,113 @@ Then("the parent peek can start a new entry after Stop", async ({ page }) => {
   expect(snapshot.state.timers).toHaveLength(1);
   expect(snapshot.state.timers[0].workItemId).toBe("parent");
   expect(snapshot.state.timers[0]._id).not.toBe(snapshot.baseline._id);
+});
+async function inspectBacklogStart(
+  page: Page,
+  control: string,
+  running: boolean,
+) {
+  let action: Locator;
+  if (control === "command palette") {
+    const isMac = await page.evaluate(() =>
+      /Mac|iPhone|iPad/.test(navigator.userAgent),
+    );
+    await page.keyboard.press(isMac ? "Meta+k" : "Control+k");
+    const palette = page.getByRole("dialog", { name: "Command palette" });
+    await palette
+      .getByRole("combobox", { name: "Search commands" })
+      .fill("Backlog parent");
+    await palette
+      .getByRole("option")
+      .filter({ hasText: "Backlog parent" })
+      .first()
+      .click();
+    action = palette.getByRole("option", { name: /^Start entry/ });
+  } else {
+    if (control === "item page") {
+      if (!new URL(page.url()).pathname.endsWith("/backlog/parent")) {
+        await page
+          .getByRole("complementary", { name: "Backlog item peek" })
+          .getByRole("button", { name: "Open page", exact: true })
+          .click();
+      }
+      const start = page
+        .getByRole("main")
+        .getByRole("button", { name: "Start entry", exact: true });
+      if (running) await expect(start).toBeDisabled();
+      else await expect(start).toBeEnabled();
+      await page
+        .getByRole("main")
+        .getByRole("button", {
+          name: "Actions for Backlog parent",
+          exact: true,
+        })
+        .click();
+    } else if (control === "editor") {
+      const editor = page.getByRole("complementary", {
+        name: "Backlog item editor",
+      });
+      if ((await editor.count()) === 0) {
+        await page
+          .getByRole("complementary", { name: "Backlog item peek" })
+          .getByRole("button", { name: "Edit", exact: true })
+          .click();
+      }
+      await editor
+        .getByRole("button", {
+          name: "Actions for Backlog parent",
+          exact: true,
+        })
+        .click();
+    } else if (control === "sidebar") {
+      const row = page
+        .getByRole("navigation", { name: "Primary navigation" })
+        .locator('[data-backlog-item-id="parent"]');
+      const start = row.getByRole("button", { name: "Start", exact: true });
+      if (running) await expect(start).toBeDisabled();
+      else await expect(start).toBeEnabled();
+      await row.click({ button: "right" });
+    } else {
+      throw new Error(`Unknown Backlog control: ${control}`);
+    }
+    action = page.getByRole("menuitem", { name: /^Start entry/ });
+  }
+  if (running) {
+    await expect(action).toBeDisabled();
+    await expect(action).toContainText("Already running");
+  } else {
+    await expect(action).toBeEnabled();
+  }
+  await page.keyboard.press("Escape");
+  if (control === "command palette") {
+    await expect(
+      page.getByRole("dialog", { name: "Command palette" }),
+    ).toHaveCount(0);
+  } else {
+    await expect(page.getByRole("menu")).toHaveCount(0);
+  }
+}
+Then(
+  "Start entry is disabled for the running item in the {string}",
+  async ({ page }, control: string) => {
+    await inspectBacklogStart(page, control, true);
+  },
+);
+Then(
+  "Start entry is enabled after Stop in the {string}",
+  async ({ page }, control: string) => {
+    await inspectBacklogStart(page, control, false);
+  },
+);
+Then("the running entry has not restarted", async ({ page }) => {
+  const snapshot = await page.evaluate(() => ({
+    state: JSON.parse(localStorage.getItem("ajour.local-state.v2")!),
+    baseline: JSON.parse(sessionStorage.getItem("peek-running-entry")!),
+  }));
+  expect(snapshot.state.timers).toEqual([
+    expect.objectContaining({ ...snapshot.baseline, workItemId: "parent" }),
+  ]);
+  expect(snapshot.state.timesheetEntries).toEqual([]);
 });
 Then("the peek shows the parent and its subitem", async ({ page }) => {
   const peek = page.getByRole("complementary", { name: "Backlog item peek" });

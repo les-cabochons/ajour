@@ -185,7 +185,7 @@ export interface BacklogItemActionOptions {
   subitemCount: number;
   isSubitem: boolean;
   /** Whether this item owns the running entry. */
-  isRunning?: boolean;
+  isRunning: boolean;
   /** Whether a snooze hides the item right now. */
   isSnoozed?: boolean;
   /** Set inside an editor, where Edit is the current mode. */
