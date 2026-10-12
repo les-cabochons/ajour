@@ -99,6 +99,41 @@ describe("localStore workflow state sync", () => {
     }
   });
 
+  it("rechecks Done lifecycle after a failed Settle write restores the same workflow", async () => {
+    const { localStore } = await import("./local-store");
+    const doing = localStore.addWorkflowState("Doing", "#d97706");
+    for (const sourceStatusKey of ["active", "waiting"]) {
+      localStore.setWorkflowStateMapping({
+        source: "azure_devops",
+        connectionId: "ado-1",
+        sourceStatusKey,
+        workflowStateId: doing,
+      });
+    }
+    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    const id = localStore.snapshot().workItems[0]!._id;
+    localStore.settleWorkItem(id, { state: { name: "Waiting", done: false } });
+    localStore.updateWorkflowState(doing, { name: "Doing", done: true });
+    expect(localStore.snapshot().workItems[0]?.status).toBe("archived");
+    localStore.failSourceWrite(id);
+    expect(localStore.snapshot().workItems[0]).toMatchObject({
+      status: "archived",
+      workflowStateId: doing,
+      sourceStatusLabel: "Active",
+    });
+    expect(
+      localStore.snapshot().workItems[0]?.pendingSourceWrite,
+    ).toBeUndefined();
+    vi.resetModules();
+    const reloaded = (await import("./local-store")).localStore;
+    expect(reloaded.snapshot().workItems[0]).toMatchObject({
+      status: "archived",
+      workflowStateId: doing,
+    });
+    reloaded.restoreWorkItem(id);
+    expect(reloaded.snapshot().workItems[0]?.workflowStateId).toBeUndefined();
+  });
+
   it("defaults update checks to the stable release track", async () => {
     const { localStore } = await import("./local-store");
 

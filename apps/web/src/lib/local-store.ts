@@ -1298,7 +1298,16 @@ export const localStore = {
   },
   /** The settle's write failed: the item goes back to active. */
   failSourceWrite(workItemId: string) {
-    updateState((state) => applyFailSourceWrite(state, workItemId));
+    updateState((state) =>
+      applyWorkflowStateLifecycle(
+        state,
+        applyFailSourceWrite(state, workItemId),
+        {
+          createId,
+          now: Date.now,
+        },
+      ),
+    );
   },
   /** Applies a fixed change when items of the rule's source project settle. */
   applySettleRule(rule: LocalSettleRule) {
