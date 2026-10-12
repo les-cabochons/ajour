@@ -173,6 +173,14 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Seven new regressions cover sync during reopen, carried children, all three automatic mapping paths, local workflow overrides and incomplete priority scales. The foundation passes 690 unit tests.
 - [ ] Complete Codex re-review after updating the view layer.
 
+## Source-write acknowledgement follow-up, 2026-10-12
+
+- [x] An older successful source request advances the recovery snapshot of its replacement, including workflow state, lifecycle, priority and carried children. The replacement retains its values and deadline.
+- [x] Source acknowledgements update both snapshots of the replacement's Undo. Independent edits still block Undo.
+- [x] Settle rejects unsupported priority clears. No priority remains available when it already matches the source's mapped level.
+- [x] Eight new regressions cover recovery of open and done states, carried children, priority-only writes, replacement Undo, independent edits and No priority validation. The foundation passes 720 unit tests and workspace typecheck.
+- [ ] Complete verification and Codex review of the updated stack.
+
 ## Standard Task Flow
 
 - [ ] Understand the requested outcome.

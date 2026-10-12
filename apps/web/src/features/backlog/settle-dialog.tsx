@@ -214,6 +214,8 @@ export function SettleDialogHost() {
   const priorityRanges = workItem
     ? getWorkItemPriorityRanges(state, workItem)
     : {};
+  const sourceHasPriority =
+    getPriorityLevel(workItem?.importedPriority, priorityRanges) !== undefined;
   const change = workItem
     ? buildSettleChange(states, stateName, priority, {
         importedPriority: workItem.importedPriority,
@@ -301,7 +303,9 @@ export function SettleDialogHost() {
                 value={priority}
                 onChange={(event) => setPriority(event.target.value)}
               >
-                <option value="">{NO_PRIORITY_NAME}</option>
+                <option value="" disabled={sourceHasPriority}>
+                  {NO_PRIORITY_NAME}
+                </option>
                 {PRIORITY_LEVELS.map(({ level, name }) => (
                   <option
                     key={level}
@@ -316,7 +320,9 @@ export function SettleDialogHost() {
               </NativeSelect>
               {change === null ? (
                 <FieldError>
-                  This priority has no source range. Choose another priority.
+                  {priority === "" && sourceHasPriority
+                    ? "This connector cannot clear its source priority. Choose a priority."
+                    : "This priority has no source range. Choose another priority."}
                 </FieldError>
               ) : null}
             </FieldContent>

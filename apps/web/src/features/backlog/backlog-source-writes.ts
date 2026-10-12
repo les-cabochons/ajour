@@ -37,22 +37,26 @@ export const settleOpensDialog = canWriteToSource;
  * `workItemIds` limits this to the action's items. At launch, it sends every
  * write left from a session that quit during its Undo window.
  *
- * A failed write puts the item back to active and shows an error toast that
- * stays until dismissed.
+ * A failed write restores the item's previous source values and lifecycle,
+ * and shows an error toast that stays until dismissed.
  */
 export async function sendPendingSourceWrites(workItemIds?: readonly string[]) {
-  const pending = localStore
-    .snapshot()
-    .workItems.filter(
-      (workItem) =>
-        workItem.pendingSourceWrite &&
-        !sending.has(workItem._id) &&
-        (!workItemIds || workItemIds.includes(workItem._id)),
-    );
-  await Promise.all(pending.map(sendSourceWrite));
+  const snapshot = localStore.snapshot();
+  const pending = snapshot.workItems.filter(
+    (workItem) =>
+      workItem.pendingSourceWrite &&
+      !sending.has(workItem._id) &&
+      (!workItemIds || workItemIds.includes(workItem._id)),
+  );
+  await Promise.all(
+    pending.map((item) => sendSourceWrite(item, snapshot.workItems)),
+  );
 }
 
-async function sendSourceWrite(workItem: LocalWorkItem) {
+async function sendSourceWrite(
+  workItem: LocalWorkItem,
+  sentItems: readonly LocalWorkItem[],
+) {
   const write = workItem.pendingSourceWrite;
   if (!write) return;
 
@@ -80,13 +84,13 @@ async function sendSourceWrite(workItem: LocalWorkItem) {
       state: write.state,
       priority: write.priority,
     });
-    if (stillCurrent()) localStore.completeSourceWrite(workItem._id);
+    localStore.completeSourceWrite(workItem._id, sentItems);
   } catch (error) {
     if (!stillCurrent()) return;
     localStore.failSourceWrite(workItem._id);
     showErrorToast({
       title: `Couldn't update "${workItem.title}" in its source`,
-      description: `${error instanceof Error ? error.message : "Unknown error"} The item is back in your list.`,
+      description: `${error instanceof Error ? error.message : "Unknown error"} The item returned to its previous state.`,
     });
   } finally {
     sending.delete(workItem._id);

@@ -266,6 +266,148 @@ describe("localStore workflow state sync", () => {
     ).toBeUndefined();
   });
 
+  it.each(["failure", "undo", "independent edit"])(
+    "advances an in-flight close's recovery snapshot before replacement %s",
+    async (outcome) => {
+      const { localStore } = await import("./local-store");
+      const openId = localStore
+        .snapshot()
+        .workflowStates.find((state) => !state.done)!._id;
+      const doneId = localStore
+        .snapshot()
+        .workflowStates.find((state) => state.done)!._id;
+      for (const [sourceStatusKey, workflowStateId] of [
+        ["active", openId],
+        ["closed", doneId],
+      ] as const)
+        localStore.setWorkflowStateMapping({
+          source: "azure_devops",
+          connectionId: "ado-1",
+          sourceStatusKey,
+          workflowStateId,
+        });
+      localStore.importConnectorWorkItems([buildImportCandidate()]);
+      const parentId = localStore.snapshot().workItems[0]!._id;
+      const childId = localStore.addSubtask(parentId, {
+        title: "Manual child",
+      });
+      localStore.moveWorkItemToState(parentId, doneId, {
+        includeSubitems: true,
+        sourceWrites: { [parentId]: "Closed" },
+      });
+      const sentItems = localStore.snapshot().workItems;
+      const closed = sentItems.find((item) => item._id === parentId)!;
+      const closedChild = sentItems.find((item) => item._id === childId)!;
+      const token = localStore.moveWorkItemToState(parentId, openId, {
+        sourceWrites: { [parentId]: "Active" },
+      });
+      if (outcome === "independent edit")
+        localStore.updateWorkItem(parentId, { note: "Keep my later edit" });
+      if (outcome === "failure")
+        localStore.updateWorkItem(childId, {
+          note: "Keep the child's later edit",
+        });
+      const readyAt = localStore
+        .snapshot()
+        .workItems.find((item) => item._id === parentId)
+        ?.pendingSourceWrite?.readyAt;
+      localStore.completeSourceWrite(parentId, sentItems);
+      const replacement = localStore
+        .snapshot()
+        .workItems.find((item) => item._id === parentId)!;
+      expect(replacement).toMatchObject({
+        status: "active",
+        workflowStateId: openId,
+        sourceStatusLabel: "Active",
+      });
+      expect(replacement.pendingSourceWrite).toMatchObject({
+        state: "Active",
+        readyAt,
+        previous: {
+          sourceStatusLabel: "Closed",
+          workflowStateId: doneId,
+          lifecycle: { status: "archived" },
+        },
+      });
+      if (outcome === "independent edit") {
+        expect(localStore.undo(token!)).toBe("stale");
+        expect(
+          localStore.snapshot().workItems.find((item) => item._id === parentId)
+            ?.note,
+        ).toBe("Keep my later edit");
+        return;
+      }
+      if (outcome === "undo") expect(localStore.undo(token!)).toBe("restored");
+      else localStore.failSourceWrite(parentId);
+      expect(
+        localStore.snapshot().workItems.find((item) => item._id === parentId),
+      ).toEqual({ ...closed, pendingSourceWrite: undefined });
+      const child = localStore
+        .snapshot()
+        .workItems.find((item) => item._id === childId)!;
+      expect(child).toEqual(
+        outcome === "undo"
+          ? closedChild
+          : { ...closedChild, note: "Keep the child's later edit" },
+      );
+    },
+  );
+
+  it("recovers the last successful priority write when its replacement fails", async () => {
+    const { localStore } = await import("./local-store");
+    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    const id = localStore.snapshot().workItems[0]!._id;
+    localStore.settleWorkItem(id, { priority: 1 });
+    const sentItems = localStore.snapshot().workItems;
+    localStore.unsettleWorkItem(id);
+    localStore.settleWorkItem(id, { priority: 4 });
+    localStore.completeSourceWrite(id, sentItems);
+    expect(
+      localStore.snapshot().workItems[0]?.pendingSourceWrite?.priority,
+    ).toBe(4);
+    localStore.failSourceWrite(id);
+    expect(localStore.snapshot().workItems[0]).toMatchObject({
+      status: "settled",
+      importedPriority: 1,
+      priority: 1,
+      pendingSourceWrite: undefined,
+    });
+  });
+
+  it("recovers the last successful open workflow state after a replacement fails", async () => {
+    const { localStore } = await import("./local-store");
+    const workingId = localStore.addWorkflowState("Working");
+    const reviewId = localStore.addWorkflowState("Reviewing");
+    for (const [label, workflowStateId] of [
+      ["Working", workingId],
+      ["Reviewing", reviewId],
+    ] as const)
+      localStore.setWorkflowStateMapping({
+        source: "azure_devops",
+        connectionId: "ado-1",
+        sourceStatusKey: label,
+        workflowStateId,
+      });
+    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    const id = localStore.snapshot().workItems[0]!._id;
+    localStore.moveWorkItemToState(id, workingId, {
+      sourceWrites: { [id]: "Working" },
+    });
+    const sentItems = localStore.snapshot().workItems;
+    localStore.moveWorkItemToState(id, reviewId, {
+      sourceWrites: { [id]: "Reviewing" },
+    });
+    localStore.completeSourceWrite(id, sentItems);
+    localStore.failSourceWrite(id);
+    expect(localStore.snapshot().workItems[0]).toMatchObject({
+      status: "active",
+      workflowStateId: workingId,
+      importedWorkflowStateId: workingId,
+      sourceStatusLabel: "Working",
+      pendingSourceWrite: undefined,
+    });
+  });
+
   it.each(["settings", "import", "done items"])(
     "closes existing items and saves their timer when %s automatically maps to Done",
     async (path) => {

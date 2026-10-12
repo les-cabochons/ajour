@@ -12,4 +12,4 @@ Settling a synced backlog item can change its state and priority in Azure DevOps
 
 - The contract change spans three repositories: this one, `ajc-azure-devops` (first) and `ajc-jira`.
 - A pending write can outlive the session. Ajour must persist it and flush it at startup.
-- A write can fail after the item has left the sidebar. The item then returns to active and an error toast that stays until dismissed explains why.
+- A failed write restores the last confirmed source values and their local lifecycle. A first failed settle returns the item to active. If an earlier in-flight write succeeds before its replacement fails, recovery uses that successful snapshot. An error toast stays until dismissed and explains the failure.

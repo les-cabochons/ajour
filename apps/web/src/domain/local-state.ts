@@ -374,6 +374,7 @@ export interface LocalPendingSourceWrite {
       | "settledImportedPriority"
       | "workflowStateIdBeforeClose"
       | "settledWithParentId"
+      | "returnedAt"
     >;
   };
 }

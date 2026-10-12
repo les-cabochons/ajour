@@ -1,4 +1,5 @@
 import { applyLoggedTimeToWorkItems } from "@/domain/backlog/work-item-estimates";
+import { completeSourceWrite } from "@/domain/backlog/backlog-item-lifecycle";
 import type {
   LocalAppState,
   LocalTimesheetEntry,
@@ -65,6 +66,41 @@ export type LocalStateUndo = {
  * leave two running timers. The state is then left as it is.
  */
 export type LocalStateUndoResult = "restored" | "stale";
+
+/** Updates a replacement action's snapshots without hiding independent edits. */
+export function completeSourceWriteInUndo(
+  undo: LocalStateUndo,
+  current: LocalAppState,
+  workItemId: string,
+  sentItems: readonly LocalWorkItem[],
+): LocalStateUndo {
+  const acknowledge = (record: LocalWorkItem | undefined) => {
+    if (!record) return record;
+    return completeSourceWrite(
+      {
+        ...current,
+        workItems: [
+          record,
+          ...current.workItems.filter((item) => item._id !== record._id),
+        ],
+      },
+      workItemId,
+      sentItems,
+    ).workItems.find((item) => item._id === record._id);
+  };
+  return {
+    ...undo,
+    workItems: undo.workItems.map((change) =>
+      change.key === workItemId && change.before?.pendingSourceWrite
+        ? {
+            ...change,
+            before: acknowledge(change.before),
+            after: acknowledge(change.after),
+          }
+        : change,
+    ),
+  };
+}
 
 /**
  * Compares two records field by field. A missing field equals `undefined`, so a

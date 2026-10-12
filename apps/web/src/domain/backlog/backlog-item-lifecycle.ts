@@ -361,20 +361,28 @@ export function moveBacklogItemToState(
               workflowStateIdBeforeClose: before.workflowStateIdBeforeClose,
               settledWithParentId: before.settledWithParentId,
             },
-            carriedChildren: (
-              before.pendingSourceWrite?.previous.carriedChildren ??
-              state.workItems
-                .filter((child) => child.settledWithParentId === workItem._id)
-                .map((child) => ({
-                  id: child._id,
-                  before: moveSnapshot(child),
-                  after: moveSnapshot(child),
-                }))
-            ).flatMap((child) => {
+            carriedChildren: state.workItems.flatMap((child) => {
               const item = moved.workItems.find(
-                (item) => item._id === child.id,
+                (item) => item._id === child._id,
               );
-              return item ? [{ ...child, after: moveSnapshot(item) }] : [];
+              const previous =
+                before.pendingSourceWrite?.previous.carriedChildren?.find(
+                  (record) => record.id === child._id,
+                );
+              if (
+                !item ||
+                (!previous &&
+                  child.settledWithParentId !== workItem._id &&
+                  item.settledWithParentId !== workItem._id)
+              )
+                return [];
+              return [
+                {
+                  id: child._id,
+                  before: previous?.before ?? moveSnapshot(child),
+                  after: moveSnapshot(item),
+                },
+              ];
             }),
           },
         },
@@ -656,16 +664,65 @@ function withSourceWrite(
   };
 }
 
-/** The write was sent. The item keeps the values the settle gave it. */
+/**
+ * Acknowledges the sent snapshot. A newer pending write keeps its displayed
+ * values and deadline, but recovers to this successful snapshot if it fails.
+ */
 export function completeSourceWrite(
   state: LocalAppState,
   workItemId: string,
+  sentItems?: readonly LocalWorkItem[],
 ): LocalAppState {
   const target = state.workItems.find(
     (workItem) => workItem._id === workItemId,
   );
-  if (!target?.pendingSourceWrite) {
+  const currentWrite = target?.pendingSourceWrite;
+  if (!target || !currentWrite) {
     return state;
+  }
+
+  const sent = sentItems
+    ? sentItems.find((item) => item._id === workItemId)
+    : target;
+  if (!sent?.pendingSourceWrite) return state;
+  if (
+    JSON.stringify(sent.pendingSourceWrite) !== JSON.stringify(currentWrite)
+  ) {
+    const { workflowStateId, ...lifecycle } = moveSnapshot(sent);
+    const carriedIds = new Set([
+      ...(sent.pendingSourceWrite.previous.carriedChildren ?? []).map(
+        (child) => child.id,
+      ),
+      ...(currentWrite.previous.carriedChildren ?? []).map((child) => child.id),
+      ...(sentItems ?? [])
+        .filter((child) => child.settledWithParentId === workItemId)
+        .map((child) => child._id),
+    ]);
+    return updateOne(state, workItemId, (item) => ({
+      ...item,
+      pendingSourceWrite: {
+        ...currentWrite,
+        previous: {
+          sourceStatusKey: sent.sourceStatusKey,
+          sourceStatusLabel: sent.sourceStatusLabel,
+          importedPriority: sent.importedPriority,
+          priority: sent.priority,
+          workflowStateId,
+          importedWorkflowStateId: sent.importedWorkflowStateId,
+          lifecycle,
+          carriedChildren: [...carriedIds].flatMap((id) => {
+            const before = sentItems?.find((child) => child._id === id);
+            const current = state.workItems.find((child) => child._id === id);
+            if (!before || !current) return [];
+            const after =
+              currentWrite.previous.carriedChildren?.find(
+                (child) => child.id === id,
+              )?.after ?? moveSnapshot(current);
+            return [{ id, before: moveSnapshot(before), after }];
+          }),
+        },
+      },
+    }));
   }
 
   return updateOne(state, workItemId, (workItem) => ({
@@ -675,8 +732,8 @@ export function completeSourceWrite(
 }
 
 /**
- * The write failed. The item takes back its source values and returns to
- * active, with the subitems its settle carried, from settled or archived.
+ * The write failed. Restore its source values and saved lifecycle, along with
+ * unchanged children carried by the move.
  */
 export function failSourceWrite(
   state: LocalAppState,

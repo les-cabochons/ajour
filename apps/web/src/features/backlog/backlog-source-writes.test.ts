@@ -57,9 +57,11 @@ it("defers a replacement move until its own Undo deadline and honors Undo", asyn
   await vi.advanceTimersByTimeAsync(4000);
   expect(mocks.write).not.toHaveBeenCalled();
 });
-it("does not complete a newer pending write when an older request finishes", async () => {
+it("reports the successful old snapshot before sending its replacement", async () => {
   const { sendPendingSourceWrites } = await import("./backlog-source-writes");
   item.pendingSourceWrite!.readyAt = 1000;
+  const sentItems = [item];
+  mocks.complete.mockImplementation(() => {});
   let finish!: () => void;
   mocks.write.mockImplementationOnce(
     () =>
@@ -74,7 +76,8 @@ it("does not complete a newer pending write when an older request finishes", asy
   };
   finish();
   await sending;
-  expect(mocks.complete).not.toHaveBeenCalled();
+  expect(mocks.complete).toHaveBeenCalledWith("a", sentItems);
+  expect(item.pendingSourceWrite?.state).toBe("Done");
   await vi.advanceTimersByTimeAsync(8000);
   expect(mocks.write).toHaveBeenCalledTimes(2);
 });

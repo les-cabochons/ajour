@@ -84,6 +84,7 @@ import {
 } from "@/domain/time/timesheet-entry";
 import {
   captureUndo,
+  completeSourceWriteInUndo,
   restoreUndo,
   type LocalStateUndo,
   type LocalStateUndoResult,
@@ -1427,8 +1428,22 @@ export const localStore = {
     );
   },
   /** The settle's write reached the source. */
-  completeSourceWrite(workItemId: string) {
-    updateState((state) => applyCompleteSourceWrite(state, workItemId));
+  completeSourceWrite(
+    workItemId: string,
+    sentItems?: readonly LocalWorkItem[],
+  ) {
+    updateState((state) => {
+      const next = applyCompleteSourceWrite(state, workItemId, sentItems);
+      if (sentItems && lastUndo) {
+        lastUndo.undo = completeSourceWriteInUndo(
+          lastUndo.undo,
+          state,
+          workItemId,
+          sentItems,
+        );
+      }
+      return next;
+    });
   },
   /** The settle's write failed: the item goes back to active. */
   failSourceWrite(workItemId: string) {
