@@ -233,7 +233,8 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 - [x] Released source writes apply lifecycle reconciliation even when their workflow mapping IDs stay unchanged.
 - [x] Four persisted-store regressions reproduce failed-write and Undo recovery into a state flagged Done during a pending move, with and without carried subitems. Recovery closes the items, saves the running entry once and survives reload.
-- [ ] Verify the rebased stack and request fresh reviews of the pushed heads.
+- [x] The rebased stack passes 828 unit tests, workspace typecheck, production builds and three focused Chromium scenarios covering failed drag recovery, parent close and Done settings.
+- [ ] Fresh Codex reviews of the pushed mapping and view heads are pending. Merging remains owned by the integration thread.
 
 ### Deferred mappings after failed writes, 2026-10-12
 
