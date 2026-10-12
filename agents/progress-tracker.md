@@ -255,6 +255,14 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Settling updates the imported workflow baseline and restores the prior workflow when a source write fails. Carried children follow the parent's settle or close.
 - [x] The foundation passes 687 unit tests and workspace typechecking. Full stack verification follows in the view-layer PR.
 
+### Project write options and persisted recovery, 2026-10-12
+
+- [x] Move writes and Change source state choices use the connector's states for the actual item. Settings write rules offer only states seen or loaded in that source project.
+- [x] Legacy pending recovery priorities migrate with the item's connection scale. Later manifest range seeding reconciles recovery values that follow their source and preserves local overrides.
+- [x] Failed moves restore snooze and Returned markers on the parent and carried children, while retaining independently changed child lifecycles.
+- [x] The foundation passes 731 unit tests and workspace typechecking. A browser fixture confirms Mercury offers only In QA and Venus only Resolved in their write-rule menus.
+- [ ] Verify the updated view stack before requesting a fresh review.
+
 - Use `just` rather than invoking package scripts directly.
 - Preserve local-first behavior unless the user explicitly asks to change it.
 - Treat connector writes and imports as side-effect-sensitive.

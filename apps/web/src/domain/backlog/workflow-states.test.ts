@@ -10,6 +10,7 @@ import {
   addWorkflowState,
   deleteWorkflowState,
   findMappedWorkflowStateId,
+  getSourceStatesMappedTo,
   moveWorkflowState,
   normalizeWorkflowStates,
   planWorkflowStateWrite,
@@ -517,15 +518,24 @@ describe("source state mappings per source project", () => {
       ],
     });
 
-    expect(planWorkflowStateWrite(state, item, "review")).toEqual({
+    expect(
+      planWorkflowStateWrite(state, item, "review", ["Resolved", "In qa"]),
+    ).toEqual({
       kind: "write",
       sourceStatusLabel: "Resolved",
     });
-    expect(planWorkflowStateWrite(state, item, "todo")).toEqual({
+    expect(
+      planWorkflowStateWrite(state, item, "todo", ["Resolved", "In qa"]),
+    ).toEqual({
       kind: "none",
     });
     expect(
-      planWorkflowStateWrite(state, { ...item, source: "manual" }, "review"),
+      planWorkflowStateWrite(
+        state,
+        { ...item, source: "manual" },
+        "review",
+        [],
+      ),
     ).toEqual({ kind: "none" });
 
     const asks = setWorkflowStateWriteRule(state, {
@@ -534,7 +544,9 @@ describe("source state mappings per source project", () => {
       workflowStateId: "review",
       write: { kind: "ask" },
     });
-    expect(planWorkflowStateWrite(asks, item, "review")).toEqual({
+    expect(
+      planWorkflowStateWrite(asks, item, "review", ["Resolved", "In qa"]),
+    ).toEqual({
       kind: "ask",
       sourceStatusLabels: ["Resolved", "In qa"],
     });
@@ -546,7 +558,9 @@ describe("source state mappings per source project", () => {
       workflowStateId: "review",
       write: { kind: "none" },
     });
-    expect(planWorkflowStateWrite(silent, item, "review")).toEqual({
+    expect(
+      planWorkflowStateWrite(silent, item, "review", ["Resolved", "In qa"]),
+    ).toEqual({
       kind: "none",
     });
     expect(
@@ -554,8 +568,58 @@ describe("source state mappings per source project", () => {
         silent,
         { ...item, sourceProjectName: "Venus" },
         "review",
+        ["Resolved", "In qa"],
       ).kind,
     ).toBe("ask");
+  });
+
+  it("restricts default, Ask and explicit writes to the item's available states", () => {
+    const state = createState({
+      workflowStateMappings: [
+        mapping("resolved", "review"),
+        mapping("in qa", "review"),
+        mapping("approved", "review", "Venus"),
+      ],
+    });
+    const available = ["In QA"];
+    expect(planWorkflowStateWrite(state, item, "review", available)).toEqual({
+      kind: "write",
+      sourceStatusLabel: "In qa",
+    });
+    const asks = setWorkflowStateWriteRule(state, {
+      source: "azure_devops",
+      connectionId: "c1",
+      workflowStateId: "review",
+      write: { kind: "ask" },
+    });
+    expect(planWorkflowStateWrite(asks, item, "review", available)).toEqual({
+      kind: "write",
+      sourceStatusLabel: "In qa",
+    });
+    expect(planWorkflowStateWrite(asks, item, "review", [])).toEqual({
+      kind: "none",
+    });
+    const explicit = setWorkflowStateWriteRule(state, {
+      source: "azure_devops",
+      connectionId: "c1",
+      workflowStateId: "review",
+      write: { kind: "state", sourceStatusLabel: "Resolved" },
+    });
+    expect(planWorkflowStateWrite(explicit, item, "review", available)).toEqual(
+      { kind: "none" },
+    );
+    expect(
+      getSourceStatesMappedTo(
+        state.workflowStateMappings,
+        {
+          source: item.source,
+          connectionId: item.sourceConnectionId,
+          sourceProjectName: item.sourceProjectName,
+        },
+        "review",
+        available,
+      ),
+    ).toEqual([{ key: "in qa", label: "In qa" }]);
   });
 });
 
@@ -653,7 +717,9 @@ it("does not write a source state remapped away from the destination", () => {
     workflowStateId: "doing",
   });
   expect(remapped.workflowStateWriteRules).toEqual([]);
-  expect(planWorkflowStateWrite(remapped, item, "review")).toEqual({
+  expect(
+    planWorkflowStateWrite(remapped, item, "review", ["Resolved"]),
+  ).toEqual({
     kind: "none",
   });
   const projectOverride = setWorkflowStateMapping(state, {
@@ -669,6 +735,7 @@ it("does not write a source state remapped away from the destination", () => {
       projectOverride,
       { ...item, sourceProjectName: "Mercury" },
       "review",
+      ["Resolved"],
     ),
   ).toEqual({ kind: "none" });
 });

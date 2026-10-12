@@ -1102,6 +1102,70 @@ describe("writing a move to the source", () => {
     });
   });
 
+  it.each([
+    { snoozedUntil: 9000, returnedAt: undefined },
+    { snoozedUntil: undefined, returnedAt: 500 },
+  ])(
+    "restores parent and carried-child visibility markers $snoozedUntil/$returnedAt after a failed close",
+    (markers) => {
+      const before = state();
+      before.workItems[0] = { ...before.workItems[0]!, ...markers };
+      before.workItems.push(
+        item("child", {
+          parentWorkItemId: "a",
+          workflowStateId: "doing",
+          ...markers,
+        }),
+      );
+      const closed = moveBacklogItemToState(before, "a", "done", factories, {
+        includeSubitems: true,
+        sourceWrites: { a: "Closed" },
+      });
+      for (const id of ["a", "child"]) {
+        expect(find(closed, id)).toMatchObject({
+          status: "archived",
+          snoozedUntil: undefined,
+          returnedAt: undefined,
+        });
+      }
+      const restored = failSourceWrite(closed, "a");
+      for (const id of ["a", "child"]) {
+        expect(find(restored, id)).toMatchObject({
+          status: "active",
+          workflowStateId: "doing",
+          ...markers,
+        });
+      }
+      expect(isBacklogItemSnoozed(find(restored, "a")!, 1000)).toBe(
+        markers.snoozedUntil !== undefined,
+      );
+      expect(isBacklogItemReturned(find(restored, "child")!, 1000)).toBe(
+        markers.returnedAt !== undefined,
+      );
+    },
+  );
+
+  it("preserves a carried child's independent snooze during failed-close recovery", () => {
+    const before = state();
+    before.workItems.push(
+      item("child", { parentWorkItemId: "a", workflowStateId: "doing" }),
+    );
+    const closed = moveBacklogItemToState(before, "a", "done", factories, {
+      includeSubitems: true,
+      sourceWrites: { a: "Closed" },
+    });
+    const changed = {
+      ...closed,
+      workItems: closed.workItems.map((child) =>
+        child._id === "child" ? { ...child, snoozedUntil: 9000 } : child,
+      ),
+    };
+    expect(find(failSourceWrite(changed, "a"), "child")).toMatchObject({
+      status: "archived",
+      snoozedUntil: 9000,
+    });
+  });
+
   it("reopens carried subitems when a parent's closing move write fails", () => {
     const before = state();
     before.workItems.push(

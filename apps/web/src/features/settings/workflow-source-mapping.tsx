@@ -334,6 +334,7 @@ function WriteRules({
       state.workflowStateMappings,
       project,
       workflowState._id,
+      project.states.map((sourceState) => sourceState.label),
     );
     return mapped.length > 0 ? [{ workflowState, mapped }] : [];
   });

@@ -54,7 +54,14 @@ function moveSnapshot(item: LocalWorkItem): LocalWorkItemMoveSnapshot {
     settledSourceStatusKey: item.settledSourceStatusKey,
     settledImportedPriority: item.settledImportedPriority,
     returnedAt: item.returnedAt,
+    snoozedUntil: item.snoozedUntil,
   };
+}
+
+function moveLifecycleSnapshot(item: LocalWorkItem) {
+  const { workflowStateId: _workflowStateId, ...lifecycle } =
+    moveSnapshot(item);
+  return lifecycle;
 }
 
 /**
@@ -101,16 +108,7 @@ function withMoveSourceWrite(
         priority: workItem.priority,
         workflowStateId: workItem.workflowStateId,
         importedWorkflowStateId: workItem.importedWorkflowStateId,
-        lifecycle: {
-          status: workItem.status,
-          settledAt: workItem.settledAt,
-          archivedAt: workItem.archivedAt,
-          archivedSourceStatusKey: workItem.archivedSourceStatusKey,
-          settledSourceStatusKey: workItem.settledSourceStatusKey,
-          settledImportedPriority: workItem.settledImportedPriority,
-          workflowStateIdBeforeClose: workItem.workflowStateIdBeforeClose,
-          settledWithParentId: workItem.settledWithParentId,
-        },
+        lifecycle: moveLifecycleSnapshot(workItem),
       },
     },
   };
@@ -351,16 +349,9 @@ export function moveBacklogItemToState(
             importedWorkflowStateId: workItem.pendingSourceWrite
               ? workItem.pendingSourceWrite.previous.importedWorkflowStateId
               : before.importedWorkflowStateId,
-            lifecycle: workItem.pendingSourceWrite?.previous.lifecycle ?? {
-              status: before.status,
-              settledAt: before.settledAt,
-              archivedAt: before.archivedAt,
-              archivedSourceStatusKey: before.archivedSourceStatusKey,
-              settledSourceStatusKey: before.settledSourceStatusKey,
-              settledImportedPriority: before.settledImportedPriority,
-              workflowStateIdBeforeClose: before.workflowStateIdBeforeClose,
-              settledWithParentId: before.settledWithParentId,
-            },
+            lifecycle:
+              workItem.pendingSourceWrite?.previous.lifecycle ??
+              moveLifecycleSnapshot(before),
             carriedChildren: state.workItems.flatMap((child) => {
               const item = moved.workItems.find(
                 (item) => item._id === child._id,
@@ -790,7 +781,7 @@ export function failSourceWrite(
         (current) => current._id === item._id,
       )!;
       if (JSON.stringify(moveSnapshot(current)) !== JSON.stringify(child.after))
-        return item;
+        return current;
       return { ...item, ...child.before };
     }),
   };

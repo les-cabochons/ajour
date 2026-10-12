@@ -56,6 +56,20 @@ export function normalizePersistedWorkItem(
     importedBacklogStatusId: legacyImportedWorkflowStateId,
     ...persisted
   } = workItem;
+  const normalizePriority = (priority?: number, importedPriority?: number) =>
+    priorityContext &&
+    priorityContext.priorityFormat !== "levels" &&
+    workItem.source !== "manual" &&
+    workItem.source !== "outlook" &&
+    priority === importedPriority
+      ? getPriorityLevel(
+          importedPriority,
+          getWorkItemPriorityRanges(priorityContext, {
+            source: workItem.source ?? "manual",
+            sourceConnectionId: workItem.sourceConnectionId,
+          }),
+        )
+      : normalizePriorityLevel(priority);
 
   return {
     ...persisted,
@@ -81,20 +95,19 @@ export function normalizePersistedWorkItem(
     parentSourceId: isRetiredBuiltInSource
       ? undefined
       : workItem.parentSourceId,
-    priority:
-      priorityContext &&
-      priorityContext.priorityFormat !== "levels" &&
-      workItem.source !== "manual" &&
-      workItem.source !== "outlook" &&
-      workItem.priority === workItem.importedPriority
-        ? getPriorityLevel(
-            workItem.importedPriority,
-            getWorkItemPriorityRanges(priorityContext, {
-              source: workItem.source ?? "manual",
-              sourceConnectionId: workItem.sourceConnectionId,
-            }),
-          )
-        : normalizePriorityLevel(workItem.priority),
+    priority: normalizePriority(workItem.priority, workItem.importedPriority),
+    pendingSourceWrite: workItem.pendingSourceWrite
+      ? {
+          ...workItem.pendingSourceWrite,
+          previous: {
+            ...workItem.pendingSourceWrite.previous,
+            priority: normalizePriority(
+              workItem.pendingSourceWrite.previous.priority,
+              workItem.pendingSourceWrite.previous.importedPriority,
+            ),
+          },
+        }
+      : undefined,
     importedPriority: isRetiredBuiltInSource
       ? undefined
       : normalizeWorkItemPriority(workItem.importedPriority),

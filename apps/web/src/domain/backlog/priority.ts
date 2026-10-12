@@ -242,17 +242,39 @@ export function setPriorityScale(
   );
   return {
     ...state,
-    workItems: state.workItems.map((workItem) =>
-      workItem.source === scale.source &&
-      workItem.sourceConnectionId === scale.connectionId &&
-      workItem.priority ===
-        getPriorityLevel(workItem.importedPriority, previous)
-        ? {
-            ...workItem,
-            priority: getPriorityLevel(workItem.importedPriority, scale.ranges),
-          }
-        : workItem,
-    ),
+    workItems: state.workItems.map((workItem) => {
+      if (
+        workItem.source !== scale.source ||
+        workItem.sourceConnectionId !== scale.connectionId
+      )
+        return workItem;
+      const recovery = workItem.pendingSourceWrite?.previous;
+      return {
+        ...workItem,
+        priority:
+          workItem.priority ===
+          getPriorityLevel(workItem.importedPriority, previous)
+            ? getPriorityLevel(workItem.importedPriority, scale.ranges)
+            : workItem.priority,
+        pendingSourceWrite:
+          workItem.pendingSourceWrite && recovery
+            ? {
+                ...workItem.pendingSourceWrite,
+                previous: {
+                  ...recovery,
+                  priority:
+                    recovery.priority ===
+                    getPriorityLevel(recovery.importedPriority, previous)
+                      ? getPriorityLevel(
+                          recovery.importedPriority,
+                          scale.ranges,
+                        )
+                      : recovery.priority,
+                },
+              }
+            : workItem.pendingSourceWrite,
+      };
+    }),
     priorityScales: [
       ...state.priorityScales.filter(
         (candidate) =>

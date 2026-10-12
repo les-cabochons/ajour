@@ -1,4 +1,5 @@
 import { getOpenSubitems } from "@/domain/backlog/backlog-item-lifecycle";
+import { showErrorToast } from "@/components/ui/toast";
 import {
   getSourceStatesMappedTo,
   planWorkflowStateWrite,
@@ -16,6 +17,26 @@ import {
 import { requestSourceStateChoice } from "@/features/backlog/source-state-dialog";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { localStore } from "@/lib/local-store";
+import { listConnectorSettleStates } from "@/lib/app-api";
+
+async function loadSourceStates(
+  workItem: LocalWorkItem,
+): Promise<string[] | null> {
+  try {
+    const result = await listConnectorSettleStates(
+      workItem.source,
+      workItem.sourceConnectionId!,
+      workItem.sourceId!,
+    );
+    return result.states.map((state) => state.name);
+  } catch (error) {
+    showErrorToast({
+      title: "Couldn't load the item's source states",
+      description: error instanceof Error ? error.message : "Unknown error",
+    });
+    return null;
+  }
+}
 
 /**
  * Whether closing or settling this item takes its open subitems along, from
@@ -65,10 +86,32 @@ async function resolveSourceWrite(
   ask: boolean,
 ): Promise<string | null> {
   if (!canWriteToSource(workItem)) return "";
+  const state = localStore.snapshot();
+  const mapped = getSourceStatesMappedTo(
+    state.workflowStateMappings,
+    {
+      source: workItem.source,
+      connectionId: workItem.sourceConnectionId,
+      sourceProjectName: workItem.sourceProjectName,
+    },
+    workflowStateId,
+  );
+  if (
+    planWorkflowStateWrite(
+      state,
+      workItem,
+      workflowStateId,
+      mapped.map((candidate) => candidate.label),
+    ).kind === "none"
+  )
+    return "";
+  const available = await loadSourceStates(workItem);
+  if (available === null) return null;
   const plan = planWorkflowStateWrite(
     localStore.snapshot(),
     workItem,
     workflowStateId,
+    available,
   );
   switch (plan.kind) {
     case "none":
@@ -135,6 +178,7 @@ export async function moveBacklogItemWithUndo(
         name,
         false,
       );
+      if (write === null) return;
       if (write) sourceWrites[subitem._id] = write;
     }
   }
@@ -188,7 +232,15 @@ export function getOtherSourceStates(workItem: LocalWorkItem): string[] {
 
 /** Change source state…: picks another source state of the same workflow state. */
 export async function changeSourceStateWithUndo(workItem: LocalWorkItem) {
-  const options = getOtherSourceStates(workItem);
+  if (!canWriteToSource(workItem)) return;
+  const available = await loadSourceStates(workItem);
+  if (available === null) return;
+  const options = getOtherSourceStates(workItem).filter((label) =>
+    available.some(
+      (candidate) =>
+        candidate.trim().toLowerCase() === label.trim().toLowerCase(),
+    ),
+  );
   if (options.length === 0) return;
   const workflowStateName = localStore
     .snapshot()

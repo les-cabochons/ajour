@@ -343,6 +343,7 @@ export type LocalWorkItemMoveSnapshot = Pick<
   | "settledSourceStatusKey"
   | "settledImportedPriority"
   | "returnedAt"
+  | "snoozedUntil"
 >;
 
 /** Only the fields the settle changed. */
@@ -375,16 +376,22 @@ export interface LocalPendingSourceWrite {
       | "workflowStateIdBeforeClose"
       | "settledWithParentId"
       | "returnedAt"
+      | "snoozedUntil"
     >;
   };
 }
 
 export type PersistedLocalWorkItem = Omit<
   LocalWorkItem,
-  "status" | "archivedAt" | "priority"
+  "status" | "archivedAt" | "priority" | "pendingSourceWrite"
 > & {
   /** Any whole number before priority had levels. */
   priority?: number;
+  pendingSourceWrite?: Omit<LocalPendingSourceWrite, "previous"> & {
+    previous: Omit<LocalPendingSourceWrite["previous"], "priority"> & {
+      priority?: number;
+    };
+  };
   status?: LocalWorkItem["status"] | "open" | "done";
   archivedAt?: number;
   completedAt?: number;

@@ -223,13 +223,18 @@ export function getSourceStatesMappedTo(
   mappings: LocalWorkflowStateMapping[],
   project: SourceProjectRef,
   workflowStateId: string,
+  availableSourceStates?: readonly string[],
 ): { key: string; label: string }[] {
+  const available = availableSourceStates
+    ? new Set(availableSourceStates.map(normalizeConnectorStatusKey))
+    : undefined;
   const seen = new Set<string>();
   const states: { key: string; label: string }[] = [];
   for (const mapping of mappings) {
     if (
       mapping.source !== project.source ||
       mapping.connectionId !== project.connectionId ||
+      (available && !available.has(mapping.sourceStatusKey)) ||
       seen.has(mapping.sourceStatusKey)
     ) {
       continue;
@@ -294,6 +299,7 @@ export function planWorkflowStateWrite(
     "source" | "sourceConnectionId" | "sourceProjectName" | "sourceId"
   >,
   workflowStateId: string,
+  availableSourceStates: readonly string[],
 ): WorkflowStateWritePlan {
   if (workItem.source === "manual" || !workItem.sourceId) {
     return { kind: "none" };
@@ -307,6 +313,7 @@ export function planWorkflowStateWrite(
     state.workflowStateMappings,
     project,
     workflowStateId,
+    availableSourceStates,
   ).map((sourceState) => sourceState.label);
   const rule = findWorkflowStateWriteRule(
     state.workflowStateWriteRules,
