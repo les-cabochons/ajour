@@ -199,6 +199,13 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Two regressions reproduce stale IDs after a failed Settle write, including JSON reload and a preserved local workflow override. Both failed before the fix.
 - [ ] Complete verification and fresh Codex review of the updated stack. The integration thread owns merging.
 
+### Archived recovery after clearing Done, 2026-10-12
+
+- [x] Failed or undone reopens move recovered explicit archives to the remaining Done state when their old state loses its Done flag. Carried children retain the archive markers and pre-close state for Restore.
+- [x] Recovery saves entries started during the optimistic reopen. Source-write snapshots preserve missing-sync provenance, so missing-sync archives retain their open workflow state.
+- [x] Six persisted-store regressions cover failure and Undo, carried children, Restore after reload and missing-sync archives. The archive migration and running-entry checks failed before their fixes.
+- [ ] Verify the rebased stack and request fresh reviews of the pushed heads.
+
 ### Done flag changes during source-write recovery, 2026-10-12
 
 - [x] Released source writes apply lifecycle reconciliation even when their workflow mapping IDs stay unchanged.

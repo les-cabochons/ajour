@@ -863,6 +863,164 @@ describe("localStore workflow state sync", () => {
     },
   );
 
+  it.each([
+    [false, "failure"],
+    [true, "failure"],
+    [false, "undo"],
+    [true, "undo"],
+  ] as const)(
+    "moves recovered archives to a remaining Done state, carrying children %s via %s",
+    async (includeSubitems, recovery) => {
+      const { localStore } = await import("./local-store");
+      const open = localStore
+        .snapshot()
+        .workflowStates.find((state) => !state.done)!._id;
+      const replacement = localStore
+        .snapshot()
+        .workflowStates.find((state) => state.done)!._id;
+      const original = localStore.addWorkflowState("Original done");
+      localStore.updateWorkflowState(original, {
+        name: "Original done",
+        done: true,
+      });
+      const mapping = {
+        source: "azure_devops",
+        connectionId: "ado-1",
+        sourceStatusKey: "Active",
+      };
+      localStore.setWorkflowStateMapping({ ...mapping, workflowStateId: open });
+      localStore.setWorkflowStateMapping({
+        ...mapping,
+        sourceStatusKey: "Closed",
+        workflowStateId: original,
+      });
+      const parent = buildImportCandidate();
+      const child = buildImportCandidate({
+        id: "child",
+        sourceId: "child-source",
+        parentSourceId: parent.sourceId,
+        depth: 1,
+      });
+      localStore.importConnectorWorkItems(
+        includeSubitems ? [parent, child] : [parent],
+      );
+      const id = localStore
+        .snapshot()
+        .workItems.find((item) => item.sourceId === parent.sourceId)!._id;
+      const childId = localStore
+        .snapshot()
+        .workItems.find((item) => item.sourceId === child.sourceId)?._id;
+      localStore.moveWorkItemToState(id, original, {
+        includeSubitems,
+        sourceWrites: {
+          [id]: "Closed",
+          ...(childId ? { [childId]: "Closed" } : {}),
+        },
+      });
+      localStore.completeSourceWrite(id);
+      if (childId) localStore.completeSourceWrite(childId);
+      const token = localStore.moveWorkItemToState(id, open, {
+        sourceWrites: { [id]: "Active" },
+      });
+      expect(
+        localStore
+          .snapshot()
+          .workItems.every((item) => item.status === "active"),
+      ).toBe(true);
+      localStore.startTimer({ workItemId: id, accumulatedDurationMs: 60000 });
+      localStore.updateWorkflowState(original, {
+        name: "Original done",
+        done: false,
+      });
+      if (recovery === "failure") localStore.failSourceWrite(id);
+      else expect(localStore.undo(token!)).toBe("restored");
+      for (const item of localStore.snapshot().workItems) {
+        expect(item).toMatchObject({
+          status: "archived",
+          workflowStateId: replacement,
+          workflowStateIdBeforeClose: open,
+          sourceStatusKey: "closed",
+          archivedSourceStatusKey: "closed",
+        });
+        expect(item.pendingSourceWrite).toBeUndefined();
+      }
+      expect(localStore.snapshot().timers).toEqual([]);
+      expect(localStore.snapshot().timesheetEntries).toEqual([
+        expect.objectContaining({
+          workItemId: id,
+          durationMs: expect.any(Number),
+        }),
+      ]);
+      expect(
+        localStore.snapshot().timesheetEntries[0]!.durationMs,
+      ).toBeGreaterThanOrEqual(60000);
+      vi.resetModules();
+      const reloaded = (await import("./local-store")).localStore;
+      expect(
+        reloaded
+          .snapshot()
+          .workItems.every(
+            (item) =>
+              item.status === "archived" &&
+              item.workflowStateId === replacement,
+          ),
+      ).toBe(true);
+      reloaded.restoreWorkItem(id);
+      expect(
+        reloaded
+          .snapshot()
+          .workItems.every(
+            (item) => item.status === "active" && item.workflowStateId === open,
+          ),
+      ).toBe(true);
+    },
+  );
+
+  it.each(["failure", "undo"] as const)(
+    "keeps a missing-sync archive in its open state after %s recovery",
+    async (recovery) => {
+      const { localStore } = await import("./local-store");
+      const open = localStore
+        .snapshot()
+        .workflowStates.find((state) => !state.done)!._id;
+      const review = localStore.addWorkflowState("Review");
+      const mapping = {
+        source: "azure_devops",
+        connectionId: "ado-1",
+        sourceStatusKey: "Active",
+      };
+      localStore.setWorkflowStateMapping({ ...mapping, workflowStateId: open });
+      localStore.setWorkflowStateMapping({
+        ...mapping,
+        sourceStatusKey: "In QA",
+        workflowStateId: review,
+      });
+      localStore.importConnectorWorkItems([buildImportCandidate()]);
+      const id = localStore.snapshot().workItems[0]!._id;
+      localStore.importConnectorWorkItems([], {
+        archiveMissingFromConnectionId: "ado-1",
+      });
+      expect(localStore.snapshot().workItems[0]).toMatchObject({
+        status: "archived",
+        archivedByMissingSync: true,
+        workflowStateId: open,
+      });
+      const token = localStore.moveWorkItemToState(id, review, {
+        sourceWrites: { [id]: "In QA" },
+      });
+      if (recovery === "failure") localStore.failSourceWrite(id);
+      else expect(localStore.undo(token!)).toBe("restored");
+      expect(localStore.snapshot().workItems[0]).toMatchObject({
+        status: "archived",
+        archivedByMissingSync: true,
+        workflowStateId: open,
+      });
+      expect(
+        localStore.snapshot().workItems[0]?.pendingSourceWrite,
+      ).toBeUndefined();
+    },
+  );
+
   it("recovers the last successful priority write when its replacement fails", async () => {
     const { localStore } = await import("./local-store");
     localStore.importConnectorWorkItems([buildImportCandidate()]);

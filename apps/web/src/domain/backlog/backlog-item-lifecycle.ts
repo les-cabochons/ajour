@@ -50,6 +50,7 @@ function moveSnapshot(item: LocalWorkItem): LocalWorkItemMoveSnapshot {
     workflowStateId: item.workflowStateId,
     workflowStateIdBeforeClose: item.workflowStateIdBeforeClose,
     archivedAt: item.archivedAt,
+    archivedByMissingSync: item.archivedByMissingSync,
     archivedSourceStatusKey: item.archivedSourceStatusKey,
     settledAt: item.settledAt,
     settledWithParentId: item.settledWithParentId,
@@ -823,12 +824,30 @@ export function reconcileSourceWriteMappings(
   );
   if (releasedIds.size === 0) return next;
 
+  const replacementDoneId = getFirstDoneWorkflowState(next.workflowStates)?._id;
   const workItems = next.workItems.map((item) => {
     if (!releasedIds.has(item._id)) return item;
-    return syncImportedWorkflowState(item, next.workflowStateMappings);
+    const mapped = syncImportedWorkflowState(item, next.workflowStateMappings);
+    // Missing-sync archives keep their open state. Explicit closes need a Done
+    // state even if their recovery snapshot predates a workflow settings edit.
+    return mapped.status === "archived" &&
+      !mapped.archivedByMissingSync &&
+      !isDoneWorkflowState(next.workflowStates, mapped.workflowStateId)
+      ? { ...mapped, workflowStateId: replacementDoneId }
+      : mapped;
   });
+  const archivedIds = new Set(
+    workItems
+      .filter((item) => releasedIds.has(item._id) && item.status === "archived")
+      .map((item) => item._id),
+  );
+  const saved = saveRunningEntries(
+    { ...next, workItems },
+    archivedIds,
+    factories,
+  );
   // A state's Done flag can change while the mapped IDs stay the same.
-  return applyWorkflowStateLifecycle(next, { ...next, workItems }, factories);
+  return applyWorkflowStateLifecycle(next, saved, factories);
 }
 
 /** Restores the write's source values and saved lifecycle after failure. */
