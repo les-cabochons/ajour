@@ -130,8 +130,10 @@ export type CodeHostPullRequestFacts = z.infer<
 
 export const codeHostSyncRequestSchema = z.object({
   /**
-   * Pull requests Ajour already tracks. The plugin returns their facts even
-   * when they closed or left the user's search, so Ajour sees them close.
+   * Pull requests Ajour already tracks. The plugin returns a tracked pull
+   * request that closed, so Ajour sees it close. A tracked open pull request
+   * missing from the result no longer passes the connection's filters, or the
+   * token can no longer see it.
    */
   tracked: z.array(codeHostPullRequestRefSchema).max(1_000),
 });
