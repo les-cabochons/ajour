@@ -9,6 +9,8 @@ import {
 import { lazy, Suspense, type ReactNode } from "react";
 import { PageSkeleton } from "@/components/page-skeleton";
 import { AppShell } from "@/features/layout/app-shell";
+// PROTOTYPE: throwaway backlog list and board variants. Never merge.
+import { BacklogViewsPrototype } from "@/features/backlog/backlog-views-prototype";
 import { ShortcutProvider } from "@/lib/shortcut-handlers";
 import { todayIsoDate } from "@/lib/utils";
 
@@ -183,7 +185,8 @@ const backlogRoute = createRoute({
   path: "/backlog",
   component: () => (
     <RouteSuspense>
-      <BacklogPage />
+      {/* PROTOTYPE: the real page is BacklogPage. */}
+      {import.meta.env.PROD ? <BacklogPage /> : <BacklogViewsPrototype />}
     </RouteSuspense>
   ),
 });
