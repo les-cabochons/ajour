@@ -9,6 +9,7 @@ import type {
   LocalWorkflowStateWriteRule,
   LocalWorkItem,
 } from "@/domain/local-state";
+import { getPendingSourceWriteItemIds } from "@/domain/local-state";
 
 const DEFAULT_BACKLOG_STATUS_COLORS = [
   "#64748b",
@@ -456,6 +457,7 @@ export function reconcileImportedWorkflowStates(
       mapping.workflowStateId === null ||
       validWorkflowStateIds.has(mapping.workflowStateId),
   );
+  const pendingMoveItemIds = getPendingSourceWriteItemIds(state);
 
   return {
     ...state,
@@ -475,24 +477,24 @@ export function reconcileImportedWorkflowStates(
             ),
         ),
     ),
-    workItems: state.workItems.map((workItem) =>
-      syncImportedWorkflowState(
-        {
-          ...workItem,
-          workflowStateId: validWorkflowStateIds.has(
-            workItem.workflowStateId ?? "",
-          )
-            ? workItem.workflowStateId
-            : undefined,
-          importedWorkflowStateId: validWorkflowStateIds.has(
-            workItem.importedWorkflowStateId ?? "",
-          )
-            ? workItem.importedWorkflowStateId
-            : undefined,
-        },
-        workflowStateMappings,
-      ),
-    ),
+    workItems: state.workItems.map((workItem) => {
+      const normalized = {
+        ...workItem,
+        workflowStateId: validWorkflowStateIds.has(
+          workItem.workflowStateId ?? "",
+        )
+          ? workItem.workflowStateId
+          : undefined,
+        importedWorkflowStateId: validWorkflowStateIds.has(
+          workItem.importedWorkflowStateId ?? "",
+        )
+          ? workItem.importedWorkflowStateId
+          : undefined,
+      };
+      return pendingMoveItemIds.has(workItem._id)
+        ? normalized
+        : syncImportedWorkflowState(normalized, workflowStateMappings);
+    }),
   };
 }
 

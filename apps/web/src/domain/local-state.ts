@@ -482,6 +482,22 @@ export interface TimelineMutationResult {
   extensionBridgeStatus?: ExtensionBridgeStatus;
 }
 
+/** Pending source moves protect the item and any children reopened with it. */
+export function getPendingSourceWriteItemIds(
+  state: Pick<LocalAppState, "workItems">,
+) {
+  const ids = new Set<string>();
+  for (const item of state.workItems) {
+    if (!item.pendingSourceWrite) continue;
+    ids.add(item._id);
+    for (const child of item.pendingSourceWrite.previous.carriedChildren ??
+      []) {
+      ids.add(child.id);
+    }
+  }
+  return ids;
+}
+
 export function getWorkItemEstimateFieldState(
   workItem: LocalWorkItem,
   fieldKey: LocalWorkItemEstimateFieldKey,

@@ -243,6 +243,8 @@ describe("localStore workflow state sync", () => {
     const pending = localStore.snapshot().workItems[0]!;
     expect(pending.status).toBe("active");
     expect(pending.pendingSourceWrite?.state).toBe("Active");
+    localStore.importConnectorWorkItems([candidate]);
+    expect(localStore.snapshot().workItems[0]).toEqual(pending);
     expect(
       localStore.archiveDoneConnectorWorkItems([
         {
@@ -320,6 +322,76 @@ describe("localStore workflow state sync", () => {
       );
     },
   );
+
+  it("preserves carried children through sync until a parent reopen is undone", async () => {
+    const { localStore } = await import("./local-store");
+    const openId = localStore
+      .snapshot()
+      .workflowStates.find((state) => !state.done)!._id;
+    const doneId = localStore
+      .snapshot()
+      .workflowStates.find((state) => state.done)!._id;
+    localStore.setWorkflowStateMapping({
+      source: "azure_devops",
+      connectionId: "ado-1",
+      sourceStatusKey: "active",
+      workflowStateId: openId,
+    });
+    const parent = buildImportCandidate();
+    const child = buildImportCandidate({
+      id: "child-candidate",
+      sourceId: "child-source",
+      depth: 1,
+      parentSourceId: parent.sourceId,
+    });
+    localStore.importConnectorWorkItems([parent, child]);
+    const parentId = localStore
+      .snapshot()
+      .workItems.find((item) => item.sourceId === parent.sourceId)!._id;
+    const childId = localStore
+      .snapshot()
+      .workItems.find((item) => item.sourceId === child.sourceId)!._id;
+    localStore.moveWorkItemToState(parentId, doneId, {
+      includeSubitems: true,
+      sourceWrites: { [parentId]: "Closed", [childId]: "Closed" },
+    });
+    localStore.completeSourceWrite(parentId);
+    localStore.completeSourceWrite(childId);
+    const closed = localStore.snapshot().workItems;
+    expect(
+      closed.find((item) => item._id === childId)?.settledWithParentId,
+    ).toBe(parentId);
+    const token = localStore.moveWorkItemToState(parentId, openId, {
+      sourceWrites: { [parentId]: "Active" },
+    });
+    const pending = localStore.snapshot().workItems;
+    expect(pending.find((item) => item._id === childId)).toMatchObject({
+      status: "active",
+      pendingSourceWrite: undefined,
+    });
+    localStore.importConnectorWorkItems(
+      [parent, child].map((item) => ({
+        ...item,
+        state: "Closed",
+        stateDone: true,
+      })),
+    );
+    expect(localStore.snapshot().workItems).toEqual(pending);
+    localStore.archiveDoneConnectorWorkItems(
+      [parent, child].map((item) => ({
+        source: item.source,
+        connectionId: item.connectionId,
+        sourceId: item.sourceId,
+        state: "Closed",
+      })),
+    );
+    localStore.importConnectorWorkItems([], {
+      archiveMissingFromConnectionId: "ado-1",
+    });
+    expect(localStore.snapshot().workItems).toEqual(pending);
+    expect(localStore.undo(token!)).toBe("restored");
+    expect(localStore.snapshot().workItems).toEqual(closed);
+  });
 
   it("preserves a local open-state override when automatic mapping discovers Done", async () => {
     const { localStore } = await import("./local-store");
