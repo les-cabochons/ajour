@@ -1102,6 +1102,22 @@ describe("writing a move to the source", () => {
     });
   });
 
+  it("reopens carried subitems when a parent's closing move write fails", () => {
+    const before = state();
+    before.workItems.push(
+      item("child", { parentWorkItemId: "a", workflowStateId: "doing" }),
+    );
+    const closed = moveBacklogItemToState(before, "a", "done", factories, {
+      includeSubitems: true,
+      sourceWrites: { a: "Closed" },
+    });
+    expect(find(closed, "child")?.status).toBe("archived");
+    expect(find(failSourceWrite(closed, "a"), "child")).toMatchObject({
+      status: "active",
+      workflowStateId: "doing",
+    });
+  });
+
   it("changes the source state and leaves the item in its workflow state", () => {
     const inReview = moveBacklogItemToState(state(), "a", "review", factories, {
       sourceWrites: { a: "Resolved" },

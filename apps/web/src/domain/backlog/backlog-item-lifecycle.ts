@@ -667,8 +667,13 @@ export function failSourceWrite(
     importedPriority: sourceWrite.previous.importedPriority,
     priority: sourceWrite.previous.priority,
   }));
+  const returned =
+    sourceWrite.previous.lifecycle &&
+    sourceWrite.previous.lifecycle.status !== target.status
+      ? reactivate(restored, workItemId, target.status)
+      : restored;
   const reopened = sourceWrite.previous.lifecycle
-    ? updateOne(restored, workItemId, (workItem) => ({
+    ? updateOne(returned, workItemId, (workItem) => ({
         ...workItem,
         ...sourceWrite.previous.lifecycle,
       }))
