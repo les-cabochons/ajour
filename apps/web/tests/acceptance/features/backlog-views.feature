@@ -297,6 +297,18 @@ Feature: Backlog list and board views
     And I follow the unmapped-state settings link with "click"
     Then Backlog keeps the invalid draft and its validation error
 
+  Scenario Outline: Open workflow settings separately without committing the draft
+    Given the Backlog has an unmapped source state
+    When I edit the other item from the Backlog peek
+    And I rename the open editor draft to "Separate settings draft"
+    And I open the unmapped-state settings link with "<modifier>" held
+    Then Backlog keeps its unsaved draft in the original page
+
+    Examples:
+      | modifier |
+      | Control  |
+      | Shift    |
+
   Scenario: Cancel a draft close before opening workflow settings
     Given the Backlog has an unmapped source state
     When I edit the parent item from the Backlog peek

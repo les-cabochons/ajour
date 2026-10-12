@@ -1601,6 +1601,40 @@ Then(
     expect(title).toBe("Saved settings draft");
   },
 );
+When(
+  "I open the unmapped-state settings link with {string} held",
+  async ({ page }, modifier: "Control" | "Shift") => {
+    const link = page.getByRole("link", {
+      name: "1 unmapped source state",
+      exact: true,
+    });
+    const [settings] = await Promise.all([
+      page.context().waitForEvent("page", { timeout: 5000 }),
+      link.click({ modifiers: [modifier] }),
+    ]);
+    await expect(settings).toHaveURL(/\/settings\/workflow$/);
+    await settings.close();
+  },
+);
+Then(
+  "Backlog keeps its unsaved draft in the original page",
+  async ({ page }) => {
+    await expect(page).toHaveURL(/\/backlog$/);
+    const editor = page.getByRole("complementary", {
+      name: "Backlog item editor",
+    });
+    await expect(
+      editor.getByRole("textbox", { name: "Item", exact: true }),
+    ).toHaveValue("Separate settings draft");
+    const title = await page.evaluate(
+      () =>
+        JSON.parse(
+          localStorage.getItem("ajour.local-state.v2")!,
+        ).workItems.find((item: { _id: string }) => item._id === "other").title,
+    );
+    expect(title).toBe("Other backlog item");
+  },
+);
 Then(
   "Backlog keeps the invalid draft and its validation error",
   async ({ page }) => {

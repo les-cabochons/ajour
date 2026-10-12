@@ -195,6 +195,13 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Project Health Notes
 
+### Modified settings-link activation, 2026-10-12
+
+- [x] The workflow settings link applies the draft guard only to an unmodified left-click. Modified clicks retain the browser's requested browsing context without committing or closing the original editor.
+- [x] Two new Chromium scenarios verify Control-click and Shift-click open a separate settings page while the original draft stays unsaved. All six settings-link scenarios pass, including same-tab saves, invalid input and cancelled subitem closure.
+- [x] All 878 unit tests, workspace typecheck, production builds and formatting pass.
+- [ ] Complete fresh Codex review of the pushed view head before integration. The integration thread owns merging.
+
 ### Workflow settings draft guard, 2026-10-12
 
 - [x] The unmapped-source-state link awaits the editor's existing commit guard before opening workflow settings. Invalid drafts and cancelled lifecycle confirmation keep the user on Backlog with the draft intact.

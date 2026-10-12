@@ -566,6 +566,15 @@ export function BacklogPage() {
                 to="/settings/workflow"
                 className="text-xs text-muted-foreground hover:text-foreground"
                 onClick={async (event) => {
+                  if (
+                    event.defaultPrevented ||
+                    event.button !== 0 ||
+                    event.ctrlKey ||
+                    event.metaKey ||
+                    event.shiftKey ||
+                    event.altKey
+                  )
+                    return;
                   event.preventDefault();
                   if (await leaveDraft())
                     void navigate({ to: "/settings/workflow" });
