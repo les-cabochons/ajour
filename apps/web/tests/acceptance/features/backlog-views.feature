@@ -278,6 +278,35 @@ Feature: Backlog list and board views
     And I cancel the subitem close prompt
     Then the parent remains active and its editor stays open
 
+  Scenario Outline: Save a draft before opening workflow settings
+    Given the Backlog has an unmapped source state
+    When I edit the other item from the Backlog peek
+    And I rename the open editor draft to "Saved settings draft"
+    And I follow the unmapped-state settings link with "<activation>"
+    Then workflow settings opens with the other item's draft saved
+
+    Examples:
+      | activation |
+      | click      |
+      | Enter      |
+
+  Scenario: Block workflow settings navigation for an invalid draft
+    Given the Backlog has an unmapped source state
+    When I edit the other item from the Backlog peek
+    And I rename the open editor draft to ""
+    And I follow the unmapped-state settings link with "click"
+    Then Backlog keeps the invalid draft and its validation error
+
+  Scenario: Cancel a draft close before opening workflow settings
+    Given the Backlog has an unmapped source state
+    When I edit the parent item from the Backlog peek
+    And I rename the open editor draft to "Pending settings draft"
+    And I change the editor workflow draft to "Done"
+    And I follow the unmapped-state settings link with "click"
+    And I cancel the subitem close prompt
+    Then the parent remains active and its editor stays open
+    And Backlog keeps the pending settings draft
+
   Scenario: Keep board arrow navigation in its project swimlane
     Given an earlier project has asymmetric board columns
     When I choose the Backlog board

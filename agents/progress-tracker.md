@@ -195,6 +195,13 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Project Health Notes
 
+### Workflow settings draft guard, 2026-10-12
+
+- [x] The unmapped-source-state link awaits the editor's existing commit guard before opening workflow settings. Invalid drafts and cancelled lifecycle confirmation keep the user on Backlog with the draft intact.
+- [x] Four new Chromium cases failed before the fix and pass afterward. They cover click and Enter saving, title validation and cancelled subitem closure. Five existing editor action and Alt-arrow cases also pass.
+- [x] All 878 unit tests, workspace typecheck, production builds and formatting passed.
+- [ ] Complete fresh Codex review of the pushed view head before integration. The integration thread owns merging.
+
 ### Top-level custom ordering, 2026-10-12
 
 - [x] Custom keyboard, request and pointer reordering accepts only top-level items. Root moves exchange only root slots, leaving subitem positions unchanged. Subitems retain cross-group property moves without an ordering write.

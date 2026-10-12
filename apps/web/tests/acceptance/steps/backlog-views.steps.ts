@@ -1555,6 +1555,90 @@ When("I edit the other item from the Backlog peek", async ({ page }) => {
     .getByRole("button", { name: "Edit", exact: true })
     .click();
 });
+Given("the Backlog has an unmapped source state", async ({ page }) => {
+  await page.evaluate(() => {
+    const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
+    Object.assign(
+      state.workItems.find((item: { _id: string }) => item._id === "other"),
+      {
+        source: "azure_devops",
+        sourceId: "unmapped-item",
+        sourceConnectionId: "unmapped-connection",
+        sourceStatusKey: "review",
+        sourceStatusLabel: "Review",
+      },
+    );
+    localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+  });
+  await page.reload();
+  await expect(
+    page.getByRole("link", { name: "1 unmapped source state", exact: true }),
+  ).toBeVisible();
+});
+When(
+  "I follow the unmapped-state settings link with {string}",
+  async ({ page }, activation: string) => {
+    const link = page.getByRole("link", {
+      name: "1 unmapped source state",
+      exact: true,
+    });
+    if (activation === "Enter") {
+      await link.focus();
+      await link.press("Enter");
+    } else await link.click();
+  },
+);
+Then(
+  "workflow settings opens with the other item's draft saved",
+  async ({ page }) => {
+    await expect(page).toHaveURL(/\/settings\/workflow$/);
+    const title = await page.evaluate(
+      () =>
+        JSON.parse(
+          localStorage.getItem("ajour.local-state.v2")!,
+        ).workItems.find((item: { _id: string }) => item._id === "other").title,
+    );
+    expect(title).toBe("Saved settings draft");
+  },
+);
+Then(
+  "Backlog keeps the invalid draft and its validation error",
+  async ({ page }) => {
+    await expect(page).toHaveURL(/\/backlog$/);
+    const editor = page.getByRole("complementary", {
+      name: "Backlog item editor",
+    });
+    await expect(
+      editor.getByRole("textbox", { name: "Item", exact: true }),
+    ).toHaveValue("");
+    await expect(
+      editor.getByText("Enter an item name", { exact: true }),
+    ).toBeVisible();
+    const title = await page.evaluate(
+      () =>
+        JSON.parse(
+          localStorage.getItem("ajour.local-state.v2")!,
+        ).workItems.find((item: { _id: string }) => item._id === "other").title,
+    );
+    expect(title).toBe("Other backlog item");
+  },
+);
+Then("Backlog keeps the pending settings draft", async ({ page }) => {
+  await expect(page).toHaveURL(/\/backlog$/);
+  const editor = page.getByRole("complementary", {
+    name: "Backlog item editor",
+  });
+  await expect(
+    editor.getByRole("textbox", { name: "Item", exact: true }),
+  ).toHaveValue("Pending settings draft");
+  const title = await page.evaluate(
+    () =>
+      JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems.find(
+        (item: { _id: string }) => item._id === "parent",
+      ).title,
+  );
+  expect(title).toBe("Backlog parent");
+});
 When(
   "I choose {string} in the Backlog editor actions",
   async ({ page }, action: string) => {

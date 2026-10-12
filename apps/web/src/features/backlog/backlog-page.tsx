@@ -565,6 +565,11 @@ export function BacklogPage() {
               <Link
                 to="/settings/workflow"
                 className="text-xs text-muted-foreground hover:text-foreground"
+                onClick={async (event) => {
+                  event.preventDefault();
+                  if (await leaveDraft())
+                    void navigate({ to: "/settings/workflow" });
+                }}
               >
                 {unmapped} unmapped source {unmapped === 1 ? "state" : "states"}
               </Link>
