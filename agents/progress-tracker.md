@@ -277,7 +277,8 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Restore cannot return an archived item to a pre-close state that has since become Done. Other active items and archived history remain unchanged.
 - [x] The foundation passes 705 unit tests and workspace typecheck, with direct lifecycle and persisted-store regressions.
 - [x] Chromium verifies the Workflow checkbox, saved running entry and archived items after reload.
-- [ ] Carry the fix through the stack, run the full checks and request fresh reviews.
+- [x] Carried the fix through the stack. All 784 unit tests and 66 Chromium scenarios pass, along with workspace typecheck, production build and formatting.
+- [ ] Fresh Codex reviews of the pushed heads are pending. Merging remains owned by the integration thread.
 
 ### Mixed editor drafts and close confirmation, 2026-10-12
 
