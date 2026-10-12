@@ -750,6 +750,76 @@ describe("connector sync of workflow states", () => {
     expect(fresh.workItems[0]?.status).toBe("archived");
   });
 
+  it("reopens archived children carried by a parent reopened in the source", () => {
+    const imported = sync(workflow());
+    const parent = imported.workItems[0]!;
+    const closed = {
+      ...imported,
+      workItems: [
+        {
+          ...parent,
+          status: "archived" as const,
+          workflowStateId: "done",
+          archivedSourceStatusKey: "closed",
+        },
+        {
+          ...parent,
+          _id: "child",
+          sourceId: "child-source",
+          status: "archived" as const,
+          workflowStateId: "done",
+          workflowStateIdBeforeClose: "review",
+          settledWithParentId: parent._id,
+        },
+      ],
+    };
+    const reopened = sync(closed, { state: "Active" });
+    expect(
+      reopened.workItems.find((item) => item._id === "child"),
+    ).toMatchObject({ status: "active", workflowStateId: "review" });
+  });
+
+  it("returns a settled item when a changed done source state maps to an open state", () => {
+    const mapped = {
+      ...workflow(),
+      workflowStateMappings: [
+        ...workflow().workflowStateMappings,
+        {
+          source: "azure_devops" as const,
+          connectionId: "connection-1",
+          sourceStatusKey: "closed",
+          workflowStateId: "review",
+        },
+      ],
+    };
+    const imported = sync(mapped);
+    const settled = {
+      ...imported,
+      workItems: imported.workItems.map((item) => ({
+        ...item,
+        status: "settled" as const,
+        settledSourceStatusKey: "active",
+      })),
+    };
+    const result = archiveDoneConnectorWorkItems(
+      settled,
+      [
+        {
+          source: "azure_devops",
+          connectionId: "connection-1",
+          sourceId: "source-1",
+          state: "Closed",
+        },
+      ],
+      factories,
+    );
+    expect(result.state.workItems[0]).toMatchObject({
+      status: "active",
+      workflowStateId: "review",
+      returnedAt: 500,
+    });
+  });
+
   it("keeps a done source state open when the user mapped it to a state that isn't done", () => {
     const mapped = {
       ...workflow(),

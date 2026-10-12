@@ -15,6 +15,7 @@ import type {
 import {
   applyWorkflowStateLifecycle,
   archiveBacklogItem,
+  unsettleBacklogItem,
 } from "@/domain/backlog/backlog-item-lifecycle";
 import {
   findMappedWorkflowStateId,
@@ -384,7 +385,7 @@ export function importConnectorWorkItems(
         existingItemsByKey.set(key, mergedWorkItem);
       }
       if (
-        existingWorkItem.status === "settled" &&
+        existingWorkItem.status !== "active" &&
         mergedWorkItem.status === "active"
       ) {
         returnedIds.add(mergedWorkItem._id);
@@ -406,7 +407,7 @@ export function importConnectorWorkItems(
 
   if (returnedIds.size > 0) {
     nextWorkItems = nextWorkItems.map((workItem) =>
-      workItem.status === "settled" &&
+      workItem.status !== "active" &&
       workItem.settledWithParentId &&
       returnedIds.has(workItem.settledWithParentId)
         ? {
@@ -416,6 +417,13 @@ export function importConnectorWorkItems(
             settledWithParentId: undefined,
             settledSourceStatusKey: undefined,
             settledImportedPriority: undefined,
+            archivedAt: undefined,
+            archivedSourceStatusKey: undefined,
+            workflowStateId:
+              workItem.status === "archived"
+                ? workItem.workflowStateIdBeforeClose
+                : workItem.workflowStateId,
+            workflowStateIdBeforeClose: undefined,
           }
         : workItem,
     );
@@ -543,7 +551,21 @@ export function archiveDoneConnectorWorkItems(
         }
       : nextState;
     if (keepsOpen) {
-      nextState = withSourceState;
+      nextState =
+        target.status === "settled" &&
+        sourceStatusKey !== target.settledSourceStatusKey
+          ? unsettleBacklogItem(withSourceState, target._id)
+          : withSourceState;
+      if (nextState !== withSourceState) {
+        nextState = {
+          ...nextState,
+          workItems: nextState.workItems.map((item) =>
+            item._id === target._id
+              ? { ...item, returnedAt: factories.now() }
+              : item,
+          ),
+        };
+      }
       continue;
     }
     nextState = archiveBacklogItem(withSourceState, target._id, factories);

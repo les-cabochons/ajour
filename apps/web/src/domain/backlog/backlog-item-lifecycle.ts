@@ -182,7 +182,7 @@ export function applyWorkflowStateLifecycle(
 export function moveBacklogItemToState(
   state: LocalAppState,
   workItemId: string,
-  workflowStateId: string,
+  workflowStateId: string | undefined,
   factories: WorkItemFactories,
   options: CloseSubitemsOptions = {},
 ): LocalAppState {
@@ -192,11 +192,15 @@ export function moveBacklogItemToState(
   const destination = state.workflowStates.find(
     (candidate) => candidate._id === workflowStateId,
   );
-  if (!target || !destination || target.workflowStateId === workflowStateId) {
+  if (
+    !target ||
+    (workflowStateId !== undefined && !destination) ||
+    target.workflowStateId === workflowStateId
+  ) {
     return state;
   }
 
-  if (destination.done) {
+  if (destination?.done) {
     if (target.status === "archived") {
       return updateOne(state, workItemId, (workItem) => ({
         ...workItem,

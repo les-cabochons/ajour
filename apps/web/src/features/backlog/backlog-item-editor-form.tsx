@@ -261,7 +261,6 @@ export function BacklogItemEditorForm({
           const states = localStore.snapshot().workflowStates;
           const changesLifecycle =
             "workflowStateId" in result.patch &&
-            workflowStateId !== undefined &&
             (isDoneWorkflowState(states, workflowStateId) ||
               isDoneWorkflowState(states, workItem.workflowStateId));
           localStore.updateWorkItem(
@@ -271,7 +270,7 @@ export function BacklogItemEditorForm({
           const saved = localStore
             .snapshot()
             .workItems.find((item) => item._id === workItem._id);
-          if (changesLifecycle && saved && workflowStateId) {
+          if (changesLifecycle && saved) {
             void moveBacklogItemWithUndo(saved, workflowStateId);
           }
         }

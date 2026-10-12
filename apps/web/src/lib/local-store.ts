@@ -1274,7 +1274,7 @@ export const localStore = {
    */
   moveWorkItemToState(
     workItemId: string,
-    workflowStateId: string,
+    workflowStateId: string | undefined,
     options?: CloseSubitemsOptions,
   ) {
     return updateStateWithUndo((state) =>

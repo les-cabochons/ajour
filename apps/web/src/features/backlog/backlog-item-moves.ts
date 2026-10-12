@@ -37,30 +37,35 @@ export async function resolveIncludeSubitems(
  */
 export async function moveBacklogItemWithUndo(
   workItem: LocalWorkItem,
-  workflowStateId: string,
+  workflowStateId: string | undefined,
 ) {
   const destination = localStore
     .snapshot()
     .workflowStates.find((state) => state._id === workflowStateId);
-  if (!destination || workItem.workflowStateId === workflowStateId) return;
+  if (
+    (workflowStateId !== undefined && !destination) ||
+    workItem.workflowStateId === workflowStateId
+  )
+    return;
 
-  const closes = destination.done === true && workItem.status !== "archived";
+  const closes = destination?.done === true && workItem.status !== "archived";
   const includeSubitems = closes
     ? await resolveIncludeSubitems(workItem, "close")
     : false;
   if (includeSubitems === null) return;
 
-  const reopens = !destination.done && workItem.status === "archived";
+  const reopens = !destination?.done && workItem.status === "archived";
+  const name = destination?.name ?? "No state";
   offerUndo(
     localStore.moveWorkItemToState(workItem._id, workflowStateId, {
       includeSubitems,
     }),
     {
       title: closes
-        ? `Closed in ${destination.name}`
+        ? `Closed in ${name}`
         : reopens
-          ? `Reopened in ${destination.name}`
-          : `Moved to ${destination.name}`,
+          ? `Reopened in ${name}`
+          : `Moved to ${name}`,
       subject: "backlog item",
     },
   );

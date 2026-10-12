@@ -689,6 +689,17 @@ describe("moving a backlog item between workflow states", () => {
     });
   });
 
+  it("reopens a done item when its workflow state is cleared", () => {
+    const next = moveBacklogItemToState(
+      withItems([item("a", { status: "archived", workflowStateId: "done" })]),
+      "a",
+      undefined,
+      factories,
+    );
+    expect(find(next, "a")?.status).toBe("active");
+    expect(find(next, "a")?.workflowStateId).toBeUndefined();
+  });
+
   it("archives into the first done state, and Restore puts the item back", () => {
     const archived = archiveBacklogItem(
       withItems([item("a", { workflowStateId: "doing" })]),
