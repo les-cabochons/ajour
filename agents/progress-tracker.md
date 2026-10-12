@@ -269,7 +269,8 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Lifecycle reconciliation closes every open item in Done, including missing-sync returns, carried subitems and legacy records whose workflow ID stays unchanged.
 - [x] Reclosing an archived item preserves a valid pre-close workflow for Restore.
 - [x] The foundation passes 710 unit tests, with real connector-import regressions for missing-sync returns and carried settled subitems.
-- [ ] Carry the fix through the stack, run the full checks and request fresh reviews.
+- [x] Carried the fix through the stack. All 789 unit tests and 66 Chromium scenarios pass, along with workspace typecheck, production build and formatting.
+- [ ] Fresh Codex reviews of the pushed heads are pending. Merging remains owned by the integration thread.
 
 ### Enabling Done on an occupied state, 2026-10-12
 
