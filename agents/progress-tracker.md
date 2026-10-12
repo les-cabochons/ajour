@@ -220,7 +220,8 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Hydration fills missing archive-provenance markers in older pending recovery and carried-child snapshots. Source markers and pre-close history identify explicit closes; manual children remain explicit, and stored boolean markers take precedence.
 - [x] Carried recovery compares snapshot fields, so JSON property order cannot invalidate an unchanged child.
 - [x] Six persisted upgrade cases cover missing-sync archives, synced and manual children, explicit archives after a Done flag change and unknown source states. Reload, failed startup writes, source returns and Restore are checked.
-- [ ] Verify the rebased stack and request fresh reviews of the pushed heads.
+- [x] The rebased stack passes 840 unit tests, workspace typecheck, production builds and three focused Chromium scenarios covering failed drag recovery, parent close with Undo and Done settings.
+- [ ] Fresh Codex reviews of the pushed mapping and view heads are pending. Merging remains owned by the integration thread.
 
 ### Archived recovery after clearing Done, 2026-10-12
 
