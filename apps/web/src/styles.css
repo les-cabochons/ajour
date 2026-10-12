@@ -1416,7 +1416,7 @@
     display: none;
   }
 
-  .desktop-shell-app .ajour-sidebar-window-drag-region {
+  .desktop-shell-macos .ajour-sidebar-window-drag-region {
     display: block;
     min-height: var(--desktop-shell-chrome-height);
     flex: 0 0 var(--desktop-shell-chrome-height);
