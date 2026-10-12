@@ -180,7 +180,8 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Source acknowledgements update both snapshots of the replacement's Undo. Independent edits still block Undo.
 - [x] Settle rejects unsupported priority clears. No priority remains available when it already matches the source's mapped level.
 - [x] Eight new regressions cover recovery of open and done states, carried children, priority-only writes, replacement Undo, independent edits and No priority validation. The foundation passes 720 unit tests and workspace typecheck.
-- [ ] Complete verification and Codex review of the updated stack.
+- [x] The full stack passes 733 unit tests, all 57 Chromium acceptance scenarios, workspace typecheck, production build and formatting. Browser fixtures verify No priority is disabled for mapped source priorities and available when it already matches the source.
+- [ ] Complete Codex review of the updated stack.
 
 ## Standard Task Flow
 
