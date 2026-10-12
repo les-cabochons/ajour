@@ -95,6 +95,50 @@ function dependencies() {
 }
 
 describe("plugin settings workflow", () => {
+  it.each([
+    {
+      capabilities: { codeHost: {} },
+      expected: ["codeHost"],
+      features: ["pull-requests"],
+    },
+    {
+      capabilities: { connector: {}, codeHost: {} },
+      expected: ["connector", "codeHost"],
+      features: ["work-item-sync", "pull-requests"],
+    },
+  ])(
+    "keeps every installed capability when the catalog is unavailable: $expected",
+    async ({ capabilities, expected, features }) => {
+      const { deps } = dependencies();
+      const installed = { ...plugin, capabilities };
+      deps.getConnectorsOverview = async () => ({
+        ...overview,
+        plugins: [installed],
+        connectionGroups: [
+          { plugin: installed, enabled: true, connections: [] },
+        ],
+      });
+      const workflow = createPluginSettingsWorkflow(deps);
+      await workflow.refresh();
+      expect(
+        workflow
+          .getSnapshot()
+          .displayEntries.find((entry) => entry.catalog.id === plugin.id)
+          ?.catalog,
+      ).toMatchObject({
+        schemaVersion: 2,
+        capabilities: expected,
+        features,
+      });
+      expect(
+        workflow
+          .getSnapshot()
+          .displayEntries.find((entry) => entry.catalog.id === shape.id)
+          ?.catalog.capabilities,
+      ).toEqual(["schema"]);
+    },
+  );
+
   it("retains installed capabilities when the remote catalog fails", async () => {
     const { deps } = dependencies();
     deps.getPluginCatalog = vi.fn(async () => {

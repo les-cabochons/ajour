@@ -11,10 +11,19 @@ const httpsUrlSchema = z
 
 const catalogSlugSchema = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
 
+/** The glossary's plugin capabilities. See ADR 0003. */
+export const pluginCatalogCapabilitySchema = z.enum([
+  "connector",
+  "codeHost",
+  "schema",
+]);
+export type PluginCatalogCapability = z.infer<
+  typeof pluginCatalogCapabilitySchema
+>;
+
 export const pluginCatalogEntrySchema = z.object({
-  schemaVersion: z.literal(1),
+  schemaVersion: z.literal(2),
   id: z.string().regex(/^[a-z0-9][a-z0-9_-]{1,63}$/),
-  type: z.enum(["connector", "plugin"]),
   title: z.string().min(1).max(80),
   description: z.string().min(1).max(500),
   author: z.object({
@@ -36,7 +45,16 @@ export const pluginCatalogEntrySchema = z.object({
   compatibility: z.object({
     pluginApiVersion: z.number().int().positive(),
   }),
-  capabilities: z.array(catalogSlugSchema).min(1).max(12),
+  capabilities: z
+    .array(pluginCatalogCapabilitySchema)
+    .min(1)
+    .max(3)
+    .refine(
+      (capabilities) => new Set(capabilities).size === capabilities.length,
+      "Catalog capabilities must not repeat.",
+    ),
+  /** What the plugin does, shown as badges, such as "work-item-sync". */
+  features: z.array(catalogSlugSchema).min(1).max(12),
   install: z
     .object({
       method: z.literal("github-release"),

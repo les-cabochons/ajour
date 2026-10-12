@@ -75,6 +75,24 @@ function assertHttpsUrl(value, label) {
   return url.toString();
 }
 
+const CATALOG_SCHEMA_VERSION = 2;
+const PLUGIN_CAPABILITIES = new Set(["connector", "codeHost", "schema"]);
+
+function assertCapabilityList(value, id) {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 3) {
+    throw new Error(
+      `Plugin "${id}" must declare between 1 and 3 capabilities.`,
+    );
+  }
+  if (
+    value.some((capability) => !PLUGIN_CAPABILITIES.has(capability)) ||
+    new Set(value).size !== value.length
+  ) {
+    throw new Error(`Plugin "${id}" declares an unsupported capability.`);
+  }
+  return [...value];
+}
+
 function assertSlugList(value, label) {
   if (!Array.isArray(value) || value.length < 1 || value.length > 12) {
     throw new Error(`${label} must contain between 1 and 12 values.`);
@@ -105,7 +123,6 @@ function normalizeCatalogEntry(value, expectedId) {
   const allowed = [
     "schemaVersion",
     "id",
-    "type",
     "title",
     "description",
     "author",
@@ -115,6 +132,7 @@ function normalizeCatalogEntry(value, expectedId) {
     "status",
     "compatibility",
     "capabilities",
+    "features",
     "install",
     "images",
     "tags",
@@ -123,7 +141,7 @@ function normalizeCatalogEntry(value, expectedId) {
     (key) => key !== "install" && key !== "images",
   );
   const raw = assertExactKeys(value, allowed, required, `plugin ${expectedId}`);
-  if (raw.schemaVersion !== 1) {
+  if (raw.schemaVersion !== CATALOG_SCHEMA_VERSION) {
     throw new Error(
       `Plugin "${expectedId}" uses an unsupported catalog schema.`,
     );
@@ -137,9 +155,7 @@ function normalizeCatalogEntry(value, expectedId) {
       `Plugin id "${id}" does not match catalog path "${expectedId}".`,
     );
   }
-  if (raw.type !== "connector" && raw.type !== "plugin") {
-    throw new Error(`Plugin "${id}" has an unsupported type.`);
-  }
+  const capabilities = assertCapabilityList(raw.capabilities, id);
   if (!["available", "coming-soon", "deprecated"].includes(raw.status)) {
     throw new Error(`Plugin "${id}" has an unsupported status.`);
   }
@@ -248,9 +264,8 @@ function normalizeCatalogEntry(value, expectedId) {
 
   return {
     entry: {
-      schemaVersion: 1,
+      schemaVersion: CATALOG_SCHEMA_VERSION,
       id,
-      type: raw.type,
       title: assertString(raw.title, "plugin.title", { maximum: 80 }),
       description: assertString(raw.description, "plugin.description", {
         maximum: 500,
@@ -274,7 +289,8 @@ function normalizeCatalogEntry(value, expectedId) {
       },
       status: raw.status,
       compatibility: { pluginApiVersion: compatibility.pluginApiVersion },
-      capabilities: assertSlugList(raw.capabilities, "plugin.capabilities"),
+      capabilities,
+      features: assertSlugList(raw.features, "plugin.features"),
       ...(install ? { install } : {}),
       tags: assertSlugList(raw.tags, "plugin.tags"),
     },
@@ -290,7 +306,7 @@ function parseCatalog(value) {
     "catalog",
   );
   if (
-    raw.schemaVersion !== 1 ||
+    raw.schemaVersion !== CATALOG_SCHEMA_VERSION ||
     !Array.isArray(raw.entries) ||
     raw.entries.length < 1
   ) {
@@ -597,7 +613,10 @@ function createPluginCatalogService(options) {
     if (!entry || entry.status !== "available" || !entry.install) {
       throw new Error(`Plugin "${pluginId}" is not available for download.`);
     }
-    if (entry.type !== "connector") {
+    if (
+      !entry.capabilities.includes("connector") &&
+      !entry.capabilities.includes("codeHost")
+    ) {
       throw new Error(
         "This Ajour version cannot install packaged schema plugins yet.",
       );

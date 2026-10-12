@@ -5,6 +5,7 @@ import type {
   ConnectorOverviewGroup,
   ConnectorPluginManifest,
   ConnectorsOverview,
+  PluginCatalogCapability,
   PluginCatalogEntry,
   PluginCatalogResponse,
   PluginCatalogSettings,
@@ -87,12 +88,24 @@ interface PluginSettingsSnapshot {
 
 function localCatalogEntry(
   plugin: ConnectorPluginManifest | ProjectDataShapePluginManifest,
-  type: PluginCatalogEntry["type"],
 ): PluginCatalogEntry {
+  const capabilities: PluginCatalogCapability[] =
+    "projectDataShape" in plugin.capabilities
+      ? ["schema"]
+      : [
+          ...(plugin.capabilities.connector ? (["connector"] as const) : []),
+          ...(plugin.capabilities.codeHost ? (["codeHost"] as const) : []),
+        ];
+  const features = capabilities.map((capability) =>
+    capability === "connector"
+      ? "work-item-sync"
+      : capability === "codeHost"
+        ? "pull-requests"
+        : "project-data-shape",
+  );
   return {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: plugin.id,
-    type,
     title: plugin.displayName,
     description:
       plugin.description ?? "Locally installed Ajour plugin capability.",
@@ -113,9 +126,15 @@ function localCatalogEntry(
     },
     status: "available",
     compatibility: { pluginApiVersion: plugin.apiVersion },
-    capabilities:
-      type === "connector" ? ["work-item-sync"] : ["project-data-shape"],
-    tags: [type === "connector" ? "connector" : "data-shape"],
+    capabilities,
+    features,
+    tags: capabilities.map((capability) =>
+      capability === "connector"
+        ? "connector"
+        : capability === "codeHost"
+          ? "code-host"
+          : "data-shape",
+    ),
   };
 }
 
@@ -130,7 +149,7 @@ function reconcileEntries(snapshot: PluginSettingsSnapshot) {
     const current = entries.get(group.plugin.id);
     entries.set(group.plugin.id, {
       ...current,
-      catalog: current?.catalog ?? localCatalogEntry(group.plugin, "connector"),
+      catalog: current?.catalog ?? localCatalogEntry(group.plugin),
       connectorGroup: group,
     });
   }
@@ -138,7 +157,7 @@ function reconcileEntries(snapshot: PluginSettingsSnapshot) {
     const current = entries.get(plugin.id);
     entries.set(plugin.id, {
       ...current,
-      catalog: current?.catalog ?? localCatalogEntry(plugin, "plugin"),
+      catalog: current?.catalog ?? localCatalogEntry(plugin),
       dataShapePlugin: plugin,
     });
   }
