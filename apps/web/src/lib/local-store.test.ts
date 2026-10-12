@@ -134,6 +134,48 @@ describe("localStore workflow state sync", () => {
     expect(reloaded.snapshot().workItems[0]?.workflowStateId).toBeUndefined();
   });
 
+  it.each(["clear", "delete"])(
+    "returns a missing-sync archive after %s of its temporary Done state",
+    async (change) => {
+      const { localStore } = await import("./local-store");
+      const doing = localStore.addWorkflowState("Doing", "#d97706");
+      localStore.setWorkflowStateMapping({
+        source: "azure_devops",
+        connectionId: "ado-1",
+        sourceStatusKey: "active",
+        workflowStateId: doing,
+      });
+      localStore.importConnectorWorkItems([buildImportCandidate()]);
+      localStore.importConnectorWorkItems([], {
+        archiveMissingFromConnectionId: "ado-1",
+      });
+      localStore.updateWorkflowState(doing, { name: "Doing", done: true });
+      if (change === "clear")
+        localStore.updateWorkflowState(doing, { name: "Doing", done: false });
+      else localStore.deleteWorkflowState(doing);
+      expect(localStore.snapshot().workItems[0]).toMatchObject({
+        status: "archived",
+        archivedByMissingSync: true,
+      });
+      expect(localStore.snapshot().workItems[0]?.workflowStateId).toBe(
+        change === "clear" ? doing : undefined,
+      );
+      vi.resetModules();
+      const reloaded = (await import("./local-store")).localStore;
+      reloaded.importConnectorWorkItems([buildImportCandidate()]);
+      expect(reloaded.snapshot().workItems[0]).toMatchObject({
+        status: "active",
+        archivedByMissingSync: false,
+      });
+      expect(reloaded.snapshot().workItems[0]?.workflowStateId).toBe(
+        change === "clear" ? doing : undefined,
+      );
+      expect(reloaded.snapshot().workItems[0]?.importedWorkflowStateId).toBe(
+        change === "clear" ? doing : undefined,
+      );
+    },
+  );
+
   it("defaults update checks to the stable release track", async () => {
     const { localStore } = await import("./local-store");
 

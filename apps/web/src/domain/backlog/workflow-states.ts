@@ -312,6 +312,7 @@ export function updateWorkflowState(
       target.done && !done
         ? state.workItems.map((workItem) =>
             workItem.status === "archived" &&
+            !workItem.archivedByMissingSync &&
             workItem.workflowStateId === statusId
               ? { ...workItem, workflowStateId: replacementDoneId }
               : workItem,
@@ -364,6 +365,7 @@ export function deleteWorkflowState(
       workflowStateId:
         workItem.workflowStateId === statusId
           ? workItem.status === "archived" &&
+            !workItem.archivedByMissingSync &&
             isDoneWorkflowState(state.workflowStates, statusId)
             ? replacementDoneId
             : undefined
