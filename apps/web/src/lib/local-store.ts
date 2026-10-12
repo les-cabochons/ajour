@@ -343,7 +343,8 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
       mapping?.source &&
       mapping.connectionId &&
       mapping.sourceStatusKey &&
-      mapping.workflowStateId,
+      (mapping.workflowStateId === null ||
+        typeof mapping.workflowStateId === "string"),
     ),
   );
   const persistedBacklogSortMode = persistedState.backlogSortMode as

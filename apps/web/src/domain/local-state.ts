@@ -229,7 +229,7 @@ export interface LocalWorkflowStateMapping {
   sourceStatusKey: string;
   /** The source state as the tool names it, which a write sends back. */
   sourceStatusLabel?: string;
-  workflowStateId: string;
+  workflowStateId: string | null;
 }
 
 /** What moving a synced item into a workflow state writes to its source. */
@@ -331,6 +331,20 @@ export interface LocalSettleRule {
   priority?: number;
 }
 
+export type LocalWorkItemMoveSnapshot = Pick<
+  LocalWorkItem,
+  | "status"
+  | "workflowStateId"
+  | "workflowStateIdBeforeClose"
+  | "archivedAt"
+  | "archivedSourceStatusKey"
+  | "settledAt"
+  | "settledWithParentId"
+  | "settledSourceStatusKey"
+  | "settledImportedPriority"
+  | "returnedAt"
+>;
+
 /** Only the fields the settle changed. */
 export interface LocalPendingSourceWrite {
   readyAt?: number;
@@ -345,6 +359,11 @@ export interface LocalPendingSourceWrite {
     /** Set by a move, which a failed write undoes. */
     workflowStateId?: string;
     importedWorkflowStateId?: string;
+    carriedChildren?: Array<{
+      id: string;
+      before: LocalWorkItemMoveSnapshot;
+      after: LocalWorkItemMoveSnapshot;
+    }>;
     lifecycle?: Pick<
       LocalWorkItem,
       | "status"

@@ -31,7 +31,7 @@ export interface WorkflowStateMappingInput {
   sourceProjectName?: string;
   sourceStatusKey: string;
   sourceStatusLabel?: string;
-  workflowStateId?: string;
+  workflowStateId?: string | null;
 }
 
 /** A source project's place in the mappings. */
@@ -202,13 +202,15 @@ export function findMappedWorkflowStateId(
   sourceStatusKey: string | undefined,
   sourceProjectName?: string,
 ) {
-  return findWorkflowStateMapping(
-    mappings,
-    source,
-    connectionId,
-    sourceStatusKey,
-    sourceProjectName,
-  )?.workflowStateId;
+  return (
+    findWorkflowStateMapping(
+      mappings,
+      source,
+      connectionId,
+      sourceStatusKey,
+      sourceProjectName,
+    )?.workflowStateId ?? undefined
+  );
 }
 
 /**
@@ -313,6 +315,14 @@ export function planWorkflowStateWrite(
 
   if (rule?.kind === "none") return { kind: "none" };
   if (rule?.kind === "state") {
+    if (
+      !mapped.some(
+        (label) =>
+          normalizeConnectorStatusKey(label) ===
+          normalizeConnectorStatusKey(rule.sourceStatusLabel),
+      )
+    )
+      return { kind: "none" };
     return { kind: "write", sourceStatusLabel: rule.sourceStatusLabel };
   }
   if (rule?.kind === "ask" && mapped.length > 1) {
@@ -441,13 +451,30 @@ export function reconcileImportedWorkflowStates(
   const validWorkflowStateIds = new Set(
     state.workflowStates.map((status) => status._id),
   );
-  const workflowStateMappings = state.workflowStateMappings.filter((mapping) =>
-    validWorkflowStateIds.has(mapping.workflowStateId),
+  const workflowStateMappings = state.workflowStateMappings.filter(
+    (mapping) =>
+      mapping.workflowStateId === null ||
+      validWorkflowStateIds.has(mapping.workflowStateId),
   );
 
   return {
     ...state,
     workflowStateMappings,
+    workflowStateWriteRules: state.workflowStateWriteRules.filter(
+      (rule) =>
+        rule.write.kind !== "state" ||
+        getSourceStatesMappedTo(
+          workflowStateMappings,
+          rule,
+          rule.workflowStateId,
+        ).some(
+          (source) =>
+            normalizeConnectorStatusKey(source.label) ===
+            normalizeConnectorStatusKey(
+              rule.write.kind === "state" ? rule.write.sourceStatusLabel : "",
+            ),
+        ),
+    ),
     workItems: state.workItems.map((workItem) =>
       syncImportedWorkflowState(
         {
@@ -667,7 +694,7 @@ export function setWorkflowStateMapping(
       ),
   );
 
-  if (mapping.workflowStateId) {
+  if (mapping.workflowStateId !== undefined) {
     workflowStateMappings.push({
       source: mapping.source,
       connectionId: mapping.connectionId,

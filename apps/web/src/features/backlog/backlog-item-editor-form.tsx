@@ -279,13 +279,11 @@ export function BacklogItemEditorForm({
       }
       case "update":
         if (workItem) {
-          // Moving into or out of a done state closes or reopens the item.
+          // Every state edit uses the move workflow, including source writes.
           const { workflowStateId, ...patch } = result.patch;
-          const states = localStore.snapshot().workflowStates;
           const changesLifecycle =
             "workflowStateId" in result.patch &&
-            (isDoneWorkflowState(states, workflowStateId) ||
-              isDoneWorkflowState(states, workItem.workflowStateId));
+            workflowStateId !== workItem.workflowStateId;
           const saved = localStore
             .snapshot()
             .workItems.find((item) => item._id === workItem._id);

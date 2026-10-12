@@ -1118,6 +1118,38 @@ describe("writing a move to the source", () => {
     });
   });
 
+  it("restores carried children when the parent's reopen write fails", () => {
+    const before = state();
+    before.workItems.push(
+      item("child", { parentWorkItemId: "a", workflowStateId: "doing" }),
+    );
+    const closed = completeSourceWrite(
+      moveBacklogItemToState(before, "a", "done", factories, {
+        includeSubitems: true,
+        sourceWrites: { a: "Closed" },
+      }),
+      "a",
+    );
+    const reopened = moveBacklogItemToState(closed, "a", "doing", factories, {
+      sourceWrites: { a: "Active" },
+    });
+    expect(find(reopened, "child")?.status).toBe("active");
+    const edited = {
+      ...reopened,
+      workItems: reopened.workItems.map((child) =>
+        child._id === "child" ? { ...child, note: "Keep this edit" } : child,
+      ),
+    };
+    const failed = failSourceWrite(edited, "a");
+    expect(find(failed, "a")?.status).toBe("archived");
+    expect(find(failed, "child")).toMatchObject({
+      status: "archived",
+      workflowStateId: "done",
+      settledWithParentId: "a",
+      note: "Keep this edit",
+    });
+  });
+
   it("changes the source state and leaves the item in its workflow state", () => {
     const inReview = moveBacklogItemToState(state(), "a", "review", factories, {
       sourceWrites: { a: "Resolved" },

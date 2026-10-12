@@ -176,6 +176,29 @@ describe("localStore workflow state sync", () => {
     },
   );
 
+  it("keeps an explicit project-level unmapped override after reload", async () => {
+    const { localStore } = await import("./local-store");
+    const workflowStateId = localStore.snapshot().workflowStates[0]!._id;
+    const key = {
+      source: "azure_devops" as const,
+      connectionId: "c",
+      sourceStatusKey: "active",
+    };
+    localStore.setWorkflowStateMapping({ ...key, workflowStateId });
+    localStore.setWorkflowStateMapping({
+      ...key,
+      sourceProjectName: "Mercury",
+      workflowStateId: null,
+    });
+    vi.resetModules();
+    const reloaded = (await import("./local-store")).localStore.snapshot();
+    expect(
+      reloaded.workflowStateMappings.find(
+        (mapping) => mapping.sourceProjectName === "Mercury",
+      )?.workflowStateId,
+    ).toBeNull();
+  });
+
   it("defaults update checks to the stable release track", async () => {
     const { localStore } = await import("./local-store");
 

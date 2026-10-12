@@ -558,3 +558,117 @@ describe("source state mappings per source project", () => {
     ).toBe("ask");
   });
 });
+
+it("distinguishes a project-level No state override from inheritance", () => {
+  const state = createState({
+    workflowStates: [
+      { _id: "review", name: "In review", color: "#000000", createdAt: 1 },
+    ],
+    workflowStateMappings: [
+      {
+        source: "azure_devops",
+        connectionId: "c",
+        sourceStatusKey: "resolved",
+        workflowStateId: "review",
+      },
+    ],
+  });
+  const key = {
+    source: "azure_devops" as const,
+    connectionId: "c",
+    sourceStatusKey: "resolved",
+    sourceProjectName: "Mercury",
+  };
+  const unmapped = setWorkflowStateMapping(state, {
+    ...key,
+    workflowStateId: null,
+  });
+  expect(
+    findMappedWorkflowStateId(
+      unmapped.workflowStateMappings,
+      "azure_devops",
+      "c",
+      "resolved",
+      "Mercury",
+    ),
+  ).toBeUndefined();
+  expect(
+    findMappedWorkflowStateId(
+      unmapped.workflowStateMappings,
+      "azure_devops",
+      "c",
+      "resolved",
+      "Venus",
+    ),
+  ).toBe("review");
+  const inherited = setWorkflowStateMapping(unmapped, {
+    ...key,
+    workflowStateId: undefined,
+  });
+  expect(
+    findMappedWorkflowStateId(
+      inherited.workflowStateMappings,
+      "azure_devops",
+      "c",
+      "resolved",
+      "Mercury",
+    ),
+  ).toBe("review");
+});
+
+it("does not write a source state remapped away from the destination", () => {
+  const state = createState({
+    workflowStates: [
+      { _id: "review", name: "In review", color: "#000000", createdAt: 1 },
+      { _id: "doing", name: "In progress", color: "#000000", createdAt: 1 },
+    ],
+    workflowStateMappings: [
+      {
+        source: "azure_devops",
+        connectionId: "c",
+        sourceStatusKey: "resolved",
+        sourceStatusLabel: "Resolved",
+        workflowStateId: "review",
+      },
+    ],
+    workflowStateWriteRules: [
+      {
+        source: "azure_devops",
+        connectionId: "c",
+        workflowStateId: "review",
+        write: { kind: "state", sourceStatusLabel: "Resolved" },
+      },
+    ],
+  });
+  const item = {
+    source: "azure_devops" as const,
+    sourceId: "1",
+    sourceConnectionId: "c",
+  };
+  const remapped = setWorkflowStateMapping(state, {
+    source: "azure_devops",
+    connectionId: "c",
+    sourceStatusKey: "resolved",
+    sourceStatusLabel: "Resolved",
+    workflowStateId: "doing",
+  });
+  expect(remapped.workflowStateWriteRules).toEqual([]);
+  expect(planWorkflowStateWrite(remapped, item, "review")).toEqual({
+    kind: "none",
+  });
+  const projectOverride = setWorkflowStateMapping(state, {
+    source: "azure_devops",
+    connectionId: "c",
+    sourceProjectName: "Mercury",
+    sourceStatusKey: "resolved",
+    sourceStatusLabel: "Resolved",
+    workflowStateId: "doing",
+  });
+  expect(
+    planWorkflowStateWrite(
+      projectOverride,
+      { ...item, sourceProjectName: "Mercury" },
+      "review",
+    ),
+  ).toEqual({ kind: "none" });
+});

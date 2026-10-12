@@ -1,3 +1,7 @@
+import {
+  normalizePersistedWorkItem,
+  updateWorkItem,
+} from "@/domain/backlog/work-item-transitions";
 import { describe, expect, it } from "vitest";
 import type { LocalAppState, LocalWorkItem } from "@/domain/local-state";
 import {
@@ -7,6 +11,7 @@ import {
   normalizePriorityLevel,
   normalizePriorityScales,
   setPriorityScale,
+  seedPriorityScales,
   validatePriorityRanges,
 } from "@/domain/backlog/priority";
 
@@ -55,7 +60,11 @@ describe("priority levels", () => {
     expect(
       normalizePriorityScales([
         { source: "jira", connectionId: "c1", ranges: wideRanges },
-        { source: "jira", connectionId: "c2", ranges: { 1: { min: 5, max: 1 } } },
+        {
+          source: "jira",
+          connectionId: "c2",
+          ranges: { 1: { min: 5, max: 1 } },
+        },
         "junk",
       ]),
     ).toEqual([{ source: "jira", connectionId: "c1", ranges: wideRanges }]);
@@ -95,4 +104,38 @@ describe("priority levels", () => {
       }),
     ).toThrow();
   });
+});
+
+it("migrates source-following priorities when the connector scale arrives later", () => {
+  const legacy = {
+    _id: "a",
+    title: "A",
+    source: "jira",
+    sourceConnectionId: "c",
+    status: "active" as const,
+    priority: 1,
+    importedPriority: 1,
+    createdAt: 1,
+  };
+  const migrated = normalizePersistedWorkItem(legacy, () => 1, {
+    priorityScales: [],
+  });
+  expect(migrated.priority).toBe(1);
+  const base = {
+    workItems: [migrated],
+    priorityScales: [],
+    priorityFormat: "levels",
+  } as unknown as LocalAppState;
+  const seeded = seedPriorityScales(
+    base,
+    [{ source: "jira", connectionId: "c" }],
+    { jira: { 4: { min: 1, max: 10 } } },
+  );
+  expect(seeded.workItems[0]?.priority).toBe(4);
+  const overridden = updateWorkItem(base, "a", { priority: 2 });
+  expect(
+    seedPriorityScales(overridden, [{ source: "jira", connectionId: "c" }], {
+      jira: { 4: { min: 1, max: 10 } },
+    }).workItems[0]?.priority,
+  ).toBe(2);
 });

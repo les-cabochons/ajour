@@ -183,9 +183,10 @@ export function seedPriorityScales(
       added.push({ source, connectionId, ranges });
     }
   }
-  return added.length > 0
-    ? { ...state, priorityScales: [...state.priorityScales, ...added] }
-    : state;
+  return added.reduce(
+    (current, scale) => setPriorityScale(current, scale),
+    state,
+  );
 }
 
 /** Keeps only valid stored scales. */

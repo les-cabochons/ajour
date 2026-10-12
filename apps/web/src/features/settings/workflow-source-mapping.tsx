@@ -183,7 +183,7 @@ function SourceProjectMapping({
         sourceProjectName: project.sourceProjectName,
         sourceStatusKey,
         sourceStatusLabel: label,
-        workflowStateId: value === INHERIT ? undefined : value || undefined,
+        workflowStateId: value === INHERIT ? undefined : value || null,
       });
       if (undoToken) {
         offerUndo(undoToken, {
