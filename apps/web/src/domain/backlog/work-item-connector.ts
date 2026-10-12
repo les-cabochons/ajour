@@ -508,7 +508,7 @@ export function archiveDoneConnectorWorkItems(
         getWorkItemSourceKey({ ...workItem, sourceId: workItem.sourceId }) ===
           key,
     );
-    if (!target) {
+    if (!target || target.pendingSourceWrite) {
       continue;
     }
 

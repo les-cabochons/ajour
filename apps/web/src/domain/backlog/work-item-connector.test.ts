@@ -864,6 +864,37 @@ describe("connector sync of workflow states", () => {
 
     expect(sync(archived).workItems[0]?.status).toBe("archived");
   });
+  it("keeps an archived pending source write when sync still reports its old open mapping", () => {
+    const mapped = workflow();
+    mapped.workflowStateMappings.push({
+      source: "azure_devops",
+      connectionId: "connection-1",
+      sourceStatusKey: "closed",
+      workflowStateId: "done",
+    });
+    const imported = sync(mapped, { state: "Resolved" });
+    const pending = settleBacklogItem(
+      imported,
+      imported.workItems[0]!._id,
+      factories,
+      { state: { name: "Closed", done: true } },
+    );
+    expect(pending.workItems[0]?.status).toBe("archived");
+    expect(
+      archiveDoneConnectorWorkItems(
+        pending,
+        [
+          {
+            source: "azure_devops",
+            connectionId: "connection-1",
+            sourceId: "source-1",
+            state: "Resolved",
+          },
+        ],
+        factories,
+      ),
+    ).toEqual({ state: pending, archivedCount: 0 });
+  });
 
   it.each(["changed", "unchanged", "missing"])(
     "handles an archived done item mapped open when its source is %s",
