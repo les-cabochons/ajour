@@ -263,8 +263,26 @@ export interface LocalWorkItem {
   settledSourceStatusKey?: string;
   /** The imported priority when the item was settled, to notice changes made in the source since. */
   settledImportedPriority?: number;
+  /**
+   * A settle's change waiting to be written to the source tool. It is sent when
+   * the Undo toast closes, or at the next launch. See ADR 0001.
+   */
+  pendingSourceWrite?: LocalPendingSourceWrite;
   createdAt: number;
   archivedAt?: number;
+}
+
+/** Only the fields the settle changed. */
+export interface LocalPendingSourceWrite {
+  state?: string;
+  priority?: number;
+  /** The item's source values before the settle, put back if the write fails. */
+  previous: {
+    sourceStatusKey?: string;
+    sourceStatusLabel?: string;
+    importedPriority?: number;
+    priority?: number;
+  };
 }
 
 export type PersistedLocalWorkItem = Omit<

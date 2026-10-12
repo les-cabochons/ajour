@@ -23,12 +23,15 @@ import {
 } from "@/domain/backlog/backlog-status";
 import {
   archiveBacklogItem as applyArchiveBacklogItem,
+  completeSourceWrite as applyCompleteSourceWrite,
+  failSourceWrite as applyFailSourceWrite,
   markBacklogItemOpened as applyMarkBacklogItemOpened,
   restoreBacklogItem as applyRestoreBacklogItem,
   settleBacklogItem as applySettleBacklogItem,
   snoozeBacklogItem as applySnoozeBacklogItem,
   unsettleBacklogItem as applyUnsettleBacklogItem,
   unsnoozeBacklogItem as applyUnsnoozeBacklogItem,
+  type BacklogSettleChange,
 } from "@/domain/backlog/backlog-item-lifecycle";
 import {
   acceptRemoteEstimateValue as applyAcceptRemoteEstimateValue,
@@ -1189,13 +1192,26 @@ export const localStore = {
   },
   /**
    * Settles a backlog item: a manual item is archived, a synced item becomes
-   * settled. Stops and saves its running entry. Returns an undo token, or null
-   * when nothing changed.
+   * settled. `change` records a pending write to the source. Stops and saves
+   * its running entry. Returns an undo token, or null when nothing changed.
    */
-  settleWorkItem(workItemId: string) {
+  settleWorkItem(workItemId: string, change?: BacklogSettleChange) {
     return updateStateWithUndo((state) =>
-      applySettleBacklogItem(state, workItemId, { createId, now: Date.now }),
+      applySettleBacklogItem(
+        state,
+        workItemId,
+        { createId, now: Date.now },
+        change,
+      ),
     );
+  },
+  /** The settle's write reached the source. */
+  completeSourceWrite(workItemId: string) {
+    updateState((state) => applyCompleteSourceWrite(state, workItemId));
+  },
+  /** The settle's write failed: the item goes back to active. */
+  failSourceWrite(workItemId: string) {
+    updateState((state) => applyFailSourceWrite(state, workItemId));
   },
   /** Puts a settled backlog item back to active. Local, with no write. */
   unsettleWorkItem(workItemId: string) {

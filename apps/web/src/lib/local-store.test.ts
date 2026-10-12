@@ -436,6 +436,29 @@ describe("localStore backlog status sync", () => {
     });
   });
 
+  it("drops a settle's pending write when the settle is undone", async () => {
+    const { localStore } = await import("./local-store");
+    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    const workItemId = localStore.snapshot().workItems[0]!._id;
+
+    const token = localStore.settleWorkItem(workItemId, {
+      state: { name: "Waiting", done: false },
+    });
+    expect(localStore.snapshot().workItems[0]).toMatchObject({
+      status: "settled",
+      pendingSourceWrite: { state: "Waiting" },
+    });
+
+    expect(localStore.undo(token!)).toBe("restored");
+    expect(localStore.snapshot().workItems[0]).toMatchObject({
+      status: "active",
+      sourceStatusLabel: "Active",
+    });
+    expect(
+      localStore.snapshot().workItems[0]?.pendingSourceWrite,
+    ).toBeUndefined();
+  });
+
   it("unarchives imported work items when they return during auto-sync reconciliation", async () => {
     const { localStore } = await import("./local-store");
 

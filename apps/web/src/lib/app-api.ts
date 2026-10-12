@@ -8,8 +8,13 @@ import {
   pluginSystemActivationUpdateSchema,
   connectorPluginInstallResponseSchema,
   connectorPluginUninstallResponseSchema,
+  connectorSettleStatesRequestSchema,
+  connectorSettleStatesResultSchema,
+  connectorSettleWriteRequestSchema,
+  connectorSettleWriteResultSchema,
   connectorSyncRequestSchema,
   connectorSyncResultSchema,
+  type ConnectorSettleWriteRequest,
   type ConnectorSyncRequest,
   connectorImportCommitResponseSchema,
   connectorImportDismissRequestSchema,
@@ -514,6 +519,40 @@ export function syncConnectorConnection(
       backlogUpdatedCount: importResult.updatedCount,
     };
   });
+}
+
+/** The states a backlog item can move to, for the settle dialog. */
+export function listConnectorSettleStates(
+  pluginId: string,
+  connectionId: string,
+  sourceId: string,
+) {
+  return appApiRequest(
+    `/api/connectors/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/settle-states`,
+    {
+      method: "POST",
+      body: JSON.stringify(
+        connectorSettleStatesRequestSchema.parse({ sourceId }),
+      ),
+    },
+    connectorSettleStatesResultSchema,
+  );
+}
+
+/** Writes a settle's changed state and priority to the source. */
+export function writeConnectorSettle(
+  pluginId: string,
+  connectionId: string,
+  request: ConnectorSettleWriteRequest,
+) {
+  return appApiRequest(
+    `/api/connectors/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/settle`,
+    {
+      method: "POST",
+      body: JSON.stringify(connectorSettleWriteRequestSchema.parse(request)),
+    },
+    connectorSettleWriteResultSchema,
+  );
 }
 
 export function listConnectorImportCandidates() {

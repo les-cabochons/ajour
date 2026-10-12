@@ -1,0 +1,224 @@
+import { useEffect, useState } from "react";
+import type { ConnectorSettleState } from "@ajour/shared";
+import { Button } from "@/components/ui/button";
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
+import {
+  Field,
+  FieldContent,
+  FieldDescription,
+  FieldError,
+  FieldLabel,
+} from "@/components/ui/field";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/select";
+import type { BacklogSettleChange } from "@/domain/backlog/backlog-item-lifecycle";
+import type { LocalWorkItem } from "@/domain/local-state";
+import { sendPendingSourceWrites } from "@/features/backlog/backlog-source-writes";
+import { formatPriorityInput } from "@/features/backlog/backlog-task-editor";
+import {
+  buildSettleChange,
+  findSettleState,
+  groupSettleStates,
+} from "@/features/backlog/settle-draft";
+import { offerUndo } from "@/features/feedback/undo-toast";
+import { listConnectorSettleStates } from "@/lib/app-api";
+import { localStore } from "@/lib/local-store";
+
+let requestListener: ((workItemId: string) => void) | null = null;
+
+/**
+ * Opens the settle dialog for a synced backlog item. Does nothing until the
+ * app shell has mounted the dialog.
+ */
+export function requestSettle(workItemId: string) {
+  requestListener?.(workItemId);
+}
+
+/**
+ * Settles the item, with Undo in a toast. A change to the source is sent when
+ * the toast closes, so Undo cancels it (ADR 0001).
+ */
+export function settleBacklogItemWithUndo(
+  workItem: LocalWorkItem,
+  change?: BacklogSettleChange,
+) {
+  const token = localStore.settleWorkItem(workItem._id, change);
+  const settled = localStore
+    .snapshot()
+    .workItems.find((candidate) => candidate._id === workItem._id);
+  offerUndo(token, {
+    title:
+      settled?.status === "archived"
+        ? "Backlog item archived"
+        : "Backlog item settled",
+    subject: "backlog item",
+    onWindowClosed: settled?.pendingSourceWrite
+      ? () => void sendPendingSourceWrites([workItem._id])
+      : undefined,
+  });
+}
+
+type StatesLoad =
+  | { status: "loading" }
+  | { status: "ready"; states: ConnectorSettleState[] }
+  | { status: "failed"; message: string };
+
+/**
+ * The settle dialog: a state picker grouped by state category and a priority,
+ * both starting at the item's current values. Settling with nothing changed
+ * stays local. Mounted once in the app shell.
+ */
+export function SettleDialogHost() {
+  const [workItem, setWorkItem] = useState<LocalWorkItem | null>(null);
+  const [load, setLoad] = useState<StatesLoad>({ status: "loading" });
+  const [stateName, setStateName] = useState("");
+  const [priority, setPriority] = useState("");
+
+  useEffect(() => {
+    const listener = (id: string) => {
+      const item = localStore
+        .snapshot()
+        .workItems.find((candidate) => candidate._id === id);
+      if (!item) return;
+      setWorkItem(item);
+      setStateName(item.sourceStatusLabel ?? "");
+      setPriority(formatPriorityInput(item.importedPriority ?? item.priority));
+      setLoad({ status: "loading" });
+    };
+    requestListener = listener;
+    return () => {
+      if (requestListener === listener) requestListener = null;
+    };
+  }, []);
+
+  useEffect(() => {
+    if (!workItem?.sourceId || !workItem.sourceConnectionId) return;
+    let cancelled = false;
+    listConnectorSettleStates(
+      workItem.source,
+      workItem.sourceConnectionId,
+      workItem.sourceId,
+    ).then(
+      (result) => {
+        if (!cancelled) setLoad({ status: "ready", states: result.states });
+      },
+      (error: unknown) => {
+        if (!cancelled) {
+          setLoad({
+            status: "failed",
+            message: error instanceof Error ? error.message : "Unknown error",
+          });
+        }
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [workItem]);
+
+  const states = load.status === "ready" ? load.states : [];
+  const currentListed = Boolean(
+    findSettleState(states, workItem?.sourceStatusLabel),
+  );
+  const change = buildSettleChange(states, stateName, priority);
+  const archives = change?.state?.done === true;
+
+  function settle() {
+    if (!workItem || !change) return;
+    settleBacklogItemWithUndo(workItem, change);
+    setWorkItem(null);
+  }
+
+  return (
+    <Dialog
+      open={Boolean(workItem)}
+      onOpenChange={(open) => !open && setWorkItem(null)}
+    >
+      <DialogContent className="max-w-sm gap-4">
+        <DialogHeader className="gap-1">
+          <DialogTitle>Settle</DialogTitle>
+          <DialogDescription className="truncate">
+            {workItem?.title}
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="flex flex-col gap-4"
+          onSubmit={(event) => {
+            event.preventDefault();
+            settle();
+          }}
+        >
+          <Field>
+            <FieldLabel htmlFor="settle-state">State</FieldLabel>
+            <FieldContent>
+              <NativeSelect
+                id="settle-state"
+                value={stateName}
+                disabled={load.status !== "ready"}
+                onChange={(event) => setStateName(event.target.value)}
+              >
+                {!currentListed ? (
+                  <option value={workItem?.sourceStatusLabel ?? ""}>
+                    {load.status === "loading"
+                      ? "Loading states…"
+                      : (workItem?.sourceStatusLabel ?? "No state")}
+                  </option>
+                ) : null}
+                {groupSettleStates(states).map((group) => (
+                  <optgroup key={group.category} label={group.category}>
+                    {group.states.map((state) => (
+                      <option key={state.name} value={state.name}>
+                        {state.name}
+                      </option>
+                    ))}
+                  </optgroup>
+                ))}
+              </NativeSelect>
+              {load.status === "failed" ? (
+                <FieldError>Couldn't load states: {load.message}</FieldError>
+              ) : archives ? (
+                <FieldDescription>
+                  This state is done, so the item will be archived.
+                </FieldDescription>
+              ) : null}
+            </FieldContent>
+          </Field>
+          <Field>
+            <FieldLabel htmlFor="settle-priority">Priority</FieldLabel>
+            <FieldContent>
+              <Input
+                id="settle-priority"
+                inputMode="numeric"
+                value={priority}
+                aria-invalid={change === null}
+                onChange={(event) => setPriority(event.target.value)}
+              />
+              {change === null ? (
+                <FieldError>Enter a whole number from 0 to 999.</FieldError>
+              ) : null}
+            </FieldContent>
+          </Field>
+          <DialogFooter>
+            <Button
+              type="button"
+              variant="ghost"
+              onClick={() => setWorkItem(null)}
+            >
+              Cancel
+            </Button>
+            <Button type="submit" disabled={change === null}>
+              {archives ? "Archive" : "Settle"}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  );
+}

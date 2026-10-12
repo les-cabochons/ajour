@@ -125,6 +125,10 @@ The backlog editor module is feature-local because its vocabulary and commands b
   which categories are done, and also reports Ajour's items that reached one,
   so Ajour archives them. The API returns those as `doneItems` and never stages
   them for review.
+- A settle's change to the source is a `pendingSourceWrite` on the work item,
+  set by `settleBacklogItem` and cleared by `completeSourceWrite` or
+  `failSourceWrite` in `domain/backlog/backlog-item-lifecycle.ts`. Undo drops
+  it with the rest of the settle, and a sync leaves its values in place.
 
 ## Shared
 

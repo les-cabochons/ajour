@@ -10,10 +10,17 @@ import { localStore } from "@/lib/local-store";
  * store returned for the action; null means the action changed nothing, so no
  * toast shows. `subject` names what the action changed, for the message shown
  * when Undo is refused because it changed again, such as "entry".
+ *
+ * `onWindowClosed` runs once the action can no longer be undone, whether or
+ * not it was. A settle sends its write to the source from there (ADR 0001).
  */
 export function offerUndo(
   token: string | null,
-  { title, subject }: { title: string; subject: string },
+  {
+    title,
+    subject,
+    onWindowClosed,
+  }: { title: string; subject: string; onWindowClosed?: () => void },
 ) {
   if (!token) return;
 
@@ -24,7 +31,10 @@ export function offerUndo(
         showToast(`Can't undo. The ${subject} changed after that action.`);
       }
     },
-    onClose: () => localStore.forgetUndo(token),
+    onClose: () => {
+      localStore.forgetUndo(token);
+      onWindowClosed?.();
+    },
   });
 }
 
