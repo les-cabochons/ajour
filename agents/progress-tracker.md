@@ -195,6 +195,13 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Project Health Notes
 
+### Clearing Done during carried recovery, 2026-10-12
+
+- [x] Clearing Done translates archived carried post-move snapshots to the replacement Done state, matching the live child. Pre-move snapshots remain unchanged, preserving pending-reopen Undo.
+- [x] The reload and failed-close regression now covers deleting an open state, deleting Done and clearing Done. The new case failed before the fix, and the existing reopen Undo case also passes.
+- [x] The rebased stack passes all 857 unit tests, three focused Chromium scenarios for failed drag recovery, parent close with Undo and Done settings, workspace typecheck, production builds and formatting.
+- [ ] Complete fresh reviews of the mapping and view heads before integration. The integration thread owns merging.
+
 ### Done rollback and unlisted drafts, 2026-10-12
 
 - [x] The foundation's failed-write command reapplies the domain lifecycle rules after restoring values. The mapping layer retains its stronger deferred-mapping reconciliation. A persisted-store regression covers a shared workflow marked Done during a pending Settle, failure, reload and Restore.
