@@ -195,6 +195,13 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Project Health Notes
 
+### Missing-sync archives after Done changes, 2026-10-12
+
+- [x] Clearing Done leaves missing-sync archives in their source-following workflow. Deleting the state clears their workflow instead of treating them as explicit closes. The same provenance check applies to carried recovery snapshots.
+- [x] Two persisted-store regressions reproduce clearing and deleting a temporary Done state, reload and an unchanged source return. Both failed before the fix and now return the item to active work.
+- [x] The stack passes all 859 unit tests, workspace typecheck, production builds, formatting and four focused Chromium scenarios. Archive passed on retry after Chromium reported `ERR_NO_BUFFER_SPACE` during initial navigation; the other three passed on the first run.
+- [ ] Complete fresh Codex reviews of the pushed stack before integration. The integration thread owns merging.
+
 ### Clearing Done during carried recovery, 2026-10-12
 
 - [x] Clearing Done translates archived carried post-move snapshots to the replacement Done state, matching the live child. Pre-move snapshots remain unchanged, preserving pending-reopen Undo.
