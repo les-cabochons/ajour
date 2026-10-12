@@ -12,7 +12,10 @@ import {
   getWorkItemParentKey,
   isSubtaskWorkItem,
 } from "@/domain/backlog/work-item-hierarchy";
-import type { WorkItemFactories } from "@/domain/backlog/work-item-transitions";
+import {
+  reorderWorkItems,
+  type WorkItemFactories,
+} from "@/domain/backlog/work-item-transitions";
 import {
   findMappedWorkflowStateId,
   getFirstDoneWorkflowState,
@@ -24,6 +27,7 @@ import {
   getWorkItemPriorityRanges,
   type PriorityRanges,
 } from "@/domain/backlog/priority";
+import { orderBacklogItems } from "@/domain/backlog/backlog-view";
 import { saveTimer } from "@/domain/time/timer-transitions";
 
 /**
@@ -37,6 +41,7 @@ export interface CloseSubitemsOptions {
 }
 
 export interface MoveBacklogItemOptions extends CloseSubitemsOptions {
+  orderedIds?: string[];
   /**
    * The source state to write for each moved item, by item id. The item shows
    * it at once, and the write is sent after the Undo window (ADR 0001).
@@ -316,7 +321,10 @@ export function moveBacklogItemToState(
     options,
   );
   const writes = options.sourceWrites ?? {};
-  if (Object.keys(writes).length === 0) return moved;
+  if (Object.keys(writes).length === 0)
+    return options.orderedIds
+      ? reorderWorkItems(moved, options.orderedIds)
+      : moved;
 
   const writtenState = {
     ...moved,
@@ -389,7 +397,7 @@ export function moveBacklogItemToState(
   };
   // Children receive their own source writes in this same pass. Record their
   // final optimistic lifecycle, including the written archive source state.
-  return {
+  const recoveryState = {
     ...writtenState,
     workItems: writtenState.workItems.map((item) => {
       const write = item.pendingSourceWrite;
@@ -413,6 +421,9 @@ export function moveBacklogItemToState(
       };
     }),
   };
+  return options.orderedIds
+    ? reorderWorkItems(recoveryState, options.orderedIds)
+    : recoveryState;
 }
 
 function moveWithoutWrites(
@@ -1155,13 +1166,6 @@ export function selectSidebarBacklogItems(
     );
   }
 
-  // Like the Backlog page: a missing priority sorts as the largest value.
-  const direction = state.backlogSortMode === "priority_desc" ? -1 : 1;
-  const priority = (workItem: LocalWorkItem) =>
-    workItem.priority ?? Number.MAX_SAFE_INTEGER;
-  return [...listed].sort(
-    (left, right) =>
-      (priority(left) - priority(right)) * direction ||
-      ownIndex(left) - ownIndex(right),
-  );
+  // Every other ordering sorts like the Backlog page.
+  return orderBacklogItems(listed, state.workItems, state.backlogSortMode);
 }

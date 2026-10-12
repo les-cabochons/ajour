@@ -365,3 +365,15 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Verified the full workspace typecheck.
 - [x] Verified the production web and desktop renderer builds.
 - [ ] Assign an owner and record a manual result in `qa/routines/local-workspace-smoke.md`.
+
+## Backlog views, 2026-10-12
+
+- [x] Grouped list and board share workflow state, priority and project grouping.
+- [x] Display options and filter chips persist per device. Ordering remains in local state and the sidebar shares it.
+- [x] Subitems have independent rows and cards, with closed-count progress on their parents.
+- [x] State and priority pickers, keyboard moves and pointer moves use the shared lifecycle commands and Undo.
+- [x] Peek shows item details and immediate property changes. Edit uses the existing form in the same panel.
+- [x] Project swimlanes collapse independently. Archive includes old done items and items missing from sync.
+- [x] Narrow windows force the list while retaining the desktop layout preference.
+- [x] Foundation PR review fixes cover clearing done states, source reopen propagation, settled return, pending write deadlines, failed-move lifecycle restoration and priority migration.
+- [ ] Finish verification and PR review for the view layer.

@@ -177,7 +177,14 @@ export interface LocalTimesheetImportDraft {
   importedAt: number;
 }
 
-export type BacklogSortMode = "custom" | "priority_asc" | "priority_desc";
+/** The Backlog page's ordering, which the sidebar shares. */
+export type BacklogSortMode =
+  | "custom"
+  | "priority_asc"
+  | "priority_desc"
+  | "created"
+  | "remaining"
+  | "title";
 
 export type ThemeMode = "system" | "dark" | "light";
 export type UpdateTrack = "stable" | "nightly";

@@ -69,6 +69,17 @@ Keep React rendering and runtime adapters outside these modules. For example, th
 
 The backlog editor module is feature-local because its vocabulary and commands belong to the backlog workflow. The drag module is runtime-aware and cross-feature, so it belongs in `lib`.
 
+### Backlog views
+
+- Selection, filtering, grouping and ordering: `domain/backlog/backlog-view.ts`.
+- Device-local preferences: `lib/backlog-view-settings.ts`. Ordering stays in local state.
+- Page orchestration: `features/backlog/backlog-page.tsx`.
+- Display controls and filters: `features/backlog/backlog-display.tsx`.
+- Shared row/card controls: `features/backlog/backlog-item-surface.tsx`.
+- Read-only details and immediate property pickers: `features/backlog/backlog-peek.tsx`.
+- Pointer moves: `features/backlog/use-backlog-drag.ts`, using `lib/table-drag.ts`.
+- The Undo module also captures custom work-item ordering. Group moves and their order change form one undoable operation.
+
 ## Desktop
 
 - Electron
