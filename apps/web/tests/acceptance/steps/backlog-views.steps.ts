@@ -430,6 +430,90 @@ When("I save the other item in To do", async ({ page }) => {
   await page.getByRole("option", { name: "To do", exact: true }).click();
   await editor.getByRole("button", { name: "Save", exact: true }).click();
 });
+
+When(
+  "I change the editor workflow draft to {string}",
+  async ({ page }, name: string) => {
+    await page
+      .getByRole("complementary", { name: "Backlog item editor" })
+      .getByRole("combobox", { name: "Workflow state", exact: true })
+      .click();
+    await page.getByRole("option", { name, exact: true }).click();
+  },
+);
+When("I edit the parent item from the Backlog peek", async ({ page }) => {
+  await page
+    .locator('[data-work-item-id="parent"] .backlog-item-title')
+    .click();
+  await page
+    .getByRole("complementary", { name: "Backlog item peek" })
+    .getByRole("button", { name: "Edit", exact: true })
+    .click();
+});
+When("I cancel the subitem close prompt", async ({ page }) => {
+  await expect(
+    page.getByRole("button", { name: "Include subitem", exact: true }),
+  ).toHaveCount(1);
+  await page.keyboard.press("Escape");
+});
+Then(
+  "the parent remains active and its editor stays open",
+  async ({ page }) => {
+    await expect(
+      page.getByRole("complementary", { name: "Backlog item editor" }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("dialog", {
+        name: "Also close its 1 open subitem?",
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    const item = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems.find(
+        (item: { _id: string }) => item._id === "parent",
+      ),
+    );
+    expect(item).toMatchObject({ status: "active", workflowStateId: "todo" });
+  },
+);
+Given("an earlier project has asymmetric board columns", async ({ page }) => {
+  await page.evaluate(() => {
+    const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
+    state.projects.unshift({
+      ...state.projects[0],
+      _id: "q",
+      name: "Earlier project",
+      displayName: "Earlier project",
+    });
+    const base = state.workItems.find(
+      (item: { _id: string }) => item._id === "other",
+    );
+    state.workItems.push(
+      ...["todo", "doing", "doing", "doing"].map((workflowStateId, index) => ({
+        ...base,
+        _id: `earlier-${index}`,
+        title: `Earlier item ${index}`,
+        projectId: "q",
+        workflowStateId,
+      })),
+    );
+    localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+  });
+  await page.reload();
+});
+When("I move focus right from the parent card", async ({ page }) => {
+  await page.locator('[data-work-item-id="parent"]').focus();
+  await page.keyboard.press("ArrowRight");
+});
+When("I press {word} on the other card", async ({ page }, key: string) => {
+  await page.locator('[data-work-item-id="other"]').press(key);
+});
+Then("the other card has focus", async ({ page }) => {
+  await expect(page.locator('[data-work-item-id="other"]')).toBeFocused();
+});
+Then("the parent card has focus", async ({ page }) => {
+  await expect(page.locator('[data-work-item-id="parent"]')).toBeFocused();
+});
 Then("the other item is in To do and Undo is offered", async ({ page }) => {
   await expect(
     page

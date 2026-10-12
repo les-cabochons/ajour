@@ -70,7 +70,7 @@ export function BacklogStatePicker({
   item: LocalWorkItem;
   state: LocalAppState;
   full?: boolean;
-  beforeChange?: () => boolean;
+  beforeChange?: () => boolean | Promise<boolean>;
 }) {
   const workflow = state.workflowStates.find(
     (s) => s._id === item.workflowStateId,
@@ -97,8 +97,8 @@ export function BacklogStatePicker({
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
         <DropdownMenuItem
-          onClick={() => {
-            if (beforeChange?.() !== false)
+          onClick={async () => {
+            if ((await beforeChange?.()) !== false)
               void moveBacklogItemWithUndo(item, undefined);
           }}
         >
@@ -107,8 +107,8 @@ export function BacklogStatePicker({
         {state.workflowStates.map((s) => (
           <DropdownMenuItem
             key={s._id}
-            onClick={() => {
-              if (beforeChange?.() !== false)
+            onClick={async () => {
+              if ((await beforeChange?.()) !== false)
                 void moveBacklogItemWithUndo(item, s._id);
             }}
           >
@@ -128,7 +128,7 @@ export function BacklogPriorityPicker({
 }: {
   item: LocalWorkItem;
   full?: boolean;
-  beforeChange?: () => boolean;
+  beforeChange?: () => boolean | Promise<boolean>;
   hidden?: boolean;
 }) {
   return (
@@ -161,8 +161,8 @@ export function BacklogPriorityPicker({
           (p) => (
             <DropdownMenuItem
               key={p.name}
-              onClick={() => {
-                if (beforeChange?.() !== false)
+              onClick={async () => {
+                if ((await beforeChange?.()) !== false)
                   patchBacklogItemWithUndo(
                     item,
                     { priority: p.level },
@@ -214,7 +214,7 @@ export function BacklogItemSurface({
   state: LocalAppState;
   view: BacklogViewSettings;
   icons: ReturnType<typeof useWorkItemIconData>;
-  beforeChange: () => boolean;
+  beforeChange: () => boolean | Promise<boolean>;
   board: boolean;
   column: number;
   now: number;

@@ -247,7 +247,9 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
       void navigate({ to: "/backlog" });
     }
     runBacklogItemAction(
-      item,
+      localStore
+        .snapshot()
+        .workItems.find((current) => current._id === item._id) ?? item,
       actionId,
       (hosted: HostedBacklogItemActionId) => setEditor(hosted),
       options,

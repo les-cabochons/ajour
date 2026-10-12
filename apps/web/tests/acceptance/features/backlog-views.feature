@@ -83,3 +83,33 @@ Feature: Backlog list and board views
     Then the other item is in To do and Undo is offered
     When I undo the last Backlog move
     Then the other item is back in In progress
+
+  Scenario Outline: Finish a workflow draft before an editor action
+    Given the other Backlog item uses "<source>"
+    When I edit the other item from the Backlog peek
+    And I change the editor workflow draft to "To do"
+    And I choose "<action>" in the Backlog editor actions
+    Then the Backlog editor is closed and the other item is archived
+
+    Examples:
+      | source | action  |
+      | azure  | Archive |
+      | manual | Settle  |
+
+  Scenario: Cancel a draft move before running an editor action
+    When I edit the parent item from the Backlog peek
+    And I change the editor workflow draft to "Done"
+    And I choose "Settle" in the Backlog editor actions
+    And I cancel the subitem close prompt
+    Then the parent remains active and its editor stays open
+
+  Scenario: Keep board arrow navigation in its project swimlane
+    Given an earlier project has asymmetric board columns
+    When I choose the Backlog board
+    And I enable project swimlanes
+    And I move focus right from the parent card
+    Then the other card has focus
+    When I press ArrowDown on the other card
+    Then the other card has focus
+    When I press ArrowLeft on the other card
+    Then the parent card has focus

@@ -391,3 +391,12 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Row and peek source-state pickers allow a single alternative. Archiving closes the editor and disables the peek's Edit action.
 - [x] All 696 unit tests and all 50 Chromium acceptance scenarios passed. Workspace typecheck, production build and formatting passed.
 - [ ] Complete Codex re-review of the updated PR stack.
+
+## Backlog integration review follow-up, 2026-10-12
+
+- [x] Changed done-category source states update their imported baseline and override local moves consistently with ordinary import.
+- [x] Deleting an occupied Done state keeps archived items in another Done state, preserving their pre-close state for Restore.
+- [x] Editor commits wait for workflow moves and share an in-flight commit. Actions consume the committed item once, and cancelling a move blocks the next action.
+- [x] Each project swimlane owns its keyboard focus scope. Arrow navigation stays in that lane despite uneven columns in earlier projects.
+- [x] Verification passed: 706 unit tests, all 54 Chromium acceptance scenarios, workspace typecheck, production build and formatting. Four new browser scenarios cover workflow drafts followed by Archive or Settle, cancellation and swimlane focus.
+- [ ] Complete Codex re-review of the new stack heads before integration.

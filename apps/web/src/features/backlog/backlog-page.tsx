@@ -162,31 +162,41 @@ export function BacklogPage() {
       closeEditor();
     if (peekId && !peek) setPeekId(null);
   }, [editor, target, peekId, peek, closeEditor]);
-  function leaveDraft() {
+  async function leaveDraft() {
     return editorRef.current?.commitBeforeSwitch() ?? true;
   }
-  function openEditor(request: EditorRequest) {
-    if (!leaveDraft()) return;
+  function showEditor(request: EditorRequest) {
     draft.current = null;
     setEditor(request);
     setEditorSerial((n) => n + 1);
   }
-  function openPage(item: LocalWorkItem) {
-    if (!leaveDraft()) return;
+  async function openEditor(request: EditorRequest) {
+    if (await leaveDraft()) showEditor(request);
+  }
+  async function openPage(item: LocalWorkItem) {
+    if (!(await leaveDraft())) return;
     void navigate({ to: "/backlog/$itemId", params: { itemId: item._id } });
   }
-  function select(item: LocalWorkItem) {
-    if (!drag.clickAllowed() || !leaveDraft()) return;
+  async function select(item: LocalWorkItem) {
+    if (!drag.clickAllowed() || !(await leaveDraft())) return;
     closeEditor();
-    if (narrow) openPage(item);
+    if (narrow)
+      void navigate({ to: "/backlog/$itemId", params: { itemId: item._id } });
     else setPeekId(item._id);
   }
-  function action(
+  async function action(
     item: LocalWorkItem,
     id: BacklogItemActionId,
     options?: { askToSettle?: boolean },
   ) {
-    if (!leaveDraft()) return;
+    if (!(await leaveDraft())) return;
+    runCommittedAction(item, id, options);
+  }
+  function runCommittedAction(
+    item: LocalWorkItem,
+    id: BacklogItemActionId,
+    options?: { askToSettle?: boolean },
+  ) {
     const saved =
       localStore.snapshot().workItems.find((i) => i._id === item._id) ?? item;
     if (id === "new-entry") closeEditor();
@@ -196,8 +206,8 @@ export function BacklogPage() {
       (hosted) => {
         if (hosted === "edit") {
           setPeekId(item._id);
-          openEditor({ kind: "edit", itemId: item._id });
-        } else openEditor({ kind: "create", parentId: item._id });
+          showEditor({ kind: "edit", itemId: item._id });
+        } else showEditor({ kind: "create", parentId: item._id });
       },
       options,
     );
@@ -226,7 +236,7 @@ export function BacklogPage() {
         })),
       )
       .find((t) => t.key === key);
-    if (!item || !found || !leaveDraft()) return;
+    if (!item || !found || !(await leaveDraft())) return;
     const { group, lane } = found;
     // A swimlane is a display partition. Drops stay in the item's project;
     // project grouping is the explicit path for changing its project.
@@ -295,7 +305,7 @@ export function BacklogPage() {
     );
     if (enabled) action(item, enabled.id);
   });
-  function itemKeys(
+  async function itemKeys(
     item: LocalWorkItem,
     group: BacklogGroup,
     e: React.KeyboardEvent<HTMLElement>,
@@ -317,7 +327,7 @@ export function BacklogPage() {
       if (id === "item.peek") {
         e.preventDefault();
         if (narrow) openPage(item);
-        else if (leaveDraft()) {
+        else if (await leaveDraft()) {
           closeEditor();
           setPeekId((current) => (current === item._id ? null : item._id));
         }
@@ -377,7 +387,7 @@ export function BacklogPage() {
           draft.current = fields;
         }}
         onClose={closeEditor}
-        onAction={action}
+        onAction={runCommittedAction}
       />
     );
   }
@@ -448,8 +458,8 @@ export function BacklogPage() {
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end">
                 <DropdownMenuItem
-                  onClick={() => {
-                    if (!leaveDraft()) return;
+                  onClick={async () => {
+                    if (!(await leaveDraft())) return;
                     closeEditor();
                     closePeek();
                     setArchive(true);
@@ -511,6 +521,7 @@ export function BacklogPage() {
             <section
               key={lane.key}
               className="backlog-swimlane"
+              data-focus-scope
               aria-label={lane.label || "Backlog items"}
             >
               {lane.kind === "project" && (
@@ -613,8 +624,8 @@ export function BacklogPage() {
                                 column={board ? column : 0}
                                 now={now}
                                 selected={item._id === peekId}
-                                beforeChange={() => {
-                                  if (!leaveDraft()) return false;
+                                beforeChange={async () => {
+                                  if (!(await leaveDraft())) return false;
                                   closeEditor();
                                   return true;
                                 }}
