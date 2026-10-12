@@ -100,7 +100,7 @@ function matchesFilter(
   filter: BacklogFilter,
   context: BacklogViewContext,
   workflowStateIds: ReadonlySet<string>,
-  projectIds: ReadonlySet<string>,
+  taskIdsByProject: ReadonlyMap<string, ReadonlySet<string>>,
 ) {
   switch (filter.field) {
     case "state":
@@ -114,12 +114,18 @@ function matchesFilter(
       return String(workItem.priority ?? "") === filter.value;
     case "project":
       return (
-        (workItem.projectId && projectIds.has(workItem.projectId)
+        (workItem.projectId && taskIdsByProject.has(workItem.projectId)
           ? workItem.projectId
           : "") === filter.value
       );
     case "task":
-      return (workItem.taskId ?? "") === filter.value;
+      return (
+        (workItem.projectId &&
+        workItem.taskId &&
+        taskIdsByProject.get(workItem.projectId)?.has(workItem.taskId)
+          ? workItem.taskId
+          : "") === filter.value
+      );
     case "sourceProject":
       return (workItem.sourceProjectName ?? "") === filter.value;
     case "connection":
@@ -150,7 +156,12 @@ export function selectBacklogViewItems(
   const workflowStateIds = new Set(
     state.workflowStates.map((state) => state._id),
   );
-  const projectIds = new Set(state.projects.map((project) => project._id));
+  const taskIdsByProject = new Map(
+    state.projects.map((project) => [
+      project._id,
+      new Set(project.tasks.map((task) => task._id)),
+    ]),
+  );
   const filtersByField = new Map<BacklogFilterField, BacklogFilter[]>();
   for (const filter of filters) {
     filtersByField.set(filter.field, [
@@ -186,7 +197,7 @@ export function selectBacklogViewItems(
             filter,
             context,
             workflowStateIds,
-            projectIds,
+            taskIdsByProject,
           ),
         )
       ) {

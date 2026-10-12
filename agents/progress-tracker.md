@@ -195,6 +195,13 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Project Health Notes
 
+### Task filter consistency, 2026-10-12
+
+- [x] Task filters resolve assignments within each item's configured project. Missing tasks, tasks in another project and tasks without a valid project match No task. Known archived assignments remain filterable.
+- [x] Six selector cases cover empty, known, stale, archived and combined task filters. Five cases failed before the fix.
+- [x] All 871 unit tests, workspace typecheck, production builds, formatting and three focused Chromium scenarios for filtering and task-preserving project reselection passed.
+- [ ] Complete Codex review of the updated view head before integration. The integration thread owns merging.
+
 ### Rejecting stale unlisted Settle drafts, 2026-10-12
 
 - [x] Settle rejects an unlisted draft that differs from the current source state, rather than silently dropping it. Unchanged unlisted states still allow local Settle.

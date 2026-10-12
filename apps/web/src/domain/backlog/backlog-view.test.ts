@@ -151,6 +151,72 @@ describe("backlog view selection", () => {
       ).map((workItem) => workItem._id),
     ).toEqual(expected);
   });
+  it.each([
+    {
+      values: [""],
+      expected: [
+        "missing",
+        "unknown",
+        "wrong-project",
+        "unknown-project",
+        "no-project",
+      ],
+    },
+    { values: ["p-task"], expected: ["known"] },
+    { values: ["q-task"], expected: ["other-known"] },
+    { values: ["deleted"], expected: [] },
+    { values: ["archived-task"], expected: ["archived-assignment"] },
+    {
+      values: ["", "p-task"],
+      expected: [
+        "missing",
+        "unknown",
+        "wrong-project",
+        "unknown-project",
+        "no-project",
+        "known",
+      ],
+    },
+  ])(
+    "filters tasks within their assigned project for $values",
+    ({ values, expected }) => {
+      const state = {
+        workflowStates,
+        projects: projects.map((project) => ({
+          ...project,
+          tasks: [
+            {
+              _id: `${project._id}-task`,
+              name: "Task",
+              status: project.status,
+              createdAt: 1,
+            },
+          ],
+        })),
+        workItems: [
+          item("missing", { projectId: "p" }),
+          item("unknown", { projectId: "p", taskId: "deleted" }),
+          item("wrong-project", { projectId: "p", taskId: "q-task" }),
+          item("unknown-project", { projectId: "deleted", taskId: "p-task" }),
+          item("no-project", { taskId: "p-task" }),
+          item("known", { projectId: "p", taskId: "p-task" }),
+          item("other-known", { projectId: "q", taskId: "q-task" }),
+          item("archived-assignment", {
+            projectId: "archived",
+            taskId: "archived-task",
+          }),
+        ],
+      };
+      expect(
+        selectBacklogViewItems(
+          state,
+          defaults,
+          values.map((value) => ({ field: "task" as const, value })),
+          { now },
+        ).map((workItem) => workItem._id),
+      ).toEqual(expected);
+    },
+  );
   it("filters running entries, zero estimates, and source connections", () => {
     const state = {
       workflowStates,
