@@ -231,7 +231,7 @@ When(
   async ({ page }, title: string) => {
     await page
       .getByRole("complementary", { name: "Backlog item editor" })
-      .getByRole("textbox", { name: "Item", exact: true })
+      .getByRole("textbox", { name: /^(Item|Subitem)$/ })
       .fill(title);
   },
 );

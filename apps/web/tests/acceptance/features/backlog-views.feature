@@ -135,5 +135,5 @@ Feature: Backlog list and board views
 
     Examples:
       | key       | state | status   |
-      | Alt+Left  | todo  | active   |
-      | Alt+Right | done  | archived |
+      | Alt+ArrowLeft  | todo  | active   |
+      | Alt+ArrowRight | done  | archived |

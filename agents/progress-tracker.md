@@ -320,7 +320,14 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Legacy pending recovery priorities migrate with the item's connection scale. Later manifest range seeding reconciles recovery values that follow their source and preserves local overrides.
 - [x] Failed moves restore snooze and Returned markers on the parent and carried children, while retaining independently changed child lifecycles.
 - [x] The foundation passes 731 unit tests and workspace typechecking. A browser fixture confirms Mercury offers only In QA and Venus only Resolved in their write-rule menus.
-- [ ] Verify the updated view stack before requesting a fresh review.
+- [x] The updated stack passes 747 unit tests, workspace typechecking, production build and formatting. All 60 Chromium scenarios pass: 57 existing scenarios in the full run and three new editor-move scenarios after correcting their test inputs.
+- [ ] Complete fresh Codex reviews on all three stack heads. The integration thread owns merging.
+
+### Editor drag and keyboard moves, 2026-10-12
+
+- [x] Board drops commit and close the editor, then read the saved item before changing its state, priority or project. Group comparisons use its committed fields.
+- [x] Alt-arrow workflow moves commit and close the editor before reading its current workflow state. An invalid draft blocks the move.
+- [x] Browser regressions cover a subitem drop followed by reopening and saving its editor, and unsaved titles followed by Alt-arrow moves to both open and Done states.
 
 - Use `just` rather than invoking package scripts directly.
 - Preserve local-first behavior unless the user explicitly asks to change it.
