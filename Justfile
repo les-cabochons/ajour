@@ -170,9 +170,9 @@ test:
 
 [doc("Runs executable Gherkin acceptance tests in Chromium")]
 [group("app")]
-acceptance-test:
+acceptance-test *args:
     echo >&2 "[1/1] Running web acceptance tests"
-    {{PNPM}} --filter @ajour/web acceptance-test
+    {{PNPM}} --filter @ajour/web acceptance-test {{args}}
 
 [private]
 acceptance-server:

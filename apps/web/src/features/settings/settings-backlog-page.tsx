@@ -29,8 +29,7 @@ export function SettingsBacklogPage() {
               <p className="mt-1 text-sm text-muted-foreground">
                 Subitems already settled or archived stay as they are.
               </p>
-              <SettleRulesSection workItems={state.workItems} settleRules={state.settleRules ?? []} />
-    </div>
+            </div>
             <ToggleGroup
               aria-label="When closing a parent with open subitems"
               variant="outline"
@@ -52,7 +51,10 @@ export function SettingsBacklogPage() {
           </Field>
         </AppPanel>
       </section>
-      <SettleRulesSection workItems={state.workItems} settleRules={state.settleRules ?? []} />
+      <SettleRulesSection
+        workItems={state.workItems}
+        settleRules={state.settleRules ?? []}
+      />
     </div>
   );
 }

@@ -30,20 +30,19 @@ export interface CloseSubitemsOptions {
 
 /**
  * The subitems a settle or close could take along: direct subitems that are
- * still open. A settle only takes active ones, because settled subitems
- * already wait on someone.
+ * still active. Independently settled and archived subitems keep their state.
  */
 export function getOpenSubitems(
   state: LocalAppState,
   workItemId: string,
-  for_: "settle" | "close",
+  _for: "settle" | "close",
 ): LocalWorkItem[] {
   const target = state.workItems.find(
     (workItem) => workItem._id === workItemId,
   );
   if (!target) return [];
-  return getDirectChildWorkItems(target, state.workItems).filter((child) =>
-    for_ === "settle" ? child.status === "active" : child.status !== "archived",
+  return getDirectChildWorkItems(target, state.workItems).filter(
+    (child) => child.status === "active",
   );
 }
 

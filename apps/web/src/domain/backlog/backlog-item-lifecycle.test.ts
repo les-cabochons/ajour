@@ -639,6 +639,15 @@ describe("moving a backlog item between workflow states", () => {
         hierarchyLevel: 1,
         status: "settled",
         workflowStateId: "doing",
+        settledAt: 200,
+        settledSourceStatusKey: "waiting",
+      }),
+      synced("already-closed", {
+        parentSourceId: "source-parent",
+        hierarchyLevel: 1,
+        status: "archived",
+        workflowStateId: "done",
+        archivedAt: 100,
       }),
     ]);
 
@@ -653,7 +662,8 @@ describe("moving a backlog item between workflow states", () => {
       workflowStateId: "done",
       settledWithParentId: "parent",
     });
-    expect(find(closed, "waiting")?.status).toBe("archived");
+    expect(find(closed, "waiting")).toBe(find(state, "waiting"));
+    expect(find(closed, "already-closed")).toBe(find(state, "already-closed"));
 
     const reopened = moveBacklogItemToState(
       closed,
@@ -670,9 +680,14 @@ describe("moving a backlog item between workflow states", () => {
       workflowStateId: "todo",
     });
     expect(find(reopened, "waiting")).toMatchObject({
-      status: "active",
+      status: "settled",
       workflowStateId: "doing",
+      settledAt: 200,
+      settledSourceStatusKey: "waiting",
     });
+    expect(find(reopened, "already-closed")).toBe(
+      find(state, "already-closed"),
+    );
   });
 
   it("moves an archived item between done states without reopening it", () => {

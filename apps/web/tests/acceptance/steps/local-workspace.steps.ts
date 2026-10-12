@@ -2203,3 +2203,29 @@ Then(
     await expect(toasts.getByRole("button", { name: "Undo" })).toBeVisible();
   },
 );
+
+When("I open the Backlog settings", async ({ page }) => {
+  await page.goto("/settings/backlog");
+});
+
+Then(
+  "the Backlog settings contain one settle rules section",
+  async ({ page }) => {
+    await expect(
+      page.getByRole("heading", { name: "Subitems", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Settle rules", exact: true }),
+    ).toHaveCount(1);
+    const preference = page.getByRole("group", {
+      name: "When closing a parent with open subitems",
+      exact: true,
+    });
+    await expect(
+      preference.getByRole("button", { name: "Ask", exact: true }),
+    ).toBeVisible();
+    await expect(page.locator('[data-slot="field"]')).not.toContainText(
+      "Settle rules",
+    );
+  },
+);

@@ -319,3 +319,9 @@ Feature: Open the local time workspace
       | Day    |
       | Week   |
       | mobile |
+
+
+  Scenario: Render Backlog preferences and settle rules once
+    Given I have no saved Ajour workspace
+    When I open the Backlog settings
+    Then the Backlog settings contain one settle rules section
