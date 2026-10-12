@@ -195,6 +195,13 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Project Health Notes
 
+### No project filter consistency, 2026-10-12
+
+- [x] Project filters resolve item project IDs against configured projects. Missing and unknown IDs match No project, while archived projects remain known assignments.
+- [x] Five selector cases cover No project, a known project, their union, a stale project filter and an archived assignment. Three cases failed before the fix.
+- [x] All 854 unit tests, workspace typecheck, production builds and three focused Chromium scenarios for filtering and archived destinations passed.
+- [ ] Complete Codex review of the updated view head. The integration thread owns merging.
+
 ### Combined review fixes verification, 2026-10-12
 
 - [x] The rebased stack passes all 849 unit tests and all 90 Chromium acceptance scenarios, workspace typecheck, production builds and formatting.

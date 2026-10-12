@@ -6,7 +6,7 @@ import {
   selectBacklogViewItems,
   getSubitemProgress,
 } from "./backlog-view";
-import type { LocalWorkItem } from "@/domain/local-state";
+import type { LocalAppState, LocalWorkItem } from "@/domain/local-state";
 import { DEFAULT_PROJECT_ICON } from "@/domain/projects/project-icon";
 const now = 1000000000;
 const item = (
@@ -24,6 +24,16 @@ const workflowStates = [
   { _id: "todo", name: "To do", color: "#000000", createdAt: 1 },
   { _id: "done", name: "Done", color: "#000000", createdAt: 1, done: true },
 ];
+const projects: LocalAppState["projects"] = ["p", "q", "archived"].map(
+  (_id) => ({
+    _id,
+    name: _id,
+    status: _id === "archived" ? "archived" : "active",
+    icon: DEFAULT_PROJECT_ICON,
+    color: "#000000",
+    tasks: [],
+  }),
+);
 describe("backlog view selection", () => {
   const workItems = [
     item("active"),
@@ -42,7 +52,7 @@ describe("backlog view selection", () => {
     }),
     item("child", { parentWorkItemId: "active", workflowStateId: "todo" }),
   ];
-  const state = { workItems, workflowStates };
+  const state = { workItems, workflowStates, projects };
   it("shows recent done items and standalone subitems with active and settled items", () => {
     expect(
       selectBacklogViewItems(state, defaults, [], { now }).map((i) => i._id),
@@ -71,6 +81,7 @@ describe("backlog view selection", () => {
   it("uses OR within a property and AND between properties", () => {
     const state = {
       workflowStates,
+      projects,
       workItems: [
         item("a", { priority: 1, projectId: "p" }),
         item("b", { priority: 2, projectId: "p" }),
@@ -98,6 +109,7 @@ describe("backlog view selection", () => {
   ])("filters resolved workflow states for $values", ({ values, expected }) => {
     const state = {
       workflowStates,
+      projects,
       workItems: [
         item("missing"),
         item("unknown", { workflowStateId: "deleted" }),
@@ -113,9 +125,36 @@ describe("backlog view selection", () => {
       ).map((workItem) => workItem._id),
     ).toEqual(expected);
   });
+  it.each([
+    { values: [""], expected: ["missing", "unknown"] },
+    { values: ["p"], expected: ["known"] },
+    { values: ["", "p"], expected: ["missing", "unknown", "known"] },
+    { values: ["deleted"], expected: [] },
+    { values: ["archived"], expected: ["archived-project"] },
+  ])("filters resolved projects for $values", ({ values, expected }) => {
+    const state = {
+      workflowStates,
+      projects,
+      workItems: [
+        item("missing"),
+        item("unknown", { projectId: "deleted" }),
+        item("known", { projectId: "p" }),
+        item("archived-project", { projectId: "archived" }),
+      ],
+    };
+    expect(
+      selectBacklogViewItems(
+        state,
+        defaults,
+        values.map((value) => ({ field: "project" as const, value })),
+        { now },
+      ).map((workItem) => workItem._id),
+    ).toEqual(expected);
+  });
   it("filters running entries, zero estimates, and source connections", () => {
     const state = {
       workflowStates,
+      projects,
       workItems: [
         item("a", { sourceConnectionId: "c", completedEstimateHours: 0 }),
         item("b"),
