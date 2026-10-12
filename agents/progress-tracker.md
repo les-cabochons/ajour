@@ -307,6 +307,9 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Independent child source acknowledgements advance the parent's child recovery baseline. A failed parent keeps a child's own pending write, and a confirmed child close stays closed in either completion order.
 - [x] Recovery updates leave in-flight requests current when their state, priority and Undo deadline are unchanged.
 - [x] The updated mapping layer passes 748 unit tests and workspace typechecking. View-layer verification follows before pushing the stack.
+- [x] The full stack passes 761 unit tests and all 61 Chromium scenarios in one run, plus workspace typechecking, production build and formatting.
+- [x] Touch dragging uses native Chromium touch events. Narrow and Archive views retain native touch scrolling because they do not attach drag handlers.
+- [ ] Complete fresh Codex review on the pushed stack heads before integration.
 
 ### Settle mapping recovery, 2026-10-12
 
