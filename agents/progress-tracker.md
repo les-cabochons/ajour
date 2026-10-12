@@ -193,6 +193,13 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Project Health Notes
 
+### Settle refresh and carried recovery, 2026-10-12
+
+- [x] Settle compares its priority draft with the current item's imported priority and range, rather than the item captured when the dialog opened. A connector refresh preserves the draft and submission writes its displayed value.
+- [x] Workflow deletion clears deleted IDs from the mapping layer's lifecycle and carried-child recovery snapshots. Clearing both child snapshots keeps failed-write recovery valid after deletion.
+- [x] The connector-refresh browser case and carried-child regression failed before their fixes. All mapping-layer unit tests, workspace typecheck and four Settle confirmation scenarios pass.
+- [ ] Verify the rebased view layer and request fresh Codex reviews. The integration thread owns merging.
+
 ### Deleted workflow recovery references, 2026-10-12
 
 - [x] Deleting a workflow state clears its ID from pending source-write rollback workflow and imported-workflow references. Other saved states remain available for recovery.

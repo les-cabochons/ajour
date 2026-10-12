@@ -28,3 +28,10 @@ Feature: Confirm a parent Settle without losing its draft
     When I submit the parent Settle draft
     And I include the Settle subitems
     Then the Settle dialog closes and the parent is "settled"
+
+  Scenario: Submit the displayed priority after a connector refresh
+    When the source changes the parent's priority to Urgent during Settle
+    Then the Settle priority draft remains High
+    When I submit the parent Settle draft
+    And I include the Settle subitems
+    Then Settle writes High against the refreshed Urgent priority

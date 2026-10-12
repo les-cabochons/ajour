@@ -135,6 +135,67 @@ When("I open the parent Settle dialog", async ({ page }) => {
   ).toBeVisible();
 });
 When(
+  "the source changes the parent's priority to Urgent during Settle",
+  async ({ page }) => {
+    await page.evaluate(async () => {
+      const { localStore } = await import(
+        /* @vite-ignore */ "/src/lib/local-store.ts"
+      );
+      localStore.importConnectorWorkItems([
+        {
+          id: "refreshed-parent",
+          source: "example",
+          connectionId: "fixture",
+          connectionLabel: "Fixture connection",
+          tenantLabel: "Fixture tenant",
+          sourceId: "source-parent",
+          externalId: "source-parent",
+          title: "Settle parent",
+          workItemType: "Task",
+          state: "Active",
+          priority: 1,
+          depth: "root",
+          selectable: true,
+          selected: true,
+          childCount: 0,
+          pushedAt: Date.now(),
+        },
+      ]);
+    });
+  },
+);
+Then("the Settle priority draft remains High", async ({ page }) => {
+  await expect(
+    page
+      .getByRole("dialog", { name: "Settle", exact: true })
+      .getByLabel("Priority", { exact: true }),
+  ).toHaveValue("2");
+  const parent = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems.find(
+      (item: { _id: string }) => item._id === "settle-parent",
+    ),
+  );
+  expect(parent.importedPriority).toBe(1);
+});
+Then(
+  "Settle writes High against the refreshed Urgent priority",
+  async ({ page }) => {
+    await expect(
+      page.getByRole("dialog", { name: "Settle", exact: true }),
+    ).toHaveCount(0);
+    const parent = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems.find(
+        (item: { _id: string }) => item._id === "settle-parent",
+      ),
+    );
+    expect(parent.priority).toBe(2);
+    expect(parent.pendingSourceWrite).toMatchObject({
+      priority: 2,
+      previous: { importedPriority: 1 },
+    });
+  },
+);
+When(
   "I choose source state {string} and priority {string} in Settle",
   async ({ page }, state: string, priority: string) => {
     const dialog = page.getByRole("dialog", { name: "Settle", exact: true });

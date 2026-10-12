@@ -621,6 +621,26 @@ function isLastDoneState(state: LocalAppState, statusId: string) {
   return doneStates.length === 1 && doneStates[0]!._id === statusId;
 }
 
+function clearDeletedWorkflowReferences<
+  T extends Pick<
+    LocalWorkItem,
+    "workflowStateId" | "importedWorkflowStateId" | "workflowStateIdBeforeClose"
+  >,
+>(snapshot: T, statusId: string): T {
+  return {
+    ...snapshot,
+    ...(snapshot.workflowStateId === statusId
+      ? { workflowStateId: undefined }
+      : {}),
+    ...(snapshot.importedWorkflowStateId === statusId
+      ? { importedWorkflowStateId: undefined }
+      : {}),
+    ...(snapshot.workflowStateIdBeforeClose === statusId
+      ? { workflowStateIdBeforeClose: undefined }
+      : {}),
+  };
+}
+
 /** Deletes a workflow state. The last done state can't be deleted. */
 export function deleteWorkflowState(
   state: LocalAppState,
@@ -668,14 +688,35 @@ export function deleteWorkflowState(
         ? {
             ...workItem.pendingSourceWrite,
             previous: {
-              ...workItem.pendingSourceWrite.previous,
-              ...(workItem.pendingSourceWrite.previous.workflowStateId ===
-              statusId
-                ? { workflowStateId: undefined }
+              ...clearDeletedWorkflowReferences(
+                workItem.pendingSourceWrite.previous,
+                statusId,
+              ),
+              ...(workItem.pendingSourceWrite.previous.lifecycle
+                ? {
+                    lifecycle: clearDeletedWorkflowReferences(
+                      workItem.pendingSourceWrite.previous.lifecycle,
+                      statusId,
+                    ),
+                  }
                 : {}),
-              ...(workItem.pendingSourceWrite.previous
-                .importedWorkflowStateId === statusId
-                ? { importedWorkflowStateId: undefined }
+              ...(workItem.pendingSourceWrite.previous.carriedChildren
+                ? {
+                    carriedChildren:
+                      workItem.pendingSourceWrite.previous.carriedChildren.map(
+                        (child) => ({
+                          ...child,
+                          before: clearDeletedWorkflowReferences(
+                            child.before,
+                            statusId,
+                          ),
+                          after: clearDeletedWorkflowReferences(
+                            child.after,
+                            statusId,
+                          ),
+                        }),
+                      ),
+                  }
                 : {}),
             },
           }

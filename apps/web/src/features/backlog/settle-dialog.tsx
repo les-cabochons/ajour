@@ -207,34 +207,36 @@ export function SettleDialogHost() {
     };
   }, [workItem]);
 
-  const states = load.status === "ready" ? load.states : [];
-  const currentListed = Boolean(
-    findSettleState(states, workItem?.sourceStatusLabel),
-  );
-  const priorityRanges = workItem
-    ? getWorkItemPriorityRanges(state, workItem)
-    : {};
-  const sourceHasPriority =
-    getPriorityLevel(workItem?.importedPriority, priorityRanges) !== undefined;
-  const change = workItem
-    ? buildSettleChange(states, stateName, priority, {
-        importedPriority: workItem.importedPriority,
-        ranges: priorityRanges,
-      })
-    : null;
   const currentItem = state.workItems.find(
     (item) => item._id === workItem?._id,
   );
+  const states = load.status === "ready" ? load.states : [];
+  const currentListed = Boolean(
+    findSettleState(states, currentItem?.sourceStatusLabel),
+  );
+  const priorityRanges = currentItem
+    ? getWorkItemPriorityRanges(state, currentItem)
+    : {};
+  const sourceHasPriority =
+    getPriorityLevel(currentItem?.importedPriority, priorityRanges) !==
+    undefined;
+  const change = currentItem
+    ? buildSettleChange(states, stateName, priority, {
+        importedPriority: currentItem.importedPriority,
+        ranges: priorityRanges,
+      })
+    : null;
   const archives = Boolean(
     currentItem &&
     settleArchivesWorkItem(state, currentItem, change ?? undefined),
   );
 
   async function settle() {
-    if (!workItem || !change || pending) return;
+    if (!currentItem || !change || pending) return;
     setPending(true);
     try {
-      if (await settleBacklogItemWithUndo(workItem, change)) setWorkItem(null);
+      if (await settleBacklogItemWithUndo(currentItem, change))
+        setWorkItem(null);
     } finally {
       setPending(false);
     }
