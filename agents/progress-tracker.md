@@ -175,6 +175,13 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Project Health Notes
 
+### Done flag and subitem confirmation recovery, 2026-10-12
+
+- [x] Clearing a Done flag moves its archived items to another Done state and preserves their pre-close state and carried-subitem restore path. Active items retain their workflow state.
+- [x] Move and Settle cancel when the eligible subitem IDs change during confirmation. Added, reparented and replaced subitems require a new action and confirmation.
+- [x] The foundation passes 702 unit tests, including archived parent and subitem Restore and both confirmation verbs.
+- [ ] Carry the fixes through the mapping and view layers, verify the stack and request fresh reviews.
+
 ### Archived source mappings and pending editor saves, 2026-10-12
 
 - [x] A changed connector-done source state mapped to an open workflow state reopens an archived item and its carried children. An unchanged local Archive stays archived, and a missing-sync archive returns when the item reappears in an open mapping.

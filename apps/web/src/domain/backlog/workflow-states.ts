@@ -302,9 +302,21 @@ export function updateWorkflowState(
   if (!done && isLastDoneState(state, statusId)) {
     throw new Error(LAST_DONE_STATE_MESSAGE);
   }
+  const replacementDoneId = getFirstDoneWorkflowState(
+    state.workflowStates.filter((status) => status._id !== statusId),
+  )?._id;
 
   return {
     ...state,
+    workItems:
+      target.done && !done
+        ? state.workItems.map((workItem) =>
+            workItem.status === "archived" &&
+            workItem.workflowStateId === statusId
+              ? { ...workItem, workflowStateId: replacementDoneId }
+              : workItem,
+          )
+        : state.workItems,
     workflowStates: state.workflowStates.map((status) => {
       if (status._id !== statusId) return status;
       const { done: _done, ...rest } = status;

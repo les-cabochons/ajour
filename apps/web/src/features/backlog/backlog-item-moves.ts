@@ -10,7 +10,7 @@ import { localStore } from "@/lib/local-store";
 /**
  * Whether closing or settling this item takes its open subitems along, from
  * the user's setting or, when it says Ask, the dialog. Null means the user
- * cancelled.
+ * cancelled or the displayed subitem set changed while they answered.
  */
 export async function resolveIncludeSubitems(
   workItem: LocalWorkItem,
@@ -25,8 +25,21 @@ export async function resolveIncludeSubitems(
       return true;
     case "leave":
       return false;
-    default:
-      return requestCloseSubitemsChoice(workItem, subitems, verb);
+    default: {
+      const answer = await requestCloseSubitemsChoice(workItem, subitems, verb);
+      if (answer === null) return null;
+      const currentSubitems = getOpenSubitems(
+        localStore.snapshot(),
+        workItem._id,
+        verb,
+      );
+      return currentSubitems.length === subitems.length &&
+        subitems.every((item) =>
+          currentSubitems.some((current) => current._id === item._id),
+        )
+        ? answer
+        : null;
+    }
   }
 }
 

@@ -197,6 +197,70 @@ describe("the done flag", () => {
     ).toThrow("The workflow needs at least one done state.");
   });
 
+  it("preserves parent and carried subitem restores when clearing their done flag", () => {
+    const state = createState({
+      ...workflow(),
+      workflowStates: [
+        ...workflow().workflowStates,
+        {
+          _id: "shipped",
+          name: "Shipped",
+          color: "#059669",
+          done: true,
+          createdAt: 1,
+        },
+      ],
+      workItems: [
+        createImportedWorkItem({ workflowStateId: "todo" }),
+        createImportedWorkItem({
+          _id: "child",
+          sourceId: "43",
+          parentWorkItemId: "work-item-1",
+          workflowStateId: "todo",
+        }),
+        createImportedWorkItem({
+          _id: "active",
+          sourceId: "44",
+          workflowStateId: "done",
+        }),
+      ],
+    });
+    const closed = moveBacklogItemToState(
+      state,
+      "work-item-1",
+      "done",
+      {
+        createId: () => "entry",
+        now: () => 500,
+      },
+      { includeSubitems: true },
+    );
+    const updated = updateWorkflowState(closed, "done", {
+      name: "Done",
+      done: false,
+    });
+    for (const id of ["work-item-1", "child"]) {
+      expect(updated.workItems.find((item) => item._id === id)).toMatchObject({
+        status: "archived",
+        workflowStateId: "shipped",
+        workflowStateIdBeforeClose: "todo",
+        archivedAt: 500,
+      });
+    }
+    expect(updated.workItems.find((item) => item._id === "active")).toBe(
+      closed.workItems[2],
+    );
+    const restored = restoreBacklogItem(updated, "work-item-1");
+    for (const id of ["work-item-1", "child"]) {
+      expect(restored.workItems.find((item) => item._id === id)).toMatchObject({
+        status: "active",
+        workflowStateId: "todo",
+        workflowStateIdBeforeClose: undefined,
+        settledWithParentId: undefined,
+      });
+    }
+  });
+
   it("lets another state become done, then the first one stop being done", () => {
     const twoDone = updateWorkflowState(workflow(), "todo", {
       name: "To do",
