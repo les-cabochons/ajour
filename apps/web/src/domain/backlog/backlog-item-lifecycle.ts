@@ -5,6 +5,7 @@ import type {
   LocalWorkItem,
   LocalWorkItemMoveSnapshot,
 } from "@/domain/local-state";
+import { getPendingSourceWriteItemIds } from "@/domain/local-state";
 import {
   getDirectChildWorkItems,
   getWorkItemLookupKeys,
@@ -16,6 +17,7 @@ import {
   findMappedWorkflowStateId,
   getFirstDoneWorkflowState,
   isDoneWorkflowState,
+  syncImportedWorkflowState,
 } from "@/domain/backlog/workflow-states";
 import {
   getPriorityLevel,
@@ -804,9 +806,48 @@ export function completeSourceWrite(
 }
 
 /**
- * The write failed. Restore its source values and saved lifecycle, along with
- * unchanged children carried by the move.
+ * Applies mapping changes deferred while a source write protected an item or
+ * its carried children. Newer writes keep their optimistic workflow state.
  */
+export function reconcileCompletedSourceWrite(
+  previous: LocalAppState,
+  acknowledged: LocalAppState,
+  factories: WorkItemFactories,
+): LocalAppState {
+  if (previous === acknowledged) return acknowledged;
+  const protectedIds = getPendingSourceWriteItemIds(acknowledged);
+  const releasedIds = new Set(
+    [...getPendingSourceWriteItemIds(previous)].filter(
+      (id) => !protectedIds.has(id),
+    ),
+  );
+  if (releasedIds.size === 0) return acknowledged;
+
+  let changed = false;
+  const workItems = acknowledged.workItems.map((item) => {
+    if (!releasedIds.has(item._id)) return item;
+    const mapped = syncImportedWorkflowState(
+      item,
+      acknowledged.workflowStateMappings,
+    );
+    if (
+      mapped.workflowStateId === item.workflowStateId &&
+      mapped.importedWorkflowStateId === item.importedWorkflowStateId
+    )
+      return item;
+    changed = true;
+    return mapped;
+  });
+  return changed
+    ? applyWorkflowStateLifecycle(
+        acknowledged,
+        { ...acknowledged, workItems },
+        factories,
+      )
+    : acknowledged;
+}
+
+/** Restores the write's source values and saved lifecycle after failure. */
 export function failSourceWrite(
   state: LocalAppState,
   workItemId: string,

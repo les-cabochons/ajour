@@ -36,6 +36,7 @@ import {
 import {
   archiveBacklogItem as applyArchiveBacklogItem,
   completeSourceWrite as applyCompleteSourceWrite,
+  reconcileCompletedSourceWrite,
   failSourceWrite as applyFailSourceWrite,
   markBacklogItemOpened as applyMarkBacklogItemOpened,
   restoreBacklogItem as applyRestoreBacklogItem,
@@ -1433,7 +1434,15 @@ export const localStore = {
     sentItems?: readonly LocalWorkItem[],
   ) {
     updateState((state) => {
-      const next = applyCompleteSourceWrite(state, workItemId, sentItems);
+      const acknowledged = applyCompleteSourceWrite(
+        state,
+        workItemId,
+        sentItems,
+      );
+      const next = reconcileCompletedSourceWrite(state, acknowledged, {
+        createId,
+        now: Date.now,
+      });
       if (sentItems && lastUndo) {
         lastUndo.undo = completeSourceWriteInUndo(
           lastUndo.undo,

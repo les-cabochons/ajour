@@ -199,6 +199,14 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Two regressions reproduce stale IDs after a failed Settle write, including JSON reload and a preserved local workflow override. Both failed before the fix.
 - [ ] Complete verification and fresh Codex review of the updated stack. The integration thread owns merging.
 
+### Mapping changes after a source write, 2026-10-12
+
+- [x] Successful source writes reconcile mappings deferred for the item and its carried children. A newly mapped Done state closes the item and saves its running entry.
+- [x] Newer pending writes and local workflow overrides remain protected.
+- [x] The UX specification retains the explicit Settle rules introduced in #95 and distinguishes them from workflow move write rules.
+- [x] The mapping layer passes 783 unit tests and workspace typecheck. Regressions cover Done, open and unmapped destinations, carried children, newer writes, local overrides and reload.
+- [ ] Rebase the view layer, verify the final stack and request fresh reviews.
+
 ### Settle confirmation and archive warning, 2026-10-12
 
 - [x] Settle keeps its selected state and priority until the subitem confirmation succeeds. Cancellation and a changed subitem set leave the draft open.
