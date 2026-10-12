@@ -139,6 +139,9 @@ function RowActions({
   className?: string;
 }) {
   const actions = rows.actionsFor(workItem);
+  const startDisabledReason = actions.find(
+    (action) => action.id === "start-entry",
+  )?.disabledReason;
   const iconButton =
     "flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-foreground/10 hover:text-foreground";
 
@@ -148,12 +151,18 @@ function RowActions({
       onClick={(event) => event.stopPropagation()}
     >
       <TooltipButton
-        label="Start entry"
-        className={iconButton}
-        disabled={Boolean(
-          actions.find((action) => action.id === "start-entry")?.disabledReason,
-        )}
-        onClick={() => rows.run(workItem, "start-entry")}
+        label={
+          startDisabledReason
+            ? `Start entry. ${startDisabledReason}`
+            : "Start entry"
+        }
+        aria-label="Start entry"
+        aria-description={startDisabledReason}
+        className={cn(iconButton, "aria-disabled:opacity-50")}
+        aria-disabled={Boolean(startDisabledReason)}
+        onClick={() => {
+          if (!startDisabledReason) rows.run(workItem, "start-entry");
+        }}
       >
         <PlayIcon className="size-3.5" />
       </TooltipButton>

@@ -284,6 +284,53 @@ Then("the parent peek can start a new entry after Stop", async ({ page }) => {
   expect(snapshot.state.timers[0].workItemId).toBe("parent");
   expect(snapshot.state.timers[0]._id).not.toBe(snapshot.baseline._id);
 });
+When("I use the compact Backlog sidebar", async ({ page }) => {
+  await page.evaluate(async () => {
+    const { updateSidebarLayout } = await import(
+      /* @vite-ignore */ "/src/lib/sidebar-layout.ts"
+    );
+    updateSidebarLayout({ density: "compact" });
+  });
+});
+Then(
+  "the sidebar Start icon explains that the parent is already running",
+  async ({ page }) => {
+    const row = page
+      .getByRole("navigation", { name: "Primary navigation" })
+      .locator('[data-backlog-item-id="parent"]');
+    await row.hover();
+    const start = row.getByRole("button", { name: "Start entry", exact: true });
+    await expect(start).toBeDisabled();
+    await expect(start).toHaveAccessibleDescription("Already running");
+    await start.hover();
+    await expect(page.locator('[data-slot="tooltip-content"]')).toContainText(
+      "Start entry. Already running",
+    );
+    await start.click({ force: true });
+    await start.focus();
+    await page.keyboard.press("Enter");
+    await page.keyboard.press("Space");
+    await page.keyboard.press("Escape");
+    await page.getByRole("main").hover();
+    await expect(page.locator('[data-slot="tooltip-content"]')).toHaveCount(0);
+  },
+);
+Then(
+  "the sidebar Start icon enables the parent without a disabled reason",
+  async ({ page }) => {
+    const row = page
+      .getByRole("navigation", { name: "Primary navigation" })
+      .locator('[data-backlog-item-id="parent"]');
+    await row.hover();
+    const start = row.getByRole("button", { name: "Start entry", exact: true });
+    await expect(start).toBeEnabled();
+    await expect(start).toHaveAccessibleDescription("");
+    await start.hover();
+    await expect(page.locator('[data-slot="tooltip-content"]')).toHaveText(
+      "Start entry",
+    );
+  },
+);
 async function inspectBacklogStart(
   page: Page,
   control: string,

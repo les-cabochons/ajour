@@ -43,6 +43,15 @@ Feature: Backlog list and board views
     When I stop the Backlog running entry from the titlebar
     Then the parent peek can start a new entry after Stop
 
+  Scenario: Explain the disabled Start icon in the compact sidebar
+    When I use the compact Backlog sidebar
+    And I peek at the Backlog parent
+    And I start an entry from the Backlog peek
+    Then the sidebar Start icon explains that the parent is already running
+    And the running entry has not restarted
+    When I stop the Backlog running entry from the titlebar
+    Then the sidebar Start icon enables the parent without a disabled reason
+
   Scenario Outline: Show running ownership in every Backlog action set
     When I peek at the Backlog parent
     And I start an entry from the Backlog peek

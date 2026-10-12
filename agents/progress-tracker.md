@@ -257,6 +257,14 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] The foundation passes 710 unit tests, workspace typecheck and three Chromium confirmation scenarios.
 - [ ] Carry the fixes through the stack, verify the final heads and request fresh reviews.
 
+### Sidebar Start disabled reason, 2026-10-12
+
+- [x] Sidebar Start icons show the action's disabled reason in their tooltip and accessible description. They keep their action name and remain focusable while unavailable.
+- [x] Replaced the tooltip trigger's `disabled` prop with `aria-disabled` and an activation guard. The former disabled the tooltip rather than the button.
+- [x] Chromium checks hover text, accessible description, ignored mouse and keyboard activation, unchanged timer identity, and the enabled control after Stop.
+- [x] All 797 unit tests and 72 Chromium scenarios pass, along with workspace typecheck, production build and formatting.
+- [ ] Fresh Codex review of the pushed view-layer fix is pending. Merging remains owned by the integration thread.
+
 ### Running ownership in every backlog action set, 2026-10-12
 
 - [x] Item-page, editor, sidebar and both command-palette paths supply running ownership to the action model. The input is required, so omitted callers fail typechecking.
