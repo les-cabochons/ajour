@@ -167,7 +167,10 @@ async function resolveSourceWrite(
 export async function moveBacklogItemWithUndo(
   workItem: LocalWorkItem,
   workflowStateId: string | undefined,
-  { patch, orderedIds }: {
+  {
+    patch,
+    orderedIds,
+  }: {
     patch?: Omit<WorkItemPatch, "workflowStateId">;
     orderedIds?: string[];
   } = {},

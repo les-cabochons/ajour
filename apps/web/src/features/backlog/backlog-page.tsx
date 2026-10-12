@@ -264,11 +264,9 @@ export function BacklogPage() {
       return;
     }
     if (group.kind === "state")
-      await moveBacklogItemWithUndo(
-        committed,
-        group.workflowStateId,
-        { orderedIds: order ?? undefined },
-      );
+      await moveBacklogItemWithUndo(committed, group.workflowStateId, {
+        orderedIds: order ?? undefined,
+      });
     if (group.kind === "priority")
       patchBacklogItemWithUndo(
         committed,
