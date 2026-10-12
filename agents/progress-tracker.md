@@ -155,8 +155,11 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Windows desktop packaging succeeds. A smoke test using the packaged
       Ajour executable starts its copied API, passes health, installs the current
       published Azure DevOps archive in a temporary workspace, and discovers it.
-- [ ] Apply the verified repair to the installed app after Alex confirms stopping
-      the conflicting backlog development API and changing installed resources.
+- [x] Alex approved the local repair. Copied and hash-verified 918 dependency
+      files in the installed runtime and stopped the approved competing APIs.
+- [x] After reopening Ajour, Alex confirmed the catalog download works. The
+      installed Ajour process owns port 8787, health passes, and Azure DevOps
+      version 1.0.0-main.8.4229e5a appears in installed plugin discovery.
 - [ ] Merge the fix and deliver it through the normal desktop release process.
 
 ## Standard Task Flow
