@@ -195,6 +195,14 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Project Health Notes
 
+### Rejecting stale unlisted Settle drafts, 2026-10-12
+
+- [x] Settle rejects an unlisted draft that differs from the current source state, rather than silently dropping it. Unchanged unlisted states still allow local Settle.
+- [x] The dialog uses the shared draft validator, disables submission and shows a state-specific error. A valid priority does not receive a misleading range error.
+- [x] Six validator cases cover changed, unchanged, absent and normalized source labels. The stale cases and browser submission guard failed before the fix. Browser coverage also confirms local Settle with an unchanged unlisted source state.
+- [x] All 865 unit tests, six Settle Chromium scenarios, workspace typecheck, production builds and formatting passed.
+- [ ] Complete fresh Codex reviews of the mapping and view heads before integration. The integration thread owns merging.
+
 ### Missing-sync archives after Done changes, 2026-10-12
 
 - [x] Clearing Done leaves missing-sync archives in their source-following workflow. Deleting the state clears their workflow instead of treating them as explicit closes. The same provenance check applies to carried recovery snapshots.
