@@ -171,6 +171,7 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Automatic source mapping applies the shared lifecycle transition before import. Settings discovery and done-item processing use the same transition.
 - [x] Settle rejects priority levels without a source range, disables those choices and explains an invalid choice.
 - [x] Seven new regressions cover sync during reopen, carried children, all three automatic mapping paths, local workflow overrides and incomplete priority scales. The foundation passes 690 unit tests.
+- [x] The updated stack passes 703 unit tests, all 50 Chromium acceptance scenarios, workspace typecheck, production build and formatting. A browser fixture confirms unsupported Settle options are disabled and stale selections show an error and block submission.
 - [ ] Complete Codex re-review after updating the view layer.
 
 ## Source-write acknowledgement follow-up, 2026-10-12
