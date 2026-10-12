@@ -291,7 +291,8 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Clearing a Done flag moves its archived items to another Done state and preserves their pre-close state and carried-subitem restore path. Active items retain their workflow state.
 - [x] Move and Settle cancel when the eligible subitem IDs change during confirmation. Added, reparented and replaced subitems require a new action and confirmation.
 - [x] The foundation passes 702 unit tests, including archived parent and subitem Restore and both confirmation verbs.
-- [ ] Carry the fixes through the mapping and view layers, verify the stack and request fresh reviews.
+- [x] Carried both fixes through the mapping and view layers. The full stack passes 781 unit tests, all 62 Chromium acceptance scenarios, workspace typecheck, production build and formatting checks.
+- [ ] Fresh Codex reviews of the pushed heads are pending. Merging remains owned by the integration thread.
 
 ### Archived source mappings and pending editor saves, 2026-10-12
 
