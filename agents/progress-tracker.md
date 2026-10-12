@@ -175,6 +175,14 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Project Health Notes
 
+### Enabling Done on an occupied state, 2026-10-12
+
+- [x] Workflow settings apply the existing lifecycle transition when an open state becomes Done. Its active and settled items close and their running entries are saved.
+- [x] Restore cannot return an archived item to a pre-close state that has since become Done. Other active items and archived history remain unchanged.
+- [x] The foundation passes 705 unit tests and workspace typecheck, with direct lifecycle and persisted-store regressions.
+- [x] Chromium verifies the Workflow checkbox, saved running entry and archived items after reload.
+- [ ] Carry the fix through the stack, run the full checks and request fresh reviews.
+
 ### Mixed editor drafts and close confirmation, 2026-10-12
 
 - [x] Editor updates keep non-state fields pending until the workflow move is confirmed. Cancelled or invalidated subitem confirmations leave the entire draft unsaved.

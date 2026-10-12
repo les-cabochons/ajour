@@ -358,3 +358,9 @@ Feature: Open the local time workspace
     And I include the child in the editor close
     Then the editor closes after the parent and child reach Done
     And the confirmed title and note remain saved after undoing the close
+
+  Scenario: Close existing items when their workflow state becomes Done
+    Given I have a parent editor close fixture
+    And the parent has a running entry
+    When I enable Done for In progress in Workflow settings
+    Then its existing items are archived and the running entry is saved

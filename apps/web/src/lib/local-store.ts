@@ -1044,7 +1044,13 @@ export const localStore = {
     statusId: string,
     updates: string | { name: string; color?: string; done?: boolean },
   ) {
-    updateState((state) => applyUpdateWorkflowState(state, statusId, updates));
+    updateState((state) =>
+      applyWorkflowStateLifecycle(
+        state,
+        applyUpdateWorkflowState(state, statusId, updates),
+        { createId, now: Date.now },
+      ),
+    );
   },
   /**
    * Deletes a workflow state with its source state mappings and clears it from work

@@ -6,8 +6,10 @@ const { Given, When, Then } = createBdd();
 Given("I have a parent editor close fixture", async ({ page }) => {
   await mockEmptyConnectorOverview(page);
   await page.addInitScript(() => {
+    if (sessionStorage.getItem("editor-close-fixture-ready")) return;
     localStorage.clear();
     sessionStorage.clear();
+    sessionStorage.setItem("editor-close-fixture-ready", "true");
     localStorage.setItem(
       "ajour.local-state.v2",
       JSON.stringify({
@@ -62,6 +64,59 @@ When("I save its editor workflow as Done", async ({ page }) => {
   await page.getByRole("option", { name: "Done", exact: true }).click();
   await editor.getByRole("button", { name: "Save", exact: true }).click();
 });
+Given("the parent has a running entry", async ({ page }) => {
+  await page.evaluate(async () => {
+    const { localStore } = await import("/src/lib/local-store.ts");
+    localStore.startTimer({
+      workItemId: "editor-parent",
+      note: "Done flag fixture",
+    });
+  });
+});
+When("I enable Done for In progress in Workflow settings", async ({ page }) => {
+  await page.goto("/settings/workflow");
+  await page
+    .getByRole("checkbox", { name: "Done", exact: true })
+    .first()
+    .check();
+});
+Then(
+  "its existing items are archived and the running entry is saved",
+  async ({ page }) => {
+    const readState = () =>
+      page.evaluate(() =>
+        JSON.parse(localStorage.getItem("ajour.local-state.v2")!),
+      );
+    await expect
+      .poll(async () =>
+        (await readState()).workItems.map(
+          (item: { status: string; workflowStateId: string }) => ({
+            status: item.status,
+            workflowStateId: item.workflowStateId,
+          }),
+        ),
+      )
+      .toEqual([
+        { status: "archived", workflowStateId: "doing" },
+        { status: "archived", workflowStateId: "doing" },
+      ]);
+    const saved = await readState();
+    expect(saved.timers).toEqual([]);
+    expect(saved.timesheetEntries).toEqual([
+      expect.objectContaining({
+        workItemId: "editor-parent",
+        note: "Done flag fixture",
+      }),
+    ]);
+    expect(saved.timesheetEntries[0].durationMs).toBeGreaterThan(0);
+    await page.reload();
+    expect(
+      (await readState()).workItems.every(
+        (item: { status: string }) => item.status === "archived",
+      ),
+    ).toBe(true);
+  },
+);
 Then(
   "the parent editor remains mounted while the subitem choice is pending",
   async ({ page }) => {
@@ -97,14 +152,12 @@ Then(
       workflowStateId: "done",
     });
     await page.getByRole("button", { name: "Undo", exact: true }).click();
-    await expect
-      .poll(readParent)
-      .toMatchObject({
-        title: "Unsaved parent title",
-        note: "Unsaved parent note",
-        status: "active",
-        workflowStateId: "doing",
-      });
+    await expect.poll(readParent).toMatchObject({
+      title: "Unsaved parent title",
+      note: "Unsaved parent note",
+      status: "active",
+      workflowStateId: "doing",
+    });
   },
 );
 When("I cancel the parent editor close prompt", async ({ page }) => {

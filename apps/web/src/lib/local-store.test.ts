@@ -72,6 +72,33 @@ describe("localStore workflow state sync", () => {
     installMockWindow();
   });
 
+  it("persists closure and a saved running entry when a workflow state becomes Done", async () => {
+    const { localStore } = await import("./local-store");
+    const doing = localStore.addWorkflowState("Doing", "#d97706");
+    const itemId = localStore.addWorkItem({
+      title: "Occupied state",
+      workflowStateId: doing,
+    });
+    localStore.startTimer({ workItemId: itemId, note: "Flag change" });
+    const startedAt = localStore.snapshot().timers[0]!.startedAt;
+    vi.spyOn(Date, "now").mockReturnValue(startedAt + 600);
+    try {
+      localStore.updateWorkflowState(doing, { name: "Doing", done: true });
+      const stored = JSON.parse(
+        window.localStorage.getItem("ajour.local-state.v2")!,
+      );
+      expect(
+        stored.workItems.find((item: { _id: string }) => item._id === itemId),
+      ).toMatchObject({ status: "archived", workflowStateId: doing });
+      expect(stored.timers).toEqual([]);
+      expect(stored.timesheetEntries).toEqual([
+        expect.objectContaining({ workItemId: itemId, durationMs: 600 }),
+      ]);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
   it("defaults update checks to the stable release track", async () => {
     const { localStore } = await import("./local-store");
 

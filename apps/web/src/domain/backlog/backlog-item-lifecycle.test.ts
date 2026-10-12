@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LocalAppState, LocalWorkItem } from "@/domain/local-state";
 import {
+  applyWorkflowStateLifecycle,
   archiveBacklogItem,
   completeSourceWrite,
   failSourceWrite,
@@ -15,6 +16,7 @@ import {
   unsettleBacklogItem,
   unsnoozeBacklogItem,
 } from "@/domain/backlog/backlog-item-lifecycle";
+import { updateWorkflowState } from "@/domain/backlog/workflow-states";
 
 function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
   return {
@@ -102,6 +104,82 @@ const factories = {
 function find(state: LocalAppState, id: string) {
   return state.workItems.find((workItem) => workItem._id === id);
 }
+
+describe("enabling Done on an occupied workflow state", () => {
+  it.each(["active", "settled"] as const)(
+    "closes %s items, saves their running entry and preserves other items",
+    (status) => {
+      const state = createState({
+        workflowStates: [
+          { _id: "doing", name: "Doing", color: "#d97706", createdAt: 1 },
+          { _id: "todo", name: "To do", color: "#64748b", createdAt: 1 },
+          {
+            _id: "done",
+            name: "Done",
+            color: "#059669",
+            done: true,
+            createdAt: 1,
+          },
+        ],
+        workItems: [
+          synced("a", {
+            workflowStateId: "doing",
+            status,
+            settledAt: status === "settled" ? 200 : undefined,
+          }),
+          item("other", { workflowStateId: "todo" }),
+          item("archived", {
+            status: "archived",
+            archivedAt: 100,
+            workflowStateId: "done",
+            workflowStateIdBeforeClose: "doing",
+          }),
+        ],
+        timers: [
+          {
+            _id: "timer-a",
+            workItemId: "a",
+            startedAt: 400,
+            accumulatedDurationMs: 0,
+            localDate: "2026-10-12",
+          },
+        ],
+      });
+      const changed = updateWorkflowState(state, "doing", {
+        name: "Doing",
+        done: true,
+      });
+      const closed = applyWorkflowStateLifecycle(state, changed, factories);
+      expect(find(closed, "a")).toMatchObject({
+        status: "archived",
+        archivedAt: 1000,
+        workflowStateId: "doing",
+        workflowStateIdBeforeClose: undefined,
+        settledAt: undefined,
+      });
+      expect(closed.timers).toEqual([]);
+      expect(closed.timesheetEntries).toEqual([
+        expect.objectContaining({ workItemId: "a", durationMs: 600 }),
+      ]);
+      expect(find(closed, "other")).toBe(state.workItems[1]);
+      expect(find(closed, "archived")).toBe(state.workItems[2]);
+      expect(find(restoreBacklogItem(closed, "a"), "a")).toMatchObject({
+        status: "active",
+        workflowStateId: undefined,
+      });
+      expect(
+        find(restoreBacklogItem(closed, "archived"), "archived"),
+      ).toMatchObject({
+        status: "active",
+        workflowStateId: undefined,
+        workflowStateIdBeforeClose: undefined,
+      });
+      expect(applyWorkflowStateLifecycle(closed, closed, factories)).toBe(
+        closed,
+      );
+    },
+  );
+});
 
 describe("settling a backlog item", () => {
   it("archives a manual item", () => {

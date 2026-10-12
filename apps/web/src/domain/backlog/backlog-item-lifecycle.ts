@@ -115,8 +115,8 @@ function saveRunningEntries(
 }
 
 /**
- * Applies the done rules to items whose workflow state changed without a move,
- * such as a sync or a mapping edit that maps their source state elsewhere: an
+ * Applies the done rules when an item's workflow state changes without a move
+ * or its current state becomes Done, such as through settings or a mapping: an
  * open item that lands in a done state closes, with its running entry saved.
  * Archived items keep their done state: a mapping edit never reopens history.
  */
@@ -136,7 +136,11 @@ export function applyWorkflowStateLifecycle(
         const before = previousById.get(workItem._id);
         return (
           workItem.status !== "archived" &&
-          before?.workflowStateId !== workItem.workflowStateId &&
+          (before?.workflowStateId !== workItem.workflowStateId ||
+            !isDoneWorkflowState(
+              previous.workflowStates,
+              workItem.workflowStateId,
+            )) &&
           isDoneWorkflowState(next.workflowStates, workItem.workflowStateId)
         );
       })
@@ -158,12 +162,13 @@ export function applyWorkflowStateLifecycle(
           next.workflowStates,
           now,
         ),
-        workflowStateIdBeforeClose: isDoneWorkflowState(
-          previous.workflowStates,
-          before?.workflowStateId,
-        )
-          ? undefined
-          : before?.workflowStateId,
+        workflowStateIdBeforeClose:
+          isDoneWorkflowState(
+            previous.workflowStates,
+            before?.workflowStateId,
+          ) || isDoneWorkflowState(next.workflowStates, before?.workflowStateId)
+            ? undefined
+            : before?.workflowStateId,
       };
     }),
   };
@@ -554,7 +559,12 @@ function reactivate(
               workItem.workflowStateId,
             )
               ? {
-                  workflowStateId: workItem.workflowStateIdBeforeClose,
+                  workflowStateId: isDoneWorkflowState(
+                    state.workflowStates,
+                    workItem.workflowStateIdBeforeClose,
+                  )
+                    ? undefined
+                    : workItem.workflowStateIdBeforeClose,
                   workflowStateIdBeforeClose: undefined,
                 }
               : {}),
