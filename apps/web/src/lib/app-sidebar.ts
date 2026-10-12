@@ -3,8 +3,9 @@ import { APP_SIDEBAR_EXPANDED_MIN_WIDTH } from "@/lib/breakpoints";
 import { useShortcut } from "@/lib/shortcut-handlers";
 
 /**
- * The desktop app sidebar is either expanded (200px, logo and labels) or a
- * 52px icon rail. See "App shell" in agents/ux-spec.md.
+ * The desktop app sidebar is either expanded (logo, labels and backlog items,
+ * resizable, see `lib/sidebar-layout.ts`) or a 52px icon rail. See "App shell"
+ * and "Backlog sidebar" in agents/ux-spec.md.
  */
 export type AppSidebarState = "expanded" | "rail";
 
@@ -94,17 +95,24 @@ export function useAppSidebar() {
   );
   const state = resolveAppSidebarState(preference, isRailForced);
 
-  const toggle = useCallback(() => {
-    if (isRailForced) {
-      return;
-    }
+  /** Expands or collapses the sidebar, as dragging its edge past the minimum does. */
+  const setState = useCallback(
+    (next: AppSidebarState) => {
+      if (isRailForced) {
+        return;
+      }
 
-    const next = preference === "expanded" ? "rail" : "expanded";
-    setPreference(next);
-    writeAppSidebarPreference(getLocalStorage(), next);
-  }, [isRailForced, preference]);
+      setPreference(next);
+      writeAppSidebarPreference(getLocalStorage(), next);
+    },
+    [isRailForced],
+  );
+
+  const toggle = useCallback(() => {
+    setState(preference === "expanded" ? "rail" : "expanded");
+  }, [preference, setState]);
 
   useShortcut("app.toggle-sidebar", toggle, "app");
 
-  return { state, isRailForced, toggle };
+  return { state, isRailForced, toggle, setState };
 }

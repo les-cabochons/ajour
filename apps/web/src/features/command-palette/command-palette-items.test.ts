@@ -276,7 +276,8 @@ describe("buildPaletteSections", () => {
       "New entry…",
       "Edit",
       "Add subitem",
-      "Archive",
+      "Snooze…",
+      "Settle",
       "Delete (and 1 subitem)",
     ]);
   });
@@ -344,7 +345,7 @@ describe("buildPaletteSections", () => {
     expect(
       saved.items.map((item) => [item.label, item.keys?.join(" ")]),
     ).toEqual([
-      ["Edit", "E"],
+      ["Edit", "↩"],
       ["Continue", "C"],
       ["Duplicate", "⌘D"],
       ["Duplicate to…", undefined],

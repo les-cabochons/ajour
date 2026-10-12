@@ -5761,3 +5761,27 @@
     user-select: none;
   }
 }
+
+/* The expanded sidebar's right edge. Dragging resizes it, and dragging past
+   the minimum snaps it to the rail. See "Width" under "Backlog sidebar" in
+   agents/ux-spec.md. */
+.ajour-shell-sidebar {
+  position: relative;
+}
+
+.ajour-sidebar-resize-handle {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  width: 6px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.ajour-sidebar-resize-handle:hover,
+.ajour-sidebar-resize-handle:focus-visible {
+  outline: none;
+  background: var(--focus-ring);
+}

@@ -4,6 +4,7 @@
  * listing and ranking rules stay testable. See "Command palette" in
  * agents/ux-spec.md.
  */
+import { isBacklogItemSnoozed } from "@/domain/backlog/backlog-item-lifecycle";
 import {
   getBacklogItemActions,
   getProjectActions,
@@ -384,6 +385,7 @@ function backlogItemSection(
   const isSubitem = isSubtaskWorkItem(workItem);
   const actions = getBacklogItemActions(workItem, {
     isSubitem,
+    isSnoozed: isBacklogItemSnoozed(workItem, Date.now()),
     subitemCount: isSubitem
       ? 0
       : getDirectChildWorkItems(workItem, [...workItems]).length,

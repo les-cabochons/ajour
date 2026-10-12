@@ -14,7 +14,9 @@ import {
   RiFileTextLine as FileText,
   RiInboxArchiveLine as ArchiveRestore,
   RiPlayLine as Play,
+  RiTimeLine as SnoozeIcon,
 } from "@remixicon/react";
+import { useNavigate } from "@tanstack/react-router";
 import {
   ObjectActionsButton,
   ObjectContextMenu,
@@ -77,6 +79,9 @@ import {
   parseWorkItemReference,
 } from "@/features/backlog/work-item-timer-comment";
 import { offerUndo } from "@/features/feedback/undo-toast";
+import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
+import { formatSnoozeTime } from "@/features/backlog/snooze-presets";
+import { isBacklogItemSnoozed } from "@/domain/backlog/backlog-item-lifecycle";
 import { openNewEntryEditor } from "@/features/time/new-entry-request";
 import {
   useLocalProjects,
@@ -84,7 +89,13 @@ import {
   useLocalWorkItems,
 } from "@/lib/local-hooks";
 import { useActionRequest } from "@/lib/action-request";
-import { BACKLOG_ITEM_ACTION_KEYS, handleItemKeyDown } from "@/lib/item-keys";
+import {
+  BACKLOG_ITEM_ACTION_KEYS,
+  BACKLOG_ITEM_ROW_KEYS,
+  OPEN_BACKLOG_ITEM_ACTION,
+  handleItemKeyDown,
+} from "@/lib/item-keys";
+import { useNow } from "@/lib/use-now";
 import { localStore } from "@/lib/local-store";
 import {
   createSharedTableDragPointerSession,
@@ -113,7 +124,7 @@ function BacklogTableColumns() {
   );
 }
 
-type BacklogFilter = "active" | "archived";
+type BacklogFilter = "active" | "settled" | "archived";
 
 type BacklogDragState = {
   workItemId: string;
@@ -144,6 +155,7 @@ function getEditorKey(request: BacklogEditorRequest) {
 
 const BACKLOG_FILTERS: { value: BacklogFilter; label: string }[] = [
   { value: "active", label: "Active" },
+  { value: "settled", label: "Settled" },
   { value: "archived", label: "Archived" },
 ];
 
@@ -200,6 +212,8 @@ export function BacklogPage() {
     fields: BacklogTaskEditorFields;
   } | null>(null);
   const currentTimer = state.timers[0] ?? null;
+  const navigate = useNavigate();
+  const now = useNow();
   const backlogSortMode = state.backlogSortMode ?? "custom";
   const isNarrowLayout = useIsNarrowView();
   const [editorRequest, setEditorRequest] =
@@ -215,26 +229,35 @@ export function BacklogPage() {
   const [backlogDragState, setBacklogDragState] =
     useState<BacklogDragState | null>(null);
 
-  const { activeItems, archivedItems, visibleItems } = useMemo(() => {
-    const active = workItems.filter((workItem) => workItem.status === "active");
-    const archived = workItems.filter(
-      (workItem) => workItem.status === "archived",
-    );
+  const { activeItems, settledItems, archivedItems, visibleItems } =
+    useMemo(() => {
+      const active = workItems.filter(
+        (workItem) => workItem.status === "active",
+      );
+      const settled = workItems.filter(
+        (workItem) => workItem.status === "settled",
+      );
+      const archived = workItems.filter(
+        (workItem) => workItem.status === "archived",
+      );
 
-    const visibleByFilter: Record<BacklogFilter, LocalWorkItem[]> = {
-      active,
-      archived,
-    };
+      const visibleByFilter: Record<BacklogFilter, LocalWorkItem[]> = {
+        active,
+        settled,
+        archived,
+      };
 
-    return {
-      activeItems: active,
-      archivedItems: archived,
-      visibleItems: visibleByFilter[activeFilter],
-    };
-  }, [workItems, activeFilter]);
+      return {
+        activeItems: active,
+        settledItems: settled,
+        archivedItems: archived,
+        visibleItems: visibleByFilter[activeFilter],
+      };
+    }, [workItems, activeFilter]);
 
   const filterCounts: Record<BacklogFilter, number> = {
     active: activeItems.length,
+    settled: settledItems.length,
     archived: archivedItems.length,
   };
 
@@ -594,6 +617,22 @@ export function BacklogPage() {
       return;
     }
 
+    openBacklogItemPage(workItem);
+  }
+
+  /** A row click or Enter opens the backlog item page. Edit opens the editor. */
+  function openBacklogItemPage(workItem: LocalWorkItem) {
+    if (!leaveEditorDraft()) {
+      return;
+    }
+
+    void navigate({
+      to: "/backlog/$itemId",
+      params: { itemId: workItem._id },
+    });
+  }
+
+  function editWorkItem(workItem: LocalWorkItem) {
     // Edit is unavailable on archived items until they are restored.
     if (workItem.status === "archived") {
       return;
@@ -665,29 +704,22 @@ export function BacklogPage() {
         );
         return;
       case "edit":
-        openWorkItemFromRow(workItem, { ignoreClickSuppression: true });
+        editWorkItem(workItem);
         return;
       case "add-subitem":
         expandSubitems(workItem._id);
         openEditor({ kind: "create", parentWorkItemId: workItem._id });
         return;
-      case "open-in-source":
-        if (workItem.sourceUrl) {
-          window.open(workItem.sourceUrl, "_blank", "noopener,noreferrer");
-        }
-        return;
-      case "archive":
-        closeEditorOf(workItem._id);
-        offerUndo(localStore.archiveWorkItem(workItem._id), {
-          title: "Backlog item archived",
-          subject: "backlog item",
-        });
-        return;
-      case "restore":
-        localStore.restoreWorkItem(workItem._id);
-        return;
       case "delete":
         deleteWorkItem(workItem);
+        return;
+      case "settle":
+      case "archive":
+        closeEditorOf(workItem._id);
+        runBacklogItemAction(workItem, actionId, () => undefined);
+        return;
+      default:
+        runBacklogItemAction(workItem, actionId, () => undefined);
         return;
     }
   }
@@ -696,6 +728,7 @@ export function BacklogPage() {
     const isSubitem = isSubtaskWorkItem(workItem);
     return getBacklogItemActions(workItem, {
       isSubitem,
+      isSnoozed: isBacklogItemSnoozed(workItem, now),
       subitemCount: isSubitem ? 0 : getChildItems(workItem).length,
     });
   }
@@ -848,9 +881,12 @@ export function BacklogPage() {
             tabIndex={0}
             onKeyDown={(event) =>
               handleItemKeyDown(event, {
-                actions: rowActions,
-                keys: BACKLOG_ITEM_ACTION_KEYS,
-                onAction: runRowAction,
+                actions: [...rowActions, OPEN_BACKLOG_ITEM_ACTION],
+                keys: BACKLOG_ITEM_ROW_KEYS,
+                onAction: (actionId) =>
+                  actionId === "open"
+                    ? openBacklogItemPage(workItem)
+                    : runRowAction(actionId),
                 onReorder: isReorderableRoot
                   ? (step) => reorderWorkItem(workItem._id, step)
                   : undefined,
@@ -891,11 +927,9 @@ export function BacklogPage() {
         }
       >
         <td className="backlog-priority-cell">
-          {!isLogicalChild ? (
-            <span className="backlog-priority-value">
-              {workItem.priority ?? ""}
-            </span>
-          ) : null}
+          <span className="backlog-priority-value">
+            {workItem.priority ?? ""}
+          </span>
         </td>
         <td className="backlog-task-cell" colSpan={isLogicalChild ? 2 : 1}>
           <div className={cn("backlog-task-row", isLogicalChild && "is-child")}>
@@ -941,6 +975,15 @@ export function BacklogPage() {
                   >
                     {workItem.title}
                   </span>
+                  {isBacklogItemSnoozed(workItem, now) ? (
+                    <span
+                      className="backlog-task-meta flex shrink-0 items-center gap-1"
+                      title={`Snoozed until ${formatSnoozeTime(workItem.snoozedUntil!, now)}`}
+                    >
+                      <SnoozeIcon className="h-3.5 w-3.5" />
+                      {formatSnoozeTime(workItem.snoozedUntil!, now)}
+                    </span>
+                  ) : null}
                   {hasEstimateSyncIssue ? (
                     <span
                       className="backlog-task-meta flex items-center gap-1 text-amber-300"
@@ -1283,12 +1326,16 @@ export function BacklogPage() {
                           <EmptyTitle>
                             {activeFilter === "active"
                               ? "No active backlog items"
-                              : "No archived backlog items"}
+                              : activeFilter === "settled"
+                                ? "No settled backlog items"
+                                : "No archived backlog items"}
                           </EmptyTitle>
                           <EmptyDescription>
                             {activeFilter === "active"
                               ? "Create one with New backlog item."
-                              : "Archived backlog items will appear here."}
+                              : activeFilter === "settled"
+                                ? "Items waiting on someone else appear here."
+                                : "Archived backlog items will appear here."}
                           </EmptyDescription>
                         </EmptyHeader>
                       </Empty>

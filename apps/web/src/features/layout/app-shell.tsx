@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   RiAddLine as Plus,
@@ -45,6 +52,8 @@ import {
   getTimerDurationsMs,
 } from "@/lib/timer-totals";
 import { useAppSidebar } from "@/lib/app-sidebar";
+import { resolveSidebarWidth, useSidebarLayout } from "@/lib/sidebar-layout";
+import { SnoozePickerHost } from "@/features/backlog/snooze-picker";
 import { useShortcut } from "@/lib/shortcut-handlers";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { isDesktopShell } from "@/lib/runtime";
@@ -555,6 +564,7 @@ export function AppShell() {
     () => timeRouteDate ?? todayIsoDate(),
   );
   const appSidebar = useAppSidebar();
+  const sidebarWidth = resolveSidebarWidth(useSidebarLayout());
   const isNarrowView = useIsNarrowView();
   useGlobalShortcuts(selectedTimeDate);
 
@@ -586,11 +596,22 @@ export function AppShell() {
       <ConnectorAutoSyncScheduler />
       <ShortcutOverlay />
       <CommandPalette />
+      <SnoozePickerHost />
       {/* useAppSidebar owns the state, persistence and Cmd/Ctrl+B, so the
           provider is controlled and its own shortcut stays off. */}
       <SidebarProvider
         className="ajour-app-body"
         data-app-sidebar={appSidebar.state}
+        style={
+          appSidebar.state === "expanded"
+            ? ({
+                "--app-sidebar-width": `${sidebarWidth}px`,
+                // Custom properties resolve where they are declared, so the
+                // centering offset is restated with the dragged width.
+                "--app-centered-workspace-right-offset": `calc(${sidebarWidth / 2}px + var(--app-workspace-half-width))`,
+              } as CSSProperties)
+            : undefined
+        }
         open={appSidebar.state === "expanded"}
         keyboardShortcut={false}
       >
@@ -603,6 +624,7 @@ export function AppShell() {
             state={appSidebar.state}
             isRailForced={appSidebar.isRailForced}
             onToggle={appSidebar.toggle}
+            onStateChange={appSidebar.setState}
           />
         )}
 

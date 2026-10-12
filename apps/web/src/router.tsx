@@ -24,6 +24,10 @@ const BacklogPage = lazy(async () => {
   const module = await import("@/features/backlog/backlog-page");
   return { default: module.BacklogPage };
 });
+const BacklogItemPage = lazy(async () => {
+  const module = await import("@/features/backlog/backlog-item-page");
+  return { default: module.BacklogItemPage };
+});
 const ProjectsPage = lazy(async () => {
   const module = await import("@/features/projects/projects-page");
   return { default: module.ProjectsPage };
@@ -184,6 +188,19 @@ const backlogRoute = createRoute({
   ),
 });
 
+const backlogItemRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/backlog/$itemId",
+  component: () => {
+    const { itemId } = backlogItemRoute.useParams();
+    return (
+      <RouteSuspense>
+        <BacklogItemPage itemId={itemId} />
+      </RouteSuspense>
+    );
+  },
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/settings",
@@ -297,6 +314,7 @@ const routeTree = rootRoute.addChildren([
     timeRoute,
     submitRoute,
     backlogRoute,
+    backlogItemRoute,
     projectsRoute,
     projectsArchiveRoute,
     projectDetailRoute,

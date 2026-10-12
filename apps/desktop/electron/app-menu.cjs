@@ -100,6 +100,8 @@ function getAppMenuModel({ platform, developmentBuild, appName }) {
     actionItem("time.week-view", "Week", "W"),
     SEPARATOR,
     actionItem("app.toggle-sidebar", "Show or hide sidebar", "CmdOrCtrl+B"),
+    actionItem("app.toggle-sidebar-density", "Compact or comfortable sidebar"),
+    actionItem("app.toggle-sidebar-up-next", "Show or hide Up next"),
     SEPARATOR,
     actionItem("time.today", "Today", "T"),
     actionItem("time.previous", "Previous", "["),
