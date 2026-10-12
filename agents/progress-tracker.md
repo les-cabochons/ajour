@@ -195,6 +195,14 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Project Health Notes
 
+### Done rollback and unlisted drafts, 2026-10-12
+
+- [x] The foundation's failed-write command reapplies the domain lifecycle rules after restoring values. The mapping layer retains its stronger deferred-mapping reconciliation. A persisted-store regression covers a shared workflow marked Done during a pending Settle, failure, reload and Restore.
+- [x] Deleting Done translates archived carried snapshots to the replacement Done state, matching the live child. Failed writes still recover that child's former active workflow. The new replacement-state case failed before the fix.
+- [x] The Settle state fallback uses the preserved draft value and exact option membership. A browser case reproduces an unlisted draft disappearing after refresh and verifies selecting and submitting a listed replacement.
+- [x] The rebased stack passes all 856 unit tests, eight focused Chromium scenarios, workspace typecheck, production builds and formatting. The full 90-scenario suite passed at `6eaaaa1` before these follow-ups.
+- [ ] Complete fresh Codex reviews before integration. The integration thread owns merging.
+
 ### No project filter consistency, 2026-10-12
 
 - [x] Project filters resolve item project IDs against configured projects. Missing and unknown IDs match No project, while archived projects remain known assignments.
