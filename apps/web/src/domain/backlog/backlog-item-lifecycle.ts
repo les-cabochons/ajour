@@ -807,29 +807,26 @@ export function completeSourceWrite(
 
 /**
  * Applies mapping changes deferred while a source write protected an item or
- * its carried children. Newer writes keep their optimistic workflow state.
+ * its carried children, after success or failure. Newer writes stay protected.
  */
-export function reconcileCompletedSourceWrite(
+export function reconcileSourceWriteMappings(
   previous: LocalAppState,
-  acknowledged: LocalAppState,
+  next: LocalAppState,
   factories: WorkItemFactories,
 ): LocalAppState {
-  if (previous === acknowledged) return acknowledged;
-  const protectedIds = getPendingSourceWriteItemIds(acknowledged);
+  if (previous === next) return next;
+  const protectedIds = getPendingSourceWriteItemIds(next);
   const releasedIds = new Set(
     [...getPendingSourceWriteItemIds(previous)].filter(
       (id) => !protectedIds.has(id),
     ),
   );
-  if (releasedIds.size === 0) return acknowledged;
+  if (releasedIds.size === 0) return next;
 
   let changed = false;
-  const workItems = acknowledged.workItems.map((item) => {
+  const workItems = next.workItems.map((item) => {
     if (!releasedIds.has(item._id)) return item;
-    const mapped = syncImportedWorkflowState(
-      item,
-      acknowledged.workflowStateMappings,
-    );
+    const mapped = syncImportedWorkflowState(item, next.workflowStateMappings);
     if (
       mapped.workflowStateId === item.workflowStateId &&
       mapped.importedWorkflowStateId === item.importedWorkflowStateId
@@ -839,12 +836,8 @@ export function reconcileCompletedSourceWrite(
     return mapped;
   });
   return changed
-    ? applyWorkflowStateLifecycle(
-        acknowledged,
-        { ...acknowledged, workItems },
-        factories,
-      )
-    : acknowledged;
+    ? applyWorkflowStateLifecycle(next, { ...next, workItems }, factories)
+    : next;
 }
 
 /** Restores the write's source values and saved lifecycle after failure. */

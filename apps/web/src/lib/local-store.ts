@@ -36,7 +36,7 @@ import {
 import {
   archiveBacklogItem as applyArchiveBacklogItem,
   completeSourceWrite as applyCompleteSourceWrite,
-  reconcileCompletedSourceWrite,
+  reconcileSourceWriteMappings,
   failSourceWrite as applyFailSourceWrite,
   markBacklogItemOpened as applyMarkBacklogItemOpened,
   restoreBacklogItem as applyRestoreBacklogItem,
@@ -1439,7 +1439,7 @@ export const localStore = {
         workItemId,
         sentItems,
       );
-      const next = reconcileCompletedSourceWrite(state, acknowledged, {
+      const next = reconcileSourceWriteMappings(state, acknowledged, {
         createId,
         now: Date.now,
       });
@@ -1454,16 +1454,13 @@ export const localStore = {
       return next;
     });
   },
-  /** The settle's write failed: the item goes back to active. */
+  /** Restores failed-write values and applies deferred workflow mappings. */
   failSourceWrite(workItemId: string) {
     updateState((state) =>
-      applyWorkflowStateLifecycle(
+      reconcileSourceWriteMappings(
         state,
         applyFailSourceWrite(state, workItemId),
-        {
-          createId,
-          now: Date.now,
-        },
+        { createId, now: Date.now },
       ),
     );
   },

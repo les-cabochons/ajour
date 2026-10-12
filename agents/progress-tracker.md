@@ -199,6 +199,13 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Two regressions reproduce stale IDs after a failed Settle write, including JSON reload and a preserved local workflow override. Both failed before the fix.
 - [ ] Complete verification and fresh Codex review of the updated stack. The integration thread owns merging.
 
+### Deferred mappings after failed writes, 2026-10-12
+
+- [x] Failed source writes restore their recovery snapshot, then use the same mapping and lifecycle reconciliation as successful writes.
+- [x] Carried children follow their current mapping after recovery. Independent child writes remain protected, and later notes and local workflow overrides remain intact.
+- [x] Six persisted-store regressions cover Done, open and unmapped destinations, reload, carried children, independent child writes and local priority-write overrides. The three destination cases failed before the fix.
+- [ ] Verify the rebased view layer and request fresh reviews of the pushed heads.
+
 ### Mapping changes after a source write, 2026-10-12
 
 - [x] Successful source writes reconcile mappings deferred for the item and its carried children. A newly mapped Done state closes the item and saves its running entry.
