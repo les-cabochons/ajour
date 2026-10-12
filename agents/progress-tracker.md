@@ -141,6 +141,24 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Rebased-branch workspace typecheck and web and desktop renderer builds passed.
 - [x] Scoped formatting checks passed and temporary test configuration was removed.
 
+## Plugin installation recovery, 2026-10-12
+
+- [x] Reproduced the installed app's missing internal API error through the real
+      desktop IPC handlers with a healthy foreign API on the configured port.
+- [x] Desktop startup now requires its owned API server and reports occupied
+      ports with recovery instructions. Retrying after the port is freed works.
+- [x] Reproduced missing packaged dependencies with electron-builder's actual
+      extraResources copier and an independent Node import outside the repository.
+- [x] Runtime dependencies now have a separate extraResources entry so the
+      copier includes the top-level node_modules directory.
+- [x] Desktop tests pass 74 cases, including seven new regression cases.
+- [x] Windows desktop packaging succeeds. A smoke test using the packaged
+      Ajour executable starts its copied API, passes health, installs the current
+      published Azure DevOps archive in a temporary workspace, and discovers it.
+- [ ] Apply the verified repair to the installed app after Alex confirms stopping
+      the conflicting backlog development API and changing installed resources.
+- [ ] Merge the fix and deliver it through the normal desktop release process.
+
 ## Standard Task Flow
 
 - [ ] Understand the requested outcome.
