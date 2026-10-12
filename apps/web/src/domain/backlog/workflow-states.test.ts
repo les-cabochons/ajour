@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
+  failSourceWrite,
   moveBacklogItemToState,
   restoreBacklogItem,
+  settleBacklogItem,
 } from "@/domain/backlog/backlog-item-lifecycle";
 import type { LocalAppState, LocalWorkItem } from "@/domain/local-state";
 import {
@@ -302,6 +304,40 @@ describe("the done flag", () => {
         ?.workflowStateIdBeforeClose,
     ).toBeUndefined();
   });
+
+  it.each(["todo", "doing"])(
+    "does not restore deleted rollback states after a failed settle from %s",
+    (workflowStateId) => {
+      const state = createState({
+        ...workflow(),
+        workflowStates: [
+          ...workflow().workflowStates,
+          { _id: "doing", name: "Doing", color: "#d97706", createdAt: 1 },
+        ],
+        workItems: [
+          createImportedWorkItem({
+            workflowStateId,
+            importedWorkflowStateId: "todo",
+          }),
+        ],
+      });
+      const settled = settleBacklogItem(
+        state,
+        "work-item-1",
+        { createId: (prefix) => prefix, now: () => 100 },
+        { state: { name: "Waiting", done: false } },
+      );
+      const deleted = deleteWorkflowState(settled, "todo");
+      const reloaded = JSON.parse(JSON.stringify(deleted)) as LocalAppState;
+      const restored = failSourceWrite(reloaded, "work-item-1").workItems[0]!;
+      expect(restored.status).toBe("active");
+      expect(restored.workflowStateId).toBe(
+        workflowStateId === "todo" ? undefined : "doing",
+      );
+      expect(restored.importedWorkflowStateId).toBeUndefined();
+      expect(restored.pendingSourceWrite).toBeUndefined();
+    },
+  );
 
   it("keeps archived items in their done state when a mapping changes", () => {
     const state = {

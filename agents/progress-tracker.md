@@ -175,6 +175,12 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Project Health Notes
 
+### Deleted workflow recovery references, 2026-10-12
+
+- [x] Deleting a workflow state clears its ID from pending source-write rollback workflow and imported-workflow references. Other saved states remain available for recovery.
+- [x] Two regressions reproduce stale IDs after a failed Settle write, including JSON reload and a preserved local workflow override. Both failed before the fix.
+- [ ] Complete verification and fresh Codex review of the updated stack. The integration thread owns merging.
+
 ### Settle confirmation and archive warning, 2026-10-12
 
 - [x] Settle keeps its selected state and priority until the subitem confirmation succeeds. Cancellation and a changed subitem set leave the draft open.

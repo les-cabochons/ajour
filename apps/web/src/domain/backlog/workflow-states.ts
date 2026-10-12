@@ -376,6 +376,22 @@ export function deleteWorkflowState(
         workItem.importedWorkflowStateId === statusId
           ? undefined
           : workItem.importedWorkflowStateId,
+      pendingSourceWrite: workItem.pendingSourceWrite
+        ? {
+            ...workItem.pendingSourceWrite,
+            previous: {
+              ...workItem.pendingSourceWrite.previous,
+              ...(workItem.pendingSourceWrite.previous.workflowStateId ===
+              statusId
+                ? { workflowStateId: undefined }
+                : {}),
+              ...(workItem.pendingSourceWrite.previous
+                .importedWorkflowStateId === statusId
+                ? { importedWorkflowStateId: undefined }
+                : {}),
+            },
+          }
+        : undefined,
     })),
   });
 }
