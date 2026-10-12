@@ -213,7 +213,8 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Legacy archive inference uses the saved workflow ID and original source-state availability. Markerless explicit closes with an assigned Done ID remain explicit, while missing-sync archives with no workflow ID retain their provenance.
 - [x] The same discriminator applies to carried snapshots. Existing boolean markers still take precedence.
 - [x] The markerless explicit-close case failed before the fix. A paired markerless missing-sync case covers failed startup recovery, source return and Restore after reload.
-- [ ] Verify the rebased stack and request fresh reviews of the pushed heads.
+- [x] The rebased stack passes 842 unit tests, workspace typecheck, production builds and three focused Chromium scenarios covering failed drag recovery, parent close with Undo and Done settings.
+- [ ] Fresh Codex reviews of the pushed mapping and view heads are pending. Merging remains owned by the integration thread.
 
 ### Legacy source-write recovery provenance, 2026-10-12
 
