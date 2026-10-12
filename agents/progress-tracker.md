@@ -175,6 +175,13 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Project Health Notes
 
+### Settle confirmation and archive warning, 2026-10-12
+
+- [x] Settle keeps its selected state and priority until the subitem confirmation succeeds. Cancellation and a changed subitem set leave the draft open.
+- [x] The archive warning and submit label use the same workflow mapping as the lifecycle transition.
+- [x] The foundation passes 710 unit tests, workspace typecheck and three Chromium confirmation scenarios.
+- [ ] Carry the fixes through the stack, verify the final heads and request fresh reviews.
+
 ### Parent return propagation and missing-sync restore history, 2026-10-12
 
 - [x] Connector returns carry subitems only when the parent remains in an open workflow state. Source changes mapped Done leave its carried archived subitems unchanged.

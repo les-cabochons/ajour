@@ -303,6 +303,36 @@ function getSourceWrite(
   };
 }
 
+function getSettleWorkflowStateId(
+  state: LocalAppState,
+  workItem: LocalWorkItem,
+  change?: BacklogSettleChange,
+) {
+  return change?.state
+    ? findMappedWorkflowStateId(
+        state.workflowStateMappings,
+        workItem.source,
+        workItem.sourceConnectionId,
+        normalizeConnectorStatusKey(change.state.name),
+      )
+    : undefined;
+}
+
+/** The dialog's archive warning follows the same mapping as the transition. */
+export function settleArchivesWorkItem(
+  state: LocalAppState,
+  workItem: LocalWorkItem,
+  change?: BacklogSettleChange,
+) {
+  return (
+    workItem.source === "manual" ||
+    isDoneWorkflowState(
+      state.workflowStates,
+      getSettleWorkflowStateId(state, workItem, change),
+    )
+  );
+}
+
 /**
  * Settles a backlog item. A manual item becomes archived. A synced item becomes
  * settled and remembers its source state and priority, so a later sync can tell
@@ -332,17 +362,12 @@ export function settleBacklogItem(
   }
 
   const sourceWrite = getSourceWrite(target, change);
-  const selectedWorkflowStateId = change?.state
-    ? findMappedWorkflowStateId(
-        state.workflowStateMappings,
-        target.source,
-        target.sourceConnectionId,
-        normalizeConnectorStatusKey(change.state.name),
-      )
-    : undefined;
-  const archives =
-    target.source === "manual" ||
-    isDoneWorkflowState(state.workflowStates, selectedWorkflowStateId);
+  const selectedWorkflowStateId = getSettleWorkflowStateId(
+    state,
+    target,
+    change,
+  );
+  const archives = settleArchivesWorkItem(state, target, change);
 
   const now = factories.now();
   const carriedIds = new Set(
