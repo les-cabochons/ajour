@@ -27,11 +27,11 @@ A backlog item nested one level under another backlog item.
 _Avoid_: Subtask, child item
 
 **Settle**:
-To record that the user has nothing left to do on a backlog item for now. A manual item becomes archived. A synced item becomes settled, and the user can change its state or priority in its source tool at the same time.
+To record that the user has nothing left to do on a backlog item or pull request for now. A manual backlog item becomes archived. A synced backlog item or a pull request becomes settled. For a synced backlog item, the user can change its state or priority in its source tool at the same time.
 _Avoid_: Complete, close, finish, resolve
 
 **Settled**:
-The state of a synced backlog item that waits on someone or something else, such as another person, a client's answer, QA or a deployment.
+The state of a synced backlog item or pull request that waits on someone or something else, such as another person, a client's answer, QA, a deployment or a reviewer.
 _Avoid_: Waiting, blocked, on hold (as the Ajour state)
 
 **Source project**:
@@ -47,16 +47,30 @@ The state of a backlog item that is done. An archived item rarely comes back.
 _Avoid_: Closed, completed, deleted
 
 **Unsettle**:
-To put a settled backlog item back on the user's plate.
+To put a settled backlog item or pull request back on the user's plate. Ajour unsettles a pull request on its own when someone asks the user to act on it.
 _Avoid_: Reopen, restore (for a settled item)
 
 **Snooze**:
-To hide a backlog item from the sidebar until a chosen moment, after which it returns on its own. A snoozed item stays active, and its connector's source tool never learns about it.
+To hide a backlog item or pull request from the sidebar until a chosen moment, after which it returns on its own. A snoozed item stays active, and its source tool never learns about it.
 _Avoid_: Defer, postpone, hide
 
 **Returned**:
-The state of a backlog item that came back to the sidebar on its own, because its snooze ended or its source tool changed it after it was settled, and that the user has not opened since.
+The state of a backlog item or pull request that came back to the sidebar on its own, because its snooze ended or something unsettled it, and that the user has not opened since.
 _Avoid_: Unread, new, woken
+
+### Code review
+
+**Pull request**:
+A proposed code change in a code host, such as GitHub or Azure DevOps, that the user authored or was asked to review. It is separate from a backlog item.
+_Avoid_: PR (in user-facing text), merge request, code review, review item
+
+**Repository rule**:
+The project and task that time on pull requests from one repository is recorded against.
+_Avoid_: Repo mapping, review rule
+
+**Draft review**:
+The user's unsent comments on one pull request, kept by Ajour until the user submits them together as a review.
+_Avoid_: Pending review, unsent comments
 
 ### Time entries
 
@@ -93,13 +107,17 @@ _Avoid_: Cancel, delete (for a running entry)
 ### Extensions
 
 **Plugin**:
-An installable extension of Ajour. A plugin is either a connector or a schema.
+An installable extension of Ajour that provides one or more capabilities: connector, schema or code host.
 _Avoid_: Extension, add-on, integration
 
 **Connector**:
-A plugin that syncs backlog items and estimates with an external tool, such as Azure DevOps or Jira.
+A plugin capability that syncs backlog items and estimates with an external tool, such as Azure DevOps or Jira.
 _Avoid_: Integration, sync plugin
 
 **Schema**:
-A plugin that defines how projects and tasks map to an external file layout, such as Workday.
+A plugin capability that defines how projects and tasks map to an external file layout, such as Workday.
+
+**Code host**:
+A plugin capability that provides the user's pull requests from a tool such as GitHub, and carries out the user's reviews, comments and merges there.
+_Avoid_: Git provider, PR plugin, forge
 _Avoid_: Data shape, project data shape (in user-facing text)
