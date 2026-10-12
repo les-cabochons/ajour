@@ -1028,10 +1028,14 @@ describe("localStore workflow state sync", () => {
     ["explicit", "manual"],
     ["legacy unknown", "none"],
     ["modern unknown", "none"],
+    ["markerless explicit", "none"],
+    ["markerless missing", "none"],
   ] as const)(
     "restores %s archives with %s children after hydrating recovery snapshots",
     async (archiveKind, children) => {
       const { localStore } = await import("./local-store");
+      const isMissing =
+        archiveKind === "missing" || archiveKind === "markerless missing";
       const open = localStore
         .snapshot()
         .workflowStates.find((state) => !state.done)!._id;
@@ -1070,16 +1074,20 @@ describe("localStore workflow state sync", () => {
           title: "Manual child",
           workflowStateId: open,
         });
-      if (archiveKind.endsWith("unknown"))
+      if (
+        archiveKind.endsWith("unknown") ||
+        archiveKind.startsWith("markerless")
+      )
         localStore.updateWorkItem(id, {
           sourceStatusKey: undefined,
           sourceStatusLabel: undefined,
           importedWorkflowStateId: undefined,
-          ...(archiveKind === "modern unknown"
+          ...(archiveKind === "modern unknown" ||
+          archiveKind.startsWith("markerless")
             ? { workflowStateId: undefined }
             : {}),
         });
-      if (archiveKind === "missing") {
+      if (isMissing) {
         localStore.settleWorkItem(id, undefined, { includeSubitems: true });
         localStore.importConnectorWorkItems([], {
           archiveMissingFromConnectionId: "ado-1",
@@ -1090,7 +1098,7 @@ describe("localStore workflow state sync", () => {
       localStore.moveWorkItemToState(id, review, {
         sourceWrites: { [id]: "In QA" },
       });
-      if (archiveKind !== "missing")
+      if (!isMissing)
         localStore.updateWorkflowState(oldDone, {
           name: "Old done",
           done: false,
@@ -1119,19 +1127,23 @@ describe("localStore workflow state sync", () => {
       expect(
         reloaded.snapshot().workItems.find((item) => item._id === id)
           ?.pendingSourceWrite?.previous.lifecycle?.archivedByMissingSync,
-      ).toBe(archiveKind === "missing");
+      ).toBe(isMissing);
       reloaded.failSourceWrite(id);
       for (const item of reloaded.snapshot().workItems) {
         expect(item).toMatchObject({
           status: "archived",
-          archivedByMissingSync: archiveKind === "missing",
-          workflowStateId: archiveKind === "missing" ? open : replacement,
+          archivedByMissingSync: isMissing,
+          workflowStateId: isMissing
+            ? archiveKind === "markerless missing"
+              ? undefined
+              : open
+            : replacement,
         });
         expect(item.pendingSourceWrite).toBeUndefined();
       }
       vi.resetModules();
       const restarted = (await import("./local-store")).localStore;
-      if (archiveKind === "missing")
+      if (isMissing)
         restarted.importConnectorWorkItems(
           children === "synced" ? [parent, child] : [parent],
         );
@@ -1143,7 +1155,10 @@ describe("localStore workflow state sync", () => {
             (item) =>
               item.status === "active" &&
               item.workflowStateId ===
-                (archiveKind === "modern unknown" ? undefined : open),
+                (archiveKind === "modern unknown" ||
+                archiveKind === "markerless explicit"
+                  ? undefined
+                  : open),
           ),
       ).toBe(true);
     },

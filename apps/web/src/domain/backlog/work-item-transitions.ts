@@ -37,7 +37,11 @@ export function normalizeWorkItemPriority(priority?: number) {
 
 /** Older move snapshots omitted archive provenance, including carried items. */
 export function normalizeSourceWriteRecovery(workItems: LocalWorkItem[]) {
-  const sources = new Map(workItems.map((item) => [item._id, item.source]));
+  const itemsById = new Map(workItems.map((item) => [item._id, item]));
+  const hasSourceState = (
+    item:
+      Pick<LocalWorkItem, "sourceStatusKey" | "sourceStatusLabel"> | undefined,
+  ) => Boolean(item?.sourceStatusKey || item?.sourceStatusLabel?.trim());
   function normalize<
     T extends Pick<
       LocalWorkItem,
@@ -46,17 +50,24 @@ export function normalizeSourceWriteRecovery(workItems: LocalWorkItem[]) {
       | "archivedSourceStatusKey"
       | "workflowStateIdBeforeClose"
     >,
-  >(snapshot: T, source: LocalWorkItem["source"]): T {
+  >(
+    snapshot: T,
+    source: LocalWorkItem["source"],
+    workflowStateId: string | undefined,
+    sourceStateKnown: boolean,
+  ): T {
     if (typeof snapshot.archivedByMissingSync === "boolean") return snapshot;
     // Explicit closes record the source state or pre-close workflow state.
-    // Missing-sync archives lack those markers. Manual archives are explicit.
+    // A markerless explicit close still assigned a Done ID. With no known
+    // source state, treat an assigned ID as explicit rather than guessing.
     return {
       ...snapshot,
       archivedByMissingSync:
         snapshot.status === "archived" &&
         source !== "manual" &&
         snapshot.archivedSourceStatusKey === undefined &&
-        snapshot.workflowStateIdBeforeClose === undefined,
+        snapshot.workflowStateIdBeforeClose === undefined &&
+        (sourceStateKnown || workflowStateId === undefined),
     };
   }
   return workItems.map((item) => {
@@ -69,13 +80,35 @@ export function normalizeSourceWriteRecovery(workItems: LocalWorkItem[]) {
         previous: {
           ...write.previous,
           lifecycle: write.previous.lifecycle
-            ? normalize(write.previous.lifecycle, item.source)
+            ? normalize(
+                write.previous.lifecycle,
+                item.source,
+                write.previous.workflowStateId,
+                hasSourceState(write.previous),
+              )
             : undefined,
-          carriedChildren: write.previous.carriedChildren?.map((child) => ({
-            ...child,
-            before: normalize(child.before, sources.get(child.id) ?? "manual"),
-            after: normalize(child.after, sources.get(child.id) ?? "manual"),
-          })),
+          carriedChildren: write.previous.carriedChildren?.map((child) => {
+            const current = itemsById.get(child.id);
+            const source = current?.source ?? "manual";
+            const before = current?.pendingSourceWrite
+              ? current.pendingSourceWrite.previous
+              : current;
+            return {
+              ...child,
+              before: normalize(
+                child.before,
+                source,
+                child.before.workflowStateId,
+                hasSourceState(before),
+              ),
+              after: normalize(
+                child.after,
+                source,
+                child.after.workflowStateId,
+                hasSourceState(current),
+              ),
+            };
+          }),
         },
       },
     };

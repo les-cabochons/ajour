@@ -199,6 +199,13 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Two regressions reproduce stale IDs after a failed Settle write, including JSON reload and a preserved local workflow override. Both failed before the fix.
 - [ ] Complete verification and fresh Codex review of the updated stack. The integration thread owns merging.
 
+### Markerless legacy explicit closes, 2026-10-12
+
+- [x] Legacy archive inference uses the saved workflow ID and original source-state availability. Markerless explicit closes with an assigned Done ID remain explicit, while missing-sync archives with no workflow ID retain their provenance.
+- [x] The same discriminator applies to carried snapshots. Existing boolean markers still take precedence.
+- [x] The markerless explicit-close case failed before the fix. A paired markerless missing-sync case covers failed startup recovery, source return and Restore after reload.
+- [ ] Verify the rebased stack and request fresh reviews of the pushed heads.
+
 ### Legacy source-write recovery provenance, 2026-10-12
 
 - [x] Hydration fills missing archive-provenance markers in older pending recovery and carried-child snapshots. Source markers and pre-close history identify explicit closes; manual children remain explicit, and stored boolean markers take precedence.
