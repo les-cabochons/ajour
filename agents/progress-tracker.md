@@ -240,7 +240,8 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Failed source writes restore their recovery snapshot, then use the same mapping and lifecycle reconciliation as successful writes.
 - [x] Carried children follow their current mapping after recovery. Independent child writes remain protected, and later notes and local workflow overrides remain intact.
 - [x] Six persisted-store regressions cover Done, open and unmapped destinations, reload, carried children, independent child writes and local priority-write overrides. The three destination cases failed before the fix.
-- [ ] Verify the rebased view layer and request fresh reviews of the pushed heads.
+- [x] The rebased stack passes 824 unit tests, workspace typecheck, production builds and five focused Chromium scenarios, including failed source-move order recovery.
+- [ ] Fresh Codex reviews of the pushed mapping and view heads are pending. Merging remains owned by the integration thread.
 
 ### Mapping changes after a source write, 2026-10-12
 
