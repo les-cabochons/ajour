@@ -457,7 +457,7 @@ Decided after the prototype on branch `prototype/backlog-sidebar`: variant B is 
 
 - Two collapsible sections follow the list: "Snoozed (n)", then "Settled". Both start collapsed. Their state is saved per device.
 - Snoozed lists items by the time they return, and each row shows it, such as "Tomorrow 9:00". The hover action is Unsnooze. An unsnoozed item goes back to the list with no dot.
-- Settled lists every settled item, newest first, 20 at a time with "Show more". The hover action is Unsettle. Archived items are not listed. They live in the Backlog page's Archived view.
+- Settled lists every settled item, newest first, 20 at a time with "Show more". Subitems settled along with their parent have no row of their own: they show on the parent's page. A subitem that has its own priority and isn't in a done state keeps its own state, so it gets its own row when it is settled. The hover action is Unsettle. Archived items are not listed. They live in the Backlog page's Archived view.
 - Clicking a row in either section opens the backlog item page.
 
 ### Snooze
