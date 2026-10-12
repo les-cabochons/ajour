@@ -298,7 +298,10 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] A changed connector-done source state mapped to an open workflow state reopens an archived item and its carried children. An unchanged local Archive stays archived, and a missing-sync archive returns when the item reappears in an open mapping.
 - [x] Editor saves and switches await workflow moves and share an in-flight commit. Cancelling the subitem prompt leaves the editor and workflow draft intact.
 - [x] The foundation passes 692 unit tests, workspace typechecking and a Chromium regression covering Save, cancellation and retry with Include subitem.
-- [ ] Carry the fixes through the mapping and view layers, verify the stack and request fresh reviews.
+- [x] Carried the fixes through the mapping and view layers. Final validation passes 771 unit tests, all 62 Chromium scenarios in one run, workspace typechecking, production build and formatting.
+- [x] Async moves recheck the parent, destination and eligible children after prompts and lookups, and reject superseded source-write choices. Six regressions cover moves, deletion, archiving and changes to the included children.
+- [x] Persisted descending priority ordering keeps No priority first and preserves custom order within a level.
+- [ ] Complete fresh Codex reviews on the pushed stack heads before integration.
 
 ### Source write races and persisted recovery, 2026-10-12
 
