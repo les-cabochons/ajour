@@ -604,7 +604,11 @@ export function settleBacklogItem(
     workItems: saved.workItems.map((workItem) => {
       if (workItem._id === workItemId) {
         const written = sourceWrite
-          ? withSourceWrite(workItem, sourceWrite, getWorkItemPriorityRanges(state, workItem))
+          ? withSourceWrite(
+              workItem,
+              sourceWrite,
+              getWorkItemPriorityRanges(state, workItem),
+            )
           : workItem;
         return settle(
           sourceWrite?.state !== undefined
