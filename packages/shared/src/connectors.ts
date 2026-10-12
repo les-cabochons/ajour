@@ -104,6 +104,18 @@ export const connectorFieldSchema = z.object({
 });
 export type ConnectorField = z.infer<typeof connectorFieldSchema>;
 
+/**
+ * Optional capabilities a connector plugin declares in its manifest. A plugin
+ * without `settle` keeps working: Ajour settles its items locally, with no
+ * write. See ADR 0001.
+ */
+export const connectorPluginCapabilitiesSchema = z.object({
+  settle: z.boolean().optional(),
+});
+export type ConnectorPluginCapabilities = z.infer<
+  typeof connectorPluginCapabilitiesSchema
+>;
+
 export const connectorPluginManifestSchema = z.object({
   id: connectorPluginIdSchema,
   version: z
@@ -116,6 +128,7 @@ export const connectorPluginManifestSchema = z.object({
   iconSvg: z.string().min(1).max(20000),
   entrypoint: z.string().trim().min(1).max(240),
   connectionFields: z.array(connectorFieldSchema).min(1).max(50),
+  capabilities: connectorPluginCapabilitiesSchema.optional(),
 });
 export type ConnectorPluginManifest = z.infer<
   typeof connectorPluginManifestSchema
@@ -308,6 +321,14 @@ export const connectorImportCandidateInputSchema = z.object({
   projectName: z.string().trim().max(120).optional(),
   workItemType: z.string().trim().min(1).max(120),
   state: z.string().trim().max(120).optional(),
+  /** The source's category for `state`, such as Azure DevOps "Resolved". */
+  stateCategory: z.string().trim().max(120).optional(),
+  /**
+   * Whether `state` is in a done category, such as Azure DevOps Completed or
+   * Removed, or Jira Done. The plugin decides, so Ajour never names source
+   * states. Ajour archives a backlog item that reaches a done category.
+   */
+  stateDone: z.boolean().optional(),
   assignedTo: z.string().trim().max(240).optional(),
   priority: z.number().int().min(0).max(999).optional(),
   originalEstimateHours: z.number().finite().nonnegative().optional(),
@@ -359,6 +380,67 @@ export const connectorSyncWorkItemUpdateSchema = z.object({
 export type ConnectorSyncWorkItemUpdate = z.infer<
   typeof connectorSyncWorkItemUpdateSchema
 >;
+
+/** A state a backlog item can move to when it is settled. */
+export const connectorSettleStateSchema = z.object({
+  name: z.string().trim().min(1).max(120),
+  /** Groups the state in the settle dialog, in the order the plugin lists. */
+  category: z.string().trim().min(1).max(120),
+  done: z.boolean(),
+});
+export type ConnectorSettleState = z.infer<typeof connectorSettleStateSchema>;
+
+export const connectorSettleStatesRequestSchema = z.object({
+  sourceId: z.string().trim().min(1).max(400),
+});
+export type ConnectorSettleStatesRequest = z.infer<
+  typeof connectorSettleStatesRequestSchema
+>;
+
+export const connectorSettleStatesResultSchema = z.object({
+  states: z.array(connectorSettleStateSchema).max(200),
+});
+export type ConnectorSettleStatesResult = z.infer<
+  typeof connectorSettleStatesResultSchema
+>;
+
+/**
+ * Writes a settle to one backlog item. Only changed fields are sent. Priority
+ * goes to whatever source field the plugin maps to Ajour's priority.
+ */
+export const connectorSettleWriteRequestSchema = z
+  .object({
+    sourceId: z.string().trim().min(1).max(400),
+    state: z.string().trim().min(1).max(120).optional(),
+    priority: z.number().int().min(0).max(999).optional(),
+  })
+  .refine(
+    (request) => request.state !== undefined || request.priority !== undefined,
+    "A settle write needs a state, a priority or both.",
+  );
+export type ConnectorSettleWriteRequest = z.infer<
+  typeof connectorSettleWriteRequestSchema
+>;
+
+/** The item's values in the source after the write. */
+export const connectorSettleWriteResultSchema = z.object({
+  state: z.string().trim().max(120).optional(),
+  stateCategory: z.string().trim().max(120).optional(),
+  stateDone: z.boolean().optional(),
+  priority: z.number().int().min(0).max(999).optional(),
+});
+export type ConnectorSettleWriteResult = z.infer<
+  typeof connectorSettleWriteResultSchema
+>;
+
+/** A synced backlog item that reached a done category in its source. */
+export const connectorDoneWorkItemSchema = z.object({
+  source: connectorSourceSchema,
+  connectionId: z.string().trim().min(1).max(120),
+  sourceId: z.string().trim().min(1).max(400),
+  state: z.string().trim().max(120).optional(),
+});
+export type ConnectorDoneWorkItem = z.infer<typeof connectorDoneWorkItemSchema>;
 
 export const connectorPluginSyncResultSchema = z.object({
   items: z.array(connectorImportCandidateInputSchema),
@@ -459,5 +541,7 @@ export const connectorSyncResultSchema = z.object({
   updatedCount: z.number().int().nonnegative(),
   skippedCount: z.number().int().nonnegative(),
   workItemUpdates: z.array(connectorSyncWorkItemUpdateSchema).default([]),
+  /** Items that reached a done category. They are never staged for review. */
+  doneItems: z.array(connectorDoneWorkItemSchema).default([]),
 });
 export type ConnectorSyncResult = z.infer<typeof connectorSyncResultSchema>;

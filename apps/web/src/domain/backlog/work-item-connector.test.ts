@@ -6,6 +6,7 @@ import type {
 import type { LocalAppState } from "@/domain/local-state";
 import {
   applyConnectorSyncWorkItemUpdates,
+  archiveDoneConnectorWorkItems,
   importConnectorWorkItems,
 } from "@/domain/backlog/work-item-connector";
 import { settleBacklogItem } from "@/domain/backlog/backlog-item-lifecycle";
@@ -468,6 +469,105 @@ describe("connector sync of settled items", () => {
       priority: 2,
       importedPriority: 2,
     });
+  });
+});
+
+describe("connector sync of done items", () => {
+  const done = (overrides: { sourceId?: string; state?: string } = {}) => ({
+    source: "azure_devops",
+    connectionId: "connection-1",
+    sourceId: "source-1",
+    state: "Closed",
+    ...overrides,
+  });
+
+  function importOne() {
+    return importConnectorWorkItems(
+      createState(),
+      [createCandidate()],
+      undefined,
+      factories,
+    ).state;
+  }
+
+  it("archives an active item that reached a done category", () => {
+    const result = archiveDoneConnectorWorkItems(
+      importOne(),
+      [done()],
+      factories,
+    );
+
+    expect(result.archivedCount).toBe(1);
+    expect(result.state.workItems[0]).toMatchObject({
+      status: "archived",
+      archivedAt: 500,
+      archivedByMissingSync: false,
+      sourceStatusKey: "closed",
+      sourceStatusLabel: "Closed",
+    });
+  });
+
+  it("archives a settled item with the subitems its settle carried", () => {
+    let id = 0;
+    const idFactories = { createId: () => `work-item-${++id}`, now: () => 500 };
+    const imported = importConnectorWorkItems(
+      createState(),
+      [
+        createCandidate(),
+        createCandidate({
+          id: "candidate-2",
+          sourceId: "source-2",
+          externalId: "43",
+          depth: 1,
+          parentSourceId: "source-1",
+          priority: undefined,
+        }),
+      ],
+      undefined,
+      idFactories,
+    ).state;
+    const parentId = imported.workItems.find(
+      (workItem) => workItem.sourceId === "source-1",
+    )!._id;
+    const settled = settleBacklogItem(imported, parentId, idFactories);
+
+    const result = archiveDoneConnectorWorkItems(
+      settled,
+      [done()],
+      idFactories,
+    );
+
+    expect(result.state.workItems.map((workItem) => workItem.status)).toEqual([
+      "archived",
+      "archived",
+    ]);
+  });
+
+  it("ignores done items Ajour never imported, from another connection, or already archived", () => {
+    const state = importOne();
+
+    expect(
+      archiveDoneConnectorWorkItems(
+        state,
+        [
+          done({ sourceId: "unknown" }),
+          { ...done(), connectionId: "connection-2" },
+        ],
+        factories,
+      ),
+    ).toEqual({ state, archivedCount: 0 });
+
+    const archived = archiveDoneConnectorWorkItems(
+      state,
+      [done()],
+      factories,
+    ).state;
+    expect(
+      archiveDoneConnectorWorkItems(archived, [done()], {
+        ...factories,
+        now: () => 900,
+      }),
+    ).toEqual({ state: archived, archivedCount: 0 });
   });
 });
 

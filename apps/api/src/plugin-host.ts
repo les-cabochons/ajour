@@ -7,11 +7,19 @@ import {
   connectorFieldValuesSchema,
   connectorPluginSyncResultSchema,
   connectorPluginValidationResultSchema,
+  connectorSettleStatesRequestSchema,
+  connectorSettleStatesResultSchema,
+  connectorSettleWriteRequestSchema,
+  connectorSettleWriteResultSchema,
   connectorSyncWorkItemSchema,
   type ConnectorFieldValues,
   type ConnectorPluginManifest,
   type ConnectorPluginSyncResult,
   type ConnectorPluginValidationResult,
+  type ConnectorSettleStatesRequest,
+  type ConnectorSettleStatesResult,
+  type ConnectorSettleWriteRequest,
+  type ConnectorSettleWriteResult,
   type ConnectorSyncWorkItem,
 } from "../../../packages/shared/src/connectors.ts";
 import { z } from "zod";
@@ -50,7 +58,8 @@ const pluginInvocationConnectionSchema = z.object({
 type PluginInvocationConnection = z.infer<
   typeof pluginInvocationConnectionSchema
 >;
-type PluginMethod = "validateConnection" | "syncConnection";
+type PluginMethod =
+  "validateConnection" | "syncConnection" | "listSettleStates" | "writeSettle";
 function comparePlugins(
   left: ConnectorPluginManifest,
   right: ConnectorPluginManifest,
@@ -189,6 +198,47 @@ export class ConnectorPluginManager {
     );
   }
 
+  /** Whether the plugin declares the settle capability. */
+  async supportsSettle(pluginId: string): Promise<boolean> {
+    this.assertRunning();
+    const plugin = (await this.discoverPlugins()).get(pluginId);
+    return plugin?.manifest.capabilities?.settle ?? false;
+  }
+
+  async listSettleStates(
+    pluginId: string,
+    connection: PluginInvocationConnection,
+    request: ConnectorSettleStatesRequest,
+  ): Promise<ConnectorSettleStatesResult> {
+    await this.assertSupportsSettle(pluginId);
+    return await this.invokePlugin(
+      pluginId,
+      "listSettleStates",
+      {
+        connection: pluginInvocationConnectionSchema.parse(connection),
+        request: connectorSettleStatesRequestSchema.parse(request),
+      },
+      connectorSettleStatesResultSchema,
+    );
+  }
+
+  async writeSettle(
+    pluginId: string,
+    connection: PluginInvocationConnection,
+    request: ConnectorSettleWriteRequest,
+  ): Promise<ConnectorSettleWriteResult> {
+    await this.assertSupportsSettle(pluginId);
+    return await this.invokePlugin(
+      pluginId,
+      "writeSettle",
+      {
+        connection: pluginInvocationConnectionSchema.parse(connection),
+        request: connectorSettleWriteRequestSchema.parse(request),
+      },
+      connectorSettleWriteResultSchema,
+    );
+  }
+
   async shutdown(): Promise<void> {
     if (!this.shutdownPromise) {
       this.shuttingDown = true;
@@ -228,6 +278,15 @@ export class ConnectorPluginManager {
         parse: (result: unknown) => schema.parse(result),
       };
     });
+  }
+
+  private async assertSupportsSettle(pluginId: string) {
+    const plugin = await this.getPlugin(pluginId);
+    if (!plugin.manifest.capabilities?.settle) {
+      throw new Error(
+        `Connector plugin "${pluginId}" does not support settling backlog items.`,
+      );
+    }
   }
 
   private assertCanInvoke() {
