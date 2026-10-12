@@ -325,3 +325,13 @@ Feature: Open the local time workspace
     Given I have no saved Ajour workspace
     When I open the Backlog settings
     Then the Backlog settings contain one settle rules section
+
+  Scenario: Keep an editor workflow draft after cancelling its close prompt
+    Given I have a parent editor close fixture
+    When I save its editor workflow as Done
+    Then the parent editor remains mounted while the subitem choice is pending
+    When I cancel the parent editor close prompt
+    Then the parent editor retains its Done draft and the item remains active
+    When I save its editor workflow as Done
+    And I include the child in the editor close
+    Then the editor closes after the parent and child reach Done

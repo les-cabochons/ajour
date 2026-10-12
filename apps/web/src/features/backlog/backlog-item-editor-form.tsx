@@ -72,7 +72,7 @@ import { cn } from "@/lib/utils";
 /** Lets a host save the draft before it loads another item into the same form. */
 export interface BacklogItemEditorFormHandle {
   /** Saves a valid draft. Returns false, and shows the error, when the draft blocks the switch. */
-  commitBeforeSwitch: () => boolean;
+  commitBeforeSwitch: () => Promise<boolean>;
 }
 
 const ESTIMATE_LABELS: Record<BacklogEstimateFieldKey, string> = {
@@ -167,6 +167,7 @@ export function BacklogItemEditorForm({
   const [showErrors, setShowErrors] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const pendingCommitRef = useRef<Promise<boolean> | null>(null);
 
   const subitems = useMemo(
     () => (workItem ? getDirectChildWorkItems(workItem, workItems) : []),
@@ -230,6 +231,15 @@ export function BacklogItemEditorForm({
 
   /** Writes the draft when it has something to save. Returns false when it is blocked. */
   function commit(reason: BacklogTaskDraftCommitReason) {
+    if (pendingCommitRef.current) return pendingCommitRef.current;
+    const pending = commitDraft(reason).finally(() => {
+      pendingCommitRef.current = null;
+    });
+    pendingCommitRef.current = pending;
+    return pending;
+  }
+
+  async function commitDraft(reason: BacklogTaskDraftCommitReason) {
     const result = commitBacklogTaskDraft(editor, reason);
     switch (result.kind) {
       case "invalid":
@@ -250,7 +260,10 @@ export function BacklogItemEditorForm({
           .snapshot()
           .workItems.find((item) => item._id === createdId);
         if (closes && created && result.draft.workflowStateId) {
-          void moveBacklogItemWithUndo(created, result.draft.workflowStateId);
+          return await moveBacklogItemWithUndo(
+            created,
+            result.draft.workflowStateId,
+          );
         }
         return true;
       }
@@ -271,7 +284,7 @@ export function BacklogItemEditorForm({
             .snapshot()
             .workItems.find((item) => item._id === workItem._id);
           if (changesLifecycle && saved) {
-            void moveBacklogItemWithUndo(saved, workflowStateId);
+            return await moveBacklogItemWithUndo(saved, workflowStateId);
           }
         }
         return true;
@@ -280,18 +293,21 @@ export function BacklogItemEditorForm({
     }
   }
 
-  function save() {
-    if (commit("save")) {
+  async function save() {
+    if (await commit("save")) {
       onClose();
     }
   }
 
-  function handleAction(actionId: BacklogItemActionId) {
-    if (!workItem || !commit("switch")) {
+  async function handleAction(actionId: BacklogItemActionId) {
+    if (!workItem || !(await commit("switch"))) {
       return;
     }
 
-    onAction({ ...workItem, ...editor.patch }, actionId);
+    const saved = localStore
+      .snapshot()
+      .workItems.find((item) => item._id === workItem._id);
+    if (saved) onAction(saved, actionId);
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {

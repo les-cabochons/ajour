@@ -441,7 +441,7 @@ export function BacklogPage() {
    * Saves a valid draft in the editor before it shows something else.
    * Returns false when the draft is invalid; the form then shows why.
    */
-  function leaveEditorDraft() {
+  async function leaveEditorDraft() {
     return editorFormRef.current?.commitBeforeSwitch() ?? true;
   }
 
@@ -449,7 +449,7 @@ export function BacklogPage() {
    * Opens a saved or new item in the editor. The item already in the editor is saved
    * first when valid; an invalid draft keeps it open.
    */
-  function openEditor(request: BacklogEditorRequest) {
+  async function openEditor(request: BacklogEditorRequest) {
     if (
       editorRequest &&
       getEditorKey(editorRequest) === getEditorKey(request)
@@ -457,7 +457,7 @@ export function BacklogPage() {
       return;
     }
 
-    if (!leaveEditorDraft()) {
+    if (!(await leaveEditorDraft())) {
       return;
     }
 
@@ -622,8 +622,8 @@ export function BacklogPage() {
   }
 
   /** A row click or Enter opens the backlog item page. Edit opens the editor. */
-  function openBacklogItemPage(workItem: LocalWorkItem) {
-    if (!leaveEditorDraft()) {
+  async function openBacklogItemPage(workItem: LocalWorkItem) {
+    if (!(await leaveEditorDraft())) {
       return;
     }
 
@@ -658,7 +658,7 @@ export function BacklogPage() {
   }
 
   /** Runs an action from a row. On the item in the editor, the draft is saved first. */
-  function runRowWorkItemAction(
+  async function runRowWorkItemAction(
     workItem: LocalWorkItem,
     actionId: BacklogItemActionId,
     options?: { askToSettle?: boolean },
@@ -668,7 +668,7 @@ export function BacklogPage() {
       return;
     }
 
-    if (!leaveEditorDraft()) {
+    if (!(await leaveEditorDraft())) {
       return;
     }
 

@@ -3,6 +3,137 @@ import { createBdd } from "playwright-bdd";
 
 const { Given, When, Then } = createBdd();
 
+Given("I have a parent editor close fixture", async ({ page }) => {
+  await mockEmptyConnectorOverview(page);
+  await page.addInitScript(() => {
+    localStorage.clear();
+    sessionStorage.clear();
+    localStorage.setItem(
+      "ajour.local-state.v2",
+      JSON.stringify({
+        workflowStates: [
+          { _id: "doing", name: "In progress", color: "#d97706", createdAt: 1 },
+          {
+            _id: "done",
+            name: "Done",
+            color: "#059669",
+            done: true,
+            createdAt: 1,
+          },
+        ],
+        workItems: [
+          {
+            _id: "editor-parent",
+            title: "Editor parent",
+            source: "manual",
+            status: "active",
+            workflowStateId: "doing",
+            createdAt: 1,
+          },
+          {
+            _id: "editor-child",
+            title: "Editor child",
+            source: "manual",
+            status: "active",
+            workflowStateId: "doing",
+            parentWorkItemId: "editor-parent",
+            createdAt: 1,
+          },
+        ],
+      }),
+    );
+  });
+  await page.goto("/backlog/editor-parent");
+  await page
+    .getByRole("button", { name: "Actions for Editor parent", exact: true })
+    .click();
+  await page.getByRole("menuitem", { name: "Edit", exact: true }).click();
+  await expect(
+    page.getByRole("complementary", { name: "Backlog item editor" }),
+  ).toBeVisible();
+});
+When("I save its editor workflow as Done", async ({ page }) => {
+  const editor = page.getByRole("complementary", {
+    name: "Backlog item editor",
+  });
+  await editor
+    .getByRole("combobox", { name: "Workflow state", exact: true })
+    .click();
+  await page.getByRole("option", { name: "Done", exact: true }).click();
+  await editor.getByRole("button", { name: "Save", exact: true }).click();
+});
+Then(
+  "the parent editor remains mounted while the subitem choice is pending",
+  async ({ page }) => {
+    await expect(
+      page.getByRole("dialog", {
+        name: "Also close its 1 open subitem?",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("complementary", {
+        name: "Backlog item editor",
+        includeHidden: true,
+      }),
+    ).toHaveCount(1);
+  },
+);
+When("I cancel the parent editor close prompt", async ({ page }) => {
+  await page.keyboard.press("Escape");
+});
+Then(
+  "the parent editor retains its Done draft and the item remains active",
+  async ({ page }) => {
+    const editor = page.getByRole("complementary", {
+      name: "Backlog item editor",
+    });
+    await expect(editor).toBeVisible();
+    await expect(
+      editor.getByRole("combobox", { name: "Workflow state", exact: true }),
+    ).toHaveValue("Done");
+    const parent = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems.find(
+        (item: { _id: string }) => item._id === "editor-parent",
+      ),
+    );
+    expect(parent).toMatchObject({
+      status: "active",
+      workflowStateId: "doing",
+    });
+  },
+);
+When("I include the child in the editor close", async ({ page }) => {
+  await page
+    .getByRole("button", { name: "Include subitem", exact: true })
+    .click();
+});
+Then(
+  "the editor closes after the parent and child reach Done",
+  async ({ page }) => {
+    await expect(
+      page.getByRole("complementary", { name: "Backlog item editor" }),
+    ).toHaveCount(0);
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          JSON.parse(
+            localStorage.getItem("ajour.local-state.v2")!,
+          ).workItems.map(
+            (item: { status: string; workflowStateId: string }) => ({
+              status: item.status,
+              workflowStateId: item.workflowStateId,
+            }),
+          ),
+        ),
+      )
+      .toEqual([
+        { status: "archived", workflowStateId: "done" },
+        { status: "archived", workflowStateId: "done" },
+      ]);
+  },
+);
+
 async function mockEmptyConnectorOverview(page: Page) {
   await page.route("http://127.0.0.1:8787/api/connectors", async (route) => {
     await route.fulfill({

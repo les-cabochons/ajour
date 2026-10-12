@@ -865,6 +865,85 @@ describe("connector sync of workflow states", () => {
     expect(sync(archived).workItems[0]?.status).toBe("archived");
   });
 
+  it.each(["changed", "unchanged", "missing"])(
+    "handles an archived done item mapped open when its source is %s",
+    (sourceChange) => {
+      const mapped = workflow();
+      const imported = sync(mapped, { state: "Resolved" });
+      const parent = imported.workItems[0]!;
+      const closed = archiveBacklogItem(
+        {
+          ...imported,
+          workItems: [
+            parent,
+            {
+              ...parent,
+              _id: "child",
+              sourceId: "child",
+              parentWorkItemId: parent._id,
+              status: "archived",
+              workflowStateId: "done",
+              workflowStateIdBeforeClose: "doing",
+              settledWithParentId: parent._id,
+            },
+          ],
+        },
+        parent._id,
+        factories,
+      );
+      const state =
+        sourceChange === "missing"
+          ? {
+              ...closed,
+              workItems: closed.workItems.map((item) =>
+                item._id === parent._id
+                  ? { ...item, archivedByMissingSync: true }
+                  : item,
+              ),
+            }
+          : closed;
+      const result = archiveDoneConnectorWorkItems(
+        state,
+        [
+          {
+            source: "azure_devops",
+            connectionId: "connection-1",
+            sourceId: "source-1",
+            state: sourceChange === "changed" ? "Active" : "Resolved",
+          },
+        ],
+        factories,
+      );
+      expect(result.archivedCount).toBe(0);
+      const reopened = sourceChange !== "unchanged";
+      expect(result.state.workItems[0]).toMatchObject(
+        reopened
+          ? {
+              status: "active",
+              workflowStateId: sourceChange === "changed" ? "doing" : "review",
+              importedWorkflowStateId:
+                sourceChange === "changed" ? "doing" : "review",
+              archivedAt: undefined,
+              archivedSourceStatusKey: undefined,
+              archivedByMissingSync: false,
+              workflowStateIdBeforeClose: undefined,
+              returnedAt: 500,
+            }
+          : { status: "archived", workflowStateId: "done" },
+      );
+      expect(result.state.workItems[1]).toMatchObject(
+        reopened
+          ? {
+              status: "active",
+              workflowStateId: "doing",
+              settledWithParentId: undefined,
+            }
+          : { status: "archived" },
+      );
+      if (!reopened) expect(result.state).toBe(state);
+    },
+  );
+
   it.each(["doing", "done"])(
     "refreshes the imported baseline when a changed done source state maps to %s",
     (destination) => {

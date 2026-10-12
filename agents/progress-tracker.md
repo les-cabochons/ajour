@@ -175,6 +175,13 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Project Health Notes
 
+### Archived source mappings and pending editor saves, 2026-10-12
+
+- [x] A changed connector-done source state mapped to an open workflow state reopens an archived item and its carried children. An unchanged local Archive stays archived, and a missing-sync archive returns when the item reappears in an open mapping.
+- [x] Editor saves and switches await workflow moves and share an in-flight commit. Cancelling the subitem prompt leaves the editor and workflow draft intact.
+- [x] The foundation passes 692 unit tests, workspace typechecking and a Chromium regression covering Save, cancellation and retry with Include subitem.
+- [ ] Carry the fixes through the mapping and view layers, verify the stack and request fresh reviews.
+
 ### Settle mapping recovery, 2026-10-12
 
 - [x] Settle derives closure from the selected source state's workflow mapping, including a connector-open state mapped to Done and a connector-done state mapped to an open state.

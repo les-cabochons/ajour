@@ -15,6 +15,7 @@ import type {
 import {
   applyWorkflowStateLifecycle,
   archiveBacklogItem,
+  restoreBacklogItem,
   unsettleBacklogItem,
 } from "@/domain/backlog/backlog-item-lifecycle";
 import {
@@ -488,8 +489,8 @@ export function importConnectorWorkItems(
  * Archives the synced items a sync reports in a done category, such as Azure
  * DevOps Completed or Removed, or Jira Done. This covers active, snoozed and
  * settled items alike, and the subitems a settle carried go with their parent.
- * Done items Ajour has not imported are ignored, and an archived item stays
- * as it is.
+ * Done items Ajour has not imported are ignored. Archived items return only
+ * when their changed source state maps to an open workflow state.
  */
 export function archiveDoneConnectorWorkItems(
   state: LocalAppState,
@@ -507,7 +508,7 @@ export function archiveDoneConnectorWorkItems(
         getWorkItemSourceKey({ ...workItem, sourceId: workItem.sourceId }) ===
           key,
     );
-    if (!target || target.status === "archived") {
+    if (!target) {
       continue;
     }
 
@@ -526,10 +527,21 @@ export function archiveDoneConnectorWorkItems(
     const keepsOpen =
       mappedWorkflowStateId !== undefined &&
       !isDoneWorkflowState(nextState.workflowStates, mappedWorkflowStateId);
+    const reopens =
+      target.status === "archived" &&
+      keepsOpen &&
+      (target.archivedByMissingSync ||
+        (target.archivedSourceStatusKey !== undefined &&
+          sourceStatusKey !== undefined &&
+          sourceStatusKey !== target.archivedSourceStatusKey));
+    if (target.status === "archived" && !reopens) continue;
+    const restored = reopens
+      ? restoreBacklogItem(nextState, target._id)
+      : nextState;
     const withSourceState = stateLabel
       ? {
-          ...nextState,
-          workItems: nextState.workItems.map((workItem) =>
+          ...restored,
+          workItems: restored.workItems.map((workItem) =>
             workItem._id === target._id
               ? {
                   ...workItem,
@@ -550,14 +562,14 @@ export function archiveDoneConnectorWorkItems(
               : workItem,
           ),
         }
-      : nextState;
+      : restored;
     if (keepsOpen) {
       nextState =
         target.status === "settled" &&
         sourceStatusKey !== target.settledSourceStatusKey
           ? unsettleBacklogItem(withSourceState, target._id)
           : withSourceState;
-      if (nextState !== withSourceState) {
+      if (reopens || nextState !== withSourceState) {
         nextState = {
           ...nextState,
           workItems: nextState.workItems.map((item) =>

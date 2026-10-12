@@ -39,20 +39,20 @@ export async function moveBacklogItemWithUndo(
   workItem: LocalWorkItem,
   workflowStateId: string | undefined,
 ) {
-  const destination = localStore
-    .snapshot()
-    .workflowStates.find((state) => state._id === workflowStateId);
-  if (
-    (workflowStateId !== undefined && !destination) ||
-    workItem.workflowStateId === workflowStateId
-  )
-    return;
+  const state = localStore.snapshot();
+  workItem =
+    state.workItems.find((item) => item._id === workItem._id) ?? workItem;
+  const destination = state.workflowStates.find(
+    (state) => state._id === workflowStateId,
+  );
+  if (workflowStateId !== undefined && !destination) return false;
+  if (workItem.workflowStateId === workflowStateId) return true;
 
   const closes = destination?.done === true && workItem.status !== "archived";
   const includeSubitems = closes
     ? await resolveIncludeSubitems(workItem, "close")
     : false;
-  if (includeSubitems === null) return;
+  if (includeSubitems === null) return false;
 
   const reopens = !destination?.done && workItem.status === "archived";
   const name = destination?.name ?? "No state";
@@ -69,4 +69,5 @@ export async function moveBacklogItemWithUndo(
       subject: "backlog item",
     },
   );
+  return true;
 }
