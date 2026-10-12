@@ -79,8 +79,119 @@ Then(
     ).toHaveCount(1);
   },
 );
+Then(
+  "the confirmed title and note remain saved after undoing the close",
+  async ({ page }) => {
+    const readParent = () =>
+      page.evaluate(() =>
+        JSON.parse(
+          localStorage.getItem("ajour.local-state.v2")!,
+        ).workItems.find(
+          (item: { _id: string }) => item._id === "editor-parent",
+        ),
+      );
+    expect(await readParent()).toMatchObject({
+      title: "Unsaved parent title",
+      note: "Unsaved parent note",
+      status: "archived",
+      workflowStateId: "done",
+    });
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    await expect
+      .poll(readParent)
+      .toMatchObject({
+        title: "Unsaved parent title",
+        note: "Unsaved parent note",
+        status: "active",
+        workflowStateId: "doing",
+      });
+  },
+);
 When("I cancel the parent editor close prompt", async ({ page }) => {
   await page.keyboard.press("Escape");
+});
+When("I change the parent draft title and note", async ({ page }) => {
+  const editor = page.getByRole("complementary", {
+    name: "Backlog item editor",
+  });
+  await editor
+    .getByPlaceholder("Item name", { exact: true })
+    .fill("Unsaved parent title");
+  await editor
+    .getByRole("textbox", { name: "Note", exact: true })
+    .fill("Unsaved parent note");
+});
+When(
+  "I interrupt the mixed-field close by {string}",
+  async ({ page }, interruption: string) => {
+    if (interruption === "dismissing the prompt") {
+      await page.keyboard.press("Escape");
+    } else {
+      await page.evaluate(async () => {
+        // Exercise a concurrent local import while the displayed confirmation stays open.
+        const { localStore } = await import("/src/lib/local-store.ts");
+        localStore.addWorkItem({
+          title: "New subitem",
+          parentWorkItemId: "editor-parent",
+          workflowStateId: "doing",
+        });
+      });
+      await page
+        .getByRole("button", { name: "Include subitem", exact: true })
+        .click();
+    }
+  },
+);
+Then(
+  "the parent editor retains every mixed-field draft without saving it",
+  async ({ page }) => {
+    const editor = page.getByRole("complementary", {
+      name: "Backlog item editor",
+    });
+    await expect(editor).toBeVisible();
+    await expect(
+      editor.getByPlaceholder("Item name", { exact: true }),
+    ).toHaveValue("Unsaved parent title");
+    await expect(
+      editor.getByRole("textbox", { name: "Note", exact: true }),
+    ).toHaveValue("Unsaved parent note");
+    await expect(
+      editor.getByRole("combobox", { name: "Workflow state", exact: true }),
+    ).toHaveValue("Done");
+    const parent = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems.find(
+        (item: { _id: string }) => item._id === "editor-parent",
+      ),
+    );
+    expect(parent).toMatchObject({
+      title: "Editor parent",
+      status: "active",
+      workflowStateId: "doing",
+    });
+    expect(parent.note).toBeUndefined();
+  },
+);
+When("I cancel the parent editor draft", async ({ page }) => {
+  await page
+    .getByRole("complementary", { name: "Backlog item editor" })
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+});
+Then("the parent title and note remain unchanged", async ({ page }) => {
+  await expect(
+    page.getByRole("complementary", { name: "Backlog item editor" }),
+  ).toHaveCount(0);
+  const parent = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems.find(
+      (item: { _id: string }) => item._id === "editor-parent",
+    ),
+  );
+  expect(parent).toMatchObject({
+    title: "Editor parent",
+    status: "active",
+    workflowStateId: "doing",
+  });
+  expect(parent.note).toBeUndefined();
 });
 Then(
   "the parent editor retains its Done draft and the item remains active",

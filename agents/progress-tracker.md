@@ -175,6 +175,13 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Project Health Notes
 
+### Mixed editor drafts and close confirmation, 2026-10-12
+
+- [x] Editor updates keep non-state fields pending until the workflow move is confirmed. Cancelled or invalidated subitem confirmations leave the entire draft unsaved.
+- [x] Chromium covers changed title and note fields with a dismissed confirmation or an added subitem, followed by editor Cancel.
+- [x] The foundation passes 702 unit tests and workspace typecheck.
+- [ ] Verify accepted mixed-field Save and Undo, carry the fix through the stack and request fresh reviews.
+
 ### Done flag and subitem confirmation recovery, 2026-10-12
 
 - [x] Clearing a Done flag moves its archived items to another Done state and preserves their pre-close state and carried-subitem restore path. Active items retain their workflow state.

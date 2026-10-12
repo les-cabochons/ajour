@@ -1,5 +1,6 @@
 import { getOpenSubitems } from "@/domain/backlog/backlog-item-lifecycle";
 import type { LocalWorkItem } from "@/domain/local-state";
+import type { WorkItemPatch } from "@/domain/backlog/work-item-transitions";
 import {
   requestCloseSubitemsChoice,
   type CloseSubitemsVerb,
@@ -51,6 +52,7 @@ export async function resolveIncludeSubitems(
 export async function moveBacklogItemWithUndo(
   workItem: LocalWorkItem,
   workflowStateId: string | undefined,
+  { patch }: { patch?: Omit<WorkItemPatch, "workflowStateId"> } = {},
 ) {
   const state = localStore.snapshot();
   workItem =
@@ -59,7 +61,10 @@ export async function moveBacklogItemWithUndo(
     (state) => state._id === workflowStateId,
   );
   if (workflowStateId !== undefined && !destination) return false;
-  if (workItem.workflowStateId === workflowStateId) return true;
+  if (workItem.workflowStateId === workflowStateId) {
+    if (patch) localStore.updateWorkItem(workItem._id, patch);
+    return true;
+  }
 
   const closes = destination?.done === true && workItem.status !== "archived";
   const includeSubitems = closes
@@ -69,6 +74,8 @@ export async function moveBacklogItemWithUndo(
 
   const reopens = !destination?.done && workItem.status === "archived";
   const name = destination?.name ?? "No state";
+  // Save the editor's other fields only after every move prompt succeeds.
+  if (patch) localStore.updateWorkItem(workItem._id, patch);
   offerUndo(
     localStore.moveWorkItemToState(workItem._id, workflowStateId, {
       includeSubitems,

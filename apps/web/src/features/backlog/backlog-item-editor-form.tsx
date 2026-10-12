@@ -276,16 +276,16 @@ export function BacklogItemEditorForm({
             "workflowStateId" in result.patch &&
             (isDoneWorkflowState(states, workflowStateId) ||
               isDoneWorkflowState(states, workItem.workflowStateId));
-          localStore.updateWorkItem(
-            workItem._id,
-            changesLifecycle ? patch : result.patch,
-          );
           const saved = localStore
             .snapshot()
             .workItems.find((item) => item._id === workItem._id);
-          if (changesLifecycle && saved) {
-            return await moveBacklogItemWithUndo(saved, workflowStateId);
+          if (!saved) return false;
+          if (changesLifecycle) {
+            return await moveBacklogItemWithUndo(saved, workflowStateId, {
+              patch,
+            });
           }
+          localStore.updateWorkItem(workItem._id, result.patch);
         }
         return true;
       case "unchanged":
