@@ -378,3 +378,15 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Foundation PR review fixes cover clearing done states, source reopen propagation, settled return, pending write deadlines, failed-move lifecycle restoration and priority migration.
 - [x] Local verification passed: 689 unit tests, workspace typecheck, production build and format check. All 46 acceptance scenarios passed, with targeted retries for intermittent browser failures.
 - [ ] Complete Codex review for the view-layer PR.
+
+## Backlog review fixes, 2026-10-12
+
+- [x] Parent closes carry only active subitems. Independently settled and archived subitems retain their lifecycle and reopen behavior.
+- [x] Settings > Backlog renders its settle rules once, outside the preferences field.
+- [x] Editor workflow changes use the shared move command, including source writes and Undo between open states.
+- [x] Manifest priority ranges reconcile migrated source-following values while preserving local overrides.
+- [x] Failed parent reopens restore carried children without overwriting independent edits.
+- [x] Project mappings persist explicit No state overrides. Remapping source states clears incompatible write rules and blocks stale inherited rules.
+- [x] Row and peek source-state pickers allow a single alternative. Archiving closes the editor and disables the peek's Edit action.
+- [x] All 696 unit tests and all 50 Chromium acceptance scenarios passed. Workspace typecheck, production build and formatting passed.
+- [ ] Complete Codex re-review of the updated PR stack.

@@ -65,3 +65,21 @@ Feature: Backlog list and board views
     When I hide the Backlog priority property
     And I set the parent priority to Low with its key
     Then the parent priority is Low
+
+  Scenario Outline: Close the editor after archiving its item
+    Given the other Backlog item uses "<source>"
+    When I edit the other item from the Backlog peek
+    And I choose "<action>" in the Backlog editor actions
+    Then the Backlog editor is closed and the other item is archived
+
+    Examples:
+      | source | action  |
+      | azure  | Archive |
+      | manual | Settle  |
+
+  Scenario: Undo an editor move between non-done workflow states
+    When I edit the other item from the Backlog peek
+    And I save the other item in To do
+    Then the other item is in To do and Undo is offered
+    When I undo the last Backlog move
+    Then the other item is back in In progress

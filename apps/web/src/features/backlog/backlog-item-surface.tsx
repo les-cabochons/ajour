@@ -423,7 +423,7 @@ export function BacklogItemSurface({
       {view.properties.sourceState && item.sourceStatusLabel && (
         <button
           className="backlog-item-source-state"
-          disabled={getOtherSourceStates(item).length < 2}
+          disabled={getOtherSourceStates(item).length === 0}
           onClick={(e) => {
             e.stopPropagation();
             void changeSourceStateWithUndo(item);

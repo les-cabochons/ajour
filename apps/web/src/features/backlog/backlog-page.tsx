@@ -154,7 +154,12 @@ export function BacklogPage() {
   }, []);
   const closePeek = useCallback(() => setPeekId(null), []);
   useEffect(() => {
-    if (editor && !target) closeEditor();
+    if (
+      editor &&
+      (!target ||
+        (target.kind === "edit" && target.workItem.status === "archived"))
+    )
+      closeEditor();
     if (peekId && !peek) setPeekId(null);
   }, [editor, target, peekId, peek, closeEditor]);
   function leaveDraft() {

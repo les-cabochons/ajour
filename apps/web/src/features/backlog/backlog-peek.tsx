@@ -99,7 +99,12 @@ export function BacklogPeek({
             <RiExternalLinkLine className="size-4" />
             Open page
           </Button>
-          <Button variant="ghost" size="sm" onClick={() => onAction("edit")}>
+          <Button
+            variant="ghost"
+            size="sm"
+            disabled={item.status === "archived"}
+            onClick={() => onAction("edit")}
+          >
             <RiPencilLine className="size-4" />
             Edit
           </Button>
@@ -116,7 +121,8 @@ export function BacklogPeek({
                 <Button
                   variant="ghost"
                   size="sm"
-                  disabled={getOtherSourceStates(item).length < 2}
+                  aria-label={`Change source state of ${item.title}`}
+                  disabled={getOtherSourceStates(item).length === 0}
                   onClick={() => void changeSourceStateWithUndo(item)}
                 >
                   {item.sourceStatusLabel}

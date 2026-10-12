@@ -365,3 +365,87 @@ Then("the parent priority is Low", async ({ page }) => {
     )
     .toBe(4);
 });
+
+Given(
+  "the other Backlog item uses {string}",
+  async ({ page }, source: string) => {
+    await page.evaluate((source) => {
+      const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
+      state.workItems.find(
+        (item: { _id: string }) => item._id === "other",
+      ).source = source;
+      localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+    }, source);
+    await page.reload();
+  },
+);
+When("I edit the other item from the Backlog peek", async ({ page }) => {
+  await page.locator('[data-work-item-id="other"] .backlog-item-title').click();
+  await page
+    .getByRole("complementary", { name: "Backlog item peek" })
+    .getByRole("button", { name: "Edit", exact: true })
+    .click();
+});
+When(
+  "I choose {string} in the Backlog editor actions",
+  async ({ page }, action: string) => {
+    await page
+      .getByRole("complementary", { name: "Backlog item editor" })
+      .getByRole("button", { name: /Actions/ })
+      .click();
+    await page.getByRole("menuitem", { name: action, exact: true }).click();
+  },
+);
+Then(
+  "the Backlog editor is closed and the other item is archived",
+  async ({ page }) => {
+    await expect(
+      page.getByRole("complementary", { name: "Backlog item editor" }),
+    ).toHaveCount(0);
+    await expect
+      .poll(() =>
+        page.evaluate(
+          () =>
+            JSON.parse(
+              localStorage.getItem("ajour.local-state.v2")!,
+            ).workItems.find((item: { _id: string }) => item._id === "other")
+              .status,
+        ),
+      )
+      .toBe("archived");
+    await expect(
+      page
+        .getByRole("complementary", { name: "Backlog item peek" })
+        .getByRole("button", { name: "Edit", exact: true }),
+    ).toBeDisabled();
+  },
+);
+When("I save the other item in To do", async ({ page }) => {
+  const editor = page.getByRole("complementary", {
+    name: "Backlog item editor",
+  });
+  await editor
+    .getByRole("combobox", { name: "Workflow state", exact: true })
+    .click();
+  await page.getByRole("option", { name: "To do", exact: true }).click();
+  await editor.getByRole("button", { name: "Save", exact: true }).click();
+});
+Then("the other item is in To do and Undo is offered", async ({ page }) => {
+  await expect(
+    page
+      .getByRole("region", { name: "To do", exact: true })
+      .locator('[data-work-item-id="other"]'),
+  ).toBeVisible();
+  await expect(
+    page
+      .getByRole("region", { name: "Notifications" })
+      .getByRole("button", { name: "Undo", exact: true }),
+  ).toBeVisible();
+});
+Then("the other item is back in In progress", async ({ page }) => {
+  await expect(
+    page
+      .getByRole("region", { name: "In progress", exact: true })
+      .locator('[data-work-item-id="other"]'),
+  ).toBeVisible();
+});
