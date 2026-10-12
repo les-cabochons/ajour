@@ -17,8 +17,9 @@ Behavior: `docs/superpowers/specs/2026-10-11-code-host-pull-requests-design.md`.
 - [x] Add the grouped list and a summary detail route, with local settle,
       unsettle, snooze, returned acknowledgement, and source links. The full review
       client, time actions, cache, and repository rules belong to later slices.
-- [x] Add the active pull request section above backlog items, ordered by the
-      event that made each item active. Preserve the backlog-only Settled section.
+- [x] Add the active pull request list, ordered by the event that made each item
+      active. After the sidebar follow-up, Backlog and Pull requests tabs share
+      this area. Preserve the backlog-only Settled section.
 - [x] Add the shared Changes end a snooze early setting. Apply it to pull request
       events and source state or priority changes on synced backlog items.
 - [x] Confirm connection removal before clearing its pull requests. Retain local

@@ -20,7 +20,7 @@ export function SidebarPullRequests({ pathname }: { pathname: string }) {
     <section
       data-focus-scope
       aria-label="Pull requests on your plate"
-      className="border-b border-border/50 px-2 pb-2"
+      className="min-h-0 flex-1 overflow-y-auto px-2 pb-2"
     >
       <h2 className="px-2 pt-2 pb-1 text-[11px] font-medium text-muted-foreground">
         Pull requests ({items.length})

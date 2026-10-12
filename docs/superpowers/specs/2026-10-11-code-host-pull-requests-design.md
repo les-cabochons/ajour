@@ -124,7 +124,7 @@ Groups: **Active**, **Settled**, **Recently closed**. Each row shows title, repo
 
 ## Sidebar
 
-A "Pull requests (n)" section above the backlog list holds active, unsnoozed pull requests, longest waiting first (time of the event that made it active). Settled pull requests do not appear in the sidebar's "Settled" section, which stays backlog-only.
+Backlog and Pull requests tabs alternate the expanded sidebar's lists. Switching tabs changes only the sidebar. Opening either feature selects its matching tab. The Backlog panel keeps Up next, Snoozed and Settled. The Pull requests panel holds active, unsnoozed pull requests, longest waiting first by the event that made each item active. Settled pull requests do not appear in the sidebar. Without an enabled code host, the sidebar shows the backlog list without tabs.
 
 Ctrl-click (Windows, Linux) or Cmd-click (macOS) on any row with a source URL opens it in the default browser: pull requests and synced backlog items, in the sidebar, on the Backlog page and on the pull request page. A plain click opens the item in Ajour. The context menu has "Open in GitHub" (or the source tool's name) with the shortcut shown.
 

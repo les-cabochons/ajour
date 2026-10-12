@@ -1,4 +1,10 @@
-import { useRef, type KeyboardEvent, type PointerEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+} from "react";
 import { Link } from "@tanstack/react-router";
 import {
   RiFolderChartLine as FolderKanban,
@@ -10,6 +16,7 @@ import {
 } from "@remixicon/react";
 import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Sidebar,
   SidebarContent,
@@ -209,6 +216,11 @@ export function AppNavigationSidebar({
   const showsLogo = state === "expanded" || isRailForced;
   const showsToggle = !isRailForced;
   const { groups } = useCodeHostConnections();
+  const [workList, setWorkList] = useState("backlog");
+  useEffect(() => {
+    if (pathname.startsWith("/pull-requests")) setWorkList("pull-requests");
+    else if (pathname.startsWith("/backlog")) setWorkList("backlog");
+  }, [pathname]);
   const items = groups.length
     ? [
         ...primaryItems,
@@ -283,10 +295,44 @@ export function AppNavigationSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
         {state === "expanded" ? (
-          <>
-            <SidebarPullRequests pathname={pathname} />
+          groups.length ? (
+            <Tabs
+              value={workList}
+              onValueChange={(value) => {
+                if (value === "backlog" || value === "pull-requests")
+                  setWorkList(value);
+              }}
+              className="min-h-0 flex-1 gap-0"
+            >
+              <TabsList
+                variant="line"
+                activateOnFocus
+                aria-label="Sidebar work lists"
+                className="mx-2 mb-2 w-auto shrink-0"
+              >
+                <TabsTrigger value="backlog" className="px-2">
+                  Backlog
+                </TabsTrigger>
+                <TabsTrigger value="pull-requests" className="px-2">
+                  Pull requests
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent
+                value="backlog"
+                className="flex min-h-0 flex-1 flex-col"
+              >
+                <SidebarBacklogList pathname={pathname} />
+              </TabsContent>
+              <TabsContent
+                value="pull-requests"
+                className="flex min-h-0 flex-1 flex-col"
+              >
+                <SidebarPullRequests pathname={pathname} />
+              </TabsContent>
+            </Tabs>
+          ) : (
             <SidebarBacklogList pathname={pathname} />
-          </>
+          )
         ) : null}
       </SidebarContent>
 

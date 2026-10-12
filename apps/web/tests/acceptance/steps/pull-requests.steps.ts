@@ -7,6 +7,103 @@ import {
 
 const { Given, When, Then } = createBdd();
 const apiUrl = "http://127.0.0.1:8787";
+
+When("I select Backlog in the sidebar tabs", async ({ page }) => {
+  await page
+    .getByRole("tablist", { name: "Sidebar work lists" })
+    .getByRole("tab", { name: "Backlog", exact: true })
+    .click();
+});
+Then(
+  "the sidebar shows backlog controls instead of pull requests",
+  async ({ page }) => {
+    await expect(
+      page.getByRole("tabpanel", { name: "Backlog", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("region", { name: "Pull requests on your plate" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Snoozed (0)", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Settled", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("link", {
+        name: "Up next: Plan next release",
+        exact: true,
+      }),
+    ).toBeVisible();
+  },
+);
+Then("the pull request page stays open", async ({ page }) => {
+  await expect(page).toHaveURL(/\/pull-requests$/);
+  await expect(
+    page.getByRole("heading", { name: "Pull requests", exact: true }),
+  ).toBeVisible();
+});
+When(
+  "I select Pull requests with the sidebar keyboard tabs",
+  async ({ page }) => {
+    const backlog = page
+      .getByRole("tablist", { name: "Sidebar work lists" })
+      .getByRole("tab", { name: "Backlog", exact: true });
+    await backlog.focus();
+    await backlog.press("ArrowRight");
+    await expect(
+      page.getByRole("tab", { name: "Pull requests", exact: true }),
+    ).toHaveAttribute("aria-selected", "true");
+  },
+);
+Then("the backlog controls are hidden", async ({ page }) => {
+  await expect(
+    page.getByRole("button", { name: "Snoozed (0)", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Settled", exact: true }),
+  ).toHaveCount(0);
+});
+When("I set the sidebar to its minimum width", async ({ page }) => {
+  await page.addInitScript(() =>
+    localStorage.setItem(
+      "ajour.sidebar-layout",
+      JSON.stringify({ width: 200 }),
+    ),
+  );
+  await page.reload();
+});
+Then("both sidebar tab labels fit inside the sidebar", async ({ page }) => {
+  const navigation = page.getByRole("navigation", {
+    name: "Primary navigation",
+  });
+  const navBox = await navigation.boundingBox();
+  expect(navBox?.width).toBe(200);
+  for (const name of ["Backlog", "Pull requests"]) {
+    const tab = navigation.getByRole("tab", { name, exact: true });
+    const box = await tab.boundingBox();
+    expect(box!.x + box!.width).toBeLessThanOrEqual(navBox!.x + navBox!.width);
+    expect(
+      await tab.evaluate(
+        (element) => element.scrollWidth <= element.clientWidth,
+      ),
+    ).toBe(true);
+  }
+  await page.screenshot({
+    path: "test-results/sidebar-work-list-tabs-compact.png",
+  });
+});
+Then(
+  "the sidebar tabs are hidden and backlog controls are visible",
+  async ({ page }) => {
+    await expect(
+      page.getByRole("tablist", { name: "Sidebar work lists" }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Snoozed (0)", exact: true }),
+    ).toBeVisible();
+  },
+);
 const makeFacts = () => {
   const now = Date.now();
   return [
@@ -116,6 +213,16 @@ Given("a code host connection with local pull requests", async ({ page }) => {
     localStorage.setItem(
       "ajour.local-state.v2",
       JSON.stringify({
+        workItems: [
+          {
+            _id: "sidebar-backlog",
+            title: "Plan next release",
+            source: "manual",
+            status: "active",
+            priority: 1,
+            createdAt: Date.now(),
+          },
+        ],
         pullRequests: facts.map((entry, index) => ({
           _id: index ? "authored" : "requested",
           pluginId: "github",
