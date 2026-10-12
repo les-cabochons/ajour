@@ -48,7 +48,7 @@ export function findSettleState(
  * Turns the settle dialog's fields into a change. A new priority level is
  * written as the lowest source value of its range, and only when the level
  * changed. The domain keeps only the fields that differ from the item.
- * Returns null for a priority that is not a level.
+ * Returns null for an invalid level or a changed level without a source range.
  */
 export function buildSettleChange(
   states: ConnectorSettleState[],
@@ -61,13 +61,20 @@ export function buildSettleChange(
     return null;
   }
 
-  const currentLevel = getPriorityLevel(current.importedPriority, current.ranges);
+  const currentLevel = getPriorityLevel(
+    current.importedPriority,
+    current.ranges,
+  );
+  const priority =
+    level !== undefined && level !== currentLevel
+      ? getSourcePriority(level, current.ranges)
+      : undefined;
+  if (level !== undefined && level !== currentLevel && priority === undefined) {
+    return null;
+  }
   const state = findSettleState(states, stateName);
   return {
     state: state ? { name: state.name, done: state.done } : undefined,
-    priority:
-      level !== undefined && level !== currentLevel
-        ? getSourcePriority(level, current.ranges)
-        : undefined,
+    priority,
   };
 }

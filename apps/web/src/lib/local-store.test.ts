@@ -219,6 +219,134 @@ describe("localStore workflow state sync", () => {
     });
   });
 
+  it("keeps a pending reopen and its Undo through done and missing sync processing", async () => {
+    const { localStore } = await import("./local-store");
+    const openId = localStore
+      .snapshot()
+      .workflowStates.find((state) => !state.done)!._id;
+    localStore.setWorkflowStateMapping({
+      source: "azure_devops",
+      connectionId: "ado-1",
+      sourceStatusKey: "active",
+      workflowStateId: openId,
+    });
+    const candidate = buildImportCandidate({
+      state: "Closed",
+      stateDone: true,
+    });
+    localStore.importConnectorWorkItems([candidate]);
+    const closed = localStore.snapshot().workItems[0]!;
+    expect(closed.status).toBe("archived");
+    const token = localStore.moveWorkItemToState(closed._id, openId, {
+      sourceWrites: { [closed._id]: "Active" },
+    });
+    const pending = localStore.snapshot().workItems[0]!;
+    expect(pending.status).toBe("active");
+    expect(pending.pendingSourceWrite?.state).toBe("Active");
+    expect(
+      localStore.archiveDoneConnectorWorkItems([
+        {
+          source: candidate.source,
+          connectionId: candidate.connectionId,
+          sourceId: candidate.sourceId,
+          state: "Closed",
+        },
+      ]),
+    ).toBe(0);
+    localStore.importConnectorWorkItems([], {
+      archiveMissingFromConnectionId: "ado-1",
+    });
+    expect(localStore.snapshot().workItems[0]).toEqual(pending);
+    expect(localStore.undo(token!)).toBe("restored");
+    expect(localStore.snapshot().workItems[0]).toEqual(closed);
+    expect(
+      localStore.snapshot().workItems[0]?.pendingSourceWrite,
+    ).toBeUndefined();
+  });
+
+  it.each(["settings", "import", "done items"])(
+    "closes existing items and saves their timer when %s automatically maps to Done",
+    async (path) => {
+      const { localStore } = await import("./local-store");
+      const candidate = buildImportCandidate({ state: "Resolved" });
+      localStore.importConnectorWorkItems([candidate]);
+      const item = localStore.snapshot().workItems[0]!;
+      expect(item.workflowStateId).toBeUndefined();
+      localStore.startTimer({
+        workItemId: item._id,
+        accumulatedDurationMs: 60000,
+      });
+      if (path === "settings") {
+        localStore.autoMapSourceStates([
+          {
+            source: candidate.source,
+            connectionId: candidate.connectionId,
+            label: "Resolved",
+            done: true,
+          },
+        ]);
+      } else if (path === "import") {
+        localStore.importConnectorWorkItems([
+          buildImportCandidate({ state: "Resolved", stateDone: true }),
+        ]);
+      } else {
+        expect(
+          localStore.archiveDoneConnectorWorkItems([
+            {
+              source: candidate.source,
+              connectionId: candidate.connectionId,
+              sourceId: "another-item",
+              state: "Resolved",
+            },
+          ]),
+        ).toBe(1);
+      }
+      const snapshot = localStore.snapshot();
+      const doneId = snapshot.workflowStates.find((state) => state.done)!._id;
+      expect(snapshot.workItems[0]).toMatchObject({
+        status: "archived",
+        workflowStateId: doneId,
+        importedWorkflowStateId: doneId,
+      });
+      expect(snapshot.timers).toHaveLength(0);
+      expect(snapshot.timesheetEntries).toEqual([
+        expect.objectContaining({
+          workItemId: item._id,
+          durationMs: expect.any(Number),
+        }),
+      ]);
+      expect(snapshot.timesheetEntries[0]!.durationMs).toBeGreaterThanOrEqual(
+        60000,
+      );
+    },
+  );
+
+  it("preserves a local open-state override when automatic mapping discovers Done", async () => {
+    const { localStore } = await import("./local-store");
+    const candidate = buildImportCandidate({ state: "Resolved" });
+    localStore.importConnectorWorkItems([candidate]);
+    const item = localStore.snapshot().workItems[0]!;
+    const openId = localStore
+      .snapshot()
+      .workflowStates.find((state) => !state.done)!._id;
+    localStore.updateWorkItem(item._id, { workflowStateId: openId });
+    localStore.autoMapSourceStates([
+      {
+        source: candidate.source,
+        connectionId: candidate.connectionId,
+        label: "Resolved",
+        done: true,
+      },
+    ]);
+    expect(localStore.snapshot().workItems[0]).toMatchObject({
+      status: "active",
+      workflowStateId: openId,
+      importedWorkflowStateId: localStore
+        .snapshot()
+        .workflowStates.find((state) => state.done)!._id,
+    });
+  });
+
   it("normalizes malformed weekly time preferences", async () => {
     window.localStorage.setItem(
       "ajour.local-state.v2",

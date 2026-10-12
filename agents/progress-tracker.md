@@ -164,6 +164,13 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
       installed Ajour process owns port 8787, health passes, and Azure DevOps
       version 1.0.0-main.8.4229e5a appears in installed plugin discovery.
 - [ ] Merge the fix and deliver it through the normal desktop release process.
+## Connector review follow-up, 2026-10-12
+
+- [x] Done-item and missing-item sync processing preserve pending source writes, so Undo can cancel an optimistic reopen.
+- [x] Automatic source mapping applies the shared lifecycle transition before import. Settings discovery and done-item processing use the same transition.
+- [x] Settle rejects priority levels without a source range, disables those choices and explains an invalid choice.
+- [x] Six new regressions cover sync during reopen, all three automatic mapping paths, local workflow overrides and incomplete priority scales. The foundation passes 689 unit tests and workspace typecheck.
+- [ ] Complete Codex re-review after updating the view layer.
 
 ## Standard Task Flow
 

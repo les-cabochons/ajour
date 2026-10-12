@@ -53,8 +53,22 @@ export function PriorityIcon({
         {...a11y}
       >
         <rect x="1" y="1" width="12" height="12" rx="3" fill="currentColor" />
-        <rect x="6.25" y="3.5" width="1.5" height="4.5" rx="0.75" fill="white" />
-        <rect x="6.25" y="9.25" width="1.5" height="1.5" rx="0.75" fill="white" />
+        <rect
+          x="6.25"
+          y="3.5"
+          width="1.5"
+          height="4.5"
+          rx="0.75"
+          fill="white"
+        />
+        <rect
+          x="6.25"
+          y="9.25"
+          width="1.5"
+          height="1.5"
+          rx="0.75"
+          fill="white"
+        />
       </svg>
     );
   }

@@ -1104,7 +1104,13 @@ export const localStore = {
   },
   /** Maps new source states that match a workflow state or a done category. */
   autoMapSourceStates(reported: ReportedSourceState[]) {
-    updateState((state) => applyAutoMapSourceStates(state, reported));
+    updateState((state) =>
+      applyWorkflowStateLifecycle(
+        state,
+        applyAutoMapSourceStates(state, reported),
+        { createId, now: Date.now },
+      ),
+    );
   },
   /** Sets or clears what moving an item into a workflow state writes. */
   setWorkflowStateWriteRule(
@@ -1239,28 +1245,32 @@ export const localStore = {
   ) {
     return updateStateWithResult((state) =>
       applyConnectorWorkItemImport(
-        autoMapSourceStates(
-          seedPriorityScales(
-            state,
-            workItems.map((workItem) => ({
-              source: workItem.source,
-              connectionId: workItem.connectionId,
-            })),
-            options?.priorityDefaults ?? {},
+        applyWorkflowStateLifecycle(
+          state,
+          autoMapSourceStates(
+            seedPriorityScales(
+              state,
+              workItems.map((workItem) => ({
+                source: workItem.source,
+                connectionId: workItem.connectionId,
+              })),
+              options?.priorityDefaults ?? {},
+            ),
+            workItems.flatMap((workItem) =>
+              workItem.state
+                ? [
+                    {
+                      source: workItem.source,
+                      connectionId: workItem.connectionId,
+                      sourceProjectName: workItem.projectName,
+                      label: workItem.state,
+                      done: workItem.stateDone,
+                    },
+                  ]
+                : [],
+            ),
           ),
-          workItems.flatMap((workItem) =>
-            workItem.state
-              ? [
-                  {
-                    source: workItem.source,
-                    connectionId: workItem.connectionId,
-                    sourceProjectName: workItem.projectName,
-                    label: workItem.state,
-                    done: workItem.stateDone,
-                  },
-                ]
-              : [],
-          ),
+          { createId, now: Date.now },
         ),
         workItems,
         options,
@@ -1297,7 +1307,17 @@ export const localStore = {
         createId,
         now: Date.now,
       });
-      return { state: result.state, result: result.archivedCount };
+      const next = applyWorkflowStateLifecycle(state, result.state, {
+        createId,
+        now: Date.now,
+      });
+      const newlyClosed = next.workItems.filter(
+        (item) =>
+          item.status === "archived" &&
+          result.state.workItems.find((before) => before._id === item._id)
+            ?.status !== "archived",
+      ).length;
+      return { state: next, result: result.archivedCount + newlyClosed };
     });
   },
   applyConnectorSyncWorkItemUpdates(updates: ConnectorSyncWorkItemUpdate[]) {

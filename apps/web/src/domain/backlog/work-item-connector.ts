@@ -462,11 +462,13 @@ export function importConnectorWorkItems(
     ).map((workItem) => {
       const sourceId = workItem.sourceId;
 
+      // Pending moves may still be absent from the connector's open set.
       if (
         workItem.source === "manual" ||
         workItem.sourceConnectionId !== archiveConnectionId ||
         !sourceId ||
-        workItem.keepWhenMissingFromSync
+        workItem.keepWhenMissingFromSync ||
+        workItem.pendingSourceWrite
       ) {
         return workItem;
       }

@@ -23,6 +23,7 @@ import {
 } from "@/domain/backlog/backlog-item-lifecycle";
 import {
   getPriorityLevel,
+  getSourcePriority,
   getWorkItemPriorityRanges,
   NO_PRIORITY_NAME,
   PRIORITY_LEVELS,
@@ -210,10 +211,13 @@ export function SettleDialogHost() {
   const currentListed = Boolean(
     findSettleState(states, workItem?.sourceStatusLabel),
   );
+  const priorityRanges = workItem
+    ? getWorkItemPriorityRanges(state, workItem)
+    : {};
   const change = workItem
     ? buildSettleChange(states, stateName, priority, {
         importedPriority: workItem.importedPriority,
-        ranges: getWorkItemPriorityRanges(state, workItem),
+        ranges: priorityRanges,
       })
     : null;
   const currentItem = state.workItems.find(
@@ -299,11 +303,22 @@ export function SettleDialogHost() {
               >
                 <option value="">{NO_PRIORITY_NAME}</option>
                 {PRIORITY_LEVELS.map(({ level, name }) => (
-                  <option key={level} value={String(level)}>
+                  <option
+                    key={level}
+                    value={String(level)}
+                    disabled={
+                      getSourcePriority(level, priorityRanges) === undefined
+                    }
+                  >
                     {name}
                   </option>
                 ))}
               </NativeSelect>
+              {change === null ? (
+                <FieldError>
+                  This priority has no source range. Choose another priority.
+                </FieldError>
+              ) : null}
             </FieldContent>
           </Field>
           <DialogFooter>

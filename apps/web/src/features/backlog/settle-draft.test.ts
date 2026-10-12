@@ -60,4 +60,21 @@ describe("settle dialog fields", () => {
     expect(buildSettleChange(states, "Active", "0", current)).toBeNull();
     expect(buildSettleChange(states, "Active", "5", current)).toBeNull();
   });
+
+  it("rejects a changed level with no source range instead of dropping it", () => {
+    const current = {
+      importedPriority: 20,
+      ranges: { 1: { min: 1, max: 10 }, 2: { min: 11, max: 20 } },
+    };
+    expect(buildSettleChange(states, "Closed", "4", current)).toBeNull();
+    expect(buildSettleChange(states, "Closed", "3", current)).toBeNull();
+    expect(buildSettleChange(states, "Closed", "1", current)?.priority).toBe(1);
+    expect(
+      buildSettleChange(states, "Closed", "2", current)?.priority,
+    ).toBeUndefined();
+    expect(buildSettleChange(states, "Closed", "", current)).toEqual({
+      state: { name: "Closed", done: true },
+      priority: undefined,
+    });
+  });
 });
