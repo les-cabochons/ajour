@@ -168,6 +168,79 @@ When("I peek at the Backlog parent", async ({ page }) => {
     .locator('[data-work-item-id="parent"] .backlog-item-title')
     .click();
 });
+When("I start an entry from the Backlog peek", async ({ page }) => {
+  const start = page
+    .getByRole("complementary", { name: "Backlog item peek" })
+    .getByRole("button", { name: "Start entry", exact: true });
+  await expect(start).toBeEnabled();
+  await start.click();
+  await expect(start).toBeDisabled();
+  await page.evaluate(() => {
+    const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
+    sessionStorage.setItem(
+      "peek-running-entry",
+      JSON.stringify({
+        _id: state.timers[0]._id,
+        startedAt: state.timers[0].startedAt,
+      }),
+    );
+  });
+});
+Then("the parent peek cannot restart its running entry", async ({ page }) => {
+  await expect(
+    page
+      .getByRole("complementary", { name: "Backlog item peek" })
+      .getByRole("button", { name: "Start entry", exact: true }),
+  ).toBeDisabled();
+  const snapshot = await page.evaluate(() => ({
+    state: JSON.parse(localStorage.getItem("ajour.local-state.v2")!),
+    baseline: JSON.parse(sessionStorage.getItem("peek-running-entry")!),
+  }));
+  expect(snapshot.state.timers).toEqual([
+    expect.objectContaining({ ...snapshot.baseline, workItemId: "parent" }),
+  ]);
+  expect(snapshot.state.timesheetEntries).toEqual([]);
+});
+When("I peek at the other Backlog item", async ({ page }) => {
+  await page.locator('[data-work-item-id="other"] .backlog-item-title').click();
+});
+Then("the other peek can start an entry", async ({ page }) => {
+  await expect(
+    page
+      .getByRole("complementary", { name: "Backlog item peek" })
+      .getByRole("button", { name: "Start entry", exact: true }),
+  ).toBeEnabled();
+});
+When("I stop the Backlog running entry from the titlebar", async ({ page }) => {
+  await page
+    .getByRole("button", { name: "Edit the running entry", exact: true })
+    .click();
+  await page
+    .locator('[data-slot="popover-content"]')
+    .getByRole("button", { name: "Stop", exact: true })
+    .click();
+  await expect(
+    page.getByRole("button", { name: "Edit the running entry", exact: true }),
+  ).toHaveCount(0);
+});
+Then("the parent peek can start a new entry after Stop", async ({ page }) => {
+  const start = page
+    .getByRole("complementary", { name: "Backlog item peek" })
+    .getByRole("button", { name: "Start entry", exact: true });
+  await expect(start).toBeEnabled();
+  await start.click();
+  await expect(start).toBeDisabled();
+  const snapshot = await page.evaluate(() => ({
+    state: JSON.parse(localStorage.getItem("ajour.local-state.v2")!),
+    baseline: JSON.parse(sessionStorage.getItem("peek-running-entry")!),
+  }));
+  expect(snapshot.state.timesheetEntries).toEqual([
+    expect.objectContaining({ workItemId: "parent" }),
+  ]);
+  expect(snapshot.state.timers).toHaveLength(1);
+  expect(snapshot.state.timers[0].workItemId).toBe("parent");
+  expect(snapshot.state.timers[0]._id).not.toBe(snapshot.baseline._id);
+});
 Then("the peek shows the parent and its subitem", async ({ page }) => {
   const peek = page.getByRole("complementary", { name: "Backlog item peek" });
   await expect(peek).toContainText("Backlog parent");

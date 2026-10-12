@@ -257,6 +257,13 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] The foundation passes 710 unit tests, workspace typecheck and three Chromium confirmation scenarios.
 - [ ] Carry the fixes through the stack, verify the final heads and request fresh reviews.
 
+### Peek Start entry and the running item, 2026-10-12
+
+- [x] The peek disables Start entry while its item owns the running entry, matching the row control.
+- [x] Chromium verifies timer identity and start time after reopening the peek, another item's enabled Start entry and a fresh entry after stopping through the titlebar.
+- [x] All 791 unit tests and 67 Chromium scenarios pass, along with workspace typecheck, production build and formatting.
+- [ ] Fresh Codex review of the pushed view-layer head is pending. Merging remains owned by the integration thread.
+
 ### Parent return propagation and missing-sync restore history, 2026-10-12
 
 - [x] Connector returns carry subitems only when the parent remains in an open workflow state. Source changes mapped Done leave its carried archived subitems unchanged.

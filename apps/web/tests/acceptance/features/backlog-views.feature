@@ -32,6 +32,17 @@ Feature: Backlog list and board views
     When I close the Backlog peek with Escape
     Then the Backlog peek is closed
 
+  Scenario: Keep a running entry continuous when reopening its Backlog peek
+    When I peek at the Backlog parent
+    And I start an entry from the Backlog peek
+    Then the parent peek cannot restart its running entry
+    When I peek at the other Backlog item
+    Then the other peek can start an entry
+    When I peek at the Backlog parent
+    Then the parent peek cannot restart its running entry
+    When I stop the Backlog running entry from the titlebar
+    Then the parent peek can start a new entry after Stop
+
   Scenario: Drag a subitem to another state and undo it
     When I choose the Backlog board
     And I drag the subitem to In progress

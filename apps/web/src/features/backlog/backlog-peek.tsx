@@ -62,6 +62,7 @@ export function BacklogPeek({
     return () => window.removeEventListener("keydown", close);
   }, [onClose]);
   const project = state.projects.find((p) => p._id === item.projectId);
+  const running = state.timers.some((timer) => timer.workItemId === item._id);
   const children = getDirectChildWorkItems(item, state.workItems);
   const reference = parseWorkItemReference(item.sourceId) ?? item.sourceId;
   return (
@@ -90,7 +91,11 @@ export function BacklogPeek({
         <h2 className="text-base leading-6 font-semibold">{item.title}</h2>
         <div className="flex flex-wrap gap-2">
           {item.status !== "archived" && (
-            <Button size="sm" onClick={() => onAction("start-entry")}>
+            <Button
+              size="sm"
+              disabled={running}
+              onClick={() => onAction("start-entry")}
+            >
               <RiPlayLine className="size-4" />
               Start entry
             </Button>
