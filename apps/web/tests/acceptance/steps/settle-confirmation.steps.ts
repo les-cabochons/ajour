@@ -1,4 +1,4 @@
-import { expect } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 
 const { Given, When, Then } = createBdd();
@@ -134,10 +134,13 @@ When("I open the parent Settle dialog", async ({ page }) => {
     page.getByRole("dialog", { name: "Settle", exact: true }),
   ).toBeVisible();
 });
-When(
-  "the source changes the parent's priority to Urgent during Settle",
-  async ({ page }) => {
-    await page.evaluate(async () => {
+async function refreshSettleParent(
+  page: Page,
+  state: string,
+  priority: number,
+) {
+  await page.evaluate(
+    async ({ state, priority }) => {
       const { localStore } = await import(
         /* @vite-ignore */ "/src/lib/local-store.ts"
       );
@@ -152,8 +155,8 @@ When(
           externalId: "source-parent",
           title: "Settle parent",
           workItemType: "Task",
-          state: "Active",
-          priority: 1,
+          state,
+          priority,
           depth: "root",
           selectable: true,
           selected: true,
@@ -161,9 +164,59 @@ When(
           pushedAt: Date.now(),
         },
       ]);
-    });
+    },
+    { state, priority },
+  );
+}
+When(
+  "the source changes the parent's priority to Urgent during Settle",
+  async ({ page }) => refreshSettleParent(page, "Active", 1),
+);
+When("I reopen Settle on an unlisted source state", async ({ page }) => {
+  await page
+    .getByRole("dialog", { name: "Settle", exact: true })
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await refreshSettleParent(page, "Unlisted", 2);
+  await page
+    .getByRole("main")
+    .getByRole("button", { name: "Actions for Settle parent", exact: true })
+    .click();
+  await page.getByRole("menuitem", { name: /^Settle/ }).click();
+  await expect(
+    page
+      .getByRole("dialog", { name: "Settle", exact: true })
+      .getByLabel("State", { exact: true }),
+  ).toBeEnabled();
+});
+When(
+  "the source changes the parent's state to Active during Settle",
+  async ({ page }) => {
+    await refreshSettleParent(page, "Active", 2);
   },
 );
+Then("the Settle state draft remains Unlisted", async ({ page }) => {
+  const select = page
+    .getByRole("dialog", { name: "Settle", exact: true })
+    .getByLabel("State", { exact: true });
+  await expect(select).toHaveValue("Unlisted");
+  await expect(select.locator("option:checked")).toHaveText("Unlisted");
+});
+Then("Settle submits the selected Waiting state", async ({ page }) => {
+  await expect(
+    page.getByRole("dialog", { name: "Settle", exact: true }),
+  ).toHaveCount(0);
+  const parent = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems.find(
+      (item: { _id: string }) => item._id === "settle-parent",
+    ),
+  );
+  expect(parent).toMatchObject({
+    sourceStatusLabel: "Waiting",
+    status: "settled",
+    pendingSourceWrite: { state: "Waiting" },
+  });
+});
 Then("the Settle priority draft remains High", async ({ page }) => {
   await expect(
     page

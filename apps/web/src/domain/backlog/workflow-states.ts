@@ -625,12 +625,15 @@ function clearDeletedWorkflowReferences<
   T extends Pick<
     LocalWorkItem,
     "workflowStateId" | "importedWorkflowStateId" | "workflowStateIdBeforeClose"
-  >,
->(snapshot: T, statusId: string): T {
+  > & { status?: LocalWorkItem["status"] },
+>(snapshot: T, statusId: string, replacementDoneId?: string): T {
   return {
     ...snapshot,
     ...(snapshot.workflowStateId === statusId
-      ? { workflowStateId: undefined }
+      ? {
+          workflowStateId:
+            snapshot.status === "archived" ? replacementDoneId : undefined,
+        }
       : {}),
     ...(snapshot.importedWorkflowStateId === statusId
       ? { importedWorkflowStateId: undefined }
@@ -649,11 +652,13 @@ export function deleteWorkflowState(
   if (isLastDoneState(state, statusId)) {
     throw new Error(LAST_DONE_STATE_MESSAGE);
   }
-  const replacementDoneId = getFirstDoneWorkflowState(
-    state.workflowStates.filter(
-      (workflowState) => workflowState._id !== statusId,
-    ),
-  )?._id;
+  const replacementDoneId = isDoneWorkflowState(state.workflowStates, statusId)
+    ? getFirstDoneWorkflowState(
+        state.workflowStates.filter(
+          (workflowState) => workflowState._id !== statusId,
+        ),
+      )?._id
+    : undefined;
 
   return reconcileImportedWorkflowStates({
     ...state,
@@ -691,12 +696,14 @@ export function deleteWorkflowState(
               ...clearDeletedWorkflowReferences(
                 workItem.pendingSourceWrite.previous,
                 statusId,
+                replacementDoneId,
               ),
               ...(workItem.pendingSourceWrite.previous.lifecycle
                 ? {
                     lifecycle: clearDeletedWorkflowReferences(
                       workItem.pendingSourceWrite.previous.lifecycle,
                       statusId,
+                      replacementDoneId,
                     ),
                   }
                 : {}),
@@ -709,10 +716,12 @@ export function deleteWorkflowState(
                           before: clearDeletedWorkflowReferences(
                             child.before,
                             statusId,
+                            replacementDoneId,
                           ),
                           after: clearDeletedWorkflowReferences(
                             child.after,
                             statusId,
+                            replacementDoneId,
                           ),
                         }),
                       ),

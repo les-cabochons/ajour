@@ -345,44 +345,62 @@ describe("the done flag", () => {
     },
   );
 
-  it("recovers carried children after deleting their pre-close workflow state", () => {
-    const state = createState({
-      ...workflow(),
-      workItems: [
-        createImportedWorkItem({
-          workflowStateId: "todo",
-          importedWorkflowStateId: "todo",
-        }),
-        createImportedWorkItem({
-          _id: "child",
-          source: "manual",
-          parentWorkItemId: "work-item-1",
-          workflowStateId: "todo",
-        }),
-      ],
-    });
-    const moved = moveBacklogItemToState(
-      state,
-      "work-item-1",
-      "done",
-      {
-        createId: (prefix) => prefix,
-        now: () => 100,
-      },
-      { includeSubitems: true, sourceWrites: { "work-item-1": "Closed" } },
-    );
-    const deleted = deleteWorkflowState(moved, "todo");
-    const reloaded = JSON.parse(JSON.stringify(deleted)) as LocalAppState;
-    const recovered = failSourceWrite(reloaded, "work-item-1");
-    expect(recovered.workItems.map((item) => item.status)).toEqual([
-      "active",
-      "active",
-    ]);
-    for (const item of recovered.workItems) {
-      expect(item.workflowStateId).toBeUndefined();
-      expect(item.workflowStateIdBeforeClose).toBeUndefined();
-    }
-  });
+  it.each(["todo", "done"])(
+    "recovers carried children after deleting %s during a pending close",
+    (deletedStateId) => {
+      const state = createState({
+        ...workflow(),
+        workflowStates: [
+          ...workflow().workflowStates,
+          {
+            _id: "done2",
+            name: "Other done",
+            done: true,
+            color: "#000000",
+            createdAt: 1,
+          },
+        ],
+        workItems: [
+          createImportedWorkItem({
+            workflowStateId: "todo",
+            importedWorkflowStateId: "todo",
+          }),
+          createImportedWorkItem({
+            _id: "child",
+            source: "manual",
+            parentWorkItemId: "work-item-1",
+            workflowStateId: "todo",
+          }),
+        ],
+      });
+      const moved = moveBacklogItemToState(
+        state,
+        "work-item-1",
+        "done",
+        {
+          createId: (prefix) => prefix,
+          now: () => 100,
+        },
+        { includeSubitems: true, sourceWrites: { "work-item-1": "Closed" } },
+      );
+      const deleted = deleteWorkflowState(moved, deletedStateId);
+      expect(deleted.workItems[1]?.workflowStateId).toBe(
+        deletedStateId === "done" ? "done2" : "done",
+      );
+      const reloaded = JSON.parse(JSON.stringify(deleted)) as LocalAppState;
+      const recovered = failSourceWrite(reloaded, "work-item-1");
+      expect(recovered.workItems.map((item) => item.status)).toEqual([
+        "active",
+        "active",
+      ]);
+      for (const item of recovered.workItems) {
+        expect(item.workflowStateId).toBe(
+          deletedStateId === "todo" ? undefined : "todo",
+        );
+        expect(item.workflowStateIdBeforeClose).toBeUndefined();
+      }
+    },
+  );
 
   it("keeps archived items in their done state when a mapping changes", () => {
     const state = {

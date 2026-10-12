@@ -38,7 +38,6 @@ import { resolveIncludeSubitems } from "@/features/backlog/backlog-item-moves";
 import { formatPriorityInput } from "@/features/backlog/backlog-task-editor";
 import {
   buildSettleChange,
-  findSettleState,
   groupSettleStates,
 } from "@/features/backlog/settle-draft";
 import { offerUndo } from "@/features/feedback/undo-toast";
@@ -211,9 +210,7 @@ export function SettleDialogHost() {
     (item) => item._id === workItem?._id,
   );
   const states = load.status === "ready" ? load.states : [];
-  const currentListed = Boolean(
-    findSettleState(states, currentItem?.sourceStatusLabel),
-  );
+  const draftListed = states.some((state) => state.name === stateName);
   const priorityRanges = currentItem
     ? getWorkItemPriorityRanges(state, currentItem)
     : {};
@@ -270,11 +267,11 @@ export function SettleDialogHost() {
                 disabled={load.status !== "ready" || pending}
                 onChange={(event) => setStateName(event.target.value)}
               >
-                {!currentListed ? (
-                  <option value={workItem?.sourceStatusLabel ?? ""}>
+                {!draftListed ? (
+                  <option value={stateName}>
                     {load.status === "loading"
                       ? "Loading states…"
-                      : (workItem?.sourceStatusLabel ?? "No state")}
+                      : stateName || "No state"}
                   </option>
                 ) : null}
                 {groupSettleStates(states).map((group) => (

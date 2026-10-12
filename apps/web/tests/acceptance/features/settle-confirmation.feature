@@ -35,3 +35,13 @@ Feature: Confirm a parent Settle without losing its draft
     When I submit the parent Settle draft
     And I include the Settle subitems
     Then Settle writes High against the refreshed Urgent priority
+
+  Scenario: Retain an unlisted state draft after a connector refresh
+    When I reopen Settle on an unlisted source state
+    Then the Settle state draft remains Unlisted
+    When the source changes the parent's state to Active during Settle
+    Then the Settle state draft remains Unlisted
+    When I choose source state "Waiting" and priority "2" in Settle
+    And I submit the parent Settle draft
+    And I include the Settle subitems
+    Then Settle submits the selected Waiting state
