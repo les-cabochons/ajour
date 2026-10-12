@@ -26,6 +26,22 @@ _Avoid_: Task, work item, issue, to-do
 A backlog item nested one level under another backlog item.
 _Avoid_: Subtask, child item
 
+**Workflow**:
+The ordered set of workflow states the user defines for their backlog.
+_Avoid_: Board, process, pipeline
+
+**Workflow state**:
+One step of the workflow, such as In progress or In review, that a backlog item is at.
+_Avoid_: Backlog status, column, status, stage
+
+**Done state**:
+A workflow state that closes the backlog items moved into it: they become archived. Moving an item out of a done state makes it active again. No other workflow state changes whether an item is active, settled or archived.
+_Avoid_: Completed, closed column, final state
+
+**Source state**:
+The state a synced backlog item has in its source tool. Each source state maps to one workflow state.
+_Avoid_: Remote status, source status
+
 **Settle**:
 To record that the user has nothing left to do on a backlog item or pull request for now. A manual backlog item becomes archived. A synced backlog item or a pull request becomes settled. For a synced backlog item, the user can change its state or priority in its source tool at the same time.
 _Avoid_: Complete, close, finish, resolve
