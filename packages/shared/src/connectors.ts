@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const CONNECTOR_PLUGIN_API_VERSION = 1;
+export const CONNECTOR_PLUGIN_API_VERSION = 2;
 export const CONNECTOR_PLUGIN_ARCHIVE_EXTENSION = ".ajour-connector";
 
 export const connectorSourceSchema = z.string().trim().min(1).max(120);
@@ -105,16 +105,40 @@ export const connectorFieldSchema = z.object({
 export type ConnectorField = z.infer<typeof connectorFieldSchema>;
 
 /**
- * Optional capabilities a connector plugin declares in its manifest. A plugin
- * without `settle` keeps working: Ajour settles its items locally, with no
- * write. See ADR 0001.
+ * What a plugin provides. A plugin declares at least one capability, and its
+ * connections serve all of them. A connector without `settle` keeps working:
+ * Ajour settles its items locally, with no write. See ADR 0001 and ADR 0003.
  */
-export const connectorPluginCapabilitiesSchema = z.object({
-  settle: z.boolean().optional(),
-});
+export const connectorPluginCapabilitiesSchema = z
+  .object({
+    connector: z
+      .object({
+        settle: z.boolean().optional(),
+      })
+      .optional(),
+    codeHost: z.object({}).optional(),
+  })
+  .refine(
+    (capabilities) =>
+      capabilities.connector !== undefined ||
+      capabilities.codeHost !== undefined,
+    "A plugin must declare the connector capability, the codeHost capability or both.",
+  );
 export type ConnectorPluginCapabilities = z.infer<
   typeof connectorPluginCapabilitiesSchema
 >;
+
+export function pluginHasConnector(manifest: {
+  capabilities: ConnectorPluginCapabilities;
+}) {
+  return manifest.capabilities.connector !== undefined;
+}
+
+export function pluginHasCodeHost(manifest: {
+  capabilities: ConnectorPluginCapabilities;
+}) {
+  return manifest.capabilities.codeHost !== undefined;
+}
 
 export const connectorPluginManifestSchema = z.object({
   id: connectorPluginIdSchema,
@@ -128,7 +152,7 @@ export const connectorPluginManifestSchema = z.object({
   iconSvg: z.string().min(1).max(20000),
   entrypoint: z.string().trim().min(1).max(240),
   connectionFields: z.array(connectorFieldSchema).min(1).max(50),
-  capabilities: connectorPluginCapabilitiesSchema.optional(),
+  capabilities: connectorPluginCapabilitiesSchema,
 });
 export type ConnectorPluginManifest = z.infer<
   typeof connectorPluginManifestSchema

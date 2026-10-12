@@ -55,6 +55,7 @@ import type {
   PluginCatalogEntry,
   PluginCatalogSettings,
 } from "@ajour/shared";
+import { pluginHasConnector } from "@ajour/shared";
 import {
   areConnectorFormValuesEqual,
   buildConnectorFormValues,
@@ -706,7 +707,9 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                       >
                         {connection.autoSync
                           ? `Auto every ${connection.autoSyncIntervalMinutes} min`
-                          : "Stage for review"}
+                          : pluginHasConnector(group.plugin)
+                            ? "Stage for review"
+                            : "Manual sync"}
                       </Badge>
                     </CardAction>
                   </CardHeader>
@@ -731,7 +734,8 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                             : null}
                         </span>
                       ) : null}
-                      {!connection.autoSync ? (
+                      {!connection.autoSync &&
+                      pluginHasConnector(group.plugin) ? (
                         <span>
                           {connection.pendingImportCount} staged ·{" "}
                           {connection.selectedImportCount} selected
@@ -745,11 +749,13 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                       )}
                     >
                       {connection.lastError ??
-                        (group.enabled
-                          ? connection.autoSync
-                            ? "Connection ready to sync directly into backlog."
-                            : "Connection ready to stage imports."
-                          : "Plugin inactive; this connection will not sync.")}
+                        (!group.enabled
+                          ? "Plugin inactive; this connection will not sync."
+                          : !pluginHasConnector(group.plugin)
+                            ? "Connection ready to sync pull requests."
+                            : connection.autoSync
+                              ? "Connection ready to sync directly into backlog."
+                              : "Connection ready to stage imports.")}
                     </p>
                   </CardContent>
                   <CardFooter className="rounded-b-lg border-t border-border/60">
@@ -763,25 +769,27 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                         <Pencil data-icon="inline-start" />
                         Edit
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        disabled={
-                          isMutatingConnector ||
-                          connectors?.pluginsEnabled === false ||
-                          !group.enabled
-                        }
-                        onClick={() =>
-                          void workflow.execute({
-                            type: "sync",
-                            pluginId: group.plugin.id,
-                            connectionId: connection.id,
-                          })
-                        }
-                      >
-                        <RefreshCw data-icon="inline-start" />
-                        Sync
-                      </Button>
+                      {pluginHasConnector(group.plugin) ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={
+                            isMutatingConnector ||
+                            connectors?.pluginsEnabled === false ||
+                            !group.enabled
+                          }
+                          onClick={() =>
+                            void workflow.execute({
+                              type: "sync",
+                              pluginId: group.plugin.id,
+                              connectionId: connection.id,
+                            })
+                          }
+                        >
+                          <RefreshCw data-icon="inline-start" />
+                          Sync
+                        </Button>
+                      ) : null}
                       <Button
                         size="sm"
                         variant="destructive"

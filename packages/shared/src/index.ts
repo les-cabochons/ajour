@@ -9,3 +9,4 @@ export * from "./validation/schemas";
 export * from "./connectors";
 export * from "./project-data-shapes";
 export * from "./plugin-catalog";
+export * from "./code-host";

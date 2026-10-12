@@ -19,6 +19,7 @@ import {
   connectorPluginActivationUpdateSchema,
   pluginSystemActivationUpdateSchema,
   connectorPluginIdSchema,
+  pluginHasCodeHost,
   connectorPluginInstallResponseSchema,
   connectorPluginUninstallResponseSchema,
   connectorSettleStatesRequestSchema,
@@ -42,6 +43,10 @@ import {
   connectorImportSelectionUpdateSchema,
   connectorsOverviewSchema,
 } from "../../../packages/shared/src/connectors.ts";
+import {
+  codeHostOperationSchema,
+  codeHostOperations,
+} from "../../../packages/shared/src/code-host.ts";
 import {
   projectDataShapeExportRequestSchema,
   projectDataShapeExportResponseSchema,
@@ -247,6 +252,12 @@ function errorMessage(error: unknown) {
 function matchConnectorRoute(pathname: string) {
   return pathname.match(
     /^\/api\/connectors\/([^/]+)\/connections(?:\/([^/]+)(?:\/(sync|settle-states|settle))?)?$/,
+  );
+}
+
+function matchCodeHostRoute(pathname: string) {
+  return pathname.match(
+    /^\/api\/code-hosts\/([^/]+)\/connections\/([^/]+)\/([A-Za-z]+)$/,
   );
 }
 
@@ -815,6 +826,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           const availablePluginIds = new Set(
             (await pluginManager.listPlugins()).map((plugin) => plugin.id),
           );
+          if (!(await pluginManager.hasCapability(pluginId, "connector"))) {
+            writeJson(response, 409, {
+              error: "This plugin does not sync backlog items.",
+            });
+            return;
+          }
           if (
             !(await storage.isConnectorPluginEnabled(
               pluginId,
@@ -951,6 +968,87 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
 
           return;
         }
+      }
+
+      const codeHostRoute = matchCodeHostRoute(requestUrl.pathname);
+      if (codeHostRoute && request.method === "POST") {
+        const [, rawPluginId, rawConnectionId, rawOperation] = codeHostRoute;
+        const pluginId = connectorPluginIdSchema.parse(
+          decodeURIComponent(rawPluginId ?? ""),
+        );
+        const connectionId = decodeURIComponent(rawConnectionId ?? "");
+        const operation = codeHostOperationSchema.safeParse(rawOperation);
+        if (!operation.success) {
+          writeJson(response, 404, { error: "Unknown code host operation." });
+          return;
+        }
+        const plugins = await pluginManager.listPlugins();
+        const plugin = plugins.find((candidate) => candidate.id === pluginId);
+        if (!plugin || !pluginHasCodeHost(plugin)) {
+          writeJson(response, 404, {
+            error: "This plugin does not provide pull requests.",
+          });
+          return;
+        }
+        if (
+          !(await storage.isConnectorPluginEnabled(
+            pluginId,
+            new Set(plugins.map((candidate) => candidate.id)),
+          ))
+        ) {
+          writeJson(response, 409, {
+            error: "Activate this plugin before using its pull requests.",
+          });
+          return;
+        }
+        const connection = await storage.getConnection(pluginId, connectionId);
+        if (!connection) {
+          writeJson(response, 404, { error: "Connection not found." });
+          return;
+        }
+
+        // A malformed body fails here, outside the try, as a 400.
+        const codeHostRequest = codeHostOperations[
+          operation.data
+        ].request.parse(await readJsonBody(request));
+        try {
+          const result = await pluginManager.runCodeHostOperation(
+            pluginId,
+            operation.data,
+            {
+              id: connection.id,
+              pluginId: connection.pluginId,
+              label: connection.label,
+              tenantLabel: connection.tenantLabel,
+              autoSync: connection.autoSync,
+              autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
+              connectedAt: connection.connectedAt,
+              lastSyncAt: connection.lastSyncAt,
+              lastError: connection.lastError,
+              config: connection.config,
+            },
+            codeHostRequest,
+          );
+          if (operation.data === "syncPullRequests") {
+            await storage.recordConnectionSyncSuccess(
+              pluginId,
+              connectionId,
+              Date.now(),
+            );
+          }
+          writeJson(response, 200, result);
+        } catch (error) {
+          const message = errorMessage(error);
+          if (operation.data === "syncPullRequests") {
+            await storage.recordConnectionError(
+              pluginId,
+              connectionId,
+              message,
+            );
+          }
+          writeJson(response, 502, { error: message });
+        }
+        return;
       }
 
       if (

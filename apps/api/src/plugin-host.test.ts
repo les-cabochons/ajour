@@ -11,6 +11,7 @@ import {
 } from "node:fs/promises";
 import { create } from "tar";
 import { afterEach, describe, expect, it } from "vitest";
+import { codeHostOperations } from "../../../packages/shared/src/code-host.ts";
 import { ConnectorPluginManager } from "./plugin-host.ts";
 import { readConnectorPlugin } from "./plugin-package.ts";
 
@@ -20,11 +21,12 @@ function pluginManifest(id: string, overrides: Record<string, unknown> = {}) {
   return {
     id,
     version: "1.0.0",
-    apiVersion: 1,
+    apiVersion: 2,
     displayName: id === "jira" ? "Jira" : id,
     description: "Test connector plugin.",
     iconSvg: ICON,
     entrypoint: "plugin.mjs",
+    capabilities: { connector: {} },
     connectionFields: [
       {
         id: "label",
@@ -146,7 +148,7 @@ describe("ConnectorPluginManager", () => {
       expect.objectContaining({
         id: "jira",
         version: "1.0.0",
-        apiVersion: 1,
+        apiVersion: 2,
       }),
     ]);
     await expect(
@@ -464,7 +466,7 @@ describe("ConnectorPluginManager", () => {
       root,
       "jira",
       "export async function validateConnection() {}",
-      { apiVersion: 2 },
+      { apiVersion: 3 },
     );
     const pluginManager = manager({
       installedPluginDirectory: path.join(root, "installed"),
@@ -473,5 +475,80 @@ describe("ConnectorPluginManager", () => {
     });
 
     await expect(pluginManager.listPlugins()).resolves.toEqual([]);
+  });
+
+  it("runs code host operations only for plugins that declare the capability", async () => {
+    const root = await tempDir();
+    const source = [
+      "export async function syncPullRequests(connection, request) {",
+      "  return { viewer: { login: connection.label, isBot: false }, pullRequests: [], ignored: request.tracked.length };",
+      "}",
+    ].join("\n");
+    const codeHostDirectory = await createPluginDirectory(
+      root,
+      "github",
+      source,
+      { capabilities: { codeHost: {} } },
+    );
+    const connectorDirectory = await createPluginDirectory(
+      root,
+      "jira",
+      source,
+    );
+    const pluginManager = manager({
+      installedPluginDirectory: path.join(root, "installed"),
+      developmentPluginDirectories: [codeHostDirectory, connectorDirectory],
+      allowDevelopmentPlugins: true,
+    });
+    const connection = {
+      id: "connection-1",
+      pluginId: "github",
+      label: "octocat",
+      tenantLabel: "github.com",
+      autoSync: true,
+      autoSyncIntervalMinutes: 5,
+      connectedAt: 1,
+      config: {},
+    };
+
+    await expect(
+      pluginManager.runCodeHostOperation(
+        "github",
+        "syncPullRequests",
+        connection,
+        {
+          tracked: [],
+        },
+      ),
+    ).resolves.toEqual({
+      viewer: { login: "octocat", isBot: false },
+      pullRequests: [],
+    });
+    await expect(
+      pluginManager.hasCapability("github", "connector"),
+    ).resolves.toBe(false);
+    await expect(
+      pluginManager.syncConnection("github", connection),
+    ).rejects.toThrow('Plugin "github" does not sync backlog items.');
+    await expect(
+      pluginManager.runCodeHostOperation(
+        "jira",
+        "syncPullRequests",
+        connection,
+        {
+          tracked: [],
+        },
+      ),
+    ).rejects.toThrow('Plugin "jira" does not provide pull requests.');
+  });
+
+  it("dispatches every code host operation in the worker", async () => {
+    const worker = await readFile(
+      new URL("./plugin-worker.mjs", import.meta.url),
+      "utf8",
+    );
+    for (const operation of Object.keys(codeHostOperations)) {
+      expect(worker).toContain(`"${operation}"`);
+    }
   });
 });

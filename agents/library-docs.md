@@ -108,19 +108,29 @@ The backlog editor module is feature-local because its vocabulary and commands b
 ## Connector Plugins
 
 - Connector packages live in the standalone `les-cabochons/ajc-azure-devops`
-  and `les-cabochons/ajc-jira` repositories.
+  and `les-cabochons/ajc-jira` repositories, and the GitHub code host in
+  `les-cabochons/ajc-github`.
 - Each connector compiles to local JavaScript modules and packages
   `plugin.json` plus `dist/` into one `.ajour-connector` archive.
 - Development builds load configured plugin directories; production builds
   only install packaged archives into the managed user-data plugin directory.
 - Desktop archive installation crosses the restricted preload/IPC bridge and
   calls the API runtime directly; it is not an HTTP endpoint.
-- Every connector exports `validateConnection(config)` and
+- `plugin.json` (plugin API version 2) declares its capabilities:
+  `"capabilities": { "connector": {}, "codeHost": {} }`, with at least one.
+  Connections belong to the plugin and serve every capability it declares.
+- Every plugin exports `validateConnection(config)`. A connector also exports
   `syncConnection(connection, workItems)`. A connector that declares
-  `"capabilities": { "settle": true }` in `plugin.json` also exports
+  `"connector": { "settle": true }` also exports
   `listSettleStates(connection, { sourceId })` and
   `writeSettle(connection, { sourceId, state?, priority? })`. The contract is
   in `packages/shared/src/connectors.ts`. See ADR 0001.
+- A code host exports one function per entry of `codeHostOperations` in
+  `packages/shared/src/code-host.ts`, each called as
+  `operation(connection, request)`. The API exposes them at
+  `POST /api/code-hosts/:pluginId/connections/:connectionId/:operation`.
+  The GitHub code host lives in `les-cabochons/ajc-github`. See ADR 0002 and
+  ADR 0003.
 - Sync reports each item's `stateCategory` and `stateDone`. The plugin decides
   which categories are done, and also reports Ajour's items that reached one,
   so Ajour archives them. The API returns those as `doneItems` and never stages

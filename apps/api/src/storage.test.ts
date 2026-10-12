@@ -12,11 +12,12 @@ function buildPlugin(id: string, displayName: string): ConnectorPluginManifest {
   return {
     id,
     version: "1.0.0",
-    apiVersion: 1,
+    apiVersion: 2,
     displayName,
     description: `${displayName} connector`,
     iconSvg: `<svg viewBox="0 0 16 16" data-plugin="${id}"><path d="M0 0h16v16H0z" /></svg>`,
     entrypoint: "worker.mjs",
+    capabilities: { connector: {} },
     connectionFields: [
       {
         id: "label",
