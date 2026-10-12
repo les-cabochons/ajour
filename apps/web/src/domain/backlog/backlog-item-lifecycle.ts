@@ -50,6 +50,7 @@ function withMoveSourceWrite(
   state: LocalAppState,
   workItem: LocalWorkItem,
   sourceStatusLabel: string | undefined,
+  now?: number,
 ): LocalWorkItem {
   const sourceStatusKey = sourceStatusLabel
     ? normalizeConnectorStatusKey(sourceStatusLabel)
@@ -74,6 +75,7 @@ function withMoveSourceWrite(
       workItem.sourceProjectName,
     ),
     pendingSourceWrite: {
+      readyAt: now === undefined ? undefined : now + 8000,
       state: sourceStatusLabel,
       priority: workItem.pendingSourceWrite?.priority,
       previous: workItem.pendingSourceWrite?.previous ?? {
@@ -83,6 +85,16 @@ function withMoveSourceWrite(
         priority: workItem.priority,
         workflowStateId: workItem.workflowStateId,
         importedWorkflowStateId: workItem.importedWorkflowStateId,
+        lifecycle: {
+          status: workItem.status,
+          settledAt: workItem.settledAt,
+          archivedAt: workItem.archivedAt,
+          archivedSourceStatusKey: workItem.archivedSourceStatusKey,
+          settledSourceStatusKey: workItem.settledSourceStatusKey,
+          settledImportedPriority: workItem.settledImportedPriority,
+          workflowStateIdBeforeClose: workItem.workflowStateIdBeforeClose,
+          settledWithParentId: workItem.settledWithParentId,
+        },
       },
     },
   };
@@ -96,9 +108,10 @@ export function changeBacklogItemSourceState(
   state: LocalAppState,
   workItemId: string,
   sourceStatusLabel: string,
+  now?: number,
 ): LocalAppState {
   return updateOne(state, workItemId, (workItem) => {
-    const next = withMoveSourceWrite(state, workItem, sourceStatusLabel);
+    const next = withMoveSourceWrite(state, workItem, sourceStatusLabel, now);
     return next === workItem
       ? workItem
       : { ...next, workflowStateId: workItem.workflowStateId };
@@ -270,7 +283,11 @@ export function moveBacklogItemToState(
   const destination = state.workflowStates.find(
     (candidate) => candidate._id === workflowStateId,
   );
-  if (!target || (workflowStateId !== undefined && !destination) || target.workflowStateId === workflowStateId) {
+  if (
+    !target ||
+    (workflowStateId !== undefined && !destination) ||
+    target.workflowStateId === workflowStateId
+  ) {
     return state;
   }
 
@@ -292,7 +309,12 @@ export function moveBacklogItemToState(
       const before = state.workItems.find(
         (candidate) => candidate._id === workItem._id,
       );
-      const written = withMoveSourceWrite(state, workItem, label);
+      const written = withMoveSourceWrite(
+        state,
+        workItem,
+        label,
+        factories.now(),
+      );
       if (written === workItem || !written.pendingSourceWrite || !before) {
         return written;
       }
@@ -313,6 +335,16 @@ export function moveBacklogItemToState(
             importedWorkflowStateId:
               workItem.pendingSourceWrite?.previous.importedWorkflowStateId ??
               before.importedWorkflowStateId,
+            lifecycle: workItem.pendingSourceWrite?.previous.lifecycle ?? {
+              status: before.status,
+              settledAt: before.settledAt,
+              archivedAt: before.archivedAt,
+              archivedSourceStatusKey: before.archivedSourceStatusKey,
+              settledSourceStatusKey: before.settledSourceStatusKey,
+              settledImportedPriority: before.settledImportedPriority,
+              workflowStateIdBeforeClose: before.workflowStateIdBeforeClose,
+              settledWithParentId: before.settledWithParentId,
+            },
           },
         },
       };
@@ -496,7 +528,10 @@ export function settleBacklogItem(
     return state;
   }
 
-  const sourceWrite = getSourceWrite(target, change);
+  const initialWrite = getSourceWrite(target, change);
+  const sourceWrite = initialWrite
+    ? { ...initialWrite, readyAt: factories.now() + 8000 }
+    : undefined;
   const selectedWorkflowStateId = getSettleWorkflowStateId(
     state,
     target,
@@ -632,8 +667,12 @@ export function failSourceWrite(
     importedPriority: sourceWrite.previous.importedPriority,
     priority: sourceWrite.previous.priority,
   }));
-  const reopened =
-    target.status === "active"
+  const reopened = sourceWrite.previous.lifecycle
+    ? updateOne(restored, workItemId, (workItem) => ({
+        ...workItem,
+        ...sourceWrite.previous.lifecycle,
+      }))
+    : target.status === "active"
       ? restored
       : reactivate(restored, workItemId, target.status);
   // A move's write also puts the item back in the state it left.
@@ -642,7 +681,8 @@ export function failSourceWrite(
         ...workItem,
         workflowStateId: sourceWrite.previous.workflowStateId,
         importedWorkflowStateId: sourceWrite.previous.importedWorkflowStateId,
-        workflowStateIdBeforeClose: undefined,
+        workflowStateIdBeforeClose:
+          sourceWrite.previous.lifecycle?.workflowStateIdBeforeClose,
       }))
     : reopened;
 }

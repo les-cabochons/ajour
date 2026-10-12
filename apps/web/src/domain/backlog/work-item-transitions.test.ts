@@ -11,6 +11,40 @@ import {
 } from "@/domain/backlog/work-item-transitions";
 import { archiveBacklogItem } from "@/domain/backlog/backlog-item-lifecycle";
 
+it("migrates a source-following raw priority through its connection scale once", () => {
+  const legacy = {
+    _id: "a",
+    title: "A",
+    source: "azure_devops",
+    sourceConnectionId: "c",
+    priority: 1,
+    importedPriority: 1,
+    createdAt: 1,
+  };
+  const priorityScales: LocalAppState["priorityScales"] = [
+    {
+      source: "azure_devops",
+      connectionId: "c",
+      ranges: { 4: { min: 1, max: 10 } },
+    },
+  ];
+  const migrated = normalizePersistedWorkItem(legacy, () => 1, {
+    priorityScales,
+  });
+  expect(migrated.priority).toBe(4);
+  expect(
+    normalizePersistedWorkItem(migrated, () => 1, {
+      priorityScales,
+      priorityFormat: "levels",
+    }).priority,
+  ).toBe(4);
+  expect(
+    normalizePersistedWorkItem({ ...legacy, priority: 2 }, () => 1, {
+      priorityScales,
+    }).priority,
+  ).toBe(2);
+});
+
 function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
   return {
     user: {

@@ -1084,6 +1084,24 @@ describe("writing a move to the source", () => {
     });
   });
 
+  it("preserves a settled lifecycle when a move write fails", () => {
+    const before = state();
+    before.workItems[0] = {
+      ...before.workItems[0]!,
+      status: "settled",
+      settledAt: 100,
+      settledSourceStatusKey: "active",
+    };
+    const moved = moveBacklogItemToState(before, "a", "review", factories, {
+      sourceWrites: { a: "Resolved" },
+    });
+    expect(find(failSourceWrite(moved, "a"), "a")).toMatchObject({
+      status: "settled",
+      settledAt: 100,
+      workflowStateId: "doing",
+    });
+  });
+
   it("changes the source state and leaves the item in its workflow state", () => {
     const inReview = moveBacklogItemToState(state(), "a", "review", factories, {
       sourceWrites: { a: "Resolved" },

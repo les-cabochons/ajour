@@ -333,6 +333,7 @@ export interface LocalSettleRule {
 
 /** Only the fields the settle changed. */
 export interface LocalPendingSourceWrite {
+  readyAt?: number;
   state?: string;
   priority?: number;
   /** The item's source values before the settle, put back if the write fails. */
@@ -344,6 +345,17 @@ export interface LocalPendingSourceWrite {
     /** Set by a move, which a failed write undoes. */
     workflowStateId?: string;
     importedWorkflowStateId?: string;
+    lifecycle?: Pick<
+      LocalWorkItem,
+      | "status"
+      | "settledAt"
+      | "archivedAt"
+      | "archivedSourceStatusKey"
+      | "settledSourceStatusKey"
+      | "settledImportedPriority"
+      | "workflowStateIdBeforeClose"
+      | "settledWithParentId"
+    >;
   };
 }
 
@@ -411,6 +423,7 @@ export interface ExtensionBridgeStatus {
 }
 
 export interface LocalAppState {
+  priorityFormat?: "levels";
   user: {
     _id: string;
     name: string;

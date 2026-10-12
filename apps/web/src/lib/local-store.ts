@@ -285,6 +285,7 @@ function createDefaultState(): LocalAppState {
     workflowStateMappings: [],
     workflowStateWriteRules: [],
     priorityScales: [],
+    priorityFormat: "levels",
     backlogSortMode: "custom",
     capture: defaultCapture,
     userPreferences: defaultUserPreferences,
@@ -318,7 +319,10 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
     defaults.workItems,
   );
   const workItems = rawWorkItems.map((workItem) =>
-    normalizePersistedWorkItem(workItem, Date.now),
+    normalizePersistedWorkItem(workItem, Date.now, {
+      priorityScales: normalizePriorityScales(persistedState.priorityScales),
+      priorityFormat: persistedState.priorityFormat,
+    }),
   );
   const workflowStates = normalizeWorkflowStates(
     arrayOrDefault(
@@ -403,6 +407,7 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
         ),
       ),
       priorityScales: normalizePriorityScales(persistedState.priorityScales),
+      priorityFormat: "levels",
       backlogSortMode,
       capture: {
         ...defaults.capture,
@@ -1392,7 +1397,12 @@ export const localStore = {
    */
   changeWorkItemSourceState(workItemId: string, sourceStatusLabel: string) {
     return updateStateWithUndo((state) =>
-      applyChangeBacklogItemSourceState(state, workItemId, sourceStatusLabel),
+      applyChangeBacklogItemSourceState(
+        state,
+        workItemId,
+        sourceStatusLabel,
+        Date.now(),
+      ),
     );
   },
   /** The settle's write reached the source. */

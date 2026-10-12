@@ -11,7 +11,11 @@ import {
   inferInheritedParentMapping,
   isSubtaskWorkItem,
 } from "@/domain/backlog/work-item-hierarchy";
-import { normalizePriorityLevel } from "@/domain/backlog/priority";
+import {
+  normalizePriorityLevel,
+  getPriorityLevel,
+  getWorkItemPriorityRanges,
+} from "@/domain/backlog/priority";
 import { normalizeWorkItemEstimateValue } from "@/domain/backlog/work-item-estimates";
 
 export interface WorkItemFactories {
@@ -34,6 +38,7 @@ export function normalizeWorkItemPriority(priority?: number) {
 export function normalizePersistedWorkItem(
   workItem: PersistedLocalWorkItem,
   now: () => number,
+  priorityContext?: Pick<LocalAppState, "priorityScales" | "priorityFormat">,
 ): LocalWorkItem {
   const parentWorkItemId = workItem.parentWorkItemId;
   const status =
@@ -76,7 +81,20 @@ export function normalizePersistedWorkItem(
     parentSourceId: isRetiredBuiltInSource
       ? undefined
       : workItem.parentSourceId,
-    priority: normalizePriorityLevel(workItem.priority),
+    priority:
+      priorityContext &&
+      priorityContext.priorityFormat !== "levels" &&
+      workItem.source !== "manual" &&
+      workItem.source !== "outlook" &&
+      workItem.priority === workItem.importedPriority
+        ? getPriorityLevel(
+            workItem.importedPriority,
+            getWorkItemPriorityRanges(priorityContext, {
+              source: workItem.source ?? "manual",
+              sourceConnectionId: workItem.sourceConnectionId,
+            }),
+          )
+        : normalizePriorityLevel(workItem.priority),
     importedPriority: isRetiredBuiltInSource
       ? undefined
       : normalizeWorkItemPriority(workItem.importedPriority),

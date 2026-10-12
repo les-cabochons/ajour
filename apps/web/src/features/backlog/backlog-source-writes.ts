@@ -56,6 +56,20 @@ async function sendSourceWrite(workItem: LocalWorkItem) {
   const write = workItem.pendingSourceWrite;
   if (!write) return;
 
+  const delay = (write.readyAt ?? 0) - Date.now();
+  if (delay > 0) {
+    window.setTimeout(
+      () => void sendPendingSourceWrites([workItem._id]),
+      delay,
+    );
+    return;
+  }
+  const stillCurrent = () =>
+    JSON.stringify(
+      localStore.snapshot().workItems.find((item) => item._id === workItem._id)
+        ?.pendingSourceWrite,
+    ) === JSON.stringify(write);
+
   sending.add(workItem._id);
   try {
     if (!workItem.sourceId || !workItem.sourceConnectionId) {
@@ -66,8 +80,9 @@ async function sendSourceWrite(workItem: LocalWorkItem) {
       state: write.state,
       priority: write.priority,
     });
-    localStore.completeSourceWrite(workItem._id);
+    if (stillCurrent()) localStore.completeSourceWrite(workItem._id);
   } catch (error) {
+    if (!stillCurrent()) return;
     localStore.failSourceWrite(workItem._id);
     showErrorToast({
       title: `Couldn't update "${workItem.title}" in its source`,
@@ -75,6 +90,7 @@ async function sendSourceWrite(workItem: LocalWorkItem) {
     });
   } finally {
     sending.delete(workItem._id);
+    if (!stillCurrent()) void sendPendingSourceWrites([workItem._id]);
   }
 }
 
