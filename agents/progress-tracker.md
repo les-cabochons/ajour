@@ -118,6 +118,13 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] The narrow view has no rail and no sidebars. Its titlebar holds a Time and Backlog switcher and a Settings cog. Settings opens on its list of pages, and Projects lives inside it with project import and export as an action.
 - [x] The narrow view does not offer Week. A Week link shows Day with a note that Week needs a wider window. Long press opens a row's action menu on touch screens, and editing uses the entry dialog at the full window width.
 
+## Windows sidebar spacing, 2026-10-12
+
+- [x] Reproduced the 52px empty strip above the Windows sidebar header.
+- [x] Restricted the sidebar chrome strip to macOS, which needs space for native traffic lights.
+- [x] Browser checks with the platform CSS classes confirmed no gap in Windows expanded and rail layouts, the retained 52px macOS strip, and unchanged web spacing.
+- [x] Repository typecheck passed. Formatting passed with the checkout's CRLF line endings; the default check reports line-ending differences in 329 files because Git uses `core.autocrlf=true`.
+
 ## Standard Task Flow
 
 - [ ] Understand the requested outcome.
