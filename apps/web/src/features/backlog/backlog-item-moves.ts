@@ -162,12 +162,10 @@ export async function moveBacklogItemWithUndo(
   if (includeSubitems === null) return false;
 
   const sourceWrites: Record<string, string> = {};
-  const itemWrite = workflowStateId === undefined ? "" : await resolveSourceWrite(
-    workItem,
-    workflowStateId,
-    name,
-    true,
-  );
+  const itemWrite =
+    workflowStateId === undefined
+      ? ""
+      : await resolveSourceWrite(workItem, workflowStateId, name, true);
   if (itemWrite === null) return false;
   if (itemWrite) sourceWrites[workItem._id] = itemWrite;
   if (includeSubitems && workflowStateId !== undefined) {
@@ -178,7 +176,7 @@ export async function moveBacklogItemWithUndo(
         name,
         false,
       );
-      if (write === null) return;
+      if (write === null) return false;
       if (write) sourceWrites[subitem._id] = write;
     }
   }
