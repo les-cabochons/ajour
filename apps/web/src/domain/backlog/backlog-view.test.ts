@@ -90,6 +90,29 @@ describe("backlog view selection", () => {
       ).map((i) => i._id),
     ).toEqual(["a", "b"]);
   });
+  it.each([
+    { values: [""], expected: ["missing", "unknown"] },
+    { values: ["todo"], expected: ["known"] },
+    { values: ["", "todo"], expected: ["missing", "unknown", "known"] },
+    { values: ["deleted"], expected: [] },
+  ])("filters resolved workflow states for $values", ({ values, expected }) => {
+    const state = {
+      workflowStates,
+      workItems: [
+        item("missing"),
+        item("unknown", { workflowStateId: "deleted" }),
+        item("known", { workflowStateId: "todo" }),
+      ],
+    };
+    expect(
+      selectBacklogViewItems(
+        state,
+        defaults,
+        values.map((value) => ({ field: "state" as const, value })),
+        { now },
+      ).map((workItem) => workItem._id),
+    ).toEqual(expected);
+  });
   it("filters running entries, zero estimates, and source connections", () => {
     const state = {
       workflowStates,

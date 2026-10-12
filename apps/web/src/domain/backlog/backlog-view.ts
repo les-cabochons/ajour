@@ -99,10 +99,16 @@ function matchesFilter(
   workItem: LocalWorkItem,
   filter: BacklogFilter,
   context: BacklogViewContext,
+  workflowStateIds: ReadonlySet<string>,
 ) {
   switch (filter.field) {
     case "state":
-      return (workItem.workflowStateId ?? "") === filter.value;
+      return (
+        (workItem.workflowStateId &&
+        workflowStateIds.has(workItem.workflowStateId)
+          ? workItem.workflowStateId
+          : "") === filter.value
+      );
     case "priority":
       return String(workItem.priority ?? "") === filter.value;
     case "project":
@@ -136,6 +142,9 @@ export function selectBacklogViewItems(
   filters: readonly BacklogFilter[],
   context: BacklogViewContext,
 ): LocalWorkItem[] {
+  const workflowStateIds = new Set(
+    state.workflowStates.map((state) => state._id),
+  );
   const filtersByField = new Map<BacklogFilterField, BacklogFilter[]>();
   for (const filter of filters) {
     filtersByField.set(filter.field, [
@@ -164,7 +173,11 @@ export function selectBacklogViewItems(
     if (!settings.showSubitems && isSubtaskWorkItem(workItem)) return false;
 
     for (const group of filtersByField.values()) {
-      if (!group.some((filter) => matchesFilter(workItem, filter, context))) {
+      if (
+        !group.some((filter) =>
+          matchesFilter(workItem, filter, context, workflowStateIds),
+        )
+      ) {
         return false;
       }
     }

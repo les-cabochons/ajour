@@ -208,6 +208,13 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Two regressions reproduce stale IDs after a failed Settle write, including JSON reload and a preserved local workflow override. Both failed before the fix.
 - [ ] Complete verification and fresh Codex review of the updated stack. The integration thread owns merging.
 
+### No state filter consistency, 2026-10-12
+
+- [x] State filters resolve item workflow IDs against the configured states. Missing and unknown IDs match No state, consistent with list and board grouping.
+- [x] Four selector cases cover No state, a known state, their combined filter and a stale state filter. Three cases failed before the fix.
+- [x] All 846 unit tests, workspace typecheck and production builds passed. The Chromium scenario for page filtering and sidebar isolation also passed.
+- [ ] Complete Codex review of the updated view head. The integration thread owns merging.
+
 ### Markerless legacy explicit closes, 2026-10-12
 
 - [x] Legacy archive inference uses the saved workflow ID and original source-state availability. Markerless explicit closes with an assigned Done ID remain explicit, while missing-sync archives with no workflow ID retain their provenance.
