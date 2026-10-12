@@ -272,6 +272,18 @@ export interface LocalWorkItem {
   archivedAt?: number;
 }
 
+/**
+ * How settling applies a fixed change to the items of one source project,
+ * without the settle dialog. Only Apply rules are stored: Ask is the default.
+ */
+export interface LocalSettleRule {
+  source: string;
+  connectionId: string;
+  sourceProjectName: string;
+  state?: { name: string; done: boolean };
+  priority?: number;
+}
+
 /** Only the fields the settle changed. */
 export interface LocalPendingSourceWrite {
   state?: string;
@@ -363,6 +375,8 @@ export interface LocalAppState {
   backlogStatuses: LocalBacklogStatus[];
   backlogStatusMappings: LocalBacklogStatusMapping[];
   backlogSortMode: BacklogSortMode;
+  /** Apply rules by source project. A source project without one asks. */
+  settleRules?: LocalSettleRule[];
   capture: CaptureSettings;
   lastExtensionImportAt?: number;
   extensionBridgeStatus?: ExtensionBridgeStatus;

@@ -44,6 +44,7 @@ import {
   hasWorkItemEstimateSyncIssue,
   type LocalWorkItem,
 } from "@/domain/local-state";
+import { settleOpensDialog } from "@/features/backlog/settle-dialog";
 import { buildBacklogStatusOptions } from "@/features/backlog/backlog-status";
 import {
   BACKLOG_ESTIMATE_FIELD_KEYS,
@@ -337,6 +338,7 @@ export function BacklogItemEditorForm({
                 isSnoozed: isBacklogItemSnoozed(workItem, Date.now()),
                 subitemCount: subitems.length,
                 isEditing: true,
+                settleOpensDialog: settleOpensDialog(workItem),
               })}
               onAction={handleAction}
               label={`Actions for ${workItem.title}`}

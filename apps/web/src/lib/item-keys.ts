@@ -86,6 +86,14 @@ export type ItemKeyCommand<Id extends string> =
   /** `action` is undefined when the key's action is listed but disabled. */
   | { kind: "action"; shortcutId: ShortcutActionId; action?: ObjectAction<Id> };
 
+/**
+ * Keys that run another key's action in a different way: Shift+E settles with
+ * the settle dialog. The action set lists only the main key.
+ */
+const VARIANT_SHORTCUTS: Partial<Record<ShortcutActionId, ShortcutActionId>> = {
+  "item.settle-ask": "item.settle",
+};
+
 const FOCUS_SHORTCUTS: Partial<Record<ShortcutActionId, FocusDirection>> = {
   "item.focus-up": "up",
   "item.focus-down": "down",
@@ -123,7 +131,10 @@ export function getItemKeyCommand<Id extends string>(
     return { kind: "open-menu" };
   }
 
-  const listed = actions.filter((action) => keys[action.id] === shortcutId);
+  const actionShortcutId = VARIANT_SHORTCUTS[shortcutId] ?? shortcutId;
+  const listed = actions.filter(
+    (action) => keys[action.id] === actionShortcutId,
+  );
   if (listed.length === 0) {
     return null;
   }
@@ -291,7 +302,8 @@ export function handleItemKeyDown<Id extends string>(
   }: {
     actions: readonly ObjectAction<Id>[];
     keys: ActionKeys<Id>;
-    onAction: (actionId: Id) => void;
+    /** `shortcutId` is the key pressed, such as Shift+E for "item.settle-ask". */
+    onAction: (actionId: Id, key: { shortcutId: ShortcutActionId }) => void;
     /** Present only where drag reorder exists. -1 is Move up, 1 is Move down. */
     onReorder?: (step: -1 | 1) => void;
   },
@@ -340,7 +352,7 @@ export function handleItemKeyDown<Id extends string>(
       if (removesItem) {
         refocusAfterRender(item, { fallback: true });
       }
-      onAction(command.action.id);
+      onAction(command.action.id, { shortcutId: command.shortcutId });
       return;
     }
     default:

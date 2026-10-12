@@ -10,6 +10,7 @@ import {
   CommandList,
   CommandShortcut,
 } from "@/components/ui/command";
+import { settleOpensDialog } from "@/features/backlog/settle-dialog";
 import {
   buildPaletteSections,
   type PaletteCommand,
@@ -372,6 +373,7 @@ export function CommandPalette() {
           isNarrowView ? "narrow" : "wide",
         ).filter((page) => page.to.startsWith("/settings/")),
         platform,
+        settleOpensDialog,
       })
     : [];
 

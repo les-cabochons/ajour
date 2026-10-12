@@ -70,6 +70,7 @@ export type ShortcutActionId =
   | "pinned.start"
   | "item.edit"
   | "item.settle"
+  | "item.settle-ask"
   | "item.snooze"
   | "item.duplicate"
   | "item.move-to"
@@ -223,6 +224,12 @@ export const SHORTCUTS: readonly ShortcutDefinition[] = [
     keys: [{ key: "e" }],
   },
   {
+    id: "item.settle-ask",
+    label: "Settle a backlog item with the settle dialog",
+    scope: "item",
+    keys: [{ key: "e", shift: true }],
+  },
+  {
     id: "item.snooze",
     label: "Snooze a backlog item",
     scope: "item",
@@ -366,7 +373,10 @@ export function matchesChord(
   }
 
   if (LETTER.test(chord.key) || chord.mod) {
-    return !event.shiftKey && event.key.toLowerCase() === chord.key;
+    return (
+      event.shiftKey === Boolean(chord.shift) &&
+      event.key.toLowerCase() === chord.key
+    );
   }
 
   return event.key === chord.key;

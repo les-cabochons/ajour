@@ -20,7 +20,11 @@ import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/select";
 import type { BacklogSettleChange } from "@/domain/backlog/backlog-item-lifecycle";
 import type { LocalWorkItem } from "@/domain/local-state";
-import { sendPendingSourceWrites } from "@/features/backlog/backlog-source-writes";
+import { findSettleRule } from "@/domain/backlog/settle-rules";
+import {
+  canWriteSettle,
+  sendPendingSourceWrites,
+} from "@/features/backlog/backlog-source-writes";
 import { formatPriorityInput } from "@/features/backlog/backlog-task-editor";
 import {
   buildSettleChange,
@@ -31,14 +35,66 @@ import { offerUndo } from "@/features/feedback/undo-toast";
 import { listConnectorSettleStates } from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
 
-let requestListener: ((workItemId: string) => void) | null = null;
+let requestListener:
+  ((workItemId: string, prefill?: BacklogSettleChange) => void) | null = null;
 
 /**
- * Opens the settle dialog for a synced backlog item. Does nothing until the
- * app shell has mounted the dialog.
+ * Opens the settle dialog for a synced backlog item, starting at `prefill`
+ * where given and at the item's current values otherwise. Does nothing until
+ * the app shell has mounted the dialog.
  */
-export function requestSettle(workItemId: string) {
-  requestListener?.(workItemId);
+export function requestSettle(
+  workItemId: string,
+  prefill?: BacklogSettleChange,
+) {
+  requestListener?.(workItemId, prefill);
+}
+
+/**
+ * How Settle behaves on an item. Items whose connector can't write settle
+ * locally. Others follow their source project's settle rule: Ask opens the
+ * dialog, Apply settles with the rule's change. `ask`, from Shift+E or
+ * Shift-click, opens the dialog prefilled with the rule instead.
+ */
+export function getSettleBehavior(
+  workItem: LocalWorkItem,
+  { ask = false }: { ask?: boolean } = {},
+):
+  | { kind: "local" }
+  | { kind: "ask"; prefill?: BacklogSettleChange }
+  | { kind: "apply"; change: BacklogSettleChange } {
+  if (!canWriteSettle(workItem)) {
+    return { kind: "local" };
+  }
+
+  const rule = findSettleRule(localStore.snapshot().settleRules, workItem);
+  const change = rule
+    ? { state: rule.state, priority: rule.priority }
+    : undefined;
+  return change && !ask
+    ? { kind: "apply", change }
+    : { kind: "ask", prefill: change };
+}
+
+/** Whether Settle opens the dialog, shown as "Settle…" in action menus. */
+export function settleOpensDialog(workItem: LocalWorkItem) {
+  return getSettleBehavior(workItem).kind === "ask";
+}
+
+/** Runs Settle on an item: the dialog, the rule's change, or a local settle. */
+export function settleBacklogItem(
+  workItem: LocalWorkItem,
+  options?: { ask?: boolean },
+) {
+  const behavior = getSettleBehavior(workItem, options);
+  if (behavior.kind === "ask") {
+    requestSettle(workItem._id, behavior.prefill);
+  } else {
+    settleBacklogItemWithUndo(
+      workItem,
+      behavior.kind === "apply" ? behavior.change : undefined,
+    );
+  }
 }
 
 /**
@@ -82,14 +138,18 @@ export function SettleDialogHost() {
   const [priority, setPriority] = useState("");
 
   useEffect(() => {
-    const listener = (id: string) => {
+    const listener = (id: string, prefill?: BacklogSettleChange) => {
       const item = localStore
         .snapshot()
         .workItems.find((candidate) => candidate._id === id);
       if (!item) return;
       setWorkItem(item);
-      setStateName(item.sourceStatusLabel ?? "");
-      setPriority(formatPriorityInput(item.importedPriority ?? item.priority));
+      setStateName(prefill?.state?.name ?? item.sourceStatusLabel ?? "");
+      setPriority(
+        formatPriorityInput(
+          prefill?.priority ?? item.importedPriority ?? item.priority,
+        ),
+      );
       setLoad({ status: "loading" });
     };
     requestListener = listener;

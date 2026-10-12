@@ -34,6 +34,11 @@ import {
   type BacklogSettleChange,
 } from "@/domain/backlog/backlog-item-lifecycle";
 import {
+  applySettleRule,
+  askSettleRule,
+  normalizeSettleRules,
+} from "@/domain/backlog/settle-rules";
+import {
   acceptRemoteEstimateValue as applyAcceptRemoteEstimateValue,
   addWorkItem as applyAddWorkItem,
   deleteWorkItem as applyDeleteWorkItem,
@@ -124,6 +129,7 @@ import type {
   ExtensionBridgeStatus,
   LocalAppState,
   LocalBacklogStatusMapping,
+  LocalSettleRule,
   LocalProject,
   LocalProjectDraft,
   LocalProjectTask,
@@ -344,6 +350,7 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
       workItems,
       backlogStatuses,
       backlogStatusMappings,
+      settleRules: normalizeSettleRules(persistedState.settleRules),
       backlogSortMode,
       capture: {
         ...defaults.capture,
@@ -1212,6 +1219,16 @@ export const localStore = {
   /** The settle's write failed: the item goes back to active. */
   failSourceWrite(workItemId: string) {
     updateState((state) => applyFailSourceWrite(state, workItemId));
+  },
+  /** Applies a fixed change when items of the rule's source project settle. */
+  applySettleRule(rule: LocalSettleRule) {
+    updateState((state) => applySettleRule(state, rule));
+  },
+  /** Puts a source project back to Ask, the settle dialog. */
+  askSettleRule(
+    key: Pick<LocalSettleRule, "source" | "connectionId" | "sourceProjectName">,
+  ) {
+    updateState((state) => askSettleRule(state, key));
   },
   /** Puts a settled backlog item back to active. Local, with no write. */
   unsettleWorkItem(workItemId: string) {

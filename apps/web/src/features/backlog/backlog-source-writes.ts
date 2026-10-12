@@ -10,10 +10,10 @@ import { localStore } from "@/lib/local-store";
 const sending = new Set<string>();
 
 /**
- * Whether Settle on this item opens the settle dialog: the item is synced and
- * its active connector can write to the source. Other items settle locally.
+ * Whether a settle can write to the item's source: the item is synced and its
+ * active connector has the settle capability. Other items settle locally.
  */
-export function settleOpensDialog(workItem: LocalWorkItem) {
+export function canWriteSettle(workItem: LocalWorkItem) {
   if (
     workItem.source === "manual" ||
     !workItem.sourceId ||

@@ -224,6 +224,18 @@ describe("backlog item actions", () => {
     expect(actions.slice(-2).every((action) => action.destructive)).toBe(true);
   });
 
+  it("labels Settle with an ellipsis when it opens the settle dialog", () => {
+    const label = (settleOpensDialog: boolean) =>
+      getBacklogItemActions(syncedItem, {
+        subitemCount: 0,
+        isSubitem: false,
+        settleOpensDialog,
+      }).find((action) => action.id === "settle")?.label;
+
+    expect(label(true)).toBe("Settle…");
+    expect(label(false)).toBe("Settle");
+  });
+
   it("swaps Snooze for Unsnooze on a snoozed item", () => {
     const actions = getBacklogItemActions(manualItem, {
       subitemCount: 0,

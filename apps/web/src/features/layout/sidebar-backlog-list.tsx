@@ -28,6 +28,7 @@ import {
   isSubtaskWorkItem,
 } from "@/domain/backlog/work-item-hierarchy";
 import type { LocalAppState, LocalWorkItem } from "@/domain/local-state";
+import { settleOpensDialog } from "@/features/backlog/settle-dialog";
 import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
 import { formatSnoozeTime } from "@/features/backlog/snooze-presets";
 import {
@@ -92,20 +93,29 @@ function useBacklogItemRow(state: LocalAppState, now: number) {
       subitemCount: isSubitem
         ? 0
         : getDirectChildWorkItems(workItem, state.workItems).length,
+      settleOpensDialog: settleOpensDialog(workItem),
     });
   }
 
-  function run(workItem: LocalWorkItem, actionId: BacklogItemActionId) {
+  function run(
+    workItem: LocalWorkItem,
+    actionId: BacklogItemActionId,
+    options?: { askToSettle?: boolean },
+  ) {
     const action = actionsFor(workItem).find((item) => item.id === actionId);
     if (!action || action.disabledReason) return;
 
     // Edit and Add subitem open the editor on the item's page.
-    runBacklogItemAction(workItem, actionId, (hosted) =>
-      navigate({
-        to: "/backlog/$itemId",
-        params: { itemId: workItem._id },
-        search: { action: hosted },
-      }),
+    runBacklogItemAction(
+      workItem,
+      actionId,
+      (hosted) =>
+        navigate({
+          to: "/backlog/$itemId",
+          params: { itemId: workItem._id },
+          search: { action: hosted },
+        }),
+      options,
     );
   }
 
@@ -151,7 +161,9 @@ function RowActions({
         label="Settle"
         shortcut="item.settle"
         className={iconButton}
-        onClick={() => rows.run(workItem, "settle")}
+        onClick={(event) =>
+          rows.run(workItem, "settle", { askToSettle: event.shiftKey })
+        }
       >
         <SettleIcon className="size-3.5" />
       </TooltipButton>
@@ -250,10 +262,12 @@ function BacklogItemRow({
             handleItemKeyDown(event, {
               actions: [...actions, OPEN_BACKLOG_ITEM_ACTION],
               keys: BACKLOG_ITEM_ROW_KEYS,
-              onAction: (actionId) =>
+              onAction: (actionId, { shortcutId }) =>
                 actionId === "open"
                   ? rows.open(workItem)
-                  : rows.run(workItem, actionId),
+                  : rows.run(workItem, actionId, {
+                      askToSettle: shortcutId === "item.settle-ask",
+                    }),
             })
           }
         />
@@ -353,10 +367,12 @@ function UpNextCard({
             handleItemKeyDown(event, {
               actions: [...actions, OPEN_BACKLOG_ITEM_ACTION],
               keys: BACKLOG_ITEM_ROW_KEYS,
-              onAction: (actionId) =>
+              onAction: (actionId, { shortcutId }) =>
                 actionId === "open"
                   ? rows.open(workItem)
-                  : rows.run(workItem, actionId),
+                  : rows.run(workItem, actionId, {
+                      askToSettle: shortcutId === "item.settle-ask",
+                    }),
             })
           }
         />
@@ -403,7 +419,9 @@ function UpNextCard({
             <button
               type="button"
               className={button}
-              onClick={() => rows.run(workItem, "settle")}
+              onClick={(event) =>
+                rows.run(workItem, "settle", { askToSettle: event.shiftKey })
+              }
             >
               <SettleIcon className="size-3.5" /> Settle
             </button>
