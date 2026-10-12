@@ -91,6 +91,101 @@ it("cancels the move when source state discovery fails", async () => {
   );
 });
 
+it.each(["moved", "deleted", "archived"])(
+  "rejects an older move when its item is %s during source lookup",
+  async (change) => {
+    const before = mocks.snapshot();
+    mocks.states.mockImplementation(async () => {
+      mocks.snapshot.mockReturnValue({
+        ...before,
+        workItems:
+          change === "deleted"
+            ? []
+            : [
+                {
+                  ...item,
+                  ...(change === "moved"
+                    ? { workflowStateId: "todo" }
+                    : { status: "archived" }),
+                },
+              ],
+      });
+      return { states: [{ name: "In QA", done: false }] };
+    });
+    expect(await moveBacklogItemWithUndo(item, "review")).toBe(false);
+    expect(mocks.move).not.toHaveBeenCalled();
+    expect(mocks.offerUndo).not.toHaveBeenCalled();
+  },
+);
+
+it("rejects an older move after a newer move while Ask is open", async () => {
+  const before = {
+    ...mocks.snapshot(),
+    workflowStateWriteRules: [
+      {
+        source: "example",
+        connectionId: "c",
+        workflowStateId: "review",
+        write: { kind: "ask" },
+      },
+    ],
+  };
+  mocks.snapshot.mockReturnValue(before);
+  mocks.states.mockResolvedValue({
+    states: [{ name: "Resolved" }, { name: "In QA" }],
+  });
+  mocks.choose.mockImplementation(async () => {
+    mocks.snapshot.mockReturnValue({
+      ...before,
+      workItems: [{ ...item, workflowStateId: "todo" }],
+    });
+    return "In QA";
+  });
+  expect(await moveBacklogItemWithUndo(item, "review")).toBe(false);
+  expect(mocks.choose).toHaveBeenCalled();
+  expect(mocks.move).not.toHaveBeenCalled();
+});
+
+it.each(["changed", "added"])(
+  "rechecks included children when a child is %s during lookup",
+  async (change) => {
+    const child: LocalWorkItem = {
+      ...item,
+      _id: "child",
+      source: "manual",
+      parentWorkItemId: "a",
+    };
+    const before = {
+      ...mocks.snapshot(),
+      workItems: [item, child],
+      userPreferences: { closeParentSubitems: "include" },
+      workflowStates: [{ _id: "done", name: "Done", done: true }],
+      workflowStateMappings: [
+        {
+          source: "example",
+          connectionId: "c",
+          sourceStatusKey: "closed",
+          sourceStatusLabel: "Closed",
+          workflowStateId: "done",
+        },
+      ],
+    };
+    mocks.snapshot.mockReturnValue(before);
+    mocks.states.mockImplementation(async () => {
+      mocks.snapshot.mockReturnValue({
+        ...before,
+        workItems:
+          change === "changed"
+            ? [item, { ...child, workflowStateId: "review" }]
+            : [item, child, { ...child, _id: "new-child" }],
+      });
+      return { states: [{ name: "Closed", done: true }] };
+    });
+    expect(await moveBacklogItemWithUndo(item, "done")).toBe(false);
+    expect(mocks.move).not.toHaveBeenCalled();
+  },
+);
+
 it("moves locally without discovery when the configured rule says Don't write", async () => {
   mocks.snapshot.mockReturnValue({
     ...mocks.snapshot(),

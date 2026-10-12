@@ -19,6 +19,32 @@ import { offerUndo } from "@/features/feedback/undo-toast";
 import { localStore } from "@/lib/local-store";
 import { listConnectorSettleStates } from "@/lib/app-api";
 
+function readUnchangedItem(expected: LocalWorkItem) {
+  const current = localStore
+    .snapshot()
+    .workItems.find((item) => item._id === expected._id);
+  const fields = [
+    "workflowStateId",
+    "workflowStateIdBeforeClose",
+    "status",
+    "settledAt",
+    "archivedAt",
+    "settledWithParentId",
+    "snoozedUntil",
+    "source",
+    "sourceId",
+    "sourceConnectionId",
+    "sourceProjectName",
+    "sourceStatusKey",
+    "sourceStatusLabel",
+    "parentWorkItemId",
+    "parentSourceId",
+  ] as const;
+  return current && fields.every((field) => current[field] === expected[field])
+    ? current
+    : undefined;
+}
+
 async function loadSourceStates(
   workItem: LocalWorkItem,
 ): Promise<string[] | null> {
@@ -107,6 +133,7 @@ async function resolveSourceWrite(
     return "";
   const available = await loadSourceStates(workItem);
   if (available === null) return null;
+  if (!readUnchangedItem(workItem)) return null;
   const plan = planWorkflowStateWrite(
     localStore.snapshot(),
     workItem,
@@ -154,12 +181,41 @@ export async function moveBacklogItemWithUndo(
     return true;
   }
   const name = destination?.name ?? "No state";
+  const stillCurrent = () => {
+    const current = readUnchangedItem(workItem);
+    const nextDestination = localStore
+      .snapshot()
+      .workflowStates.find((item) => item._id === workflowStateId);
+    return (
+      current &&
+      (workflowStateId === undefined || nextDestination) &&
+      nextDestination?.done === destination?.done
+    );
+  };
 
   const closes = destination?.done === true && workItem.status !== "archived";
   const includeSubitems = closes
     ? await resolveIncludeSubitems(workItem, "close")
     : false;
   if (includeSubitems === null) return false;
+  if (!stillCurrent()) return false;
+  const subitems = includeSubitems
+    ? getOpenSubitems(localStore.snapshot(), workItem._id, "close")
+    : [];
+  const readyToCommit = () => {
+    if (!stillCurrent()) return false;
+    const currentChildren = includeSubitems
+      ? getOpenSubitems(localStore.snapshot(), workItem._id, "close")
+      : [];
+    return (
+      currentChildren.length === subitems.length &&
+      subitems.every(
+        (item) =>
+          readUnchangedItem(item) &&
+          currentChildren.some((child) => child._id === item._id),
+      )
+    );
+  };
 
   const sourceWrites: Record<string, string> = {};
   const itemWrite =
@@ -167,9 +223,10 @@ export async function moveBacklogItemWithUndo(
       ? ""
       : await resolveSourceWrite(workItem, workflowStateId, name, true);
   if (itemWrite === null) return false;
+  if (!readyToCommit()) return false;
   if (itemWrite) sourceWrites[workItem._id] = itemWrite;
   if (includeSubitems && workflowStateId !== undefined) {
-    for (const subitem of getOpenSubitems(state, workItem._id, "close")) {
+    for (const subitem of subitems) {
       const write = await resolveSourceWrite(
         subitem,
         workflowStateId,
@@ -177,11 +234,30 @@ export async function moveBacklogItemWithUndo(
         false,
       );
       if (write === null) return false;
+      if (!readyToCommit()) return false;
       if (write) sourceWrites[subitem._id] = write;
     }
   }
 
   const reopens = !destination?.done && workItem.status === "archived";
+  const current = localStore.snapshot();
+  for (const [itemId, label] of Object.entries(sourceWrites)) {
+    const item = current.workItems.find((item) => item._id === itemId);
+    if (
+      !item ||
+      !canWriteToSource(item) ||
+      !getSourceStatesMappedTo(
+        current.workflowStateMappings,
+        {
+          source: item.source,
+          connectionId: item.sourceConnectionId,
+          sourceProjectName: item.sourceProjectName,
+        },
+        workflowStateId!,
+      ).some((state) => state.label === label)
+    )
+      return false;
+  }
   // Save the editor's other fields only after every move prompt succeeds.
   if (patch) localStore.updateWorkItem(workItem._id, patch);
   const writtenIds = Object.keys(sourceWrites);
@@ -232,21 +308,8 @@ export function getOtherSourceStates(workItem: LocalWorkItem): string[] {
 export async function changeSourceStateWithUndo(workItem: LocalWorkItem) {
   if (!canWriteToSource(workItem)) return;
   const currentItem = () => {
-    const current = localStore
-      .snapshot()
-      .workItems.find((item) => item._id === workItem._id);
-    return current &&
-      current.workflowStateId === workItem.workflowStateId &&
-      current.status === workItem.status &&
-      current.source === workItem.source &&
-      current.sourceId === workItem.sourceId &&
-      current.sourceConnectionId === workItem.sourceConnectionId &&
-      current.sourceProjectName === workItem.sourceProjectName &&
-      current.sourceStatusKey === workItem.sourceStatusKey &&
-      current.sourceStatusLabel === workItem.sourceStatusLabel &&
-      canWriteToSource(current)
-      ? current
-      : undefined;
+    const current = readUnchangedItem(workItem);
+    return current && canWriteToSource(current) ? current : undefined;
   };
   if (!currentItem()) return;
   const available = await loadSourceStates(workItem);
