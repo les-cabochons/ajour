@@ -176,17 +176,26 @@ export function BacklogPage() {
     if (narrow) openPage(item);
     else setPeekId(item._id);
   }
-  function action(item: LocalWorkItem, id: BacklogItemActionId) {
+  function action(
+    item: LocalWorkItem,
+    id: BacklogItemActionId,
+    options?: { askToSettle?: boolean },
+  ) {
     if (!leaveDraft()) return;
     const saved =
       localStore.snapshot().workItems.find((i) => i._id === item._id) ?? item;
     if (id === "new-entry") closeEditor();
-    runBacklogItemAction(saved, id, (hosted) => {
-      if (hosted === "edit") {
-        setPeekId(item._id);
-        openEditor({ kind: "edit", itemId: item._id });
-      } else openEditor({ kind: "create", parentId: item._id });
-    });
+    runBacklogItemAction(
+      saved,
+      id,
+      (hosted) => {
+        if (hosted === "edit") {
+          setPeekId(item._id);
+          openEditor({ kind: "edit", itemId: item._id });
+        } else openEditor({ kind: "create", parentId: item._id });
+      },
+      options,
+    );
   }
   function reorder(itemId: string, group: BacklogGroup, step: -1 | 1) {
     if (state.backlogSortMode !== "custom" || archive) return;
@@ -338,7 +347,10 @@ export function BacklogPage() {
         OPEN_BACKLOG_ITEM_ACTION,
       ],
       keys: BACKLOG_ITEM_ROW_KEYS,
-      onAction: (id) => (id === "open" ? openPage(item) : action(item, id)),
+      onAction: (id, { shortcutId }) =>
+        id === "open"
+          ? openPage(item)
+          : action(item, id, { askToSettle: shortcutId === "item.settle-ask" }),
       onReorder: (step) => reorder(item._id, group, step),
     });
   }

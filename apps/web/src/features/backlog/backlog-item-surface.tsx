@@ -45,6 +45,7 @@ import {
 } from "@/features/backlog/work-item-icons";
 import { parseWorkItemReference } from "@/features/backlog/work-item-timer-comment";
 import { offerUndo } from "@/features/feedback/undo-toast";
+import { settleOpensDialog } from "@/features/backlog/settle-dialog";
 import { BACKLOG_ITEM_ACTION_KEYS } from "@/lib/item-keys";
 import { localStore } from "@/lib/local-store";
 import { cn } from "@/lib/utils";
@@ -190,6 +191,7 @@ export function getBacklogSurfaceActions(
     isSnoozed: isBacklogItemSnoozed(item, now),
     subitemCount: getDirectChildWorkItems(item, state.workItems).length,
     otherSourceStateCount: getOtherSourceStates(item).length,
+    settleOpensDialog: settleOpensDialog(item),
   });
 }
 export function BacklogItemSurface({

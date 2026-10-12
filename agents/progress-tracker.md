@@ -376,4 +376,5 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Project swimlanes collapse independently. Archive includes old done items and items missing from sync.
 - [x] Narrow windows force the list while retaining the desktop layout preference.
 - [x] Foundation PR review fixes cover clearing done states, source reopen propagation, settled return, pending write deadlines, failed-move lifecycle restoration and priority migration.
-- [ ] Finish verification and PR review for the view layer.
+- [x] Local verification passed: 689 unit tests, workspace typecheck, production build and format check. All 46 acceptance scenarios passed, with targeted retries for intermittent browser failures.
+- [ ] Complete Codex review for the view-layer PR.
