@@ -308,6 +308,8 @@ export interface LocalPendingSourceWrite {
     sourceStatusLabel?: string;
     importedPriority?: number;
     priority?: number;
+    workflowStateId?: string;
+    importedWorkflowStateId?: string;
   };
 }
 

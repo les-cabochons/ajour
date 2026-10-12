@@ -175,6 +175,12 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Project Health Notes
 
+### Settle mapping recovery, 2026-10-12
+
+- [x] Settle derives closure from the selected source state's workflow mapping, including a connector-open state mapped to Done and a connector-done state mapped to an open state.
+- [x] Settling updates the imported workflow baseline and restores the prior workflow when a source write fails. Carried children follow the parent's settle or close.
+- [x] The foundation passes 687 unit tests and workspace typechecking. Full stack verification follows in the view-layer PR.
+
 - Use `just` rather than invoking package scripts directly.
 - Preserve local-first behavior unless the user explicitly asks to change it.
 - Treat connector writes and imports as side-effect-sensitive.

@@ -292,6 +292,12 @@ function getSourceWrite(
       sourceStatusLabel: workItem.sourceStatusLabel,
       importedPriority: workItem.importedPriority,
       priority: workItem.priority,
+      ...(state !== undefined
+        ? {
+            workflowStateId: workItem.workflowStateId,
+            importedWorkflowStateId: workItem.importedWorkflowStateId,
+          }
+        : {}),
     },
   };
 }
@@ -303,7 +309,7 @@ function getSourceWrite(
  *
  * `change` sets a new state, priority or both in the source. Only the fields
  * that differ are kept, as a pending write that is sent after the Undo window.
- * The item shows the new values at once. A state in a done category archives
+ * The item shows the new values at once. A source state mapped to Done archives
  * the item instead.
  *
  * `includeSubitems` settles the parent's active subitems along with it, and
@@ -325,9 +331,17 @@ export function settleBacklogItem(
   }
 
   const sourceWrite = getSourceWrite(target, change);
+  const selectedWorkflowStateId = change?.state
+    ? findMappedWorkflowStateId(
+        state.workflowStateMappings,
+        target.source,
+        target.sourceConnectionId,
+        normalizeConnectorStatusKey(change.state.name),
+      )
+    : undefined;
   const archives =
     target.source === "manual" ||
-    (sourceWrite?.state !== undefined && change?.state?.done === true);
+    isDoneWorkflowState(state.workflowStates, selectedWorkflowStateId);
 
   const now = factories.now();
   const carriedIds = new Set(
@@ -345,7 +359,7 @@ export function settleBacklogItem(
     archives
       ? closeWorkItem(
           workItem,
-          getClosingWorkflowStateId(state, workItem),
+          selectedWorkflowStateId ?? getClosingWorkflowStateId(state, workItem),
           state.workflowStates,
           now,
         )
@@ -363,8 +377,19 @@ export function settleBacklogItem(
     ...saved,
     workItems: saved.workItems.map((workItem) => {
       if (workItem._id === workItemId) {
+        const written = sourceWrite
+          ? withSourceWrite(workItem, sourceWrite)
+          : workItem;
         return settle(
-          sourceWrite ? withSourceWrite(workItem, sourceWrite) : workItem,
+          sourceWrite?.state !== undefined
+            ? {
+                ...written,
+                importedWorkflowStateId: selectedWorkflowStateId,
+                workflowStateId: archives
+                  ? written.workflowStateId
+                  : selectedWorkflowStateId,
+              }
+            : written,
         );
       }
 
@@ -444,9 +469,17 @@ export function failSourceWrite(
     importedPriority: sourceWrite.previous.importedPriority,
     priority: sourceWrite.previous.priority,
   }));
-  return target.status === "active"
-    ? restored
-    : reactivate(restored, workItemId, target.status);
+  const recovered =
+    target.status === "active"
+      ? restored
+      : reactivate(restored, workItemId, target.status);
+  return "workflowStateId" in sourceWrite.previous
+    ? updateOne(recovered, workItemId, (workItem) => ({
+        ...workItem,
+        workflowStateId: sourceWrite.previous.workflowStateId,
+        importedWorkflowStateId: sourceWrite.previous.importedWorkflowStateId,
+      }))
+    : recovered;
 }
 
 /**

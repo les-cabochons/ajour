@@ -189,6 +189,23 @@ describe("settling a backlog item", () => {
 describe("settling with a change to the source", () => {
   const state = () =>
     createState({
+      workflowStates: [
+        {
+          _id: "done",
+          name: "Done",
+          done: true,
+          color: "#000000",
+          createdAt: 1,
+        },
+      ],
+      workflowStateMappings: [
+        {
+          source: "azure_devops",
+          connectionId: "connection-1",
+          sourceStatusKey: "closed",
+          workflowStateId: "done",
+        },
+      ],
       workItems: [
         synced("parent", { importedPriority: 2, priority: 2 }),
         synced("follows", {
@@ -283,6 +300,72 @@ describe("settling with a change to the source", () => {
 
     expect(find(next, "a")?.pendingSourceWrite).toBeUndefined();
   });
+
+  it.each([
+    { connectorDone: false, mappedState: "done", expectedStatus: "archived" },
+    { connectorDone: true, mappedState: "review", expectedStatus: "settled" },
+    { connectorDone: true, mappedState: undefined, expectedStatus: "settled" },
+  ])(
+    "uses mapping $mappedState rather than connector Done $connectorDone for Settle",
+    ({ connectorDone, mappedState, expectedStatus }) => {
+      const before = createState({
+        workflowStates: [
+          { _id: "doing", name: "Doing", color: "#000000", createdAt: 1 },
+          { _id: "review", name: "Review", color: "#000000", createdAt: 1 },
+          {
+            _id: "done",
+            name: "Done",
+            done: true,
+            color: "#000000",
+            createdAt: 1,
+          },
+        ],
+        workflowStateMappings: mappedState
+          ? [
+              {
+                source: "azure_devops",
+                connectionId: "connection-1",
+                sourceStatusKey: "resolved",
+                workflowStateId: mappedState,
+              },
+            ]
+          : [],
+        workItems: [
+          synced("a", {
+            workflowStateId: "doing",
+            importedWorkflowStateId: "doing",
+          }),
+          item("child", { parentWorkItemId: "a", workflowStateId: "review" }),
+        ],
+      });
+      const next = settleBacklogItem(
+        before,
+        "a",
+        factories,
+        { state: { name: "Resolved", done: connectorDone } },
+        { includeSubitems: true },
+      );
+      expect(find(next, "a")).toMatchObject({
+        status: expectedStatus,
+        workflowStateId: mappedState,
+        importedWorkflowStateId: mappedState,
+      });
+      expect(find(next, "child")?.status).toBe(expectedStatus);
+      if (expectedStatus === "archived")
+        expect(find(next, "a")?.workflowStateIdBeforeClose).toBe("doing");
+      const failed = failSourceWrite(next, "a");
+      expect(find(failed, "a")).toMatchObject({
+        status: "active",
+        workflowStateId: "doing",
+        importedWorkflowStateId: "doing",
+        sourceStatusKey: "active",
+      });
+      expect(find(failed, "child")).toMatchObject({
+        status: "active",
+        workflowStateId: "review",
+      });
+    },
+  );
 });
 
 describe("sending a settle's write", () => {
