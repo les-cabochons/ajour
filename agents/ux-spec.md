@@ -118,7 +118,7 @@ Decided in [App shell and collapsible sidebar](https://github.com/les-cabochons/
 
 ### Desktop widths
 
-- The app sidebar has two states: expanded (200px, logo and labels) and a 52px icon rail (icons with tooltips). Time, Backlog and Projects sit at the top, and Settings at the bottom.
+- The app sidebar has two states: expanded (logo and labels, resizable, see the Backlog sidebar section for widths) and a 52px icon rail (icons with tooltips). Time, Backlog and Projects sit at the top, and Settings at the bottom.
 - The expanded sidebar lists backlog items below Time, Backlog and Projects. The rail does not. See the Backlog sidebar section.
 - Cmd+B (Ctrl+B on Windows) and a button next to the logo toggle it. The View menu gets "Show sidebar" or "Hide sidebar" once the menu bar exists. There is no second shortcut.
 - The state is saved per device. Below 1100px the sidebar collapses to the rail on its own, without changing the saved preference.
@@ -425,12 +425,32 @@ The sidebar works like the T3 Code sidebar: navigation at the top, then the work
 - Snoozed, settled and archived items leave the list.
 - The rail and the narrow view have no item list. The Backlog page is the way in.
 
+### Layout options
+
+Decided after the prototype on branch `prototype/backlog-sidebar`: variant B is the default, variant A is the compact layout, and variant C's Up next card is an option.
+
+- Density has two values. Comfortable is the default. Compact fits more items.
+- Show Up next is on by default. It works with both densities.
+- Both live in a "Sidebar" group in Settings > General and as View menu entries next to Show or Hide sidebar. They are saved per device.
+- The Snoozed and Settled sections are the same in every layout.
+
+### Width
+
+- Dragging the sidebar's edge resizes it from 200px to 400px.
+- The default width is 272px for Comfortable and 200px for Compact. It applies until the user drags the edge, or after a double-click on the edge resets it.
+- One dragged width is saved per device. Switching density keeps it.
+- Dragging the edge below 200px snaps the sidebar to the rail, as in VS Code. Dragging the rail's edge outward expands it again at the saved width.
+- The toggle button next to the logo stays visible in both states, so there is always a visible control to show the sidebar again. Cmd+B still toggles it.
+
 ### Rows
 
-- A row shows the type icon and the title. A subitem also shows its parent title in muted text, such as "Login page › Fix token refresh".
+- Comfortable: the type icon, the title on up to two lines, and a muted meta line with the external id ("Local" for a manual item), the source state and the remaining estimate, such as "#48213 · Active · 2.5h left". A subitem's meta line shows its parent instead, such as "↳ Login page".
+- Compact: one line with the type icon and the title. A subitem shows its parent after the title in muted text, such as "Fix token refresh · Login page". The title comes first because 200px leaves about 18 characters, and about 8 once the hover actions show.
+- In Comfortable, the hover actions float over the row's top right corner. In Compact, they replace the markers at the end of the line.
 - A marker shows on the item with the running entry.
 - A dot shows on a returned item. Opening the item from anywhere, or clicking the dot, clears it.
 - Clicking a row opens the backlog item page.
+- With Show Up next on, the first item of the list shows as a card above the others: type icon, external id, title, markers, and Start entry, Snooze and Settle buttons. Compact shows the buttons as icons only. The list below starts at the second item.
 - Hover and keyboard focus show Start entry, Snooze and Settle. The button always says Settle. Right-click and "…" open the full action set.
 
 ### Snoozed and Settled sections
@@ -489,7 +509,13 @@ Syncs move synced items between states:
 
 - The page lives at `/backlog/$itemId`. Clicking a row in the sidebar or on the Backlog page, or pressing Enter on it, opens it.
 - V1 shows only what Ajour stores: title, type and external id with Open in source, source state and backlog status, project and task mapping, priority, estimates with their sync state, note, parent and subitems, and the time entries logged on it.
-- The layout leaves room for fields not imported yet, such as assignee, iteration, area path, tags, acceptance criteria and comments. See [#71](https://github.com/les-cabochons/ajour/issues/71).
+- Layout, from the prototype: variant C's header over variant A's body.
+  - Header: the type icon in a square tile, the title, and a muted line with the external id (linked to the source), the source project and the source state. The actions sit on the right: Start entry, Snooze, Settle and "…", or Unsnooze, Unsettle or Restore depending on the state.
+  - A notice under the header when the item is snoozed, settled, archived or returned, such as "Settled today 7:51 p.m. · waiting in "Waiting for client"".
+  - Four tiles: Original, Remaining, Completed and Logged in Ajour. A tile shows the estimate's sync conflict when there is one.
+  - A progress bar: completed over original.
+  - Two columns below. The main column has the note, the subitems and the time entries. The right panel lists state, backlog status and priority, then project, task and source project.
+- The right panel leaves room for fields not imported yet, such as assignee, iteration, area path, tags, acceptance criteria and comments. See [#71](https://github.com/les-cabochons/ajour/issues/71).
 - The page is designed for Azure DevOps first, then Jira.
 - The page header has the "…" action menu. Edit opens the side panel over the page.
 
