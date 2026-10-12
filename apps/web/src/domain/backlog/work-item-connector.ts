@@ -218,7 +218,18 @@ function mergeConnectorWorkItem(
       ? undefined
       : existingWorkItem.archivedAt,
     archivedByMissingSync: false,
-    ...(changedSinceSettled(existingWorkItem, nextImportedState)
+    // Until a settle's write is sent, the source still shows the old values.
+    // The item keeps the settle's values, and the old ones don't return it.
+    ...(existingWorkItem.pendingSourceWrite
+      ? {
+          priority: existingWorkItem.priority,
+          importedPriority: existingWorkItem.importedPriority,
+          sourceStatusKey: existingWorkItem.sourceStatusKey,
+          sourceStatusLabel: existingWorkItem.sourceStatusLabel,
+        }
+      : {}),
+    ...(!existingWorkItem.pendingSourceWrite &&
+    changedSinceSettled(existingWorkItem, nextImportedState)
       ? {
           status: "active" as const,
           returnedAt: factories.now(),

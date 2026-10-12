@@ -1,6 +1,11 @@
 import type { BacklogItemActionId } from "@/domain/actions/object-actions";
 import { getDirectChildWorkItems } from "@/domain/backlog/work-item-hierarchy";
 import type { LocalWorkItem } from "@/domain/local-state";
+import { settleOpensDialog } from "@/features/backlog/backlog-source-writes";
+import {
+  requestSettle,
+  settleBacklogItemWithUndo,
+} from "@/features/backlog/settle-dialog";
 import { requestSnooze } from "@/features/backlog/snooze-picker";
 import { getWorkItemEntryValues } from "@/features/backlog/work-item-timer-comment";
 import { offerUndo } from "@/features/feedback/undo-toast";
@@ -49,13 +54,13 @@ export function runBacklogItemAction(
       localStore.unsnoozeWorkItem(workItem._id);
       return;
     case "settle":
-      offerUndo(localStore.settleWorkItem(workItem._id), {
-        title:
-          workItem.source === "manual"
-            ? "Backlog item archived"
-            : "Backlog item settled",
-        subject: "backlog item",
-      });
+      // A synced item whose connector can write asks first. Others settle
+      // locally at once.
+      if (settleOpensDialog(workItem)) {
+        requestSettle(workItem._id);
+      } else {
+        settleBacklogItemWithUndo(workItem);
+      }
       return;
     case "unsettle":
       localStore.unsettleWorkItem(workItem._id);

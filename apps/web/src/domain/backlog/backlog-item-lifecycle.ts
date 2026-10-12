@@ -1,4 +1,9 @@
-import type { LocalAppState, LocalWorkItem } from "@/domain/local-state";
+import { normalizeConnectorStatusKey } from "@ajour/shared";
+import type {
+  LocalAppState,
+  LocalPendingSourceWrite,
+  LocalWorkItem,
+} from "@/domain/local-state";
 import {
   getDirectChildWorkItems,
   getWorkItemLookupKeys,
@@ -13,10 +18,52 @@ import { saveTimer } from "@/domain/time/timer-transitions";
  * agents/ux-spec.md. Terms follow agents/GLOSSARY.md.
  */
 
+/** What the settle dialog or a settle rule asks to change in the source. */
+export interface BacklogSettleChange {
+  state?: { name: string; done: boolean };
+  priority?: number;
+}
+
+/** Keeps only the fields that differ from the item's source values. */
+function getSourceWrite(
+  workItem: LocalWorkItem,
+  change: BacklogSettleChange | undefined,
+): LocalPendingSourceWrite | undefined {
+  if (!change || workItem.source === "manual") return undefined;
+
+  const state =
+    change.state &&
+    normalizeConnectorStatusKey(change.state.name) !== workItem.sourceStatusKey
+      ? change.state.name
+      : undefined;
+  const priority =
+    change.priority !== undefined &&
+    change.priority !== workItem.importedPriority
+      ? change.priority
+      : undefined;
+  if (state === undefined && priority === undefined) return undefined;
+
+  return {
+    state,
+    priority,
+    previous: {
+      sourceStatusKey: workItem.sourceStatusKey,
+      sourceStatusLabel: workItem.sourceStatusLabel,
+      importedPriority: workItem.importedPriority,
+      priority: workItem.priority,
+    },
+  };
+}
+
 /**
  * Settles a backlog item. A manual item becomes archived. A synced item becomes
  * settled and remembers its source state and priority, so a later sync can tell
  * when someone changed it in the source.
+ *
+ * `change` sets a new state, priority or both in the source. Only the fields
+ * that differ are kept, as a pending write that is sent after the Undo window.
+ * The item shows the new values at once. A state in a done category archives
+ * the item instead.
  *
  * Active subitems without their own priority follow their parent. Subitems with
  * their own priority keep their own state. A running entry on a settled item is
@@ -26,6 +73,7 @@ export function settleBacklogItem(
   state: LocalAppState,
   workItemId: string,
   factories: WorkItemFactories,
+  change?: BacklogSettleChange,
 ): LocalAppState {
   const target = state.workItems.find(
     (workItem) => workItem._id === workItemId,
@@ -33,6 +81,11 @@ export function settleBacklogItem(
   if (!target || target.status !== "active") {
     return state;
   }
+
+  const sourceWrite = getSourceWrite(target, change);
+  const archives =
+    target.source === "manual" ||
+    (sourceWrite?.state !== undefined && change?.state?.done === true);
 
   const now = factories.now();
   const carriedIds = new Set(
@@ -51,7 +104,7 @@ export function settleBacklogItem(
     );
   // A snooze ends with the settle, so the item never comes back as returned.
   const settle = (workItem: LocalWorkItem): LocalWorkItem =>
-    target.source === "manual"
+    archives
       ? {
           ...workItem,
           status: "archived",
@@ -73,7 +126,9 @@ export function settleBacklogItem(
     ...saved,
     workItems: saved.workItems.map((workItem) => {
       if (workItem._id === workItemId) {
-        return settle(workItem);
+        return settle(
+          sourceWrite ? withSourceWrite(workItem, sourceWrite) : workItem,
+        );
       }
 
       return carriedIds.has(workItem._id)
@@ -81,6 +136,80 @@ export function settleBacklogItem(
         : workItem;
     }),
   };
+}
+
+/** Shows the pending write's values on the item until the write is sent. */
+function withSourceWrite(
+  workItem: LocalWorkItem,
+  sourceWrite: LocalPendingSourceWrite,
+): LocalWorkItem {
+  const followsImportedPriority =
+    workItem.priority === workItem.importedPriority;
+  return {
+    ...workItem,
+    pendingSourceWrite: sourceWrite,
+    ...(sourceWrite.state !== undefined
+      ? {
+          sourceStatusKey: normalizeConnectorStatusKey(sourceWrite.state),
+          sourceStatusLabel: sourceWrite.state,
+        }
+      : {}),
+    ...(sourceWrite.priority !== undefined
+      ? {
+          importedPriority: sourceWrite.priority,
+          priority: followsImportedPriority
+            ? sourceWrite.priority
+            : workItem.priority,
+        }
+      : {}),
+  };
+}
+
+/** The write was sent. The item keeps the values the settle gave it. */
+export function completeSourceWrite(
+  state: LocalAppState,
+  workItemId: string,
+): LocalAppState {
+  const target = state.workItems.find(
+    (workItem) => workItem._id === workItemId,
+  );
+  if (!target?.pendingSourceWrite) {
+    return state;
+  }
+
+  return updateOne(state, workItemId, (workItem) => ({
+    ...workItem,
+    pendingSourceWrite: undefined,
+  }));
+}
+
+/**
+ * The write failed. The item takes back its source values and returns to
+ * active, with the subitems its settle carried, from settled or archived.
+ */
+export function failSourceWrite(
+  state: LocalAppState,
+  workItemId: string,
+): LocalAppState {
+  const target = state.workItems.find(
+    (workItem) => workItem._id === workItemId,
+  );
+  const sourceWrite = target?.pendingSourceWrite;
+  if (!target || !sourceWrite) {
+    return state;
+  }
+
+  const restored = updateOne(state, workItemId, (workItem) => ({
+    ...workItem,
+    pendingSourceWrite: undefined,
+    sourceStatusKey: sourceWrite.previous.sourceStatusKey,
+    sourceStatusLabel: sourceWrite.previous.sourceStatusLabel,
+    importedPriority: sourceWrite.previous.importedPriority,
+    priority: sourceWrite.previous.priority,
+  }));
+  return target.status === "active"
+    ? restored
+    : reactivate(restored, workItemId, target.status);
 }
 
 /**

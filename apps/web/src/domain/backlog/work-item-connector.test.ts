@@ -446,6 +446,34 @@ describe("connector sync of settled items", () => {
     ).toMatchObject({ status: "active" });
   });
 
+  it("keeps a settle's values while its write waits, without returning the item", () => {
+    const imported = importConnectorWorkItems(
+      createState(),
+      [createCandidate()],
+      undefined,
+      factories,
+    ).state;
+    const settled = settleBacklogItem(imported, "work-item-1", factories, {
+      state: { name: "Waiting", done: false },
+      priority: 1,
+    });
+
+    const refreshed = importConnectorWorkItems(
+      settled,
+      [createCandidate({ title: "Renamed in the source" })],
+      undefined,
+      factories,
+    ).state;
+
+    expect(refreshed.workItems[0]).toMatchObject({
+      status: "settled",
+      title: "Renamed in the source",
+      sourceStatusLabel: "Waiting",
+      importedPriority: 1,
+      pendingSourceWrite: { state: "Waiting", priority: 1 },
+    });
+  });
+
   it("keeps a settled item settled when nothing changed in the source", () => {
     const refreshed = importConnectorWorkItems(
       importAndSettle(),

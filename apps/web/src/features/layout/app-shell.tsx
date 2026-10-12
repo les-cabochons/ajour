@@ -53,6 +53,8 @@ import {
 } from "@/lib/timer-totals";
 import { useAppSidebar } from "@/lib/app-sidebar";
 import { resolveSidebarWidth, useSidebarLayout } from "@/lib/sidebar-layout";
+import { sendPendingSourceWrites } from "@/features/backlog/backlog-source-writes";
+import { SettleDialogHost } from "@/features/backlog/settle-dialog";
 import { SnoozePickerHost } from "@/features/backlog/snooze-picker";
 import { useShortcut } from "@/lib/shortcut-handlers";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
@@ -152,6 +154,18 @@ function CompactTimeDatePicker({
  * one error toast. A due connection retries on every poll, so the same failure
  * again shows nothing new until the connection syncs or fails differently.
  */
+/**
+ * Sends the settle writes left from a session that quit during their Undo
+ * window (ADR 0001). There is no offline queue beyond that: a write that fails
+ * here puts its item back to active.
+ */
+function PendingSourceWritesFlush() {
+  useEffect(() => {
+    void sendPendingSourceWrites();
+  }, []);
+  return null;
+}
+
 function ConnectorAutoSyncScheduler() {
   const loopStateRef = useRef({
     cancelled: false,
@@ -594,9 +608,11 @@ export function AppShell() {
       )}
     >
       <ConnectorAutoSyncScheduler />
+      <PendingSourceWritesFlush />
       <ShortcutOverlay />
       <CommandPalette />
       <SnoozePickerHost />
+      <SettleDialogHost />
       {/* useAppSidebar owns the state, persistence and Cmd/Ctrl+B, so the
           provider is controlled and its own shortcut stays off. */}
       <SidebarProvider

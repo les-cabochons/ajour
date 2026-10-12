@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { LocalAppState, LocalWorkItem } from "@/domain/local-state";
 import {
   archiveBacklogItem,
+  completeSourceWrite,
+  failSourceWrite,
   isBacklogItemReturned,
   isBacklogItemSnoozed,
   markBacklogItemOpened,
@@ -171,6 +173,167 @@ describe("settling a backlog item", () => {
     expect(next.timesheetEntries).toEqual([
       expect.objectContaining({ workItemId: "a", durationMs: 600 }),
     ]);
+  });
+});
+
+describe("settling with a change to the source", () => {
+  const state = () =>
+    createState({
+      workItems: [
+        synced("parent", { importedPriority: 2, priority: 2 }),
+        synced("follows", {
+          parentSourceId: "source-parent",
+          hierarchyLevel: 1,
+        }),
+      ],
+    });
+
+  it("shows the new state and priority at once and keeps a pending write", () => {
+    const next = settleBacklogItem(state(), "parent", factories, {
+      state: { name: "Waiting for client", done: false },
+      priority: 1,
+    });
+
+    expect(find(next, "parent")).toMatchObject({
+      status: "settled",
+      sourceStatusKey: "waiting for client",
+      sourceStatusLabel: "Waiting for client",
+      importedPriority: 1,
+      priority: 1,
+      settledSourceStatusKey: "waiting for client",
+      settledImportedPriority: 1,
+      pendingSourceWrite: {
+        state: "Waiting for client",
+        priority: 1,
+        previous: {
+          sourceStatusKey: "active",
+          sourceStatusLabel: "Active",
+          importedPriority: 2,
+          priority: 2,
+        },
+      },
+    });
+  });
+
+  it("keeps only the fields that changed, and nothing to write stays local", () => {
+    const onlyPriority = settleBacklogItem(state(), "parent", factories, {
+      state: { name: "ACTIVE", done: false },
+      priority: 3,
+    });
+    expect(find(onlyPriority, "parent")?.pendingSourceWrite).toMatchObject({
+      state: undefined,
+      priority: 3,
+    });
+
+    const unchanged = settleBacklogItem(state(), "parent", factories, {
+      state: { name: "Active", done: false },
+      priority: 2,
+    });
+    expect(find(unchanged, "parent")).toMatchObject({ status: "settled" });
+    expect(find(unchanged, "parent")?.pendingSourceWrite).toBeUndefined();
+  });
+
+  it("keeps a local priority the user set, while writing the new one to the source", () => {
+    const next = settleBacklogItem(
+      createState({
+        workItems: [synced("a", { importedPriority: 2, priority: 5 })],
+      }),
+      "a",
+      factories,
+      { priority: 1 },
+    );
+
+    expect(find(next, "a")).toMatchObject({ importedPriority: 1, priority: 5 });
+  });
+
+  it("archives the item and its carried subitems when the state is done", () => {
+    const next = settleBacklogItem(state(), "parent", factories, {
+      state: { name: "Closed", done: true },
+    });
+
+    expect(find(next, "parent")).toMatchObject({
+      status: "archived",
+      sourceStatusLabel: "Closed",
+      pendingSourceWrite: { state: "Closed" },
+    });
+    expect(find(next, "follows")?.status).toBe("archived");
+  });
+
+  it("ignores the change on a manual item", () => {
+    const next = settleBacklogItem(
+      createState({ workItems: [item("a")] }),
+      "a",
+      factories,
+      { priority: 1 },
+    );
+
+    expect(find(next, "a")?.pendingSourceWrite).toBeUndefined();
+  });
+});
+
+describe("sending a settle's write", () => {
+  const settled = () =>
+    settleBacklogItem(
+      createState({
+        workItems: [
+          synced("parent", { importedPriority: 2, priority: 2 }),
+          synced("follows", {
+            parentSourceId: "source-parent",
+            hierarchyLevel: 1,
+          }),
+        ],
+      }),
+      "parent",
+      factories,
+      { state: { name: "Waiting", done: false }, priority: 1 },
+    );
+
+  it("keeps the settle's values once the write is sent", () => {
+    const next = completeSourceWrite(settled(), "parent");
+
+    expect(find(next, "parent")).toMatchObject({
+      status: "settled",
+      sourceStatusLabel: "Waiting",
+      importedPriority: 1,
+    });
+    expect(find(next, "parent")?.pendingSourceWrite).toBeUndefined();
+  });
+
+  it("puts the item and its carried subitems back to active with their old values when the write fails", () => {
+    const next = failSourceWrite(settled(), "parent");
+
+    expect(find(next, "parent")).toMatchObject({
+      status: "active",
+      sourceStatusKey: "active",
+      sourceStatusLabel: "Active",
+      importedPriority: 2,
+      priority: 2,
+      settledAt: undefined,
+    });
+    expect(find(next, "parent")?.pendingSourceWrite).toBeUndefined();
+    expect(find(next, "follows")?.status).toBe("active");
+  });
+
+  it("brings back an item a done state archived when the write fails", () => {
+    const archived = settleBacklogItem(
+      createState({ workItems: [synced("a")] }),
+      "a",
+      factories,
+      { state: { name: "Closed", done: true } },
+    );
+
+    expect(find(failSourceWrite(archived, "a"), "a")).toMatchObject({
+      status: "active",
+      archivedAt: undefined,
+      sourceStatusLabel: "Active",
+    });
+  });
+
+  it("changes nothing for an item without a pending write", () => {
+    const state = createState({ workItems: [synced("a")] });
+
+    expect(completeSourceWrite(state, "a")).toBe(state);
+    expect(failSourceWrite(state, "a")).toBe(state);
   });
 });
 
