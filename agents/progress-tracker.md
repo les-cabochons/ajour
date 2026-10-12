@@ -257,6 +257,13 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] The foundation passes 710 unit tests, workspace typecheck and three Chromium confirmation scenarios.
 - [ ] Carry the fixes through the stack, verify the final heads and request fresh reviews.
 
+### Peek Start disabled reason, 2026-10-12
+
+- [x] Peek Start exposes the shared action's disabled reason in its tooltip and accessible description, while remaining focusable with `aria-disabled` and guarded activation.
+- [x] The running-entry Chromium regression covers hover and keyboard tooltip access, ignored mouse/Enter/Space activation, timer identity across reopening, another item's enabled Start, and the cleared reason after Stop.
+- [x] All 812 unit tests and 84 Chromium scenarios pass, along with workspace typecheck, production build and formatting.
+- [ ] Fresh Codex review is pending. Merging remains owned by the integration thread.
+
 ### Drag eligibility and sorted list scrolling, 2026-10-12
 
 - [x] The shared drag module determines whether an item can reorder with a peer or move to another reachable group in its lane. Rendering and pointer startup use the same rule, and ordering changes cancel an active drag.

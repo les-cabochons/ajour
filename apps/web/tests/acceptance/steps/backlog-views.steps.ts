@@ -187,12 +187,27 @@ When("I start an entry from the Backlog peek", async ({ page }) => {
   });
 });
 Then("the parent peek cannot restart its running entry", async ({ page }) => {
-  await expect(
-    page
-      .getByRole("complementary", { name: "Backlog item peek" })
-      .getByRole("button", { name: "Start entry", exact: true }),
-  ).toBeDisabled();
   const peek = page.getByRole("complementary", { name: "Backlog item peek" });
+  const start = peek.getByRole("button", { name: "Start entry", exact: true });
+  await expect(start).toBeDisabled();
+  await expect(start).toHaveAccessibleDescription("Already running");
+  await peek.getByRole("button", { name: "Open page", exact: true }).hover();
+  await start.hover();
+  await expect(
+    page.locator('[data-slot="tooltip-content"][data-open]'),
+  ).toHaveText("Start entry. Already running");
+  await start.focus();
+  await page.keyboard.press("Tab");
+  await page.keyboard.press("Shift+Tab");
+  await expect(start).toBeFocused();
+  await expect(
+    page.locator('[data-slot="tooltip-content"][data-open]'),
+  ).toHaveText("Start entry. Already running");
+  await start.click({ force: true });
+  await start.focus();
+  await page.keyboard.press("Enter");
+  await page.keyboard.press("Space");
+  await page.keyboard.press("Tab");
   await peek
     .getByRole("button", { name: "Actions for Backlog parent", exact: true })
     .click();
@@ -232,6 +247,11 @@ Then("the other peek can start an entry", async ({ page }) => {
       .getByRole("complementary", { name: "Backlog item peek" })
       .getByRole("button", { name: "Start entry", exact: true }),
   ).toBeEnabled();
+  await expect(
+    page
+      .getByRole("complementary", { name: "Backlog item peek" })
+      .getByRole("button", { name: "Start entry", exact: true }),
+  ).toHaveAccessibleDescription("");
   await page
     .getByRole("complementary", { name: "Backlog item peek" })
     .getByRole("button", {
@@ -262,6 +282,11 @@ Then("the parent peek can start a new entry after Stop", async ({ page }) => {
     .getByRole("complementary", { name: "Backlog item peek" })
     .getByRole("button", { name: "Start entry", exact: true });
   await expect(start).toBeEnabled();
+  await expect(start).toHaveAccessibleDescription("");
+  await start.hover();
+  await expect(
+    page.locator('[data-slot="tooltip-content"][data-open]'),
+  ).toHaveText("Start entry");
   await page
     .getByRole("complementary", { name: "Backlog item peek" })
     .getByRole("button", { name: "Actions for Backlog parent", exact: true })

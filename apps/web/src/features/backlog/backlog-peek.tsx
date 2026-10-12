@@ -92,14 +92,23 @@ export function BacklogPeek({
         <h2 className="text-base leading-6 font-semibold">{item.title}</h2>
         <div className="flex flex-wrap gap-2">
           {item.status !== "archived" && (
-            <Button
-              size="sm"
-              disabled={Boolean(startAction?.disabledReason)}
-              onClick={() => onAction("start-entry")}
+            <TooltipButton
+              label={
+                startAction?.disabledReason
+                  ? `Start entry. ${startAction.disabledReason}`
+                  : "Start entry"
+              }
+              aria-label="Start entry"
+              aria-description={startAction?.disabledReason}
+              aria-disabled={Boolean(startAction?.disabledReason)}
+              render={<Button size="sm" className="aria-disabled:opacity-50" />}
+              onClick={() => {
+                if (!startAction?.disabledReason) onAction("start-entry");
+              }}
             >
               <RiPlayLine className="size-4" />
               Start entry
-            </Button>
+            </TooltipButton>
           )}
           <Button variant="outline" size="sm" onClick={onOpen}>
             <RiExternalLinkLine className="size-4" />
