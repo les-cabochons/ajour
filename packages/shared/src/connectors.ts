@@ -144,6 +144,8 @@ export type ConnectorPriorityScale = z.infer<
  * What a plugin provides. A plugin declares at least one capability, and its
  * connections serve all of them. A connector without `settle` keeps working:
  * Ajour settles its items locally, with no write. See ADR 0001 and ADR 0003.
+ * A connector's `priorityScale` supplies default source ranges for Ajour's
+ * levels. Without it, source values 1 to 4 map to Urgent, High, Medium and Low.
  */
 export const connectorPluginCapabilitiesSchema = z
   .object({

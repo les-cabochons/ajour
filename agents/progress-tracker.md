@@ -164,6 +164,7 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
       installed Ajour process owns port 8787, health passes, and Azure DevOps
       version 1.0.0-main.8.4229e5a appears in installed plugin discovery.
 - [ ] Merge the fix and deliver it through the normal desktop release process.
+
 ## Connector review follow-up, 2026-10-12
 
 - [x] Done-item, missing-item and ordinary sync processing preserve pending source writes and children carried by a parent reopen, so Undo can cancel the move.

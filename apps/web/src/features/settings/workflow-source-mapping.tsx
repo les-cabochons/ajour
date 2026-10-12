@@ -152,7 +152,7 @@ function canListStates(source: string) {
   const group = getCachedConnectorsOverview()?.connectionGroups.find(
     (candidate) => candidate.plugin.id === source,
   );
-  return Boolean(group?.enabled && group.plugin.capabilities?.settle);
+  return Boolean(group?.enabled && group.plugin.capabilities.connector?.settle);
 }
 
 function SourceProjectMapping({

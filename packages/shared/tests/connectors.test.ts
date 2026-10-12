@@ -81,14 +81,16 @@ describe("connector plugin manifest", () => {
   it("accepts a priority scale with ranges for Ajour's levels", () => {
     const manifest = connectorPluginManifestSchema.parse({
       ...validManifest,
-      capabilities: { connector: {
-        settle: true,
-        priorityScale: {
-          urgent: { min: 1, max: 1 },
-          high: { min: 2, max: 2 },
-          low: { min: 3, max: 9 },
+      capabilities: {
+        connector: {
+          settle: true,
+          priorityScale: {
+            urgent: { min: 1, max: 1 },
+            high: { min: 2, max: 2 },
+            low: { min: 3, max: 9 },
+          },
         },
-      } },
+      },
     });
     expect(manifest.capabilities.connector?.priorityScale?.low).toEqual({
       min: 3,
