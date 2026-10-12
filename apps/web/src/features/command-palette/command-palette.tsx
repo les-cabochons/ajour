@@ -258,14 +258,22 @@ export function CommandPalette() {
           (item) => item._id === command.workItemId,
         );
         if (!workItem) return;
-        // Edit and Add subitem open the editor on the item's page.
-        runBacklogItemAction(workItem, command.actionId, (hosted) =>
-          navigate({
+        // Edit and Add subitem open an editor: on the Backlog page when it is
+        // open, which guards its draft, otherwise on the item's page.
+        runBacklogItemAction(workItem, command.actionId, (hosted) => {
+          if (router.state.location.pathname === "/backlog") {
+            requestPageAction("/backlog", {
+              action: hosted,
+              target: workItem._id,
+            });
+            return;
+          }
+          void navigate({
             to: "/backlog/$itemId",
             params: { itemId: workItem._id },
             search: { action: hosted } as never,
-          }),
-        );
+          });
+        });
         return;
       }
       case "reorder":

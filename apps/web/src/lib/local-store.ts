@@ -21,6 +21,7 @@ import {
   type BacklogStatusMappingInput,
 } from "@/domain/backlog/backlog-status";
 import {
+  archiveBacklogItem as applyArchiveBacklogItem,
   markBacklogItemOpened as applyMarkBacklogItemOpened,
   restoreBacklogItem as applyRestoreBacklogItem,
   settleBacklogItem as applySettleBacklogItem,
@@ -37,7 +38,6 @@ import {
   normalizePersistedWorkItem,
   reorderWorkItems as applyReorderWorkItems,
   setBacklogSortMode as applyBacklogSortMode,
-  setWorkItemStatus as applyWorkItemStatus,
   updateWorkItem as applyUpdateWorkItem,
 } from "@/domain/backlog/work-item-transitions";
 import {
@@ -1167,11 +1167,6 @@ export const localStore = {
   ) {
     updateState((state) => applyUpdateWorkItem(state, workItemId, patch));
   },
-  setWorkItemStatus(workItemId: string, status: LocalWorkItem["status"]) {
-    updateState((state) =>
-      applyWorkItemStatus(state, workItemId, status, Date.now),
-    );
-  },
   /** Restores an archived backlog item, with the subitems its settle carried. */
   restoreWorkItem(workItemId: string) {
     updateState((state) => applyRestoreBacklogItem(state, workItemId));
@@ -1208,7 +1203,7 @@ export const localStore = {
   /** Archives a backlog item. Returns an undo token, or null when nothing changed. */
   archiveWorkItem(workItemId: string) {
     return updateStateWithUndo((state) =>
-      applyWorkItemStatus(state, workItemId, "archived", Date.now),
+      applyArchiveBacklogItem(state, workItemId, { createId, now: Date.now }),
     );
   },
   /**

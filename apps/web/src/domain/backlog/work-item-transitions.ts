@@ -493,30 +493,6 @@ export function updateWorkItem(
   return { ...state, workItems };
 }
 
-export function setWorkItemStatus(
-  state: LocalAppState,
-  workItemId: string,
-  status: LocalWorkItem["status"],
-  now: () => number,
-): LocalAppState {
-  return {
-    ...state,
-    workItems: state.workItems.map((workItem) =>
-      workItem._id === workItemId
-        ? {
-            ...workItem,
-            status,
-            archivedAt:
-              status === "archived"
-                ? (workItem.archivedAt ?? now())
-                : undefined,
-            archivedByMissingSync: false,
-          }
-        : workItem,
-    ),
-  };
-}
-
 export function deleteWorkItem(
   state: LocalAppState,
   workItemId: string,

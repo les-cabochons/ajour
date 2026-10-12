@@ -183,22 +183,22 @@ function Markers({
           role="img"
           aria-label="Running entry"
         >
-          <span className="absolute inline-flex size-full animate-ping rounded-full bg-emerald-500 opacity-60 motion-reduce:hidden" />
-          <span className="relative inline-flex size-2 rounded-full bg-emerald-500" />
+          <span className="absolute inline-flex size-full animate-ping rounded-full bg-[var(--success)] opacity-60 motion-reduce:hidden" />
+          <span className="relative inline-flex size-2 rounded-full bg-[var(--success)]" />
         </span>
       ) : null}
       {isReturned ? (
-        <button
-          type="button"
-          className="flex size-4 shrink-0 items-center justify-center"
+        <TooltipButton
+          label="Returned. Click to clear"
           aria-label={`Clear the returned mark on ${workItem.title}`}
+          className="flex size-4 shrink-0 items-center justify-center"
           onClick={(event) => {
             event.stopPropagation();
             localStore.markWorkItemOpened(workItem._id);
           }}
         >
-          <span className="size-2 rounded-full bg-sky-500" />
-        </button>
+          <span className="size-2 rounded-full bg-foreground" />
+        </TooltipButton>
       ) : null}
     </>
   );
@@ -237,6 +237,7 @@ function BacklogItemRow({
           role="link"
           tabIndex={0}
           data-focus-column="0"
+          data-backlog-item-id={workItem._id}
           aria-current={isActive ? "page" : undefined}
           title={parentTitle ? `${workItem.title} · ${parentTitle}` : undefined}
           className={cn(
@@ -340,6 +341,7 @@ function UpNextCard({
           role="link"
           tabIndex={0}
           data-focus-column="0"
+          data-backlog-item-id={workItem._id}
           aria-current={isActive ? "page" : undefined}
           aria-label={`Up next: ${workItem.title}`}
           className={cn(
@@ -428,15 +430,12 @@ function SectionHeader({
       type="button"
       aria-expanded={open}
       onClick={onToggle}
-      className="flex w-full items-center gap-1 px-2 pt-3 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase hover:text-foreground"
+      className="flex w-full items-center gap-1 px-2 pt-3 pb-1 text-[11px] font-medium text-muted-foreground uppercase hover:text-foreground"
     >
       <ChevronDown
         className={cn("size-3.5 transition-transform", !open && "-rotate-90")}
       />
-      {label}
-      {count !== undefined ? (
-        <span className="ml-auto font-normal">{count}</span>
-      ) : null}
+      {count !== undefined ? `${label} (${count})` : label}
     </button>
   );
 }
@@ -461,6 +460,7 @@ function OffListRow({
       role="link"
       tabIndex={0}
       data-focus-column="0"
+      data-backlog-item-id={workItem._id}
       className="group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-[13px] text-muted-foreground outline-none hover:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring"
       onClick={() => rows.open(workItem)}
       onKeyDown={(event) => {
@@ -592,7 +592,7 @@ export function SidebarBacklogList({ pathname }: { pathname: string }) {
     >
       {upNext ? (
         <>
-          <div className="px-2 pt-3 pb-1 text-[11px] font-medium tracking-wide text-muted-foreground uppercase">
+          <div className="px-2 pt-3 pb-1 text-[11px] font-medium text-muted-foreground uppercase">
             Up next
           </div>
           <UpNextCard {...rowProps(upNext)} />

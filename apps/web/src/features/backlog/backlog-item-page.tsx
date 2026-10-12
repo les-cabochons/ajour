@@ -27,6 +27,8 @@ import {
 } from "@/domain/backlog/backlog-item-lifecycle";
 import {
   getDirectChildWorkItems,
+  getWorkItemLookupKeys,
+  getWorkItemParentKey,
   isSubtaskWorkItem,
 } from "@/domain/backlog/work-item-hierarchy";
 import {
@@ -106,9 +108,15 @@ function stateNotice(workItem: LocalWorkItem, now: number) {
     return `Snoozed until ${formatSnoozeTime(workItem.snoozedUntil!, now)}`;
   }
   if (workItem.status === "settled") {
-    return workItem.sourceStatusLabel
-      ? `Settled · waiting in "${workItem.sourceStatusLabel}"`
+    const settled = workItem.settledAt
+      ? `Settled ${formatSnoozeTime(workItem.settledAt, now).replace(
+          /^(Today|Tomorrow)/,
+          (word) => word.toLowerCase(),
+        )}`
       : "Settled";
+    return workItem.sourceStatusLabel
+      ? `${settled} · waiting in "${workItem.sourceStatusLabel}"`
+      : settled;
   }
   if (workItem.status === "archived") {
     return "Archived";
@@ -199,12 +207,10 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
     isSnoozed,
     subitemCount: isSubitem ? 0 : subitems.length,
   });
-  const parent = isSubitem
-    ? state.workItems.find(
-        (candidate) =>
-          candidate._id === item.parentWorkItemId ||
-          (Boolean(item.parentSourceId) &&
-            candidate.sourceId === item.parentSourceId),
+  const parentKey = getWorkItemParentKey(item);
+  const parent = parentKey
+    ? state.workItems.find((candidate) =>
+        getWorkItemLookupKeys(candidate).includes(parentKey),
       )
     : undefined;
   const project = state.projects.find((entry) => entry._id === item.projectId);
@@ -296,6 +302,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
           ref={focusRef}
           tabIndex={-1}
           data-focus-column="0"
+          data-backlog-item-id={item._id}
           className="mx-auto flex w-full max-w-5xl flex-col gap-4 p-6 outline-none"
           aria-label={item.title}
           onKeyDown={(event) =>
@@ -312,9 +319,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                 <WorkItemIcon icon={resolveWorkItemIcon(item, iconData)} />
               </div>
               <div className="min-w-0">
-                <h1 className="text-xl font-semibold tracking-tight">
-                  {item.title}
-                </h1>
+                <h1 className="text-xl font-semibold">{item.title}</h1>
                 <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[12px] text-muted-foreground">
                   {reference ? (
                     item.sourceUrl ? (
@@ -378,7 +383,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                   <div className="mt-1 flex items-baseline gap-1.5 text-lg font-semibold tabular-nums">
                     {formatHours(item[tile.key])}
                     {fieldState?.conflict ? (
-                      <span className="text-[11px] font-normal text-amber-600">
+                      <span className="text-[11px] font-normal text-[var(--danger)]">
                         Conflict
                       </span>
                     ) : null}
@@ -404,7 +409,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
             aria-valuemax={100}
           >
             <div
-              className="h-full bg-emerald-500"
+              className="h-full bg-[var(--success)]"
               style={{ width: `${progress * 100}%` }}
             />
           </div>

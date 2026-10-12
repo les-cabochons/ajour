@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LocalAppState, LocalWorkItem } from "@/domain/local-state";
 import {
+  archiveBacklogItem,
   isBacklogItemReturned,
   isBacklogItemSnoozed,
   markBacklogItemOpened,
@@ -170,6 +171,48 @@ describe("settling a backlog item", () => {
     expect(next.timesheetEntries).toEqual([
       expect.objectContaining({ workItemId: "a", durationMs: 600 }),
     ]);
+  });
+});
+
+describe("settling a snoozed item", () => {
+  it("drops the snooze, so the item never comes back as returned", () => {
+    const snoozed = snoozeBacklogItem(
+      createState({ workItems: [synced("a")] }),
+      "a",
+      5_000,
+    );
+
+    const next = unsettleBacklogItem(
+      settleBacklogItem(snoozed, "a", factories),
+      "a",
+    );
+
+    expect(isBacklogItemReturned(find(next, "a")!, 6_000)).toBe(false);
+  });
+});
+
+describe("archiving a settled backlog item", () => {
+  it("archives the subitems its settle carried, and Restore brings them back", () => {
+    const settled = settleBacklogItem(
+      createState({
+        workItems: [
+          synced("parent"),
+          synced("follows", {
+            parentSourceId: "source-parent",
+            hierarchyLevel: 1,
+          }),
+        ],
+      }),
+      "parent",
+      factories,
+    );
+
+    const archived = archiveBacklogItem(settled, "parent", factories);
+
+    expect(find(archived, "follows")?.status).toBe("archived");
+    expect(
+      find(restoreBacklogItem(archived, "parent"), "follows")?.status,
+    ).toBe("active");
   });
 });
 

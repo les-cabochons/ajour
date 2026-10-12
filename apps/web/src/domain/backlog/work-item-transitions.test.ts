@@ -7,9 +7,9 @@ import {
   dismissEstimateIssue,
   keepLocalEstimateConflict,
   normalizePersistedWorkItem,
-  setWorkItemStatus,
   updateWorkItem,
 } from "@/domain/backlog/work-item-transitions";
+import { archiveBacklogItem } from "@/domain/backlog/backlog-item-lifecycle";
 
 function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
   return {
@@ -253,12 +253,10 @@ describe("work item transitions", () => {
       },
       factories,
     );
-    const archived = setWorkItemStatus(
-      child.state,
-      parent.result,
-      "archived",
-      () => 500,
-    );
+    const archived = archiveBacklogItem(child.state, parent.result, {
+      createId: factories.createId,
+      now: () => 500,
+    });
     const deleted = deleteWorkItem(archived, parent.result);
 
     expect(

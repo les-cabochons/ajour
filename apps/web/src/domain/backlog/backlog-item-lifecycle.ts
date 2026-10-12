@@ -49,15 +49,24 @@ export function settleBacklogItem(
       (current, timer) => saveTimer(current, timer._id, factories),
       state,
     );
+  // A snooze ends with the settle, so the item never comes back as returned.
   const settle = (workItem: LocalWorkItem): LocalWorkItem =>
     target.source === "manual"
-      ? { ...workItem, status: "archived", archivedAt: now }
+      ? {
+          ...workItem,
+          status: "archived",
+          archivedAt: now,
+          snoozedUntil: undefined,
+          returnedAt: undefined,
+        }
       : {
           ...workItem,
           status: "settled",
           settledAt: now,
           settledSourceStatusKey: workItem.sourceStatusKey,
           settledImportedPriority: workItem.importedPriority,
+          snoozedUntil: undefined,
+          returnedAt: undefined,
         };
 
   return {
@@ -71,6 +80,42 @@ export function settleBacklogItem(
         ? { ...settle(workItem), settledWithParentId: workItemId }
         : workItem;
     }),
+  };
+}
+
+/**
+ * Archives an item in Ajour without touching its source. A settled item takes
+ * the subitems its settle carried, so Restore brings them back together.
+ */
+export function archiveBacklogItem(
+  state: LocalAppState,
+  workItemId: string,
+  factories: WorkItemFactories,
+): LocalAppState {
+  const target = state.workItems.find(
+    (workItem) => workItem._id === workItemId,
+  );
+  if (!target || target.status === "archived") {
+    return state;
+  }
+
+  const now = factories.now();
+  return {
+    ...state,
+    workItems: state.workItems.map((workItem) =>
+      workItem._id === workItemId ||
+      (workItem.settledWithParentId === workItemId &&
+        workItem.status === "settled")
+        ? {
+            ...workItem,
+            status: "archived",
+            archivedAt: now,
+            archivedByMissingSync: false,
+            snoozedUntil: undefined,
+            returnedAt: undefined,
+          }
+        : workItem,
+    ),
   };
 }
 

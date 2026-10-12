@@ -39,7 +39,8 @@ Use this file as the local index for important library choices. Check official d
 - Backlog status normalization, CRUD transitions, and connector mapping reconciliation: `apps/web/src/domain/backlog/backlog-status.ts`
 - Work-item hierarchy lookup, validation, and inherited mapping rules: `apps/web/src/domain/backlog/work-item-hierarchy.ts`
 - Work-item estimate normalization, display values, reversible logged-time adjustments, overrun tracking, and imported baselines: `apps/web/src/domain/backlog/work-item-estimates.ts`
-- Manual work-item lifecycle, hierarchy-aware edits, ordering, status, deletion, and estimate-conflict decisions: `apps/web/src/domain/backlog/work-item-transitions.ts`
+- Manual work-item creation, hierarchy-aware edits, ordering, deletion, and estimate-conflict decisions: `apps/web/src/domain/backlog/work-item-transitions.ts`
+- Backlog item status (settle, unsettle, archive, restore), snooze, the Returned mark and the sidebar's item order: `apps/web/src/domain/backlog/backlog-item-lifecycle.ts`
 - Connector work-item identity, local-decision-preserving merge, missing-item archive provenance, and estimate-sync updates: `apps/web/src/domain/backlog/work-item-connector.ts`
 - Clock and decimal-hours formatting and hours-input parsing: `apps/web/src/domain/time/duration.ts`
 - Timesheet entry creation, editing, deletion, ordering, submission state, and linked estimate adjustments: `apps/web/src/domain/time/timesheet-entry.ts`
