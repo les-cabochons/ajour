@@ -195,7 +195,8 @@ export function orderBacklogItems(
         );
       case "priority_desc":
         return (
-          (right.priority ?? 0) - (left.priority ?? 0) || custom(left, right)
+          missingLast(right.priority) - missingLast(left.priority) ||
+          custom(left, right)
         );
       case "created":
         return right.createdAt - left.createdAt || custom(left, right);

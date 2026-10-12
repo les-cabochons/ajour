@@ -123,6 +123,11 @@ describe("backlog ordering and grouping", () => {
       orderBacklogItems(items, items, "priority_asc").map((i) => i._id),
     ).toEqual(["b", "z", "a", "c"]);
   });
+  it("preserves the persisted descending priority order with No priority first", () => {
+    expect(
+      orderBacklogItems(items, items, "priority_desc").map((i) => i._id),
+    ).toEqual(["c", "z", "a", "b"]);
+  });
   it("orders by newest creation, title, or remaining estimate with absent estimates last", () => {
     expect(
       orderBacklogItems(items, items, "created").map((i) => i._id),
