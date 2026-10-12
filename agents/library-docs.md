@@ -41,7 +41,7 @@ Use this file as the local index for important library choices. Check official d
 - Work-item estimate normalization, display values, reversible logged-time adjustments, overrun tracking, and imported baselines: `apps/web/src/domain/backlog/work-item-estimates.ts`
 - Manual work-item creation, hierarchy-aware edits, ordering, deletion, and estimate-conflict decisions: `apps/web/src/domain/backlog/work-item-transitions.ts`
 - Backlog item status (settle, unsettle, archive, restore), snooze, the Returned mark and the sidebar's item order: `apps/web/src/domain/backlog/backlog-item-lifecycle.ts`
-- Connector work-item identity, local-decision-preserving merge, missing-item archive provenance, and estimate-sync updates: `apps/web/src/domain/backlog/work-item-connector.ts`
+- Connector work-item identity, local-decision-preserving merge, missing-item archive provenance, done-category archives, and estimate-sync updates: `apps/web/src/domain/backlog/work-item-connector.ts`
 - Clock and decimal-hours formatting and hours-input parsing: `apps/web/src/domain/time/duration.ts`
 - Timesheet entry creation, editing, deletion, ordering, submission state, and linked estimate adjustments: `apps/web/src/domain/time/timesheet-entry.ts`
 - Submit page lines (grouping, comment merging), selection, summary warnings, and week submission status: `apps/web/src/domain/time/timesheet-submission.ts`
@@ -115,6 +115,16 @@ The backlog editor module is feature-local because its vocabulary and commands b
   only install packaged archives into the managed user-data plugin directory.
 - Desktop archive installation crosses the restricted preload/IPC bridge and
   calls the API runtime directly; it is not an HTTP endpoint.
+- Every connector exports `validateConnection(config)` and
+  `syncConnection(connection, workItems)`. A connector that declares
+  `"capabilities": { "settle": true }` in `plugin.json` also exports
+  `listSettleStates(connection, { sourceId })` and
+  `writeSettle(connection, { sourceId, state?, priority? })`. The contract is
+  in `packages/shared/src/connectors.ts`. See ADR 0001.
+- Sync reports each item's `stateCategory` and `stateDone`. The plugin decides
+  which categories are done, and also reports Ajour's items that reached one,
+  so Ajour archives them. The API returns those as `doneItems` and never stages
+  them for review.
 
 ## Shared
 

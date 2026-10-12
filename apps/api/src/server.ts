@@ -21,6 +21,10 @@ import {
   connectorPluginIdSchema,
   connectorPluginInstallResponseSchema,
   connectorPluginUninstallResponseSchema,
+  connectorSettleStatesRequestSchema,
+  connectorSettleStatesResultSchema,
+  connectorSettleWriteRequestSchema,
+  connectorSettleWriteResultSchema,
   connectorSyncRequestSchema,
   connectorSyncResultSchema,
   type ConnectorFieldValues,
@@ -129,6 +133,21 @@ function collectAutoSyncItems(
   return candidates.filter((item) => committedIds.has(item.id));
 }
 
+/** Done items go back as `doneItems` so Ajour archives them, never to review. */
+function splitDoneItems(items: ConnectorImportCandidateInput[]) {
+  return {
+    openItems: items.filter((item) => !item.stateDone),
+    doneItems: items
+      .filter((item) => item.stateDone)
+      .map((item) => ({
+        source: item.source,
+        connectionId: item.connectionId,
+        sourceId: item.sourceId,
+        state: item.state,
+      })),
+  };
+}
+
 function collectConnectorStatuses(items: ConnectorImportCandidateInput[]) {
   return items
     .filter((item): item is ConnectorImportCandidateInput & { state: string } =>
@@ -227,7 +246,7 @@ function errorMessage(error: unknown) {
 
 function matchConnectorRoute(pathname: string) {
   return pathname.match(
-    /^\/api\/connectors\/([^/]+)\/connections(?:\/([^/]+)(?:\/(sync))?)?$/,
+    /^\/api\/connectors\/([^/]+)\/connections(?:\/([^/]+)(?:\/(sync|settle-states|settle))?)?$/,
   );
 }
 
@@ -704,6 +723,94 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           return;
         }
 
+        if (
+          request.method === "POST" &&
+          (action === "settle-states" || action === "settle")
+        ) {
+          const connection = await storage.getConnection(
+            pluginId,
+            connectionId,
+          );
+          if (!connection) {
+            writeJson(response, 404, {
+              error: "Connector connection not found.",
+            });
+            return;
+          }
+          if (
+            !(await storage.isConnectorPluginEnabled(
+              pluginId,
+              new Set(
+                (await pluginManager.listPlugins()).map((plugin) => plugin.id),
+              ),
+            ))
+          ) {
+            writeJson(response, 409, {
+              error: "Activate this connector plugin before settling.",
+            });
+            return;
+          }
+          if (!(await pluginManager.supportsSettle(pluginId))) {
+            writeJson(response, 409, {
+              error: "This connector plugin does not support settling.",
+            });
+            return;
+          }
+
+          const body = await readJsonBody(request);
+          const pluginConnection = {
+            id: connection.id,
+            pluginId: connection.pluginId,
+            label: connection.label,
+            tenantLabel: connection.tenantLabel,
+            autoSync: connection.autoSync,
+            autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
+            connectedAt: connection.connectedAt,
+            lastSyncAt: connection.lastSyncAt,
+            lastError: connection.lastError,
+            config: connection.config,
+          };
+          // A malformed body fails here, outside the try, as a 400.
+          const statesRequest =
+            action === "settle-states"
+              ? connectorSettleStatesRequestSchema.parse(body)
+              : undefined;
+          const writeRequest =
+            action === "settle"
+              ? connectorSettleWriteRequestSchema.parse(body)
+              : undefined;
+          try {
+            if (statesRequest) {
+              const result = await pluginManager.listSettleStates(
+                pluginId,
+                pluginConnection,
+                statesRequest,
+              );
+              writeJson(
+                response,
+                200,
+                connectorSettleStatesResultSchema.parse(result),
+              );
+              return;
+            }
+            if (writeRequest) {
+              const result = await pluginManager.writeSettle(
+                pluginId,
+                pluginConnection,
+                writeRequest,
+              );
+              writeJson(
+                response,
+                200,
+                connectorSettleWriteResultSchema.parse(result),
+              );
+            }
+          } catch (error) {
+            writeJson(response, 502, { error: errorMessage(error) });
+          }
+          return;
+        }
+
         if (request.method === "POST" && action === "sync") {
           const availablePluginIds = new Set(
             (await pluginManager.listPlugins()).map((plugin) => plugin.id),
@@ -755,6 +862,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
               },
               payload.workItems,
             );
+            const { openItems, doneItems } = splitDoneItems(fetched.items);
             if (
               !(await storage.isConnectorPluginEnabled(
                 pluginId,
@@ -772,7 +880,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             }
 
             const autoSyncItems = shouldAutoSyncToBacklog
-              ? collectAutoSyncItems(fetched.items)
+              ? collectAutoSyncItems(openItems)
               : [];
             const stageResult = isSourceWriteOnly
               ? {
@@ -786,7 +894,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
                     updatedCount: 0,
                     skippedCount: 0,
                   }
-                : await storage.stageImportItems(fetched.items);
+                : await storage.stageImportItems(openItems);
             await storage.recordConnectionSyncSuccess(
               pluginId,
               connectionId,
@@ -810,6 +918,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
                 updatedCount: stageResult.updatedCount,
                 skippedCount: stageResult.skippedCount,
                 workItemUpdates: fetched.workItemUpdates,
+                doneItems,
               }),
             );
           } catch (error) {

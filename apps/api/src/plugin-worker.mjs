@@ -26,6 +26,16 @@ async function run() {
     );
   }
 
+  if (
+    workerData.method === "listSettleStates" ||
+    workerData.method === "writeSettle"
+  ) {
+    return await handler(
+      workerData.params.connection,
+      workerData.params.request,
+    );
+  }
+
   throw new Error(`Unknown connector plugin method: ${workerData.method}`);
 }
 

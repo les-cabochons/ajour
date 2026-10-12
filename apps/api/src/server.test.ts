@@ -23,6 +23,7 @@ async function createPlugin(
   parent: string,
   source: string,
   entrypoint = "plugin.mjs",
+  manifestExtras: Record<string, unknown> = {},
 ) {
   const pluginDirectory = path.join(parent, "jira");
   await mkdir(pluginDirectory, { recursive: true });
@@ -56,6 +57,7 @@ async function createPlugin(
           required: true,
         },
       ],
+      ...manifestExtras,
     }),
     "utf8",
   );
@@ -535,5 +537,185 @@ describe("connector plugin installation boundary", () => {
         error: "Activate this connector plugin before syncing.",
       },
     });
+  });
+});
+
+describe("connector settle routes", () => {
+  const tempDirs: string[] = [];
+  const servers: Server[] = [];
+
+  afterEach(async () => {
+    for (const server of servers.splice(0)) {
+      server.emit("close");
+    }
+    await Promise.all(
+      tempDirs
+        .splice(0)
+        .map((directory) => rm(directory, { recursive: true, force: true })),
+    );
+  });
+
+  const settlePluginSource = [
+    "export async function validateConnection(config) {",
+    "  return { normalizedConfig: config, connectionSummary: {} };",
+    "}",
+    "const item = (sourceId, state, stateDone) => ({",
+    "  source: 'jira', connectionId: 'ignored', connectionLabel: 'Main Jira',",
+    "  tenantLabel: 'Acme', sourceId, externalId: sourceId, title: sourceId,",
+    "  workItemType: 'Task', state, stateDone, depth: 0, selectable: true, childCount: 0,",
+    "});",
+    "export async function syncConnection(connection) {",
+    "  return {",
+    "    items: [item('OPEN-1', 'In Progress', false), item('DONE-1', 'Done', true)]",
+    "      .map((candidate) => ({ ...candidate, connectionId: connection.id })),",
+    "    workItemUpdates: [],",
+    "  };",
+    "}",
+    "export async function listSettleStates(connection, request) {",
+    "  return { states: [",
+    "    { name: 'Waiting', category: 'In Progress', done: false },",
+    "    { name: 'Done ' + request.sourceId, category: 'Done', done: true },",
+    "  ] };",
+    "}",
+    "export async function writeSettle(connection, request) {",
+    "  if (request.sourceId === 'FAIL-1') throw new Error('Transition not allowed.');",
+    "  return { state: request.state, priority: request.priority };",
+    "}",
+  ].join("\n");
+
+  async function createServer(capabilities?: { settle: boolean }) {
+    const root = await mkdtemp(path.join(os.tmpdir(), "ajour-settle-api-"));
+    tempDirs.push(root);
+    const pluginDirectory = await createPlugin(
+      path.join(root, "source"),
+      settlePluginSource,
+      "plugin.mjs",
+      capabilities ? { capabilities } : {},
+    );
+    const server = createAppApiServer({
+      statePath: path.join(root, "state.json"),
+      installedPluginDirectory: path.join(root, "installed"),
+      developmentPluginDirectories: [pluginDirectory],
+      allowDevelopmentPlugins: true,
+    });
+    servers.push(server);
+    const connectionResponse = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: "/api/connectors/jira/connections",
+      body: JSON.stringify({
+        values: {
+          label: "Main Jira",
+          tenantLabel: "Acme",
+          autoSync: false,
+          autoSyncIntervalMinutes: 15,
+          baseUrl: "https://acme.atlassian.net",
+        },
+      }),
+    });
+    const connectionId = (
+      connectionResponse.body as { connection: { id: string } }
+    ).connection.id;
+    return { server, connectionId };
+  }
+
+  it("lists settle states and writes a settle through the plugin", async () => {
+    const { server, connectionId } = await createServer({ settle: true });
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/connectors/jira/connections/${connectionId}/settle-states`,
+        body: JSON.stringify({ sourceId: "OPEN-1" }),
+      }),
+    ).resolves.toEqual({
+      status: 200,
+      body: {
+        states: [
+          { name: "Waiting", category: "In Progress", done: false },
+          { name: "Done OPEN-1", category: "Done", done: true },
+        ],
+      },
+    });
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/connectors/jira/connections/${connectionId}/settle`,
+        body: JSON.stringify({
+          sourceId: "OPEN-1",
+          state: "Waiting",
+          priority: 25,
+        }),
+      }),
+    ).resolves.toEqual({
+      status: 200,
+      body: { state: "Waiting", priority: 25 },
+    });
+  });
+
+  it("rejects an empty write and reports a failed write as a gateway error", async () => {
+    const { server, connectionId } = await createServer({ settle: true });
+
+    const empty = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: `/api/connectors/jira/connections/${connectionId}/settle`,
+      body: JSON.stringify({ sourceId: "OPEN-1" }),
+    });
+    expect(empty.status).toBe(400);
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/connectors/jira/connections/${connectionId}/settle`,
+        body: JSON.stringify({ sourceId: "FAIL-1", state: "Waiting" }),
+      }),
+    ).resolves.toEqual({
+      status: 502,
+      body: { error: "Transition not allowed." },
+    });
+  });
+
+  it("refuses to settle through a plugin without the capability", async () => {
+    const { server, connectionId } = await createServer();
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/connectors/jira/connections/${connectionId}/settle-states`,
+        body: JSON.stringify({ sourceId: "OPEN-1" }),
+      }),
+    ).resolves.toEqual({
+      status: 409,
+      body: { error: "This connector plugin does not support settling." },
+    });
+  });
+
+  it("returns done items from a sync instead of staging them for review", async () => {
+    const { server, connectionId } = await createServer({ settle: true });
+
+    const synced = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: `/api/connectors/jira/connections/${connectionId}/sync`,
+      body: JSON.stringify({ trigger: "manual", workItems: [] }),
+    });
+    expect(synced).toMatchObject({
+      status: 200,
+      body: {
+        stagedCount: 1,
+        doneItems: [
+          { source: "jira", connectionId, sourceId: "DONE-1", state: "Done" },
+        ],
+      },
+    });
+
+    const staged = await dispatchJsonRequest(server, {
+      method: "GET",
+      path: "/api/backlog/imports",
+    });
+    expect(
+      (staged.body as { items: { sourceId: string }[] }).items.map(
+        (item) => item.sourceId,
+      ),
+    ).toEqual(["OPEN-1"]);
   });
 });

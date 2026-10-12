@@ -8,6 +8,7 @@ import {
 import { todayIsoDate } from "@/lib/utils";
 import type {
   ConnectorImportCandidate,
+  ConnectorDoneWorkItem,
   ConnectorSyncWorkItemUpdate,
   ProjectDataShapeImportProject,
 } from "@ajour/shared";
@@ -42,6 +43,7 @@ import {
 } from "@/domain/backlog/work-item-transitions";
 import {
   applyConnectorSyncWorkItemUpdates as applyConnectorWorkItemUpdates,
+  archiveDoneConnectorWorkItems,
   importConnectorWorkItems as applyConnectorWorkItemImport,
 } from "@/domain/backlog/work-item-connector";
 import { type ProjectTaskImportResult } from "@/domain/projects/task-import";
@@ -1117,6 +1119,20 @@ export const localStore = {
         now: Date.now,
       }),
     );
+  },
+  /** Archives the synced items a sync reports in a done category. */
+  archiveDoneConnectorWorkItems(doneItems: ConnectorDoneWorkItem[]) {
+    if (doneItems.length === 0) {
+      return 0;
+    }
+
+    return updateStateWithResult((state) => {
+      const result = archiveDoneConnectorWorkItems(state, doneItems, {
+        createId,
+        now: Date.now,
+      });
+      return { state: result.state, result: result.archivedCount };
+    });
   },
   applyConnectorSyncWorkItemUpdates(updates: ConnectorSyncWorkItemUpdate[]) {
     if (updates.length === 0) {

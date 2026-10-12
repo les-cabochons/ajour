@@ -496,6 +496,9 @@ export function syncConnectorConnection(
     },
     connectorSyncResultSchema,
   ).then((result) => {
+    // Done items go first, so a done item that left the open set is archived
+    // as done rather than as missing from the sync.
+    localStore.archiveDoneConnectorWorkItems(result.doneItems);
     const importResult =
       result.mode === "backlog"
         ? localStore.importConnectorWorkItems(result.items, {

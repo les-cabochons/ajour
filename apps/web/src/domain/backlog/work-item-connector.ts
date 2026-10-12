@@ -1,5 +1,6 @@
 import {
   normalizeConnectorStatusKey,
+  type ConnectorDoneWorkItem,
   type ConnectorImportCandidate,
   type ConnectorSyncFieldUpdate,
   type ConnectorSyncWorkItemUpdate,
@@ -11,6 +12,7 @@ import type {
   LocalWorkItemEstimateFieldState,
   LocalWorkItemEstimateSyncState,
 } from "@/domain/local-state";
+import { archiveBacklogItem } from "@/domain/backlog/backlog-item-lifecycle";
 import { findMappedBacklogStatusId } from "@/domain/backlog/backlog-status";
 import {
   createImportedEstimateSyncState,
@@ -404,6 +406,55 @@ export function importConnectorWorkItems(
     },
     result,
   };
+}
+
+/**
+ * Archives the synced items a sync reports in a done category, such as Azure
+ * DevOps Completed or Removed, or Jira Done. This covers active, snoozed and
+ * settled items alike, and the subitems a settle carried go with their parent.
+ * Done items Ajour has not imported are ignored, and an archived item stays
+ * as it is.
+ */
+export function archiveDoneConnectorWorkItems(
+  state: LocalAppState,
+  doneItems: ConnectorDoneWorkItem[],
+  factories: ConnectorWorkItemFactories,
+): { state: LocalAppState; archivedCount: number } {
+  let nextState = state;
+  let archivedCount = 0;
+
+  for (const doneItem of doneItems) {
+    const key = getWorkItemSourceKey(doneItem);
+    const target = nextState.workItems.find(
+      (workItem) =>
+        workItem.sourceId !== undefined &&
+        getWorkItemSourceKey({ ...workItem, sourceId: workItem.sourceId }) ===
+          key,
+    );
+    if (!target || target.status === "archived") {
+      continue;
+    }
+
+    const stateLabel = doneItem.state?.trim();
+    const withSourceState = stateLabel
+      ? {
+          ...nextState,
+          workItems: nextState.workItems.map((workItem) =>
+            workItem._id === target._id
+              ? {
+                  ...workItem,
+                  sourceStatusKey: normalizeConnectorStatusKey(stateLabel),
+                  sourceStatusLabel: stateLabel,
+                }
+              : workItem,
+          ),
+        }
+      : nextState;
+    nextState = archiveBacklogItem(withSourceState, target._id, factories);
+    archivedCount += 1;
+  }
+
+  return { state: nextState, archivedCount };
 }
 
 function applyConnectorFieldUpdateToWorkItem(
