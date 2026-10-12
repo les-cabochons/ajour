@@ -257,6 +257,14 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] The foundation passes 710 unit tests, workspace typecheck and three Chromium confirmation scenarios.
 - [ ] Carry the fixes through the stack, verify the final heads and request fresh reviews.
 
+### Archived swimlane touch scrolling, 2026-10-12
+
+- [x] Archived project swimlane cards omit drag handlers because they have no reachable drop destination. Their native touch scrolling stays enabled.
+- [x] Active swimlane cards retain drag handling. Existing assignments in archived project groups can still be dragged to active projects.
+- [x] Chromium touch regression checks the actual board scroll position, the absence of a drag session during the swipe, and native touch handling for archived cards. Existing touch drag and Undo, archived destinations and active project creation pass.
+- [x] All 805 unit tests and 82 Chromium scenarios pass, along with workspace typecheck, production build and formatting. The prior project-shortcut timeout did not recur in the full browser run.
+- [ ] Fresh Codex review is pending. Merging remains owned by the integration thread.
+
 ### Peek returns and archived project destinations, 2026-10-12
 
 - [x] Opening a peek through click, Space or the hosted editor clears Returned through the existing lifecycle command. Closing a peek does not mark an item opened.

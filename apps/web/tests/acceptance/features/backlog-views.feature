@@ -63,6 +63,15 @@ Feature: Backlog list and board views
       | groups       |
       | swimlanes    |
 
+  Scenario: Scroll an archived project swimlane with a touchscreen
+    Given an archived project still has a Backlog item
+    And the archived project has enough cards to scroll
+    When I choose the Backlog board
+    And I show Backlog projects as "swimlanes"
+    Then the archived swimlane allows native touch handling
+    When I swipe upward from an archived project card
+    Then the board scrolls without starting a drag
+
   Scenario: Keep a running entry continuous when reopening its Backlog peek
     When I peek at the Backlog parent
     And I start an entry from the Backlog peek

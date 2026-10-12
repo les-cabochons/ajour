@@ -692,7 +692,9 @@ export function BacklogPage() {
                                 onAction={(id) => action(item, id)}
                                 onKeyDown={(e) => itemKeys(item, group, e)}
                                 onPointerDown={
-                                  archive || narrow
+                                  archive ||
+                                  narrow ||
+                                  !canUseProjectGroup(lane, state)
                                     ? undefined
                                     : (e) => drag.pointerDown(item._id, key, e)
                                 }

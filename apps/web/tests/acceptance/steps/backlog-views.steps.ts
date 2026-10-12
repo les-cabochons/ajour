@@ -729,6 +729,100 @@ Then("the new editor uses the active project", async ({ page }) => {
     editor.getByRole("combobox", { name: "Project", exact: true }),
   ).toHaveValue("Example project");
 });
+Given("the archived project has enough cards to scroll", async ({ page }) => {
+  await page.evaluate(() => {
+    const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
+    const original = state.workItems.find(
+      (item: { _id: string }) => item._id === "archived-assigned",
+    );
+    state.workItems.push(
+      ...Array.from({ length: 20 }, (_, index) => ({
+        ...original,
+        _id: `archived-scroll-${index}`,
+        title: `Archived project item ${index}`,
+      })),
+    );
+    localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+  });
+  await page.reload();
+});
+Then("the archived swimlane allows native touch handling", async ({ page }) => {
+  const archived = page
+    .getByRole("region", { name: "Archived project", exact: true })
+    .locator("[data-work-item-id]");
+  expect(
+    await archived.evaluateAll((cards) =>
+      cards.map((card) => getComputedStyle(card).touchAction),
+    ),
+  ).toEqual(Array(await archived.count()).fill("auto"));
+  expect(
+    await page
+      .locator('[data-work-item-id="other"]')
+      .evaluate((card) => getComputedStyle(card).touchAction),
+  ).toBe("none");
+});
+When("I swipe upward from an archived project card", async ({ page }) => {
+  const card = page.locator('[data-work-item-id="archived-assigned"]');
+  await card.scrollIntoViewIfNeeded();
+  await card.evaluate((card) => {
+    let container = card.parentElement;
+    while (
+      container &&
+      !(
+        container.scrollHeight > container.clientHeight &&
+        /auto|scroll/.test(getComputedStyle(container).overflowY)
+      )
+    )
+      container = container.parentElement;
+    if (!container) throw new Error("No scrollable board container");
+    container.setAttribute("data-acceptance-board-scroll", "true");
+    sessionStorage.setItem(
+      "archived-board-scroll-top",
+      String(container.scrollTop),
+    );
+  });
+  const bounds = await card.boundingBox();
+  const x = bounds!.x + 40;
+  const y = bounds!.y + Math.min(60, bounds!.height - 8);
+  const session = await page.context().newCDPSession(page);
+  try {
+    await session.send("Emulation.setTouchEmulationEnabled", {
+      enabled: true,
+      maxTouchPoints: 1,
+    });
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ x, y }],
+    });
+    for (let step = 1; step <= 10; step++) {
+      await session.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: [{ x, y: y - step * 15 }],
+      });
+      await expect(page.locator("body")).not.toHaveClass(/backlog-drag-active/);
+    }
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    });
+  } finally {
+    await session.detach();
+  }
+});
+Then("the board scrolls without starting a drag", async ({ page }) => {
+  const baseline = await page.evaluate(() =>
+    Number(sessionStorage.getItem("archived-board-scroll-top")),
+  );
+  await expect
+    .poll(() =>
+      page
+        .locator('[data-acceptance-board-scroll="true"]')
+        .evaluate((container) => container.scrollTop),
+    )
+    .toBeGreaterThan(baseline);
+  await expect(page.locator("body")).not.toHaveClass(/backlog-drag-active/);
+  await expect(page.locator(".is-drop-target")).toHaveCount(0);
+});
 When("I drag the subitem to In progress", async ({ page }) => {
   const from = await page
     .locator('[data-work-item-id="child"] .backlog-item-title')
