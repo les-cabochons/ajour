@@ -12,6 +12,24 @@ export interface BacklogDropTarget {
   key: string;
   itemIds: string[];
 }
+
+/** A drag needs either another destination in its lane or a reorderable peer. */
+export function canDragBacklogItem(
+  targets: readonly BacklogDropTarget[],
+  canReorder: boolean,
+  itemId: string,
+  originKey: string,
+) {
+  const lane = originKey.split("/")[0];
+  return targets.some(
+    (target) =>
+      target.key.split("/")[0] === lane &&
+      (target.key !== originKey ||
+        (canReorder &&
+          target.itemIds.includes(itemId) &&
+          target.itemIds.length > 1)),
+  );
+}
 interface Drag {
   itemId: string;
   originKey: string;
@@ -62,7 +80,7 @@ export function useBacklogDrag({
     .join("|");
   useEffect(() => {
     if (current.current) reset();
-  }, [disabled, targetIdentity]);
+  }, [disabled, canReorder, targetIdentity]);
   function pointerDown(
     itemId: string,
     originKey: string,
@@ -70,6 +88,12 @@ export function useBacklogDrag({
   ) {
     if (
       disabled ||
+      !canDragBacklogItem(
+        live.current.targets,
+        live.current.canReorder,
+        itemId,
+        originKey,
+      ) ||
       event.button !== 0 ||
       !(event.target instanceof Element) ||
       !event.currentTarget.contains(event.target) ||
@@ -159,6 +183,8 @@ export function useBacklogDrag({
     rowRefs,
     groupRefs,
     pointerDown,
+    canDrag: (itemId: string, originKey: string) =>
+      !disabled && canDragBacklogItem(targets, canReorder, itemId, originKey),
     clickAllowed: () => performance.now() > suppress.current,
   };
 }

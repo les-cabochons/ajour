@@ -72,6 +72,27 @@ Feature: Backlog list and board views
     When I swipe upward from an archived project card
     Then the board scrolls without starting a drag
 
+  Scenario: Scroll a sorted ungrouped list and restore Custom dragging
+    Given the Backlog has enough items to scroll
+    When I use an ungrouped Backlog list ordered by Title
+    Then the Backlog items allow native touch scrolling
+    When I swipe upward from a sorted Backlog row
+    Then the list scrolls without starting a drag
+    When I order the Backlog by "Custom"
+    Then the ungrouped custom list remains draggable
+    When I reorder the ungrouped parent below the other item
+    Then the ungrouped parent has moved below the other item
+    When I undo the last Backlog move
+    Then the ungrouped parent's original order is restored
+
+  Scenario: Move sorted board cards between workflow states with touch
+    When I choose the Backlog board
+    And I order the Backlog by "Title"
+    And I touch-drag the subitem to In progress
+    Then the subitem is in In progress
+    When I undo the last Backlog move
+    Then the subitem is back in To do
+
   Scenario: Keep a running entry continuous when reopening its Backlog peek
     When I peek at the Backlog parent
     And I start an entry from the Backlog peek

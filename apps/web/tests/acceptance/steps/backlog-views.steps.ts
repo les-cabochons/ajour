@@ -761,8 +761,8 @@ Then("the archived swimlane allows native touch handling", async ({ page }) => {
       .evaluate((card) => getComputedStyle(card).touchAction),
   ).toBe("none");
 });
-When("I swipe upward from an archived project card", async ({ page }) => {
-  const card = page.locator('[data-work-item-id="archived-assigned"]');
+async function swipeBacklogItem(page: Page, itemId: string) {
+  const card = page.locator(`[data-work-item-id="${itemId}"]`);
   await card.scrollIntoViewIfNeeded();
   await card.evaluate((card) => {
     let container = card.parentElement;
@@ -774,10 +774,10 @@ When("I swipe upward from an archived project card", async ({ page }) => {
       )
     )
       container = container.parentElement;
-    if (!container) throw new Error("No scrollable board container");
-    container.setAttribute("data-acceptance-board-scroll", "true");
+    if (!container) throw new Error("No scrollable Backlog container");
+    container.setAttribute("data-acceptance-backlog-scroll", "true");
     sessionStorage.setItem(
-      "archived-board-scroll-top",
+      "backlog-swipe-scroll-top",
       String(container.scrollTop),
     );
   });
@@ -808,20 +808,108 @@ When("I swipe upward from an archived project card", async ({ page }) => {
   } finally {
     await session.detach();
   }
-});
-Then("the board scrolls without starting a drag", async ({ page }) => {
+}
+async function expectNativeBacklogScroll(page: Page) {
   const baseline = await page.evaluate(() =>
-    Number(sessionStorage.getItem("archived-board-scroll-top")),
+    Number(sessionStorage.getItem("backlog-swipe-scroll-top")),
   );
   await expect
     .poll(() =>
       page
-        .locator('[data-acceptance-board-scroll="true"]')
+        .locator('[data-acceptance-backlog-scroll="true"]')
         .evaluate((container) => container.scrollTop),
     )
     .toBeGreaterThan(baseline);
   await expect(page.locator("body")).not.toHaveClass(/backlog-drag-active/);
   await expect(page.locator(".is-drop-target")).toHaveCount(0);
+}
+When("I swipe upward from an archived project card", async ({ page }) => {
+  await swipeBacklogItem(page, "archived-assigned");
+});
+Then("the board scrolls without starting a drag", async ({ page }) => {
+  await expectNativeBacklogScroll(page);
+});
+Given("the Backlog has enough items to scroll", async ({ page }) => {
+  await page.evaluate(() => {
+    const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
+    const parent = state.workItems.find(
+      (item: { _id: string }) => item._id === "parent",
+    );
+    state.workItems.push(
+      ...Array.from({ length: 20 }, (_, index) => ({
+        ...parent,
+        _id: `scroll-${index}`,
+        title: `Scrolling item ${index}`,
+      })),
+    );
+    localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+  });
+  await page.reload();
+});
+When("I use an ungrouped Backlog list ordered by Title", async ({ page }) => {
+  await page.getByRole("button", { name: "List layout", exact: true }).click();
+  await page.getByRole("button", { name: "Display", exact: true }).click();
+  await page.getByLabel("Grouping", { exact: true }).selectOption("none");
+  await page.getByLabel("Ordering", { exact: true }).selectOption("title");
+  await page.keyboard.press("Escape");
+});
+When("I order the Backlog by {string}", async ({ page }, order: string) => {
+  await page.getByRole("button", { name: "Display", exact: true }).click();
+  await page
+    .getByLabel("Ordering", { exact: true })
+    .selectOption({ label: order });
+  await page.keyboard.press("Escape");
+});
+When("I swipe upward from a sorted Backlog row", async ({ page }) => {
+  await swipeBacklogItem(page, "parent");
+});
+Then("the list scrolls without starting a drag", async ({ page }) => {
+  await expectNativeBacklogScroll(page);
+});
+Then("the ungrouped custom list remains draggable", async ({ page }) => {
+  const items = page.locator("[data-work-item-id]");
+  expect(
+    await items.evaluateAll((items) =>
+      items.map((item) => getComputedStyle(item).touchAction),
+    ),
+  ).toEqual(Array(await items.count()).fill("none"));
+});
+When(
+  "I reorder the ungrouped parent below the other item",
+  async ({ page }) => {
+    await page.locator('[data-work-item-id="parent"]').scrollIntoViewIfNeeded();
+    const from = await page
+      .locator('[data-work-item-id="parent"] .backlog-item-title')
+      .boundingBox();
+    const to = await page.locator('[data-work-item-id="other"]').boundingBox();
+    await page.mouse.move(from!.x + 20, from!.y + 8);
+    await page.mouse.down();
+    await page.mouse.move(to!.x + 40, to!.y + to!.height - 3, { steps: 10 });
+    await page.mouse.up();
+  },
+);
+Then(
+  "the ungrouped parent has moved below the other item",
+  async ({ page }) => {
+    await expect
+      .poll(() =>
+        page.evaluate(() => {
+          const order = JSON.parse(
+            localStorage.getItem("ajour.local-state.v2")!,
+          ).workItems.map((item: { _id: string }) => item._id);
+          return order.indexOf("parent") > order.indexOf("other");
+        }),
+      )
+      .toBe(true);
+  },
+);
+Then("the ungrouped parent's original order is restored", async ({ page }) => {
+  const order = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems.map(
+      (item: { _id: string }) => item._id,
+    ),
+  );
+  expect(order.slice(0, 3)).toEqual(["parent", "child", "other"]);
 });
 When("I drag the subitem to In progress", async ({ page }) => {
   const from = await page
