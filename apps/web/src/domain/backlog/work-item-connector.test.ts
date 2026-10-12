@@ -10,9 +10,11 @@ import {
   importConnectorWorkItems,
 } from "@/domain/backlog/work-item-connector";
 import {
+  restoreBacklogItem,
   archiveBacklogItem,
   settleBacklogItem,
 } from "@/domain/backlog/backlog-item-lifecycle";
+import { updateWorkflowState } from "@/domain/backlog/workflow-states";
 
 function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
   return {
@@ -100,6 +102,128 @@ const factories = {
 };
 
 describe("connector work item imports", () => {
+  it("keeps a missing-sync return closed when its unchanged state became Done while absent", () => {
+    const initial = createState({
+      workflowStates: [
+        { _id: "doing", name: "Doing", color: "#d97706", createdAt: 1 },
+        {
+          _id: "done",
+          name: "Done",
+          color: "#059669",
+          done: true,
+          createdAt: 1,
+        },
+      ],
+      workflowStateMappings: [
+        {
+          source: "azure_devops",
+          connectionId: "connection-1",
+          sourceStatusKey: "active",
+          workflowStateId: "doing",
+        },
+      ],
+    });
+    const imported = importConnectorWorkItems(
+      initial,
+      [createCandidate()],
+      undefined,
+      factories,
+    ).state;
+    const missing = importConnectorWorkItems(
+      imported,
+      [],
+      { archiveMissingFromConnectionId: "connection-1" },
+      factories,
+    ).state;
+    expect(missing.workItems[0]).toMatchObject({
+      status: "archived",
+      archivedByMissingSync: true,
+      workflowStateId: "doing",
+    });
+    const configured = updateWorkflowState(missing, "doing", {
+      name: "Doing",
+      done: true,
+    });
+    const returned = importConnectorWorkItems(
+      configured,
+      [createCandidate()],
+      undefined,
+      factories,
+    ).state;
+    expect(returned.workItems[0]).toMatchObject({
+      status: "archived",
+      archivedByMissingSync: false,
+      workflowStateId: "doing",
+      returnedAt: undefined,
+    });
+    expect(
+      restoreBacklogItem(returned, "work-item-1").workItems[0],
+    ).toMatchObject({ status: "active", workflowStateId: undefined });
+  });
+
+  it("closes a carried settled subitem reactivated in its unchanged Done state", () => {
+    const imported = importConnectorWorkItems(
+      createState({
+        workflowStates: [
+          { _id: "todo", name: "To do", color: "#64748b", createdAt: 1 },
+          {
+            _id: "done",
+            name: "Done",
+            color: "#059669",
+            done: true,
+            createdAt: 1,
+          },
+        ],
+        workflowStateMappings: [
+          {
+            source: "azure_devops",
+            connectionId: "connection-1",
+            sourceStatusKey: "active",
+            workflowStateId: "todo",
+          },
+        ],
+      }),
+      [createCandidate()],
+      undefined,
+      factories,
+    ).state;
+    const carried = {
+      ...imported,
+      workItems: [
+        {
+          ...imported.workItems[0]!,
+          status: "settled" as const,
+          settledSourceStatusKey: "active",
+          settledImportedPriority: 2,
+        },
+        {
+          _id: "child",
+          title: "Child",
+          createdAt: 1,
+          source: "manual" as const,
+          status: "settled" as const,
+          parentWorkItemId: "work-item-1",
+          settledWithParentId: "work-item-1",
+          workflowStateId: "done",
+        },
+      ],
+    };
+    const returned = importConnectorWorkItems(
+      carried,
+      [createCandidate({ priority: 1 })],
+      undefined,
+      factories,
+    ).state;
+    expect(returned.workItems[0]).toMatchObject({
+      status: "active",
+      workflowStateId: "todo",
+    });
+    expect(returned.workItems[1]).toMatchObject({
+      status: "archived",
+      workflowStateId: "done",
+      settledWithParentId: undefined,
+    });
+  });
   it("keeps the connector's source URL and refreshes it on the next import", () => {
     const imported = importConnectorWorkItems(
       createState(),

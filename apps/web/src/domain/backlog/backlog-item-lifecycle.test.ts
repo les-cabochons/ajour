@@ -106,6 +106,51 @@ function find(state: LocalAppState, id: string) {
 }
 
 describe("enabling Done on an occupied workflow state", () => {
+  it.each(["archived", "settled", "active"] as const)(
+    "closes a reactivated or legacy %s item without a workflow change",
+    (status) => {
+      const previous = createState({
+        workflowStates: [
+          { _id: "todo", name: "To do", color: "#64748b", createdAt: 1 },
+          {
+            _id: "done",
+            name: "Done",
+            color: "#059669",
+            done: true,
+            createdAt: 1,
+          },
+        ],
+        workItems: [
+          item("a", {
+            status,
+            workflowStateId: "done",
+            workflowStateIdBeforeClose:
+              status === "archived" ? "todo" : undefined,
+          }),
+        ],
+      });
+      const next = {
+        ...previous,
+        workItems: [
+          {
+            ...previous.workItems[0]!,
+            status: "active" as const,
+            returnedAt: 500,
+          },
+        ],
+      };
+      const closed = applyWorkflowStateLifecycle(previous, next, factories);
+      expect(find(closed, "a")).toMatchObject({
+        status: "archived",
+        workflowStateId: "done",
+        archivedAt: 1000,
+      });
+      expect(find(restoreBacklogItem(closed, "a"), "a")).toMatchObject({
+        status: "active",
+        workflowStateId: status === "archived" ? "todo" : undefined,
+      });
+    },
+  );
   it.each(["active", "settled"] as const)(
     "closes %s items, saves their running entry and preserves other items",
     (status) => {

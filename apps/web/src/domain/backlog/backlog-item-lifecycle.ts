@@ -115,9 +115,9 @@ function saveRunningEntries(
 }
 
 /**
- * Applies the done rules when an item's workflow state changes without a move
- * or its current state becomes Done, such as through settings or a mapping: an
- * open item that lands in a done state closes, with its running entry saved.
+ * Applies the done rules after settings, mapping or connector changes. Every
+ * open item in a done state closes, including items reactivated without a
+ * workflow change, with its running entry saved.
  * Archived items keep their done state: a mapping edit never reopens history.
  */
 export function applyWorkflowStateLifecycle(
@@ -132,18 +132,11 @@ export function applyWorkflowStateLifecycle(
   );
   const closingIds = new Set(
     next.workItems
-      .filter((workItem) => {
-        const before = previousById.get(workItem._id);
-        return (
+      .filter(
+        (workItem) =>
           workItem.status !== "archived" &&
-          (before?.workflowStateId !== workItem.workflowStateId ||
-            !isDoneWorkflowState(
-              previous.workflowStates,
-              workItem.workflowStateId,
-            )) &&
-          isDoneWorkflowState(next.workflowStates, workItem.workflowStateId)
-        );
-      })
+          isDoneWorkflowState(next.workflowStates, workItem.workflowStateId),
+      )
       .map((workItem) => workItem._id),
   );
   if (closingIds.size === 0) return next;
@@ -155,6 +148,10 @@ export function applyWorkflowStateLifecycle(
     workItems: saved.workItems.map((workItem) => {
       if (!closingIds.has(workItem._id)) return workItem;
       const before = previousById.get(workItem._id);
+      const previousStateId =
+        before?.status === "archived"
+          ? before.workflowStateIdBeforeClose
+          : before?.workflowStateId;
       return {
         ...closeWorkItem(
           workItem,
@@ -163,12 +160,10 @@ export function applyWorkflowStateLifecycle(
           now,
         ),
         workflowStateIdBeforeClose:
-          isDoneWorkflowState(
-            previous.workflowStates,
-            before?.workflowStateId,
-          ) || isDoneWorkflowState(next.workflowStates, before?.workflowStateId)
+          isDoneWorkflowState(previous.workflowStates, previousStateId) ||
+          isDoneWorkflowState(next.workflowStates, previousStateId)
             ? undefined
-            : before?.workflowStateId,
+            : previousStateId,
       };
     }),
   };

@@ -175,6 +175,13 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Project Health Notes
 
+### Reactivation in an unchanged Done state, 2026-10-12
+
+- [x] Lifecycle reconciliation closes every open item in Done, including missing-sync returns, carried subitems and legacy records whose workflow ID stays unchanged.
+- [x] Reclosing an archived item preserves a valid pre-close workflow for Restore.
+- [x] The foundation passes 710 unit tests, with real connector-import regressions for missing-sync returns and carried settled subitems.
+- [ ] Carry the fix through the stack, run the full checks and request fresh reviews.
+
 ### Enabling Done on an occupied state, 2026-10-12
 
 - [x] Workflow settings apply the existing lifecycle transition when an open state becomes Done. Its active and settled items close and their running entries are saved.
