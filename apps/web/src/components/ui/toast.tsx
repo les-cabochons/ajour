@@ -190,7 +190,7 @@ export function Toaster() {
         <ToastPrimitive.Viewport
           className={cn(
             "fixed right-4 bottom-4 z-[60] flex w-[min(360px,calc(100vw-2rem))] flex-col gap-2 outline-none",
-            "narrow:right-auto narrow:left-1/2 narrow:-translate-x-1/2",
+            "narrow:right-auto narrow:bottom-[var(--narrow-timer-clearance)] narrow:left-1/2 narrow:-translate-x-1/2",
           )}
         >
           <ToastList />

@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button";
 import { getSubmitWeekStatus } from "@/domain/time/timesheet-submission";
 import { useLocalState } from "@/lib/local-hooks";
 
-/** The one "Submit week" button of the Day and Week headers. */
+/** Opens the selected week's submission page from the titlebar totals popover. */
 export function SubmitWeekButton({ onClick }: { onClick: () => void }) {
   return (
     <Button variant="outline" size="sm" onClick={onClick}>

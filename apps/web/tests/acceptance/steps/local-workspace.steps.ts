@@ -893,9 +893,9 @@ Then("the Time workspace is visible", async ({ page }) => {
   ).toHaveAttribute("aria-current", "page");
   // The Time page itself has rendered, so its own shortcuts (such as N opening
   // the side panel instead of the titlebar popover) are registered.
-  await expect(
-    page.getByRole("button", { name: "Submit week" }).first(),
-  ).toBeVisible();
+  await expect(page.locator(".time-page-stack")).toBeVisible({
+    timeout: 15_000,
+  });
 });
 
 Then("the desktop sidebar owns the full left edge", async ({ page }) => {
@@ -1230,12 +1230,14 @@ Then(
 );
 
 Then("the timesheet can be submitted", async ({ page }) => {
+  await page.getByRole("button", { name: "Show day and week totals" }).click();
   const submitTimesheet = page.getByRole("button", {
     name: "Submit week",
   });
 
   await expect(submitTimesheet).toBeVisible();
   await expect(submitTimesheet).toBeEnabled();
+  await page.keyboard.press("Escape");
 });
 
 Then(
@@ -1661,21 +1663,100 @@ Given("I have a week of saved entries", async ({ page }) => {
   });
 });
 
-When("I open the submit page from the Week header", async ({ page }) => {
-  await page.goto("/time/2026-10-05?view=week");
-  await page
-    .getByRole("region", { name: "Week" })
-    .getByRole("button", { name: "Submit week" })
-    .click();
-  await expect(page).toHaveURL(/\/time\/2026-10-05\/submit/);
-});
+When(
+  "I open the submit page from the Week totals dropdown",
+  async ({ page }) => {
+    await page.goto("/time/2026-10-05?view=week");
+    await expect(page.locator(".time-page-stack")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByRole("button", { name: "Submit week" })).toHaveCount(
+      0,
+    );
+    await page
+      .getByRole("button", { name: "Show day and week totals" })
+      .click();
+    await expect(page.getByLabel("Current time totals")).toContainText("5:00");
+    await page.getByRole("button", { name: "Submit week" }).click();
+    await expect(page).toHaveURL(/\/time\/2026-10-05\/submit/);
+  },
+);
 
-When("I open the submit page from the narrow Day header", async ({ page }) => {
-  await page.setViewportSize({ width: 420, height: 860 });
+When(
+  "I open the submit page from the narrow totals dropdown",
+  async ({ page }) => {
+    await page.setViewportSize({ width: 420, height: 860 });
+    await page.goto("/time/2026-10-05");
+    await expect(page.locator(".time-page-stack")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByRole("button", { name: "Submit week" })).toHaveCount(
+      0,
+    );
+    await page
+      .getByRole("button", { name: "Show day and week totals" })
+      .click();
+    await page.getByRole("button", { name: "Submit week" }).click();
+    await expect(page).toHaveURL(/\/time\/2026-10-05\/submit/);
+  },
+);
+
+When("I open the submit page from Settings totals", async ({ page }) => {
   await page.goto("/time/2026-10-05");
+  await expect(page.locator(".time-page-stack")).toBeVisible({
+    timeout: 15_000,
+  });
+  // The development router launcher covers the sidebar footer's pointer target.
+  await page.getByRole("link", { name: "Settings", exact: true }).focus();
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/settings\/general$/);
+  await page.getByRole("button", { name: "Show day and week totals" }).click();
+  await expect(page.getByLabel("Current time totals")).toContainText("5:00");
   await page.getByRole("button", { name: "Submit week" }).click();
   await expect(page).toHaveURL(/\/time\/2026-10-05\/submit/);
 });
+
+When(
+  "I request week submission with {string} hours in an open entry",
+  async ({ page }, hours: string) => {
+    await page.goto("/time/2026-10-05?entry=mon-dev-1");
+    await page
+      .getByRole("textbox", { name: "Note", exact: true })
+      .fill("Unsaved submission note");
+    await page.getByRole("textbox", { name: "Hours", exact: true }).fill(hours);
+    await page
+      .getByRole("button", { name: "Show day and week totals" })
+      .click();
+    await page.getByRole("button", { name: "Submit week" }).click();
+  },
+);
+
+Then("the submit page includes the saved entry draft", async ({ page }) => {
+  await expect(page).toHaveURL(/\/time\/2026-10-05\/submit/);
+  const savedEntry = await page.evaluate(() => {
+    const state = JSON.parse(
+      localStorage.getItem("ajour.local-state.v2") ?? "null",
+    );
+    return state.timesheetEntries.find(
+      (entry: { _id: string }) => entry._id === "mon-dev-1",
+    );
+  });
+  expect(savedEntry.note).toBe("Unsaved submission note");
+  expect(savedEntry.durationMs).toBe(2 * 60 * 60 * 1000);
+});
+
+Then(
+  "the invalid entry draft stays open instead of submitting",
+  async ({ page }) => {
+    await expect(page).toHaveURL(/\/time\/2026-10-05\?entry=mon-dev-1$/);
+    await expect(
+      page.getByRole("textbox", { name: "Hours", exact: true }),
+    ).toHaveValue("invalid");
+    await expect(
+      page.getByText("Enter a valid duration", { exact: true }),
+    ).toBeVisible();
+  },
+);
 
 When("I open a Week link in a narrow window", async ({ page }) => {
   await page.setViewportSize({ width: 420, height: 860 });
@@ -1767,7 +1848,7 @@ Then("the entry editor opens in a full-width dialog", async ({ page }) => {
 Then("the submit page lists the week's entries", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "Submit week of Oct 5 to Oct 11" }),
-  ).toBeVisible();
+  ).toBeVisible({ timeout: 15_000 });
   await expect(
     page.getByRole("button", { name: "Mark 4 entries as submitted" }),
   ).toBeVisible();

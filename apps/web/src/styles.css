@@ -2508,7 +2508,7 @@
   }
 
   /* ----------------------------------------------------------------
-     Global timer bar (always visible in nav)
+     Global timer controls and titlebar totals
      ---------------------------------------------------------------- */
 
   .global-timer {
@@ -2520,6 +2520,10 @@
     min-width: 0;
     max-width: 50%;
     flex-shrink: 0;
+  }
+
+  .global-timer-controls {
+    display: contents;
   }
 
   .global-timer-meta {
@@ -5213,6 +5217,10 @@
     );
   }
 
+  .desktop-shell-windows .ajour-nav-inner {
+    gap: 0.25rem;
+  }
+
   .ajour-nav-brand {
     display: none;
   }
@@ -5711,11 +5719,80 @@
   }
   .global-timer {
     margin-left: auto;
-    flex: 0 1 auto;
+    flex: 0 0 auto;
     min-width: 0;
     max-width: none;
     gap: 0.5rem;
     justify-content: flex-end;
+  }
+
+  :root {
+    --narrow-timer-clearance: calc(5rem + env(safe-area-inset-bottom, 0px));
+  }
+
+  .global-timer-controls {
+    position: fixed;
+    right: max(1rem, env(safe-area-inset-right, 0px));
+    bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    max-width: calc(100vw - 2rem - env(safe-area-inset-right, 0px));
+  }
+
+  .global-timer-controls .quick-timer-button-group {
+    display: contents;
+  }
+
+  .global-timer-controls .quick-timer-group-button {
+    width: 44px;
+    height: 44px;
+    flex-shrink: 0;
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    background: var(--surface);
+  }
+
+  .global-timer-controls .quick-timer-group-button-play,
+  .global-timer-controls .quick-timer-popup-anchor {
+    order: -1;
+  }
+
+  .global-timer-controls .quick-timer-group-button:hover {
+    background: var(--surface-high);
+    color: var(--text);
+  }
+
+  .global-timer-controls .quick-timer-group-button-play:hover {
+    background: var(--success-bg);
+    color: var(--success);
+  }
+
+  .global-timer-controls button:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+
+  .global-timer-controls .quick-timer-popup-anchor {
+    max-width: none;
+    flex: 0 0 auto;
+  }
+
+  .global-timer-controls .stat-pill-active {
+    height: 44px;
+    flex: 0 0 auto;
+  }
+
+  .app-content-scroll-area [data-slot="scroll-area-viewport"] > div {
+    padding-bottom: var(--narrow-timer-clearance);
+  }
+
+  .entries-table-scroll-shell
+    .entries-table-scroll-area
+    [data-slot="scroll-area-viewport"] {
+    height: 100% !important;
+    max-height: 100%;
   }
 
   .global-timer-meta,

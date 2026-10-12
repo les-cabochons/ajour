@@ -7,7 +7,6 @@ import { SidePanel } from "@/components/side-panel";
 import { Button } from "@/components/ui/button";
 import { findPinnedTask } from "@/domain/projects/project-transitions";
 import { formatClockDuration } from "@/domain/time/duration";
-import { SubmitWeekButton } from "@/features/time/submit-week-controls";
 import {
   TimeEntryEditorForm,
   type TimeEntryEditorFormHandle,
@@ -26,6 +25,7 @@ import { TimerPanel } from "@/features/timer/timer-panel";
 import { TimeEntryModal } from "@/features/timer/time-entry-modal";
 import { useLocalState, useUserPreferences } from "@/lib/local-hooks";
 import { useShortcut } from "@/lib/shortcut-handlers";
+import { useActionRequest } from "@/lib/action-request";
 import {
   getTimerContributionMs,
   getTimerDurationsMs,
@@ -318,6 +318,10 @@ export function TimePage({ date }: { date: string }) {
     });
   }
 
+  useActionRequest(({ action }) => {
+    if (action === "submit-week") openSubmitPage();
+  });
+
   // These win over the app shell's handlers while the Time page is open.
   useShortcut("entry.new", () => openEditor({}));
   useShortcut("pinned.new-entry", ({ digit }) => {
@@ -372,7 +376,6 @@ export function TimePage({ date }: { date: string }) {
             onOpenEntry={(request) => openEditor(request)}
             onReturnToDay={returnToDayView}
             onSelectWeek={goToDate}
-            onSubmit={openSubmitPage}
           />
         ) : (
           <>
@@ -391,18 +394,12 @@ export function TimePage({ date }: { date: string }) {
                   <TimeViewScopeMenu value="day" onChange={changeTimeView} />
                 ) : undefined
               }
-              headerActions={<SubmitWeekButton onClick={openSubmitPage} />}
             />
             {showsWeekUnavailableNote ? (
               <MessagePanel role="status" className="mx-3 mt-2">
                 Week needs a wider window. Showing Day instead.
               </MessagePanel>
             ) : null}
-            {/* The narrow view hides the Day viewer strip, so the button gets its own row. */}
-            <div className="flex justify-end px-3 pt-2 desktop:hidden">
-              <SubmitWeekButton onClick={openSubmitPage} />
-            </div>
-
             <TimerPanel
               date={date}
               activeEntryId={activeEntryId}

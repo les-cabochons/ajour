@@ -38,10 +38,7 @@ import {
   useLocalState,
   useUserPreferences,
 } from "@/lib/local-hooks";
-import {
-  SubmitWeekButton,
-  WeekSubmittedBadge,
-} from "@/features/time/submit-week-controls";
+import { WeekSubmittedBadge } from "@/features/time/submit-week-controls";
 import {
   formatToastDay,
   offerTimeEntryUndo,
@@ -115,7 +112,6 @@ export function WeeklyTimeView({
   onOpenEntry,
   onReturnToDay,
   onSelectWeek,
-  onSubmit,
   weekDates,
 }: {
   /** The Grid cell shown in the side panel, highlighted in the Grid. */
@@ -137,7 +133,6 @@ export function WeeklyTimeView({
   }) => void;
   onReturnToDay: () => void;
   onSelectWeek: (anchorDate: string) => void;
-  onSubmit: () => void;
   weekDates: string[];
 }) {
   const state = useLocalState();
@@ -427,7 +422,6 @@ export function WeeklyTimeView({
             overCapacity={projection.overCapacity}
             showWarning={preferences.warnWhenOverCapacity}
           />
-          <SubmitWeekButton onClick={onSubmit} />
         </div>
       </header>
 
