@@ -195,6 +195,14 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Project Health Notes
 
+### Top-level custom ordering, 2026-10-12
+
+- [x] Custom keyboard, request and pointer reordering accepts only top-level items. Root moves exchange only root slots, leaving subitem positions unchanged. Subitems retain cross-group property moves without an ordering write.
+- [x] Explicit subitem project drops disable parent mapping inheritance, including No project. Undo restores the prior assignment and custom order.
+- [x] Seven new unit cases cover drag eligibility and root-only drop ordering. Browser scenarios cover rejected subitem reorder attempts, state/priority/project moves with Undo and root keyboard ordering. The failed-source ordering fixture now uses a root card.
+- [x] All 878 unit tests, workspace typecheck and production builds passed. The full Chromium run passed 96 of 97 scenarios and exposed the project-inheritance defect. After fixing it, all ten focused ordering, property-drop and archived-project scenarios passed.
+- [ ] Complete fresh Codex review of the pushed view head before integration. The integration thread owns merging.
+
 ### Task filter consistency, 2026-10-12
 
 - [x] Task filters resolve assignments within each item's configured project. Missing tasks, tasks in another project and tasks without a valid project match No task. Known archived assignments remain filterable.

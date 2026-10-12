@@ -173,12 +173,44 @@ Feature: Backlog list and board views
     When I undo the last Backlog move
     Then the subitem is back in To do
 
+  Scenario: Keep subitems outside the custom order
+    When I use an ungrouped Backlog list ordered by Title
+    And I order the Backlog by "Custom"
+    And I record the Backlog custom order
+    And I try to reorder the subitem with keys, requests and a pointer
+    Then the Backlog custom order remains unchanged
+
+  Scenario Outline: Move subitems between groups without changing custom order
+    When I record the Backlog custom order
+    And I choose the Backlog board
+    And I group the Backlog by "<grouping>"
+    And I drag the subitem to the "<destination>" group
+    Then the subitem's "<grouping>" is "<value>"
+    And the Backlog custom order remains unchanged
+    When I undo the last Backlog move
+    Then the subitem's "<grouping>" is "<original>"
+    And the Backlog custom order remains unchanged
+
+    Examples:
+      | grouping | destination | value | original |
+      | state    | In progress | doing | todo     |
+      | priority | Medium      | 3     | 2        |
+      | project  | No project  |       | p        |
+
+  Scenario: Reorder root items around fixed subitem slots
+    When I use an ungrouped Backlog list ordered by Title
+    And I order the Backlog by "Custom"
+    And I move the parent down with Alt and ArrowDown
+    Then only the root items exchanged their custom order slots
+    When I undo the last Backlog move
+    Then the ungrouped parent's original order is restored
+
   Scenario: Restore a dragged card's custom order when its source write fails
-    Given the Backlog subitem has a source that rejects moves
+    Given the Backlog root card has a source that rejects moves
     When I choose the Backlog board
-    And I drag the subitem below the other card in In progress
-    Then the subitem has moved below the other card
-    And the failed source move restores the subitem's workflow and custom order
+    And I drag the source card below the other card in In progress
+    Then the source card has moved below the other card
+    And the failed source move restores the root card's workflow and custom order
 
   Scenario: Close a parent and its subitems from the board
     When I choose the Backlog board

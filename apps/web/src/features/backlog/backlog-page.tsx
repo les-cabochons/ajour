@@ -48,6 +48,7 @@ import {
   type BacklogGroup,
 } from "@/domain/backlog/backlog-view";
 import { getPriorityLevelName } from "@/domain/backlog/priority";
+import { isSubtaskWorkItem } from "@/domain/backlog/work-item-hierarchy";
 import { PriorityIcon } from "@/features/backlog/priority-icon";
 import type { BacklogItemActionId } from "@/domain/actions/object-actions";
 import type { LocalAppState, LocalWorkItem } from "@/domain/local-state";
@@ -233,10 +234,22 @@ export function BacklogPage() {
       options,
     );
   }
+  const canReorderItem = useCallback(
+    (itemId: string) => {
+      const item = state.workItems.find(
+        (candidate) => candidate._id === itemId,
+      );
+      return (
+        state.backlogSortMode === "custom" &&
+        Boolean(item && !isSubtaskWorkItem(item))
+      );
+    },
+    [state.backlogSortMode, state.workItems],
+  );
   function reorder(itemId: string, group: BacklogGroup, step: -1 | 1) {
-    if (state.backlogSortMode !== "custom" || archive) return;
+    if (!canReorderItem(itemId) || archive) return;
     const next = getSharedTableStepOrder(
-      group.items.map((i) => i._id),
+      group.items.filter((item) => !isSubtaskWorkItem(item)).map((i) => i._id),
       itemId,
       step,
     );
@@ -267,6 +280,15 @@ export function BacklogPage() {
     closeEditor();
     const committed = current.workItems.find((i) => i._id === itemId);
     if (!committed) return;
+    const rootIds = new Set(
+      current.workItems
+        .filter((item) => !isSubtaskWorkItem(item))
+        .map((item) => item._id),
+    );
+    const orderedIds =
+      current.backlogSortMode === "custom" && !isSubtaskWorkItem(committed)
+        ? order?.filter((id) => rootIds.has(id))
+        : undefined;
     const { group, lane } = found;
     // A swimlane is a display partition. Drops stay in the item's project;
     // project grouping is the explicit path for changing its project.
@@ -281,8 +303,8 @@ export function BacklogPage() {
             ? committed.projectId === group.projectId
             : true;
     if (sameGroup) {
-      if (order)
-        offerUndo(localStore.reorderWorkItemsWithUndo(order), {
+      if (orderedIds)
+        offerUndo(localStore.reorderWorkItemsWithUndo(orderedIds), {
           title: "Backlog item reordered",
           subject: "backlog item",
         });
@@ -290,26 +312,32 @@ export function BacklogPage() {
     }
     if (group.kind === "state")
       await moveBacklogItemWithUndo(committed, group.workflowStateId, {
-        orderedIds: order ?? undefined,
+        orderedIds,
       });
     if (group.kind === "priority")
       patchBacklogItemWithUndo(
         committed,
         { priority: group.priority },
         `Priority changed to ${getPriorityLevelName(group.priority)}`,
-        order ?? undefined,
+        orderedIds,
       );
     if (group.kind === "project")
       patchBacklogItemWithUndo(
         committed,
-        { projectId: group.projectId, taskId: undefined },
+        {
+          projectId: group.projectId,
+          taskId: undefined,
+          ...(isSubtaskWorkItem(committed)
+            ? { inheritsParentMapping: false }
+            : {}),
+        },
         "Project changed",
-        order ?? undefined,
+        orderedIds,
       );
   }
   const drag = useBacklogDrag({
     targets,
-    canReorder: state.backlogSortMode === "custom",
+    canReorder: canReorderItem,
     disabled: archive || narrow,
     onDrop: (...args) => void drop(...args),
   });
@@ -416,7 +444,10 @@ export function BacklogPage() {
         id === "open"
           ? openPage(item)
           : action(item, id, { askToSettle: shortcutId === "item.settle-ask" }),
-      onReorder: (step) => reorder(item._id, group, step),
+      onReorder:
+        !archive && canReorderItem(item._id)
+          ? (step) => reorder(item._id, group, step)
+          : undefined,
     });
   }
   function editorForm(titleAs?: typeof DialogTitle) {
@@ -668,6 +699,7 @@ export function BacklogPage() {
                               className={cn(
                                 drag.drag?.itemId === item._id && "opacity-30",
                                 drag.drag?.targetKey === key &&
+                                  canReorderItem(drag.drag.itemId) &&
                                   drag.drag.index === index &&
                                   drag.drag.itemId !== item._id &&
                                   "backlog-drop-before",

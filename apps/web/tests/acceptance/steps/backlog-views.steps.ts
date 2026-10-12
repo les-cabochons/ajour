@@ -941,13 +941,125 @@ Then("the list scrolls without starting a drag", async ({ page }) => {
   await expectNativeBacklogScroll(page);
 });
 Then("the ungrouped custom list remains draggable", async ({ page }) => {
-  const items = page.locator("[data-work-item-id]");
+  const items = page.locator(
+    '[data-work-item-id]:not([data-work-item-id="child"])',
+  );
   expect(
     await items.evaluateAll((items) =>
       items.map((item) => getComputedStyle(item).touchAction),
     ),
   ).toEqual(Array(await items.count()).fill("none"));
+  await expect(page.locator('[data-work-item-id="child"]')).not.toHaveCSS(
+    "touch-action",
+    "none",
+  );
 });
+When("I record the Backlog custom order", async ({ page }) => {
+  await page.evaluate(() =>
+    sessionStorage.setItem(
+      "subitem-order",
+      JSON.stringify(
+        JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems.map(
+          (item: { _id: string }) => item._id,
+        ),
+      ),
+    ),
+  );
+});
+async function expectSubitemOrderUnchanged(page: Page) {
+  const snapshot = await page.evaluate(() => ({
+    order: JSON.parse(
+      localStorage.getItem("ajour.local-state.v2")!,
+    ).workItems.map((item: { _id: string }) => item._id),
+    before: JSON.parse(sessionStorage.getItem("subitem-order")!),
+  }));
+  expect(snapshot.order).toEqual(snapshot.before);
+}
+When(
+  "I try to reorder the subitem with keys, requests and a pointer",
+  async ({ page }) => {
+    const child = page.locator('[data-work-item-id="child"]');
+    await expect(child).not.toHaveCSS("touch-action", "none");
+    for (const key of ["Alt+ArrowUp", "Alt+ArrowDown"]) {
+      await child.focus();
+      await child.press(key);
+      await expectSubitemOrderUnchanged(page);
+    }
+    for (const action of ["move-up", "move-down"]) {
+      await page.goto(`/backlog?action=${action}&target=child`);
+      await page.waitForURL((url) => !url.searchParams.has("action"));
+      await expectSubitemOrderUnchanged(page);
+    }
+    const from = await child.locator(".backlog-item-title").boundingBox();
+    const to = await page.locator('[data-work-item-id="other"]').boundingBox();
+    await page.mouse.move(from!.x + 20, from!.y + 8);
+    await page.mouse.down();
+    await page.mouse.move(to!.x + 40, to!.y + to!.height - 3, { steps: 10 });
+    await expect(page.locator(".backlog-drag-overlay")).toHaveCount(0);
+    await page.mouse.up();
+    await expectSubitemOrderUnchanged(page);
+  },
+);
+Then("the Backlog custom order remains unchanged", async ({ page }) => {
+  await expectSubitemOrderUnchanged(page);
+});
+When("I group the Backlog by {string}", async ({ page }, grouping: string) => {
+  await page.getByRole("button", { name: "Display", exact: true }).click();
+  await page.getByLabel("Grouping", { exact: true }).selectOption(grouping);
+  await page.keyboard.press("Escape");
+});
+When(
+  "I drag the subitem to the {string} group",
+  async ({ page }, label: string) => {
+    const from = await page
+      .locator('[data-work-item-id="child"] .backlog-item-title')
+      .boundingBox();
+    const target = await page
+      .getByRole("region", { name: label, exact: true })
+      .boundingBox();
+    await page.mouse.move(from!.x + 20, from!.y + 8);
+    await page.mouse.down();
+    await page.mouse.move(target!.x + 40, target!.y + 80, { steps: 10 });
+    await page.mouse.up();
+  },
+);
+Then(
+  "the subitem's {string} is {string}",
+  async ({ page }, grouping: string, value: string) => {
+    await expect
+      .poll(() =>
+        page.evaluate((grouping) => {
+          const child = JSON.parse(
+            localStorage.getItem("ajour.local-state.v2")!,
+          ).workItems.find((item: { _id: string }) => item._id === "child");
+          const field =
+            grouping === "state"
+              ? "workflowStateId"
+              : grouping === "priority"
+                ? "priority"
+                : "projectId";
+          return String(child[field] ?? "");
+        }, grouping),
+      )
+      .toBe(value);
+  },
+);
+When("I move the parent down with Alt and ArrowDown", async ({ page }) => {
+  const parent = page.locator('[data-work-item-id="parent"]');
+  await parent.focus();
+  await parent.press("Alt+ArrowDown");
+});
+Then(
+  "only the root items exchanged their custom order slots",
+  async ({ page }) => {
+    const order = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems.map(
+        (item: { _id: string }) => item._id,
+      ),
+    );
+    expect(order.slice(0, 3)).toEqual(["other", "child", "parent"]);
+  },
+);
 When(
   "I reorder the ungrouped parent below the other item",
   async ({ page }) => {
@@ -1001,7 +1113,7 @@ When("I drag the subitem to In progress", async ({ page }) => {
 });
 
 Given(
-  "the Backlog subitem has a source that rejects moves",
+  "the Backlog root card has a source that rejects moves",
   async ({ page }) => {
     const plugin = {
       id: "azure_devops",
@@ -1052,6 +1164,11 @@ Given(
       Object.assign(
         state.workItems.find((item: { _id: string }) => item._id === "child"),
         {
+          title: "Synced root card",
+          parentWorkItemId: undefined,
+          parentSourceId: undefined,
+          hierarchyLevel: 0,
+          inheritsParentMapping: false,
           source: "azure_devops",
           sourceId: "source-child",
           sourceConnectionId: "connection-1",
@@ -1095,7 +1212,7 @@ Given(
   },
 );
 When(
-  "I drag the subitem below the other card in In progress",
+  "I drag the source card below the other card in In progress",
   async ({ page }) => {
     const from = await page
       .locator('[data-work-item-id="child"] .backlog-item-title')
@@ -1107,7 +1224,7 @@ When(
     await page.mouse.up();
   },
 );
-Then("the subitem has moved below the other card", async ({ page }) => {
+Then("the source card has moved below the other card", async ({ page }) => {
   await expect
     .poll(() =>
       page.evaluate(() => {
@@ -1126,11 +1243,11 @@ Then("the subitem has moved below the other card", async ({ page }) => {
     .toBe(true);
 });
 Then(
-  "the failed source move restores the subitem's workflow and custom order",
+  "the failed source move restores the root card's workflow and custom order",
   async ({ page }) => {
     await expect(
       page.locator('h2[data-type="error"]').filter({
-        hasText: 'Couldn\'t update "Backlog subitem" in its source',
+        hasText: 'Couldn\'t update "Synced root card" in its source',
       }),
     ).toBeVisible({ timeout: 15000 });
     const snapshot = await page.evaluate(() => ({
@@ -1149,6 +1266,11 @@ Then(
       workflowStateId: "todo",
       sourceStatusKey: "new",
     });
+    expect(
+      snapshot.state.workItems.find(
+        (item: { _id: string }) => item._id === "child",
+      ).parentWorkItemId,
+    ).toBeUndefined();
     await expect(
       page
         .getByRole("region", { name: "To do", exact: true })

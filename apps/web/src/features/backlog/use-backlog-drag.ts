@@ -16,7 +16,7 @@ export interface BacklogDropTarget {
 /** A drag needs either another destination in its lane or a reorderable peer. */
 export function canDragBacklogItem(
   targets: readonly BacklogDropTarget[],
-  canReorder: boolean,
+  canReorder: (itemId: string) => boolean,
   itemId: string,
   originKey: string,
 ) {
@@ -25,10 +25,34 @@ export function canDragBacklogItem(
     (target) =>
       target.key.split("/")[0] === lane &&
       (target.key !== originKey ||
-        (canReorder &&
+        (canReorder(itemId) &&
           target.itemIds.includes(itemId) &&
-          target.itemIds.length > 1)),
+          target.itemIds.some(
+            (peerId) => peerId !== itemId && canReorder(peerId),
+          ))),
   );
+}
+
+export function getBacklogDropOrder(
+  itemIds: string[],
+  itemId: string,
+  index: number,
+  sameGroup: boolean,
+  canReorder: (itemId: string) => boolean,
+) {
+  if (!canReorder(itemId)) return null;
+  const others = itemIds.filter((id) => id !== itemId);
+  const targetIndex = others.slice(0, index).filter(canReorder).length;
+  const sortable = itemIds.filter(canReorder);
+  if (sameGroup)
+    return getSharedTableDropOrder(
+      sortable,
+      sortable.indexOf(itemId),
+      targetIndex,
+    );
+  const order = sortable.filter((id) => id !== itemId);
+  order.splice(targetIndex, 0, itemId);
+  return order;
 }
 interface Drag {
   itemId: string;
@@ -49,7 +73,7 @@ export function useBacklogDrag({
   onDrop,
 }: {
   targets: BacklogDropTarget[];
-  canReorder: boolean;
+  canReorder: (itemId: string) => boolean;
   disabled: boolean;
   onDrop: (itemId: string, targetKey: string, order: string[] | null) => void;
 }) {
@@ -159,14 +183,13 @@ export function useBacklogDrag({
         if (!commit || !d?.targetKey) return;
         const target = live.current.targets.find((t) => t.key === d.targetKey);
         if (!target) return;
-        const ids = target.itemIds.filter((id) => id !== itemId);
-        ids.splice(d.index, 0, itemId);
-        const origin = target.itemIds.indexOf(itemId);
-        const order = live.current.canReorder
-          ? d.originKey === d.targetKey
-            ? getSharedTableDropOrder(target.itemIds, origin, d.index)
-            : ids
-          : null;
+        const order = getBacklogDropOrder(
+          target.itemIds,
+          itemId,
+          d.index,
+          d.originKey === d.targetKey,
+          live.current.canReorder,
+        );
         if (d.originKey !== d.targetKey || order)
           live.current.onDrop(itemId, d.targetKey, order);
       },
