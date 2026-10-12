@@ -43,7 +43,7 @@ Feature: Open the local time workspace
 
   Scenario: Submit part of a week from the submit page
     Given I have a week of saved entries
-    When I open the submit page from the Week header
+    When I open the submit page from the Week totals dropdown
     Then the submit page merges Monday's task entries
     And copying the merged line gives decimal hours and merged comments
     When I drop Tuesday from the submission
@@ -53,8 +53,23 @@ Feature: Open the local time workspace
 
   Scenario: Open the submit page from the narrow view
     Given I have a week of saved entries
-    When I open the submit page from the narrow Day header
+    When I open the submit page from the narrow totals dropdown
     Then the submit page lists the week's entries
+
+  Scenario: Open the selected week's submit page from Settings
+    Given I have a week of saved entries
+    When I open the submit page from Settings totals
+    Then the submit page lists the week's entries
+
+  Scenario: Save a valid entry draft before opening submission
+    Given I have a week of saved entries
+    When I request week submission with "02:00" hours in an open entry
+    Then the submit page includes the saved entry draft
+
+  Scenario: Keep an invalid entry draft open when requesting submission
+    Given I have a week of saved entries
+    When I request week submission with "invalid" hours in an open entry
+    Then the invalid entry draft stays open instead of submitting
 
   Scenario Outline: Undo deleting a time entry
     Given I have a week of saved entries

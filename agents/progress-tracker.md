@@ -125,6 +125,22 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Browser checks with the platform CSS classes confirmed no gap in Windows expanded and rail layouts, the retained 52px macOS strip, and unchanged web spacing.
 - [x] Repository typecheck passed. Formatting passed with the checkout's CRLF line endings; the default check reports line-ending differences in 329 files because Git uses `core.autocrlf=true`.
 
+## Narrow timer controls, 2026-10-12
+
+- [x] Move Start, Create time entry, and the running-entry pill to the bottom right below 768px; keep the daily total in the titlebar.
+- [x] Preserve the shared editor and shortcuts, reserve scroll space, and place narrow Undo notifications above the controls.
+- [x] Browser checks covered 320px and 374px narrow layouts, Windows titlebar CSS spacing, the 1280px titlebar controls, Start and running-entry editing, the Create time entry dialog, and Backlog. A 40-entry list scrolls its final row above the floating controls.
+- [x] `just test` passed all 635 tests; `just typecheck` and the web and desktop renderer builds passed. Commands use the installed Git Bash shell because `sh` is not on PATH in this Windows worktree.
+- [x] Final `just format-check` and web and desktop renderer builds passed after the scroll-height adjustment. A preview Undo toast sits above the floating controls without overlap.
+
+## Submit week in totals, 2026-10-12
+
+- [x] Move Submit week from the Day and Week headers into the titlebar totals popover, including the narrow view and Settings.
+- [x] Keep totals and submission on the selected week and preserve the Time page's draft validation before navigation.
+- [x] Verified historical-week navigation, wide and narrow popover layout, valid and invalid draft handling, and submission from Settings. After rebasing onto the Windows sidebar spacing fix, all 40 acceptance scenarios passed together on isolated port 5194. The default port sometimes served an older app.
+- [x] Rebased-branch workspace typecheck and web and desktop renderer builds passed.
+- [x] Scoped formatting checks passed and temporary test configuration was removed.
+
 ## Standard Task Flow
 
 - [ ] Understand the requested outcome.

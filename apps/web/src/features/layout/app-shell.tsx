@@ -6,6 +6,7 @@ import {
   useState,
   type CSSProperties,
 } from "react";
+import { createPortal } from "react-dom";
 import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   RiAddLine as Plus,
@@ -42,6 +43,7 @@ import {
   type NewEntryRequest,
 } from "@/features/time/new-entry-request";
 import { TimeEntryModal } from "@/features/timer/time-entry-modal";
+import { SubmitWeekButton } from "@/features/time/submit-week-controls";
 import { formatClockDuration } from "@/domain/time/duration";
 import { getLocalProjectDisplayName } from "@/domain/local-state";
 import { findPinnedTask } from "@/domain/projects/project-transitions";
@@ -274,18 +276,22 @@ function ConnectorAutoSyncScheduler() {
 }
 
 /**
- * The Today pill in the titlebar. A click opens a popover with the day and week
- * totals.
+ * The selected day's titlebar pill, with day and week totals and Submit week.
  */
 function DayTotalsPill({
+  date,
   dayTotalMs,
   weekTotalMs,
+  onSubmit,
 }: {
+  date: string;
   dayTotalMs: number;
   weekTotalMs: number;
+  onSubmit: () => void;
 }) {
+  const [open, setOpen] = useState(false);
   return (
-    <Popover>
+    <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         className={cn(
           "stat-pill global-timer-today stat-pill-clickable shrink-0",
@@ -293,7 +299,9 @@ function DayTotalsPill({
         )}
         aria-label="Show day and week totals"
       >
-        <span className="stat-pill-label">Today</span>
+        <span className="stat-pill-label">
+          {date === todayIsoDate() ? "Today" : "Day"}
+        </span>
         <span className="stat-pill-value">
           {formatClockDuration(dayTotalMs)}
         </span>
@@ -316,6 +324,14 @@ function DayTotalsPill({
             {formatClockDuration(dayTotalMs)}
           </span>
         </div>
+        <div className="mt-1 border-t border-border pt-2">
+          <SubmitWeekButton
+            onClick={() => {
+              setOpen(false);
+              onSubmit();
+            }}
+          />
+        </div>
       </PopoverContent>
     </Popover>
   );
@@ -327,13 +343,20 @@ function DayTotalsPill({
 type TitlebarEditor = "new" | "running" | null;
 
 /**
- * The titlebar's New entry (+), Start (▶), Running pill and totals pill. "+" and the
+ * New entry (+), Start (▶), Running pill and titlebar totals. Entry controls float
+ * at the bottom right in the narrow view. "+" and the
  * pill open the entry editor in a popover anchored to them, or in the dialog in the
  * narrow view. New entry… on a task or backlog item (`openNewEntryEditor`) opens the
  * same popover, anchored to its row. New entries default to today; the Start button
  * starts one at once.
  */
-function GlobalTimerBar() {
+function GlobalTimerBar({
+  date,
+  onSubmit,
+}: {
+  date: string;
+  onSubmit: () => void;
+}) {
   const state = useLocalState();
   const projects = useLocalProjects();
   const isNarrowView = useIsNarrowView();
@@ -348,7 +371,7 @@ function GlobalTimerBar() {
 
   const currentTimer = state.timers[0] ?? null;
   const today = todayIsoDate();
-  const weekDates = useMemo(() => getIsoWeekDates(today), [today]);
+  const weekDates = useMemo(() => getIsoWeekDates(date), [date]);
   const newEntryTarget = useMemo(
     () => ({
       kind: "create" as const,
@@ -416,17 +439,17 @@ function GlobalTimerBar() {
     runningDurationMs,
   });
 
-  const todayTotalMs = useMemo(() => {
+  const dayTotalMs = useMemo(() => {
     let total = state.timesheetEntries
-      .filter((entry) => entry.localDate === today)
+      .filter((entry) => entry.localDate === date)
       .reduce((sum, entry) => sum + entry.durationMs, 0);
 
-    if (currentTimer && currentTimer.localDate === today) {
+    if (currentTimer && currentTimer.localDate === date) {
       total += timerContributionMs;
     }
 
     return total;
-  }, [state.timesheetEntries, today, currentTimer, timerContributionMs]);
+  }, [state.timesheetEntries, date, currentTimer, timerContributionMs]);
 
   const weekTotalMs = useMemo(() => {
     const weekDateSet = new Set(weekDates);
@@ -476,8 +499,8 @@ function GlobalTimerBar() {
   const runningPillClassName =
     "stat-pill stat-pill-active stat-pill-active-clickable";
 
-  return (
-    <div className="global-timer">
+  const controls = (
+    <div className="global-timer-controls">
       <div
         className={cn(
           "quick-timer-button-group",
@@ -490,6 +513,7 @@ function GlobalTimerBar() {
             onClick={() => openNewEntry()}
             label="Create time entry"
             shortcut="entry.new"
+            side="top"
           >
             <Plus className="h-3.5 w-3.5" />
           </TooltipButton>
@@ -513,6 +537,7 @@ function GlobalTimerBar() {
             onClick={handleStartClick}
             label="Start"
             shortcut="entry.stop-or-start"
+            side={isNarrowView ? "top" : "bottom"}
           >
             <Play className="h-3.5 w-3.5" />
           </TooltipButton>
@@ -550,7 +575,19 @@ function GlobalTimerBar() {
           )}
         </div>
       ) : null}
-      <DayTotalsPill dayTotalMs={todayTotalMs} weekTotalMs={weekTotalMs} />
+    </div>
+  );
+
+  return (
+    <div className="global-timer">
+      {/* The titlebar's backdrop filter would contain fixed-position children. */}
+      {isNarrowView ? createPortal(controls, document.body) : controls}
+      <DayTotalsPill
+        date={date}
+        dayTotalMs={dayTotalMs}
+        weekTotalMs={weekTotalMs}
+        onSubmit={onSubmit}
+      />
       {isNarrowView && editor !== null ? (
         <TimeEntryModal
           date={today}
@@ -708,7 +745,28 @@ export function AppShell() {
                 ) : null}
               </div>
 
-              <GlobalTimerBar />
+              <GlobalTimerBar
+                date={selectedTimeDate}
+                onSubmit={() => {
+                  if (isTimeActive && /^\/time\/[^/]+$/.test(pathname)) {
+                    void navigate({
+                      to: "/time/$date",
+                      params: {
+                        date: pathname.split("/")[2] ?? selectedTimeDate,
+                      },
+                      search: ((previous: Record<string, unknown>) => ({
+                        ...previous,
+                        action: "submit-week",
+                      })) as never,
+                    });
+                  } else {
+                    void navigate({
+                      to: "/time/$date/submit",
+                      params: { date: selectedTimeDate },
+                    });
+                  }
+                }}
+              />
               {isNarrowView ? (
                 <NarrowSettingsButton pathname={pathname} />
               ) : null}
