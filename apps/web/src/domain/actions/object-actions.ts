@@ -184,6 +184,8 @@ export interface BacklogItemActionOptions {
   /** Subitems removed together with the item, stated in the Delete label. */
   subitemCount: number;
   isSubitem: boolean;
+  /** Whether this item owns the running entry. */
+  isRunning?: boolean;
   /** Whether a snooze hides the item right now. */
   isSnoozed?: boolean;
   /** Set inside an editor, where Edit is the current mode. */
@@ -227,7 +229,12 @@ export function getBacklogItemActions(
   const isSettled = item.status === "settled";
   const archivedReason = isArchived ? RESTORE_ITEM_FIRST : undefined;
   const actions: ObjectAction<BacklogItemActionId>[] = [
-    { id: "start-entry", label: "Start entry", disabledReason: archivedReason },
+    {
+      id: "start-entry",
+      label: "Start entry",
+      disabledReason:
+        archivedReason ?? (options.isRunning ? "Already running" : undefined),
+    },
     { id: "new-entry", label: "New entry…", disabledReason: archivedReason },
     {
       id: "edit",

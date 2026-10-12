@@ -62,7 +62,8 @@ export function BacklogPeek({
     return () => window.removeEventListener("keydown", close);
   }, [onClose]);
   const project = state.projects.find((p) => p._id === item.projectId);
-  const running = state.timers.some((timer) => timer.workItemId === item._id);
+  const actions = getBacklogSurfaceActions(item, state, now);
+  const startAction = actions.find((action) => action.id === "start-entry");
   const children = getDirectChildWorkItems(item, state.workItems);
   const reference = parseWorkItemReference(item.sourceId) ?? item.sourceId;
   return (
@@ -75,7 +76,7 @@ export function BacklogPeek({
         <div className="flex items-center gap-1">
           <ObjectActionsButton
             label={`Actions for ${item.title}`}
-            actions={getBacklogSurfaceActions(item, state, now)}
+            actions={actions}
             onAction={onAction}
           />
           <TooltipButton
@@ -93,7 +94,7 @@ export function BacklogPeek({
           {item.status !== "archived" && (
             <Button
               size="sm"
-              disabled={running}
+              disabled={Boolean(startAction?.disabledReason)}
               onClick={() => onAction("start-entry")}
             >
               <RiPlayLine className="size-4" />

@@ -257,6 +257,14 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] The foundation passes 710 unit tests, workspace typecheck and three Chromium confirmation scenarios.
 - [ ] Carry the fixes through the stack, verify the final heads and request fresh reviews.
 
+### Running-item Start entry in action menus, 2026-10-12
+
+- [x] The shared backlog action rules disable Start entry for the running item in peek and row menus. The peek button uses the same action set.
+- [x] The shared Start command ignores requests for the already running item while allowing starts with no running item or another item running.
+- [x] Domain, command and Chromium regressions pass. Browser checks include both menus, timer identity and start time, another item and starting after Stop.
+- [x] All 795 unit tests and 67 Chromium scenarios pass, along with workspace typecheck, production build and formatting.
+- [ ] Fresh Codex review of the pushed view-layer head is pending. Merging remains owned by the integration thread.
+
 ### Peek Start entry and the running item, 2026-10-12
 
 - [x] The peek disables Start entry while its item owns the running entry, matching the row control.

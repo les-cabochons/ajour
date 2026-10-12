@@ -185,6 +185,7 @@ export function getBacklogSurfaceActions(
   now: number,
 ) {
   return getBacklogItemActions(item, {
+    isRunning: state.timers.some((timer) => timer.workItemId === item._id),
     isSubitem: Boolean(
       item.parentWorkItemId || item.parentSourceId || item.hierarchyLevel,
     ),

@@ -30,6 +30,12 @@ export function runBacklogItemAction(
 ) {
   switch (actionId) {
     case "start-entry":
+      if (
+        localStore
+          .snapshot()
+          .timers.some((timer) => timer.workItemId === workItem._id)
+      )
+        return;
       // Today, saving any running entry first.
       localStore.startTimer({
         ...getWorkItemEntryValues(workItem),

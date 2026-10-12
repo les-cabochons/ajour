@@ -224,6 +224,28 @@ describe("backlog item actions", () => {
     expect(actions.slice(-2).every((action) => action.destructive)).toBe(true);
   });
 
+  it("blocks Start entry for the running item and retains manual entry and archive rules", () => {
+    const options = { subitemCount: 0, isSubitem: false, isRunning: true };
+    const running = getBacklogItemActions(manualItem, options);
+    expect(
+      running.find((action) => action.id === "start-entry")?.disabledReason,
+    ).toBe("Already running");
+    expect(
+      running.find((action) => action.id === "new-entry")?.disabledReason,
+    ).toBeUndefined();
+    expect(
+      getBacklogItemActions(
+        { ...manualItem, status: "archived" },
+        options,
+      ).find((action) => action.id === "start-entry")?.disabledReason,
+    ).toBe("Restore the item first");
+    expect(
+      getBacklogItemActions(manualItem, { ...options, isRunning: false }).find(
+        (action) => action.id === "start-entry",
+      )?.disabledReason,
+    ).toBeUndefined();
+  });
+
   it("labels Settle with an ellipsis when it opens the settle dialog", () => {
     const label = (settleOpensDialog: boolean) =>
       getBacklogItemActions(syncedItem, {

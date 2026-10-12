@@ -192,6 +192,28 @@ Then("the parent peek cannot restart its running entry", async ({ page }) => {
       .getByRole("complementary", { name: "Backlog item peek" })
       .getByRole("button", { name: "Start entry", exact: true }),
   ).toBeDisabled();
+  const peek = page.getByRole("complementary", { name: "Backlog item peek" });
+  await peek
+    .getByRole("button", { name: "Actions for Backlog parent", exact: true })
+    .click();
+  await expect(
+    page.getByRole("menuitem", { name: /^Start entry/ }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("menuitem", { name: /^Start entry/ }),
+  ).toContainText("Already running");
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await page
+    .locator('[data-work-item-id="parent"]')
+    .getByRole("button", { name: "Actions for Backlog parent", exact: true })
+    .click();
+  await expect(
+    page.getByRole("menuitem", { name: /^Start entry/ }),
+  ).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  await expect(peek).toBeVisible();
   const snapshot = await page.evaluate(() => ({
     state: JSON.parse(localStorage.getItem("ajour.local-state.v2")!),
     baseline: JSON.parse(sessionStorage.getItem("peek-running-entry")!),
@@ -210,6 +232,18 @@ Then("the other peek can start an entry", async ({ page }) => {
       .getByRole("complementary", { name: "Backlog item peek" })
       .getByRole("button", { name: "Start entry", exact: true }),
   ).toBeEnabled();
+  await page
+    .getByRole("complementary", { name: "Backlog item peek" })
+    .getByRole("button", {
+      name: "Actions for Other backlog item",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole("menuitem", { name: "Start entry", exact: true }),
+  ).toBeEnabled();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toHaveCount(0);
 });
 When("I stop the Backlog running entry from the titlebar", async ({ page }) => {
   await page
@@ -228,6 +262,15 @@ Then("the parent peek can start a new entry after Stop", async ({ page }) => {
     .getByRole("complementary", { name: "Backlog item peek" })
     .getByRole("button", { name: "Start entry", exact: true });
   await expect(start).toBeEnabled();
+  await page
+    .getByRole("complementary", { name: "Backlog item peek" })
+    .getByRole("button", { name: "Actions for Backlog parent", exact: true })
+    .click();
+  await expect(
+    page.getByRole("menuitem", { name: "Start entry", exact: true }),
+  ).toBeEnabled();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("menu")).toHaveCount(0);
   await start.click();
   await expect(start).toBeDisabled();
   const snapshot = await page.evaluate(() => ({
