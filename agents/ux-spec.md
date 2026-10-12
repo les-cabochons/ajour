@@ -588,9 +588,8 @@ Syncs move synced items between states:
 
 ### Settle rules
 
-- Settle rules are now the out mapping of each source project in Settings > Workflow, see Mapping source states under Backlog. Ask opens the settle dialog; a default source state applies it without one.
-- Manual items have no settle rule. They always archive.
-- With a default source state, E and the sidebar's Settle button use it. Shift+E or Shift-click opens the dialog prefilled with it.
+- There are no separate settle rules. Settle on a synced item whose connector can write opens the settle dialog. Moving an item between workflow states writes through the write rules in Settings > Workflow, see Mapping source states under Backlog.
+- Manual items always archive.
 
 ### Backlog item page
 

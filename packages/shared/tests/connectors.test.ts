@@ -77,4 +77,37 @@ describe("connector plugin manifest", () => {
     expect(pluginHasConnector(manifest)).toBe(false);
     expect(pluginHasCodeHost(manifest)).toBe(true);
   });
+
+  it("accepts a priority scale with ranges for Ajour's levels", () => {
+    const manifest = connectorPluginManifestSchema.parse({
+      ...validManifest,
+      capabilities: { connector: {
+        settle: true,
+        priorityScale: {
+          urgent: { min: 1, max: 1 },
+          high: { min: 2, max: 2 },
+          low: { min: 3, max: 9 },
+        },
+      } },
+    });
+    expect(manifest.capabilities.connector?.priorityScale?.low).toEqual({
+      min: 3,
+      max: 9,
+    });
+  });
+
+  it("rejects priority ranges that overlap or run backwards", () => {
+    for (const priorityScale of [
+      { urgent: { min: 1, max: 5 }, high: { min: 5, max: 9 } },
+      { medium: { min: 9, max: 1 } },
+      { low: { min: 1, max: 1000 } },
+    ]) {
+      expect(() =>
+        connectorPluginManifestSchema.parse({
+          ...validManifest,
+          capabilities: { connector: { priorityScale } },
+        }),
+      ).toThrow();
+    }
+  });
 });

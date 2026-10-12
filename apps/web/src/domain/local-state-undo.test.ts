@@ -98,6 +98,8 @@ function createState(): LocalAppState {
     timesheetImportDrafts: [],
     workflowStates: [],
     workflowStateMappings: [],
+    workflowStateWriteRules: [],
+    priorityScales: [],
   } as unknown as LocalAppState;
 }
 

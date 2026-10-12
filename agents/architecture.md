@@ -35,7 +35,8 @@ Current deep domain modules demonstrate this boundary:
 
 - `domain/backlog/work-item-transitions.ts` owns manual work-item creation, hierarchy-aware mapping changes, ordering, deletion, and estimate-conflict decisions.
 - `domain/backlog/backlog-item-lifecycle.ts` owns backlog item status: moves between workflow states (a done state closes the item, leaving one reopens it), settle, unsettle, archive, restore, which open subitems a close or settle takes along, snooze, the Returned mark, and the sidebar's item order.
-- `domain/backlog/workflow-states.ts` owns the workflow: the default states, the Done flag and the rule that one done state always remains, ordering, and how source states map onto workflow states.
+- `domain/backlog/workflow-states.ts` owns the workflow: the default states, the Done flag and the rule that one done state always remains, ordering, how source states map onto workflow states per source project (with the connection's mapping as the fallback), automatic mapping of new source states, and the write rules that plan what a move writes to the source.
+- `domain/backlog/priority.ts` owns the five priority levels and each connection's ranges of source values, seeded from the connector manifest's `priorityScale`.
 - `domain/backlog/work-item-connector.ts` owns connector import, merge, disappearance, reactivation, and estimate-sync transitions.
 - `domain/projects/project-transitions.ts` owns project and task creation, legacy hydration, ordering, edits, and archive state.
 - `domain/time/timesheet-entry.ts` owns manual entry creation, edits, deletion, ordering, submission state, and the corresponding work-item estimate adjustments.

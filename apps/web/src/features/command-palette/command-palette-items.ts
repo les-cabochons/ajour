@@ -44,6 +44,7 @@ import {
   type ShortcutDefinition,
   type ShortcutPlatform,
 } from "@/lib/shortcuts";
+import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
 
 /** A list the palette shows: the main list, or the actions of one search result. */
 export type PaletteView =
@@ -393,6 +394,7 @@ function backlogItemSection(
       ? 0
       : getDirectChildWorkItems(workItem, [...workItems]).length,
     settleOpensDialog: settleOpensDialog?.(workItem),
+    otherSourceStateCount: getOtherSourceStates(workItem).length,
   });
 
   return {

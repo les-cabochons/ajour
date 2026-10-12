@@ -17,6 +17,7 @@ const UNDO_COLLECTIONS = [
   "workItems",
   "workflowStates",
   "workflowStateMappings",
+  "workflowStateWriteRules",
 ] as const satisfies readonly (keyof LocalAppState)[];
 
 type UndoCollection = (typeof UNDO_COLLECTIONS)[number];
@@ -33,7 +34,9 @@ const recordKeys: {
   workItems: (workItem) => workItem._id,
   workflowStates: (status) => status._id,
   workflowStateMappings: (mapping) =>
-    `${mapping.source}:${mapping.connectionId}:${mapping.sourceStatusKey}`,
+    `${mapping.source}:${mapping.connectionId}:${mapping.sourceProjectName ?? ""}:${mapping.sourceStatusKey}`,
+  workflowStateWriteRules: (rule) =>
+    `${rule.source}:${rule.connectionId}:${rule.sourceProjectName ?? ""}:${rule.workflowStateId}`,
 };
 
 /**
@@ -307,6 +310,11 @@ export function restoreUndo(
       workflowStates: restoreCollection("workflowStates", state, undo),
       workflowStateMappings: restoreCollection(
         "workflowStateMappings",
+        state,
+        undo,
+      ),
+      workflowStateWriteRules: restoreCollection(
+        "workflowStateWriteRules",
         state,
         undo,
       ),

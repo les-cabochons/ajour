@@ -16,12 +16,17 @@ import {
   FieldError,
   FieldLabel,
 } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/select";
 import {
   settleArchivesWorkItem,
   type BacklogSettleChange,
 } from "@/domain/backlog/backlog-item-lifecycle";
+import {
+  getPriorityLevel,
+  getWorkItemPriorityRanges,
+  NO_PRIORITY_NAME,
+  PRIORITY_LEVELS,
+} from "@/domain/backlog/priority";
 import type { LocalWorkItem } from "@/domain/local-state";
 import { findSettleRule } from "@/domain/backlog/settle-rules";
 import {
@@ -162,7 +167,10 @@ export function SettleDialogHost() {
       setStateName(prefill?.state?.name ?? item.sourceStatusLabel ?? "");
       setPriority(
         formatPriorityInput(
-          prefill?.priority ?? item.importedPriority ?? item.priority,
+          getPriorityLevel(
+            prefill?.priority ?? item.importedPriority,
+            getWorkItemPriorityRanges(localStore.snapshot(), item),
+          ) ?? item.priority,
         ),
       );
       setLoad({ status: "loading" });
@@ -202,7 +210,12 @@ export function SettleDialogHost() {
   const currentListed = Boolean(
     findSettleState(states, workItem?.sourceStatusLabel),
   );
-  const change = buildSettleChange(states, stateName, priority);
+  const change = workItem
+    ? buildSettleChange(states, stateName, priority, {
+        importedPriority: workItem.importedPriority,
+        ranges: getWorkItemPriorityRanges(state, workItem),
+      })
+    : null;
   const currentItem = state.workItems.find(
     (item) => item._id === workItem?._id,
   );
@@ -278,17 +291,19 @@ export function SettleDialogHost() {
           <Field>
             <FieldLabel htmlFor="settle-priority">Priority</FieldLabel>
             <FieldContent>
-              <Input
+              <NativeSelect
                 id="settle-priority"
                 disabled={pending}
-                inputMode="numeric"
                 value={priority}
-                aria-invalid={change === null}
                 onChange={(event) => setPriority(event.target.value)}
-              />
-              {change === null ? (
-                <FieldError>Enter a whole number from 0 to 999.</FieldError>
-              ) : null}
+              >
+                <option value="">{NO_PRIORITY_NAME}</option>
+                {PRIORITY_LEVELS.map(({ level, name }) => (
+                  <option key={level} value={String(level)}>
+                    {name}
+                  </option>
+                ))}
+              </NativeSelect>
             </FieldContent>
           </Field>
           <DialogFooter>

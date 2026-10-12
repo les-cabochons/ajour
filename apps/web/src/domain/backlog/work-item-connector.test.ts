@@ -36,6 +36,8 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
     workItems: [],
     workflowStates: [],
     workflowStateMappings: [],
+    workflowStateWriteRules: [],
+    priorityScales: [],
     backlogSortMode: "custom",
     capture: {
       urlMode: "sanitized_path",

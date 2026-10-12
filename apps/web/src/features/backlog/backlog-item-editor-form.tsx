@@ -48,6 +48,12 @@ import { settleOpensDialog } from "@/features/backlog/settle-dialog";
 import { buildWorkflowStateOptions } from "@/features/backlog/workflow-states";
 import { isDoneWorkflowState } from "@/domain/backlog/workflow-states";
 import {
+  getWorkItemPriorityRanges,
+  NO_PRIORITY_NAME,
+  PRIORITY_LEVELS,
+} from "@/domain/backlog/priority";
+import { NativeSelect } from "@/components/ui/select";
+import {
   BACKLOG_ESTIMATE_FIELD_KEYS,
   commitBacklogTaskDraft,
   createBacklogTaskEditorSeed,
@@ -68,6 +74,7 @@ import {
 } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 import { cn } from "@/lib/utils";
+import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
 
 /** Lets a host save the draft before it loads another item into the same form. */
 export interface BacklogItemEditorFormHandle {
@@ -175,6 +182,9 @@ export function BacklogItemEditorForm({
   );
   const editor = evaluateBacklogTaskEditor(fields, target, {
     subitemTotals: subitems.length > 0 ? sumSubitemEstimates(subitems) : null,
+    priorityRanges: workItem
+      ? getWorkItemPriorityRanges(localStore.snapshot(), workItem)
+      : undefined,
   });
   const { validation } = editor;
 
@@ -389,6 +399,7 @@ export function BacklogItemEditorForm({
                 subitemCount: subitems.length,
                 isEditing: true,
                 settleOpensDialog: settleOpensDialog(workItem),
+                otherSourceStateCount: getOtherSourceStates(workItem).length,
               })}
               onAction={handleAction}
               label={`Actions for ${workItem.title}`}
@@ -438,16 +449,21 @@ export function BacklogItemEditorForm({
           {!editor.isSubitem ? (
             <Field data-invalid={Boolean(validation.priorityError)}>
               <FieldLabel htmlFor={`${idPrefix}-priority`}>Priority</FieldLabel>
-              <Input
+              <NativeSelect
                 id={`${idPrefix}-priority`}
-                className="font-mono"
-                inputMode="numeric"
                 value={fields.priority}
                 onChange={(event) =>
                   updateFields({ priority: event.target.value })
                 }
                 aria-invalid={Boolean(validation.priorityError)}
-              />
+              >
+                <option value="">{NO_PRIORITY_NAME}</option>
+                {PRIORITY_LEVELS.map(({ level, name }) => (
+                  <option key={level} value={String(level)}>
+                    {name}
+                  </option>
+                ))}
+              </NativeSelect>
             </Field>
           ) : null}
           <Field>

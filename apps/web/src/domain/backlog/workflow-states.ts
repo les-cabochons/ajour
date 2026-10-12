@@ -6,6 +6,7 @@ import type {
   LocalAppState,
   LocalWorkflowState,
   LocalWorkflowStateMapping,
+  LocalWorkflowStateWriteRule,
   LocalWorkItem,
 } from "@/domain/local-state";
 
@@ -26,8 +27,25 @@ interface WorkflowStateFactories {
 export interface WorkflowStateMappingInput {
   source: ConnectorBacklogSource;
   connectionId: string;
+  /** Missing for a mapping that applies to the whole connection. */
+  sourceProjectName?: string;
   sourceStatusKey: string;
+  sourceStatusLabel?: string;
   workflowStateId?: string;
+}
+
+/** A source project's place in the mappings. */
+export interface SourceProjectRef {
+  source: LocalWorkItem["source"];
+  connectionId: string | undefined;
+  sourceProjectName?: string;
+}
+
+function sameProject(
+  mapping: { sourceProjectName?: string },
+  sourceProjectName: string | undefined,
+) {
+  return (mapping.sourceProjectName ?? "") === (sourceProjectName ?? "");
 }
 
 export function normalizeWorkflowStateName(value: string) {
@@ -146,22 +164,250 @@ export function moveWorkflowState(
   return { ...state, workflowStates };
 }
 
-export function findMappedWorkflowStateId(
+/**
+ * The mapping a source state of a source project uses: its project's own, or
+ * else the connection's.
+ */
+export function findWorkflowStateMapping(
   mappings: LocalWorkflowStateMapping[],
   source: LocalWorkItem["source"],
   connectionId: string | undefined,
   sourceStatusKey: string | undefined,
+  sourceProjectName?: string,
 ) {
   if (!connectionId || !sourceStatusKey || source === "manual") {
     return undefined;
   }
 
-  return mappings.find(
+  const candidates = mappings.filter(
     (mapping) =>
       mapping.source === source &&
       mapping.connectionId === connectionId &&
       mapping.sourceStatusKey === sourceStatusKey,
+  );
+  return (
+    (sourceProjectName
+      ? candidates.find(
+          (mapping) => mapping.sourceProjectName === sourceProjectName,
+        )
+      : undefined) ??
+    candidates.find((mapping) => mapping.sourceProjectName === undefined)
+  );
+}
+
+export function findMappedWorkflowStateId(
+  mappings: LocalWorkflowStateMapping[],
+  source: LocalWorkItem["source"],
+  connectionId: string | undefined,
+  sourceStatusKey: string | undefined,
+  sourceProjectName?: string,
+) {
+  return findWorkflowStateMapping(
+    mappings,
+    source,
+    connectionId,
+    sourceStatusKey,
+    sourceProjectName,
   )?.workflowStateId;
+}
+
+/**
+ * The source states of a source project that map to a workflow state, in
+ * mapping order. A connection-wide mapping counts unless the project maps
+ * that source state elsewhere.
+ */
+export function getSourceStatesMappedTo(
+  mappings: LocalWorkflowStateMapping[],
+  project: SourceProjectRef,
+  workflowStateId: string,
+): { key: string; label: string }[] {
+  const seen = new Set<string>();
+  const states: { key: string; label: string }[] = [];
+  for (const mapping of mappings) {
+    if (
+      mapping.source !== project.source ||
+      mapping.connectionId !== project.connectionId ||
+      seen.has(mapping.sourceStatusKey)
+    ) {
+      continue;
+    }
+    const effective = findWorkflowStateMapping(
+      mappings,
+      project.source,
+      project.connectionId,
+      mapping.sourceStatusKey,
+      project.sourceProjectName,
+    );
+    if (effective?.workflowStateId === workflowStateId) {
+      seen.add(mapping.sourceStatusKey);
+      states.push({
+        key: mapping.sourceStatusKey,
+        label: effective.sourceStatusLabel ?? mapping.sourceStatusKey,
+      });
+    }
+  }
+  return states;
+}
+
+/** The write rule set for a workflow state of a source project, if any. */
+export function findWorkflowStateWriteRule(
+  rules: LocalWorkflowStateWriteRule[],
+  project: SourceProjectRef,
+  workflowStateId: string,
+) {
+  const candidates = rules.filter(
+    (rule) =>
+      rule.source === project.source &&
+      rule.connectionId === project.connectionId &&
+      rule.workflowStateId === workflowStateId,
+  );
+  return (
+    (project.sourceProjectName
+      ? candidates.find((rule) => sameProject(rule, project.sourceProjectName))
+      : undefined) ??
+    candidates.find((rule) => rule.sourceProjectName === undefined)
+  );
+}
+
+/** What moving a synced item into a workflow state should write. */
+export type WorkflowStateWritePlan =
+  | { kind: "write"; sourceStatusLabel: string }
+  | { kind: "ask"; sourceStatusLabels: string[] }
+  | { kind: "none" };
+
+/**
+ * Plans the source write for moving an item into a workflow state: the rule's
+ * source state, the source states to choose from for Ask, or nothing. Without
+ * a rule it writes the first source state mapped to the workflow state. Ask
+ * with fewer than two source states writes the only one.
+ */
+export function planWorkflowStateWrite(
+  state: Pick<
+    LocalAppState,
+    "workflowStateMappings" | "workflowStateWriteRules"
+  >,
+  workItem: Pick<
+    LocalWorkItem,
+    "source" | "sourceConnectionId" | "sourceProjectName" | "sourceId"
+  >,
+  workflowStateId: string,
+): WorkflowStateWritePlan {
+  if (workItem.source === "manual" || !workItem.sourceId) {
+    return { kind: "none" };
+  }
+  const project: SourceProjectRef = {
+    source: workItem.source,
+    connectionId: workItem.sourceConnectionId,
+    sourceProjectName: workItem.sourceProjectName,
+  };
+  const mapped = getSourceStatesMappedTo(
+    state.workflowStateMappings,
+    project,
+    workflowStateId,
+  ).map((sourceState) => sourceState.label);
+  const rule = findWorkflowStateWriteRule(
+    state.workflowStateWriteRules,
+    project,
+    workflowStateId,
+  )?.write;
+
+  if (rule?.kind === "none") return { kind: "none" };
+  if (rule?.kind === "state") {
+    return { kind: "write", sourceStatusLabel: rule.sourceStatusLabel };
+  }
+  if (rule?.kind === "ask" && mapped.length > 1) {
+    return { kind: "ask", sourceStatusLabels: mapped };
+  }
+  return mapped[0]
+    ? { kind: "write", sourceStatusLabel: mapped[0] }
+    : { kind: "none" };
+}
+
+/** A source state a sync or a connector reported, with its done category. */
+export interface ReportedSourceState {
+  source: LocalWorkItem["source"];
+  connectionId: string;
+  sourceProjectName?: string;
+  label: string;
+  done?: boolean;
+}
+
+/**
+ * Maps new source states the user hasn't mapped yet, for the whole
+ * connection: one whose name matches a workflow state, ignoring case, maps to
+ * it, and one in the tool's done category maps to the first done state.
+ * Anything else stays unmapped.
+ */
+export function autoMapSourceStates(
+  state: LocalAppState,
+  reported: readonly ReportedSourceState[],
+): LocalAppState {
+  const added: LocalWorkflowStateMapping[] = [];
+  const firstDone = getFirstDoneWorkflowState(state.workflowStates);
+  for (const entry of reported) {
+    if (entry.source === "manual") continue;
+    const label = entry.label.trim();
+    const sourceStatusKey = normalizeConnectorStatusKey(label);
+    if (!label || !sourceStatusKey) continue;
+    const mappings = [...state.workflowStateMappings, ...added];
+    if (
+      findWorkflowStateMapping(
+        mappings,
+        entry.source,
+        entry.connectionId,
+        sourceStatusKey,
+        entry.sourceProjectName,
+      )
+    ) {
+      continue;
+    }
+    const sameName = state.workflowStates.find(
+      (workflowState) =>
+        normalizeWorkflowStateName(workflowState.name).toLowerCase() ===
+        normalizeWorkflowStateName(label).toLowerCase(),
+    );
+    const workflowStateId =
+      sameName?._id ?? (entry.done ? firstDone?._id : undefined);
+    if (workflowStateId) {
+      added.push({
+        source: entry.source,
+        connectionId: entry.connectionId,
+        sourceStatusKey,
+        sourceStatusLabel: label,
+        workflowStateId,
+      });
+    }
+  }
+  return added.length > 0
+    ? reconcileImportedWorkflowStates({
+        ...state,
+        workflowStateMappings: [...state.workflowStateMappings, ...added],
+      })
+    : state;
+}
+
+/** Sets or clears the write rule of a workflow state for a source project. */
+export function setWorkflowStateWriteRule(
+  state: LocalAppState,
+  rule: Omit<LocalWorkflowStateWriteRule, "write"> & {
+    write?: LocalWorkflowStateWriteRule["write"];
+  },
+): LocalAppState {
+  const rest = state.workflowStateWriteRules.filter(
+    (candidate) =>
+      !(
+        candidate.source === rule.source &&
+        candidate.connectionId === rule.connectionId &&
+        candidate.workflowStateId === rule.workflowStateId &&
+        sameProject(candidate, rule.sourceProjectName)
+      ),
+  );
+  return {
+    ...state,
+    workflowStateWriteRules: rule.write
+      ? [...rest, { ...rule, write: rule.write }]
+      : rest,
+  };
 }
 
 export function syncImportedWorkflowState(
@@ -173,6 +419,7 @@ export function syncImportedWorkflowState(
     workItem.source,
     workItem.sourceConnectionId,
     workItem.sourceStatusKey,
+    workItem.sourceProjectName,
   );
   // An archived item stays in its done state when a mapping changes.
   const followsImportedWorkflowState =
@@ -360,6 +607,9 @@ export function deleteWorkflowState(
     workflowStateMappings: state.workflowStateMappings.filter(
       (mapping) => mapping.workflowStateId !== statusId,
     ),
+    workflowStateWriteRules: state.workflowStateWriteRules.filter(
+      (rule) => rule.workflowStateId !== statusId,
+    ),
     workItems: state.workItems.map((workItem) => ({
       ...workItem,
       workflowStateId:
@@ -412,7 +662,8 @@ export function setWorkflowStateMapping(
       !(
         candidate.source === mapping.source &&
         candidate.connectionId === mapping.connectionId &&
-        candidate.sourceStatusKey === sourceStatusKey
+        candidate.sourceStatusKey === sourceStatusKey &&
+        sameProject(candidate, mapping.sourceProjectName)
       ),
   );
 
@@ -420,7 +671,13 @@ export function setWorkflowStateMapping(
     workflowStateMappings.push({
       source: mapping.source,
       connectionId: mapping.connectionId,
+      ...(mapping.sourceProjectName
+        ? { sourceProjectName: mapping.sourceProjectName }
+        : {}),
       sourceStatusKey,
+      ...(mapping.sourceStatusLabel?.trim()
+        ? { sourceStatusLabel: mapping.sourceStatusLabel.trim() }
+        : {}),
       workflowStateId: mapping.workflowStateId,
     });
   }

@@ -82,6 +82,7 @@ import {
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
 import { formatSnoozeTime } from "@/features/backlog/snooze-presets";
+import { PriorityIcon } from "@/features/backlog/priority-icon";
 import { isBacklogItemSnoozed } from "@/domain/backlog/backlog-item-lifecycle";
 import { openNewEntryEditor } from "@/features/time/new-entry-request";
 import {
@@ -111,6 +112,7 @@ import {
 } from "@/lib/table-drag";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { cn } from "@/lib/utils";
+import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
 
 const BACKLOG_TABLE_COLUMN_COUNT = 4;
 
@@ -734,6 +736,7 @@ export function BacklogPage() {
       isSnoozed: isBacklogItemSnoozed(workItem, now),
       subitemCount: isSubitem ? 0 : getChildItems(workItem).length,
       settleOpensDialog: settleOpensDialog(workItem),
+      otherSourceStateCount: getOtherSourceStates(workItem).length,
     });
   }
 
@@ -936,7 +939,9 @@ export function BacklogPage() {
       >
         <td className="backlog-priority-cell">
           <span className="backlog-priority-value">
-            {workItem.priority ?? ""}
+            {workItem.priority !== undefined ? (
+              <PriorityIcon priority={workItem.priority} />
+            ) : null}
           </span>
         </td>
         <td className="backlog-task-cell" colSpan={isLogicalChild ? 2 : 1}>
@@ -1400,7 +1405,12 @@ export function BacklogPage() {
           <div className="backlog-task-drag-preview-grid">
             <div className="backlog-priority-cell backlog-task-drag-preview-priority">
               <span className="backlog-priority-value">
-                {draggedWorkItem.priority ?? ""}
+                {draggedWorkItem.priority !== undefined ? (
+                  <PriorityIcon
+                    priority={draggedWorkItem.priority}
+                    decorative
+                  />
+                ) : null}
               </span>
             </div>
             <div className="backlog-task-cell backlog-task-drag-preview-cell">

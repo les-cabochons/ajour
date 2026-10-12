@@ -32,19 +32,32 @@ describe("settle dialog fields", () => {
   });
 
   it("builds a change from the chosen state and priority", () => {
-    expect(buildSettleChange(states, "Closed", "25")).toEqual({
+    const current = {
+      importedPriority: 30,
+      ranges: {
+        1: { min: 1, max: 10 },
+        2: { min: 11, max: 20 },
+        3: { min: 21, max: 40 },
+      },
+    };
+    expect(buildSettleChange(states, "Closed", "2", current)).toEqual({
       state: { name: "Closed", done: true },
-      priority: 25,
+      priority: 11,
     });
-    expect(buildSettleChange(states, "Unknown", "")).toEqual({
+    expect(buildSettleChange(states, "Active", "3", current)).toEqual({
+      state: { name: "Active", done: false },
+      priority: undefined,
+    });
+    expect(buildSettleChange(states, "Unknown", "", current)).toEqual({
       state: undefined,
       priority: undefined,
     });
   });
 
-  it("refuses a priority that is not a whole number from 0 to 999", () => {
-    expect(buildSettleChange(states, "Active", "1.5")).toBeNull();
-    expect(buildSettleChange(states, "Active", "-1")).toBeNull();
-    expect(buildSettleChange(states, "Active", "1000")).toBeNull();
+  it("refuses a priority that is not a level", () => {
+    const current = { ranges: {} };
+    expect(buildSettleChange(states, "Active", "1.5", current)).toBeNull();
+    expect(buildSettleChange(states, "Active", "0", current)).toBeNull();
+    expect(buildSettleChange(states, "Active", "5", current)).toBeNull();
   });
 });

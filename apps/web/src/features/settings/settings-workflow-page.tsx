@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   RiArrowDownLine as MoveDown,
   RiArrowUpLine as MoveUp,
@@ -12,11 +12,6 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { SearchableSelect } from "@/components/ui/searchable-select";
-import {
-  buildWorkflowStateOptions,
-  getWorkflowStateName,
-} from "@/features/backlog/workflow-states";
 import {
   getConnectorBacklogStatuses,
   isConnectorApiMissing,
@@ -25,6 +20,7 @@ import { offerUndo } from "@/features/feedback/undo-toast";
 import { useRetryWhileConnectorApiMissing } from "@/lib/use-connector-api-retry";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
+import { WorkflowSourceMapping } from "@/features/settings/workflow-source-mapping";
 
 const DEFAULT_NEW_STATE_COLOR = "#64748b";
 
@@ -47,64 +43,6 @@ export function SettingsWorkflowPage() {
   const [isRefreshing, setIsRefreshing] = useState(false);
   // Synced statuses come from connectors, so the web build hides that section.
   const [connectorApiMissing, setConnectorApiMissing] = useState(false);
-
-  const workflowStateOptions = useMemo(
-    () => buildWorkflowStateOptions(state.workflowStates),
-    [state.workflowStates],
-  );
-  const workflowStateNameById = useMemo(
-    () =>
-      new Map(
-        state.workflowStates.map(
-          (status) => [status._id, status.name] as const,
-        ),
-      ),
-    [state.workflowStates],
-  );
-  const mappingByKey = useMemo(
-    () =>
-      new Map(
-        state.workflowStateMappings.map((mapping) => [
-          `${mapping.source}:${mapping.connectionId}:${mapping.sourceStatusKey}`,
-          mapping.workflowStateId,
-        ]),
-      ),
-    [state.workflowStateMappings],
-  );
-
-  const groupedSourceStatuses = useMemo(() => {
-    const groups = new Map<
-      string,
-      {
-        tenantLabel: string;
-        connectionId: string;
-        connectionLabel: string;
-        statuses: typeof sourceStatuses;
-      }
-    >();
-
-    for (const status of sourceStatuses) {
-      const groupKey = `${status.tenantLabel}::${status.connectionId}`;
-      const existing = groups.get(groupKey);
-      if (existing) {
-        existing.statuses.push(status);
-        continue;
-      }
-
-      groups.set(groupKey, {
-        tenantLabel: status.tenantLabel,
-        connectionId: status.connectionId,
-        connectionLabel: status.connectionLabel,
-        statuses: [status],
-      });
-    }
-
-    return Array.from(groups.values()).sort(
-      (left, right) =>
-        left.tenantLabel.localeCompare(right.tenantLabel) ||
-        left.connectionLabel.localeCompare(right.connectionLabel),
-    );
-  }, [sourceStatuses]);
 
   useEffect(() => {
     setStatusDrafts((current) => {
@@ -133,6 +71,10 @@ export function SettingsWorkflowPage() {
   }, []);
 
   useRetryWhileConnectorApiMissing(connectorApiMissing, refreshSourceStatuses);
+  // Mappings are local, so synced items keep the section without the API.
+  const hasSyncedItems = state.workItems.some(
+    (workItem) => workItem.source !== "manual",
+  );
 
   async function refreshSourceStatuses() {
     setIsRefreshing(true);
@@ -231,38 +173,6 @@ export function SettingsWorkflowPage() {
         nextError instanceof Error
           ? nextError.message
           : "Unable to update the workflow state.",
-      );
-    }
-  }
-
-  function handleMappingChange(
-    source: (typeof sourceStatuses)[number],
-    workflowStateId: string,
-  ) {
-    try {
-      const { closedCount, undoToken } = localStore.setWorkflowStateMapping({
-        source: source.source,
-        connectionId: source.connectionId,
-        sourceStatusKey: source.key,
-        workflowStateId: workflowStateId || undefined,
-      });
-      if (undoToken) {
-        offerUndo(undoToken, {
-          title: `${closedCount} ${closedCount === 1 ? "item" : "items"} closed`,
-          subject: "mapping",
-        });
-      }
-      setError(null);
-      setMessage(
-        workflowStateId
-          ? `Mapped ${source.label} to ${getWorkflowStateName(workflowStateId, workflowStateNameById)}.`
-          : `Cleared the mapping for ${source.label}.`,
-      );
-    } catch (nextError) {
-      setError(
-        nextError instanceof Error
-          ? nextError.message
-          : "Unable to update the mapping.",
       );
     }
   }
@@ -421,7 +331,7 @@ export function SettingsWorkflowPage() {
         </AppPanel>
       </section>
 
-      {connectorApiMissing ? null : (
+      {connectorApiMissing && !hasSyncedItems ? null : (
         <section className="settings-section">
           <h2 className="settings-section-title">Source states</h2>
           <p className="settings-section-desc">
@@ -435,7 +345,7 @@ export function SettingsWorkflowPage() {
                 variant="outline"
                 size="sm"
                 className="gap-1.5"
-                disabled={isRefreshing}
+                disabled={isRefreshing || connectorApiMissing}
                 onClick={() => void refreshSourceStatuses()}
               >
                 <RefreshCw className="h-3.5 w-3.5" />
@@ -443,80 +353,11 @@ export function SettingsWorkflowPage() {
               </Button>
             </div>
 
-            {groupedSourceStatuses.length === 0 ? (
-              <MessagePanel>
-                No source states yet. Run a connector sync first.
-              </MessagePanel>
-            ) : (
-              <div className="backlog-settings-source-groups">
-                {groupedSourceStatuses.map((group) => (
-                  <section
-                    key={group.connectionId}
-                    className="backlog-settings-source-group"
-                  >
-                    <div className="backlog-settings-source-header">
-                      <div className="backlog-settings-source-kicker">
-                        {group.tenantLabel}
-                      </div>
-                      <div className="backlog-settings-source-title">
-                        {group.connectionLabel}
-                      </div>
-                    </div>
-
-                    <div className="backlog-settings-source-list">
-                      {group.statuses.map((status) => {
-                        const mappingKey = `${status.source}:${status.connectionId}:${status.key}`;
-                        const mappedWorkflowStateId =
-                          mappingByKey.get(mappingKey) ?? "";
-
-                        return (
-                          <div
-                            key={mappingKey}
-                            className="backlog-settings-source-row"
-                          >
-                            <div>
-                              <div className="backlog-settings-source-label">
-                                {status.label}
-                              </div>
-                              <div className="backlog-settings-source-meta">
-                                Last seen{" "}
-                                {new Date(status.lastSeenAt).toLocaleString()}
-                              </div>
-                            </div>
-
-                            <SearchableSelect
-                              value={mappedWorkflowStateId}
-                              options={workflowStateOptions}
-                              onChange={(nextValue) =>
-                                handleMappingChange(status, nextValue)
-                              }
-                              placeholder={
-                                state.workflowStates.length > 0
-                                  ? "No mapping"
-                                  : "Add workflow states first"
-                              }
-                              clearLabel={
-                                state.workflowStates.length > 0
-                                  ? "No mapping"
-                                  : undefined
-                              }
-                              emptyMessage={
-                                state.workflowStates.length > 0
-                                  ? "No matching workflow states"
-                                  : "Add workflow states first"
-                              }
-                              ariaLabel={`Map ${status.label} to a workflow state`}
-                              disabled={state.workflowStates.length === 0}
-                              className="backlog-settings-source-select"
-                            />
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </section>
-                ))}
-              </div>
-            )}
+            <WorkflowSourceMapping
+              state={state}
+              registered={sourceStatuses}
+              onError={setError}
+            />
           </AppPanel>
         </section>
       )}

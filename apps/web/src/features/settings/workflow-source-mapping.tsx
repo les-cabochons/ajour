@@ -1,0 +1,505 @@
+import { useMemo, useState } from "react";
+import type { ConnectorBacklogStatus } from "@ajour/shared";
+import { RiDownloadLine as LoadIcon } from "@remixicon/react";
+import { MessagePanel } from "@/components/app-surface";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { NativeSelect } from "@/components/ui/select";
+import {
+  getPriorityRanges,
+  PRIORITY_LEVELS,
+  type PriorityLevel,
+  type PriorityRanges,
+} from "@/domain/backlog/priority";
+import {
+  findWorkflowStateWriteRule,
+  getSourceStatesMappedTo,
+} from "@/domain/backlog/workflow-states";
+import type { LocalAppState } from "@/domain/local-state";
+import { offerUndo } from "@/features/feedback/undo-toast";
+import {
+  buildSourceConnectionGroups,
+  countUnmappedStates,
+  getEffectiveMapping,
+  type SourceConnectionGroup,
+  type SourceProjectGroup,
+} from "@/features/settings/workflow-source-groups";
+import {
+  getCachedConnectorsOverview,
+  listConnectorSettleStates,
+} from "@/lib/app-api";
+import { localStore } from "@/lib/local-store";
+
+const INHERIT = "__inherit";
+
+/**
+ * Settings > Workflow's source states: for each connection, its priority
+ * ranges, then for each source project how its source states map to workflow
+ * states and what moving an item into each workflow state writes back.
+ */
+export function WorkflowSourceMapping({
+  state,
+  registered,
+  onError,
+}: {
+  state: LocalAppState;
+  registered: readonly ConnectorBacklogStatus[];
+  onError: (message: string | null) => void;
+}) {
+  const [loaded, setLoaded] = useState<Record<string, string[]>>({});
+  const [loading, setLoading] = useState<string | null>(null);
+  const groups = useMemo(
+    () => buildSourceConnectionGroups(registered, state.workItems, loaded),
+    [registered, state.workItems, loaded],
+  );
+
+  async function loadStates(project: SourceProjectGroup) {
+    setLoading(project.key);
+    try {
+      const results = await Promise.all(
+        project.sampleSourceIds.map((sourceId) =>
+          listConnectorSettleStates(
+            project.source,
+            project.connectionId,
+            sourceId,
+          ),
+        ),
+      );
+      const states = results.flatMap((result) => result.states);
+      localStore.autoMapSourceStates(
+        states.map((sourceState) => ({
+          source: project.source,
+          connectionId: project.connectionId,
+          sourceProjectName: project.sourceProjectName,
+          label: sourceState.name,
+          done: sourceState.done,
+        })),
+      );
+      setLoaded((current) => ({
+        ...current,
+        [project.key]: states.map((sourceState) => sourceState.name),
+      }));
+      onError(null);
+    } catch (error) {
+      onError(
+        error instanceof Error ? error.message : "Unable to load the states.",
+      );
+    } finally {
+      setLoading(null);
+    }
+  }
+
+  if (groups.length === 0) {
+    return (
+      <MessagePanel>
+        No source states yet. Run a connector sync first.
+      </MessagePanel>
+    );
+  }
+
+  return (
+    <div className="backlog-settings-source-groups">
+      {groups.map((connection) => (
+        <section key={connection.key} className="backlog-settings-source-group">
+          <div className="backlog-settings-source-header">
+            {connection.tenantLabel ? (
+              <div className="backlog-settings-source-kicker">
+                {connection.tenantLabel}
+              </div>
+            ) : null}
+            <div className="backlog-settings-source-title">
+              {connection.connectionLabel}
+            </div>
+          </div>
+
+          <PriorityRangesEditor
+            connection={connection}
+            ranges={getPriorityRanges(
+              state.priorityScales,
+              connection.source,
+              connection.connectionId,
+            )}
+            onError={onError}
+          />
+
+          {connection.projects
+            .filter(
+              (project) =>
+                project.sourceProjectName !== undefined ||
+                project.states.length > 0,
+            )
+            .map((project) => (
+              <SourceProjectMapping
+                key={project.key}
+                state={state}
+                project={project}
+                canLoad={
+                  project.sampleSourceIds.length > 0 &&
+                  canListStates(project.source)
+                }
+                loading={loading === project.key}
+                onLoad={() => void loadStates(project)}
+                onError={onError}
+              />
+            ))}
+        </section>
+      ))}
+    </div>
+  );
+}
+
+function canListStates(source: string) {
+  const group = getCachedConnectorsOverview()?.connectionGroups.find(
+    (candidate) => candidate.plugin.id === source,
+  );
+  return Boolean(group?.enabled && group.plugin.capabilities?.settle);
+}
+
+function SourceProjectMapping({
+  state,
+  project,
+  canLoad,
+  loading,
+  onLoad,
+  onError,
+}: {
+  state: LocalAppState;
+  project: SourceProjectGroup;
+  canLoad: boolean;
+  loading: boolean;
+  onLoad: () => void;
+  onError: (message: string | null) => void;
+}) {
+  const unmapped = countUnmappedStates(state.workflowStateMappings, project);
+  const title = project.sourceProjectName ?? "All source projects";
+  // Starts open when something needs mapping, then stays as the user leaves it.
+  const [open, setOpen] = useState(unmapped > 0);
+
+  function setMapping(sourceStatusKey: string, label: string, value: string) {
+    try {
+      const { closedCount, undoToken } = localStore.setWorkflowStateMapping({
+        source: project.source,
+        connectionId: project.connectionId,
+        sourceProjectName: project.sourceProjectName,
+        sourceStatusKey,
+        sourceStatusLabel: label,
+        workflowStateId: value === INHERIT ? undefined : value || undefined,
+      });
+      if (undoToken) {
+        offerUndo(undoToken, {
+          title: `${closedCount} ${closedCount === 1 ? "item" : "items"} closed`,
+          subject: "mapping",
+        });
+      }
+      onError(null);
+    } catch (error) {
+      onError(
+        error instanceof Error
+          ? error.message
+          : "Unable to update the mapping.",
+      );
+    }
+  }
+
+  function setWrite(workflowStateId: string, value: string) {
+    localStore.setWorkflowStateWriteRule({
+      source: project.source,
+      connectionId: project.connectionId,
+      sourceProjectName: project.sourceProjectName,
+      workflowStateId,
+      write:
+        value === "ask"
+          ? { kind: "ask" }
+          : value === "none"
+            ? { kind: "none" }
+            : value.startsWith("state:")
+              ? { kind: "state", sourceStatusLabel: value.slice(6) }
+              : undefined,
+    });
+  }
+
+  return (
+    <details
+      className="rounded-lg border border-border/70"
+      open={open}
+      onToggle={(event) => setOpen(event.currentTarget.open)}
+    >
+      <summary className="flex cursor-pointer items-center gap-3 px-3 py-2 text-[13px]">
+        <span className="font-medium">{title}</span>
+        <span className="text-muted-foreground">
+          {project.states.length} source{" "}
+          {project.states.length === 1 ? "state" : "states"}
+          {unmapped > 0 ? ` · ${unmapped} not mapped` : ""}
+        </span>
+        {canLoad ? (
+          <Button
+            type="button"
+            variant="ghost"
+            size="xs"
+            className="ml-auto"
+            disabled={loading}
+            onClick={(event) => {
+              event.preventDefault();
+              onLoad();
+            }}
+          >
+            <LoadIcon data-icon="inline-start" />
+            {loading ? "Loading…" : "Load all states"}
+          </Button>
+        ) : null}
+      </summary>
+
+      <div className="flex flex-col gap-4 px-3 pt-1 pb-3">
+        {project.states.length === 0 ? (
+          <p className="text-[13px] text-muted-foreground">
+            No source states seen in this project yet.
+          </p>
+        ) : (
+          <div className="flex flex-col gap-1.5">
+            <div className="text-[12px] text-muted-foreground">
+              Items in this source state show in
+            </div>
+            {project.states.map((sourceState) => {
+              const effective = getEffectiveMapping(
+                state.workflowStateMappings,
+                project,
+                sourceState.key,
+              );
+              return (
+                <div
+                  key={sourceState.key}
+                  className="backlog-settings-source-row"
+                >
+                  <div className="backlog-settings-source-label">
+                    {sourceState.label}
+                  </div>
+                  <NativeSelect
+                    aria-label={`Map ${sourceState.label} to a workflow state`}
+                    value={
+                      effective.inherited
+                        ? INHERIT
+                        : (effective.workflowStateId ?? "")
+                    }
+                    onChange={(event) =>
+                      setMapping(
+                        sourceState.key,
+                        sourceState.label,
+                        event.target.value,
+                      )
+                    }
+                  >
+                    {project.sourceProjectName ? (
+                      <option value={INHERIT}>
+                        {effective.inherited
+                          ? `Same as all projects (${
+                              state.workflowStates.find(
+                                (workflowState) =>
+                                  workflowState._id ===
+                                  effective.workflowStateId,
+                              )?.name ?? "No state"
+                            })`
+                          : "Same as all projects"}
+                      </option>
+                    ) : null}
+                    <option value="">No state (not mapped)</option>
+                    {state.workflowStates.map((workflowState) => (
+                      <option key={workflowState._id} value={workflowState._id}>
+                        {workflowState.name}
+                      </option>
+                    ))}
+                  </NativeSelect>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <WriteRules state={state} project={project} onChange={setWrite} />
+      </div>
+    </details>
+  );
+}
+
+function WriteRules({
+  state,
+  project,
+  onChange,
+}: {
+  state: LocalAppState;
+  project: SourceProjectGroup;
+  onChange: (workflowStateId: string, value: string) => void;
+}) {
+  const rows = state.workflowStates.flatMap((workflowState) => {
+    const mapped = getSourceStatesMappedTo(
+      state.workflowStateMappings,
+      project,
+      workflowState._id,
+    );
+    return mapped.length > 0 ? [{ workflowState, mapped }] : [];
+  });
+  if (rows.length === 0) return null;
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="text-[12px] text-muted-foreground">
+        Moving an item into a workflow state writes
+      </div>
+      {rows.map(({ workflowState, mapped }) => {
+        const rule = findWorkflowStateWriteRule(
+          state.workflowStateWriteRules,
+          project,
+          workflowState._id,
+        );
+        const own =
+          rule &&
+          (rule.sourceProjectName ?? "") === (project.sourceProjectName ?? "");
+        const value = !own
+          ? ""
+          : rule.write.kind === "state"
+            ? `state:${rule.write.sourceStatusLabel}`
+            : rule.write.kind;
+        return (
+          <div key={workflowState._id} className="backlog-settings-source-row">
+            <div className="backlog-settings-source-label">
+              {workflowState.name}
+            </div>
+            <NativeSelect
+              aria-label={`What moving an item to ${workflowState.name} writes`}
+              value={value}
+              onChange={(event) =>
+                onChange(workflowState._id, event.target.value)
+              }
+            >
+              <option value="">
+                {project.sourceProjectName && rule && !own
+                  ? "Same as all projects"
+                  : `${mapped[0]!.label} (default)`}
+              </option>
+              {mapped.map((sourceState) => (
+                <option
+                  key={sourceState.key}
+                  value={`state:${sourceState.label}`}
+                >
+                  {sourceState.label}
+                </option>
+              ))}
+              {mapped.length > 1 ? <option value="ask">Ask</option> : null}
+              <option value="none">Don't write</option>
+            </NativeSelect>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function PriorityRangesEditor({
+  connection,
+  ranges,
+  onError,
+}: {
+  connection: SourceConnectionGroup;
+  ranges: PriorityRanges;
+  onError: (message: string | null) => void;
+}) {
+  const [draft, setDraft] = useState(() => toDraft(ranges));
+  const [savedFrom, setSavedFrom] = useState(ranges);
+  if (savedFrom !== ranges) {
+    setSavedFrom(ranges);
+    setDraft(toDraft(ranges));
+  }
+
+  function save() {
+    const next: PriorityRanges = {};
+    for (const { level } of PRIORITY_LEVELS) {
+      const { min, max } = draft[level];
+      if (min.trim() === "" && max.trim() === "") continue;
+      next[level] = {
+        min: Number(min),
+        max: Number(max === "" ? min : max),
+      };
+    }
+    try {
+      localStore.setPriorityScale({
+        source: connection.source,
+        connectionId: connection.connectionId,
+        ranges: next,
+      });
+      onError(null);
+    } catch (error) {
+      onError(
+        error instanceof Error ? error.message : "Unable to save the ranges.",
+      );
+    }
+  }
+
+  return (
+    <div className="flex flex-col gap-1.5">
+      <div className="text-[12px] text-muted-foreground">
+        Priority: the source values each level holds
+      </div>
+      <div className="grid w-fit grid-cols-[6rem_5rem_auto_5rem] items-center gap-x-2 gap-y-1.5 text-[13px]">
+        {PRIORITY_LEVELS.map(({ level, name }) => (
+          <PriorityRangeRow
+            key={level}
+            name={name}
+            value={draft[level]}
+            onChange={(value) =>
+              setDraft((current) => ({ ...current, [level]: value }))
+            }
+          />
+        ))}
+      </div>
+      <div>
+        <Button type="button" variant="outline" size="sm" onClick={save}>
+          Save priority ranges
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+type RangeDraft = Record<PriorityLevel, { min: string; max: string }>;
+
+function toDraft(ranges: PriorityRanges): RangeDraft {
+  const draft = {} as RangeDraft;
+  for (const { level } of PRIORITY_LEVELS) {
+    const range = ranges[level];
+    draft[level] = {
+      min: range ? String(range.min) : "",
+      max: range ? String(range.max) : "",
+    };
+  }
+  return draft;
+}
+
+function PriorityRangeRow({
+  name,
+  value,
+  onChange,
+}: {
+  name: string;
+  value: { min: string; max: string };
+  onChange: (value: { min: string; max: string }) => void;
+}) {
+  return (
+    <>
+      <span>{name}</span>
+      <Input
+        aria-label={`${name} from`}
+        inputMode="numeric"
+        className="h-8 font-mono"
+        value={value.min}
+        onChange={(event) => onChange({ ...value, min: event.target.value })}
+      />
+      <span className="text-muted-foreground">to</span>
+      <Input
+        aria-label={`${name} to`}
+        inputMode="numeric"
+        className="h-8 font-mono"
+        value={value.max}
+        onChange={(event) => onChange({ ...value, max: event.target.value })}
+      />
+    </>
+  );
+}

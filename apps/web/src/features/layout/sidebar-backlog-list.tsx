@@ -52,6 +52,7 @@ import {
 } from "@/lib/sidebar-layout";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
+import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
 
 const SETTLED_PAGE_SIZE = 20;
 
@@ -94,6 +95,7 @@ function useBacklogItemRow(state: LocalAppState, now: number) {
         ? 0
         : getDirectChildWorkItems(workItem, state.workItems).length,
       settleOpensDialog: settleOpensDialog(workItem),
+      otherSourceStateCount: getOtherSourceStates(workItem).length,
     });
   }
 

@@ -9,8 +9,11 @@ import type { LocalAppState, LocalWorkItem } from "@/domain/local-state";
 import {
   addWorkflowState,
   deleteWorkflowState,
+  findMappedWorkflowStateId,
   moveWorkflowState,
   normalizeWorkflowStates,
+  planWorkflowStateWrite,
+  setWorkflowStateWriteRule,
   setWorkflowStateMapping,
   updateWorkflowState,
 } from "@/domain/backlog/workflow-states";
@@ -34,6 +37,8 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
     workItems: [],
     workflowStates: [],
     workflowStateMappings: [],
+    workflowStateWriteRules: [],
+    priorityScales: [],
     backlogSortMode: "custom",
     capture: {
       urlMode: "sanitized_path",
@@ -454,5 +459,102 @@ describe("workflow state operations", () => {
       workflowStateId: "status-local",
       importedWorkflowStateId: undefined,
     });
+  });
+});
+
+describe("source state mappings per source project", () => {
+  const mapping = (
+    sourceStatusKey: string,
+    workflowStateId: string,
+    sourceProjectName?: string,
+  ) => ({
+    source: "azure_devops" as const,
+    connectionId: "c1",
+    sourceStatusKey,
+    sourceStatusLabel:
+      sourceStatusKey[0]!.toUpperCase() + sourceStatusKey.slice(1),
+    workflowStateId,
+    ...(sourceProjectName ? { sourceProjectName } : {}),
+  });
+  const item = {
+    source: "azure_devops" as const,
+    sourceId: "s1",
+    sourceConnectionId: "c1",
+    sourceProjectName: "Mercury",
+  };
+
+  it("prefers the project's own mapping over the connection's", () => {
+    const mappings = [
+      mapping("resolved", "review"),
+      mapping("resolved", "done", "Mercury"),
+    ];
+
+    expect(
+      findMappedWorkflowStateId(
+        mappings,
+        "azure_devops",
+        "c1",
+        "resolved",
+        "Mercury",
+      ),
+    ).toBe("done");
+    expect(
+      findMappedWorkflowStateId(
+        mappings,
+        "azure_devops",
+        "c1",
+        "resolved",
+        "Venus",
+      ),
+    ).toBe("review");
+  });
+
+  it("writes the first mapped source state unless a rule says otherwise", () => {
+    const state = createState({
+      workflowStateMappings: [
+        mapping("resolved", "review"),
+        mapping("in qa", "review"),
+      ],
+    });
+
+    expect(planWorkflowStateWrite(state, item, "review")).toEqual({
+      kind: "write",
+      sourceStatusLabel: "Resolved",
+    });
+    expect(planWorkflowStateWrite(state, item, "todo")).toEqual({
+      kind: "none",
+    });
+    expect(
+      planWorkflowStateWrite(state, { ...item, source: "manual" }, "review"),
+    ).toEqual({ kind: "none" });
+
+    const asks = setWorkflowStateWriteRule(state, {
+      source: "azure_devops",
+      connectionId: "c1",
+      workflowStateId: "review",
+      write: { kind: "ask" },
+    });
+    expect(planWorkflowStateWrite(asks, item, "review")).toEqual({
+      kind: "ask",
+      sourceStatusLabels: ["Resolved", "In qa"],
+    });
+
+    const silent = setWorkflowStateWriteRule(asks, {
+      source: "azure_devops",
+      connectionId: "c1",
+      sourceProjectName: "Mercury",
+      workflowStateId: "review",
+      write: { kind: "none" },
+    });
+    expect(planWorkflowStateWrite(silent, item, "review")).toEqual({
+      kind: "none",
+    });
+    expect(
+      planWorkflowStateWrite(
+        silent,
+        { ...item, sourceProjectName: "Venus" },
+        "review",
+      ).kind,
+    ).toBe("ask");
   });
 });

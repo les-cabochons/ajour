@@ -9,6 +9,10 @@ import type {
   RuleRecord,
   TeamSettings,
 } from "@ajour/shared";
+import type {
+  LocalPriorityScale,
+  PriorityLevel,
+} from "@/domain/backlog/priority";
 import type { LocalProjectIcon } from "@/domain/projects/project-icon";
 
 export interface LocalProject {
@@ -213,11 +217,38 @@ export interface LocalWorkflowState {
   createdAt: number;
 }
 
+/**
+ * Maps one source state to a workflow state. A mapping without a source
+ * project applies to every source project of the connection that has none of
+ * its own.
+ */
 export interface LocalWorkflowStateMapping {
   source: ConnectorBacklogSource;
   connectionId: string;
+  sourceProjectName?: string;
   sourceStatusKey: string;
+  /** The source state as the tool names it, which a write sends back. */
+  sourceStatusLabel?: string;
   workflowStateId: string;
+}
+
+/** What moving a synced item into a workflow state writes to its source. */
+export type LocalWorkflowStateWrite =
+  | { kind: "state"; sourceStatusLabel: string }
+  | { kind: "ask" }
+  | { kind: "none" };
+
+/**
+ * The write for one workflow state of a source project, or of every source
+ * project of the connection when `sourceProjectName` is missing. Without a
+ * rule, a move writes the first source state mapped to the workflow state.
+ */
+export interface LocalWorkflowStateWriteRule {
+  source: ConnectorBacklogSource;
+  connectionId: string;
+  sourceProjectName?: string;
+  workflowStateId: string;
+  write: LocalWorkflowStateWrite;
 }
 
 export interface LocalWorkItem {
@@ -239,7 +270,9 @@ export interface LocalWorkItem {
   hierarchyLevel?: 0 | 1;
   parentWorkItemId?: string;
   parentSourceId?: string;
-  priority?: number;
+  /** Ajour's level. A synced item follows its source value until the user sets one. */
+  priority?: PriorityLevel;
+  /** The source's own priority value, mapped to a level by the connection's ranges. */
   importedPriority?: number;
   workflowStateId?: string;
   importedWorkflowStateId?: string;
@@ -307,7 +340,8 @@ export interface LocalPendingSourceWrite {
     sourceStatusKey?: string;
     sourceStatusLabel?: string;
     importedPriority?: number;
-    priority?: number;
+    priority?: PriorityLevel;
+    /** Set by a move, which a failed write undoes. */
     workflowStateId?: string;
     importedWorkflowStateId?: string;
   };
@@ -315,8 +349,10 @@ export interface LocalPendingSourceWrite {
 
 export type PersistedLocalWorkItem = Omit<
   LocalWorkItem,
-  "status" | "archivedAt"
+  "status" | "archivedAt" | "priority"
 > & {
+  /** Any whole number before priority had levels. */
+  priority?: number;
   status?: LocalWorkItem["status"] | "open" | "done";
   archivedAt?: number;
   completedAt?: number;
@@ -332,7 +368,7 @@ export interface LocalWorkItemDraft {
   taskId?: string;
   inheritsParentMapping?: boolean;
   parentWorkItemId?: string;
-  priority?: number;
+  priority?: PriorityLevel;
   workflowStateId?: string;
   originalEstimateHours?: number;
   remainingEstimateHours?: number;
@@ -393,6 +429,8 @@ export interface LocalAppState {
   workItems: LocalWorkItem[];
   workflowStates: LocalWorkflowState[];
   workflowStateMappings: LocalWorkflowStateMapping[];
+  workflowStateWriteRules: LocalWorkflowStateWriteRule[];
+  priorityScales: LocalPriorityScale[];
   backlogSortMode: BacklogSortMode;
   /** Apply rules by source project. A source project without one asks. */
   settleRules?: LocalSettleRule[];

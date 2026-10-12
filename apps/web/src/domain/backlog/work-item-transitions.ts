@@ -11,6 +11,7 @@ import {
   inferInheritedParentMapping,
   isSubtaskWorkItem,
 } from "@/domain/backlog/work-item-hierarchy";
+import { normalizePriorityLevel } from "@/domain/backlog/priority";
 import { normalizeWorkItemEstimateValue } from "@/domain/backlog/work-item-estimates";
 
 export interface WorkItemFactories {
@@ -75,7 +76,7 @@ export function normalizePersistedWorkItem(
     parentSourceId: isRetiredBuiltInSource
       ? undefined
       : workItem.parentSourceId,
-    priority: normalizeWorkItemPriority(workItem.priority),
+    priority: normalizePriorityLevel(workItem.priority),
     importedPriority: isRetiredBuiltInSource
       ? undefined
       : normalizeWorkItemPriority(workItem.importedPriority),
@@ -135,7 +136,7 @@ function createManualWorkItem(
     hierarchyLevel: isSubtask ? 1 : 0,
     parentWorkItemId: workItem.parentWorkItemId,
     parentSourceId: undefined,
-    priority: normalizeWorkItemPriority(workItem.priority),
+    priority: normalizePriorityLevel(workItem.priority),
     importedPriority: undefined,
     workflowStateId: workItem.workflowStateId,
     importedWorkflowStateId: undefined,
@@ -329,7 +330,7 @@ export function updateWorkItem(
   const nextIsSubtask = Boolean(nextParentWorkItemId || nextParentSourceId);
   const priorityProvided = hasOwn(patch, "priority");
   const nextPriority = priorityProvided
-    ? normalizeWorkItemPriority(patch.priority)
+    ? normalizePriorityLevel(patch.priority)
     : target.priority;
   const mappingProvided = hasOwn(patch, "projectId") || hasOwn(patch, "taskId");
   const inheritanceProvided = hasOwn(patch, "inheritsParentMapping");

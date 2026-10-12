@@ -3,6 +3,7 @@ import type { LocalAppState, LocalWorkItem } from "@/domain/local-state";
 import {
   applyWorkflowStateLifecycle,
   archiveBacklogItem,
+  changeBacklogItemSourceState,
   completeSourceWrite,
   failSourceWrite,
   isBacklogItemReturned,
@@ -37,6 +38,8 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
     workItems: [],
     workflowStates: [],
     workflowStateMappings: [],
+    workflowStateWriteRules: [],
+    priorityScales: [],
     backlogSortMode: "custom",
     capture: {
       urlMode: "sanitized_path",
@@ -386,14 +389,14 @@ describe("settling with a change to the source", () => {
   it("keeps a local priority the user set, while writing the new one to the source", () => {
     const next = settleBacklogItem(
       createState({
-        workItems: [synced("a", { importedPriority: 2, priority: 5 })],
+        workItems: [synced("a", { importedPriority: 2, priority: 4 })],
       }),
       "a",
       factories,
       { priority: 1 },
     );
 
-    expect(find(next, "a")).toMatchObject({ importedPriority: 1, priority: 5 });
+    expect(find(next, "a")).toMatchObject({ importedPriority: 1, priority: 4 });
   });
 
   it("archives the item and its carried subitems when the state is done", () => {
@@ -998,6 +1001,103 @@ describe("moving a backlog item between workflow states", () => {
       status: "archived",
       workflowStateId: "canceled",
       archivedSourceStatusKey: "removed",
+    });
+  });
+});
+
+describe("writing a move to the source", () => {
+  const workflowStates: LocalAppState["workflowStates"] = [
+    { _id: "doing", name: "In progress", color: "#d97706", createdAt: 1 },
+    { _id: "review", name: "In review", color: "#7c3aed", createdAt: 1 },
+    { _id: "done", name: "Done", color: "#059669", done: true, createdAt: 1 },
+  ];
+  const workflowStateMappings: LocalAppState["workflowStateMappings"] = [
+    {
+      source: "azure_devops",
+      connectionId: "connection-1",
+      sourceStatusKey: "active",
+      workflowStateId: "doing",
+    },
+    {
+      source: "azure_devops",
+      connectionId: "connection-1",
+      sourceStatusKey: "resolved",
+      sourceStatusLabel: "Resolved",
+      workflowStateId: "review",
+    },
+    {
+      source: "azure_devops",
+      connectionId: "connection-1",
+      sourceStatusKey: "in qa",
+      sourceStatusLabel: "In QA",
+      workflowStateId: "review",
+    },
+    {
+      source: "azure_devops",
+      connectionId: "connection-1",
+      sourceStatusKey: "closed",
+      sourceStatusLabel: "Closed",
+      workflowStateId: "done",
+    },
+  ];
+  const state = () =>
+    createState({
+      workflowStates,
+      workflowStateMappings,
+      workItems: [
+        synced("a", {
+          workflowStateId: "doing",
+          importedWorkflowStateId: "doing",
+        }),
+      ],
+    });
+
+  it("shows the new source state at once and keeps a write for later", () => {
+    const next = moveBacklogItemToState(state(), "a", "review", factories, {
+      sourceWrites: { a: "Resolved" },
+    });
+
+    expect(find(next, "a")).toMatchObject({
+      workflowStateId: "review",
+      importedWorkflowStateId: "review",
+      sourceStatusLabel: "Resolved",
+      pendingSourceWrite: {
+        state: "Resolved",
+        previous: { sourceStatusKey: "active", workflowStateId: "doing" },
+      },
+    });
+  });
+
+  it("puts a closed item back where it was when the write fails", () => {
+    const closed = moveBacklogItemToState(state(), "a", "done", factories, {
+      sourceWrites: { a: "Closed" },
+    });
+    expect(find(closed, "a")).toMatchObject({
+      status: "archived",
+      archivedSourceStatusKey: "closed",
+    });
+
+    expect(find(failSourceWrite(closed, "a"), "a")).toMatchObject({
+      status: "active",
+      workflowStateId: "doing",
+      sourceStatusKey: "active",
+    });
+  });
+
+  it("changes the source state and leaves the item in its workflow state", () => {
+    const inReview = moveBacklogItemToState(state(), "a", "review", factories, {
+      sourceWrites: { a: "Resolved" },
+    });
+    const next = changeBacklogItemSourceState(
+      completeSourceWrite(inReview, "a"),
+      "a",
+      "In QA",
+    );
+
+    expect(find(next, "a")).toMatchObject({
+      workflowStateId: "review",
+      sourceStatusLabel: "In QA",
+      pendingSourceWrite: { state: "In QA" },
     });
   });
 });

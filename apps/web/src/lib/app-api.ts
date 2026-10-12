@@ -50,6 +50,10 @@ import {
   type ProjectDataShapeExportProject,
 } from "@ajour/shared";
 import { localStore } from "@/lib/local-store";
+import {
+  priorityRangesFromConnectorScale,
+  type PriorityRanges,
+} from "@/domain/backlog/priority";
 
 export type SyncConnectorConnectionResult = ConnectorSyncResult & {
   backlogImportedCount: number;
@@ -266,6 +270,18 @@ export function importProjectsWithDataShape(
 
 export function getCachedConnectorsOverview() {
   return cachedConnectorsOverview;
+}
+
+/** Each connector plugin's default priority ranges, from the cached overview. */
+function getPluginPriorityDefaults(): Record<string, PriorityRanges> {
+  const defaults: Record<string, PriorityRanges> = {};
+  for (const group of cachedConnectorsOverview?.connectionGroups ?? []) {
+    const scale = group.plugin.capabilities.connector?.priorityScale;
+    if (scale) {
+      defaults[group.plugin.id] = priorityRangesFromConnectorScale(scale);
+    }
+  }
+  return defaults;
 }
 
 export function cacheConnectorsOverview(overview: ConnectorsOverview) {
@@ -509,6 +525,7 @@ export function syncConnectorConnection(
         ? localStore.importConnectorWorkItems(result.items, {
             archiveMissingFromConnectionId:
               payload.trigger === "auto" ? connectionId : undefined,
+            priorityDefaults: getPluginPriorityDefaults(),
           })
         : { importedCount: 0, updatedCount: 0 };
     localStore.applyConnectorSyncWorkItemUpdates(result.workItemUpdates);
@@ -615,7 +632,9 @@ export async function commitSelectedConnectorImportsToLocalStore() {
     connectorImportCommitResponseSchema,
   );
 
-  const importResult = localStore.importConnectorWorkItems(committed.items);
+  const importResult = localStore.importConnectorWorkItems(committed.items, {
+    priorityDefaults: getPluginPriorityDefaults(),
+  });
   return {
     ...importResult,
     committedCount: committed.committedCount,

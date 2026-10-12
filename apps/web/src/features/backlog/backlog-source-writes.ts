@@ -10,10 +10,11 @@ import { localStore } from "@/lib/local-store";
 const sending = new Set<string>();
 
 /**
- * Whether a settle can write to the item's source: the item is synced and its
- * active connector has the settle capability. Other items settle locally.
+ * Whether the item is synced and its active connector can write to the source.
+ * Settle then opens the settle dialog, and moves write the new source state.
+ * Other items settle and move locally.
  */
-export function canWriteSettle(workItem: LocalWorkItem) {
+export function canWriteToSource(workItem: LocalWorkItem) {
   if (
     workItem.source === "manual" ||
     !workItem.sourceId ||
@@ -28,8 +29,11 @@ export function canWriteSettle(workItem: LocalWorkItem) {
   return Boolean(group?.enabled && group.plugin.capabilities.connector?.settle);
 }
 
+/** Whether Settle on this item opens the settle dialog. */
+export const settleOpensDialog = canWriteToSource;
+
 /**
- * Sends the settle writes waiting in local state. After an Undo toast closes,
+ * Sends the settle and move writes waiting in local state. After an Undo toast closes,
  * `workItemIds` limits this to the action's items. At launch, it sends every
  * write left from a session that quit during its Undo window.
  *
@@ -66,10 +70,13 @@ async function sendSourceWrite(workItem: LocalWorkItem) {
   } catch (error) {
     localStore.failSourceWrite(workItem._id);
     showErrorToast({
-      title: `Couldn't settle "${workItem.title}"`,
+      title: `Couldn't update "${workItem.title}" in its source`,
       description: `${error instanceof Error ? error.message : "Unknown error"} The item is back in your list.`,
     });
   } finally {
     sending.delete(workItem._id);
   }
 }
+
+/** Compatibility for the explicit settle rule workflow. */
+export const canWriteSettle = canWriteToSource;
