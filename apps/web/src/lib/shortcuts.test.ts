@@ -102,6 +102,7 @@ describe("shortcut registry", () => {
     expect(keys("mac")).toEqual([
       "↩",
       "E",
+      "⇧E",
       "B",
       "⌘D",
       "M",
@@ -117,6 +118,7 @@ describe("shortcut registry", () => {
     expect(keys("other")).toEqual([
       "Enter",
       "E",
+      "Shift+E",
       "B",
       "Ctrl+D",
       "M",
@@ -179,6 +181,7 @@ describe("shortcut registry", () => {
     expect(ids("BACKLOG")).toEqual([
       "go.backlog",
       "item.settle",
+      "item.settle-ask",
       "item.snooze",
     ]);
     expect(ids("⇧F10")).toEqual(["item.open-menu"]);

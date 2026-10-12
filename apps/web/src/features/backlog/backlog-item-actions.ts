@@ -1,11 +1,7 @@
 import type { BacklogItemActionId } from "@/domain/actions/object-actions";
 import { getDirectChildWorkItems } from "@/domain/backlog/work-item-hierarchy";
 import type { LocalWorkItem } from "@/domain/local-state";
-import { settleOpensDialog } from "@/features/backlog/backlog-source-writes";
-import {
-  requestSettle,
-  settleBacklogItemWithUndo,
-} from "@/features/backlog/settle-dialog";
+import { settleBacklogItem } from "@/features/backlog/settle-dialog";
 import { requestSnooze } from "@/features/backlog/snooze-picker";
 import { getWorkItemEntryValues } from "@/features/backlog/work-item-timer-comment";
 import { offerUndo } from "@/features/feedback/undo-toast";
@@ -22,12 +18,14 @@ export type HostedBacklogItemActionId = Extract<
  * Runs a backlog item action the same way on every surface: the sidebar, the
  * Backlog page, the backlog item page and the command palette. Edit and Add
  * subitem need an editor, so `onHosted` runs them. Callers check that the
- * action is enabled first.
+ * action is enabled first. `askToSettle`, from Shift+E or Shift-click, opens
+ * the settle dialog even when a settle rule applies a fixed change.
  */
 export function runBacklogItemAction(
   workItem: LocalWorkItem,
   actionId: BacklogItemActionId,
   onHosted: (actionId: HostedBacklogItemActionId) => void,
+  { askToSettle = false }: { askToSettle?: boolean } = {},
 ) {
   switch (actionId) {
     case "start-entry":
@@ -54,13 +52,7 @@ export function runBacklogItemAction(
       localStore.unsnoozeWorkItem(workItem._id);
       return;
     case "settle":
-      // A synced item whose connector can write asks first. Others settle
-      // locally at once.
-      if (settleOpensDialog(workItem)) {
-        requestSettle(workItem._id);
-      } else {
-        settleBacklogItemWithUndo(workItem);
-      }
+      settleBacklogItem(workItem, { ask: askToSettle });
       return;
     case "unsettle":
       localStore.unsettleWorkItem(workItem._id);

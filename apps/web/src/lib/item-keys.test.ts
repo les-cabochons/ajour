@@ -203,4 +203,26 @@ describe("getItemKeyCommand", () => {
     ).toBeNull();
     expect(command(press("1", { code: "Digit1" }))).toBeNull();
   });
+
+  it("settles on E and settles with the dialog on Shift+E", () => {
+    const actions = getBacklogItemActions(
+      { status: "active", source: "azure_devops" },
+      { subitemCount: 0, isSubitem: false },
+    );
+
+    expect(
+      getItemKeyCommand(press("e"), "mac", actions, BACKLOG_ITEM_ACTION_KEYS),
+    ).toMatchObject({ shortcutId: "item.settle", action: { id: "settle" } });
+    expect(
+      getItemKeyCommand(
+        press("E", { shiftKey: true }),
+        "mac",
+        actions,
+        BACKLOG_ITEM_ACTION_KEYS,
+      ),
+    ).toMatchObject({
+      shortcutId: "item.settle-ask",
+      action: { id: "settle" },
+    });
+  });
 });

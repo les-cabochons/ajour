@@ -116,6 +116,8 @@ export interface PaletteInput {
   /** The settings pages, in display order. */
   settingsPages: readonly { to: string; label: string }[];
   platform: ShortcutPlatform;
+  /** Whether Settle on a backlog item opens the settle dialog. */
+  settleOpensDialog?: (workItem: LocalWorkItem) => boolean;
 }
 
 /** Search results stop here; typing more narrows them. */
@@ -380,6 +382,7 @@ function backlogItemSection(
   prefix: string,
   workItem: LocalWorkItem,
   workItems: readonly LocalWorkItem[],
+  settleOpensDialog: PaletteInput["settleOpensDialog"],
   keysPlatform?: ShortcutPlatform,
 ): PaletteSection {
   const isSubitem = isSubtaskWorkItem(workItem);
@@ -389,6 +392,7 @@ function backlogItemSection(
     subitemCount: isSubitem
       ? 0
       : getDirectChildWorkItems(workItem, [...workItems]).length,
+    settleOpensDialog: settleOpensDialog?.(workItem),
   });
 
   return {
@@ -511,6 +515,7 @@ function focusedSection(input: PaletteInput): PaletteSection | null {
         prefix,
         workItem,
         input.workItems,
+        input.settleOpensDialog,
         platform,
       );
       // Subitems follow their parent; only top-level items are sortable.
@@ -729,7 +734,12 @@ export function buildPaletteSections(input: PaletteInput): PaletteSection[] {
         filterSection(
           query,
           workItem
-            ? backlogItemSection("backlog-item", workItem, input.workItems)
+            ? backlogItemSection(
+                "backlog-item",
+                workItem,
+                input.workItems,
+                input.settleOpensDialog,
+              )
             : null,
         ),
       ];

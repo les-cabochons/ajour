@@ -18,6 +18,7 @@ import {
   isConnectorApiMissing,
 } from "@/lib/app-api";
 import { offerUndo } from "@/features/feedback/undo-toast";
+import { SettleRulesSection } from "@/features/settings/settle-rules-section";
 import { useRetryWhileConnectorApiMissing } from "@/lib/use-connector-api-retry";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
@@ -439,6 +440,13 @@ export function SettingsBacklogPage() {
             )}
           </AppPanel>
         </section>
+      )}
+
+      {connectorApiMissing ? null : (
+        <SettleRulesSection
+          workItems={state.workItems}
+          settleRules={state.settleRules}
+        />
       )}
 
       {message ? <MessagePanel>{message}</MessagePanel> : null}

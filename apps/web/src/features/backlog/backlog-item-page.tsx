@@ -37,6 +37,7 @@ import {
   type LocalWorkItemEstimateFieldKey,
 } from "@/domain/local-state";
 import { formatClockDuration } from "@/domain/time/duration";
+import { settleOpensDialog } from "@/features/backlog/settle-dialog";
 import {
   runBacklogItemAction,
   type HostedBacklogItemActionId,
@@ -206,6 +207,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
     isSubitem,
     isSnoozed,
     subitemCount: isSubitem ? 0 : subitems.length,
+    settleOpensDialog: settleOpensDialog(item),
   });
   const parentKey = getWorkItemParentKey(item);
   const parent = parentKey
@@ -229,15 +231,21 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
       : 0;
   const notice = stateNotice(item, now);
 
-  function runAction(actionId: BacklogItemActionId) {
+  function runAction(
+    actionId: BacklogItemActionId,
+    options?: { askToSettle?: boolean },
+  ) {
     const action = actions.find((candidate) => candidate.id === actionId);
     if (!action || action.disabledReason) return;
 
     if (actionId === "delete") {
       void navigate({ to: "/backlog" });
     }
-    runBacklogItemAction(item, actionId, (hosted: HostedBacklogItemActionId) =>
-      setEditor(hosted),
+    runBacklogItemAction(
+      item,
+      actionId,
+      (hosted: HostedBacklogItemActionId) => setEditor(hosted),
+      options,
     );
   }
 
@@ -284,7 +292,13 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
         <Button size="sm" variant="ghost" onClick={() => runAction("snooze")}>
           <SnoozeIcon /> Snooze
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => runAction("settle")}>
+        <Button
+          size="sm"
+          variant="ghost"
+          onClick={(event) =>
+            runAction("settle", { askToSettle: event.shiftKey })
+          }
+        >
           <SettleIcon /> Settle
         </Button>
       </>
@@ -309,7 +323,10 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
             handleItemKeyDown(event, {
               actions,
               keys: BACKLOG_ITEM_ACTION_KEYS,
-              onAction: runAction,
+              onAction: (actionId, { shortcutId }) =>
+                runAction(actionId, {
+                  askToSettle: shortcutId === "item.settle-ask",
+                }),
             })
           }
         >

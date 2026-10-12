@@ -59,6 +59,7 @@ import {
   type BacklogSortMode,
   type LocalWorkItem,
 } from "@/domain/local-state";
+import { settleOpensDialog } from "@/features/backlog/settle-dialog";
 import {
   BacklogItemEditorForm,
   type BacklogItemEditorFormHandle,
@@ -660,9 +661,10 @@ export function BacklogPage() {
   function runRowWorkItemAction(
     workItem: LocalWorkItem,
     actionId: BacklogItemActionId,
+    options?: { askToSettle?: boolean },
   ) {
     if (editingWorkItemId !== workItem._id) {
-      runWorkItemAction(workItem, actionId);
+      runWorkItemAction(workItem, actionId, options);
       return;
     }
 
@@ -674,7 +676,7 @@ export function BacklogPage() {
     const savedWorkItem = localStore
       .snapshot()
       .workItems.find((item) => item._id === workItem._id);
-    runWorkItemAction(savedWorkItem ?? workItem, actionId);
+    runWorkItemAction(savedWorkItem ?? workItem, actionId, options);
   }
 
   /**
@@ -684,6 +686,7 @@ export function BacklogPage() {
   function runWorkItemAction(
     workItem: LocalWorkItem,
     actionId: BacklogItemActionId,
+    options?: { askToSettle?: boolean },
   ) {
     switch (actionId) {
       case "start-entry":
@@ -716,7 +719,7 @@ export function BacklogPage() {
       case "settle":
       case "archive":
         closeEditorOf(workItem._id);
-        runBacklogItemAction(workItem, actionId, () => undefined);
+        runBacklogItemAction(workItem, actionId, () => undefined, options);
         return;
       default:
         runBacklogItemAction(workItem, actionId, () => undefined);
@@ -730,6 +733,7 @@ export function BacklogPage() {
       isSubitem,
       isSnoozed: isBacklogItemSnoozed(workItem, now),
       subitemCount: isSubitem ? 0 : getChildItems(workItem).length,
+      settleOpensDialog: settleOpensDialog(workItem),
     });
   }
 
@@ -855,8 +859,10 @@ export function BacklogPage() {
     const isReorderableRoot = canReorderVisibleRootItems && !isLogicalChild;
 
     const rowActions = getWorkItemActions(workItem);
-    const runRowAction = (actionId: BacklogItemActionId) =>
-      runRowWorkItemAction(workItem, actionId);
+    const runRowAction = (
+      actionId: BacklogItemActionId,
+      options?: { askToSettle?: boolean },
+    ) => runRowWorkItemAction(workItem, actionId, options);
     const rowActionsButton = (
       <ObjectActionsButton
         actions={rowActions}
@@ -883,10 +889,12 @@ export function BacklogPage() {
               handleItemKeyDown(event, {
                 actions: [...rowActions, OPEN_BACKLOG_ITEM_ACTION],
                 keys: BACKLOG_ITEM_ROW_KEYS,
-                onAction: (actionId) =>
+                onAction: (actionId, { shortcutId }) =>
                   actionId === "open"
                     ? openBacklogItemPage(workItem)
-                    : runRowAction(actionId),
+                    : runRowAction(actionId, {
+                        askToSettle: shortcutId === "item.settle-ask",
+                      }),
                 onReorder: isReorderableRoot
                   ? (step) => reorderWorkItem(workItem._id, step)
                   : undefined,

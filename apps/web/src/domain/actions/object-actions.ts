@@ -187,6 +187,8 @@ export interface BacklogItemActionOptions {
   isSnoozed?: boolean;
   /** Set inside an editor, where Edit is the current mode. */
   isEditing?: boolean;
+  /** Whether Settle opens the settle dialog, so its label ends with "…". */
+  settleOpensDialog?: boolean;
 }
 
 function formatDeleteLabel(subitemCount: number) {
@@ -246,7 +248,10 @@ export function getBacklogItemActions(
       ? { id: "restore", label: "Restore" }
       : isSettled
         ? { id: "unsettle", label: "Unsettle" }
-        : { id: "settle", label: "Settle" },
+        : {
+            id: "settle",
+            label: options.settleOpensDialog ? "Settle…" : "Settle",
+          },
   ];
 
   if (item.sourceUrl) {
