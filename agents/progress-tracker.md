@@ -208,6 +208,13 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Two regressions reproduce stale IDs after a failed Settle write, including JSON reload and a preserved local workflow override. Both failed before the fix.
 - [ ] Complete verification and fresh Codex review of the updated stack. The integration thread owns merging.
 
+### Peek project reselection, 2026-10-12
+
+- [x] Selecting the current project in the peek leaves the task assignment unchanged. Changing or clearing the project still clears the task through the existing command and Undo.
+- [x] Click and Enter browser cases reproduced task loss before the fix. Both now retain the task and cover clearing, Undo and reload. The existing peek editing scenario also passes.
+- [x] All 846 unit tests, workspace typecheck, production builds and formatting passed.
+- [ ] Complete Codex review of the updated view head. The integration thread owns merging.
+
 ### No state filter consistency, 2026-10-12
 
 - [x] State filters resolve item workflow IDs against the configured states. Missing and unknown IDs match No state, consistent with list and board grouping.

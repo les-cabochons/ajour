@@ -32,6 +32,23 @@ Feature: Backlog list and board views
     When I close the Backlog peek with Escape
     Then the Backlog peek is closed
 
+  Scenario Outline: Preserve the task when reselecting the peek project
+    When I peek at the Backlog parent
+    And I reselect the current peek project with "<control>"
+    Then the peek retains the parent's project and task
+    When I clear the peek project
+    Then the peek has no project or task
+    When I undo the last Backlog move
+    Then the peek retains the parent's project and task
+    When I reload the app
+    And I peek at the Backlog parent
+    Then the peek retains the parent's project and task
+
+    Examples:
+      | control |
+      | click   |
+      | Enter   |
+
   Scenario Outline: Clear Returned when an item is opened in the peek
     Given the Backlog parent has returned through "<reason>"
     When I use the Backlog "<layout>" layout

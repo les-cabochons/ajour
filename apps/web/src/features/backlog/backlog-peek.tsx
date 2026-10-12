@@ -172,13 +172,14 @@ export function BacklogPeek({
               emptyMessage="No projects"
               ariaLabel="Peek project"
               clearLabel="No project"
-              onChange={(value) =>
+              onChange={(value) => {
+                if (value === (item.projectId ?? "")) return;
                 patchBacklogItemWithUndo(
                   item,
                   { projectId: value || undefined, taskId: undefined },
                   "Project changed",
-                )
-              }
+                );
+              }}
             />
           </dd>
           <dt>Task</dt>

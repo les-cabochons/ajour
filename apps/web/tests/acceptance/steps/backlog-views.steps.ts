@@ -168,6 +168,55 @@ When("I peek at the Backlog parent", async ({ page }) => {
     .locator('[data-work-item-id="parent"] .backlog-item-title')
     .click();
 });
+When(
+  "I reselect the current peek project with {string}",
+  async ({ page }, control: string) => {
+    const project = page.getByRole("combobox", { name: "Peek project" });
+    await expect(project).toHaveValue("Example project");
+    await project.click();
+    if (control === "Enter") {
+      await project.press("Enter");
+    } else {
+      await page
+        .getByRole("option", { name: "Example project", exact: true })
+        .click();
+    }
+    await expect(page.getByRole("listbox")).toHaveCount(0);
+  },
+);
+Then("the peek retains the parent's project and task", async ({ page }) => {
+  await expect(
+    page.getByRole("combobox", { name: "Peek project" }),
+  ).toHaveValue("Example project");
+  await expect(page.getByRole("combobox", { name: "Peek task" })).toHaveValue(
+    "Example task",
+  );
+  const parent = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems.find(
+      (item: { _id: string }) => item._id === "parent",
+    ),
+  );
+  expect(parent).toMatchObject({ projectId: "p", taskId: "t" });
+});
+When("I clear the peek project", async ({ page }) => {
+  await page.getByRole("combobox", { name: "Peek project" }).click();
+  await page.getByRole("option", { name: "No project", exact: true }).click();
+});
+Then("the peek has no project or task", async ({ page }) => {
+  await expect(
+    page.getByRole("combobox", { name: "Peek project" }),
+  ).toHaveValue("");
+  const task = page.getByRole("combobox", { name: "Peek task" });
+  await expect(task).toHaveValue("");
+  await expect(task).toBeDisabled();
+  const parent = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems.find(
+      (item: { _id: string }) => item._id === "parent",
+    ),
+  );
+  expect(parent.projectId).toBeUndefined();
+  expect(parent.taskId).toBeUndefined();
+});
 When("I start an entry from the Backlog peek", async ({ page }) => {
   const start = page
     .getByRole("complementary", { name: "Backlog item peek" })
