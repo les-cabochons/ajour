@@ -112,6 +112,10 @@ it("moves locally without discovery when the configured rule says Don't write", 
 });
 
 it("offers only this item's available alternatives in Change source state", async () => {
+  mocks.snapshot.mockReturnValue({
+    ...mocks.snapshot(),
+    workItems: [{ ...item, workflowStateId: "review" }],
+  });
   mocks.choose.mockResolvedValue("In QA");
   await changeSourceStateWithUndo({ ...item, workflowStateId: "review" });
   expect(mocks.choose).toHaveBeenCalledWith(
@@ -119,3 +123,61 @@ it("offers only this item's available alternatives in Change source state", asyn
   );
   expect(mocks.change).toHaveBeenCalledWith("a", "In QA");
 });
+
+it.each(["moved", "deleted", "archived"])(
+  "does not open a stale source-state dialog after the item is %s during lookup",
+  async (change) => {
+    const original = { ...item, workflowStateId: "review" };
+    const before = { ...mocks.snapshot(), workItems: [original] };
+    mocks.snapshot.mockReturnValue(before);
+    let finish!: (value: { states: { name: string; done: boolean }[] }) => void;
+    mocks.states.mockReturnValue(
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+    );
+    const request = changeSourceStateWithUndo(original);
+    mocks.snapshot.mockReturnValue({
+      ...before,
+      workItems:
+        change === "deleted"
+          ? []
+          : [
+              {
+                ...original,
+                ...(change === "moved"
+                  ? { workflowStateId: "doing" }
+                  : { status: "archived" }),
+              },
+            ],
+    });
+    finish({ states: [{ name: "In QA", done: false }] });
+    await request;
+    expect(mocks.choose).not.toHaveBeenCalled();
+    expect(mocks.change).not.toHaveBeenCalled();
+  },
+);
+
+it.each(["move", "remap"])(
+  "does not write a stale choice after a %s during the dialog",
+  async (change) => {
+    const original = { ...item, workflowStateId: "review" };
+    const before = { ...mocks.snapshot(), workItems: [original] };
+    mocks.snapshot.mockReturnValue(before);
+    mocks.choose.mockImplementation(async () => {
+      mocks.snapshot.mockReturnValue(
+        change === "move"
+          ? {
+              ...before,
+              workItems: [{ ...original, workflowStateId: "doing" }],
+            }
+          : { ...before, workflowStateMappings: [] },
+      );
+      return "In QA";
+    });
+    await changeSourceStateWithUndo(original);
+    expect(mocks.choose).toHaveBeenCalled();
+    expect(mocks.change).not.toHaveBeenCalled();
+    expect(mocks.offerUndo).not.toHaveBeenCalled();
+  },
+);

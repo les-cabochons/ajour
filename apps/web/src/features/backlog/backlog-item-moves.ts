@@ -233,9 +233,29 @@ export function getOtherSourceStates(workItem: LocalWorkItem): string[] {
 /** Change source state…: picks another source state of the same workflow state. */
 export async function changeSourceStateWithUndo(workItem: LocalWorkItem) {
   if (!canWriteToSource(workItem)) return;
+  const currentItem = () => {
+    const current = localStore
+      .snapshot()
+      .workItems.find((item) => item._id === workItem._id);
+    return current &&
+      current.workflowStateId === workItem.workflowStateId &&
+      current.status === workItem.status &&
+      current.source === workItem.source &&
+      current.sourceId === workItem.sourceId &&
+      current.sourceConnectionId === workItem.sourceConnectionId &&
+      current.sourceProjectName === workItem.sourceProjectName &&
+      current.sourceStatusKey === workItem.sourceStatusKey &&
+      current.sourceStatusLabel === workItem.sourceStatusLabel &&
+      canWriteToSource(current)
+      ? current
+      : undefined;
+  };
+  if (!currentItem()) return;
   const available = await loadSourceStates(workItem);
   if (available === null) return;
-  const options = getOtherSourceStates(workItem).filter((label) =>
+  const current = currentItem();
+  if (!current) return;
+  const options = getOtherSourceStates(current).filter((label) =>
     available.some(
       (candidate) =>
         candidate.trim().toLowerCase() === label.trim().toLowerCase(),
@@ -249,13 +269,15 @@ export async function changeSourceStateWithUndo(workItem: LocalWorkItem) {
     )?.name;
 
   const label = await requestSourceStateChoice({
-    workItem,
+    workItem: current,
     title: "Change source state",
     description: `The item stays in ${workflowStateName ?? "its state"}. The new state is written when the Undo toast closes.`,
     sourceStatusLabels: options,
     allowNoWrite: false,
   });
   if (!label) return;
+  const selected = currentItem();
+  if (!selected || !getOtherSourceStates(selected).includes(label)) return;
 
   offerUndo(localStore.changeWorkItemSourceState(workItem._id, label), {
     title: `Source state set to ${label}`,
