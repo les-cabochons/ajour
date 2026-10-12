@@ -10,6 +10,7 @@ Feature: Backlog list and board views
     Then the Backlog has workflow columns and standalone subitems
     When I narrow the Backlog window
     Then the saved board uses a narrow list
+    And the Backlog items allow native touch scrolling
     When I widen the Backlog window
     Then the Backlog has workflow columns and standalone subitems
     When I reload the app
@@ -38,6 +39,13 @@ Feature: Backlog list and board views
     When I undo the last Backlog move
     Then the subitem is back in To do
 
+  Scenario: Drag a board card with a touchscreen and undo it
+    When I choose the Backlog board
+    And I touch-drag the subitem to In progress
+    Then the subitem is in In progress
+    When I undo the last Backlog move
+    Then the subitem is back in To do
+
   Scenario: Close a parent and its subitems from the board
     When I choose the Backlog board
     And I move the parent to Done and include its subitems
@@ -58,6 +66,7 @@ Feature: Backlog list and board views
   Scenario: Restore items from Archive including missing sync items
     When I open the Backlog Archive
     Then Archive contains the old done and missing sync items
+    And the Backlog items allow native touch scrolling
     When I restore the old done item
     Then the old done item is active in To do
 

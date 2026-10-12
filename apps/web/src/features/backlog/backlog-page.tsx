@@ -652,8 +652,10 @@ export function BacklogPage() {
                                 onOpen={() => openPage(item)}
                                 onAction={(id) => action(item, id)}
                                 onKeyDown={(e) => itemKeys(item, group, e)}
-                                onPointerDown={(e) =>
-                                  drag.pointerDown(item._id, key, e)
+                                onPointerDown={
+                                  archive || narrow
+                                    ? undefined
+                                    : (e) => drag.pointerDown(item._id, key, e)
                                 }
                               />
                             </div>

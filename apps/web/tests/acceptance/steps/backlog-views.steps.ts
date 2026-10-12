@@ -219,6 +219,56 @@ When("I drag the subitem to In progress", async ({ page }) => {
   await page.mouse.up();
 });
 
+When("I touch-drag the subitem to In progress", async ({ page }) => {
+  const source = page.locator(
+    '[data-work-item-id="child"] .backlog-item-title',
+  );
+  const target = page.locator(
+    '.backlog-board-column[aria-label="In progress"] .backlog-group-header',
+  );
+  const from = await source.boundingBox();
+  const to = await target.boundingBox();
+  const session = await page.context().newCDPSession(page);
+  try {
+    await session.send("Emulation.setTouchEmulationEnabled", {
+      enabled: true,
+      maxTouchPoints: 1,
+    });
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchStart",
+      touchPoints: [{ x: from!.x + 20, y: from!.y + 8 }],
+    });
+    for (let step = 1; step <= 10; step++) {
+      const fraction = step / 10;
+      await session.send("Input.dispatchTouchEvent", {
+        type: "touchMove",
+        touchPoints: [
+          {
+            x: from!.x + 20 + (to!.x + 40 - from!.x - 20) * fraction,
+            y: from!.y + 8 + (to!.y + 18 - from!.y - 8) * fraction,
+          },
+        ],
+      });
+    }
+    await session.send("Input.dispatchTouchEvent", {
+      type: "touchEnd",
+      touchPoints: [],
+    });
+  } finally {
+    await session.detach();
+  }
+});
+
+Then("the Backlog items allow native touch scrolling", async ({ page }) => {
+  const items = page.locator("[data-work-item-id]");
+  await expect(items.first()).toBeVisible();
+  expect(
+    await items.evaluateAll((items) =>
+      items.map((item) => getComputedStyle(item).touchAction),
+    ),
+  ).toEqual(Array(await items.count()).fill("auto"));
+});
+
 When("I edit the subitem from its peek", async ({ page }) => {
   await page.locator('[data-work-item-id="child"] .backlog-item-title').click();
   await page

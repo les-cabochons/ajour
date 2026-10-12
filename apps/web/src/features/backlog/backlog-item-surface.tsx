@@ -223,7 +223,7 @@ export function BacklogItemSurface({
   onOpen: () => void;
   onAction: (action: BacklogItemActionId) => void;
   onKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
-  onPointerDown: (event: PointerEvent<HTMLElement>) => void;
+  onPointerDown?: (event: PointerEvent<HTMLElement>) => void;
 }) {
   const project = state.projects.find((p) => p._id === item.projectId);
   const parent = item.parentWorkItemId
@@ -319,6 +319,7 @@ export function BacklogItemSurface({
           data-focus-column={column}
           className={cn(
             board ? "backlog-board-card" : "backlog-list-row",
+            onPointerDown && "touch-none",
             selected && "is-selected",
           )}
           onClick={click}
