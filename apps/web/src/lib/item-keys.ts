@@ -13,6 +13,7 @@ import {
   type ShortcutKeyEvent,
   type ShortcutPlatform,
 } from "@/lib/shortcuts";
+import { isShortcutSequencePending } from "@/lib/shortcut-handlers";
 
 /**
  * Keys on the focused row, card or Grid cell. See "Focused rows and cards" in
@@ -44,10 +45,29 @@ export const TIME_ENTRY_ACTION_KEYS: ActionKeys<TimeEntryActionId> = {
   discard: "item.delete",
 };
 
-/** Backlog items have Delete, so Archive has no key. */
+/**
+ * Backlog items have Delete, so Archive has no key. Enter opens the backlog
+ * item page from a row, so rows pass `BACKLOG_ITEM_ROW_KEYS`, and the page and
+ * editor use these keys, where Enter is Edit.
+ */
 export const BACKLOG_ITEM_ACTION_KEYS: ActionKeys<BacklogItemActionId> = {
   edit: "item.edit",
+  snooze: "item.snooze",
+  settle: "item.settle",
   delete: "item.delete",
+};
+
+/** The id rows add to their action list so Enter opens the backlog item page. */
+export const OPEN_BACKLOG_ITEM_ACTION = {
+  id: "open",
+  label: "Open",
+} as const satisfies ObjectAction<"open">;
+
+/** Keys on a backlog item row: Enter opens the item page instead of Edit. */
+export const BACKLOG_ITEM_ROW_KEYS: ActionKeys<BacklogItemActionId | "open"> = {
+  ...BACKLOG_ITEM_ACTION_KEYS,
+  edit: undefined,
+  open: "item.edit",
 };
 
 /** Tasks have no Delete: the Delete key archives them, with Undo. */
@@ -280,7 +300,8 @@ export function handleItemKeyDown<Id extends string>(
   if (
     event.defaultPrevented ||
     event.target !== item ||
-    event.nativeEvent.isComposing
+    event.nativeEvent.isComposing ||
+    isShortcutSequencePending()
   ) {
     return;
   }

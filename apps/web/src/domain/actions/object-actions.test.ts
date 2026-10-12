@@ -190,7 +190,7 @@ describe("backlog item actions", () => {
     sourceUrl: "https://example.atlassian.net/browse/ENG-42",
   } as const;
 
-  it("lists a manual root item without Open in source, Archive then Delete last", () => {
+  it("lists a manual root item with Snooze and Settle, without Open in source or Archive", () => {
     const actions = getBacklogItemActions(manualItem, {
       subitemCount: 0,
       isSubitem: false,
@@ -201,11 +201,50 @@ describe("backlog item actions", () => {
       "new-entry",
       "edit",
       "add-subitem",
-      "archive",
+      "snooze",
+      "settle",
       "delete",
     ]);
     expect(disabledReasons(actions)).toEqual({});
+    expect(actions.at(-1)?.destructive).toBe(true);
+  });
+
+  it("lists Archive before Delete for a synced item, both destructive", () => {
+    const actions = getBacklogItemActions(syncedItem, {
+      subitemCount: 0,
+      isSubitem: false,
+    });
+
+    expect(ids(actions).slice(-4)).toEqual([
+      "settle",
+      "open-in-source",
+      "archive",
+      "delete",
+    ]);
     expect(actions.slice(-2).every((action) => action.destructive)).toBe(true);
+  });
+
+  it("swaps Snooze for Unsnooze on a snoozed item", () => {
+    const actions = getBacklogItemActions(manualItem, {
+      subitemCount: 0,
+      isSubitem: false,
+      isSnoozed: true,
+    });
+
+    expect(ids(actions)).toContain("unsnooze");
+    expect(ids(actions)).not.toContain("snooze");
+  });
+
+  it("swaps Settle for Unsettle and blocks Snooze on a settled item", () => {
+    const actions = getBacklogItemActions(
+      { ...syncedItem, status: "settled" },
+      { subitemCount: 0, isSubitem: false },
+    );
+
+    expect(ids(actions)).toContain("unsettle");
+    expect(disabledReasons(actions)).toEqual({
+      snooze: "Unsettle the item first",
+    });
   });
 
   it("lists Open in source only when the connector gave a source URL", () => {
@@ -255,7 +294,7 @@ describe("backlog item actions", () => {
     });
   });
 
-  it("swaps Archive for Restore and blocks the work actions on an archived item", () => {
+  it("puts Restore in the Settle slot and blocks the work actions on an archived item", () => {
     const actions = getBacklogItemActions(
       { ...syncedItem, status: "archived" },
       { subitemCount: 2, isSubitem: false },
@@ -266,8 +305,10 @@ describe("backlog item actions", () => {
       "new-entry",
       "edit",
       "add-subitem",
-      "open-in-source",
+      "snooze",
       "restore",
+      "open-in-source",
+      "archive",
       "delete",
     ]);
     expect(disabledReasons(actions)).toEqual({
@@ -275,6 +316,8 @@ describe("backlog item actions", () => {
       "new-entry": "Restore the item first",
       edit: "Restore the item first",
       "add-subitem": "Restore the item first",
+      snooze: "Restore the item first",
+      archive: "The item is archived",
     });
     expect(actions.find((action) => action.id === "restore")?.destructive).toBe(
       undefined,

@@ -69,13 +69,10 @@ export function normalizePersistedWorkItem(
     parentSourceId: isRetiredBuiltInSource
       ? undefined
       : workItem.parentSourceId,
-    priority: isSubtask
+    priority: normalizeWorkItemPriority(workItem.priority),
+    importedPriority: isRetiredBuiltInSource
       ? undefined
-      : normalizeWorkItemPriority(workItem.priority),
-    importedPriority:
-      isSubtask || isRetiredBuiltInSource
-        ? undefined
-        : normalizeWorkItemPriority(workItem.importedPriority),
+      : normalizeWorkItemPriority(workItem.importedPriority),
     backlogStatusId: workItem.backlogStatusId,
     importedBacklogStatusId: isRetiredBuiltInSource
       ? undefined
@@ -132,9 +129,7 @@ function createManualWorkItem(
     hierarchyLevel: isSubtask ? 1 : 0,
     parentWorkItemId: workItem.parentWorkItemId,
     parentSourceId: undefined,
-    priority: isSubtask
-      ? undefined
-      : normalizeWorkItemPriority(workItem.priority),
+    priority: normalizeWorkItemPriority(workItem.priority),
     importedPriority: undefined,
     backlogStatusId: workItem.backlogStatusId,
     importedBacklogStatusId: undefined,
@@ -214,7 +209,7 @@ export function addWorkItem(
       projectId,
       taskId,
       inheritsParentMapping,
-      priority: workItem.parentWorkItemId ? undefined : workItem.priority,
+      priority: workItem.priority,
       backlogStatusId: workItem.backlogStatusId,
     },
     factories,
@@ -327,11 +322,9 @@ export function updateWorkItem(
 
   const nextIsSubtask = Boolean(nextParentWorkItemId || nextParentSourceId);
   const priorityProvided = hasOwn(patch, "priority");
-  const nextPriority = nextIsSubtask
-    ? undefined
-    : priorityProvided
-      ? normalizeWorkItemPriority(patch.priority)
-      : target.priority;
+  const nextPriority = priorityProvided
+    ? normalizeWorkItemPriority(patch.priority)
+    : target.priority;
   const mappingProvided = hasOwn(patch, "projectId") || hasOwn(patch, "taskId");
   const inheritanceProvided = hasOwn(patch, "inheritsParentMapping");
   const nextParent = nextParentWorkItemId
@@ -407,7 +400,7 @@ export function updateWorkItem(
           : 0
         : target.hierarchyLevel,
     priority: nextPriority,
-    importedPriority: nextIsSubtask ? undefined : target.importedPriority,
+    importedPriority: target.importedPriority,
     projectId: nextProjectId,
     taskId: nextTaskId,
     inheritsParentMapping: nextInheritsParentMapping,

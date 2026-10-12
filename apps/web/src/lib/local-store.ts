@@ -21,6 +21,14 @@ import {
   type BacklogStatusMappingInput,
 } from "@/domain/backlog/backlog-status";
 import {
+  markBacklogItemOpened as applyMarkBacklogItemOpened,
+  restoreBacklogItem as applyRestoreBacklogItem,
+  settleBacklogItem as applySettleBacklogItem,
+  snoozeBacklogItem as applySnoozeBacklogItem,
+  unsettleBacklogItem as applyUnsettleBacklogItem,
+  unsnoozeBacklogItem as applyUnsnoozeBacklogItem,
+} from "@/domain/backlog/backlog-item-lifecycle";
+import {
   acceptRemoteEstimateValue as applyAcceptRemoteEstimateValue,
   addWorkItem as applyAddWorkItem,
   deleteWorkItem as applyDeleteWorkItem,
@@ -1164,8 +1172,38 @@ export const localStore = {
       applyWorkItemStatus(state, workItemId, status, Date.now),
     );
   },
+  /** Restores an archived backlog item, with the subitems its settle carried. */
   restoreWorkItem(workItemId: string) {
-    this.setWorkItemStatus(workItemId, "active");
+    updateState((state) => applyRestoreBacklogItem(state, workItemId));
+  },
+  /**
+   * Settles a backlog item: a manual item is archived, a synced item becomes
+   * settled. Stops and saves its running entry. Returns an undo token, or null
+   * when nothing changed.
+   */
+  settleWorkItem(workItemId: string) {
+    return updateStateWithUndo((state) =>
+      applySettleBacklogItem(state, workItemId, { createId, now: Date.now }),
+    );
+  },
+  /** Puts a settled backlog item back to active. Local, with no write. */
+  unsettleWorkItem(workItemId: string) {
+    updateState((state) => applyUnsettleBacklogItem(state, workItemId));
+  },
+  /** Snoozes a backlog item until `until`. Returns an undo token, or null when nothing changed. */
+  snoozeWorkItem(workItemId: string, until: number) {
+    return updateStateWithUndo((state) =>
+      applySnoozeBacklogItem(state, workItemId, until),
+    );
+  },
+  unsnoozeWorkItem(workItemId: string) {
+    updateState((state) => applyUnsnoozeBacklogItem(state, workItemId));
+  },
+  /** Clears the item's Returned mark when the user opens it. */
+  markWorkItemOpened(workItemId: string) {
+    updateState((state) =>
+      applyMarkBacklogItemOpened(state, workItemId, Date.now()),
+    );
   },
   /** Archives a backlog item. Returns an undo token, or null when nothing changed. */
   archiveWorkItem(workItemId: string) {
