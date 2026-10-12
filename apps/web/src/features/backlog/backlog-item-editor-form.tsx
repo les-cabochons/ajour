@@ -33,6 +33,7 @@ import {
   TooltipContent,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { isBacklogItemSnoozed } from "@/domain/backlog/backlog-item-lifecycle";
 import {
   getBacklogItemActions,
   type BacklogItemActionId,
@@ -333,6 +334,7 @@ export function BacklogItemEditorForm({
             <ObjectActionsButton
               actions={getBacklogItemActions(workItem, {
                 isSubitem: editor.isSubitem,
+                isSnoozed: isBacklogItemSnoozed(workItem, Date.now()),
                 subitemCount: subitems.length,
                 isEditing: true,
               })}

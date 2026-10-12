@@ -11,9 +11,9 @@ import {
 } from "@/domain/backlog/backlog-status";
 import {
   deleteWorkItem,
-  setWorkItemStatus,
   updateWorkItem,
 } from "@/domain/backlog/work-item-transitions";
+import { archiveBacklogItem } from "@/domain/backlog/backlog-item-lifecycle";
 import {
   setProjectTaskStatus,
   updateProject,
@@ -483,7 +483,10 @@ describe("backlog and project undo", () => {
   it("restores an archived backlog item to active", () => {
     const before = createBacklogState();
     const { after, undo } = undoAction(before, (state) =>
-      setWorkItemStatus(state, "item-parent", "archived", () => 100),
+      archiveBacklogItem(state, "item-parent", {
+        createId: () => "unused",
+        now: () => 100,
+      }),
     );
     expect(after.workItems[1]).toMatchObject({
       status: "archived",
@@ -498,7 +501,10 @@ describe("backlog and project undo", () => {
   it("refuses to undo an archive when the item changed after it", () => {
     const before = createBacklogState();
     const { after, undo } = undoAction(before, (state) =>
-      setWorkItemStatus(state, "item-parent", "archived", () => 100),
+      archiveBacklogItem(state, "item-parent", {
+        createId: () => "unused",
+        now: () => 100,
+      }),
     );
     const edited = updateWorkItem(after, "item-parent", { note: "Edited" });
 

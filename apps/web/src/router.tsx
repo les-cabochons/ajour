@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-router";
 import { lazy, Suspense, type ReactNode } from "react";
 import { PageSkeleton } from "@/components/page-skeleton";
+import { parseBacklogItemSearch } from "@/features/backlog/backlog-item-search";
 import { AppShell } from "@/features/layout/app-shell";
 import { ShortcutProvider } from "@/lib/shortcut-handlers";
 import { todayIsoDate } from "@/lib/utils";
@@ -23,6 +24,10 @@ const SubmitPage = lazy(async () => {
 const BacklogPage = lazy(async () => {
   const module = await import("@/features/backlog/backlog-page");
   return { default: module.BacklogPage };
+});
+const BacklogItemPage = lazy(async () => {
+  const module = await import("@/features/backlog/backlog-item-page");
+  return { default: module.BacklogItemPage };
 });
 const ProjectsPage = lazy(async () => {
   const module = await import("@/features/projects/projects-page");
@@ -184,6 +189,20 @@ const backlogRoute = createRoute({
   ),
 });
 
+const backlogItemRoute = createRoute({
+  getParentRoute: () => appRoute,
+  path: "/backlog/$itemId",
+  validateSearch: parseBacklogItemSearch,
+  component: () => {
+    const { itemId } = backlogItemRoute.useParams();
+    return (
+      <RouteSuspense>
+        <BacklogItemPage itemId={itemId} />
+      </RouteSuspense>
+    );
+  },
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/settings",
@@ -297,6 +316,7 @@ const routeTree = rootRoute.addChildren([
     timeRoute,
     submitRoute,
     backlogRoute,
+    backlogItemRoute,
     projectsRoute,
     projectsArchiveRoute,
     projectDetailRoute,

@@ -69,6 +69,8 @@ export type ShortcutActionId =
   | "pinned.new-entry"
   | "pinned.start"
   | "item.edit"
+  | "item.settle"
+  | "item.snooze"
   | "item.duplicate"
   | "item.move-to"
   | "item.delete"
@@ -206,12 +208,25 @@ export const SHORTCUTS: readonly ShortcutDefinition[] = [
     keys: [{ digit: true, shift: true }],
   },
   // The focused row's keys. None is a digit, so pinned tasks keep 1 to 0.
+  // Enter goes one level deeper: Edit on entries, tasks and projects, the
+  // backlog item page on a backlog item row. E is Settle, as archive in Gmail.
   {
     id: "item.edit",
-    label: "Edit",
+    label: "Open or edit",
+    scope: "item",
+    keys: [{ key: "Enter" }],
+  },
+  {
+    id: "item.settle",
+    label: "Settle a backlog item",
     scope: "item",
     keys: [{ key: "e" }],
-    alternateKeys: [{ key: "Enter" }],
+  },
+  {
+    id: "item.snooze",
+    label: "Snooze a backlog item",
+    scope: "item",
+    keys: [{ key: "b" }],
   },
   {
     id: "item.duplicate",

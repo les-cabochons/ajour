@@ -10,7 +10,6 @@ import {
   CommandList,
   CommandShortcut,
 } from "@/components/ui/command";
-import { getWorkItemEntryValues } from "@/features/backlog/work-item-timer-comment";
 import {
   buildPaletteSections,
   type PaletteCommand,
@@ -21,6 +20,7 @@ import {
 import { ProjectFormDialog } from "@/features/projects/project-form-dialog";
 import { getSettingsPages } from "@/features/settings/settings-navigation";
 import { openNewEntryEditor } from "@/features/time/new-entry-request";
+import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
 import { useTimeEntryActions } from "@/features/time/time-entry-actions";
 import type { ActionRequest } from "@/lib/action-request";
 import {
@@ -258,26 +258,22 @@ export function CommandPalette() {
           (item) => item._id === command.workItemId,
         );
         if (!workItem) return;
-        if (command.actionId === "start-entry") {
-          localStore.startTimer({
-            ...getWorkItemEntryValues(workItem),
-            accumulatedDurationMs: 0,
-          });
-        } else if (command.actionId === "new-entry") {
-          openNewEntryEditor(
-            { kind: "backlog-item", workItemId: workItem._id },
-            getWorkItemEntryValues(workItem),
-          );
-        } else if (command.actionId === "open-in-source") {
-          if (workItem.sourceUrl) {
-            window.open(workItem.sourceUrl, "_blank", "noopener,noreferrer");
+        // Edit and Add subitem open an editor: on the Backlog page when it is
+        // open, which guards its draft, otherwise on the item's page.
+        runBacklogItemAction(workItem, command.actionId, (hosted) => {
+          if (router.state.location.pathname === "/backlog") {
+            requestPageAction("/backlog", {
+              action: hosted,
+              target: workItem._id,
+            });
+            return;
           }
-        } else {
-          requestPageAction("/backlog", {
-            action: command.actionId,
-            target: workItem._id,
+          void navigate({
+            to: "/backlog/$itemId",
+            params: { itemId: workItem._id },
+            search: { action: hosted },
           });
-        }
+        });
         return;
       }
       case "reorder":

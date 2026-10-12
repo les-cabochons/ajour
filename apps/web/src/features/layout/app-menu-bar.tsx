@@ -18,6 +18,10 @@ import { isDesktopShell } from "@/lib/runtime";
 import { useRunShortcut } from "@/lib/shortcut-handlers";
 import { requestUpdateCheck } from "@/lib/update-check-request";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
+import {
+  toggleSidebarDensity,
+  toggleSidebarUpNext,
+} from "@/lib/sidebar-layout";
 
 const isWindowsDesktopShell =
   isDesktopShell &&
@@ -34,6 +38,10 @@ function useAppMenuActionRunner() {
       const command = resolveAppMenuAction(action);
       if (command?.kind === "shortcut") {
         runShortcut(command.id);
+      } else if (command?.kind === "toggle-sidebar-density") {
+        toggleSidebarDensity();
+      } else if (command?.kind === "toggle-sidebar-up-next") {
+        toggleSidebarUpNext();
       } else if (command?.kind === "check-for-updates") {
         // Opening General checks for updates. When it is already open, ask it.
         if (router.state.location.pathname === "/settings/general") {

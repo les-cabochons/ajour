@@ -216,7 +216,11 @@ export interface LocalBacklogStatusMapping {
 export interface LocalWorkItem {
   _id: string;
   title: string;
-  status: "active" | "archived";
+  /**
+   * Active items are on the user's plate. Settled items wait on someone else
+   * (synced items only). Archived items are done. See agents/GLOSSARY.md.
+   */
+  status: "active" | "settled" | "archived";
   source: "manual" | ConnectorBacklogSource;
   sourceId?: string;
   sourceConnectionId?: string;
@@ -245,6 +249,20 @@ export interface LocalWorkItem {
   estimateSync?: LocalWorkItemEstimateSyncState;
   keepWhenMissingFromSync?: boolean;
   archivedByMissingSync?: boolean;
+  /**
+   * Hides the item from the sidebar until this time. Once the time has passed,
+   * the item is returned until the user opens it or ends the snooze.
+   */
+  snoozedUntil?: number;
+  /** Set when a sync brings a settled item back. Cleared when the user opens it. */
+  returnedAt?: number;
+  settledAt?: number;
+  /** The parent whose settle carried this subitem along, so they come back together. */
+  settledWithParentId?: string;
+  /** The source state key when the item was settled, to notice changes made in the source since. */
+  settledSourceStatusKey?: string;
+  /** The imported priority when the item was settled, to notice changes made in the source since. */
+  settledImportedPriority?: number;
   createdAt: number;
   archivedAt?: number;
 }

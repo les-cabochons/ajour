@@ -100,7 +100,9 @@ describe("shortcut registry", () => {
       );
 
     expect(keys("mac")).toEqual([
-      "E or ↩",
+      "↩",
+      "E",
+      "B",
       "⌘D",
       "M",
       "⌫ or ⌦",
@@ -113,7 +115,9 @@ describe("shortcut registry", () => {
       "→",
     ]);
     expect(keys("other")).toEqual([
-      "E or Enter",
+      "Enter",
+      "E",
+      "B",
       "Ctrl+D",
       "M",
       "Backspace or Del",
@@ -153,7 +157,7 @@ describe("shortcut registry", () => {
       formatAriaKeyShortcuts(getShortcut("go.time"), "mac"),
     ).toBeUndefined();
     expect(formatAriaKeyShortcuts(getShortcut("item.edit"), "mac")).toBe(
-      "E Enter",
+      "Enter",
     );
     expect(formatAriaKeyShortcuts(getShortcut("item.move-up"), "other")).toBe(
       "Alt+ArrowUp",
@@ -172,7 +176,11 @@ describe("shortcut registry", () => {
       "app.command-palette",
       "item.duplicate",
     ]);
-    expect(ids("BACKLOG")).toEqual(["go.backlog"]);
+    expect(ids("BACKLOG")).toEqual([
+      "go.backlog",
+      "item.settle",
+      "item.snooze",
+    ]);
     expect(ids("⇧F10")).toEqual(["item.open-menu"]);
     expect(ids("nothing like this")).toEqual([]);
   });
@@ -279,7 +287,8 @@ describe("resolveShortcut", () => {
     };
 
     expect(itemId(press("Enter"))).toBe("item.edit");
-    expect(itemId(press("e"))).toBe("item.edit");
+    expect(itemId(press("e"))).toBe("item.settle");
+    expect(itemId(press("b"))).toBe("item.snooze");
     expect(itemId(press("Delete"))).toBe("item.delete");
     expect(itemId(press("F10", { shiftKey: true }))).toBe("item.open-menu");
     expect(itemId(press("ArrowDown", { altKey: true }))).toBe("item.move-down");

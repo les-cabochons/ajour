@@ -105,7 +105,8 @@ describe("getItemKeyCommand", () => {
     };
 
     expect(actionId(press("Enter"))).toBe("edit");
-    expect(actionId(press("e"))).toBe("edit");
+    // E settles backlog items. It no longer edits anything.
+    expect(actionId(press("e"))).toBeNull();
     expect(actionId(press("Backspace"))).toBe("delete");
     expect(actionId(press("Delete"))).toBe("delete");
     expect(actionId(press("m"))).toBe("move-to");
@@ -176,10 +177,13 @@ describe("getItemKeyCommand", () => {
       ),
     ).toMatchObject({ action: { id: "archive" } });
 
-    const backlogActions = getBacklogItemActions(active, {
-      subitemCount: 0,
-      isSubitem: false,
-    });
+    const backlogActions = getBacklogItemActions(
+      { ...active, source: "manual" },
+      {
+        subitemCount: 0,
+        isSubitem: false,
+      },
+    );
     expect(
       getItemKeyCommand(
         press("Delete"),

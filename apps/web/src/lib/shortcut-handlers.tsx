@@ -68,6 +68,18 @@ class ShortcutHandlerRegistry {
 
 const ShortcutContext = createContext<ShortcutHandlerRegistry | null>(null);
 
+/** True between the two keys of a sequence such as "G then B". */
+let sequencePending = false;
+
+/**
+ * Whether the app listener is waiting for the second key of a sequence. Focused
+ * rows leave their keys alone then, so "G then B" goes to Backlog instead of
+ * snoozing the focused backlog item.
+ */
+export function isShortcutSequencePending() {
+  return sequencePending;
+}
+
 /**
  * Listens for every registered shortcut on the window and runs the handler that
  * `useShortcut` registered for it. Single keys stay quiet while focus is in a
@@ -85,6 +97,7 @@ export function ShortcutProvider({ children }: { children: ReactNode }) {
 
     function clearPrefix() {
       prefix = [];
+      sequencePending = false;
       window.clearTimeout(prefixTimeoutId);
     }
 
@@ -112,6 +125,7 @@ export function ShortcutProvider({ children }: { children: ReactNode }) {
       if (resolution.kind === "pending") {
         event.preventDefault();
         prefix = resolution.prefix;
+        sequencePending = true;
         prefixTimeoutId = window.setTimeout(clearPrefix, SEQUENCE_TIMEOUT_MS);
         return;
       }

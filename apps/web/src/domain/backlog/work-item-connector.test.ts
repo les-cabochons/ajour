@@ -8,6 +8,7 @@ import {
   applyConnectorSyncWorkItemUpdates,
   importConnectorWorkItems,
 } from "@/domain/backlog/work-item-connector";
+import { settleBacklogItem } from "@/domain/backlog/backlog-item-lifecycle";
 
 function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
   return {
@@ -367,6 +368,106 @@ describe("connector work item imports", () => {
 
     expect(cleared.workItems[0]?.remainingEstimateHours).toBeUndefined();
     expect(restored.workItems[0]?.remainingEstimateHours).toBe(7);
+  });
+});
+
+describe("connector sync of settled items", () => {
+  function importAndSettle() {
+    const imported = importConnectorWorkItems(
+      createState(),
+      [createCandidate()],
+      undefined,
+      factories,
+    ).state;
+    return settleBacklogItem(imported, "work-item-1", factories);
+  }
+
+  it("brings a settled item back as returned when its state changed in the source", () => {
+    const refreshed = importConnectorWorkItems(
+      importAndSettle(),
+      [createCandidate({ state: "Ready for QA" })],
+      undefined,
+      factories,
+    ).state;
+
+    expect(refreshed.workItems[0]).toMatchObject({
+      status: "active",
+      returnedAt: 500,
+    });
+  });
+
+  it("brings a settled item back as returned when its priority changed in the source", () => {
+    const refreshed = importConnectorWorkItems(
+      importAndSettle(),
+      [createCandidate({ priority: 1 })],
+      undefined,
+      factories,
+    ).state;
+
+    expect(refreshed.workItems[0]).toMatchObject({
+      status: "active",
+      returnedAt: 500,
+    });
+  });
+
+  it("brings back the subitems a returning parent carried when it was settled", () => {
+    let id = 0;
+    const idFactories = { createId: () => `work-item-${++id}`, now: () => 500 };
+    const parent = createCandidate();
+    const child = createCandidate({
+      id: "candidate-2",
+      sourceId: "source-2",
+      externalId: "43",
+      depth: 1,
+      parentSourceId: "source-1",
+      priority: undefined,
+    });
+    const imported = importConnectorWorkItems(
+      createState(),
+      [parent, child],
+      undefined,
+      idFactories,
+    ).state;
+    const parentId = imported.workItems.find(
+      (workItem) => workItem.sourceId === "source-1",
+    )!._id;
+    const settled = settleBacklogItem(imported, parentId, idFactories);
+
+    const refreshed = importConnectorWorkItems(
+      settled,
+      [{ ...parent, state: "Active again" }, child],
+      undefined,
+      idFactories,
+    ).state;
+
+    expect(
+      refreshed.workItems.find((workItem) => workItem.sourceId === "source-2"),
+    ).toMatchObject({ status: "active" });
+  });
+
+  it("keeps a settled item settled when nothing changed in the source", () => {
+    const refreshed = importConnectorWorkItems(
+      importAndSettle(),
+      [createCandidate()],
+      undefined,
+      factories,
+    ).state;
+
+    expect(refreshed.workItems[0]?.status).toBe("settled");
+  });
+
+  it("keeps a subitem's own priority from the source", () => {
+    const imported = importConnectorWorkItems(
+      createState(),
+      [createCandidate({ depth: 1, parentSourceId: "parent-1", priority: 2 })],
+      undefined,
+      factories,
+    ).state;
+
+    expect(imported.workItems[0]).toMatchObject({
+      priority: 2,
+      importedPriority: 2,
+    });
   });
 });
 

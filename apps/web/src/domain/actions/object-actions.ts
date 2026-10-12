@@ -170,15 +170,21 @@ export type BacklogItemActionId =
   | "new-entry"
   | "edit"
   | "add-subitem"
+  | "snooze"
+  | "unsnooze"
+  | "settle"
+  | "unsettle"
+  | "restore"
   | "open-in-source"
   | "archive"
-  | "restore"
   | "delete";
 
 export interface BacklogItemActionOptions {
   /** Subitems removed together with the item, stated in the Delete label. */
   subitemCount: number;
   isSubitem: boolean;
+  /** Whether a snooze hides the item right now. */
+  isSnoozed?: boolean;
   /** Set inside an editor, where Edit is the current mode. */
   isEditing?: boolean;
 }
@@ -193,17 +199,23 @@ function formatDeleteLabel(subitemCount: number) {
 
 /**
  * Lists a backlog item's actions:
- * Start entry · New entry… · Edit · Add subitem · Open in source · Archive/Restore · Delete.
+ * Start entry · New entry… · Edit · Add subitem · Snooze…/Unsnooze ·
+ * Settle/Unsettle/Restore · Open in source · Archive · Delete.
+ *
  * Open in source is listed only when a connector provided the item's URL.
+ * Archive is listed only for synced items: it archives in Ajour and leaves the
+ * source as it is. A manual item archives through Settle.
  */
 export function getBacklogItemActions(
   item: {
-    status: ArchiveStatus;
+    status: "active" | "settled" | "archived";
+    source: string;
     sourceUrl?: string;
   },
   options: BacklogItemActionOptions,
 ): ObjectAction<BacklogItemActionId>[] {
   const isArchived = item.status === "archived";
+  const isSettled = item.status === "settled";
   const archivedReason = isArchived ? RESTORE_ITEM_FIRST : undefined;
   const actions: ObjectAction<BacklogItemActionId>[] = [
     { id: "start-entry", label: "Start entry", disabledReason: archivedReason },
@@ -221,22 +233,40 @@ export function getBacklogItemActions(
         ? "Subitems can't have subitems"
         : archivedReason,
     },
+    options.isSnoozed
+      ? { id: "unsnooze", label: "Unsnooze" }
+      : {
+          id: "snooze",
+          label: "Snooze…",
+          disabledReason:
+            archivedReason ??
+            (isSettled ? "Unsettle the item first" : undefined),
+        },
+    isArchived
+      ? { id: "restore", label: "Restore" }
+      : isSettled
+        ? { id: "unsettle", label: "Unsettle" }
+        : { id: "settle", label: "Settle" },
   ];
 
   if (item.sourceUrl) {
     actions.push({ id: "open-in-source", label: "Open in source" });
   }
 
-  actions.push(
-    isArchived
-      ? { id: "restore", label: "Restore" }
-      : { id: "archive", label: "Archive", destructive: true },
-    {
-      id: "delete",
-      label: formatDeleteLabel(options.subitemCount),
+  if (item.source !== "manual") {
+    actions.push({
+      id: "archive",
+      label: "Archive",
       destructive: true,
-    },
-  );
+      disabledReason: isArchived ? "The item is archived" : undefined,
+    });
+  }
+
+  actions.push({
+    id: "delete",
+    label: formatDeleteLabel(options.subitemCount),
+    destructive: true,
+  });
 
   return actions;
 }

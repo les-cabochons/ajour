@@ -15,6 +15,11 @@ import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import {
+  updateSidebarLayout,
+  useSidebarLayout,
+  type SidebarDensity,
+} from "@/lib/sidebar-layout";
 import type {
   ThemeMode,
   UpdateTrack,
@@ -137,6 +142,7 @@ function formatCheckedAt(value: string) {
 }
 
 export function SettingsGeneralPage() {
+  const sidebarLayout = useSidebarLayout();
   const preferences = useUserPreferences();
   const resolvedTheme = useResolvedTheme();
   const [updateCheck, setUpdateCheck] = useState<UpdateCheckState>({
@@ -265,6 +271,62 @@ export function SettingsGeneralPage() {
                 );
               })}
             </div>
+          </div>
+        </AppPanel>
+      </section>
+
+      <section className="settings-section">
+        <h2 className="settings-section-title">Sidebar</h2>
+        <p className="settings-section-desc">
+          How the backlog items in the sidebar look on this device.
+        </p>
+
+        <AppPanel>
+          <div className="grid gap-3 desktop:grid-cols-2">
+            <Field
+              orientation="horizontal"
+              className="rounded-2xl border border-border/70 p-4"
+            >
+              <div className="flex-1">
+                <FieldLabel>Density</FieldLabel>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  One line per item, narrower sidebar.
+                </p>
+              </div>
+              <ToggleGroup
+                aria-label="Sidebar density"
+                variant="outline"
+                size="sm"
+                value={[sidebarLayout.density]}
+                onValueChange={(next) => {
+                  const density = next[0] as SidebarDensity | undefined;
+                  if (density) updateSidebarLayout({ density });
+                }}
+              >
+                <ToggleGroupItem value="comfortable">
+                  Comfortable
+                </ToggleGroupItem>
+                <ToggleGroupItem value="compact">Compact</ToggleGroupItem>
+              </ToggleGroup>
+            </Field>
+            <Field
+              orientation="horizontal"
+              className="rounded-2xl border border-border/70 p-4"
+            >
+              <div className="flex-1">
+                <FieldLabel htmlFor="show-up-next">Show Up next</FieldLabel>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Show the first backlog item as a card with its actions.
+                </p>
+              </div>
+              <Switch
+                id="show-up-next"
+                checked={sidebarLayout.showUpNext}
+                onCheckedChange={(checked) =>
+                  updateSidebarLayout({ showUpNext: checked })
+                }
+              />
+            </Field>
           </div>
         </AppPanel>
       </section>

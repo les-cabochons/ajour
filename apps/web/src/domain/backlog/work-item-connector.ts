@@ -64,14 +64,8 @@ function createConnectorWorkItem(
     sourceWorkItemType: workItem.workItemType,
     hierarchyLevel: workItem.depth,
     parentSourceId: workItem.parentSourceId,
-    priority:
-      workItem.depth > 0
-        ? undefined
-        : normalizeWorkItemPriority(workItem.priority),
-    importedPriority:
-      workItem.depth > 0
-        ? undefined
-        : normalizeWorkItemPriority(workItem.priority),
+    priority: normalizeWorkItemPriority(workItem.priority),
+    importedPriority: normalizeWorkItemPriority(workItem.priority),
     backlogStatusId: mappedBacklogStatusId,
     importedBacklogStatusId: mappedBacklogStatusId,
     sourceStatusKey,
@@ -100,12 +94,12 @@ function mergeConnectorWorkItem(
   existingWorkItem: LocalWorkItem,
   importedWorkItem: ConnectorImportCandidate,
   mappedBacklogStatusId: string | undefined,
-  createId: (prefix: string) => string,
+  factories: ConnectorWorkItemFactories,
 ): LocalWorkItem {
   const nextImportedState = createConnectorWorkItem(
     importedWorkItem,
     mappedBacklogStatusId,
-    createId,
+    factories.createId,
     existingWorkItem._id,
   );
   const followsImportedEstimate = (fieldKey: LocalWorkItemEstimateFieldKey) => {
@@ -164,7 +158,6 @@ function mergeConnectorWorkItem(
       error: followsImported ? undefined : current?.error,
     };
   };
-  const nextIsSubtask = (nextImportedState.hierarchyLevel ?? 0) > 0;
   const mergedEstimateSync: LocalWorkItemEstimateSyncState = {
     originalEstimateHours: mergeEstimateField(
       "originalEstimateHours",
@@ -195,14 +188,10 @@ function mergeConnectorWorkItem(
     sourceWorkItemType: nextImportedState.sourceWorkItemType,
     hierarchyLevel: nextImportedState.hierarchyLevel,
     parentSourceId: nextImportedState.parentSourceId,
-    priority: nextIsSubtask
-      ? undefined
-      : followsImportedPriority
-        ? nextImportedState.importedPriority
-        : existingWorkItem.priority,
-    importedPriority: nextIsSubtask
-      ? undefined
-      : nextImportedState.importedPriority,
+    priority: followsImportedPriority
+      ? nextImportedState.importedPriority
+      : existingWorkItem.priority,
+    importedPriority: nextImportedState.importedPriority,
     backlogStatusId: followsImportedBacklogStatus
       ? nextImportedState.importedBacklogStatusId
       : existingWorkItem.backlogStatusId,
@@ -227,7 +216,34 @@ function mergeConnectorWorkItem(
       ? undefined
       : existingWorkItem.archivedAt,
     archivedByMissingSync: false,
+    ...(changedSinceSettled(existingWorkItem, nextImportedState)
+      ? {
+          status: "active" as const,
+          returnedAt: factories.now(),
+          settledAt: undefined,
+          settledWithParentId: undefined,
+          settledSourceStatusKey: undefined,
+          settledImportedPriority: undefined,
+        }
+      : {}),
   };
+}
+
+/**
+ * A settled item comes back when the source shows a state or priority other
+ * than the ones it had when the user settled it.
+ */
+function changedSinceSettled(
+  existingWorkItem: LocalWorkItem,
+  importedState: LocalWorkItem,
+) {
+  return (
+    existingWorkItem.status === "settled" &&
+    (importedState.sourceStatusKey !==
+      existingWorkItem.settledSourceStatusKey ||
+      importedState.importedPriority !==
+        existingWorkItem.settledImportedPriority)
+  );
 }
 
 export function importConnectorWorkItems(
@@ -257,6 +273,8 @@ export function importConnectorWorkItems(
   );
   const importedKeysForConnection = new Set<string>();
   const importedItems: LocalWorkItem[] = [];
+  /** Settled items this sync brought back, whose carried subitems return with them. */
+  const returnedIds = new Set<string>();
   let nextWorkItems = state.workItems;
   let changedExistingItems = false;
 
@@ -280,7 +298,7 @@ export function importConnectorWorkItems(
         existingWorkItem,
         workItem,
         mappedBacklogStatusId,
-        factories.createId,
+        factories,
       );
       if (JSON.stringify(mergedWorkItem) === JSON.stringify(existingWorkItem)) {
         continue;
@@ -297,6 +315,12 @@ export function importConnectorWorkItems(
         nextWorkItems[existingIndex] = mergedWorkItem;
         existingItemsByKey.set(key, mergedWorkItem);
       }
+      if (
+        existingWorkItem.status === "settled" &&
+        mergedWorkItem.status === "active"
+      ) {
+        returnedIds.add(mergedWorkItem._id);
+      }
 
       result.updatedCount += 1;
       continue;
@@ -310,6 +334,23 @@ export function importConnectorWorkItems(
     existingItemsByKey.set(key, importedItem);
     importedItems.push(importedItem);
     result.importedCount += 1;
+  }
+
+  if (returnedIds.size > 0) {
+    nextWorkItems = nextWorkItems.map((workItem) =>
+      workItem.status === "settled" &&
+      workItem.settledWithParentId &&
+      returnedIds.has(workItem.settledWithParentId)
+        ? {
+            ...workItem,
+            status: "active" as const,
+            settledAt: undefined,
+            settledWithParentId: undefined,
+            settledSourceStatusKey: undefined,
+            settledImportedPriority: undefined,
+          }
+        : workItem,
+    );
   }
 
   if (options?.archiveMissingFromConnectionId) {
