@@ -257,6 +257,14 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] The foundation passes 710 unit tests, workspace typecheck and three Chromium confirmation scenarios.
 - [ ] Carry the fixes through the stack, verify the final heads and request fresh reviews.
 
+### Failed source drag order recovery, 2026-10-12
+
+- [x] Pending source moves retain the drag's affected custom order, including across persistence and coalesced moves. Recovery advances when an older source write succeeds.
+- [x] Failed writes restore that order only while its affected items retain the drop order. Later explicit reorders, unrelated reorders, inserted items and field edits survive recovery.
+- [x] Seven domain regressions and a Chromium drag through a rejected fixture source write pass. All 804 unit tests pass.
+- [x] All 73 Chromium scenarios pass, along with workspace typecheck, production build and formatting.
+- [ ] Fresh Codex review of the pushed view-layer fix is pending. Merging remains owned by the integration thread.
+
 ### Sidebar Start disabled reason, 2026-10-12
 
 - [x] Sidebar Start icons show the action's disabled reason in their tooltip and accessible description. They keep their action name and remain focusable while unavailable.

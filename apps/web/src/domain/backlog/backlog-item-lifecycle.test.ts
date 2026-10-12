@@ -18,6 +18,7 @@ import {
   unsnoozeBacklogItem,
 } from "@/domain/backlog/backlog-item-lifecycle";
 import { updateWorkflowState } from "@/domain/backlog/workflow-states";
+import { reorderWorkItems } from "@/domain/backlog/work-item-transitions";
 
 function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
   return {
@@ -1066,6 +1067,115 @@ describe("writing a move to the source", () => {
         previous: { sourceStatusKey: "active", workflowStateId: "doing" },
       },
     });
+  });
+
+  const orderedState = () => ({
+    ...state(),
+    workItems: [
+      ...state().workItems,
+      item("untouched"),
+      item("b"),
+      item("c"),
+      item("d"),
+      item("e"),
+    ],
+  });
+  const ids = (value: LocalAppState) => value.workItems.map((item) => item._id);
+  const dragToReview = (before = orderedState()) =>
+    moveBacklogItemToState(before, "a", "review", factories, {
+      sourceWrites: { a: "Resolved" },
+      orderedIds: ["b", "c", "a"],
+    });
+
+  it.each(["review", "done"])(
+    "restores the persisted drag order and lifecycle after a failed move into %s",
+    (destination) => {
+      const before = orderedState();
+      const moved = moveBacklogItemToState(
+        before,
+        "a",
+        destination,
+        factories,
+        {
+          sourceWrites: { a: destination === "done" ? "Closed" : "Resolved" },
+          orderedIds: ["b", "c", "a"],
+        },
+      );
+      expect(ids(moved)).toEqual(["b", "untouched", "c", "a", "d", "e"]);
+      const reloaded: LocalAppState = JSON.parse(JSON.stringify(moved));
+      const failed = failSourceWrite(reloaded, "a");
+      expect(ids(failed)).toEqual(ids(before));
+      expect(find(failed, "a")).toMatchObject({
+        workflowStateId: "doing",
+        status: "active",
+        sourceStatusKey: "active",
+      });
+      expect(find(failed, "a")?.pendingSourceWrite).toBeUndefined();
+    },
+  );
+
+  it("restores the drag without undoing unrelated reorders, inserted items or notes", () => {
+    const moved = dragToReview();
+    moved.workItems.splice(2, 0, item("new"));
+    const edited = reorderWorkItems(moved, ["e", "d"]);
+    const a = find(edited, "a")!;
+    a.note = "Keep this note";
+    const failed = failSourceWrite(edited, "a");
+    expect(ids(failed)).toEqual(["a", "untouched", "new", "b", "c", "e", "d"]);
+    expect(find(failed, "a")?.note).toBe("Keep this note");
+  });
+
+  it("preserves a later explicit reorder of the dragged range", () => {
+    const edited = reorderWorkItems(dragToReview(), ["c", "a", "b"]);
+    const failed = failSourceWrite(edited, "a");
+    expect(ids(failed)).toEqual(ids(edited));
+    expect(find(failed, "a")?.workflowStateId).toBe("doing");
+  });
+
+  it("recovers the original order after two coalesced drags", () => {
+    const before = orderedState();
+    const first = dragToReview(before);
+    const second = moveBacklogItemToState(first, "a", "done", factories, {
+      sourceWrites: { a: "Closed" },
+      orderedIds: ["d", "a"],
+    });
+    expect(ids(second)).toEqual(["b", "untouched", "c", "d", "a", "e"]);
+    const failed = failSourceWrite(second, "a");
+    expect(ids(failed)).toEqual(ids(before));
+    expect(find(failed, "a")?.workflowStateId).toBe("doing");
+  });
+
+  it("advances drag recovery to an older successful write's order", () => {
+    const first = dragToReview();
+    const second = moveBacklogItemToState(
+      first,
+      "a",
+      "done",
+      {
+        ...factories,
+        now: () => 2000,
+      },
+      {
+        sourceWrites: { a: "Closed" },
+        orderedIds: ["d", "a"],
+      },
+    );
+    const acknowledged = completeSourceWrite(second, "a", first.workItems);
+    expect(ids(acknowledged)).toEqual(ids(second));
+    const failed = failSourceWrite(acknowledged, "a");
+    expect(ids(failed)).toEqual(ids(first));
+    expect(find(failed, "a")).toMatchObject({
+      status: "active",
+      workflowStateId: "review",
+      sourceStatusKey: "resolved",
+    });
+  });
+
+  it("keeps the dropped order after a successful source write", () => {
+    const moved = dragToReview();
+    const completed = completeSourceWrite(moved, "a", moved.workItems);
+    expect(ids(completed)).toEqual(ids(moved));
+    expect(find(completed, "a")?.pendingSourceWrite).toBeUndefined();
   });
 
   it.each(["doing", undefined])(

@@ -421,9 +421,54 @@ export function moveBacklogItemToState(
       };
     }),
   };
-  return options.orderedIds
-    ? reorderWorkItems(recoveryState, options.orderedIds)
-    : recoveryState;
+  if (!options.orderedIds) return recoveryState;
+  const reordered = reorderWorkItems(recoveryState, options.orderedIds);
+  const pending = reordered.workItems.find(
+    (item) => item._id === workItemId,
+  )?.pendingSourceWrite;
+  if (!pending) return reordered;
+  // Coalesced moves keep the original order while retaining unrelated edits.
+  const baseline = restoreSourceWriteOrder(
+    state,
+    target.pendingSourceWrite?.previous.workItemOrder,
+  );
+  const before = baseline.workItems.map((item) => item._id);
+  const after = reordered.workItems.map((item) => item._id);
+  const changedIds = new Set(before.filter((id, index) => after[index] !== id));
+  return updateOne(reordered, workItemId, (item) => ({
+    ...item,
+    pendingSourceWrite: {
+      ...pending,
+      previous: {
+        ...pending.previous,
+        workItemOrder: changedIds.size
+          ? {
+              before: before.filter((id) => changedIds.has(id)),
+              after: after.filter((id) => changedIds.has(id)),
+            }
+          : undefined,
+      },
+    },
+  }));
+}
+
+/** Restores only the drag's changed slots, preserving new items and later edits. */
+function restoreSourceWriteOrder(
+  state: LocalAppState,
+  order: LocalPendingSourceWrite["previous"]["workItemOrder"],
+): LocalAppState {
+  if (!order) return state;
+  const affectedIds = new Set(order.after);
+  const current = state.workItems
+    .filter((item) => affectedIds.has(item._id))
+    .map((item) => item._id);
+  const existingIds = new Set(current);
+  const expected = order.after.filter((id) => existingIds.has(id));
+  if (current.some((id, index) => id !== expected[index])) return state;
+  return reorderWorkItems(
+    state,
+    order.before.filter((id) => existingIds.has(id)),
+  );
 }
 
 function moveWithoutWrites(
@@ -796,6 +841,16 @@ export function completeSourceWrite(
           workflowStateId,
           importedWorkflowStateId: sent.importedWorkflowStateId,
           lifecycle,
+          workItemOrder: currentWrite.previous.workItemOrder
+            ? {
+                before: (sentItems ?? []).flatMap((item) =>
+                  currentWrite.previous.workItemOrder!.after.includes(item._id)
+                    ? [item._id]
+                    : [],
+                ),
+                after: currentWrite.previous.workItemOrder.after,
+              }
+            : undefined,
           carriedChildren: [...carriedIds].flatMap((id) => {
             const before = sentItems?.find((child) => child._id === id);
             const current = state.workItems.find((child) => child._id === id);
@@ -896,7 +951,7 @@ export function failSourceWrite(
       ? restored
       : reactivate(restored, workItemId, target.status);
   // A move's write also puts the item back in the state it left.
-  const recovered =
+  const recoveredFields =
     sourceWrite.state !== undefined || "workflowStateId" in sourceWrite.previous
       ? updateOne(reopened, workItemId, (workItem) => ({
           ...workItem,
@@ -906,6 +961,10 @@ export function failSourceWrite(
             sourceWrite.previous.lifecycle?.workflowStateIdBeforeClose,
         }))
       : reopened;
+  const recovered = restoreSourceWriteOrder(
+    recoveredFields,
+    sourceWrite.previous.workItemOrder,
+  );
   const carried = sourceWrite.previous.carriedChildren ?? [];
   if (!carried.length) return recovered;
   return {

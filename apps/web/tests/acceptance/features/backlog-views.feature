@@ -81,6 +81,13 @@ Feature: Backlog list and board views
     When I undo the last Backlog move
     Then the subitem is back in To do
 
+  Scenario: Restore a dragged card's custom order when its source write fails
+    Given the Backlog subitem has a source that rejects moves
+    When I choose the Backlog board
+    And I drag the subitem below the other card in In progress
+    Then the subitem has moved below the other card
+    And the failed source move restores the subitem's workflow and custom order
+
   Scenario: Close a parent and its subitems from the board
     When I choose the Backlog board
     And I move the parent to Done and include its subitems

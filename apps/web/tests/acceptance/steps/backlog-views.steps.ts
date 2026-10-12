@@ -489,6 +489,163 @@ When("I drag the subitem to In progress", async ({ page }) => {
   await page.mouse.up();
 });
 
+Given(
+  "the Backlog subitem has a source that rejects moves",
+  async ({ page }) => {
+    const plugin = {
+      id: "azure_devops",
+      version: "1.0.0",
+      apiVersion: 2,
+      displayName: "Fixture source",
+      description: "Acceptance fixture. All source requests are intercepted.",
+      iconSvg:
+        '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/></svg>',
+      entrypoint: "dist/plugin.js",
+      capabilities: { connector: { settle: true } },
+      connectionFields: [
+        { id: "url", label: "URL", type: "url", required: true, secret: false },
+      ],
+    };
+    await page.route("http://127.0.0.1:8787/api/connectors", (route) =>
+      route.fulfill({
+        json: {
+          pluginsEnabled: true,
+          plugins: [plugin],
+          connectionGroups: [{ plugin, enabled: true, connections: [] }],
+          totalPendingImportCount: 0,
+          totalSelectedImportCount: 0,
+        },
+        headers: { "access-control-allow-origin": "*" },
+      }),
+    );
+    await page.route("**/connections/connection-1/settle-states", (route) =>
+      route.fulfill({
+        json: {
+          states: [
+            { name: "New", category: "Open", done: false },
+            { name: "Active", category: "Open", done: false },
+          ],
+        },
+        headers: { "access-control-allow-origin": "*" },
+      }),
+    );
+    await page.route("**/connections/connection-1/settle", (route) =>
+      route.fulfill({
+        status: 500,
+        json: { error: "Fixture source write failure" },
+        headers: { "access-control-allow-origin": "*" },
+      }),
+    );
+    await page.evaluate(() => {
+      const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
+      Object.assign(
+        state.workItems.find((item: { _id: string }) => item._id === "child"),
+        {
+          source: "azure_devops",
+          sourceId: "source-child",
+          sourceConnectionId: "connection-1",
+          sourceStatusKey: "new",
+          sourceStatusLabel: "New",
+          importedWorkflowStateId: "todo",
+        },
+      );
+      state.backlogSortMode = "custom";
+      state.workflowStateMappings = [
+        {
+          source: "azure_devops",
+          connectionId: "connection-1",
+          sourceStatusKey: "new",
+          sourceStatusLabel: "New",
+          workflowStateId: "todo",
+        },
+        {
+          source: "azure_devops",
+          connectionId: "connection-1",
+          sourceStatusKey: "active",
+          sourceStatusLabel: "Active",
+          workflowStateId: "doing",
+        },
+      ];
+      sessionStorage.setItem(
+        "source-drag-order",
+        JSON.stringify(
+          state.workItems.map((item: { _id: string }) => item._id),
+        ),
+      );
+      localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+    });
+    await page.reload();
+    await page.evaluate(async () => {
+      const { getConnectorsOverview } = await import(
+        /* @vite-ignore */ "/src/lib/app-api.ts"
+      );
+      await getConnectorsOverview();
+    });
+  },
+);
+When(
+  "I drag the subitem below the other card in In progress",
+  async ({ page }) => {
+    const from = await page
+      .locator('[data-work-item-id="child"] .backlog-item-title')
+      .boundingBox();
+    const to = await page.locator('[data-work-item-id="other"]').boundingBox();
+    await page.mouse.move(from!.x + 20, from!.y + 8);
+    await page.mouse.down();
+    await page.mouse.move(to!.x + 40, to!.y + to!.height - 6, { steps: 10 });
+    await page.mouse.up();
+  },
+);
+Then("the subitem has moved below the other card", async ({ page }) => {
+  await expect
+    .poll(() =>
+      page.evaluate(() => {
+        const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
+        const order = state.workItems.map((item: { _id: string }) => item._id);
+        const child = state.workItems.find(
+          (item: { _id: string }) => item._id === "child",
+        );
+        return (
+          child.workflowStateId === "doing" &&
+          Boolean(child.pendingSourceWrite) &&
+          order.indexOf("child") > order.indexOf("other")
+        );
+      }),
+    )
+    .toBe(true);
+});
+Then(
+  "the failed source move restores the subitem's workflow and custom order",
+  async ({ page }) => {
+    await expect(
+      page.locator('h2[data-type="error"]').filter({
+        hasText: 'Couldn\'t update "Backlog subitem" in its source',
+      }),
+    ).toBeVisible({ timeout: 15000 });
+    const snapshot = await page.evaluate(() => ({
+      state: JSON.parse(localStorage.getItem("ajour.local-state.v2")!),
+      order: JSON.parse(sessionStorage.getItem("source-drag-order")!),
+    }));
+    expect(
+      snapshot.state.workItems.map((item: { _id: string }) => item._id),
+    ).toEqual(snapshot.order);
+    expect(
+      snapshot.state.workItems.find(
+        (item: { _id: string }) => item._id === "child",
+      ),
+    ).toMatchObject({
+      status: "active",
+      workflowStateId: "todo",
+      sourceStatusKey: "new",
+    });
+    await expect(
+      page
+        .getByRole("region", { name: "To do", exact: true })
+        .locator('[data-work-item-id="child"]'),
+    ).toBeVisible();
+  },
+);
+
 When("I touch-drag the subitem to In progress", async ({ page }) => {
   const source = page.locator(
     '[data-work-item-id="child"] .backlog-item-title',
