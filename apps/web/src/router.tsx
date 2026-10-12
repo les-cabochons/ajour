@@ -8,6 +8,7 @@ import {
 } from "@tanstack/react-router";
 import { lazy, Suspense, type ReactNode } from "react";
 import { PageSkeleton } from "@/components/page-skeleton";
+import { parseBacklogItemSearch } from "@/features/backlog/backlog-item-search";
 import { AppShell } from "@/features/layout/app-shell";
 import { ShortcutProvider } from "@/lib/shortcut-handlers";
 import { todayIsoDate } from "@/lib/utils";
@@ -191,6 +192,7 @@ const backlogRoute = createRoute({
 const backlogItemRoute = createRoute({
   getParentRoute: () => appRoute,
   path: "/backlog/$itemId",
+  validateSearch: parseBacklogItemSearch,
   component: () => {
     const { itemId } = backlogItemRoute.useParams();
     return (

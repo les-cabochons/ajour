@@ -104,7 +104,7 @@ function useBacklogItemRow(state: LocalAppState, now: number) {
       navigate({
         to: "/backlog/$itemId",
         params: { itemId: workItem._id },
-        search: { action: hosted } as never,
+        search: { action: hosted },
       }),
     );
   }
