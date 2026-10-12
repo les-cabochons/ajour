@@ -1577,7 +1577,16 @@ export const localStore = {
 
     const { undo } = lastUndo;
     lastUndo = undefined;
-    return updateStateWithResult((state) => restoreUndo(state, undo));
+    return updateStateWithResult((state) => {
+      const restored = restoreUndo(state, undo);
+      return {
+        ...restored,
+        state: reconcileSourceWriteMappings(state, restored.state, {
+          createId,
+          now: Date.now,
+        }),
+      };
+    });
   },
   /** Drops the undo for `token` once its toast closes. A newer undo is kept. */
   forgetUndo(token: string) {

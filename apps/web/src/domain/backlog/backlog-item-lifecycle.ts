@@ -823,21 +823,12 @@ export function reconcileSourceWriteMappings(
   );
   if (releasedIds.size === 0) return next;
 
-  let changed = false;
   const workItems = next.workItems.map((item) => {
     if (!releasedIds.has(item._id)) return item;
-    const mapped = syncImportedWorkflowState(item, next.workflowStateMappings);
-    if (
-      mapped.workflowStateId === item.workflowStateId &&
-      mapped.importedWorkflowStateId === item.importedWorkflowStateId
-    )
-      return item;
-    changed = true;
-    return mapped;
+    return syncImportedWorkflowState(item, next.workflowStateMappings);
   });
-  return changed
-    ? applyWorkflowStateLifecycle(next, { ...next, workItems }, factories)
-    : next;
+  // A state's Done flag can change while the mapped IDs stay the same.
+  return applyWorkflowStateLifecycle(next, { ...next, workItems }, factories);
 }
 
 /** Restores the write's source values and saved lifecycle after failure. */

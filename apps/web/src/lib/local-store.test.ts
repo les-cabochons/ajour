@@ -762,6 +762,107 @@ describe("localStore workflow state sync", () => {
     });
   });
 
+  it.each([
+    [false, "failure"],
+    [true, "failure"],
+    [false, "undo"],
+    [true, "undo"],
+  ] as const)(
+    "closes recovery into a newly Done state, carrying children %s via %s",
+    async (includeSubitems, recovery) => {
+      const { localStore } = await import("./local-store");
+      const original = localStore.addWorkflowState("Original");
+      const review = localStore.addWorkflowState("Review");
+      const done = localStore
+        .snapshot()
+        .workflowStates.find((state) => state.done)!._id;
+      const mapping = {
+        source: "azure_devops",
+        connectionId: "ado-1",
+        sourceStatusKey: "Active",
+      };
+      localStore.setWorkflowStateMapping({
+        ...mapping,
+        workflowStateId: original,
+      });
+      localStore.setWorkflowStateMapping({
+        ...mapping,
+        sourceStatusKey: "In QA",
+        workflowStateId: review,
+      });
+      localStore.setWorkflowStateMapping({
+        ...mapping,
+        sourceStatusKey: "Closed",
+        workflowStateId: done,
+      });
+      const parent = buildImportCandidate();
+      const child = buildImportCandidate({
+        id: "child",
+        sourceId: "child-source",
+        parentSourceId: parent.sourceId,
+        depth: 1,
+      });
+      localStore.importConnectorWorkItems(
+        includeSubitems ? [parent, child] : [parent],
+      );
+      const id = localStore
+        .snapshot()
+        .workItems.find((item) => item.sourceId === parent.sourceId)!._id;
+      localStore.startTimer({ workItemId: id, accumulatedDurationMs: 60000 });
+      const token = localStore.moveWorkItemToState(
+        id,
+        includeSubitems ? done : review,
+        {
+          includeSubitems,
+          sourceWrites: { [id]: includeSubitems ? "Closed" : "In QA" },
+        },
+      );
+      localStore.updateWorkflowState(original, {
+        name: "Original",
+        done: true,
+      });
+      expect(
+        localStore.snapshot().workItems.find((item) => item._id === id),
+      ).toMatchObject({
+        workflowStateId: includeSubitems ? done : review,
+        pendingSourceWrite: expect.any(Object),
+      });
+      expect(localStore.snapshot().timers).toHaveLength(
+        includeSubitems ? 0 : 1,
+      );
+      if (recovery === "failure") localStore.failSourceWrite(id);
+      else expect(localStore.undo(token!)).toBe("restored");
+      for (const item of localStore.snapshot().workItems) {
+        expect(item).toMatchObject({
+          status: "archived",
+          workflowStateId: original,
+          importedWorkflowStateId: original,
+        });
+        expect(item.pendingSourceWrite).toBeUndefined();
+        expect(item.workflowStateIdBeforeClose).toBeUndefined();
+      }
+      expect(localStore.snapshot().timers).toEqual([]);
+      expect(localStore.snapshot().timesheetEntries).toHaveLength(1);
+      expect(localStore.snapshot().timesheetEntries[0]).toMatchObject({
+        workItemId: id,
+        durationMs: expect.any(Number),
+      });
+      expect(
+        localStore.snapshot().timesheetEntries[0]!.durationMs,
+      ).toBeGreaterThanOrEqual(60000);
+      vi.resetModules();
+      const reloaded = (await import("./local-store")).localStore.snapshot();
+      expect(
+        reloaded.workItems.every(
+          (item) =>
+            item.status === "archived" && item.workflowStateId === original,
+        ),
+      ).toBe(true);
+      expect(reloaded.timers).toEqual([]);
+      expect(reloaded.timesheetEntries).toHaveLength(1);
+    },
+  );
+
   it("recovers the last successful priority write when its replacement fails", async () => {
     const { localStore } = await import("./local-store");
     localStore.importConnectorWorkItems([buildImportCandidate()]);
@@ -874,7 +975,7 @@ describe("localStore workflow state sync", () => {
     },
   );
 
-  it("preserves carried children through sync until a parent reopen is undone", async () => {
+  it("preserves carried children and reconciles deferred mappings when a parent reopen is undone", async () => {
     const { localStore } = await import("./local-store");
     const openId = localStore
       .snapshot()
@@ -941,7 +1042,11 @@ describe("localStore workflow state sync", () => {
     });
     expect(localStore.snapshot().workItems).toEqual(pending);
     expect(localStore.undo(token!)).toBe("restored");
-    expect(localStore.snapshot().workItems).toEqual(closed);
+    // The protected sync introduced Closed's Done mapping. Undo restores the
+    // archive and refreshes its imported baseline without changing other fields.
+    expect(localStore.snapshot().workItems).toEqual(
+      closed.map((item) => ({ ...item, importedWorkflowStateId: doneId })),
+    );
   });
 
   it("preserves a local open-state override when automatic mapping discovers Done", async () => {

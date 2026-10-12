@@ -199,6 +199,12 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Two regressions reproduce stale IDs after a failed Settle write, including JSON reload and a preserved local workflow override. Both failed before the fix.
 - [ ] Complete verification and fresh Codex review of the updated stack. The integration thread owns merging.
 
+### Done flag changes during source-write recovery, 2026-10-12
+
+- [x] Released source writes apply lifecycle reconciliation even when their workflow mapping IDs stay unchanged.
+- [x] Four persisted-store regressions reproduce failed-write and Undo recovery into a state flagged Done during a pending move, with and without carried subitems. Recovery closes the items, saves the running entry once and survives reload.
+- [ ] Verify the rebased stack and request fresh reviews of the pushed heads.
+
 ### Deferred mappings after failed writes, 2026-10-12
 
 - [x] Failed source writes restore their recovery snapshot, then use the same mapping and lifecycle reconciliation as successful writes.
