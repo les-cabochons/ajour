@@ -41,7 +41,15 @@ Feature: Confirm a parent Settle without losing its draft
     Then the Settle state draft remains Unlisted
     When the source changes the parent's state to Active during Settle
     Then the Settle state draft remains Unlisted
+    And Settle requires an available state before submitting
     When I choose source state "Waiting" and priority "2" in Settle
     And I submit the parent Settle draft
     And I include the Settle subitems
     Then Settle submits the selected Waiting state
+
+  Scenario: Settle locally with an unchanged unlisted source state
+    When I reopen Settle on an unlisted source state
+    Then the Settle state draft remains Unlisted
+    When I submit the parent Settle draft
+    And I include the Settle subitems
+    Then Settle submits the unchanged unlisted state locally

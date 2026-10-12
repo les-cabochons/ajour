@@ -31,6 +31,26 @@ describe("settle dialog fields", () => {
     expect(findSettleState(states, undefined)).toBeUndefined();
   });
 
+  it.each([
+    { draft: "Unlisted", sourceStatusLabel: "Unlisted", valid: true },
+    { draft: "Unlisted", sourceStatusLabel: "Active", valid: false },
+    { draft: "", sourceStatusLabel: "Active", valid: false },
+    { draft: "Unlisted", sourceStatusLabel: undefined, valid: false },
+    { draft: "", sourceStatusLabel: undefined, valid: true },
+    { draft: " unlisted ", sourceStatusLabel: "UNLISTED", valid: true },
+  ])(
+    "validates unlisted draft $draft against $sourceStatusLabel",
+    ({ draft, sourceStatusLabel, valid }) => {
+      const change = buildSettleChange(states, draft, "", {
+        sourceStatusLabel,
+        ranges: {},
+      });
+      if (valid)
+        expect(change).toEqual({ state: undefined, priority: undefined });
+      else expect(change).toBeNull();
+    },
+  );
+
   it("builds a change from the chosen state and priority", () => {
     const current = {
       importedPriority: 30,

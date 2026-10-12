@@ -39,6 +39,7 @@ import { formatPriorityInput } from "@/features/backlog/backlog-task-editor";
 import {
   buildSettleChange,
   groupSettleStates,
+  isSettleStateDraftValid,
 } from "@/features/backlog/settle-draft";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { listConnectorSettleStates } from "@/lib/app-api";
@@ -211,6 +212,11 @@ export function SettleDialogHost() {
   );
   const states = load.status === "ready" ? load.states : [];
   const draftListed = states.some((state) => state.name === stateName);
+  const stateDraftValid = isSettleStateDraftValid(
+    states,
+    stateName,
+    currentItem?.sourceStatusLabel,
+  );
   const priorityRanges = currentItem
     ? getWorkItemPriorityRanges(state, currentItem)
     : {};
@@ -219,6 +225,7 @@ export function SettleDialogHost() {
     undefined;
   const change = currentItem
     ? buildSettleChange(states, stateName, priority, {
+        sourceStatusLabel: currentItem.sourceStatusLabel,
         importedPriority: currentItem.importedPriority,
         ranges: priorityRanges,
       })
@@ -264,6 +271,7 @@ export function SettleDialogHost() {
               <NativeSelect
                 id="settle-state"
                 value={stateName}
+                aria-invalid={load.status === "ready" && !stateDraftValid}
                 disabled={load.status !== "ready" || pending}
                 onChange={(event) => setStateName(event.target.value)}
               >
@@ -286,6 +294,11 @@ export function SettleDialogHost() {
               </NativeSelect>
               {load.status === "failed" ? (
                 <FieldError>Couldn't load states: {load.message}</FieldError>
+              ) : load.status === "ready" && !stateDraftValid ? (
+                <FieldError>
+                  This source state is no longer available. Choose another
+                  state.
+                </FieldError>
               ) : archives ? (
                 <FieldDescription>
                   This state is done, so the item will be archived.
@@ -317,7 +330,7 @@ export function SettleDialogHost() {
                   </option>
                 ))}
               </NativeSelect>
-              {change === null ? (
+              {change === null && stateDraftValid ? (
                 <FieldError>
                   {priority === "" && sourceHasPriority
                     ? "This connector cannot clear its source priority. Choose a priority."

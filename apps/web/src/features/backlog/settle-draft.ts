@@ -44,19 +44,37 @@ export function findSettleState(
   );
 }
 
+export function isSettleStateDraftValid(
+  states: ConnectorSettleState[],
+  stateName: string,
+  sourceStatusLabel: string | undefined,
+) {
+  return (
+    Boolean(findSettleState(states, stateName)) ||
+    normalizeConnectorStatusKey(stateName) ===
+      normalizeConnectorStatusKey(sourceStatusLabel ?? "")
+  );
+}
+
 /**
  * Turns the settle dialog's fields into a change. A new priority level is
  * written as the lowest source value of its range, and only when the level
  * changed. The domain keeps only the fields that differ from the item.
- * Returns null for an invalid level, an unsupported priority clear, or a
- * changed level without a source range.
+ * Returns null for an unsupported changed state, an invalid level, an
+ * unsupported priority clear, or a changed level without a source range.
  */
 export function buildSettleChange(
   states: ConnectorSettleState[],
   stateName: string,
   priorityInput: string,
-  current: { importedPriority?: number; ranges: PriorityRanges },
+  current: {
+    sourceStatusLabel?: string;
+    importedPriority?: number;
+    ranges: PriorityRanges;
+  },
 ): BacklogSettleChange | null {
+  if (!isSettleStateDraftValid(states, stateName, current.sourceStatusLabel))
+    return null;
   const level = parsePriorityInput(priorityInput);
   if (level === null) {
     return null;

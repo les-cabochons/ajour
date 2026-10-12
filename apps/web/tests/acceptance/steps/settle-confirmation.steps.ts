@@ -202,6 +202,45 @@ Then("the Settle state draft remains Unlisted", async ({ page }) => {
   await expect(select).toHaveValue("Unlisted");
   await expect(select.locator("option:checked")).toHaveText("Unlisted");
 });
+Then(
+  "Settle requires an available state before submitting",
+  async ({ page }) => {
+    const dialog = page.getByRole("dialog", { name: "Settle", exact: true });
+    await expect(
+      dialog.getByRole("button", { name: "Settle", exact: true }),
+    ).toBeDisabled();
+    await expect(
+      dialog.getByText(
+        "This source state is no longer available. Choose another state.",
+        { exact: true },
+      ),
+    ).toBeVisible();
+    await expect(
+      dialog.getByText(
+        "This priority has no source range. Choose another priority.",
+        { exact: true },
+      ),
+    ).toHaveCount(0);
+  },
+);
+Then(
+  "Settle submits the unchanged unlisted state locally",
+  async ({ page }) => {
+    await expect(
+      page.getByRole("dialog", { name: "Settle", exact: true }),
+    ).toHaveCount(0);
+    const parent = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems.find(
+        (item: { _id: string }) => item._id === "settle-parent",
+      ),
+    );
+    expect(parent).toMatchObject({
+      status: "settled",
+      sourceStatusLabel: "Unlisted",
+    });
+    expect(parent.pendingSourceWrite).toBeUndefined();
+  },
+);
 Then("Settle submits the selected Waiting state", async ({ page }) => {
   await expect(
     page.getByRole("dialog", { name: "Settle", exact: true }),
