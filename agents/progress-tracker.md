@@ -227,7 +227,8 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Failed or undone reopens move recovered explicit archives to the remaining Done state when their old state loses its Done flag. Carried children retain the archive markers and pre-close state for Restore.
 - [x] Recovery saves entries started during the optimistic reopen. Source-write snapshots preserve missing-sync provenance, so missing-sync archives retain their open workflow state.
 - [x] Six persisted-store regressions cover failure and Undo, carried children, Restore after reload and missing-sync archives. The archive migration and running-entry checks failed before their fixes.
-- [ ] Verify the rebased stack and request fresh reviews of the pushed heads.
+- [x] The rebased stack passes 834 unit tests, workspace typecheck, production builds and three focused Chromium scenarios covering failed drag recovery, parent close with Undo and Done settings.
+- [ ] Fresh Codex reviews of the pushed mapping and view heads are pending. Merging remains owned by the integration thread.
 
 ### Done flag changes during source-write recovery, 2026-10-12
 
