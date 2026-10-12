@@ -1129,7 +1129,8 @@ async function expectAppSidebarWidth(page: Page, width: number) {
 }
 
 Then("the app sidebar is expanded", async ({ page }) => {
-  await expectAppSidebarWidth(page, 200);
+  // The Comfortable density's default width. See "Width" in agents/ux-spec.md.
+  await expectAppSidebarWidth(page, 272);
   await expect(
     page
       .getByRole("navigation", { name: "Primary navigation" })
@@ -1736,7 +1737,7 @@ Then("the entry's action menu is open", async ({ page }) => {
   await expect(menu).toBeVisible();
   // Each item ends with its key, which differs between macOS and other platforms.
   await expect(menu.getByRole("menuitem")).toHaveText([
-    /^EditE$/,
+    /^Edit(↩|Enter)$/,
     /^ContinueC$/,
     /^Duplicate(⌘D|Ctrl\+D)$/,
     /^Duplicate to…$/,
