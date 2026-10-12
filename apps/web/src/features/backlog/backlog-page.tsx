@@ -50,7 +50,7 @@ import {
 import { getPriorityLevelName } from "@/domain/backlog/priority";
 import { PriorityIcon } from "@/features/backlog/priority-icon";
 import type { BacklogItemActionId } from "@/domain/actions/object-actions";
-import type { LocalWorkItem } from "@/domain/local-state";
+import type { LocalAppState, LocalWorkItem } from "@/domain/local-state";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 import { useBacklogView } from "@/lib/backlog-view-settings";
@@ -70,6 +70,21 @@ import {
 } from "@/lib/shortcuts";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { cn } from "@/lib/utils";
+
+function canUseProjectGroup(
+  group: BacklogGroup | undefined,
+  state: Pick<LocalAppState, "projects">,
+) {
+  return (
+    group?.kind !== "project" ||
+    group.projectId === undefined ||
+    (!group.archived &&
+      state.projects.some(
+        (project) =>
+          project._id === group.projectId && project.status === "active",
+      ))
+  );
+}
 
 type EditorRequest =
   | { kind: "edit"; itemId: string }
@@ -124,12 +139,14 @@ export function BacklogPage() {
     }),
   }));
   const targets = groupsByLane.flatMap(({ lane, groups }) =>
-    collapsed.has(lane.key)
+    collapsed.has(lane.key) || !canUseProjectGroup(lane, state)
       ? []
-      : groups.map((group) => ({
-          key: `${lane.key}/${group.key}`,
-          itemIds: group.items.map((i) => i._id),
-        })),
+      : groups
+          .filter((group) => canUseProjectGroup(group, state))
+          .map((group) => ({
+            key: `${lane.key}/${group.key}`,
+            itemIds: group.items.map((i) => i._id),
+          })),
   );
   const peek = state.workItems.find((i) => i._id === peekId);
   const target: BacklogTaskEditorTarget | null =
@@ -153,6 +170,10 @@ export function BacklogPage() {
     draft.current = null;
   }, []);
   const closePeek = useCallback(() => setPeekId(null), []);
+  function showPeek(itemId: string) {
+    localStore.markWorkItemOpened(itemId);
+    setPeekId(itemId);
+  }
   useEffect(() => {
     if (
       editor &&
@@ -182,7 +203,7 @@ export function BacklogPage() {
     closeEditor();
     if (narrow)
       void navigate({ to: "/backlog/$itemId", params: { itemId: item._id } });
-    else setPeekId(item._id);
+    else showPeek(item._id);
   }
   async function action(
     item: LocalWorkItem,
@@ -205,7 +226,7 @@ export function BacklogPage() {
       id,
       (hosted) => {
         if (hosted === "edit") {
-          setPeekId(item._id);
+          showPeek(item._id);
           showEditor({ kind: "edit", itemId: item._id });
         } else showEditor({ kind: "create", parentId: item._id });
       },
@@ -237,10 +258,14 @@ export function BacklogPage() {
       )
       .find((t) => t.key === key);
     if (!item || !found || !(await leaveDraft())) return;
+    const current = localStore.snapshot();
+    if (
+      !canUseProjectGroup(found.group, current) ||
+      !canUseProjectGroup(found.lane, current)
+    )
+      return;
     closeEditor();
-    const committed = localStore
-      .snapshot()
-      .workItems.find((i) => i._id === itemId);
+    const committed = current.workItems.find((i) => i._id === itemId);
     if (!committed) return;
     const { group, lane } = found;
     // A swimlane is a display partition. Drops stay in the item's project;
@@ -288,7 +313,14 @@ export function BacklogPage() {
     disabled: archive || narrow,
     onDrop: (...args) => void drop(...args),
   });
-  function add(group?: BacklogGroup, lane?: BacklogGroup) {
+  async function add(group?: BacklogGroup, lane?: BacklogGroup) {
+    if (!(await leaveDraft())) return;
+    const current = localStore.snapshot();
+    if (
+      !canUseProjectGroup(group, current) ||
+      !canUseProjectGroup(lane, current)
+    )
+      return;
     const preset: Partial<BacklogTaskEditorFields> = {};
     if (group?.kind === "state")
       preset.workflowStateId = group.workflowStateId ?? "";
@@ -296,7 +328,7 @@ export function BacklogPage() {
       preset.priority = group.priority ? String(group.priority) : "";
     if (group?.kind === "project") preset.projectId = group.projectId ?? "";
     if (lane?.kind === "project") preset.projectId = lane.projectId ?? "";
-    openEditor({ kind: "create", preset });
+    showEditor({ kind: "create", preset });
   }
   useActionRequest(({ action: requested, target: itemId }) => {
     if (requested === "create") {
@@ -341,7 +373,8 @@ export function BacklogPage() {
         if (narrow) openPage(item);
         else if (await leaveDraft()) {
           closeEditor();
-          setPeekId((current) => (current === item._id ? null : item._id));
+          if (peekId === item._id) closePeek();
+          else showPeek(item._id);
         }
         return;
       }
@@ -559,6 +592,7 @@ export function BacklogPage() {
                     <RiArrowDownSLine className="size-4" />
                   )}
                   {lane.label}
+                  {lane.archived && <span>Archived</span>}
                   <span>{lane.items.length}</span>
                 </button>
               )}
@@ -596,10 +630,17 @@ export function BacklogPage() {
                               />
                             )}
                             <h2>{group.label}</h2>
+                            {group.kind === "project" && group.archived && (
+                              <span className="text-muted-foreground">
+                                Archived
+                              </span>
+                            )}
                             <span className="backlog-group-count">
                               {group.items.length}
                             </span>
                             {!(group.kind === "state" && group.done) &&
+                              canUseProjectGroup(group, state) &&
+                              canUseProjectGroup(lane, state) &&
                               !archive && (
                                 <TooltipButton
                                   label={`New item in ${group.label}`}

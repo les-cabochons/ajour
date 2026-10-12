@@ -257,6 +257,14 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] The foundation passes 710 unit tests, workspace typecheck and three Chromium confirmation scenarios.
 - [ ] Carry the fixes through the stack, verify the final heads and request fresh reviews.
 
+### Peek returns and archived project destinations, 2026-10-12
+
+- [x] Opening a peek through click, Space or the hosted editor clears Returned through the existing lifecycle command. Closing a peek does not mark an item opened.
+- [x] Archived project groups and swimlanes retain their assigned items and an Archived label, with creation controls and drop destinations removed. Add and drop commands recheck current project availability after draft commits.
+- [x] Browser regressions cover sync returns and expired snoozes in list and board, persistence after opening, blocked archived project drops and active project creation in groups and swimlanes.
+- [x] All 805 unit tests, workspace typecheck, production build and formatting pass. Chromium passed 80 of 81 scenarios in the full run. The project-shortcut scenario timed out on a blank page and passed on a focused rerun without code changes.
+- [ ] Fresh Codex review is pending. Merging remains owned by the integration thread.
+
 ### Running-item Start tooltips in rows and cards, 2026-10-12
 
 - [x] Rows and cards expose the shared Start disabled reason in their tooltip and accessible description. The running item says Start instead of offering to switch to itself.

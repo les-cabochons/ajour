@@ -241,6 +241,7 @@ export type BacklogGroup =
       key: string;
       label: string;
       projectId?: string;
+      archived: boolean;
       items: LocalWorkItem[];
     }
   | { kind: "all"; key: string; label: string; items: LocalWorkItem[] };
@@ -316,6 +317,7 @@ export function groupBacklogItems(
             key: `project:${project._id}`,
             label: getLocalProjectDisplayName(project),
             projectId: project._id,
+            archived: project.status === "archived",
             items: items.filter(
               (workItem) => workItem.projectId === project._id,
             ),
@@ -324,6 +326,7 @@ export function groupBacklogItems(
             kind: "project" as const,
             key: "project:none",
             label: "No project",
+            archived: false,
             items: items.filter(
               (workItem) =>
                 !workItem.projectId || !known.has(workItem.projectId),

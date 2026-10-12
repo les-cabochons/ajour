@@ -32,6 +32,37 @@ Feature: Backlog list and board views
     When I close the Backlog peek with Escape
     Then the Backlog peek is closed
 
+  Scenario Outline: Clear Returned when an item is opened in the peek
+    Given the Backlog parent has returned through "<reason>"
+    When I use the Backlog "<layout>" layout
+    Then the parent has a Returned mark in the sidebar
+    When I open the parent peek with "<control>"
+    Then the peek clears the parent's Returned mark
+    When I reload the app
+    Then the parent's Returned mark remains cleared
+
+    Examples:
+      | layout | reason         | control |
+      | List   | sync           | click   |
+      | List   | expired snooze | Space   |
+      | Board  | expired snooze | click   |
+      | Board  | sync           | Space   |
+
+  Scenario Outline: Keep archived project assignments without allowing new destinations
+    Given an archived project still has a Backlog item
+    When I choose the Backlog board
+    And I show Backlog projects as "<presentation>"
+    Then the archived project shows its item without creation controls
+    When I try to drag the other card into the archived project
+    Then the other card's assignment and custom order have not changed
+    When I create a Backlog item in the active project group
+    Then the new editor uses the active project
+
+    Examples:
+      | presentation |
+      | groups       |
+      | swimlanes    |
+
   Scenario: Keep a running entry continuous when reopening its Backlog peek
     When I peek at the Backlog parent
     And I start an entry from the Backlog peek

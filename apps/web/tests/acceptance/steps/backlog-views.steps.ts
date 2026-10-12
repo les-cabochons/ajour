@@ -547,6 +547,188 @@ Then("the Backlog peek is closed", async ({ page }) => {
     page.getByRole("complementary", { name: "Backlog item peek" }),
   ).toHaveCount(0);
 });
+Given(
+  "the Backlog parent has returned through {string}",
+  async ({ page }, reason: string) => {
+    await page.evaluate((reason) => {
+      const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
+      const parent = state.workItems.find(
+        (item: { _id: string }) => item._id === "parent",
+      );
+      if (reason === "sync") parent.returnedAt = Date.now() - 1000;
+      else if (reason === "expired snooze")
+        parent.snoozedUntil = Date.now() - 1000;
+      else throw new Error(`Unknown return reason: ${reason}`);
+      localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+    }, reason);
+    await page.reload();
+  },
+);
+Then("the parent has a Returned mark in the sidebar", async ({ page }) => {
+  await expect(
+    page.getByRole("button", {
+      name: "Clear the returned mark on Backlog parent",
+      exact: true,
+    }),
+  ).toBeVisible();
+});
+When(
+  "I open the parent peek with {string}",
+  async ({ page }, control: string) => {
+    const row = page.locator('[data-work-item-id="parent"]');
+    if (control === "click") await row.locator(".backlog-item-title").click();
+    else if (control === "Space") {
+      await row.focus();
+      await page.keyboard.press("Space");
+    } else throw new Error(`Unknown peek control: ${control}`);
+  },
+);
+Then("the peek clears the parent's Returned mark", async ({ page }) => {
+  await expect(
+    page.getByRole("complementary", { name: "Backlog item peek" }),
+  ).toContainText("Backlog parent");
+  await expect(
+    page.getByRole("button", {
+      name: "Clear the returned mark on Backlog parent",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+  const parent = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems.find(
+      (item: { _id: string }) => item._id === "parent",
+    ),
+  );
+  expect(parent.returnedAt).toBeUndefined();
+  expect(parent.snoozedUntil).toBeUndefined();
+});
+Then("the parent's Returned mark remains cleared", async ({ page }) => {
+  await expect(page.locator('[data-work-item-id="parent"]')).toBeVisible();
+  await expect(
+    page.getByRole("button", {
+      name: "Clear the returned mark on Backlog parent",
+      exact: true,
+    }),
+  ).toHaveCount(0);
+});
+Given("an archived project still has a Backlog item", async ({ page }) => {
+  await page.evaluate(() => {
+    const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
+    state.projects.push({
+      _id: "archived-project",
+      name: "Archived project",
+      displayName: "Archived project",
+      status: "archived",
+      color: "#64748b",
+      tasks: [],
+    });
+    state.workItems.push({
+      _id: "archived-assigned",
+      title: "Historical assignment",
+      projectId: "archived-project",
+      workflowStateId: "todo",
+      source: "manual",
+      status: "active",
+      createdAt: 1,
+    });
+    localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+  });
+  await page.reload();
+});
+When(
+  "I show Backlog projects as {string}",
+  async ({ page }, presentation: string) => {
+    await page.getByRole("button", { name: "Display", exact: true }).click();
+    await page
+      .getByLabel("Grouping", { exact: true })
+      .selectOption(presentation === "groups" ? "project" : "state");
+    if (presentation === "swimlanes")
+      await page
+        .getByLabel("Swimlanes", { exact: true })
+        .selectOption("project");
+    await page.keyboard.press("Escape");
+  },
+);
+Then(
+  "the archived project shows its item without creation controls",
+  async ({ page }) => {
+    const group = page.getByRole("region", {
+      name: "Archived project",
+      exact: true,
+    });
+    await expect(
+      group.locator('[data-work-item-id="archived-assigned"]'),
+    ).toBeVisible();
+    await expect(group.getByText("Archived", { exact: true })).toBeVisible();
+    await expect(
+      group.getByRole("button", { name: /^New item in / }),
+    ).toHaveCount(0);
+  },
+);
+When(
+  "I try to drag the other card into the archived project",
+  async ({ page }) => {
+    await page.evaluate(() =>
+      sessionStorage.setItem(
+        "before-archived-project-drop",
+        JSON.stringify(
+          JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems,
+        ),
+      ),
+    );
+    const from = await page
+      .locator('[data-work-item-id="other"] .backlog-item-title')
+      .boundingBox();
+    const to = await page
+      .locator('[data-work-item-id="archived-assigned"]')
+      .boundingBox();
+    await page.mouse.move(from!.x + 20, from!.y + 8);
+    await page.mouse.down();
+    await page.mouse.move(to!.x + 40, to!.y + to!.height - 6, { steps: 10 });
+    await expect(
+      page
+        .getByRole("region", { name: "Archived project", exact: true })
+        .locator(".is-drop-target"),
+    ).toHaveCount(0);
+    await page.mouse.up();
+  },
+);
+Then(
+  "the other card's assignment and custom order have not changed",
+  async ({ page }) => {
+    const snapshot = await page.evaluate(() => ({
+      current: JSON.parse(localStorage.getItem("ajour.local-state.v2")!)
+        .workItems,
+      before: JSON.parse(
+        sessionStorage.getItem("before-archived-project-drop")!,
+      ),
+    }));
+    expect(snapshot.current).toEqual(snapshot.before);
+    await expect(
+      page
+        .getByRole("region", { name: "Example project", exact: true })
+        .locator('[data-work-item-id="other"]'),
+    ).toBeVisible();
+  },
+);
+When(
+  "I create a Backlog item in the active project group",
+  async ({ page }) => {
+    await page
+      .getByRole("region", { name: "Example project", exact: true })
+      .getByRole("button", { name: /^New item in / })
+      .first()
+      .click();
+  },
+);
+Then("the new editor uses the active project", async ({ page }) => {
+  const editor = page.getByRole("complementary", {
+    name: "Backlog item editor",
+  });
+  await expect(editor).toBeVisible();
+  await expect(
+    editor.getByRole("combobox", { name: "Project", exact: true }),
+  ).toHaveValue("Example project");
+});
 When("I drag the subitem to In progress", async ({ page }) => {
   const from = await page
     .locator('[data-work-item-id="child"] .backlog-item-title')
