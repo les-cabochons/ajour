@@ -2,9 +2,8 @@
 // The remote catalog remains authoritative whenever it is reachable.
 const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
   {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: "azure_devops",
-    type: "connector",
     title: "Azure DevOps",
     description:
       "Sync Azure DevOps work items into Ajour's local backlog and update estimates from Ajour.",
@@ -24,8 +23,9 @@ const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
       url: "https://github.com/les-cabochons/ajc-azure-devops",
     },
     status: "available",
-    compatibility: { pluginApiVersion: 1 },
-    capabilities: ["work-item-sync", "estimate-update"],
+    compatibility: { pluginApiVersion: 2 },
+    capabilities: ["connector"],
+    features: ["work-item-sync", "estimate-update"],
     install: {
       method: "github-release",
       allowPrereleases: true,
@@ -34,9 +34,40 @@ const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
     tags: ["azure-devops", "project-management", "synchronization"],
   },
   {
-    schemaVersion: 1,
+    schemaVersion: 2,
+    id: "github",
+    title: "GitHub",
+    description:
+      "Bring your GitHub pull requests into Ajour: the ones you wrote and the ones you were asked to review.",
+    author: {
+      name: "Alex Trépanier",
+      url: "https://github.com/alextrepa",
+    },
+    license: {
+      name: "MIT License",
+      spdxId: "MIT",
+      url: "https://github.com/les-cabochons/ajc-github/blob/main/LICENSE",
+    },
+    website: "https://github.com/les-cabochons/ajc-github#readme",
+    repository: {
+      provider: "github",
+      slug: "les-cabochons/ajc-github",
+      url: "https://github.com/les-cabochons/ajc-github",
+    },
+    status: "available",
+    compatibility: { pluginApiVersion: 2 },
+    capabilities: ["codeHost"],
+    features: ["pull-requests"],
+    install: {
+      method: "github-release",
+      allowPrereleases: true,
+      assetPattern: "^github-[0-9A-Za-z.+-]+\\.ajour-connector$",
+    },
+    tags: ["github", "code-review", "pull-requests"],
+  },
+  {
+    schemaVersion: 2,
     id: "jira",
-    type: "connector",
     title: "Jira",
     description:
       "Sync Jira issues into Ajour's local backlog and update estimates from Ajour.",
@@ -56,8 +87,9 @@ const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
       url: "https://github.com/les-cabochons/ajc-jira",
     },
     status: "available",
-    compatibility: { pluginApiVersion: 1 },
-    capabilities: ["work-item-sync", "estimate-update"],
+    compatibility: { pluginApiVersion: 2 },
+    capabilities: ["connector"],
+    features: ["work-item-sync", "estimate-update"],
     install: {
       method: "github-release",
       allowPrereleases: true,
@@ -66,9 +98,8 @@ const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
     tags: ["jira", "project-management", "synchronization"],
   },
   {
-    schemaVersion: 1,
+    schemaVersion: 2,
     id: "workday-project-data",
-    type: "plugin",
     title: "Workday schema",
     description:
       "Maps project and task records to a Workday-compatible file layout without connecting to Workday.",
@@ -89,7 +120,8 @@ const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
     },
     status: "coming-soon",
     compatibility: { pluginApiVersion: 1 },
-    capabilities: ["project-data-shape"],
+    capabilities: ["schema"],
+    features: ["project-data-shape"],
     tags: ["workday", "import", "export", "data-shape"],
   },
 ];

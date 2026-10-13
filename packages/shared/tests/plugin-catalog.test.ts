@@ -5,9 +5,8 @@ import {
 } from "../src/plugin-catalog";
 
 const azureDevOps = {
-  schemaVersion: 1,
+  schemaVersion: 2,
   id: "azure_devops",
-  type: "connector",
   title: "Azure DevOps",
   description: "Sync work items into Ajour.",
   author: { name: "Alex", url: "https://example.com/alex" },
@@ -23,8 +22,9 @@ const azureDevOps = {
     url: "https://github.com/example/plugin",
   },
   status: "available",
-  compatibility: { pluginApiVersion: 1 },
-  capabilities: ["work-item-sync"],
+  compatibility: { pluginApiVersion: 2 },
+  capabilities: ["connector"],
+  features: ["work-item-sync"],
   install: {
     method: "github-release",
     allowPrereleases: true,
@@ -49,6 +49,21 @@ describe("plugin catalog contracts", () => {
       pluginCatalogEntrySchema.parse({
         ...azureDevOps,
         images: { thumbnailDataUrl: "https://example.com/icon.png" },
+      }),
+    ).toThrow();
+  });
+
+  it("rejects unknown and repeated capabilities", () => {
+    expect(() =>
+      pluginCatalogEntrySchema.parse({
+        ...azureDevOps,
+        capabilities: ["work-item-sync"],
+      }),
+    ).toThrow();
+    expect(() =>
+      pluginCatalogEntrySchema.parse({
+        ...azureDevOps,
+        capabilities: ["connector", "connector"],
       }),
     ).toThrow();
   });

@@ -52,6 +52,7 @@ import type {
   ConnectorFieldValues,
   ConnectorOverviewGroup,
   ConnectorPluginManifest,
+  PluginCatalogCapability,
   PluginCatalogEntry,
   PluginCatalogSettings,
 } from "@ajour/shared";
@@ -64,10 +65,12 @@ import {
 } from "./connector-form-state";
 import { ConnectorFieldInput } from "./connector-settings-ui";
 import {
+  canInstallCatalogPlugin,
   PluginCapabilityBand,
   PluginCapabilityList,
   PluginIdentityMark,
   PluginInfoList,
+  pluginCapabilitiesLabel,
 } from "./plugin-catalog-ui";
 
 type ConnectorFormState = {
@@ -77,7 +80,7 @@ type ConnectorFormState = {
   values: ConnectorFieldValues;
 };
 
-type PluginCatalogFilter = "all" | "connector" | "plugin";
+type PluginCatalogFilter = "all" | PluginCatalogCapability;
 
 /** The one notice Plugins shows when the web build runs without the connector API. */
 const CONNECTORS_NEED_DESKTOP_APP = "Connectors need the desktop app.";
@@ -140,9 +143,7 @@ function PluginCatalogCard({
             {catalog.description}
           </span>
           <span className="mt-3 flex flex-wrap gap-2">
-            <Badge variant="outline">
-              {catalog.type === "connector" ? "Connector" : "Schema"}
-            </Badge>
+            <Badge variant="outline">{pluginCapabilitiesLabel(catalog)}</Badge>
             <Badge variant={installed ? "secondary" : "outline"}>
               {statusLabel}
             </Badge>
@@ -167,9 +168,11 @@ function PluginCatalogCard({
           className="w-full desktop:w-auto"
           size="sm"
           variant="outline"
-          disabled={!canDownload || isMutating || catalog.type !== "connector"}
+          disabled={
+            !canDownload || isMutating || !canInstallCatalogPlugin(catalog)
+          }
           title={
-            catalog.type !== "connector"
+            !canInstallCatalogPlugin(catalog)
               ? "Packaged schema-plugin installation is not available in this Ajour version."
               : !canDownload
                 ? "Downloads are available in the production desktop app."
@@ -239,11 +242,20 @@ function PluginsHeader({
         <TabsList
           variant="line"
           aria-label="Filter plugins"
-          className="border-b border-border/70"
+          className="max-w-full gap-0 border-b border-border/70 p-0 desktop:gap-1 desktop:p-1"
         >
-          <TabsTrigger value="all">All</TabsTrigger>
-          <TabsTrigger value="connector">Connectors</TabsTrigger>
-          <TabsTrigger value="plugin">Schemas</TabsTrigger>
+          <TabsTrigger value="all" className="px-1.5 desktop:px-3">
+            All
+          </TabsTrigger>
+          <TabsTrigger value="connector" className="px-1.5 desktop:px-3">
+            Connectors
+          </TabsTrigger>
+          <TabsTrigger value="codeHost" className="px-1.5 desktop:px-3">
+            Code hosts
+          </TabsTrigger>
+          <TabsTrigger value="schema" className="px-1.5 desktop:px-3">
+            Schemas
+          </TabsTrigger>
         </TabsList>
 
         <div className="flex flex-col gap-3 border-y border-border/60 py-3 desktop:flex-row desktop:items-center desktop:justify-between">
@@ -330,8 +342,7 @@ function PluginDetailHeader({
               {entry.description}
             </p>
             <p className="mt-2 text-xs text-[var(--text-tertiary)]">
-              {entry.author.name} ·{" "}
-              {entry.type === "connector" ? "Connector" : "Schema"} ·{" "}
+              {entry.author.name} · {pluginCapabilitiesLabel(entry)} ·{" "}
               {entry.license.spdxId}
             </p>
           </div>
@@ -387,7 +398,9 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
 
   const connectorGroups = connectors?.connectionGroups ?? [];
   const filteredDisplayEntries = displayEntries.filter(
-    (entry) => catalogFilter === "all" || entry.catalog.type === catalogFilter,
+    (entry) =>
+      catalogFilter === "all" ||
+      entry.catalog.capabilities.includes(catalogFilter),
   );
   const pluginsById = useMemo(
     () =>
@@ -552,7 +565,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
         <PluginCapabilityBand entry={entry} />
 
         <section className="settings-section">
-          <h2 className="settings-section-title">Capabilities</h2>
+          <h2 className="settings-section-title">Features</h2>
           <PluginCapabilityList entry={entry} />
         </section>
 
@@ -869,7 +882,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
     const available = catalogEntry.status === "available";
     const canDownloadThisEntry =
       available &&
-      catalogEntry.type === "connector" &&
+      canInstallCatalogPlugin(catalogEntry) &&
       canDownloadCatalogPlugins;
 
     return (
@@ -890,7 +903,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                 className="w-full desktop:w-auto"
                 disabled={!canDownloadThisEntry || isMutatingConnector}
                 title={
-                  catalogEntry.type !== "connector"
+                  !canInstallCatalogPlugin(catalogEntry)
                     ? "Packaged schema-plugin installation is not available in this Ajour version."
                     : !canDownloadCatalogPlugins
                       ? "Downloads are available in the production desktop app."
@@ -925,7 +938,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                       : "Available"}
               </Badge>
               <Badge variant="outline">
-                {catalogEntry.type === "connector" ? "Connector" : "Schema"}
+                {pluginCapabilitiesLabel(catalogEntry)}
               </Badge>
               <Badge variant="outline">
                 Plugin API {catalogEntry.compatibility.pluginApiVersion}
@@ -942,7 +955,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
         <PluginCapabilityBand entry={catalogEntry} />
 
         <section className="settings-section">
-          <h2 className="settings-section-title">Capabilities</h2>
+          <h2 className="settings-section-title">Features</h2>
           <PluginCapabilityList entry={catalogEntry} />
         </section>
 

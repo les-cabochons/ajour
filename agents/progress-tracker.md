@@ -4,6 +4,15 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Current Baseline
 
+- [x] Catalog schema version 2 lists connector, code host, and schema capabilities
+      separately from feature badges. Plugins with several capabilities appear
+      under each matching filter, and code hosts can use managed downloads.
+- [x] The built-in catalog includes GitHub and targets plugin API version 2 for
+      GitHub, Jira, and Azure DevOps. The Workday schema retains its separate API.
+- [ ] Merge the catalog and plugin-index follow-ups with the plugin API version 2
+      provider packages. Pull request persistence and review UI remain later work
+      in the pull requests issue map.
+
 - [x] Monorepo structure identified.
 - [x] Local-first privacy boundary documented.
 - [x] Wide-events logging direction documented.

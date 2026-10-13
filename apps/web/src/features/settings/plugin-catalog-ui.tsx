@@ -6,13 +6,47 @@ import {
 import { AppPanel } from "@/components/app-surface";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import type { PluginCatalogEntry } from "@ajour/shared";
+import type {
+  PluginCatalogCapability,
+  PluginCatalogEntry,
+} from "@ajour/shared";
 
-const capabilityDescriptions: Record<string, string> = {
+const featureDescriptions: Record<string, string> = {
   "estimate-update": "Update remote estimates from decisions made in Ajour.",
   "project-data-shape":
     "Apply a project and task schema while Ajour keeps ownership of the file format.",
+  "pull-requests": "Sync pull requests you authored or were asked to review.",
   "work-item-sync": "Bring remote items into Ajour's local backlog.",
+};
+
+const capabilityLabels: Record<PluginCatalogCapability, string> = {
+  connector: "Connector",
+  codeHost: "Code host",
+  schema: "Schema",
+};
+
+/** "Connector", or "Connector · Code host" for a plugin with both. */
+export function pluginCapabilitiesLabel(entry: PluginCatalogEntry) {
+  return entry.capabilities
+    .map((capability) => capabilityLabels[capability])
+    .join(" · ");
+}
+
+/** Whether this Ajour version can install the plugin's package. */
+export function canInstallCatalogPlugin(entry: PluginCatalogEntry) {
+  return (
+    entry.capabilities.includes("connector") ||
+    entry.capabilities.includes("codeHost")
+  );
+}
+
+const capabilityFlows: Record<
+  PluginCatalogCapability,
+  { start: string; end: string }
+> = {
+  connector: { start: "External service", end: "Local backlog" },
+  codeHost: { start: "Code host", end: "Pull requests" },
+  schema: { start: "Ajour projects", end: "Excel files" },
 };
 
 function titleCaseSlug(value: string) {
@@ -22,7 +56,7 @@ function titleCaseSlug(value: string) {
     .join(" ");
 }
 
-function capabilityDisplayName(value: string) {
+function featureDisplayName(value: string) {
   return value === "project-data-shape" ? "Schema" : titleCaseSlug(value);
 }
 
@@ -95,9 +129,9 @@ function PluginCapabilityBand({ entry }: { entry: PluginCatalogEntry }) {
     );
   }
 
-  const startLabel =
-    entry.type === "connector" ? "External service" : "Ajour projects";
-  const endLabel = entry.type === "connector" ? "Local backlog" : "Excel files";
+  const flow = capabilityFlows[entry.capabilities[0] ?? "connector"];
+  const startLabel = flow.start;
+  const endLabel = flow.end;
 
   return (
     <AppPanel
@@ -119,9 +153,9 @@ function PluginCapabilityBand({ entry }: { entry: PluginCatalogEntry }) {
         </span>
       </div>
       <div className="flex flex-wrap justify-center gap-2">
-        {entry.capabilities.map((capability) => (
-          <Badge key={capability} variant="outline">
-            {capabilityDisplayName(capability)}
+        {entry.features.map((feature) => (
+          <Badge key={feature} variant="outline">
+            {featureDisplayName(feature)}
           </Badge>
         ))}
       </div>
@@ -132,8 +166,8 @@ function PluginCapabilityBand({ entry }: { entry: PluginCatalogEntry }) {
 function PluginCapabilityList({ entry }: { entry: PluginCatalogEntry }) {
   return (
     <div className="divide-y divide-border/60 border-y border-border/60">
-      {entry.capabilities.map((capability) => (
-        <div key={capability} className="flex items-start gap-3 py-4">
+      {entry.features.map((feature) => (
+        <div key={feature} className="flex items-start gap-3 py-4">
           <span
             className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-[var(--surface-low)]"
             aria-hidden="true"
@@ -142,11 +176,11 @@ function PluginCapabilityList({ entry }: { entry: PluginCatalogEntry }) {
           </span>
           <div className="min-w-0">
             <p className="text-sm font-medium text-foreground">
-              {capabilityDisplayName(capability)}
+              {featureDisplayName(feature)}
             </p>
             <p className="mt-0.5 text-sm leading-5 text-muted-foreground">
-              {capabilityDescriptions[capability] ??
-                `Adds ${capabilityDisplayName(capability).toLowerCase()} support to Ajour.`}
+              {featureDescriptions[feature] ??
+                `Adds ${featureDisplayName(feature).toLowerCase()} support to Ajour.`}
             </p>
           </div>
         </div>
@@ -188,7 +222,7 @@ function PluginInfoList({
         {entry.author.name}
       </ExternalValue>,
     ],
-    ["Type", entry.type === "connector" ? "Connector" : "Schema"],
+    ["Capabilities", pluginCapabilitiesLabel(entry)],
     [
       "License",
       <ExternalValue href={entry.license.url}>

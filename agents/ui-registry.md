@@ -99,14 +99,16 @@ Last updated: 2026-08-07
 Plugin settings use a compact system-level activation switch and refresh-policy
 selector above a category tab bar and responsive two-column catalog. Catalog
 entries merge normalized Ajour-index metadata with installed connector and
-schema capabilities. The category tabs are All, Connectors, and Schemas, and
-the catalog labels non-connector plugins and the project-data-shape capability
-Schema. An available remote connector shows Download;
-only an installed plugin can be activated. Manual file installation remains a
+schema capabilities. The category tabs are All, Connectors, Code hosts, and
+Schemas; a plugin with several capabilities appears under each, and its badge
+reads "Connector · Code host". Feature badges such as Work Item Sync come from
+the entry's `features`. An available remote connector or code host shows Download;
+The filter tabs use compact spacing below 768px so all four fit at 320px.
+Only an installed plugin can be activated. Manual file installation remains a
 separate action.
 
 Opening an entry moves to a dedicated detail route with a back link,
-identity-first header, status-driven primary action, capability band, capability
+identity-first header, status-driven primary action, capability band, feature
 list, and information list before plugin-owned configuration. Cached catalog
 artwork is optional: the identity mark supplies a consistent generated default
 thumbnail, while the capability band supplies an equally sized operational-flow

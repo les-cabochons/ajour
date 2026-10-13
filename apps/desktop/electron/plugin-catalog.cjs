@@ -75,6 +75,94 @@ function assertHttpsUrl(value, label) {
   return url.toString();
 }
 
+const CATALOG_SCHEMA_VERSION = 2;
+const PLUGIN_CAPABILITIES = new Set(["connector", "codeHost", "schema"]);
+
+function assertCapabilityList(value, id) {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 3) {
+    throw new Error(
+      `Plugin "${id}" must declare between 1 and 3 capabilities.`,
+    );
+  }
+  if (
+    value.some((capability) => !PLUGIN_CAPABILITIES.has(capability)) ||
+    new Set(value).size !== value.length
+  ) {
+    throw new Error(`Plugin "${id}" declares an unsupported capability.`);
+  }
+  return [...value];
+}
+
+const RELEASE_VERSION_PATTERN =
+  /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/u;
+
+/** Parses "v1.2.3-main.10.abc1234" into numbers and prerelease identifiers. */
+function parseReleaseVersion(tagName) {
+  if (typeof tagName !== "string") {
+    return null;
+  }
+  const match = RELEASE_VERSION_PATTERN.exec(tagName.trim());
+  if (!match) {
+    return null;
+  }
+  return {
+    core: [Number(match[1]), Number(match[2]), Number(match[3])],
+    prerelease: match[4] ? match[4].split(".") : [],
+  };
+}
+
+function comparePrereleaseIdentifiers(left, right) {
+  const leftNumeric = /^\d+$/u.test(left);
+  const rightNumeric = /^\d+$/u.test(right);
+  if (leftNumeric && rightNumeric) {
+    return Number(left) - Number(right);
+  }
+  if (leftNumeric !== rightNumeric) {
+    return leftNumeric ? -1 : 1;
+  }
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+/** Semantic version precedence: negative when `left` is older. */
+function compareReleaseVersions(left, right) {
+  for (let index = 0; index < 3; index += 1) {
+    const difference = left.core[index] - right.core[index];
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+  if (left.prerelease.length === 0 || right.prerelease.length === 0) {
+    return right.prerelease.length - left.prerelease.length;
+  }
+  const length = Math.max(left.prerelease.length, right.prerelease.length);
+  for (let index = 0; index < length; index += 1) {
+    if (left.prerelease[index] === undefined) return -1;
+    if (right.prerelease[index] === undefined) return 1;
+    const difference = comparePrereleaseIdentifiers(
+      left.prerelease[index],
+      right.prerelease[index],
+    );
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+  return 0;
+}
+
+/** Newest version first; tags without a version last, in GitHub's order. */
+function compareReleaseCandidates(left, right) {
+  if (left.version && right.version) {
+    return (
+      compareReleaseVersions(right.version, left.version) ||
+      left.index - right.index
+    );
+  }
+  if (left.version || right.version) {
+    return left.version ? -1 : 1;
+  }
+  return left.index - right.index;
+}
+
 function assertSlugList(value, label) {
   if (!Array.isArray(value) || value.length < 1 || value.length > 12) {
     throw new Error(`${label} must contain between 1 and 12 values.`);
@@ -105,7 +193,6 @@ function normalizeCatalogEntry(value, expectedId) {
   const allowed = [
     "schemaVersion",
     "id",
-    "type",
     "title",
     "description",
     "author",
@@ -115,6 +202,7 @@ function normalizeCatalogEntry(value, expectedId) {
     "status",
     "compatibility",
     "capabilities",
+    "features",
     "install",
     "images",
     "tags",
@@ -123,7 +211,7 @@ function normalizeCatalogEntry(value, expectedId) {
     (key) => key !== "install" && key !== "images",
   );
   const raw = assertExactKeys(value, allowed, required, `plugin ${expectedId}`);
-  if (raw.schemaVersion !== 1) {
+  if (raw.schemaVersion !== CATALOG_SCHEMA_VERSION) {
     throw new Error(
       `Plugin "${expectedId}" uses an unsupported catalog schema.`,
     );
@@ -137,9 +225,7 @@ function normalizeCatalogEntry(value, expectedId) {
       `Plugin id "${id}" does not match catalog path "${expectedId}".`,
     );
   }
-  if (raw.type !== "connector" && raw.type !== "plugin") {
-    throw new Error(`Plugin "${id}" has an unsupported type.`);
-  }
+  const capabilities = assertCapabilityList(raw.capabilities, id);
   if (!["available", "coming-soon", "deprecated"].includes(raw.status)) {
     throw new Error(`Plugin "${id}" has an unsupported status.`);
   }
@@ -248,9 +334,8 @@ function normalizeCatalogEntry(value, expectedId) {
 
   return {
     entry: {
-      schemaVersion: 1,
+      schemaVersion: CATALOG_SCHEMA_VERSION,
       id,
-      type: raw.type,
       title: assertString(raw.title, "plugin.title", { maximum: 80 }),
       description: assertString(raw.description, "plugin.description", {
         maximum: 500,
@@ -274,7 +359,8 @@ function normalizeCatalogEntry(value, expectedId) {
       },
       status: raw.status,
       compatibility: { pluginApiVersion: compatibility.pluginApiVersion },
-      capabilities: assertSlugList(raw.capabilities, "plugin.capabilities"),
+      capabilities,
+      features: assertSlugList(raw.features, "plugin.features"),
       ...(install ? { install } : {}),
       tags: assertSlugList(raw.tags, "plugin.tags"),
     },
@@ -290,7 +376,7 @@ function parseCatalog(value) {
     "catalog",
   );
   if (
-    raw.schemaVersion !== 1 ||
+    raw.schemaVersion !== CATALOG_SCHEMA_VERSION ||
     !Array.isArray(raw.entries) ||
     raw.entries.length < 1
   ) {
@@ -597,7 +683,10 @@ function createPluginCatalogService(options) {
     if (!entry || entry.status !== "available" || !entry.install) {
       throw new Error(`Plugin "${pluginId}" is not available for download.`);
     }
-    if (entry.type !== "connector") {
+    if (
+      !entry.capabilities.includes("connector") &&
+      !entry.capabilities.includes("codeHost")
+    ) {
       throw new Error(
         "This Ajour version cannot install packaged schema plugins yet.",
       );
@@ -608,15 +697,17 @@ function createPluginCatalogService(options) {
       throw new Error("GitHub returned an invalid release list.");
     }
     const pattern = new RegExp(entry.install.assetPattern, "u");
-    let selectedAsset;
-    for (const release of releases) {
+    // GitHub lists releases by creation time, which follows build completion
+    // order, not version order. Pick the highest version instead.
+    const candidates = [];
+    releases.forEach((release, index) => {
       if (
         !isRecord(release) ||
         release.draft === true ||
         (release.prerelease === true && !entry.install.allowPrereleases) ||
         !Array.isArray(release.assets)
       ) {
-        continue;
+        return;
       }
       const matchingAssets = release.assets.filter(
         (asset) =>
@@ -624,16 +715,24 @@ function createPluginCatalogService(options) {
           typeof asset.name === "string" &&
           pattern.test(asset.name),
       );
-      if (matchingAssets.length > 1) {
-        throw new Error(
-          `Release ${release.tag_name ?? "unknown"} has multiple matching plugin assets.`,
-        );
+      if (matchingAssets.length === 0) {
+        return;
       }
-      if (matchingAssets.length === 1) {
-        selectedAsset = matchingAssets[0];
-        break;
-      }
+      candidates.push({
+        release,
+        index,
+        matchingAssets,
+        version: parseReleaseVersion(release.tag_name),
+      });
+    });
+    candidates.sort(compareReleaseCandidates);
+    const best = candidates[0];
+    if (best && best.matchingAssets.length > 1) {
+      throw new Error(
+        `Release ${best.release.tag_name ?? "unknown"} has multiple matching plugin assets.`,
+      );
     }
+    const selectedAsset = best?.matchingAssets[0];
     if (!selectedAsset) {
       throw new Error(
         `No compatible release asset is available for ${entry.title}.`,
