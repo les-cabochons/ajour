@@ -3,6 +3,301 @@ import { createBdd } from "playwright-bdd";
 
 const { Given, When, Then } = createBdd();
 
+Given("I have a parent editor close fixture", async ({ page }) => {
+  await mockEmptyConnectorOverview(page);
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem("editor-close-fixture-ready")) return;
+    localStorage.clear();
+    sessionStorage.clear();
+    sessionStorage.setItem("editor-close-fixture-ready", "true");
+    localStorage.setItem(
+      "ajour.local-state.v2",
+      JSON.stringify({
+        workflowStates: [
+          { _id: "doing", name: "In progress", color: "#d97706", createdAt: 1 },
+          {
+            _id: "done",
+            name: "Done",
+            color: "#059669",
+            done: true,
+            createdAt: 1,
+          },
+        ],
+        workItems: [
+          {
+            _id: "editor-parent",
+            title: "Editor parent",
+            source: "manual",
+            status: "active",
+            workflowStateId: "doing",
+            createdAt: 1,
+          },
+          {
+            _id: "editor-child",
+            title: "Editor child",
+            source: "manual",
+            status: "active",
+            workflowStateId: "doing",
+            parentWorkItemId: "editor-parent",
+            createdAt: 1,
+          },
+        ],
+      }),
+    );
+  });
+  await page.goto("/backlog/editor-parent");
+  await page
+    .getByRole("button", { name: "Actions for Editor parent", exact: true })
+    .click();
+  await page.getByRole("menuitem", { name: "Edit", exact: true }).click();
+  await expect(
+    page.getByRole("complementary", { name: "Backlog item editor" }),
+  ).toBeVisible();
+});
+When("I save its editor workflow as Done", async ({ page }) => {
+  const editor = page.getByRole("complementary", {
+    name: "Backlog item editor",
+  });
+  await editor
+    .getByRole("combobox", { name: "Workflow state", exact: true })
+    .click();
+  await page.getByRole("option", { name: "Done", exact: true }).click();
+  await editor.getByRole("button", { name: "Save", exact: true }).click();
+});
+Given("the parent has a running entry", async ({ page }) => {
+  await page.evaluate(async () => {
+    const { localStore } = await import("/src/lib/local-store.ts");
+    localStore.startTimer({
+      workItemId: "editor-parent",
+      note: "Done flag fixture",
+    });
+  });
+});
+When("I enable Done for In progress in Workflow settings", async ({ page }) => {
+  await page.goto("/settings/workflow");
+  await page
+    .getByRole("checkbox", { name: "Done", exact: true })
+    .first()
+    .check();
+});
+Then(
+  "its existing items are archived and the running entry is saved",
+  async ({ page }) => {
+    const readState = () =>
+      page.evaluate(() =>
+        JSON.parse(localStorage.getItem("ajour.local-state.v2")!),
+      );
+    await expect
+      .poll(async () =>
+        (await readState()).workItems.map(
+          (item: { status: string; workflowStateId: string }) => ({
+            status: item.status,
+            workflowStateId: item.workflowStateId,
+          }),
+        ),
+      )
+      .toEqual([
+        { status: "archived", workflowStateId: "doing" },
+        { status: "archived", workflowStateId: "doing" },
+      ]);
+    const saved = await readState();
+    expect(saved.timers).toEqual([]);
+    expect(saved.timesheetEntries).toEqual([
+      expect.objectContaining({
+        workItemId: "editor-parent",
+        note: "Done flag fixture",
+      }),
+    ]);
+    expect(saved.timesheetEntries[0].durationMs).toBeGreaterThan(0);
+    await page.reload();
+    expect(
+      (await readState()).workItems.every(
+        (item: { status: string }) => item.status === "archived",
+      ),
+    ).toBe(true);
+  },
+);
+Then(
+  "the parent editor remains mounted while the subitem choice is pending",
+  async ({ page }) => {
+    await expect(
+      page.getByRole("dialog", {
+        name: "Also close its 1 open subitem?",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("complementary", {
+        name: "Backlog item editor",
+        includeHidden: true,
+      }),
+    ).toHaveCount(1);
+  },
+);
+Then(
+  "the confirmed title and note remain saved after undoing the close",
+  async ({ page }) => {
+    const readParent = () =>
+      page.evaluate(() =>
+        JSON.parse(
+          localStorage.getItem("ajour.local-state.v2")!,
+        ).workItems.find(
+          (item: { _id: string }) => item._id === "editor-parent",
+        ),
+      );
+    expect(await readParent()).toMatchObject({
+      title: "Unsaved parent title",
+      note: "Unsaved parent note",
+      status: "archived",
+      workflowStateId: "done",
+    });
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    await expect.poll(readParent).toMatchObject({
+      title: "Unsaved parent title",
+      note: "Unsaved parent note",
+      status: "active",
+      workflowStateId: "doing",
+    });
+  },
+);
+When("I cancel the parent editor close prompt", async ({ page }) => {
+  await page.keyboard.press("Escape");
+});
+When("I change the parent draft title and note", async ({ page }) => {
+  const editor = page.getByRole("complementary", {
+    name: "Backlog item editor",
+  });
+  await editor
+    .getByPlaceholder("Item name", { exact: true })
+    .fill("Unsaved parent title");
+  await editor
+    .getByRole("textbox", { name: "Note", exact: true })
+    .fill("Unsaved parent note");
+});
+When(
+  "I interrupt the mixed-field close by {string}",
+  async ({ page }, interruption: string) => {
+    if (interruption === "dismissing the prompt") {
+      await page.keyboard.press("Escape");
+    } else {
+      await page.evaluate(async () => {
+        // Exercise a concurrent local import while the displayed confirmation stays open.
+        const { localStore } = await import("/src/lib/local-store.ts");
+        localStore.addWorkItem({
+          title: "New subitem",
+          parentWorkItemId: "editor-parent",
+          workflowStateId: "doing",
+        });
+      });
+      await page
+        .getByRole("button", { name: "Include subitem", exact: true })
+        .click();
+    }
+  },
+);
+Then(
+  "the parent editor retains every mixed-field draft without saving it",
+  async ({ page }) => {
+    const editor = page.getByRole("complementary", {
+      name: "Backlog item editor",
+    });
+    await expect(editor).toBeVisible();
+    await expect(
+      editor.getByPlaceholder("Item name", { exact: true }),
+    ).toHaveValue("Unsaved parent title");
+    await expect(
+      editor.getByRole("textbox", { name: "Note", exact: true }),
+    ).toHaveValue("Unsaved parent note");
+    await expect(
+      editor.getByRole("combobox", { name: "Workflow state", exact: true }),
+    ).toHaveValue("Done");
+    const parent = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems.find(
+        (item: { _id: string }) => item._id === "editor-parent",
+      ),
+    );
+    expect(parent).toMatchObject({
+      title: "Editor parent",
+      status: "active",
+      workflowStateId: "doing",
+    });
+    expect(parent.note).toBeUndefined();
+  },
+);
+When("I cancel the parent editor draft", async ({ page }) => {
+  await page
+    .getByRole("complementary", { name: "Backlog item editor" })
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+});
+Then("the parent title and note remain unchanged", async ({ page }) => {
+  await expect(
+    page.getByRole("complementary", { name: "Backlog item editor" }),
+  ).toHaveCount(0);
+  const parent = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems.find(
+      (item: { _id: string }) => item._id === "editor-parent",
+    ),
+  );
+  expect(parent).toMatchObject({
+    title: "Editor parent",
+    status: "active",
+    workflowStateId: "doing",
+  });
+  expect(parent.note).toBeUndefined();
+});
+Then(
+  "the parent editor retains its Done draft and the item remains active",
+  async ({ page }) => {
+    const editor = page.getByRole("complementary", {
+      name: "Backlog item editor",
+    });
+    await expect(editor).toBeVisible();
+    await expect(
+      editor.getByRole("combobox", { name: "Workflow state", exact: true }),
+    ).toHaveValue("Done");
+    const parent = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems.find(
+        (item: { _id: string }) => item._id === "editor-parent",
+      ),
+    );
+    expect(parent).toMatchObject({
+      status: "active",
+      workflowStateId: "doing",
+    });
+  },
+);
+When("I include the child in the editor close", async ({ page }) => {
+  await page
+    .getByRole("button", { name: "Include subitem", exact: true })
+    .click();
+});
+Then(
+  "the editor closes after the parent and child reach Done",
+  async ({ page }) => {
+    await expect(
+      page.getByRole("complementary", { name: "Backlog item editor" }),
+    ).toHaveCount(0);
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          JSON.parse(
+            localStorage.getItem("ajour.local-state.v2")!,
+          ).workItems.map(
+            (item: { status: string; workflowStateId: string }) => ({
+              status: item.status,
+              workflowStateId: item.workflowStateId,
+            }),
+          ),
+        ),
+      )
+      .toEqual([
+        { status: "archived", workflowStateId: "done" },
+        { status: "archived", workflowStateId: "done" },
+      ]);
+  },
+);
+
 async function mockEmptyConnectorOverview(page: Page) {
   await page.route("http://127.0.0.1:8787/api/connectors", async (route) => {
     await route.fulfill({
@@ -2201,5 +2496,31 @@ Then(
     const toasts = page.getByRole("region", { name: "Notifications" });
     await expect(toasts).toContainText("Entry deleted");
     await expect(toasts.getByRole("button", { name: "Undo" })).toBeVisible();
+  },
+);
+
+When("I open the Backlog settings", async ({ page }) => {
+  await page.goto("/settings/backlog");
+});
+
+Then(
+  "the Backlog settings contain one settle rules section",
+  async ({ page }) => {
+    await expect(
+      page.getByRole("heading", { name: "Subitems", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Settle rules", exact: true }),
+    ).toHaveCount(1);
+    const preference = page.getByRole("group", {
+      name: "When closing a parent with open subitems",
+      exact: true,
+    });
+    await expect(
+      preference.getByRole("button", { name: "Ask", exact: true }),
+    ).toBeVisible();
+    await expect(page.locator('[data-slot="field"]')).not.toContainText(
+      "Settle rules",
+    );
   },
 );

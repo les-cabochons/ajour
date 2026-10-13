@@ -11,12 +11,254 @@ import {
   isSubtaskWorkItem,
 } from "@/domain/backlog/work-item-hierarchy";
 import type { WorkItemFactories } from "@/domain/backlog/work-item-transitions";
+import {
+  findMappedWorkflowStateId,
+  getFirstDoneWorkflowState,
+  isDoneWorkflowState,
+} from "@/domain/backlog/workflow-states";
 import { saveTimer } from "@/domain/time/timer-transitions";
 
 /**
  * Settle, snooze and their counterparts, from "Backlog sidebar" in
  * agents/ux-spec.md. Terms follow agents/GLOSSARY.md.
  */
+
+/** Whether a settle or close also takes the parent's open subitems. */
+export interface CloseSubitemsOptions {
+  includeSubitems?: boolean;
+}
+
+/**
+ * The subitems a settle or close could take along: direct subitems that are
+ * still active. Independently settled and archived subitems keep their state.
+ */
+export function getOpenSubitems(
+  state: LocalAppState,
+  workItemId: string,
+  _for: "settle" | "close",
+): LocalWorkItem[] {
+  const target = state.workItems.find(
+    (workItem) => workItem._id === workItemId,
+  );
+  if (!target) return [];
+  return getDirectChildWorkItems(target, state.workItems).filter(
+    (child) => child.status === "active",
+  );
+}
+
+/**
+ * The done state an item closes into: the one its source state maps to, the
+ * done state it is already in, or the workflow's first done state. Callers
+ * that honor a mapping to a state that isn't done check that first.
+ */
+function getClosingWorkflowStateId(
+  state: LocalAppState,
+  workItem: LocalWorkItem,
+) {
+  const mapped = findMappedWorkflowStateId(
+    state.workflowStateMappings,
+    workItem.source,
+    workItem.sourceConnectionId,
+    workItem.sourceStatusKey,
+  );
+  if (isDoneWorkflowState(state.workflowStates, mapped)) return mapped;
+  if (isDoneWorkflowState(state.workflowStates, workItem.workflowStateId)) {
+    return workItem.workflowStateId;
+  }
+  return getFirstDoneWorkflowState(state.workflowStates)?._id;
+}
+
+/**
+ * Archives an item into a done state. It remembers the state it left, so a
+ * reopen puts it back, and its source state, so a sync can tell when someone
+ * reopened it in the source.
+ */
+function closeWorkItem(
+  workItem: LocalWorkItem,
+  doneStateId: string | undefined,
+  states: LocalAppState["workflowStates"],
+  now: number,
+): LocalWorkItem {
+  return {
+    ...workItem,
+    status: "archived",
+    archivedAt: now,
+    archivedByMissingSync: false,
+    archivedSourceStatusKey: workItem.sourceStatusKey,
+    workflowStateId: doneStateId ?? workItem.workflowStateId,
+    workflowStateIdBeforeClose: isDoneWorkflowState(
+      states,
+      workItem.workflowStateId,
+    )
+      ? workItem.workflowStateIdBeforeClose
+      : workItem.workflowStateId,
+    settledAt: undefined,
+    settledSourceStatusKey: undefined,
+    settledImportedPriority: undefined,
+    snoozedUntil: undefined,
+    returnedAt: undefined,
+  };
+}
+
+/** Stops and saves the running entries on these items. */
+function saveRunningEntries(
+  state: LocalAppState,
+  workItemIds: ReadonlySet<string>,
+  factories: WorkItemFactories,
+) {
+  return state.timers
+    .filter((timer) => timer.workItemId && workItemIds.has(timer.workItemId))
+    .reduce(
+      (current, timer) => saveTimer(current, timer._id, factories),
+      state,
+    );
+}
+
+/**
+ * Applies the done rules after settings, mapping or connector changes. Every
+ * open item in a done state closes, including items reactivated without a
+ * workflow change, with its running entry saved.
+ * Archived items keep their done state: a mapping edit never reopens history.
+ */
+export function applyWorkflowStateLifecycle(
+  previous: LocalAppState,
+  next: LocalAppState,
+  factories: WorkItemFactories,
+): LocalAppState {
+  if (previous === next) return next;
+
+  const previousById = new Map(
+    previous.workItems.map((workItem) => [workItem._id, workItem]),
+  );
+  const closingIds = new Set(
+    next.workItems
+      .filter(
+        (workItem) =>
+          workItem.status !== "archived" &&
+          isDoneWorkflowState(next.workflowStates, workItem.workflowStateId),
+      )
+      .map((workItem) => workItem._id),
+  );
+  if (closingIds.size === 0) return next;
+
+  const now = factories.now();
+  const saved = saveRunningEntries(next, closingIds, factories);
+  return {
+    ...saved,
+    workItems: saved.workItems.map((workItem) => {
+      if (!closingIds.has(workItem._id)) return workItem;
+      const before = previousById.get(workItem._id);
+      const previousStateId =
+        before?.status === "archived"
+          ? (before.workflowStateIdBeforeClose ??
+            (before.archivedByMissingSync ? before.workflowStateId : undefined))
+          : before?.workflowStateId;
+      return {
+        ...closeWorkItem(
+          workItem,
+          workItem.workflowStateId,
+          next.workflowStates,
+          now,
+        ),
+        workflowStateIdBeforeClose:
+          isDoneWorkflowState(previous.workflowStates, previousStateId) ||
+          isDoneWorkflowState(next.workflowStates, previousStateId)
+            ? undefined
+            : previousStateId,
+      };
+    }),
+  };
+}
+
+/**
+ * Moves a backlog item to a workflow state. Only done states change its
+ * lifecycle: moving into one closes the item, archiving it with its running
+ * entry stopped and saved, and moving out of one reopens it with the subitems
+ * that closed with it. Moving between other states leaves an active or settled
+ * item as it is.
+ *
+ * `includeSubitems` closes the parent's open subitems along with it.
+ */
+export function moveBacklogItemToState(
+  state: LocalAppState,
+  workItemId: string,
+  workflowStateId: string | undefined,
+  factories: WorkItemFactories,
+  options: CloseSubitemsOptions = {},
+): LocalAppState {
+  const target = state.workItems.find(
+    (workItem) => workItem._id === workItemId,
+  );
+  const destination = state.workflowStates.find(
+    (candidate) => candidate._id === workflowStateId,
+  );
+  if (
+    !target ||
+    (workflowStateId !== undefined && !destination) ||
+    target.workflowStateId === workflowStateId
+  ) {
+    return state;
+  }
+
+  if (destination?.done) {
+    if (target.status === "archived") {
+      return updateOne(state, workItemId, (workItem) => ({
+        ...workItem,
+        workflowStateId,
+      }));
+    }
+
+    const carriedIds = new Set(
+      options.includeSubitems
+        ? getOpenSubitems(state, workItemId, "close").map((child) => child._id)
+        : [],
+    );
+    const now = factories.now();
+    const saved = saveRunningEntries(
+      state,
+      new Set([workItemId, ...carriedIds]),
+      factories,
+    );
+    return {
+      ...saved,
+      workItems: saved.workItems.map((workItem) => {
+        if (workItem._id === workItemId) {
+          return closeWorkItem(
+            workItem,
+            workflowStateId,
+            state.workflowStates,
+            now,
+          );
+        }
+        return carriedIds.has(workItem._id)
+          ? {
+              ...closeWorkItem(
+                workItem,
+                workflowStateId,
+                state.workflowStates,
+                now,
+              ),
+              settledWithParentId: workItemId,
+            }
+          : workItem;
+      }),
+    };
+  }
+
+  if (target.status === "archived") {
+    const reopened = reactivate(state, workItemId, "archived");
+    return updateOne(reopened, workItemId, (workItem) => ({
+      ...workItem,
+      workflowStateId,
+      workflowStateIdBeforeClose: undefined,
+    }));
+  }
+
+  return updateOne(state, workItemId, (workItem) => ({
+    ...workItem,
+    workflowStateId,
+  }));
+}
 
 /** What the settle dialog or a settle rule asks to change in the source. */
 export interface BacklogSettleChange {
@@ -51,8 +293,44 @@ function getSourceWrite(
       sourceStatusLabel: workItem.sourceStatusLabel,
       importedPriority: workItem.importedPriority,
       priority: workItem.priority,
+      ...(state !== undefined
+        ? {
+            workflowStateId: workItem.workflowStateId,
+            importedWorkflowStateId: workItem.importedWorkflowStateId,
+          }
+        : {}),
     },
   };
+}
+
+function getSettleWorkflowStateId(
+  state: LocalAppState,
+  workItem: LocalWorkItem,
+  change?: BacklogSettleChange,
+) {
+  return change?.state
+    ? findMappedWorkflowStateId(
+        state.workflowStateMappings,
+        workItem.source,
+        workItem.sourceConnectionId,
+        normalizeConnectorStatusKey(change.state.name),
+      )
+    : undefined;
+}
+
+/** The dialog's archive warning follows the same mapping as the transition. */
+export function settleArchivesWorkItem(
+  state: LocalAppState,
+  workItem: LocalWorkItem,
+  change?: BacklogSettleChange,
+) {
+  return (
+    workItem.source === "manual" ||
+    isDoneWorkflowState(
+      state.workflowStates,
+      getSettleWorkflowStateId(state, workItem, change),
+    )
+  );
 }
 
 /**
@@ -62,18 +340,19 @@ function getSourceWrite(
  *
  * `change` sets a new state, priority or both in the source. Only the fields
  * that differ are kept, as a pending write that is sent after the Undo window.
- * The item shows the new values at once. A state in a done category archives
+ * The item shows the new values at once. A source state mapped to Done archives
  * the item instead.
  *
- * Active subitems without their own priority follow their parent. Subitems with
- * their own priority keep their own state. A running entry on a settled item is
- * stopped and saved first.
+ * `includeSubitems` settles the parent's active subitems along with it, and
+ * Undo or a reopen brings them back together. A running entry on a settled
+ * item is stopped and saved first. An archived item moves into a done state.
  */
 export function settleBacklogItem(
   state: LocalAppState,
   workItemId: string,
   factories: WorkItemFactories,
   change?: BacklogSettleChange,
+  options: CloseSubitemsOptions = {},
 ): LocalAppState {
   const target = state.workItems.find(
     (workItem) => workItem._id === workItemId,
@@ -83,35 +362,33 @@ export function settleBacklogItem(
   }
 
   const sourceWrite = getSourceWrite(target, change);
-  const archives =
-    target.source === "manual" ||
-    (sourceWrite?.state !== undefined && change?.state?.done === true);
+  const selectedWorkflowStateId = getSettleWorkflowStateId(
+    state,
+    target,
+    change,
+  );
+  const archives = settleArchivesWorkItem(state, target, change);
 
   const now = factories.now();
   const carriedIds = new Set(
-    getDirectChildWorkItems(target, state.workItems)
-      .filter(
-        (child) => child.status === "active" && child.priority === undefined,
-      )
-      .map((child) => child._id),
+    options.includeSubitems
+      ? getOpenSubitems(state, workItemId, "settle").map((child) => child._id)
+      : [],
   );
-  const settledIds = new Set([workItemId, ...carriedIds]);
-  const saved = state.timers
-    .filter((timer) => timer.workItemId && settledIds.has(timer.workItemId))
-    .reduce(
-      (current, timer) => saveTimer(current, timer._id, factories),
-      state,
-    );
+  const saved = saveRunningEntries(
+    state,
+    new Set([workItemId, ...carriedIds]),
+    factories,
+  );
   // A snooze ends with the settle, so the item never comes back as returned.
   const settle = (workItem: LocalWorkItem): LocalWorkItem =>
     archives
-      ? {
-          ...workItem,
-          status: "archived",
-          archivedAt: now,
-          snoozedUntil: undefined,
-          returnedAt: undefined,
-        }
+      ? closeWorkItem(
+          workItem,
+          selectedWorkflowStateId ?? getClosingWorkflowStateId(state, workItem),
+          state.workflowStates,
+          now,
+        )
       : {
           ...workItem,
           status: "settled",
@@ -126,8 +403,19 @@ export function settleBacklogItem(
     ...saved,
     workItems: saved.workItems.map((workItem) => {
       if (workItem._id === workItemId) {
+        const written = sourceWrite
+          ? withSourceWrite(workItem, sourceWrite)
+          : workItem;
         return settle(
-          sourceWrite ? withSourceWrite(workItem, sourceWrite) : workItem,
+          sourceWrite?.state !== undefined
+            ? {
+                ...written,
+                importedWorkflowStateId: selectedWorkflowStateId,
+                workflowStateId: archives
+                  ? written.workflowStateId
+                  : selectedWorkflowStateId,
+              }
+            : written,
         );
       }
 
@@ -207,9 +495,18 @@ export function failSourceWrite(
     importedPriority: sourceWrite.previous.importedPriority,
     priority: sourceWrite.previous.priority,
   }));
-  return target.status === "active"
-    ? restored
-    : reactivate(restored, workItemId, target.status);
+  const recovered =
+    target.status === "active"
+      ? restored
+      : reactivate(restored, workItemId, target.status);
+  return sourceWrite.state !== undefined ||
+    "workflowStateId" in sourceWrite.previous
+    ? updateOne(recovered, workItemId, (workItem) => ({
+        ...workItem,
+        workflowStateId: sourceWrite.previous.workflowStateId,
+        importedWorkflowStateId: sourceWrite.previous.importedWorkflowStateId,
+      }))
+    : recovered;
 }
 
 /**
@@ -235,20 +532,22 @@ export function archiveBacklogItem(
       workItem._id === workItemId ||
       (workItem.settledWithParentId === workItemId &&
         workItem.status === "settled")
-        ? {
-            ...workItem,
-            status: "archived",
-            archivedAt: now,
-            archivedByMissingSync: false,
-            snoozedUntil: undefined,
-            returnedAt: undefined,
-          }
+        ? closeWorkItem(
+            workItem,
+            getClosingWorkflowStateId(state, workItem),
+            state.workflowStates,
+            now,
+          )
         : workItem,
     ),
   };
 }
 
-/** Puts the item and the subitems its settle carried back on the user's plate. */
+/**
+ * Puts the item and the subitems its settle or close carried back on the
+ * user's plate. An item leaving a done state goes back to the state it had
+ * before.
+ */
 function reactivate(
   state: LocalAppState,
   workItemId: string,
@@ -275,6 +574,21 @@ function reactivate(
             settledImportedPriority: undefined,
             archivedAt: undefined,
             archivedByMissingSync: false,
+            archivedSourceStatusKey: undefined,
+            ...(isDoneWorkflowState(
+              state.workflowStates,
+              workItem.workflowStateId,
+            )
+              ? {
+                  workflowStateId: isDoneWorkflowState(
+                    state.workflowStates,
+                    workItem.workflowStateIdBeforeClose,
+                  )
+                    ? undefined
+                    : workItem.workflowStateIdBeforeClose,
+                  workflowStateIdBeforeClose: undefined,
+                }
+              : {}),
           }
         : workItem,
     ),

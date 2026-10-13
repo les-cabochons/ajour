@@ -45,8 +45,14 @@ export function normalizePersistedWorkItem(
   const createdAt = workItem.createdAt ?? now();
   const isRetiredBuiltInSource = workItem.source === "outlook";
 
+  const {
+    backlogStatusId: legacyWorkflowStateId,
+    importedBacklogStatusId: legacyImportedWorkflowStateId,
+    ...persisted
+  } = workItem;
+
   return {
-    ...workItem,
+    ...persisted,
     title: workItem.title.trim(),
     status,
     source: isRetiredBuiltInSource ? "manual" : (workItem.source ?? "manual"),
@@ -73,10 +79,10 @@ export function normalizePersistedWorkItem(
     importedPriority: isRetiredBuiltInSource
       ? undefined
       : normalizeWorkItemPriority(workItem.importedPriority),
-    backlogStatusId: workItem.backlogStatusId,
-    importedBacklogStatusId: isRetiredBuiltInSource
+    workflowStateId: workItem.workflowStateId ?? legacyWorkflowStateId,
+    importedWorkflowStateId: isRetiredBuiltInSource
       ? undefined
-      : workItem.importedBacklogStatusId,
+      : (workItem.importedWorkflowStateId ?? legacyImportedWorkflowStateId),
     sourceStatusKey: isRetiredBuiltInSource
       ? undefined
       : workItem.sourceStatusKey,
@@ -131,8 +137,8 @@ function createManualWorkItem(
     parentSourceId: undefined,
     priority: normalizeWorkItemPriority(workItem.priority),
     importedPriority: undefined,
-    backlogStatusId: workItem.backlogStatusId,
-    importedBacklogStatusId: undefined,
+    workflowStateId: workItem.workflowStateId,
+    importedWorkflowStateId: undefined,
     sourceStatusKey: undefined,
     sourceStatusLabel: undefined,
     projectId: workItem.projectId,
@@ -210,7 +216,7 @@ export function addWorkItem(
       taskId,
       inheritsParentMapping,
       priority: workItem.priority,
-      backlogStatusId: workItem.backlogStatusId,
+      workflowStateId: workItem.workflowStateId,
     },
     factories,
   );

@@ -34,14 +34,15 @@ For state-changing workflows, keep deterministic transition rules in a focused d
 Current deep domain modules demonstrate this boundary:
 
 - `domain/backlog/work-item-transitions.ts` owns manual work-item creation, hierarchy-aware mapping changes, ordering, deletion, and estimate-conflict decisions.
-- `domain/backlog/backlog-item-lifecycle.ts` owns backlog item status: settle, unsettle, archive, restore, snooze, the Returned mark, and the sidebar's item order.
+- `domain/backlog/backlog-item-lifecycle.ts` owns backlog item status: moves between workflow states (a done state closes the item, leaving one reopens it), settle, unsettle, archive, restore, which open subitems a close or settle takes along, snooze, the Returned mark, and the sidebar's item order.
+- `domain/backlog/workflow-states.ts` owns the workflow: the default states, the Done flag and the rule that one done state always remains, ordering, and how source states map onto workflow states.
 - `domain/backlog/work-item-connector.ts` owns connector import, merge, disappearance, reactivation, and estimate-sync transitions.
 - `domain/projects/project-transitions.ts` owns project and task creation, legacy hydration, ordering, edits, and archive state.
 - `domain/time/timesheet-entry.ts` owns manual entry creation, edits, deletion, ordering, submission state, and the corresponding work-item estimate adjustments.
 - `domain/time/timesheet-import.ts` owns import normalization, conflict detection, draft review, project/task recovery, and single or batch commit.
 - `domain/time/timer-transitions.ts` owns timer hydration, start/edit/cancel/save/continue behavior, elapsed-time calculation, and replacement of continued entries. A running entry always starts on today, and a counted time correction restarts its count from the corrected value.
 - `domain/time/timeline-transitions.ts` owns imported browser review preservation, timeline materialization, dismissal, idempotent commits, and rule creation.
-- `domain/local-state-undo.ts` records which records an action changed (projects, time entries, timers, import drafts, work items, backlog statuses and status mappings) and restores them for Undo. It refuses a restore when any of those records changed again since. After a time entry action, a work item changed again since gets the inverse logged time instead of its old values. `local-store.ts` keeps only the last action's undo, in memory, behind a token, and `features/feedback/undo-toast.ts` shows its toast. Sync review dismissals live in the local API, so `AppApiStorage` keeps the last one in memory the same way.
+- `domain/local-state-undo.ts` records which records an action changed (projects, time entries, timers, import drafts, work items, workflow states and source state mappings) and restores them for Undo. It refuses a restore when any of those records changed again since. After a time entry action, a work item changed again since gets the inverse logged time instead of its old values. `local-store.ts` keeps only the last action's undo, in memory, behind a token, and `features/feedback/undo-toast.ts` shows its toast. Sync review dismissals live in the local API, so `AppApiStorage` keeps the last one in memory the same way.
 
 These modules are the Interface between workflow orchestration and persistence. Keep their behavior deterministic and free of browser APIs. A domain module should be deep enough that removing it would force meaningful rules back into several callers; avoid shallow one-function wrappers that only rename an operation.
 

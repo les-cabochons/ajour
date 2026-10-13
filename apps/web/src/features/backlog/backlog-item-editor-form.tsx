@@ -45,7 +45,8 @@ import {
   type LocalWorkItem,
 } from "@/domain/local-state";
 import { settleOpensDialog } from "@/features/backlog/settle-dialog";
-import { buildBacklogStatusOptions } from "@/features/backlog/backlog-status";
+import { buildWorkflowStateOptions } from "@/features/backlog/workflow-states";
+import { isDoneWorkflowState } from "@/domain/backlog/workflow-states";
 import {
   BACKLOG_ESTIMATE_FIELD_KEYS,
   commitBacklogTaskDraft,
@@ -57,6 +58,7 @@ import {
   type BacklogTaskEditorFields,
   type BacklogTaskEditorTarget,
 } from "@/features/backlog/backlog-task-editor";
+import { moveBacklogItemWithUndo } from "@/features/backlog/backlog-item-moves";
 import { parseWorkItemReference } from "@/features/backlog/work-item-timer-comment";
 import { buildProjectTaskOptions } from "@/features/projects/project-task-options";
 import {
@@ -70,7 +72,7 @@ import { cn } from "@/lib/utils";
 /** Lets a host save the draft before it loads another item into the same form. */
 export interface BacklogItemEditorFormHandle {
   /** Saves a valid draft. Returns false, and shows the error, when the draft blocks the switch. */
-  commitBeforeSwitch: () => boolean;
+  commitBeforeSwitch: () => Promise<boolean>;
 }
 
 const ESTIMATE_LABELS: Record<BacklogEstimateFieldKey, string> = {
@@ -165,6 +167,7 @@ export function BacklogItemEditorForm({
   const [showErrors, setShowErrors] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const titleInputRef = useRef<HTMLInputElement>(null);
+  const pendingCommitRef = useRef<Promise<boolean> | null>(null);
 
   const subitems = useMemo(
     () => (workItem ? getDirectChildWorkItems(workItem, workItems) : []),
@@ -202,8 +205,8 @@ export function BacklogItemEditorForm({
     [availableTasks],
   );
   const statusOptions = useMemo(
-    () => buildBacklogStatusOptions(state.backlogStatuses),
-    [state.backlogStatuses],
+    () => buildWorkflowStateOptions(state.workflowStates),
+    [state.workflowStates],
   );
 
   useImperativeHandle(ref, () => ({
@@ -228,16 +231,60 @@ export function BacklogItemEditorForm({
 
   /** Writes the draft when it has something to save. Returns false when it is blocked. */
   function commit(reason: BacklogTaskDraftCommitReason) {
+    if (pendingCommitRef.current) return pendingCommitRef.current;
+    const pending = commitDraft(reason).finally(() => {
+      pendingCommitRef.current = null;
+    });
+    pendingCommitRef.current = pending;
+    return pending;
+  }
+
+  async function commitDraft(reason: BacklogTaskDraftCommitReason) {
     const result = commitBacklogTaskDraft(editor, reason);
     switch (result.kind) {
       case "invalid":
         setShowErrors(true);
         return false;
-      case "create":
-        localStore.addWorkItem(result.draft);
+      case "create": {
+        // A new item created in a done state closes like a moved one.
+        const closes = isDoneWorkflowState(
+          localStore.snapshot().workflowStates,
+          result.draft.workflowStateId,
+        );
+        const createdId = localStore.addWorkItem(
+          closes
+            ? { ...result.draft, workflowStateId: undefined }
+            : result.draft,
+        );
+        const created = localStore
+          .snapshot()
+          .workItems.find((item) => item._id === createdId);
+        if (closes && created && result.draft.workflowStateId) {
+          return await moveBacklogItemWithUndo(
+            created,
+            result.draft.workflowStateId,
+          );
+        }
         return true;
+      }
       case "update":
         if (workItem) {
+          // Moving into or out of a done state closes or reopens the item.
+          const { workflowStateId, ...patch } = result.patch;
+          const states = localStore.snapshot().workflowStates;
+          const changesLifecycle =
+            "workflowStateId" in result.patch &&
+            (isDoneWorkflowState(states, workflowStateId) ||
+              isDoneWorkflowState(states, workItem.workflowStateId));
+          const saved = localStore
+            .snapshot()
+            .workItems.find((item) => item._id === workItem._id);
+          if (!saved) return false;
+          if (changesLifecycle) {
+            return await moveBacklogItemWithUndo(saved, workflowStateId, {
+              patch,
+            });
+          }
           localStore.updateWorkItem(workItem._id, result.patch);
         }
         return true;
@@ -246,18 +293,21 @@ export function BacklogItemEditorForm({
     }
   }
 
-  function save() {
-    if (commit("save")) {
+  async function save() {
+    if (await commit("save")) {
       onClose();
     }
   }
 
-  function handleAction(actionId: BacklogItemActionId) {
-    if (!workItem || !commit("switch")) {
+  async function handleAction(actionId: BacklogItemActionId) {
+    if (!workItem || !(await commit("switch"))) {
       return;
     }
 
-    onAction({ ...workItem, ...editor.patch }, actionId);
+    const saved = localStore
+      .snapshot()
+      .workItems.find((item) => item._id === workItem._id);
+    if (saved) onAction(saved, actionId);
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -401,15 +451,15 @@ export function BacklogItemEditorForm({
             </Field>
           ) : null}
           <Field>
-            <FieldLabel>Status</FieldLabel>
+            <FieldLabel>Workflow state</FieldLabel>
             <SearchableSelect
-              value={fields.backlogStatusId}
+              value={fields.workflowStateId}
               options={statusOptions}
-              onChange={(backlogStatusId) => updateFields({ backlogStatusId })}
-              placeholder="No status"
-              clearLabel="No status"
-              emptyMessage="No matching statuses"
-              ariaLabel="Backlog status"
+              onChange={(workflowStateId) => updateFields({ workflowStateId })}
+              placeholder="No state"
+              clearLabel="No state"
+              emptyMessage="No matching workflow states"
+              ariaLabel="Workflow state"
             />
           </Field>
         </div>
@@ -436,10 +486,10 @@ export function BacklogItemEditorForm({
                 variant="ghost"
                 size="xs"
                 onClick={() =>
-                  updateFields({ backlogStatusId: editor.statusReset ?? "" })
+                  updateFields({ workflowStateId: editor.statusReset ?? "" })
                 }
               >
-                Reset status to synced
+                Reset state to synced
               </Button>
             ) : null}
           </div>

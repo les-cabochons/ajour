@@ -26,7 +26,8 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] `apps/web/src/lib` no longer depends on feature modules.
 - [x] `just test` includes both web and shared workspace tests.
 - [x] Project task and workbook import transitions are isolated from browser persistence and have direct domain tests.
-- [x] Backlog status hydration, CRUD, and connector mapping transitions are isolated from browser persistence and have direct domain tests.
+- [x] Workflow state hydration (including data saved as backlog statuses), CRUD, ordering, the Done flag, and source state mapping transitions are isolated from browser persistence and have direct domain tests.
+- [x] Moving a backlog item into a done state closes it and leaving one reopens it, with the open-subitems prompt and its Settings > Backlog choice (#85, #89).
 - [x] Work-item hierarchy, estimates, manual lifecycle, and connector reconciliation have canonical domain modules with direct tests.
 - [x] Timesheet entry lifecycle and linked estimate adjustments are isolated from browser persistence and have direct tests.
 - [x] Project/task creation, hydration, ordering, edits, and archive transitions are isolated from browser persistence and have direct domain tests.
@@ -173,6 +174,68 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [ ] Summarize changed files and verification results.
 
 ## Project Health Notes
+
+### Deleted workflow recovery references, 2026-10-12
+
+- [x] Deleting a workflow state clears its ID from pending source-write rollback workflow and imported-workflow references. Other saved states remain available for recovery.
+- [x] Two regressions reproduce stale IDs after a failed Settle write, including JSON reload and a preserved local workflow override. Both failed before the fix.
+- [ ] Complete verification and fresh Codex review of the updated stack. The integration thread owns merging.
+
+### Settle confirmation and archive warning, 2026-10-12
+
+- [x] Settle keeps its selected state and priority until the subitem confirmation succeeds. Cancellation and a changed subitem set leave the draft open.
+- [x] The archive warning and submit label use the same workflow mapping as the lifecycle transition.
+- [x] The foundation passes 710 unit tests, workspace typecheck and three Chromium confirmation scenarios.
+- [ ] Carry the fixes through the stack, verify the final heads and request fresh reviews.
+
+### Parent return propagation and missing-sync restore history, 2026-10-12
+
+- [x] Connector returns carry subitems only when the parent remains in an open workflow state. Source changes mapped Done leave its carried archived subitems unchanged.
+- [x] A missing-sync return closed into Done remembers its former open workflow when no pre-close state exists.
+- [x] The foundation passes 712 unit tests and workspace typecheck. Connector regressions cover closed-parent child retention, later genuine reopening and Restore after a missing-sync return.
+- [ ] Carry the fixes through the stack, run the full checks and request fresh reviews.
+
+### Reactivation in an unchanged Done state, 2026-10-12
+
+- [x] Lifecycle reconciliation closes every open item in Done, including missing-sync returns, carried subitems and legacy records whose workflow ID stays unchanged.
+- [x] Reclosing an archived item preserves a valid pre-close workflow for Restore.
+- [x] The foundation passes 710 unit tests, with real connector-import regressions for missing-sync returns and carried settled subitems.
+- [ ] Carry the fix through the stack, run the full checks and request fresh reviews.
+
+### Enabling Done on an occupied state, 2026-10-12
+
+- [x] Workflow settings apply the existing lifecycle transition when an open state becomes Done. Its active and settled items close and their running entries are saved.
+- [x] Restore cannot return an archived item to a pre-close state that has since become Done. Other active items and archived history remain unchanged.
+- [x] The foundation passes 705 unit tests and workspace typecheck, with direct lifecycle and persisted-store regressions.
+- [x] Chromium verifies the Workflow checkbox, saved running entry and archived items after reload.
+- [ ] Carry the fix through the stack, run the full checks and request fresh reviews.
+
+### Mixed editor drafts and close confirmation, 2026-10-12
+
+- [x] Editor updates keep non-state fields pending until the workflow move is confirmed. Cancelled or invalidated subitem confirmations leave the entire draft unsaved.
+- [x] Chromium covers changed title and note fields with a dismissed confirmation or an added subitem, followed by editor Cancel.
+- [x] The foundation passes 702 unit tests and workspace typecheck.
+- [ ] Verify accepted mixed-field Save and Undo, carry the fix through the stack and request fresh reviews.
+
+### Done flag and subitem confirmation recovery, 2026-10-12
+
+- [x] Clearing a Done flag moves its archived items to another Done state and preserves their pre-close state and carried-subitem restore path. Active items retain their workflow state.
+- [x] Move and Settle cancel when the eligible subitem IDs change during confirmation. Added, reparented and replaced subitems require a new action and confirmation.
+- [x] The foundation passes 702 unit tests, including archived parent and subitem Restore and both confirmation verbs.
+- [ ] Carry the fixes through the mapping and view layers, verify the stack and request fresh reviews.
+
+### Archived source mappings and pending editor saves, 2026-10-12
+
+- [x] A changed connector-done source state mapped to an open workflow state reopens an archived item and its carried children. An unchanged local Archive stays archived, and a missing-sync archive returns when the item reappears in an open mapping.
+- [x] Editor saves and switches await workflow moves and share an in-flight commit. Cancelling the subitem prompt leaves the editor and workflow draft intact.
+- [x] The foundation passes 692 unit tests, workspace typechecking and a Chromium regression covering Save, cancellation and retry with Include subitem.
+- [ ] Carry the fixes through the mapping and view layers, verify the stack and request fresh reviews.
+
+### Settle mapping recovery, 2026-10-12
+
+- [x] Settle derives closure from the selected source state's workflow mapping, including a connector-open state mapped to Done and a connector-done state mapped to an open state.
+- [x] Settling updates the imported workflow baseline and restores the prior workflow when a source write fails. Carried children follow the parent's settle or close.
+- [x] The foundation passes 687 unit tests and workspace typechecking. Full stack verification follows in the view-layer PR.
 
 - Use `just` rather than invoking package scripts directly.
 - Preserve local-first behavior unless the user explicitly asks to change it.

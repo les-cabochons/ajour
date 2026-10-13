@@ -63,7 +63,7 @@ function buildImportCandidate(overrides: Record<string, unknown> = {}) {
   };
 }
 
-describe("localStore backlog status sync", () => {
+describe("localStore workflow state sync", () => {
   beforeEach(() => {
     vi.resetModules();
     vi.stubGlobal("crypto", {
@@ -71,6 +71,110 @@ describe("localStore backlog status sync", () => {
     });
     installMockWindow();
   });
+
+  it("persists closure and a saved running entry when a workflow state becomes Done", async () => {
+    const { localStore } = await import("./local-store");
+    const doing = localStore.addWorkflowState("Doing", "#d97706");
+    const itemId = localStore.addWorkItem({
+      title: "Occupied state",
+      workflowStateId: doing,
+    });
+    localStore.startTimer({ workItemId: itemId, note: "Flag change" });
+    const startedAt = localStore.snapshot().timers[0]!.startedAt;
+    vi.spyOn(Date, "now").mockReturnValue(startedAt + 600);
+    try {
+      localStore.updateWorkflowState(doing, { name: "Doing", done: true });
+      const stored = JSON.parse(
+        window.localStorage.getItem("ajour.local-state.v2")!,
+      );
+      expect(
+        stored.workItems.find((item: { _id: string }) => item._id === itemId),
+      ).toMatchObject({ status: "archived", workflowStateId: doing });
+      expect(stored.timers).toEqual([]);
+      expect(stored.timesheetEntries).toEqual([
+        expect.objectContaining({ workItemId: itemId, durationMs: 600 }),
+      ]);
+    } finally {
+      vi.restoreAllMocks();
+    }
+  });
+
+  it("rechecks Done lifecycle after a failed Settle write restores the same workflow", async () => {
+    const { localStore } = await import("./local-store");
+    const doing = localStore.addWorkflowState("Doing", "#d97706");
+    for (const sourceStatusKey of ["active", "waiting"]) {
+      localStore.setWorkflowStateMapping({
+        source: "azure_devops",
+        connectionId: "ado-1",
+        sourceStatusKey,
+        workflowStateId: doing,
+      });
+    }
+    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    const id = localStore.snapshot().workItems[0]!._id;
+    localStore.settleWorkItem(id, { state: { name: "Waiting", done: false } });
+    localStore.updateWorkflowState(doing, { name: "Doing", done: true });
+    expect(localStore.snapshot().workItems[0]?.status).toBe("archived");
+    localStore.failSourceWrite(id);
+    expect(localStore.snapshot().workItems[0]).toMatchObject({
+      status: "archived",
+      workflowStateId: doing,
+      sourceStatusLabel: "Active",
+    });
+    expect(
+      localStore.snapshot().workItems[0]?.pendingSourceWrite,
+    ).toBeUndefined();
+    vi.resetModules();
+    const reloaded = (await import("./local-store")).localStore;
+    expect(reloaded.snapshot().workItems[0]).toMatchObject({
+      status: "archived",
+      workflowStateId: doing,
+    });
+    reloaded.restoreWorkItem(id);
+    expect(reloaded.snapshot().workItems[0]?.workflowStateId).toBeUndefined();
+  });
+
+  it.each(["clear", "delete"])(
+    "returns a missing-sync archive after %s of its temporary Done state",
+    async (change) => {
+      const { localStore } = await import("./local-store");
+      const doing = localStore.addWorkflowState("Doing", "#d97706");
+      localStore.setWorkflowStateMapping({
+        source: "azure_devops",
+        connectionId: "ado-1",
+        sourceStatusKey: "active",
+        workflowStateId: doing,
+      });
+      localStore.importConnectorWorkItems([buildImportCandidate()]);
+      localStore.importConnectorWorkItems([], {
+        archiveMissingFromConnectionId: "ado-1",
+      });
+      localStore.updateWorkflowState(doing, { name: "Doing", done: true });
+      if (change === "clear")
+        localStore.updateWorkflowState(doing, { name: "Doing", done: false });
+      else localStore.deleteWorkflowState(doing);
+      expect(localStore.snapshot().workItems[0]).toMatchObject({
+        status: "archived",
+        archivedByMissingSync: true,
+      });
+      expect(localStore.snapshot().workItems[0]?.workflowStateId).toBe(
+        change === "clear" ? doing : undefined,
+      );
+      vi.resetModules();
+      const reloaded = (await import("./local-store")).localStore;
+      reloaded.importConnectorWorkItems([buildImportCandidate()]);
+      expect(reloaded.snapshot().workItems[0]).toMatchObject({
+        status: "active",
+        archivedByMissingSync: false,
+      });
+      expect(reloaded.snapshot().workItems[0]?.workflowStateId).toBe(
+        change === "clear" ? doing : undefined,
+      );
+      expect(reloaded.snapshot().workItems[0]?.importedWorkflowStateId).toBe(
+        change === "clear" ? doing : undefined,
+      );
+    },
+  );
 
   it("defaults update checks to the stable release track", async () => {
     const { localStore } = await import("./local-store");
@@ -160,72 +264,141 @@ describe("localStore backlog status sync", () => {
     expect(localStore.snapshot().userPreferences.updateTrack).toBe("stable");
   });
 
-  it("keeps a local backlog status override when the synced mapping changes", async () => {
+  it("keeps a local workflow state override when the synced mapping changes", async () => {
     const { localStore } = await import("./local-store");
 
-    const todoStatusId = localStore.addBacklogStatus("To do");
-    const doingStatusId = localStore.addBacklogStatus("Doing");
-    const blockedStatusId = localStore.addBacklogStatus("Blocked");
+    const todoStatusId = localStore.addWorkflowState("Ready");
+    const doingStatusId = localStore.addWorkflowState("Doing");
+    const blockedStatusId = localStore.addWorkflowState("Blocked");
 
-    localStore.setBacklogStatusMapping({
+    localStore.setWorkflowStateMapping({
       source: "azure_devops",
       connectionId: "ado-1",
       sourceStatusKey: "active",
-      backlogStatusId: todoStatusId,
+      workflowStateId: todoStatusId,
     });
 
     localStore.importConnectorWorkItems([buildImportCandidate()]);
     const importedItem = localStore.snapshot().workItems[0];
     expect(importedItem).toMatchObject({
-      backlogStatusId: todoStatusId,
-      importedBacklogStatusId: todoStatusId,
+      workflowStateId: todoStatusId,
+      importedWorkflowStateId: todoStatusId,
       sourceStatusLabel: "Active",
     });
 
     localStore.updateWorkItem(importedItem!._id, {
-      backlogStatusId: doingStatusId,
+      workflowStateId: doingStatusId,
     });
 
-    localStore.setBacklogStatusMapping({
+    localStore.setWorkflowStateMapping({
       source: "azure_devops",
       connectionId: "ado-1",
       sourceStatusKey: "active",
-      backlogStatusId: blockedStatusId,
+      workflowStateId: blockedStatusId,
     });
 
     expect(localStore.snapshot().workItems[0]).toMatchObject({
-      backlogStatusId: doingStatusId,
-      importedBacklogStatusId: blockedStatusId,
+      workflowStateId: doingStatusId,
+      importedWorkflowStateId: blockedStatusId,
     });
   });
 
-  it("stores backlog status colors and lets them be updated", async () => {
+  it("closes open items when their source state is mapped to a done state, with Undo", async () => {
+    const { localStore } = await import("./local-store");
+    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    const doneStateId = localStore
+      .snapshot()
+      .workflowStates.find((workflowState) => workflowState.done)!._id;
+
+    const { closedCount, undoToken } = localStore.setWorkflowStateMapping({
+      source: "azure_devops",
+      connectionId: "ado-1",
+      sourceStatusKey: "active",
+      workflowStateId: doneStateId,
+    });
+
+    expect(closedCount).toBe(1);
+    expect(localStore.snapshot().workItems[0]).toMatchObject({
+      status: "archived",
+      workflowStateId: doneStateId,
+    });
+    localStore.undo(undoToken!);
+    expect(localStore.snapshot().workItems[0]?.status).toBe("active");
+  });
+
+  it("stores workflow state colors and lets them be updated", async () => {
     const { localStore } = await import("./local-store");
 
-    const backlogStatusId = localStore.addBacklogStatus("To do", "#123456");
-    expect(localStore.snapshot().backlogStatuses).toContainEqual(
+    const workflowStateId = localStore.addWorkflowState("Ready", "#123456");
+    expect(localStore.snapshot().workflowStates).toContainEqual(
       expect.objectContaining({
-        _id: backlogStatusId,
-        name: "To do",
+        _id: workflowStateId,
+        name: "Ready",
         color: "#123456",
       }),
     );
 
-    localStore.updateBacklogStatus(backlogStatusId, {
+    localStore.updateWorkflowState(workflowStateId, {
       name: "Doing",
       color: "#654321",
     });
 
-    expect(localStore.snapshot().backlogStatuses).toContainEqual(
+    expect(localStore.snapshot().workflowStates).toContainEqual(
       expect.objectContaining({
-        _id: backlogStatusId,
+        _id: workflowStateId,
         name: "Doing",
         color: "#654321",
       }),
     );
   });
 
-  it("hydrates a fallback color for legacy backlog statuses without one", async () => {
+  it("reads workflow states saved under their old backlog status names", async () => {
+    window.localStorage.setItem(
+      "ajour.local-state.v2",
+      JSON.stringify({
+        workItems: [
+          {
+            _id: "item-1",
+            title: "Legacy item",
+            status: "active",
+            source: "manual",
+            createdAt: 1,
+            backlogStatusId: "status-1",
+          },
+        ],
+        backlogStatuses: [
+          { _id: "status-1", name: "Doing", color: "#2563eb", createdAt: 1 },
+        ],
+        backlogStatusMappings: [
+          {
+            source: "azure_devops",
+            connectionId: "ado-1",
+            sourceStatusKey: "active",
+            backlogStatusId: "status-1",
+          },
+        ],
+        updatedAt: 1,
+      }),
+    );
+
+    const { localStore } = await import("./local-store");
+    const state = localStore.snapshot();
+
+    expect(state.workflowStates[0]).toMatchObject({
+      _id: "status-1",
+      name: "Doing",
+    });
+    expect(
+      state.workflowStates.some((workflowState) => workflowState.done),
+    ).toBe(true);
+    expect(state.workflowStateMappings).toEqual([
+      expect.objectContaining({ workflowStateId: "status-1" }),
+    ]);
+    expect(state.workItems[0]).toMatchObject({ workflowStateId: "status-1" });
+    expect(state.workItems[0]).not.toHaveProperty("backlogStatusId");
+  });
+
+  it("hydrates a fallback color for legacy workflow states without one", async () => {
     window.localStorage.setItem(
       "ajour.local-state.v2",
       JSON.stringify({
@@ -244,14 +417,14 @@ describe("localStore backlog status sync", () => {
         timesheetEntries: [],
         timesheetImportDrafts: [],
         workItems: [],
-        backlogStatuses: [
+        workflowStates: [
           {
             _id: "status-1",
             name: "Legacy",
             createdAt: 1,
           },
         ],
-        backlogStatusMappings: [],
+        workflowStateMappings: [],
         backlogSortMode: "custom",
         capture: {
           urlMode: "sanitized_path",
@@ -269,7 +442,7 @@ describe("localStore backlog status sync", () => {
 
     const { localStore } = await import("./local-store");
 
-    expect(localStore.snapshot().backlogStatuses).toContainEqual(
+    expect(localStore.snapshot().workflowStates).toContainEqual(
       expect.objectContaining({
         _id: "status-1",
         name: "Legacy",
@@ -846,8 +1019,8 @@ describe("localStore backlog status sync", () => {
         timers: [],
         timesheetEntries: [],
         workItems: [],
-        backlogStatuses: [],
-        backlogStatusMappings: [],
+        workflowStates: [],
+        workflowStateMappings: [],
         backlogSortMode: "custom",
         capture: {
           urlMode: "sanitized_path",
@@ -967,8 +1140,8 @@ describe("localStore backlog status sync", () => {
           },
         ],
         workItems: [],
-        backlogStatuses: [],
-        backlogStatusMappings: [],
+        workflowStates: [],
+        workflowStateMappings: [],
         backlogSortMode: "custom",
         capture: {
           urlMode: "sanitized_path",

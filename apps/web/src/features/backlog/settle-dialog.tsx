@@ -18,13 +18,17 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/select";
-import type { BacklogSettleChange } from "@/domain/backlog/backlog-item-lifecycle";
+import {
+  settleArchivesWorkItem,
+  type BacklogSettleChange,
+} from "@/domain/backlog/backlog-item-lifecycle";
 import type { LocalWorkItem } from "@/domain/local-state";
 import { findSettleRule } from "@/domain/backlog/settle-rules";
 import {
   canWriteSettle,
   sendPendingSourceWrites,
 } from "@/features/backlog/backlog-source-writes";
+import { resolveIncludeSubitems } from "@/features/backlog/backlog-item-moves";
 import { formatPriorityInput } from "@/features/backlog/backlog-task-editor";
 import {
   buildSettleChange,
@@ -34,6 +38,7 @@ import {
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { listConnectorSettleStates } from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
+import { useLocalState } from "@/lib/local-hooks";
 
 let requestListener:
   ((workItemId: string, prefill?: BacklogSettleChange) => void) | null = null;
@@ -98,14 +103,21 @@ export function settleBacklogItem(
 }
 
 /**
- * Settles the item, with Undo in a toast. A change to the source is sent when
- * the toast closes, so Undo cancels it (ADR 0001).
+ * Settles the item, with Undo in a toast. A parent with open subitems asks
+ * whether they settle too, unless the user's setting answers. A change to the
+ * source is sent when the toast closes, so Undo cancels it (ADR 0001).
  */
-export function settleBacklogItemWithUndo(
+export async function settleBacklogItemWithUndo(
   workItem: LocalWorkItem,
   change?: BacklogSettleChange,
 ) {
-  const token = localStore.settleWorkItem(workItem._id, change);
+  const includeSubitems = await resolveIncludeSubitems(workItem, "settle");
+  if (includeSubitems === null) return false;
+
+  const token = localStore.settleWorkItem(workItem._id, change, {
+    includeSubitems,
+  });
+  if (!token) return false;
   const settled = localStore
     .snapshot()
     .workItems.find((candidate) => candidate._id === workItem._id);
@@ -119,6 +131,7 @@ export function settleBacklogItemWithUndo(
       ? () => void sendPendingSourceWrites([workItem._id])
       : undefined,
   });
+  return true;
 }
 
 type StatesLoad =
@@ -132,10 +145,12 @@ type StatesLoad =
  * stays local. Mounted once in the app shell.
  */
 export function SettleDialogHost() {
+  const state = useLocalState();
   const [workItem, setWorkItem] = useState<LocalWorkItem | null>(null);
   const [load, setLoad] = useState<StatesLoad>({ status: "loading" });
   const [stateName, setStateName] = useState("");
   const [priority, setPriority] = useState("");
+  const [pending, setPending] = useState(false);
 
   useEffect(() => {
     const listener = (id: string, prefill?: BacklogSettleChange) => {
@@ -188,18 +203,28 @@ export function SettleDialogHost() {
     findSettleState(states, workItem?.sourceStatusLabel),
   );
   const change = buildSettleChange(states, stateName, priority);
-  const archives = change?.state?.done === true;
+  const currentItem = state.workItems.find(
+    (item) => item._id === workItem?._id,
+  );
+  const archives = Boolean(
+    currentItem &&
+    settleArchivesWorkItem(state, currentItem, change ?? undefined),
+  );
 
-  function settle() {
-    if (!workItem || !change) return;
-    settleBacklogItemWithUndo(workItem, change);
-    setWorkItem(null);
+  async function settle() {
+    if (!workItem || !change || pending) return;
+    setPending(true);
+    try {
+      if (await settleBacklogItemWithUndo(workItem, change)) setWorkItem(null);
+    } finally {
+      setPending(false);
+    }
   }
 
   return (
     <Dialog
       open={Boolean(workItem)}
-      onOpenChange={(open) => !open && setWorkItem(null)}
+      onOpenChange={(open) => !open && !pending && setWorkItem(null)}
     >
       <DialogContent className="max-w-sm gap-4">
         <DialogHeader className="gap-1">
@@ -212,7 +237,7 @@ export function SettleDialogHost() {
           className="flex flex-col gap-4"
           onSubmit={(event) => {
             event.preventDefault();
-            settle();
+            void settle();
           }}
         >
           <Field>
@@ -221,7 +246,7 @@ export function SettleDialogHost() {
               <NativeSelect
                 id="settle-state"
                 value={stateName}
-                disabled={load.status !== "ready"}
+                disabled={load.status !== "ready" || pending}
                 onChange={(event) => setStateName(event.target.value)}
               >
                 {!currentListed ? (
@@ -255,6 +280,7 @@ export function SettleDialogHost() {
             <FieldContent>
               <Input
                 id="settle-priority"
+                disabled={pending}
                 inputMode="numeric"
                 value={priority}
                 aria-invalid={change === null}
@@ -269,11 +295,12 @@ export function SettleDialogHost() {
             <Button
               type="button"
               variant="ghost"
+              disabled={pending}
               onClick={() => setWorkItem(null)}
             >
               Cancel
             </Button>
-            <Button type="submit" disabled={change === null}>
+            <Button type="submit" disabled={change === null || pending}>
               {archives ? "Archive" : "Settle"}
             </Button>
           </DialogFooter>

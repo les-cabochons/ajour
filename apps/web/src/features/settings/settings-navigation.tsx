@@ -7,6 +7,7 @@ import {
   RiListCheck3 as ListTodo,
   RiPuzzle2Line as Puzzle,
   RiSettings3Line as Settings,
+  RiFlowChart as Workflow,
 } from "@remixicon/react";
 import {
   CustomSidebar,
@@ -35,6 +36,7 @@ export function getSettingsPages(view: SettingsNavigationView) {
     { to: "/settings/general", label: "General", icon: Settings },
     { to: "/settings/plugins", label: "Plugins", icon: Puzzle },
     { to: "/settings/backlog", label: "Backlog", icon: ListTodo },
+    { to: "/settings/workflow", label: "Workflow", icon: Workflow },
     view === "narrow"
       ? { to: "/projects", label: "Projects", icon: FolderKanban }
       : { to: "/settings/projects", label: "Projects", icon: FolderKanban },

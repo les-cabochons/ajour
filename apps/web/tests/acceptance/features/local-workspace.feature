@@ -319,3 +319,48 @@ Feature: Open the local time workspace
       | Day    |
       | Week   |
       | mobile |
+
+
+  Scenario: Render Backlog preferences and settle rules once
+    Given I have no saved Ajour workspace
+    When I open the Backlog settings
+    Then the Backlog settings contain one settle rules section
+
+  Scenario: Keep an editor workflow draft after cancelling its close prompt
+    Given I have a parent editor close fixture
+    When I save its editor workflow as Done
+    Then the parent editor remains mounted while the subitem choice is pending
+    When I cancel the parent editor close prompt
+    Then the parent editor retains its Done draft and the item remains active
+    When I save its editor workflow as Done
+    And I include the child in the editor close
+    Then the editor closes after the parent and child reach Done
+
+  Scenario Outline: Discard all draft fields after an interrupted parent close
+    Given I have a parent editor close fixture
+    When I change the parent draft title and note
+    And I save its editor workflow as Done
+    Then the parent editor remains mounted while the subitem choice is pending
+    When I interrupt the mixed-field close by "<interruption>"
+    Then the parent editor retains every mixed-field draft without saving it
+    When I cancel the parent editor draft
+    Then the parent title and note remain unchanged
+
+    Examples:
+      | interruption         |
+      | dismissing the prompt |
+      | adding a subitem      |
+
+  Scenario: Save mixed draft fields after confirming a parent close
+    Given I have a parent editor close fixture
+    When I change the parent draft title and note
+    And I save its editor workflow as Done
+    And I include the child in the editor close
+    Then the editor closes after the parent and child reach Done
+    And the confirmed title and note remain saved after undoing the close
+
+  Scenario: Close existing items when their workflow state becomes Done
+    Given I have a parent editor close fixture
+    And the parent has a running entry
+    When I enable Done for In progress in Workflow settings
+    Then its existing items are archived and the running entry is saved

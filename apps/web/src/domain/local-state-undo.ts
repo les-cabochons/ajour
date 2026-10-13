@@ -15,8 +15,8 @@ const UNDO_COLLECTIONS = [
   "timers",
   "timesheetImportDrafts",
   "workItems",
-  "backlogStatuses",
-  "backlogStatusMappings",
+  "workflowStates",
+  "workflowStateMappings",
 ] as const satisfies readonly (keyof LocalAppState)[];
 
 type UndoCollection = (typeof UNDO_COLLECTIONS)[number];
@@ -31,8 +31,8 @@ const recordKeys: {
   timers: (timer) => timer._id,
   timesheetImportDrafts: (draft) => draft._id,
   workItems: (workItem) => workItem._id,
-  backlogStatuses: (status) => status._id,
-  backlogStatusMappings: (mapping) =>
+  workflowStates: (status) => status._id,
+  workflowStateMappings: (mapping) =>
     `${mapping.source}:${mapping.connectionId}:${mapping.sourceStatusKey}`,
 };
 
@@ -304,9 +304,9 @@ export function restoreUndo(
       workItems: changedTimeEntries
         ? restoreLoggedTime(state, undo)
         : restoreCollection("workItems", state, undo),
-      backlogStatuses: restoreCollection("backlogStatuses", state, undo),
-      backlogStatusMappings: restoreCollection(
-        "backlogStatusMappings",
+      workflowStates: restoreCollection("workflowStates", state, undo),
+      workflowStateMappings: restoreCollection(
+        "workflowStateMappings",
         state,
         undo,
       ),

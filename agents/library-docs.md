@@ -36,7 +36,7 @@ Use this file as the local index for important library choices. Check official d
 ## Web Domain Modules
 
 - Persisted local-state contracts and pure selectors: `apps/web/src/domain/local-state.ts`
-- Backlog status normalization, CRUD transitions, and connector mapping reconciliation: `apps/web/src/domain/backlog/backlog-status.ts`
+- Workflow state normalization, the Done flag, CRUD and ordering transitions, and source state mapping reconciliation: `apps/web/src/domain/backlog/workflow-states.ts`
 - Work-item hierarchy lookup, validation, and inherited mapping rules: `apps/web/src/domain/backlog/work-item-hierarchy.ts`
 - Work-item estimate normalization, display values, reversible logged-time adjustments, overrun tracking, and imported baselines: `apps/web/src/domain/backlog/work-item-estimates.ts`
 - Manual work-item creation, hierarchy-aware edits, ordering, deletion, and estimate-conflict decisions: `apps/web/src/domain/backlog/work-item-transitions.ts`
