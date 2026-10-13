@@ -43,11 +43,22 @@ export const codeHostReviewRequestSchema = z.object({
 });
 export type CodeHostReviewRequest = z.infer<typeof codeHostReviewRequestSchema>;
 
+export const codeHostReviewRequestEventSchema = z.object({
+  id: idSchema,
+  author: codeHostUserSchema,
+  createdAt: timeSchema,
+  includesViewer: z.boolean(),
+});
+export type CodeHostReviewRequestEvent = z.infer<
+  typeof codeHostReviewRequestEventSchema
+>;
+
 export const codeHostReviewFactSchema = z.object({
   id: idSchema,
   author: codeHostUserSchema,
   verdict: codeHostReviewVerdictSchema,
   submittedAt: timeSchema,
+  mentionsViewer: z.boolean().optional(),
 });
 export type CodeHostReviewFact = z.infer<typeof codeHostReviewFactSchema>;
 
@@ -118,7 +129,14 @@ export const codeHostPullRequestFactsSchema =
     viewerIsAuthor: z.boolean(),
     headSha: shaSchema,
     lastPushedAt: timeSchema,
+    /** Missing attribution must not trigger a return for a possibly own push. */
+    lastPushActor: codeHostUserSchema.optional(),
     reviewRequests: z.array(codeHostReviewRequestSchema).max(100),
+    /** Request events distinguish a re-request while the same reviewer is pending. */
+    reviewRequestEvents: z
+      .array(codeHostReviewRequestEventSchema)
+      .max(500)
+      .optional(),
     reviews: z.array(codeHostReviewFactSchema).max(500),
     comments: z.array(codeHostCommentFactSchema).max(2_000),
     checks: codeHostCheckStateSchema,
@@ -141,6 +159,12 @@ export type CodeHostSyncRequest = z.infer<typeof codeHostSyncRequestSchema>;
 
 export const codeHostSyncResultSchema = z.object({
   viewer: codeHostUserSchema,
+  /**
+   * The code host instance the connection talks to, such as
+   * "https://github.com". Never secret. With `viewer`, it lets Ajour
+   * recognize a replacement connection to the same account.
+   */
+  instanceUrl: z.string().url().optional(),
   pullRequests: z.array(codeHostPullRequestFactsSchema).max(1_000),
 });
 export type CodeHostSyncResult = z.infer<typeof codeHostSyncResultSchema>;

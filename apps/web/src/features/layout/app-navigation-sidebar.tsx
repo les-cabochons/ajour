@@ -1,4 +1,10 @@
-import { useRef, type KeyboardEvent, type PointerEvent } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+} from "react";
 import { Link } from "@tanstack/react-router";
 import {
   RiFolderChartLine as FolderKanban,
@@ -6,9 +12,11 @@ import {
   RiSettings3Line as Settings,
   RiSideBarLine as SidebarIcon,
   RiTimerLine as Timer,
+  RiGitPullRequestLine as PullRequestIcon,
 } from "@remixicon/react";
 import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Sidebar,
   SidebarContent,
@@ -26,6 +34,8 @@ import {
 } from "@/components/tooltip-button";
 import type { AppSidebarState } from "@/lib/app-sidebar";
 import { SidebarBacklogList } from "@/features/layout/sidebar-backlog-list";
+import { SidebarPullRequests } from "@/features/layout/sidebar-pull-requests";
+import { useCodeHostConnections } from "@/lib/code-host-connections";
 import {
   SIDEBAR_MIN_WIDTH,
   clampSidebarWidth,
@@ -136,7 +146,7 @@ const primaryItems = [
 
 export function isAppNavigationItemActive(
   pathname: string,
-  to: "/time/$date" | "/backlog" | "/projects" | "/settings",
+  to: "/time/$date" | "/backlog" | "/projects" | "/settings" | "/pull-requests",
 ) {
   if (to === "/time/$date") {
     return pathname.startsWith("/time/");
@@ -149,6 +159,8 @@ export function isAppNavigationItemActive(
   if (to === "/settings") {
     return pathname.startsWith("/settings");
   }
+  if (to === "/pull-requests")
+    return pathname === to || pathname.startsWith(`${to}/`);
 
   return pathname === to;
 }
@@ -203,6 +215,23 @@ export function AppNavigationSidebar({
   const isSettingsActive = isAppNavigationItemActive(pathname, "/settings");
   const showsLogo = state === "expanded" || isRailForced;
   const showsToggle = !isRailForced;
+  const { groups } = useCodeHostConnections();
+  const [workList, setWorkList] = useState("backlog");
+  useEffect(() => {
+    if (pathname.startsWith("/pull-requests")) setWorkList("pull-requests");
+    else if (pathname.startsWith("/backlog")) setWorkList("backlog");
+  }, [pathname]);
+  const items = groups.length
+    ? [
+        ...primaryItems,
+        {
+          to: "/pull-requests",
+          label: "Pull requests",
+          icon: PullRequestIcon,
+          shortcut: undefined,
+        } as const,
+      ]
+    : primaryItems;
 
   return (
     <Sidebar
@@ -227,7 +256,7 @@ export function AppNavigationSidebar({
         <SidebarGroup>
           <SidebarGroupContent>
             <SidebarMenu>
-              {primaryItems.map((item) => {
+              {items.map((item) => {
                 const Icon = item.icon;
                 const isActive = isAppNavigationItemActive(pathname, item.to);
                 return (
@@ -266,7 +295,44 @@ export function AppNavigationSidebar({
           </SidebarGroupContent>
         </SidebarGroup>
         {state === "expanded" ? (
-          <SidebarBacklogList pathname={pathname} />
+          groups.length ? (
+            <Tabs
+              value={workList}
+              onValueChange={(value) => {
+                if (value === "backlog" || value === "pull-requests")
+                  setWorkList(value);
+              }}
+              className="min-h-0 flex-1 gap-0"
+            >
+              <TabsList
+                variant="line"
+                activateOnFocus
+                aria-label="Sidebar work lists"
+                className="mx-2 mb-2 w-auto shrink-0"
+              >
+                <TabsTrigger value="backlog" className="px-2">
+                  Backlog
+                </TabsTrigger>
+                <TabsTrigger value="pull-requests" className="px-2">
+                  Pull requests
+                </TabsTrigger>
+              </TabsList>
+              <TabsContent
+                value="backlog"
+                className="flex min-h-0 flex-1 flex-col"
+              >
+                <SidebarBacklogList pathname={pathname} />
+              </TabsContent>
+              <TabsContent
+                value="pull-requests"
+                className="flex min-h-0 flex-1 flex-col"
+              >
+                <SidebarPullRequests pathname={pathname} />
+              </TabsContent>
+            </Tabs>
+          ) : (
+            <SidebarBacklogList pathname={pathname} />
+          )
         ) : null}
       </SidebarContent>
 

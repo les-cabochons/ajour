@@ -7,7 +7,7 @@ import {
   type CSSProperties,
 } from "react";
 import { createPortal } from "react-dom";
-import { pluginHasConnector } from "@ajour/shared";
+import { pluginHasConnector, pluginHasCodeHost } from "@ajour/shared";
 import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   RiAddLine as Plus,
@@ -48,7 +48,11 @@ import { SubmitWeekButton } from "@/features/time/submit-week-controls";
 import { formatClockDuration } from "@/domain/time/duration";
 import { getLocalProjectDisplayName } from "@/domain/local-state";
 import { findPinnedTask } from "@/domain/projects/project-transitions";
-import { getConnectorsOverview, syncConnectorConnection } from "@/lib/app-api";
+import {
+  getConnectorsOverview,
+  syncConnectorConnection,
+  syncCodeHostConnection,
+} from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
 import {
   getTimerContributionMs,
@@ -205,7 +209,10 @@ function ConnectorAutoSyncScheduler() {
         const overview = await getConnectorsOverview();
         const now = Date.now();
         const dueConnections = overview.connectionGroups.flatMap((group) =>
-          !group.enabled || !pluginHasConnector(group.plugin)
+          overview.pluginsEnabled === false ||
+          !group.enabled ||
+          (!pluginHasConnector(group.plugin) &&
+            !pluginHasCodeHost(group.plugin))
             ? []
             : group.connections
                 .filter((connection) => {
@@ -224,6 +231,7 @@ function ConnectorAutoSyncScheduler() {
                 })
                 .map((connection) => ({
                   pluginId: group.plugin.id,
+                  plugin: group.plugin,
                   connection,
                 })),
         );
@@ -233,27 +241,53 @@ function ConnectorAutoSyncScheduler() {
             break;
           }
 
-          const failureKey = `${dueConnection.pluginId}:${dueConnection.connection.id}`;
-          try {
-            await syncConnectorConnection(
-              dueConnection.pluginId,
-              dueConnection.connection.id,
-              { trigger: "auto" },
-            );
-            loopState.shownFailures.delete(failureKey);
-          } catch (error) {
-            console.error(
-              `Connector auto sync failed for "${dueConnection.pluginId}".`,
-              error,
-            );
-            const message =
-              error instanceof Error ? error.message : "Unknown error";
-            if (loopState.shownFailures.get(failureKey) !== message) {
-              loopState.shownFailures.set(failureKey, message);
-              showErrorToast({
-                title: `${dueConnection.connection.label} sync failed`,
-                description: message,
-              });
+          const operations = [
+            ...(pluginHasConnector(dueConnection.plugin)
+              ? [
+                  {
+                    capability: "connector",
+                    run: () =>
+                      syncConnectorConnection(
+                        dueConnection.pluginId,
+                        dueConnection.connection.id,
+                        { trigger: "auto" },
+                      ),
+                  },
+                ]
+              : []),
+            ...(pluginHasCodeHost(dueConnection.plugin)
+              ? [
+                  {
+                    capability: "codeHost",
+                    run: () =>
+                      syncCodeHostConnection(
+                        dueConnection.pluginId,
+                        dueConnection.connection.id,
+                      ),
+                  },
+                ]
+              : []),
+          ];
+          for (const operation of operations) {
+            if (loopState.cancelled) break;
+            const failureKey = `${dueConnection.pluginId}:${dueConnection.connection.id}:${operation.capability}`;
+            try {
+              await operation.run();
+              loopState.shownFailures.delete(failureKey);
+            } catch (error) {
+              console.error(
+                `Connector auto sync failed for "${dueConnection.pluginId}".`,
+                error,
+              );
+              const message =
+                error instanceof Error ? error.message : "Unknown error";
+              if (loopState.shownFailures.get(failureKey) !== message) {
+                loopState.shownFailures.set(failureKey, message);
+                showErrorToast({
+                  title: `${dueConnection.connection.label} sync failed`,
+                  description: message,
+                });
+              }
             }
           }
         }

@@ -4,14 +4,32 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Current Baseline
 
+- [x] Issue #78 adds local pull request facts, lifecycle, Active/Settled/Recently
+      closed groups, a summary route, conditional navigation and the active
+      sidebar list. A follow-up replaces the stacked lists with Backlog and
+      Pull requests tabs. The early snooze return setting
+      applies to pull requests and synced backlog source changes. Deactivation
+      retains local choices; connection removal confirms before deleting them.
+- [x] Issue #78 verification passed 700 workspace unit tests, type checks,
+      production builds and 53 Chromium scenarios, including nine new pull
+      request scenarios. Six resource-interrupted scenarios passed when retried
+      with one worker. A live GitHub plugin sync
+      displayed six real authored Ajour pull requests. Independent review found
+      no remaining blockers after lifecycle corrections.
+- [x] The sidebar tab follow-up passed all 11 pull request Chromium scenarios,
+      including keyboard switching, a 200px sidebar and code-host deactivation.
+- [ ] Merge issue #78 and its GitHub event-facts companion after the capability
+      and catalog stack. Full review content, time actions, repository rules and
+      Browse remain in #79 through #82.
+
 - [x] Catalog schema version 2 lists connector, code host, and schema capabilities
       separately from feature badges. Plugins with several capabilities appear
       under each matching filter, and code hosts can use managed downloads.
 - [x] The built-in catalog includes GitHub and targets plugin API version 2 for
       GitHub, Jira, and Azure DevOps. The Workday schema retains its separate API.
 - [ ] Merge the catalog and plugin-index follow-ups with the plugin API version 2
-      provider packages. Pull request persistence and review UI remain later work
-      in the pull requests issue map.
+      provider packages. Full review UI remains later work in the pull requests
+      issue map.
 
 - [x] Monorepo structure identified.
 - [x] Local-first privacy boundary documented.

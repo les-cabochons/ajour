@@ -1,4 +1,5 @@
 import { RiPlayLine, RiTimeLine, RiAlarmWarningLine } from "@remixicon/react";
+import { openModifiedSourceClick } from "@/lib/source-navigation";
 import type { KeyboardEvent, PointerEvent } from "react";
 import {
   ObjectActionsButton,
@@ -257,6 +258,7 @@ export function BacklogItemSurface({
       (e.target instanceof Element && e.target.closest("button,a,input"))
     )
       return;
+    if (openModifiedSourceClick(e, item.sourceUrl)) return;
     e.currentTarget instanceof HTMLElement && e.currentTarget.focus();
     onSelect();
   };

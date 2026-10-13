@@ -14,6 +14,7 @@ import type {
   PriorityLevel,
 } from "@/domain/backlog/priority";
 import type { LocalProjectIcon } from "@/domain/projects/project-icon";
+import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
 
 export interface LocalProject {
   _id: string;
@@ -211,6 +212,7 @@ export interface UserPreferences {
   weeklyCapacityTargets: WeeklyCapacityTargets;
   warnWhenOverCapacity: boolean;
   warnWhenSubmittingUnderCapacity: boolean;
+  changesEndSnoozeEarly?: boolean;
   closeParentSubitems: CloseParentSubitems;
 }
 
@@ -478,6 +480,7 @@ export interface LocalAppState {
   timesheetEntries: LocalTimesheetEntry[];
   timesheetImportDrafts: LocalTimesheetImportDraft[];
   workItems: LocalWorkItem[];
+  pullRequests?: LocalPullRequest[];
   workflowStates: LocalWorkflowState[];
   workflowStateMappings: LocalWorkflowStateMapping[];
   workflowStateWriteRules: LocalWorkflowStateWriteRule[];

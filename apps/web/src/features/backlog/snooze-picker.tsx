@@ -16,7 +16,8 @@ import {
 } from "@/features/backlog/snooze-presets";
 import { localStore } from "@/lib/local-store";
 
-let requestListener: ((workItemId: string) => void) | null = null;
+type SnoozeTarget = { kind: "backlog-item" | "pull-request"; id: string };
+let requestListener: ((target: SnoozeTarget) => void) | null = null;
 
 /**
  * Opens the Snooze… picker for a backlog item. Snooze… in any action menu, the
@@ -24,7 +25,11 @@ let requestListener: ((workItemId: string) => void) | null = null;
  * app shell has mounted the picker.
  */
 export function requestSnooze(workItemId: string) {
-  requestListener?.(workItemId);
+  requestListener?.({ kind: "backlog-item", id: workItemId });
+}
+
+export function requestPullRequestSnooze(id: string) {
+  requestListener?.({ kind: "pull-request", id });
 }
 
 /** Snoozes the item, with Undo in a toast. */
@@ -41,15 +46,15 @@ export function snoozeBacklogItem(workItemId: string, until: number) {
 
 /** The Snooze… dialog: the presets, then a custom date and time. Mounted once in the app shell. */
 export function SnoozePickerHost() {
-  const [workItemId, setWorkItemId] = useState<string | null>(null);
+  const [target, setTarget] = useState<SnoozeTarget | null>(null);
   const [custom, setCustom] = useState("");
   const [now, setNow] = useState(() => Date.now());
 
   useEffect(() => {
-    const listener = (id: string) => {
+    const listener = (target: SnoozeTarget) => {
       setNow(Date.now());
       setCustom("");
-      setWorkItemId(id);
+      setTarget(target);
     };
     requestListener = listener;
     return () => {
@@ -57,30 +62,35 @@ export function SnoozePickerHost() {
     };
   }, []);
 
-  const workItem = workItemId
-    ? localStore.snapshot().workItems.find((item) => item._id === workItemId)
-    : undefined;
+  const state = localStore.snapshot();
+  const workItem =
+    target?.kind === "backlog-item"
+      ? state.workItems.find((item) => item._id === target.id)
+      : undefined;
+  const pullRequest =
+    target?.kind === "pull-request"
+      ? state.pullRequests?.find((item) => item._id === target.id)
+      : undefined;
+  const title = workItem?.title ?? pullRequest?.facts.title;
   const customUntil = custom ? new Date(custom).getTime() : Number.NaN;
   const customIsValid = Number.isFinite(customUntil) && customUntil > now;
 
   function choose(until: number) {
-    if (workItemId) {
-      snoozeBacklogItem(workItemId, until);
-    }
-    setWorkItemId(null);
+    if (target?.kind === "backlog-item") snoozeBacklogItem(target.id, until);
+    else if (target)
+      localStore.changePullRequest(target.id, { type: "snooze", until });
+    setTarget(null);
   }
 
   return (
     <Dialog
-      open={Boolean(workItem)}
-      onOpenChange={(open) => !open && setWorkItemId(null)}
+      open={Boolean(title)}
+      onOpenChange={(open) => !open && setTarget(null)}
     >
       <DialogContent className="max-w-sm gap-4">
         <DialogHeader className="gap-1">
           <DialogTitle>Snooze until</DialogTitle>
-          <DialogDescription className="truncate">
-            {workItem?.title}
-          </DialogDescription>
+          <DialogDescription className="truncate">{title}</DialogDescription>
         </DialogHeader>
         <div className="flex flex-col gap-1">
           {getSnoozePresets(now).map((preset) => (

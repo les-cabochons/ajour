@@ -278,11 +278,34 @@ export function SettingsGeneralPage() {
       <section className="settings-section">
         <h2 className="settings-section-title">Sidebar</h2>
         <p className="settings-section-desc">
-          How the backlog items in the sidebar look on this device.
+          How items in the sidebar look and return on this device.
         </p>
 
         <AppPanel>
           <div className="grid gap-3 desktop:grid-cols-2">
+            <Field
+              orientation="horizontal"
+              className="rounded-2xl border border-border/70 p-4"
+            >
+              <div className="flex-1">
+                <FieldLabel htmlFor="changes-end-snooze">
+                  Changes end a snooze early
+                </FieldLabel>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Return pull requests when someone asks you to act, and backlog
+                  items when their source state or priority changes.
+                </p>
+              </div>
+              <Switch
+                id="changes-end-snooze"
+                checked={preferences.changesEndSnoozeEarly === true}
+                onCheckedChange={(checked) =>
+                  localStore.setUserPreferences({
+                    changesEndSnoozeEarly: checked,
+                  })
+                }
+              />
+            </Field>
             <Field
               orientation="horizontal"
               className="rounded-2xl border border-border/70 p-4"

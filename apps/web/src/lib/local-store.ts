@@ -13,6 +13,14 @@ import {
   type TeamSettings,
 } from "@ajour/shared";
 import { todayIsoDate } from "@/lib/utils";
+import {
+  changePullRequest,
+  normalizePullRequests,
+  reattachPullRequests,
+  reconcilePullRequests,
+  type PullRequestCommand,
+} from "@/domain/pull-requests/pull-request-lifecycle";
+import type { CodeHostSyncResult } from "@ajour/shared";
 import type {
   ConnectorImportCandidate,
   ConnectorDoneWorkItem,
@@ -248,6 +256,7 @@ const defaultUserPreferences: UserPreferences = {
   },
   warnWhenOverCapacity: true,
   warnWhenSubmittingUnderCapacity: true,
+  changesEndSnoozeEarly: false,
   closeParentSubitems: "ask",
 };
 
@@ -284,6 +293,7 @@ function createDefaultState(): LocalAppState {
     timesheetEntries: [],
     timesheetImportDrafts: [],
     workItems: [],
+    pullRequests: [],
     workflowStates: [],
     workflowStateMappings: [],
     workflowStateWriteRules: [],
@@ -407,6 +417,7 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
         defaults.timesheetImportDrafts,
       ),
       workItems,
+      pullRequests: normalizePullRequests(persistedState.pullRequests),
       workflowStates,
       workflowStateMappings,
       settleRules: normalizeSettleRules(persistedState.settleRules),
@@ -446,6 +457,8 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
       userPreferences: {
         ...defaults.userPreferences,
         ...persistedState.userPreferences,
+        changesEndSnoozeEarly:
+          persistedState.userPreferences?.changesEndSnoozeEarly === true,
         updateTrack:
           persistedState.userPreferences?.updateTrack === "nightly"
             ? "nightly"
@@ -872,6 +885,55 @@ export const localStore = {
     };
   },
   snapshot: readState,
+  syncPullRequests(
+    source: {
+      pluginId: string;
+      pluginName: string;
+      connectionId: string;
+      connectionLabel: string;
+    },
+    result: CodeHostSyncResult,
+    options: { reattachFrom?: string } = {},
+  ) {
+    return updateState((state) => ({
+      ...state,
+      pullRequests: reconcilePullRequests(
+        options.reattachFrom
+          ? reattachPullRequests(
+              state.pullRequests ?? [],
+              source.pluginId,
+              options.reattachFrom,
+              source,
+            )
+          : (state.pullRequests ?? []),
+        source,
+        result,
+        {
+          now: Date.now(),
+          createId: () => createId("pull_request"),
+          changesEndSnoozeEarly:
+            state.userPreferences.changesEndSnoozeEarly === true,
+        },
+      ),
+    }));
+  },
+  changePullRequest(id: string, command: PullRequestCommand) {
+    return updateState((state) => ({
+      ...state,
+      pullRequests: (state.pullRequests ?? []).map((item) =>
+        item._id === id ? changePullRequest(item, command, Date.now()) : item,
+      ),
+    }));
+  },
+  removeConnectionPullRequests(pluginId: string, connectionId: string) {
+    return updateState((state) => ({
+      ...state,
+      pullRequests: (state.pullRequests ?? []).filter(
+        (item) =>
+          item.pluginId !== pluginId || item.connectionId !== connectionId,
+      ),
+    }));
+  },
   createTeam(
     teamName: string,
     teamSlug: string,

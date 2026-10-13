@@ -551,6 +551,26 @@ export interface BacklogSettleChange {
   priority?: number;
 }
 
+/** Only source state or imported priority changes can end a snooze early. */
+export function sourceChangeSnooze(
+  previous: LocalWorkItem,
+  incoming: LocalWorkItem,
+  enabled: boolean,
+  now: number,
+): Partial<Pick<LocalWorkItem, "snoozedUntil" | "returnedAt">> {
+  if (
+    !enabled ||
+    previous.source === "manual" ||
+    previous.status !== "active" ||
+    previous.pendingSourceWrite ||
+    (previous.snoozedUntil ?? 0) <= now ||
+    (previous.sourceStatusKey === incoming.sourceStatusKey &&
+      previous.importedPriority === incoming.importedPriority)
+  )
+    return {};
+  return { snoozedUntil: undefined, returnedAt: now };
+}
+
 /** Keeps only the fields that differ from the item's source values. */
 function getSourceWrite(
   workItem: LocalWorkItem,

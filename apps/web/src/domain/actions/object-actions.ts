@@ -192,6 +192,7 @@ export interface BacklogItemActionOptions {
   isEditing?: boolean;
   /** Whether Settle opens the settle dialog, so its label ends with "…". */
   settleOpensDialog?: boolean;
+  sourceName?: string;
   /**
    * Other source states of the item's workflow state it can write. Change
    * source state… is listed only when there are some.
@@ -277,7 +278,18 @@ export function getBacklogItemActions(
   }
 
   if (item.sourceUrl) {
-    actions.push({ id: "open-in-source", label: "Open in source" });
+    const sourceName =
+      options.sourceName ??
+      (item.source === "azure_devops"
+        ? "Azure DevOps"
+        : item.source === "jira"
+          ? "Jira"
+          : "source");
+    actions.push({
+      id: "open-in-source",
+      label: `Open in ${sourceName}`,
+      hint: "Ctrl-click or Cmd-click",
+    });
   }
 
   if (item.source !== "manual") {

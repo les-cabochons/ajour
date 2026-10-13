@@ -17,6 +17,7 @@ import {
   applyWorkflowStateLifecycle,
   archiveBacklogItem,
   restoreBacklogItem,
+  sourceChangeSnooze,
   unsettleBacklogItem,
 } from "@/domain/backlog/backlog-item-lifecycle";
 import {
@@ -114,6 +115,7 @@ function mergeConnectorWorkItem(
   mappedWorkflowStateId: string | undefined,
   priorityRanges: PriorityRanges,
   factories: ConnectorWorkItemFactories,
+  changesEndSnoozeEarly: boolean,
   preserveSource: boolean,
 ): LocalWorkItem {
   const nextImportedState = createConnectorWorkItem(
@@ -206,6 +208,12 @@ function mergeConnectorWorkItem(
 
   return {
     ...existingWorkItem,
+    ...sourceChangeSnooze(
+      existingWorkItem,
+      nextImportedState,
+      changesEndSnoozeEarly,
+      factories.now(),
+    ),
     title: nextImportedState.title,
     note: existingWorkItem.note,
     sourceId: nextImportedState.sourceId,
@@ -386,6 +394,7 @@ export function importConnectorWorkItems(
           workItem.connectionId,
         ),
         factories,
+        state.userPreferences.changesEndSnoozeEarly === true,
         pendingMoveItemIds.has(existingWorkItem._id),
       );
       if (JSON.stringify(mergedWorkItem) === JSON.stringify(existingWorkItem)) {

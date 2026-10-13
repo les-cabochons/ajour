@@ -54,6 +54,104 @@ import {
   priorityRangesFromConnectorScale,
   type PriorityRanges,
 } from "@/domain/backlog/priority";
+import {
+  codeHostSyncResultSchema,
+  pluginHasCodeHost,
+  type CodeHostSyncResult,
+} from "@ajour/shared";
+import {
+  findRetainedConnection,
+  trackedPullRequestRefs,
+} from "@/domain/pull-requests/pull-request-lifecycle";
+
+const pullRequestSyncs = new Map<string, Promise<CodeHostSyncResult>>();
+const connectionGenerations = new Map<string, number>();
+const connectionKey = (pluginId: string, connectionId: string) =>
+  JSON.stringify([pluginId, connectionId]);
+
+/** Deduplicates manual and scheduled calls, and rejects results from a removed connection. */
+export function syncCodeHostConnection(
+  pluginId: string,
+  connectionId: string,
+): Promise<CodeHostSyncResult> {
+  const key = connectionKey(pluginId, connectionId);
+  const pending = pullRequestSyncs.get(key);
+  if (pending) return pending;
+  const generation = connectionGenerations.get(key) ?? 0;
+  const run = async () => {
+    const request = (tracked: { repository: string; number: number }[]) =>
+      appApiRequest(
+        `/api/code-hosts/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/syncPullRequests`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tracked }),
+        },
+        codeHostSyncResultSchema,
+      );
+    let result = await request(
+      trackedPullRequestRefs(
+        localStore.snapshot().pullRequests ?? [],
+        pluginId,
+        [connectionId],
+      ),
+    );
+    await getConnectorsOverview();
+    const overview = getCachedConnectorsOverview()!;
+    const group = overview.connectionGroups.find(
+      (entry) => entry.plugin.id === pluginId,
+    );
+    const connection = group?.connections.find(
+      (entry) => entry.id === connectionId,
+    );
+    if (
+      (connectionGenerations.get(key) ?? 0) !== generation ||
+      overview.pluginsEnabled === false ||
+      !group?.enabled ||
+      !pluginHasCodeHost(group.plugin) ||
+      !connection
+    ) {
+      return result;
+    }
+    const source = {
+      pluginId,
+      pluginName: group.plugin.displayName,
+      connectionId,
+      connectionLabel: connection.label,
+    };
+    // A reinstalled plugin gives connections new ids. Restore the records the
+    // uninstall kept, after asking about them so the ones that closed report.
+    const reattachFrom = findRetainedConnection(
+      localStore.snapshot().pullRequests ?? [],
+      source,
+      result,
+      new Set(group.connections.map((entry) => entry.id)),
+    );
+    if (reattachFrom) {
+      result = await request(
+        trackedPullRequestRefs(
+          localStore.snapshot().pullRequests ?? [],
+          pluginId,
+          [connectionId, reattachFrom],
+        ),
+      );
+      if ((connectionGenerations.get(key) ?? 0) !== generation) {
+        return result;
+      }
+    }
+    localStore.syncPullRequests(
+      source,
+      result,
+      reattachFrom ? { reattachFrom } : {},
+    );
+    return result;
+  };
+  const promise = run().finally(() => {
+    if (pullRequestSyncs.get(key) === promise) pullRequestSyncs.delete(key);
+  });
+  pullRequestSyncs.set(key, promise);
+  return promise;
+}
 
 export type SyncConnectorConnectionResult = ConnectorSyncResult & {
   backlogImportedCount: number;
@@ -422,6 +520,10 @@ export async function saveConnectorConnection(
     connectorConnectionSaveResponseSchema,
   );
   cacheConnectorsOverview(result.overview);
+  if (id) {
+    const key = connectionKey(pluginId, id);
+    connectionGenerations.set(key, (connectionGenerations.get(key) ?? 0) + 1);
+  }
   return result;
 }
 
@@ -429,7 +531,9 @@ export async function deleteConnectorConnection(
   pluginId: string,
   connectionId: string,
 ): Promise<ConnectorsOverview> {
-  return cacheConnectorsOverview(
+  const key = connectionKey(pluginId, connectionId);
+  connectionGenerations.set(key, (connectionGenerations.get(key) ?? 0) + 1);
+  const overview = cacheConnectorsOverview(
     await appApiRequest(
       `/api/connectors/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}`,
       {
@@ -438,6 +542,8 @@ export async function deleteConnectorConnection(
       connectorsOverviewSchema,
     ),
   );
+  localStore.removeConnectionPullRequests(pluginId, connectionId);
+  return overview;
 }
 
 export function syncConnectorConnection(

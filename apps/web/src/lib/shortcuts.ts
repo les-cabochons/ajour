@@ -224,7 +224,7 @@ export const SHORTCUTS: readonly ShortcutDefinition[] = [
   },
   {
     id: "item.settle",
-    label: "Settle a backlog item",
+    label: "Settle a backlog item or pull request",
     scope: "item",
     keys: [{ key: "e" }],
   },
@@ -236,7 +236,7 @@ export const SHORTCUTS: readonly ShortcutDefinition[] = [
   },
   {
     id: "item.snooze",
-    label: "Snooze a backlog item",
+    label: "Snooze a backlog item or pull request",
     scope: "item",
     keys: [{ key: "b" }],
   },

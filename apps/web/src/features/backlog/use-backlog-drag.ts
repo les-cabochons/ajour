@@ -119,6 +119,9 @@ export function useBacklogDrag({
         originKey,
       ) ||
       event.button !== 0 ||
+      // Ctrl or Cmd click opens the item's source instead.
+      event.ctrlKey ||
+      event.metaKey ||
       !(event.target instanceof Element) ||
       !event.currentTarget.contains(event.target) ||
       event.target.closest('button,input,a,textarea,select,[role="menu"]')
