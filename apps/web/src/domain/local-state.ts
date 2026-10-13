@@ -177,7 +177,14 @@ export interface LocalTimesheetImportDraft {
   importedAt: number;
 }
 
-export type BacklogSortMode = "custom" | "priority_asc" | "priority_desc";
+/** The Backlog page's ordering, which the sidebar shares. */
+export type BacklogSortMode =
+  | "custom"
+  | "priority_asc"
+  | "priority_desc"
+  | "created"
+  | "remaining"
+  | "title";
 
 export type ThemeMode = "system" | "dark" | "light";
 export type UpdateTrack = "stable" | "nightly";
@@ -361,6 +368,8 @@ export interface LocalPendingSourceWrite {
     /** Set by a move, which a failed write undoes. */
     workflowStateId?: string;
     importedWorkflowStateId?: string;
+    /** A drag's changed order. Restore it only while that order is unchanged. */
+    workItemOrder?: { before: string[]; after: string[] };
     carriedChildren?: Array<{
       id: string;
       before: LocalWorkItemMoveSnapshot;

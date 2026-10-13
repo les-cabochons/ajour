@@ -167,7 +167,13 @@ async function resolveSourceWrite(
 export async function moveBacklogItemWithUndo(
   workItem: LocalWorkItem,
   workflowStateId: string | undefined,
-  { patch }: { patch?: Omit<WorkItemPatch, "workflowStateId"> } = {},
+  {
+    patch,
+    orderedIds,
+  }: {
+    patch?: Omit<WorkItemPatch, "workflowStateId">;
+    orderedIds?: string[];
+  } = {},
 ) {
   const state = localStore.snapshot();
   workItem =
@@ -265,6 +271,7 @@ export async function moveBacklogItemWithUndo(
     localStore.moveWorkItemToState(workItem._id, workflowStateId, {
       includeSubitems,
       sourceWrites,
+      orderedIds,
     }),
     {
       title: closes

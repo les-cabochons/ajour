@@ -12,7 +12,10 @@ import {
   getWorkItemParentKey,
   isSubtaskWorkItem,
 } from "@/domain/backlog/work-item-hierarchy";
-import type { WorkItemFactories } from "@/domain/backlog/work-item-transitions";
+import {
+  reorderWorkItems,
+  type WorkItemFactories,
+} from "@/domain/backlog/work-item-transitions";
 import {
   findMappedWorkflowStateId,
   getFirstDoneWorkflowState,
@@ -24,6 +27,7 @@ import {
   getWorkItemPriorityRanges,
   type PriorityRanges,
 } from "@/domain/backlog/priority";
+import { orderBacklogItems } from "@/domain/backlog/backlog-view";
 import { saveTimer } from "@/domain/time/timer-transitions";
 
 /**
@@ -37,6 +41,7 @@ export interface CloseSubitemsOptions {
 }
 
 export interface MoveBacklogItemOptions extends CloseSubitemsOptions {
+  orderedIds?: string[];
   /**
    * The source state to write for each moved item, by item id. The item shows
    * it at once, and the write is sent after the Undo window (ADR 0001).
@@ -316,7 +321,10 @@ export function moveBacklogItemToState(
     options,
   );
   const writes = options.sourceWrites ?? {};
-  if (Object.keys(writes).length === 0) return moved;
+  if (Object.keys(writes).length === 0)
+    return options.orderedIds
+      ? reorderWorkItems(moved, options.orderedIds)
+      : moved;
 
   const writtenState = {
     ...moved,
@@ -389,7 +397,7 @@ export function moveBacklogItemToState(
   };
   // Children receive their own source writes in this same pass. Record their
   // final optimistic lifecycle, including the written archive source state.
-  return {
+  const recoveryState = {
     ...writtenState,
     workItems: writtenState.workItems.map((item) => {
       const write = item.pendingSourceWrite;
@@ -413,6 +421,54 @@ export function moveBacklogItemToState(
       };
     }),
   };
+  if (!options.orderedIds) return recoveryState;
+  const reordered = reorderWorkItems(recoveryState, options.orderedIds);
+  const pending = reordered.workItems.find(
+    (item) => item._id === workItemId,
+  )?.pendingSourceWrite;
+  if (!pending) return reordered;
+  // Coalesced moves keep the original order while retaining unrelated edits.
+  const baseline = restoreSourceWriteOrder(
+    state,
+    target.pendingSourceWrite?.previous.workItemOrder,
+  );
+  const before = baseline.workItems.map((item) => item._id);
+  const after = reordered.workItems.map((item) => item._id);
+  const changedIds = new Set(before.filter((id, index) => after[index] !== id));
+  return updateOne(reordered, workItemId, (item) => ({
+    ...item,
+    pendingSourceWrite: {
+      ...pending,
+      previous: {
+        ...pending.previous,
+        workItemOrder: changedIds.size
+          ? {
+              before: before.filter((id) => changedIds.has(id)),
+              after: after.filter((id) => changedIds.has(id)),
+            }
+          : undefined,
+      },
+    },
+  }));
+}
+
+/** Restores only the drag's changed slots, preserving new items and later edits. */
+function restoreSourceWriteOrder(
+  state: LocalAppState,
+  order: LocalPendingSourceWrite["previous"]["workItemOrder"],
+): LocalAppState {
+  if (!order) return state;
+  const affectedIds = new Set(order.after);
+  const current = state.workItems
+    .filter((item) => affectedIds.has(item._id))
+    .map((item) => item._id);
+  const existingIds = new Set(current);
+  const expected = order.after.filter((id) => existingIds.has(id));
+  if (current.some((id, index) => id !== expected[index])) return state;
+  return reorderWorkItems(
+    state,
+    order.before.filter((id) => existingIds.has(id)),
+  );
 }
 
 function moveWithoutWrites(
@@ -785,6 +841,16 @@ export function completeSourceWrite(
           workflowStateId,
           importedWorkflowStateId: sent.importedWorkflowStateId,
           lifecycle,
+          workItemOrder: currentWrite.previous.workItemOrder
+            ? {
+                before: (sentItems ?? []).flatMap((item) =>
+                  currentWrite.previous.workItemOrder!.after.includes(item._id)
+                    ? [item._id]
+                    : [],
+                ),
+                after: currentWrite.previous.workItemOrder.after,
+              }
+            : undefined,
           carriedChildren: [...carriedIds].flatMap((id) => {
             const before = sentItems?.find((child) => child._id === id);
             const current = state.workItems.find((child) => child._id === id);
@@ -885,7 +951,7 @@ export function failSourceWrite(
       ? restored
       : reactivate(restored, workItemId, target.status);
   // A move's write also puts the item back in the state it left.
-  const recovered =
+  const recoveredFields =
     sourceWrite.state !== undefined || "workflowStateId" in sourceWrite.previous
       ? updateOne(reopened, workItemId, (workItem) => ({
           ...workItem,
@@ -895,6 +961,10 @@ export function failSourceWrite(
             sourceWrite.previous.lifecycle?.workflowStateIdBeforeClose,
         }))
       : reopened;
+  const recovered = restoreSourceWriteOrder(
+    recoveredFields,
+    sourceWrite.previous.workItemOrder,
+  );
   const carried = sourceWrite.previous.carriedChildren ?? [];
   if (!carried.length) return recovered;
   return {
@@ -1155,13 +1225,6 @@ export function selectSidebarBacklogItems(
     );
   }
 
-  // Like the Backlog page: a missing priority sorts as the largest value.
-  const direction = state.backlogSortMode === "priority_desc" ? -1 : 1;
-  const priority = (workItem: LocalWorkItem) =>
-    workItem.priority ?? Number.MAX_SAFE_INTEGER;
-  return [...listed].sort(
-    (left, right) =>
-      (priority(left) - priority(right)) * direction ||
-      ownIndex(left) - ownIndex(right),
-  );
+  // Every other ordering sorts like the Backlog page.
+  return orderBacklogItems(listed, state.workItems, state.backlogSortMode);
 }

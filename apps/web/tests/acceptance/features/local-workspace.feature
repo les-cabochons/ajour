@@ -256,14 +256,14 @@ Feature: Open the local time workspace
     Given I have two saved entries with a timer running on the first
     When I start the timer on the Backlog item
     Then the Backlog workspace fills the available page
-    And expanded and dragged Backlog rows keep their centered columns
+    And standalone subitems and cancellable Backlog drag remain usable
     And the first timer is saved and the Backlog timer is running
 
   Scenario: Start a Backlog timer from mobile while another timer is running
     Given I have two saved entries with a timer running on the first
     When I start the timer on the Backlog item from mobile
     Then the first timer is saved and the Backlog timer is running
-    And hidden Backlog columns do not reserve mobile width
+    And the Backlog list fits a narrow window
 
   Scenario: Find a time-entry task from project and task terms
     Given I have projects with searchable tasks

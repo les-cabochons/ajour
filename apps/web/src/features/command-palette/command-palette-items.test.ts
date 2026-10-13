@@ -377,6 +377,45 @@ describe("buildPaletteSections", () => {
     });
   });
 
+  it.each(["focused", "item"] as const)(
+    "passes running ownership to the %s backlog action section",
+    (location) => {
+      const backlog = workItem("backlog", "Atlas release");
+      const list = (runningId?: string) =>
+        buildPaletteSections(
+          input({
+            workItems: [backlog],
+            focused:
+              location === "focused"
+                ? { kind: "backlog-item", workItemId: backlog._id }
+                : null,
+            view:
+              location === "item"
+                ? { kind: "backlog-item", workItemId: backlog._id }
+                : { kind: "root" },
+            timer: runningId
+              ? {
+                  _id: "timer",
+                  workItemId: runningId,
+                  startedAt: 1,
+                  accumulatedDurationMs: 0,
+                  localDate: "2026-10-12",
+                }
+              : null,
+          }),
+        )
+          .flatMap((section) => section.items)
+          .find(
+            (item) =>
+              item.command.kind === "backlog-item" &&
+              item.command.actionId === "start-entry",
+          );
+      expect(list(backlog._id)?.disabledReason).toBe("Already running");
+      expect(list("another")?.disabledReason).toBeUndefined();
+      expect(list()?.disabledReason).toBeUndefined();
+    },
+  );
+
   it("offers Move up and Move down only on top-level backlog items", () => {
     const parent = workItem("parent", "Atlas release");
     const child = workItem("child", "Atlas notes", {

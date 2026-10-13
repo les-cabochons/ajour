@@ -354,10 +354,21 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
   );
   const persistedBacklogSortMode = persistedState.backlogSortMode as
     BacklogSortMode | "priority" | undefined;
-  const backlogSortMode =
+  const knownSortModes: readonly string[] = [
+    "custom",
+    "priority_asc",
+    "priority_desc",
+    "created",
+    "remaining",
+    "title",
+  ];
+  const backlogSortMode: BacklogSortMode =
     persistedBacklogSortMode === "priority"
       ? "priority_asc"
-      : (persistedBacklogSortMode ?? defaults.backlogSortMode);
+      : persistedBacklogSortMode &&
+          knownSortModes.includes(persistedBacklogSortMode)
+        ? persistedBacklogSortMode
+        : defaults.backlogSortMode;
 
   return ensureLocalWorkspace(
     reconcileImportedWorkflowStates({
@@ -1365,6 +1376,11 @@ export const localStore = {
 
     updateState((state) => applyReorderWorkItems(state, orderedIds));
   },
+  reorderWorkItemsWithUndo(orderedIds: string[]) {
+    return updateStateWithUndo((state) =>
+      applyReorderWorkItems(state, orderedIds),
+    );
+  },
   setBacklogSortMode(mode: BacklogSortMode) {
     updateState((state) => applyBacklogSortMode(state, mode));
   },
@@ -1373,6 +1389,16 @@ export const localStore = {
     patch: Partial<Omit<LocalWorkItem, "_id" | "createdAt" | "source">>,
   ) {
     updateState((state) => applyUpdateWorkItem(state, workItemId, patch));
+  },
+  updateWorkItemWithUndo(
+    workItemId: string,
+    patch: Parameters<typeof applyUpdateWorkItem>[2],
+    orderedIds?: string[],
+  ) {
+    return updateStateWithUndo((state) => {
+      const updated = applyUpdateWorkItem(state, workItemId, patch);
+      return orderedIds ? applyReorderWorkItems(updated, orderedIds) : updated;
+    });
   },
   /** Restores an archived backlog item, with the subitems its settle carried. */
   restoreWorkItem(workItemId: string) {

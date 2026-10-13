@@ -602,3 +602,31 @@ describe("backlog and project undo", () => {
     );
   });
 });
+
+it("restores custom backlog order and refuses undo after another reorder", () => {
+  const before: LocalAppState = {
+    ...createState(),
+    workItems: [
+      {
+        _id: "a",
+        title: "A",
+        source: "manual",
+        status: "active",
+        createdAt: 1,
+      },
+      {
+        _id: "b",
+        title: "B",
+        source: "manual",
+        status: "active",
+        createdAt: 1,
+      },
+    ],
+  };
+  const after = { ...before, workItems: [...before.workItems].reverse() };
+  const undo = captureUndo(before, after)!;
+  expect(
+    restoreUndo(after, undo).state.workItems.map((item) => item._id),
+  ).toEqual(["a", "b"]);
+  expect(restoreUndo(before, undo).result).toBe("stale");
+});

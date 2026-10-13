@@ -171,6 +171,7 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Automatic source mapping applies the shared lifecycle transition before import. Settings discovery and done-item processing use the same transition.
 - [x] Settle rejects priority levels without a source range, disables those choices and explains an invalid choice.
 - [x] Seven new regressions cover sync during reopen, carried children, all three automatic mapping paths, local workflow overrides and incomplete priority scales. The foundation passes 690 unit tests.
+- [x] The updated stack passes 703 unit tests, all 50 Chromium acceptance scenarios, workspace typecheck, production build and formatting. A browser fixture confirms unsupported Settle options are disabled and stale selections show an error and block submission.
 - [ ] Complete Codex re-review after updating the view layer.
 
 ## Source-write acknowledgement follow-up, 2026-10-12
@@ -179,7 +180,8 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Source acknowledgements update both snapshots of the replacement's Undo. Independent edits still block Undo.
 - [x] Settle rejects unsupported priority clears. No priority remains available when it already matches the source's mapped level.
 - [x] Eight new regressions cover recovery of open and done states, carried children, priority-only writes, replacement Undo, independent edits and No priority validation. The foundation passes 720 unit tests and workspace typecheck.
-- [ ] Complete verification and Codex review of the updated stack.
+- [x] The full stack passes 733 unit tests, all 57 Chromium acceptance scenarios, workspace typecheck, production build and formatting. Browser fixtures verify No priority is disabled for mapped source priorities and available when it already matches the source.
+- [ ] Complete Codex review of the updated stack.
 
 ## Standard Task Flow
 
@@ -192,6 +194,79 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [ ] Summarize changed files and verification results.
 
 ## Project Health Notes
+
+### Modified settings-link activation, 2026-10-12
+
+- [x] The workflow settings link applies the draft guard only to an unmodified left-click. Modified clicks retain the browser's requested browsing context without committing or closing the original editor.
+- [x] Two new Chromium scenarios verify Control-click and Shift-click open a separate settings page while the original draft stays unsaved. All six settings-link scenarios pass, including same-tab saves, invalid input and cancelled subitem closure.
+- [x] All 878 unit tests, workspace typecheck, production builds and formatting pass.
+- [ ] Complete fresh Codex review of the pushed view head before integration. The integration thread owns merging.
+
+### Workflow settings draft guard, 2026-10-12
+
+- [x] The unmapped-source-state link awaits the editor's existing commit guard before opening workflow settings. Invalid drafts and cancelled lifecycle confirmation keep the user on Backlog with the draft intact.
+- [x] Four new Chromium cases failed before the fix and pass afterward. They cover click and Enter saving, title validation and cancelled subitem closure. Five existing editor action and Alt-arrow cases also pass.
+- [x] All 878 unit tests, workspace typecheck, production builds and formatting passed.
+- [ ] Complete fresh Codex review of the pushed view head before integration. The integration thread owns merging.
+
+### Top-level custom ordering, 2026-10-12
+
+- [x] Custom keyboard, request and pointer reordering accepts only top-level items. Root moves exchange only root slots, leaving subitem positions unchanged. Subitems retain cross-group property moves without an ordering write.
+- [x] Explicit subitem project drops disable parent mapping inheritance, including No project. Undo restores the prior assignment and custom order.
+- [x] Seven new unit cases cover drag eligibility and root-only drop ordering. Browser scenarios cover rejected subitem reorder attempts, state/priority/project moves with Undo and root keyboard ordering. The failed-source ordering fixture now uses a root card.
+- [x] All 878 unit tests, workspace typecheck and production builds passed. The full Chromium run passed 96 of 97 scenarios and exposed the project-inheritance defect. After fixing it, all ten focused ordering, property-drop and archived-project scenarios passed.
+- [ ] Complete fresh Codex review of the pushed view head before integration. The integration thread owns merging.
+
+### Task filter consistency, 2026-10-12
+
+- [x] Task filters resolve assignments within each item's configured project. Missing tasks, tasks in another project and tasks without a valid project match No task. Known archived assignments remain filterable.
+- [x] Six selector cases cover empty, known, stale, archived and combined task filters. Five cases failed before the fix.
+- [x] All 871 unit tests, workspace typecheck, production builds, formatting and three focused Chromium scenarios for filtering and task-preserving project reselection passed.
+- [ ] Complete Codex review of the updated view head before integration. The integration thread owns merging.
+
+### Rejecting stale unlisted Settle drafts, 2026-10-12
+
+- [x] Settle rejects an unlisted draft that differs from the current source state, rather than silently dropping it. Unchanged unlisted states still allow local Settle.
+- [x] The dialog uses the shared draft validator, disables submission and shows a state-specific error. A valid priority does not receive a misleading range error.
+- [x] Six validator cases cover changed, unchanged, absent and normalized source labels. The stale cases and browser submission guard failed before the fix. Browser coverage also confirms local Settle with an unchanged unlisted source state.
+- [x] All 865 unit tests, six Settle Chromium scenarios, workspace typecheck, production builds and formatting passed.
+- [ ] Complete fresh Codex reviews of the mapping and view heads before integration. The integration thread owns merging.
+
+### Missing-sync archives after Done changes, 2026-10-12
+
+- [x] Clearing Done leaves missing-sync archives in their source-following workflow. Deleting the state clears their workflow instead of treating them as explicit closes. The same provenance check applies to carried recovery snapshots.
+- [x] Two persisted-store regressions reproduce clearing and deleting a temporary Done state, reload and an unchanged source return. Both failed before the fix and now return the item to active work.
+- [x] The stack passes all 859 unit tests, workspace typecheck, production builds, formatting and four focused Chromium scenarios. Archive passed on retry after Chromium reported `ERR_NO_BUFFER_SPACE` during initial navigation; the other three passed on the first run.
+- [ ] Complete fresh Codex reviews of the pushed stack before integration. The integration thread owns merging.
+
+### Clearing Done during carried recovery, 2026-10-12
+
+- [x] Clearing Done translates archived carried post-move snapshots to the replacement Done state, matching the live child. Pre-move snapshots remain unchanged, preserving pending-reopen Undo.
+- [x] The reload and failed-close regression now covers deleting an open state, deleting Done and clearing Done. The new case failed before the fix, and the existing reopen Undo case also passes.
+- [x] The rebased stack passes all 857 unit tests, three focused Chromium scenarios for failed drag recovery, parent close with Undo and Done settings, workspace typecheck, production builds and formatting.
+- [ ] Complete fresh reviews of the mapping and view heads before integration. The integration thread owns merging.
+
+### Done rollback and unlisted drafts, 2026-10-12
+
+- [x] The foundation's failed-write command reapplies the domain lifecycle rules after restoring values. The mapping layer retains its stronger deferred-mapping reconciliation. A persisted-store regression covers a shared workflow marked Done during a pending Settle, failure, reload and Restore.
+- [x] Deleting Done translates archived carried snapshots to the replacement Done state, matching the live child. Failed writes still recover that child's former active workflow. The new replacement-state case failed before the fix.
+- [x] The Settle state fallback uses the preserved draft value and exact option membership. A browser case reproduces an unlisted draft disappearing after refresh and verifies selecting and submitting a listed replacement.
+- [x] The rebased stack passes all 856 unit tests, eight focused Chromium scenarios, workspace typecheck, production builds and formatting. The full 90-scenario suite passed at `6eaaaa1` before these follow-ups.
+- [ ] Complete fresh Codex reviews before integration. The integration thread owns merging.
+
+### No project filter consistency, 2026-10-12
+
+- [x] Project filters resolve item project IDs against configured projects. Missing and unknown IDs match No project, while archived projects remain known assignments.
+- [x] Five selector cases cover No project, a known project, their union, a stale project filter and an archived assignment. Three cases failed before the fix.
+- [x] All 854 unit tests, workspace typecheck, production builds and three focused Chromium scenarios for filtering and archived destinations passed.
+- [ ] Complete Codex review of the updated view head. The integration thread owns merging.
+
+### Combined review fixes verification, 2026-10-12
+
+- [x] The rebased stack passes all 849 unit tests and all 90 Chromium acceptance scenarios, workspace typecheck, production builds and formatting.
+- [x] The view-only head `c04a91c` passed Codex review with no major issues. Parent review fixes required rebasing the view layer, so all three updated heads need fresh reviews.
+- [x] Deleted workflow IDs no longer return through parent or carried-child rollback after a failed source write. Settle retains its displayed priority intent when a connector refresh changes the imported value.
+- [ ] Complete Codex review of the updated stack before integration. The integration thread owns merging.
 
 ### Settle refresh and carried recovery, 2026-10-12
 
@@ -206,39 +281,58 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Two regressions reproduce stale IDs after a failed Settle write, including JSON reload and a preserved local workflow override. Both failed before the fix.
 - [ ] Complete verification and fresh Codex review of the updated stack. The integration thread owns merging.
 
+### Peek project reselection, 2026-10-12
+
+- [x] Selecting the current project in the peek leaves the task assignment unchanged. Changing or clearing the project still clears the task through the existing command and Undo.
+- [x] Click and Enter browser cases reproduced task loss before the fix. Both now retain the task and cover clearing, Undo and reload. The existing peek editing scenario also passes.
+- [x] All 846 unit tests, workspace typecheck, production builds and formatting passed.
+- [ ] Complete Codex review of the updated view head. The integration thread owns merging.
+
+### No state filter consistency, 2026-10-12
+
+- [x] State filters resolve item workflow IDs against the configured states. Missing and unknown IDs match No state, consistent with list and board grouping.
+- [x] Four selector cases cover No state, a known state, their combined filter and a stale state filter. Three cases failed before the fix.
+- [x] All 846 unit tests, workspace typecheck and production builds passed. The Chromium scenario for page filtering and sidebar isolation also passed.
+- [ ] Complete Codex review of the updated view head. The integration thread owns merging.
+
 ### Markerless legacy explicit closes, 2026-10-12
 
 - [x] Legacy archive inference uses the saved workflow ID and original source-state availability. Markerless explicit closes with an assigned Done ID remain explicit, while missing-sync archives with no workflow ID retain their provenance.
 - [x] The same discriminator applies to carried snapshots. Existing boolean markers still take precedence.
 - [x] The markerless explicit-close case failed before the fix. A paired markerless missing-sync case covers failed startup recovery, source return and Restore after reload.
-- [ ] Verify the rebased stack and request fresh reviews of the pushed heads.
+- [x] The rebased stack passes 842 unit tests, workspace typecheck, production builds and three focused Chromium scenarios covering failed drag recovery, parent close with Undo and Done settings.
+- [ ] Fresh Codex reviews of the pushed mapping and view heads are pending. Merging remains owned by the integration thread.
 
 ### Legacy source-write recovery provenance, 2026-10-12
 
 - [x] Hydration fills missing archive-provenance markers in older pending recovery and carried-child snapshots. Source markers and pre-close history identify explicit closes; manual children remain explicit, and stored boolean markers take precedence.
 - [x] Carried recovery compares snapshot fields, so JSON property order cannot invalidate an unchanged child.
 - [x] Six persisted upgrade cases cover missing-sync archives, synced and manual children, explicit archives after a Done flag change and unknown source states. Reload, failed startup writes, source returns and Restore are checked.
-- [ ] Verify the rebased stack and request fresh reviews of the pushed heads.
+- [x] The rebased stack passes 840 unit tests, workspace typecheck, production builds and three focused Chromium scenarios covering failed drag recovery, parent close with Undo and Done settings.
+- [ ] Fresh Codex reviews of the pushed mapping and view heads are pending. Merging remains owned by the integration thread.
 
 ### Archived recovery after clearing Done, 2026-10-12
 
 - [x] Failed or undone reopens move recovered explicit archives to the remaining Done state when their old state loses its Done flag. Carried children retain the archive markers and pre-close state for Restore.
 - [x] Recovery saves entries started during the optimistic reopen. Source-write snapshots preserve missing-sync provenance, so missing-sync archives retain their open workflow state.
 - [x] Six persisted-store regressions cover failure and Undo, carried children, Restore after reload and missing-sync archives. The archive migration and running-entry checks failed before their fixes.
-- [ ] Verify the rebased stack and request fresh reviews of the pushed heads.
+- [x] The rebased stack passes 834 unit tests, workspace typecheck, production builds and three focused Chromium scenarios covering failed drag recovery, parent close with Undo and Done settings.
+- [ ] Fresh Codex reviews of the pushed mapping and view heads are pending. Merging remains owned by the integration thread.
 
 ### Done flag changes during source-write recovery, 2026-10-12
 
 - [x] Released source writes apply lifecycle reconciliation even when their workflow mapping IDs stay unchanged.
 - [x] Four persisted-store regressions reproduce failed-write and Undo recovery into a state flagged Done during a pending move, with and without carried subitems. Recovery closes the items, saves the running entry once and survives reload.
-- [ ] Verify the rebased stack and request fresh reviews of the pushed heads.
+- [x] The rebased stack passes 828 unit tests, workspace typecheck, production builds and three focused Chromium scenarios covering failed drag recovery, parent close and Done settings.
+- [ ] Fresh Codex reviews of the pushed mapping and view heads are pending. Merging remains owned by the integration thread.
 
 ### Deferred mappings after failed writes, 2026-10-12
 
 - [x] Failed source writes restore their recovery snapshot, then use the same mapping and lifecycle reconciliation as successful writes.
 - [x] Carried children follow their current mapping after recovery. Independent child writes remain protected, and later notes and local workflow overrides remain intact.
 - [x] Six persisted-store regressions cover Done, open and unmapped destinations, reload, carried children, independent child writes and local priority-write overrides. The three destination cases failed before the fix.
-- [ ] Verify the rebased view layer and request fresh reviews of the pushed heads.
+- [x] The rebased stack passes 824 unit tests, workspace typecheck, production builds and five focused Chromium scenarios, including failed source-move order recovery.
+- [ ] Fresh Codex reviews of the pushed mapping and view heads are pending. Merging remains owned by the integration thread.
 
 ### Mapping changes after a source write, 2026-10-12
 
@@ -246,28 +340,110 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Newer pending writes and local workflow overrides remain protected.
 - [x] The UX specification retains the explicit Settle rules introduced in #95 and distinguishes them from workflow move write rules.
 - [x] The mapping layer passes 783 unit tests and workspace typecheck. Regressions cover Done, open and unmapped destinations, carried children, newer writes, local overrides and reload.
-- [ ] Rebase the view layer, verify the final stack and request fresh reviews.
+- [x] Rebased the view layer. The complete stack passes 818 unit tests, all 87 Chromium scenarios, workspace typecheck, production builds and formatting.
+- [ ] Fresh Codex reviews of the pushed heads are pending. Merging remains owned by the integration thread.
 
 ### Settle confirmation and archive warning, 2026-10-12
 
 - [x] Settle keeps its selected state and priority until the subitem confirmation succeeds. Cancellation and a changed subitem set leave the draft open.
 - [x] The archive warning and submit label use the same workflow mapping as the lifecycle transition.
 - [x] The foundation passes 710 unit tests, workspace typecheck and three Chromium confirmation scenarios.
-- [ ] Carry the fixes through the stack, verify the final heads and request fresh reviews.
+- [x] Carried the fixes through the stack and verified all 87 Chromium scenarios, including the three Settle confirmation cases.
+- [ ] Fresh Codex reviews of the pushed heads are pending. Merging remains owned by the integration thread.
+
+### Peek Start disabled reason, 2026-10-12
+
+- [x] Peek Start exposes the shared action's disabled reason in its tooltip and accessible description, while remaining focusable with `aria-disabled` and guarded activation.
+- [x] The running-entry Chromium regression covers hover and keyboard tooltip access, ignored mouse/Enter/Space activation, timer identity across reopening, another item's enabled Start, and the cleared reason after Stop.
+- [x] All 812 unit tests and 84 Chromium scenarios pass, along with workspace typecheck, production build and formatting.
+- [ ] Fresh Codex review is pending. Merging remains owned by the integration thread.
+
+### Drag eligibility and sorted list scrolling, 2026-10-12
+
+- [x] The shared drag module determines whether an item can reorder with a peer or move to another reachable group in its lane. Rendering and pointer startup use the same rule, and ordering changes cancel an active drag.
+- [x] Sorted ungrouped lists, single-item groups without another destination and unavailable lanes retain native touch scrolling. Custom reordering and cross-group moves remain enabled when they can change an item.
+- [x] Seven eligibility tests and Chromium scenarios cover actual sorted-list scrolling, restoring Custom reordering and Undo, sorted board touch moves, and archived swimlane scrolling. All 812 unit tests and workspace typecheck pass.
+- [x] All 84 Chromium scenarios pass in the full run, along with production build and formatting.
+- [ ] Fresh Codex review is pending. Merging remains owned by the integration thread.
+
+### Archived swimlane touch scrolling, 2026-10-12
+
+- [x] Archived project swimlane cards omit drag handlers because they have no reachable drop destination. Their native touch scrolling stays enabled.
+- [x] Active swimlane cards retain drag handling. Existing assignments in archived project groups can still be dragged to active projects.
+- [x] Chromium touch regression checks the actual board scroll position, the absence of a drag session during the swipe, and native touch handling for archived cards. Existing touch drag and Undo, archived destinations and active project creation pass.
+- [x] All 805 unit tests and 82 Chromium scenarios pass, along with workspace typecheck, production build and formatting. The prior project-shortcut timeout did not recur in the full browser run.
+- [ ] Fresh Codex review is pending. Merging remains owned by the integration thread.
+
+### Peek returns and archived project destinations, 2026-10-12
+
+- [x] Opening a peek through click, Space or the hosted editor clears Returned through the existing lifecycle command. Closing a peek does not mark an item opened.
+- [x] Archived project groups and swimlanes retain their assigned items and an Archived label, with creation controls and drop destinations removed. Add and drop commands recheck current project availability after draft commits.
+- [x] Browser regressions cover sync returns and expired snoozes in list and board, persistence after opening, blocked archived project drops and active project creation in groups and swimlanes.
+- [x] All 805 unit tests, workspace typecheck, production build and formatting pass. Chromium passed 80 of 81 scenarios in the full run. The project-shortcut scenario timed out on a blank page and passed on a focused rerun without code changes.
+- [ ] Fresh Codex review is pending. Merging remains owned by the integration thread.
+
+### Running-item Start tooltips in rows and cards, 2026-10-12
+
+- [x] Rows and cards expose the shared Start disabled reason in their tooltip and accessible description. The running item says Start instead of offering to switch to itself.
+- [x] Start remains focusable with `aria-disabled`; its activation guard blocks clicks, Enter and Space. Other items retain Switch, and Stop enables the control again.
+- [x] List and board Chromium regressions cover tooltip access, blocked activation, timer identity, the other item's enabled control and the cleared reason after Stop.
+- [x] All 804 unit tests and 75 Chromium scenarios pass, along with workspace typecheck, production build and formatting. Keyboard tooltip assertions select the open popup so closing animations do not match.
+- [ ] Fresh Codex review is pending. Merging remains owned by the integration thread.
+
+### Failed source drag order recovery, 2026-10-12
+
+- [x] Pending source moves retain the drag's affected custom order, including across persistence and coalesced moves. Recovery advances when an older source write succeeds.
+- [x] Failed writes restore that order only while its affected items retain the drop order. Later explicit reorders, unrelated reorders, inserted items and field edits survive recovery.
+- [x] Seven domain regressions and a Chromium drag through a rejected fixture source write pass. All 804 unit tests pass.
+- [x] All 73 Chromium scenarios pass, along with workspace typecheck, production build and formatting.
+- [ ] Fresh Codex review of the pushed view-layer fix is pending. Merging remains owned by the integration thread.
+
+### Sidebar Start disabled reason, 2026-10-12
+
+- [x] Sidebar Start icons show the action's disabled reason in their tooltip and accessible description. They keep their action name and remain focusable while unavailable.
+- [x] Replaced the tooltip trigger's `disabled` prop with `aria-disabled` and an activation guard. The former disabled the tooltip rather than the button.
+- [x] Chromium checks hover text, accessible description, ignored mouse and keyboard activation, unchanged timer identity, and the enabled control after Stop.
+- [x] All 797 unit tests and 72 Chromium scenarios pass, along with workspace typecheck, production build and formatting.
+- [ ] Fresh Codex review of the pushed view-layer fix is pending. Merging remains owned by the integration thread.
+
+### Running ownership in every backlog action set, 2026-10-12
+
+- [x] Item-page, editor, sidebar and both command-palette paths supply running ownership to the action model. The input is required, so omitted callers fail typechecking.
+- [x] Item-page and sidebar Start controls use the same disabled reason as their menus.
+- [x] Palette regressions cover focused and selected items with their own timer, another item's timer or none. Chromium checks every remaining control while running and after Stop, with timer identity preserved.
+- [x] All 797 unit tests and 71 Chromium scenarios pass, along with workspace typecheck, production build and formatting.
+- [ ] Fresh Codex review of the pushed view-layer head is pending. Merging remains owned by the integration thread.
+
+### Running-item Start entry in action menus, 2026-10-12
+
+- [x] The shared backlog action rules disable Start entry for the running item in peek and row menus. The peek button uses the same action set.
+- [x] The shared Start command ignores requests for the already running item while allowing starts with no running item or another item running.
+- [x] Domain, command and Chromium regressions pass. Browser checks include both menus, timer identity and start time, another item and starting after Stop.
+- [x] All 795 unit tests and 67 Chromium scenarios pass, along with workspace typecheck, production build and formatting.
+- [ ] Fresh Codex review of the pushed view-layer head is pending. Merging remains owned by the integration thread.
+
+### Peek Start entry and the running item, 2026-10-12
+
+- [x] The peek disables Start entry while its item owns the running entry, matching the row control.
+- [x] Chromium verifies timer identity and start time after reopening the peek, another item's enabled Start entry and a fresh entry after stopping through the titlebar.
+- [x] All 791 unit tests and 67 Chromium scenarios pass, along with workspace typecheck, production build and formatting.
+- [ ] Fresh Codex review of the pushed view-layer head is pending. Merging remains owned by the integration thread.
 
 ### Parent return propagation and missing-sync restore history, 2026-10-12
 
 - [x] Connector returns carry subitems only when the parent remains in an open workflow state. Source changes mapped Done leave its carried archived subitems unchanged.
 - [x] A missing-sync return closed into Done remembers its former open workflow when no pre-close state exists.
 - [x] The foundation passes 712 unit tests and workspace typecheck. Connector regressions cover closed-parent child retention, later genuine reopening and Restore after a missing-sync return.
-- [ ] Carry the fixes through the stack, run the full checks and request fresh reviews.
+- [x] Carried the fixes through the stack. All 791 unit tests and 66 Chromium scenarios pass, along with workspace typecheck, production build and formatting.
+- [ ] Fresh Codex reviews of the pushed heads are pending. Merging remains owned by the integration thread.
 
 ### Reactivation in an unchanged Done state, 2026-10-12
 
 - [x] Lifecycle reconciliation closes every open item in Done, including missing-sync returns, carried subitems and legacy records whose workflow ID stays unchanged.
 - [x] Reclosing an archived item preserves a valid pre-close workflow for Restore.
 - [x] The foundation passes 710 unit tests, with real connector-import regressions for missing-sync returns and carried settled subitems.
-- [ ] Carry the fix through the stack, run the full checks and request fresh reviews.
+- [x] Carried the fix through the stack. All 789 unit tests and 66 Chromium scenarios pass, along with workspace typecheck, production build and formatting.
+- [ ] Fresh Codex reviews of the pushed heads are pending. Merging remains owned by the integration thread.
 
 ### Enabling Done on an occupied state, 2026-10-12
 
@@ -275,28 +451,35 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Restore cannot return an archived item to a pre-close state that has since become Done. Other active items and archived history remain unchanged.
 - [x] The foundation passes 705 unit tests and workspace typecheck, with direct lifecycle and persisted-store regressions.
 - [x] Chromium verifies the Workflow checkbox, saved running entry and archived items after reload.
-- [ ] Carry the fix through the stack, run the full checks and request fresh reviews.
+- [x] Carried the fix through the stack. All 784 unit tests and 66 Chromium scenarios pass, along with workspace typecheck, production build and formatting.
+- [ ] Fresh Codex reviews of the pushed heads are pending. Merging remains owned by the integration thread.
 
 ### Mixed editor drafts and close confirmation, 2026-10-12
 
 - [x] Editor updates keep non-state fields pending until the workflow move is confirmed. Cancelled or invalidated subitem confirmations leave the entire draft unsaved.
 - [x] Chromium covers changed title and note fields with a dismissed confirmation or an added subitem, followed by editor Cancel.
 - [x] The foundation passes 702 unit tests and workspace typecheck.
-- [ ] Verify accepted mixed-field Save and Undo, carry the fix through the stack and request fresh reviews.
+- [x] Accepted mixed-field Save and Undo pass in Chromium. The fix is carried through the stack, with 781 unit tests, all 65 Chromium scenarios, workspace typecheck, production build and formatting passing.
+- [ ] Fresh Codex reviews of the pushed heads are pending. Merging remains owned by the integration thread.
 
 ### Done flag and subitem confirmation recovery, 2026-10-12
 
 - [x] Clearing a Done flag moves its archived items to another Done state and preserves their pre-close state and carried-subitem restore path. Active items retain their workflow state.
 - [x] Move and Settle cancel when the eligible subitem IDs change during confirmation. Added, reparented and replaced subitems require a new action and confirmation.
 - [x] The foundation passes 702 unit tests, including archived parent and subitem Restore and both confirmation verbs.
-- [ ] Carry the fixes through the mapping and view layers, verify the stack and request fresh reviews.
+- [x] Carried both fixes through the mapping and view layers. The full stack passes 781 unit tests, all 62 Chromium acceptance scenarios, workspace typecheck, production build and formatting checks.
+- [ ] Fresh Codex reviews of the pushed heads are pending. Merging remains owned by the integration thread.
 
 ### Archived source mappings and pending editor saves, 2026-10-12
 
 - [x] A changed connector-done source state mapped to an open workflow state reopens an archived item and its carried children. An unchanged local Archive stays archived, and a missing-sync archive returns when the item reappears in an open mapping.
 - [x] Editor saves and switches await workflow moves and share an in-flight commit. Cancelling the subitem prompt leaves the editor and workflow draft intact.
 - [x] The foundation passes 692 unit tests, workspace typechecking and a Chromium regression covering Save, cancellation and retry with Include subitem.
-- [ ] Carry the fixes through the mapping and view layers, verify the stack and request fresh reviews.
+- [x] Carried the fixes through the mapping and view layers. Final validation passes 772 unit tests, all 62 Chromium scenarios in one run, workspace typechecking, production build and formatting.
+- [x] A queued archived source write stays in place when sync reports its previous source state, even when that old state maps open.
+- [x] Async moves recheck the parent, destination and eligible children after prompts and lookups, and reject superseded source-write choices. Six regressions cover moves, deletion, archiving and changes to the included children.
+- [x] Persisted descending priority ordering keeps No priority first and preserves custom order within a level.
+- [ ] Complete fresh Codex reviews on the pushed stack heads before integration.
 
 ### Source write races and persisted recovery, 2026-10-12
 
@@ -305,6 +488,9 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Independent child source acknowledgements advance the parent's child recovery baseline. A failed parent keeps a child's own pending write, and a confirmed child close stays closed in either completion order.
 - [x] Recovery updates leave in-flight requests current when their state, priority and Undo deadline are unchanged.
 - [x] The updated mapping layer passes 748 unit tests and workspace typechecking. View-layer verification follows before pushing the stack.
+- [x] The full stack passes 761 unit tests and all 61 Chromium scenarios in one run, plus workspace typechecking, production build and formatting.
+- [x] Touch dragging uses native Chromium touch events. Narrow and Archive views retain native touch scrolling because they do not attach drag handlers.
+- [ ] Complete fresh Codex review on the pushed stack heads before integration.
 
 ### Settle mapping recovery, 2026-10-12
 
@@ -318,7 +504,14 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Legacy pending recovery priorities migrate with the item's connection scale. Later manifest range seeding reconciles recovery values that follow their source and preserves local overrides.
 - [x] Failed moves restore snooze and Returned markers on the parent and carried children, while retaining independently changed child lifecycles.
 - [x] The foundation passes 731 unit tests and workspace typechecking. A browser fixture confirms Mercury offers only In QA and Venus only Resolved in their write-rule menus.
-- [ ] Verify the updated view stack before requesting a fresh review.
+- [x] The updated stack passes 747 unit tests, workspace typechecking, production build and formatting. All 60 Chromium scenarios pass: 57 existing scenarios in the full run and three new editor-move scenarios after correcting their test inputs.
+- [ ] Complete fresh Codex reviews on all three stack heads. The integration thread owns merging.
+
+### Editor drag and keyboard moves, 2026-10-12
+
+- [x] Board drops commit and close the editor, then read the saved item before changing its state, priority or project. Group comparisons use its committed fields.
+- [x] Alt-arrow workflow moves commit and close the editor before reading its current workflow state. An invalid draft blocks the move.
+- [x] Browser regressions cover a subitem drop followed by reopening and saving its editor, and unsaved titles followed by Alt-arrow moves to both open and Done states.
 
 - Use `just` rather than invoking package scripts directly.
 - Preserve local-first behavior unless the user explicitly asks to change it.
@@ -365,3 +558,45 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Verified the full workspace typecheck.
 - [x] Verified the production web and desktop renderer builds.
 - [ ] Assign an owner and record a manual result in `qa/routines/local-workspace-smoke.md`.
+
+## Backlog views, 2026-10-12
+
+- [x] Grouped list and board share workflow state, priority and project grouping.
+- [x] Display options and filter chips persist per device. Ordering remains in local state and the sidebar shares it.
+- [x] Subitems have independent rows and cards, with closed-count progress on their parents.
+- [x] State and priority pickers, keyboard moves and pointer moves use the shared lifecycle commands and Undo.
+- [x] Peek shows item details and immediate property changes. Edit uses the existing form in the same panel.
+- [x] Project swimlanes collapse independently. Archive includes old done items and items missing from sync.
+- [x] Narrow windows force the list while retaining the desktop layout preference.
+- [x] Foundation PR review fixes cover clearing done states, source reopen propagation, settled return, pending write deadlines, failed-move lifecycle restoration and priority migration.
+- [x] Local verification passed: 689 unit tests, workspace typecheck, production build and format check. All 46 acceptance scenarios passed, with targeted retries for intermittent browser failures.
+- [ ] Complete Codex review for the view-layer PR.
+
+## Backlog review fixes, 2026-10-12
+
+- [x] Parent closes carry only active subitems. Independently settled and archived subitems retain their lifecycle and reopen behavior.
+- [x] Settings > Backlog renders its settle rules once, outside the preferences field.
+- [x] Editor workflow changes use the shared move command, including source writes and Undo between open states.
+- [x] Manifest priority ranges reconcile migrated source-following values while preserving local overrides.
+- [x] Failed parent reopens restore carried children without overwriting independent edits.
+- [x] Project mappings persist explicit No state overrides. Remapping source states clears incompatible write rules and blocks stale inherited rules.
+- [x] Row and peek source-state pickers allow a single alternative. Archiving closes the editor and disables the peek's Edit action.
+- [x] All 696 unit tests and all 50 Chromium acceptance scenarios passed. Workspace typecheck, production build and formatting passed.
+- [ ] Complete Codex re-review of the updated PR stack.
+
+## Backlog integration review follow-up, 2026-10-12
+
+- [x] Changed done-category source states update their imported baseline and override local moves consistently with ordinary import.
+- [x] Deleting an occupied Done state keeps archived items in another Done state, preserving their pre-close state for Restore.
+- [x] Editor commits wait for workflow moves and share an in-flight commit. Actions consume the committed item once, and cancelling a move blocks the next action.
+- [x] Each project swimlane owns its keyboard focus scope. Arrow navigation stays in that lane despite uneven columns in earlier projects.
+- [x] Verification passed: 706 unit tests, all 54 Chromium acceptance scenarios, workspace typecheck, production build and formatting. Four new browser scenarios cover workflow drafts followed by Archive or Settle, cancellation and swimlane focus.
+- [ ] Complete Codex re-review of the new stack heads before integration.
+
+## Backlog capability migration integration, 2026-10-12
+
+- [x] Rebased the stack onto main at `af1e48b`, including the API v2 capability migration and packaged plugin recovery.
+- [x] Connector priority scales live under `capabilities.connector`. Import defaults, source write availability and Workflow settings use the migrated contract.
+- [x] Preserved main's capability validation and tests alongside the priority-range tests.
+- [x] Verification passed: all 725 unit tests and all 57 Chromium acceptance scenarios, workspace typecheck, production build and formatting.
+- [ ] Complete Codex review on the rebased heads. The integration thread owns merging.

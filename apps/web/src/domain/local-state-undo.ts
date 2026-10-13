@@ -59,7 +59,7 @@ export interface UndoRecordChange<T> {
  */
 export type LocalStateUndo = {
   [K in UndoCollection]: UndoRecordChange<UndoRecord<K>>[];
-};
+} & { workItemOrder?: { before: string[]; after: string[] } };
 
 /**
  * `stale` means a record changed again after the action, or restoring would
@@ -176,14 +176,41 @@ export function captureUndo(
   before: LocalAppState,
   after: LocalAppState,
 ): LocalStateUndo | null {
-  const undo = Object.fromEntries(
-    UNDO_COLLECTIONS.map((collection) => [
-      collection,
-      diffCollection(collection, before, after),
-    ]),
-  ) as LocalStateUndo;
+  const undo: LocalStateUndo = {
+    projects: diffCollection("projects", before, after),
+    workItems: diffCollection("workItems", before, after),
+    timers: diffCollection("timers", before, after),
+    timesheetEntries: diffCollection("timesheetEntries", before, after),
+    timesheetImportDrafts: diffCollection(
+      "timesheetImportDrafts",
+      before,
+      after,
+    ),
+    workflowStates: diffCollection("workflowStates", before, after),
+    workflowStateMappings: diffCollection(
+      "workflowStateMappings",
+      before,
+      after,
+    ),
+    workflowStateWriteRules: diffCollection(
+      "workflowStateWriteRules",
+      before,
+      after,
+    ),
+  };
 
-  return UNDO_COLLECTIONS.some((collection) => undo[collection].length > 0)
+  const beforeOrder = before.workItems.map((item) => item._id);
+  const afterOrder = after.workItems.map((item) => item._id);
+  if (
+    beforeOrder.length === afterOrder.length &&
+    beforeOrder.every((id) => afterOrder.includes(id)) &&
+    !recordsEqual(beforeOrder, afterOrder)
+  ) {
+    undo.workItemOrder = { before: beforeOrder, after: afterOrder };
+  }
+
+  return undo.workItemOrder ||
+    UNDO_COLLECTIONS.some((collection) => undo[collection].length > 0)
     ? undo
     : null;
 }
@@ -317,6 +344,11 @@ export function restoreUndo(
     (collection) => !(changedTimeEntries && collection === "workItems"),
   );
   if (
+    (undo.workItemOrder &&
+      !recordsEqual(
+        state.workItems.map((item) => item._id),
+        undo.workItemOrder.after,
+      )) ||
     !strictCollections.every((collection) =>
       isUnchangedSinceAction(collection, state, undo[collection]),
     )
@@ -329,6 +361,17 @@ export function restoreUndo(
     return { state, result: "stale" };
   }
 
+  let workItems = changedTimeEntries
+    ? restoreLoggedTime(state, undo)
+    : restoreCollection("workItems", state, undo);
+  if (undo.workItemOrder) {
+    const indexes = new Map(
+      undo.workItemOrder.before.map((id, index) => [id, index]),
+    );
+    workItems = [...workItems].sort(
+      (left, right) => indexes.get(left._id)! - indexes.get(right._id)!,
+    );
+  }
   return {
     state: {
       ...state,
@@ -340,9 +383,7 @@ export function restoreUndo(
         state,
         undo,
       ),
-      workItems: changedTimeEntries
-        ? restoreLoggedTime(state, undo)
-        : restoreCollection("workItems", state, undo),
+      workItems,
       workflowStates: restoreCollection("workflowStates", state, undo),
       workflowStateMappings: restoreCollection(
         "workflowStateMappings",

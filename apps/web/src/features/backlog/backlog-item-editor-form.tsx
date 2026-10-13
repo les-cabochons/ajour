@@ -392,6 +392,9 @@ export function BacklogItemEditorForm({
           {workItem ? (
             <ObjectActionsButton
               actions={getBacklogItemActions(workItem, {
+                isRunning: state.timers.some(
+                  (timer) => timer.workItemId === workItem._id,
+                ),
                 isSubitem: editor.isSubitem,
                 isSnoozed: isBacklogItemSnoozed(workItem, Date.now()),
                 subitemCount: subitems.length,
