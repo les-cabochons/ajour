@@ -9,6 +9,10 @@ import type {
   RuleRecord,
   TeamSettings,
 } from "@ajour/shared";
+import type {
+  LocalPriorityScale,
+  PriorityLevel,
+} from "@/domain/backlog/priority";
 import type { LocalProjectIcon } from "@/domain/projects/project-icon";
 import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
 
@@ -174,7 +178,14 @@ export interface LocalTimesheetImportDraft {
   importedAt: number;
 }
 
-export type BacklogSortMode = "custom" | "priority_asc" | "priority_desc";
+/** The Backlog page's ordering, which the sidebar shares. */
+export type BacklogSortMode =
+  | "custom"
+  | "priority_asc"
+  | "priority_desc"
+  | "created"
+  | "remaining"
+  | "title";
 
 export type ThemeMode = "system" | "dark" | "light";
 export type UpdateTrack = "stable" | "nightly";
@@ -190,6 +201,9 @@ export interface WeeklyCapacityTargets {
   sunday: number;
 }
 
+/** What closing or settling a parent does with its open subitems. */
+export type CloseParentSubitems = "ask" | "include" | "leave";
+
 export interface UserPreferences {
   themeMode: ThemeMode;
   updateTrack: UpdateTrack;
@@ -199,20 +213,51 @@ export interface UserPreferences {
   warnWhenOverCapacity: boolean;
   warnWhenSubmittingUnderCapacity: boolean;
   changesEndSnoozeEarly?: boolean;
+  closeParentSubitems: CloseParentSubitems;
 }
 
-export interface LocalBacklogStatus {
+/** One step of the user's workflow. The workflow's order is the array order. */
+export interface LocalWorkflowState {
   _id: string;
   name: string;
   color: string;
+  /** Moving an item into a done state closes it: it becomes archived. */
+  done?: boolean;
   createdAt: number;
 }
 
-export interface LocalBacklogStatusMapping {
+/**
+ * Maps one source state to a workflow state. A mapping without a source
+ * project applies to every source project of the connection that has none of
+ * its own.
+ */
+export interface LocalWorkflowStateMapping {
   source: ConnectorBacklogSource;
   connectionId: string;
+  sourceProjectName?: string;
   sourceStatusKey: string;
-  backlogStatusId: string;
+  /** The source state as the tool names it, which a write sends back. */
+  sourceStatusLabel?: string;
+  workflowStateId: string | null;
+}
+
+/** What moving a synced item into a workflow state writes to its source. */
+export type LocalWorkflowStateWrite =
+  | { kind: "state"; sourceStatusLabel: string }
+  | { kind: "ask" }
+  | { kind: "none" };
+
+/**
+ * The write for one workflow state of a source project, or of every source
+ * project of the connection when `sourceProjectName` is missing. Without a
+ * rule, a move writes the first source state mapped to the workflow state.
+ */
+export interface LocalWorkflowStateWriteRule {
+  source: ConnectorBacklogSource;
+  connectionId: string;
+  sourceProjectName?: string;
+  workflowStateId: string;
+  write: LocalWorkflowStateWrite;
 }
 
 export interface LocalWorkItem {
@@ -234,10 +279,12 @@ export interface LocalWorkItem {
   hierarchyLevel?: 0 | 1;
   parentWorkItemId?: string;
   parentSourceId?: string;
-  priority?: number;
+  /** Ajour's level. A synced item follows its source value until the user sets one. */
+  priority?: PriorityLevel;
+  /** The source's own priority value, mapped to a level by the connection's ranges. */
   importedPriority?: number;
-  backlogStatusId?: string;
-  importedBacklogStatusId?: string;
+  workflowStateId?: string;
+  importedWorkflowStateId?: string;
   sourceStatusKey?: string;
   sourceStatusLabel?: string;
   projectId?: string;
@@ -259,8 +306,15 @@ export interface LocalWorkItem {
   /** Set when a sync brings a settled item back. Cleared when the user opens it. */
   returnedAt?: number;
   settledAt?: number;
-  /** The parent whose settle carried this subitem along, so they come back together. */
+  /**
+   * The parent whose settle or close carried this subitem along, so they come
+   * back together.
+   */
   settledWithParentId?: string;
+  /** The workflow state the item had before it moved into a done state. */
+  workflowStateIdBeforeClose?: string;
+  /** The source state key when the item was archived, to notice a reopen in the source. */
+  archivedSourceStatusKey?: string;
   /** The source state key when the item was settled, to notice changes made in the source since. */
   settledSourceStatusKey?: string;
   /** The imported priority when the item was settled, to notice changes made in the source since. */
@@ -286,8 +340,25 @@ export interface LocalSettleRule {
   priority?: number;
 }
 
+export type LocalWorkItemMoveSnapshot = Pick<
+  LocalWorkItem,
+  | "status"
+  | "workflowStateId"
+  | "workflowStateIdBeforeClose"
+  | "archivedAt"
+  | "archivedByMissingSync"
+  | "archivedSourceStatusKey"
+  | "settledAt"
+  | "settledWithParentId"
+  | "settledSourceStatusKey"
+  | "settledImportedPriority"
+  | "returnedAt"
+  | "snoozedUntil"
+>;
+
 /** Only the fields the settle changed. */
 export interface LocalPendingSourceWrite {
+  readyAt?: number;
   state?: string;
   priority?: number;
   /** The item's source values before the settle, put back if the write fails. */
@@ -295,17 +366,51 @@ export interface LocalPendingSourceWrite {
     sourceStatusKey?: string;
     sourceStatusLabel?: string;
     importedPriority?: number;
-    priority?: number;
+    priority?: PriorityLevel;
+    /** Set by a move, which a failed write undoes. */
+    workflowStateId?: string;
+    importedWorkflowStateId?: string;
+    /** A drag's changed order. Restore it only while that order is unchanged. */
+    workItemOrder?: { before: string[]; after: string[] };
+    carriedChildren?: Array<{
+      id: string;
+      before: LocalWorkItemMoveSnapshot;
+      after: LocalWorkItemMoveSnapshot;
+    }>;
+    lifecycle?: Pick<
+      LocalWorkItem,
+      | "status"
+      | "settledAt"
+      | "archivedAt"
+      | "archivedByMissingSync"
+      | "archivedSourceStatusKey"
+      | "settledSourceStatusKey"
+      | "settledImportedPriority"
+      | "workflowStateIdBeforeClose"
+      | "settledWithParentId"
+      | "returnedAt"
+      | "snoozedUntil"
+    >;
   };
 }
 
 export type PersistedLocalWorkItem = Omit<
   LocalWorkItem,
-  "status" | "archivedAt"
+  "status" | "archivedAt" | "priority" | "pendingSourceWrite"
 > & {
+  /** Any whole number before priority had levels. */
+  priority?: number;
+  pendingSourceWrite?: Omit<LocalPendingSourceWrite, "previous"> & {
+    previous: Omit<LocalPendingSourceWrite["previous"], "priority"> & {
+      priority?: number;
+    };
+  };
   status?: LocalWorkItem["status"] | "open" | "done";
   archivedAt?: number;
   completedAt?: number;
+  /** Workflow states were called backlog statuses before. */
+  backlogStatusId?: string;
+  importedBacklogStatusId?: string;
 };
 
 export interface LocalWorkItemDraft {
@@ -315,8 +420,8 @@ export interface LocalWorkItemDraft {
   taskId?: string;
   inheritsParentMapping?: boolean;
   parentWorkItemId?: string;
-  priority?: number;
-  backlogStatusId?: string;
+  priority?: PriorityLevel;
+  workflowStateId?: string;
   originalEstimateHours?: number;
   remainingEstimateHours?: number;
   completedEstimateHours?: number;
@@ -358,6 +463,7 @@ export interface ExtensionBridgeStatus {
 }
 
 export interface LocalAppState {
+  priorityFormat?: "levels";
   user: {
     _id: string;
     name: string;
@@ -375,8 +481,10 @@ export interface LocalAppState {
   timesheetImportDrafts: LocalTimesheetImportDraft[];
   workItems: LocalWorkItem[];
   pullRequests?: LocalPullRequest[];
-  backlogStatuses: LocalBacklogStatus[];
-  backlogStatusMappings: LocalBacklogStatusMapping[];
+  workflowStates: LocalWorkflowState[];
+  workflowStateMappings: LocalWorkflowStateMapping[];
+  workflowStateWriteRules: LocalWorkflowStateWriteRule[];
+  priorityScales: LocalPriorityScale[];
   backlogSortMode: BacklogSortMode;
   /** Apply rules by source project. A source project without one asks. */
   settleRules?: LocalSettleRule[];
@@ -394,6 +502,22 @@ export interface TimelineMutationResult {
   trackedMs: number;
   committedMs: number;
   extensionBridgeStatus?: ExtensionBridgeStatus;
+}
+
+/** Pending source moves protect the item and any children reopened with it. */
+export function getPendingSourceWriteItemIds(
+  state: Pick<LocalAppState, "workItems">,
+) {
+  const ids = new Set<string>();
+  for (const item of state.workItems) {
+    if (!item.pendingSourceWrite) continue;
+    ids.add(item._id);
+    for (const child of item.pendingSourceWrite.previous.carriedChildren ??
+      []) {
+      ids.add(child.id);
+    }
+  }
+  return ids;
 }
 
 export function getWorkItemEstimateFieldState(

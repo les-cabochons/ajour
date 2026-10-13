@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { LocalAppState } from "@/domain/local-state";
+import { seedPriorityScales } from "@/domain/backlog/priority";
 import {
   acceptRemoteEstimateValue,
   addWorkItem,
@@ -9,7 +10,128 @@ import {
   normalizePersistedWorkItem,
   updateWorkItem,
 } from "@/domain/backlog/work-item-transitions";
-import { archiveBacklogItem } from "@/domain/backlog/backlog-item-lifecycle";
+import {
+  archiveBacklogItem,
+  failSourceWrite,
+} from "@/domain/backlog/backlog-item-lifecycle";
+
+it("migrates a source-following raw priority through its connection scale once", () => {
+  const legacy = {
+    _id: "a",
+    title: "A",
+    source: "azure_devops",
+    sourceConnectionId: "c",
+    priority: 1,
+    importedPriority: 1,
+    createdAt: 1,
+  };
+  const priorityScales: LocalAppState["priorityScales"] = [
+    {
+      source: "azure_devops",
+      connectionId: "c",
+      ranges: { 4: { min: 1, max: 10 } },
+    },
+  ];
+  const migrated = normalizePersistedWorkItem(legacy, () => 1, {
+    priorityScales,
+  });
+  expect(migrated.priority).toBe(4);
+  expect(
+    normalizePersistedWorkItem(migrated, () => 1, {
+      priorityScales,
+      priorityFormat: "levels",
+    }).priority,
+  ).toBe(4);
+  expect(
+    normalizePersistedWorkItem({ ...legacy, priority: 2 }, () => 1, {
+      priorityScales,
+    }).priority,
+  ).toBe(2);
+});
+
+it.each([
+  { previousPriority: 7, importedPriority: 7, expected: 2 },
+  { previousPriority: 9, importedPriority: 7, expected: 4 },
+])(
+  "migrates a pending recovery priority $previousPriority before a failed startup write",
+  ({ previousPriority, importedPriority, expected }) => {
+    const context = {
+      priorityScales: [
+        {
+          source: "azure_devops",
+          connectionId: "c",
+          ranges: { 2: { min: 5, max: 8 } },
+        },
+      ],
+    };
+    const migrated = normalizePersistedWorkItem(
+      {
+        _id: "a",
+        title: "A",
+        source: "azure_devops",
+        sourceConnectionId: "c",
+        status: "settled",
+        priority: 5,
+        importedPriority: 5,
+        createdAt: 1,
+        pendingSourceWrite: {
+          priority: 5,
+          previous: { priority: previousPriority, importedPriority },
+        },
+      },
+      () => 1,
+      context,
+    );
+    expect(migrated.pendingSourceWrite?.priority).toBe(5);
+    expect(migrated.pendingSourceWrite?.previous.importedPriority).toBe(
+      importedPriority,
+    );
+    const reloaded = normalizePersistedWorkItem(migrated, () => 1, {
+      ...context,
+      priorityFormat: "levels",
+    });
+    expect(reloaded).toEqual(migrated);
+    expect(
+      failSourceWrite(createState({ workItems: [reloaded] }), "a").workItems[0],
+    ).toMatchObject({
+      status: "active",
+      priority: expected,
+      importedPriority,
+    });
+  },
+);
+
+it("reconciles migrated recovery priorities when connector ranges arrive later", () => {
+  const items = [7, 3].map((priority, index) =>
+    normalizePersistedWorkItem(
+      {
+        _id: `a${index}`,
+        title: "A",
+        source: "azure_devops",
+        sourceConnectionId: "c",
+        status: "settled",
+        priority: 1,
+        importedPriority: 1,
+        createdAt: 1,
+        pendingSourceWrite: {
+          priority: 1,
+          previous: { priority, importedPriority: 7 },
+        },
+      },
+      () => 1,
+      { priorityScales: [] },
+    ),
+  );
+  const seeded = seedPriorityScales(
+    createState({ workItems: items }),
+    [{ source: "azure_devops", connectionId: "c" }],
+    {
+      azure_devops: { 2: { min: 5, max: 8 } },
+    },
+  );
+  expect(failSourceWrite(seeded, "a0").workItems[0]?.priority).toBe(2);
+  expect(failSourceWrite(seeded, "a1").workItems[1]?.priority).toBe(3);
+});
 
 function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
   return {
@@ -28,8 +150,10 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
     timesheetEntries: [],
     timesheetImportDrafts: [],
     workItems: [],
-    backlogStatuses: [],
-    backlogStatusMappings: [],
+    workflowStates: [],
+    workflowStateMappings: [],
+    workflowStateWriteRules: [],
+    priorityScales: [],
     backlogSortMode: "custom",
     capture: {
       urlMode: "sanitized_path",
@@ -54,6 +178,7 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
       },
       warnWhenOverCapacity: true,
       warnWhenSubmittingUnderCapacity: true,
+      closeParentSubitems: "ask",
     },
     updatedAt: 0,
     ...overrides,

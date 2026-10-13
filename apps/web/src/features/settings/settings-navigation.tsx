@@ -8,6 +8,7 @@ import {
   RiPuzzle2Line as Puzzle,
   RiSettings3Line as Settings,
   RiGitPullRequestLine as PullRequestIcon,
+  RiFlowChart as Workflow,
 } from "@remixicon/react";
 import {
   CustomSidebar,
@@ -49,6 +50,7 @@ export function getSettingsPages(
           } as const,
         ]
       : []),
+    { to: "/settings/workflow", label: "Workflow", icon: Workflow },
     view === "narrow"
       ? { to: "/projects", label: "Projects", icon: FolderKanban }
       : { to: "/settings/projects", label: "Projects", icon: FolderKanban },

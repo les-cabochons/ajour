@@ -9,7 +9,13 @@ import {
   archiveDoneConnectorWorkItems,
   importConnectorWorkItems,
 } from "@/domain/backlog/work-item-connector";
-import { settleBacklogItem } from "@/domain/backlog/backlog-item-lifecycle";
+import {
+  restoreBacklogItem,
+  moveBacklogItemToState,
+  archiveBacklogItem,
+  settleBacklogItem,
+} from "@/domain/backlog/backlog-item-lifecycle";
+import { updateWorkflowState } from "@/domain/backlog/workflow-states";
 
 function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
   return {
@@ -28,8 +34,10 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
     timesheetEntries: [],
     timesheetImportDrafts: [],
     workItems: [],
-    backlogStatuses: [],
-    backlogStatusMappings: [],
+    workflowStates: [],
+    workflowStateMappings: [],
+    workflowStateWriteRules: [],
+    priorityScales: [],
     backlogSortMode: "custom",
     capture: {
       urlMode: "sanitized_path",
@@ -54,6 +62,7 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
       },
       warnWhenOverCapacity: true,
       warnWhenSubmittingUnderCapacity: true,
+      closeParentSubitems: "ask",
     },
     updatedAt: 0,
     ...overrides,
@@ -136,6 +145,129 @@ describe("connector work item imports", () => {
       ).toBe(1000);
     },
   );
+
+  it("keeps a missing-sync return closed when its unchanged state became Done while absent", () => {
+    const initial = createState({
+      workflowStates: [
+        { _id: "doing", name: "Doing", color: "#d97706", createdAt: 1 },
+        {
+          _id: "done",
+          name: "Done",
+          color: "#059669",
+          done: true,
+          createdAt: 1,
+        },
+      ],
+      workflowStateMappings: [
+        {
+          source: "azure_devops",
+          connectionId: "connection-1",
+          sourceStatusKey: "active",
+          workflowStateId: "doing",
+        },
+      ],
+    });
+    const imported = importConnectorWorkItems(
+      initial,
+      [createCandidate()],
+      undefined,
+      factories,
+    ).state;
+    const missing = importConnectorWorkItems(
+      imported,
+      [],
+      { archiveMissingFromConnectionId: "connection-1" },
+      factories,
+    ).state;
+    expect(missing.workItems[0]).toMatchObject({
+      status: "archived",
+      archivedByMissingSync: true,
+      workflowStateId: "doing",
+    });
+    const configured = updateWorkflowState(missing, "doing", {
+      name: "Doing",
+      done: true,
+    });
+    const returned = importConnectorWorkItems(
+      configured,
+      [createCandidate()],
+      undefined,
+      factories,
+    ).state;
+    expect(returned.workItems[0]).toMatchObject({
+      status: "archived",
+      archivedByMissingSync: false,
+      workflowStateId: "doing",
+      returnedAt: undefined,
+    });
+    expect(
+      restoreBacklogItem(returned, "work-item-1").workItems[0],
+    ).toMatchObject({ status: "active", workflowStateId: undefined });
+  });
+
+  it("closes a carried settled subitem reactivated in its unchanged Done state", () => {
+    const imported = importConnectorWorkItems(
+      createState({
+        workflowStates: [
+          { _id: "todo", name: "To do", color: "#64748b", createdAt: 1 },
+          {
+            _id: "done",
+            name: "Done",
+            color: "#059669",
+            done: true,
+            createdAt: 1,
+          },
+        ],
+        workflowStateMappings: [
+          {
+            source: "azure_devops",
+            connectionId: "connection-1",
+            sourceStatusKey: "active",
+            workflowStateId: "todo",
+          },
+        ],
+      }),
+      [createCandidate()],
+      undefined,
+      factories,
+    ).state;
+    const carried = {
+      ...imported,
+      workItems: [
+        {
+          ...imported.workItems[0]!,
+          status: "settled" as const,
+          settledSourceStatusKey: "active",
+          settledImportedPriority: 2,
+        },
+        {
+          _id: "child",
+          title: "Child",
+          createdAt: 1,
+          source: "manual" as const,
+          status: "settled" as const,
+          parentWorkItemId: "work-item-1",
+          settledWithParentId: "work-item-1",
+          workflowStateId: "done",
+        },
+      ],
+    };
+    const returned = importConnectorWorkItems(
+      carried,
+      [createCandidate({ priority: 1 })],
+      undefined,
+      factories,
+    ).state;
+    expect(returned.workItems[0]).toMatchObject({
+      status: "active",
+      workflowStateId: "todo",
+    });
+    expect(returned.workItems[1]).toMatchObject({
+      status: "archived",
+      workflowStateId: "done",
+      settledWithParentId: undefined,
+    });
+  });
   it("keeps the connector's source URL and refreshes it on the next import", () => {
     const imported = importConnectorWorkItems(
       createState(),
@@ -162,7 +294,7 @@ describe("connector work item imports", () => {
   it("creates mapped work items with estimate baselines", () => {
     const operation = importConnectorWorkItems(
       createState({
-        backlogStatuses: [
+        workflowStates: [
           {
             _id: "status-active",
             name: "Active",
@@ -170,12 +302,12 @@ describe("connector work item imports", () => {
             createdAt: 1,
           },
         ],
-        backlogStatusMappings: [
+        workflowStateMappings: [
           {
             source: "azure_devops",
             connectionId: "connection-1",
             sourceStatusKey: "active",
-            backlogStatusId: "status-active",
+            workflowStateId: "status-active",
           },
         ],
       }),
@@ -191,8 +323,8 @@ describe("connector work item imports", () => {
     });
     expect(operation.state.workItems[0]).toMatchObject({
       _id: "work-item-1",
-      backlogStatusId: "status-active",
-      importedBacklogStatusId: "status-active",
+      workflowStateId: "status-active",
+      importedWorkflowStateId: "status-active",
       remainingEstimateHours: 5,
       estimateSync: {
         remainingEstimateHours: {
@@ -597,7 +729,15 @@ describe("connector sync of done items", () => {
     const parentId = imported.workItems.find(
       (workItem) => workItem.sourceId === "source-1",
     )!._id;
-    const settled = settleBacklogItem(imported, parentId, idFactories);
+    const settled = settleBacklogItem(
+      imported,
+      parentId,
+      idFactories,
+      undefined,
+      {
+        includeSubitems: true,
+      },
+    );
 
     const result = archiveDoneConnectorWorkItems(
       settled,
@@ -637,6 +777,533 @@ describe("connector sync of done items", () => {
       }),
     ).toEqual({ state: archived, archivedCount: 0 });
   });
+});
+
+describe("connector sync of workflow states", () => {
+  const workflow = () =>
+    createState({
+      workflowStates: [
+        { _id: "doing", name: "In progress", color: "#d97706", createdAt: 1 },
+        { _id: "review", name: "In review", color: "#7c3aed", createdAt: 1 },
+        {
+          _id: "done",
+          name: "Done",
+          color: "#059669",
+          done: true,
+          createdAt: 1,
+        },
+      ],
+      workflowStateMappings: [
+        {
+          source: "azure_devops",
+          connectionId: "connection-1",
+          sourceStatusKey: "active",
+          workflowStateId: "doing",
+        },
+        {
+          source: "azure_devops",
+          connectionId: "connection-1",
+          sourceStatusKey: "resolved",
+          workflowStateId: "review",
+        },
+      ],
+    });
+  const sync = (state: LocalAppState, overrides = {}) =>
+    importConnectorWorkItems(
+      state,
+      [createCandidate(overrides)],
+      undefined,
+      factories,
+    ).state;
+
+  it("keeps carried subitems closed through source changes mapped Done, then returns them with an open parent", () => {
+    const mapped = {
+      ...workflow(),
+      workflowStateMappings: [
+        ...workflow().workflowStateMappings,
+        ...["ready a", "ready b"].map((sourceStatusKey) => ({
+          source: "azure_devops" as const,
+          connectionId: "connection-1",
+          sourceStatusKey,
+          workflowStateId: "done",
+        })),
+      ],
+    };
+    const imported = sync(mapped);
+    const parent = imported.workItems[0]!;
+    const closed = moveBacklogItemToState(
+      {
+        ...imported,
+        workItems: [
+          parent,
+          {
+            ...parent,
+            _id: "child",
+            sourceId: "child-source",
+            parentWorkItemId: parent._id,
+            workflowStateId: "review",
+          },
+        ],
+      },
+      parent._id,
+      "done",
+      factories,
+      { includeSubitems: true },
+    );
+    const baseline = {
+      ...closed,
+      workItems: closed.workItems.map((item) =>
+        item._id === parent._id
+          ? {
+              ...item,
+              sourceStatusKey: "ready a",
+              sourceStatusLabel: "Ready A",
+              archivedSourceStatusKey: "ready a",
+              importedWorkflowStateId: "done",
+            }
+          : item,
+      ),
+    };
+    const changed = sync(baseline, { state: "Ready B" });
+    expect(changed.workItems[0]).toMatchObject({
+      status: "archived",
+      workflowStateId: "done",
+      workflowStateIdBeforeClose: "doing",
+    });
+    expect(changed.workItems[1]).toBe(baseline.workItems[1]);
+    expect(changed.workItems[1]).toMatchObject({
+      status: "archived",
+      workflowStateId: "done",
+      workflowStateIdBeforeClose: "review",
+      settledWithParentId: parent._id,
+    });
+    const reopened = sync(changed, { state: "Active" });
+    expect(reopened.workItems[0]).toMatchObject({
+      status: "active",
+      workflowStateId: "doing",
+    });
+    expect(reopened.workItems[1]).toMatchObject({
+      status: "active",
+      workflowStateId: "review",
+      settledWithParentId: undefined,
+    });
+  });
+
+  it("restores the former open workflow after a missing item returns in a source state mapped Done", () => {
+    const mapped = {
+      ...workflow(),
+      workflowStateMappings: [
+        ...workflow().workflowStateMappings,
+        {
+          source: "azure_devops" as const,
+          connectionId: "connection-1",
+          sourceStatusKey: "ready",
+          workflowStateId: "done",
+        },
+      ],
+    };
+    const imported = sync(mapped);
+    const missing = importConnectorWorkItems(
+      imported,
+      [],
+      { archiveMissingFromConnectionId: "connection-1" },
+      factories,
+    ).state;
+    expect(missing.workItems[0]).toMatchObject({
+      status: "archived",
+      archivedByMissingSync: true,
+      workflowStateId: "doing",
+    });
+    expect(missing.workItems[0]?.workflowStateIdBeforeClose).toBeUndefined();
+    const returned = sync(missing, { state: "Ready" });
+    expect(returned.workItems[0]).toMatchObject({
+      status: "archived",
+      workflowStateId: "done",
+      workflowStateIdBeforeClose: "doing",
+      archivedByMissingSync: false,
+    });
+    expect(
+      restoreBacklogItem(returned, "work-item-1").workItems[0],
+    ).toMatchObject({
+      status: "active",
+      workflowStateId: "doing",
+      workflowStateIdBeforeClose: undefined,
+    });
+  });
+
+  it("keeps a local move until the source shows a different state", () => {
+    const imported = sync(workflow());
+    const moved = {
+      ...imported,
+      workItems: imported.workItems.map((workItem) => ({
+        ...workItem,
+        workflowStateId: "review",
+      })),
+    };
+
+    expect(sync(moved).workItems[0]?.workflowStateId).toBe("review");
+    expect(
+      sync(sync(moved), { state: "Resolved" }).workItems[0]?.workflowStateId,
+    ).toBe("review");
+    expect(
+      sync(moved, { state: "Resolved" }).workItems[0]?.importedWorkflowStateId,
+    ).toBe("review");
+  });
+
+  it("follows the mapping again when the source state changes", () => {
+    const imported = sync(workflow(), { state: "Resolved" });
+    const moved = {
+      ...imported,
+      workItems: imported.workItems.map((workItem) => ({
+        ...workItem,
+        workflowStateId: "done",
+      })),
+    };
+
+    expect(sync(moved, { state: "Active" }).workItems[0]?.workflowStateId).toBe(
+      "doing",
+    );
+  });
+
+  it("reopens an archived item that the source shows open in another state", () => {
+    const closed = archiveDoneConnectorWorkItems(
+      sync(workflow()),
+      [
+        {
+          source: "azure_devops",
+          connectionId: "connection-1",
+          sourceId: "source-1",
+          state: "Closed",
+        },
+      ],
+      factories,
+    ).state;
+    expect(closed.workItems[0]).toMatchObject({
+      status: "archived",
+      workflowStateId: "done",
+    });
+
+    const reopened = sync(closed, { state: "Active" });
+    expect(reopened.workItems[0]).toMatchObject({
+      status: "active",
+      returnedAt: 500,
+      workflowStateId: "doing",
+    });
+  });
+
+  it("closes an item whose source state now maps to a done state", () => {
+    const withDoneMapping = {
+      ...workflow(),
+      workflowStateMappings: [
+        ...workflow().workflowStateMappings,
+        {
+          source: "azure_devops" as const,
+          connectionId: "connection-1",
+          sourceStatusKey: "closed",
+          workflowStateId: "done",
+        },
+      ],
+    };
+    const imported = sync(withDoneMapping);
+    const running = {
+      ...imported,
+      timers: [
+        {
+          _id: "timer-1",
+          startedAt: 100,
+          localDate: "2026-10-11",
+          workItemId: imported.workItems[0]!._id,
+          accumulatedDurationMs: 0,
+        },
+      ],
+    };
+
+    const closed = sync(running, { state: "Closed" });
+    expect(closed.workItems[0]).toMatchObject({
+      status: "archived",
+      workflowStateId: "done",
+      workflowStateIdBeforeClose: "doing",
+    });
+    expect(closed.timers).toEqual([]);
+
+    const fresh = sync(
+      { ...withDoneMapping, workItems: [] },
+      { state: "Closed" },
+    );
+    expect(fresh.workItems[0]?.status).toBe("archived");
+  });
+
+  it("reopens archived children carried by a parent reopened in the source", () => {
+    const imported = sync(workflow());
+    const parent = imported.workItems[0]!;
+    const closed = {
+      ...imported,
+      workItems: [
+        {
+          ...parent,
+          status: "archived" as const,
+          workflowStateId: "done",
+          archivedSourceStatusKey: "closed",
+        },
+        {
+          ...parent,
+          _id: "child",
+          sourceId: "child-source",
+          status: "archived" as const,
+          workflowStateId: "done",
+          workflowStateIdBeforeClose: "review",
+          settledWithParentId: parent._id,
+        },
+      ],
+    };
+    const reopened = sync(closed, { state: "Active" });
+    expect(
+      reopened.workItems.find((item) => item._id === "child"),
+    ).toMatchObject({ status: "active", workflowStateId: "review" });
+  });
+
+  it("returns a settled item when a changed done source state maps to an open state", () => {
+    const mapped = {
+      ...workflow(),
+      workflowStateMappings: [
+        ...workflow().workflowStateMappings,
+        {
+          source: "azure_devops" as const,
+          connectionId: "connection-1",
+          sourceStatusKey: "closed",
+          workflowStateId: "review",
+        },
+      ],
+    };
+    const imported = sync(mapped);
+    const settled = {
+      ...imported,
+      workItems: imported.workItems.map((item) => ({
+        ...item,
+        status: "settled" as const,
+        settledSourceStatusKey: "active",
+      })),
+    };
+    const result = archiveDoneConnectorWorkItems(
+      settled,
+      [
+        {
+          source: "azure_devops",
+          connectionId: "connection-1",
+          sourceId: "source-1",
+          state: "Closed",
+        },
+      ],
+      factories,
+    );
+    expect(result.state.workItems[0]).toMatchObject({
+      status: "active",
+      workflowStateId: "review",
+      returnedAt: 500,
+    });
+  });
+
+  it("keeps a done source state open when the user mapped it to a state that isn't done", () => {
+    const mapped = {
+      ...workflow(),
+      workflowStateMappings: [
+        ...workflow().workflowStateMappings,
+        {
+          source: "azure_devops" as const,
+          connectionId: "connection-1",
+          sourceStatusKey: "closed",
+          workflowStateId: "review",
+        },
+      ],
+    };
+    const result = archiveDoneConnectorWorkItems(
+      sync(mapped),
+      [
+        {
+          source: "azure_devops",
+          connectionId: "connection-1",
+          sourceId: "source-1",
+          state: "Closed",
+        },
+      ],
+      factories,
+    );
+
+    expect(result.archivedCount).toBe(0);
+    expect(result.state.workItems[0]).toMatchObject({
+      status: "active",
+      workflowStateId: "review",
+      sourceStatusLabel: "Closed",
+    });
+  });
+
+  it("keeps a local Archive when the source still shows the same state", () => {
+    const imported = sync(workflow());
+    const archived = archiveBacklogItem(
+      imported,
+      imported.workItems[0]!._id,
+      factories,
+    );
+
+    expect(sync(archived).workItems[0]?.status).toBe("archived");
+  });
+  it("keeps an archived pending source write when sync still reports its old open mapping", () => {
+    const mapped = workflow();
+    mapped.workflowStateMappings.push({
+      source: "azure_devops",
+      connectionId: "connection-1",
+      sourceStatusKey: "closed",
+      workflowStateId: "done",
+    });
+    const imported = sync(mapped, { state: "Resolved" });
+    const pending = settleBacklogItem(
+      imported,
+      imported.workItems[0]!._id,
+      factories,
+      { state: { name: "Closed", done: true } },
+    );
+    expect(pending.workItems[0]?.status).toBe("archived");
+    expect(
+      archiveDoneConnectorWorkItems(
+        pending,
+        [
+          {
+            source: "azure_devops",
+            connectionId: "connection-1",
+            sourceId: "source-1",
+            state: "Resolved",
+          },
+        ],
+        factories,
+      ),
+    ).toEqual({ state: pending, archivedCount: 0 });
+  });
+
+  it.each(["changed", "unchanged", "missing"])(
+    "handles an archived done item mapped open when its source is %s",
+    (sourceChange) => {
+      const mapped = workflow();
+      const imported = sync(mapped, { state: "Resolved" });
+      const parent = imported.workItems[0]!;
+      const closed = archiveBacklogItem(
+        {
+          ...imported,
+          workItems: [
+            parent,
+            {
+              ...parent,
+              _id: "child",
+              sourceId: "child",
+              parentWorkItemId: parent._id,
+              status: "archived",
+              workflowStateId: "done",
+              workflowStateIdBeforeClose: "doing",
+              settledWithParentId: parent._id,
+            },
+          ],
+        },
+        parent._id,
+        factories,
+      );
+      const state =
+        sourceChange === "missing"
+          ? {
+              ...closed,
+              workItems: closed.workItems.map((item) =>
+                item._id === parent._id
+                  ? { ...item, archivedByMissingSync: true }
+                  : item,
+              ),
+            }
+          : closed;
+      const result = archiveDoneConnectorWorkItems(
+        state,
+        [
+          {
+            source: "azure_devops",
+            connectionId: "connection-1",
+            sourceId: "source-1",
+            state: sourceChange === "changed" ? "Active" : "Resolved",
+          },
+        ],
+        factories,
+      );
+      expect(result.archivedCount).toBe(0);
+      const reopened = sourceChange !== "unchanged";
+      expect(result.state.workItems[0]).toMatchObject(
+        reopened
+          ? {
+              status: "active",
+              workflowStateId: sourceChange === "changed" ? "doing" : "review",
+              importedWorkflowStateId:
+                sourceChange === "changed" ? "doing" : "review",
+              archivedAt: undefined,
+              archivedSourceStatusKey: undefined,
+              archivedByMissingSync: false,
+              workflowStateIdBeforeClose: undefined,
+              returnedAt: 500,
+            }
+          : { status: "archived", workflowStateId: "done" },
+      );
+      expect(result.state.workItems[1]).toMatchObject(
+        reopened
+          ? {
+              status: "active",
+              workflowStateId: "doing",
+              settledWithParentId: undefined,
+            }
+          : { status: "archived" },
+      );
+      if (!reopened) expect(result.state).toBe(state);
+    },
+  );
+
+  it.each(["doing", "done"])(
+    "refreshes the imported baseline when a changed done source state maps to %s",
+    (destination) => {
+      const mapped = {
+        ...workflow(),
+        workflowStateMappings: [
+          ...workflow().workflowStateMappings,
+          {
+            source: "azure_devops" as const,
+            connectionId: "connection-1",
+            sourceStatusKey: "closed",
+            workflowStateId: destination,
+          },
+        ],
+      };
+      const imported = sync(mapped);
+      const moved = {
+        ...imported,
+        workItems: imported.workItems.map((item) => ({
+          ...item,
+          workflowStateId: "review",
+        })),
+      };
+      const result = archiveDoneConnectorWorkItems(
+        moved,
+        [
+          {
+            source: "azure_devops",
+            connectionId: "connection-1",
+            sourceId: "source-1",
+            state: "Closed",
+          },
+        ],
+        factories,
+      );
+      expect(result.state.workItems[0]).toMatchObject({
+        workflowStateId: destination,
+        importedWorkflowStateId: destination,
+        status: destination === "done" ? "archived" : "active",
+      });
+      if (destination === "done")
+        expect(result.state.workItems[0]?.workflowStateIdBeforeClose).toBe(
+          "review",
+        );
+    },
+  );
 });
 
 describe("connector estimate sync", () => {

@@ -3,6 +3,11 @@ import {
   type ConnectorSettleState,
 } from "@ajour/shared";
 import type { BacklogSettleChange } from "@/domain/backlog/backlog-item-lifecycle";
+import {
+  getPriorityLevel,
+  getSourcePriority,
+  type PriorityRanges,
+} from "@/domain/backlog/priority";
 import { parsePriorityInput } from "@/features/backlog/backlog-task-editor";
 
 export interface SettleStateGroup {
@@ -39,21 +44,54 @@ export function findSettleState(
   );
 }
 
+export function isSettleStateDraftValid(
+  states: ConnectorSettleState[],
+  stateName: string,
+  sourceStatusLabel: string | undefined,
+) {
+  return (
+    Boolean(findSettleState(states, stateName)) ||
+    normalizeConnectorStatusKey(stateName) ===
+      normalizeConnectorStatusKey(sourceStatusLabel ?? "")
+  );
+}
+
 /**
- * Turns the settle dialog's fields into a change. The domain keeps only the
- * fields that differ from the item. Returns null for a priority that is not a
- * whole number from 0 to 999.
+ * Turns the settle dialog's fields into a change. A new priority level is
+ * written as the lowest source value of its range, and only when the level
+ * changed. The domain keeps only the fields that differ from the item.
+ * Returns null for an unsupported changed state, an invalid level, an
+ * unsupported priority clear, or a changed level without a source range.
  */
 export function buildSettleChange(
   states: ConnectorSettleState[],
   stateName: string,
   priorityInput: string,
+  current: {
+    sourceStatusLabel?: string;
+    importedPriority?: number;
+    ranges: PriorityRanges;
+  },
 ): BacklogSettleChange | null {
-  const priority = parsePriorityInput(priorityInput);
-  if (priority === null || (priority !== undefined && priority > 999)) {
+  if (!isSettleStateDraftValid(states, stateName, current.sourceStatusLabel))
+    return null;
+  const level = parsePriorityInput(priorityInput);
+  if (level === null) {
     return null;
   }
 
+  const currentLevel = getPriorityLevel(
+    current.importedPriority,
+    current.ranges,
+  );
+  if (level === undefined && currentLevel !== undefined) return null;
+  const priority =
+    level !== undefined && level !== currentLevel
+      ? getSourcePriority(level, current.ranges)
+      : undefined;
+  if (level !== undefined && level !== currentLevel && priority === undefined) {
+    return null;
+  }
   const state = findSettleState(states, stateName);
   return {
     state: state ? { name: state.name, done: state.done } : undefined,

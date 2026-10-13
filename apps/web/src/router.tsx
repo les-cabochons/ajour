@@ -57,6 +57,10 @@ const SettingsBacklogPage = lazy(async () => {
   const module = await import("@/features/settings/settings-backlog-page");
   return { default: module.SettingsBacklogPage };
 });
+const SettingsWorkflowPage = lazy(async () => {
+  const module = await import("@/features/settings/settings-workflow-page");
+  return { default: module.SettingsWorkflowPage };
+});
 const SettingsProjectsPage = lazy(async () => {
   const module = await import("@/features/settings/settings-projects-page");
   return { default: module.SettingsProjectsPage };
@@ -289,6 +293,16 @@ const settingsBacklogRoute = createRoute({
   ),
 });
 
+const settingsWorkflowRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/workflow",
+  component: () => (
+    <RouteSuspense>
+      <SettingsWorkflowPage />
+    </RouteSuspense>
+  ),
+});
+
 const settingsTimeEntriesRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/time-entries",
@@ -351,6 +365,7 @@ const routeTree = rootRoute.addChildren([
       settingsPluginsRoute,
       settingsPluginDetailRoute,
       settingsBacklogRoute,
+      settingsWorkflowRoute,
       settingsProjectsRoute,
       settingsTimeEntriesRoute,
       settingsSyncReviewRoute,

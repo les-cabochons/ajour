@@ -61,6 +61,8 @@ import {
 import { useAppSidebar } from "@/lib/app-sidebar";
 import { resolveSidebarWidth, useSidebarLayout } from "@/lib/sidebar-layout";
 import { sendPendingSourceWrites } from "@/features/backlog/backlog-source-writes";
+import { CloseSubitemsDialogHost } from "@/features/backlog/close-subitems-dialog";
+import { SourceStateDialogHost } from "@/features/backlog/source-state-dialog";
 import { SettleDialogHost } from "@/features/backlog/settle-dialog";
 import { SnoozePickerHost } from "@/features/backlog/snooze-picker";
 import { useShortcut } from "@/lib/shortcut-handlers";
@@ -685,6 +687,8 @@ export function AppShell() {
       <CommandPalette />
       <SnoozePickerHost />
       <SettleDialogHost />
+      <CloseSubitemsDialogHost />
+      <SourceStateDialogHost />
       {/* useAppSidebar owns the state, persistence and Cmd/Ctrl+B, so the
           provider is controlled and its own shortcut stays off. */}
       <SidebarProvider

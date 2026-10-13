@@ -61,6 +61,9 @@ import { localStore } from "@/lib/local-store";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
+import { getPriorityLevelName } from "@/domain/backlog/priority";
+import { PriorityIcon } from "@/features/backlog/priority-icon";
+import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
 
 const ESTIMATE_TILES: { key: LocalWorkItemEstimateFieldKey; label: string }[] =
   [
@@ -161,14 +164,19 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
   // `?action=`. Only enabled actions of the item run.
   useActionRequest(({ action }) => {
     if (action !== "edit" && action !== "add-subitem") return;
-    const current = localStore
-      .snapshot()
-      .workItems.find((candidate) => candidate._id === itemId);
+    const currentState = localStore.snapshot();
+    const current = currentState.workItems.find(
+      (candidate) => candidate._id === itemId,
+    );
     if (!current) return;
     const isSubitem = isSubtaskWorkItem(current);
     const requested = getBacklogItemActions(current, {
+      isRunning: currentState.timers.some(
+        (timer) => timer.workItemId === current._id,
+      ),
       isSubitem,
       subitemCount: 0,
+      otherSourceStateCount: getOtherSourceStates(current).length,
     }).find((candidate) => candidate.id === action);
     if (requested && !requested.disabledReason) {
       setEditor(action);
@@ -204,11 +212,14 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
   const isSubitem = isSubtaskWorkItem(item);
   const isSnoozed = isBacklogItemSnoozed(item, now);
   const actions = getBacklogItemActions(item, {
+    isRunning: state.timers.some((timer) => timer.workItemId === item._id),
     isSubitem,
     isSnoozed,
     subitemCount: isSubitem ? 0 : subitems.length,
     settleOpensDialog: settleOpensDialog(item),
+    otherSourceStateCount: getOtherSourceStates(item).length,
   });
+  const startAction = actions.find((action) => action.id === "start-entry");
   const parentKey = getWorkItemParentKey(item);
   const parent = parentKey
     ? state.workItems.find((candidate) =>
@@ -217,8 +228,8 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
     : undefined;
   const project = state.projects.find((entry) => entry._id === item.projectId);
   const task = project?.tasks.find((entry) => entry._id === item.taskId);
-  const backlogStatus = state.backlogStatuses.find(
-    (status) => status._id === item.backlogStatusId,
+  const workflowState = state.workflowStates.find(
+    (status) => status._id === item.workflowStateId,
   );
   const reference =
     item.source === "azure_devops"
@@ -242,7 +253,9 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
       void navigate({ to: "/backlog" });
     }
     runBacklogItemAction(
-      item,
+      localStore
+        .snapshot()
+        .workItems.find((current) => current._id === item._id) ?? item,
       actionId,
       (hosted: HostedBacklogItemActionId) => setEditor(hosted),
       options,
@@ -286,6 +299,8 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
           size="sm"
           variant="outline"
           onClick={() => runAction("start-entry")}
+          disabled={Boolean(startAction?.disabledReason)}
+          title={startAction?.disabledReason}
         >
           <PlayIcon /> Start entry
         </Button>
@@ -462,9 +477,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                             {subitem.title}
                           </span>
                           {subitem.priority !== undefined ? (
-                            <span className="text-[11px] text-muted-foreground">
-                              P{subitem.priority}
-                            </span>
+                            <PriorityIcon priority={subitem.priority} />
                           ) : null}
                           {subitem.sourceStatusLabel ? (
                             <span className="text-[11px] text-muted-foreground">
@@ -527,8 +540,15 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                 <Property label="State">
                   {item.sourceStatusLabel ?? "–"}
                 </Property>
-                <Property label="Status">{backlogStatus?.name ?? "–"}</Property>
-                <Property label="Priority">{item.priority ?? "–"}</Property>
+                <Property label="Workflow state">
+                  {workflowState?.name ?? "–"}
+                </Property>
+                <Property label="Priority">
+                  <span className="inline-flex items-center gap-1.5">
+                    <PriorityIcon priority={item.priority} decorative />
+                    {getPriorityLevelName(item.priority)}
+                  </span>
+                </Property>
               </div>
               <div className="py-1">
                 <Property label="Project">

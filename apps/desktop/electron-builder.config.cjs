@@ -39,6 +39,14 @@ module.exports = {
       to: "internal-app-runtime",
     },
     {
+      // electron-builder skips a source directory's top-level node_modules.
+      from: path.resolve(
+        desktopRoot,
+        "build/internal-app-runtime/node_modules",
+      ),
+      to: "internal-app-runtime/node_modules",
+    },
+    {
       from: path.resolve(repoRoot, "assets"),
       to: "assets",
     },

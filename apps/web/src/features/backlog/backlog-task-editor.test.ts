@@ -48,7 +48,7 @@ describe("backlog task editor", () => {
         createWorkItem({
           note: "Description",
           priority: 2,
-          backlogStatusId: "status-1",
+          workflowStateId: "status-1",
           keepWhenMissingFromSync: true,
         }),
       ),
@@ -56,7 +56,7 @@ describe("backlog task editor", () => {
       title: "Original title",
       note: "Description",
       priority: "2",
-      backlogStatusId: "status-1",
+      workflowStateId: "status-1",
       parentWorkItemId: "",
       projectId: "project-1",
       taskId: "task-1",
@@ -108,7 +108,7 @@ describe("backlog task editor", () => {
     expect(
       validateBacklogTaskEditor(fields, { isSubtask: false }),
     ).toMatchObject({
-      priorityError: "Enter a whole number",
+      priorityError: "Choose a priority",
       remainingEstimateError: "Enter a non-negative number",
       canSave: false,
     });
@@ -165,7 +165,7 @@ describe("backlog task editor", () => {
 
   describe("panel draft", () => {
     it("starts a new subitem under its parent with the parent's project and task", () => {
-      const parent = createWorkItem({ backlogStatusId: "status-1" });
+      const parent = createWorkItem({ workflowStateId: "status-1" });
 
       expect(
         createBacklogTaskEditorSeed({ kind: "create", parent }),
@@ -173,7 +173,7 @@ describe("backlog task editor", () => {
         parentWorkItemId: "work-item-1",
         projectId: "project-1",
         taskId: "task-1",
-        backlogStatusId: "",
+        workflowStateId: "",
         title: "",
       });
     });
@@ -287,8 +287,8 @@ describe("backlog task editor", () => {
         source: "azure_devops",
         priority: 1,
         importedPriority: 2,
-        backlogStatusId: "status-1",
-        importedBacklogStatusId: "status-1",
+        workflowStateId: "status-1",
+        importedWorkflowStateId: "status-1",
       });
 
       expect(editDraft({ kind: "edit", workItem: synced })).toMatchObject({
@@ -298,7 +298,7 @@ describe("backlog task editor", () => {
       expect(
         editDraft(
           { kind: "edit", workItem: synced },
-          { backlogStatusId: "status-2" },
+          { workflowStateId: "status-2" },
         ).statusReset,
       ).toBe("status-1");
       expect(

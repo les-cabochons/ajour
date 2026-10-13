@@ -2205,7 +2205,8 @@
   }
 
   .backlog-settings-status-row {
-    grid-template-columns: auto minmax(0, 1fr) auto auto auto;
+    grid-template-columns: auto auto minmax(0, 1fr) auto auto auto auto;
+    align-items: center;
   }
 
   .backlog-settings-status-list,
@@ -5861,4 +5862,402 @@
 .ajour-sidebar-resize-handle:focus-visible {
   outline: none;
   background: var(--focus-ring);
+}
+/* Backlog list and board use the same workflow controls and item model. */
+.backlog-workspace-main {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+.backlog-workspace-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+}
+.backlog-workspace-header h1 {
+  font-size: 15px;
+  font-weight: 600;
+}
+.backlog-workspace-filterbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 8px 24px;
+  border-bottom: 1px solid var(--border);
+}
+.backlog-workspace-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding-bottom: 32px;
+}
+.backlog-workspace-scroll.is-board {
+  padding: 16px 20px 32px;
+  background: var(--surface-low);
+}
+.backlog-group-header {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 40px;
+  padding: 0 24px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface-low);
+}
+.backlog-group-header h2 {
+  font-size: 12px;
+  font-weight: 600;
+}
+.backlog-group-count {
+  font-size: 11px;
+  color: var(--text-tertiary);
+}
+.backlog-group-header > button {
+  margin-left: auto;
+}
+.backlog-state-dot {
+  display: inline-block;
+  flex: none;
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-radius: 50%;
+  color: var(--text-tertiary);
+}
+.backlog-list-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 4px 24px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+}
+.backlog-list-row:hover,
+.backlog-board-card:hover {
+  background: var(--hover-bg);
+}
+.backlog-list-row.is-selected,
+.backlog-board-card.is-selected {
+  background: var(--highlight-bg);
+}
+.backlog-list-row:focus-visible,
+.backlog-board-card:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--ring);
+}
+.backlog-item-leading,
+.backlog-item-properties {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.backlog-item-id {
+  max-width: 86px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.backlog-item-content {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  flex: 1;
+}
+.backlog-item-title {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+.backlog-item-parent {
+  max-width: 140px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+.backlog-item-project {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-secondary);
+  font-size: 10px;
+}
+.backlog-item-estimate {
+  color: var(--text-secondary);
+  font-size: 11px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.backlog-item-actions {
+  display: flex;
+  align-items: center;
+  opacity: 0;
+}
+.backlog-list-row:hover .backlog-item-actions,
+.backlog-list-row:focus-within .backlog-item-actions,
+.backlog-board-card:hover .backlog-item-actions,
+.backlog-board-card:focus-within .backlog-item-actions {
+  opacity: 1;
+}
+.backlog-item-marker {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  white-space: nowrap;
+  color: var(--text-tertiary);
+}
+.backlog-subitem-progress {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  color: var(--text-tertiary);
+}
+.backlog-item-source-state {
+  max-width: 100px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 10px;
+  color: var(--text-tertiary);
+  text-align: left;
+}
+.backlog-item-source-state:not(:disabled):hover {
+  color: var(--text);
+}
+.backlog-board {
+  display: grid;
+  grid-auto-flow: column;
+  grid-auto-columns: minmax(250px, 1fr);
+  gap: 14px;
+  min-width: 100%;
+  width: max-content;
+}
+.backlog-board-column {
+  min-height: 240px;
+  border: 1px solid transparent;
+  border-radius: var(--control-radius);
+}
+.backlog-board-column .backlog-group-header {
+  padding: 0 8px;
+  background: var(--surface-low);
+  border-bottom: 0;
+}
+.backlog-column-items {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 4px;
+}
+.backlog-board-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--control-radius);
+  font-size: 12px;
+  cursor: pointer;
+  outline: none;
+}
+.backlog-board-card .backlog-item-leading {
+  justify-content: space-between;
+}
+.backlog-board-card .backlog-item-content {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 5px;
+}
+.backlog-board-card .backlog-item-title {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  white-space: normal;
+  line-height: 1.55;
+}
+.backlog-board-card .backlog-item-properties {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.backlog-board-card .backlog-item-project {
+  margin-left: auto;
+}
+.backlog-board-card .backlog-item-actions {
+  margin-left: auto;
+}
+.backlog-progress-track {
+  width: 36px;
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.backlog-progress-track > span {
+  display: block;
+  height: 100%;
+  background: var(--success);
+}
+.backlog-column-empty {
+  padding: 18px 8px;
+  text-align: center;
+  color: var(--text-tertiary);
+  font-size: 11px;
+}
+.backlog-swimlane-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 42px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.backlog-swimlane-header > span {
+  font-size: 11px;
+  font-weight: 400;
+  color: var(--text-tertiary);
+}
+.backlog-swimlane + .backlog-swimlane {
+  margin-top: 16px;
+}
+.backlog-list-group.is-drop-target .backlog-group-header,
+.backlog-board-column.is-drop-target {
+  background: var(--highlight-bg);
+  outline: 1px solid var(--ring);
+}
+.backlog-drop-before {
+  border-top: 2px solid var(--primary);
+}
+.backlog-move-preview {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 100;
+  pointer-events: none;
+  padding: 12px;
+  background: var(--surface-high);
+  border: 1px solid var(--ring);
+  border-radius: var(--control-radius);
+  box-shadow: var(--shadow-lg);
+  font-size: 12px;
+}
+.backlog-view-empty {
+  padding: 64px 24px;
+  text-align: center;
+}
+.backlog-view-empty h2 {
+  font-size: 15px;
+  font-weight: 600;
+}
+.backlog-view-empty p {
+  margin: 8px 0 18px;
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.backlog-peek {
+  height: 100%;
+  overflow: auto;
+}
+.backlog-peek-properties {
+  display: grid;
+  grid-template-columns: 100px minmax(0, 1fr);
+  align-items: center;
+  gap: 12px 8px;
+  font-size: 11px;
+}
+.backlog-peek-properties dt {
+  color: var(--text-tertiary);
+}
+.backlog-peek-properties dd {
+  min-width: 0;
+}
+.backlog-narrow-add {
+  position: absolute;
+  right: 16px;
+  bottom: calc(20px + env(safe-area-inset-bottom));
+  z-index: 2;
+}
+@media (max-width: 767px) {
+  .backlog-workspace-header {
+    padding: 10px 12px;
+  }
+  .backlog-workspace-filterbar {
+    padding: 6px 12px;
+  }
+  .backlog-list-row {
+    padding: 6px 10px;
+    gap: 4px;
+    min-height: 48px;
+  }
+  .backlog-item-leading,
+  .backlog-item-properties {
+    gap: 2px;
+  }
+  .backlog-item-id,
+  .backlog-item-project,
+  .backlog-item-parent,
+  .backlog-list-row .backlog-item-marker,
+  .backlog-list-row .backlog-subitem-progress {
+    display: none;
+  }
+  .backlog-item-actions {
+    opacity: 1;
+  }
+  .backlog-group-header {
+    padding: 0 12px;
+  }
+  .backlog-workspace-scroll {
+    padding-bottom: 100px;
+  }
+}
+@media (pointer: coarse) {
+  .backlog-item-actions {
+    opacity: 1;
+  }
+}
+.backlog-list-row,
+.backlog-board-card {
+  position: relative;
+}
+.backlog-hidden-picker {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  padding: 0;
+  pointer-events: none;
+}
+@media (min-width: 768px) {
+  .backlog-workspace-header,
+  .backlog-workspace-filterbar,
+  .backlog-list-row,
+  .backlog-list-group .backlog-group-header {
+    padding-inline: calc(24px + var(--app-workspace-content-gutter, 0px));
+  }
 }

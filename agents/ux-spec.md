@@ -105,6 +105,7 @@ Each nav label matches its page title. Old routes are removed, not redirected.
 | General      | General                        | `/settings/general`      |
 | Plugins      | Plugins                        | `/settings/plugins`      |
 | Backlog      | Backlog                        | `/settings/backlog`      |
+| Workflow     | Workflow                       | `/settings/workflow`     |
 | Projects     | Projects                       | `/settings/projects`     |
 | Time entries | Import and export time entries | `/settings/time-entries` |
 | Sync review  | Sync review                    | `/settings/sync-review`  |
@@ -402,15 +403,101 @@ One "Submit week" button, styled the same, sits in the Day and Week headers at e
 
 ## Backlog
 
-Decided in [Backlog page under the new conventions](https://github.com/les-cabochons/ajour/issues/25).
+Decided in [Backlog page under the new conventions](https://github.com/les-cabochons/ajour/issues/25), then redesigned as a list and a board inspired by Linear: [ADR 0002](adr/0002-workflow-states-and-done.md), and the prototype on branch `prototype/backlog-views`, where variant A won, with the peek and project swimlanes from variant B. The page takes Linear's density and options and keeps Ajour's tokens, fonts and quiet style.
 
-- Editing a backlog item uses the side panel, like time entries, with the same rules: explicit Save (button, Enter in the title, Cmd+Enter), Escape or × discards, outside clicks do nothing. The narrow view uses the full-width dialog. This replaces the inline expanded editor, the mobile modal, the title edit mode and the separate note modal. Escape no longer saves.
-- The panel holds title, status, priority, project and task mapping, note, the estimates with their "Reset to subitem total" buttons, and "Keep when missing from sync" for synced items. Its header has the "…" action menu.
-- "New backlog item" in the page header opens a blank panel. "Add subitem" opens the panel with the parent set.
-- Subitems stay listed under their parent row, expanded with the row's chevron.
-- The page header holds the Active / Settled / Archived switch and the sort menu at every width. Snoozed items stay under Active with a snoozed marker. The floating filter and "+" buttons go away.
-- Clicking a row or pressing Enter opens the backlog item page. Edit opens the side panel.
-- The row's play button stays as the Start entry shortcut. Entries start on today.
+### Workflow
+
+- The user defines a workflow in Settings > Workflow: an ordered list of workflow states, each with a name and a color. New workspaces start with To do, In progress, In review and Done.
+- A state can carry the Done flag, and more than one can, such as Done and Canceled. The workflow keeps at least one done state.
+- Moving an item into a done state settles and archives it. Moving it out of one makes it active again and unsettles it. No other state changes whether an item is active, settled or archived. Settle and Snooze stay explicit actions.
+- A settled item stays in its state's column with a muted Settled marker and its settle date.
+
+### Mapping source states
+
+Settings > Workflow lists, for each connection and source project, its source states. It replaces the Synced status mapping. Explicit Settle rules stay in Settings > Backlog. Moves use the per-workflow write rules below.
+
+- **In:** each source state maps to one workflow state. Connectors list every source state of a source project, so states are mapped before any item reaches them. A plugin that can't list them falls back to the states seen in syncs.
+- A new source state in the tool's done category is preselected to map to the first done state. A source state whose name matches a workflow state exactly, ignoring case, maps to it. Anything else stays unmapped.
+- Items in an unmapped source state show under "No state", first on the board and in the list. Settings > Workflow shows the count of unmapped source states, and the Backlog header shows a quiet notice that links there.
+- **Out:** each workflow state has a default source state, Ask, or Don't write. The default starts on the first mapped source state. Ask is offered when two or more source states map in, and opens a dialog with them when an item moves there.
+- Moving a synced item writes its new source state after the Undo window, as Settle does in [ADR 0001](adr/0001-connector-writes-after-undo-window.md). A plugin without the write capability moves the item locally.
+- "Change source state…" writes another source state of the same workflow state and leaves the item in place. It shows in the "…" and right-click menus when two or more source states map in, and on the card's source-state label.
+- A sync that shows a different source state moves the item to that state's mapping. A sync that shows an archived item in a source state that isn't done makes it active again in the mapped column, as returned.
+
+### Priority
+
+- Priority has five levels with Linear's icons: Urgent, High, Medium, Low and No priority.
+- Each connection maps source priority values to levels with a range for each level, set in Settings > Workflow. The connector supplies default ranges, such as Azure DevOps 1 Urgent, 2 High, 3 Medium and 4 Low. A value outside every range is No priority.
+- Settle and moving into a done state write the lowest value of the level's range, and only when the level changed.
+- Within a level, items keep the custom order.
+
+### Layouts
+
+- The page has a list and a board. The header's two-icon toggle and the Display popover switch between them. The narrow view always shows the list and hides the toggle.
+- The list groups rows under sticky group headers. A row is one line: priority, id, state, type, title, a muted "↳ Parent" for a subitem, subitem progress, the running and Settled markers, then project and remaining estimate on the right.
+- The board shows one column per group. A card shows the id, the state and title on up to two lines, "↳ Parent" for a subitem, then priority, type, the Settled marker, subitem progress, project and remaining estimate.
+- Each group and column header has a "+" that opens New backlog item with that state, priority or project set. Done states have none.
+- Subitems are their own rows and cards, in their own state. "Show subitems" hides them. Their parent shows "2/5" subitem progress.
+
+### Display
+
+The Display popover holds:
+
+- Layout: List or Board.
+- Grouping: workflow state (the default), priority, project, or none. None is list-only.
+- Swimlanes, on the board only: None (the default) or Project. One collapsible swimlane per project, with "No project" last. Hidden when grouping is Project.
+- Ordering: Custom (the default), Priority, Created, Remaining estimate or Title.
+- Done items: Past week (the default), All or None.
+- Show settled items and Show subitems, both on by default.
+- Display properties: ID, priority, project, estimate and source state.
+
+The layout, grouping, swimlanes, done window, toggles and properties are saved per device. The ordering stays in local state, because the sidebar shares it.
+
+### Filters
+
+- Filter adds removable chips: state, priority, project, task, source project or connection, type, has estimate, and running.
+- Filters apply to the page only. The sidebar keeps its own list.
+
+### Peek
+
+- Clicking a row or card opens the peek on the right. Space toggles it on the focused row. It follows the clicked item until Escape or × closes it.
+- The peek shows the type and id, the title, Start entry and Open page, then state, source state, priority, lifecycle, project, task, estimates and subitems.
+- State, priority, project and task change in place and save at once with Undo, like the pickers on a card.
+- Edit turns the peek into the backlog item editor in the same slot, with its explicit Save. Saving or discarding goes back to the peek.
+- Enter, a double-click or Open page opens the backlog item page.
+- The narrow view has no peek: a tap opens the item page.
+
+### Moving items
+
+- Dragging a card to another column, or a row to another group, sets its state, priority or project. A drop on a done state follows the done rules above.
+- With Custom ordering, dragging within a column or group moves the item in the one custom order, so the sidebar follows. Other orderings allow moves across columns only.
+- The state and priority icons on a row or card open pickers. Picking a state is the same as dropping on it, with the same Ask and subitem prompts.
+- Every move shows the Undo toast.
+
+### Closing a parent
+
+- Moving a parent into a done state, or settling it, while it has open subitems asks "Also close its 3 subitems?" (or "settle"), with Include subitems, Only this item, and "Remember my choice".
+- Settings > Backlog holds the choice: Ask (the default), Include them, or Leave them.
+- Included synced subitems are written through their own source project's mapping. Subitems already settled or archived are left alone.
+- Reopening the parent brings back the subitems that closed with it.
+
+### Archive
+
+- Archived items older than the done window live in Archive, from the header's "…" menu: the list layout filtered to archived items, including items archived because they dropped out of the sync. Restore puts an item back in its state's column.
+
+### Keyboard
+
+- ←/→ move focus between columns, ↑/↓ within a column or list.
+- Alt+←/→ move the focused card to the previous or next workflow state. Alt+↑/↓ reorder, as before.
+- Shift+S opens the state picker and P the priority picker. S stays the global start or stop key.
+- Space toggles the peek. Enter opens the item page. E, B, M and "." keep their meaning.
+
+### Editing
+
+- Editing a backlog item uses the editor form, in the peek slot on wide windows and the full-width dialog in the narrow view, with the entry editor's rules: explicit Save (button, Enter in the title, Cmd+Enter), Escape or × discards, outside clicks do nothing.
+- The form holds title, workflow state, priority, project and task mapping, note, the estimates with their "Reset to subitem total" buttons, and "Keep when missing from sync" for synced items. Its header has the "…" action menu.
+- "New backlog item" in the page header opens a blank form. "Add subitem" opens it with the parent set.
+- Start entry stays on hover, in the "…" menu and in the peek. Entries start on today.
 
 ## Backlog sidebar
 
@@ -474,14 +561,14 @@ Decided after the prototype on branch `prototype/backlog-sidebar`: variant B is 
 Settle means the user has nothing left to do on the item for now.
 
 - A manual item becomes archived.
-- A synced item becomes settled. Its source project's settle rule decides how:
+- A synced item becomes settled. Its source project's Settle rule decides how:
   - Ask, the default, opens the settle dialog: a state picker grouped by state category and a priority field, both starting at the item's current values. Settling with nothing changed is allowed and stays local, such as for "waiting on the client" when no matching state exists.
   - Apply sets a fixed state, priority or both without a dialog.
-- Settling into a state in a done category archives the item instead. Done categories are Azure DevOps Completed and Removed, and Jira Done. Azure DevOps Resolved is not done, because it usually means waiting on QA.
+- Settling into a source state that maps to a done state archives the item instead and moves it there. Azure DevOps Resolved usually maps to a state that isn't done, because it means waiting on QA.
 - Only changed fields are written, and only after the Undo toast closes. If Ajour quits during the window, the write is sent at the next launch. There is no offline queue beyond that.
 - Settling stops and saves the running entry on the item. Undo restores the entry as it was, still running from its original start.
 - A plugin without the settle capability settles its items locally, with no write.
-- Settling a parent carries its subitems that have no priority of their own: they settle or archive with it, and Undo restores them together. Subitems with their own priority keep their own state. Settling a synced subitem writes that subitem, under its own source project's settle rule.
+- Settling a parent with open subitems asks whether to include them, as in Closing a parent under Backlog. Undo restores them together. Settling a synced subitem writes that subitem through its own source project's mapping.
 - The dialog does not offer an assignee yet. Ajour does not import assignees. See [#71](https://github.com/les-cabochons/ajour/issues/71).
 - Settle is the only action that writes priority to the source. Priority edits in the side panel stay local.
 
@@ -494,28 +581,27 @@ Settle means the user has nothing left to do on the item for now.
 
 Syncs move synced items between states:
 
-| What the sync shows                                     | Result                                         |
-| ------------------------------------------------------- | ---------------------------------------------- |
-| An active or settled item reached a done category       | Archived                                       |
-| Someone else changed a settled item's state or priority | Active, as returned                            |
-| An item dropped out of the sync                         | Archived, as today. It returns if it reappears |
+| What the sync shows                                                     | Result                                         |
+| ----------------------------------------------------------------------- | ---------------------------------------------- |
+| An active or settled item reached a source state mapped to a done state | Archived, in that done state                   |
+| Someone else changed a settled item's state or priority                 | Active, as returned                            |
+| An item dropped out of the sync                                         | Archived, as today. It returns if it reappears |
 
 ### Settle rules
 
-- Settings > Backlog lists, for each connection, the source projects seen in syncs. Each has a settle rule: Ask or Apply, and for Apply the target state, priority or both.
-- Manual items have no settle rule. They always archive.
-- With Apply, E and the sidebar's Settle button use the rule. Shift+E or Shift-click opens the dialog prefilled with it.
+- Explicit Settle rules stay in Settings > Backlog, as introduced on main in #95. They control the Settle action and its Shift+E override. Moving an item between workflow states uses the write rules in Settings > Workflow.
+- Manual items always archive.
 
 ### Backlog item page
 
 - The page lives at `/backlog/$itemId`. Clicking a row in the sidebar or on the Backlog page, or pressing Enter on it, opens it.
-- V1 shows only what Ajour stores: title, type and external id with Open in source, source state and backlog status, project and task mapping, priority, estimates with their sync state, note, parent and subitems, and the time entries logged on it.
+- V1 shows only what Ajour stores: title, type and external id with Open in source, source state and workflow state, project and task mapping, priority, estimates with their sync state, note, parent and subitems, and the time entries logged on it.
 - Layout, from the prototype: variant C's header over variant A's body.
   - Header: the type icon in a square tile, the title, and a muted line with the external id (linked to the source), the source project and the source state. The actions sit on the right: Start entry, Snooze, Settle and "…", or Unsnooze, Unsettle or Restore depending on the state.
   - A notice under the header when the item is snoozed, settled, archived or returned, such as "Settled today 7:51 p.m. · waiting in "Waiting for client"".
   - Four tiles: Original, Remaining, Completed and Logged in Ajour. A tile shows the estimate's sync conflict when there is one.
   - A progress bar: completed over original.
-  - Two columns below. The main column has the note, the subitems and the time entries. The right panel lists state, backlog status and priority, then project, task and source project.
+  - Two columns below. The main column has the note, the subitems and the time entries. The right panel lists source state, workflow state and priority, then project, task and source project.
 - The right panel leaves room for fields not imported yet, such as assignee, iteration, area path, tags, acceptance criteria and comments. See [#71](https://github.com/les-cabochons/ajour/issues/71).
 - The page is designed for Azure DevOps first, then Jira.
 - The page header has the "…" action menu. Edit opens the side panel over the page.

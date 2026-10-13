@@ -6,9 +6,9 @@ import type {
   LocalWorkItem,
 } from "@/domain/local-state";
 import {
-  deleteBacklogStatus,
-  setBacklogStatusMapping,
-} from "@/domain/backlog/backlog-status";
+  deleteWorkflowState,
+  setWorkflowStateMapping,
+} from "@/domain/backlog/workflow-states";
 import {
   deleteWorkItem,
   updateWorkItem,
@@ -96,8 +96,10 @@ function createState(): LocalAppState {
       },
     ],
     timesheetImportDrafts: [],
-    backlogStatuses: [],
-    backlogStatusMappings: [],
+    workflowStates: [],
+    workflowStateMappings: [],
+    workflowStateWriteRules: [],
+    priorityScales: [],
   } as unknown as LocalAppState;
 }
 
@@ -403,7 +405,7 @@ function importDraft(_id: string): LocalTimesheetImportDraft {
 function createBacklogState(): LocalAppState {
   const state = createState();
   const project = state.projects[0]!;
-  return setBacklogStatusMapping(
+  return setWorkflowStateMapping(
     {
       ...state,
       projects: [
@@ -416,7 +418,7 @@ function createBacklogState(): LocalAppState {
         },
       ],
       workItems: [
-        workItem({ _id: "item-first", backlogStatusId: "status-doing" }),
+        workItem({ _id: "item-first", workflowStateId: "status-doing" }),
         workItem({ _id: "item-parent", note: "Parent notes" }),
         workItem({ _id: "subitem-1", parentWorkItemId: "item-parent" }),
         workItem({
@@ -428,7 +430,7 @@ function createBacklogState(): LocalAppState {
         }),
         workItem({ _id: "subitem-2", parentWorkItemId: "item-parent" }),
       ],
-      backlogStatuses: [
+      workflowStates: [
         { _id: "status-doing", name: "Doing", color: "#2563eb", createdAt: 1 },
         { _id: "status-done", name: "Done", color: "#059669", createdAt: 2 },
       ],
@@ -442,7 +444,7 @@ function createBacklogState(): LocalAppState {
       source: "azure_devops",
       connectionId: "connection-1",
       sourceStatusKey: "active",
-      backlogStatusId: "status-doing",
+      workflowStateId: "status-doing",
     },
   );
 }
@@ -514,24 +516,24 @@ describe("backlog and project undo", () => {
     expect(restored.state).toBe(edited);
   });
 
-  it("restores a deleted backlog status with its mapping and the items that used it", () => {
+  it("restores a deleted workflow state with its mapping and the items that used it", () => {
     const before = createBacklogState();
     expect(before.workItems[3]).toMatchObject({
-      backlogStatusId: "status-doing",
-      importedBacklogStatusId: "status-doing",
+      workflowStateId: "status-doing",
+      importedWorkflowStateId: "status-doing",
     });
     const { after, undo } = undoAction(before, (state) =>
-      deleteBacklogStatus(state, "status-doing"),
+      deleteWorkflowState(state, "status-doing"),
     );
-    expect(after.backlogStatusMappings).toEqual([]);
-    expect(after.workItems[0]?.backlogStatusId).toBeUndefined();
+    expect(after.workflowStateMappings).toEqual([]);
+    expect(after.workItems[0]?.workflowStateId).toBeUndefined();
 
     const restored = restoreUndo(after, undo);
 
     expect(restored.result).toBe("restored");
-    expect(restored.state.backlogStatuses).toEqual(before.backlogStatuses);
-    expect(restored.state.backlogStatusMappings).toEqual(
-      before.backlogStatusMappings,
+    expect(restored.state.workflowStates).toEqual(before.workflowStates);
+    expect(restored.state.workflowStateMappings).toEqual(
+      before.workflowStateMappings,
     );
     expect(restored.state.workItems).toEqual(before.workItems);
   });
@@ -599,4 +601,32 @@ describe("backlog and project undo", () => {
       before.timesheetImportDrafts,
     );
   });
+});
+
+it("restores custom backlog order and refuses undo after another reorder", () => {
+  const before: LocalAppState = {
+    ...createState(),
+    workItems: [
+      {
+        _id: "a",
+        title: "A",
+        source: "manual",
+        status: "active",
+        createdAt: 1,
+      },
+      {
+        _id: "b",
+        title: "B",
+        source: "manual",
+        status: "active",
+        createdAt: 1,
+      },
+    ],
+  };
+  const after = { ...before, workItems: [...before.workItems].reverse() };
+  const undo = captureUndo(before, after)!;
+  expect(
+    restoreUndo(after, undo).state.workItems.map((item) => item._id),
+  ).toEqual(["a", "b"]);
+  expect(restoreUndo(before, undo).result).toBe("stale");
 });

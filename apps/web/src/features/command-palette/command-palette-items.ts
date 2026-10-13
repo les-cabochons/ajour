@@ -44,6 +44,7 @@ import {
   type ShortcutDefinition,
   type ShortcutPlatform,
 } from "@/lib/shortcuts";
+import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
 
 /** A list the palette shows: the main list, or the actions of one search result. */
 export type PaletteView =
@@ -382,17 +383,20 @@ function backlogItemSection(
   prefix: string,
   workItem: LocalWorkItem,
   workItems: readonly LocalWorkItem[],
+  runningWorkItemId: string | undefined,
   settleOpensDialog: PaletteInput["settleOpensDialog"],
   keysPlatform?: ShortcutPlatform,
 ): PaletteSection {
   const isSubitem = isSubtaskWorkItem(workItem);
   const actions = getBacklogItemActions(workItem, {
+    isRunning: runningWorkItemId === workItem._id,
     isSubitem,
     isSnoozed: isBacklogItemSnoozed(workItem, Date.now()),
     subitemCount: isSubitem
       ? 0
       : getDirectChildWorkItems(workItem, [...workItems]).length,
     settleOpensDialog: settleOpensDialog?.(workItem),
+    otherSourceStateCount: getOtherSourceStates(workItem).length,
   });
 
   return {
@@ -515,6 +519,7 @@ function focusedSection(input: PaletteInput): PaletteSection | null {
         prefix,
         workItem,
         input.workItems,
+        input.timer?.workItemId,
         input.settleOpensDialog,
         platform,
       );
@@ -738,6 +743,7 @@ export function buildPaletteSections(input: PaletteInput): PaletteSection[] {
                 "backlog-item",
                 workItem,
                 input.workItems,
+                input.timer?.workItemId,
                 input.settleOpensDialog,
               )
             : null,

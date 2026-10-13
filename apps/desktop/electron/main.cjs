@@ -481,11 +481,14 @@ async function waitForInternalAppApiStartup(apiProcess) {
   throw lastError ?? new Error("Internal connector API failed to start");
 }
 
-async function ensureInternalAppApiRunning() {
-  if (await checkInternalAppApiHealth()) {
-    return;
-  }
+function internalAppApiPortInUseError(cause) {
+  return new Error(
+    `Ajour's plugin runtime cannot start because port ${INTERNAL_APP_API_PORT} is already in use. Close the other app or development server using this port, then try again.`,
+    { cause },
+  );
+}
 
+async function ensureInternalAppApiRunning() {
   if (internalAppApiServer) {
     await waitForInternalAppApiStartup(internalAppApiServer);
     return;
@@ -501,7 +504,7 @@ async function ensureInternalAppApiRunning() {
     }
 
     if (await checkInternalAppApiHealth()) {
-      return;
+      throw internalAppApiPortInUseError();
     }
 
     if (!existsSync(internalAppApiEntryPath)) {
@@ -535,6 +538,11 @@ async function ensureInternalAppApiRunning() {
       allowedOrigins: app.isPackaged
         ? ["app://local"]
         : ["http://127.0.0.1:5173"],
+    }).catch((error) => {
+      if (error?.code === "EADDRINUSE") {
+        throw internalAppApiPortInUseError(error);
+      }
+      throw error;
     });
     internalAppApiServer = apiServer;
 

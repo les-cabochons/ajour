@@ -53,6 +53,7 @@ import {
 } from "@/lib/sidebar-layout";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
+import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
 
 const SETTLED_PAGE_SIZE = 20;
 
@@ -89,12 +90,16 @@ function useBacklogItemRow(state: LocalAppState, now: number) {
   function actionsFor(workItem: LocalWorkItem) {
     const isSubitem = isSubtaskWorkItem(workItem);
     return getBacklogItemActions(workItem, {
+      isRunning: state.timers.some(
+        (timer) => timer.workItemId === workItem._id,
+      ),
       isSubitem,
       isSnoozed: isBacklogItemSnoozed(workItem, now),
       subitemCount: isSubitem
         ? 0
         : getDirectChildWorkItems(workItem, state.workItems).length,
       settleOpensDialog: settleOpensDialog(workItem),
+      otherSourceStateCount: getOtherSourceStates(workItem).length,
     });
   }
 
@@ -135,6 +140,9 @@ function RowActions({
   className?: string;
 }) {
   const actions = rows.actionsFor(workItem);
+  const startDisabledReason = actions.find(
+    (action) => action.id === "start-entry",
+  )?.disabledReason;
   const iconButton =
     "flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-foreground/10 hover:text-foreground";
 
@@ -144,9 +152,18 @@ function RowActions({
       onClick={(event) => event.stopPropagation()}
     >
       <TooltipButton
-        label="Start entry"
-        className={iconButton}
-        onClick={() => rows.run(workItem, "start-entry")}
+        label={
+          startDisabledReason
+            ? `Start entry. ${startDisabledReason}`
+            : "Start entry"
+        }
+        aria-label="Start entry"
+        aria-description={startDisabledReason}
+        className={cn(iconButton, "aria-disabled:opacity-50")}
+        aria-disabled={Boolean(startDisabledReason)}
+        onClick={() => {
+          if (!startDisabledReason) rows.run(workItem, "start-entry");
+        }}
       >
         <PlayIcon className="size-3.5" />
       </TooltipButton>
@@ -411,7 +428,15 @@ function UpNextCard({
           <>
             <button
               type="button"
-              className={cn(button, "border")}
+              className={cn(button, "border disabled:opacity-50")}
+              disabled={Boolean(
+                actions.find((action) => action.id === "start-entry")
+                  ?.disabledReason,
+              )}
+              title={
+                actions.find((action) => action.id === "start-entry")
+                  ?.disabledReason
+              }
               onClick={() => rows.run(workItem, "start-entry")}
             >
               <PlayIcon className="size-3.5" /> Start

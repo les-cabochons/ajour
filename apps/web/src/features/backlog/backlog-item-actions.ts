@@ -2,6 +2,7 @@ import type { BacklogItemActionId } from "@/domain/actions/object-actions";
 import { getDirectChildWorkItems } from "@/domain/backlog/work-item-hierarchy";
 import type { LocalWorkItem } from "@/domain/local-state";
 import { settleBacklogItem } from "@/features/backlog/settle-dialog";
+import { changeSourceStateWithUndo } from "@/features/backlog/backlog-item-moves";
 import { requestSnooze } from "@/features/backlog/snooze-picker";
 import { getWorkItemEntryValues } from "@/features/backlog/work-item-timer-comment";
 import { offerUndo } from "@/features/feedback/undo-toast";
@@ -30,6 +31,12 @@ export function runBacklogItemAction(
 ) {
   switch (actionId) {
     case "start-entry":
+      if (
+        localStore
+          .snapshot()
+          .timers.some((timer) => timer.workItemId === workItem._id)
+      )
+        return;
       // Today, saving any running entry first.
       localStore.startTimer({
         ...getWorkItemEntryValues(workItem),
@@ -60,6 +67,9 @@ export function runBacklogItemAction(
       return;
     case "restore":
       localStore.restoreWorkItem(workItem._id);
+      return;
+    case "change-source-state":
+      void changeSourceStateWithUndo(workItem);
       return;
     case "open-in-source":
       if (workItem.sourceUrl) {

@@ -78,6 +78,11 @@ export type ShortcutActionId =
   | "item.move-up"
   | "item.move-down"
   | "item.open-menu"
+  | "item.peek"
+  | "item.change-state"
+  | "item.change-priority"
+  | "item.state-previous"
+  | "item.state-next"
   | "item.focus-up"
   | "item.focus-down"
   | "item.focus-left"
@@ -272,6 +277,38 @@ export const SHORTCUTS: readonly ShortcutDefinition[] = [
     scope: "item",
     keys: [{ key: "." }],
     alternateKeys: [{ key: "ContextMenu" }, { key: "F10", shift: true }],
+  },
+  // Backlog rows and cards: S is the global start or stop key, so the state
+  // picker takes Shift+S.
+  {
+    id: "item.peek",
+    label: "Open or close the peek",
+    scope: "item",
+    keys: [{ key: " " }],
+  },
+  {
+    id: "item.change-state",
+    label: "Change state",
+    scope: "item",
+    keys: [{ key: "s", shift: true }],
+  },
+  {
+    id: "item.change-priority",
+    label: "Change priority",
+    scope: "item",
+    keys: [{ key: "p" }],
+  },
+  {
+    id: "item.state-previous",
+    label: "Move to the previous workflow state",
+    scope: "item",
+    keys: [{ key: "ArrowLeft", alt: true }],
+  },
+  {
+    id: "item.state-next",
+    label: "Move to the next workflow state",
+    scope: "item",
+    keys: [{ key: "ArrowRight", alt: true }],
   },
   {
     id: "item.focus-up",
@@ -526,6 +563,7 @@ const NAMED_KEY_LABELS: Record<string, Record<ShortcutPlatform, string>> = {
   Backspace: { mac: "⌫", other: "Backspace" },
   Delete: { mac: "⌦", other: "Del" },
   ContextMenu: { mac: "Menu", other: "Menu" },
+  " ": { mac: "Space", other: "Space" },
 };
 
 /** One key chord's label, such as "⌘B", "Ctrl+B", "⌥↑" or "Shift+F10". */

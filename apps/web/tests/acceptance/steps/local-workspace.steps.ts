@@ -3,6 +3,301 @@ import { createBdd } from "playwright-bdd";
 
 const { Given, When, Then } = createBdd();
 
+Given("I have a parent editor close fixture", async ({ page }) => {
+  await mockEmptyConnectorOverview(page);
+  await page.addInitScript(() => {
+    if (sessionStorage.getItem("editor-close-fixture-ready")) return;
+    localStorage.clear();
+    sessionStorage.clear();
+    sessionStorage.setItem("editor-close-fixture-ready", "true");
+    localStorage.setItem(
+      "ajour.local-state.v2",
+      JSON.stringify({
+        workflowStates: [
+          { _id: "doing", name: "In progress", color: "#d97706", createdAt: 1 },
+          {
+            _id: "done",
+            name: "Done",
+            color: "#059669",
+            done: true,
+            createdAt: 1,
+          },
+        ],
+        workItems: [
+          {
+            _id: "editor-parent",
+            title: "Editor parent",
+            source: "manual",
+            status: "active",
+            workflowStateId: "doing",
+            createdAt: 1,
+          },
+          {
+            _id: "editor-child",
+            title: "Editor child",
+            source: "manual",
+            status: "active",
+            workflowStateId: "doing",
+            parentWorkItemId: "editor-parent",
+            createdAt: 1,
+          },
+        ],
+      }),
+    );
+  });
+  await page.goto("/backlog/editor-parent");
+  await page
+    .getByRole("button", { name: "Actions for Editor parent", exact: true })
+    .click();
+  await page.getByRole("menuitem", { name: "Edit", exact: true }).click();
+  await expect(
+    page.getByRole("complementary", { name: "Backlog item editor" }),
+  ).toBeVisible();
+});
+When("I save its editor workflow as Done", async ({ page }) => {
+  const editor = page.getByRole("complementary", {
+    name: "Backlog item editor",
+  });
+  await editor
+    .getByRole("combobox", { name: "Workflow state", exact: true })
+    .click();
+  await page.getByRole("option", { name: "Done", exact: true }).click();
+  await editor.getByRole("button", { name: "Save", exact: true }).click();
+});
+Given("the parent has a running entry", async ({ page }) => {
+  await page.evaluate(async () => {
+    const { localStore } = await import("/src/lib/local-store.ts");
+    localStore.startTimer({
+      workItemId: "editor-parent",
+      note: "Done flag fixture",
+    });
+  });
+});
+When("I enable Done for In progress in Workflow settings", async ({ page }) => {
+  await page.goto("/settings/workflow");
+  await page
+    .getByRole("checkbox", { name: "Done", exact: true })
+    .first()
+    .check();
+});
+Then(
+  "its existing items are archived and the running entry is saved",
+  async ({ page }) => {
+    const readState = () =>
+      page.evaluate(() =>
+        JSON.parse(localStorage.getItem("ajour.local-state.v2")!),
+      );
+    await expect
+      .poll(async () =>
+        (await readState()).workItems.map(
+          (item: { status: string; workflowStateId: string }) => ({
+            status: item.status,
+            workflowStateId: item.workflowStateId,
+          }),
+        ),
+      )
+      .toEqual([
+        { status: "archived", workflowStateId: "doing" },
+        { status: "archived", workflowStateId: "doing" },
+      ]);
+    const saved = await readState();
+    expect(saved.timers).toEqual([]);
+    expect(saved.timesheetEntries).toEqual([
+      expect.objectContaining({
+        workItemId: "editor-parent",
+        note: "Done flag fixture",
+      }),
+    ]);
+    expect(saved.timesheetEntries[0].durationMs).toBeGreaterThan(0);
+    await page.reload();
+    expect(
+      (await readState()).workItems.every(
+        (item: { status: string }) => item.status === "archived",
+      ),
+    ).toBe(true);
+  },
+);
+Then(
+  "the parent editor remains mounted while the subitem choice is pending",
+  async ({ page }) => {
+    await expect(
+      page.getByRole("dialog", {
+        name: "Also close its 1 open subitem?",
+        exact: true,
+      }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("complementary", {
+        name: "Backlog item editor",
+        includeHidden: true,
+      }),
+    ).toHaveCount(1);
+  },
+);
+Then(
+  "the confirmed title and note remain saved after undoing the close",
+  async ({ page }) => {
+    const readParent = () =>
+      page.evaluate(() =>
+        JSON.parse(
+          localStorage.getItem("ajour.local-state.v2")!,
+        ).workItems.find(
+          (item: { _id: string }) => item._id === "editor-parent",
+        ),
+      );
+    expect(await readParent()).toMatchObject({
+      title: "Unsaved parent title",
+      note: "Unsaved parent note",
+      status: "archived",
+      workflowStateId: "done",
+    });
+    await page.getByRole("button", { name: "Undo", exact: true }).click();
+    await expect.poll(readParent).toMatchObject({
+      title: "Unsaved parent title",
+      note: "Unsaved parent note",
+      status: "active",
+      workflowStateId: "doing",
+    });
+  },
+);
+When("I cancel the parent editor close prompt", async ({ page }) => {
+  await page.keyboard.press("Escape");
+});
+When("I change the parent draft title and note", async ({ page }) => {
+  const editor = page.getByRole("complementary", {
+    name: "Backlog item editor",
+  });
+  await editor
+    .getByPlaceholder("Item name", { exact: true })
+    .fill("Unsaved parent title");
+  await editor
+    .getByRole("textbox", { name: "Note", exact: true })
+    .fill("Unsaved parent note");
+});
+When(
+  "I interrupt the mixed-field close by {string}",
+  async ({ page }, interruption: string) => {
+    if (interruption === "dismissing the prompt") {
+      await page.keyboard.press("Escape");
+    } else {
+      await page.evaluate(async () => {
+        // Exercise a concurrent local import while the displayed confirmation stays open.
+        const { localStore } = await import("/src/lib/local-store.ts");
+        localStore.addWorkItem({
+          title: "New subitem",
+          parentWorkItemId: "editor-parent",
+          workflowStateId: "doing",
+        });
+      });
+      await page
+        .getByRole("button", { name: "Include subitem", exact: true })
+        .click();
+    }
+  },
+);
+Then(
+  "the parent editor retains every mixed-field draft without saving it",
+  async ({ page }) => {
+    const editor = page.getByRole("complementary", {
+      name: "Backlog item editor",
+    });
+    await expect(editor).toBeVisible();
+    await expect(
+      editor.getByPlaceholder("Item name", { exact: true }),
+    ).toHaveValue("Unsaved parent title");
+    await expect(
+      editor.getByRole("textbox", { name: "Note", exact: true }),
+    ).toHaveValue("Unsaved parent note");
+    await expect(
+      editor.getByRole("combobox", { name: "Workflow state", exact: true }),
+    ).toHaveValue("Done");
+    const parent = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems.find(
+        (item: { _id: string }) => item._id === "editor-parent",
+      ),
+    );
+    expect(parent).toMatchObject({
+      title: "Editor parent",
+      status: "active",
+      workflowStateId: "doing",
+    });
+    expect(parent.note).toBeUndefined();
+  },
+);
+When("I cancel the parent editor draft", async ({ page }) => {
+  await page
+    .getByRole("complementary", { name: "Backlog item editor" })
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+});
+Then("the parent title and note remain unchanged", async ({ page }) => {
+  await expect(
+    page.getByRole("complementary", { name: "Backlog item editor" }),
+  ).toHaveCount(0);
+  const parent = await page.evaluate(() =>
+    JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems.find(
+      (item: { _id: string }) => item._id === "editor-parent",
+    ),
+  );
+  expect(parent).toMatchObject({
+    title: "Editor parent",
+    status: "active",
+    workflowStateId: "doing",
+  });
+  expect(parent.note).toBeUndefined();
+});
+Then(
+  "the parent editor retains its Done draft and the item remains active",
+  async ({ page }) => {
+    const editor = page.getByRole("complementary", {
+      name: "Backlog item editor",
+    });
+    await expect(editor).toBeVisible();
+    await expect(
+      editor.getByRole("combobox", { name: "Workflow state", exact: true }),
+    ).toHaveValue("Done");
+    const parent = await page.evaluate(() =>
+      JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems.find(
+        (item: { _id: string }) => item._id === "editor-parent",
+      ),
+    );
+    expect(parent).toMatchObject({
+      status: "active",
+      workflowStateId: "doing",
+    });
+  },
+);
+When("I include the child in the editor close", async ({ page }) => {
+  await page
+    .getByRole("button", { name: "Include subitem", exact: true })
+    .click();
+});
+Then(
+  "the editor closes after the parent and child reach Done",
+  async ({ page }) => {
+    await expect(
+      page.getByRole("complementary", { name: "Backlog item editor" }),
+    ).toHaveCount(0);
+    await expect
+      .poll(() =>
+        page.evaluate(() =>
+          JSON.parse(
+            localStorage.getItem("ajour.local-state.v2")!,
+          ).workItems.map(
+            (item: { status: string; workflowStateId: string }) => ({
+              status: item.status,
+              workflowStateId: item.workflowStateId,
+            }),
+          ),
+        ),
+      )
+      .toEqual([
+        { status: "archived", workflowStateId: "done" },
+        { status: "archived", workflowStateId: "done" },
+      ]);
+  },
+);
+
 async function mockEmptyConnectorOverview(page: Page) {
   await page.route("http://127.0.0.1:8787/api/connectors", async (route) => {
     await route.fulfill({
@@ -714,9 +1009,7 @@ Then("a running entry starts today with no time counted", async ({ page }) => {
 
 When("I start the timer on the Backlog item", async ({ page }) => {
   await page.goto("/backlog");
-  const backlogRow = page
-    .getByRole("row")
-    .filter({ hasText: "Backlog switch item" });
+  const backlogRow = page.locator('[data-work-item-id="work-item-acceptance"]');
   await backlogRow.hover();
   const switchTimer = backlogRow.getByRole("button", {
     name: "Switch to Backlog switch item",
@@ -728,8 +1021,7 @@ When("I start the timer on the Backlog item", async ({ page }) => {
 When("I delete the Backlog item with its subitem", async ({ page }) => {
   await page.goto("/backlog");
   await page
-    .getByRole("row")
-    .filter({ hasText: "Backlog switch item" })
+    .locator('[data-work-item-id="work-item-acceptance"]')
     .click({ button: "right" });
   await page.getByRole("menuitem", { name: "Delete (and 1 subitem)" }).click();
 });
@@ -738,7 +1030,7 @@ Then("the Backlog item is gone and a toast offers Undo", async ({ page }) => {
   // Delete happens at once, without a confirmation dialog.
   await expect(page.getByRole("alertdialog")).toHaveCount(0);
   await expect(
-    page.getByRole("row").filter({ hasText: "Backlog switch item" }),
+    page.locator('[data-work-item-id="work-item-acceptance"]'),
   ).toHaveCount(0);
   const toasts = page.getByRole("region", { name: "Notifications" });
   await expect(toasts).toContainText("Backlog item and 1 subitem deleted");
@@ -747,7 +1039,7 @@ Then("the Backlog item is gone and a toast offers Undo", async ({ page }) => {
 
 Then("the Backlog item and its subitem are back in place", async ({ page }) => {
   await expect(
-    page.getByRole("row").filter({ hasText: "Backlog switch item" }),
+    page.locator('[data-work-item-id="work-item-acceptance"]'),
   ).toBeVisible();
   await expect
     .poll(async () =>
@@ -774,7 +1066,6 @@ When("I start the timer on the Backlog item from mobile", async ({ page }) => {
     name: "Switch to Backlog switch item",
   });
   await expect(switchTimer).toBeEnabled();
-  await expect(switchTimer).toContainText("Switch");
   await switchTimer.click();
 });
 
@@ -983,137 +1274,55 @@ Then("the day surfaces stretch around centered content", async ({ page }) => {
 
 Then("the Backlog workspace fills the available page", async ({ page }) => {
   await page.setViewportSize({ width: 2200, height: 900 });
-
-  const content = page.locator(".app-content-shell");
-  const pageContainer = page.locator(
-    ".page-container:has(> .backlog-page-stack)",
-  );
-  const backlogShell = page.locator(".entries-table-scroll-shell-backlog");
-  const backlogHeader = backlogShell.locator(".entries-table-header-table");
-  const backlogHeadingLabel = backlogHeader
-    .locator(".backlog-task-heading-content > span")
-    .first();
-  const [
-    contentBox,
-    pageContainerBox,
-    backlogShellBox,
-    backlogHeaderBox,
-    backlogHeadingLabelBox,
-  ] = await Promise.all([
-    content.boundingBox(),
-    pageContainer.boundingBox(),
-    backlogShell.boundingBox(),
-    backlogHeader.boundingBox(),
-    backlogHeadingLabel.boundingBox(),
-  ]);
-
-  expect(contentBox).not.toBeNull();
-  expect(pageContainerBox).not.toBeNull();
-  expect(backlogShellBox).not.toBeNull();
-  expect(backlogHeaderBox).not.toBeNull();
-  expect(backlogHeadingLabelBox).not.toBeNull();
-  expect(pageContainerBox?.x).toBe(contentBox?.x);
-  expect(pageContainerBox?.width).toBe(contentBox?.width);
-  expect(backlogShellBox?.x).toBe(contentBox?.x);
-  expect(backlogShellBox?.width).toBe(contentBox?.width);
-  expect(backlogShellBox?.height).toBe(contentBox?.height);
-  expect(backlogHeaderBox?.x).toBe(contentBox?.x);
-  expect(backlogHeaderBox?.width).toBe(contentBox?.width);
-
-  const centeredContentGutter = Math.max(
-    0,
-    ((contentBox?.width ?? 0) - 1440) / 2,
-  );
-  expect(backlogHeadingLabelBox?.x).toBeCloseTo(
-    (contentBox?.x ?? 0) + centeredContentGutter + 16,
-    0,
-  );
-  await expect(backlogShell).toHaveCSS("border-left-width", "0px");
-  await expect(backlogShell).toHaveCSS("border-right-width", "0px");
-  await expect(backlogShell).toHaveCSS("border-bottom-width", "0px");
-  await expect(backlogShell).toHaveCSS("border-radius", "0px");
+  const content = await page.locator(".app-content-shell").boundingBox();
+  const workspace = await page.locator(".backlog-workspace").boundingBox();
+  const header = await page.locator(".backlog-workspace-header").boundingBox();
+  expect(workspace).not.toBeNull();
+  expect(workspace?.x).toBe(content?.x);
+  expect(workspace?.width).toBe(content?.width);
+  expect(workspace?.height).toBe(content?.height);
+  expect(header?.width).toBe(content?.width);
 });
 
-Then("hidden Backlog columns do not reserve mobile width", async ({ page }) => {
-  const columnWidths = await page
-    .locator(".entries-table-body-table")
-    .evaluate((table) => {
-      const priorityColumn = table.querySelector<HTMLElement>(
-        ".backlog-priority-column",
-      );
-      const statusColumn = table.querySelector<HTMLElement>(
-        ".backlog-status-column",
-      );
-
-      return {
-        priority: priorityColumn?.getBoundingClientRect().width ?? -1,
-        status: statusColumn?.getBoundingClientRect().width ?? -1,
-      };
-    });
-
-  expect(columnWidths.priority).toBeLessThanOrEqual(0.5);
-  expect(columnWidths.status).toBeLessThanOrEqual(0.5);
+Then("the Backlog list fits a narrow window", async ({ page }) => {
+  const row = page.locator('[data-work-item-id="work-item-acceptance"]');
+  await expect(row).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Board layout", exact: true }),
+  ).toHaveCount(0);
+  const bounds = await row.boundingBox();
+  expect((bounds?.x ?? 0) + (bounds?.width ?? 0)).toBeLessThanOrEqual(
+    page.viewportSize()!.width,
+  );
+  await expect(
+    row.getByRole("button", { name: "Actions for Backlog switch item" }),
+  ).toBeVisible();
 });
 
 Then(
-  "expanded and dragged Backlog rows keep their centered columns",
+  "standalone subitems and cancellable Backlog drag remain usable",
   async ({ page }) => {
-    const rootRow = page.locator(
-      'tr[data-backlog-root-id="work-item-acceptance"]:not(.entry-edit-row):not(.backlog-row-child)',
+    const parent = page.locator('[data-work-item-id="work-item-acceptance"]');
+    const child = page.locator(
+      '[data-work-item-id="work-item-child-acceptance"]',
     );
-    const rootTaskCell = rootRow.locator(".backlog-task-cell");
-    const rootTaskCellBefore = await rootTaskCell.boundingBox();
-    expect(rootTaskCellBefore).not.toBeNull();
-
-    const rootTitle = rootRow.getByText("Backlog switch item", { exact: true });
-    const rootTitleBox = await rootTitle.boundingBox();
-    expect(rootTitleBox).not.toBeNull();
-
-    const dragX = (rootTitleBox?.x ?? 0) + 8;
-    const dragY = (rootTitleBox?.y ?? 0) + (rootTitleBox?.height ?? 0) / 2;
-    await page.mouse.move(dragX, dragY);
+    await expect(child).toBeVisible();
+    await expect(
+      parent.getByRole("button", {
+        name: "Show subitems for Backlog switch item",
+      }),
+    ).toHaveCount(0);
+    const title = await parent.locator(".backlog-item-title").boundingBox();
+    await page.mouse.move(title!.x + 8, title!.y + 8);
     await page.mouse.down();
-    await page.mouse.move(dragX + 2, dragY + 14, { steps: 5 });
-
-    const dragPreview = page.locator(".backlog-task-drag-preview");
-    await expect(dragPreview).toBeVisible();
-    const dragPreviewTaskCell = await dragPreview
-      .locator(".backlog-task-drag-preview-cell")
-      .boundingBox();
-    const dragPreviewTitle = await dragPreview
-      .getByText("Backlog switch item", { exact: true })
-      .boundingBox();
-    expect(dragPreviewTaskCell).not.toBeNull();
-    expect(dragPreviewTitle).not.toBeNull();
-    expect(
-      Math.abs((dragPreviewTaskCell?.x ?? 0) - (rootTaskCellBefore?.x ?? 0)),
-    ).toBeLessThanOrEqual(1.5);
-    expect(
-      Math.abs((dragPreviewTitle?.x ?? 0) - (rootTitleBox?.x ?? 0)),
-    ).toBeLessThanOrEqual(1.5);
+    await page.mouse.move(title!.x + 8, title!.y + 24, { steps: 5 });
+    await expect(page.locator(".backlog-move-preview")).toBeVisible();
+    await page.keyboard.press("Escape");
     await page.mouse.up();
-
-    await page.waitForTimeout(100);
-    await rootRow
-      .getByRole("button", { name: "Show subitems for Backlog switch item" })
-      .click();
-
-    const childRow = page
-      .locator("tr.backlog-row-child")
-      .filter({ hasText: "Backlog child item" });
-    await expect(childRow).toBeVisible();
-    const [rootTaskCellAfter, childTaskCell] = await Promise.all([
-      rootTaskCell.boundingBox(),
-      childRow.locator(".backlog-task-cell").boundingBox(),
-    ]);
-    expect(rootTaskCellAfter).not.toBeNull();
-    expect(childTaskCell).not.toBeNull();
-    expect(
-      Math.abs((rootTaskCellAfter?.x ?? 0) - (rootTaskCellBefore?.x ?? 0)),
-    ).toBeLessThanOrEqual(1.5);
-    expect(
-      Math.abs((childTaskCell?.x ?? 0) - (rootTaskCellBefore?.x ?? 0)),
-    ).toBeLessThanOrEqual(1.5);
+    await expect(page.locator(".backlog-move-preview")).toHaveCount(0);
+    await expect(
+      page.getByRole("complementary", { name: "Backlog item peek" }),
+    ).toHaveCount(0);
   },
 );
 
@@ -2201,5 +2410,31 @@ Then(
     const toasts = page.getByRole("region", { name: "Notifications" });
     await expect(toasts).toContainText("Entry deleted");
     await expect(toasts.getByRole("button", { name: "Undo" })).toBeVisible();
+  },
+);
+
+When("I open the Backlog settings", async ({ page }) => {
+  await page.goto("/settings/backlog");
+});
+
+Then(
+  "the Backlog settings contain one settle rules section",
+  async ({ page }) => {
+    await expect(
+      page.getByRole("heading", { name: "Subitems", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Settle rules", exact: true }),
+    ).toHaveCount(1);
+    const preference = page.getByRole("group", {
+      name: "When closing a parent with open subitems",
+      exact: true,
+    });
+    await expect(
+      preference.getByRole("button", { name: "Ask", exact: true }),
+    ).toBeVisible();
+    await expect(page.locator('[data-slot="field"]')).not.toContainText(
+      "Settle rules",
+    );
   },
 );

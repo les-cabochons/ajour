@@ -182,6 +182,7 @@ describe("getItemKeyCommand", () => {
       {
         subitemCount: 0,
         isSubitem: false,
+        isRunning: false,
       },
     );
     expect(
@@ -207,7 +208,7 @@ describe("getItemKeyCommand", () => {
   it("settles on E and settles with the dialog on Shift+E", () => {
     const actions = getBacklogItemActions(
       { status: "active", source: "azure_devops" },
-      { subitemCount: 0, isSubitem: false },
+      { subitemCount: 0, isSubitem: false, isRunning: false },
     );
 
     expect(

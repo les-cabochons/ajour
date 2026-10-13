@@ -36,7 +36,7 @@ Use this file as the local index for important library choices. Check official d
 ## Web Domain Modules
 
 - Persisted local-state contracts and pure selectors: `apps/web/src/domain/local-state.ts`
-- Backlog status normalization, CRUD transitions, and connector mapping reconciliation: `apps/web/src/domain/backlog/backlog-status.ts`
+- Workflow state normalization, the Done flag, CRUD and ordering transitions, and source state mapping reconciliation: `apps/web/src/domain/backlog/workflow-states.ts`
 - Work-item hierarchy lookup, validation, and inherited mapping rules: `apps/web/src/domain/backlog/work-item-hierarchy.ts`
 - Work-item estimate normalization, display values, reversible logged-time adjustments, overrun tracking, and imported baselines: `apps/web/src/domain/backlog/work-item-estimates.ts`
 - Manual work-item creation, hierarchy-aware edits, ordering, deletion, and estimate-conflict decisions: `apps/web/src/domain/backlog/work-item-transitions.ts`
@@ -69,6 +69,17 @@ Keep React rendering and runtime adapters outside these modules. For example, th
 - Keyboard shortcuts: `apps/web/src/lib/shortcuts.ts` is the registry (action id, keys, label, scope) with key matching, the text-field guard and key labels. Menus, tooltips and the palette read keys from it. `lib/shortcut-handlers.tsx` has the one window key listener (`ShortcutProvider`, mounted in the router root) and `useShortcut(id, handler, layer)`. A page handler wins over an app handler for the same action, so the Time page handles N and T while it is open and `features/layout/use-global-shortcuts.ts` handles them elsewhere. [, ], D and W only have Time page handlers. Pinned task digits are digit chords: they match `event.code` (Digit1 to Digit0) so Shift+digit works on every layout, the handler receives the digit, and they stay quiet while any entry editor is open (`lib/entry-editor-presence.ts` counts mounted editor forms) or a Week Grid cell (`data-grid-cell`) has focus. A digit chord wins over "?" when both match, so Shift+6 starts slot 6 on Canadian French layouts. Shortcuts with scope "item" (Edit, Delete, Move up, focus arrows and the others of "Focused rows and cards") stay out of the window listener (`APP_SHORTCUTS`): the focused row runs them through `lib/item-keys.ts`, only while the row itself has focus. Add a key to the registry only when its handler ships.
 
 The backlog editor module is feature-local because its vocabulary and commands belong to the backlog workflow. The drag module is runtime-aware and cross-feature, so it belongs in `lib`.
+
+### Backlog views
+
+- Selection, filtering, grouping and ordering: `domain/backlog/backlog-view.ts`.
+- Device-local preferences: `lib/backlog-view-settings.ts`. Ordering stays in local state.
+- Page orchestration: `features/backlog/backlog-page.tsx`.
+- Display controls and filters: `features/backlog/backlog-display.tsx`.
+- Shared row/card controls: `features/backlog/backlog-item-surface.tsx`.
+- Read-only details and immediate property pickers: `features/backlog/backlog-peek.tsx`.
+- Pointer moves: `features/backlog/use-backlog-drag.ts`, using `lib/table-drag.ts`.
+- The Undo module also captures custom work-item ordering. Group moves and their order change form one undoable operation.
 
 ## Desktop
 

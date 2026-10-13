@@ -1,4 +1,5 @@
 import { applyLoggedTimeToWorkItems } from "@/domain/backlog/work-item-estimates";
+import { completeSourceWrite } from "@/domain/backlog/backlog-item-lifecycle";
 import type {
   LocalAppState,
   LocalTimesheetEntry,
@@ -15,8 +16,9 @@ const UNDO_COLLECTIONS = [
   "timers",
   "timesheetImportDrafts",
   "workItems",
-  "backlogStatuses",
-  "backlogStatusMappings",
+  "workflowStates",
+  "workflowStateMappings",
+  "workflowStateWriteRules",
 ] as const satisfies readonly (keyof LocalAppState)[];
 
 type UndoCollection = (typeof UNDO_COLLECTIONS)[number];
@@ -31,9 +33,11 @@ const recordKeys: {
   timers: (timer) => timer._id,
   timesheetImportDrafts: (draft) => draft._id,
   workItems: (workItem) => workItem._id,
-  backlogStatuses: (status) => status._id,
-  backlogStatusMappings: (mapping) =>
-    `${mapping.source}:${mapping.connectionId}:${mapping.sourceStatusKey}`,
+  workflowStates: (status) => status._id,
+  workflowStateMappings: (mapping) =>
+    `${mapping.source}:${mapping.connectionId}:${mapping.sourceProjectName ?? ""}:${mapping.sourceStatusKey}`,
+  workflowStateWriteRules: (rule) =>
+    `${rule.source}:${rule.connectionId}:${rule.sourceProjectName ?? ""}:${rule.workflowStateId}`,
 };
 
 /**
@@ -55,13 +59,48 @@ export interface UndoRecordChange<T> {
  */
 export type LocalStateUndo = {
   [K in UndoCollection]: UndoRecordChange<UndoRecord<K>>[];
-};
+} & { workItemOrder?: { before: string[]; after: string[] } };
 
 /**
  * `stale` means a record changed again after the action, or restoring would
  * leave two running timers. The state is then left as it is.
  */
 export type LocalStateUndoResult = "restored" | "stale";
+
+/** Updates a replacement action's snapshots without hiding independent edits. */
+export function completeSourceWriteInUndo(
+  undo: LocalStateUndo,
+  current: LocalAppState,
+  workItemId: string,
+  sentItems: readonly LocalWorkItem[],
+): LocalStateUndo {
+  const acknowledge = (record: LocalWorkItem | undefined) => {
+    if (!record) return record;
+    return completeSourceWrite(
+      {
+        ...current,
+        workItems: [
+          record,
+          ...current.workItems.filter((item) => item._id !== record._id),
+        ],
+      },
+      workItemId,
+      sentItems,
+    ).workItems.find((item) => item._id === record._id);
+  };
+  return {
+    ...undo,
+    workItems: undo.workItems.map((change) =>
+      change.key === workItemId && change.before?.pendingSourceWrite
+        ? {
+            ...change,
+            before: acknowledge(change.before),
+            after: acknowledge(change.after),
+          }
+        : change,
+    ),
+  };
+}
 
 /**
  * Compares two records field by field. A missing field equals `undefined`, so a
@@ -137,14 +176,41 @@ export function captureUndo(
   before: LocalAppState,
   after: LocalAppState,
 ): LocalStateUndo | null {
-  const undo = Object.fromEntries(
-    UNDO_COLLECTIONS.map((collection) => [
-      collection,
-      diffCollection(collection, before, after),
-    ]),
-  ) as LocalStateUndo;
+  const undo: LocalStateUndo = {
+    projects: diffCollection("projects", before, after),
+    workItems: diffCollection("workItems", before, after),
+    timers: diffCollection("timers", before, after),
+    timesheetEntries: diffCollection("timesheetEntries", before, after),
+    timesheetImportDrafts: diffCollection(
+      "timesheetImportDrafts",
+      before,
+      after,
+    ),
+    workflowStates: diffCollection("workflowStates", before, after),
+    workflowStateMappings: diffCollection(
+      "workflowStateMappings",
+      before,
+      after,
+    ),
+    workflowStateWriteRules: diffCollection(
+      "workflowStateWriteRules",
+      before,
+      after,
+    ),
+  };
 
-  return UNDO_COLLECTIONS.some((collection) => undo[collection].length > 0)
+  const beforeOrder = before.workItems.map((item) => item._id);
+  const afterOrder = after.workItems.map((item) => item._id);
+  if (
+    beforeOrder.length === afterOrder.length &&
+    beforeOrder.every((id) => afterOrder.includes(id)) &&
+    !recordsEqual(beforeOrder, afterOrder)
+  ) {
+    undo.workItemOrder = { before: beforeOrder, after: afterOrder };
+  }
+
+  return undo.workItemOrder ||
+    UNDO_COLLECTIONS.some((collection) => undo[collection].length > 0)
     ? undo
     : null;
 }
@@ -278,6 +344,11 @@ export function restoreUndo(
     (collection) => !(changedTimeEntries && collection === "workItems"),
   );
   if (
+    (undo.workItemOrder &&
+      !recordsEqual(
+        state.workItems.map((item) => item._id),
+        undo.workItemOrder.after,
+      )) ||
     !strictCollections.every((collection) =>
       isUnchangedSinceAction(collection, state, undo[collection]),
     )
@@ -290,6 +361,17 @@ export function restoreUndo(
     return { state, result: "stale" };
   }
 
+  let workItems = changedTimeEntries
+    ? restoreLoggedTime(state, undo)
+    : restoreCollection("workItems", state, undo);
+  if (undo.workItemOrder) {
+    const indexes = new Map(
+      undo.workItemOrder.before.map((id, index) => [id, index]),
+    );
+    workItems = [...workItems].sort(
+      (left, right) => indexes.get(left._id)! - indexes.get(right._id)!,
+    );
+  }
   return {
     state: {
       ...state,
@@ -301,12 +383,15 @@ export function restoreUndo(
         state,
         undo,
       ),
-      workItems: changedTimeEntries
-        ? restoreLoggedTime(state, undo)
-        : restoreCollection("workItems", state, undo),
-      backlogStatuses: restoreCollection("backlogStatuses", state, undo),
-      backlogStatusMappings: restoreCollection(
-        "backlogStatusMappings",
+      workItems,
+      workflowStates: restoreCollection("workflowStates", state, undo),
+      workflowStateMappings: restoreCollection(
+        "workflowStateMappings",
+        state,
+        undo,
+      ),
+      workflowStateWriteRules: restoreCollection(
+        "workflowStateWriteRules",
         state,
         undo,
       ),
