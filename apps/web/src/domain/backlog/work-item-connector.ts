@@ -12,6 +12,7 @@ import type {
   LocalWorkItemEstimateFieldState,
   LocalWorkItemEstimateSyncState,
 } from "@/domain/local-state";
+import { getPendingSourceWriteItemIds } from "@/domain/local-state";
 import {
   applyWorkflowStateLifecycle,
   archiveBacklogItem,
@@ -27,6 +28,11 @@ import {
   normalizeWorkItemEstimateValue,
 } from "@/domain/backlog/work-item-estimates";
 import { normalizeWorkItemPriority } from "@/domain/backlog/work-item-transitions";
+import {
+  getPriorityLevel,
+  getPriorityRanges,
+  type PriorityRanges,
+} from "@/domain/backlog/priority";
 
 export interface ConnectorWorkItemFactories {
   createId: (prefix: string) => string;
@@ -53,9 +59,11 @@ function getWorkItemSourceKey(workItem: {
 function createConnectorWorkItem(
   workItem: ConnectorImportCandidate,
   mappedWorkflowStateId: string | undefined,
+  priorityRanges: PriorityRanges,
   createId: (prefix: string) => string,
   existingId?: string,
 ): LocalWorkItem {
+  const importedPriority = normalizeWorkItemPriority(workItem.priority);
   const sourceStatusLabel = workItem.state?.trim() || undefined;
   const sourceStatusKey = sourceStatusLabel
     ? normalizeConnectorStatusKey(sourceStatusLabel)
@@ -74,8 +82,8 @@ function createConnectorWorkItem(
     sourceWorkItemType: workItem.workItemType,
     hierarchyLevel: workItem.depth,
     parentSourceId: workItem.parentSourceId,
-    priority: normalizeWorkItemPriority(workItem.priority),
-    importedPriority: normalizeWorkItemPriority(workItem.priority),
+    priority: getPriorityLevel(importedPriority, priorityRanges),
+    importedPriority,
     workflowStateId: mappedWorkflowStateId,
     importedWorkflowStateId: mappedWorkflowStateId,
     sourceStatusKey,
@@ -104,11 +112,14 @@ function mergeConnectorWorkItem(
   existingWorkItem: LocalWorkItem,
   importedWorkItem: ConnectorImportCandidate,
   mappedWorkflowStateId: string | undefined,
+  priorityRanges: PriorityRanges,
   factories: ConnectorWorkItemFactories,
+  preserveSource: boolean,
 ): LocalWorkItem {
   const nextImportedState = createConnectorWorkItem(
     importedWorkItem,
     mappedWorkflowStateId,
+    priorityRanges,
     factories.createId,
     existingWorkItem._id,
   );
@@ -123,18 +134,17 @@ function mergeConnectorWorkItem(
     );
   };
   const followsImportedPriority =
-    existingWorkItem.priority === existingWorkItem.importedPriority;
+    existingWorkItem.priority ===
+    getPriorityLevel(existingWorkItem.importedPriority, priorityRanges);
   // A local move stays until the source shows a different state; then the
   // mapping wins again.
   const followsImportedWorkflowState =
     existingWorkItem.workflowStateId ===
       existingWorkItem.importedWorkflowStateId ||
     nextImportedState.sourceStatusKey !== existingWorkItem.sourceStatusKey;
-  const reopened = reopenedInSource(
-    existingWorkItem,
-    importedWorkItem,
-    nextImportedState,
-  );
+  const reopened =
+    !preserveSource &&
+    reopenedInSource(existingWorkItem, importedWorkItem, nextImportedState);
   const followsImportedOriginalEstimate = followsImportedEstimate(
     "originalEstimateHours",
   );
@@ -207,7 +217,7 @@ function mergeConnectorWorkItem(
     hierarchyLevel: nextImportedState.hierarchyLevel,
     parentSourceId: nextImportedState.parentSourceId,
     priority: followsImportedPriority
-      ? nextImportedState.importedPriority
+      ? nextImportedState.priority
       : existingWorkItem.priority,
     importedPriority: nextImportedState.importedPriority,
     // An archived item stays in its done state unless the source reopened it.
@@ -240,15 +250,15 @@ function mergeConnectorWorkItem(
       ? undefined
       : existingWorkItem.archivedAt,
     archivedByMissingSync: false,
-    // Until a settle's write is sent, the source still shows the old values.
-    // The item keeps the settle's values, and the old ones don't return it.
-    ...(existingWorkItem.pendingSourceWrite
+    // A pending move or settle keeps its source values until the write is sent.
+    ...(preserveSource
       ? {
           priority: existingWorkItem.priority,
           importedPriority: existingWorkItem.importedPriority,
           sourceStatusKey: existingWorkItem.sourceStatusKey,
           sourceStatusLabel: existingWorkItem.sourceStatusLabel,
           workflowStateId: existingWorkItem.workflowStateId,
+          importedWorkflowStateId: existingWorkItem.importedWorkflowStateId,
         }
       : {}),
     ...(reopened
@@ -264,7 +274,7 @@ function mergeConnectorWorkItem(
             existingWorkItem.workflowStateIdBeforeClose,
         }
       : {}),
-    ...(!existingWorkItem.pendingSourceWrite &&
+    ...(!preserveSource &&
     changedSinceSettled(existingWorkItem, nextImportedState)
       ? {
           status: "active" as const,
@@ -341,6 +351,7 @@ export function importConnectorWorkItems(
       )
       .map((workItem) => [getWorkItemSourceKey(workItem), workItem] as const),
   );
+  const pendingMoveItemIds = getPendingSourceWriteItemIds(state);
   const importedKeysForConnection = new Set<string>();
   const importedItems: LocalWorkItem[] = [];
   /** Settled items this sync brought back, whose carried subitems return with them. */
@@ -356,6 +367,7 @@ export function importConnectorWorkItems(
           workItem.source,
           workItem.connectionId,
           normalizeConnectorStatusKey(workItem.state),
+          workItem.projectName,
         )
       : undefined;
     const existingWorkItem = existingItemsByKey.get(key);
@@ -368,7 +380,13 @@ export function importConnectorWorkItems(
         existingWorkItem,
         workItem,
         mappedWorkflowStateId,
+        getPriorityRanges(
+          state.priorityScales,
+          workItem.source,
+          workItem.connectionId,
+        ),
         factories,
+        pendingMoveItemIds.has(existingWorkItem._id),
       );
       if (JSON.stringify(mergedWorkItem) === JSON.stringify(existingWorkItem)) {
         continue;
@@ -403,6 +421,11 @@ export function importConnectorWorkItems(
     const importedItem = createConnectorWorkItem(
       workItem,
       mappedWorkflowStateId,
+      getPriorityRanges(
+        state.priorityScales,
+        workItem.source,
+        workItem.connectionId,
+      ),
       factories.createId,
     );
     existingItemsByKey.set(key, importedItem);
@@ -441,11 +464,13 @@ export function importConnectorWorkItems(
     ).map((workItem) => {
       const sourceId = workItem.sourceId;
 
+      // Pending moves may still be absent from the connector's open set.
       if (
         workItem.source === "manual" ||
         workItem.sourceConnectionId !== archiveConnectionId ||
         !sourceId ||
-        workItem.keepWhenMissingFromSync
+        workItem.keepWhenMissingFromSync ||
+        pendingMoveItemIds.has(workItem._id)
       ) {
         return workItem;
       }
@@ -503,6 +528,7 @@ export function archiveDoneConnectorWorkItems(
 ): { state: LocalAppState; archivedCount: number } {
   let nextState = state;
   let archivedCount = 0;
+  const pendingMoveItemIds = getPendingSourceWriteItemIds(state);
 
   for (const doneItem of doneItems) {
     const key = getWorkItemSourceKey(doneItem);
@@ -512,7 +538,7 @@ export function archiveDoneConnectorWorkItems(
         getWorkItemSourceKey({ ...workItem, sourceId: workItem.sourceId }) ===
           key,
     );
-    if (!target || target.pendingSourceWrite) {
+    if (!target || pendingMoveItemIds.has(target._id)) {
       continue;
     }
 
@@ -525,6 +551,7 @@ export function archiveDoneConnectorWorkItems(
       target.source,
       target.sourceConnectionId,
       sourceStatusKey,
+      target.sourceProjectName,
     );
     // A user who mapped this source state to a state that isn't done keeps
     // the item open there.

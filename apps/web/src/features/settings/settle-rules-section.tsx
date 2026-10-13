@@ -13,13 +13,17 @@ import {
   findSettleState,
   groupSettleStates,
 } from "@/features/backlog/settle-draft";
-import { formatPriorityInput } from "@/features/backlog/backlog-task-editor";
+
 import {
   getCachedConnectorsOverview,
   listConnectorSettleStates,
   subscribeConnectorsOverview,
 } from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
+
+function formatSourcePriorityInput(priority: number | undefined) {
+  return priority === undefined ? "" : String(priority);
+}
 
 /**
  * Settings > Backlog: the settle rule of each source project seen in syncs,
@@ -120,7 +124,9 @@ function SettleRuleRow({
   rule: LocalSettleRule | undefined;
 }) {
   const [load, setLoad] = useState<StatesLoad>({ status: "idle" });
-  const [priority, setPriority] = useState(formatPriorityInput(rule?.priority));
+  const [priority, setPriority] = useState(
+    formatSourcePriorityInput(rule?.priority),
+  );
   const applies = Boolean(rule);
   const key = {
     source: project.source,
@@ -129,7 +135,7 @@ function SettleRuleRow({
   };
 
   useEffect(() => {
-    setPriority(formatPriorityInput(rule?.priority));
+    setPriority(formatSourcePriorityInput(rule?.priority));
   }, [rule?.priority]);
 
   useEffect(() => {

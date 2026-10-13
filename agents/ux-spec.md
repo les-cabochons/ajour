@@ -413,7 +413,7 @@ Decided in [Backlog page under the new conventions](https://github.com/les-caboc
 
 ### Mapping source states
 
-Settings > Workflow lists, for each connection and source project, its source states. It replaces the Synced status mapping and the settle rules.
+Settings > Workflow lists, for each connection and source project, its source states. It replaces the Synced status mapping. Explicit Settle rules stay in Settings > Backlog. Moves use the per-workflow write rules below.
 
 - **In:** each source state maps to one workflow state. Connectors list every source state of a source project, so states are mapped before any item reaches them. A plugin that can't list them falls back to the states seen in syncs.
 - A new source state in the tool's done category is preselected to map to the first done state. A source state whose name matches a workflow state exactly, ignoring case, maps to it. Anything else stays unmapped.
@@ -560,7 +560,7 @@ Decided after the prototype on branch `prototype/backlog-sidebar`: variant B is 
 Settle means the user has nothing left to do on the item for now.
 
 - A manual item becomes archived.
-- A synced item becomes settled. The out mapping of its source project decides how, see Mapping source states under Backlog:
+- A synced item becomes settled. Its source project's Settle rule decides how:
   - Ask, the default, opens the settle dialog: a state picker grouped by state category and a priority field, both starting at the item's current values. Settling with nothing changed is allowed and stays local, such as for "waiting on the client" when no matching state exists.
   - Apply sets a fixed state, priority or both without a dialog.
 - Settling into a source state that maps to a done state archives the item instead and moves it there. Azure DevOps Resolved usually maps to a state that isn't done, because it means waiting on QA.
@@ -588,9 +588,8 @@ Syncs move synced items between states:
 
 ### Settle rules
 
-- Settle rules are now the out mapping of each source project in Settings > Workflow, see Mapping source states under Backlog. Ask opens the settle dialog; a default source state applies it without one.
-- Manual items have no settle rule. They always archive.
-- With a default source state, E and the sidebar's Settle button use it. Shift+E or Shift-click opens the dialog prefilled with it.
+- Explicit Settle rules stay in Settings > Backlog, as introduced on main in #95. They control the Settle action and its Shift+E override. Moving an item between workflow states uses the write rules in Settings > Workflow.
+- Manual items always archive.
 
 ### Backlog item page
 

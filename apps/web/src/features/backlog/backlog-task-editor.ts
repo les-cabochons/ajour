@@ -1,6 +1,13 @@
 import type { LocalWorkItem, LocalWorkItemDraft } from "@/domain/local-state";
 import type { WorkItemPatch } from "@/domain/backlog/work-item-transitions";
 import { isSubtaskWorkItem } from "@/domain/backlog/work-item-hierarchy";
+import {
+  DEFAULT_PRIORITY_RANGES,
+  getPriorityLevel,
+  isPriorityLevel,
+  type PriorityLevel,
+  type PriorityRanges,
+} from "@/domain/backlog/priority";
 
 /**
  * The editor model for backlog items. The side panel and the narrow dialog render the
@@ -102,21 +109,18 @@ export const EMPTY_BACKLOG_TASK_EDITOR_FIELDS: BacklogTaskEditorFields = {
   keepWhenMissingFromSync: false,
 };
 
-export function formatPriorityInput(priority?: number) {
-  return typeof priority === "number" ? String(priority) : "";
+export function formatPriorityInput(priority?: PriorityLevel) {
+  return priority ? String(priority) : "";
 }
 
+/** "" is No priority. Returns null for anything but a level. */
 export function parsePriorityInput(value: string) {
   if (value.trim() === "") {
     return undefined;
   }
 
   const parsedValue = Number(value);
-  if (!Number.isInteger(parsedValue) || parsedValue < 0) {
-    return null;
-  }
-
-  return parsedValue;
+  return isPriorityLevel(parsedValue) ? parsedValue : null;
 }
 
 export function formatEstimateInput(value?: number) {
@@ -225,7 +229,7 @@ export function validateBacklogTaskEditor(
       : null;
   const priorityError =
     !options.isSubtask && parsePriorityInput(fields.priority) === null
-      ? "Enter a whole number"
+      ? "Choose a priority"
       : null;
   const originalEstimateError =
     parseEstimateInput(fields.originalEstimateHours) === null
@@ -394,7 +398,11 @@ function hasSameFields(
 export function evaluateBacklogTaskEditor(
   fields: BacklogTaskEditorFields,
   target: BacklogTaskEditorTarget,
-  options: { subitemTotals?: SubitemEstimateTotals | null } = {},
+  options: {
+    subitemTotals?: SubitemEstimateTotals | null;
+    /** The synced item's connection ranges, for "Reset priority to synced". */
+    priorityRanges?: PriorityRanges;
+  } = {},
 ): BacklogTaskEditorState {
   const original = target.kind === "edit" ? target.workItem : undefined;
   const isSubitem = original
@@ -417,7 +425,12 @@ export function evaluateBacklogTaskEditor(
     }
   }
 
-  const syncedPriority = formatPriorityInput(original?.importedPriority);
+  const syncedPriority = formatPriorityInput(
+    getPriorityLevel(
+      original?.importedPriority,
+      options.priorityRanges ?? DEFAULT_PRIORITY_RANGES,
+    ),
+  );
   const syncedStatus = original?.importedWorkflowStateId ?? "";
 
   return {

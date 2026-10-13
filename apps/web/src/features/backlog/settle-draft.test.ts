@@ -31,20 +31,87 @@ describe("settle dialog fields", () => {
     expect(findSettleState(states, undefined)).toBeUndefined();
   });
 
+  it.each([
+    { draft: "Unlisted", sourceStatusLabel: "Unlisted", valid: true },
+    { draft: "Unlisted", sourceStatusLabel: "Active", valid: false },
+    { draft: "", sourceStatusLabel: "Active", valid: false },
+    { draft: "Unlisted", sourceStatusLabel: undefined, valid: false },
+    { draft: "", sourceStatusLabel: undefined, valid: true },
+    { draft: " unlisted ", sourceStatusLabel: "UNLISTED", valid: true },
+  ])(
+    "validates unlisted draft $draft against $sourceStatusLabel",
+    ({ draft, sourceStatusLabel, valid }) => {
+      const change = buildSettleChange(states, draft, "", {
+        sourceStatusLabel,
+        ranges: {},
+      });
+      if (valid)
+        expect(change).toEqual({ state: undefined, priority: undefined });
+      else expect(change).toBeNull();
+    },
+  );
+
   it("builds a change from the chosen state and priority", () => {
-    expect(buildSettleChange(states, "Closed", "25")).toEqual({
+    const current = {
+      importedPriority: 30,
+      ranges: {
+        1: { min: 1, max: 10 },
+        2: { min: 11, max: 20 },
+        3: { min: 21, max: 40 },
+      },
+    };
+    expect(buildSettleChange(states, "Closed", "2", current)).toEqual({
       state: { name: "Closed", done: true },
-      priority: 25,
+      priority: 11,
     });
-    expect(buildSettleChange(states, "Unknown", "")).toEqual({
-      state: undefined,
+    expect(buildSettleChange(states, "Active", "3", current)).toEqual({
+      state: { name: "Active", done: false },
+      priority: undefined,
+    });
+    expect(buildSettleChange(states, "Unknown", "", current)).toBeNull();
+  });
+
+  it("refuses a priority that is not a level", () => {
+    const current = { ranges: {} };
+    expect(buildSettleChange(states, "Active", "1.5", current)).toBeNull();
+    expect(buildSettleChange(states, "Active", "0", current)).toBeNull();
+    expect(buildSettleChange(states, "Active", "5", current)).toBeNull();
+  });
+
+  it("rejects a changed level with no source range instead of dropping it", () => {
+    const current = {
+      importedPriority: 20,
+      ranges: { 1: { min: 1, max: 10 }, 2: { min: 11, max: 20 } },
+    };
+    expect(buildSettleChange(states, "Closed", "4", current)).toBeNull();
+    expect(buildSettleChange(states, "Closed", "3", current)).toBeNull();
+    expect(buildSettleChange(states, "Closed", "1", current)?.priority).toBe(1);
+    expect(
+      buildSettleChange(states, "Closed", "2", current)?.priority,
+    ).toBeUndefined();
+    expect(buildSettleChange(states, "Closed", "", current)).toBeNull();
+  });
+
+  it("rejects clearing a mapped source priority while retaining an unchanged level", () => {
+    const current = { importedPriority: 2, ranges: { 2: { min: 2, max: 2 } } };
+    expect(buildSettleChange(states, "Active", "", current)).toBeNull();
+    expect(buildSettleChange(states, "Active", "2", current)).toEqual({
+      state: { name: "Active", done: false },
       priority: undefined,
     });
   });
-
-  it("refuses a priority that is not a whole number from 0 to 999", () => {
-    expect(buildSettleChange(states, "Active", "1.5")).toBeNull();
-    expect(buildSettleChange(states, "Active", "-1")).toBeNull();
-    expect(buildSettleChange(states, "Active", "1000")).toBeNull();
-  });
+  it.each([undefined, 99])(
+    "keeps No priority when source priority %s has no mapped level",
+    (importedPriority) => {
+      expect(
+        buildSettleChange(states, "Active", "", {
+          importedPriority,
+          ranges: { 2: { min: 2, max: 2 } },
+        }),
+      ).toEqual({
+        state: { name: "Active", done: false },
+        priority: undefined,
+      });
+    },
+  );
 });

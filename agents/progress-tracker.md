@@ -28,6 +28,8 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Project task and workbook import transitions are isolated from browser persistence and have direct domain tests.
 - [x] Workflow state hydration (including data saved as backlog statuses), CRUD, ordering, the Done flag, and source state mapping transitions are isolated from browser persistence and have direct domain tests.
 - [x] Moving a backlog item into a done state closes it and leaving one reopens it, with the open-subitems prompt and its Settings > Backlog choice (#85, #89).
+- [x] Priority has five levels with per-connection ranges, seeded from the connector manifest's `priorityScale` (#86, #88).
+- [x] Source states map to workflow states per source project, new ones map automatically by name or done category, and moves of synced items write the source state after the Undo window through per-state write rules (#87).
 - [x] Work-item hierarchy, estimates, manual lifecycle, and connector reconciliation have canonical domain modules with direct tests.
 - [x] Timesheet entry lifecycle and linked estimate adjustments are isolated from browser persistence and have direct tests.
 - [x] Project/task creation, hydration, ordering, edits, and archive transitions are isolated from browser persistence and have direct domain tests.
@@ -163,6 +165,22 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
       version 1.0.0-main.8.4229e5a appears in installed plugin discovery.
 - [ ] Merge the fix and deliver it through the normal desktop release process.
 
+## Connector review follow-up, 2026-10-12
+
+- [x] Done-item, missing-item and ordinary sync processing preserve pending source writes and children carried by a parent reopen, so Undo can cancel the move.
+- [x] Automatic source mapping applies the shared lifecycle transition before import. Settings discovery and done-item processing use the same transition.
+- [x] Settle rejects priority levels without a source range, disables those choices and explains an invalid choice.
+- [x] Seven new regressions cover sync during reopen, carried children, all three automatic mapping paths, local workflow overrides and incomplete priority scales. The foundation passes 690 unit tests.
+- [ ] Complete Codex re-review after updating the view layer.
+
+## Source-write acknowledgement follow-up, 2026-10-12
+
+- [x] An older successful source request advances the recovery snapshot of its replacement, including workflow state, lifecycle, priority and carried children. The replacement retains its values and deadline.
+- [x] Source acknowledgements update both snapshots of the replacement's Undo. Independent edits still block Undo.
+- [x] Settle rejects unsupported priority clears. No priority remains available when it already matches the source's mapped level.
+- [x] Eight new regressions cover recovery of open and done states, carried children, priority-only writes, replacement Undo, independent edits and No priority validation. The foundation passes 720 unit tests and workspace typecheck.
+- [ ] Complete verification and Codex review of the updated stack.
+
 ## Standard Task Flow
 
 - [ ] Understand the requested outcome.
@@ -175,11 +193,60 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Project Health Notes
 
+### Settle refresh and carried recovery, 2026-10-12
+
+- [x] Settle compares its priority draft with the current item's imported priority and range, rather than the item captured when the dialog opened. A connector refresh preserves the draft and submission writes its displayed value.
+- [x] Workflow deletion clears deleted IDs from the mapping layer's lifecycle and carried-child recovery snapshots. Clearing both child snapshots keeps failed-write recovery valid after deletion.
+- [x] The connector-refresh browser case and carried-child regression failed before their fixes. All mapping-layer unit tests, workspace typecheck and four Settle confirmation scenarios pass.
+- [ ] Verify the rebased view layer and request fresh Codex reviews. The integration thread owns merging.
+
 ### Deleted workflow recovery references, 2026-10-12
 
 - [x] Deleting a workflow state clears its ID from pending source-write rollback workflow and imported-workflow references. Other saved states remain available for recovery.
 - [x] Two regressions reproduce stale IDs after a failed Settle write, including JSON reload and a preserved local workflow override. Both failed before the fix.
 - [ ] Complete verification and fresh Codex review of the updated stack. The integration thread owns merging.
+
+### Markerless legacy explicit closes, 2026-10-12
+
+- [x] Legacy archive inference uses the saved workflow ID and original source-state availability. Markerless explicit closes with an assigned Done ID remain explicit, while missing-sync archives with no workflow ID retain their provenance.
+- [x] The same discriminator applies to carried snapshots. Existing boolean markers still take precedence.
+- [x] The markerless explicit-close case failed before the fix. A paired markerless missing-sync case covers failed startup recovery, source return and Restore after reload.
+- [ ] Verify the rebased stack and request fresh reviews of the pushed heads.
+
+### Legacy source-write recovery provenance, 2026-10-12
+
+- [x] Hydration fills missing archive-provenance markers in older pending recovery and carried-child snapshots. Source markers and pre-close history identify explicit closes; manual children remain explicit, and stored boolean markers take precedence.
+- [x] Carried recovery compares snapshot fields, so JSON property order cannot invalidate an unchanged child.
+- [x] Six persisted upgrade cases cover missing-sync archives, synced and manual children, explicit archives after a Done flag change and unknown source states. Reload, failed startup writes, source returns and Restore are checked.
+- [ ] Verify the rebased stack and request fresh reviews of the pushed heads.
+
+### Archived recovery after clearing Done, 2026-10-12
+
+- [x] Failed or undone reopens move recovered explicit archives to the remaining Done state when their old state loses its Done flag. Carried children retain the archive markers and pre-close state for Restore.
+- [x] Recovery saves entries started during the optimistic reopen. Source-write snapshots preserve missing-sync provenance, so missing-sync archives retain their open workflow state.
+- [x] Six persisted-store regressions cover failure and Undo, carried children, Restore after reload and missing-sync archives. The archive migration and running-entry checks failed before their fixes.
+- [ ] Verify the rebased stack and request fresh reviews of the pushed heads.
+
+### Done flag changes during source-write recovery, 2026-10-12
+
+- [x] Released source writes apply lifecycle reconciliation even when their workflow mapping IDs stay unchanged.
+- [x] Four persisted-store regressions reproduce failed-write and Undo recovery into a state flagged Done during a pending move, with and without carried subitems. Recovery closes the items, saves the running entry once and survives reload.
+- [ ] Verify the rebased stack and request fresh reviews of the pushed heads.
+
+### Deferred mappings after failed writes, 2026-10-12
+
+- [x] Failed source writes restore their recovery snapshot, then use the same mapping and lifecycle reconciliation as successful writes.
+- [x] Carried children follow their current mapping after recovery. Independent child writes remain protected, and later notes and local workflow overrides remain intact.
+- [x] Six persisted-store regressions cover Done, open and unmapped destinations, reload, carried children, independent child writes and local priority-write overrides. The three destination cases failed before the fix.
+- [ ] Verify the rebased view layer and request fresh reviews of the pushed heads.
+
+### Mapping changes after a source write, 2026-10-12
+
+- [x] Successful source writes reconcile mappings deferred for the item and its carried children. A newly mapped Done state closes the item and saves its running entry.
+- [x] Newer pending writes and local workflow overrides remain protected.
+- [x] The UX specification retains the explicit Settle rules introduced in #95 and distinguishes them from workflow move write rules.
+- [x] The mapping layer passes 783 unit tests and workspace typecheck. Regressions cover Done, open and unmapped destinations, carried children, newer writes, local overrides and reload.
+- [ ] Rebase the view layer, verify the final stack and request fresh reviews.
 
 ### Settle confirmation and archive warning, 2026-10-12
 
@@ -231,11 +298,27 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] The foundation passes 692 unit tests, workspace typechecking and a Chromium regression covering Save, cancellation and retry with Include subitem.
 - [ ] Carry the fixes through the mapping and view layers, verify the stack and request fresh reviews.
 
+### Source write races and persisted recovery, 2026-10-12
+
+- [x] Source state choices revalidate the item's workflow, source identity, lifecycle and mapping after both the lookup and dialog.
+- [x] State writes restore No state after JSON persistence. A move extending a priority-only write captures its pre-move workflow baseline.
+- [x] Independent child source acknowledgements advance the parent's child recovery baseline. A failed parent keeps a child's own pending write, and a confirmed child close stays closed in either completion order.
+- [x] Recovery updates leave in-flight requests current when their state, priority and Undo deadline are unchanged.
+- [x] The updated mapping layer passes 748 unit tests and workspace typechecking. View-layer verification follows before pushing the stack.
+
 ### Settle mapping recovery, 2026-10-12
 
 - [x] Settle derives closure from the selected source state's workflow mapping, including a connector-open state mapped to Done and a connector-done state mapped to an open state.
 - [x] Settling updates the imported workflow baseline and restores the prior workflow when a source write fails. Carried children follow the parent's settle or close.
 - [x] The foundation passes 687 unit tests and workspace typechecking. Full stack verification follows in the view-layer PR.
+
+### Project write options and persisted recovery, 2026-10-12
+
+- [x] Move writes and Change source state choices use the connector's states for the actual item. Settings write rules offer only states seen or loaded in that source project.
+- [x] Legacy pending recovery priorities migrate with the item's connection scale. Later manifest range seeding reconciles recovery values that follow their source and preserves local overrides.
+- [x] Failed moves restore snooze and Returned markers on the parent and carried children, while retaining independently changed child lifecycles.
+- [x] The foundation passes 731 unit tests and workspace typechecking. A browser fixture confirms Mercury offers only In QA and Venus only Resolved in their write-rule menus.
+- [ ] Verify the updated view stack before requesting a fresh review.
 
 - Use `just` rather than invoking package scripts directly.
 - Preserve local-first behavior unless the user explicitly asks to change it.

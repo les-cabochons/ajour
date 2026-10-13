@@ -11,6 +11,11 @@ import {
   inferInheritedParentMapping,
   isSubtaskWorkItem,
 } from "@/domain/backlog/work-item-hierarchy";
+import {
+  normalizePriorityLevel,
+  getPriorityLevel,
+  getWorkItemPriorityRanges,
+} from "@/domain/backlog/priority";
 import { normalizeWorkItemEstimateValue } from "@/domain/backlog/work-item-estimates";
 
 export interface WorkItemFactories {
@@ -30,9 +35,90 @@ export function normalizeWorkItemPriority(priority?: number) {
   return Math.max(0, Math.round(priority));
 }
 
+/** Older move snapshots omitted archive provenance, including carried items. */
+export function normalizeSourceWriteRecovery(workItems: LocalWorkItem[]) {
+  const itemsById = new Map(workItems.map((item) => [item._id, item]));
+  const hasSourceState = (
+    item:
+      Pick<LocalWorkItem, "sourceStatusKey" | "sourceStatusLabel"> | undefined,
+  ) => Boolean(item?.sourceStatusKey || item?.sourceStatusLabel?.trim());
+  function normalize<
+    T extends Pick<
+      LocalWorkItem,
+      | "status"
+      | "archivedByMissingSync"
+      | "archivedSourceStatusKey"
+      | "workflowStateIdBeforeClose"
+    >,
+  >(
+    snapshot: T,
+    source: LocalWorkItem["source"],
+    workflowStateId: string | undefined,
+    sourceStateKnown: boolean,
+  ): T {
+    if (typeof snapshot.archivedByMissingSync === "boolean") return snapshot;
+    // Explicit closes record the source state or pre-close workflow state.
+    // A markerless explicit close still assigned a Done ID. With no known
+    // source state, treat an assigned ID as explicit rather than guessing.
+    return {
+      ...snapshot,
+      archivedByMissingSync:
+        snapshot.status === "archived" &&
+        source !== "manual" &&
+        snapshot.archivedSourceStatusKey === undefined &&
+        snapshot.workflowStateIdBeforeClose === undefined &&
+        (sourceStateKnown || workflowStateId === undefined),
+    };
+  }
+  return workItems.map((item) => {
+    const write = item.pendingSourceWrite;
+    if (!write) return item;
+    return {
+      ...item,
+      pendingSourceWrite: {
+        ...write,
+        previous: {
+          ...write.previous,
+          lifecycle: write.previous.lifecycle
+            ? normalize(
+                write.previous.lifecycle,
+                item.source,
+                write.previous.workflowStateId,
+                hasSourceState(write.previous),
+              )
+            : undefined,
+          carriedChildren: write.previous.carriedChildren?.map((child) => {
+            const current = itemsById.get(child.id);
+            const source = current?.source ?? "manual";
+            const before = current?.pendingSourceWrite
+              ? current.pendingSourceWrite.previous
+              : current;
+            return {
+              ...child,
+              before: normalize(
+                child.before,
+                source,
+                child.before.workflowStateId,
+                hasSourceState(before),
+              ),
+              after: normalize(
+                child.after,
+                source,
+                child.after.workflowStateId,
+                hasSourceState(current),
+              ),
+            };
+          }),
+        },
+      },
+    };
+  });
+}
+
 export function normalizePersistedWorkItem(
   workItem: PersistedLocalWorkItem,
   now: () => number,
+  priorityContext?: Pick<LocalAppState, "priorityScales" | "priorityFormat">,
 ): LocalWorkItem {
   const parentWorkItemId = workItem.parentWorkItemId;
   const status =
@@ -50,6 +136,20 @@ export function normalizePersistedWorkItem(
     importedBacklogStatusId: legacyImportedWorkflowStateId,
     ...persisted
   } = workItem;
+  const normalizePriority = (priority?: number, importedPriority?: number) =>
+    priorityContext &&
+    priorityContext.priorityFormat !== "levels" &&
+    workItem.source !== "manual" &&
+    workItem.source !== "outlook" &&
+    priority === importedPriority
+      ? getPriorityLevel(
+          importedPriority,
+          getWorkItemPriorityRanges(priorityContext, {
+            source: workItem.source ?? "manual",
+            sourceConnectionId: workItem.sourceConnectionId,
+          }),
+        )
+      : normalizePriorityLevel(priority);
 
   return {
     ...persisted,
@@ -75,7 +175,19 @@ export function normalizePersistedWorkItem(
     parentSourceId: isRetiredBuiltInSource
       ? undefined
       : workItem.parentSourceId,
-    priority: normalizeWorkItemPriority(workItem.priority),
+    priority: normalizePriority(workItem.priority, workItem.importedPriority),
+    pendingSourceWrite: workItem.pendingSourceWrite
+      ? {
+          ...workItem.pendingSourceWrite,
+          previous: {
+            ...workItem.pendingSourceWrite.previous,
+            priority: normalizePriority(
+              workItem.pendingSourceWrite.previous.priority,
+              workItem.pendingSourceWrite.previous.importedPriority,
+            ),
+          },
+        }
+      : undefined,
     importedPriority: isRetiredBuiltInSource
       ? undefined
       : normalizeWorkItemPriority(workItem.importedPriority),
@@ -135,7 +247,7 @@ function createManualWorkItem(
     hierarchyLevel: isSubtask ? 1 : 0,
     parentWorkItemId: workItem.parentWorkItemId,
     parentSourceId: undefined,
-    priority: normalizeWorkItemPriority(workItem.priority),
+    priority: normalizePriorityLevel(workItem.priority),
     importedPriority: undefined,
     workflowStateId: workItem.workflowStateId,
     importedWorkflowStateId: undefined,
@@ -329,7 +441,7 @@ export function updateWorkItem(
   const nextIsSubtask = Boolean(nextParentWorkItemId || nextParentSourceId);
   const priorityProvided = hasOwn(patch, "priority");
   const nextPriority = priorityProvided
-    ? normalizeWorkItemPriority(patch.priority)
+    ? normalizePriorityLevel(patch.priority)
     : target.priority;
   const mappingProvided = hasOwn(patch, "projectId") || hasOwn(patch, "taskId");
   const inheritanceProvided = hasOwn(patch, "inheritsParentMapping");

@@ -61,6 +61,9 @@ import { localStore } from "@/lib/local-store";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
+import { getPriorityLevelName } from "@/domain/backlog/priority";
+import { PriorityIcon } from "@/features/backlog/priority-icon";
+import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
 
 const ESTIMATE_TILES: { key: LocalWorkItemEstimateFieldKey; label: string }[] =
   [
@@ -169,6 +172,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
     const requested = getBacklogItemActions(current, {
       isSubitem,
       subitemCount: 0,
+      otherSourceStateCount: getOtherSourceStates(current).length,
     }).find((candidate) => candidate.id === action);
     if (requested && !requested.disabledReason) {
       setEditor(action);
@@ -208,6 +212,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
     isSnoozed,
     subitemCount: isSubitem ? 0 : subitems.length,
     settleOpensDialog: settleOpensDialog(item),
+    otherSourceStateCount: getOtherSourceStates(item).length,
   });
   const parentKey = getWorkItemParentKey(item);
   const parent = parentKey
@@ -462,9 +467,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                             {subitem.title}
                           </span>
                           {subitem.priority !== undefined ? (
-                            <span className="text-[11px] text-muted-foreground">
-                              P{subitem.priority}
-                            </span>
+                            <PriorityIcon priority={subitem.priority} />
                           ) : null}
                           {subitem.sourceStatusLabel ? (
                             <span className="text-[11px] text-muted-foreground">
@@ -530,7 +533,12 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                 <Property label="Workflow state">
                   {workflowState?.name ?? "–"}
                 </Property>
-                <Property label="Priority">{item.priority ?? "–"}</Property>
+                <Property label="Priority">
+                  <span className="inline-flex items-center gap-1.5">
+                    <PriorityIcon priority={item.priority} decorative />
+                    {getPriorityLevelName(item.priority)}
+                  </span>
+                </Property>
               </div>
               <div className="py-1">
                 <Property label="Project">

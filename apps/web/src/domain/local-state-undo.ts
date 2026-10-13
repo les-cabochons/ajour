@@ -1,4 +1,5 @@
 import { applyLoggedTimeToWorkItems } from "@/domain/backlog/work-item-estimates";
+import { completeSourceWrite } from "@/domain/backlog/backlog-item-lifecycle";
 import type {
   LocalAppState,
   LocalTimesheetEntry,
@@ -17,6 +18,7 @@ const UNDO_COLLECTIONS = [
   "workItems",
   "workflowStates",
   "workflowStateMappings",
+  "workflowStateWriteRules",
 ] as const satisfies readonly (keyof LocalAppState)[];
 
 type UndoCollection = (typeof UNDO_COLLECTIONS)[number];
@@ -33,7 +35,9 @@ const recordKeys: {
   workItems: (workItem) => workItem._id,
   workflowStates: (status) => status._id,
   workflowStateMappings: (mapping) =>
-    `${mapping.source}:${mapping.connectionId}:${mapping.sourceStatusKey}`,
+    `${mapping.source}:${mapping.connectionId}:${mapping.sourceProjectName ?? ""}:${mapping.sourceStatusKey}`,
+  workflowStateWriteRules: (rule) =>
+    `${rule.source}:${rule.connectionId}:${rule.sourceProjectName ?? ""}:${rule.workflowStateId}`,
 };
 
 /**
@@ -62,6 +66,41 @@ export type LocalStateUndo = {
  * leave two running timers. The state is then left as it is.
  */
 export type LocalStateUndoResult = "restored" | "stale";
+
+/** Updates a replacement action's snapshots without hiding independent edits. */
+export function completeSourceWriteInUndo(
+  undo: LocalStateUndo,
+  current: LocalAppState,
+  workItemId: string,
+  sentItems: readonly LocalWorkItem[],
+): LocalStateUndo {
+  const acknowledge = (record: LocalWorkItem | undefined) => {
+    if (!record) return record;
+    return completeSourceWrite(
+      {
+        ...current,
+        workItems: [
+          record,
+          ...current.workItems.filter((item) => item._id !== record._id),
+        ],
+      },
+      workItemId,
+      sentItems,
+    ).workItems.find((item) => item._id === record._id);
+  };
+  return {
+    ...undo,
+    workItems: undo.workItems.map((change) =>
+      change.key === workItemId && change.before?.pendingSourceWrite
+        ? {
+            ...change,
+            before: acknowledge(change.before),
+            after: acknowledge(change.after),
+          }
+        : change,
+    ),
+  };
+}
 
 /**
  * Compares two records field by field. A missing field equals `undefined`, so a
@@ -307,6 +346,11 @@ export function restoreUndo(
       workflowStates: restoreCollection("workflowStates", state, undo),
       workflowStateMappings: restoreCollection(
         "workflowStateMappings",
+        state,
+        undo,
+      ),
+      workflowStateWriteRules: restoreCollection(
+        "workflowStateWriteRules",
         state,
         undo,
       ),

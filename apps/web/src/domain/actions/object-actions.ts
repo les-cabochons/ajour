@@ -175,6 +175,7 @@ export type BacklogItemActionId =
   | "settle"
   | "unsettle"
   | "restore"
+  | "change-source-state"
   | "open-in-source"
   | "archive"
   | "delete";
@@ -189,6 +190,11 @@ export interface BacklogItemActionOptions {
   isEditing?: boolean;
   /** Whether Settle opens the settle dialog, so its label ends with "…". */
   settleOpensDialog?: boolean;
+  /**
+   * Other source states of the item's workflow state it can write. Change
+   * source state… is listed only when there are some.
+   */
+  otherSourceStateCount?: number;
 }
 
 function formatDeleteLabel(subitemCount: number) {
@@ -202,7 +208,8 @@ function formatDeleteLabel(subitemCount: number) {
 /**
  * Lists a backlog item's actions:
  * Start entry · New entry… · Edit · Add subitem · Snooze…/Unsnooze ·
- * Settle/Unsettle/Restore · Open in source · Archive · Delete.
+ * Settle/Unsettle/Restore · Change source state… · Open in source · Archive ·
+ * Delete.
  *
  * Open in source is listed only when a connector provided the item's URL.
  * Archive is listed only for synced items: it archives in Ajour and leaves the
@@ -253,6 +260,14 @@ export function getBacklogItemActions(
             label: options.settleOpensDialog ? "Settle…" : "Settle",
           },
   ];
+
+  if ((options.otherSourceStateCount ?? 0) > 0) {
+    actions.push({
+      id: "change-source-state",
+      label: "Change source state…",
+      disabledReason: archivedReason,
+    });
+  }
 
   if (item.sourceUrl) {
     actions.push({ id: "open-in-source", label: "Open in source" });

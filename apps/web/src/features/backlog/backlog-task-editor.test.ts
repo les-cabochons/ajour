@@ -108,7 +108,7 @@ describe("backlog task editor", () => {
     expect(
       validateBacklogTaskEditor(fields, { isSubtask: false }),
     ).toMatchObject({
-      priorityError: "Enter a whole number",
+      priorityError: "Choose a priority",
       remainingEstimateError: "Enter a non-negative number",
       canSave: false,
     });

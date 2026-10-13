@@ -16,12 +16,18 @@ import {
   FieldError,
   FieldLabel,
 } from "@/components/ui/field";
-import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/select";
 import {
   settleArchivesWorkItem,
   type BacklogSettleChange,
 } from "@/domain/backlog/backlog-item-lifecycle";
+import {
+  getPriorityLevel,
+  getSourcePriority,
+  getWorkItemPriorityRanges,
+  NO_PRIORITY_NAME,
+  PRIORITY_LEVELS,
+} from "@/domain/backlog/priority";
 import type { LocalWorkItem } from "@/domain/local-state";
 import { findSettleRule } from "@/domain/backlog/settle-rules";
 import {
@@ -32,8 +38,8 @@ import { resolveIncludeSubitems } from "@/features/backlog/backlog-item-moves";
 import { formatPriorityInput } from "@/features/backlog/backlog-task-editor";
 import {
   buildSettleChange,
-  findSettleState,
   groupSettleStates,
+  isSettleStateDraftValid,
 } from "@/features/backlog/settle-draft";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { listConnectorSettleStates } from "@/lib/app-api";
@@ -162,7 +168,10 @@ export function SettleDialogHost() {
       setStateName(prefill?.state?.name ?? item.sourceStatusLabel ?? "");
       setPriority(
         formatPriorityInput(
-          prefill?.priority ?? item.importedPriority ?? item.priority,
+          getPriorityLevel(
+            prefill?.priority ?? item.importedPriority,
+            getWorkItemPriorityRanges(localStore.snapshot(), item),
+          ) ?? item.priority,
         ),
       );
       setLoad({ status: "loading" });
@@ -198,24 +207,40 @@ export function SettleDialogHost() {
     };
   }, [workItem]);
 
-  const states = load.status === "ready" ? load.states : [];
-  const currentListed = Boolean(
-    findSettleState(states, workItem?.sourceStatusLabel),
-  );
-  const change = buildSettleChange(states, stateName, priority);
   const currentItem = state.workItems.find(
     (item) => item._id === workItem?._id,
   );
+  const states = load.status === "ready" ? load.states : [];
+  const draftListed = states.some((state) => state.name === stateName);
+  const stateDraftValid = isSettleStateDraftValid(
+    states,
+    stateName,
+    currentItem?.sourceStatusLabel,
+  );
+  const priorityRanges = currentItem
+    ? getWorkItemPriorityRanges(state, currentItem)
+    : {};
+  const sourceHasPriority =
+    getPriorityLevel(currentItem?.importedPriority, priorityRanges) !==
+    undefined;
+  const change = currentItem
+    ? buildSettleChange(states, stateName, priority, {
+        sourceStatusLabel: currentItem.sourceStatusLabel,
+        importedPriority: currentItem.importedPriority,
+        ranges: priorityRanges,
+      })
+    : null;
   const archives = Boolean(
     currentItem &&
     settleArchivesWorkItem(state, currentItem, change ?? undefined),
   );
 
   async function settle() {
-    if (!workItem || !change || pending) return;
+    if (!currentItem || !change || pending) return;
     setPending(true);
     try {
-      if (await settleBacklogItemWithUndo(workItem, change)) setWorkItem(null);
+      if (await settleBacklogItemWithUndo(currentItem, change))
+        setWorkItem(null);
     } finally {
       setPending(false);
     }
@@ -246,14 +271,15 @@ export function SettleDialogHost() {
               <NativeSelect
                 id="settle-state"
                 value={stateName}
+                aria-invalid={load.status === "ready" && !stateDraftValid}
                 disabled={load.status !== "ready" || pending}
                 onChange={(event) => setStateName(event.target.value)}
               >
-                {!currentListed ? (
-                  <option value={workItem?.sourceStatusLabel ?? ""}>
+                {!draftListed ? (
+                  <option value={stateName}>
                     {load.status === "loading"
                       ? "Loading states…"
-                      : (workItem?.sourceStatusLabel ?? "No state")}
+                      : stateName || "No state"}
                   </option>
                 ) : null}
                 {groupSettleStates(states).map((group) => (
@@ -268,6 +294,11 @@ export function SettleDialogHost() {
               </NativeSelect>
               {load.status === "failed" ? (
                 <FieldError>Couldn't load states: {load.message}</FieldError>
+              ) : load.status === "ready" && !stateDraftValid ? (
+                <FieldError>
+                  This source state is no longer available. Choose another
+                  state.
+                </FieldError>
               ) : archives ? (
                 <FieldDescription>
                   This state is done, so the item will be archived.
@@ -278,16 +309,33 @@ export function SettleDialogHost() {
           <Field>
             <FieldLabel htmlFor="settle-priority">Priority</FieldLabel>
             <FieldContent>
-              <Input
+              <NativeSelect
                 id="settle-priority"
                 disabled={pending}
-                inputMode="numeric"
                 value={priority}
-                aria-invalid={change === null}
                 onChange={(event) => setPriority(event.target.value)}
-              />
-              {change === null ? (
-                <FieldError>Enter a whole number from 0 to 999.</FieldError>
+              >
+                <option value="" disabled={sourceHasPriority}>
+                  {NO_PRIORITY_NAME}
+                </option>
+                {PRIORITY_LEVELS.map(({ level, name }) => (
+                  <option
+                    key={level}
+                    value={String(level)}
+                    disabled={
+                      getSourcePriority(level, priorityRanges) === undefined
+                    }
+                  >
+                    {name}
+                  </option>
+                ))}
+              </NativeSelect>
+              {change === null && stateDraftValid ? (
+                <FieldError>
+                  {priority === "" && sourceHasPriority
+                    ? "This connector cannot clear its source priority. Choose a priority."
+                    : "This priority has no source range. Choose another priority."}
+                </FieldError>
               ) : null}
             </FieldContent>
           </Field>

@@ -3,7 +3,9 @@ import type {
   LocalAppState,
   LocalPendingSourceWrite,
   LocalWorkItem,
+  LocalWorkItemMoveSnapshot,
 } from "@/domain/local-state";
+import { getPendingSourceWriteItemIds } from "@/domain/local-state";
 import {
   getDirectChildWorkItems,
   getWorkItemLookupKeys,
@@ -15,7 +17,13 @@ import {
   findMappedWorkflowStateId,
   getFirstDoneWorkflowState,
   isDoneWorkflowState,
+  syncImportedWorkflowState,
 } from "@/domain/backlog/workflow-states";
+import {
+  getPriorityLevel,
+  getWorkItemPriorityRanges,
+  type PriorityRanges,
+} from "@/domain/backlog/priority";
 import { saveTimer } from "@/domain/time/timer-transitions";
 
 /**
@@ -26,6 +34,105 @@ import { saveTimer } from "@/domain/time/timer-transitions";
 /** Whether a settle or close also takes the parent's open subitems. */
 export interface CloseSubitemsOptions {
   includeSubitems?: boolean;
+}
+
+export interface MoveBacklogItemOptions extends CloseSubitemsOptions {
+  /**
+   * The source state to write for each moved item, by item id. The item shows
+   * it at once, and the write is sent after the Undo window (ADR 0001).
+   */
+  sourceWrites?: Readonly<Record<string, string>>;
+}
+
+function moveSnapshot(item: LocalWorkItem): LocalWorkItemMoveSnapshot {
+  return {
+    status: item.status,
+    workflowStateId: item.workflowStateId,
+    workflowStateIdBeforeClose: item.workflowStateIdBeforeClose,
+    archivedAt: item.archivedAt,
+    archivedByMissingSync: item.archivedByMissingSync,
+    archivedSourceStatusKey: item.archivedSourceStatusKey,
+    settledAt: item.settledAt,
+    settledWithParentId: item.settledWithParentId,
+    settledSourceStatusKey: item.settledSourceStatusKey,
+    settledImportedPriority: item.settledImportedPriority,
+    returnedAt: item.returnedAt,
+    snoozedUntil: item.snoozedUntil,
+  };
+}
+
+function moveLifecycleSnapshot(item: LocalWorkItem) {
+  const { workflowStateId: _workflowStateId, ...lifecycle } =
+    moveSnapshot(item);
+  return lifecycle;
+}
+
+/**
+ * Records a source state write on a moved item: the item shows the new source
+ * state and its mapping at once, and keeps what it had before, so a failed
+ * write puts it back. A write still waiting keeps its first `previous`.
+ */
+function withMoveSourceWrite(
+  state: LocalAppState,
+  workItem: LocalWorkItem,
+  sourceStatusLabel: string | undefined,
+  now?: number,
+): LocalWorkItem {
+  const sourceStatusKey = sourceStatusLabel
+    ? normalizeConnectorStatusKey(sourceStatusLabel)
+    : undefined;
+  if (
+    !sourceStatusLabel ||
+    workItem.source === "manual" ||
+    sourceStatusKey === workItem.sourceStatusKey
+  ) {
+    return workItem;
+  }
+
+  return {
+    ...workItem,
+    sourceStatusKey,
+    sourceStatusLabel,
+    importedWorkflowStateId: findMappedWorkflowStateId(
+      state.workflowStateMappings,
+      workItem.source,
+      workItem.sourceConnectionId,
+      sourceStatusKey,
+      workItem.sourceProjectName,
+    ),
+    pendingSourceWrite: {
+      readyAt: now === undefined ? undefined : now + 8000,
+      state: sourceStatusLabel,
+      priority: workItem.pendingSourceWrite?.priority,
+      previous: workItem.pendingSourceWrite?.previous ?? {
+        sourceStatusKey: workItem.sourceStatusKey,
+        sourceStatusLabel: workItem.sourceStatusLabel,
+        importedPriority: workItem.importedPriority,
+        priority: workItem.priority,
+        workflowStateId: workItem.workflowStateId,
+        importedWorkflowStateId: workItem.importedWorkflowStateId,
+        lifecycle: moveLifecycleSnapshot(workItem),
+      },
+    },
+  };
+}
+
+/**
+ * Change source state: writes another source state that maps to the same
+ * workflow state. The item stays where it is.
+ */
+export function changeBacklogItemSourceState(
+  state: LocalAppState,
+  workItemId: string,
+  sourceStatusLabel: string,
+  now?: number,
+): LocalAppState {
+  return updateOne(state, workItemId, (workItem) => {
+    const next = withMoveSourceWrite(state, workItem, sourceStatusLabel, now);
+    return next === workItem
+      ? workItem
+      : { ...next, workflowStateId: workItem.workflowStateId };
+  });
 }
 
 /**
@@ -60,6 +167,7 @@ function getClosingWorkflowStateId(
     workItem.source,
     workItem.sourceConnectionId,
     workItem.sourceStatusKey,
+    workItem.sourceProjectName,
   );
   if (isDoneWorkflowState(state.workflowStates, mapped)) return mapped;
   if (isDoneWorkflowState(state.workflowStates, workItem.workflowStateId)) {
@@ -184,7 +292,7 @@ export function moveBacklogItemToState(
   workItemId: string,
   workflowStateId: string | undefined,
   factories: WorkItemFactories,
-  options: CloseSubitemsOptions = {},
+  options: MoveBacklogItemOptions = {},
 ): LocalAppState {
   const target = state.workItems.find(
     (workItem) => workItem._id === workItemId,
@@ -199,6 +307,127 @@ export function moveBacklogItemToState(
   ) {
     return state;
   }
+
+  const moved = moveWithoutWrites(
+    state,
+    workItemId,
+    workflowStateId,
+    factories,
+    options,
+  );
+  const writes = options.sourceWrites ?? {};
+  if (Object.keys(writes).length === 0) return moved;
+
+  const writtenState = {
+    ...moved,
+    workItems: moved.workItems.map((workItem) => {
+      const label = writes[workItem._id];
+      if (!label) return workItem;
+      const before = state.workItems.find(
+        (candidate) => candidate._id === workItem._id,
+      );
+      const written = withMoveSourceWrite(
+        state,
+        workItem,
+        label,
+        factories.now(),
+      );
+      if (written === workItem || !written.pendingSourceWrite || !before) {
+        return written;
+      }
+      const hasWorkflowRecovery =
+        workItem.pendingSourceWrite &&
+        (workItem.pendingSourceWrite.state !== undefined ||
+          "workflowStateId" in workItem.pendingSourceWrite.previous);
+      // A failed write goes back to where the item was before this move.
+      return {
+        ...written,
+        archivedSourceStatusKey:
+          written.status === "archived"
+            ? written.sourceStatusKey
+            : written.archivedSourceStatusKey,
+        pendingSourceWrite: {
+          ...written.pendingSourceWrite,
+          previous: {
+            ...written.pendingSourceWrite.previous,
+            workflowStateId: hasWorkflowRecovery
+              ? workItem.pendingSourceWrite!.previous.workflowStateId
+              : before.workflowStateId,
+            importedWorkflowStateId: hasWorkflowRecovery
+              ? workItem.pendingSourceWrite!.previous.importedWorkflowStateId
+              : before.importedWorkflowStateId,
+            lifecycle:
+              workItem.pendingSourceWrite?.previous.lifecycle ??
+              moveLifecycleSnapshot(before),
+            carriedChildren: state.workItems.flatMap((child) => {
+              const item = moved.workItems.find(
+                (item) => item._id === child._id,
+              );
+              const previous =
+                before.pendingSourceWrite?.previous.carriedChildren?.find(
+                  (record) => record.id === child._id,
+                );
+              if (
+                !item ||
+                (!previous &&
+                  child.settledWithParentId !== workItem._id &&
+                  item.settledWithParentId !== workItem._id)
+              )
+                return [];
+              return [
+                {
+                  id: child._id,
+                  before: previous?.before ?? moveSnapshot(child),
+                  after: moveSnapshot(item),
+                },
+              ];
+            }),
+          },
+        },
+      };
+    }),
+  };
+  // Children receive their own source writes in this same pass. Record their
+  // final optimistic lifecycle, including the written archive source state.
+  return {
+    ...writtenState,
+    workItems: writtenState.workItems.map((item) => {
+      const write = item.pendingSourceWrite;
+      if (!write?.previous.carriedChildren?.length) return item;
+      return {
+        ...item,
+        pendingSourceWrite: {
+          ...write,
+          previous: {
+            ...write.previous,
+            carriedChildren: write.previous.carriedChildren.map((child) => {
+              const current = writtenState.workItems.find(
+                (item) => item._id === child.id,
+              );
+              return current
+                ? { ...child, after: moveSnapshot(current) }
+                : child;
+            }),
+          },
+        },
+      };
+    }),
+  };
+}
+
+function moveWithoutWrites(
+  state: LocalAppState,
+  workItemId: string,
+  workflowStateId: string | undefined,
+  factories: WorkItemFactories,
+  options: CloseSubitemsOptions,
+): LocalAppState {
+  const target = state.workItems.find(
+    (workItem) => workItem._id === workItemId,
+  )!;
+  const destination = state.workflowStates.find(
+    (candidate) => candidate._id === workflowStateId,
+  )!;
 
   if (destination?.done) {
     if (target.status === "archived") {
@@ -314,6 +543,7 @@ function getSettleWorkflowStateId(
         workItem.source,
         workItem.sourceConnectionId,
         normalizeConnectorStatusKey(change.state.name),
+        workItem.sourceProjectName,
       )
     : undefined;
 }
@@ -361,7 +591,10 @@ export function settleBacklogItem(
     return state;
   }
 
-  const sourceWrite = getSourceWrite(target, change);
+  const initialWrite = getSourceWrite(target, change);
+  const sourceWrite = initialWrite
+    ? { ...initialWrite, readyAt: factories.now() + 8000 }
+    : undefined;
   const selectedWorkflowStateId = getSettleWorkflowStateId(
     state,
     target,
@@ -404,7 +637,11 @@ export function settleBacklogItem(
     workItems: saved.workItems.map((workItem) => {
       if (workItem._id === workItemId) {
         const written = sourceWrite
-          ? withSourceWrite(workItem, sourceWrite)
+          ? withSourceWrite(
+              workItem,
+              sourceWrite,
+              getWorkItemPriorityRanges(state, workItem),
+            )
           : workItem;
         return settle(
           sourceWrite?.state !== undefined
@@ -430,9 +667,11 @@ export function settleBacklogItem(
 function withSourceWrite(
   workItem: LocalWorkItem,
   sourceWrite: LocalPendingSourceWrite,
+  priorityRanges: PriorityRanges,
 ): LocalWorkItem {
   const followsImportedPriority =
-    workItem.priority === workItem.importedPriority;
+    workItem.priority ===
+    getPriorityLevel(workItem.importedPriority, priorityRanges);
   return {
     ...workItem,
     pendingSourceWrite: sourceWrite,
@@ -446,23 +685,119 @@ function withSourceWrite(
       ? {
           importedPriority: sourceWrite.priority,
           priority: followsImportedPriority
-            ? sourceWrite.priority
+            ? getPriorityLevel(sourceWrite.priority, priorityRanges)
             : workItem.priority,
         }
       : {}),
   };
 }
 
-/** The write was sent. The item keeps the values the settle gave it. */
+/** Recovery can advance while the state, priority and Undo deadline stay fixed. */
+export function hasSameSourceWriteRequest(
+  left: LocalPendingSourceWrite | undefined,
+  right: LocalPendingSourceWrite | undefined,
+) {
+  return (
+    Boolean(left) === Boolean(right) &&
+    left?.state === right?.state &&
+    left?.priority === right?.priority &&
+    left?.readyAt === right?.readyAt
+  );
+}
+
+/**
+ * Acknowledges the sent snapshot. A newer pending write keeps its displayed
+ * values and deadline, but recovers to this successful snapshot if it fails.
+ */
 export function completeSourceWrite(
   state: LocalAppState,
   workItemId: string,
+  sentItems?: readonly LocalWorkItem[],
 ): LocalAppState {
   const target = state.workItems.find(
     (workItem) => workItem._id === workItemId,
   );
-  if (!target?.pendingSourceWrite) {
+  const currentWrite = target?.pendingSourceWrite;
+  if (!target || !currentWrite) {
     return state;
+  }
+
+  const sent = sentItems
+    ? sentItems.find((item) => item._id === workItemId)
+    : target;
+  if (!sent?.pendingSourceWrite) return state;
+  if (sent.pendingSourceWrite.state !== undefined) {
+    // A child's accepted source state is now its recovery baseline, even if
+    // the parent's independently dispatched write later fails.
+    state = {
+      ...state,
+      workItems: state.workItems.map((parent) => {
+        const write = parent.pendingSourceWrite;
+        if (
+          !write?.previous.carriedChildren?.some(
+            (child) => child.id === workItemId,
+          )
+        )
+          return parent;
+        return {
+          ...parent,
+          pendingSourceWrite: {
+            ...write,
+            previous: {
+              ...write.previous,
+              carriedChildren: write.previous.carriedChildren.map((child) =>
+                child.id === workItemId
+                  ? {
+                      ...child,
+                      before: {
+                        ...moveSnapshot(sent),
+                        settledWithParentId: undefined,
+                      },
+                    }
+                  : child,
+              ),
+            },
+          },
+        };
+      }),
+    };
+  }
+  if (!hasSameSourceWriteRequest(sent.pendingSourceWrite, currentWrite)) {
+    const { workflowStateId, ...lifecycle } = moveSnapshot(sent);
+    const carriedIds = new Set([
+      ...(sent.pendingSourceWrite.previous.carriedChildren ?? []).map(
+        (child) => child.id,
+      ),
+      ...(currentWrite.previous.carriedChildren ?? []).map((child) => child.id),
+      ...(sentItems ?? [])
+        .filter((child) => child.settledWithParentId === workItemId)
+        .map((child) => child._id),
+    ]);
+    return updateOne(state, workItemId, (item) => ({
+      ...item,
+      pendingSourceWrite: {
+        ...currentWrite,
+        previous: {
+          sourceStatusKey: sent.sourceStatusKey,
+          sourceStatusLabel: sent.sourceStatusLabel,
+          importedPriority: sent.importedPriority,
+          priority: sent.priority,
+          workflowStateId,
+          importedWorkflowStateId: sent.importedWorkflowStateId,
+          lifecycle,
+          carriedChildren: [...carriedIds].flatMap((id) => {
+            const before = sentItems?.find((child) => child._id === id);
+            const current = state.workItems.find((child) => child._id === id);
+            if (!before || !current) return [];
+            const after =
+              currentWrite.previous.carriedChildren?.find(
+                (child) => child.id === id,
+              )?.after ?? moveSnapshot(current);
+            return [{ id, before: moveSnapshot(before), after }];
+          }),
+        },
+      },
+    }));
   }
 
   return updateOne(state, workItemId, (workItem) => ({
@@ -472,9 +807,50 @@ export function completeSourceWrite(
 }
 
 /**
- * The write failed. The item takes back its source values and returns to
- * active, with the subitems its settle carried, from settled or archived.
+ * Applies mapping changes deferred while a source write protected an item or
+ * its carried children, after success or failure. Newer writes stay protected.
  */
+export function reconcileSourceWriteMappings(
+  previous: LocalAppState,
+  next: LocalAppState,
+  factories: WorkItemFactories,
+): LocalAppState {
+  if (previous === next) return next;
+  const protectedIds = getPendingSourceWriteItemIds(next);
+  const releasedIds = new Set(
+    [...getPendingSourceWriteItemIds(previous)].filter(
+      (id) => !protectedIds.has(id),
+    ),
+  );
+  if (releasedIds.size === 0) return next;
+
+  const replacementDoneId = getFirstDoneWorkflowState(next.workflowStates)?._id;
+  const workItems = next.workItems.map((item) => {
+    if (!releasedIds.has(item._id)) return item;
+    const mapped = syncImportedWorkflowState(item, next.workflowStateMappings);
+    // Missing-sync archives keep their open state. Explicit closes need a Done
+    // state even if their recovery snapshot predates a workflow settings edit.
+    return mapped.status === "archived" &&
+      !mapped.archivedByMissingSync &&
+      !isDoneWorkflowState(next.workflowStates, mapped.workflowStateId)
+      ? { ...mapped, workflowStateId: replacementDoneId }
+      : mapped;
+  });
+  const archivedIds = new Set(
+    workItems
+      .filter((item) => releasedIds.has(item._id) && item.status === "archived")
+      .map((item) => item._id),
+  );
+  const saved = saveRunningEntries(
+    { ...next, workItems },
+    archivedIds,
+    factories,
+  );
+  // A state's Done flag can change while the mapped IDs stay the same.
+  return applyWorkflowStateLifecycle(next, saved, factories);
+}
+
+/** Restores the write's source values and saved lifecycle after failure. */
 export function failSourceWrite(
   state: LocalAppState,
   workItemId: string,
@@ -495,18 +871,55 @@ export function failSourceWrite(
     importedPriority: sourceWrite.previous.importedPriority,
     priority: sourceWrite.previous.priority,
   }));
-  const recovered =
-    target.status === "active"
+  const returned =
+    sourceWrite.previous.lifecycle &&
+    sourceWrite.previous.lifecycle.status !== target.status
+      ? reactivate(restored, workItemId, target.status)
+      : restored;
+  const reopened = sourceWrite.previous.lifecycle
+    ? updateOne(returned, workItemId, (workItem) => ({
+        ...workItem,
+        ...sourceWrite.previous.lifecycle,
+      }))
+    : target.status === "active"
       ? restored
       : reactivate(restored, workItemId, target.status);
-  return sourceWrite.state !== undefined ||
-    "workflowStateId" in sourceWrite.previous
-    ? updateOne(recovered, workItemId, (workItem) => ({
-        ...workItem,
-        workflowStateId: sourceWrite.previous.workflowStateId,
-        importedWorkflowStateId: sourceWrite.previous.importedWorkflowStateId,
-      }))
-    : recovered;
+  // A move's write also puts the item back in the state it left.
+  const recovered =
+    sourceWrite.state !== undefined || "workflowStateId" in sourceWrite.previous
+      ? updateOne(reopened, workItemId, (workItem) => ({
+          ...workItem,
+          workflowStateId: sourceWrite.previous.workflowStateId,
+          importedWorkflowStateId: sourceWrite.previous.importedWorkflowStateId,
+          workflowStateIdBeforeClose:
+            sourceWrite.previous.lifecycle?.workflowStateIdBeforeClose,
+        }))
+      : reopened;
+  const carried = sourceWrite.previous.carriedChildren ?? [];
+  if (!carried.length) return recovered;
+  return {
+    ...recovered,
+    workItems: recovered.workItems.map((item) => {
+      const child = carried.find((child) => child.id === item._id);
+      if (!child) return item;
+      const current = state.workItems.find(
+        (current) => current._id === item._id,
+      )!;
+      if (current.pendingSourceWrite?.state !== undefined) {
+        return current.settledWithParentId === workItemId
+          ? { ...current, settledWithParentId: undefined }
+          : current;
+      }
+      if (
+        !Object.entries(moveSnapshot(current)).every(
+          ([key, value]) =>
+            child.after[key as keyof LocalWorkItemMoveSnapshot] === value,
+        )
+      )
+        return current;
+      return { ...item, ...child.before };
+    }),
+  };
 }
 
 /**
