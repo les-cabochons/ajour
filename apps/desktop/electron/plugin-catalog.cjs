@@ -93,6 +93,76 @@ function assertCapabilityList(value, id) {
   return [...value];
 }
 
+const RELEASE_VERSION_PATTERN =
+  /^v?(\d+)\.(\d+)\.(\d+)(?:-([0-9A-Za-z.-]+))?(?:\+[0-9A-Za-z.-]+)?$/u;
+
+/** Parses "v1.2.3-main.10.abc1234" into numbers and prerelease identifiers. */
+function parseReleaseVersion(tagName) {
+  if (typeof tagName !== "string") {
+    return null;
+  }
+  const match = RELEASE_VERSION_PATTERN.exec(tagName.trim());
+  if (!match) {
+    return null;
+  }
+  return {
+    core: [Number(match[1]), Number(match[2]), Number(match[3])],
+    prerelease: match[4] ? match[4].split(".") : [],
+  };
+}
+
+function comparePrereleaseIdentifiers(left, right) {
+  const leftNumeric = /^\d+$/u.test(left);
+  const rightNumeric = /^\d+$/u.test(right);
+  if (leftNumeric && rightNumeric) {
+    return Number(left) - Number(right);
+  }
+  if (leftNumeric !== rightNumeric) {
+    return leftNumeric ? -1 : 1;
+  }
+  return left < right ? -1 : left > right ? 1 : 0;
+}
+
+/** Semantic version precedence: negative when `left` is older. */
+function compareReleaseVersions(left, right) {
+  for (let index = 0; index < 3; index += 1) {
+    const difference = left.core[index] - right.core[index];
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+  if (left.prerelease.length === 0 || right.prerelease.length === 0) {
+    return right.prerelease.length - left.prerelease.length;
+  }
+  const length = Math.max(left.prerelease.length, right.prerelease.length);
+  for (let index = 0; index < length; index += 1) {
+    if (left.prerelease[index] === undefined) return -1;
+    if (right.prerelease[index] === undefined) return 1;
+    const difference = comparePrereleaseIdentifiers(
+      left.prerelease[index],
+      right.prerelease[index],
+    );
+    if (difference !== 0) {
+      return difference;
+    }
+  }
+  return 0;
+}
+
+/** Newest version first; tags without a version last, in GitHub's order. */
+function compareReleaseCandidates(left, right) {
+  if (left.version && right.version) {
+    return (
+      compareReleaseVersions(right.version, left.version) ||
+      left.index - right.index
+    );
+  }
+  if (left.version || right.version) {
+    return left.version ? -1 : 1;
+  }
+  return left.index - right.index;
+}
+
 function assertSlugList(value, label) {
   if (!Array.isArray(value) || value.length < 1 || value.length > 12) {
     throw new Error(`${label} must contain between 1 and 12 values.`);
@@ -627,15 +697,17 @@ function createPluginCatalogService(options) {
       throw new Error("GitHub returned an invalid release list.");
     }
     const pattern = new RegExp(entry.install.assetPattern, "u");
-    let selectedAsset;
-    for (const release of releases) {
+    // GitHub lists releases by creation time, which follows build completion
+    // order, not version order. Pick the highest version instead.
+    const candidates = [];
+    releases.forEach((release, index) => {
       if (
         !isRecord(release) ||
         release.draft === true ||
         (release.prerelease === true && !entry.install.allowPrereleases) ||
         !Array.isArray(release.assets)
       ) {
-        continue;
+        return;
       }
       const matchingAssets = release.assets.filter(
         (asset) =>
@@ -643,16 +715,24 @@ function createPluginCatalogService(options) {
           typeof asset.name === "string" &&
           pattern.test(asset.name),
       );
-      if (matchingAssets.length > 1) {
-        throw new Error(
-          `Release ${release.tag_name ?? "unknown"} has multiple matching plugin assets.`,
-        );
+      if (matchingAssets.length === 0) {
+        return;
       }
-      if (matchingAssets.length === 1) {
-        selectedAsset = matchingAssets[0];
-        break;
-      }
+      candidates.push({
+        release,
+        index,
+        matchingAssets,
+        version: parseReleaseVersion(release.tag_name),
+      });
+    });
+    candidates.sort(compareReleaseCandidates);
+    const best = candidates[0];
+    if (best && best.matchingAssets.length > 1) {
+      throw new Error(
+        `Release ${best.release.tag_name ?? "unknown"} has multiple matching plugin assets.`,
+      );
     }
+    const selectedAsset = best?.matchingAssets[0];
     if (!selectedAsset) {
       throw new Error(
         `No compatible release asset is available for ${entry.title}.`,

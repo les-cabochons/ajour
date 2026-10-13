@@ -309,4 +309,105 @@ describe("desktop plugin catalog", () => {
     expect(catalog.source).toBe("cache");
     expect(catalog.warning).toBeDefined();
   });
+
+  function serviceWithReleases(releases: unknown[]) {
+    const downloads: string[] = [];
+    const fetchImpl = vi.fn(async (input: string | URL | Request) => {
+      const url = String(input);
+      if (url === CATALOG_URL) return response(catalogYaml);
+      if (url === definitionUrl) return response(pluginYaml);
+      if (url === imageUrl) {
+        return response(Buffer.from("image"), {
+          headers: { "content-type": "image/png" },
+        });
+      }
+      if (url.includes("api.github.com/repos/")) {
+        return response(JSON.stringify(releases));
+      }
+      if (
+        url.startsWith(
+          "https://github.com/les-cabochons/ajc-azure-devops/releases/download/",
+        )
+      ) {
+        downloads.push(url);
+        return response(Buffer.from("archive"));
+      }
+      throw new Error(`Unexpected URL ${url}`);
+    });
+    return tempDirectory().then((cacheDirectory) => ({
+      downloads,
+      service: createPluginCatalogService({
+        cacheDirectory,
+        fetchImpl: fetchImpl as unknown as typeof fetch,
+      }),
+    }));
+  }
+
+  function release(
+    version: string,
+    options: { prerelease?: boolean; draft?: boolean; assets?: number } = {},
+  ) {
+    const name = `azure_devops-${version}.ajour-connector`;
+    return {
+      tag_name: `v${version}`,
+      draft: options.draft ?? false,
+      prerelease: options.prerelease ?? true,
+      assets: Array.from({ length: options.assets ?? 1 }, () => ({
+        name,
+        browser_download_url: `https://github.com/les-cabochons/ajc-azure-devops/releases/download/v${version}/${name}`,
+      })),
+    };
+  }
+
+  it("downloads the highest version when GitHub lists an older build first", async () => {
+    const { service } = await serviceWithReleases([
+      release("1.0.0-main.9.aaaaaaa"),
+      release("1.0.0-main.10.bbbbbbb"),
+      release("1.0.0-main.2.ccccccc"),
+    ]);
+
+    await service.refresh();
+    await expect(
+      service.downloadPluginArchive("azure_devops"),
+    ).resolves.toMatchObject({
+      archiveFilename: "azure_devops-1.0.0-main.10.bbbbbbb.ajour-connector",
+    });
+  });
+
+  it("prefers a stable release over prereleases of the same version and skips drafts", async () => {
+    const { service } = await serviceWithReleases([
+      release("1.1.0", { draft: true }),
+      release("1.0.0-main.10.bbbbbbb"),
+      release("1.0.0", { prerelease: false }),
+    ]);
+
+    await service.refresh();
+    await expect(
+      service.downloadPluginArchive("azure_devops"),
+    ).resolves.toMatchObject({
+      archiveFilename: "azure_devops-1.0.0.ajour-connector",
+    });
+  });
+
+  it("ignores an older release with ambiguous assets but refuses an ambiguous newest one", async () => {
+    const olderAmbiguous = await serviceWithReleases([
+      release("1.0.0-main.1.aaaaaaa", { assets: 2 }),
+      release("1.0.0-main.2.bbbbbbb"),
+    ]);
+    await olderAmbiguous.service.refresh();
+    await expect(
+      olderAmbiguous.service.downloadPluginArchive("azure_devops"),
+    ).resolves.toMatchObject({
+      archiveFilename: "azure_devops-1.0.0-main.2.bbbbbbb.ajour-connector",
+    });
+
+    const newestAmbiguous = await serviceWithReleases([
+      release("1.0.0-main.3.ccccccc", { assets: 2 }),
+      release("1.0.0-main.2.bbbbbbb"),
+    ]);
+    await newestAmbiguous.service.refresh();
+    await expect(
+      newestAmbiguous.service.downloadPluginArchive("azure_devops"),
+    ).rejects.toThrow("multiple matching plugin assets");
+  });
 });
