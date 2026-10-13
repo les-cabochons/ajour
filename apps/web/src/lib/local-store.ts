@@ -9,6 +9,7 @@ import { todayIsoDate } from "@/lib/utils";
 import {
   changePullRequest,
   normalizePullRequests,
+  reattachPullRequests,
   reconcilePullRequests,
   type PullRequestCommand,
 } from "@/domain/pull-requests/pull-request-lifecycle";
@@ -813,11 +814,19 @@ export const localStore = {
       connectionLabel: string;
     },
     result: CodeHostSyncResult,
+    options: { reattachFrom?: string } = {},
   ) {
     return updateState((state) => ({
       ...state,
       pullRequests: reconcilePullRequests(
-        state.pullRequests ?? [],
+        options.reattachFrom
+          ? reattachPullRequests(
+              state.pullRequests ?? [],
+              source.pluginId,
+              options.reattachFrom,
+              source,
+            )
+          : (state.pullRequests ?? []),
         source,
         result,
         {

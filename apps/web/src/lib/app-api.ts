@@ -55,6 +55,10 @@ import {
   pluginHasCodeHost,
   type CodeHostSyncResult,
 } from "@ajour/shared";
+import {
+  findRetainedConnection,
+  trackedPullRequestRefs,
+} from "@/domain/pull-requests/pull-request-lifecycle";
 
 const pullRequestSyncs = new Map<string, Promise<CodeHostSyncResult>>();
 const connectionGenerations = new Map<string, number>();
@@ -71,24 +75,22 @@ export function syncCodeHostConnection(
   if (pending) return pending;
   const generation = connectionGenerations.get(key) ?? 0;
   const run = async () => {
-    const tracked = (localStore.snapshot().pullRequests ?? [])
-      .filter(
-        (item) =>
-          item.pluginId === pluginId && item.connectionId === connectionId,
-      )
-      .slice(0, 1000)
-      .map((item) => ({
-        repository: item.facts.repository,
-        number: item.facts.number,
-      }));
-    const result = await appApiRequest(
-      `/api/code-hosts/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/syncPullRequests`,
-      {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ tracked }),
-      },
-      codeHostSyncResultSchema,
+    const request = (tracked: { repository: string; number: number }[]) =>
+      appApiRequest(
+        `/api/code-hosts/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/syncPullRequests`,
+        {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ tracked }),
+        },
+        codeHostSyncResultSchema,
+      );
+    let result = await request(
+      trackedPullRequestRefs(
+        localStore.snapshot().pullRequests ?? [],
+        pluginId,
+        [connectionId],
+      ),
     );
     await getConnectorsOverview();
     const overview = getCachedConnectorsOverview()!;
@@ -99,22 +101,45 @@ export function syncCodeHostConnection(
       (entry) => entry.id === connectionId,
     );
     if (
-      (connectionGenerations.get(key) ?? 0) === generation &&
-      overview.pluginsEnabled !== false &&
-      group?.enabled &&
-      pluginHasCodeHost(group.plugin) &&
-      connection
+      (connectionGenerations.get(key) ?? 0) !== generation ||
+      overview.pluginsEnabled === false ||
+      !group?.enabled ||
+      !pluginHasCodeHost(group.plugin) ||
+      !connection
     ) {
-      localStore.syncPullRequests(
-        {
-          pluginId,
-          pluginName: group.plugin.displayName,
-          connectionId,
-          connectionLabel: connection.label,
-        },
-        result,
-      );
+      return result;
     }
+    const source = {
+      pluginId,
+      pluginName: group.plugin.displayName,
+      connectionId,
+      connectionLabel: connection.label,
+    };
+    // A reinstalled plugin gives connections new ids. Restore the records the
+    // uninstall kept, after asking about them so the ones that closed report.
+    const reattachFrom = findRetainedConnection(
+      localStore.snapshot().pullRequests ?? [],
+      source,
+      result,
+      new Set(group.connections.map((entry) => entry.id)),
+    );
+    if (reattachFrom) {
+      result = await request(
+        trackedPullRequestRefs(
+          localStore.snapshot().pullRequests ?? [],
+          pluginId,
+          [connectionId, reattachFrom],
+        ),
+      );
+      if ((connectionGenerations.get(key) ?? 0) !== generation) {
+        return result;
+      }
+    }
+    localStore.syncPullRequests(
+      source,
+      result,
+      reattachFrom ? { reattachFrom } : {},
+    );
     return result;
   };
   const promise = run().finally(() => {

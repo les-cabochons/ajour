@@ -26,6 +26,8 @@ export interface LocalPullRequest {
   connectionId: string;
   connectionLabel: string;
   viewerLogin: string;
+  /** The code host instance, such as "https://github.com". */
+  instanceUrl?: string;
   facts: CodeHostPullRequestFacts;
   status: "active" | "settled";
   activeAt: number;
@@ -277,6 +279,7 @@ export function reconcilePullRequests(
       ...initial,
       ...source,
       viewerLogin: result.viewer.login,
+      ...(result.instanceUrl ? { instanceUrl: result.instanceUrl } : {}),
       facts,
       closedAt,
       missingFromSync: false,
@@ -319,6 +322,98 @@ export function reconcilePullRequests(
       .map((item) => ({ ...item, missingFromSync: true })),
     ...imported,
   ];
+}
+
+/** The references a sync should track, so closed pull requests report. */
+export function trackedPullRequestRefs(
+  items: readonly LocalPullRequest[],
+  pluginId: string,
+  connectionIds: readonly string[],
+) {
+  const seen = new Set<string>();
+  return items
+    .filter(
+      (item) =>
+        item.pluginId === pluginId && connectionIds.includes(item.connectionId),
+    )
+    .flatMap((item) => {
+      const key = refKey(item.facts);
+      if (seen.has(key)) return [];
+      seen.add(key);
+      return [{ repository: item.facts.repository, number: item.facts.number }];
+    })
+    .slice(0, 1000);
+}
+
+export class AmbiguousRetainedConnectionError extends Error {
+  constructor(labels: string[]) {
+    super(
+      `Several earlier connections match this account: ${labels.join(", ")}. Give this connection the same label as the one to restore.`,
+    );
+    this.name = "AmbiguousRetainedConnectionError";
+  }
+}
+
+const sameInstance = (left?: string, right?: string) =>
+  left !== undefined &&
+  right !== undefined &&
+  new URL(left).origin.toLowerCase() === new URL(right).origin.toLowerCase();
+
+/**
+ * Finds the records an uninstall kept for this account, so a replacement
+ * connection restores them instead of starting over. Records match when
+ * their connection no longer exists and both the account and the code host
+ * instance are the same. A unique earlier label breaks a tie; anything else
+ * is ambiguous. Only a connection's first sync can restore records.
+ */
+export function findRetainedConnection(
+  items: readonly LocalPullRequest[],
+  source: { pluginId: string; connectionId: string; connectionLabel: string },
+  result: Pick<CodeHostSyncResult, "viewer" | "instanceUrl">,
+  liveConnectionIds: ReadonlySet<string>,
+): string | null {
+  const inPlugin = items.filter((item) => item.pluginId === source.pluginId);
+  if (inPlugin.some((item) => item.connectionId === source.connectionId)) {
+    return null;
+  }
+  const candidates = new Map<string, string>();
+  for (const item of inPlugin) {
+    if (
+      !liveConnectionIds.has(item.connectionId) &&
+      sameLogin(item.viewerLogin, result.viewer.login) &&
+      sameInstance(item.instanceUrl, result.instanceUrl)
+    ) {
+      candidates.set(item.connectionId, item.connectionLabel);
+    }
+  }
+  if (candidates.size <= 1) {
+    return candidates.keys().next().value ?? null;
+  }
+  const sameLabel = [...candidates].filter(
+    ([, label]) => label === source.connectionLabel,
+  );
+  if (sameLabel.length === 1) {
+    return sameLabel[0]![0];
+  }
+  throw new AmbiguousRetainedConnectionError([...candidates.values()].sort());
+}
+
+/** Moves retained records to their replacement connection. */
+export function reattachPullRequests(
+  items: readonly LocalPullRequest[],
+  pluginId: string,
+  fromConnectionId: string,
+  source: { connectionId: string; connectionLabel: string },
+): LocalPullRequest[] {
+  return items.map((item) =>
+    item.pluginId === pluginId && item.connectionId === fromConnectionId
+      ? {
+          ...item,
+          connectionId: source.connectionId,
+          connectionLabel: source.connectionLabel,
+        }
+      : item,
+  );
 }
 
 export type PullRequestCommand =
@@ -388,6 +483,7 @@ const storedPullRequestSchema = z.object({
   connectionId: z.string().min(1),
   connectionLabel: z.string(),
   viewerLogin: z.string().min(1),
+  instanceUrl: z.string().url().optional(),
   facts: codeHostPullRequestFactsSchema,
   status: z.enum(["active", "settled"]),
   activeAt: z.number().int().nonnegative(),

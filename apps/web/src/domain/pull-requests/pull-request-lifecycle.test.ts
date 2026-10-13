@@ -4,11 +4,15 @@ import type {
   CodeHostSyncResult,
 } from "@ajour/shared";
 import {
+  AmbiguousRetainedConnectionError,
   changePullRequest,
   CLOSED_RETENTION_MS,
+  findRetainedConnection,
   isPullRequestReturned,
+  reattachPullRequests,
   reconcilePullRequests,
   selectSidebarPullRequests,
+  type LocalPullRequest,
 } from "./pull-request-lifecycle";
 
 const viewer = { login: "alex", isBot: false };
@@ -487,5 +491,121 @@ describe("pull request lifecycle", () => {
     expect(changePullRequest(first, { type: "snooze", until: NaN }, 600)).toBe(
       first,
     );
+  });
+
+  describe("restoring records after a reinstall", () => {
+    const instanceUrl = "https://github.com";
+    const retained = (
+      connectionId: string,
+      connectionLabel: string,
+      patch: Partial<LocalPullRequest> = {},
+    ): LocalPullRequest => ({
+      ...changePullRequest(
+        reconcilePullRequests(
+          [],
+          { ...source, connectionId, connectionLabel },
+          { viewer, instanceUrl, pullRequests: [facts] },
+          { ...options, createId: () => `local-${connectionId}` },
+        )[0]!,
+        { type: "snooze", until: 9_000 },
+        400,
+      ),
+      ...patch,
+    });
+    const replacement = {
+      ...source,
+      connectionId: "new",
+      connectionLabel: "Work",
+    };
+    const live = new Set(["new"]);
+
+    it("stores the instance URL with each record", () => {
+      expect(retained("old", "Work").instanceUrl).toBe(instanceUrl);
+    });
+
+    it("restores a unique match for the same account and instance, keeping local choices", () => {
+      const items = [retained("old", "Work")];
+      const from = findRetainedConnection(
+        items,
+        replacement,
+        { viewer: { login: "ALEX", isBot: false }, instanceUrl },
+        live,
+      );
+      expect(from).toBe("old");
+
+      const restored = reconcilePullRequests(
+        reattachPullRequests(items, "github", from!, replacement),
+        replacement,
+        { viewer, instanceUrl, pullRequests: [facts] },
+        { ...options, createId: () => "duplicate" },
+      );
+      expect(restored).toEqual([
+        expect.objectContaining({
+          _id: "local-old",
+          connectionId: "new",
+          snoozedUntil: 9_000,
+        }),
+      ]);
+    });
+
+    it("never restores across accounts, instances, plugins or live connections", () => {
+      const items = [
+        retained("other-account", "Work", { viewerLogin: "someone" }),
+        retained("enterprise", "Work", {
+          instanceUrl: "https://github.acme.com",
+        }),
+        retained("legacy", "Work", { instanceUrl: undefined }),
+        retained("gitlab", "Work", { pluginId: "gitlab" }),
+        retained("still-live", "Work"),
+      ];
+      expect(
+        findRetainedConnection(
+          items,
+          replacement,
+          { viewer, instanceUrl },
+          new Set(["new", "still-live"]),
+        ),
+      ).toBeNull();
+    });
+
+    it("only restores on the connection's first sync", () => {
+      const items = [retained("old", "Work"), retained("new", "Work")];
+      expect(
+        findRetainedConnection(
+          items,
+          replacement,
+          { viewer, instanceUrl },
+          live,
+        ),
+      ).toBeNull();
+    });
+
+    it("breaks a tie with a unique earlier label and refuses an ambiguous match", () => {
+      const items = [retained("a", "Work"), retained("b", "Personal")];
+      expect(
+        findRetainedConnection(
+          items,
+          replacement,
+          { viewer, instanceUrl },
+          live,
+        ),
+      ).toBe("a");
+      expect(() =>
+        findRetainedConnection(
+          items,
+          { ...replacement, connectionLabel: "Other" },
+          { viewer, instanceUrl },
+          live,
+        ),
+      ).toThrow(AmbiguousRetainedConnectionError);
+      expect(() =>
+        findRetainedConnection(
+          [retained("a", "Work"), retained("b", "Work")],
+          replacement,
+          { viewer, instanceUrl },
+          live,
+        ),
+      ).toThrow("Several earlier connections match this account: Work, Work.");
+    });
   });
 });

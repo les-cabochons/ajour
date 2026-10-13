@@ -159,6 +159,12 @@ export type CodeHostSyncRequest = z.infer<typeof codeHostSyncRequestSchema>;
 
 export const codeHostSyncResultSchema = z.object({
   viewer: codeHostUserSchema,
+  /**
+   * The code host instance the connection talks to, such as
+   * "https://github.com". Never secret. With `viewer`, it lets Ajour
+   * recognize a replacement connection to the same account.
+   */
+  instanceUrl: z.string().url().optional(),
   pullRequests: z.array(codeHostPullRequestFactsSchema).max(1_000),
 });
 export type CodeHostSyncResult = z.infer<typeof codeHostSyncResultSchema>;

@@ -140,4 +140,95 @@ describe("code host sync persistence", () => {
     await sync;
     expect(localStore.snapshot()).toBe(before);
   });
+
+  it("restores records retained by an uninstall when the plugin is reinstalled", async () => {
+    const api = await import("./app-api");
+    const { localStore } = await import("./local-store");
+    const instanceUrl = "https://github.com";
+    const closed = { ...facts, id: "pr2", number: 2, title: "Old work" };
+    localStore.syncPullRequests(source, {
+      ...result,
+      instanceUrl,
+      pullRequests: [facts, closed],
+    });
+    const [kept] = localStore.snapshot().pullRequests!;
+    localStore.changePullRequest(kept!._id, { type: "settle" });
+
+    const replacementOverview = structuredClone(overview);
+    replacementOverview.connectionGroups[0]!.connections[0]!.id = "replacement";
+    api.cacheConnectorsOverview(replacementOverview);
+    const bodies: unknown[] = [];
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) => {
+        if (init?.method !== "POST") return Response.json(replacementOverview);
+        bodies.push(JSON.parse(init.body as string));
+        const tracked = (bodies.at(-1) as { tracked: unknown[] }).tracked;
+        return Response.json({
+          ...result,
+          instanceUrl,
+          pullRequests:
+            tracked.length > 0
+              ? [facts, { ...closed, state: "merged", closedAt: Date.now() }]
+              : [facts],
+        });
+      }),
+    );
+
+    await api.syncCodeHostConnection("github", "replacement");
+
+    expect(bodies).toEqual([
+      { tracked: [] },
+      {
+        tracked: [
+          { repository: "acme/api", number: 1 },
+          { repository: "acme/api", number: 2 },
+        ],
+      },
+    ]);
+    expect(localStore.snapshot().pullRequests).toEqual([
+      expect.objectContaining({
+        _id: kept!._id,
+        connectionId: "replacement",
+        status: "settled",
+      }),
+      expect.objectContaining({
+        connectionId: "replacement",
+        facts: expect.objectContaining({ number: 2, state: "merged" }),
+      }),
+    ]);
+  });
+
+  it("keeps the list when several retained connections match", async () => {
+    const api = await import("./app-api");
+    const { localStore } = await import("./local-store");
+    const instanceUrl = "https://github.com";
+    localStore.syncPullRequests(
+      { ...source, connectionId: "a", connectionLabel: "One" },
+      { ...result, instanceUrl },
+    );
+    localStore.syncPullRequests(
+      { ...source, connectionId: "b", connectionLabel: "Two" },
+      { ...result, instanceUrl },
+    );
+    const before = localStore.snapshot();
+    const replacementOverview = structuredClone(overview);
+    replacementOverview.connectionGroups[0]!.connections[0]!.id = "replacement";
+    api.cacheConnectorsOverview(replacementOverview);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_url: string, init?: RequestInit) =>
+        init?.method === "POST"
+          ? Response.json({ ...result, instanceUrl })
+          : Response.json(replacementOverview),
+      ),
+    );
+
+    await expect(
+      api.syncCodeHostConnection("github", "replacement"),
+    ).rejects.toThrow(
+      "Several earlier connections match this account: One, Two.",
+    );
+    expect(localStore.snapshot()).toBe(before);
+  });
 });
