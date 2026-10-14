@@ -1,4 +1,4 @@
-import { useEffect, type ReactNode } from "react";
+import { useEffect, type MouseEventHandler, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "@tanstack/react-router";
 import { registerPageHeader, usePageHeaderSlot } from "@/lib/page-header";
@@ -87,6 +87,8 @@ export interface PageBreadcrumbItem {
   to?: string;
   /** Set on the object's own id or key, shown in the mono value style. */
   mono?: boolean;
+  /** Runs before the crumb's navigation; call `preventDefault` to stay. */
+  onClick?: MouseEventHandler<HTMLAnchorElement>;
 }
 
 /** "Backlog / #48190": every crumb but the last links back. */
@@ -107,7 +109,11 @@ export function PageBreadcrumb({ items }: { items: PageBreadcrumbItem[] }) {
                 </span>
               ) : null}
               {item.to && !isLast ? (
-                <Link to={item.to} className="ajour-page-breadcrumb-link">
+                <Link
+                  to={item.to}
+                  className="ajour-page-breadcrumb-link"
+                  onClick={item.onClick}
+                >
                   {label}
                 </Link>
               ) : (

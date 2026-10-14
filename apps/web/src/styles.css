@@ -6,6 +6,7 @@
 /* Page stylesheets. Each page area owns one file; the rest of this file is being retired into them. */
 @import "./styles/time.css";
 @import "./styles/backlog.css";
+@import "./styles/projects.css";
 
 @custom-variant dark (&:is(.dark *));
 
@@ -236,25 +237,6 @@
     background: var(--surface);
     color: var(--text);
   }
-}
-/* Project sidebar rows: the "…" covers the right edge of the row, over the code. */
-.ajour-project-sidebar-item .object-actions-button {
-  position: absolute;
-  top: 50%;
-  right: 0.375rem;
-  width: 22px;
-  height: 22px;
-  translate: 0 -50%;
-  background: var(--surface-high);
-  opacity: 0;
-  transition: opacity 140ms var(--ease);
-}
-
-/* The code would peek out from under the "…", so it hides while the button shows. */
-.ajour-project-sidebar-item:hover .ajour-sidebar-code,
-.ajour-project-sidebar-item:focus-within .ajour-sidebar-code,
-.ajour-project-sidebar-item:has([data-popup-open]) .ajour-sidebar-code {
-  visibility: hidden;
 }
 @media (prefers-reduced-motion: reduce) {
   .ajour-shell-sidebar {
@@ -809,24 +791,6 @@
     color: var(--text);
     box-shadow: var(--shadow-sm);
   }
-
-  /* ----------------------------------------------------------------
-     Hours badge — monospace pill for time values
-     ---------------------------------------------------------------- */
-
-  .hours-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 2px 8px;
-    border-radius: var(--radius-sm);
-    font-family: var(--font-mono);
-    font-size: 12px;
-    font-weight: 500;
-    background: var(--surface-high);
-    color: var(--text-secondary);
-    border: 1px solid var(--border);
-  }
-
   /* ----------------------------------------------------------------
      Page container — replaces the old sidebar grid
      ---------------------------------------------------------------- */
@@ -836,15 +800,6 @@
     max-width: var(--app-workspace-max-width);
     margin-inline: auto;
     padding: 1.5rem 2rem;
-  }
-
-  .page-container:has(> .settings-layout[data-slot="sidebar-wrapper"]),
-  .page-container:has(> .ajour-project-layout[data-slot="sidebar-wrapper"]) {
-    height: 100%;
-    max-width: none;
-    min-height: 100%;
-    margin: 0;
-    padding: 0;
   }
   .app-content-shell {
     --app-shell-nav-height: 48px;
@@ -1033,26 +988,6 @@
     margin: 0;
     overflow: visible;
   }
-
-  .ajour-project-layout[data-slot="sidebar-wrapper"] {
-    --sidebar-width: 200px;
-    --sidebar-width-icon: 200px;
-    width: 100%;
-    height: 100%;
-    max-width: none;
-    min-height: 100% !important;
-    margin: 0;
-    align-items: stretch;
-    overflow: hidden;
-  }
-
-  .ajour-project-layout[data-slot="sidebar-wrapper"] .settings-content {
-    flex: 1;
-    width: 100%;
-    max-width: none;
-    margin: 0;
-  }
-
   .ajour-section-sidebar {
     position: relative !important;
     inset: auto !important;
@@ -1089,148 +1024,10 @@
   .ajour-section-sidebar [data-sidebar="group"] {
     padding: 0.125rem 0 !important;
   }
-
-  .ajour-project-sidebar-item {
-    position: relative;
-    touch-action: none;
-    will-change: transform, opacity;
-    transition:
-      transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
-      opacity 180ms var(--ease),
-      background var(--duration) var(--ease);
-  }
-
-  .ajour-project-sidebar-item.is-reorderable .ajour-section-sidebar-button {
-    cursor: grab;
-    user-select: none;
-    -webkit-user-drag: none;
-  }
-
-  .ajour-project-sidebar-item a {
-    -webkit-user-drag: none;
-  }
-
-  .ajour-project-sidebar-item.is-pressing .ajour-section-sidebar-button {
-    cursor: grabbing;
-    background: var(--surface-high);
-  }
-
-  .ajour-project-sidebar-item.is-drag-source {
-    opacity: 0;
-  }
-
-  .ajour-project-sidebar-drag-preview {
-    position: fixed;
-    top: 0;
-    left: 0;
-    z-index: 320;
-    pointer-events: none;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0 1rem;
-    border: 1px solid var(--border-hover);
-    background: var(--surface-high);
-    color: var(--text);
-    font-size: 13px;
-    box-shadow: var(--shadow-drag);
-    transform-origin: top left;
-    animation: task-drag-lift 180ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
   .ajour-section-sidebar [data-sidebar="footer"] {
     padding: 0.5rem;
     border-top: 1px solid var(--border);
   }
-
-  .ajour-project-sidebar-header {
-    gap: 0.45rem;
-    padding: 0.125rem 0 0.35rem;
-    border-bottom: 1px solid var(--border);
-  }
-
-  .ajour-project-sidebar-search-row {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    min-height: 2rem;
-    min-width: 0;
-    padding: 0 0.5rem;
-  }
-
-  .ajour-project-sidebar-command-trigger {
-    display: inline-flex;
-    min-width: 0;
-    flex: 1;
-    align-items: center;
-    gap: 0.5rem;
-    height: 2rem;
-    justify-content: flex-start;
-    padding: 0 1rem;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    color: var(--text-secondary);
-    font-size: 13px;
-    text-align: left;
-    transition:
-      background-color 0.16s ease,
-      color 0.16s ease;
-  }
-
-  .ajour-project-sidebar-command-trigger:hover {
-    background: var(--surface-high);
-    color: var(--text);
-  }
-
-  .ajour-project-sidebar-command-trigger:focus-visible {
-    outline: 1px solid var(--border-strong);
-    outline-offset: -1px;
-  }
-
-  /* "New project" in the project list header. */
-  .ajour-project-sidebar-header .entries-header-add {
-    display: inline-flex;
-    flex-shrink: 0;
-  }
-
-  .ajour-project-sidebar-footer {
-    position: relative;
-    z-index: 100001;
-    margin-top: auto;
-    border-top: 0 !important;
-    background: var(--background);
-  }
-
-  .ajour-project-sidebar-archive-trigger {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    justify-content: flex-start;
-    width: 100%;
-    height: 2rem;
-    border: 0;
-    border-radius: 0;
-    padding: 0 0.625rem;
-    background: transparent;
-    color: var(--text-secondary);
-    font-size: 13px;
-    font-weight: 500;
-    outline: none;
-  }
-
-  .ajour-project-sidebar-archive-trigger svg {
-    width: 14px;
-    height: 14px;
-  }
-
-  .ajour-project-sidebar-archive-trigger:hover,
-  .ajour-project-sidebar-archive-trigger:focus-visible,
-  .ajour-project-sidebar-archive-trigger.is-active {
-    background: var(--surface-high);
-    color: var(--text);
-  }
-
   .project-icon-field {
     display: flex;
     flex-direction: column;
@@ -1314,30 +1111,6 @@
     outline: 1px solid var(--border-focus);
     outline-offset: 2px;
   }
-
-  [data-slot="sidebar"][data-collapsible="icon"]
-    .ajour-project-sidebar-header
-    .entries-header-add {
-    display: inline-flex;
-  }
-
-  [data-slot="sidebar"][data-collapsible="icon"]
-    .ajour-project-sidebar-command-trigger,
-  [data-slot="sidebar"][data-collapsible="icon"]
-    .ajour-project-sidebar-archive-trigger
-    [data-sidebar-collapsed="hide"],
-  [data-slot="sidebar"][data-collapsible="icon"]
-    .ajour-section-sidebar-button
-    [data-sidebar-collapsed="hide"] {
-    display: none;
-  }
-
-  [data-slot="sidebar"][data-collapsible="icon"]
-    .ajour-project-sidebar-search-row,
-  [data-slot="sidebar"][data-collapsible="icon"] .ajour-project-sidebar-footer {
-    justify-content: center;
-  }
-
   [data-slot="sidebar"][data-collapsible="icon"] [data-slot="sidebar-group"] {
     padding-inline: 0.25rem;
   }
@@ -1346,21 +1119,6 @@
     [data-slot="sidebar-menu-item"] {
     width: 100%;
   }
-
-  .ajour-project-layout[data-slot="sidebar-wrapper"]
-    [data-slot="sidebar"][data-collapsible="icon"]
-    .ajour-section-sidebar
-    [data-sidebar="content"] {
-    overflow-x: hidden;
-    overflow-y: auto;
-  }
-
-  [data-slot="sidebar"][data-collapsible="icon"]
-    .ajour-project-sidebar-archive-trigger {
-    justify-content: center;
-    padding: 0;
-  }
-
   [data-slot="sidebar"][data-collapsible="icon"] .ajour-section-sidebar-button {
     width: 100% !important;
     height: 2rem !important;
@@ -1969,571 +1727,13 @@
     margin: 0;
   }
 
-  /* ----------------------------------------------------------------
-     Entries table (wepoint concept)
-     ---------------------------------------------------------------- */
-
-  .entries-header-add {
-    width: 22px;
-    height: 22px;
-    border-radius: 999px;
-    border: none;
-    background: transparent;
-    color: var(--text-tertiary);
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    transition:
-      transform 140ms var(--ease),
-      border-color 140ms var(--ease),
-      background 140ms var(--ease),
-      color 140ms var(--ease);
-  }
-
-  .entries-header-add > svg {
-    transition: transform 140ms var(--ease);
-  }
-
-  .entries-header-add-label {
-    display: none;
-    white-space: nowrap;
-    font-size: 11px;
-    font-weight: 600;
-    letter-spacing: -0.01em;
-  }
-
-  .entries-header-add:hover {
-    background: color-mix(in srgb, var(--surface-low) 80%, white 20%);
-    color: var(--text);
-  }
-  /* The strip follows its own width, which the rail and the entry side
-     panel both reduce. Below 840px the padding tightens;
-  @container day-viewer (width < 840px) {  }
-
-  @container day-viewer (width < 720px) {  }
-
-  .entries-header-add.is-open {
-    transform: none;
-  }
-
-  .entries-header-add.is-open > svg {
-    transform: rotate(45deg);
-  }
-
-  .entries-table {
-    width: 100%;
-    border-collapse: separate;
-    border-spacing: 0;
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    overflow: hidden;
-  }
-
-  .entries-table-scroll-shell {
-    border: 1px solid var(--border);
-    border-radius: var(--radius-md);
-    background: var(--surface-lowest);
-    overflow: hidden;
-    --entries-table-scroll-height: auto;
-  }
-  .entries-table-scroll-shell-backlog {
-    --entries-table-header-height: 3.25rem;
-    --entries-table-scroll-height: calc(
-      var(--app-content-height) - var(--entries-table-header-height)
-    );
-    display: flex;
-    height: 100%;
-    max-height: var(--app-content-height);
-    min-height: 0;
-    flex: 1 1 auto;
-    flex-direction: column;
-    border: 0;
-    border-radius: 0;
-    background: transparent;
-    overflow: hidden;
-  }
-  .entries-table-scroll-shell-project {
-    --entries-table-scroll-height: clamp(12rem, calc(100dvh - 18rem), 38rem);
-  }
-  .entries-table-scroll-shell .entries-table {
-    border: 0;
-    border-radius: 0;
-  }
-
-  .entries-table-header-table {
-    flex: 0 0 auto;
-    position: relative;
-    z-index: 3;
-    overflow: visible;
-  }
-
-  .entries-table-header-table th {
-    overflow: visible;
-  }
-  .entries-table-body-table {
-    border-top: 0;
-  }
-
-  .entries-table-scroll-area {
-    max-height: var(--entries-table-scroll-height);
-    overflow: hidden;
-  }
-
-  .entries-table-scroll-shell-backlog .entries-table-scroll-area {
-    min-height: 0;
-    flex: 1 1 auto;
-    max-height: var(--entries-table-scroll-height);
-  }
-
-  .entries-table-scroll-area [data-slot="scroll-area-viewport"] {
-    height: auto !important;
-    max-height: var(--entries-table-scroll-height);
-    overflow-y: auto;
-    overflow-x: hidden;
-  }
-
-  .entries-table-scroll-shell-backlog
-    .entries-table-scroll-area
-    [data-slot="scroll-area-viewport"] {
-    height: 100% !important;
-    max-height: var(--entries-table-scroll-height);
-  }
-
-  .entries-table-scroll-area [data-slot="scroll-area-scrollbar"] {
-    opacity: 0;
-    transition: opacity 120ms var(--ease);
-  }
-
-  .entries-table-scroll-area:hover [data-slot="scroll-area-scrollbar"],
-  .entries-table-scroll-area:focus-within [data-slot="scroll-area-scrollbar"] {
-    opacity: 1;
-  }
-
-  .entries-table-scroll-area [data-slot="scroll-area-thumb"] {
-    background: color-mix(in srgb, var(--text-tertiary) 58%, transparent);
-  }
-
   .entries-table-scroll-region {
     position: relative;
   }
-  .entries-table.is-entry-dragging tbody tr:not(.is-drag-source):hover {
-    background: transparent;
-  }
-  .entries-table thead {
-    position: sticky;
-    top: 0;
-    z-index: 3;
-    background: var(--surface-low);
-  }
-
-  .entries-table thead tr {
-    position: sticky;
-    top: 0;
-    z-index: 3;
-    background: var(--surface-low);
-  }
-
-  .entries-table th {
-    position: sticky;
-    top: 0;
-    z-index: 2;
-    text-align: left;
-    padding: 0.75rem 1rem;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-tertiary);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    background: var(--surface-low);
-    border-bottom: 1px solid var(--border);
-  }
-
-  .entries-table th:last-child {
-    text-align: right;
-  }
-
-  .entries-table td {
-    padding: 0.75rem 1rem;
-    font-size: 13px;
-    border-bottom: 1px solid var(--border);
-    vertical-align: middle;
-  }
-
-  .entries-table tr:last-child td {
-    border-bottom: 0;
-  }
-
-  .entries-table tbody tr {
-    transition: background var(--duration) var(--ease);
-    cursor: pointer;
-  }
-
-  .entries-table tbody tr:hover {
-    background: var(--surface-low);
-  }
-
-  /* Day, backlog and task rows take keyboard focus. See lib/item-keys.ts. */
-  .entries-table tbody tr[data-focus-column]:focus-visible {
-    background: var(--surface-low);
-    outline: 2px solid color-mix(in srgb, var(--ring) 60%, transparent);
-    outline-offset: -2px;
-  }
-  .project-task-row {
-    position: relative;
-    touch-action: none;
-    will-change: transform, opacity;
-    transition:
-      transform 220ms cubic-bezier(0.22, 1, 0.36, 1),
-      opacity 180ms var(--ease),
-      background var(--duration) var(--ease);
-  }
-
-  .project-detail-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-  }
-
-  .project-task-row.is-editing {
-    background: var(--surface-low);
-  }
-
   .project-icon-field-hint {
     color: var(--text-secondary);
     font-size: 12px;
   }
-
-  .project-summary-controls {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-  }
-
-  .project-title-stack {
-    display: inline-flex;
-    min-width: 0;
-    flex-direction: column;
-    gap: 0.1rem;
-  }
-
-  .project-full-name {
-    max-width: min(42rem, 70vw);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    color: var(--text-tertiary);
-    font-size: 12px;
-    line-height: 1.25;
-  }
-
-  .project-task-filter-tabs {
-    flex-shrink: 0;
-  }
-
-  .project-task-row.is-pressing {
-    cursor: grabbing;
-    background: color-mix(in srgb, var(--surface-high) 70%, transparent);
-  }
-
-  .project-task-row.is-drag-source {
-    opacity: 0;
-  }
-
-  .project-task-row.is-drag-source td {
-    border-color: transparent;
-  }
-
-  .project-tasks-table .entry-hours-cell,
-  .project-tasks-table .entry-hours-heading {
-    width: 10rem;
-  }
-
-  .project-tasks-table.is-task-dragging tbody tr:not(.is-drag-source):hover {
-    background: transparent;
-  }
-
-  .project-task-name-cell {
-    display: flex;
-    align-items: center;
-    gap: 0.55rem;
-    min-width: 0;
-  }
-
-  .project-task-row.is-reorderable .project-task-name-cell {
-    cursor: grab;
-  }
-
-  .project-task-row.is-pressing .project-task-name-cell {
-    cursor: grabbing;
-  }
-
-  .project-task-name {
-    min-width: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-size: 13px;
-  }
-
-  .project-task-status-badge {
-    background: var(--surface-high);
-    color: var(--text-tertiary);
-  }
-
-  .project-task-budget-badge {
-    justify-content: center;
-    min-width: 7.5rem;
-  }
-
-  .project-task-budget-badge.is-success {
-    background: color-mix(in srgb, var(--success) 14%, transparent);
-    color: color-mix(in srgb, var(--success) 82%, white 18%);
-    border-color: color-mix(in srgb, var(--success) 28%, var(--border));
-  }
-
-  .project-task-budget-badge.is-warning {
-    background: color-mix(in srgb, #e9c46a 18%, transparent);
-    color: #f0cb73;
-    border-color: color-mix(in srgb, #e9c46a 30%, var(--border));
-  }
-
-  .project-task-budget-badge.is-danger {
-    background: var(--danger-muted);
-    color: var(--danger-light);
-    border-color: color-mix(in srgb, var(--danger) 28%, var(--border));
-  }
-
-  .project-task-budget-badge.is-danger-strong {
-    background: color-mix(in srgb, var(--danger) 20%, transparent);
-    color: color-mix(in srgb, var(--danger-light) 88%, white 12%);
-    border-color: color-mix(in srgb, var(--danger) 42%, var(--border));
-  }
-
-  .project-task-billable-badge {
-    flex-shrink: 0;
-  }
-
-  .project-task-drag-preview {
-    position: fixed;
-    top: 0;
-    left: 0;
-    z-index: 320;
-    pointer-events: none;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 0.75rem 1rem;
-    border: 1px solid color-mix(in srgb, var(--indigo) 72%, var(--border));
-    border-radius: calc(var(--radius-md) - 1px);
-    background: var(--surface-lowest);
-    box-shadow: var(--shadow-drag);
-    transform-origin: top left;
-    animation: task-drag-lift 180ms cubic-bezier(0.22, 1, 0.36, 1);
-  }
-
-  .project-task-drag-preview .project-task-name {
-    font-weight: 600;
-  }
-
-  .entry-date-cell {
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-  }
-
-  .entry-date-primary {
-    font-weight: 500;
-    color: var(--text);
-  }
-
-  .entry-date-secondary {
-    font-size: 11px;
-    color: var(--text-tertiary);
-  }
-  .entry-hours-cell {
-    text-align: right;
-    width: 6.5rem;
-    white-space: nowrap;
-  }
-
-  .entry-hours-content {
-    position: relative;
-    display: inline-flex;
-    align-items: center;
-    justify-content: flex-end;
-  }
-  .entry-hours-heading {
-    width: 6.5rem;
-    white-space: nowrap;
-  }
-
-  .entry-hours-heading-actions {
-    text-align: right;
-  }
-  :root {
-    --backlog-priority-column-width: 2.9rem;
-    --backlog-status-column-width: 9rem;
-    --backlog-estimate-column-width: 8.5rem;
-    --backlog-header-trailing-width: calc(
-      var(--backlog-status-column-width) + var(--backlog-estimate-column-width)
-    );
-  }
-  .entry-empty-row,
-  .entry-empty-row:hover {
-    cursor: default;
-    background: transparent !important;
-  }
-
-  .entry-table-empty {
-    min-height: 9rem;
-    padding: 1.5rem 1rem;
-    border-radius: 0;
-    background: transparent;
-    color: var(--text-tertiary);
-  }
-
-  .entry-table-empty [data-slot="empty-header"] {
-    gap: 0.35rem;
-  }
-
-  .entry-table-empty [data-slot="empty-icon"] {
-    margin-bottom: 0.35rem;
-    color: var(--text-secondary);
-    background: var(--surface-higher);
-    border: 1px solid var(--border);
-    border-radius: 6px;
-  }
-
-  .entry-table-empty [data-slot="empty-title"] {
-    color: var(--text);
-    font-family: var(--font-sans) !important;
-    font-size: 14px;
-    font-weight: 600;
-    letter-spacing: 0;
-    line-height: 1.25;
-  }
-
-  .entry-table-empty [data-slot="empty-description"] {
-    max-width: 24rem;
-    color: var(--text-tertiary);
-    font-size: 13px;
-    line-height: 1.45;
-  }
-
-  .entry-table-empty [data-slot="empty-content"] {
-    gap: 0;
-  }
-
-  .entry-row-actions {
-    position: absolute;
-    top: 50%;
-    right: calc(100% + 0.4rem);
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    opacity: 0;
-    pointer-events: none;
-    transform: translate(4px, -50%);
-    z-index: 2;
-    transition:
-      opacity 140ms var(--ease),
-      transform 140ms var(--ease);
-  }
-
-  .entries-table tbody tr:hover .entry-row-actions,
-  .entries-table tbody tr:focus-within .entry-row-actions,
-  .entry-row-actions:hover,
-  .entry-row-actions:has([data-popup-open]) {
-    opacity: 1;
-    pointer-events: auto;
-    transform: translate(0, -50%);
-  }
-
-  .entry-row-action {
-    height: 24px;
-    padding: 0;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.35rem;
-    border: 1px solid transparent;
-    border-radius: 999px;
-    background: transparent;
-    color: var(--text-tertiary);
-    cursor: pointer;
-    transition:
-      color 140ms var(--ease),
-      border-color 140ms var(--ease),
-      opacity 140ms var(--ease),
-      width 140ms var(--ease);
-  }
-
-  .entry-row-action-play {
-    width: 24px;
-    padding: 0;
-    flex: 0 0 24px;
-    opacity: 1;
-    transform: scale(1);
-    transition:
-      color 140ms var(--ease),
-      border-color 140ms var(--ease),
-      opacity 140ms var(--ease),
-      transform 140ms var(--ease);
-  }
-  .entry-row-action:hover {
-    color: var(--text-secondary);
-  }
-
-  .entry-row-action:disabled {
-    opacity: 0.35;
-    cursor: default;
-  }
-
-  /* ── Inline edit dropdown (inside table) ── */
-
-  .entry-row-expanded {
-    background: var(--surface-low) !important;
-  }
-
-  .entry-row-expanded td {
-    border-bottom: 0 !important;
-  }
-
-  .entry-edit-row {
-    cursor: default !important;
-  }
-
-  .entry-edit-row:hover {
-    background: transparent !important;
-  }
-
-  .entry-edit-row > td {
-    padding: 0 !important;
-    border-bottom: 1px solid var(--border);
-    overflow: visible;
-  }
-
-  .entry-edit-dropdown {
-    position: relative;
-    z-index: 20;
-    background: var(--surface-low);
-    border-top: 1px solid var(--border);
-    padding: 1rem 1rem 0.75rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    animation: editDropdownIn 150ms var(--ease) both;
-  }
-
-  .entry-create-dropdown {
-    border-top: 0;
-  }
-
   @keyframes editDropdownIn {
     from {
       opacity: 0;
@@ -2543,66 +1743,7 @@
       opacity: 1;
       transform: translateY(0);
     }
-  }
-
-  .entry-edit-dropdown-grid {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0.75rem;
-  }
-
-  /* ----------------------------------------------------------------
-     Entry form (wepoint concept — grid layout)
-     ---------------------------------------------------------------- */
-
-  .entry-form-card {
-    background: var(--surface-low);
-    border: 1px solid var(--border);
-    border-radius: var(--radius-lg);
-    padding: 1.5rem;
-    display: flex;
-    flex-direction: column;
-    gap: 1.25rem;
-  }
-
-  .entry-form {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-  }
-
-  .entry-form-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0.75rem;
-    grid-column: 1 / -1;
-  }
-
-  .entry-form-full {
-    grid-column: 1 / -1;
-  }
-
-  .entry-form-actions {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    gap: 0.75rem;
-    grid-column: 1 / -1;
-  }
-
-  .entry-form-actions-row {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-  }
-
-  .entry-form-hint {
-    font-size: 12px;
-    color: var(--text-tertiary);
-  }
-
-  /* ----------------------------------------------------------------
+  } /* ----------------------------------------------------------------
      Field (wepoint concept)
      ---------------------------------------------------------------- */
 
@@ -2612,25 +1753,6 @@
     gap: 0.25rem;
     min-width: 0;
   }
-
-  .entry-field-span-2 {
-    grid-column: span 2;
-  }
-
-  .entry-edit-actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-  }
-
-  .entry-field-note {
-    grid-column: span 3;
-  }
-
-  .entry-field-hours {
-    grid-column: span 1;
-  }
-
   .field-label {
     font-size: 12px;
     font-weight: 500;
@@ -2759,24 +1881,6 @@
     resize: vertical;
     min-height: 80px;
   }
-
-  .entry-note-input {
-    min-height: 72px;
-    resize: none;
-    line-height: 1.4;
-    padding-top: 0.65rem;
-    padding-bottom: 0.65rem;
-  }
-
-  .entry-hours-input {
-    height: 72px;
-    font-size: 1.125rem;
-    font-weight: 600;
-    letter-spacing: -0.03em;
-    padding-top: 0.65rem;
-    padding-bottom: 0.65rem;
-  }
-
   .field-error {
     font-size: 12px;
     color: var(--danger);
@@ -2786,62 +1890,6 @@
     font-size: 12px;
     color: var(--text-tertiary);
   }
-
-  /* ----------------------------------------------------------------
-     Project icon and color controls
-     ---------------------------------------------------------------- */
-
-  .project-color-picker {
-    position: relative;
-    display: flex;
-    align-items: center;
-    height: 36px;
-    width: 100%;
-    overflow: hidden;
-    cursor: pointer;
-    border: 1px solid var(--field-border);
-    border-radius: var(--control-radius);
-    background: var(--field-bg);
-    padding: 4px;
-    transition:
-      border-color var(--duration) var(--ease),
-      box-shadow var(--duration) var(--ease),
-      background var(--duration) var(--ease);
-  }
-
-  .project-color-picker:hover {
-    border-color: var(--border-hover);
-  }
-
-  .project-color-picker:focus-within {
-    border-color: var(--border-focus);
-    box-shadow: 0 0 0 2px var(--hover-bg);
-  }
-
-  .project-color-picker-swatch {
-    display: block;
-    height: 100%;
-    width: 100%;
-    border-radius: calc(var(--control-radius) * 0.75);
-    box-shadow:
-      inset 0 0 0 1px color-mix(in srgb, white 22%, transparent),
-      inset 0 -10px 18px color-mix(in srgb, black 12%, transparent);
-  }
-
-  .project-color-picker-input {
-    position: absolute;
-    inset: 0;
-    width: 100%;
-    height: 100%;
-    cursor: pointer;
-    opacity: 0;
-  }
-
-  .project-header-icon {
-    width: 14px;
-    height: 14px;
-  }
-
   /* ----------------------------------------------------------------
      Empty state
      ---------------------------------------------------------------- */
@@ -3084,19 +2132,6 @@
   .ajour-app-workspace {
     width: 100%;
   }
-
-  .ajour-project-layout[data-slot="sidebar-wrapper"] {
-    width: 100%;
-  }
-  .entries-table-scroll-shell-backlog {
-    --entries-table-scroll-height: calc(
-      var(--app-content-height) - var(--entries-table-header-height)
-    );
-    height: var(--app-content-height);
-    flex: 1 1 auto;
-    max-height: var(--app-content-height);
-  }
-
   .ajour-titlebar-date-trigger {
     display: inline-flex;
   }
@@ -3181,114 +2216,6 @@
     margin: 0;
     padding: 1.5rem 2rem;
   }
-
-  .ajour-project-layout[data-slot="sidebar-wrapper"] .settings-content {
-    max-width: none;
-  }
-}
-
-@media (max-width: 1056px) {
-  .ajour-project-layout[data-slot="sidebar-wrapper"] {
-    width: 100% !important;
-    max-width: none !important;
-    margin-left: 0 !important;
-    margin-right: 0 !important;
-  }
-}
-
-/* Where useAppSidebar forces the app sidebar to the rail, the Projects list
-   is a 48px icon rail too. Its rows rely on right-click and the project
-   header's "…", so the rail hides their "…" buttons. */
-@variant forced-rail {
-  .ajour-project-layout[data-slot="sidebar-wrapper"]
-    .ajour-project-navigation-sidebar {
-    display: flex;
-    width: 48px !important;
-    flex: 0 0 48px;
-  }
-
-  .ajour-project-navigation-sidebar .object-actions-button {
-    display: none;
-  }
-
-  .ajour-project-navigation-sidebar [data-sidebar="group"] {
-    padding-inline: 0.25rem !important;
-  }
-
-  .ajour-project-navigation-sidebar .ajour-project-sidebar-search-row,
-  .ajour-project-navigation-sidebar .ajour-project-sidebar-footer {
-    justify-content: center;
-  }
-
-  .ajour-project-navigation-sidebar .ajour-project-sidebar-command-trigger,
-  .ajour-project-navigation-sidebar [data-sidebar-collapsed="hide"],
-  .ajour-project-navigation-sidebar .ajour-sidebar-code {
-    display: none;
-  }
-
-  .ajour-project-navigation-sidebar .ajour-section-sidebar-button,
-  .ajour-project-navigation-sidebar .ajour-project-sidebar-archive-trigger {
-    width: 100% !important;
-    justify-content: center !important;
-    gap: 0 !important;
-    padding-inline: 0 !important;
-  }
-}
-
-@variant narrow {
-  .entries-table th,
-  .entries-table td {
-    padding: 0.625rem 0.75rem;
-  }
-
-  .entries-table {
-    table-layout: fixed;
-    width: 100%;
-  }
-  .entries-header-add.entries-header-bubble {
-    width: auto;
-    height: 28px;
-    padding: 0 0.75rem;
-    gap: 0.45rem;
-    border: 1px solid var(--border);
-    background: var(--surface);
-    color: var(--text-secondary);
-  }
-
-  .entries-header-add.entries-header-bubble:hover {
-    background: var(--surface-high);
-    border-color: var(--border-hover);
-    color: var(--text);
-  }
-
-  .entries-header-add.entries-header-bubble.is-open {
-    background: color-mix(in srgb, var(--surface-high) 84%, white 16%);
-    border-color: var(--border-hover);
-    color: var(--text);
-  }
-
-  .entries-header-add.entries-header-bubble .entries-header-add-label {
-    display: inline-flex;
-  }
-
-  .entry-hours-heading,
-  .entry-hours-cell {
-    width: 4.75rem;
-  }
-
-  .entry-hours-heading-create {
-    width: auto;
-    min-width: 8.75rem;
-  }
-  :root {
-    --backlog-estimate-column-width: 7.5rem;
-    --backlog-header-trailing-width: var(--backlog-estimate-column-width);
-  }
-  .entries-table tbody tr:hover .entry-row-actions,
-  .entries-table tbody tr:focus-within .entry-row-actions,
-  .entry-row-actions {
-    display: none;
-  }
 }
 
 @variant narrow {
@@ -3298,17 +2225,6 @@
     flex: 1 1 auto;
     border-right: 0;
   }
-
-  .ajour-project-layout[data-slot="sidebar-wrapper"] {
-    width: 100vw !important;
-    margin-left: 0 !important;
-  }
-
-  /* Rows always show their "…" here, so the project code sits beside it. */
-  .ajour-project-sidebar-item .ajour-sidebar-code {
-    margin-right: 1.75rem;
-  }
-
   .settings-content {
     padding: 1.25rem 1.25rem 2.5rem;
   }
@@ -3336,25 +2252,6 @@
     align-items: flex-start;
   }
   .profile-bar-stats {
-    width: 100%;
-  }
-  .entry-form {
-    grid-template-columns: 1fr;
-  }
-  .entry-form-row {
-    grid-template-columns: 1fr;
-  }
-  .entry-edit-dropdown-grid {
-    grid-template-columns: 1fr;
-  }
-  .entry-field-span-2,
-  .entry-field-note,
-  .entry-field-hours {
-    grid-column: span 1;
-  }
-
-  .entry-form-actions-row .btn,
-  .entry-form-actions-row button {
     width: 100%;
   }
   .global-timer {
@@ -3426,13 +2323,6 @@
   .app-content-scroll-area [data-slot="scroll-area-viewport"] > div {
     padding-bottom: var(--narrow-timer-clearance);
   }
-
-  .entries-table-scroll-shell
-    .entries-table-scroll-area
-    [data-slot="scroll-area-viewport"] {
-    height: 100% !important;
-    max-height: 100%;
-  }
   .global-timer-today {
     margin-left: 0;
     flex: 0 0 auto;
@@ -3448,17 +2338,6 @@
 @variant narrow {
   .object-actions-button {
     opacity: 1 !important;
-  }
-
-  .entries-table tbody tr .entry-row-actions {
-    display: inline-flex;
-    opacity: 1;
-    pointer-events: auto;
-    transform: translate(0, -50%);
-  }
-
-  .entries-table tbody tr .entry-row-actions .entry-row-action-play {
-    display: none;
   }
 }
 

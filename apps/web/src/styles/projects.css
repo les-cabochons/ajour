@@ -1,0 +1,571 @@
+/* Projects: the project list beside the project, its task rows, the archive
+   and the project form's color field. Imported from styles.css. The narrow
+   and rail views use plain media queries here because the breakpoint plugin
+   registers its variants after the imports are inlined. */
+
+@layer components {
+  /* -- Layout ------------------------------------------------------ */
+
+  /* The page meets the workspace edges: the project list sits against the
+     application sidebar. */
+  .page-container:has(> .ajour-project-layout[data-slot="sidebar-wrapper"]) {
+    height: 100%;
+    max-width: none;
+    min-height: 100%;
+    margin: 0;
+    padding: 0;
+  }
+
+  .ajour-project-layout[data-slot="sidebar-wrapper"] {
+    --sidebar-width: 200px;
+    --sidebar-width-icon: 200px;
+    width: 100%;
+    height: 100%;
+    max-width: none;
+    min-height: 100% !important;
+    margin: 0;
+    align-items: stretch;
+    overflow: hidden;
+  }
+
+  .project-content {
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    min-width: 0;
+    height: 100%;
+    overflow: auto;
+    padding: 1.25rem 1.5rem 2rem;
+  }
+
+  /* -- Project list ------------------------------------------------ */
+
+  .ajour-project-sidebar-item {
+    position: relative;
+    touch-action: none;
+  }
+
+  .ajour-project-navigation-sidebar.is-project-dragging
+    .ajour-project-sidebar-item {
+    transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .ajour-project-sidebar-item.is-reorderable .ajour-section-sidebar-button {
+    cursor: grab;
+    user-select: none;
+    -webkit-user-drag: none;
+  }
+
+  .ajour-project-sidebar-item a {
+    -webkit-user-drag: none;
+  }
+
+  .ajour-project-sidebar-item.is-pressing .ajour-section-sidebar-button {
+    cursor: grabbing;
+    background: var(--surface-high);
+  }
+
+  .ajour-project-sidebar-item.is-drag-source {
+    opacity: 0;
+  }
+
+  .ajour-project-navigation-sidebar .ajour-section-sidebar-button {
+    height: 28px;
+    margin-inline: 0.375rem;
+    padding-inline: 0.5rem;
+    border-radius: var(--radius-sm) !important;
+    font-size: var(--text-sm);
+  }
+
+  .ajour-project-sidebar-drag-preview {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 320;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0 0.5rem;
+    border: 1px solid var(--border-hover);
+    border-radius: var(--radius-sm);
+    background: var(--surface-highest);
+    color: var(--text);
+    font-size: var(--text-sm);
+    box-shadow: var(--shadow-drag);
+    transform-origin: top left;
+  }
+
+  .ajour-project-sidebar-header {
+    padding: 0.25rem 0.375rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .ajour-project-sidebar-search-row {
+    display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    height: 36px;
+    min-width: 0;
+  }
+
+  .ajour-project-sidebar-command-trigger {
+    display: inline-flex;
+    flex: 1;
+    min-width: 0;
+    align-items: center;
+    height: 28px;
+    padding: 0 0.5rem;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-tertiary);
+    font-size: var(--text-sm);
+    text-align: left;
+  }
+
+  .ajour-project-sidebar-command-trigger:hover {
+    background: var(--surface-high);
+    color: var(--text-secondary);
+  }
+
+  .ajour-project-sidebar-command-trigger:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
+  }
+
+  /* "New project" in the project list header. */
+  .project-sidebar-add {
+    display: inline-flex;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    width: 28px;
+    height: 28px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-tertiary);
+  }
+
+  .project-sidebar-add:hover,
+  .project-sidebar-add.is-open {
+    background: var(--surface-high);
+    color: var(--text);
+  }
+
+  .project-sidebar-add:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: -2px;
+  }
+
+  .ajour-project-sidebar-footer {
+    margin-top: auto;
+    padding: 0.25rem 0.375rem;
+    border-top: 1px solid var(--border);
+    background: var(--background);
+  }
+
+  .ajour-project-sidebar-archive-trigger {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    height: 28px;
+    padding: 0 0.5rem;
+    border: 0;
+    border-radius: var(--radius-sm);
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+    font-weight: 500;
+    outline: none;
+  }
+
+  .ajour-project-sidebar-archive-trigger svg {
+    width: 14px;
+    height: 14px;
+  }
+
+  .ajour-project-sidebar-archive-trigger:hover,
+  .ajour-project-sidebar-archive-trigger:focus-visible,
+  .ajour-project-sidebar-archive-trigger.is-active {
+    background: var(--surface-high);
+    color: var(--text);
+  }
+
+  /* -- The project ------------------------------------------------- */
+
+  .project-detail {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    width: 100%;
+    max-width: 960px;
+  }
+
+  .project-detail-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+
+  .project-header-icon {
+    flex-shrink: 0;
+    width: 16px;
+    height: 16px;
+  }
+
+  .project-detail-title {
+    min-width: 0;
+    margin: 0;
+    overflow: hidden;
+    color: var(--text);
+    font-size: var(--text-xl);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    line-height: 1.25;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .project-full-name {
+    margin: -0.625rem 0 0;
+    color: var(--text-secondary);
+    font-size: var(--text-sm);
+  }
+
+  .project-task-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-top: 0.25rem;
+  }
+
+  .project-task-toolbar > h2 {
+    flex: 1;
+    margin: 0;
+  }
+
+  .project-task-filter-tabs .toggle-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 3px 10px;
+  }
+
+  .project-task-filter-count {
+    color: var(--text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+
+  .toggle-item-active .project-task-filter-count {
+    color: var(--text-secondary);
+  }
+
+  /* -- Task rows --------------------------------------------------- */
+
+  .project-task-table {
+    width: 100%;
+    border-collapse: collapse;
+    border-top: 1px solid var(--border);
+  }
+
+  .project-task-row {
+    position: relative;
+    height: 36px;
+    border-bottom: 1px solid var(--border);
+    color: var(--text);
+    font-size: var(--text-sm);
+    outline: none;
+    touch-action: none;
+  }
+
+  .project-task-row.is-reorderable {
+    cursor: grab;
+    user-select: none;
+  }
+
+  .project-task-row:hover,
+  .project-task-row.is-editing {
+    background: var(--highlight-bg);
+  }
+
+  .project-task-row:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--focus-ring);
+  }
+
+  .project-task-row.is-pressing {
+    cursor: grabbing;
+  }
+
+  .project-task-table.is-task-dragging .project-task-row {
+    transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .project-task-table.is-task-dragging
+    .project-task-row:not(.is-drag-source):hover {
+    background: transparent;
+  }
+
+  .project-task-row.is-drag-source {
+    opacity: 0;
+  }
+
+  .project-task-row td {
+    padding: 0 0.25rem;
+    vertical-align: middle;
+  }
+
+  .project-task-name-cell {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+  }
+
+  .project-task-name {
+    min-width: 0;
+    overflow: hidden;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .project-task-trailing {
+    width: 1%;
+    text-align: right;
+    white-space: nowrap;
+  }
+
+  .project-task-trailing-content {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .project-task-actions {
+    display: inline-flex;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .project-task-row:hover .project-task-actions,
+  .project-task-row:focus-within .project-task-actions,
+  .project-task-row:has([data-popup-open]) .project-task-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .project-task-empty {
+    padding-inline: 0.25rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .project-task-drag-preview {
+    position: fixed;
+    top: 0;
+    left: 0;
+    z-index: 320;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 0 0.5rem;
+    border: 1px solid var(--border-hover);
+    border-radius: var(--radius);
+    background: var(--surface-highest);
+    color: var(--text);
+    font-size: var(--text-sm);
+    box-shadow: var(--shadow-drag);
+    transform-origin: top left;
+  }
+
+  .project-task-drag-preview .project-task-name-cell {
+    flex: 1;
+  }
+
+  /* -- Color field (project form) ---------------------------------- */
+
+  .color-field-swatch {
+    flex-shrink: 0;
+    width: 14px;
+    height: 14px;
+    border-radius: 3px;
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, black 12%, transparent);
+  }
+
+  .color-field-popover {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    width: auto;
+    padding: 0.5rem;
+  }
+
+  .color-field-grid {
+    display: grid;
+    grid-template-columns: repeat(6, 24px);
+    gap: 0.375rem;
+  }
+
+  .color-field-option {
+    width: 24px;
+    height: 24px;
+    border: 0;
+    border-radius: var(--radius-sm);
+    box-shadow: inset 0 0 0 1px color-mix(in srgb, black 12%, transparent);
+    cursor: pointer;
+  }
+
+  .color-field-option.is-selected {
+    outline: 2px solid var(--text);
+    outline-offset: 2px;
+  }
+
+  .color-field-option:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 2px;
+  }
+}
+
+/* Outside the layer: these override the buttons' own utility classes. */
+
+/* The row's "…" covers the right edge of the row, over the code. */
+.ajour-project-sidebar-item .object-actions-button {
+  position: absolute;
+  top: 50%;
+  right: 0.375rem;
+  width: 22px;
+  height: 22px;
+  translate: 0 -50%;
+  background: var(--surface-high);
+  opacity: 0;
+}
+
+.ajour-project-sidebar-item:hover .object-actions-button,
+.ajour-project-sidebar-item:focus-within .object-actions-button,
+.ajour-project-sidebar-item:has([data-popup-open]) .object-actions-button {
+  opacity: 1;
+}
+
+/* The consumed hours: a Value, whose own text color these tones replace. */
+.project-task-consumed {
+  min-width: 6.5rem;
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+.project-task-consumed.is-success {
+  color: var(--success);
+}
+
+.project-task-consumed.is-warning {
+  color: var(--warning);
+}
+
+.project-task-consumed.is-danger,
+.project-task-consumed.is-danger-strong {
+  color: var(--danger);
+}
+
+.project-task-consumed.is-danger-strong {
+  font-weight: 600;
+}
+
+.color-field-trigger {
+  width: 100%;
+  justify-content: flex-start;
+  gap: 0.5rem;
+}
+
+@media (max-width: 1056px) {
+  .ajour-project-layout[data-slot="sidebar-wrapper"] {
+    width: 100% !important;
+    max-width: none !important;
+    margin-left: 0 !important;
+    margin-right: 0 !important;
+  }
+}
+
+/* Where useAppSidebar forces the app sidebar to the rail, the Projects list
+   is a 48px icon rail too. Its rows rely on right-click and the project
+   header's "…", so the rail hides their "…" buttons. */
+@media (768px <= width < 1100px) {
+  .ajour-project-layout[data-slot="sidebar-wrapper"]
+    .ajour-project-navigation-sidebar {
+    display: flex;
+    width: 48px !important;
+    flex: 0 0 48px;
+  }
+
+  .ajour-project-navigation-sidebar .object-actions-button {
+    display: none;
+  }
+
+  .ajour-project-navigation-sidebar [data-sidebar="group"] {
+    padding-inline: 0.25rem !important;
+  }
+
+  .ajour-project-navigation-sidebar .ajour-project-sidebar-search-row,
+  .ajour-project-navigation-sidebar .ajour-project-sidebar-footer {
+    justify-content: center;
+  }
+
+  .ajour-project-navigation-sidebar .ajour-project-sidebar-command-trigger,
+  .ajour-project-navigation-sidebar [data-sidebar-collapsed="hide"],
+  .ajour-project-navigation-sidebar .ajour-sidebar-code {
+    display: none;
+  }
+
+  .ajour-project-navigation-sidebar .ajour-section-sidebar-button,
+  .ajour-project-navigation-sidebar .ajour-project-sidebar-archive-trigger {
+    width: 100% !important;
+    justify-content: center !important;
+    gap: 0 !important;
+    margin-inline: 0 !important;
+    padding-inline: 0 !important;
+  }
+}
+
+@media (width < 768px) {
+  .ajour-project-layout[data-slot="sidebar-wrapper"] {
+    width: 100vw !important;
+    margin-left: 0 !important;
+  }
+
+  .project-content {
+    padding: 1rem;
+  }
+
+  /* Rows always show their "…" in the narrow view; the project rows make
+     room for it so it does not cover the code. */
+  .project-task-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .ajour-project-sidebar-item .ajour-sidebar-code {
+    margin-right: 1.75rem;
+  }
+
+  /* The list is a page of its own here: Archive and Import and export follow
+     the rows instead of sitting under the floating dock. */
+  .ajour-project-navigation-sidebar [data-sidebar="content"] {
+    flex: 0 0 auto;
+  }
+
+  .ajour-project-sidebar-footer {
+    margin-top: 0;
+  }
+}
+
+@media (pointer: coarse) {
+  .project-task-actions {
+    opacity: 1;
+    pointer-events: auto;
+  }
+}

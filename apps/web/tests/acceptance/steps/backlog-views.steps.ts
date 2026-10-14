@@ -268,8 +268,10 @@ Then("the parent peek cannot restart its running entry", async ({ page }) => {
   ).toContainText("Already running");
   await page.keyboard.press("Escape");
   await expect(page.getByRole("menu")).toHaveCount(0);
-  await page
-    .locator('[data-work-item-id="parent"]')
+  // The row's actions take pointer events only once the row is hovered.
+  const parentRow = page.locator('[data-work-item-id="parent"]');
+  await parentRow.hover();
+  await parentRow
     .getByRole("button", { name: "Actions for Backlog parent", exact: true })
     .click();
   await expect(
@@ -1524,8 +1526,9 @@ Then(
   },
 );
 When("I restore the old done item", async ({ page }) => {
-  await page
-    .locator('[data-work-item-id="old"]')
+  const oldRow = page.locator('[data-work-item-id="old"]');
+  await oldRow.hover();
+  await oldRow
     .getByRole("button", { name: "Actions for Old done item" })
     .click();
   await page.getByRole("menuitem", { name: "Restore", exact: true }).click();
