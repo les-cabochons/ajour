@@ -1,9 +1,15 @@
-import { useMemo, useState, type ReactNode } from "react";
+import {
+  useMemo,
+  useState,
+  type KeyboardEvent,
+  type MouseEvent,
+  type ReactNode,
+} from "react";
 import { useNavigate } from "@tanstack/react-router";
 import {
   RiArrowDownSLine as ChevronDown,
   RiArrowGoBackLine as UndoIcon,
-  RiCheckboxCircleLine as SettleIcon,
+  RiPlayFill as PlayFillIcon,
   RiPlayLine as PlayIcon,
   RiTimeLine as SnoozeIcon,
 } from "@remixicon/react";
@@ -59,9 +65,9 @@ const SETTLED_PAGE_SIZE = 20;
 
 type IconData = ReturnType<typeof useWorkItemIconData>;
 
-function formatHoursLeft(hours?: number) {
+function formatHours(hours?: number) {
   if (hours === undefined) return undefined;
-  return `${Number.isInteger(hours) ? hours : hours.toFixed(1)}h left`;
+  return `${Number.isInteger(hours) ? hours : hours.toFixed(1)}h`;
 }
 
 /** "#48213 · Active · 2.5h left", or "Local" for a manual item. */
@@ -70,10 +76,11 @@ function getMetaLine(workItem: LocalWorkItem) {
     workItem.source === "azure_devops"
       ? parseWorkItemReference(workItem.sourceId)
       : workItem.sourceId;
+  const hours = formatHours(workItem.remainingEstimateHours);
   return [
     workItem.source === "manual" ? "Local" : reference && `#${reference}`,
     workItem.sourceStatusLabel,
-    formatHoursLeft(workItem.remainingEstimateHours),
+    hours && `${hours} left`,
   ]
     .filter(Boolean)
     .join(" · ");
@@ -130,43 +137,94 @@ function useBacklogItemRow(state: LocalAppState, now: number) {
 
 type RowApi = ReturnType<typeof useBacklogItemRow>;
 
+const iconButton =
+  "flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-foreground/10 hover:text-foreground";
+
+/** Hover and focus swap the type icon for the settle circle. Shift asks first. */
+function LeadingIcon({
+  workItem,
+  iconData,
+  rows,
+}: {
+  workItem: LocalWorkItem;
+  iconData: IconData;
+  rows: RowApi;
+}) {
+  return (
+    <span
+      className="relative flex size-4 shrink-0 items-center justify-center"
+      onClick={(event) => event.stopPropagation()}
+    >
+      <span className="flex group-focus-within:hidden group-hover:hidden">
+        <WorkItemIcon icon={resolveWorkItemIcon(workItem, iconData)} />
+      </span>
+      <TooltipButton
+        label="Settle"
+        shortcut="item.settle"
+        className="hidden size-4 rounded-full border-[1.5px] border-foreground/50 group-focus-within:flex group-hover:flex hover:border-foreground hover:bg-foreground/10"
+        onClick={(event) =>
+          rows.run(workItem, "settle", { askToSettle: event.shiftKey })
+        }
+      />
+    </span>
+  );
+}
+
+function StartButton({
+  workItem,
+  rows,
+  variant = "icon",
+}: {
+  workItem: LocalWorkItem;
+  rows: RowApi;
+  variant?: "icon" | "round";
+}) {
+  const disabledReason = rows
+    .actionsFor(workItem)
+    .find((action) => action.id === "start-entry")?.disabledReason;
+  return (
+    <TooltipButton
+      label={disabledReason ? `Start entry. ${disabledReason}` : "Start entry"}
+      aria-label="Start entry"
+      aria-description={disabledReason}
+      aria-disabled={Boolean(disabledReason)}
+      className={cn(
+        variant === "round"
+          ? "flex size-6 shrink-0 items-center justify-center rounded-full border bg-background text-foreground hover:bg-foreground/10"
+          : iconButton,
+        "aria-disabled:opacity-50",
+      )}
+      onClick={() => {
+        if (!disabledReason) rows.run(workItem, "start-entry");
+      }}
+    >
+      {variant === "round" ? (
+        <PlayFillIcon className="size-3" />
+      ) : (
+        <PlayIcon className="size-3.5" />
+      )}
+    </TooltipButton>
+  );
+}
+
+/** Start entry, Snooze and "…". They replace the row's end on hover and focus. */
 function RowActions({
   workItem,
   rows,
+  showStart = true,
   className,
 }: {
   workItem: LocalWorkItem;
   rows: RowApi;
+  showStart?: boolean;
   className?: string;
 }) {
-  const actions = rows.actionsFor(workItem);
-  const startDisabledReason = actions.find(
-    (action) => action.id === "start-entry",
-  )?.disabledReason;
-  const iconButton =
-    "flex size-6 items-center justify-center rounded text-muted-foreground hover:bg-foreground/10 hover:text-foreground";
-
   return (
     <div
       className={cn("items-center gap-0.5", className)}
       onClick={(event) => event.stopPropagation()}
     >
-      <TooltipButton
-        label={
-          startDisabledReason
-            ? `Start entry. ${startDisabledReason}`
-            : "Start entry"
-        }
-        aria-label="Start entry"
-        aria-description={startDisabledReason}
-        className={cn(iconButton, "aria-disabled:opacity-50")}
-        aria-disabled={Boolean(startDisabledReason)}
-        onClick={() => {
-          if (!startDisabledReason) rows.run(workItem, "start-entry");
-        }}
-      >
-        <PlayIcon className="size-3.5" />
-      </TooltipButton>
+      {showStart ? <StartButton workItem={workItem} rows={rows} /> : null}
       <TooltipButton
         label="Snooze…"
         shortcut="item.snooze"
@@ -175,18 +233,8 @@ function RowActions({
       >
         <SnoozeIcon className="size-3.5" />
       </TooltipButton>
-      <TooltipButton
-        label="Settle"
-        shortcut="item.settle"
-        className={iconButton}
-        onClick={(event) =>
-          rows.run(workItem, "settle", { askToSettle: event.shiftKey })
-        }
-      >
-        <SettleIcon className="size-3.5" />
-      </TooltipButton>
       <ObjectActionsButton
-        actions={actions}
+        actions={rows.actionsFor(workItem)}
         keys={BACKLOG_ITEM_ACTION_KEYS}
         onAction={(actionId) => rows.run(workItem, actionId)}
         label={`Actions for ${workItem.title}`}
@@ -234,16 +282,7 @@ function Markers({
   );
 }
 
-function BacklogItemRow({
-  workItem,
-  parentTitle,
-  density,
-  isActive,
-  isRunning,
-  isReturned,
-  iconData,
-  rows,
-}: {
+interface ItemRowProps {
   workItem: LocalWorkItem;
   parentTitle?: string;
   density: SidebarDensity;
@@ -252,10 +291,42 @@ function BacklogItemRow({
   isReturned: boolean;
   iconData: IconData;
   rows: RowApi;
-}) {
+}
+
+/** Click, modified click, keys and the context menu, shared by the item rows. */
+function useItemRowHandlers({ workItem, rows }: ItemRowProps) {
   const actions = rows.actionsFor(workItem);
-  const icon = <WorkItemIcon icon={resolveWorkItemIcon(workItem, iconData)} />;
-  const isCompact = density === "compact";
+  return {
+    actions,
+    onClick: (event: MouseEvent<HTMLElement>) => {
+      if (!openModifiedSourceClick(event, workItem.sourceUrl))
+        rows.open(workItem);
+    },
+    onKeyDown: (event: KeyboardEvent<HTMLElement>) =>
+      handleItemKeyDown(event, {
+        actions: [...actions, OPEN_BACKLOG_ITEM_ACTION],
+        keys: BACKLOG_ITEM_ROW_KEYS,
+        onAction: (actionId, { shortcutId }) =>
+          actionId === "open"
+            ? rows.open(workItem)
+            : rows.run(workItem, actionId, {
+                askToSettle: shortcutId === "item.settle-ask",
+              }),
+      }),
+  };
+}
+
+/**
+ * One line: the type icon, the title, then the markers and, in Comfortable,
+ * the remaining estimate. A subitem shows its parent after its title.
+ */
+function BacklogItemRow(props: ItemRowProps) {
+  const { workItem, parentTitle, density, isActive, iconData, rows } = props;
+  const { actions, onClick, onKeyDown } = useItemRowHandlers(props);
+  const hours =
+    density === "comfortable"
+      ? formatHours(workItem.remainingEstimateHours)
+      : undefined;
 
   return (
     <ObjectContextMenu
@@ -271,100 +342,58 @@ function BacklogItemRow({
           aria-current={isActive ? "page" : undefined}
           title={parentTitle ? `${workItem.title} · ${parentTitle}` : undefined}
           className={cn(
-            "group relative flex cursor-pointer rounded-md px-2 text-[13px] outline-none hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring",
-            isCompact ? "h-7 items-center gap-2" : "items-start gap-2 py-1.5",
+            "group flex shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 text-[13px] outline-none hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring",
+            density === "compact" ? "h-[26px]" : "h-7",
             isActive && "bg-foreground/[0.07]",
           )}
-          onClick={(event) => {
-            if (!openModifiedSourceClick(event, workItem.sourceUrl))
-              rows.open(workItem);
-          }}
-          onKeyDown={(event) =>
-            handleItemKeyDown(event, {
-              actions: [...actions, OPEN_BACKLOG_ITEM_ACTION],
-              keys: BACKLOG_ITEM_ROW_KEYS,
-              onAction: (actionId, { shortcutId }) =>
-                actionId === "open"
-                  ? rows.open(workItem)
-                  : rows.run(workItem, actionId, {
-                      askToSettle: shortcutId === "item.settle-ask",
-                    }),
-            })
-          }
+          onClick={onClick}
+          onKeyDown={onKeyDown}
         />
       }
     >
-      <span className={cn("shrink-0", !isCompact && "mt-0.5")}>{icon}</span>
-      {isCompact ? (
-        <span className="min-w-0 flex-1 truncate">
-          {workItem.title}
-          {parentTitle ? (
-            <span className="text-muted-foreground"> · {parentTitle}</span>
-          ) : null}
-        </span>
-      ) : (
-        <span className="min-w-0 flex-1">
-          <span
-            className={cn(
-              "line-clamp-2 leading-snug",
-              isReturned && "font-semibold",
-            )}
-          >
-            {workItem.title}
-          </span>
-          <span className="mt-0.5 block truncate text-[11px] text-muted-foreground">
-            {parentTitle ? `↳ ${parentTitle}` : getMetaLine(workItem)}
-          </span>
-        </span>
-      )}
+      <LeadingIcon workItem={workItem} iconData={iconData} rows={rows} />
       <span
         className={cn(
-          "flex shrink-0 items-center gap-1 group-focus-within:hidden group-hover:hidden",
-          !isCompact && "pt-1",
+          "min-w-0 flex-1 truncate",
+          props.isReturned && "font-semibold",
         )}
       >
+        {workItem.title}
+        {parentTitle ? (
+          <span className="font-normal text-muted-foreground">
+            {" "}
+            · {parentTitle}
+          </span>
+        ) : null}
+      </span>
+      <span className="flex shrink-0 items-center gap-1.5 group-focus-within:hidden group-hover:hidden">
         <Markers
           workItem={workItem}
-          isRunning={isRunning}
-          isReturned={isReturned}
+          isRunning={props.isRunning}
+          isReturned={props.isReturned}
         />
+        {hours ? (
+          <span className="text-[11.5px] text-muted-foreground tabular-nums">
+            {hours}
+          </span>
+        ) : null}
       </span>
       <RowActions
         workItem={workItem}
         rows={rows}
-        className={cn(
-          "hidden group-focus-within:flex group-hover:flex",
-          !isCompact &&
-            "absolute top-1 right-1 rounded-md bg-background/95 shadow-sm ring-1 ring-border",
-        )}
+        className="hidden group-focus-within:flex group-hover:flex"
       />
     </ObjectContextMenu>
   );
 }
 
-function UpNextCard({
-  workItem,
-  parentTitle,
-  density,
-  isActive,
-  isRunning,
-  isReturned,
-  iconData,
-  rows,
-}: {
-  workItem: LocalWorkItem;
-  parentTitle?: string;
-  density: SidebarDensity;
-  isActive: boolean;
-  isRunning: boolean;
-  isReturned: boolean;
-  iconData: IconData;
-  rows: RowApi;
-}) {
-  const actions = rows.actionsFor(workItem);
-  const isCompact = density === "compact";
-  const button =
-    "inline-flex h-6 items-center gap-1 rounded px-1.5 text-[12px] hover:bg-foreground/10";
+/**
+ * The first item, highlighted above the list with its meta line and a Start
+ * entry button that is always visible.
+ */
+function UpNextRow(props: ItemRowProps) {
+  const { workItem, parentTitle, isActive, iconData, rows } = props;
+  const { actions, onClick, onKeyDown } = useItemRowHandlers(props);
 
   return (
     <ObjectContextMenu
@@ -380,91 +409,49 @@ function UpNextCard({
           aria-current={isActive ? "page" : undefined}
           aria-label={`Up next: ${workItem.title}`}
           className={cn(
-            "mb-1 cursor-pointer rounded-lg border bg-background p-2.5 shadow-xs outline-none focus-visible:ring-1 focus-visible:ring-ring",
-            isActive && "border-foreground/30",
+            "group flex shrink-0 cursor-pointer items-center gap-2 rounded-md bg-foreground/5 py-1.5 pr-1.5 pl-2 outline-none hover:bg-foreground/[0.08] focus-visible:ring-1 focus-visible:ring-ring",
+            isActive && "bg-foreground/10",
           )}
-          onClick={(event) => {
-            if (!openModifiedSourceClick(event, workItem.sourceUrl))
-              rows.open(workItem);
-          }}
-          onKeyDown={(event) =>
-            handleItemKeyDown(event, {
-              actions: [...actions, OPEN_BACKLOG_ITEM_ACTION],
-              keys: BACKLOG_ITEM_ROW_KEYS,
-              onAction: (actionId, { shortcutId }) =>
-                actionId === "open"
-                  ? rows.open(workItem)
-                  : rows.run(workItem, actionId, {
-                      askToSettle: shortcutId === "item.settle-ask",
-                    }),
-            })
-          }
+          onClick={onClick}
+          onKeyDown={onKeyDown}
         />
       }
     >
-      <div className="flex items-center gap-1.5 text-[11px] text-muted-foreground">
-        <WorkItemIcon icon={resolveWorkItemIcon(workItem, iconData)} />
-        <span className="truncate">
+      <LeadingIcon workItem={workItem} iconData={iconData} rows={rows} />
+      <span className="min-w-0 flex-1">
+        <span
+          className={cn(
+            "block truncate text-[13px] leading-snug font-semibold",
+          )}
+        >
+          {workItem.title}
+        </span>
+        <span className="block truncate text-[11px] text-muted-foreground">
           {parentTitle ? `↳ ${parentTitle}` : getMetaLine(workItem)}
         </span>
-        <span className="ml-auto flex items-center gap-1">
-          <Markers
-            workItem={workItem}
-            isRunning={isRunning}
-            isReturned={isReturned}
-          />
-        </span>
-      </div>
-      <div className="mt-1 text-[13px] leading-snug font-medium">
-        {workItem.title}
-      </div>
-      <div
-        className="mt-2 flex items-center gap-0.5"
-        onClick={(event) => event.stopPropagation()}
-      >
-        {isCompact ? (
-          <RowActions workItem={workItem} rows={rows} className="flex" />
-        ) : (
-          <>
-            <button
-              type="button"
-              className={cn(button, "border disabled:opacity-50")}
-              disabled={Boolean(
-                actions.find((action) => action.id === "start-entry")
-                  ?.disabledReason,
-              )}
-              title={
-                actions.find((action) => action.id === "start-entry")
-                  ?.disabledReason
-              }
-              onClick={() => rows.run(workItem, "start-entry")}
-            >
-              <PlayIcon className="size-3.5" /> Start
-            </button>
-            <button
-              type="button"
-              className={button}
-              onClick={() => rows.run(workItem, "snooze")}
-            >
-              <SnoozeIcon className="size-3.5" /> Snooze
-            </button>
-            <button
-              type="button"
-              className={button}
-              onClick={(event) =>
-                rows.run(workItem, "settle", { askToSettle: event.shiftKey })
-              }
-            >
-              <SettleIcon className="size-3.5" /> Settle
-            </button>
-          </>
-        )}
-      </div>
+      </span>
+      <span className="flex shrink-0 items-center gap-1 group-focus-within:hidden group-hover:hidden">
+        <Markers
+          workItem={workItem}
+          isRunning={props.isRunning}
+          isReturned={props.isReturned}
+        />
+      </span>
+      <RowActions
+        workItem={workItem}
+        rows={rows}
+        showStart={false}
+        className="hidden group-focus-within:flex group-hover:flex"
+      />
+      <span onClick={(event) => event.stopPropagation()}>
+        <StartButton workItem={workItem} rows={rows} variant="round" />
+      </span>
     </ObjectContextMenu>
   );
 }
 
-function SectionHeader({
+/** A collapsible section label: "Backlog 11", "Snoozed 3", "Settled". */
+export function SidebarSectionHeader({
   label,
   count,
   open,
@@ -480,12 +467,18 @@ function SectionHeader({
       type="button"
       aria-expanded={open}
       onClick={onToggle}
-      className="flex w-full items-center gap-1 px-2 pt-3 pb-1 text-[11px] font-medium text-muted-foreground uppercase hover:text-foreground"
+      className="flex w-full shrink-0 items-center gap-1 rounded-md px-2 pt-3 pb-1 text-left text-[11.5px] font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
     >
       <ChevronDown
-        className={cn("size-3.5 transition-transform", !open && "-rotate-90")}
+        className={cn(
+          "size-3.5 transition-transform motion-reduce:transition-none",
+          !open && "-rotate-90",
+        )}
       />
-      {count !== undefined ? `${label} (${count})` : label}
+      {label}
+      {count !== undefined ? (
+        <span className="font-normal tabular-nums">{count}</span>
+      ) : null}
     </button>
   );
 }
@@ -511,7 +504,7 @@ function OffListRow({
       tabIndex={0}
       data-focus-column="0"
       data-backlog-item-id={workItem._id}
-      className="group flex cursor-pointer items-center gap-2 rounded-md px-2 py-1 text-[13px] text-muted-foreground outline-none hover:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring"
+      className="group flex h-7 shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 text-[13px] text-muted-foreground outline-none hover:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring"
       onClick={(event) => {
         if (!openModifiedSourceClick(event, workItem.sourceUrl))
           rows.open(workItem);
@@ -528,7 +521,7 @@ function OffListRow({
       />
       <span className="min-w-0 flex-1 truncate">{workItem.title}</span>
       {detail ? (
-        <span className="shrink-0 text-[11px] group-focus-within:hidden group-hover:hidden">
+        <span className="shrink-0 text-[11.5px] group-focus-within:hidden group-hover:hidden">
           {detail}
         </span>
       ) : null}
@@ -538,7 +531,7 @@ function OffListRow({
       >
         <TooltipButton
           label={restoreLabel}
-          className="flex size-6 items-center justify-center rounded hover:bg-foreground/10 hover:text-foreground"
+          className={iconButton}
           onClick={onRestore}
         >
           <UndoIcon className="size-3.5" />
@@ -549,11 +542,18 @@ function OffListRow({
 }
 
 /**
- * The backlog items in the expanded app sidebar, from "Backlog sidebar" in
- * agents/ux-spec.md: the Up next card, the active items in the Backlog page's
- * order, then the collapsible Snoozed and Settled sections.
+ * The work list in the expanded app sidebar, from "Backlog sidebar" in
+ * agents/ux-spec.md: the Up next row, the collapsible Backlog section with the
+ * active items in the Backlog page's order, `children` (the Pull requests
+ * section), then the collapsible Snoozed and Settled sections.
  */
-export function SidebarBacklogList({ pathname }: { pathname: string }) {
+export function SidebarBacklogList({
+  pathname,
+  children,
+}: {
+  pathname: string;
+  children?: ReactNode;
+}) {
   const state = useLocalState();
   const now = useNow();
   const layout = useSidebarLayout();
@@ -593,7 +593,7 @@ export function SidebarBacklogList({ pathname }: { pathname: string }) {
     const key = getWorkItemParentKey(workItem);
     return key ? titleByLookupKey.get(key) : undefined;
   };
-  const rowProps = (workItem: LocalWorkItem) => ({
+  const rowProps = (workItem: LocalWorkItem): ItemRowProps => ({
     workItem,
     parentTitle: parentTitleOf(workItem),
     density: layout.density,
@@ -645,33 +645,39 @@ export function SidebarBacklogList({ pathname }: { pathname: string }) {
     >
       {upNext ? (
         <>
-          <div className="px-2 pt-3 pb-1 text-[11px] font-medium text-muted-foreground uppercase">
+          <div className="px-2 pt-3 pb-1 text-[11.5px] font-medium text-muted-foreground">
             Up next
           </div>
-          <UpNextCard {...rowProps(upNext)} />
+          <UpNextRow {...rowProps(upNext)} />
         </>
-      ) : (
-        <div className="pt-2" />
-      )}
-      <div
-        className={cn(
-          "flex flex-col",
-          layout.density === "comfortable" && "gap-px",
-        )}
-      >
-        {rest.map((workItem) =>
-          workItem ? (
-            <BacklogItemRow key={workItem._id} {...rowProps(workItem)} />
-          ) : null,
-        )}
-      </div>
-      {listed.length === 0 ? (
-        <p className="px-2 py-1 text-[12px] text-muted-foreground">
-          Nothing on your plate.
-        </p>
       ) : null}
 
-      <SectionHeader
+      <SidebarSectionHeader
+        label="Backlog"
+        count={rest.length}
+        open={layout.backlogOpen}
+        onToggle={() =>
+          updateSidebarLayout({ backlogOpen: !layout.backlogOpen })
+        }
+      />
+      {layout.backlogOpen ? (
+        <>
+          {rest.map((workItem) =>
+            workItem ? (
+              <BacklogItemRow key={workItem._id} {...rowProps(workItem)} />
+            ) : null,
+          )}
+          {listed.length === 0 ? (
+            <p className="px-2 py-1 text-[12px] text-muted-foreground">
+              Nothing on your plate.
+            </p>
+          ) : null}
+        </>
+      ) : null}
+
+      {children}
+
+      <SidebarSectionHeader
         label="Snoozed"
         count={snoozed.length}
         open={layout.snoozedOpen}
@@ -693,7 +699,7 @@ export function SidebarBacklogList({ pathname }: { pathname: string }) {
           ))
         : null}
 
-      <SectionHeader
+      <SidebarSectionHeader
         label="Settled"
         open={layout.settledOpen}
         onToggle={() =>

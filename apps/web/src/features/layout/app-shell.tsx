@@ -22,12 +22,19 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { showErrorToast } from "@/components/ui/toast";
 import {
   AppNavigationSidebar,
+  SidebarToggleButton,
   isAppNavigationItemActive,
 } from "@/features/layout/app-navigation-sidebar";
+import {
+  FloatingTimerDock,
+  RunningEntryWindowTitle,
+  setRunningEntryEditorOpen,
+} from "@/features/layout/timer-dock";
 import { AppMenuBar } from "@/features/layout/app-menu-bar";
 import { CommandPalette } from "@/features/command-palette/command-palette";
 import { ShortcutOverlay } from "@/features/layout/shortcut-overlay";
@@ -46,7 +53,6 @@ import {
 import { TimeEntryModal } from "@/features/timer/time-entry-modal";
 import { SubmitWeekButton } from "@/features/time/submit-week-controls";
 import { formatClockDuration } from "@/domain/time/duration";
-import { getLocalProjectDisplayName } from "@/domain/local-state";
 import { findPinnedTask } from "@/domain/projects/project-transitions";
 import {
   getConnectorsOverview,
@@ -376,22 +382,30 @@ function DayTotalsPill({
 
 /* ── Global Timer Bar ──────────────────────────────────────────────── */
 
-/** Which entry editor the titlebar has open: the "+" new entry, or the running entry. */
+/**
+ * Which entry editor the titlebar has open: the "+" new entry, or the running
+ * entry in the narrow view's dialog. Desktop edits the running entry on the
+ * timer dock.
+ */
 type TitlebarEditor = "new" | "running" | null;
 
 /**
- * New entry (+), Start (▶), Running pill and titlebar totals. Entry controls float
- * at the bottom right in the narrow view. "+" and the
- * pill open the entry editor in a popover anchored to them, or in the dialog in the
- * narrow view. New entry… on a task or backlog item (`openNewEntryEditor`) opens the
- * same popover, anchored to its row. New entries default to today; the Start button
- * starts one at once.
+ * New entry (+), Start (▶) and the titlebar totals. The running entry lives in
+ * the sidebar's timer dock; while the sidebar is off screen
+ * (`showsFloatingDock`), the dock floats at the bottom left instead. Entry
+ * controls float at the bottom right in the narrow view, with the floating
+ * dock beside them. "+" and the dock open the entry editor in a popover
+ * anchored to them, or in the dialog in the narrow view. New entry… on a task
+ * or backlog item (`openNewEntryEditor`) opens the same popover, anchored to
+ * its row. New entries default to today; the Start button starts one at once.
  */
 function GlobalTimerBar({
   date,
+  showsFloatingDock,
   onSubmit,
 }: {
   date: string;
+  showsFloatingDock: boolean;
   onSubmit: () => void;
 }) {
   const state = useLocalState();
@@ -501,40 +515,19 @@ function GlobalTimerBar({
     return total;
   }, [currentTimer, state.timesheetEntries, timerContributionMs, weekDates]);
 
-  const timerProject = currentTimer
-    ? projects.find((p) => p._id === currentTimer.projectId)
-    : null;
-  const timerTask = timerProject?.tasks.find(
-    (t) => t._id === currentTimer?.taskId,
-  );
-  const timerProjectLabel = timerProject
-    ? timerProject.code?.trim() || getLocalProjectDisplayName(timerProject)
-    : undefined;
-  const timerMeta = [timerProjectLabel, timerTask?.name]
-    .filter(Boolean)
-    .join(" · ");
-
-  /** Starts an empty running entry today, then opens it so the user can fill it in. */
+  /**
+   * Starts an empty running entry today, then opens it so the user can fill it
+   * in: in the dialog in the narrow view, else on the timer dock.
+   */
   function handleStartClick() {
     localStore.startTimer({});
-    setEditor("running");
+    if (isNarrowView) setEditor("running");
+    else setRunningEntryEditorOpen(true);
   }
 
   const handleEditorClose = useCallback(() => {
     setEditor(null);
   }, []);
-
-  const runningPillContent = (
-    <>
-      <span className="status-dot status-dot-pulse" />
-      <span className="stat-pill-label">Running</span>
-      <span className="stat-pill-value">
-        {formatClockDuration(runningDurationMs)}
-      </span>
-    </>
-  );
-  const runningPillClassName =
-    "stat-pill stat-pill-active stat-pill-active-clickable";
 
   const controls = (
     <div className="global-timer-controls">
@@ -580,36 +573,12 @@ function GlobalTimerBar({
           </TooltipButton>
         )}
       </div>
-      {currentTimer ? (
-        <div
-          className={cn(
-            "quick-timer-popup-anchor",
-            isDesktopShell && "desktop-no-drag",
-          )}
-        >
-          {timerMeta ? (
-            <span className="global-timer-meta">{timerMeta}</span>
-          ) : null}
-          {isNarrowView ? (
-            <button
-              type="button"
-              className={runningPillClassName}
-              onClick={() => setEditor("running")}
-              aria-label="Edit the running entry"
-            >
-              {runningPillContent}
-            </button>
-          ) : (
-            <TimeEntryEditorPopover
-              target={{ kind: "running", timer: currentTimer }}
-              open={editor === "running"}
-              onOpenChange={(open) => setEditor(open ? "running" : null)}
-              triggerLabel="Edit the running entry"
-              triggerClassName={runningPillClassName}
-            >
-              {runningPillContent}
-            </TimeEntryEditorPopover>
-          )}
+      {currentTimer && isNarrowView ? (
+        <div className="quick-timer-popup-anchor">
+          <FloatingTimerDock
+            onEdit={() => setEditor("running")}
+            className="h-11"
+          />
         </div>
       ) : null}
     </div>
@@ -619,6 +588,12 @@ function GlobalTimerBar({
     <div className="global-timer">
       {/* The titlebar's backdrop filter would contain fixed-position children. */}
       {isNarrowView ? createPortal(controls, document.body) : controls}
+      {currentTimer && showsFloatingDock && !isNarrowView
+        ? createPortal(
+            <FloatingTimerDock className="ajour-floating-dock-desktop" />,
+            document.body,
+          )
+        : null}
       <DayTotalsPill
         date={date}
         dayTotalMs={dayTotalMs}
@@ -652,6 +627,7 @@ export function AppShell() {
     () => timeRouteDate ?? todayIsoDate(),
   );
   const appSidebar = useAppSidebar();
+  const { closeOverlay } = appSidebar;
   const sidebarWidth = resolveSidebarWidth(useSidebarLayout());
   const isNarrowView = useIsNarrowView();
   useGlobalShortcuts(selectedTimeDate);
@@ -672,6 +648,13 @@ export function AppShell() {
     }
   }, [timeRouteDate]);
 
+  // Opening a page from the sidebar over the page closes it.
+  useEffect(() => {
+    closeOverlay();
+  }, [pathname, closeOverlay]);
+
+  const isSidebarInline = appSidebar.display === "inline" && !isNarrowView;
+
   return (
     <div
       className={cn(
@@ -681,6 +664,7 @@ export function AppShell() {
         isMacDesktopShell && "desktop-shell-macos",
       )}
     >
+      <RunningEntryWindowTitle />
       <ConnectorAutoSyncScheduler />
       <PendingSourceWritesFlush />
       <ShortcutOverlay />
@@ -693,32 +677,55 @@ export function AppShell() {
           provider is controlled and its own shortcut stays off. */}
       <SidebarProvider
         className="ajour-app-body"
-        data-app-sidebar={appSidebar.state}
+        data-app-sidebar={isSidebarInline ? "inline" : "none"}
         style={
-          appSidebar.state === "expanded"
-            ? ({
-                "--app-sidebar-width": `${sidebarWidth}px`,
-                // Custom properties resolve where they are declared, so the
-                // centering offset is restated with the dragged width.
-                "--app-centered-workspace-right-offset": `calc(${sidebarWidth / 2}px + var(--app-workspace-half-width))`,
-              } as CSSProperties)
-            : undefined
+          {
+            "--app-sidebar-width": `${isSidebarInline ? sidebarWidth : 0}px`,
+            // Custom properties resolve where they are declared, so the
+            // centering offset is restated with the dragged width.
+            "--app-centered-workspace-right-offset": `calc(${isSidebarInline ? sidebarWidth / 2 : 0}px + var(--app-workspace-half-width))`,
+          } as CSSProperties
         }
-        open={appSidebar.state === "expanded"}
+        open={isSidebarInline}
         keyboardShortcut={false}
       >
-        {/* The narrow view has no rail and no sidebars. Its titlebar holds
-            the navigation instead. */}
-        {isNarrowView ? null : (
+        {/* The narrow view has no sidebars. Its titlebar holds the
+            navigation instead. Narrow desktop windows show the sidebar over
+            the page while the user has it open. */}
+        {isSidebarInline ? (
           <AppNavigationSidebar
             pathname={pathname}
             selectedTimeDate={selectedTimeDate}
-            state={appSidebar.state}
-            isRailForced={appSidebar.isRailForced}
             onToggle={appSidebar.toggle}
             onStateChange={appSidebar.setState}
           />
-        )}
+        ) : null}
+        {!isNarrowView && appSidebar.isHiddenForced ? (
+          <Sheet
+            open={appSidebar.display === "overlay"}
+            onOpenChange={(open) => {
+              if (!open) closeOverlay();
+            }}
+          >
+            <SheetContent
+              side="left"
+              showCloseButton={false}
+              className="ajour-sidebar-overlay gap-0 p-0 data-[side=left]:w-(--app-sidebar-width) data-[side=left]:sm:max-w-none"
+              style={
+                { "--app-sidebar-width": `${sidebarWidth}px` } as CSSProperties
+              }
+            >
+              <SheetTitle className="sr-only">Navigation</SheetTitle>
+              <AppNavigationSidebar
+                pathname={pathname}
+                selectedTimeDate={selectedTimeDate}
+                overlay
+                onToggle={appSidebar.toggle}
+                onStateChange={appSidebar.setState}
+              />
+            </SheetContent>
+          </Sheet>
+        ) : null}
 
         <div className="ajour-app-workspace">
           {/* Workspace titlebar. The sidebar owns the window's left chrome, except
@@ -741,6 +748,13 @@ export function AppShell() {
                   isDesktopShell && "desktop-shell-nav-main",
                 )}
               >
+                {isNarrowView || isSidebarInline ? null : (
+                  <SidebarToggleButton
+                    label="Show sidebar"
+                    onToggle={appSidebar.toggle}
+                    className={cn(isDesktopShell && "desktop-no-drag")}
+                  />
+                )}
                 <AppMenuBar />
                 {isNarrowView ? (
                   <NarrowSectionSwitcher
@@ -786,6 +800,7 @@ export function AppShell() {
 
               <GlobalTimerBar
                 date={selectedTimeDate}
+                showsFloatingDock={appSidebar.display === "none"}
                 onSubmit={() => {
                   if (isTimeActive && /^\/time\/[^/]+$/.test(pathname)) {
                     void navigate({

@@ -119,17 +119,24 @@ Decided in [App shell and collapsible sidebar](https://github.com/les-cabochons/
 
 ### Desktop widths
 
-- The app sidebar has two states: expanded (logo and labels, resizable, see the Backlog sidebar section for widths) and a 52px icon rail (icons with tooltips). Time, Backlog and Projects sit at the top, and Settings at the bottom.
-- The expanded sidebar lists backlog items below Time, Backlog and Projects. The rail does not. See the Backlog sidebar section.
-- Cmd+B (Ctrl+B on Windows) and a button next to the logo toggle it. The View menu gets "Show sidebar" or "Hide sidebar" once the menu bar exists. There is no second shortcut.
-- The state is saved per device. Below 1100px the sidebar collapses to the rail on its own, without changing the saved preference.
+- The app sidebar is expanded (resizable, see the Backlog sidebar section for widths) or hidden. There is no icon rail. From the top: the logo with Search and Hide sidebar, the timer dock, Time, Backlog, Pull requests and Projects, then the work list. Settings sits at the bottom.
+- Cmd+B (Ctrl+B on Windows), Hide sidebar next to the logo and Show sidebar at the start of the titlebar toggle it. The View menu gets "Show sidebar" or "Hide sidebar" once the menu bar exists. There is no second shortcut.
+- The state is saved per device. Below 1100px the sidebar hides on its own, without changing the saved preference. Show sidebar and Cmd+B then open it over the page, and opening a page from it, Escape or a click outside closes it.
 - Settings opens inside the shell. The app sidebar stays visible with Settings active, and the settings pages are listed in a second column next to the page. There is no separate "back" control, because the user never leaves the app.
 - Projects keeps its own list of projects next to the app sidebar, with no collapse control of its own.
-- The titlebar keeps New entry (+), Start (▶), the running entry pill and the totals pill. The date picker only shows in the narrow view.
+- The titlebar keeps New entry (+), Start (▶) and the totals pill. The date picker only shows in the narrow view. The running entry lives in the timer dock, not the titlebar.
+
+### Timer dock
+
+- While an entry runs, the top of the sidebar shows it: a running dot, its title (the backlog item's, else the note, the task or the project), the time counted with seconds, and Stop. With a remaining estimate, a bar shows how much of it the running time uses, with "1.1h left" or "0.4h over", next to the project code and task.
+- Clicking the dock opens the running entry's editor in a popover. Start (▶) in the titlebar starts an empty entry and opens the same editor.
+- With nothing running, the dock shows "Nothing running", today's total and a one-click start for the first item of the list, marked Up next.
+- While the sidebar is not on screen, the dock floats at the bottom left on one line: dot, title, time counted and Stop. It shows only while an entry runs.
+- The window title shows the running entry, such as "● 1:24 · Fix export rounding — Ajour", so it shows on the taskbar or Dock. It changes once a minute and goes back to "Ajour" when nothing runs.
 
 ### Narrow view
 
-Below 768px there is no rail and no sidebar, including the Projects list. See the Narrow view section.
+Below 768px there is no sidebar, including the Projects list. See the Narrow view section.
 
 ## Narrow view
 
@@ -148,7 +155,7 @@ Today's splits at 640px and 1023px go away.
 ### Navigation
 
 - The titlebar holds a segmented switcher for Time and Backlog. The active section shows its label, the other shows only its icon.
-- The running entry pill, the totals pill and New entry stay in the titlebar.
+- The totals pill stays in the titlebar. New entry and Start float at the bottom right, and the floating timer dock joins them while an entry runs. Clicking the dock opens the running entry in the full-width dialog.
 - A cog button at the trailing edge opens Settings. A search button may join it later. See [Keyboard model and command palette](https://github.com/les-cabochons/ajour/issues/18).
 - Settings opens on a list of its pages. Each page has a back arrow to that list.
 - Projects lives inside Settings in the narrow view. The Settings list has one Projects entry that opens the full Projects section: the project list, project detail and the archive. Importing and exporting projects is an action inside that section, not a separate settings page.
@@ -205,7 +212,7 @@ Decided in [Running timer editing and empty duration meaning](https://github.com
 
 ### Editing
 
-- The running entry opens in the same form as every entry. Edit from its menu, or a click on its row or card, opens the side panel in Day and Week. A click on the titlebar's Running pill opens the form in a popover anchored to the pill. The narrow view uses the full-width dialog.
+- The running entry opens in the same form as every entry. Edit from its menu, or a click on its row or card, opens the side panel in Day and Week. A click on the timer dock opens the form in a popover anchored to it. The narrow view uses the full-width dialog.
 - The footer reads Cancel · Stop · Save. Save applies the changes and the entry keeps running. Nothing changes until the user saves. The old live-editing popup goes away.
 - Hours shows the time counted so far and stays editable, so the user can correct a late start before saving.
 - Discard happens at once and shows the Undo toast (see Feedback).
@@ -215,7 +222,7 @@ Decided in [Running timer editing and empty duration meaning](https://github.com
 - In a new entry with empty Hours, Save is disabled with "Enter hours, or press Start", and Enter presses Start. Ajour never saves a 0h entry.
 - With Hours filled, Start counts on from that time: typing 0:30 then Start gives a running entry at 0:30.
 - A running entry is always on today. Starting from another day's form starts the entry today, and the form says "Starts today". An entry that runs past midnight stays on the day it started; Move to… changes that.
-- Starting while another entry runs saves the running one and switches, without a prompt. The button reads Switch instead of Start. The Running pill and the rows show the switch; no message appears.
+- Starting while another entry runs saves the running one and switches, without a prompt. The button reads Switch instead of Start. The timer dock and the rows show the switch; no message appears.
 - Start entry on tasks and backlog items starts on today, as it does now.
 
 ### Date field
@@ -287,7 +294,7 @@ No success toasts. The result shows where the action happened:
 - Submitting a timesheet: the submit flow shows its own result. See [Submit timesheet flow in full and narrow windows](https://github.com/les-cabochons/ajour/issues/24).
 - Imports and exports: the page shows the result inline, such as the file name and counts.
 - A connector sync the user started: the connector shows that it is syncing, then when it last synced.
-- Starting or switching an entry from another page: the Running pill and the row update.
+- Starting or switching an entry from another page: the timer dock and the row update.
 
 ### Errors
 
@@ -503,15 +510,17 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 
 Decided in [Backlog sidebar with settle, snooze and a backlog item page](https://github.com/les-cabochons/ajour/issues/69). The connector side is [#70](https://github.com/les-cabochons/ajour/issues/70). Delayed writes are recorded in [ADR 0001](adr/0001-connector-writes-after-undo-window.md).
 
-The sidebar works like the T3 Code sidebar: navigation at the top, then the work itself.
+The sidebar works like the T3 Code and Linear sidebars: the timer dock, navigation with live counts, then the work itself in one scroll.
 
 ### List
 
-- Below Time, Backlog and Projects, the expanded sidebar lists active backlog items in the Backlog page's current order, custom or priority. There is one ordering.
+- Below the navigation, the sidebar lists active backlog items in the Backlog page's current order, custom or priority. There is one ordering.
+- The navigation rows show live values: today's total next to Time, the number of listed items next to Backlog, and next to Pull requests the number that need the user, as a filled badge when any returned.
+- The work list is one scroll: Up next, then collapsible sections for Backlog (the rest of the list), Pull requests (only while a code host plugin is enabled), Snoozed and Settled. Backlog and Pull requests start open, and every section's state is saved per device. The Backlog and Pull requests tabs are gone.
 - The list holds top-level items and subitems that have their own priority. A subitem without a priority follows its parent and does not show.
 - With priority order, a subitem with its own priority mixes with top-level items by priority. With custom order, it sits right below its parent. If its parent is snoozed or settled, it takes the parent's place.
 - Snoozed, settled and archived items leave the list.
-- The rail and the narrow view have no item list. The Backlog page is the way in.
+- The narrow view has no item list. The Backlog page is the way in.
 
 ### Layout options
 
@@ -527,23 +536,25 @@ Decided after the prototype on branch `prototype/backlog-sidebar`: variant B is 
 - Dragging the sidebar's edge resizes it from 200px to 400px.
 - The default width is 272px for Comfortable and 200px for Compact. It applies until the user drags the edge, or after a double-click on the edge resets it.
 - One dragged width is saved per device. Switching density keeps it.
-- Dragging the edge below 200px snaps the sidebar to the rail, as in VS Code. Dragging the rail's edge outward expands it again at the saved width.
-- The toggle button next to the logo stays visible in both states, so there is always a visible control to show the sidebar again. Cmd+B still toggles it.
+- Dragging the edge below 200px hides the sidebar, as in VS Code, and keeps the saved width for when it shows again.
+- Show sidebar at the start of the titlebar is always visible while the sidebar is hidden. Cmd+B still toggles it.
+- The sidebar over the page in narrow desktop windows uses the saved width and cannot be resized.
 
 ### Rows
 
-- Comfortable: the type icon, the title on up to two lines, and a muted meta line with the external id ("Local" for a manual item), the source state and the remaining estimate, such as "#48213 · Active · 2.5h left". A subitem's meta line shows its parent instead, such as "↳ Login page".
-- Compact: one line with the type icon and the title. A subitem shows its parent after the title in muted text, such as "Fix token refresh · Login page". The title comes first because 200px leaves about 18 characters, and about 8 once the hover actions show.
-- In Comfortable, the hover actions float over the row's top right corner. In Compact, they replace the markers at the end of the line.
+- Every row is one line: the type icon and the title. A subitem shows its parent after the title in muted text, such as "Fix token refresh · Login page".
+- Comfortable rows are 28px and end with the remaining estimate, such as "2.5h". Compact rows are 26px and show no estimate.
+- Hover and keyboard focus swap the type icon for a settle circle and replace the end of the row with Start entry, Snooze… and "…". Nothing floats over the title. Clicking the circle settles; Shift-click asks first.
 - A marker shows on the item with the running entry.
 - A dot shows on a returned item. Opening the item from anywhere, or clicking the dot, clears it.
 - Clicking a row opens the backlog item page.
-- With Show Up next on, the first item of the list shows as a card above the others: type icon, external id, title, markers, and Start entry, Snooze and Settle buttons. Compact shows the buttons as icons only. The list below starts at the second item.
-- Hover and keyboard focus show Start entry, Snooze and Settle. The button always says Settle. Right-click and "…" open the full action set.
+- With Show Up next on, the first item of the list shows above the Backlog section as a highlighted row: type icon, title, a meta line with the external id ("Local" for a manual item), the source state and the remaining estimate, such as "#48213 · Active · 2.5h left", and a Start entry button that is always visible. The Backlog section starts at the second item.
+- Right-click and "…" open the full action set.
+- Pull request rows are one line too: the pull request icon, the title (bold when returned), and its reason and age, such as "Review · 2h". Hover and focus show "…".
 
 ### Snoozed and Settled sections
 
-- Two collapsible sections follow the list: "Snoozed (n)", then "Settled". Both start collapsed. Their state is saved per device.
+- Two collapsible sections end the list: "Snoozed n", then "Settled". Both start collapsed. Their state is saved per device.
 - Snoozed lists items by the time they return, and each row shows it, such as "Tomorrow 9:00". The hover action is Unsnooze. An unsnoozed item goes back to the list with no dot.
 - Settled lists every settled item, newest first, 20 at a time with "Show more". Subitems settled along with their parent have no row of their own: they show on the parent's page. A subitem that has its own priority and isn't in a done state keeps its own state, so it gets its own row when it is settled. The hover action is Unsettle. Archived items are not listed. They live in the Backlog page's Archived view.
 - Clicking a row in either section opens the backlog item page.

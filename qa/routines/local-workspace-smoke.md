@@ -27,17 +27,17 @@ Confirm that a tester can open the local daily time workspace and reach its prim
 2. Open `http://127.0.0.1:4173/time/today` in a browser.
    - Expected: The daily time workspace loads without asking for account credentials.
 3. Find the desktop primary navigation sidebar.
-   - Expected: The tinted sidebar reaches the top and bottom of the window, `Time`, `Backlog`, and `Projects` are visible near the top, `Settings` is aligned to the bottom, and `Time` is the current page.
+   - Expected: The tinted sidebar reaches the top and bottom of the window, the timer dock reads `Nothing running`, `Time`, `Backlog`, and `Projects` are visible below it with their counts, `Settings` is aligned to the bottom, and `Time` is the current page.
    - On Windows, the timer controls do not sit beneath minimize, maximize, or close. On macOS, the traffic lights occupy the reserved strip above the sidebar brand and navigation.
 4. Find the `Submit week` action.
    - Expected: The action is visible and enabled. On a window wider than 1640px, the day labels remain centered in a 1440px column while the day color band, table header background, and row separators stretch to both workspace edges without an enclosing outer border.
 5. Open Settings from the sidebar.
    - Expected: The primary sidebar stays visible with `Settings` current, and the settings pages are listed in a second column beside it. There is no `Back` action.
-6. Select `Collapse sidebar` next to the logo, reload, then press Cmd+B (Ctrl+B outside macOS).
-   - Expected: The sidebar becomes a 52px icon rail, stays a rail after the reload, and expands again with the shortcut. Narrowing the window below 1100px shows the rail; widening it again restores the expanded sidebar.
+6. Start an entry with Start in the titlebar, close its editor, select `Hide sidebar` next to the logo, reload, then press Cmd+B (Ctrl+B outside macOS).
+   - Expected: The timer dock shows the running entry and the window title starts with `●`. Hiding the sidebar leaves `Show sidebar` at the start of the titlebar and the running entry floating at the bottom left. The sidebar stays hidden after the reload and shows again with the shortcut. Narrowing the window below 1100px hides it; `Show sidebar` then opens it over the page, and widening the window restores the expanded sidebar.
 7. Open Projects.
    - Expected: The primary sidebar remains visible beside a fully expanded Projects sidebar; the Projects sidebar begins directly at the primary sidebar edge, the detail pane is left-aligned after it, and project labels are not collapsed to icons.
-   - At a width between 641px and 1023px, the primary sidebar is a 52px rail and the Projects sidebar a 48px rail; project actions and archived projects remain reachable.
+   - At a width between 768px and 1099px, the primary sidebar is hidden and the Projects sidebar is a 48px rail; project actions and archived projects remain reachable.
 8. Open Backlog.
    - Expected: The Backlog header background and row separators meet both workspace edges, their labels remain centered in the 1440px content column on very wide windows, the surface fills the available height, and there is no rounded outer card.
 

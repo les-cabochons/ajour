@@ -550,8 +550,58 @@ When("I widen the app back to a desktop width", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
 });
 
-When("I collapse the app sidebar with its button", async ({ page }) => {
-  await page.getByRole("button", { name: "Collapse sidebar" }).click();
+When("I hide the app sidebar with its button", async ({ page }) => {
+  await page.getByRole("button", { name: "Hide sidebar" }).click();
+});
+
+When("I show the app sidebar from the titlebar", async ({ page }) => {
+  await page.getByRole("button", { name: "Show sidebar" }).click();
+});
+
+When("I start an empty entry from the titlebar", async ({ page }) => {
+  await page
+    .locator(".ajour-nav")
+    .getByRole("button", { name: "Start", exact: true })
+    .click();
+});
+
+Then("the timer dock opens the running entry", async ({ page }) => {
+  const dock = page
+    .getByRole("navigation", { name: "Primary navigation" })
+    .getByRole("region", { name: "Running entry" });
+  await expect(dock).toContainText("Untitled entry");
+  await expect(
+    page.getByRole("dialog").getByRole("button", { name: "Stop", exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+Then("the window title shows the running entry", async ({ page }) => {
+  await expect(page).toHaveTitle(/^● 0:00 · Untitled entry — Ajour$/);
+});
+
+Then("the running entry floats at the bottom left", async ({ page }) => {
+  const dock = page.locator(".ajour-floating-dock-desktop");
+  await expect(dock).toContainText("Untitled entry");
+  const [box, viewport] = await Promise.all([
+    dock.boundingBox(),
+    page.evaluate(() => ({ height: window.innerHeight })),
+  ]);
+  expect(box?.x).toBe(16);
+  expect((box?.y ?? 0) + (box?.height ?? 0)).toBe(viewport.height - 16);
+});
+
+When("I stop the running entry from the floating dock", async ({ page }) => {
+  await page
+    .locator(".ajour-floating-dock-desktop")
+    .getByRole("button", { name: "Stop", exact: true })
+    .click();
+});
+
+Then("nothing runs and the window title is plain", async ({ page }) => {
+  await expect(page.locator(".ajour-floating-dock-desktop")).toHaveCount(0);
+  await expect(page).toHaveTitle("Ajour");
 });
 
 When("I reload the app", async ({ page }) => {
@@ -913,7 +963,7 @@ When("I start a fresh timer from the Time page", async ({ page }) => {
 });
 
 When(
-  "I open the running entry from the titlebar on the Backlog page",
+  "I open the running entry from the timer dock on the Backlog page",
   async ({ page }) => {
     await page.goto("/backlog");
     await page.getByRole("button", { name: "Edit the running entry" }).click();
@@ -938,9 +988,8 @@ When(
 );
 
 Then("the running entry keeps running from one hour", async ({ page }) => {
-  await expect(
-    page.getByRole("button", { name: "Stop", exact: true }),
-  ).toHaveCount(0);
+  // The editor closed. The timer dock keeps its own Stop.
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   const state = await page.evaluate(() =>
     JSON.parse(window.localStorage.getItem("ajour.local-state.v2") ?? "null"),
   );
@@ -1347,17 +1396,24 @@ Then("the app sidebar is expanded", async ({ page }) => {
   ).toBeVisible();
 });
 
-Then("the app sidebar is an icon rail", async ({ page }) => {
-  await expectAppSidebarWidth(page, 52);
-  const primaryNavigation = page.getByRole("navigation", {
-    name: "Primary navigation",
-  });
+Then("the app sidebar is hidden", async ({ page }) => {
   await expect(
-    primaryNavigation.getByRole("link", { name: "Time" }),
+    page.getByRole("navigation", { name: "Primary navigation" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Show sidebar" }),
   ).toBeVisible();
+});
+
+Then("the app sidebar opens over the page", async ({ page }) => {
+  const overlay = page.getByRole("dialog", { name: "Navigation" });
   await expect(
-    primaryNavigation.getByText("Time", { exact: true }),
-  ).toBeHidden();
+    overlay.getByRole("navigation", { name: "Primary navigation" }),
+  ).toBeVisible();
+  // Opening a page from it closes it.
+  await overlay.getByRole("link", { name: "Backlog" }).click();
+  await expect(page).toHaveURL(/\/backlog$/);
+  await expect(overlay).toHaveCount(0);
 });
 
 Then(
@@ -1377,7 +1433,9 @@ Then(
     await expect(
       settingsNavigation.getByRole("link", { name: "General" }),
     ).toHaveAttribute("aria-current", "page");
-    await expect(page.getByRole("button", { name: "Back" })).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Back", exact: true }),
+    ).toHaveCount(0);
 
     const [primaryNavigationBox, settingsNavigationBox] = await Promise.all([
       primaryNavigation.boundingBox(),
@@ -1425,7 +1483,9 @@ Then(
     const projectsNavigation = page.getByRole("navigation", {
       name: "Projects",
     });
-    await expectAppSidebarWidth(page, 52);
+    await expect(
+      page.getByRole("navigation", { name: "Primary navigation" }),
+    ).toHaveCount(0);
     await expect(projectsNavigation).toBeVisible();
     const projectsNavigationBox = await projectsNavigation.boundingBox();
     expect(projectsNavigationBox?.width).toBe(48);

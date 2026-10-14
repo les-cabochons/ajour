@@ -118,7 +118,7 @@ Feature: Backlog list and board views
     Then the other peek can start an entry
     When I peek at the Backlog parent
     Then the parent peek cannot restart its running entry
-    When I stop the Backlog running entry from the titlebar
+    When I stop the Backlog running entry from the timer dock
     Then the parent peek can start a new entry after Stop
 
   Scenario: Explain the disabled Start icon in the compact sidebar
@@ -127,7 +127,7 @@ Feature: Backlog list and board views
     And I start an entry from the Backlog peek
     Then the sidebar Start icon explains that the parent is already running
     And the running entry has not restarted
-    When I stop the Backlog running entry from the titlebar
+    When I stop the Backlog running entry from the timer dock
     Then the sidebar Start icon enables the parent without a disabled reason
 
   Scenario Outline: Explain the running item's Start icon in rows and cards
@@ -136,7 +136,7 @@ Feature: Backlog list and board views
     And I start an entry from the Backlog peek
     Then the parent Start icon explains that it is already running
     And the running entry has not restarted
-    When I stop the Backlog running entry from the titlebar
+    When I stop the Backlog running entry from the timer dock
     Then the parent Start icon is enabled without a disabled reason
 
     Examples:
@@ -149,7 +149,7 @@ Feature: Backlog list and board views
     And I start an entry from the Backlog peek
     Then Start entry is disabled for the running item in the "<control>"
     And the running entry has not restarted
-    When I stop the Backlog running entry from the titlebar
+    When I stop the Backlog running entry from the timer dock
     Then Start entry is enabled after Stop in the "<control>"
 
     Examples:

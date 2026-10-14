@@ -314,18 +314,21 @@ Then("the other peek can start an entry", async ({ page }) => {
   await page.keyboard.press("Escape");
   await expect(page.getByRole("menu")).toHaveCount(0);
 });
-When("I stop the Backlog running entry from the titlebar", async ({ page }) => {
-  await page
-    .getByRole("button", { name: "Edit the running entry", exact: true })
-    .click();
-  await page
-    .locator('[data-slot="popover-content"]')
-    .getByRole("button", { name: "Stop", exact: true })
-    .click();
-  await expect(
-    page.getByRole("button", { name: "Edit the running entry", exact: true }),
-  ).toHaveCount(0);
-});
+When(
+  "I stop the Backlog running entry from the timer dock",
+  async ({ page }) => {
+    await page
+      .getByRole("button", { name: "Edit the running entry", exact: true })
+      .click();
+    await page
+      .locator('[data-slot="popover-content"]')
+      .getByRole("button", { name: "Stop", exact: true })
+      .click();
+    await expect(
+      page.getByRole("button", { name: "Edit the running entry", exact: true }),
+    ).toHaveCount(0);
+  },
+);
 Then("the parent peek can start a new entry after Stop", async ({ page }) => {
   const start = page
     .getByRole("complementary", { name: "Backlog item peek" })
@@ -539,7 +542,10 @@ async function inspectBacklogStart(
       const row = page
         .getByRole("navigation", { name: "Primary navigation" })
         .locator('[data-backlog-item-id="parent"]');
-      const start = row.getByRole("button", { name: "Start", exact: true });
+      const start = row.getByRole("button", {
+        name: "Start entry",
+        exact: true,
+      });
       if (running) await expect(start).toBeDisabled();
       else await expect(start).toBeEnabled();
       await row.click({ button: "right" });

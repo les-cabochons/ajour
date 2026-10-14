@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   APP_SIDEBAR_STORAGE_KEY,
   readAppSidebarPreference,
-  resolveAppSidebarState,
+  resolveAppSidebarDisplay,
   writeAppSidebarPreference,
 } from "./app-sidebar";
 
@@ -35,28 +35,39 @@ describe("app sidebar preference", () => {
     ).toBe("expanded");
   });
 
-  it("reads back the saved rail", () => {
+  it("reads back the saved hidden sidebar", () => {
     const storage = memoryStorage();
-    writeAppSidebarPreference(storage, "rail");
-    expect(readAppSidebarPreference(storage)).toBe("rail");
+    writeAppSidebarPreference(storage, "hidden");
+    expect(readAppSidebarPreference(storage)).toBe("hidden");
+  });
+
+  it("reads a rail saved before the rail was removed as hidden", () => {
+    expect(
+      readAppSidebarPreference(
+        memoryStorage({ [APP_SIDEBAR_STORAGE_KEY]: "rail" }),
+      ),
+    ).toBe("hidden");
   });
 
   it("falls back to expanded when storage is blocked", () => {
     expect(readAppSidebarPreference(throwingStorage)).toBe("expanded");
     expect(() =>
-      writeAppSidebarPreference(throwingStorage, "rail"),
+      writeAppSidebarPreference(throwingStorage, "hidden"),
     ).not.toThrow();
   });
 });
 
-describe("resolveAppSidebarState", () => {
-  it("follows the preference at wide widths", () => {
-    expect(resolveAppSidebarState("expanded", false)).toBe("expanded");
-    expect(resolveAppSidebarState("rail", false)).toBe("rail");
+describe("resolveAppSidebarDisplay", () => {
+  it("follows the preference at wide widths and ignores the overlay", () => {
+    expect(resolveAppSidebarDisplay("expanded", false, false)).toBe("inline");
+    expect(resolveAppSidebarDisplay("hidden", false, false)).toBe("none");
+    expect(resolveAppSidebarDisplay("hidden", false, true)).toBe("none");
   });
 
-  it("shows the rail when the window is narrow, whatever the preference", () => {
-    expect(resolveAppSidebarState("expanded", true)).toBe("rail");
-    expect(resolveAppSidebarState("rail", true)).toBe("rail");
+  it("hides the sidebar in narrow windows until the user opens it over the page", () => {
+    expect(resolveAppSidebarDisplay("expanded", true, false)).toBe("none");
+    expect(resolveAppSidebarDisplay("hidden", true, false)).toBe("none");
+    expect(resolveAppSidebarDisplay("expanded", true, true)).toBe("overlay");
+    expect(resolveAppSidebarDisplay("hidden", true, true)).toBe("overlay");
   });
 });

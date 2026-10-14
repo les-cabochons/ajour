@@ -140,6 +140,14 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Plugins tabs are All, Connectors, and Schemas. User-facing text says schema, not data shape, and time entries, not time logs.
 - [x] Labels, headings, buttons, and aria-labels use sentence case.
 
+## Sidebar redesign, 2026-10-13
+
+- [x] The app sidebar is expanded or hidden; the 52px rail is removed. Below 1100px it hides on its own and opens over the page in a sheet. A saved "rail" reads as hidden.
+- [x] A timer dock heads the sidebar with the running entry, its time, Stop and the share of the remaining estimate used, or today's total and a start for Up next. It replaces the titlebar's running pill. While the sidebar is off screen the dock floats at the bottom left, and in the narrow view it sits beside the entry buttons.
+- [x] The window title shows the running entry, such as "● 1:24 · Fix export rounding — Ajour".
+- [x] Navigation rows show today's total, the backlog count and the pull requests that need the user. The Backlog and Pull requests tabs become collapsible sections of one work list, with one-line rows, an Up next row instead of the card, and a settle circle on hover.
+- [x] Verified with web unit tests, type checks, the Chromium acceptance suite and browser checks at 1440px, 1000px (overlay) and 420px (narrow view).
+
 ## App shell, 2026-10-11
 
 - [x] The app sidebar collapses to a 52px icon rail from a button next to the logo or Cmd/Ctrl+B. The choice is saved per device, and below 1100px the rail is forced without changing it.

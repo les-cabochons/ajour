@@ -1,14 +1,9 @@
-import {
-  useEffect,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type PointerEvent,
-} from "react";
+import { useMemo, useRef, type KeyboardEvent, type PointerEvent } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   RiFolderChartLine as FolderKanban,
   RiListCheck3 as ListTodo,
+  RiSearchLine as SearchIcon,
   RiSettings3Line as Settings,
   RiSideBarLine as SidebarIcon,
   RiTimerLine as Timer,
@@ -16,7 +11,6 @@ import {
 } from "@remixicon/react";
 import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import {
   Sidebar,
   SidebarContent,
@@ -32,10 +26,18 @@ import {
   ShortcutTooltipLabel,
   TooltipButton,
 } from "@/components/tooltip-button";
-import type { AppSidebarState } from "@/lib/app-sidebar";
+import { selectSidebarBacklogItems } from "@/domain/backlog/backlog-item-lifecycle";
+import { isPullRequestReturned } from "@/domain/pull-requests/pull-request-lifecycle";
+import { formatClockDuration } from "@/domain/time/duration";
+import { openCommandPalette } from "@/features/command-palette/command-palette";
 import { SidebarBacklogList } from "@/features/layout/sidebar-backlog-list";
-import { SidebarPullRequests } from "@/features/layout/sidebar-pull-requests";
-import { useCodeHostConnections } from "@/lib/code-host-connections";
+import {
+  SidebarPullRequests,
+  useSidebarPullRequests,
+} from "@/features/layout/sidebar-pull-requests";
+import { TimerDock, useRunningEntry } from "@/features/layout/timer-dock";
+import type { AppSidebarState } from "@/lib/app-sidebar";
+import { useLocalState } from "@/lib/local-hooks";
 import {
   SIDEBAR_MIN_WIDTH,
   clampSidebarWidth,
@@ -43,28 +45,26 @@ import {
   updateSidebarLayout,
   useSidebarLayout,
 } from "@/lib/sidebar-layout";
+import { useNow } from "@/lib/use-now";
+import { cn } from "@/lib/utils";
 
-/** How far past an edge the pointer goes before the sidebar snaps open or closed. */
+/** How far past the minimum width the pointer goes before the sidebar hides. */
 const SNAP_DISTANCE = 48;
-const RAIL_WIDTH = 52;
 const KEYBOARD_STEP = 16;
 
 /**
- * The sidebar's right edge. Dragging resizes the expanded sidebar from 200px
- * to 400px. Past the minimum it snaps to the rail, and dragging the rail's
- * edge outward expands it again, as in VS Code. A double-click resets the
- * width to the density's default.
+ * The sidebar's right edge. Dragging resizes the sidebar from 200px to 400px.
+ * Past the minimum it hides, keeping the width it had for next time, as in VS
+ * Code. A double-click resets the width to the density's default.
  */
 function SidebarResizeHandle({
-  state,
   onStateChange,
 }: {
-  state: AppSidebarState;
   onStateChange: (state: AppSidebarState) => void;
 }) {
   const layout = useSidebarLayout();
   const leftRef = useRef(0);
-  // The width before the drag, so a snap to the rail keeps it for next time.
+  // The width before the drag, so hiding keeps it for next time.
   const startWidthRef = useRef<number | undefined>(undefined);
 
   function handlePointerDown(event: PointerEvent<HTMLDivElement>) {
@@ -80,25 +80,16 @@ function SidebarResizeHandle({
     if (!event.currentTarget.hasPointerCapture(event.pointerId)) return;
     const width = event.clientX - leftRef.current;
 
-    if (state === "rail") {
-      if (width > RAIL_WIDTH + SNAP_DISTANCE) {
-        event.currentTarget.releasePointerCapture(event.pointerId);
-        onStateChange("expanded");
-      }
-      return;
-    }
-
     if (width < SIDEBAR_MIN_WIDTH - SNAP_DISTANCE) {
       event.currentTarget.releasePointerCapture(event.pointerId);
       updateSidebarLayout({ width: startWidthRef.current });
-      onStateChange("rail");
+      onStateChange("hidden");
       return;
     }
     updateSidebarLayout({ width: clampSidebarWidth(width) });
   }
 
   function handleKeyDown(event: KeyboardEvent<HTMLDivElement>) {
-    if (state !== "expanded") return;
     const step =
       event.key === "ArrowLeft"
         ? -KEYBOARD_STEP
@@ -118,31 +109,16 @@ function SidebarResizeHandle({
       role="separator"
       aria-orientation="vertical"
       aria-label="Resize sidebar"
-      aria-valuenow={
-        state === "expanded" ? resolveSidebarWidth(layout) : RAIL_WIDTH
-      }
+      aria-valuenow={resolveSidebarWidth(layout)}
       tabIndex={0}
       className="ajour-sidebar-resize-handle"
       onPointerDown={handlePointerDown}
       onPointerMove={handlePointerMove}
-      onDoubleClick={() =>
-        state === "expanded" && updateSidebarLayout({ width: undefined })
-      }
+      onDoubleClick={() => updateSidebarLayout({ width: undefined })}
       onKeyDown={handleKeyDown}
     />
   );
 }
-
-const primaryItems = [
-  { to: "/time/$date", label: "Time", icon: Timer, shortcut: "go.time" },
-  { to: "/backlog", label: "Backlog", icon: ListTodo, shortcut: "go.backlog" },
-  {
-    to: "/projects",
-    label: "Projects",
-    icon: FolderKanban,
-    shortcut: "go.projects",
-  },
-] as const;
 
 export function isAppNavigationItemActive(
   pathname: string,
@@ -165,24 +141,26 @@ export function isAppNavigationItemActive(
   return pathname === to;
 }
 
-function SidebarToggleButton({
-  state,
+/** The sidebar toggle, beside the logo and in the titlebar while the sidebar is hidden. */
+export function SidebarToggleButton({
+  label,
   onToggle,
+  className,
 }: {
-  state: AppSidebarState;
+  label: string;
   onToggle: () => void;
+  className?: string;
 }) {
-  const label = state === "expanded" ? "Collapse sidebar" : "Expand sidebar";
   return (
     <TooltipButton
       label={label}
       shortcut="app.toggle-sidebar"
-      side="right"
+      side="bottom"
       render={
         <Button
           variant="ghost"
           size="icon-sm"
-          className="ajour-app-sidebar-toggle"
+          className={cn("ajour-app-sidebar-toggle", className)}
           onClick={onToggle}
         />
       }
@@ -192,50 +170,103 @@ function SidebarToggleButton({
   );
 }
 
+/** The live value at the end of a navigation row. */
+function NavigationCount({
+  value,
+  highlighted = false,
+}: {
+  value?: string | number;
+  highlighted?: boolean;
+}) {
+  if (value === undefined) return null;
+  return (
+    <span
+      className={cn(
+        "ml-auto shrink-0 text-[11px] font-normal tabular-nums",
+        highlighted
+          ? "flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-foreground px-1.5 font-semibold text-background"
+          : "text-muted-foreground",
+      )}
+    >
+      {value}
+    </span>
+  );
+}
+
 /**
- * The app sidebar on desktop widths. It stays visible on every page, Settings
- * included. `state` comes from `useAppSidebar`; when the window is too narrow
- * the rail is forced and the toggle gives way to the logo mark.
+ * The app sidebar on desktop widths: the timer dock, navigation with live
+ * counts, then the work list. It shows beside the page, or over it in narrow
+ * desktop windows (`overlay`), where it cannot be resized. `useAppSidebar`
+ * owns whether it shows.
  */
 export function AppNavigationSidebar({
   pathname,
   selectedTimeDate,
-  state,
-  isRailForced,
+  overlay = false,
   onToggle,
   onStateChange,
 }: {
   pathname: string;
   selectedTimeDate: string;
-  state: AppSidebarState;
-  isRailForced: boolean;
+  overlay?: boolean;
   onToggle: () => void;
   onStateChange: (state: AppSidebarState) => void;
 }) {
+  const state = useLocalState();
+  const now = useNow();
   const isSettingsActive = isAppNavigationItemActive(pathname, "/settings");
-  const showsLogo = state === "expanded" || isRailForced;
-  const showsToggle = !isRailForced;
-  const { groups } = useCodeHostConnections();
-  const [workList, setWorkList] = useState("backlog");
-  useEffect(() => {
-    if (pathname.startsWith("/pull-requests")) setWorkList("pull-requests");
-    else if (pathname.startsWith("/backlog")) setWorkList("backlog");
-  }, [pathname]);
-  const items = groups.length
-    ? [
-        ...primaryItems,
-        {
-          to: "/pull-requests",
-          label: "Pull requests",
-          icon: PullRequestIcon,
-          shortcut: undefined,
-        } as const,
-      ]
-    : primaryItems;
+  const pullRequests = useSidebarPullRequests();
+  const { todayTotalMs } = useRunningEntry(30_000);
+  const listed = useMemo(
+    () => selectSidebarBacklogItems(state, now),
+    [state, now],
+  );
+  const returnedPullRequests = pullRequests.items.filter((item) =>
+    isPullRequestReturned(item, pullRequests.now),
+  ).length;
+
+  const items = [
+    {
+      to: "/time/$date",
+      label: "Time",
+      icon: Timer,
+      shortcut: "go.time",
+      count: formatClockDuration(todayTotalMs),
+    },
+    {
+      to: "/backlog",
+      label: "Backlog",
+      icon: ListTodo,
+      shortcut: "go.backlog",
+      count: listed.length,
+    },
+    ...(pullRequests.enabled
+      ? [
+          {
+            to: "/pull-requests",
+            label: "Pull requests",
+            icon: PullRequestIcon,
+            shortcut: undefined,
+            count: returnedPullRequests || pullRequests.items.length,
+            highlighted: returnedPullRequests > 0,
+          } as const,
+        ]
+      : []),
+    {
+      to: "/projects",
+      label: "Projects",
+      icon: FolderKanban,
+      shortcut: "go.projects",
+      count: undefined,
+    },
+  ] as const;
 
   return (
     <Sidebar
-      className="ajour-shell-sidebar ajour-app-navigation-sidebar"
+      className={cn(
+        "ajour-shell-sidebar ajour-app-navigation-sidebar",
+        overlay && "ajour-shell-sidebar-overlay",
+      )}
       innerClassName="ajour-shell-sidebar-inner"
       collapsible="none"
       role="navigation"
@@ -246,11 +277,28 @@ export function AppNavigationSidebar({
         aria-hidden="true"
       />
       <SidebarHeader className="ajour-app-sidebar-header">
-        {showsLogo ? <BrandLogo linked /> : null}
-        {showsToggle ? (
-          <SidebarToggleButton state={state} onToggle={onToggle} />
-        ) : null}
+        <BrandLogo linked />
+        <span className="ml-auto flex items-center gap-0.5">
+          <TooltipButton
+            label="Search"
+            shortcut="app.command-palette"
+            side="bottom"
+            render={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="ajour-app-sidebar-toggle"
+                onClick={openCommandPalette}
+              />
+            }
+          >
+            <SearchIcon />
+          </TooltipButton>
+          <SidebarToggleButton label="Hide sidebar" onToggle={onToggle} />
+        </span>
       </SidebarHeader>
+
+      <TimerDock upNext={listed[0]} />
 
       <SidebarContent>
         <SidebarGroup>
@@ -262,7 +310,7 @@ export function AppNavigationSidebar({
                 return (
                   <SidebarMenuItem key={item.to}>
                     <SidebarMenuButton
-                      className="ajour-app-sidebar-button"
+                      className="ajour-app-sidebar-button h-[30px]"
                       tooltip={{
                         children: (
                           <ShortcutTooltipLabel
@@ -287,6 +335,12 @@ export function AppNavigationSidebar({
                     >
                       <Icon />
                       <span>{item.label}</span>
+                      <NavigationCount
+                        value={item.count}
+                        highlighted={
+                          "highlighted" in item ? item.highlighted : false
+                        }
+                      />
                     </SidebarMenuButton>
                   </SidebarMenuItem>
                 );
@@ -294,53 +348,16 @@ export function AppNavigationSidebar({
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        {state === "expanded" ? (
-          groups.length ? (
-            <Tabs
-              value={workList}
-              onValueChange={(value) => {
-                if (value === "backlog" || value === "pull-requests")
-                  setWorkList(value);
-              }}
-              className="min-h-0 flex-1 gap-0"
-            >
-              <TabsList
-                variant="line"
-                activateOnFocus
-                aria-label="Sidebar work lists"
-                className="mx-2 mb-2 w-auto shrink-0"
-              >
-                <TabsTrigger value="backlog" className="px-2">
-                  Backlog
-                </TabsTrigger>
-                <TabsTrigger value="pull-requests" className="px-2">
-                  Pull requests
-                </TabsTrigger>
-              </TabsList>
-              <TabsContent
-                value="backlog"
-                className="flex min-h-0 flex-1 flex-col"
-              >
-                <SidebarBacklogList pathname={pathname} />
-              </TabsContent>
-              <TabsContent
-                value="pull-requests"
-                className="flex min-h-0 flex-1 flex-col"
-              >
-                <SidebarPullRequests pathname={pathname} />
-              </TabsContent>
-            </Tabs>
-          ) : (
-            <SidebarBacklogList pathname={pathname} />
-          )
-        ) : null}
+        <SidebarBacklogList pathname={pathname}>
+          <SidebarPullRequests pathname={pathname} />
+        </SidebarBacklogList>
       </SidebarContent>
 
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
-              className="ajour-app-sidebar-button"
+              className="ajour-app-sidebar-button h-[30px]"
               tooltip={{
                 children: (
                   <ShortcutTooltipLabel
@@ -364,9 +381,7 @@ export function AppNavigationSidebar({
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
-      {isRailForced ? null : (
-        <SidebarResizeHandle state={state} onStateChange={onStateChange} />
-      )}
+      {overlay ? null : <SidebarResizeHandle onStateChange={onStateChange} />}
     </Sidebar>
   );
 }
