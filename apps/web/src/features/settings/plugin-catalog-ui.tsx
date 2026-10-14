@@ -3,7 +3,6 @@ import {
   RiArrowRightLine as ArrowRight,
   RiPuzzle2Line as Puzzle,
 } from "@remixicon/react";
-import { AppPanel } from "@/components/app-surface";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import type {
@@ -118,7 +117,7 @@ function PluginCapabilityBand({ entry }: { entry: PluginCatalogEntry }) {
 
   if (hero && !heroFailed) {
     return (
-      <div className="min-h-40 overflow-hidden rounded-lg border border-border/70 bg-[var(--surface-low)] desktop:aspect-[16/5]">
+      <div className="min-h-40 overflow-hidden rounded-lg bg-[var(--surface-low)] desktop:aspect-[16/5]">
         <img
           className="size-full min-h-40 object-cover"
           src={hero}
@@ -133,47 +132,42 @@ function PluginCapabilityBand({ entry }: { entry: PluginCatalogEntry }) {
   const startLabel = flow.start;
   const endLabel = flow.end;
 
+  // Without artwork the band is a plain line of text: where data comes
+  // from, the plugin, and where it lands.
   return (
-    <AppPanel
-      as="section"
-      className="min-h-40 justify-center gap-5 overflow-hidden bg-[var(--surface-low)] p-5 desktop:aspect-[16/5]"
+    <section
+      className="flex flex-col gap-3"
       aria-label={`${entry.title} capability overview`}
     >
-      <div className="flex min-w-0 items-center justify-center gap-2 text-xs text-muted-foreground desktop:gap-4 desktop:text-sm">
-        <span className="min-w-0 rounded-[var(--control-radius)] border border-border/70 bg-background px-2.5 py-2 text-center desktop:px-4">
-          {startLabel}
-        </span>
+      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted-foreground">
+        <span className="min-w-0">{startLabel}</span>
         <ArrowRight className="size-4 shrink-0" aria-hidden="true" />
-        <span className="min-w-0 rounded-[var(--control-radius)] border border-border/70 bg-background px-2.5 py-2 text-center font-medium text-foreground desktop:px-4">
+        <span className="min-w-0 font-medium text-foreground">
           {entry.title}
         </span>
         <ArrowRight className="size-4 shrink-0" aria-hidden="true" />
-        <span className="min-w-0 rounded-[var(--control-radius)] border border-border/70 bg-background px-2.5 py-2 text-center desktop:px-4">
-          {endLabel}
-        </span>
+        <span className="min-w-0">{endLabel}</span>
       </div>
-      <div className="flex flex-wrap justify-center gap-2">
+      <div className="flex flex-wrap gap-2">
         {entry.features.map((feature) => (
           <Badge key={feature} variant="outline">
             {featureDisplayName(feature)}
           </Badge>
         ))}
       </div>
-    </AppPanel>
+    </section>
   );
 }
 
 function PluginCapabilityList({ entry }: { entry: PluginCatalogEntry }) {
   return (
-    <div className="divide-y divide-border/60 border-y border-border/60">
+    <div className="flex flex-col gap-4">
       {entry.features.map((feature) => (
-        <div key={feature} className="flex items-start gap-3 py-4">
-          <span
-            className="inline-flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-[var(--surface-low)]"
+        <div key={feature} className="flex items-start gap-3">
+          <Puzzle
+            className="mt-0.5 size-4 shrink-0 text-muted-foreground"
             aria-hidden="true"
-          >
-            <Puzzle className="size-4 text-muted-foreground" />
-          </span>
+          />
           <div className="min-w-0">
             <p className="text-sm font-medium text-foreground">
               {featureDisplayName(feature)}
@@ -266,11 +260,11 @@ function PluginInfoList({
   ];
 
   return (
-    <dl className="border-y border-border/60">
+    <dl className="flex flex-col gap-3">
       {rows.map(([label, value]) => (
         <div
           key={label}
-          className="grid gap-1 border-b border-border/60 py-3 last:border-b-0 desktop:grid-cols-[8rem_minmax(0,1fr)] desktop:gap-4"
+          className="grid gap-1 desktop:grid-cols-[8rem_minmax(0,1fr)] desktop:gap-4"
         >
           <dt className="text-xs text-[var(--text-tertiary)]">{label}</dt>
           <dd className="min-w-0 text-sm text-foreground">{value}</dd>

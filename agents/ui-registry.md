@@ -12,11 +12,11 @@ This registry captures reusable visual patterns already present in Ajour. Update
 - Day rows, Days cards, Week Grid cells, backlog rows and task rows take keyboard focus. Each carries `data-focus-column` (the day index in the Week, "0" in lists) inside a `data-focus-scope` container, and its `onKeyDown` calls `handleItemKeyDown` from `lib/item-keys.ts`. Arrows move focus within the scope; the item keys in the registry (scope "item") run the action that the kind's `ActionKeys` map names, such as `TIME_ENTRY_ACTION_KEYS`; Alt+Up and Alt+Down call the row's reorder, which commits through `getSharedTableStepOrder` in `lib/table-drag.ts` and the same store command as a drag. ".", Shift+F10 and the context menu key open the "…" menu, or the right-click menu on Grid cells. The menus show each action's key from the same map, and the "…" menu gives focus back to its row on close. Grid cells keep their own Enter and digit editing. Project links in the Projects sidebar take Alt+Up and Alt+Down only. After Delete, focus goes to the next row still on screen, so a backlog item's deleted subitems are skipped.
 - Cmd+K (Ctrl+K elsewhere) opens the command palette, `features/command-palette/command-palette.tsx`, and `openCommandPalette()` opens it from buttons such as the Projects list's Search. It lists the focused object's actions, search results across tasks, backlog items and projects, the registry's actions with their keys, and navigation. `command-palette-items.ts` builds and ranks the list. Focus attributes from `lib/focused-object.ts` name the focused object: `data-entry-id` with `data-running-entry`, `data-backlog-item-id`, `data-task-id` and `data-project-id`. Start entry and New entry… run in the palette. New entry… opens the titlebar popover anchored to the object's row while it is on screen, otherwise to the titlebar "+". Other object actions go to their page as `?action=<id>&target=<id>`, which the page runs through `useActionRequest` from `lib/action-request.ts`, so each action keeps one runner. While the Projects page is open, the palette sends every project and task command to it, including opening a project, the archive and Create project, so a task draft is saved first or blocks the command. Items show a disabled reason or hint on a second line, like the "…" menus.
 - A pinned task shows its slot as a small key badge, `PinnedSlotBadge` in `features/projects/pinned-slot.tsx`, on its task row and in the project task picker. "Assign shortcut…" opens `PinnedSlotDialog` from the same file: ten slot buttons that name the task holding each slot, a number key picks a slot, and Clear shortcut frees it. The Projects page owns the picker, so the row menus and the palette's `?action=assign-shortcut` open the same one and write at once. The task panel's Shortcut field, `PinnedSlotField`, opens it too but only changes the draft, which Save writes.
-- In wide windows Settings opens inside the shell. The application sidebar stays with Settings active, and `features/settings/settings-navigation.tsx` lists the settings pages in a 200px second column next to it, built on `CustomSidebar` like the Projects list. There is no Back control.
+- In wide windows Settings opens inside the shell. The application sidebar stays with Settings active, and `features/settings/settings-navigation.tsx` lists the settings pages in a 200px second column next to it, built on `CustomSidebar` like the Projects list, under the App, Work and Data group labels from `getSettingsGroups`. There is no Back control.
 - Projects keeps the application sidebar and adds a permanently expanded 200px project sidebar aligned directly against its right edge, with no collapse control of its own; the project detail pane continues left-to-right from that rail rather than centering the split layout.
 - Breakpoints live in `lib/breakpoints.ts` only: below 768px is the narrow view, 768px to 1099px forces the rail, and 1100px and up follows the saved choice. Scripts use its media queries or `useIsNarrowView` from `lib/use-narrow-view.ts`. Styles use the `narrow`, `desktop` and `forced-rail` Tailwind variants that `lib/tailwind-breakpoints.ts` builds from it, as `@variant narrow { ... }` in CSS or `narrow:` in class names. Do not write width media queries for layout.
 - From 768px to 1099px the Projects sidebar is a 48px icon rail next to the 52px app rail; their links keep accessible names.
-- The narrow view renders no rail and no sidebars. `features/layout/narrow-titlebar.tsx` puts a segmented Time and Backlog switcher at the start of the titlebar (the active section shows its label) and a Settings cog at the trailing edge. Settings opens on a full-width list of its pages, and `features/layout/narrow-navigation.ts` decides each page's back arrow, shown in a bar under the titlebar. The Settings list's Projects entry opens `/projects` as a full-width project list; project detail, the archive and project import and export (`/settings/projects`) lead back to it.
+- The narrow view renders no rail and no sidebars. `features/layout/narrow-titlebar.tsx` puts a segmented Time and Backlog switcher at the start of the titlebar (the active section shows its label) and a Settings cog at the trailing edge. Settings opens on a full-width list of its pages in the same groups: a small tertiary heading per group and 52px rows of icon, label and chevron, with no cards, borders or fills, and `features/layout/narrow-navigation.ts` decides each page's back arrow, shown in a bar under the titlebar. The Settings list's Projects entry opens `/projects` as a full-width project list; project detail, the archive and project import and export (`/settings/projects`) lead back to it.
 - Desktop structural surfaces consume the full area beside the application sidebar. Readable Time and Backlog content stays centered in a column capped at 1440px, while their color bands, table backgrounds, and row separators stretch to the workspace edges; individual pages may apply narrower readable inner columns.
 - The daily Time view is a continuous page surface rather than an outer card: retain internal day and row separators, but do not draw a perimeter around the combined day strip and entry area. The day strip is a `day-viewer` size container: below 840px its padding tightens, and below 720px, as next to the entry side panel, it drops the seven days and the week total.
 - Time and Backlog remove the generic page inset and meet the full workspace edges. Backlog fills the available workspace height and uses full-width internal header/row separators without a rounded outer card.
@@ -34,7 +34,7 @@ This registry captures reusable visual patterns already present in Ajour. Update
 - Use semantic surfaces from `styles.css`: `--surface-lowest`, `--surface-low`, `--surface`, `--surface-high`, and `--surface-highest`.
 - Borders and muted backgrounds carry most hierarchy.
 - Shadows are reserved for popovers, dialogs, drag states, and elevated overlays.
-- App settings surfaces use `AppPanel` from `apps/web/src/components/app-surface.tsx`. Keep `settings-panel` class ownership inside that module.
+- App settings surfaces use `AppPanel` and `SettingRow` from `apps/web/src/components/app-surface.tsx`; neither draws a border or background. Keep `settings-panel` and `settings-row` class ownership inside that module.
 - Status, empty, and warning messages use `MessagePanel` from `apps/web/src/components/app-surface.tsx`. Keep `message-panel` class ownership inside that module.
 - Icon/title/body callouts use `SurfaceCallout` from `apps/web/src/components/app-surface.tsx`.
 
@@ -82,50 +82,61 @@ This registry captures reusable visual patterns already present in Ajour. Update
 
 ### Plugin Catalog And Detail
 
-File: `apps/web/src/features/settings/settings-connectors-page.tsx`
-Last updated: 2026-08-07
+Files: `apps/web/src/features/settings/settings-connectors-page.tsx`, `plugin-catalog-ui.tsx`, `connector-settings-ui.tsx`
+Last updated: 2026-10-13
 
-| Property         | Class or token                                                                    |
-| ---------------- | --------------------------------------------------------------------------------- |
-| Background       | `AppPanel`, `--surface-high` on hover                                             |
-| Border           | `AppPanel` border, `border-border/70` for tabs and connection cards               |
-| Border radius    | `rounded-lg` for icons and connection cards; `--control-radius` for focus targets |
-| Text — primary   | `text-sm font-semibold text-foreground`                                           |
-| Text — secondary | `text-sm leading-5 text-muted-foreground`                                         |
-| Spacing          | `p-4 gap-3` for catalog entries; `p-5 gap-5` for detail headers and forms         |
-| Hover state      | `hover:bg-[var(--surface-high)]`                                                  |
-| Shadow           | none for catalog entries; connection cards use borders instead of elevation       |
-| Accent usage     | `Badge variant="secondary"` for active state; status colors only for errors       |
+| Property         | Class or token                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------------------- |
+| Background       | none; catalog rows tint `--hover-bg` on hover                                                     |
+| Border           | none on entries, connections, forms or lists; only the identity mark tile keeps its border        |
+| Border radius    | `rounded-lg` for the identity mark, hero image and row hover; `--control-radius` for focus        |
+| Text — title     | `settings-section-title` for sections; `text-lg font-semibold` for the page and plugin name       |
+| Text — label     | `text-sm font-medium text-foreground` for entry, feature and connection names                     |
+| Text — secondary | `text-[13px] text-muted-foreground` for descriptions and connection status                        |
+| Text — meta      | `text-xs text-[var(--text-tertiary)]` for capabilities, version, config summary and last sync     |
+| Spacing          | `settings-sections` between sections; `gap-1` catalog rows, `gap-6` connections, `gap-4` features |
+| Hover state      | `hover:bg-[var(--hover-bg)]` on catalog rows                                                      |
+| Shadow           | none                                                                                              |
+| Accent usage     | `Badge variant="secondary"` for installed and active state; status colors only for errors         |
 
 **Pattern notes:**
-Plugin settings use a compact system-level activation switch and refresh-policy
-selector above a category tab bar and responsive two-column catalog. Catalog
-entries merge normalized Ajour-index metadata with installed connector and
-schema capabilities. The category tabs are All, Connectors, Code hosts, and
-Schemas; a plugin with several capabilities appears under each, and its badge
-reads "Connector · Code host". Feature badges such as Work Item Sync come from
-the entry's `features`. An available remote connector or code host shows Download;
-The filter tabs use compact spacing below 768px so all four fit at 320px.
-Only an installed plugin can be activated. Manual file installation remains a
-separate action.
+The catalog page carries no cards. The header holds the page title, Install
+from file, and two `SettingRow`s: the Plugin system switch and the Refresh
+catalog select. Below it the category tabs (All, Connectors, Code hosts,
+Schemas) sit over a single-column list of plain rows: identity mark, name with
+a status badge, a two-line description, and a meta line with capabilities and
+version, such as "Connector · Code host · v1.2.0". The trailing action is the
+activation `Switch` for an installed connector, or Download for an available
+remote connector or code host. Rows are separated by spacing and only tint on
+hover. Catalog entries merge normalized Ajour-index metadata with installed
+connector and schema capabilities; a plugin with several capabilities appears
+under each tab. The filter tabs use compact spacing below 768px so all four
+fit at 320px. Only an installed plugin can be activated. Manual file
+installation remains a separate action.
 
-Opening an entry moves to a dedicated detail route with a back link,
-identity-first header, status-driven primary action, capability band, feature
-list, and information list before plugin-owned configuration. Cached catalog
-artwork is optional: the identity mark supplies a consistent generated default
-thumbnail, while the capability band supplies an equally sized operational-flow
-fallback when no hero exists. Never fetch remote images from the renderer.
-Mobile collapses the catalog to one column and preserves the detail hierarchy.
+Opening an entry moves to a dedicated detail route, a cardless page of
+sections. Its first section holds the back link, identity-first header,
+status-driven primary action, status badges, any notices (`MessagePanel`),
+and the capability band. Features, Information, Configuration and Uninstall
+plugin follow as `settings-section`s. Features and Information are spaced
+lists with no dividers. Configuration lists connections as plain rows (name,
+sync-mode badge, tenant, status line, meta lines, then Edit, Sync and Remove
+trailing on desktop and below on narrow widths); the connection form renders
+unframed above them, and empty lists show plain text. Cached catalog artwork
+is optional: the identity mark supplies a consistent generated default
+thumbnail, and the hero image keeps rounded corners with no border. Without a
+hero, the capability band is a plain line of text ("External service → Plugin
+→ Local backlog") above the feature badges. Never fetch remote images from the
+renderer. Dialogs and `MessagePanel` notices are the only framed surfaces.
 
 ### Application Updates
 
 File: `apps/web/src/features/settings/settings-general-page.tsx`
 Last updated: 2026-08-06
 
-The stable/nightly choice uses the shared compact toggle group inside an
-`AppPanel`. Keep exactly one track selected, explain nightly risk beside the
-control, and separate repository status with a single top border rather than a
-nested card. Status text uses `aria-live`, preserves its layout while checking,
+The stable/nightly choice is a `SettingRow` with the shared outline toggle
+group. Keep exactly one track selected and explain nightly risk in the row's
+description. Repository status follows below it, separated by space only. Status text uses `aria-live`, preserves its layout while checking,
 and shows the release action only when a newer matching release exists. Web-only
 rendering keeps the preference available but identifies the desktop requirement.
 Packaged Windows builds download the selected track in the background and use a
@@ -187,11 +198,15 @@ week target asks for confirmation.
 ### Project Import And Export
 
 File: `apps/web/src/features/settings/settings-projects-page.tsx`
-Last updated: 2026-08-06
+Last updated: 2026-10-13
 
 The Projects settings workflow separates the schema selector from the Excel
 format actions. `Ajour default` is always the first option and remains usable
 without the plugin host. Discovered plugins add provider-specific schemas; the
 selection persists in user preferences. Export and import copy identifies the
 active schema and explains that the schema controls fields while Ajour owns
-the file format.
+the file format. The schema, export and import are three cardless sections of
+`SettingRow`s; projects to export are plain checkbox rows, and a finished
+transfer is a line of text under its action. Time entry import and export
+(`settings-export-page.tsx`) follows the same layout, with staged import drafts
+as plain rows that carry Add and Dismiss.

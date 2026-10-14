@@ -14,6 +14,7 @@ Ajour is an operational desktop/web app. Build interfaces for scanning, repeated
 
 - Prefer full-width app surfaces with constrained inner content where needed.
 - Use cards only for repeated items, dialogs, and genuinely framed tools.
+- Settings pages use no cards. Space and type size carry the hierarchy: sections sit 3rem apart under a 16px heading, settings inside a section are `SettingRow`s (14px label, 13px description, control trailing) with no border or background between them.
 - Keep fixed-format elements stable with explicit width, height, grid tracks, or aspect ratios.
 - Do not let hover states, badges, loading text, or dynamic labels resize the layout.
 - Ensure mobile and desktop text never overlaps controls or adjacent content.
@@ -22,8 +23,8 @@ Ajour is an operational desktop/web app. Build interfaces for scanning, repeated
 
 - Use existing `apps/web/src/components/ui` primitives before creating new primitives.
 - Use `apps/web/src/components/app-surface.tsx` for repeated product surfaces:
-  - `AppPanel` for settings-style app panels.
-  - `MessagePanel` for status, empty, and warning messages.
+  - `AppPanel` for the cardless body of a settings section, and `SettingRow` for each setting in it.
+  - `MessagePanel` for status, empty, and warning messages. Settings pages show empty, loading and success states as plain text (`ResultLine` for a finished action) and keep `MessagePanel` for warnings and errors.
   - `SurfaceCallout` for icon/title/body callouts.
 - Use `Checkbox` from `apps/web/src/components/ui/checkbox.tsx` for checkbox controls. Do not add new raw `type="checkbox"` controls in feature code.
 - Feature pages should not directly reference `settings-panel` or `message-panel`; those classes are owned by the app-surface module.

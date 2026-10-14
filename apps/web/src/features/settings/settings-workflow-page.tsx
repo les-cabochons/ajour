@@ -8,7 +8,6 @@ import {
 } from "@remixicon/react";
 import { AppPanel, MessagePanel } from "@/components/app-surface";
 import { TooltipButton } from "@/components/tooltip-button";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
@@ -186,20 +185,13 @@ export function SettingsWorkflowPage() {
           into a done state closes it, and moving it out reopens it.
         </p>
 
-        <AppPanel className="space-y-4">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge>{state.workflowStates.length} workflow states</Badge>
-            {connectorApiMissing ? null : (
-              <>
-                <Badge className="bg-muted">
-                  {sourceStatuses.length} source states
-                </Badge>
-                <Badge className="bg-muted">
-                  {state.workflowStateMappings.length} mappings
-                </Badge>
-              </>
-            )}
-          </div>
+        <AppPanel>
+          <p className="text-[12px] text-[var(--text-tertiary)]">
+            {state.workflowStates.length} workflow states
+            {connectorApiMissing
+              ? null
+              : ` · ${sourceStatuses.length} source states · ${state.workflowStateMappings.length} mappings`}
+          </p>
 
           <div className="backlog-settings-status-create">
             <Input
@@ -231,99 +223,124 @@ export function SettingsWorkflowPage() {
             <div className="backlog-settings-status-list">
               {state.workflowStates.map((status, index) => (
                 <div key={status._id} className="backlog-settings-status-row">
-                  <div className="flex items-center">
-                    <TooltipButton
-                      label={`Move ${status.name} up`}
-                      render={
-                        <Button type="button" variant="ghost" size="icon-sm" />
+                  <div className="flex min-w-0 items-center gap-2">
+                    <div className="flex shrink-0 items-center">
+                      <TooltipButton
+                        label={`Move ${status.name} up`}
+                        render={
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                          />
+                        }
+                        disabled={index === 0}
+                        onClick={() =>
+                          localStore.moveWorkflowState(status._id, -1)
+                        }
+                      >
+                        <MoveUp />
+                      </TooltipButton>
+                      <TooltipButton
+                        label={`Move ${status.name} down`}
+                        render={
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon-sm"
+                          />
+                        }
+                        disabled={index === state.workflowStates.length - 1}
+                        onClick={() =>
+                          localStore.moveWorkflowState(status._id, 1)
+                        }
+                      >
+                        <MoveDown />
+                      </TooltipButton>
+                    </div>
+                    <span
+                      className="status-dot shrink-0"
+                      aria-hidden="true"
+                      style={{
+                        background:
+                          statusDrafts[status._id]?.color ?? status.color,
+                      }}
+                    />
+                    <Input
+                      value={statusDrafts[status._id]?.name ?? status.name}
+                      onChange={(event) =>
+                        setStatusDrafts((current) => ({
+                          ...current,
+                          [status._id]: {
+                            name: event.target.value,
+                            color: current[status._id]?.color ?? status.color,
+                          },
+                        }))
                       }
-                      disabled={index === 0}
-                      onClick={() =>
-                        localStore.moveWorkflowState(status._id, -1)
+                      autoComplete="off"
+                    />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Input
+                      aria-label={`${status.name} color`}
+                      type="color"
+                      value={statusDrafts[status._id]?.color ?? status.color}
+                      onChange={(event) =>
+                        setStatusDrafts((current) => ({
+                          ...current,
+                          [status._id]: {
+                            name: current[status._id]?.name ?? status.name,
+                            color: event.target.value,
+                          },
+                        }))
+                      }
+                      className="w-14 p-1"
+                    />
+                    <label className="flex h-8 items-center gap-2 text-[13px]">
+                      <Checkbox
+                        checked={status.done === true}
+                        onCheckedChange={(checked) =>
+                          handleDoneChange(status._id, checked === true)
+                        }
+                      />
+                      Done
+                    </label>
+                    {/* Phones show these as icons only; the tooltip names them. */}
+                    <TooltipButton
+                      label={`Save ${status.name}`}
+                      tooltipClassName="desktop:hidden"
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1.5 narrow:w-8 narrow:px-0"
+                        />
+                      }
+                      onClick={() => handleSaveStatus(status._id)}
+                      disabled={
+                        (statusDrafts[status._id]?.name ?? status.name).trim()
+                          .length === 0
                       }
                     >
-                      <MoveUp />
+                      <Save className="h-3.5 w-3.5" />
+                      <span className="narrow:hidden">Save</span>
                     </TooltipButton>
                     <TooltipButton
-                      label={`Move ${status.name} down`}
+                      label={`Remove ${status.name}`}
+                      tooltipClassName="desktop:hidden"
                       render={
-                        <Button type="button" variant="ghost" size="icon-sm" />
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="gap-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive narrow:w-8 narrow:px-0"
+                        />
                       }
-                      disabled={index === state.workflowStates.length - 1}
-                      onClick={() =>
-                        localStore.moveWorkflowState(status._id, 1)
-                      }
+                      onClick={() => handleDeleteStatus(status._id)}
                     >
-                      <MoveDown />
+                      <Trash2 className="h-3.5 w-3.5" />
+                      <span className="narrow:hidden">Remove</span>
                     </TooltipButton>
                   </div>
-                  <span
-                    className="status-dot"
-                    aria-hidden="true"
-                    style={{
-                      background:
-                        statusDrafts[status._id]?.color ?? status.color,
-                    }}
-                  />
-                  <Input
-                    value={statusDrafts[status._id]?.name ?? status.name}
-                    onChange={(event) =>
-                      setStatusDrafts((current) => ({
-                        ...current,
-                        [status._id]: {
-                          name: event.target.value,
-                          color: current[status._id]?.color ?? status.color,
-                        },
-                      }))
-                    }
-                    autoComplete="off"
-                  />
-                  <Input
-                    aria-label={`${status.name} color`}
-                    type="color"
-                    value={statusDrafts[status._id]?.color ?? status.color}
-                    onChange={(event) =>
-                      setStatusDrafts((current) => ({
-                        ...current,
-                        [status._id]: {
-                          name: current[status._id]?.name ?? status.name,
-                          color: event.target.value,
-                        },
-                      }))
-                    }
-                    className="w-14 p-1"
-                  />
-                  <label className="flex h-8 items-center gap-2 text-[13px]">
-                    <Checkbox
-                      checked={status.done === true}
-                      onCheckedChange={(checked) =>
-                        handleDoneChange(status._id, checked === true)
-                      }
-                    />
-                    Done
-                  </label>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="gap-1.5"
-                    onClick={() => handleSaveStatus(status._id)}
-                    disabled={
-                      (statusDrafts[status._id]?.name ?? status.name).trim()
-                        .length === 0
-                    }
-                  >
-                    <Save className="h-3.5 w-3.5" />
-                    Save
-                  </Button>
-                  <Button
-                    variant="danger"
-                    size="sm"
-                    className="gap-1.5"
-                    onClick={() => handleDeleteStatus(status._id)}
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                    Remove
-                  </Button>
                 </div>
               ))}
             </div>
@@ -339,8 +356,8 @@ export function SettingsWorkflowPage() {
             to the workflow state its items show in.
           </p>
 
-          <AppPanel className="space-y-4">
-            <div className="flex flex-wrap gap-3">
+          <AppPanel>
+            <div>
               <Button
                 variant="outline"
                 size="sm"
