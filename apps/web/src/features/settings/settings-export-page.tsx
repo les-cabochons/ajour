@@ -255,9 +255,11 @@ export function SettingsExportPage() {
                   </p>
                 )}
                 <p className="mt-1 text-xs text-[var(--text-tertiary)]">
-                  Filename: {buildTimesheetExportFilename(startDate, endDate)}
-                  {" · "}Rows without an assigned project or task are exported
-                  with blank cells.
+                  {hasInvalidDate
+                    ? null
+                    : `Filename: ${buildTimesheetExportFilename(startDate, endDate)} · `}
+                  Rows without an assigned project or task are exported with
+                  blank cells.
                 </p>
               </>
             }

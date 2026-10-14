@@ -253,6 +253,28 @@
   }
 }
 
+@media (max-width: 1600px) {
+  .settings-layout {
+    display: flex;
+    gap: 0;
+    max-width: none;
+    margin: 0;
+  }
+
+  .settings-layout[data-slot="sidebar-wrapper"] {
+    max-width: none;
+    margin: 0;
+  }
+
+  .settings-content {
+    flex: 1;
+    min-width: 0;
+    max-width: 960px;
+    margin: 0;
+    padding: 1.5rem 2rem;
+  }
+}
+
 @media (width < 768px) {
   .page-container:has(> .settings-layout[data-slot="sidebar-wrapper"]) {
     padding: 0;
@@ -278,28 +300,6 @@
 
   .backlog-settings-source-label {
     min-height: 0;
-  }
-}
-
-@media (max-width: 1600px) {
-  .settings-layout {
-    display: flex;
-    gap: 0;
-    max-width: none;
-    margin: 0;
-  }
-
-  .settings-layout[data-slot="sidebar-wrapper"] {
-    max-width: none;
-    margin: 0;
-  }
-
-  .settings-content {
-    flex: 1;
-    min-width: 0;
-    max-width: 960px;
-    margin: 0;
-    padding: 1.5rem 2rem;
   }
 }
 
