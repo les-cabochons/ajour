@@ -7,11 +7,12 @@ The renderer runs every data tool through the object action sets and domain tran
 ## Considered options
 
 - **Filter private fields out of tool results.** Rejected. Notes are what the Workday flow copies as comments, and an agent that cannot see notes cannot edit them correctly.
-- **No token, loopback only.** Rejected. Any local process could read and change time entries.
+- **No token, loopback only.** Rejected. The `/mcp` endpoint takes no browser Origin, but a token is what keeps a web page from calling it, and it names which agent made each call and lets the user revoke one agent.
 - **Ajour data tools as an installable plugin.** Rejected. A plugin would need a new host API with write access to the store and per-plugin permissions. Plugins add tools and prompts on the same MCP endpoint instead (spec B).
 
 ## Consequences
 
 - Settings > MCP states that connected agents can read and change time entries and the backlog, and that their model provider receives that data.
-- Tokens are stored hashed and can be revoked per client.
+- Tokens are stored hashed and can be revoked per client. They block web pages, give per-client attribution in the agent panel and Undo toasts, and let the user cut off one agent.
+- Tokens do not stop local processes. Any process running as the user is trusted, as for the rest of `/api`: `POST /api/mcp/settings` and `POST /api/mcp/clients` accept a request with no Origin, and such a process can already read Ajour's data on disk.
 - MCP works only while the Ajour window is open, because the renderer owns the data.
