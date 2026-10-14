@@ -24,9 +24,8 @@ export function PageHeader({
 }) {
   const slot = usePageHeaderSlot();
   useEffect(() => registerPageHeader(), []);
-  if (!slot) return null;
 
-  return createPortal(
+  const content = (
     <>
       <div className="ajour-page-header-title">
         {breadcrumb ? (
@@ -39,9 +38,16 @@ export function PageHeader({
       {actions ? (
         <div className="ajour-page-header-actions">{actions}</div>
       ) : null}
-    </>,
-    slot,
+    </>
   );
+
+  // The narrow view's titlebar holds the section switcher, not a slot: the
+  // header renders where the page put it instead, as the page's first row.
+  if (!slot) {
+    return <div className="ajour-page-header-inline">{content}</div>;
+  }
+
+  return createPortal(content, slot);
 }
 
 /**

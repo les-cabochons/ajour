@@ -7,25 +7,25 @@ import React, {
 } from "react";
 import {
   RiAddLine as Plus,
+  RiCheckLine as Check,
   RiPlayLine as Play,
-  RiTimerLine as Timer,
 } from "@remixicon/react";
 import {
   Empty,
   EmptyDescription,
   EmptyContent,
   EmptyHeader,
-  EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
+import { Value } from "@/components/ui/value";
+import { RunningDot } from "@/components/running-dot";
 import {
   ObjectActionsButton,
   ObjectContextMenu,
 } from "@/components/object-actions-menu";
 import { useTimeEntryActions } from "@/features/time/time-entry-actions";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import { formatClockDuration } from "@/domain/time/duration";
 import {
   getLocalProjectDisplayName,
@@ -93,9 +93,40 @@ function isEntryDragBlockedTarget(target: EventTarget | null) {
     : false;
 }
 
+/** The one-line body of a row: dot, project, task and note. Also the drag preview. */
+function EntryMain({
+  projectName,
+  projectColor,
+  projectIcon,
+  taskName,
+  note,
+}: {
+  projectName: string;
+  projectColor: string;
+  projectIcon: React.ComponentProps<typeof ProjectIcon>["icon"];
+  taskName?: string;
+  note?: string;
+}) {
+  return (
+    <>
+      <ProjectIcon
+        icon={projectIcon}
+        color={projectColor}
+        className="time-entry-dot"
+        fallback="dot"
+      />
+      <span className="time-entry-project">{projectName}</span>
+      {taskName ? <span className="time-entry-task">{taskName}</span> : null}
+      {note ? <span className="time-entry-note">{note}</span> : null}
+    </>
+  );
+}
+
 /**
- * The Day view's entry list. Rows and "New entry" ask the page to open the entry
- * editor through `onOpenEntry`; an empty target means a new entry on `date`.
+ * The Day view's entry list: one 40px row per entry, the running entry first,
+ * and a "New entry" row at the end. Rows and "New entry" ask the page to open
+ * the entry editor through `onOpenEntry`; an empty target means a new entry on
+ * `date`.
  */
 export function TimerPanel({
   date,
@@ -359,325 +390,229 @@ export function TimerPanel({
     });
   }
 
+  function describeEntry(entry: LocalTimesheetEntry | RunningEntryRow) {
+    const project = projects.find((item) => item._id === entry.projectId);
+    const task = project?.tasks.find((item) => item._id === entry.taskId);
+    return {
+      projectName: project ? getLocalProjectDisplayName(project) : "No project",
+      projectColor: project?.color ?? "var(--text-tertiary)",
+      projectIcon: project?.icon,
+      taskName: task?.name,
+    };
+  }
+
   return (
-    <div className="space-y-3">
-      <div className="entries-table-scroll-shell entries-table-scroll-shell-time">
-        <table className="entries-table entries-table-header-table animate-in">
-          <thead>
-            <tr>
-              <th className="entry-project-heading">Project</th>
-              <th className="entry-notes-heading hidden desktop:table-cell">
-                Notes
-              </th>
-              <th className="entry-notes-heading desktop:hidden">Entries</th>
-              <th className="entry-hours-heading entry-hours-heading-create desktop:hidden">
-                <div className="flex justify-end">
-                  <button
-                    type="button"
-                    className="entries-header-add entries-header-bubble"
-                    aria-label="New entry"
-                    onClick={() => onOpenEntry({})}
-                  >
-                    <span className="entries-header-add-label">New entry</span>
-                    <Plus className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </th>
-              <th className="entry-hours-heading entry-hours-heading-actions hidden desktop:table-cell">
-                <TooltipButton
-                  className="entries-header-add"
-                  label="New entry"
-                  shortcut="entry.new"
-                  onClick={() => onOpenEntry({})}
-                >
-                  <Plus className="h-3.5 w-3.5" />
-                </TooltipButton>
-              </th>
+    <div className="time-entries">
+      <table
+        className={cn(
+          "time-entries-table",
+          entryDragState && "is-entry-dragging",
+        )}
+      >
+        <tbody className="entries-table-scroll-region" data-focus-scope>
+          {visibleEntries.length === 0 ? (
+            <tr className="time-entries-empty-row">
+              <td colSpan={2}>
+                <Empty align="start">
+                  <EmptyHeader>
+                    <EmptyTitle>No time entries</EmptyTitle>
+                    <EmptyDescription>
+                      Saved and running entries for this day appear here.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                  <EmptyContent>
+                    <Button variant="outline" onClick={() => onOpenEntry({})}>
+                      <Plus data-icon="inline-start" />
+                      New entry
+                    </Button>
+                  </EmptyContent>
+                </Empty>
+              </td>
             </tr>
-          </thead>
-        </table>
-        <ScrollArea className="entries-table-scroll-area">
-          <table
-            className={cn(
-              "entries-table entries-table-body-table animate-in",
-              entryDragState && "is-entry-dragging",
-            )}
-          >
-            <tbody className="entries-table-scroll-region" data-focus-scope>
-              {visibleEntries.length === 0 ? (
-                <tr className="entry-empty-row">
-                  <td colSpan={3}>
-                    <Empty className="entry-table-empty">
-                      <EmptyHeader>
-                        <EmptyMedia variant="icon">
-                          <Timer className="h-5 w-5" />
-                        </EmptyMedia>
-                        <EmptyTitle className="font-sans text-[14px] font-semibold tracking-normal">
-                          No time entries
-                        </EmptyTitle>
-                        <EmptyDescription>
-                          Saved and running entries for this day appear here.
-                        </EmptyDescription>
-                      </EmptyHeader>
-                      <EmptyContent>
-                        <Button
-                          className="gap-1.5"
-                          onClick={() => onOpenEntry({})}
-                        >
-                          <Plus className="h-3.5 w-3.5" />
-                          New entry
-                        </Button>
-                      </EmptyContent>
-                    </Empty>
-                  </td>
-                </tr>
-              ) : null}
-              {visibleEntries.map((entry) => {
-                const project = projects.find(
-                  (item) => item._id === entry.projectId,
-                );
-                const task = project?.tasks.find(
-                  (item) => item._id === entry.taskId,
-                );
-                const isRunning = "isRunning" in entry && entry.isRunning;
-                const isEditing =
-                  activeEntryId !== undefined && entry._id === activeEntryId;
-                const rowTarget = isRunningEntry(entry)
-                  ? { kind: "running" as const, timerId: entry.timerId }
-                  : { kind: "entry" as const, entry };
-                const rowActions = entryActions.getActions(rowTarget);
-                const draggableIndex = draggableEntryIds.indexOf(entry._id);
-                const isDraggedEntry = entryDragState?.entryId === entry._id;
-                const rowShift =
-                  !isRunning && entryDragState && draggableIndex !== -1
-                    ? getSharedTableDragRowShift({
-                        itemIndex: draggableIndex,
-                        originIndex: entryDragState.originIndex,
-                        targetIndex: entryDragState.targetIndex,
-                        rowHeight: entryDragState.height,
-                      })
-                    : 0;
-
-                return (
-                  <React.Fragment key={entry._id}>
-                    <ObjectContextMenu
-                      actions={rowActions}
-                      keys={TIME_ENTRY_ACTION_KEYS}
-                      onAction={(actionId) =>
-                        entryActions.runAction(rowTarget, actionId)
-                      }
-                      render={
-                        <tr
-                          ref={(node) => {
-                            if (isRunning) {
-                              return;
-                            }
-
-                            if (node) {
-                              entryRowRefs.current.set(entry._id, node);
-                              return;
-                            }
-
-                            entryRowRefs.current.delete(entry._id);
-                          }}
-                          className={cn(
-                            "time-entry-row",
-                            isEditing && "is-editing",
-                            canReorderEntries &&
-                              !isRunning &&
-                              draggableIndex !== -1 &&
-                              "is-reorderable",
-                            pressedEntryId === entry._id && "is-pressing",
-                            rowShift !== 0 && "is-shifting",
-                            isDraggedEntry && "is-drag-source",
-                          )}
-                          style={
-                            rowShift !== 0
-                              ? {
-                                  transform: `translate3d(0, ${rowShift}px, 0)`,
-                                }
-                              : undefined
-                          }
-                          aria-grabbed={isDraggedEntry}
-                          data-entry-id={entry._id}
-                          data-running-entry={isRunning ? "true" : undefined}
-                          data-focus-column="0"
-                          tabIndex={0}
-                          onClick={() => openEntry(entry)}
-                          onKeyDown={(event) =>
-                            handleItemKeyDown(event, {
-                              actions: rowActions,
-                              keys: TIME_ENTRY_ACTION_KEYS,
-                              onAction: (actionId) =>
-                                entryActions.runAction(rowTarget, actionId),
-                              // The running entry stays on top.
-                              onReorder: isRunning
-                                ? undefined
-                                : (step) => reorderEntry(entry._id, step),
-                            })
-                          }
-                          onPointerDown={(event) =>
-                            handleEntryPointerDown(entry, event)
-                          }
-                        />
-                      }
-                    >
-                      <td className="entry-project-column">
-                        <div className="entry-project-cell">
-                          <ProjectIcon
-                            icon={project?.icon}
-                            color={project?.color ?? "#3b82f6"}
-                            className="entry-project-dot"
-                            fallback="dot"
-                          />
-                          <span className="entry-project-name">
-                            {project
-                              ? getLocalProjectDisplayName(project)
-                              : "No project"}
-                          </span>
-                        </div>
-                      </td>
-                      <td className="entry-notes-cell">
-                        <div className="entry-notes-content">
-                          <div className="entry-project-cell entry-project-cell-mobile">
-                            <ProjectIcon
-                              icon={project?.icon}
-                              color={project?.color ?? "#3b82f6"}
-                              className="entry-project-dot"
-                              fallback="dot"
-                            />
-                            <span className="entry-project-name">
-                              {project
-                                ? getLocalProjectDisplayName(project)
-                                : "No project"}
-                            </span>
-                          </div>
-                          {task?.name && (
-                            <span className="entry-task-name">{task.name}</span>
-                          )}
-                          {entry.note && (
-                            <span className="entry-note-text">
-                              {entry.note}
-                            </span>
-                          )}
-                          {"submittedAt" in entry && entry.submittedAt ? (
-                            <span className="entry-submitted-status">
-                              submitted
-                            </span>
-                          ) : null}
-                        </div>
-                      </td>
-                      <td className="entry-hours-cell">
-                        <div className="entry-hours-content">
-                          <div className="entry-row-actions">
-                            {isRunning ? null : (
-                              <TooltipButton
-                                className="entry-row-action entry-row-action-play"
-                                label={
-                                  currentTimer
-                                    ? "Continue and stop the running entry"
-                                    : "Continue"
-                                }
-                                shortcut="entry.continue"
-                                data-no-entry-drag="true"
-                                onClick={(event) => {
-                                  event.stopPropagation();
-                                  handleContinueEntry(entry._id);
-                                }}
-                              >
-                                <Play className="h-3.5 w-3.5" />
-                              </TooltipButton>
-                            )}
-                            <ObjectActionsButton
-                              actions={rowActions}
-                              keys={TIME_ENTRY_ACTION_KEYS}
-                              onAction={(actionId) =>
-                                entryActions.runAction(rowTarget, actionId)
-                              }
-                              label="Entry actions"
-                              className="entry-row-action"
-                            />
-                          </div>
-                          {isRunning ? (
-                            <span className="stat-pill stat-pill-active entry-running-pill">
-                              <span className="status-dot status-dot-pulse" />
-                              <span className="stat-pill-value">
-                                {formatClockDuration(entry.durationMs)}
-                              </span>
-                            </span>
-                          ) : null}
-                          {isRunning ? null : (
-                            <span className="hours-badge">
-                              {formatClockDuration(entry.durationMs)}
-                            </span>
-                          )}
-                        </div>
-                      </td>
-                    </ObjectContextMenu>
-                  </React.Fragment>
-                );
-              })}
-            </tbody>
-          </table>
-        </ScrollArea>
-      </div>
-
-      {draggedEntry && entryDragState
-        ? (() => {
-            const project = projects.find(
-              (item) => item._id === draggedEntry.projectId,
-            );
-            const task = project?.tasks.find(
-              (item) => item._id === draggedEntry.taskId,
-            );
+          ) : null}
+          {visibleEntries.map((entry) => {
+            const summary = describeEntry(entry);
+            const isRunning = isRunningEntry(entry);
+            const isEditing =
+              activeEntryId !== undefined && entry._id === activeEntryId;
+            const rowTarget = isRunningEntry(entry)
+              ? { kind: "running" as const, timerId: entry.timerId }
+              : { kind: "entry" as const, entry };
+            const rowActions = entryActions.getActions(rowTarget);
+            const draggableIndex = draggableEntryIds.indexOf(entry._id);
+            const isDraggedEntry = entryDragState?.entryId === entry._id;
+            const rowShift =
+              !isRunning && entryDragState && draggableIndex !== -1
+                ? getSharedTableDragRowShift({
+                    itemIndex: draggableIndex,
+                    originIndex: entryDragState.originIndex,
+                    targetIndex: entryDragState.targetIndex,
+                    rowHeight: entryDragState.height,
+                  })
+                : 0;
+            const isSubmitted = "submittedAt" in entry && entry.submittedAt;
 
             return (
-              <div
-                className="time-entry-drag-preview"
-                style={{
-                  width: entryDragState.width,
-                  minHeight: entryDragState.height,
-                  transform: getSharedTableDragOverlayTransform(entryDragState),
-                }}
-              >
-                <div className="entry-project-column">
-                  <div className="entry-project-cell">
-                    <ProjectIcon
-                      icon={project?.icon}
-                      color={project?.color ?? "#3b82f6"}
-                      className="entry-project-dot"
-                      fallback="dot"
+              <React.Fragment key={entry._id}>
+                <ObjectContextMenu
+                  actions={rowActions}
+                  keys={TIME_ENTRY_ACTION_KEYS}
+                  onAction={(actionId) =>
+                    entryActions.runAction(rowTarget, actionId)
+                  }
+                  render={
+                    <tr
+                      ref={(node) => {
+                        if (isRunning) {
+                          return;
+                        }
+
+                        if (node) {
+                          entryRowRefs.current.set(entry._id, node);
+                          return;
+                        }
+
+                        entryRowRefs.current.delete(entry._id);
+                      }}
+                      className={cn(
+                        "time-entry-row",
+                        isRunning && "is-running",
+                        isEditing && "is-editing",
+                        canReorderEntries &&
+                          !isRunning &&
+                          draggableIndex !== -1 &&
+                          "is-reorderable",
+                        pressedEntryId === entry._id && "is-pressing",
+                        rowShift !== 0 && "is-shifting",
+                        isDraggedEntry && "is-drag-source",
+                      )}
+                      style={
+                        rowShift !== 0
+                          ? {
+                              transform: `translate3d(0, ${rowShift}px, 0)`,
+                            }
+                          : undefined
+                      }
+                      aria-grabbed={isDraggedEntry}
+                      data-entry-id={entry._id}
+                      data-running-entry={isRunning ? "true" : undefined}
+                      data-focus-column="0"
+                      tabIndex={0}
+                      onClick={() => openEntry(entry)}
+                      onKeyDown={(event) =>
+                        handleItemKeyDown(event, {
+                          actions: rowActions,
+                          keys: TIME_ENTRY_ACTION_KEYS,
+                          onAction: (actionId) =>
+                            entryActions.runAction(rowTarget, actionId),
+                          // The running entry stays on top.
+                          onReorder: isRunning
+                            ? undefined
+                            : (step) => reorderEntry(entry._id, step),
+                        })
+                      }
+                      onPointerDown={(event) =>
+                        handleEntryPointerDown(entry, event)
+                      }
                     />
-                    <span className="entry-project-name">
-                      {project
-                        ? getLocalProjectDisplayName(project)
-                        : "No project"}
+                  }
+                >
+                  <td className="time-entry-main">
+                    <EntryMain {...summary} note={entry.note} />
+                  </td>
+                  <td className="time-entry-trailing">
+                    <span className="time-entry-actions">
+                      {isRunning ? null : (
+                        <TooltipButton
+                          label={
+                            currentTimer
+                              ? "Continue and stop the running entry"
+                              : "Continue"
+                          }
+                          shortcut="entry.continue"
+                          data-no-entry-drag="true"
+                          render={
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              className="text-muted-foreground"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                handleContinueEntry(entry._id);
+                              }}
+                            />
+                          }
+                        >
+                          <Play />
+                        </TooltipButton>
+                      )}
+                      <ObjectActionsButton
+                        actions={rowActions}
+                        keys={TIME_ENTRY_ACTION_KEYS}
+                        onAction={(actionId) =>
+                          entryActions.runAction(rowTarget, actionId)
+                        }
+                        label="Entry actions"
+                        className="time-entry-more"
+                      />
                     </span>
-                  </div>
-                </div>
-                <div className="entry-notes-cell">
-                  <div className="entry-notes-content">
-                    {task?.name ? (
-                      <span className="entry-task-name">{task.name}</span>
+                    {isSubmitted ? (
+                      <Check
+                        className="time-entry-submitted"
+                        aria-label="Submitted"
+                        role="img"
+                      />
                     ) : null}
-                    {draggedEntry.note ? (
-                      <span className="entry-note-text">
-                        {draggedEntry.note}
+                    {isRunning ? (
+                      <span className="time-entry-running">
+                        <RunningDot />
+                        <Value tone="success">
+                          {formatClockDuration(entry.durationMs)}
+                        </Value>
                       </span>
-                    ) : null}
-                  </div>
-                </div>
-                <div className="entry-hours-cell">
-                  <div className="entry-hours-content">
-                    <span className="hours-badge">
-                      {formatClockDuration(draggedEntry.durationMs)}
-                    </span>
-                  </div>
-                </div>
-              </div>
+                    ) : (
+                      <Value>{formatClockDuration(entry.durationMs)}</Value>
+                    )}
+                  </td>
+                </ObjectContextMenu>
+              </React.Fragment>
             );
-          })()
-        : null}
+          })}
+          {visibleEntries.length === 0 ? null : (
+            <tr className="time-entries-add-row">
+              <td colSpan={2}>
+                <TooltipButton
+                  label="New entry"
+                  shortcut="entry.new"
+                  className="time-entries-add"
+                  onClick={() => onOpenEntry({})}
+                >
+                  <Plus />
+                  <span>New entry</span>
+                </TooltipButton>
+              </td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
+      {draggedEntry && entryDragState ? (
+        <div
+          className="time-entry-drag-preview"
+          style={{
+            width: entryDragState.width,
+            minHeight: entryDragState.height,
+            transform: getSharedTableDragOverlayTransform(entryDragState),
+          }}
+        >
+          <div className="time-entry-main">
+            <EntryMain {...describeEntry(draggedEntry)} note={draggedEntry.note} />
+          </div>
+          <div className="time-entry-trailing">
+            <Value>{formatClockDuration(draggedEntry.durationMs)}</Value>
+          </div>
+        </div>
+      ) : null}
       {entryActions.dialogs}
     </div>
   );

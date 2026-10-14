@@ -8,6 +8,7 @@ import {
   RiPlayFill as PlayIcon,
   RiStopFill as StopIcon,
 } from "@remixicon/react";
+import { RunningDot } from "@/components/running-dot";
 import { TooltipButton } from "@/components/tooltip-button";
 import { formatClockDuration } from "@/domain/time/duration";
 import {
@@ -119,15 +120,6 @@ export function useRunningEntry() {
     savedTodayMs + (timer?.localDate === today ? unsavedDurationMs : 0);
 
   return { timer, summary, runningDurationMs, todayTotalMs };
-}
-
-function RunningDot() {
-  return (
-    <span className="relative flex size-2 shrink-0" aria-hidden="true">
-      <span className="absolute inline-flex size-full animate-ping rounded-full bg-[var(--success)] opacity-60 motion-reduce:hidden" />
-      <span className="relative inline-flex size-2 rounded-full bg-[var(--success)]" />
-    </span>
-  );
 }
 
 function StopButton({

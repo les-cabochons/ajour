@@ -5,6 +5,7 @@ import {
   FieldGroup,
   FieldLabel,
 } from "@/components/ui/field";
+import { DateField } from "@/components/ui/date-field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import type { LocalProject } from "@/domain/local-state";
@@ -114,11 +115,10 @@ export function TimeEntryFields({
         {localDate !== undefined ? (
           <Field data-invalid={Boolean(dateError)}>
             <FieldLabel htmlFor={dateId}>Date</FieldLabel>
-            <Input
+            <DateField
               id={dateId}
-              type="date"
               value={localDate}
-              onChange={(event) => onDateChange?.(event.target.value)}
+              onChange={(value) => onDateChange?.(value)}
               aria-invalid={Boolean(dateError)}
             />
             {dateError ? (

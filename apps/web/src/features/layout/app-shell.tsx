@@ -11,14 +11,12 @@ import { pluginHasConnector, pluginHasCodeHost } from "@ajour/shared";
 import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   RiAddLine as Plus,
-  RiArrowDownSLine as ChevronDown,
   RiArrowGoBackLine as ReturnIcon,
   RiPlayLine as Play,
 } from "@remixicon/react";
 import { PageTitle } from "@/components/page-header";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Chip } from "@/components/ui/chip";
-import { Calendar } from "@/components/ui/calendar";
 import {
   Popover,
   PopoverContent,
@@ -49,6 +47,7 @@ import {
   NarrowSectionSwitcher,
   NarrowSettingsButton,
 } from "@/features/layout/narrow-titlebar";
+import { TimeDatePicker } from "@/features/time/time-date-picker";
 import { TimeEntryEditorPopover } from "@/features/time/time-entry-editor-popover";
 import type { NewTimeEntryValues } from "@/features/time/time-entry-editor-form";
 import {
@@ -105,30 +104,6 @@ const isMacDesktopShell =
 
 const AUTO_SYNC_POLL_INTERVAL_MS = 30_000;
 
-function dateAtNoon(localDate: string) {
-  return new Date(`${localDate}T12:00:00`);
-}
-
-function formatTitlebarDate(localDate: string) {
-  return new Intl.DateTimeFormat("en-CA", {
-    month: "short",
-    day: "numeric",
-  }).format(dateAtNoon(localDate));
-}
-
-/** "Wednesday, Oct 14": the Time page's title in the top bar. */
-function formatLongTitlebarDate(localDate: string) {
-  return new Intl.DateTimeFormat("en-CA", {
-    weekday: "long",
-    month: "short",
-    day: "numeric",
-  }).format(dateAtNoon(localDate));
-}
-
-function formatCalendarIsoDate(date: Date) {
-  return new Intl.DateTimeFormat("en-CA").format(date);
-}
-
 function getTimeRouteDate(pathname: string) {
   const match = pathname.match(/^\/(?:time|review)\/([^/?#]+)/);
   if (!match) {
@@ -136,63 +111,6 @@ function getTimeRouteDate(pathname: string) {
   }
 
   return match[1] === "today" ? todayIsoDate() : match[1];
-}
-
-/**
- * The selected day with a calendar popover. The narrow titlebar shows it short
- * ("Oct 14"); as the Time page's default title (`long`) it reads "Wednesday,
- * Oct 14" with a chevron.
- */
-function CompactTimeDatePicker({
-  date,
-  onSelectDate,
-  long = false,
-}: {
-  date: string;
-  onSelectDate: (date: string) => void;
-  long?: boolean;
-}) {
-  const [isOpen, setIsOpen] = useState(false);
-
-  function selectDate(nextDate: string) {
-    setIsOpen(false);
-    if (nextDate !== date) {
-      onSelectDate(nextDate);
-    }
-  }
-
-  return (
-    <Popover open={isOpen} onOpenChange={setIsOpen}>
-      <PopoverTrigger
-        className={cn(
-          long ? "ajour-page-title-date" : "ajour-titlebar-date-trigger",
-          "desktop-no-drag",
-        )}
-        aria-label={`Select time entry date. Current date ${formatTitlebarDate(date)}`}
-      >
-        {long ? formatLongTitlebarDate(date) : formatTitlebarDate(date)}
-        {long ? <ChevronDown aria-hidden="true" /> : null}
-      </PopoverTrigger>
-      <PopoverContent
-        className="ajour-titlebar-date-popover"
-        align="start"
-        sideOffset={8}
-      >
-        <Calendar
-          mode="single"
-          selected={dateAtNoon(date)}
-          onSelect={(selectedDate) => {
-            if (selectedDate) {
-              selectDate(formatCalendarIsoDate(selectedDate));
-            }
-          }}
-          captionLayout="label"
-          buttonVariant="ghost"
-          className="ajour-titlebar-calendar"
-        />
-      </PopoverContent>
-    </Popover>
-  );
 }
 
 /** The top bar's title while the page has not mounted its own `PageHeader`. */
@@ -208,7 +126,7 @@ function DefaultPageHeader({
   if (pathname.startsWith("/time/")) {
     return (
       <>
-        <CompactTimeDatePicker
+        <TimeDatePicker
           date={selectedTimeDate}
           onSelectDate={onSelectDate}
           long
@@ -932,7 +850,7 @@ export function AppShell() {
                     selectedTimeDate={selectedTimeDate}
                   />
                 ) : null}
-                <CompactTimeDatePicker
+                <TimeDatePicker
                   date={selectedTimeDate}
                   onSelectDate={(nextDate) => {
                     setSelectedTimeDate(nextDate);

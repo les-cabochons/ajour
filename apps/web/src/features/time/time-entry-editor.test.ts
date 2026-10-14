@@ -270,6 +270,21 @@ describe("time-entry editor", () => {
       });
     });
 
+    it("blocks a date that is not a calendar day", () => {
+      const editor = evaluateTimeEntryEditor(
+        {
+          ...createTimeEntryEditorFields(DAY, original),
+          localDate: "2026-02-30",
+        },
+        { original },
+      );
+      expect(editor.dateError).toBe("Enter a date");
+      expect(commitTimeEntryDraft(editor, "save")).toEqual({
+        kind: "invalid",
+        error: "Enter a date",
+      });
+    });
+
     it("never offers Save for a new entry with 0h", () => {
       const editor = evaluateTimeEntryEditor(
         { ...createTimeEntryEditorFields(DAY), durationHours: "0" },

@@ -14,6 +14,7 @@ import {
   RiStopLine as Stop,
 } from "@remixicon/react";
 import { ObjectActionsButton } from "@/components/object-actions-menu";
+import { RunningDot } from "@/components/running-dot";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import type { TimeEntryActionId } from "@/domain/actions/object-actions";
@@ -355,13 +356,13 @@ export function TimeEntryEditorForm({
     >
       <header className="flex items-start justify-between gap-2">
         <div className="flex min-w-0 flex-col gap-0.5">
-          <Title className="text-sm font-semibold">
+          <Title className="text-base font-semibold">
             {target.kind === "create" ? "New time entry" : "Edit time entry"}
           </Title>
           <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
             {runningTimer ? (
               <>
-                <span className="status-dot status-dot-pulse" />
+                <RunningDot />
                 Running · {formatEntryDate(runningTimer.localDate)}
               </>
             ) : (
