@@ -251,7 +251,7 @@ export function AppNavigationSidebar({
             label: "Pull requests",
             icon: PullRequestIcon,
             shortcut: undefined,
-            count: returnedPullRequests || pullRequests.items.length,
+            count: pullRequests.items.length,
             highlighted: returnedPullRequests > 0,
           } as const,
         ]
