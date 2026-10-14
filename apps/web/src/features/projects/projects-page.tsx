@@ -364,6 +364,7 @@ function ProjectDetail({
   onProjectAction,
   onOpenTask,
   onNewTask,
+  onLeave,
   onAssignShortcut,
 }: {
   project: LocalProject;
@@ -376,6 +377,8 @@ function ProjectDetail({
   onOpenTask: (task: LocalProjectTask) => void;
   /** Opens a blank task in the task editor. */
   onNewTask: () => void;
+  /** Guards the breadcrumb back to the list, like the sidebar links. */
+  onLeave: (event: React.MouseEvent<HTMLAnchorElement>) => void;
   /** Opens the slot picker for a task, like the palette's Assign shortcut…. */
   onAssignShortcut: (task: LocalProjectTask) => void;
 }) {
@@ -851,7 +854,7 @@ function ProjectDetail({
 
       <PageHeader
         breadcrumb={[
-          { label: "Projects", to: "/projects" },
+          { label: "Projects", to: "/projects", onClick: onLeave },
           { label: displayName },
         ]}
         actions={
@@ -1917,6 +1920,7 @@ export function ProjectsPage() {
               onProjectAction={runProjectAction}
               onOpenTask={(task) => openTaskEditor(selectedProject._id, task)}
               onNewTask={() => openTaskEditor(selectedProject._id)}
+              onLeave={(event) => handleLeaveProjectClick(event, null)}
               onAssignShortcut={(task) =>
                 setShortcutRequest({ projectId: selectedProject._id, task })
               }
