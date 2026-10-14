@@ -146,6 +146,68 @@ describe("agent timer and entry tools", () => {
     ).toMatchObject({ ok: false, error: "Stop the running entry first" });
   });
 
+  it("keeps the task when edit_entry repeats the entry's project", async () => {
+    const { call, localStore, project, task } = await setup();
+    localStore.saveManualTimeEntry({
+      localDate: "2026-10-13",
+      projectId: project._id,
+      taskId: task("Build")._id,
+      durationMs: 30 * 60_000,
+    });
+    const entry = localStore.snapshot().timesheetEntries[0]!;
+
+    expect(
+      call("edit_entry", {
+        entryId: entry._id,
+        projectId: project._id,
+        note: "Renamed",
+      }),
+    ).toMatchObject({ ok: true });
+    expect(localStore.snapshot().timesheetEntries[0]).toMatchObject({
+      taskId: task("Build")._id,
+      note: "Renamed",
+    });
+  });
+
+  it("drops the task when edit_entry moves the entry to another project", async () => {
+    const { call, localStore, project, task } = await setup();
+    localStore.addProject({ name: "Other", color: "#654321" });
+    const other = localStore
+      .snapshot()
+      .projects.find((candidate) => candidate.name === "Other")!;
+    localStore.saveManualTimeEntry({
+      localDate: "2026-10-13",
+      projectId: project._id,
+      taskId: task("Build")._id,
+      durationMs: 30 * 60_000,
+    });
+    const entry = localStore.snapshot().timesheetEntries[0]!;
+
+    expect(
+      call("edit_entry", { entryId: entry._id, projectId: other._id }),
+    ).toMatchObject({ ok: true });
+    expect(localStore.snapshot().timesheetEntries[0]).toMatchObject({
+      projectId: other._id,
+    });
+    expect(localStore.snapshot().timesheetEntries[0]!.taskId).toBeUndefined();
+  });
+
+  it("keeps the task when edit_running_entry repeats the current project", async () => {
+    const { call, localStore, project, task } = await setup();
+    call("start_timer", {
+      projectId: project._id,
+      taskId: task("Build")._id,
+    });
+
+    expect(
+      call("edit_running_entry", { projectId: project._id, note: "Renamed" }),
+    ).toMatchObject({ ok: true });
+    expect(localStore.snapshot().timers[0]).toMatchObject({
+      taskId: task("Build")._id,
+      note: "Renamed",
+    });
+  });
+
   it("creates an entry and marks it submitted", async () => {
     const { call, localStore, project, task } = await setup();
     const created = call("create_entry", {
@@ -292,6 +354,10 @@ describe("agent work item tools", () => {
 
   it("drops the old task when an edit changes the project", async () => {
     const { call, localStore, project, task } = await setup();
+    localStore.addProject({ name: "Other", color: "#654321" });
+    const other = localStore
+      .snapshot()
+      .projects.find((candidate) => candidate.name === "Other")!;
     const workItemId = localStore.addWorkItem({
       title: "Mapped",
       projectId: project._id,
@@ -299,13 +365,34 @@ describe("agent work item tools", () => {
     });
 
     expect(
-      call("edit_work_item", { workItemId, projectId: null }),
+      call("edit_work_item", { workItemId, projectId: other._id }),
     ).toMatchObject({ ok: true });
     const item = localStore
       .snapshot()
       .workItems.find((candidate) => candidate._id === workItemId)!;
-    expect(item.projectId).toBeUndefined();
+    expect(item.projectId).toBe(other._id);
     expect(item.taskId).toBeUndefined();
+  });
+
+  it("keeps the task when an item edit repeats its current project", async () => {
+    const { call, localStore, project, task } = await setup();
+    const workItemId = localStore.addWorkItem({
+      title: "Mapped",
+      projectId: project._id,
+      taskId: task("Build")._id,
+    });
+
+    expect(
+      call("edit_work_item", {
+        workItemId,
+        projectId: project._id,
+        title: "Renamed",
+      }),
+    ).toMatchObject({ ok: true });
+    const item = localStore
+      .snapshot()
+      .workItems.find((candidate) => candidate._id === workItemId)!;
+    expect(item.taskId).toBe(task("Build")._id);
   });
 
   it("refuses a subitem of a subitem and an item created in a done state", async () => {

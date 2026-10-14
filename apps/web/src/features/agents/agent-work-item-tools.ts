@@ -185,15 +185,16 @@ export function runWorkItemWriteTool(
           input.remainingEstimateHours ?? undefined;
       }
       if (input.projectId !== undefined || input.taskId !== undefined) {
-        // A new project drops the old task, which belongs to the old project.
         const projectId =
           input.projectId === undefined
             ? item.projectId
             : (input.projectId ?? undefined);
+        // A different project drops the old task, which belongs to the old project.
+        const projectChanged = projectId !== item.projectId;
         const taskId =
           input.taskId !== undefined
             ? (input.taskId ?? undefined)
-            : input.projectId !== undefined
+            : projectChanged
               ? undefined
               : item.taskId;
         if (taskId && !projectId) {

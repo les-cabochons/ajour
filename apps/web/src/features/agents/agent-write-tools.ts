@@ -248,9 +248,11 @@ export function runEntryWriteTool(
       const timer = state.timers[0];
       if (!timer) throw new AgentToolRefusal("No entry is running.");
       const projectId = input.projectId ?? timer.projectId;
-      const taskId = input.projectId
-        ? input.taskId
-        : (input.taskId ?? timer.taskId);
+      // A different project drops the old task, which belongs to the old project.
+      const taskId =
+        input.projectId && input.projectId !== timer.projectId
+          ? input.taskId
+          : (input.taskId ?? timer.taskId);
       if (projectId) requireProjectTask(state, projectId, taskId);
       const { undoToken } = localStore.runWithUndo(() =>
         localStore.editRunningEntry(timer._id, {
@@ -319,9 +321,11 @@ export function runEntryWriteTool(
       }
       assertAllowed(entryActions(state, entry), "edit");
       const projectId = input.projectId ?? entry.projectId;
-      const taskId = input.projectId
-        ? input.taskId
-        : (input.taskId ?? entry.taskId);
+      // A different project drops the old task, which belongs to the old project.
+      const taskId =
+        input.projectId && input.projectId !== entry.projectId
+          ? input.taskId
+          : (input.taskId ?? entry.taskId);
       if (projectId) requireProjectTask(state, projectId, taskId);
       const { undoToken } = localStore.runWithUndo(() =>
         localStore.updateTimesheetEntry(entry._id, {
