@@ -5,10 +5,19 @@ import { z } from "zod";
  * Ajour's data tools. See docs/superpowers/specs/2026-10-14-ajour-mcp-design.md.
  */
 
-/** A local calendar date, such as 2026-10-14. */
+/** A real local calendar date, such as 2026-10-14. 2026-02-29 is refused. */
 export const isoDateSchema = z
   .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, "Use a date such as 2026-10-14.");
+  .regex(/^\d{4}-\d{2}-\d{2}$/, "Use a date such as 2026-10-14.")
+  .refine(isRealCalendarDate, "That day does not exist in the calendar.");
+
+/** True when the date survives a parse and format round trip in UTC. */
+function isRealCalendarDate(value: string) {
+  const parsed = new Date(`${value}T00:00:00Z`);
+  return (
+    !Number.isNaN(parsed.getTime()) && parsed.toISOString().startsWith(value)
+  );
+}
 
 /** An agent client as Settings lists it. The token is never part of it. */
 export const mcpClientSchema = z.object({

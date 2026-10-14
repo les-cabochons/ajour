@@ -30,8 +30,11 @@ describe("agent tool contracts", () => {
     });
   });
 
-  it("rejects dates that are not ISO calendar dates", () => {
+  it("rejects text that is not a real calendar date", () => {
     expect(isoDateSchema.safeParse("14/10/2026").success).toBe(false);
+    expect(isoDateSchema.safeParse("2026-02-29").success).toBe(false);
+    expect(isoDateSchema.safeParse("2026-13-45").success).toBe(false);
+    expect(isoDateSchema.safeParse("2028-02-29").success).toBe(true);
     expect(isoDateSchema.safeParse("2026-10-14").success).toBe(true);
   });
 });
