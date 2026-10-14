@@ -1,6 +1,6 @@
 # UI Registry
 
-- Pull request rows live in `features/pull-requests/pull-request-row.tsx`. The list groups Active, Settled and Recently closed items. The expanded sidebar alternates its lists with Backlog and Pull requests tabs, shown only while a code host is enabled. Opening either feature selects its tab; manual switching changes only the sidebar. Backlog keeps Up next, Snoozed and Settled. The pull request panel contains active, unsnoozed items in longest-waiting-first order. E settles locally, B opens the shared snooze picker, Enter opens the summary and the context menu offers Open in the provider. Ctrl/Cmd-click opens the source without changing routes. Navigation and records are hidden while the code host is inactive.
+- Pull request rows live in `features/pull-requests/pull-request-row.tsx`. The list groups Active, Settled and Recently closed items. The sidebar work list shows them as a collapsible Pull requests section, only while a code host is enabled, between the Backlog section and Snoozed: active, unsnoozed items in longest-waiting-first order, as one-line compact rows. E settles locally, B opens the shared snooze picker, Enter opens the summary and the context menu offers Open in the provider. Ctrl/Cmd-click opens the source without changing routes. Navigation and records are hidden while the code host is inactive.
 
 This registry captures reusable visual patterns already present in Ajour. Update it after meaningful UI additions.
 

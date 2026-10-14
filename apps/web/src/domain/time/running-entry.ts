@@ -14,21 +14,27 @@ export interface RunningEntrySummary {
   meta: string;
   workItem?: LocalWorkItem;
   /**
-   * The backlog item's remaining estimate minus the time running now. Negative
-   * once the entry runs past the estimate. Missing without an estimate.
+   * The backlog item's remaining estimate, less any overrun already logged,
+   * minus the time running now that is not saved yet. Negative once the item
+   * runs past its estimate. Missing without an estimate.
    */
   remainingMs?: number;
-  /** How much of the remaining estimate the running time uses, from 0 to 1. */
+  /** How much of that remaining estimate the unsaved time uses, from 0 to 1. */
   estimateUsed?: number;
 }
 
-/** What the timer dock and the window title show for the running entry. */
+/**
+ * What the timer dock and the window title show for the running entry.
+ * `unsavedDurationMs` is the running time not yet saved to an entry: saving
+ * already takes logged time off the item's remaining estimate, so a continued
+ * entry only counts what it added since.
+ */
 export function summarizeRunningEntry(
   timer: LocalTimer,
   context: {
     projects: readonly LocalProject[];
     workItems: readonly LocalWorkItem[];
-    runningDurationMs: number;
+    unsavedDurationMs: number;
   },
 ): RunningEntrySummary {
   const project = context.projects.find(({ _id }) => _id === timer.projectId);
@@ -39,9 +45,12 @@ export function summarizeRunningEntry(
   const projectLabel = project
     ? project.code?.trim() || getLocalProjectDisplayName(project)
     : undefined;
+  // The remaining estimate stops at 0; logged time past it is the overrun.
   const estimateMs =
     workItem?.remainingEstimateHours !== undefined
-      ? workItem.remainingEstimateHours * HOUR_MS
+      ? (workItem.remainingEstimateHours -
+          (workItem.remainingEstimateOverrunHours ?? 0)) *
+        HOUR_MS
       : undefined;
 
   return {
@@ -56,13 +65,13 @@ export function summarizeRunningEntry(
     remainingMs:
       estimateMs === undefined
         ? undefined
-        : estimateMs - context.runningDurationMs,
+        : estimateMs - context.unsavedDurationMs,
     estimateUsed:
       estimateMs === undefined
         ? undefined
         : estimateMs <= 0
           ? 1
-          : Math.min(1, context.runningDurationMs / estimateMs),
+          : Math.min(1, context.unsavedDurationMs / estimateMs),
   };
 }
 

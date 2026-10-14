@@ -622,10 +622,13 @@ export function AppShell() {
   const [selectedTimeDate, setSelectedTimeDate] = useState(
     () => timeRouteDate ?? todayIsoDate(),
   );
-  const appSidebar = useAppSidebar();
+  const isNarrowView = useIsNarrowView();
+  // In wide windows Settings fills the left column, so Cmd/Ctrl+B waits.
+  const appSidebar = useAppSidebar({
+    suspended: isSettingsActive && !isNarrowView,
+  });
   const { closeOverlay } = appSidebar;
   const sidebarWidth = resolveSidebarWidth(useSidebarLayout());
-  const isNarrowView = useIsNarrowView();
   useGlobalShortcuts(selectedTimeDate);
 
   useApplyTheme();

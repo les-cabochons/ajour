@@ -68,30 +68,32 @@ export function useRunningEntry() {
   const now = useRunningClock(timer !== null);
 
   const { runningDurationMs } = getTimerDurationsMs(timer, now);
-  const summary = useMemo(
-    () =>
-      timer
-        ? summarizeRunningEntry(timer, {
-            projects: state.projects,
-            workItems: state.workItems,
-            runningDurationMs,
-          })
-        : null,
-    [timer, state.projects, state.workItems, runningDurationMs],
-  );
+  // The running time not saved to an entry yet. A continued entry has
+  // already counted its saved time, in today's total and in the estimate.
+  const unsavedDurationMs = getTimerContributionMs({
+    timer,
+    timesheetEntries: state.timesheetEntries,
+    runningDurationMs,
+  });
+  const summary = timer
+    ? summarizeRunningEntry(timer, {
+        projects: state.projects,
+        workItems: state.workItems,
+        unsavedDurationMs,
+      })
+    : null;
 
   const today = todayIsoDate();
+  // Saved entries change rarely; only the running part ticks.
+  const savedTodayMs = useMemo(
+    () =>
+      state.timesheetEntries
+        .filter((entry) => entry.localDate === today)
+        .reduce((sum, entry) => sum + entry.durationMs, 0),
+    [state.timesheetEntries, today],
+  );
   const todayTotalMs =
-    state.timesheetEntries
-      .filter((entry) => entry.localDate === today)
-      .reduce((sum, entry) => sum + entry.durationMs, 0) +
-    (timer?.localDate === today
-      ? getTimerContributionMs({
-          timer,
-          timesheetEntries: state.timesheetEntries,
-          runningDurationMs,
-        })
-      : 0);
+    savedTodayMs + (timer?.localDate === today ? unsavedDurationMs : 0);
 
   return { timer, summary, runningDurationMs, todayTotalMs };
 }

@@ -144,11 +144,11 @@ Decided in [Narrow view](https://github.com/les-cabochons/ajour/issues/13). Prot
 
 ### Breakpoints
 
-| Width           | Layout                                          |
-| --------------- | ----------------------------------------------- |
-| 1100px and up   | Desktop, sidebar expanded or rail by preference |
-| 768px to 1099px | Desktop, 52px rail                              |
-| Below 768px     | Narrow view, no rail and no sidebars            |
+| Width           | Layout                                                 |
+| --------------- | ------------------------------------------------------ |
+| 1100px and up   | Desktop, sidebar expanded or hidden by preference      |
+| 768px to 1099px | Desktop, sidebar hidden, opens over the page on demand |
+| Below 768px     | Narrow view, no sidebars                               |
 
 Today's splits at 640px and 1023px go away.
 

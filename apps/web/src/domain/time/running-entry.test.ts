@@ -47,7 +47,7 @@ describe("summarizeRunningEntry", () => {
       {
         projects: [project],
         workItems: [workItem],
-        runningDurationMs: HOUR_MS / 2,
+        unsavedDurationMs: HOUR_MS / 2,
       },
     );
     expect(summary.title).toBe("Fix export rounding");
@@ -56,11 +56,39 @@ describe("summarizeRunningEntry", () => {
     expect(summary.estimateUsed).toBe(0.25);
   });
 
+  it("counts only the unsaved time of a continued entry", () => {
+    // 3h remaining, 2h logged and saved: 1h remains. Continuing that entry
+    // runs from 2h, but only the 30 minutes since are unsaved.
+    const summary = summarizeRunningEntry(timer({ workItemId: "item-1" }), {
+      projects: [],
+      workItems: [{ ...workItem, remainingEstimateHours: 1 }],
+      unsavedDurationMs: HOUR_MS / 2,
+    });
+    expect(summary.remainingMs).toBe(HOUR_MS / 2);
+    expect(summary.estimateUsed).toBe(0.5);
+  });
+
+  it("starts from an overrun the item already logged", () => {
+    const summary = summarizeRunningEntry(timer({ workItemId: "item-1" }), {
+      projects: [],
+      workItems: [
+        {
+          ...workItem,
+          remainingEstimateHours: 0,
+          remainingEstimateOverrunHours: 1,
+        },
+      ],
+      unsavedDurationMs: HOUR_MS / 2,
+    });
+    expect(summary.remainingMs).toBe(-1.5 * HOUR_MS);
+    expect(summary.estimateUsed).toBe(1);
+  });
+
   it("goes past the estimate without capping the remaining time", () => {
     const summary = summarizeRunningEntry(timer({ workItemId: "item-1" }), {
       projects: [],
       workItems: [workItem],
-      runningDurationMs: 3 * HOUR_MS,
+      unsavedDurationMs: 3 * HOUR_MS,
     });
     expect(summary.remainingMs).toBe(-HOUR_MS);
     expect(summary.estimateUsed).toBe(1);
@@ -70,7 +98,7 @@ describe("summarizeRunningEntry", () => {
     const context = {
       projects: [project],
       workItems: [],
-      runningDurationMs: 0,
+      unsavedDurationMs: 0,
     };
     expect(
       summarizeRunningEntry(
