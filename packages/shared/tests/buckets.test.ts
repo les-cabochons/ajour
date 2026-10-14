@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { buildBrowserActivityBuckets } from "../src/timeline/buckets";
-import type { ActivitySegmentInput } from "../src/types/domain";
+import { buildBrowserActivityBuckets } from "../index";
+import type { ActivitySegmentInput } from "../index";
 
 function makeSegment(
   overrides: Partial<ActivitySegmentInput>,

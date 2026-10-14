@@ -21,13 +21,13 @@ import {
   type ConnectorSettleWriteRequest,
   type ConnectorSettleWriteResult,
   type ConnectorSyncWorkItem,
-} from "../../../packages/shared/src/connectors.ts";
+} from "../../../packages/shared/connectors.ts";
 import {
   codeHostOperations,
   type CodeHostOperation,
   type CodeHostOperationRequest,
   type CodeHostOperationResult,
-} from "../../../packages/shared/src/code-host.ts";
+} from "../../../packages/shared/code-host.ts";
 import { z } from "zod";
 import {
   discoverInstalledConnectorPlugins,

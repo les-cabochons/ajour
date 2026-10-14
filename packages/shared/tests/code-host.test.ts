@@ -4,7 +4,7 @@ import {
   codeHostOperations,
   codeHostSyncResultSchema,
   codeHostUpdatePullRequestRequestSchema,
-} from "../src/code-host";
+} from "../code-host";
 
 const user = { login: "octocat", isBot: false };
 

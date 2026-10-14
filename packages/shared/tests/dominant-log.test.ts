@@ -1,9 +1,6 @@
 import { describe, expect, it } from "vitest";
-import {
-  buildDominantActivityLog,
-  splitSpansByLocalDate,
-} from "../src/timeline/dominant-log";
-import type { ActivityIdentity, ActivitySpan } from "../src/types/domain";
+import { buildDominantActivityLog, splitSpansByLocalDate } from "../index";
+import type { ActivityIdentity, ActivitySpan } from "../index";
 
 const BUCKET_MS = 5 * 60 * 1000;
 

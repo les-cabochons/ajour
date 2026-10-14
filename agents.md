@@ -25,6 +25,9 @@ adapters in `apps/web/src/lib`, workflow UI in `apps/web/src/features`, and reus
 controls in `apps/web/src/components`. Extend the owning transition module instead
 of rebuilding lifecycle rules in `local-store.ts` or React components.
 
+Packages are deep modules: see [`packages/README.md`](packages/README.md) before
+adding a package or importing from one.
+
 Examples:
 
 ```sh

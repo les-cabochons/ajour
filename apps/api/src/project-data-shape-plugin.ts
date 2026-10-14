@@ -4,7 +4,7 @@ import {
   PROJECT_DATA_SHAPE_PLUGIN_API_VERSION,
   projectDataShapePluginManifestSchema,
   type ProjectDataShapePluginManifest,
-} from "../../../packages/shared/src/project-data-shapes.ts";
+} from "../../../packages/shared/project-data-shapes.ts";
 
 const ALLOWED_ENTRYPOINT_EXTENSIONS = new Set([".cjs", ".js", ".mjs"]);
 

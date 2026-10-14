@@ -4,7 +4,7 @@ import {
   connectorPluginManifestSchema,
   pluginHasCodeHost,
   pluginHasConnector,
-} from "../src/connectors";
+} from "../connectors";
 
 const validManifest = {
   id: "example_connector",
