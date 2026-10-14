@@ -148,6 +148,13 @@ Feature: Open the local time workspace
     And I go back to the app from Settings
     Then the Time workspace is visible
 
+  Scenario: Return from Settings to the same view
+    Given I have no saved Ajour workspace
+    When I open today's time workspace in the Week view
+    And I open Settings from the desktop sidebar
+    And I go back to the app from Settings
+    Then the Week view is back and the browser's Back skips Settings
+
   Scenario: Open Settings directly
     Given I have no saved Ajour workspace
     When I open Settings directly

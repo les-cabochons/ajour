@@ -665,11 +665,13 @@ export function AppShell() {
     closeOverlay();
   }, [pathname, closeOverlay]);
 
-  // Back to app returns to the last page outside Settings.
-  const lastAppPathRef = useRef("/time/today");
+  // Back to app returns to the last page outside Settings, with its search
+  // state, such as the Week view or the entry open in the side panel.
+  const href = useRouterState({ select: (state) => state.location.href });
+  const lastAppHrefRef = useRef("/time/today");
   useEffect(() => {
-    if (!isSettingsActive) lastAppPathRef.current = pathname;
-  }, [isSettingsActive, pathname]);
+    if (!isSettingsActive) lastAppHrefRef.current = href;
+  }, [isSettingsActive, href]);
 
   // In wide windows Settings takes the left column with its own pages list.
   const showsSettingsSidebar = isSettingsActive && !isNarrowView;
@@ -719,8 +721,10 @@ export function AppShell() {
           <SettingsNavigation
             pathname={pathname}
             view="wide"
+            // Replacing the Settings entry keeps the browser's Back from
+            // reopening Settings.
             onBack={() =>
-              void navigate({ to: lastAppPathRef.current } as never)
+              void navigate({ href: lastAppHrefRef.current, replace: true })
             }
           />
         ) : null}

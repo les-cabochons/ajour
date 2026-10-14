@@ -1449,6 +1449,19 @@ Then("the Settings pages replace the app sidebar", async ({ page }) => {
   expect(box?.height).toBe(viewport.height);
 });
 
+When("I open today's time workspace in the Week view", async ({ page }) => {
+  await page.goto("/time/today?view=week");
+});
+
+Then(
+  "the Week view is back and the browser's Back skips Settings",
+  async ({ page }) => {
+    await expect(page).toHaveURL(/view=week/);
+    await page.goBack();
+    await expect(page).not.toHaveURL(/\/settings/);
+  },
+);
+
 When("I go back to the app from Settings", async ({ page }) => {
   await page
     .getByRole("navigation", { name: "Settings sections" })
