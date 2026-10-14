@@ -63,10 +63,7 @@ export function DayStrip({
             </span>
             <span className="day-strip-number">{formatDayNumber(day)}</span>
             <Value
-              className={cn(
-                "day-strip-hours",
-                value === "0:00" && "is-empty",
-              )}
+              className={cn("day-strip-hours", value === "0:00" && "is-empty")}
               tone={isSelected ? "default" : "muted"}
             >
               {value === "0:00" ? "—" : value}

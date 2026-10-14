@@ -138,7 +138,7 @@ Then("the saved board uses a narrow list", async ({ page }) => {
 });
 When("I filter the Backlog to Urgent", async ({ page }) => {
   await page.getByRole("button", { name: "Filter", exact: true }).click();
-  await page.getByLabel("Filter property").selectOption("priority");
+  await chooseSelectOption(page, "Filter property", "priority");
   await page.getByRole("combobox", { name: "Filter value" }).click();
   await page.getByRole("option", { name: "Urgent", exact: true }).click();
 });
@@ -481,6 +481,36 @@ Then(
     ).toHaveText("Start Backlog parent");
   },
 );
+/** Labels of the Display popover's choices, by the value the steps name. */
+const DISPLAY_OPTION_LABELS: Record<string, string> = {
+  state: "Workflow state",
+  priority: "Priority",
+  project: "Project",
+  none: "None",
+  custom: "Custom",
+  priority_asc: "Priority",
+  created: "Created",
+  remaining: "Remaining estimate",
+  title: "Title",
+  week: "Past week",
+  all: "All",
+};
+
+/**
+ * Picks an option in one of the shadcn selects: opens the combobox named
+ * `label`, then clicks the option. `choice` is a value from the maps above or
+ * the option's own label.
+ */
+async function chooseSelectOption(page: Page, label: string, choice: string) {
+  await page.getByRole("combobox", { name: label, exact: true }).click();
+  await page
+    .getByRole("option", {
+      name: DISPLAY_OPTION_LABELS[choice] ?? choice,
+      exact: true,
+    })
+    .click();
+}
+
 async function inspectBacklogStart(
   page: Page,
   control: string,
@@ -510,13 +540,15 @@ async function inspectBacklogStart(
           .getByRole("button", { name: "Open page", exact: true })
           .click();
       }
-      const start = page
-        .getByRole("main")
-        .getByRole("button", { name: "Start entry", exact: true });
+      // The item page's actions sit in the top bar, beside its breadcrumb.
+      const header = page.locator(".ajour-page-header-slot");
+      const start = header.getByRole("button", {
+        name: "Start entry",
+        exact: true,
+      });
       if (running) await expect(start).toBeDisabled();
       else await expect(start).toBeEnabled();
-      await page
-        .getByRole("main")
+      await header
         .getByRole("button", {
           name: "Actions for Backlog parent",
           exact: true,
@@ -718,13 +750,13 @@ When(
   "I show Backlog projects as {string}",
   async ({ page }, presentation: string) => {
     await page.getByRole("button", { name: "Display", exact: true }).click();
-    await page
-      .getByLabel("Grouping", { exact: true })
-      .selectOption(presentation === "groups" ? "project" : "state");
+    await chooseSelectOption(
+      page,
+      "Grouping",
+      presentation === "groups" ? "project" : "state",
+    );
     if (presentation === "swimlanes")
-      await page
-        .getByLabel("Swimlanes", { exact: true })
-        .selectOption("project");
+      await chooseSelectOption(page, "Swimlanes", "project");
     await page.keyboard.press("Escape");
   },
 );
@@ -929,15 +961,13 @@ Given("the Backlog has enough items to scroll", async ({ page }) => {
 When("I use an ungrouped Backlog list ordered by Title", async ({ page }) => {
   await page.getByRole("button", { name: "List layout", exact: true }).click();
   await page.getByRole("button", { name: "Display", exact: true }).click();
-  await page.getByLabel("Grouping", { exact: true }).selectOption("none");
-  await page.getByLabel("Ordering", { exact: true }).selectOption("title");
+  await chooseSelectOption(page, "Grouping", "none");
+  await chooseSelectOption(page, "Ordering", "title");
   await page.keyboard.press("Escape");
 });
 When("I order the Backlog by {string}", async ({ page }, order: string) => {
   await page.getByRole("button", { name: "Display", exact: true }).click();
-  await page
-    .getByLabel("Ordering", { exact: true })
-    .selectOption({ label: order });
+  await chooseSelectOption(page, "Ordering", order);
   await page.keyboard.press("Escape");
 });
 When("I swipe upward from a sorted Backlog row", async ({ page }) => {
@@ -1011,7 +1041,7 @@ Then("the Backlog custom order remains unchanged", async ({ page }) => {
 });
 When("I group the Backlog by {string}", async ({ page }, grouping: string) => {
   await page.getByRole("button", { name: "Display", exact: true }).click();
-  await page.getByLabel("Grouping", { exact: true }).selectOption(grouping);
+  await chooseSelectOption(page, "Grouping", grouping);
   await page.keyboard.press("Escape");
 });
 When(
@@ -1460,7 +1490,7 @@ Then("the new Backlog item is in In progress", async ({ page }) => {
 });
 When("I enable project swimlanes", async ({ page }) => {
   await page.getByRole("button", { name: "Display", exact: true }).click();
-  await page.getByLabel("Swimlanes", { exact: true }).selectOption("project");
+  await chooseSelectOption(page, "Swimlanes", "project");
   await page.keyboard.press("Escape");
 });
 Then(

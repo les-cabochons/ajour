@@ -32,17 +32,17 @@ The redesign direction decided on 2026-10-14: Linear's density and structure, Ve
 - Breakpoints live in `lib/breakpoints.ts` only: below 768px is the narrow view, 768px to 1099px hides the app sidebar and makes the Projects list a rail, and 1100px and up follows the saved choice. Scripts use its media queries or `useIsNarrowView` from `lib/use-narrow-view.ts`. Styles use the `narrow`, `desktop` and `forced-rail` Tailwind variants that `lib/tailwind-breakpoints.ts` builds from it, as `@variant narrow { ... }` in CSS or `narrow:` in class names. Do not write width media queries for layout.
 - From 768px to 1099px the Projects sidebar is a 48px icon rail at the window's left edge; its links keep accessible names.
 - The narrow view renders no sidebars. `features/layout/narrow-titlebar.tsx` puts a segmented Time and Backlog switcher at the start of the titlebar (the active section shows its label) and a Settings cog at the trailing edge. Settings opens on a full-width list of its pages in the same groups: a small tertiary heading per group and 52px rows of icon, label and chevron, with no cards, borders or fills, and `features/layout/narrow-navigation.ts` decides each page's back arrow, shown in a bar under the titlebar. The Settings list's Projects entry opens `/projects` as a full-width project list; project detail, the archive and project import and export (`/settings/projects`) lead back to it.
-- Desktop structural surfaces consume the full area beside the application sidebar. Readable Time and Backlog content stays centered in a column capped at 1440px, while their color bands, table backgrounds, and row separators stretch to the workspace edges; individual pages may apply narrower readable inner columns.
-- The daily Time view is a continuous page surface rather than an outer card: retain internal day and row separators, but do not draw a perimeter around the combined day strip and entry area. The day strip is a `day-viewer` size container: below 840px its padding tightens, and below 720px, as next to the entry side panel, it drops the seven days and the week total.
-- Time and Backlog remove the generic page inset and meet the full workspace edges. Backlog fills the available workspace height and uses full-width internal header/row separators without a rounded outer card.
-- The compact titlebar begins beside the application sidebar. Date and new-entry controls remain clear of the native Windows caption-control area.
+- Desktop structural surfaces consume the full area beside the application sidebar. Time and Backlog remove the generic page inset and meet the full workspace edges; Backlog fills the available workspace height. Each page area owns a stylesheet under `apps/web/src/styles/` (`time.css`, `backlog.css`), imported at the top of `styles.css`; page files use the plain `(width < 768px)` media query for the narrow view because the breakpoint plugin registers its variants after the imports are inlined.
+- The Time pages put their header in the top bar through `features/time/time-page-header.tsx`: previous and next, the day as a calendar trigger (`features/time/time-date-picker.tsx`, which the shell's default title and the narrow titlebar also use) or the week's range, a Today chip or the way back to today, then Day | Week and Submit week. Under it the Day view shows `features/time/day-strip.tsx`, a 56px row of seven day tabs with their totals and the week total, then one-line 40px rows (`time-entry-row` in `features/timer/timer-panel.tsx`: dot, project, task, note, hover actions, the duration as a `Value`), and a quiet "New entry" row at the end.
+- The top bar begins beside the application sidebar. Its controls remain clear of the native Windows caption-control area.
 - Below 768px, Start and Create time entry float together at the bottom right with 44px targets. The floating timer dock replaces Start there. `GlobalTimerBar` keeps one editor and shortcut owner, portals the controls outside the titlebar's backdrop filter, and leaves the daily total in the titlebar. The scroll area reserves bottom space, safe-area insets keep the controls reachable, and narrow toasts sit above them. Wider windows keep the titlebar controls.
 - The app menu comes from `apps/desktop/electron/app-menu.cjs`. macOS shows it in the native menu bar. On Windows at 768px and up, `features/layout/app-menu-bar.tsx` draws the same menus at the start of the titlebar with the `components/ui/menubar.tsx` wrapper. Items run once their menu has closed and focus is back on the element the user was in, so Copy and Continue act on it. The narrow view and the web build show no menu bar.
 
 - The sidebar's work list is one scroll, `features/layout/sidebar-backlog-list.tsx`. `selectSidebarBacklogItems` in `domain/backlog/backlog-item-lifecycle.ts` decides which items show and their order. The highlighted Up next row comes first, then the collapsible Backlog section with one-line rows in Comfortable (28px with the estimate, 272px by default) or Compact (26px, 200px) density, the Pull requests section from `sidebar-pull-requests.tsx` (compact `PullRequestRow`s), and the collapsible Snoozed and Settled sections. `SidebarSectionHeader` draws every section label. Rows show a green running marker and a Returned dot; hover and focus swap the type icon for a settle circle and show Start entry, Snooze and "…" in place of the end of the row. `lib/sidebar-layout.ts` saves the density, Up next, the dragged width and each section's state per device under `ajour.sidebar-layout`. The shell sets `--app-sidebar-width` and the centering offset inline from it. `.ajour-sidebar-resize-handle` on the sidebar's right edge resizes it from 200px to 400px, hides the sidebar past the minimum, and resets on double-click.
 - Moving a backlog item between workflow states runs through `moveBacklogItemWithUndo` in `features/backlog/backlog-item-moves.ts`, from any surface, and the editor's state field uses it when a done state is involved. Closing or settling a parent with open subitems asks through the one `CloseSubitemsDialogHost` from `features/backlog/close-subitems-dialog.tsx`, mounted in the app shell, unless the Settings > Backlog choice answers. Settings > Workflow (`features/settings/settings-workflow-page.tsx`) lists the workflow states in board order with their Done flag, then the source states and their mapping.
 - Every backlog item action runs through `runBacklogItemAction` in `features/backlog/backlog-item-actions.ts`; hosts only run Edit and Add subitem. Snooze… opens the one `SnoozePickerHost` from `features/backlog/snooze-picker.tsx`, mounted in the app shell. `useNow` from `lib/use-now.ts` re-renders views that hide snoozed items, so a snooze ends on its own. `getSettleBehavior` in `features/backlog/settle-dialog.tsx` decides what Settle does. Items whose connector can't settle are settled locally at once. Otherwise the source project's settle rule decides: Ask opens the one `SettleDialogHost`, also mounted in the app shell, and Apply settles with the rule's change. Shift+E (`item.settle-ask`) and Shift-click open the dialog prefilled with the rule, and action menus label Settle "Settle…" when it opens the dialog. Settings > Backlog edits the rules in `features/settings/settle-rules-section.tsx`, and `domain/backlog/settle-rules.ts` owns them. `features/backlog/backlog-source-writes.ts` sends a settle's pending write when its Undo toast closes (`offerUndo`'s `onWindowClosed`) and at launch.
-- The backlog item page, `features/backlog/backlog-item-page.tsx` at `/backlog/$itemId`, has an icon tile header with the actions, a state notice, four estimate tiles, a progress bar, then the note, subitems and time entries next to a properties panel. The page root is the focused object, so Enter edits, E settles and B snoozes. Edit opens the backlog item editor in a `SidePanel` over the page, and `?action=edit` or `?action=add-subitem` open it from the sidebar and the palette.
+- The backlog item page, `features/backlog/backlog-item-page.tsx` at `/backlog/$itemId`, puts a "Backlog / #id" breadcrumb and the item's actions in the top bar, then the 20px title with type and project chips, a state notice, the estimates as a `FigureRow` over a 3px progress bar, and the note, subitems and time entries (`backlog-item-row`s with `SectionHeading`s) beside a `PropertyList`.
+- The Backlog page puts "Backlog n" and its actions (layout toggle, Display, "…", New backlog item) in the top bar; the archive view swaps the title for "Archive" with a back arrow. A 40px filter row follows, then 32px sticky group headers and 36px list rows with fixed leading columns (priority, id, state, type) so titles align whether or not an item has an id; the project is a `Chip` and the estimate a mono value at the row's end. Board cards are flat 6px cards. The Display popover's choices are shadcn `Select`s. The pull request pages follow the same anatomy: title and Sync in the bar, `SectionHeading`s over rows, a breadcrumb and `PropertyList` on the detail page. The page root is the focused object, so Enter edits, E settles and B snoozes. Edit opens the backlog item editor in a `SidePanel` over the page, and `?action=edit` or `?action=add-subitem` open it from the sidebar and the palette.
 
 ## Surfaces
 
@@ -65,8 +65,8 @@ The redesign direction decided on 2026-10-14: Linear's density and structure, Ve
 - Immediate on/off settings use `Switch` from `apps/web/src/components/ui/switch.tsx`; labels describe the action as Activate or Deactivate plus the capability name.
 - Reorderable tables and navigation lists use `apps/web/src/lib/table-drag.ts` for consistent mouse/touch thresholds, cancellation, row movement, and drag-preview positioning. Its pointer session cancels the drag on Escape and keeps that Escape from closing the panel or dialog behind it. `getSharedTableDropOrder` returns null for a drop where the item started, so nothing is saved. The Week's cross-day drag, `lib/cross-day-entry-drag.ts`, runs on the same session.
 - Icon-only buttons use `TooltipButton` from `apps/web/src/components/tooltip-button.tsx`: a `Tooltip` with the button's label and, when a `shortcut` id is given, its key from `lib/shortcuts.ts`, as "Previous day [". It sets `aria-label` and `aria-keyshortcuts`. Pass `render` for a `Button`, a `Link` or a `DropdownMenuTrigger` or `PopoverTrigger`. `ShortcutTooltipLabel` from the same file fills tooltips that other components render, such as the app sidebar's navigation. The Projects sidebar shows its project and Archive tooltips only in the 48px rail.
-- Modal surfaces are `Dialog`, `AlertDialog` or `Sheet`; the titlebar totals pill opens its day and week totals in a `Popover`.
-- Creating and editing a time entry use one form, `features/time/time-entry-editor-form.tsx`: header with title, date, "…" and ×; Project / task, Note, Hours, Date (`time-entry-fields.tsx`); footer Cancel · Start (Switch while another entry runs, Continue on a saved entry, Stop on the running entry) · Save. Day and Week host it in `components/side-panel.tsx`, a panel docked on the right that keeps the page clickable and returns focus to the row or card on close. Clicking another entry saves a valid draft first; an invalid draft blocks the switch. In the narrow view, below 768px, `features/timer/time-entry-modal.tsx` hosts the same form in a dialog that spans the window, less an 8px margin on each side. The titlebar "+" and the timer dock host it in `features/time/time-entry-editor-popover.tsx`, a popover anchored to them that ignores outside clicks. Its `anchor` prop moves the popover to another element and gives focus back to it on close. Entry actions come from `domain/actions/object-actions.ts` and render through `components/object-actions-menu.tsx` as a right-click menu and a "…" button.
+- Modal surfaces are `Dialog`, `AlertDialog` or `Sheet`; the top bar's day total opens its day and week totals in a `Popover`.
+- Creating and editing a time entry use one form, `features/time/time-entry-editor-form.tsx`: header with title, date, "…" and ×; Project / task, Note, Hours, Date (`time-entry-fields.tsx`, where Date is `components/ui/date-field.tsx`: an ISO text input with a calendar popover, never the browser's date control); footer Cancel · Start (Switch while another entry runs, Continue on a saved entry, Stop on the running entry) · Save. Day and Week host it in `components/side-panel.tsx`, a panel docked on the right that keeps the page clickable and returns focus to the row or card on close. Clicking another entry saves a valid draft first; an invalid draft blocks the switch. In the narrow view, below 768px, `features/timer/time-entry-modal.tsx` hosts the same form in a dialog that spans the window, less an 8px margin on each side. The titlebar "+" and the timer dock host it in `features/time/time-entry-editor-popover.tsx`, a popover anchored to them that ignores outside clicks. Its `anchor` prop moves the popover to another element and gives focus back to it on close. Entry actions come from `domain/actions/object-actions.ts` and render through `components/object-actions-menu.tsx` as a right-click menu and a "…" button.
 - Delete entry, Discard running entry, Move to…, cross-day drag and Duplicate to… another day act at once and show an Undo toast for 8 seconds instead of a confirmation. `components/ui/toast.tsx` wraps the Base UI toast: `Toaster` is mounted once in `main.tsx`, bottom right, bottom center below 768px, at most three, newest on top. `showUndoToast` keeps one Undo toast open, and Cmd+Z (Ctrl+Z) presses it when focus is not in a text field. Time entry actions call it through `offerTimeEntryUndo` in `features/time/time-entry-actions.tsx`.
 - Projects: "New project" in the project list header and Edit open `features/projects/project-form-dialog.tsx`, a standard `Dialog` that ignores outside clicks. Tasks open in `features/projects/project-task-editor-form.tsx` with the entry editor's Save and Escape rules, hosted in `components/side-panel.tsx`, or a full-width dialog in the narrow view. "New task" sits in the project header; "Import tasks…" is in the project header's "…" menu only.
 - Projects, tasks and backlog items use the same pattern. Project rows in the project sidebar, the archived list and the project header; task rows; and backlog rows and the backlog item editor all show their kind's action set. Archive and Restore act at once. Backlog Delete asks for confirmation and states the subitem count.
@@ -162,36 +162,38 @@ update guidance while preserving the same release-track status and link.
 ### Weekly Time Overview
 
 Files: `apps/web/src/features/time/weekly-time-view.tsx`, `apps/web/src/features/time/week-grid.tsx`, `apps/web/src/features/time/week-grid-cell-panel.tsx`, `apps/web/src/features/time/time-entry-fields.tsx`
-Last updated: 2026-10-11
+Last updated: 2026-10-14
 
-Day remains the default, timer-first time surface. The date heading exposes a
-compact anchored scope menu with `Day` and `Week` at desktop widths of 768px
-and above. The narrow view has no scope menu. A Week link there (`?view=week`)
-shows Day with a note that Week needs a wider window, and keeps `view=week`, so
-widening the window shows Week.
-Week offers Grid and Days through the shared toggle group,
-with the preference persisted locally as `grid` or `days`. Grid aggregates project/task time by
-day and shows project markers and daily totals. A click on a Grid cell opens it
-in the side panel: a new entry for an empty cell, the entry of a one-entry cell
-with "Add another entry for <day>", or the list of a cell with several entries
-(`week-grid-cell-panel.tsx`). Double-click, Enter or a digit edits an empty or
-one-entry cell in place; the typed-cell rules live in `domain/time/week-grid-cell.ts`.
-A cell with several entries shows "3:30 ×2" and never edits in place. "+ Add row"
-adds an empty row for the week, never saved on its own. Days use seven
-equal-height headers, restrained weekend/today cues, and a project-color rail
-on each entry card. Cards drag between days with thresholded pointer dragging,
-explicit weekday drop targets, and Escape/pointer-cancel cleanup. A click or
-Enter on a card opens it in the side panel. Running entries stay locked. Normal headers show logged totals only;
+Day remains the default, timer-first time surface. The top bar's Day | Week
+control switches views at desktop widths of 768px and above. The narrow view
+has no switcher. A Week link there (`?view=week`) shows Day with a note that
+Week needs a wider window, and keeps `view=week`, so widening the window shows
+Week. The week's range is the top bar's title in Week, with a Today chip while
+the week holds today and the Submitted chip once every entry is submitted.
+Under the bar a 44px toolbar holds Grid | Days (persisted locally as `grid` or
+`days`) and the week total. Grid rows are 40px with the project and task on
+one line, day headings read "Mon 12 7:30", today's column is tinted, weekends
+are muted, and a "Totals" footer closes the table. A click on a Grid cell
+opens it in the side panel: a new entry for an empty cell, the entry of a
+one-entry cell with "Add another entry for <day>", or the list of a cell with
+several entries (`week-grid-cell-panel.tsx`). Double-click, Enter or a digit
+edits an empty or one-entry cell in place; the typed-cell rules live in
+`domain/time/week-grid-cell.ts`. A cell with several entries shows "3:30 ×2"
+and never edits in place. "+ Add row" adds an empty row for the week, never
+saved on its own. Days use seven 40px column headers and flat 6px entry cards
+with the project's color as a rail; the running card wears a success-tone
+chip. Cards drag between days with thresholded pointer dragging, explicit
+weekday drop targets, and Escape/pointer-cancel cleanup. A click or Enter on a
+card opens it in the side panel. Normal headers show logged totals only;
 capacity target and utilization live in hover cards, with an optional compact
 over-target warning.
 
-The Week toolbar, grid or day columns, and totals form one full-width
-desktop workspace rather than stacked cards. Return to Day is the leading
-left-arrow action. Every time entry surface (Day rows, Days cards, Grid cells,
-the Grid cell list and the entry form) exposes the same action set through a
-right-click menu and a "…" button, which the narrow view always shows. Duplicate
-to and Move to open a calendar dialog; Delete and Discard happen at once and show an Undo toast.
-`features/time/time-entry-actions.tsx` runs the actions for every surface.
+Every time entry surface (Day rows, Days cards, Grid cells, the Grid cell list
+and the entry form) exposes the same action set through a right-click menu
+and a "…" button, which the narrow view always shows. Duplicate to and Move to
+open a calendar dialog; Delete and Discard happen at once and show an Undo
+toast. `features/time/time-entry-actions.tsx` runs the actions for every
+surface.
 
 Capacity targets and the two independent warning switches live in General
 Settings. Targets are Monday-first, default to eight hours on weekdays and zero
@@ -201,14 +203,19 @@ on weekends, and remain local user preferences.
 
 Files: `apps/web/src/features/time/submit-page.tsx`, `apps/web/src/features/time/submit-week-controls.tsx`
 
-Route `/time/$date/submit` shows the week that holds `$date`. The
-titlebar totals popover opens it with the shared `SubmitWeekButton` at every width. Totals and submission follow the selected date, including historical weeks. The action saves valid entry drafts and keeps invalid drafts open through the Time page's action request handler. The Week
-header shows `WeekSubmittedBadge` once every entry is submitted. The page has a
-summary (total against target, progress bar, warnings, result in place) and the
-lines grouped by Day and task, Day or Task. Every value copies on click with an
-always-visible icon; hours copy as decimals. Grouping, selection, summary and
-status rules live in `domain/time/timesheet-submission.ts`. Submitting below the
-week target asks for confirmation.
+Route `/time/$date/submit` shows the week that holds `$date`. The Time page's
+Submit week action and the top bar's totals popover (`SubmitWeekButton`) open
+it; the narrow view keeps the popover path. Totals and submission follow the
+selected date, including historical weeks. Opening it saves valid entry drafts
+and keeps invalid drafts open through the Time page's action request handler.
+The top bar carries a back arrow, the title and the primary "Mark n entries as
+submitted" action; in the narrow view the header renders inline. The page
+leads with the total as a 28px figure beside the target, a 3px progress bar,
+amber warnings and the result as a `ResultLine`, then a Group by and day-chip
+toolbar and the lines under `SectionHeading`s. Every value copies on click
+with an always-visible icon; hours copy as decimals. Grouping, selection,
+summary and status rules live in `domain/time/timesheet-submission.ts`.
+Submitting below the week target asks for confirmation.
 
 ### Project Import And Export
 

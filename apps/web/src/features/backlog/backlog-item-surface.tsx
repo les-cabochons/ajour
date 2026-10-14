@@ -7,6 +7,7 @@ import {
 } from "@/components/object-actions-menu";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -88,7 +89,7 @@ export function BacklogStatePicker({
       <Button
         variant="ghost"
 
-        className={full ? "justify-start" : "size-7 p-0"}
+        className={full ? "justify-start" : "size-6 p-0"}
         aria-label={`Change state of ${item.title}`}
         aria-haspopup="menu"
         tabIndex={-1}
@@ -107,7 +108,7 @@ export function BacklogStatePicker({
           <Button
             variant="ghost"
 
-            className={full ? "justify-start" : "size-7 p-0"}
+            className={full ? "justify-start" : "size-6 p-0"}
             aria-label={`Change state of ${item.title}`}
           />
         }
@@ -161,7 +162,7 @@ export function BacklogPriorityPicker({
       <Button
         variant="ghost"
 
-        className={full ? "justify-start" : "size-7 p-0"}
+        className={full ? "justify-start" : "size-6 p-0"}
         aria-label={`Change priority of ${item.title}`}
         aria-haspopup="menu"
         tabIndex={-1}
@@ -185,7 +186,7 @@ export function BacklogPriorityPicker({
                 ? "backlog-hidden-picker"
                 : full
                   ? "justify-start"
-                  : "size-7 p-0"
+                  : "size-6 p-0"
             }
             tabIndex={hidden ? -1 : undefined}
             aria-hidden={hidden || undefined}
@@ -313,7 +314,7 @@ export function BacklogItemSurface({
   const markers = (
     <>
       {running && (
-        <span className="backlog-item-marker text-primary">
+        <span className="backlog-item-marker is-running">
           <RiPlayLine className="size-3" />
           Running
         </span>
@@ -411,8 +412,8 @@ export function BacklogItemSurface({
             live={live}
           />
         )}
-        {view.properties.id && reference && (
-          <span className="backlog-item-id">{reference}</span>
+        {view.properties.id && (
+          <span className="backlog-item-id">{reference ?? ""}</span>
         )}
         <BacklogStatePicker
           item={item}
@@ -451,16 +452,13 @@ export function BacklogItemSurface({
         {board && markers}
         {board && progressLabel}
         {view.properties.project && project && (
-          <span
-            className="backlog-item-project"
+          <Chip
+            className="backlog-item-project max-w-40"
+            color={project.color}
             title={getLocalProjectDisplayName(project)}
           >
-            <span
-              className="size-1.5 shrink-0 rounded-full"
-              style={{ background: project.color }}
-            />
             {getLocalProjectDisplayName(project)}
-          </span>
+          </Chip>
         )}
         {view.properties.estimate &&
           item.remainingEstimateHours !== undefined && (
@@ -483,8 +481,8 @@ export function BacklogItemSurface({
                 render={
                   <Button
                     variant="ghost"
-                    size="icon"
-                    className="aria-disabled:opacity-50"
+                    size="icon-sm"
+                    className="text-muted-foreground aria-disabled:opacity-50"
                   />
                 }
                 onClick={(e) => {
@@ -497,8 +495,8 @@ export function BacklogItemSurface({
             ) : (
               <Button
                 variant="ghost"
-                size="icon"
-                className="aria-disabled:opacity-50"
+                size="icon-sm"
+                className="text-muted-foreground aria-disabled:opacity-50"
                 aria-label={startLabel}
                 aria-description={startDisabledReason}
                 aria-disabled={Boolean(startDisabledReason)}
@@ -517,6 +515,7 @@ export function BacklogItemSurface({
             onAction={onAction}
             keys={BACKLOG_ITEM_ACTION_KEYS}
             live={live}
+            className="size-6 text-muted-foreground"
           />
         </div>
       </div>

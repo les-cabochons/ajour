@@ -8,6 +8,8 @@ import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { TooltipButton } from "@/components/tooltip-button";
 import { ObjectActionsButton } from "@/components/object-actions-menu";
+import { PropertyList, PropertyRow } from "@/components/property-list";
+import { SectionHeading } from "@/components/section-heading";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { getDirectChildWorkItems } from "@/domain/backlog/work-item-hierarchy";
 import {
@@ -68,7 +70,7 @@ export function BacklogPeek({
   const reference = parseWorkItemReference(item.sourceId) ?? item.sourceId;
   return (
     <div className="backlog-peek" aria-label={`Peek ${item.title}`}>
-      <div className="flex items-center justify-between gap-2 border-b p-4">
+      <div className="flex h-11 items-center justify-between gap-2 border-b px-4">
         <span className="truncate text-xs text-muted-foreground">
           {[item.sourceWorkItemType, reference].filter(Boolean).join(" · ") ||
             "Backlog item"}
@@ -89,7 +91,7 @@ export function BacklogPeek({
         </div>
       </div>
       <div className="space-y-5 p-4">
-        <h2 className="text-base leading-6 font-semibold">{item.title}</h2>
+        <h2 className="text-lg leading-6 font-semibold">{item.title}</h2>
         <div className="flex flex-wrap gap-2">
           {item.status !== "archived" && (
             <TooltipButton
@@ -124,40 +126,34 @@ export function BacklogPeek({
             Edit
           </Button>
         </div>
-        <dl className="backlog-peek-properties">
-          <dt>State</dt>
-          <dd>
+        <PropertyList>
+          <PropertyRow label="State">
             <BacklogStatePicker item={item} state={state} full />
-          </dd>
+          </PropertyRow>
           {item.sourceStatusLabel && (
-            <>
-              <dt>Source state</dt>
-              <dd>
-                <Button
-                  variant="ghost"
-
-                  aria-label={`Change source state of ${item.title}`}
-                  disabled={getOtherSourceStates(item).length === 0}
-                  onClick={() => void changeSourceStateWithUndo(item)}
-                >
-                  {item.sourceStatusLabel}
-                </Button>
-              </dd>
-            </>
+            <PropertyRow label="Source state">
+              <Button
+                variant="ghost"
+                aria-label={`Change source state of ${item.title}`}
+                disabled={getOtherSourceStates(item).length === 0}
+                onClick={() => void changeSourceStateWithUndo(item)}
+              >
+                {item.sourceStatusLabel}
+              </Button>
+            </PropertyRow>
           )}
-          <dt>Priority</dt>
-          <dd>
+          <PropertyRow label="Priority">
             <BacklogPriorityPicker item={item} full />
-          </dd>
-          <dt>Lifecycle</dt>
-          <dd className="capitalize">
-            {item.status}
-            {item.status === "settled" && item.settledAt
-              ? ` · ${new Date(item.settledAt).toLocaleDateString()}`
-              : ""}
-          </dd>
-          <dt>Project</dt>
-          <dd>
+          </PropertyRow>
+          <PropertyRow label="Lifecycle">
+            <span className="capitalize">
+              {item.status}
+              {item.status === "settled" && item.settledAt
+                ? ` · ${new Date(item.settledAt).toLocaleDateString()}`
+                : ""}
+            </span>
+          </PropertyRow>
+          <PropertyRow label="Project">
             <SearchableSelect
               value={item.projectId ?? ""}
               options={state.projects
@@ -181,9 +177,8 @@ export function BacklogPeek({
                 );
               }}
             />
-          </dd>
-          <dt>Task</dt>
-          <dd>
+          </PropertyRow>
+          <PropertyRow label="Task">
             <SearchableSelect
               value={item.taskId ?? ""}
               options={(project?.tasks ?? [])
@@ -202,7 +197,7 @@ export function BacklogPeek({
                 )
               }
             />
-          </dd>
+          </PropertyRow>
           {(
             [
               ["Original estimate", item.originalEstimateHours],
@@ -210,12 +205,19 @@ export function BacklogPeek({
               ["Completed estimate", item.completedEstimateHours],
             ] as const
           ).map(([label, value]) => (
-            <div className="contents" key={label}>
-              <dt>{label}</dt>
-              <dd>{value === undefined ? "No estimate" : `${value}h`}</dd>
-            </div>
+            <PropertyRow key={label} label={label}>
+              <span
+                className={
+                  value === undefined
+                    ? "text-muted-foreground"
+                    : "font-mono text-xs"
+                }
+              >
+                {value === undefined ? "No estimate" : `${value}h`}
+              </span>
+            </PropertyRow>
           ))}
-        </dl>
+        </PropertyList>
         {item.note && (
           <p className="text-sm whitespace-pre-wrap text-muted-foreground">
             {item.note}
@@ -223,21 +225,21 @@ export function BacklogPeek({
         )}
         {children.length > 0 && (
           <section>
-            <h3 className="mb-2 text-xs font-semibold">
-              Subitems ·{" "}
-              {children.filter((i) => i.status === "archived").length}/
-              {children.length}
-            </h3>
-            <div className="space-y-1">
+            <SectionHeading
+              trailing={`${children.filter((i) => i.status === "archived").length}/${children.length}`}
+            >
+              Subitems
+            </SectionHeading>
+            <div className="backlog-item-rows">
               {children.map((child) => (
-                <Button
+                <button
                   key={child._id}
-                  variant="ghost"
-                  className="h-auto w-full justify-start py-2 text-left text-xs"
+                  type="button"
+                  className="backlog-item-row text-left"
                   onClick={() => onSelect(child)}
                 >
-                  <span className="line-clamp-2">{child.title}</span>
-                </Button>
+                  <span className="backlog-item-row-title">{child.title}</span>
+                </button>
               ))}
             </div>
           </section>

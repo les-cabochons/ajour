@@ -606,7 +606,10 @@ export function TimerPanel({
           }}
         >
           <div className="time-entry-main">
-            <EntryMain {...describeEntry(draggedEntry)} note={draggedEntry.note} />
+            <EntryMain
+              {...describeEntry(draggedEntry)}
+              note={draggedEntry.note}
+            />
           </div>
           <div className="time-entry-trailing">
             <Value>{formatClockDuration(draggedEntry.durationMs)}</Value>

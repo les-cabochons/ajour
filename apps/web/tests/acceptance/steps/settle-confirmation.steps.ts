@@ -124,11 +124,15 @@ Given("I have a writable synced parent Settle fixture", async ({ page }) => {
     await getConnectorsOverview();
   });
 });
-When("I open the parent Settle dialog", async ({ page }) => {
+/** The item page's "…" sits in the top bar, beside its breadcrumb. */
+async function openSettleParentActions(page: Page) {
   await page
-    .getByRole("main")
+    .locator(".ajour-page-header-slot")
     .getByRole("button", { name: "Actions for Settle parent", exact: true })
     .click();
+}
+When("I open the parent Settle dialog", async ({ page }) => {
+  await openSettleParentActions(page);
   await page.getByRole("menuitem", { name: /^Settle/ }).click();
   await expect(
     page.getByRole("dialog", { name: "Settle", exact: true }),
@@ -178,10 +182,7 @@ When("I reopen Settle on an unlisted source state", async ({ page }) => {
     .getByRole("button", { name: "Cancel", exact: true })
     .click();
   await refreshSettleParent(page, "Unlisted", 2);
-  await page
-    .getByRole("main")
-    .getByRole("button", { name: "Actions for Settle parent", exact: true })
-    .click();
+  await openSettleParentActions(page);
   await page.getByRole("menuitem", { name: /^Settle/ }).click();
   await expect(
     page

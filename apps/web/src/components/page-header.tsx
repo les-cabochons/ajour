@@ -12,11 +12,14 @@ import { cn } from "@/lib/utils";
  */
 export function PageHeader({
   title,
+  meta,
   breadcrumb,
   actions,
   children,
 }: {
   title?: ReactNode;
+  /** A muted count after the title, such as the number of listed items. */
+  meta?: ReactNode;
   breadcrumb?: PageBreadcrumbItem[];
   actions?: ReactNode;
   /** Controls that belong with the title, such as a date switcher. */
@@ -31,7 +34,7 @@ export function PageHeader({
         {breadcrumb ? (
           <PageBreadcrumb items={breadcrumb} />
         ) : title !== undefined ? (
-          <PageTitle>{title}</PageTitle>
+          <PageTitle meta={meta}>{title}</PageTitle>
         ) : null}
         {children}
       </div>
@@ -67,12 +70,14 @@ export function PageTitle({
   as?: "h1" | "div";
 }) {
   return (
-    <Heading className={cn("ajour-page-title", className)}>
-      <span className="truncate">{children}</span>
+    <>
+      <Heading className={cn("ajour-page-title", className)}>
+        <span className="truncate">{children}</span>
+      </Heading>
       {meta !== undefined ? (
         <span className="ajour-page-title-meta">{meta}</span>
       ) : null}
-    </Heading>
+    </>
   );
 }
 

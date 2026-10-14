@@ -1310,7 +1310,9 @@ Then("the Backlog workspace fills the available page", async ({ page }) => {
   await page.setViewportSize({ width: 2200, height: 900 });
   const content = await page.locator(".app-content-shell").boundingBox();
   const workspace = await page.locator(".backlog-workspace").boundingBox();
-  const header = await page.locator(".backlog-workspace-header").boundingBox();
+  const header = await page
+    .locator(".backlog-workspace-filterbar")
+    .boundingBox();
   expect(workspace).not.toBeNull();
   expect(workspace?.x).toBe(content?.x);
   expect(workspace?.width).toBe(content?.width);

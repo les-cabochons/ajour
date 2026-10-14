@@ -257,13 +257,13 @@
     align-items: center;
     gap: 0.125rem;
     margin-right: 0.5rem;
-    visibility: hidden;
+    opacity: 0;
   }
 
   .time-entry-row:hover .time-entry-actions,
   .time-entry-row:focus-within .time-entry-actions,
   .time-entry-row:has([data-popup-open]) .time-entry-actions {
-    visibility: visible;
+    opacity: 1;
   }
 
   .time-entry-more {
@@ -1132,7 +1132,7 @@
 
   /* Rows always show their "…" in the narrow view. */
   .time-entry-actions {
-    visibility: visible;
+    opacity: 1;
   }
 
   .time-entry-actions > :not(.time-entry-more) {

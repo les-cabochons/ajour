@@ -2,12 +2,21 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   RiAddLine,
   RiArrowLeftLine,
+  RiErrorWarningLine,
   RiMoreLine,
   RiArrowDownSLine,
   RiArrowRightSLine,
 } from "@remixicon/react";
 import { useNavigate, Link } from "@tanstack/react-router";
+import { PageHeader } from "@/components/page-header";
 import { Button } from "@/components/ui/button";
+import {
+  Empty,
+  EmptyContent,
+  EmptyDescription,
+  EmptyHeader,
+  EmptyTitle,
+} from "@/components/ui/empty";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   DropdownMenu,
@@ -500,71 +509,76 @@ export function BacklogPage() {
       )}
     >
       <div className="backlog-page-main backlog-workspace-main">
-        <header className="backlog-workspace-header">
-          <div className="flex min-w-0 items-center gap-2">
-            {archive && (
-              <TooltipButton
-                label="Back to backlog"
-                render={<Button variant="ghost" size="icon" />}
-                onClick={() => setArchive(false)}
-              >
-                <RiArrowLeftLine className="size-4" />
-              </TooltipButton>
-            )}
-            <h1>{archive ? "Archive" : "Backlog"}</h1>
-            <span className="text-xs text-muted-foreground">
-              {items.length}
-            </span>
-          </div>
-          <div className="flex items-center gap-1">
-            {!archive && !narrow && <BacklogLayoutToggle view={view} />}
-            {!archive && (
-              <BacklogDisplay
-                view={view}
-                ordering={state.backlogSortMode}
-                narrow={narrow}
-              />
-            )}
-            <DropdownMenu>
-              <DropdownMenuTrigger
-                render={
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label="Backlog options"
-                  />
-                }
-              >
-                <RiMoreLine className="size-4" />
-              </DropdownMenuTrigger>
-              <DropdownMenuContent align="end">
-                <DropdownMenuItem
-                  onClick={async () => {
-                    if (!(await leaveDraft())) return;
-                    closeEditor();
-                    closePeek();
-                    setArchive(true);
-                  }}
+        <PageHeader
+          title={archive ? "Archive" : "Backlog"}
+          meta={items.length}
+          actions={
+            <>
+              {!archive && !narrow && <BacklogLayoutToggle view={view} />}
+              {!archive && (
+                <BacklogDisplay
+                  view={view}
+                  ordering={state.backlogSortMode}
+                  narrow={narrow}
+                />
+              )}
+              <DropdownMenu>
+                <DropdownMenuTrigger
+                  render={
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      aria-label="Backlog options"
+                    />
+                  }
                 >
-                  Archive
-                </DropdownMenuItem>
-              </DropdownMenuContent>
-            </DropdownMenu>
-            {!archive && (
-              <Button onClick={() => add()} className="narrow:hidden">
-                <RiAddLine className="size-4" />
-                New backlog item
-              </Button>
-            )}
-          </div>
-        </header>
+                  <RiMoreLine className="size-4" />
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    onClick={async () => {
+                      if (!(await leaveDraft())) return;
+                      closeEditor();
+                      closePeek();
+                      setArchive(true);
+                    }}
+                  >
+                    Archive
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+              {!archive && (
+                <Button onClick={() => add()} className="narrow:hidden">
+                  <RiAddLine data-icon="inline-start" />
+                  New backlog item
+                </Button>
+              )}
+            </>
+          }
+        >
+          {archive && (
+            <TooltipButton
+              label="Back to backlog"
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  className="order-first -ml-1 text-muted-foreground"
+                />
+              }
+              onClick={() => setArchive(false)}
+            >
+              <RiArrowLeftLine />
+            </TooltipButton>
+          )}
+        </PageHeader>
         {!archive && (
           <div className="backlog-workspace-filterbar">
             <BacklogFilters state={state} view={view} />
             {unmapped > 0 && (
               <Link
                 to="/settings/workflow"
-                className="text-xs text-muted-foreground hover:text-foreground"
+                className="backlog-unmapped"
                 onClick={async (event) => {
                   if (
                     event.defaultPrevented ||
@@ -580,6 +594,7 @@ export function BacklogPage() {
                     void navigate({ to: "/settings/workflow" });
                 }}
               >
+                <RiErrorWarningLine aria-hidden />
                 {unmapped} unmapped source {unmapped === 1 ? "state" : "states"}
               </Link>
             )}
@@ -590,27 +605,31 @@ export function BacklogPage() {
           data-focus-scope
         >
           {items.length === 0 && (
-            <div className="backlog-view-empty">
-              <h2>
-                {archive
-                  ? "No archived items"
-                  : view.filters.length
-                    ? "No matching items"
-                    : "Your backlog is empty"}
-              </h2>
-              <p>
-                {archive
-                  ? "Archived items will appear here."
-                  : view.filters.length
-                    ? "Change the filters to see more items."
-                    : "Create a backlog item or import items from a connector."}
-              </p>
+            <Empty align="start">
+              <EmptyHeader>
+                <EmptyTitle>
+                  {archive
+                    ? "No archived items"
+                    : view.filters.length
+                      ? "No matching items"
+                      : "Your backlog is empty"}
+                </EmptyTitle>
+                <EmptyDescription>
+                  {archive
+                    ? "Archived items will appear here."
+                    : view.filters.length
+                      ? "Change the filters to see more items."
+                      : "Create a backlog item or import items from a connector."}
+                </EmptyDescription>
+              </EmptyHeader>
               {!archive && !view.filters.length && (
-                <Button variant="outline" onClick={() => add()}>
-                  New backlog item
-                </Button>
+                <EmptyContent>
+                  <Button variant="outline" onClick={() => add()}>
+                    New backlog item
+                  </Button>
+                </EmptyContent>
               )}
-            </div>
+            </Empty>
           )}
           {groupsByLane.map(({ lane, groups }) => (
             <section
@@ -690,11 +709,11 @@ export function BacklogPage() {
                                 <TooltipButton
                                   label={`New item in ${group.label}`}
                                   render={
-                                    <Button variant="ghost" size="icon" />
+                                    <Button variant="ghost" size="icon-sm" />
                                   }
                                   onClick={() => add(group, lane)}
                                 >
-                                  <RiAddLine className="size-3.5" />
+                                  <RiAddLine />
                                 </TooltipButton>
                               )}
                           </div>
