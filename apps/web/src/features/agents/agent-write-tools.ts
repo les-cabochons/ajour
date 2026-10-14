@@ -12,6 +12,7 @@ import {
   type ObjectAction,
 } from "@/domain/actions/object-actions";
 import {
+  findWorkItemOrRefuse,
   readRunningTimer,
   toAgentEntry,
 } from "@/domain/agents/agent-read-model";
@@ -278,6 +279,13 @@ export function runEntryWriteTool(
     case "create_entry": {
       const input = writeToolInputSchemas.create_entry.parse(rawInput);
       const target = requireProjectTask(state, input.projectId, input.taskId);
+      if (input.workItemId) {
+        const item = findWorkItemOrRefuse(state, input.workItemId);
+        assertAllowed(
+          getBacklogItemActions(item, backlogActionOptions(state, item, now)),
+          "new-entry",
+        );
+      }
       const { undoToken } = localStore.runWithUndo(() =>
         localStore.saveManualTimeEntry({
           localDate: input.date,

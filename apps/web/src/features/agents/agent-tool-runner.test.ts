@@ -163,6 +163,31 @@ describe("agent timer and entry tools", () => {
     ).toBeDefined();
   });
 
+  it("refuses to create an entry on an archived or unknown backlog item", async () => {
+    const { call, localStore, project, task } = await setup();
+    localStore.addWorkItem({ title: "Old story" });
+    const workItem = localStore.snapshot().workItems[0]!;
+    localStore.archiveWorkItem(workItem._id);
+    expect(localStore.snapshot().workItems[0]!.status).toBe("archived");
+    const entry = {
+      date: "2026-10-13",
+      projectId: project._id,
+      taskId: task("Build")._id,
+      minutes: 30,
+    };
+
+    expect(
+      call("create_entry", { ...entry, workItemId: workItem._id }),
+    ).toMatchObject({ ok: false, error: "Restore the item first" });
+    expect(
+      call("create_entry", { ...entry, workItemId: "missing" }),
+    ).toMatchObject({
+      ok: false,
+      error: "No backlog item has the id missing. Call list_work_items.",
+    });
+    expect(localStore.snapshot().timesheetEntries).toHaveLength(0);
+  });
+
   it("stops the running entry", async () => {
     const { call, localStore, project } = await setup();
     call("start_timer", { projectId: project._id });

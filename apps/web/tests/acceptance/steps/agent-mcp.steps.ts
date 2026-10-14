@@ -185,9 +185,22 @@ When("I open the app", async ({ page }) => {
   await page.goto("/");
 });
 
-Then("an entry is running", async () => {
-  await expect.poll(() => mcp.postedResults.length).toBeGreaterThan(0);
-});
+Then(
+  "an entry is running on {string} {string}",
+  async ({ page }, projectName: string, taskName: string) => {
+    // The timer dock shows the entry the agent started.
+    const dock = page.getByRole("button", {
+      name: "Edit the running entry",
+      exact: true,
+    });
+    await expect(dock).toBeVisible();
+    await expect(dock).toContainText(projectName);
+    await expect(dock).toContainText(taskName);
+    await expect(
+      page.getByRole("button", { name: "Stop", exact: true }),
+    ).toBeVisible();
+  },
+);
 
 Then("a toast reads {string}", async ({ page }, text: string) => {
   await expect(page.getByText(text)).toBeVisible();
