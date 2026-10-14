@@ -1273,7 +1273,19 @@
     flex-shrink: 0;
   }
 
+  /* The ring scales and fades on the compositor. Animating box-shadow restyled
+     and repainted the titlebar on every frame while a timer ran. */
   .status-dot-pulse {
+    position: relative;
+  }
+
+  .status-dot-pulse::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--success-ring);
+    pointer-events: none;
     animation: pulse-ring 2s infinite;
   }
 
@@ -4905,15 +4917,16 @@
   }
 }
 
+/* Scales the 6px dot's ring to the old 8px spread: (6 + 2 * 8) / 6. */
 @keyframes pulse-ring {
   0% {
-    box-shadow: 0 0 0 0 var(--success-ring);
+    transform: scale(1);
+    opacity: 1;
   }
-  70% {
-    box-shadow: 0 0 0 8px transparent;
-  }
+  70%,
   100% {
-    box-shadow: 0 0 0 0 transparent;
+    transform: scale(3.667);
+    opacity: 0;
   }
 }
 

@@ -46,7 +46,10 @@ import {
 import { TimeEntryModal } from "@/features/timer/time-entry-modal";
 import { SubmitWeekButton } from "@/features/time/submit-week-controls";
 import { formatClockDuration } from "@/domain/time/duration";
-import { getLocalProjectDisplayName } from "@/domain/local-state";
+import {
+  getLocalProjectDisplayName,
+  type LocalTimer,
+} from "@/domain/local-state";
 import { findPinnedTask } from "@/domain/projects/project-transitions";
 import {
   getConnectorsOverview,
@@ -67,6 +70,7 @@ import { SettleDialogHost } from "@/features/backlog/settle-dialog";
 import { SnoozePickerHost } from "@/features/backlog/snooze-picker";
 import { useShortcut } from "@/lib/shortcut-handlers";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
+import { useRunningClock } from "@/lib/use-now";
 import { isDesktopShell } from "@/lib/runtime";
 import { cn, getIsoWeekDates, todayIsoDate } from "@/lib/utils";
 import {
@@ -317,16 +321,49 @@ function ConnectorAutoSyncScheduler() {
  */
 function DayTotalsPill({
   date,
-  dayTotalMs,
-  weekTotalMs,
   onSubmit,
 }: {
   date: string;
-  dayTotalMs: number;
-  weekTotalMs: number;
   onSubmit: () => void;
 }) {
+  const state = useLocalState();
   const [open, setOpen] = useState(false);
+  const currentTimer = state.timers[0] ?? null;
+  const now = useRunningClock(currentTimer !== null);
+  const weekDates = useMemo(() => getIsoWeekDates(date), [date]);
+
+  const { runningDurationMs } = getTimerDurationsMs(currentTimer, now);
+  const timerContributionMs = getTimerContributionMs({
+    timer: currentTimer,
+    timesheetEntries: state.timesheetEntries,
+    runningDurationMs,
+  });
+
+  const dayTotalMs = useMemo(() => {
+    let total = state.timesheetEntries
+      .filter((entry) => entry.localDate === date)
+      .reduce((sum, entry) => sum + entry.durationMs, 0);
+
+    if (currentTimer && currentTimer.localDate === date) {
+      total += timerContributionMs;
+    }
+
+    return total;
+  }, [state.timesheetEntries, date, currentTimer, timerContributionMs]);
+
+  const weekTotalMs = useMemo(() => {
+    const weekDateSet = new Set(weekDates);
+    let total = state.timesheetEntries
+      .filter((entry) => weekDateSet.has(entry.localDate))
+      .reduce((sum, entry) => sum + entry.durationMs, 0);
+
+    if (currentTimer && weekDateSet.has(currentTimer.localDate)) {
+      total += timerContributionMs;
+    }
+
+    return total;
+  }, [currentTimer, state.timesheetEntries, timerContributionMs, weekDates]);
+
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
@@ -374,6 +411,12 @@ function DayTotalsPill({
   );
 }
 
+/** The running pill's elapsed time, the only part of the pill that ticks. */
+function RunningTimerDuration({ timer }: { timer: LocalTimer }) {
+  const now = useRunningClock(true);
+  return formatClockDuration(getTimerDurationsMs(timer, now).runningDurationMs);
+}
+
 /* ── Global Timer Bar ──────────────────────────────────────────────── */
 
 /** Which entry editor the titlebar has open: the "+" new entry, or the running entry. */
@@ -397,7 +440,6 @@ function GlobalTimerBar({
   const state = useLocalState();
   const projects = useLocalProjects();
   const isNarrowView = useIsNarrowView();
-  const [now, setNow] = useState(() => Date.now());
   const [editor, setEditor] = useState<TitlebarEditor>(null);
   /** The project and task a new entry starts with, such as a pinned task. */
   const [newEntryValues, setNewEntryValues] = useState<NewTimeEntryValues>();
@@ -408,7 +450,6 @@ function GlobalTimerBar({
 
   const currentTimer = state.timers[0] ?? null;
   const today = todayIsoDate();
-  const weekDates = useMemo(() => getIsoWeekDates(date), [date]);
   const newEntryTarget = useMemo(
     () => ({
       kind: "create" as const,
@@ -459,48 +500,6 @@ function GlobalTimerBar({
     }
   }, [currentTimer]);
 
-  useEffect(() => {
-    if (!currentTimer) {
-      return;
-    }
-
-    setNow(Date.now());
-    const intervalId = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(intervalId);
-  }, [currentTimer]);
-
-  const { runningDurationMs } = getTimerDurationsMs(currentTimer, now);
-  const timerContributionMs = getTimerContributionMs({
-    timer: currentTimer,
-    timesheetEntries: state.timesheetEntries,
-    runningDurationMs,
-  });
-
-  const dayTotalMs = useMemo(() => {
-    let total = state.timesheetEntries
-      .filter((entry) => entry.localDate === date)
-      .reduce((sum, entry) => sum + entry.durationMs, 0);
-
-    if (currentTimer && currentTimer.localDate === date) {
-      total += timerContributionMs;
-    }
-
-    return total;
-  }, [state.timesheetEntries, date, currentTimer, timerContributionMs]);
-
-  const weekTotalMs = useMemo(() => {
-    const weekDateSet = new Set(weekDates);
-    let total = state.timesheetEntries
-      .filter((entry) => weekDateSet.has(entry.localDate))
-      .reduce((sum, entry) => sum + entry.durationMs, 0);
-
-    if (currentTimer && weekDateSet.has(currentTimer.localDate)) {
-      total += timerContributionMs;
-    }
-
-    return total;
-  }, [currentTimer, state.timesheetEntries, timerContributionMs, weekDates]);
-
   const timerProject = currentTimer
     ? projects.find((p) => p._id === currentTimer.projectId)
     : null;
@@ -529,7 +528,7 @@ function GlobalTimerBar({
       <span className="status-dot status-dot-pulse" />
       <span className="stat-pill-label">Running</span>
       <span className="stat-pill-value">
-        {formatClockDuration(runningDurationMs)}
+        {currentTimer ? <RunningTimerDuration timer={currentTimer} /> : null}
       </span>
     </>
   );
@@ -619,12 +618,7 @@ function GlobalTimerBar({
     <div className="global-timer">
       {/* The titlebar's backdrop filter would contain fixed-position children. */}
       {isNarrowView ? createPortal(controls, document.body) : controls}
-      <DayTotalsPill
-        date={date}
-        dayTotalMs={dayTotalMs}
-        weekTotalMs={weekTotalMs}
-        onSubmit={onSubmit}
-      />
+      <DayTotalsPill date={date} onSubmit={onSubmit} />
       {isNarrowView && editor !== null ? (
         <TimeEntryModal
           date={today}

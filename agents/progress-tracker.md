@@ -4,6 +4,16 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Current Baseline
 
+- [x] A running timer no longer re-renders the titlebar and Time page each
+      second: running readouts share one clock (`useRunningClock`), and the
+      status pulse animates on the compositor. Renderer work with a timer
+      running fell from about 51 to 4 ms per second on Windows.
+- [ ] macOS sluggishness on a fresh install, with no timer running, is not
+      reproduced on Windows. Collect a trace from a Mac, and check whether the
+      x64 build runs under Rosetta on Apple Silicon.
+- [ ] A failed plugin connection save shows its error at the top of the page,
+      off-screen from the form, and the error clears after about 6 seconds.
+
 - [x] Issue #78 adds local pull request facts, lifecycle, Active/Settled/Recently
       closed groups, a summary route, conditional navigation and the active
       sidebar list. A follow-up replaces the stacked lists with Backlog and

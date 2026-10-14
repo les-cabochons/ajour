@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { RiAddLine as Plus } from "@remixicon/react";
 import { MessagePanel } from "@/components/app-surface";
@@ -31,6 +31,7 @@ import {
   getTimerDurationsMs,
 } from "@/lib/timer-totals";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
+import { useRunningClock } from "@/lib/use-now";
 import { addDaysIsoDate, cn, getIsoWeekDates, todayIsoDate } from "@/lib/utils";
 
 /**
@@ -58,7 +59,6 @@ export function TimePage({ date }: { date: string }) {
   };
   const state = useLocalState();
   const preferences = useUserPreferences();
-  const [now, setNow] = useState(() => Date.now());
   const today = todayIsoDate();
   const weekDates = useMemo(() => getIsoWeekDates(date), [date]);
   const currentTimer = state.timers[0] ?? null;
@@ -135,51 +135,6 @@ export function TimePage({ date }: { date: string }) {
   useEffect(() => {
     if (showsEditor) setListedCell(null);
   }, [showsEditor]);
-
-  useEffect(() => {
-    if (!currentTimer) {
-      return;
-    }
-
-    setNow(Date.now());
-    const intervalId = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(intervalId);
-  }, [currentTimer]);
-
-  const totalsByDate = useMemo(() => {
-    const totals = new Map(weekDates.map((day) => [day, 0]));
-
-    for (const entry of state.timesheetEntries) {
-      if (!totals.has(entry.localDate)) {
-        continue;
-      }
-
-      totals.set(
-        entry.localDate,
-        (totals.get(entry.localDate) ?? 0) + entry.durationMs,
-      );
-    }
-
-    if (currentTimer && totals.has(currentTimer.localDate)) {
-      const { runningDurationMs } = getTimerDurationsMs(currentTimer, now);
-      const timerContribution = getTimerContributionMs({
-        timer: currentTimer,
-        timesheetEntries: state.timesheetEntries,
-        runningDurationMs,
-      });
-      totals.set(
-        currentTimer.localDate,
-        (totals.get(currentTimer.localDate) ?? 0) + timerContribution,
-      );
-    }
-
-    return totals;
-  }, [currentTimer, now, state.timesheetEntries, weekDates]);
-
-  const weekTotalMs = Array.from(totalsByDate.values()).reduce(
-    (sum, value) => sum + value,
-    0,
-  );
 
   /**
    * Saves a valid draft in the side panel before the page shows something else.
@@ -366,7 +321,6 @@ export function TimePage({ date }: { date: string }) {
         {isWeekView ? (
           <WeeklyTimeView
             anchorDate={date}
-            now={now}
             weekDates={weekDates}
             activeEntryId={activeEntryId}
             activeCell={editorTarget ? panelCell : panelListedCell}
@@ -379,15 +333,10 @@ export function TimePage({ date }: { date: string }) {
           />
         ) : (
           <>
-            <DayViewerCard
+            <DayTotalsViewerCard
               date={date}
               today={today}
               weekDates={weekDates}
-              totalLabel="Week total"
-              totalValue={formatClockDuration(weekTotalMs)}
-              getDayValue={(day) =>
-                formatClockDuration(totalsByDate.get(day) ?? 0)
-              }
               onSelectDate={goToDate}
               dateScopeControl={
                 weekAvailable ? (
@@ -446,7 +395,6 @@ export function TimePage({ date }: { date: string }) {
           <WeekGridCellPanel
             key={`${panelListedCell.rowKey}-${panelListedCell.localDate}`}
             cell={panelListedCell}
-            now={now}
             onClose={closeEditor}
             onOpen={openEditor}
           />
@@ -464,5 +412,75 @@ export function TimePage({ date }: { date: string }) {
         />
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The Day view's week strip with day and week totals. It ticks with the running
+ * timer on its own, so the page and its open editor do not re-render each second.
+ */
+function DayTotalsViewerCard({
+  date,
+  today,
+  weekDates,
+  onSelectDate,
+  dateScopeControl,
+}: {
+  date: string;
+  today: string;
+  weekDates: string[];
+  onSelectDate: (date: string) => void;
+  dateScopeControl?: ReactNode;
+}) {
+  const state = useLocalState();
+  const currentTimer = state.timers[0] ?? null;
+  const now = useRunningClock(currentTimer !== null);
+
+  const totalsByDate = useMemo(() => {
+    const totals = new Map(weekDates.map((day) => [day, 0]));
+
+    for (const entry of state.timesheetEntries) {
+      if (!totals.has(entry.localDate)) {
+        continue;
+      }
+
+      totals.set(
+        entry.localDate,
+        (totals.get(entry.localDate) ?? 0) + entry.durationMs,
+      );
+    }
+
+    if (currentTimer && totals.has(currentTimer.localDate)) {
+      const { runningDurationMs } = getTimerDurationsMs(currentTimer, now);
+      const timerContribution = getTimerContributionMs({
+        timer: currentTimer,
+        timesheetEntries: state.timesheetEntries,
+        runningDurationMs,
+      });
+      totals.set(
+        currentTimer.localDate,
+        (totals.get(currentTimer.localDate) ?? 0) + timerContribution,
+      );
+    }
+
+    return totals;
+  }, [currentTimer, now, state.timesheetEntries, weekDates]);
+
+  const weekTotalMs = Array.from(totalsByDate.values()).reduce(
+    (sum, value) => sum + value,
+    0,
+  );
+
+  return (
+    <DayViewerCard
+      date={date}
+      today={today}
+      weekDates={weekDates}
+      totalLabel="Week total"
+      totalValue={formatClockDuration(weekTotalMs)}
+      getDayValue={(day) => formatClockDuration(totalsByDate.get(day) ?? 0)}
+      onSelectDate={onSelectDate}
+      dateScopeControl={dateScopeControl}
+    />
   );
 }

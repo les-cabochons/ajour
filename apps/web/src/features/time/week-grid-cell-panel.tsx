@@ -20,6 +20,7 @@ import type {
 import { formatWeekDay } from "@/features/time/weekly-capacity-value";
 import { useLocalState } from "@/lib/local-hooks";
 import { getTimerDurationsMs } from "@/lib/timer-totals";
+import { useRunningClock } from "@/lib/use-now";
 
 /**
  * The side panel content for a Grid cell with several entries: the cell's entries,
@@ -28,12 +29,10 @@ import { getTimerDurationsMs } from "@/lib/timer-totals";
  */
 export function WeekGridCellPanel({
   cell,
-  now,
   onClose,
   onOpen,
 }: {
   cell: WeekGridCell;
-  now: number;
   onClose: () => void;
   onOpen: (request: WeekGridOpenRequest) => void;
 }) {
@@ -46,6 +45,7 @@ export function WeekGridCellPanel({
     rowKey: cell.rowKey,
     running: currentTimer,
   });
+  const now = useRunningClock(hasRunning);
   const runningTarget =
     hasRunning && currentTimer
       ? { kind: "running" as const, timerId: currentTimer._id }
