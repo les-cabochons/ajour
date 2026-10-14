@@ -205,3 +205,126 @@ export type WriteToolName = keyof typeof writeToolInputSchemas;
 export type WriteToolInput<Name extends WriteToolName> = z.infer<
   (typeof writeToolInputSchemas)[Name]
 >;
+
+export const agentSessionMessageSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("update"), at: z.number(), text: z.string() }),
+  z.object({
+    kind: z.literal("question"),
+    at: z.number(),
+    questionId: z.string(),
+    text: z.string(),
+    choices: z.array(z.string()).optional(),
+  }),
+  z.object({
+    kind: z.literal("answer"),
+    at: z.number(),
+    questionId: z.string(),
+    text: z.string(),
+  }),
+  z.object({
+    kind: z.literal("end"),
+    at: z.number(),
+    outcome: z.enum(["done", "failed", "cancelled"]),
+    summary: z.string(),
+  }),
+]);
+export type AgentSessionMessage = z.infer<typeof agentSessionMessageSchema>;
+
+/** A stretch of work an agent announced. See the glossary's "Agent session". */
+export const agentSessionSchema = z.object({
+  id: z.string(),
+  client: agentClientRefSchema,
+  title: z.string(),
+  state: z.enum(["active", "stalled", "done", "failed", "cancelled"]),
+  startedAt: z.number(),
+  /** Unset while a question pauses the session, and once it ends. */
+  deadlineAt: z.number().optional(),
+  pausedRemainingMs: z.number().optional(),
+  endedAt: z.number().optional(),
+  messages: z.array(agentSessionMessageSchema),
+});
+export type AgentSession = z.infer<typeof agentSessionSchema>;
+
+export const agentQuestionSchema = z.object({
+  id: z.string(),
+  client: agentClientRefSchema,
+  sessionId: z.string().optional(),
+  text: z.string(),
+  choices: z.array(z.string()).optional(),
+  askedAt: z.number(),
+  answer: z.string().optional(),
+  answeredAt: z.number().optional(),
+  withdrawn: z.boolean().optional(),
+});
+export type AgentQuestion = z.infer<typeof agentQuestionSchema>;
+
+/** One agent write. Never a note or a tool input. */
+export const agentActivitySchema = z.object({
+  at: z.number(),
+  client: agentClientRefSchema,
+  sessionId: z.string().optional(),
+  tool: z.string(),
+  action: z.string(),
+  objectId: z.string(),
+  objectTitle: z.string(),
+});
+export type AgentActivity = z.infer<typeof agentActivitySchema>;
+
+export const agentErrorSchema = z.object({
+  at: z.number(),
+  client: agentClientRefSchema.optional(),
+  message: z.string(),
+});
+export type AgentError = z.infer<typeof agentErrorSchema>;
+
+/** Everything the agent indicator and panel show, newest first. */
+export const agentsSnapshotSchema = z.object({
+  sessions: z.array(agentSessionSchema),
+  openQuestions: z.array(agentQuestionSchema),
+  activity: z.array(agentActivitySchema),
+  errors: z.array(agentErrorSchema),
+  /** When the user last opened the panel. Older errors and failures are seen. */
+  seenAt: z.number(),
+});
+export type AgentsSnapshot = z.infer<typeof agentsSnapshotSchema>;
+
+export const sessionToolInputSchemas = {
+  begin_session: z.object({
+    title: z.string().trim().min(1).max(200),
+    estimateMinutes: z
+      .number()
+      .int()
+      .min(1)
+      .max(24 * 60),
+  }),
+  update_session: z.object({
+    sessionId: z.string(),
+    message: z.string().trim().min(1).max(2000),
+    extraMinutes: z
+      .number()
+      .int()
+      .min(1)
+      .max(24 * 60)
+      .optional(),
+  }),
+  end_session: z.object({
+    sessionId: z.string(),
+    outcome: z.enum(["done", "failed", "cancelled"]),
+    summary: z.string().trim().min(1).max(4000),
+  }),
+  ask: z.object({
+    question: z.string().trim().min(1).max(2000),
+    choices: z
+      .array(z.string().trim().min(1).max(200))
+      .min(2)
+      .max(6)
+      .optional(),
+    sessionId: z.string().optional(),
+  }),
+  wait_for_answer: z.object({ questionId: z.string() }),
+} as const;
+export type SessionToolName = keyof typeof sessionToolInputSchemas;
+
+export const agentAnswerRequestSchema = z.object({
+  text: z.string().trim().min(1).max(4000),
+});
