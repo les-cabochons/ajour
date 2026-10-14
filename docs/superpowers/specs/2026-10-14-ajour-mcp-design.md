@@ -80,8 +80,8 @@ The renderer owns all data in browser storage. Plugins and the API never get the
 - `apps/api/src/mcp-clients.ts`: token creation, hashing, lookup and revocation on top of `AppApiStorage`.
 - `apps/api/src/agent-sessions.ts`: the session and question rules, with an injected clock, and the in-memory activity list.
 - `apps/web/src/lib/mcp-bridge.ts`: the event stream connection, reconnection and result posting.
-- `apps/web/src/lib/agent-tools.ts`: runs each data tool against `localStore`. It looks the object up, checks its action set from `domain/actions/object-actions.ts`, calls the existing store command and returns the result with the Undo token. It adds no lifecycle rules of its own.
-- `apps/web/src/features/agents/`: the indicator, the panel, the question toast, and the wiring that shows the Undo toast for agent writes.
+- `apps/web/src/features/agents/agent-tool-runner.ts`, with `agent-write-tools.ts` and `agent-work-item-tools.ts`: runs each data tool against `localStore`. It looks the object up, checks its action set from `domain/actions/object-actions.ts`, calls the existing store command and returns the result with the Undo token. It adds no lifecycle rules of its own. It lives in `features` because it needs `canWriteToSource` from `features/backlog`.
+- `apps/web/src/features/agents/`: the indicator, the generic `agent-panel.tsx` (it takes the snapshot and callbacks as props), `agent-panel-host.tsx` that wires the panel to the bridge, the question toast, and the wiring that shows the Undo toast for agent writes.
 - `apps/web/src/features/settings/settings-mcp-page.tsx`: the toggle and the client list, at `/settings/mcp`.
 
 ## Tools
@@ -160,7 +160,7 @@ The API emits one wide event per MCP request, `mcp.request`, with the client ID,
 
 - `agent-sessions` unit tests with an injected clock cover the deadline margin and limits, stall and revival, the pause while a question is open, and withdrawal on end.
 - API tests cover 401 without a token or with a revoked one, 403 with an `Origin` header, 404 when MCP is off, the error without a bridge and the bridge timeout.
-- `agent-tools` tests in the web app run each write tool against a real `localStore` and check one refusal from the action sets per object kind, such as moving a running entry.
+- `agent-tool-runner` tests in the web app run each write tool against a real `localStore` and check one refusal from the action sets per object kind, such as moving a running entry.
 - One acceptance feature, `agent-mcp.feature`, uses the SDK's MCP client against the real API and web app:
   - An agent starts a timer. The timer runs, and the Undo toast names the client.
   - An agent asks a question. The indicator shows Needs input, the user answers in the panel, and `wait_for_answer` returns the answer.
