@@ -12,6 +12,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { DateField } from "@/components/ui/date-field";
+import { isValidLocalDate } from "@/domain/time/local-date";
 import { FileField } from "@/components/ui/file-field";
 import { Label } from "@/components/ui/label";
 import { offerUndo } from "@/features/feedback/undo-toast";
@@ -65,7 +66,11 @@ export function SettingsExportPage() {
   const [error, setError] = useState("");
   const [exportMessage, setExportMessage] = useState("");
   const [exportError, setExportError] = useState("");
-  const hasInvalidRange = startDate > endDate;
+  // The Date field passes a partial typed value through, so both days must
+  // be real before the range means anything.
+  const hasInvalidDate =
+    !isValidLocalDate(startDate) || !isValidLocalDate(endDate);
+  const hasInvalidRange = hasInvalidDate || startDate > endDate;
 
   const rows = useMemo(
     () =>
@@ -229,7 +234,11 @@ export function SettingsExportPage() {
             </div>
           </SettingRow>
 
-          {hasInvalidRange ? (
+          {hasInvalidDate ? (
+            <MessagePanel tone="warning">
+              Enter both days as YYYY-MM-DD.
+            </MessagePanel>
+          ) : hasInvalidRange ? (
             <MessagePanel tone="warning">
               The start day must be on or before the end day.
             </MessagePanel>
