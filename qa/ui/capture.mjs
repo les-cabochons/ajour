@@ -169,14 +169,10 @@ await session(
   },
 );
 
-await session(
-  { name: "empty", seed: { running: false } },
-  async (page, shot) => {
-    await page.addInitScript(() => localStorage.clear());
-    await go(page, "/time/today");
-    await shot("time-day");
-  },
-);
+await session({ name: "empty", seed: { empty: true } }, async (page, shot) => {
+  await go(page, "/time/today");
+  await shot("time-day");
+});
 
 await browser.close();
 stopServer();

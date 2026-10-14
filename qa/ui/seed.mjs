@@ -1,6 +1,7 @@
 // A realistic workspace for screenshots and measurements, written into
 // localStorage before the app loads. `large` adds 600 backlog items and
-// 1,800 entries, the workspace the progress tracker's budgets are measured on.
+// 1,800 entries, the workspace the progress tracker's budgets are measured on;
+// `empty` leaves storage clear, as on a fresh install.
 export function seedScript(options = {}) {
   return `(() => {
   const options = ${JSON.stringify(options)};
@@ -85,9 +86,13 @@ export function seedScript(options = {}) {
     }
   }
   const timers = options.running === false ? [] : [ { _id:"timer-1", startedAt:t0-47*60000, localDate:today, workItemId:"w1", projectId:"p-atlas", taskId:"t-atlas-dev", note:"Export rounding: edge cases", accumulatedDurationMs:0 } ];
-  const preferences = { themeMode: options.theme || "light", updateTrack:"stable", projectDataShapeId:"default", weeklyTimeViewStyle: options.weekStyle || "grid", weeklyCapacityTargets:{ monday:8, tuesday:8, wednesday:8, thursday:8, friday:8, saturday:0, sunday:0 }, warnWhenOverCapacity:true, warnWhenSubmittingUnderCapacity:true, closeParentSubitems:"ask" };
+  // Capacity targets persist in milliseconds per weekday.
+  const h8 = 8 * 3600000;
+  const userPreferences = { themeMode: options.theme || "light", updateTrack:"stable", projectDataShapeId:"default", weeklyTimeViewStyle: options.weekStyle || "grid", weeklyCapacityTargets:{ monday:h8, tuesday:h8, wednesday:h8, thursday:h8, friday:h8, saturday:0, sunday:0 }, warnWhenOverCapacity:true, warnWhenSubmittingUnderCapacity:true, closeParentSubitems:"ask" };
   localStorage.clear();
-  localStorage.setItem("ajour.local-state.v2", JSON.stringify({ projects, workflowStates, workItems, timesheetEntries, timers, preferences }));
+  // An empty workspace: nothing persisted, so the app starts as on a fresh install.
+  if (options.empty) return;
+  localStorage.setItem("ajour.local-state.v2", JSON.stringify({ projects, workflowStates, workItems, timesheetEntries, timers, userPreferences }));
   if (options.backlogLayout) localStorage.setItem("ajour.backlog-view", JSON.stringify({ layout: options.backlogLayout }));
   if (options.sidebar) localStorage.setItem("ajour.app-sidebar", options.sidebar);
 })()`;
