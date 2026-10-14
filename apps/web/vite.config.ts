@@ -141,13 +141,21 @@ export default defineConfig(({ mode }) => {
       exclude: [...configDefaults.exclude, ".features-gen/**"],
     },
     resolve: {
-      alias: {
-        "@": path.resolve(__dirname, "./src"),
-        "@ajour/shared": path.resolve(
-          __dirname,
-          "../../packages/shared/index.ts",
-        ),
-      },
+      alias: [
+        { find: "@", replacement: path.resolve(__dirname, "./src") },
+        {
+          find: /^@ajour\/shared$/,
+          replacement: path.resolve(
+            __dirname,
+            "../../packages/shared/index.ts",
+          ),
+        },
+        {
+          // Root entry points such as @ajour/shared/agent-tools (packages/README.md).
+          find: /^@ajour\/shared\/([a-z-]+)$/,
+          replacement: `${path.resolve(__dirname, "../../packages/shared")}/$1.ts`,
+        },
+      ],
       dedupe: ["react", "react-dom", "react/jsx-runtime"],
     },
   };
