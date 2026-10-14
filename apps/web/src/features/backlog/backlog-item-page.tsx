@@ -282,21 +282,20 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
 
   const headerButtons =
     item.status === "archived" ? (
-      <Button size="sm" variant="outline" onClick={() => runAction("restore")}>
+      <Button variant="outline" onClick={() => runAction("restore")}>
         Restore
       </Button>
     ) : item.status === "settled" ? (
-      <Button size="sm" variant="outline" onClick={() => runAction("unsettle")}>
+      <Button variant="outline" onClick={() => runAction("unsettle")}>
         <UnsettleIcon /> Unsettle
       </Button>
     ) : isSnoozed ? (
-      <Button size="sm" variant="outline" onClick={() => runAction("unsnooze")}>
+      <Button variant="outline" onClick={() => runAction("unsnooze")}>
         Unsnooze
       </Button>
     ) : (
       <>
         <Button
-          size="sm"
           variant="outline"
           onClick={() => runAction("start-entry")}
           disabled={Boolean(startAction?.disabledReason)}
@@ -304,11 +303,10 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
         >
           <PlayIcon /> Start entry
         </Button>
-        <Button size="sm" variant="ghost" onClick={() => runAction("snooze")}>
+        <Button variant="ghost" onClick={() => runAction("snooze")}>
           <SnoozeIcon /> Snooze
         </Button>
         <Button
-          size="sm"
           variant="ghost"
           onClick={(event) =>
             runAction("settle", { askToSettle: event.shiftKey })

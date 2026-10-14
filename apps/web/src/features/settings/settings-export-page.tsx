@@ -394,7 +394,7 @@ export function SettingsExportPage() {
                     <div className="flex shrink-0 gap-2">
                       <Button
                         type="button"
-                        size="sm"
+
                         variant={
                           draft.potentialConflict ? "outline" : "secondary"
                         }
@@ -404,7 +404,7 @@ export function SettingsExportPage() {
                       </Button>
                       <Button
                         type="button"
-                        size="sm"
+
                         variant="ghost"
                         onClick={() => handleDismissDraft(draft._id)}
                       >

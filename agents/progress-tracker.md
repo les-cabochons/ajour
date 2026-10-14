@@ -4,6 +4,16 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Current Baseline
 
+- [x] UI foundation (2026-10-14): Geist Sans and Mono replace Raleway and
+      Noto Serif; one type scale (11 to 28px), 28px and 32px controls, 4/6/8px
+      radii and an indigo accent are tokens in `styles.css`; the top bar is the
+      page header (`PageHeader` and `lib/page-header.ts`); `Chip`, `Value`,
+      `Figure`, `SectionHeading` and `PropertyList` are the shared patterns; the
+      chrome is solid with no blur. `just ui-capture` and `just ui-perf` give
+      every UI change screenshots and budget numbers.
+- [ ] Migrate the Time, Backlog, Projects and Settings pages to the foundation
+      patterns, one pull request per area, each with before and after captures
+      and budget numbers.
 - [x] A running timer no longer re-renders the titlebar and Time page each
       second: running readouts share one clock (`useRunningClock`), and the
       status pulse animates on the compositor. Renderer work with a timer

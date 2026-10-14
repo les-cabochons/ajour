@@ -168,6 +168,18 @@ test:
     echo >&2 "[1/1] Running workspace tests"
     {{PNPM}} test
 
+[doc("Screenshots every product surface on a seeded workspace into qa/ui/out")]
+[group("qa")]
+ui-capture:
+    echo >&2 "[1/1] Capturing UI screenshots"
+    node qa/ui/capture.mjs
+
+[doc("Measures the renderer budgets on the large seeded workspace")]
+[group("qa")]
+ui-perf:
+    echo >&2 "[1/1] Measuring UI performance"
+    node qa/ui/perf.mjs
+
 [doc("Runs executable Gherkin acceptance tests in Chromium")]
 [group("app")]
 acceptance-test *args:

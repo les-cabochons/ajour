@@ -366,7 +366,7 @@ export function WeeklyTimeView({
           <Button
             className="weekly-return-day"
             variant="ghost"
-            size="sm"
+
             onClick={onReturnToDay}
           >
             <ArrowLeft data-icon="inline-start" />
@@ -379,7 +379,7 @@ export function WeeklyTimeView({
               render={
                 <Button
                   variant="ghost"
-                  size="icon-sm"
+                  size="icon"
                   onClick={() => onSelectWeek(addDaysIsoDate(anchorDate, -7))}
                 />
               }
@@ -392,7 +392,7 @@ export function WeeklyTimeView({
               render={
                 <Button
                   variant="ghost"
-                  size="icon-sm"
+                  size="icon"
                   onClick={() => onSelectWeek(addDaysIsoDate(anchorDate, 7))}
                 />
               }
@@ -408,7 +408,7 @@ export function WeeklyTimeView({
             value={[preferences.weeklyTimeViewStyle]}
             onValueChange={changeStyle}
             variant="outline"
-            size="sm"
+
             aria-label="Week layout"
           >
             <ToggleGroupItem value="grid">Grid</ToggleGroupItem>
@@ -506,7 +506,6 @@ export function WeeklyTimeView({
                       }
                       render={
                         <Card
-                          size="sm"
                           tabIndex={0}
                           aria-label={`Running entry, ${formatClockDuration(runningTime.displayDurationMs)}`}
                           className="weekly-entry-card is-running"
@@ -556,7 +555,6 @@ export function WeeklyTimeView({
                         }
                         render={
                           <Card
-                            size="sm"
                             tabIndex={0}
                             role="button"
                             data-entry-id={entry._id}
@@ -635,7 +633,7 @@ export function WeeklyTimeView({
                   })}
                   <Button
                     variant="ghost"
-                    size="sm"
+
                     className="weekly-days-column-add"
                     onClick={() => onNewEntry(day.localDate)}
                   >

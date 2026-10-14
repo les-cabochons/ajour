@@ -115,7 +115,7 @@ export function ObjectActionsButton<Id extends string>({
       <Button
         type="button"
         variant="ghost"
-        size="icon-sm"
+        size="icon"
         className={cn("object-actions-button", className)}
         aria-label={label}
         aria-haspopup="menu"
@@ -142,7 +142,7 @@ export function ObjectActionsButton<Id extends string>({
                 ref={triggerRef}
                 type="button"
                 variant="ghost"
-                size="icon-sm"
+                size="icon"
                 className={cn("object-actions-button", className)}
                 data-no-entry-drag="true"
                 onClick={(event) => event.stopPropagation()}

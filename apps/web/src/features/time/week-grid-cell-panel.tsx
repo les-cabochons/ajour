@@ -93,7 +93,7 @@ export function WeekGridCellPanel({
         </div>
         <TooltipButton
           label="Close"
-          render={<Button variant="ghost" size="icon-sm" onClick={onClose} />}
+          render={<Button variant="ghost" size="icon" onClick={onClose} />}
         >
           <X />
         </TooltipButton>
@@ -177,7 +177,7 @@ export function WeekGridCellPanel({
       <Button
         type="button"
         variant="outline"
-        size="sm"
+
         className="self-start"
         onClick={() => onOpen({ cell })}
       >

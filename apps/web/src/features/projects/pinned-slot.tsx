@@ -180,7 +180,7 @@ export function PinnedSlotField({
         id="project-task-editor-shortcut"
         type="button"
         variant="outline"
-        size="sm"
+
         className="justify-start gap-2 self-start"
         aria-label={slot ? `Shortcut ${slot}, change` : "Shortcut none, assign"}
         onClick={() => setIsOpen(true)}

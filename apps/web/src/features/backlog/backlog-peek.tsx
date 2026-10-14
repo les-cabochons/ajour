@@ -81,7 +81,7 @@ export function BacklogPeek({
           />
           <TooltipButton
             label="Close peek"
-            render={<Button variant="ghost" size="icon-sm" />}
+            render={<Button variant="ghost" size="icon" />}
             onClick={onClose}
           >
             <RiCloseLine className="size-4" />
@@ -101,7 +101,7 @@ export function BacklogPeek({
               aria-label="Start entry"
               aria-description={startAction?.disabledReason}
               aria-disabled={Boolean(startAction?.disabledReason)}
-              render={<Button size="sm" className="aria-disabled:opacity-50" />}
+              render={<Button className="aria-disabled:opacity-50" />}
               onClick={() => {
                 if (!startAction?.disabledReason) onAction("start-entry");
               }}
@@ -110,13 +110,13 @@ export function BacklogPeek({
               Start entry
             </TooltipButton>
           )}
-          <Button variant="outline" size="sm" onClick={onOpen}>
+          <Button variant="outline" onClick={onOpen}>
             <RiExternalLinkLine className="size-4" />
             Open page
           </Button>
           <Button
             variant="ghost"
-            size="sm"
+
             disabled={item.status === "archived"}
             onClick={() => onAction("edit")}
           >
@@ -135,7 +135,7 @@ export function BacklogPeek({
               <dd>
                 <Button
                   variant="ghost"
-                  size="sm"
+
                   aria-label={`Change source state of ${item.title}`}
                   disabled={getOtherSourceStates(item).length === 0}
                   onClick={() => void changeSourceStateWithUndo(item)}

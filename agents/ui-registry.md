@@ -4,6 +4,20 @@
 
 This registry captures reusable visual patterns already present in Ajour. Update it after meaningful UI additions.
 
+## Foundation
+
+The redesign direction decided on 2026-10-14: Linear's density and structure, Vercel's restraint in color. These are the shared patterns every page is built from. Pages that still carry their own styles migrate to them one area at a time (Time, Backlog, Projects, Settings).
+
+- **Top bar and page header.** The 48px bar is the page header. `PageHeader` in `components/page-header.tsx` renders a `title` (list pages) or a `breadcrumb` (detail pages) and `actions` into the bar through a portal; `lib/page-header.ts` owns the slot. Until a page mounts one, the shell shows the route's default title, and on Time the selected day as a calendar trigger with a "Today" chip. On Windows the menus sit at the bar's left, then a hairline, then the title. The bar's right end holds New entry (+), Start (▶) and the day total as plain text (`.ajour-nav-total`), whose popover still shows the week total and Submit week.
+- **Chip.** `components/ui/chip.tsx`: 20px, 4px corners, 12px medium, neutral by default, with a `color` dot for projects and workflow states. The only metadata treatment.
+- **Value, Figure, FigureRow.** `components/ui/value.tsx`: every duration, total, count and id in mono tabular figures. `Figure` is a 12px label over a 16px value; a `FigureRow` replaces stat cards.
+- **SectionHeading.** `components/section-heading.tsx`: 12px medium muted, with a trailing count or total, heading every cardless section.
+- **PropertyList.** `components/property-list.tsx`: label and value pairs in a two-column grid with 28px rows, replacing boxed side panels on detail pages.
+- **Empty.** `components/ui/empty.tsx`: a 13px title, a 12px line and at most one outline button; `align="start"` in lists, centered on empty pages.
+- **Buttons.** `xs` 20px, `sm` 24px, default 28px, `lg` 32px; `icon-xs`, `icon-sm`, `icon`, `icon-lg` likewise. Primary is the accent indigo. Inputs and selects are 32px with 4px corners.
+- **Sidebar.** Solid surface one step below the content (above it in dark), no blur, 44px header with an 18px mark and a 14px semibold wordmark, 28px nav rows with mono counts, the timer dock as a flat bordered block, Settings at the bottom. Returned pull requests show a filled accent count.
+- **Capture and budgets.** `just ui-capture` screenshots every surface into `qa/ui/out`; `just ui-perf` prints the renderer budgets on the 600-item workspace. See `qa/routines/ui-capture.md`.
+
 ## App Shell
 
 - Desktop uses a full-height application sidebar with a quiet translucent surface distinct from the workspace. Only macOS reserves a top chrome strip for native traffic lights. Windows places the sidebar header at the top of the window. The timer dock, then Time, Backlog, Pull requests and Projects, sit below the header, while Settings is anchored at the bottom.

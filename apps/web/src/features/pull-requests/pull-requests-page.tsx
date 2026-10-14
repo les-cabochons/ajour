@@ -79,7 +79,7 @@ export function PullRequestsPage({ itemId }: { itemId?: string }) {
       <div className="space-y-5 p-4 desktop:p-6">
         <Button
           variant="ghost"
-          size="sm"
+
           nativeButton={false}
           render={<Link to="/pull-requests" />}
         >
@@ -104,7 +104,7 @@ export function PullRequestsPage({ itemId }: { itemId?: string }) {
                 <Button
                   key={action.id}
                   variant="outline"
-                  size="sm"
+
                   onClick={() =>
                     runPullRequestAction(
                       item,
@@ -191,7 +191,7 @@ export function PullRequestsPage({ itemId }: { itemId?: string }) {
         </div>
         <Button
           variant="outline"
-          size="sm"
+
           disabled={
             syncing || !groups.some((group) => group.connections.length)
           }

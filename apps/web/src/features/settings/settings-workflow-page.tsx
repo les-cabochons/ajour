@@ -228,11 +228,7 @@ export function SettingsWorkflowPage() {
                       <TooltipButton
                         label={`Move ${status.name} up`}
                         render={
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon-sm"
-                          />
+                          <Button type="button" variant="ghost" size="icon" />
                         }
                         disabled={index === 0}
                         onClick={() =>
@@ -244,11 +240,7 @@ export function SettingsWorkflowPage() {
                       <TooltipButton
                         label={`Move ${status.name} down`}
                         render={
-                          <Button
-                            type="button"
-                            variant="ghost"
-                            size="icon-sm"
-                          />
+                          <Button type="button" variant="ghost" size="icon" />
                         }
                         disabled={index === state.workflowStates.length - 1}
                         onClick={() =>
@@ -312,7 +304,7 @@ export function SettingsWorkflowPage() {
                       render={
                         <Button
                           variant="ghost"
-                          size="sm"
+
                           className="gap-1.5 narrow:w-8 narrow:px-0"
                         />
                       }
@@ -331,7 +323,7 @@ export function SettingsWorkflowPage() {
                       render={
                         <Button
                           variant="ghost"
-                          size="sm"
+
                           className="gap-1.5 text-muted-foreground hover:bg-destructive/10 hover:text-destructive narrow:w-8 narrow:px-0"
                         />
                       }
@@ -360,7 +352,7 @@ export function SettingsWorkflowPage() {
             <div>
               <Button
                 variant="outline"
-                size="sm"
+
                 className="gap-1.5"
                 disabled={isRefreshing || connectorApiMissing}
                 onClick={() => void refreshSourceStatuses()}

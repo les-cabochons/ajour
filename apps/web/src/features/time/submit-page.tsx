@@ -390,7 +390,7 @@ export function SubmitPage({
   return (
     <div className="mx-auto flex w-full max-w-[1100px] flex-col gap-4 p-4">
       <header className="flex flex-wrap items-center gap-2">
-        <Button variant="ghost" size="sm" onClick={goBack}>
+        <Button variant="ghost" onClick={goBack}>
           <ArrowLeft data-icon="inline-start" />
           {returnView === "week" ? "Week" : "Day"}
         </Button>
@@ -479,7 +479,7 @@ export function SubmitPage({
                   if (next) setGroupBy(next.value);
                 }}
                 variant="outline"
-                size="sm"
+
                 aria-labelledby="submit-group-by-label"
               >
                 {GROUP_BY_OPTIONS.map((option) => (
@@ -505,7 +505,7 @@ export function SubmitPage({
                     <Button
                       key={localDate}
                       variant={dayState === "all" ? "secondary" : "outline"}
-                      size="xs"
+                      size="sm"
                       disabled={dayIds.length === 0}
                       aria-pressed={
                         dayState === "some" ? "mixed" : dayState === "all"

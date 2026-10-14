@@ -97,7 +97,7 @@ export function ProjectTaskEditorForm({
         </div>
         <TooltipButton
           label="Close"
-          render={<Button variant="ghost" size="icon-sm" onClick={onClose} />}
+          render={<Button variant="ghost" size="icon" onClick={onClose} />}
         >
           <X />
         </TooltipButton>
@@ -181,12 +181,12 @@ export function ProjectTaskEditorForm({
       </FieldGroup>
 
       <footer className="flex flex-wrap justify-end gap-2">
-        <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+        <Button type="button" variant="ghost" onClick={onClose}>
           Cancel
         </Button>
         <Button
           type="button"
-          size="sm"
+
           disabled={!editor.canSave}
           onClick={onSave}
         >

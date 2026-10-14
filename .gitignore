@@ -42,3 +42,6 @@ connectors/*/package/
 
 # Native agent build output
 apps/macos-agent/.build/
+
+# UI capture output (screenshots belong in pull requests)
+qa/ui/out/

@@ -166,7 +166,7 @@ export function TimerDock({ upNext }: { upNext?: LocalWorkItem }) {
     return (
       <section
         aria-label="Timer"
-        className="mx-2 mt-1 mb-2 rounded-lg border bg-background p-2.5 text-[12px]"
+        className="mx-2 mt-1 mb-2 rounded-md border bg-background p-2.5 text-xs"
       >
         <div className="flex items-center justify-between text-muted-foreground">
           <span>Nothing running</span>
@@ -177,19 +177,19 @@ export function TimerDock({ upNext }: { upNext?: LocalWorkItem }) {
         {upNext ? (
           <button
             type="button"
-            className="mt-2 flex h-8 w-full items-center gap-2 rounded-md border pr-2 pl-1 text-left text-[13px] outline-none hover:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring"
+            className="mt-2 flex h-7 w-full items-center gap-2 rounded-md border pr-2 pl-1 text-left text-sm outline-none hover:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring"
             aria-label={`Start entry on ${upNext.title}`}
             onClick={() =>
               runBacklogItemAction(upNext, "start-entry", () => undefined)
             }
           >
-            <span className="flex size-6 shrink-0 items-center justify-center rounded-full bg-foreground text-background">
+            <span className="flex size-5 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-foreground text-background">
               <PlayIcon className="size-3" />
             </span>
             <span className="min-w-0 flex-1 truncate font-medium">
               {upNext.title}
             </span>
-            <span className="shrink-0 text-[11px] text-muted-foreground">
+            <span className="shrink-0 text-xs text-muted-foreground">
               Up next
             </span>
           </button>
@@ -201,7 +201,7 @@ export function TimerDock({ upNext }: { upNext?: LocalWorkItem }) {
   return (
     <section
       aria-label="Running entry"
-      className="relative mx-2 mt-1 mb-2 rounded-lg border bg-background"
+      className="relative mx-2 mt-1 mb-2 rounded-md border bg-background"
     >
       <TimeEntryEditorPopover
         target={{ kind: "running", timer }}
@@ -209,15 +209,15 @@ export function TimerDock({ upNext }: { upNext?: LocalWorkItem }) {
         onOpenChange={setRunningEntryEditorOpen}
         {...runningEntryDraftProps(timer._id)}
         triggerLabel="Edit the running entry"
-        triggerClassName="block w-full rounded-lg p-2.5 text-left outline-none hover:bg-foreground/[0.03] focus-visible:ring-1 focus-visible:ring-ring"
+        triggerClassName="block w-full rounded-md p-2.5 text-left outline-none hover:bg-foreground/[0.03] focus-visible:ring-1 focus-visible:ring-ring"
       >
         <span className="flex min-w-0 items-center gap-2 pr-8">
           <RunningDot />
-          <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">
+          <span className="min-w-0 flex-1 truncate text-sm font-medium">
             {summary.title}
           </span>
         </span>
-        <span className="mt-2 mb-1.5 block font-mono text-xl leading-none font-semibold tabular-nums">
+        <span className="mt-2 mb-1.5 block font-mono text-xl leading-none font-medium tabular-nums">
           {formatElapsedDuration(runningDurationMs)}
         </span>
         {summary.estimateUsed !== undefined ? (
@@ -234,7 +234,7 @@ export function TimerDock({ upNext }: { upNext?: LocalWorkItem }) {
           </span>
         ) : null}
         {summary.meta || summary.remainingMs !== undefined ? (
-          <span className="mt-1.5 flex justify-between gap-2 text-[11px] text-muted-foreground">
+          <span className="mt-1.5 flex justify-between gap-2 text-xs text-muted-foreground">
             <span className="min-w-0 truncate">{summary.meta}</span>
             {summary.remainingMs !== undefined ? (
               <span className="shrink-0">
@@ -271,10 +271,10 @@ export function FloatingTimerDock({
   const content = (
     <>
       <RunningDot />
-      <span className="min-w-0 flex-1 truncate text-[13px] font-semibold">
+      <span className="min-w-0 flex-1 truncate text-sm font-medium">
         {summary.title}
       </span>
-      <span className="shrink-0 font-mono text-[12px] font-semibold tabular-nums">
+      <span className="shrink-0 font-mono text-xs font-medium tabular-nums">
         {formatElapsedDuration(runningDurationMs)}
       </span>
     </>
@@ -285,7 +285,7 @@ export function FloatingTimerDock({
   return (
     <div
       className={cn(
-        "ajour-floating-dock flex h-10 max-w-[22rem] items-center gap-2 rounded-lg border bg-background pr-1.5 shadow-[var(--shadow-popup)]",
+        "ajour-floating-dock flex h-10 max-w-[22rem] items-center gap-2 rounded-lg border bg-popover pr-1.5 shadow-[var(--shadow-popup)]",
         className,
       )}
       style={style}

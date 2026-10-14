@@ -164,7 +164,7 @@ export function SidebarToggleButton({
       render={
         <Button
           variant="ghost"
-          size="icon-sm"
+          size="icon"
           className={cn("ajour-app-sidebar-toggle", className)}
           onClick={onToggle}
         />
@@ -187,9 +187,9 @@ function NavigationCount({
   return (
     <span
       className={cn(
-        "ml-auto shrink-0 text-[11px] font-normal tabular-nums",
+        "ml-auto shrink-0 font-mono text-xs font-normal tabular-nums",
         highlighted
-          ? "flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-foreground px-1.5 font-semibold text-background"
+          ? "flex h-[18px] min-w-[18px] items-center justify-center rounded-[var(--radius-sm)] bg-primary px-1.5 font-medium text-primary-foreground"
           : "text-muted-foreground",
       )}
     >
@@ -290,7 +290,7 @@ export function AppNavigationSidebar({
             render={
               <Button
                 variant="ghost"
-                size="icon-sm"
+                size="icon"
                 className="ajour-app-sidebar-toggle"
                 onClick={openCommandPalette}
               />
@@ -314,7 +314,7 @@ export function AppNavigationSidebar({
                 return (
                   <SidebarMenuItem key={item.to}>
                     <SidebarMenuButton
-                      className="ajour-app-sidebar-button h-[30px]"
+                      className="ajour-app-sidebar-button"
                       tooltip={{
                         children: (
                           <ShortcutTooltipLabel
@@ -361,7 +361,7 @@ export function AppNavigationSidebar({
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton
-              className="ajour-app-sidebar-button h-[30px]"
+              className="ajour-app-sidebar-button"
               tooltip={{
                 children: (
                   <ShortcutTooltipLabel

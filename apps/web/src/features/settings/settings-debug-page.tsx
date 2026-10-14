@@ -114,7 +114,6 @@ export function SettingsDebugPage() {
             </div>
             <div className="flex flex-wrap gap-2">
               <Button
-                size="sm"
                 disabled={isUpdatingDevelopmentPlugins}
                 onClick={() => void chooseDevelopmentPluginDirectory()}
               >
@@ -123,7 +122,7 @@ export function SettingsDebugPage() {
               </Button>
               <Button
                 variant="outline"
-                size="sm"
+
                 disabled={isUpdatingDevelopmentPlugins}
                 onClick={() => void resetDevelopmentPluginDirectories()}
               >

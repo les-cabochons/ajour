@@ -306,7 +306,6 @@ export function SettingsImportReviewPage() {
                   {fieldState?.conflict ? (
                     <>
                       <Button
-                        size="sm"
                         variant="outline"
                         onClick={() =>
                           localStore.keepLocalEstimateConflict(
@@ -318,7 +317,6 @@ export function SettingsImportReviewPage() {
                         Keep local
                       </Button>
                       <Button
-                        size="sm"
                         variant="outline"
                         onClick={() =>
                           localStore.acceptRemoteEstimateValue(
@@ -332,7 +330,6 @@ export function SettingsImportReviewPage() {
                     </>
                   ) : null}
                   <Button
-                    size="sm"
                     variant="outline"
                     onClick={() =>
                       localStore.dismissEstimateIssue(workItem._id, fieldKey)
@@ -367,7 +364,7 @@ export function SettingsImportReviewPage() {
             <div className="flex flex-wrap gap-2">
               <Button
                 variant="outline"
-                size="sm"
+
                 disabled={isLoading || isMutating}
                 onClick={() => void refresh()}
               >
@@ -376,7 +373,7 @@ export function SettingsImportReviewPage() {
               </Button>
               <Button
                 variant="outline"
-                size="sm"
+
                 disabled={
                   isLoading ||
                   isMutating ||
@@ -396,7 +393,7 @@ export function SettingsImportReviewPage() {
               </Button>
               <Button
                 variant="outline"
-                size="sm"
+
                 disabled={isLoading || isMutating || selectedCount === 0}
                 onClick={() =>
                   void dismissItems(
@@ -411,7 +408,7 @@ export function SettingsImportReviewPage() {
               </Button>
               <Button
                 variant="outline"
-                size="sm"
+
                 disabled={isLoading || isMutating || selectedCount === 0}
                 onClick={() =>
                   void toggleItems(
@@ -426,7 +423,6 @@ export function SettingsImportReviewPage() {
                 Clear selection
               </Button>
               <Button
-                size="sm"
                 disabled={isLoading || isMutating || selectedCount === 0}
                 onClick={() => void handleCommitSelected()}
               >
@@ -491,7 +487,7 @@ export function SettingsImportReviewPage() {
                     <div className="flex flex-wrap gap-2">
                       <Button
                         variant="outline"
-                        size="sm"
+
                         disabled={isMutating || selectableIds.length === 0}
                         onClick={() => void toggleItems(selectableIds, true)}
                       >
@@ -500,7 +496,7 @@ export function SettingsImportReviewPage() {
                       </Button>
                       <Button
                         variant="outline"
-                        size="sm"
+
                         disabled={isMutating || group.items.length === 0}
                         onClick={() =>
                           void dismissItems(group.items.map((item) => item.id))
@@ -511,7 +507,7 @@ export function SettingsImportReviewPage() {
                       </Button>
                       <Button
                         variant="outline"
-                        size="sm"
+
                         disabled={isMutating || selectedIds.length === 0}
                         onClick={() => void toggleItems(selectedIds, false)}
                       >

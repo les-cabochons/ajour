@@ -89,7 +89,7 @@ export function NarrowSettingsButton({ pathname }: { pathname: string }) {
           to="/settings"
           aria-current={isActive ? "page" : undefined}
           className={cn(
-            buttonVariants({ variant: "ghost", size: "icon-sm" }),
+            buttonVariants({ variant: "ghost", size: "icon" }),
             "shrink-0 text-muted-foreground",
             isActive && "bg-muted text-foreground",
             isDesktopShell && "desktop-no-drag",
@@ -115,7 +115,7 @@ export function NarrowBackBar({ pathname }: { pathname: string }) {
         to={backLink.to}
         aria-label={`Back to ${backLink.label}`}
         className={cn(
-          buttonVariants({ variant: "ghost", size: "sm" }),
+          buttonVariants({ variant: "ghost" }),
           "gap-1.5 text-muted-foreground hover:text-foreground",
         )}
       >

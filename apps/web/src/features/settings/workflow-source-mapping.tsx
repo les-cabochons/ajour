@@ -246,7 +246,7 @@ function SourceProjectMapping({
           <Button
             type="button"
             variant="ghost"
-            size="xs"
+            size="sm"
             className="shrink-0"
             disabled={loading}
             onClick={(event) => {
@@ -463,7 +463,7 @@ function PriorityRangesEditor({
         ))}
       </div>
       <div>
-        <Button type="button" variant="outline" size="sm" onClick={save}>
+        <Button type="button" variant="outline" onClick={save}>
           Save priority ranges
         </Button>
       </div>
