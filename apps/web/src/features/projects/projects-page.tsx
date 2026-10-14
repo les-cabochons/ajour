@@ -4,28 +4,28 @@ import {
   RiArchiveLine as Archive,
   RiDownloadLine as Download,
   RiFileTransferLine as FileTransfer,
-  RiFolderAddLine as FolderPlus,
 } from "@remixicon/react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { MessagePanel } from "@/components/app-surface";
+import { PageHeader } from "@/components/page-header";
+import { SectionHeading } from "@/components/section-heading";
 import {
   ObjectActionsButton,
   ObjectContextMenu,
 } from "@/components/object-actions-menu";
 import { SidePanel } from "@/components/side-panel";
-import { Badge } from "@/components/ui/badge";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   Empty,
   EmptyContent,
   EmptyDescription,
   EmptyHeader,
-  EmptyMedia,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { Figure, FigureRow, Value } from "@/components/ui/value";
 import {
   CustomSidebar,
   CustomSidebarLayout,
@@ -145,10 +145,10 @@ type ProjectHeaderActionId = ProjectActionId | "import-tasks";
 
 const projectTaskToneClassName: Record<ProjectTaskConsumedTone, string> = {
   default: "",
-  success: "project-task-budget-badge is-success",
-  warning: "project-task-budget-badge is-warning",
-  danger: "project-task-budget-badge is-danger",
-  "danger-strong": "project-task-budget-badge is-danger-strong",
+  success: "is-success",
+  warning: "is-warning",
+  danger: "is-danger",
+  "danger-strong": "is-danger-strong",
 };
 
 function getProjectDisplayName(project: LocalProject) {
@@ -293,82 +293,65 @@ function ArchivedProjectsView({
   onProjectAction: (project: LocalProject, actionId: ProjectActionId) => void;
 }) {
   return (
-    <div>
-      <div className="entries-table-scroll-shell entries-table-scroll-shell-project">
-        <table className="entries-table entries-table-header-table animate-in">
-          <thead>
-            <tr>
-              <th>Project</th>
-              <th className="entry-hours-heading entry-hours-heading-actions">
-                <span className="sr-only">Actions</span>
-              </th>
-            </tr>
-          </thead>
-        </table>
-        <ScrollArea className="entries-table-scroll-area">
-          <table className="entries-table entries-table-body-table animate-in">
-            <tbody className="entries-table-scroll-region">
-              {projects.length > 0 ? (
-                projects.map((project) => {
-                  const actions = getProjectActions(project);
-                  const onAction = (actionId: ProjectActionId) =>
-                    onProjectAction(project, actionId);
+    <div className="project-detail">
+      <PageHeader
+        breadcrumb={[
+          { label: "Projects", to: "/projects" },
+          { label: "Archive" },
+        ]}
+      />
+      <SectionHeading trailing={projects.length}>
+        Archived projects
+      </SectionHeading>
+      {projects.length > 0 ? (
+        <table className="project-task-table">
+          <tbody>
+            {projects.map((project) => {
+              const actions = getProjectActions(project);
+              const onAction = (actionId: ProjectActionId) =>
+                onProjectAction(project, actionId);
+              const name = getProjectDisplayName(project);
 
-                  return (
-                    <ObjectContextMenu
-                      key={project._id}
-                      actions={actions}
-                      onAction={onAction}
-                      render={<tr className="project-archived-row" />}
-                    >
-                      <td>
-                        <div className="project-task-name-cell">
-                          <ProjectIcon
-                            icon={project.icon}
-                            color={project.color}
-                            className="ajour-sidebar-icon"
-                          />
-                          <span className="project-task-name">
-                            {getProjectDisplayName(project)}
-                          </span>
-                          {project.code ? <Badge>{project.code}</Badge> : null}
-                        </div>
-                      </td>
-                      <td className="entry-hours-cell">
-                        <div className="entry-hours-content">
-                          <ObjectActionsButton
-                            actions={actions}
-                            onAction={onAction}
-                            label={`Actions for ${getProjectDisplayName(project)}`}
-                          />
-                        </div>
-                      </td>
-                    </ObjectContextMenu>
-                  );
-                })
-              ) : (
-                <tr className="entry-empty-row">
-                  <td colSpan={2}>
-                    <Empty className="entry-table-empty">
-                      <EmptyHeader>
-                        <EmptyMedia variant="icon">
-                          <Archive className="h-5 w-5" />
-                        </EmptyMedia>
-                        <EmptyTitle className="font-sans text-[14px] font-semibold tracking-normal">
-                          No archived projects
-                        </EmptyTitle>
-                        <EmptyDescription>
-                          Archived projects will appear here.
-                        </EmptyDescription>
-                      </EmptyHeader>
-                    </Empty>
+              return (
+                <ObjectContextMenu
+                  key={project._id}
+                  actions={actions}
+                  onAction={onAction}
+                  render={<tr className="project-task-row" />}
+                >
+                  <td className="project-task-name-cell">
+                    <ProjectIcon
+                      icon={project.icon}
+                      color={project.color}
+                      className="ajour-sidebar-icon"
+                    />
+                    <span className="project-task-name">{name}</span>
+                    {project.code ? <Chip>{project.code}</Chip> : null}
                   </td>
-                </tr>
-              )}
-            </tbody>
-          </table>
-        </ScrollArea>
-      </div>
+                  <td className="project-task-trailing">
+                    <span className="project-task-trailing-content">
+                      <ObjectActionsButton
+                        actions={actions}
+                        onAction={onAction}
+                        label={`Actions for ${name}`}
+                      />
+                    </span>
+                  </td>
+                </ObjectContextMenu>
+              );
+            })}
+          </tbody>
+        </table>
+      ) : (
+        <Empty align="start" className="project-task-empty">
+          <EmptyHeader>
+            <EmptyTitle>No archived projects</EmptyTitle>
+            <EmptyDescription>
+              Archived projects will appear here.
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      )}
     </div>
   );
 }
@@ -424,10 +407,6 @@ function ProjectDetail({
   const archivedTasks = project.tasks.filter(
     (task) => task.status === "archived",
   );
-  const summaryStats = [
-    { label: "Tracked", value: hoursLabel(metrics.durationMs) },
-    { label: "Entries", value: `${metrics.entryCount}` },
-  ];
   const taskFilters: {
     value: ProjectTaskFilter;
     label: string;
@@ -746,19 +725,120 @@ function ProjectDetail({
     };
 
     return (
-      <span
+      <Value
         className={cn(
-          "hours-badge",
+          "project-task-consumed",
           projectTaskToneClassName[getProjectTaskConsumedTone(options)],
         )}
       >
         {formatProjectTaskConsumedBadge(options)}
-      </span>
+      </Value>
+    );
+  }
+
+  const visibleTasks = isArchivedTaskFilter ? archivedTasks : activeTasks;
+  const displayName = getProjectDisplayName(project);
+
+  function renderTaskRow(task: LocalProjectTask, index: number) {
+    const taskActions = getTaskActions(project, task);
+    // Archived tasks list only: no editor, no drag, no reorder.
+    const isActiveRow = !isArchivedTaskFilter;
+    const isDraggedTask = isActiveRow && taskDragState?.taskId === task._id;
+    const rowShift =
+      isActiveRow && taskDragState
+        ? getSharedTableDragRowShift({
+            itemIndex: index,
+            originIndex: taskDragState.originIndex,
+            targetIndex: taskDragState.targetIndex,
+            rowHeight: taskDragState.height,
+          })
+        : 0;
+    const runAction = (actionId: TaskActionId) => runTaskAction(task, actionId);
+
+    return (
+      <ObjectContextMenu
+        key={task._id}
+        actions={taskActions}
+        keys={TASK_ACTION_KEYS}
+        onAction={runAction}
+        render={
+          <tr
+            ref={
+              isActiveRow
+                ? (node) => {
+                    if (node) {
+                      taskRowRefs.current.set(task._id, node);
+                      return;
+                    }
+                    taskRowRefs.current.delete(task._id);
+                  }
+                : undefined
+            }
+            className={cn(
+              "project-task-row",
+              isActiveRow && canReorderTasks && "is-reorderable",
+              pressedTaskId === task._id && "is-pressing",
+              rowShift !== 0 && "is-shifting",
+              isDraggedTask && "is-drag-source",
+              editingTaskId === task._id && "is-editing",
+            )}
+            style={
+              rowShift !== 0
+                ? { transform: `translate3d(0, ${rowShift}px, 0)` }
+                : undefined
+            }
+            aria-grabbed={isActiveRow ? isDraggedTask : undefined}
+            {...{ [FOCUS_ATTRIBUTES.task]: task._id }}
+            data-focus-column="0"
+            tabIndex={0}
+            onKeyDown={(event) =>
+              handleItemKeyDown(event, {
+                actions: taskActions,
+                keys: TASK_ACTION_KEYS,
+                onAction: runAction,
+                onReorder:
+                  isActiveRow && canReorderTasks
+                    ? (step) => reorderTask(task._id, step)
+                    : undefined,
+              })
+            }
+            onClick={isActiveRow ? () => handleTaskClick(task) : undefined}
+            onPointerDown={
+              isActiveRow
+                ? (event) => handleTaskPointerDown(task._id, event)
+                : undefined
+            }
+          />
+        }
+      >
+        <td className="project-task-name-cell">
+          <span className="project-task-name">{task.name}</span>
+          {task.pinnedSlot ? <PinnedSlotBadge slot={task.pinnedSlot} /> : null}
+          <Chip>{getProjectTaskBillableValueLabel(task)}</Chip>
+          {task.status === "archived" ? <Chip>Archived</Chip> : null}
+        </td>
+        <td className="project-task-trailing">
+          <span className="project-task-trailing-content">
+            <span className="project-task-actions">
+              <ObjectActionsButton
+                actions={taskActions}
+                keys={TASK_ACTION_KEYS}
+                onAction={runAction}
+                label={`Actions for ${task.name}`}
+              />
+            </span>
+            {renderConsumedBadge(task)}
+          </span>
+        </td>
+      </ObjectContextMenu>
     );
   }
 
   return (
-    <div className="space-y-6" {...{ [FOCUS_ATTRIBUTES.project]: project._id }}>
+    <div
+      className="project-detail"
+      {...{ [FOCUS_ATTRIBUTES.project]: project._id }}
+    >
       <input
         ref={importInputRef}
         type="file"
@@ -769,56 +849,66 @@ function ProjectDetail({
         }}
       />
 
-      {/* Project header */}
-      <div className="project-detail-header">
-        <ObjectContextMenu
-          actions={projectActions}
-          onAction={(actionId) => onProjectAction(project, actionId)}
-          render={<div className="flex min-w-0 flex-wrap items-center gap-2" />}
-        >
-          <ProjectIcon
-            icon={project.icon}
-            color={project.color}
-            className="project-header-icon"
-          />
-          <div className="project-title-stack">
-            <h2 className="text-[15px] font-semibold">
-              {getProjectDisplayName(project)}
-            </h2>
-            {shouldShowProjectFullName(project) ? (
-              <span className="project-full-name">{project.name}</span>
+      <PageHeader
+        breadcrumb={[
+          { label: "Projects", to: "/projects" },
+          { label: displayName },
+        ]}
+        actions={
+          <>
+            <ObjectActionsButton
+              actions={headerActions}
+              onAction={runHeaderAction}
+              label={`Actions for ${displayName}`}
+            />
+            {!isArchived ? (
+              <Button type="button" size="lg" onClick={onNewTask}>
+                <Plus data-icon="inline-start" />
+                New task
+              </Button>
             ) : null}
-          </div>
-          {project.code ? <Badge>{project.code}</Badge> : null}
-          <ObjectActionsButton
-            actions={headerActions}
-            onAction={runHeaderAction}
-            label={`Actions for ${getProjectDisplayName(project)}`}
-          />
-        </ObjectContextMenu>
-        {!isArchived ? (
-          <Button type="button" variant="outline" onClick={onNewTask}>
-            <Plus data-icon="inline-start" />
-            New task
-          </Button>
-        ) : null}
-      </div>
+          </>
+        }
+      />
 
-      {/* Stat pills */}
-      <div className="project-summary-controls">
-        <div className="flex flex-wrap gap-2">
-          {summaryStats.map((stat) => (
-            <Badge
-              key={stat.label}
-              className="rounded-md px-3 py-1.5 text-xs text-foreground"
-            >
-              <span className="font-mono text-[13px] font-semibold text-foreground">
-                {stat.value}
-              </span>
-              <span className="text-foreground/55">{stat.label}</span>
-            </Badge>
-          ))}
-        </div>
+      <ObjectContextMenu
+        actions={projectActions}
+        onAction={(actionId) => onProjectAction(project, actionId)}
+        render={<header className="project-detail-header" />}
+      >
+        <ProjectIcon
+          icon={project.icon}
+          color={project.color}
+          className="project-header-icon"
+        />
+        <h1 className="project-detail-title">{displayName}</h1>
+        {project.code ? <Chip>{project.code}</Chip> : null}
+        {isArchived ? <Chip>Archived</Chip> : null}
+      </ObjectContextMenu>
+      {shouldShowProjectFullName(project) ? (
+        <p className="project-full-name">{project.name}</p>
+      ) : null}
+
+      <FigureRow>
+        <Figure label="Tracked">{hoursLabel(metrics.durationMs)}</Figure>
+        <Figure label="Entries">{metrics.entryCount}</Figure>
+        <Figure label="Active tasks">{summary.active}</Figure>
+      </FigureRow>
+
+      {isArchived ? (
+        <MessagePanel>
+          This project is archived. You can consult it here, but project and
+          task changes are disabled until you restore it.
+        </MessagePanel>
+      ) : null}
+      {isImporting ? <MessagePanel>Importing tasks…</MessagePanel> : null}
+      {importMessage ? <MessagePanel>{importMessage}</MessagePanel> : null}
+      {importError ? (
+        <MessagePanel tone="warning">{importError}</MessagePanel>
+      ) : null}
+
+      <div className="project-task-toolbar">
+        <SectionHeading>Tasks</SectionHeading>
         <div
           className="toggle-group project-task-filter-tabs"
           role="tablist"
@@ -832,14 +922,11 @@ function ProjectDetail({
                 type="button"
                 role="tab"
                 aria-selected={isActive}
-                className={cn(
-                  "toggle-item inline-flex items-center gap-1.5",
-                  isActive && "toggle-item-active",
-                )}
+                className={cn("toggle-item", isActive && "toggle-item-active")}
                 onClick={() => setTaskFilter(filter.value)}
               >
                 <span>{filter.label}</span>
-                <span className="font-mono text-[11px] text-muted-foreground">
+                <span className="project-task-filter-count">
                   {filter.count}
                 </span>
               </button>
@@ -848,261 +935,44 @@ function ProjectDetail({
         </div>
       </div>
 
-      {isArchived ? (
-        <MessagePanel className="border border-[var(--border)] bg-muted/60 text-foreground">
-          This project is archived. You can consult it here, but project and
-          task changes are disabled until you restore it.
-        </MessagePanel>
-      ) : null}
-
-      {/* Import messages */}
-      {isImporting ? (
-        <MessagePanel className="border border-[var(--border)] text-foreground">
-          Importing tasks…
-        </MessagePanel>
-      ) : null}
-      {importMessage ? (
-        <MessagePanel className="border border-[var(--success-muted)] bg-[var(--success-muted)] text-foreground">
-          {importMessage}
-        </MessagePanel>
-      ) : null}
-      {importError ? (
-        <MessagePanel
-          tone="warning"
-          className="border border-[var(--danger-muted)] text-foreground"
-        >
-          {importError}
-        </MessagePanel>
-      ) : null}
-
-      {/* Tasks table */}
-      <div className="entries-table-scroll-shell entries-table-scroll-shell-project">
-        <table className="entries-table project-tasks-table entries-table-header-table animate-in">
-          <thead>
-            <tr>
-              <th>Task</th>
-              <th className="entry-hours-heading entry-hours-heading-actions">
-                <span className="sr-only">Actions</span>
-              </th>
-            </tr>
-          </thead>
-        </table>
-        <ScrollArea className="entries-table-scroll-area">
-          <table
-            className={cn(
-              "entries-table project-tasks-table entries-table-body-table animate-in",
-              taskDragState && "is-task-dragging",
-            )}
-          >
-            <tbody data-focus-scope>
-              {(isArchivedTaskFilter ? archivedTasks : activeTasks).length ===
-              0 ? (
-                <tr className="entry-empty-row">
-                  <td colSpan={2}>
-                    <Empty className="entry-table-empty">
-                      <EmptyHeader>
-                        <EmptyMedia variant="icon">
-                          <FolderPlus className="h-5 w-5" />
-                        </EmptyMedia>
-                        <EmptyTitle>
-                          {isArchivedTaskFilter
-                            ? "No archived tasks"
-                            : "No active tasks"}
-                        </EmptyTitle>
-                        <EmptyDescription>
-                          {isArchivedTaskFilter
-                            ? "Archived tasks will appear here."
-                            : isArchived
-                              ? "This archived project has no active tasks."
-                              : "Create a task or import tasks from Excel."}
-                        </EmptyDescription>
-                      </EmptyHeader>
-                      {!isArchived && !isArchivedTaskFilter ? (
-                        <EmptyContent className="max-w-none flex-row justify-center gap-2">
-                          <Button type="button" onClick={onNewTask}>
-                            <Plus data-icon="inline-start" />
-                            New task
-                          </Button>
-                          <Button
-                            type="button"
-                            variant="secondary"
-
-                            disabled={isImporting}
-                            onClick={openImportPicker}
-                          >
-                            <Download data-icon="inline-start" />
-                            Import tasks…
-                          </Button>
-                        </EmptyContent>
-                      ) : null}
-                    </Empty>
-                  </td>
-                </tr>
-              ) : null}
-
+      {visibleTasks.length === 0 ? (
+        <Empty align="start" className="project-task-empty">
+          <EmptyHeader>
+            <EmptyTitle>
+              {isArchivedTaskFilter ? "No archived tasks" : "No active tasks"}
+            </EmptyTitle>
+            <EmptyDescription>
               {isArchivedTaskFilter
-                ? archivedTasks.map((task) => {
-                    const taskActions = getTaskActions(project, task);
-
-                    return (
-                      <ObjectContextMenu
-                        key={task._id}
-                        actions={taskActions}
-                        keys={TASK_ACTION_KEYS}
-                        onAction={(actionId) => runTaskAction(task, actionId)}
-                        render={
-                          <tr
-                            className="project-task-row"
-                            {...{ [FOCUS_ATTRIBUTES.task]: task._id }}
-                            data-focus-column="0"
-                            tabIndex={0}
-                            onKeyDown={(event) =>
-                              handleItemKeyDown(event, {
-                                actions: taskActions,
-                                keys: TASK_ACTION_KEYS,
-                                onAction: (actionId) =>
-                                  runTaskAction(task, actionId),
-                              })
-                            }
-                          />
-                        }
-                      >
-                        <td>
-                          <div className="project-task-name-cell">
-                            <span className="project-task-name">
-                              {task.name}
-                            </span>
-                            {task.pinnedSlot ? (
-                              <PinnedSlotBadge slot={task.pinnedSlot} />
-                            ) : null}
-                            <Badge className="project-task-billable-badge bg-muted">
-                              {getProjectTaskBillableValueLabel(task)}
-                            </Badge>
-                            <Badge className="project-task-status-badge">
-                              Archived
-                            </Badge>
-                          </div>
-                        </td>
-                        <td className="entry-hours-cell">
-                          <div className="entry-hours-content">
-                            <div className="entry-row-actions">
-                              <ObjectActionsButton
-                                actions={taskActions}
-                                keys={TASK_ACTION_KEYS}
-                                onAction={(actionId) =>
-                                  runTaskAction(task, actionId)
-                                }
-                                label={`Actions for ${task.name}`}
-                                className="entry-row-action"
-                              />
-                            </div>
-                            {renderConsumedBadge(task)}
-                          </div>
-                        </td>
-                      </ObjectContextMenu>
-                    );
-                  })
-                : activeTasks.map((task, index) => {
-                    const taskActions = getTaskActions(project, task);
-                    const isDraggedTask = taskDragState?.taskId === task._id;
-                    const rowShift = taskDragState
-                      ? getSharedTableDragRowShift({
-                          itemIndex: index,
-                          originIndex: taskDragState.originIndex,
-                          targetIndex: taskDragState.targetIndex,
-                          rowHeight: taskDragState.height,
-                        })
-                      : 0;
-
-                    return (
-                      <ObjectContextMenu
-                        key={task._id}
-                        actions={taskActions}
-                        keys={TASK_ACTION_KEYS}
-                        onAction={(actionId) => runTaskAction(task, actionId)}
-                        render={
-                          <tr
-                            ref={(node) => {
-                              if (node) {
-                                taskRowRefs.current.set(task._id, node);
-                                return;
-                              }
-
-                              taskRowRefs.current.delete(task._id);
-                            }}
-                            className={cn(
-                              "project-task-row",
-                              canReorderTasks && "is-reorderable",
-                              pressedTaskId === task._id && "is-pressing",
-                              rowShift !== 0 && "is-shifting",
-                              isDraggedTask && "is-drag-source",
-                              editingTaskId === task._id && "is-editing",
-                            )}
-                            style={
-                              rowShift !== 0
-                                ? {
-                                    transform: `translate3d(0, ${rowShift}px, 0)`,
-                                  }
-                                : undefined
-                            }
-                            aria-grabbed={isDraggedTask}
-                            {...{ [FOCUS_ATTRIBUTES.task]: task._id }}
-                            data-focus-column="0"
-                            tabIndex={0}
-                            onKeyDown={(event) =>
-                              handleItemKeyDown(event, {
-                                actions: taskActions,
-                                keys: TASK_ACTION_KEYS,
-                                onAction: (actionId) =>
-                                  runTaskAction(task, actionId),
-                                onReorder: canReorderTasks
-                                  ? (step) => reorderTask(task._id, step)
-                                  : undefined,
-                              })
-                            }
-                            onClick={() => handleTaskClick(task)}
-                            onPointerDown={(event) =>
-                              handleTaskPointerDown(task._id, event)
-                            }
-                          />
-                        }
-                      >
-                        <td>
-                          <div className="project-task-name-cell">
-                            <span className="project-task-name">
-                              {task.name}
-                            </span>
-                            {task.pinnedSlot ? (
-                              <PinnedSlotBadge slot={task.pinnedSlot} />
-                            ) : null}
-                            <Badge className="project-task-billable-badge bg-muted">
-                              {getProjectTaskBillableValueLabel(task)}
-                            </Badge>
-                          </div>
-                        </td>
-                        <td className="entry-hours-cell">
-                          <div className="entry-hours-content">
-                            <div className="entry-row-actions">
-                              <ObjectActionsButton
-                                actions={taskActions}
-                                keys={TASK_ACTION_KEYS}
-                                onAction={(actionId) =>
-                                  runTaskAction(task, actionId)
-                                }
-                                label={`Actions for ${task.name}`}
-                                className="entry-row-action"
-                              />
-                            </div>
-                            {renderConsumedBadge(task)}
-                          </div>
-                        </td>
-                      </ObjectContextMenu>
-                    );
-                  })}
-            </tbody>
-          </table>
-        </ScrollArea>
-      </div>
+                ? "Archived tasks will appear here."
+                : isArchived
+                  ? "This archived project has no active tasks."
+                  : "Create a task, or import tasks from Excel."}
+            </EmptyDescription>
+          </EmptyHeader>
+          {!isArchived && !isArchivedTaskFilter ? (
+            <EmptyContent>
+              <Button
+                type="button"
+                variant="outline"
+                disabled={isImporting}
+                onClick={openImportPicker}
+              >
+                <Download data-icon="inline-start" />
+                Import tasks…
+              </Button>
+            </EmptyContent>
+          ) : null}
+        </Empty>
+      ) : (
+        <table
+          className={cn(
+            "project-task-table",
+            taskDragState && "is-task-dragging",
+          )}
+        >
+          <tbody data-focus-scope>{visibleTasks.map(renderTaskRow)}</tbody>
+        </table>
+      )}
 
       {draggedTask && taskDragState ? (
         <div
@@ -1118,9 +988,7 @@ function ProjectDetail({
             {draggedTask.pinnedSlot ? (
               <PinnedSlotBadge slot={draggedTask.pinnedSlot} />
             ) : null}
-            <Badge className="project-task-billable-badge bg-muted">
-              {getProjectTaskBillableValueLabel(draggedTask)}
-            </Badge>
+            <Chip>{getProjectTaskBillableValueLabel(draggedTask)}</Chip>
           </div>
           {renderConsumedBadge(draggedTask)}
         </div>
@@ -1794,9 +1662,23 @@ export function ProjectsPage() {
       className="ajour-project-layout"
       keyboardShortcut={false}
     >
+      {!isNarrowView && !selectedProject && !isArchivePage ? (
+        <PageHeader
+          title="Projects"
+          actions={
+            <Button type="button" size="lg" onClick={openCreateProjectModal}>
+              <Plus data-icon="inline-start" />
+              New project
+            </Button>
+          }
+        />
+      ) : null}
       {isNarrowView && !isNarrowProjectList ? null : (
         <CustomSidebar
-          className="ajour-project-navigation-sidebar"
+          className={cn(
+            "ajour-project-navigation-sidebar",
+            projectDragState && "is-project-dragging",
+          )}
           role="navigation"
           aria-label="Projects"
           collapsible="none"
@@ -1816,7 +1698,7 @@ export function ProjectsPage() {
               </button>
               <TooltipButton
                 className={cn(
-                  "entries-header-add",
+                  "project-sidebar-add",
                   projectModalState?.mode === "create" && "is-open",
                 )}
                 label="New project"
@@ -2013,7 +1895,7 @@ export function ProjectsPage() {
       ) : null}
 
       {isNarrowProjectList ? null : (
-        <div className="settings-content">
+        <div className="project-content">
           {isArchivePage ? (
             <ArchivedProjectsView
               projects={archivedProjects}
@@ -2040,20 +1922,32 @@ export function ProjectsPage() {
               }
             />
           ) : (
-            <div className="flex min-h-[400px] items-center justify-center">
-              <div className="max-w-md text-center">
-                <h2 className="text-[15px] font-semibold">
+            <Empty>
+              <EmptyHeader>
+                <EmptyTitle>
                   {allProjects.length > 0
                     ? "No project selected"
                     : "No projects yet"}
-                </h2>
-                <p className="mt-2 text-sm text-foreground/65">
+                </EmptyTitle>
+                <EmptyDescription>
                   {allProjects.length > 0
-                    ? "Select a project from the sidebar to consult it."
-                    : "Create your first project with the + button in the project list."}
-                </p>
-              </div>
-            </div>
+                    ? "Choose a project in the list."
+                    : "Create your first project."}
+                </EmptyDescription>
+              </EmptyHeader>
+              {allProjects.length === 0 ? (
+                <EmptyContent>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={openCreateProjectModal}
+                  >
+                    <Plus data-icon="inline-start" />
+                    New project
+                  </Button>
+                </EmptyContent>
+              ) : null}
+            </Empty>
           )}
         </div>
       )}

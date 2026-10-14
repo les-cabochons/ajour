@@ -5,6 +5,7 @@ import {
 } from "@remixicon/react";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
+import { ColorField } from "@/components/ui/color-field";
 import {
   Dialog,
   DialogContent,
@@ -121,21 +122,12 @@ export function ProjectFormDialog({
               </Field>
               <Field>
                 <FieldLabel htmlFor="project-form-color">Color</FieldLabel>
-                <label className="project-color-picker">
-                  <span
-                    className="project-color-picker-swatch"
-                    style={{ backgroundColor: fields.color }}
-                    aria-hidden="true"
-                  />
-                  <input
-                    id="project-form-color"
-                    className="project-color-picker-input"
-                    aria-label="Project color"
-                    type="color"
-                    value={fields.color}
-                    onChange={(event) => update({ color: event.target.value })}
-                  />
-                </label>
+                <ColorField
+                  id="project-form-color"
+                  label="Project color"
+                  value={fields.color}
+                  onChange={(color) => update({ color })}
+                />
               </Field>
             </div>
           </FieldGroup>

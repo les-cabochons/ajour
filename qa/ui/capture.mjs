@@ -76,6 +76,15 @@ await session({ name: "light" }, async (page, shot) => {
   await shot("backlog-item");
   await go(page, "/projects/p-atlas");
   await shot("projects");
+  await go(page, "/projects/archive");
+  await shot("projects-archive");
+  await go(page, "/projects/p-atlas");
+  await page.getByRole("button", { name: "New project" }).click();
+  await shot("project-form");
+  await page.getByRole("button", { name: /^Project color/ }).click();
+  await shot("project-color-popover");
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
   for (const settingsPage of [
     "general",
     "plugins",
@@ -150,6 +159,9 @@ await session({ name: "mid", width: 1000, height: 760 }, async (page, shot) => {
   await shot("time-day");
   await page.keyboard.press("Control+b");
   await shot("sidebar-overlay");
+  await page.keyboard.press("Escape");
+  await go(page, "/projects/p-atlas");
+  await shot("projects");
 });
 
 await session(
@@ -159,6 +171,8 @@ await session(
       ["/time/today", "time-day"],
       ["/backlog", "backlog"],
       ["/backlog/w2", "backlog-item"],
+      ["/projects", "projects"],
+      ["/projects/p-atlas", "project"],
       ["/settings", "settings"],
       ["/settings/general", "settings-general"],
       ["/time/today/submit", "submit"],
