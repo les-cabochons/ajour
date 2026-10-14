@@ -115,6 +115,12 @@ const minutesSchema = z
   .max(24 * 60);
 const noteSchema = z.string().max(2000);
 
+/** 1 Urgent to 4 Low. Null clears it to No priority. */
+const priorityInputSchema = z
+  .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)])
+  .nullable();
+const workItemIdInput = z.object({ workItemId: z.string() });
+
 /** Input schemas of the write tools, by MCP tool name. */
 export const writeToolInputSchemas = {
   start_timer: z.object({
@@ -158,6 +164,42 @@ export const writeToolInputSchemas = {
   mark_entries_submitted: z.object({
     entryIds: z.array(z.string()).min(1).max(500),
   }),
+  create_work_item: z.object({
+    title: z.string().trim().min(1).max(500),
+    note: z.string().max(10_000).optional(),
+    projectId: z.string().optional(),
+    taskId: z.string().optional(),
+    priority: priorityInputSchema.optional(),
+    workflowStateId: z.string().optional(),
+    parentWorkItemId: z.string().optional(),
+    remainingEstimateHours: z.number().min(0).max(1000).optional(),
+  }),
+  edit_work_item: z.object({
+    workItemId: z.string(),
+    title: z.string().trim().min(1).max(500).optional(),
+    note: z.string().max(10_000).optional(),
+    priority: priorityInputSchema.optional(),
+    remainingEstimateHours: z.number().min(0).max(1000).nullable().optional(),
+    projectId: z.string().nullable().optional(),
+    taskId: z.string().nullable().optional(),
+  }),
+  move_work_item: z.object({
+    workItemId: z.string(),
+    workflowStateId: z.string(),
+    includeSubitems: z.boolean().optional(),
+  }),
+  settle_work_item: z.object({
+    workItemId: z.string(),
+    includeSubitems: z.boolean().optional(),
+  }),
+  unsettle_work_item: workItemIdInput,
+  snooze_work_item: z.object({
+    workItemId: z.string(),
+    until: z.string().datetime({ offset: true }),
+  }),
+  unsnooze_work_item: workItemIdInput,
+  archive_work_item: workItemIdInput,
+  restore_work_item: workItemIdInput,
 } as const;
 export type WriteToolName = keyof typeof writeToolInputSchemas;
 export type WriteToolInput<Name extends WriteToolName> = z.infer<

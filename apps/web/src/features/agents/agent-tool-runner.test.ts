@@ -1,7 +1,14 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { offerUndo } = vi.hoisted(() => ({ offerUndo: vi.fn() }));
+const { offerUndo, canWriteToSource } = vi.hoisted(() => ({
+  offerUndo: vi.fn(),
+  canWriteToSource: vi.fn(() => false),
+}));
 vi.mock("@/features/feedback/undo-toast", () => ({ offerUndo }));
+vi.mock("@/features/backlog/backlog-source-writes", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  canWriteToSource,
+}));
 
 const client = { id: "c1", name: "Claude Code" };
 
@@ -54,6 +61,7 @@ beforeEach(() => {
   vi.resetModules();
   installMockWindow();
   offerUndo.mockClear();
+  canWriteToSource.mockReturnValue(false);
 });
 
 describe("agent read tools", () => {
@@ -196,6 +204,129 @@ describe("agent timer and entry tools", () => {
     expect(call("stop_timer")).toMatchObject({
       ok: false,
       error: "No entry is running.",
+    });
+  });
+});
+
+describe("agent work item tools", () => {
+  it("creates an item and moves it to a done state, which closes it", async () => {
+    const { call, localStore } = await setup();
+    const done = localStore
+      .snapshot()
+      .workflowStates.find((state) => state.done)!;
+
+    const created = call("create_work_item", { title: "Write the spec" });
+    const workItemId = (created as { output: { workItemId: string } }).output
+      .workItemId;
+    const moved = call("move_work_item", {
+      workItemId,
+      workflowStateId: done._id,
+    });
+
+    expect(moved).toMatchObject({ ok: true, output: { status: "archived" } });
+    expect(offerUndo.mock.calls.at(-1)![1].title).toMatch(
+      /^Claude Code: Closed in /,
+    );
+  });
+
+  it("asks the agent to choose when a parent's open subitems are in question", async () => {
+    const { call, localStore } = await setup();
+    localStore.setUserPreferences({ closeParentSubitems: "ask" });
+    const parentId = localStore.addWorkItem({ title: "Parent" });
+    localStore.addWorkItem({ title: "Child", parentWorkItemId: parentId });
+
+    expect(call("settle_work_item", { workItemId: parentId })).toMatchObject({
+      ok: false,
+      error:
+        "This item has 1 open subitem. Call again with includeSubitems true or false.",
+    });
+    expect(
+      call("settle_work_item", { workItemId: parentId, includeSubitems: true }),
+    ).toMatchObject({ ok: true });
+    expect(
+      localStore
+        .snapshot()
+        .workItems.every((item) => item.status === "archived"),
+    ).toBe(true);
+  });
+
+  it("refuses a snooze in the past", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = localStore.addWorkItem({ title: "Later" });
+    expect(
+      call("snooze_work_item", { workItemId, until: "2020-01-01T09:00:00Z" }),
+    ).toMatchObject({ ok: false, error: "Pick a time in the future." });
+  });
+
+  it("leaves synced items that write to their source to the user", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = localStore.addWorkItem({ title: "Synced" });
+    canWriteToSource.mockReturnValue(true);
+    const target = localStore.snapshot().workflowStates[0]!;
+
+    expect(
+      call("move_work_item", { workItemId, workflowStateId: target._id }),
+    ).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("writes its state to its source"),
+    });
+  });
+
+  it("gives the action set's reason when the item is archived", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = localStore.addWorkItem({ title: "Old" });
+    call("settle_work_item", { workItemId });
+
+    expect(call("edit_work_item", { workItemId, title: "New" })).toMatchObject({
+      ok: false,
+      error: "Restore the item first",
+    });
+    expect(call("restore_work_item", { workItemId })).toMatchObject({
+      ok: true,
+      output: { status: "active" },
+    });
+    expect(offerUndo.mock.calls.at(-1)![1].title).toBe(
+      "Claude Code: Restored a backlog item",
+    );
+  });
+
+  it("drops the old task when an edit changes the project", async () => {
+    const { call, localStore, project, task } = await setup();
+    const workItemId = localStore.addWorkItem({
+      title: "Mapped",
+      projectId: project._id,
+      taskId: task("Build")._id,
+    });
+
+    expect(
+      call("edit_work_item", { workItemId, projectId: null }),
+    ).toMatchObject({ ok: true });
+    const item = localStore
+      .snapshot()
+      .workItems.find((candidate) => candidate._id === workItemId)!;
+    expect(item.projectId).toBeUndefined();
+    expect(item.taskId).toBeUndefined();
+  });
+
+  it("refuses a subitem of a subitem and an item created in a done state", async () => {
+    const { call, localStore } = await setup();
+    const parentId = localStore.addWorkItem({ title: "Parent" });
+    const childId = localStore.addWorkItem({
+      title: "Child",
+      parentWorkItemId: parentId,
+    });
+    const done = localStore
+      .snapshot()
+      .workflowStates.find((state) => state.done)!;
+
+    expect(
+      call("create_work_item", { title: "Deep", parentWorkItemId: childId }),
+    ).toMatchObject({ ok: false, error: "Subitems can't have subitems" });
+    expect(
+      call("create_work_item", { title: "Done", workflowStateId: done._id }),
+    ).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("done state"),
     });
   });
 });

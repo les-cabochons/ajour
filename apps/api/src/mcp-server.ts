@@ -62,6 +62,21 @@ export const TOOL_DESCRIPTIONS: Record<ReadToolName | WriteToolName, string> = {
   duplicate_entry: "Copies an entry, to the same date or another one.",
   mark_entries_submitted:
     "Marks entries as submitted after the user entered them in their timesheet.",
+  create_work_item:
+    "Adds a manual backlog item, or a subitem with parentWorkItemId.",
+  edit_work_item:
+    "Changes a backlog item's title, note, priority, remaining estimate, project or task. Null clears a field.",
+  move_work_item:
+    "Moves a backlog item to a workflow state. A done state closes it. Pass includeSubitems when it has open subitems.",
+  settle_work_item:
+    "Settles a backlog item: a manual item is archived, a synced item waits on someone else.",
+  unsettle_work_item: "Makes a settled item active again.",
+  snooze_work_item:
+    "Hides an item from the sidebar until a time (ISO 8601 with offset).",
+  unsnooze_work_item: "Ends a snooze now.",
+  archive_work_item:
+    "Archives a synced item in Ajour and leaves its source unchanged. Settle a manual item instead.",
+  restore_work_item: "Restores an archived item.",
 };
 
 export function textResult(value: unknown): ToolResult {

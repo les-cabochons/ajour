@@ -20,6 +20,11 @@ import {
   type AgentWriteOutcome,
   type EntryWriteTool,
 } from "@/features/agents/agent-write-tools";
+import {
+  WORK_ITEM_WRITE_TOOLS,
+  runWorkItemWriteTool,
+  type WorkItemWriteTool,
+} from "@/features/agents/agent-work-item-tools";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { localStore } from "@/lib/local-store";
 import { getIsoWeekDates } from "@/lib/utils";
@@ -86,6 +91,10 @@ function isEntryWriteTool(tool: string): tool is EntryWriteTool {
   return (ENTRY_WRITE_TOOLS as readonly string[]).includes(tool);
 }
 
+function isWorkItemWriteTool(tool: string): tool is WorkItemWriteTool {
+  return (WORK_ITEM_WRITE_TOOLS as readonly string[]).includes(tool);
+}
+
 /** Shows the Undo toast with the client's name and builds the result. */
 function finishWrite(
   call: BridgeToolCall,
@@ -124,6 +133,9 @@ export function runAgentToolCall(call: BridgeToolCall): BridgeToolResult {
     }
     if (isEntryWriteTool(call.tool)) {
       return finishWrite(call, runEntryWriteTool(call.tool, call.input));
+    }
+    if (isWorkItemWriteTool(call.tool)) {
+      return finishWrite(call, runWorkItemWriteTool(call.tool, call.input));
     }
     return refuse(`Ajour has no tool named ${call.tool}.`);
   } catch (error) {

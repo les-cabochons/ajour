@@ -308,9 +308,14 @@ describe("MCP endpoint", () => {
     const agent = await connectAgent(baseUrl, token);
 
     const { tools } = await agent.listTools();
-    expect(tools).toHaveLength(14);
+    expect(tools).toHaveLength(23);
     expect(tools.map((tool) => tool.name)).toEqual(
-      expect.arrayContaining(["start_timer", "mark_entries_submitted"]),
+      expect.arrayContaining([
+        "start_timer",
+        "mark_entries_submitted",
+        "create_work_item",
+        "restore_work_item",
+      ]),
     );
 
     await agent.callTool({
