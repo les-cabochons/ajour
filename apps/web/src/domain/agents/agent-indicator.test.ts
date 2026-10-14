@@ -22,7 +22,8 @@ const session = (state: "active" | "stalled" | "failed", endedAt?: number) => ({
 
 const indicator = (
   snapshot: AgentsSnapshot,
-  bridgeStatus: "connected" | "disconnected" = "connected",
+  bridgeStatus:
+    "connected" | "connecting" | "reconnecting" | "disconnected" = "connected",
 ) => getAgentIndicator({ mcpEnabled: true, bridgeStatus, snapshot }).state;
 
 describe("agent indicator", () => {
@@ -54,6 +55,14 @@ describe("agent indicator", () => {
 
   it("shows an error when the bridge lost the API", () => {
     expect(indicator(empty, "disconnected")).toBe("error");
+  });
+
+  it("shows an error while the bridge retries after losing the API", () => {
+    expect(indicator(empty, "reconnecting")).toBe("error");
+  });
+
+  it("does not call the first connection attempt an error", () => {
+    expect(indicator(empty, "connecting")).toBe("idle");
   });
 
   it("shows only errors newer than the last time the panel opened", () => {

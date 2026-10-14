@@ -1,5 +1,12 @@
-import { useEffect, useState } from "react";
-import type { AgentQuestion, AgentSession } from "@ajour/shared/agent-tools";
+import { useEffect, useState, type ReactNode } from "react";
+import { RiCloseLine } from "@remixicon/react";
+import type {
+  AgentQuestion,
+  AgentSession,
+  AgentsSnapshot,
+} from "@ajour/shared/agent-tools";
+import { SidePanel } from "@/components/side-panel";
+import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import {
   Sheet,
@@ -10,20 +17,31 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { Value } from "@/components/ui/value";
-import { answerAgentQuestion, markAgentsSeen } from "@/lib/app-api";
-import { useIsNarrowView } from "@/lib/use-narrow-view";
-import { cn } from "@/lib/utils";
 import {
-  closeAgentPanel,
-  setAgentsSnapshot,
-  useAgentBridgeState,
-} from "@/features/agents/agent-bridge-state";
+  describeSessionTimeLeft,
+  pickDefaultSession,
+} from "@/domain/agents/agent-sessions";
+import { useIsNarrowView } from "@/lib/use-narrow-view";
+import { useNow } from "@/lib/use-now";
+import { cn } from "@/lib/utils";
 
 /**
- * The agent panel: sessions as chats, open questions, the activity list and
- * errors. It takes sessions as generic data, so later LLM plugins can reuse it.
- * It opens from the right in a wide window and from the bottom in a narrow one.
+ * The agent panel: sessions with their chats, open questions, and an activity
+ * and errors tab. It knows nothing about MCP. The caller gives it the data and
+ * the three actions, so later LLM plugins can reuse it. In a wide window it is
+ * a docked side panel and the page stays usable; in a narrow window it is an
+ * overlay that opens from the bottom.
  */
+
+export interface AgentPanelProps {
+  snapshot: AgentsSnapshot | null;
+  open: boolean;
+  onOpenChange(open: boolean): void;
+  /** Sends the answer. A rejection shows its message under the question. */
+  onAnswer(questionId: string, text: string): Promise<void>;
+  /** Runs each time the panel opens, to mark past errors and failures seen. */
+  onSeen(): void;
+}
 
 function Time({ at }: { at: number }) {
   return (
@@ -36,13 +54,19 @@ function Time({ at }: { at: number }) {
   );
 }
 
-function QuestionForm({ question }: { question: AgentQuestion }) {
+function QuestionForm({
+  question,
+  onAnswer,
+}: {
+  question: AgentQuestion;
+  onAnswer: AgentPanelProps["onAnswer"];
+}) {
   const [text, setText] = useState("");
   const [error, setError] = useState<string | null>(null);
   const send = async (answer: string) => {
     setError(null);
     try {
-      setAgentsSnapshot(await answerAgentQuestion(question.id, answer));
+      await onAnswer(question.id, answer);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unknown error");
     }
@@ -89,118 +113,230 @@ function QuestionForm({ question }: { question: AgentQuestion }) {
   );
 }
 
-function SessionChat({ session }: { session: AgentSession }) {
+/** A session's updates and answers. An open question shows as a form instead. */
+function SessionChat({
+  session,
+  questions,
+  onAnswer,
+}: {
+  session: AgentSession;
+  questions: AgentQuestion[];
+  onAnswer: AgentPanelProps["onAnswer"];
+}) {
+  const openIds = new Set(questions.map((question) => question.id));
   return (
-    <ol className="flex flex-col gap-1 text-sm">
-      {session.messages.map((message, index) => (
-        <li key={index} className="flex gap-2">
-          <Time at={message.at} />
-          <span>
-            {message.kind === "update" && message.text}
-            {message.kind === "question" && `Asked: ${message.text}`}
-            {message.kind === "answer" && `You answered: ${message.text}`}
-            {message.kind === "end" &&
-              `Ended ${message.outcome}: ${message.summary}`}
-          </span>
-        </li>
+    <div className="flex flex-col gap-2" aria-label={`${session.title} chat`}>
+      <ol className="flex flex-col gap-1 text-sm">
+        {session.messages
+          .filter(
+            (message) =>
+              message.kind !== "question" || !openIds.has(message.questionId),
+          )
+          .map((message, index) => (
+            <li key={index} className="flex gap-2">
+              <Time at={message.at} />
+              <span>
+                {message.kind === "update" && message.text}
+                {message.kind === "question" && `Asked: ${message.text}`}
+                {message.kind === "answer" && `You answered: ${message.text}`}
+                {message.kind === "end" &&
+                  `Ended ${message.outcome}: ${message.summary}`}
+              </span>
+            </li>
+          ))}
+      </ol>
+      {questions.map((question) => (
+        <QuestionForm
+          key={question.id}
+          question={question}
+          onAnswer={onAnswer}
+        />
       ))}
-    </ol>
+    </div>
   );
 }
 
-export function AgentPanel() {
-  const { snapshot, panelOpen } = useAgentBridgeState();
-  const narrow = useIsNarrowView();
+function SessionRow({
+  session,
+  selected,
+  now,
+  onSelect,
+}: {
+  session: AgentSession;
+  selected: boolean;
+  now: number;
+  onSelect: () => void;
+}) {
+  const timeLeft = describeSessionTimeLeft(session, now);
+  return (
+    <button
+      type="button"
+      aria-current={selected ? "true" : undefined}
+      onClick={onSelect}
+      className={cn(
+        "flex w-full flex-col gap-0.5 border-b border-border px-2 py-1.5 text-left text-sm hover:bg-accent",
+        selected && "bg-accent",
+      )}
+    >
+      <span className="truncate font-medium">{session.title}</span>
+      <span className="truncate text-xs text-muted-foreground">
+        {[session.client.name, session.state, timeLeft]
+          .filter(Boolean)
+          .join(" · ")}
+      </span>
+    </button>
+  );
+}
 
-  // Opening the panel marks earlier errors and failures as seen.
-  useEffect(() => {
-    if (!panelOpen) return;
-    void markAgentsSeen()
-      .then(setAgentsSnapshot)
-      .catch(() => undefined);
-  }, [panelOpen]);
-
+function AgentPanelTabs({
+  snapshot,
+  onAnswer,
+}: Pick<AgentPanelProps, "snapshot" | "onAnswer">) {
+  const now = useNow();
+  const [chosenId, setChosenId] = useState<string>();
   const sessions = snapshot?.sessions ?? [];
   const questions = snapshot?.openQuestions ?? [];
+
+  // Until the user picks one, show the session that waits for an answer.
+  const selectedId = sessions.some((session) => session.id === chosenId)
+    ? chosenId
+    : pickDefaultSession(sessions, questions);
+  const selected = sessions.find((session) => session.id === selectedId);
   const sessionIds = new Set(sessions.map((session) => session.id));
-  // A question shows under its session, or on its own when it has none.
-  const loneQuestions = questions.filter(
+  const lone = questions.filter(
     (question) => !question.sessionId || !sessionIds.has(question.sessionId),
   );
 
   return (
-    <Sheet
-      open={panelOpen}
-      onOpenChange={(open) => (open ? undefined : closeAgentPanel())}
-    >
-      <SheetContent
-        side={narrow ? "bottom" : "right"}
-        className={cn(
-          "flex flex-col gap-3 p-4",
-          narrow &&
-            "max-h-[85dvh] pb-[calc(1rem+env(safe-area-inset-bottom,0px))]",
-        )}
+    <Tabs defaultValue="sessions" className="flex min-h-0 flex-1 flex-col">
+      <TabsList>
+        <TabsTrigger value="sessions">Sessions</TabsTrigger>
+        <TabsTrigger value="activity">Activity</TabsTrigger>
+      </TabsList>
+      <TabsContent
+        value="sessions"
+        className="flex flex-col gap-3 overflow-y-auto"
       >
-        <SheetHeader className="p-0">
-          <SheetTitle>Agents</SheetTitle>
-        </SheetHeader>
-        <Tabs defaultValue="sessions" className="flex min-h-0 flex-1 flex-col">
-          <TabsList>
-            <TabsTrigger value="sessions">Sessions</TabsTrigger>
-            <TabsTrigger value="activity">Activity</TabsTrigger>
-          </TabsList>
-          <TabsContent
-            value="sessions"
-            className="flex flex-col gap-3 overflow-y-auto"
-          >
-            {loneQuestions.map((question) => (
-              <QuestionForm key={question.id} question={question} />
-            ))}
-            {sessions.length === 0 && questions.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No agent sessions yet.
-              </p>
-            ) : null}
+        {lone.map((question) => (
+          <QuestionForm
+            key={question.id}
+            question={question}
+            onAnswer={onAnswer}
+          />
+        ))}
+        {sessions.length === 0 && lone.length === 0 ? (
+          <p className="text-sm text-muted-foreground">
+            No agent sessions yet.
+          </p>
+        ) : null}
+        {sessions.length > 0 ? (
+          <div className="flex flex-col border-t border-border">
             {sessions.map((session) => (
-              <section key={session.id} className="flex flex-col gap-2">
-                <header className="flex items-baseline justify-between gap-2">
-                  <h3 className="text-sm font-medium">{session.title}</h3>
-                  <span className="text-xs text-muted-foreground">
-                    {session.client.name} · {session.state}
-                  </span>
-                </header>
-                <SessionChat session={session} />
-                {questions
-                  .filter((question) => question.sessionId === session.id)
-                  .map((question) => (
-                    <QuestionForm key={question.id} question={question} />
-                  ))}
-              </section>
+              <SessionRow
+                key={session.id}
+                session={session}
+                selected={session.id === selectedId}
+                now={now}
+                onSelect={() => setChosenId(session.id)}
+              />
             ))}
-          </TabsContent>
-          <TabsContent
-            value="activity"
-            className="flex flex-col gap-1 overflow-y-auto text-sm"
-          >
-            {(snapshot?.errors ?? []).map((error, index) => (
-              <p key={index} className="text-destructive">
-                <Time at={error.at} />{" "}
-                {error.client ? `${error.client.name}: ` : ""}
-                {error.message}
-              </p>
-            ))}
-            {(snapshot?.activity ?? []).map((entry, index) => (
-              <p key={index}>
-                <Time at={entry.at} /> {entry.client.name}: {entry.action} ·{" "}
-                {entry.objectTitle}
-              </p>
-            ))}
-            {!snapshot?.errors.length && !snapshot?.activity.length ? (
-              <p className="text-muted-foreground">Nothing yet.</p>
-            ) : null}
-          </TabsContent>
-        </Tabs>
-      </SheetContent>
-    </Sheet>
+          </div>
+        ) : null}
+        {selected ? (
+          <SessionChat
+            session={selected}
+            questions={questions.filter(
+              (question) => question.sessionId === selected.id,
+            )}
+            onAnswer={onAnswer}
+          />
+        ) : null}
+      </TabsContent>
+      <TabsContent
+        value="activity"
+        className="flex flex-col gap-1 overflow-y-auto text-sm"
+      >
+        {(snapshot?.errors ?? []).map((error, index) => (
+          <p key={index} className="text-destructive">
+            <Time at={error.at} />{" "}
+            {error.client ? `${error.client.name}: ` : ""}
+            {error.message}
+          </p>
+        ))}
+        {(snapshot?.activity ?? []).map((entry, index) => (
+          <p key={index}>
+            <Time at={entry.at} /> {entry.client.name}: {entry.action} ·{" "}
+            {entry.objectTitle}
+          </p>
+        ))}
+        {!snapshot?.errors.length && !snapshot?.activity.length ? (
+          <p className="text-muted-foreground">Nothing yet.</p>
+        ) : null}
+      </TabsContent>
+    </Tabs>
+  );
+}
+
+export function AgentPanel({
+  snapshot,
+  open,
+  onOpenChange,
+  onAnswer,
+  onSeen,
+}: AgentPanelProps) {
+  const narrow = useIsNarrowView();
+
+  useEffect(() => {
+    if (open) onSeen();
+  }, [open, onSeen]);
+
+  const tabs: ReactNode = (
+    <AgentPanelTabs snapshot={snapshot} onAnswer={onAnswer} />
+  );
+
+  if (narrow) {
+    return (
+      <Sheet open={open} onOpenChange={onOpenChange}>
+        <SheetContent
+          side="bottom"
+          className="flex max-h-[85dvh] flex-col gap-3 p-4 pb-[calc(1rem+env(safe-area-inset-bottom,0px))]"
+        >
+          <SheetHeader className="p-0">
+            <SheetTitle>Agents</SheetTitle>
+          </SheetHeader>
+          {tabs}
+        </SheetContent>
+      </Sheet>
+    );
+  }
+
+  if (!open) return null;
+  return (
+    // The bottom padding keeps the last row clear of the corner indicator.
+    <SidePanel
+      contentKey="agents"
+      aria-label="Agents"
+      className="flex flex-col gap-3 pb-14"
+      onKeyDown={(event) => {
+        if (event.key === "Escape") onOpenChange(false);
+      }}
+    >
+      <header className="flex items-center justify-between gap-2">
+        <h2 className="text-base font-semibold">Agents</h2>
+        <TooltipButton
+          label="Close agents"
+          render={
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => onOpenChange(false)}
+            />
+          }
+        >
+          <RiCloseLine />
+        </TooltipButton>
+      </header>
+      {tabs}
+    </SidePanel>
   );
 }

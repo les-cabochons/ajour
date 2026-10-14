@@ -27,3 +27,22 @@ Feature: Agents through MCP
     When I open the agent panel and choose "Acme"
     Then the answer "Acme" is sent for that question
     And the question toast is gone
+
+  Scenario: I read a session's chat beside the page and answer its question
+    Given MCP is on and "Claude Code" runs "Fill Workday" asking "Which project gets the 2 hours?" and "Check Jira" saying "Found 3 tickets"
+    When I open the app
+    And I open the agent panel
+    Then the session "Fill Workday" lists "Claude Code", "active" and "1 h 30 min left"
+    And the chat shows "Reading the week"
+    When I select the session "Check Jira"
+    Then the chat shows "Found 3 tickets"
+    And the page stays usable beside the panel
+    When I select the session "Fill Workday"
+    And I choose "Globex" in the chat
+    Then the answer "Globex" is sent for that question
+
+  Scenario: The panel opens as an overlay in a narrow window
+    Given MCP is on and "Claude Code" asks "Which project gets the 2 hours?" with choices "Acme" and "Globex"
+    When I open the app on a narrow screen
+    And I open the agent panel
+    Then the agent panel is an overlay

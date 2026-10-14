@@ -4,7 +4,7 @@ import type { AgentsSnapshot } from "@ajour/shared/agent-tools";
  * The agent indicator's one state, the most urgent across all sessions:
  * needs input, then error, then failed, then active, then idle. Opening the
  * panel (`seenAt`) clears past errors and failures. A stalled session or a
- * lost API connection keeps its state until it recovers.
+ * lost API connection (`reconnecting` or `disconnected`) keeps its state until it recovers.
  */
 
 export type AgentIndicatorState =
@@ -21,7 +21,8 @@ export function getAgentIndicator({
   snapshot,
 }: {
   mcpEnabled: boolean;
-  bridgeStatus: "off" | "connecting" | "connected" | "disconnected";
+  bridgeStatus:
+    "off" | "connecting" | "connected" | "reconnecting" | "disconnected";
   snapshot: AgentsSnapshot | null;
 }): AgentIndicator {
   if (!mcpEnabled) return { state: "hidden", label: "" };
@@ -35,7 +36,7 @@ export function getAgentIndicator({
   }
 
   const seenAt = snapshot?.seenAt ?? 0;
-  if (bridgeStatus === "disconnected") {
+  if (bridgeStatus === "reconnecting" || bridgeStatus === "disconnected") {
     return { state: "error", label: "Can't reach Ajour's API" };
   }
   if (snapshot?.errors.some((error) => error.at > seenAt)) {

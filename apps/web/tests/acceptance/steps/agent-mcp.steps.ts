@@ -284,6 +284,10 @@ Then("the agent indicator reads {string}", async ({ page }, label: string) => {
   ).toBeVisible();
 });
 
+When("I open the agent panel", async ({ page }) => {
+  await page.getByRole("button", { name: /^Agents:/ }).click();
+});
+
 When(
   "I open the agent panel and choose {string}",
   async ({ page }, choice: string) => {
@@ -291,6 +295,127 @@ When(
     await page.getByRole("button", { name: choice, exact: true }).click();
   },
 );
+
+Given(
+  "MCP is on and {string} runs {string} asking {string} and {string} saying {string}",
+  async (
+    { page },
+    clientName: string,
+    askingTitle: string,
+    text: string,
+    quietTitle: string,
+    update: string,
+  ) => {
+    const client = { id: "client-1", name: clientName };
+    const now = Date.now();
+    const MINUTE = 60_000;
+    mcp = await mockMcp(page, {
+      bridgeEvents: [
+        {
+          event: "agents",
+          data: {
+            sessions: [
+              {
+                id: "session-1",
+                client,
+                title: askingTitle,
+                state: "active",
+                startedAt: now - 10 * MINUTE,
+                deadlineAt: now + 90 * MINUTE,
+                messages: [
+                  {
+                    kind: "update",
+                    at: now - 9 * MINUTE,
+                    text: "Reading the week",
+                  },
+                  {
+                    kind: "question",
+                    at: now - MINUTE,
+                    questionId: "question-1",
+                    text,
+                    choices: ["Acme", "Globex"],
+                  },
+                ],
+              },
+              {
+                id: "session-2",
+                client,
+                title: quietTitle,
+                state: "active",
+                startedAt: now - MINUTE,
+                deadlineAt: now + 10 * MINUTE,
+                messages: [{ kind: "update", at: now - 30_000, text: update }],
+              },
+            ],
+            openQuestions: [
+              {
+                id: "question-1",
+                sessionId: "session-1",
+                client,
+                text,
+                choices: ["Acme", "Globex"],
+                askedAt: now - MINUTE,
+              },
+            ],
+            activity: [],
+            errors: [],
+            seenAt: 0,
+          },
+        },
+      ],
+    });
+  },
+);
+
+When("I open the app on a narrow screen", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/");
+});
+
+const agentPanel = (page: Page) =>
+  page.getByRole("complementary", { name: "Agents" });
+
+Then(
+  "the session {string} lists {string}, {string} and {string}",
+  async (
+    { page },
+    title: string,
+    client: string,
+    state: string,
+    left: string,
+  ) => {
+    const row = agentPanel(page).getByRole("button", { name: title });
+    await expect(row).toContainText(`${client} · ${state} · ${left}`);
+  },
+);
+
+Then("the chat shows {string}", async ({ page }, text: string) => {
+  await expect(agentPanel(page).getByText(text)).toBeVisible();
+});
+
+When("I select the session {string}", async ({ page }, title: string) => {
+  await agentPanel(page).getByRole("button", { name: title }).click();
+});
+
+When("I choose {string} in the chat", async ({ page }, choice: string) => {
+  await agentPanel(page)
+    .getByRole("button", { name: choice, exact: true })
+    .click();
+});
+
+Then("the page stays usable beside the panel", async ({ page }) => {
+  await page
+    .getByRole("link", { name: /^Backlog/ })
+    .first()
+    .click();
+  await expect(page).toHaveURL(/\/backlog/);
+  await expect(agentPanel(page)).toBeVisible();
+});
+
+Then("the agent panel is an overlay", async ({ page }) => {
+  await expect(page.getByRole("dialog", { name: "Agents" })).toBeVisible();
+  await expect(agentPanel(page)).toHaveCount(0);
+});
 
 Then(
   "the answer {string} is sent for that question",
