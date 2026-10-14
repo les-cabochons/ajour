@@ -17,6 +17,7 @@ import {
 } from "@/domain/time/running-entry";
 import type { LocalWorkItem } from "@/domain/local-state";
 import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
+import type { TimeEntryEditorFields } from "@/features/time/time-entry-editor";
 import { TimeEntryEditorPopover } from "@/features/time/time-entry-editor-popover";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
@@ -28,21 +29,42 @@ import { useRunningClock, useTodayIsoDate } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 
 let runningEntryEditorOpen = false;
+/** The unsaved draft, kept with its timer so it never seeds another entry. */
+let runningEntryDraft:
+  { timerId: string; fields: TimeEntryEditorFields } | undefined;
 const runningEntryEditorListeners = new Set<() => void>();
 
 /**
- * Opens or closes the running entry's editor on whichever dock shows: the
- * sidebar's or the floating one. The titlebar's Start opens it after starting
- * an empty entry.
+ * Opens or closes the running entry's editor on whichever host shows: the
+ * sidebar's dock, the floating dock, or the narrow view's dialog. The
+ * titlebar's Start opens it after starting an empty entry. Closing drops the
+ * draft.
  */
 export function setRunningEntryEditorOpen(open: boolean) {
+  if (!open) runningEntryDraft = undefined;
   if (runningEntryEditorOpen === open) return;
   runningEntryEditorOpen = open;
   runningEntryEditorListeners.forEach((listener) => listener());
 }
 
+/**
+ * What a host passes to the editor so an unsaved draft survives a move to
+ * another host, as when the window crosses the narrow view's breakpoint.
+ */
+export function runningEntryDraftProps(timerId: string) {
+  return {
+    initialFields:
+      runningEntryDraft?.timerId === timerId
+        ? runningEntryDraft.fields
+        : undefined,
+    onFieldsChange: (fields: TimeEntryEditorFields) => {
+      runningEntryDraft = { timerId, fields };
+    },
+  };
+}
+
 /** The running entry editor's open state. Stop or Discard from anywhere closes it. */
-function useRunningEntryEditor(hasTimer: boolean) {
+export function useRunningEntryEditor(hasTimer: boolean) {
   const open = useSyncExternalStore(
     (listener) => {
       runningEntryEditorListeners.add(listener);
@@ -185,6 +207,7 @@ export function TimerDock({ upNext }: { upNext?: LocalWorkItem }) {
         target={{ kind: "running", timer }}
         open={editorOpen}
         onOpenChange={setRunningEntryEditorOpen}
+        {...runningEntryDraftProps(timer._id)}
         triggerLabel="Edit the running entry"
         triggerClassName="block w-full rounded-lg p-2.5 text-left outline-none hover:bg-foreground/[0.03] focus-visible:ring-1 focus-visible:ring-ring"
       >
@@ -281,6 +304,7 @@ export function FloatingTimerDock({
           target={{ kind: "running", timer }}
           open={editorOpen}
           onOpenChange={setRunningEntryEditorOpen}
+          {...runningEntryDraftProps(timer._id)}
           triggerLabel="Edit the running entry"
           triggerClassName={triggerClassName}
         >

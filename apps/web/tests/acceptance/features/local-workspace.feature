@@ -148,6 +148,16 @@ Feature: Open the local time workspace
     And I go back to the app from Settings
     Then the Time workspace is visible
 
+  Scenario: Keep the running entry's draft across the narrow breakpoint
+    Given I have no saved Ajour workspace
+    When I open today's time workspace
+    And I start an empty entry from the titlebar
+    And I type "Standup notes" in the running entry's note
+    And I narrow the window to the narrow view
+    Then the running entry's dialog still has "Standup notes"
+    When I widen the app back to a desktop width
+    Then the running entry's popover still has "Standup notes"
+
   Scenario: Return from Settings to the same view
     Given I have no saved Ajour workspace
     When I open today's time workspace in the Week view

@@ -33,7 +33,9 @@ import {
 import {
   FloatingTimerDock,
   RunningEntryWindowTitle,
+  runningEntryDraftProps,
   setRunningEntryEditorOpen,
+  useRunningEntryEditor,
 } from "@/features/layout/timer-dock";
 import { AppMenuBar } from "@/features/layout/app-menu-bar";
 import { CommandPalette } from "@/features/command-palette/command-palette";
@@ -418,11 +420,10 @@ function DayTotalsPill({
 /* ── Global Timer Bar ──────────────────────────────────────────────── */
 
 /**
- * Which entry editor the titlebar has open: the "+" new entry, or the running
- * entry in the narrow view's dialog. Desktop edits the running entry on the
- * timer dock.
+ * Whether the titlebar has the "+" new entry editor open. The running entry's
+ * editor state lives with the timer dock (`setRunningEntryEditorOpen`).
  */
-type TitlebarEditor = "new" | "running" | null;
+type TitlebarEditor = "new" | null;
 
 /**
  * New entry (+), Start (▶) and the titlebar totals. The running entry lives in
@@ -502,12 +503,9 @@ function GlobalTimerBar({
     "app",
   );
 
-  // Stop or Discard from another surface closes the running entry's editor.
-  useEffect(() => {
-    if (!currentTimer) {
-      setEditor((current) => (current === "running" ? null : current));
-    }
-  }, [currentTimer]);
+  // The running entry's editor state lives with the timer dock, so it and its
+  // draft survive a move between the dock's popover and the narrow dialog.
+  const runningEditorOpen = useRunningEntryEditor(currentTimer !== null);
 
   /**
    * Starts an empty running entry today, then opens it so the user can fill it
@@ -515,13 +513,16 @@ function GlobalTimerBar({
    */
   function handleStartClick() {
     localStore.startTimer({});
-    if (isNarrowView) setEditor("running");
-    else setRunningEntryEditorOpen(true);
+    setRunningEntryEditorOpen(true);
   }
 
   const handleEditorClose = useCallback(() => {
     setEditor(null);
   }, []);
+  const closeRunningEditor = useCallback(
+    () => setRunningEntryEditorOpen(false),
+    [],
+  );
 
   const controls = (
     <div className="global-timer-controls">
@@ -570,7 +571,7 @@ function GlobalTimerBar({
       {currentTimer && isNarrowView ? (
         <div className="quick-timer-popup-anchor">
           <FloatingTimerDock
-            onEdit={() => setEditor("running")}
+            onEdit={() => setRunningEntryEditorOpen(true)}
             className="h-11"
           />
         </div>
@@ -596,12 +597,19 @@ function GlobalTimerBar({
           )
         : null}
       <DayTotalsPill date={date} onSubmit={onSubmit} />
-      {isNarrowView && editor !== null ? (
+      {isNarrowView && editor === "new" ? (
         <TimeEntryModal
           date={today}
-          timerId={editor === "running" ? (currentTimer?._id ?? "") : undefined}
-          initialValues={editor === "new" ? newEntryValues : undefined}
+          initialValues={newEntryValues}
           onClose={handleEditorClose}
+        />
+      ) : null}
+      {isNarrowView && runningEditorOpen && currentTimer ? (
+        <TimeEntryModal
+          date={today}
+          timerId={currentTimer._id}
+          {...runningEntryDraftProps(currentTimer._id)}
+          onClose={closeRunningEditor}
         />
       ) : null}
     </div>

@@ -1449,6 +1449,41 @@ Then("the Settings pages replace the app sidebar", async ({ page }) => {
   expect(box?.height).toBe(viewport.height);
 });
 
+When(
+  "I type {string} in the running entry's note",
+  async ({ page }, note: string) => {
+    await page
+      .getByRole("dialog")
+      .getByRole("textbox", { name: "Note", exact: true })
+      .fill(note);
+  },
+);
+
+When("I narrow the window to the narrow view", async ({ page }) => {
+  await page.setViewportSize({ width: 420, height: 800 });
+});
+
+Then(
+  "the running entry's dialog still has {string}",
+  async ({ page }, note: string) => {
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toHaveCount(1);
+    await expect(
+      dialog.getByRole("textbox", { name: "Note", exact: true }),
+    ).toHaveValue(note);
+  },
+);
+
+Then(
+  "the running entry's popover still has {string}",
+  async ({ page }, note: string) => {
+    const popover = page.locator('[data-slot="popover-content"]');
+    await expect(
+      popover.getByRole("textbox", { name: "Note", exact: true }),
+    ).toHaveValue(note);
+  },
+);
+
 When("I open today's time workspace in the Week view", async ({ page }) => {
   await page.goto("/time/today?view=week");
 });
