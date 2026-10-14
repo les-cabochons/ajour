@@ -648,6 +648,22 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         return;
       }
 
+      // The user clears a session from the panel, for an agent that died
+      // without ending it.
+      const mcpDismissRoute = requestUrl.pathname.match(
+        /^\/api\/mcp\/sessions\/([^/]+)\/dismiss$/,
+      );
+      if (request.method === "POST" && mcpDismissRoute) {
+        try {
+          agentSessions.dismiss(decodeURIComponent(mcpDismissRoute[1] ?? ""));
+        } catch (error) {
+          writeJson(response, 409, { error: errorMessage(error) });
+          return;
+        }
+        writeJson(response, 200, agentSessions.snapshot());
+        return;
+      }
+
       // The user opened the agent panel: earlier errors and failures are seen.
       if (
         request.method === "POST" &&

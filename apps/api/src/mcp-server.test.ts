@@ -465,6 +465,53 @@ describe("agent sessions over MCP", () => {
     );
   });
 
+  it("dismisses a session, withdraws its question and answers 409 the second time", async () => {
+    const { baseUrl, logged } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl);
+    const agent = await connectAgent(baseUrl, token);
+    const begun = JSON.parse(
+      resultText(
+        await agent.callTool({
+          name: "begin_session",
+          arguments: { title: "Fill Workday", estimateMinutes: 10 },
+        }),
+      ),
+    ) as { sessionId: string };
+    const asked = JSON.parse(
+      resultText(
+        await agent.callTool({
+          name: "ask",
+          arguments: { question: "Which project?", sessionId: begun.sessionId },
+        }),
+      ),
+    ) as { questionId: string };
+    const waiting = agent.callTool({
+      name: "wait_for_answer",
+      arguments: { questionId: asked.questionId },
+    });
+    const path = `/api/mcp/sessions/${begun.sessionId}/dismiss`;
+
+    const dismissed = await apiRequest(baseUrl, path, {});
+
+    expect(dismissed.status).toBe(200);
+    expect(dismissed.body.sessions[0]).toMatchObject({ state: "cancelled" });
+    expect(dismissed.body.openQuestions).toEqual([]);
+    expect(JSON.parse(resultText(await waiting))).toEqual({
+      status: "withdrawn",
+    });
+    expect(logged).toContainEqual(
+      expect.objectContaining({
+        event: "mcp.session_ended",
+        session_id: begun.sessionId,
+        outcome: "cancelled",
+      }),
+    );
+    expect((await apiRequest(baseUrl, path, {})).status).toBe(409);
+    expect(
+      (await apiRequest(baseUrl, "/api/mcp/sessions/nope/dismiss", {})).status,
+    ).toBe(409);
+  });
+
   it("returns waiting when no answer comes within the wait", async () => {
     const { baseUrl } = await startTestApi({ mcpWaitForAnswerMs: 50 });
     const { token } = await enableMcpWithClient(baseUrl);

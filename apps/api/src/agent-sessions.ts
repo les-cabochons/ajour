@@ -124,25 +124,20 @@ export class AgentSessions {
     },
   ): AgentSession {
     const session = this.openSession(client, input.sessionId);
-    const now = this.now();
-    session.state = input.outcome;
-    session.endedAt = now;
-    session.deadlineAt = undefined;
-    session.pausedRemainingMs = undefined;
-    session.messages.push({
-      kind: "end",
-      at: now,
-      outcome: input.outcome,
-      summary: input.summary,
-    });
-    for (const question of this.questions.values()) {
-      if (question.sessionId === session.id && isOpenQuestion(question)) {
-        question.withdrawn = true;
-        this.wake(question.id);
-      }
+    this.finish(session, input.outcome, input.summary);
+    return session;
+  }
+
+  /**
+   * The user clears a session from the panel, for an agent that died without
+   * ending it. It ends as cancelled and its open questions are withdrawn.
+   */
+  dismiss(sessionId: string): AgentSession {
+    const session = this.sessions.get(sessionId);
+    if (!session || !isOpen(session)) {
+      throw new AgentSessionError("This session is no longer open.");
     }
-    this.options.onEnded?.(session);
-    this.changed();
+    this.finish(session, "cancelled", "Dismissed by the user.");
     return session;
   }
 
@@ -318,6 +313,28 @@ export class AgentSessions {
       );
     }
     return session;
+  }
+
+  /** Ends an open session and releases the agents waiting on its questions. */
+  private finish(
+    session: AgentSession,
+    outcome: "done" | "failed" | "cancelled",
+    summary: string,
+  ) {
+    const now = this.now();
+    session.state = outcome;
+    session.endedAt = now;
+    session.deadlineAt = undefined;
+    session.pausedRemainingMs = undefined;
+    session.messages.push({ kind: "end", at: now, outcome, summary });
+    for (const question of this.questions.values()) {
+      if (question.sessionId === session.id && isOpenQuestion(question)) {
+        question.withdrawn = true;
+        this.wake(question.id);
+      }
+    }
+    this.options.onEnded?.(session);
+    this.changed();
   }
 
   private revive(session: AgentSession, minutes: number) {

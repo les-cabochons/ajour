@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import type { AgentSession } from "../../../packages/shared/agent-tools.ts";
 import {
   AgentSessions,
   AgentSessionError,
@@ -9,12 +10,15 @@ const MINUTE = 60_000;
 const claude = { id: "c1", name: "Claude Code" };
 const codex = { id: "c2", name: "Codex" };
 
-function createSessions() {
+function createSessions(
+  options: { onEnded?: (session: AgentSession) => void } = {},
+) {
   let now = 0;
   let next = 0;
   const sessions = new AgentSessions({
     now: () => now,
     createId: () => `id-${(next += 1)}`,
+    ...options,
   });
   return { sessions, advance: (ms: number) => (now += ms), now: () => now };
 }
@@ -111,6 +115,41 @@ describe("questions", () => {
     ).resolves.toEqual({
       status: "withdrawn",
     });
+  });
+
+  it("dismisses a session, withdraws its question and wakes the waiter", async () => {
+    const ended: string[] = [];
+    const { sessions } = createSessions({
+      onEnded: (session) => ended.push(session.state),
+    });
+    const session = sessions.begin(claude, {
+      title: "Work",
+      estimateMinutes: 5,
+    });
+    const question = sessions.ask(claude, {
+      question: "Ok?",
+      sessionId: session.id,
+    });
+    const waiting = sessions.waitForAnswer(claude, question.id, 60_000);
+
+    const dismissed = sessions.dismiss(session.id);
+
+    expect(dismissed.state).toBe("cancelled");
+    expect(sessions.snapshot().openQuestions).toEqual([]);
+    await expect(waiting).resolves.toEqual({ status: "withdrawn" });
+    expect(ended).toEqual(["cancelled"]);
+  });
+
+  it("refuses to dismiss an unknown or an ended session", () => {
+    const { sessions } = createSessions();
+    const session = sessions.begin(claude, {
+      title: "Work",
+      estimateMinutes: 5,
+    });
+    sessions.dismiss(session.id);
+
+    expect(() => sessions.dismiss(session.id)).toThrow(AgentSessionError);
+    expect(() => sessions.dismiss("nope")).toThrow(AgentSessionError);
   });
 });
 
