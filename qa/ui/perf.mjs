@@ -137,15 +137,12 @@ console.log(
   RUNS,
   "runs",
 );
+console.log(`  cold load, Time page until rows render:   ${fmt(coldLoad)}`);
+console.log(`  Start click until painted:                ${fmt(startClick)}`);
+console.log(`  store write on the Backlog page:          ${fmt(storeWrite)}`);
 console.log(
-  `  cold load, Time page until rows render:   ${fmt(coldLoad)}  (budget ~150 ms)`,
+  `  renderer work per second, timer running:  ${fmt(timer.task)}  (script ${fmt(timer.script)}, style ${fmt(timer.style)}, layout ${fmt(timer.layout)})`,
 );
 console.log(
-  `  Start click until painted:                ${fmt(startClick)}  (budget ~40 ms)`,
-);
-console.log(
-  `  store write on the Backlog page:          ${fmt(storeWrite)}  (budget ~75 ms)`,
-);
-console.log(
-  `  renderer work per second, timer running:  ${fmt(timer.task)}  (budget ~4 ms; script ${fmt(timer.script)}, style ${fmt(timer.style)}, layout ${fmt(timer.layout)})`,
+  "Compare with the same script on the base branch; a measurement over 10% worse blocks the change.",
 );
