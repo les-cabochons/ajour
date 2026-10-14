@@ -3,6 +3,7 @@ import { findPinnedTask } from "@/domain/projects/project-transitions";
 import { selectMostRecentTimesheetEntry } from "@/domain/time/timesheet-entry";
 import { localStore } from "@/lib/local-store";
 import { useShortcut } from "@/lib/shortcut-handlers";
+import { isNarrowView } from "@/lib/use-narrow-view";
 import { todayIsoDate } from "@/lib/utils";
 
 /**
@@ -102,6 +103,11 @@ export function useGlobalShortcuts(selectedTimeDate: string) {
   );
   useShortcut("go.backlog", () => void navigate({ to: "/backlog" }), "app");
   useShortcut("go.projects", () => void navigate({ to: "/projects" }), "app");
-  useShortcut("go.settings", () => void navigate({ to: "/settings" }), "app");
-  useShortcut("app.settings", () => void navigate({ to: "/settings" }), "app");
+  // /settings is the pages list in the narrow view. Wide windows open General
+  // directly rather than through the /settings redirect, which could land
+  // after a quick Back to app and return to Settings.
+  const openSettings = () =>
+    void navigate({ to: isNarrowView() ? "/settings" : "/settings/general" });
+  useShortcut("go.settings", openSettings, "app");
+  useShortcut("app.settings", openSettings, "app");
 }

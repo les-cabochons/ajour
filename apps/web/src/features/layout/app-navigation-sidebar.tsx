@@ -372,7 +372,8 @@ export function AppNavigationSidebar({
               }}
               render={
                 <Link
-                  to="/settings"
+                  // The sidebar is wide-only, where /settings only redirects.
+                  to="/settings/general"
                   aria-label="Settings"
                   aria-current={isSettingsActive ? "page" : undefined}
                 />
