@@ -720,6 +720,7 @@ export function BacklogPage() {
                               )}
                             >
                               <BacklogItemSurface
+                                alwaysLive={narrow}
                                 item={item}
                                 state={state}
                                 view={view}

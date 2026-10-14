@@ -217,6 +217,7 @@ export type {
 } from "@/domain/local-state";
 
 const STORAGE_KEY = "ajour.local-state.v2";
+const STATE_CHANGE_EVENT = "ajour-local-state";
 const RETIRED_AUTH_CACHE_PREFIX = "msal.";
 
 const defaultCapture: CaptureSettings = {
@@ -804,7 +805,7 @@ function writeState(state: LocalAppState) {
   const nextState = { ...state, updatedAt: Date.now() };
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
   cachedState = nextState;
-  window.dispatchEvent(new Event("ajour-local-state"));
+  window.dispatchEvent(new Event(STATE_CHANGE_EVENT));
 }
 
 function updateState(
@@ -865,24 +866,31 @@ function updateStateWithUndo(
 /** `expired` means a later action replaced this one, or its toast already closed. */
 export type UndoResult = LocalStateUndoResult | "expired";
 
+let otherWindowWritesListened = false;
+
+/**
+ * Picks up a write from another window of this origin. A write in this window
+ * already cached its state in `writeState`, so it only announces the change.
+ */
+function listenForOtherWindowWrites() {
+  if (otherWindowWritesListened) {
+    return;
+  }
+
+  otherWindowWritesListened = true;
+  window.addEventListener("storage", (event: StorageEvent) => {
+    if (event.key === STORAGE_KEY || event.key === null) {
+      refreshState();
+      window.dispatchEvent(new Event(STATE_CHANGE_EVENT));
+    }
+  });
+}
+
 export const localStore = {
   subscribe(callback: () => void) {
-    const notify = () => {
-      refreshState();
-      callback();
-    };
-    const notifyStorage = (event: StorageEvent) => {
-      if (event.key === STORAGE_KEY || event.key === null) {
-        notify();
-      }
-    };
-
-    window.addEventListener("ajour-local-state", notify);
-    window.addEventListener("storage", notifyStorage);
-    return () => {
-      window.removeEventListener("ajour-local-state", notify);
-      window.removeEventListener("storage", notifyStorage);
-    };
+    listenForOtherWindowWrites();
+    window.addEventListener(STATE_CHANGE_EVENT, callback);
+    return () => window.removeEventListener(STATE_CHANGE_EVENT, callback);
   },
   snapshot: readState,
   syncPullRequests(

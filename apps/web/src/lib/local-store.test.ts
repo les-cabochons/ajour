@@ -2787,3 +2787,59 @@ describe("localStore workflow state sync", () => {
     expect(window.dispatchEvent).not.toHaveBeenCalled();
   });
 });
+
+describe("localStore subscriptions", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubGlobal("crypto", {
+      randomUUID: vi.fn(() => `uuid-${Math.random().toString(16).slice(2)}`),
+    });
+    installMockWindow();
+  });
+
+  it("announces a write in this window without re-reading storage", async () => {
+    const { localStore } = await import("./local-store");
+    const listener = vi.fn();
+    localStore.subscribe(listener);
+    localStore.addWorkItem({ title: "Ship it" });
+    const written = localStore.snapshot();
+    vi.mocked(window.localStorage.getItem).mockClear();
+
+    const announced = vi.mocked(window.dispatchEvent).mock.calls.at(-1)![0];
+    expect(announced.type).toBe("ajour-local-state");
+    const deliver = vi
+      .mocked(window.addEventListener)
+      .mock.calls.find(([type]) => type === "ajour-local-state")![1];
+    (deliver as () => void)();
+
+    expect(listener).toHaveBeenCalledTimes(1);
+    expect(window.localStorage.getItem).not.toHaveBeenCalled();
+    expect(localStore.snapshot()).toBe(written);
+  });
+
+  it("reloads once for a write from another window, however many subscribers", async () => {
+    const { localStore } = await import("./local-store");
+    localStore.subscribe(vi.fn());
+    localStore.subscribe(vi.fn());
+    const before = localStore.snapshot();
+    window.localStorage.setItem(
+      "ajour.local-state.v2",
+      JSON.stringify({ ...before, updatedAt: before.updatedAt + 1 }),
+    );
+    vi.mocked(window.localStorage.getItem).mockClear();
+    vi.mocked(window.dispatchEvent).mockClear();
+
+    const storageListeners = vi
+      .mocked(window.addEventListener)
+      .mock.calls.filter(([type]) => type === "storage");
+    expect(storageListeners).toHaveLength(1);
+    (storageListeners[0]![1] as unknown as (event: { key: string }) => void)({
+      key: "ajour.local-state.v2",
+    });
+
+    expect(window.localStorage.getItem).toHaveBeenCalledTimes(1);
+    expect(window.dispatchEvent).toHaveBeenCalledTimes(1);
+    expect(localStore.snapshot()).not.toBe(before);
+    expect(localStore.snapshot().updatedAt).toBe(before.updatedAt + 1);
+  });
+});
