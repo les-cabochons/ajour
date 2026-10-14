@@ -1,13 +1,17 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import type { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
   readToolInputSchemas,
+  sessionToolInputSchemas,
   writeToolInputSchemas,
   type AgentClientRef,
   type ReadToolName,
+  type SessionToolName,
   type WriteToolName,
 } from "../../../packages/shared/agent-tools.ts";
+import { AgentSessionError, type AgentSessions } from "./agent-sessions.ts";
 import { BridgeCallError, type McpBridge } from "./mcp-bridge.ts";
 import { authenticateMcpRequest } from "./mcp-clients.ts";
 import type { AppApiStorage } from "./storage.ts";
@@ -21,9 +25,19 @@ import type { AppApiStorage } from "./storage.ts";
 export interface McpRequestContext {
   storage: AppApiStorage;
   bridge: McpBridge;
+  sessions: AgentSessions;
+  /** How long one wait_for_answer call holds. Capped at MAX_WAIT_FOR_ANSWER_MS. */
+  waitForAnswerMs: number;
   logEvent: (event: Record<string, unknown>) => void;
   readBody: (request: IncomingMessage) => Promise<unknown>;
 }
+
+/** The longest one wait_for_answer call may hold. Agents call it again. */
+export const MAX_WAIT_FOR_ANSWER_MS = 50_000;
+
+type SessionInput<Name extends SessionToolName> = z.infer<
+  (typeof sessionToolInputSchemas)[Name]
+>;
 
 export interface ToolResult {
   [key: string]: unknown;
@@ -38,8 +52,11 @@ const AJOUR_INSTRUCTIONS = [
   "A write refused by Ajour returns an error with the reason. Do not retry it unchanged.",
 ].join("\n");
 
-/** Tool descriptions, by tool name. Later tasks add session tools. */
-export const TOOL_DESCRIPTIONS: Record<ReadToolName | WriteToolName, string> = {
+/** Tool descriptions, by tool name. */
+export const TOOL_DESCRIPTIONS: Record<
+  ReadToolName | WriteToolName | SessionToolName,
+  string
+> = {
   get_running_timer:
     "The running entry, with its project, task, note and counted minutes. Null when nothing runs.",
   list_time_entries:
@@ -77,6 +94,15 @@ export const TOOL_DESCRIPTIONS: Record<ReadToolName | WriteToolName, string> = {
   archive_work_item:
     "Archives a synced item in Ajour and leaves its source unchanged. Settle a manual item instead.",
   restore_work_item: "Restores an archived item.",
+  begin_session:
+    "Call before any work longer than a minute: a title and your estimate in minutes. Ajour shows it to the user and adds a 25% margin. Send update_session at least every few minutes, extend before the deadline passes, and always call end_session.",
+  update_session:
+    "A short progress message for the user, with optional extra minutes when you need more time.",
+  end_session:
+    "Ends the session as done, failed or cancelled, with a one-paragraph summary.",
+  ask: "Asks the user a question and returns its id at once. Ask only when you cannot go on otherwise. Offer choices when there are a few clear options. Then call wait_for_answer.",
+  wait_for_answer:
+    "Waits up to 50 seconds for the answer. Returns `waiting` if there is none yet: call it again. Returns `withdrawn` if the session ended.",
 };
 
 export function textResult(value: unknown): ToolResult {
@@ -109,10 +135,44 @@ export async function forwardToRenderer(
       return errorResult(result.error);
     }
     event.outcome = "ok";
+    if (result.activity) {
+      context.sessions.recordActivity(client, { tool, ...result.activity });
+    }
     return textResult(result.output);
   } catch (error) {
     if (error instanceof BridgeCallError) {
       event.outcome = error.reason;
+      context.sessions.recordError(error.message, client);
+      return errorResult(error.message);
+    }
+    event.outcome = "error";
+    throw error;
+  } finally {
+    event.duration_ms = Date.now() - startedAt;
+    context.logEvent(event);
+  }
+}
+
+/** Runs a session tool in the API and logs one `mcp.request` event. */
+async function runSessionTool(
+  tool: SessionToolName,
+  client: AgentClientRef,
+  context: McpRequestContext,
+  run: () => unknown | Promise<unknown>,
+): Promise<ToolResult> {
+  const startedAt = Date.now();
+  const event: Record<string, unknown> = {
+    event: "mcp.request",
+    client_id: client.id,
+    tool,
+  };
+  try {
+    const output = await run();
+    event.outcome = "ok";
+    return textResult(output);
+  } catch (error) {
+    if (error instanceof AgentSessionError) {
+      event.outcome = "refused";
       return errorResult(error.message);
     }
     event.outcome = "error";
@@ -152,6 +212,70 @@ export function registerTools(
       async (input: unknown) => forwardToRenderer(name, input, client, context),
     );
   }
+
+  // Session tools run in the API: sessions live here, not in the renderer.
+  const { sessions } = context;
+  // The SDK has already parsed each input against its schema, but it does not
+  // infer the type from `.shape` here, so each handler names it.
+  const sessionToolConfig = (name: SessionToolName) => ({
+    description: TOOL_DESCRIPTIONS[name],
+    inputSchema: sessionToolInputSchemas[name].shape,
+  });
+  server.registerTool(
+    "begin_session",
+    sessionToolConfig("begin_session"),
+    async (input: SessionInput<"begin_session">) =>
+      runSessionTool("begin_session", client, context, () => {
+        const session = sessions.begin(client, input);
+        return {
+          sessionId: session.id,
+          deadline: new Date(session.deadlineAt!).toISOString(),
+        };
+      }),
+  );
+  server.registerTool(
+    "update_session",
+    sessionToolConfig("update_session"),
+    async (input: SessionInput<"update_session">) =>
+      runSessionTool("update_session", client, context, () => {
+        const session = sessions.update(client, input);
+        return {
+          state: session.state,
+          deadline: session.deadlineAt
+            ? new Date(session.deadlineAt).toISOString()
+            : null,
+        };
+      }),
+  );
+  server.registerTool(
+    "end_session",
+    sessionToolConfig("end_session"),
+    async (input: SessionInput<"end_session">) =>
+      runSessionTool("end_session", client, context, () => {
+        sessions.end(client, input);
+        return { ended: true };
+      }),
+  );
+  server.registerTool(
+    "ask",
+    sessionToolConfig("ask"),
+    async (input: SessionInput<"ask">) =>
+      runSessionTool("ask", client, context, () => ({
+        questionId: sessions.ask(client, input).id,
+      })),
+  );
+  server.registerTool(
+    "wait_for_answer",
+    sessionToolConfig("wait_for_answer"),
+    async (input: SessionInput<"wait_for_answer">) =>
+      runSessionTool("wait_for_answer", client, context, () =>
+        sessions.waitForAnswer(
+          client,
+          input.questionId,
+          Math.min(context.waitForAnswerMs, MAX_WAIT_FOR_ANSWER_MS),
+        ),
+      ),
+  );
 }
 
 function writeError(response: ServerResponse, status: number, message: string) {
@@ -188,6 +312,12 @@ export async function handleMcpRequest(
     request.headers.authorization,
   );
   if (authentication.kind !== "ok") {
+    if (authentication.kind === "revoked") {
+      context.sessions.recordError(
+        `${authentication.client.name}: its token was revoked.`,
+        { id: authentication.client.id, name: authentication.client.name },
+      );
+    }
     context.logEvent({
       event: "mcp.request",
       outcome: "unauthorized",

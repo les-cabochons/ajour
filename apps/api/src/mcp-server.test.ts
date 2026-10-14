@@ -308,7 +308,7 @@ describe("MCP endpoint", () => {
     const agent = await connectAgent(baseUrl, token);
 
     const { tools } = await agent.listTools();
-    expect(tools).toHaveLength(23);
+    expect(tools).toHaveLength(28);
     expect(tools.map((tool) => tool.name)).toEqual(
       expect.arrayContaining([
         "start_timer",
@@ -373,5 +373,167 @@ describe("MCP endpoint", () => {
     });
 
     expect(resultText(result)).toBe("Ajour did not answer in time.");
+  });
+});
+
+describe("agent sessions over MCP", () => {
+  it("runs a session from begin to end and publishes it", async () => {
+    const { baseUrl, logged } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl);
+    const renderer = await openFakeRenderer(baseUrl);
+    const agent = await connectAgent(baseUrl, token);
+
+    const begun = JSON.parse(
+      resultText(
+        await agent.callTool({
+          name: "begin_session",
+          arguments: { title: "Fill Workday", estimateMinutes: 10 },
+        }),
+      ),
+    ) as { sessionId: string };
+    const published = await renderer.waitFor(
+      "agents",
+      (data) => data.sessions.length === 1,
+    );
+    expect(published.data).toMatchObject({
+      sessions: [{ title: "Fill Workday", state: "active" }],
+    });
+
+    await agent.callTool({
+      name: "end_session",
+      arguments: {
+        sessionId: begun.sessionId,
+        outcome: "done",
+        summary: "Entered 5 lines",
+      },
+    });
+    expect(logged).toContainEqual(
+      expect.objectContaining({ event: "mcp.session_ended", outcome: "done" }),
+    );
+    // Wide events carry ids and counts, never what the agent or user wrote.
+    expect(JSON.stringify(logged)).not.toContain("Entered 5 lines");
+    expect(JSON.stringify(logged)).not.toContain("Fill Workday");
+  });
+
+  it("returns the user's answer to wait_for_answer", async () => {
+    const { baseUrl } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl);
+    const renderer = await openFakeRenderer(baseUrl);
+    const agent = await connectAgent(baseUrl, token);
+
+    const asked = JSON.parse(
+      resultText(
+        await agent.callTool({
+          name: "ask",
+          arguments: {
+            question: "Which project?",
+            choices: ["Acme", "Globex"],
+          },
+        }),
+      ),
+    ) as { questionId: string };
+    await renderer.waitFor("agents", (data) => data.openQuestions.length === 1);
+
+    const waiting = agent.callTool({
+      name: "wait_for_answer",
+      arguments: { questionId: asked.questionId },
+    });
+    await apiRequest(baseUrl, `/api/mcp/questions/${asked.questionId}/answer`, {
+      text: "Acme",
+    });
+
+    expect(JSON.parse(resultText(await waiting))).toEqual({
+      status: "answered",
+      answer: "Acme",
+    });
+  });
+
+  it("answers 409 for a question that is closed", async () => {
+    const { baseUrl } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl);
+    const agent = await connectAgent(baseUrl, token);
+    const asked = JSON.parse(
+      resultText(
+        await agent.callTool({ name: "ask", arguments: { question: "Ok?" } }),
+      ),
+    ) as { questionId: string };
+    const path = `/api/mcp/questions/${asked.questionId}/answer`;
+
+    expect((await apiRequest(baseUrl, path, { text: "Yes" })).status).toBe(200);
+    expect((await apiRequest(baseUrl, path, { text: "Again" })).status).toBe(
+      409,
+    );
+  });
+
+  it("returns waiting when no answer comes within the wait", async () => {
+    const { baseUrl } = await startTestApi({ mcpWaitForAnswerMs: 50 });
+    const { token } = await enableMcpWithClient(baseUrl);
+    const agent = await connectAgent(baseUrl, token);
+    const asked = JSON.parse(
+      resultText(
+        await agent.callTool({ name: "ask", arguments: { question: "Ok?" } }),
+      ),
+    ) as { questionId: string };
+
+    const result = await agent.callTool({
+      name: "wait_for_answer",
+      arguments: { questionId: asked.questionId },
+    });
+
+    expect(JSON.parse(resultText(result))).toEqual({ status: "waiting" });
+  });
+
+  it("publishes the seen time when the panel opens", async () => {
+    const { baseUrl } = await startTestApi();
+    await apiRequest(baseUrl, "/api/mcp/settings", { enabled: true });
+    const renderer = await openFakeRenderer(baseUrl);
+    await renderer.waitFor("agents", (data) => data.seenAt === 0);
+
+    const seen = await apiRequest(baseUrl, "/api/mcp/seen", {});
+
+    expect(seen.body.seenAt).toBeGreaterThan(0);
+    await renderer.waitFor("agents", (data) => data.seenAt > 0);
+  });
+
+  it("records a write in the activity list and a missing window as an error", async () => {
+    const { baseUrl } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl, "Codex");
+    const agent = await connectAgent(baseUrl, token);
+    await agent.callTool({ name: "list_projects", arguments: {} });
+
+    const renderer = await openFakeRenderer(baseUrl, (call) => ({
+      requestId: call.requestId,
+      ok: true,
+      output: {},
+      activity: {
+        action: "Started an entry",
+        objectId: "t1",
+        objectTitle: "Acme \u00b7 Build",
+      },
+    }));
+    const first = await renderer.waitFor(
+      "agents",
+      (data) => data.errors.length > 0,
+    );
+    expect(first.data).toMatchObject({
+      errors: [
+        {
+          message: "Open the Ajour window to use this tool.",
+          client: { name: "Codex" },
+        },
+      ],
+    });
+
+    await agent.callTool({
+      name: "start_timer",
+      arguments: { projectId: "p" },
+    });
+    const after = await renderer.waitFor(
+      "agents",
+      (data) => data.activity.length > 0,
+    );
+    expect(after.data).toMatchObject({
+      activity: [{ tool: "start_timer", objectTitle: "Acme \u00b7 Build" }],
+    });
   });
 });
