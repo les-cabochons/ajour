@@ -1,4 +1,4 @@
-import { useMemo, useState, type ChangeEvent } from "react";
+import { useMemo, useState } from "react";
 import {
   RiDownloadLine as Download,
   RiUploadLine as Upload,
@@ -11,7 +11,8 @@ import {
 } from "@/components/app-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/ui/date-field";
+import { FileField } from "@/components/ui/file-field";
 import { Label } from "@/components/ui/label";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { useLocalState } from "@/lib/local-hooks";
@@ -123,8 +124,8 @@ export function SettingsExportPage() {
     }
   }
 
-  function handleImportFileChange(event: ChangeEvent<HTMLInputElement>) {
-    setSelectedImportFile(event.target.files?.[0] ?? null);
+  function handleImportFileChange(file: File | null) {
+    setSelectedImportFile(file);
     setError("");
     setStatusMessage("");
   }
@@ -205,12 +206,10 @@ export function SettingsExportPage() {
                 >
                   From
                 </Label>
-                <Input
+                <DateField
                   id="time-entries-export-start"
-                  type="date"
                   value={startDate}
-                  onChange={(event) => setStartDate(event.target.value)}
-                  max={endDate}
+                  onChange={setStartDate}
                 />
               </div>
 
@@ -221,12 +220,10 @@ export function SettingsExportPage() {
                 >
                   To
                 </Label>
-                <Input
+                <DateField
                   id="time-entries-export-end"
-                  type="date"
                   value={endDate}
-                  onChange={(event) => setEndDate(event.target.value)}
-                  min={startDate}
+                  onChange={setEndDate}
                 />
               </div>
             </div>
@@ -284,19 +281,15 @@ export function SettingsExportPage() {
           <SettingRow
             label="Workbook"
             labelFor="time-entries-import-file"
-            description={
-              selectedImportFile
-                ? selectedImportFile.name
-                : "Choose a .xlsx file with a Time entries sheet."
-            }
+            description="Choose a .xlsx file with a Time entries sheet."
             stacked
           >
-            <Input
+            <FileField
               id="time-entries-import-file"
-              type="file"
               accept=".xlsx"
+              file={selectedImportFile}
               onChange={handleImportFileChange}
-              className="min-w-0 flex-[1_1_14rem] desktop:max-w-sm"
+              className="flex-[1_1_14rem]"
             />
             <Button
               type="button"

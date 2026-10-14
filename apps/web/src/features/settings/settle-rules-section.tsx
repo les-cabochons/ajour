@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import type { ConnectorSettleState } from "@ajour/shared";
 import { AppPanel, MessagePanel } from "@/components/app-surface";
 import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/ui/select";
+import { OptionSelect } from "@/components/ui/option-select";
 import {
   listSettleRuleSourceProjects,
   type SettleRuleSourceProject,
@@ -179,53 +179,53 @@ function SettleRuleRow({
         {project.sourceProjectName}
       </div>
       <div className="flex min-w-0 flex-wrap items-center gap-2">
-        <NativeSelect
-          aria-label={label}
+        <OptionSelect
+          label={label}
           className="w-auto"
           value={applies ? "apply" : "ask"}
-          onChange={(event) =>
-            event.target.value === "apply"
-              ? save({})
-              : localStore.askSettleRule(key)
+          onChange={(mode) =>
+            mode === "apply" ? save({}) : localStore.askSettleRule(key)
           }
-        >
-          <option value="ask">Ask</option>
-          <option value="apply">Apply</option>
-        </NativeSelect>
+          options={[
+            { value: "ask", label: "Ask" },
+            { value: "apply", label: "Apply" },
+          ]}
+        />
         {applies ? (
           <>
-            <NativeSelect
-              aria-label={`State for ${project.sourceProjectName}`}
+            <OptionSelect
+              label={`State for ${project.sourceProjectName}`}
               className="w-auto"
               value={rule?.state?.name ?? ""}
               disabled={load.status !== "ready"}
-              onChange={(event) => {
-                const state = findSettleState(states, event.target.value);
+              onChange={(name) => {
+                const state = findSettleState(states, name);
                 save({
                   state: state
                     ? { name: state.name, done: state.done }
                     : undefined,
                 });
               }}
-            >
-              <option value="">
-                {load.status === "loading"
-                  ? "Loading states…"
-                  : "Keep the state"}
-              </option>
-              {rule?.state && !findSettleState(states, rule.state.name) ? (
-                <option value={rule.state.name}>{rule.state.name}</option>
-              ) : null}
-              {groupSettleStates(states).map((group) => (
-                <optgroup key={group.category} label={group.category}>
-                  {group.states.map((state) => (
-                    <option key={state.name} value={state.name}>
-                      {state.name}
-                    </option>
-                  ))}
-                </optgroup>
-              ))}
-            </NativeSelect>
+              options={[
+                {
+                  value: "",
+                  label:
+                    load.status === "loading"
+                      ? "Loading states…"
+                      : "Keep the state",
+                },
+                ...(rule?.state && !findSettleState(states, rule.state.name)
+                  ? [{ value: rule.state.name, label: rule.state.name }]
+                  : []),
+              ]}
+              groups={groupSettleStates(states).map((group) => ({
+                label: group.category,
+                options: group.states.map((state) => ({
+                  value: state.name,
+                  label: state.name,
+                })),
+              }))}
+            />
             <Input
               aria-label={`Priority for ${project.sourceProjectName}`}
               aria-invalid={!priorityIsValid}

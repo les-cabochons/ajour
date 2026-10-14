@@ -9,6 +9,7 @@ import {
   RiUpload2Line as Upload,
 } from "@remixicon/react";
 import { AppPanel, MessagePanel, SettingRow } from "@/components/app-surface";
+import { isDesktopShell } from "@/lib/runtime";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -29,7 +30,7 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { FieldGroup } from "@/components/ui/field";
-import { NativeSelect } from "@/components/ui/select";
+import { OptionSelect } from "@/components/ui/option-select";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getAppApiBaseUrl, getAppApiDescription } from "@/lib/app-api";
@@ -269,25 +270,24 @@ function PluginsHeader({
             />
           </SettingRow>
           <SettingRow label="Refresh catalog" labelFor="plugin-catalog-refresh">
-            <NativeSelect
+            <OptionSelect
               id="plugin-catalog-refresh"
               className="w-36"
               value={String(refreshMinutes)}
               disabled={!canConfigureRefresh}
-              onChange={(event) =>
+              onChange={(minutes) =>
                 onRefreshMinutesChange(
-                  Number(
-                    event.target.value,
-                  ) as PluginCatalogSettings["refreshMinutes"],
+                  Number(minutes) as PluginCatalogSettings["refreshMinutes"],
                 )
               }
-            >
-              <option value="0">At launch only</option>
-              <option value="15">Every 15 min</option>
-              <option value="30">Every 30 min</option>
-              <option value="60">Every hour</option>
-              <option value="240">Every 4 hours</option>
-            </NativeSelect>
+              options={[
+                { value: "0", label: "At launch only" },
+                { value: "15", label: "Every 15 min" },
+                { value: "30", label: "Every 30 min" },
+                { value: "60", label: "Every hour" },
+                { value: "240", label: "Every 4 hours" },
+              ]}
+            />
           </SettingRow>
         </AppPanel>
       </section>
@@ -530,7 +530,10 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
           </MessagePanel>
         ) : null}
         {catalogError ? (
-          <MessagePanel tone="warning">{catalogError}</MessagePanel>
+          // The web build has no catalog: that is a notice, not a failure.
+          <MessagePanel tone={isDesktopShell ? "warning" : "default"}>
+            {catalogError}
+          </MessagePanel>
         ) : null}
       </>
     );

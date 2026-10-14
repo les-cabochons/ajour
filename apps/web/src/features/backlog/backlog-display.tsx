@@ -20,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { OptionSelect } from "@/components/ui/option-select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
@@ -49,39 +50,6 @@ function Option({ label, children }: { label: string; children: ReactNode }) {
 }
 
 /** A 28px select for the popover's options. */
-function OptionSelect<T extends string>({
-  label,
-  value,
-  onChange,
-  options,
-}: {
-  label: string;
-  value: T;
-  onChange: (value: T) => void;
-  options: { value: T; label: string }[];
-}) {
-  return (
-    <Select
-      value={value}
-      // The content mounts on open, so the trigger learns the labels here.
-      items={options}
-      onValueChange={(next) => {
-        if (next !== null && next !== value) onChange(next as T);
-      }}
-    >
-      <SelectTrigger size="sm" className="w-full" aria-label={label}>
-        <SelectValue />
-      </SelectTrigger>
-      <SelectContent>
-        {options.map((option) => (
-          <SelectItem key={option.value} value={option.value}>
-            {option.label}
-          </SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
-  );
-}
 export function BacklogLayoutToggle({
   view,
 }: {

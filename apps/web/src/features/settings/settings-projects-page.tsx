@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ChangeEvent } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { ProjectDataShapePluginManifest } from "@ajour/shared";
 import {
   RiDownloadLine as Download,
@@ -12,8 +12,8 @@ import {
 } from "@/components/app-surface";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/ui/select";
+import { FileField } from "@/components/ui/file-field";
+import { OptionSelect } from "@/components/ui/option-select";
 import {
   exportProjectsWithDataShape,
   getProjectDataShapePlugins,
@@ -196,8 +196,8 @@ export function SettingsProjectsPage() {
     }
   }
 
-  function handleImportFileChange(event: ChangeEvent<HTMLInputElement>) {
-    setSelectedImportFile(event.target.files?.[0] ?? null);
+  function handleImportFileChange(file: File | null) {
+    setSelectedImportFile(file);
     setError("");
     setStatusMessage("");
   }
@@ -266,21 +266,23 @@ export function SettingsProjectsPage() {
               "Ajour's built-in schema is always available, even when no plugins are installed."
             }
           >
-            <NativeSelect
+            <OptionSelect
               id="project-data-shape"
+              size="default"
               className="w-60 max-w-full"
               value={selectedShapeId}
-              onChange={(event) => handleShapeChange(event.target.value)}
-            >
-              <option value={DEFAULT_PROJECT_DATA_SHAPE_ID}>
-                Ajour default
-              </option>
-              {shapePlugins.map((plugin) => (
-                <option key={plugin.id} value={plugin.id}>
-                  {plugin.displayName}
-                </option>
-              ))}
-            </NativeSelect>
+              onChange={handleShapeChange}
+              options={[
+                {
+                  value: DEFAULT_PROJECT_DATA_SHAPE_ID,
+                  label: "Ajour default",
+                },
+                ...shapePlugins.map((plugin) => ({
+                  value: plugin.id,
+                  label: plugin.displayName,
+                })),
+              ]}
+            />
           </SettingRow>
         </AppPanel>
       </section>
@@ -410,20 +412,16 @@ export function SettingsProjectsPage() {
           <SettingRow
             label="Workbook"
             labelFor="project-import-file"
-            description={
-              selectedImportFile
-                ? selectedImportFile.name
-                : "Choose a .xlsx file with a Projects sheet."
-            }
+            description="Choose a .xlsx file with a Projects sheet."
             stacked
           >
-            <Input
+            <FileField
               key={selectedShapeId}
               id="project-import-file"
-              type="file"
               accept=".xlsx"
+              file={selectedImportFile}
               onChange={handleImportFileChange}
-              className="min-w-0 flex-[1_1_14rem] desktop:max-w-sm"
+              className="flex-[1_1_14rem]"
             />
             <Button
               type="button"

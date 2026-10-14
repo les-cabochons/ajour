@@ -4,12 +4,12 @@ import {
   RiArrowUpLine as MoveUp,
   RiDeleteBinLine as Trash2,
   RiRefreshLine as RefreshCw,
-  RiSaveLine as Save,
 } from "@remixicon/react";
 import { AppPanel, MessagePanel } from "@/components/app-surface";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ColorField } from "@/components/ui/color-field";
 import { Input } from "@/components/ui/input";
 import {
   getConnectorBacklogStatuses,
@@ -113,15 +113,26 @@ export function SettingsWorkflowPage() {
     }
   }
 
-  function handleSaveStatus(statusId: string) {
+  /** Writes a draft that differs from the saved state; an emptied name reverts. */
+  function commitStatus(
+    statusId: string,
+    draft: { name: string; color: string },
+  ) {
+    const status = state.workflowStates.find(
+      (candidate) => candidate._id === statusId,
+    );
+    if (!status) return;
+    const name = draft.name.trim();
+    if (name.length === 0) {
+      setStatusDrafts((current) => ({
+        ...current,
+        [statusId]: { name: status.name, color: draft.color },
+      }));
+      return;
+    }
+    if (name === status.name && draft.color === status.color) return;
     try {
-      localStore.updateWorkflowState(
-        statusId,
-        statusDrafts[statusId] ?? {
-          name: "",
-          color: DEFAULT_NEW_STATE_COLOR,
-        },
-      );
+      localStore.updateWorkflowState(statusId, { name, color: draft.color });
       setError(null);
       setMessage("Workflow state updated.");
     } catch (nextError) {
@@ -200,12 +211,10 @@ export function SettingsWorkflowPage() {
               placeholder="Add a workflow state"
               autoComplete="off"
             />
-            <Input
-              aria-label="New workflow state color"
-              type="color"
+            <ColorField
+              label="New workflow state color"
               value={newStatusColor}
-              onChange={(event) => setNewStatusColor(event.target.value)}
-              className="w-14 p-1"
+              onChange={setNewStatusColor}
             />
             <Button
               onClick={handleAddStatus}
@@ -270,23 +279,36 @@ export function SettingsWorkflowPage() {
                         }))
                       }
                       autoComplete="off"
+                      // Saves on blur when the name changed; Enter blurs.
+                      onBlur={() =>
+                        commitStatus(
+                          status._id,
+                          statusDrafts[status._id] ?? {
+                            name: status.name,
+                            color: status.color,
+                          },
+                        )
+                      }
+                      onKeyDown={(event) => {
+                        if (event.key === "Enter") event.currentTarget.blur();
+                      }}
                     />
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
-                    <Input
-                      aria-label={`${status.name} color`}
-                      type="color"
+                    <ColorField
+                      label={`${status.name} color`}
                       value={statusDrafts[status._id]?.color ?? status.color}
-                      onChange={(event) =>
+                      onChange={(color) => {
+                        const draft = {
+                          name: statusDrafts[status._id]?.name ?? status.name,
+                          color,
+                        };
                         setStatusDrafts((current) => ({
                           ...current,
-                          [status._id]: {
-                            name: current[status._id]?.name ?? status.name,
-                            color: event.target.value,
-                          },
-                        }))
-                      }
-                      className="w-14 p-1"
+                          [status._id]: draft,
+                        }));
+                        commitStatus(status._id, draft);
+                      }}
                     />
                     <label className="flex h-8 items-center gap-2 text-[13px]">
                       <Checkbox
@@ -297,26 +319,7 @@ export function SettingsWorkflowPage() {
                       />
                       Done
                     </label>
-                    {/* Phones show these as icons only; the tooltip names them. */}
-                    <TooltipButton
-                      label={`Save ${status.name}`}
-                      tooltipClassName="desktop:hidden"
-                      render={
-                        <Button
-                          variant="ghost"
-
-                          className="gap-1.5 narrow:w-8 narrow:px-0"
-                        />
-                      }
-                      onClick={() => handleSaveStatus(status._id)}
-                      disabled={
-                        (statusDrafts[status._id]?.name ?? status.name).trim()
-                          .length === 0
-                      }
-                    >
-                      <Save className="h-3.5 w-3.5" />
-                      <span className="narrow:hidden">Save</span>
-                    </TooltipButton>
+                    {/* Phones show it as an icon only; the tooltip names it. */}
                     <TooltipButton
                       label={`Remove ${status.name}`}
                       tooltipClassName="desktop:hidden"

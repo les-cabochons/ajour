@@ -3,6 +3,14 @@ import { createBdd } from "playwright-bdd";
 
 const { Given, When, Then } = createBdd();
 
+/** The priority levels' names, as the Settle dialog's select shows them. */
+const PRIORITY_NAMES: Record<string, string> = {
+  "1": "Urgent",
+  "2": "High",
+  "3": "Medium",
+  "4": "Low",
+};
+
 Given("I have a writable synced parent Settle fixture", async ({ page }) => {
   const plugin = {
     id: "example",
@@ -200,8 +208,7 @@ Then("the Settle state draft remains Unlisted", async ({ page }) => {
   const select = page
     .getByRole("dialog", { name: "Settle", exact: true })
     .getByLabel("State", { exact: true });
-  await expect(select).toHaveValue("Unlisted");
-  await expect(select.locator("option:checked")).toHaveText("Unlisted");
+  await expect(select).toHaveText("Unlisted");
 });
 Then(
   "Settle requires an available state before submitting",
@@ -262,7 +269,7 @@ Then("the Settle priority draft remains High", async ({ page }) => {
     page
       .getByRole("dialog", { name: "Settle", exact: true })
       .getByLabel("Priority", { exact: true }),
-  ).toHaveValue("2");
+  ).toHaveText("High");
   const parent = await page.evaluate(() =>
     JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems.find(
       (item: { _id: string }) => item._id === "settle-parent",
@@ -292,11 +299,15 @@ When(
   "I choose source state {string} and priority {string} in Settle",
   async ({ page }, state: string, priority: string) => {
     const dialog = page.getByRole("dialog", { name: "Settle", exact: true });
-    await dialog.getByLabel("State", { exact: true }).selectOption(state);
+    await dialog.getByLabel("State", { exact: true }).click();
+    await page.getByRole("option", { name: state, exact: true }).click();
     const input = dialog.getByLabel("Priority", { exact: true });
-    if ((await input.evaluate((element) => element.tagName)) === "SELECT")
-      await input.selectOption(priority);
-    else await input.fill(priority);
+    if ((await input.getAttribute("role")) === "combobox") {
+      await input.click();
+      await page
+        .getByRole("option", { name: PRIORITY_NAMES[priority] ?? priority })
+        .click();
+    } else await input.fill(priority);
   },
 );
 Then(
@@ -365,11 +376,9 @@ Then(
   async ({ page }, state: string, priority: string) => {
     const dialog = page.getByRole("dialog", { name: "Settle", exact: true });
     await expect(dialog).toBeVisible();
-    await expect(dialog.getByLabel("State", { exact: true })).toHaveValue(
-      state,
-    );
-    await expect(dialog.getByLabel("Priority", { exact: true })).toHaveValue(
-      priority,
+    await expect(dialog.getByLabel("State", { exact: true })).toHaveText(state);
+    await expect(dialog.getByLabel("Priority", { exact: true })).toHaveText(
+      PRIORITY_NAMES[priority] ?? priority,
     );
     await expect(
       dialog.getByRole("button", { name: "Archive", exact: true }),

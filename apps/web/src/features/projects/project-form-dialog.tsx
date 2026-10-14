@@ -125,6 +125,7 @@ export function ProjectFormDialog({
                 <ColorField
                   id="project-form-color"
                   label="Project color"
+                  className="w-full"
                   value={fields.color}
                   onChange={(color) => update({ color })}
                 />

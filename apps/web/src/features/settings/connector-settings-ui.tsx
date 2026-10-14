@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/field";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/ui/select";
+import { OptionSelect } from "@/components/ui/option-select";
 import { cn } from "@/lib/utils";
 import type { ConnectorField, ConnectorFieldValue } from "@ajour/shared";
 import { SAVED_SECRET_MASK } from "./connector-form-state";
@@ -50,17 +50,13 @@ function ConnectorFieldInput({
       <Field className={cn(isWideField && "desktop:col-span-2")}>
         <FieldLabel htmlFor={field.id}>{field.label}</FieldLabel>
         <FieldContent>
-          <NativeSelect
+          <OptionSelect
             id={field.id}
+            size="default"
             value={typeof value === "string" ? value : ""}
-            onChange={(event) => onChange(event.target.value)}
-          >
-            {(field.options ?? []).map((option) => (
-              <option key={option.value} value={option.value}>
-                {option.label}
-              </option>
-            ))}
-          </NativeSelect>
+            onChange={onChange}
+            options={field.options ?? []}
+          />
           {field.helpText ? (
             <FieldDescription>{field.helpText}</FieldDescription>
           ) : null}

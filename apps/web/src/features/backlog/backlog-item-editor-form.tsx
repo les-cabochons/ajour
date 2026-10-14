@@ -52,7 +52,7 @@ import {
   NO_PRIORITY_NAME,
   PRIORITY_LEVELS,
 } from "@/domain/backlog/priority";
-import { NativeSelect } from "@/components/ui/select";
+import { OptionSelect } from "@/components/ui/option-select";
 import {
   BACKLOG_ESTIMATE_FIELD_KEYS,
   commitBacklogTaskDraft,
@@ -450,21 +450,20 @@ export function BacklogItemEditorForm({
           {!editor.isSubitem ? (
             <Field data-invalid={Boolean(validation.priorityError)}>
               <FieldLabel htmlFor={`${idPrefix}-priority`}>Priority</FieldLabel>
-              <NativeSelect
+              <OptionSelect
                 id={`${idPrefix}-priority`}
+                size="default"
                 value={fields.priority}
-                onChange={(event) =>
-                  updateFields({ priority: event.target.value })
-                }
-                aria-invalid={Boolean(validation.priorityError)}
-              >
-                <option value="">{NO_PRIORITY_NAME}</option>
-                {PRIORITY_LEVELS.map(({ level, name }) => (
-                  <option key={level} value={String(level)}>
-                    {name}
-                  </option>
-                ))}
-              </NativeSelect>
+                onChange={(priority) => updateFields({ priority })}
+                invalid={Boolean(validation.priorityError)}
+                options={[
+                  { value: "", label: NO_PRIORITY_NAME },
+                  ...PRIORITY_LEVELS.map(({ level, name }) => ({
+                    value: String(level),
+                    label: name,
+                  })),
+                ]}
+              />
             </Field>
           ) : null}
           <Field>
