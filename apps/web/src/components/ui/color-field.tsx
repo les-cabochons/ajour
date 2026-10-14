@@ -105,6 +105,7 @@ export function ColorField({
         </div>
         <Input
           aria-label="Hex color"
+          aria-invalid={!HEX_COLOR.test(draft) || undefined}
           className="font-mono"
           placeholder="#4f46e5"
           value={draft}
@@ -112,6 +113,11 @@ export function ColorField({
             const next = event.target.value.trim();
             setDraft(next);
             if (HEX_COLOR.test(next)) onChange(next);
+          }}
+          // An unfinished hex never becomes the value: leaving the input
+          // shows the color that stands.
+          onBlur={() => {
+            if (!HEX_COLOR.test(draft)) setDraft(value);
           }}
         />
       </PopoverContent>
