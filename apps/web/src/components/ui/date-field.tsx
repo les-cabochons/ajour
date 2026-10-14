@@ -38,7 +38,15 @@ export function DateField({
   calendarLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
+  // The month the calendar shows. It follows a valid typed value, including
+  // one typed while the picker is open, and the arrows move it from there.
+  const [month, setMonth] = useState<Date | undefined>();
   const selected = isValidLocalDate(value) ? dateAtNoon(value) : undefined;
+
+  function change(next: string) {
+    onChange(next);
+    if (isValidLocalDate(next)) setMonth(dateAtNoon(next));
+  }
 
   return (
     <div className={cn("relative", className)}>
@@ -48,9 +56,15 @@ export function DateField({
         inputMode="numeric"
         placeholder="YYYY-MM-DD"
         className="pr-8 font-mono"
-        onChange={(event) => onChange(event.target.value)}
+        onChange={(event) => change(event.target.value)}
       />
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover
+        open={open}
+        onOpenChange={(next) => {
+          if (next) setMonth(selected);
+          setOpen(next);
+        }}
+      >
         <TooltipButton
           label={calendarLabel}
           render={
@@ -72,10 +86,11 @@ export function DateField({
           <Calendar
             mode="single"
             selected={selected}
-            defaultMonth={selected}
+            month={month}
+            onMonthChange={setMonth}
             onSelect={(date) => {
               if (date) {
-                onChange(formatIsoDate(date));
+                change(formatIsoDate(date));
                 setOpen(false);
               }
             }}
