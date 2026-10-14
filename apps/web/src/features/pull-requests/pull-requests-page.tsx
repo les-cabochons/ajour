@@ -4,7 +4,11 @@ import {
   RiRefreshLine as Refresh,
   RiArrowLeftLine as Back,
 } from "@remixicon/react";
+import { TooltipButton } from "@/components/tooltip-button";
 import { MessagePanel } from "@/components/app-surface";
+import { PageHeader } from "@/components/page-header";
+import { PropertyList, PropertyRow } from "@/components/property-list";
+import { SectionHeading } from "@/components/section-heading";
 import { Button } from "@/components/ui/button";
 import {
   isPullRequestSnoozed,
@@ -76,49 +80,64 @@ export function PullRequestsPage({ itemId }: { itemId?: string }) {
     );
   if (itemId)
     return (
-      <div className="space-y-5 p-4 desktop:p-6">
-        <Button
-          variant="ghost"
-
-          nativeButton={false}
-          render={<Link to="/pull-requests" />}
+      <div className="backlog-item-page">
+        <PageHeader
+          breadcrumb={[
+            { label: "Pull requests", to: "/pull-requests" },
+            {
+              label: item ? `#${item.facts.number}` : "Pull request",
+              mono: Boolean(item),
+            },
+          ]}
+          actions={
+            item
+              ? pullRequestActions(item, now).map((action) => (
+                  <Button
+                    key={action.id}
+                    variant="outline"
+                    onClick={() =>
+                      runPullRequestAction(
+                        item,
+                        action.id as Parameters<typeof runPullRequestAction>[1],
+                      )
+                    }
+                  >
+                    {action.label}
+                  </Button>
+                ))
+              : null
+          }
         >
-          <Back />
-          Pull requests
-        </Button>
+          <TooltipButton
+            label="Back to pull requests"
+            render={
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="order-first -ml-1 text-muted-foreground"
+                nativeButton={false}
+                render={<Link to="/pull-requests" />}
+              />
+            }
+          >
+            <Back />
+          </TooltipButton>
+        </PageHeader>
         {!item ? (
           <MessagePanel>
             This pull request is no longer in the local list.
           </MessagePanel>
         ) : (
           <>
-            <header className="space-y-2">
-              <p className="text-xs text-muted-foreground">
+            <header>
+              <h1 className="backlog-item-page-title">{item.facts.title}</h1>
+              <p className="backlog-item-page-meta">
                 {item.facts.repository} #{item.facts.number} ·{" "}
                 {item.connectionLabel}
               </p>
-              <h1 className="text-lg font-semibold">{item.facts.title}</h1>
             </header>
-            <div className="flex flex-wrap gap-2">
-              {pullRequestActions(item, now).map((action) => (
-                <Button
-                  key={action.id}
-                  variant="outline"
-
-                  onClick={() =>
-                    runPullRequestAction(
-                      item,
-                      action.id as Parameters<typeof runPullRequestAction>[1],
-                    )
-                  }
-                >
-                  {action.label}
-                </Button>
-              ))}
-            </div>
-            <dl className="grid max-w-xl grid-cols-[7rem_1fr] gap-y-3 text-sm">
-              <dt className="text-muted-foreground">State</dt>
-              <dd>
+            <PropertyList className="max-w-xl">
+              <PropertyRow label="State">
                 {item.facts.state === "open"
                   ? item.facts.draft
                     ? "Draft"
@@ -126,21 +145,18 @@ export function PullRequestsPage({ itemId }: { itemId?: string }) {
                   : item.facts.state === "merged"
                     ? "Merged"
                     : "Closed"}
-              </dd>
-              <dt className="text-muted-foreground">Author</dt>
-              <dd>
+              </PropertyRow>
+              <PropertyRow label="Author">
                 {item.facts.author.displayName ?? item.facts.author.login}
-              </dd>
-              <dt className="text-muted-foreground">On your plate</dt>
-              <dd>
+              </PropertyRow>
+              <PropertyRow label="On your plate">
                 {item.status === "settled"
                   ? "Settled"
                   : isPullRequestSnoozed(item, now)
                     ? "Snoozed"
                     : reasonLabels[item.reason ?? "manual"]}
-              </dd>
-              <dt className="text-muted-foreground">Checks</dt>
-              <dd>
+              </PropertyRow>
+              <PropertyRow label="Checks">
                 {item.facts.checks === "none"
                   ? "No checks"
                   : item.facts.checks === "success"
@@ -148,10 +164,11 @@ export function PullRequestsPage({ itemId }: { itemId?: string }) {
                     : item.facts.checks === "failure"
                       ? "Failed"
                       : "Pending"}
-              </dd>
-              <dt className="text-muted-foreground">Last updated</dt>
-              <dd>{new Date(item.facts.updatedAt).toLocaleString()}</dd>
-            </dl>
+              </PropertyRow>
+              <PropertyRow label="Last updated">
+                {new Date(item.facts.updatedAt).toLocaleString()}
+              </PropertyRow>
+            </PropertyList>
           </>
         )}
       </div>
@@ -181,26 +198,26 @@ export function PullRequestsPage({ itemId }: { itemId?: string }) {
     },
   ];
   return (
-    <div className="space-y-6 p-4 desktop:p-6">
-      <header className="flex items-start justify-between gap-3">
-        <div>
-          <h1 className="text-lg font-semibold">Pull requests</h1>
-          <p className="mt-1 text-sm text-muted-foreground">
-            Your authored pull requests and review requests.
-          </p>
-        </div>
-        <Button
-          variant="outline"
-
-          disabled={
-            syncing || !groups.some((group) => group.connections.length)
-          }
-          onClick={() => void refresh()}
-        >
-          <Refresh className={syncing ? "animate-spin" : ""} />
-          {syncing ? "Syncing…" : "Sync"}
-        </Button>
-      </header>
+    <div className="backlog-item-page">
+      <PageHeader
+        title="Pull requests"
+        meta={items.length}
+        actions={
+          <Button
+            variant="outline"
+            disabled={
+              syncing || !groups.some((group) => group.connections.length)
+            }
+            onClick={() => void refresh()}
+          >
+            <Refresh
+              data-icon="inline-start"
+              className={syncing ? "animate-spin" : ""}
+            />
+            {syncing ? "Syncing…" : "Sync"}
+          </Button>
+        }
+      />
       {error ? <MessagePanel role="alert">{error}</MessagePanel> : null}
       {!groups.some((group) => group.connections.length) ? (
         <MessagePanel>
@@ -212,14 +229,10 @@ export function PullRequestsPage({ itemId }: { itemId?: string }) {
           key={section.title}
           data-focus-scope
           aria-label={section.title}
-          className="space-y-2"
         >
-          <h2 className="flex items-center gap-2 text-sm font-semibold">
+          <SectionHeading trailing={section.items.length}>
             {section.title}
-            <span className="text-xs font-normal text-muted-foreground">
-              {section.items.length}
-            </span>
-          </h2>
+          </SectionHeading>
           {section.items.length ? (
             section.items.map((entry) => (
               <PullRequestRow
@@ -235,7 +248,7 @@ export function PullRequestsPage({ itemId }: { itemId?: string }) {
               />
             ))
           ) : (
-            <p className="py-2 text-sm text-muted-foreground">
+            <p className="py-1 text-sm text-muted-foreground">
               {section.title === "Active"
                 ? "No pull requests need your attention."
                 : section.title === "Settled"

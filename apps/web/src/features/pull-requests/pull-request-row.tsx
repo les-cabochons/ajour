@@ -8,7 +8,7 @@ import {
   ObjectActionsButton,
   ObjectContextMenu,
 } from "@/components/object-actions-menu";
-import { Badge } from "@/components/ui/badge";
+import { Chip } from "@/components/ui/chip";
 import type { ObjectAction } from "@/domain/actions/object-actions";
 import {
   isPullRequestReturned,
@@ -140,10 +140,10 @@ export function PullRequestRow({
           data-pull-request-id={item._id}
           data-focus-column="0"
           className={cn(
-            "group flex min-w-0 cursor-pointer gap-2 rounded-md text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            "group flex min-w-0 cursor-pointer gap-2 rounded-md text-sm outline-none focus-visible:ring-2 focus-visible:ring-ring",
             compact
               ? "h-7 shrink-0 items-center px-2 hover:bg-foreground/5 focus-visible:ring-1"
-              : "items-start border-b border-border/50 px-3 py-3 hover:bg-[var(--surface-high)]",
+              : "items-start border-b border-border px-1 py-2.5 hover:bg-[var(--highlight-bg)]",
             selected && "bg-foreground/[0.07]",
           )}
           onClick={(event) => {
@@ -182,7 +182,7 @@ export function PullRequestRow({
           >
             {item.facts.title}
           </span>
-          <span className="shrink-0 text-[11.5px] text-muted-foreground group-focus-within:hidden group-hover:hidden">
+          <span className="shrink-0 text-xs text-muted-foreground group-focus-within:hidden group-hover:hidden">
             {[
               returned
                 ? "Returned"
@@ -234,7 +234,7 @@ export function PullRequestRow({
                       ? "Settled"
                       : reasonLabels[item.reason ?? "manual"]}
               </span>
-              {item.facts.draft ? <Badge variant="outline">Draft</Badge> : null}
+              {item.facts.draft ? <Chip>Draft</Chip> : null}
               {item.facts.checks !== "none" ? (
                 <span>
                   Checks{" "}

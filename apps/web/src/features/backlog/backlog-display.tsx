@@ -13,7 +13,13 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
-import { NativeSelect } from "@/components/ui/select";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
@@ -35,10 +41,45 @@ import { localStore } from "@/lib/local-store";
 
 function Option({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <label className="flex items-center justify-between gap-4 text-xs">
-      <span>{label}</span>
+    <div className="flex items-center justify-between gap-4 text-sm">
+      <span className="text-muted-foreground">{label}</span>
       <span className="w-40">{children}</span>
-    </label>
+    </div>
+  );
+}
+
+/** A 28px select for the popover's options. */
+function OptionSelect<T extends string>({
+  label,
+  value,
+  onChange,
+  options,
+}: {
+  label: string;
+  value: T;
+  onChange: (value: T) => void;
+  options: { value: T; label: string }[];
+}) {
+  return (
+    <Select
+      value={value}
+      // The content mounts on open, so the trigger learns the labels here.
+      items={options}
+      onValueChange={(next) => {
+        if (next !== null && next !== value) onChange(next as T);
+      }}
+    >
+      <SelectTrigger size="sm" className="w-full" aria-label={label}>
+        <SelectValue />
+      </SelectTrigger>
+      <SelectContent>
+        {options.map((option) => (
+          <SelectItem key={option.value} value={option.value}>
+            {option.label}
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
   );
 }
 export function BacklogLayoutToggle({
@@ -91,76 +132,69 @@ export function BacklogDisplay({
           </Option>
         )}
         <Option label="Grouping">
-          <NativeSelect
-            aria-label="Grouping"
+          <OptionSelect<BacklogViewPreferences["grouping"]>
+            label="Grouping"
             value={
               !narrow && view.layout === "board" && view.grouping === "none"
                 ? "state"
                 : view.grouping
             }
-            onChange={(e) =>
-              updateBacklogView({
-                grouping: e.target.value as BacklogViewPreferences["grouping"],
-              })
-            }
-          >
-            <option value="state">Workflow state</option>
-            <option value="priority">Priority</option>
-            <option value="project">Project</option>
-            {(narrow || view.layout === "list") && (
-              <option value="none">None</option>
-            )}
-          </NativeSelect>
+            onChange={(grouping) => updateBacklogView({ grouping })}
+            options={[
+              { value: "state", label: "Workflow state" },
+              { value: "priority", label: "Priority" },
+              { value: "project", label: "Project" },
+              ...(narrow || view.layout === "list"
+                ? [{ value: "none" as const, label: "None" }]
+                : []),
+            ]}
+          />
         </Option>
         {!narrow && view.layout === "board" && view.grouping !== "project" && (
           <Option label="Swimlanes">
-            <NativeSelect
-              aria-label="Swimlanes"
+            <OptionSelect<"none" | "project">
+              label="Swimlanes"
               value={view.swimlanes}
-              onChange={(e) =>
-                updateBacklogView({
-                  swimlanes: e.target.value === "project" ? "project" : "none",
-                })
-              }
-            >
-              <option value="none">None</option>
-              <option value="project">Project</option>
-            </NativeSelect>
+              onChange={(swimlanes) => updateBacklogView({ swimlanes })}
+              options={[
+                { value: "none", label: "None" },
+                { value: "project", label: "Project" },
+              ]}
+            />
           </Option>
         )}
         <Option label="Ordering">
-          <NativeSelect
-            aria-label="Ordering"
+          <OptionSelect<BacklogSortMode>
+            label="Ordering"
             value={ordering}
-            onChange={(e) =>
-              localStore.setBacklogSortMode(e.target.value as BacklogSortMode)
-            }
-          >
-            {BACKLOG_ORDERINGS.map((o) => (
-              <option key={o.value} value={o.value}>
-                {o.label}
-              </option>
-            ))}
-            {ordering === "priority_desc" && (
-              <option value="priority_desc">Priority descending</option>
-            )}
-          </NativeSelect>
+            onChange={(mode) => localStore.setBacklogSortMode(mode)}
+            options={[
+              ...BACKLOG_ORDERINGS.map((o) => ({
+                value: o.value as BacklogSortMode,
+                label: o.label,
+              })),
+              ...(ordering === "priority_desc"
+                ? [
+                    {
+                      value: "priority_desc" as BacklogSortMode,
+                      label: "Priority descending",
+                    },
+                  ]
+                : []),
+            ]}
+          />
         </Option>
         <Option label="Done items">
-          <NativeSelect
-            aria-label="Done items"
+          <OptionSelect<BacklogViewPreferences["doneWindow"]>
+            label="Done items"
             value={view.doneWindow}
-            onChange={(e) =>
-              updateBacklogView({
-                doneWindow: e.target
-                  .value as BacklogViewPreferences["doneWindow"],
-              })
-            }
-          >
-            <option value="week">Past week</option>
-            <option value="all">All</option>
-            <option value="none">None</option>
-          </NativeSelect>
+            onChange={(doneWindow) => updateBacklogView({ doneWindow })}
+            options={[
+              { value: "week", label: "Past week" },
+              { value: "all", label: "All" },
+              { value: "none", label: "None" },
+            ]}
+          />
         </Option>
         <div className="flex flex-col gap-3 border-t pt-3">
           {(
@@ -169,7 +203,7 @@ export function BacklogDisplay({
               ["showSubitems", "Show subitems"],
             ] as const
           ).map(([key, label]) => (
-            <label key={key} className="flex items-center gap-2 text-xs">
+            <label key={key} className="flex items-center gap-2 text-sm">
               <Checkbox
                 checked={view[key]}
                 onCheckedChange={(checked) =>
@@ -194,7 +228,7 @@ export function BacklogDisplay({
                 sourceState: "Source state",
               }) as [BacklogProperty, string][]
             ).map(([key, label]) => (
-              <label key={key} className="flex items-center gap-2 text-xs">
+              <label key={key} className="flex items-center gap-2 text-sm">
                 <Checkbox
                   checked={view.properties[key]}
                   onCheckedChange={(checked) =>
@@ -318,17 +352,14 @@ export function BacklogFilters({
           className="gap-3 rounded-lg"
           aria-label="Add backlog filter"
         >
-          <NativeSelect
-            aria-label="Filter property"
+          <OptionSelect<BacklogFilterField>
+            label="Filter property"
             value={field}
-            onChange={(e) => setField(e.target.value as BacklogFilterField)}
-          >
-            {Object.entries(FIELDS).map(([value, label]) => (
-              <option key={value} value={value}>
-                {label}
-              </option>
-            ))}
-          </NativeSelect>
+            onChange={setField}
+            options={(
+              Object.entries(FIELDS) as [BacklogFilterField, string][]
+            ).map(([value, label]) => ({ value, label }))}
+          />
           <SearchableSelect
             value=""
             options={options.map((option) => ({
@@ -363,7 +394,7 @@ export function BacklogFilters({
             key={`${filter.field}:${filter.value}`}
             variant="outline"
 
-            className="h-7 gap-1.5 text-xs"
+            size="sm"
             onClick={() =>
               updateBacklogView({
                 filters: view.filters.filter((_, i) => i !== index),

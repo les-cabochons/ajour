@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import {
   RiArrowGoBackLine as UnsettleIcon,
@@ -8,8 +8,12 @@ import {
   RiTimeLine as SnoozeIcon,
 } from "@remixicon/react";
 import { ObjectActionsButton } from "@/components/object-actions-menu";
+import { PageHeader } from "@/components/page-header";
+import { PropertyList, PropertyRow } from "@/components/property-list";
+import { SectionHeading } from "@/components/section-heading";
 import { SidePanel } from "@/components/side-panel";
 import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   Empty,
@@ -17,6 +21,7 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
+import { Figure, FigureRow, Value } from "@/components/ui/value";
 import {
   getBacklogItemActions,
   type BacklogItemActionId,
@@ -65,45 +70,18 @@ import { getPriorityLevelName } from "@/domain/backlog/priority";
 import { PriorityIcon } from "@/features/backlog/priority-icon";
 import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
 
-const ESTIMATE_TILES: { key: LocalWorkItemEstimateFieldKey; label: string }[] =
-  [
-    { key: "originalEstimateHours", label: "Original" },
-    { key: "remainingEstimateHours", label: "Remaining" },
-    { key: "completedEstimateHours", label: "Completed" },
-  ];
+const ESTIMATE_FIGURES: {
+  key: LocalWorkItemEstimateFieldKey;
+  label: string;
+}[] = [
+  { key: "originalEstimateHours", label: "Original" },
+  { key: "remainingEstimateHours", label: "Remaining" },
+  { key: "completedEstimateHours", label: "Completed" },
+];
 
 function formatHours(hours?: number) {
   if (hours === undefined) return "–";
   return `${Number.isInteger(hours) ? hours : hours.toFixed(1)}h`;
-}
-
-function Property({ label, children }: { label: string; children: ReactNode }) {
-  return (
-    <div className="grid grid-cols-[6rem_1fr] items-baseline gap-2 py-1.5 text-[13px]">
-      <dt className="text-muted-foreground">{label}</dt>
-      <dd className="min-w-0 truncate">{children}</dd>
-    </div>
-  );
-}
-
-function Section({
-  title,
-  aside,
-  children,
-}: {
-  title: string;
-  aside?: ReactNode;
-  children: ReactNode;
-}) {
-  return (
-    <section className="flex flex-col gap-2">
-      <h2 className="flex items-baseline text-[12px] font-medium text-muted-foreground">
-        {title}
-        {aside ? <span className="ml-auto tabular-nums">{aside}</span> : null}
-      </h2>
-      {children}
-    </section>
-  );
 }
 
 /** The notice under the header when the item is off the list or came back. */
@@ -135,9 +113,10 @@ function stateNotice(workItem: LocalWorkItem, now: number) {
 
 /**
  * The backlog item page at /backlog/$itemId, from "Backlog item page" in
- * agents/ux-spec.md: a header with the item's actions, the estimate tiles and
- * progress bar, then the note, subitems and time entries next to a properties
- * panel. Edit opens the backlog item editor in a side panel over the page.
+ * agents/ux-spec.md. The top bar holds the breadcrumb and the item's actions;
+ * the page holds the title, the estimate figures and progress, then the note,
+ * subitems and time entries beside the properties. Edit opens the backlog
+ * item editor in a side panel over the page.
  *
  * The page itself is the focused object, so E settles, B snoozes and Enter
  * edits as soon as it opens.
@@ -197,14 +176,17 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
 
   if (!workItem) {
     return (
-      <Empty className="py-16">
-        <EmptyHeader>
-          <EmptyTitle>This backlog item no longer exists</EmptyTitle>
-          <EmptyDescription>
-            <Link to="/backlog">Go to the backlog</Link>
-          </EmptyDescription>
-        </EmptyHeader>
-      </Empty>
+      <div className="backlog-item-page">
+        <PageHeader breadcrumb={[{ label: "Backlog", to: "/backlog" }]} />
+        <Empty align="start" className="px-0">
+          <EmptyHeader>
+            <EmptyTitle>This backlog item no longer exists</EmptyTitle>
+            <EmptyDescription>
+              <Link to="/backlog">Go to the backlog</Link>
+            </EmptyDescription>
+          </EmptyHeader>
+        </Empty>
+      </div>
     );
   }
 
@@ -287,7 +269,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
       </Button>
     ) : item.status === "settled" ? (
       <Button variant="outline" onClick={() => runAction("unsettle")}>
-        <UnsettleIcon /> Unsettle
+        <UnsettleIcon data-icon="inline-start" /> Unsettle
       </Button>
     ) : isSnoozed ? (
       <Button variant="outline" onClick={() => runAction("unsnooze")}>
@@ -301,10 +283,10 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
           disabled={Boolean(startAction?.disabledReason)}
           title={startAction?.disabledReason}
         >
-          <PlayIcon /> Start entry
+          <PlayIcon data-icon="inline-start" /> Start entry
         </Button>
         <Button variant="ghost" onClick={() => runAction("snooze")}>
-          <SnoozeIcon /> Snooze
+          <SnoozeIcon data-icon="inline-start" /> Snooze
         </Button>
         <Button
           variant="ghost"
@@ -312,7 +294,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
             runAction("settle", { askToSettle: event.shiftKey })
           }
         >
-          <SettleIcon /> Settle
+          <SettleIcon data-icon="inline-start" /> Settle
         </Button>
       </>
     );
@@ -330,7 +312,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
           tabIndex={-1}
           data-focus-column="0"
           data-backlog-item-id={item._id}
-          className="mx-auto flex w-full max-w-5xl flex-col gap-4 p-6 outline-none"
+          className="backlog-item-page"
           aria-label={item.title}
           onKeyDown={(event) =>
             handleItemKeyDown(event, {
@@ -343,225 +325,261 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
             })
           }
         >
-          <header className="flex items-start justify-between gap-3">
-            <div className="flex min-w-0 items-start gap-3">
-              <div className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-muted">
-                <WorkItemIcon icon={resolveWorkItemIcon(item, iconData)} />
-              </div>
-              <div className="min-w-0">
-                <h1 className="text-xl font-semibold">{item.title}</h1>
-                <div className="mt-0.5 flex flex-wrap items-center gap-x-2 text-[12px] text-muted-foreground">
-                  {reference ? (
-                    item.sourceUrl ? (
-                      <a
-                        href={item.sourceUrl}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="inline-flex items-center gap-1 hover:text-foreground"
-                      >
-                        #{reference} <ExternalIcon className="size-3" />
-                      </a>
-                    ) : (
-                      <span>#{reference}</span>
-                    )
-                  ) : (
-                    <span>Manual item</span>
-                  )}
-                  {item.sourceProjectName ? (
-                    <span>· {item.sourceProjectName}</span>
-                  ) : null}
-                  {item.sourceStatusLabel ? (
-                    <span>· {item.sourceStatusLabel}</span>
-                  ) : null}
-                  {parent ? (
-                    <Link
-                      to="/backlog/$itemId"
-                      params={{ itemId: parent._id }}
-                      className="truncate hover:text-foreground"
+          <PageHeader
+            breadcrumb={[
+              { label: "Backlog", to: "/backlog" },
+              reference
+                ? { label: `#${reference}`, mono: true }
+                : { label: "Item" },
+            ]}
+            actions={
+              <>
+                {headerButtons}
+                <ObjectActionsButton
+                  actions={actions}
+                  keys={BACKLOG_ITEM_ACTION_KEYS}
+                  onAction={runAction}
+                  label={`Actions for ${item.title}`}
+                />
+              </>
+            }
+          />
+
+          <header className="flex min-w-0 items-start gap-3">
+            <WorkItemIcon
+              icon={resolveWorkItemIcon(item, iconData)}
+              className="mt-1.5"
+            />
+            <div className="min-w-0">
+              <h1 className="backlog-item-page-title">{item.title}</h1>
+              <div className="backlog-item-page-meta">
+                {item.sourceWorkItemType ? (
+                  <Chip>{item.sourceWorkItemType}</Chip>
+                ) : null}
+                {project ? (
+                  <Chip color={project.color}>
+                    {getLocalProjectDisplayName(project)}
+                  </Chip>
+                ) : null}
+                {reference ? (
+                  item.sourceUrl ? (
+                    <a
+                      href={item.sourceUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="inline-flex items-center gap-1"
                     >
-                      · in {parent.title}
-                    </Link>
-                  ) : null}
-                </div>
+                      {item.sourceStatusLabel
+                        ? `${item.sourceStatusLabel} in ${item.sourceProjectName ?? item.sourceConnectionLabel ?? "the source"}`
+                        : "Open in source"}
+                      <ExternalIcon className="size-3" />
+                    </a>
+                  ) : (
+                    <span>
+                      {[item.sourceProjectName, item.sourceStatusLabel]
+                        .filter(Boolean)
+                        .join(" · ")}
+                    </span>
+                  )
+                ) : (
+                  <span>Manual item</span>
+                )}
+                {parent ? (
+                  <Link
+                    to="/backlog/$itemId"
+                    params={{ itemId: parent._id }}
+                    className="truncate"
+                  >
+                    ↳ {parent.title}
+                  </Link>
+                ) : null}
               </div>
-            </div>
-            <div className="flex shrink-0 items-center gap-1">
-              {headerButtons}
-              <ObjectActionsButton
-                actions={actions}
-                keys={BACKLOG_ITEM_ACTION_KEYS}
-                onAction={runAction}
-                label={`Actions for ${item.title}`}
-              />
             </div>
           </header>
 
           {notice ? (
-            <div className="rounded-md bg-muted px-3 py-2 text-[12px] text-muted-foreground">
-              {notice}
-            </div>
+            <p className="text-xs text-muted-foreground">{notice}</p>
           ) : null}
 
-          <div className="grid grid-cols-2 gap-3 md:grid-cols-4">
-            {ESTIMATE_TILES.map((tile) => {
-              const fieldState = item.estimateSync?.[tile.key];
-              return (
-                <div key={tile.key} className="rounded-lg border p-3">
-                  <div className="text-[11px] text-muted-foreground">
-                    {tile.label}
-                  </div>
-                  <div className="mt-1 flex items-baseline gap-1.5 text-lg font-semibold tabular-nums">
-                    {formatHours(item[tile.key])}
+          <div className="flex flex-col gap-2.5">
+            <FigureRow>
+              {ESTIMATE_FIGURES.map((figure) => {
+                const fieldState = item.estimateSync?.[figure.key];
+                return (
+                  <Figure key={figure.key} label={figure.label}>
+                    {formatHours(item[figure.key])}
                     {fieldState?.conflict ? (
-                      <span className="text-[11px] font-normal text-[var(--danger)]">
+                      <span className="ml-1.5 font-sans text-xs font-normal text-destructive">
                         Conflict
                       </span>
                     ) : null}
-                  </div>
-                </div>
-              );
-            })}
-            <div className="rounded-lg border p-3">
-              <div className="text-[11px] text-muted-foreground">
-                Logged in Ajour
-              </div>
-              <div className="mt-1 text-lg font-semibold tabular-nums">
+                  </Figure>
+                );
+              })}
+              <Figure label="Logged in Ajour">
                 {formatClockDuration(loggedMs)}
-              </div>
+              </Figure>
+            </FigureRow>
+            <div
+              className="backlog-item-progress"
+              role="progressbar"
+              aria-label="Completed over original estimate"
+              aria-valuenow={Math.round(progress * 100)}
+              aria-valuemin={0}
+              aria-valuemax={100}
+            >
+              <div style={{ width: `${progress * 100}%` }} />
             </div>
           </div>
-          <div
-            className="h-1.5 overflow-hidden rounded-full bg-muted"
-            role="progressbar"
-            aria-label="Completed over original estimate"
-            aria-valuenow={Math.round(progress * 100)}
-            aria-valuemin={0}
-            aria-valuemax={100}
-          >
-            <div
-              className="h-full bg-[var(--success)]"
-              style={{ width: `${progress * 100}%` }}
-            />
-          </div>
 
-          <div className="grid gap-8 md:grid-cols-[1fr_16rem]">
-            <div className="flex min-w-0 flex-col gap-6">
-              <Section title="Note">
-                <p className="text-[14px] leading-relaxed whitespace-pre-line">
-                  {item.note ?? (
-                    <span className="text-muted-foreground">No note.</span>
-                  )}
-                </p>
-              </Section>
+          <div className="backlog-item-page-columns">
+            <div className="flex min-w-0 flex-col">
+              <SectionHeading>Note</SectionHeading>
+              <p className="text-sm leading-relaxed whitespace-pre-line">
+                {item.note ?? (
+                  <span className="text-muted-foreground">No note.</span>
+                )}
+              </p>
               {!isSubitem ? (
-                <Section title="Subitems">
+                <>
+                  <SectionHeading
+                    trailing={
+                      subitems.length
+                        ? `${subitems.filter((subitem) => subitem.status === "archived").length} of ${subitems.length} done`
+                        : undefined
+                    }
+                  >
+                    Subitems
+                  </SectionHeading>
                   {subitems.length === 0 ? (
-                    <p className="text-[13px] text-muted-foreground">
+                    <p className="text-sm text-muted-foreground">
                       No subitems.
                     </p>
                   ) : (
-                    <div className="flex flex-col divide-y rounded-md border">
+                    <div className="backlog-item-rows">
                       {subitems.map((subitem) => (
                         <Link
                           key={subitem._id}
                           to="/backlog/$itemId"
                           params={{ itemId: subitem._id }}
-                          className="flex items-center gap-2 px-3 py-2 text-[13px] hover:bg-muted/60"
+                          className="backlog-item-row"
                         >
                           <WorkItemIcon
                             icon={resolveWorkItemIcon(subitem, iconData)}
                           />
-                          <span className="min-w-0 flex-1 truncate">
+                          <span
+                            className={cn(
+                              "backlog-item-row-title",
+                              subitem.status === "archived" &&
+                                "text-muted-foreground",
+                            )}
+                          >
                             {subitem.title}
                           </span>
                           {subitem.priority !== undefined ? (
                             <PriorityIcon priority={subitem.priority} />
                           ) : null}
                           {subitem.sourceStatusLabel ? (
-                            <span className="text-[11px] text-muted-foreground">
+                            <span className="text-xs text-muted-foreground">
                               {subitem.sourceStatusLabel}
                             </span>
                           ) : null}
-                          <span className="w-12 text-right text-[12px] text-muted-foreground tabular-nums">
+                          <Value tone="muted" className="w-10 text-right">
                             {formatHours(subitem.remainingEstimateHours)}
-                          </span>
+                          </Value>
                         </Link>
                       ))}
                     </div>
                   )}
-                </Section>
+                </>
               ) : null}
-              <Section
-                title="Time entries"
-                aside={entries.length ? formatClockDuration(loggedMs) : null}
+              <SectionHeading
+                trailing={
+                  entries.length ? (
+                    <Value>{formatClockDuration(loggedMs)}</Value>
+                  ) : undefined
+                }
               >
-                {entries.length === 0 ? (
-                  <p className="text-[13px] text-muted-foreground">
-                    No time logged yet.
-                  </p>
-                ) : (
-                  <div className="flex flex-col divide-y rounded-md border">
-                    {entries.map((entry) => (
-                      <Link
-                        key={entry._id}
-                        to="/time/$date"
-                        params={{ date: entry.localDate }}
-                        className="flex items-center gap-3 px-3 py-2 text-[13px] hover:bg-muted/60"
-                      >
-                        <span className="w-24 shrink-0 text-muted-foreground">
-                          {new Date(
-                            `${entry.localDate}T12:00:00`,
-                          ).toLocaleDateString(undefined, {
-                            weekday: "short",
-                            month: "short",
-                            day: "numeric",
-                          })}
-                        </span>
-                        <span className="min-w-0 flex-1 truncate">
-                          {entry.note ?? (
-                            <span className="text-muted-foreground">
-                              No note
-                            </span>
-                          )}
-                        </span>
-                        <span className="tabular-nums">
-                          {formatClockDuration(entry.durationMs)}
-                        </span>
-                      </Link>
-                    ))}
-                  </div>
-                )}
-              </Section>
+                Time entries
+              </SectionHeading>
+              {entries.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No time logged yet.
+                </p>
+              ) : (
+                <div className="backlog-item-rows">
+                  {entries.map((entry) => (
+                    <Link
+                      key={entry._id}
+                      to="/time/$date"
+                      params={{ date: entry.localDate }}
+                      className="backlog-item-row"
+                    >
+                      <span className="w-24 shrink-0 text-muted-foreground">
+                        {new Date(
+                          `${entry.localDate}T12:00:00`,
+                        ).toLocaleDateString(undefined, {
+                          weekday: "short",
+                          month: "short",
+                          day: "numeric",
+                        })}
+                      </span>
+                      <span className="backlog-item-row-title">
+                        {entry.note ?? (
+                          <span className="text-muted-foreground">No note</span>
+                        )}
+                      </span>
+                      <Value>{formatClockDuration(entry.durationMs)}</Value>
+                    </Link>
+                  ))}
+                </div>
+              )}
             </div>
-            <dl className="flex flex-col divide-y self-start rounded-lg border px-3 py-1">
-              <div className="py-1">
-                <Property label="State">
+            <div>
+              <SectionHeading>Properties</SectionHeading>
+              <PropertyList>
+                <PropertyRow label="State">
+                  {workflowState ? (
+                    <>
+                      <span
+                        className="backlog-state-dot"
+                        style={{ color: workflowState.color }}
+                      />
+                      {workflowState.name}
+                    </>
+                  ) : (
+                    "–"
+                  )}
+                </PropertyRow>
+                <PropertyRow label="Source state">
                   {item.sourceStatusLabel ?? "–"}
-                </Property>
-                <Property label="Workflow state">
-                  {workflowState?.name ?? "–"}
-                </Property>
-                <Property label="Priority">
-                  <span className="inline-flex items-center gap-1.5">
-                    <PriorityIcon priority={item.priority} decorative />
-                    {getPriorityLevelName(item.priority)}
-                  </span>
-                </Property>
-              </div>
-              <div className="py-1">
-                <Property label="Project">
-                  {project ? getLocalProjectDisplayName(project) : "–"}
-                </Property>
-                <Property label="Task">{task?.name ?? "–"}</Property>
-                <Property label="Source">
+                </PropertyRow>
+                <PropertyRow label="Priority">
+                  <PriorityIcon priority={item.priority} decorative />
+                  {getPriorityLevelName(item.priority)}
+                </PropertyRow>
+                <PropertyRow label="Lifecycle">
+                  <span className="capitalize">{item.status}</span>
+                </PropertyRow>
+                <PropertyRow label="Project">
+                  {project ? (
+                    <Chip color={project.color}>
+                      {getLocalProjectDisplayName(project)}
+                    </Chip>
+                  ) : (
+                    "–"
+                  )}
+                </PropertyRow>
+                <PropertyRow label="Task">{task?.name ?? "–"}</PropertyRow>
+                <PropertyRow label="Source">
                   {item.source === "manual"
                     ? "Ajour"
                     : (item.sourceProjectName ??
                       item.sourceConnectionLabel ??
                       "–")}
-                </Property>
-              </div>
-            </dl>
+                </PropertyRow>
+              </PropertyList>
+            </div>
           </div>
         </div>
       </div>

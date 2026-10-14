@@ -161,7 +161,7 @@ type RowApi = ReturnType<typeof useBacklogItemRow>;
 type RowActionList = ReturnType<RowApi["actionsFor"]>;
 
 const iconButton =
-  "flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-foreground/10 hover:text-foreground";
+  "flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-foreground/10 hover:text-foreground";
 
 /**
  * Hover and focus swap the type icon for the settle circle, which mounts only
@@ -384,7 +384,7 @@ const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
           title={parentTitle ? `${workItem.title} · ${parentTitle}` : undefined}
           {...reveal.props}
           className={cn(
-            "group flex shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 text-[13px] outline-none hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring",
+            "group flex shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 text-sm outline-none hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring",
             density === "compact" ? "h-[26px]" : "h-7",
             isActive && "bg-foreground/[0.07]",
           )}
@@ -420,7 +420,7 @@ const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
           isReturned={props.isReturned}
         />
         {hours ? (
-          <span className="text-[11.5px] text-muted-foreground tabular-nums">
+          <span className="text-xs text-muted-foreground tabular-nums">
             {hours}
           </span>
         ) : null}
@@ -476,14 +476,10 @@ const UpNextRow = memo(function UpNextRow(props: ItemRowProps) {
         revealed={reveal.active}
       />
       <span className="min-w-0 flex-1">
-        <span
-          className={cn(
-            "block truncate text-[13px] leading-snug font-semibold",
-          )}
-        >
+        <span className={cn("block truncate text-sm leading-snug font-medium")}>
           {workItem.title}
         </span>
-        <span className="block truncate text-[11px] text-muted-foreground">
+        <span className="block truncate text-xs text-muted-foreground">
           {parentTitle ? `↳ ${parentTitle}` : getMetaLine(workItem)}
         </span>
       </span>
@@ -532,7 +528,7 @@ export function SidebarSectionHeader({
       type="button"
       aria-expanded={open}
       onClick={onToggle}
-      className="flex w-full shrink-0 items-center gap-1 rounded-md px-2 pt-3 pb-1 text-left text-[11.5px] font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
+      className="flex w-full shrink-0 items-center gap-1 rounded-md px-2 pt-3 pb-1 text-left text-xs font-medium text-muted-foreground outline-none hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
     >
       <ChevronDown
         className={cn(
@@ -571,7 +567,7 @@ const OffListRow = memo(function OffListRow({
       tabIndex={0}
       data-focus-column="0"
       data-backlog-item-id={workItem._id}
-      className="group flex h-7 shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 text-[13px] text-muted-foreground outline-none hover:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring"
+      className="group flex h-7 shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 text-sm text-muted-foreground outline-none hover:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring"
       {...reveal.props}
       onClick={(event) => {
         if (!openModifiedSourceClick(event, workItem.sourceUrl))
@@ -589,7 +585,7 @@ const OffListRow = memo(function OffListRow({
       />
       <span className="min-w-0 flex-1 truncate">{workItem.title}</span>
       {detail ? (
-        <span className="shrink-0 text-[11.5px] group-focus-within:hidden group-hover:hidden">
+        <span className="shrink-0 text-xs group-focus-within:hidden group-hover:hidden">
           {detail}
         </span>
       ) : null}
@@ -698,7 +694,7 @@ export function SidebarBacklogList({
         {settled.length > settledShown ? (
           <button
             type="button"
-            className="px-2 py-1 text-left text-[12px] text-muted-foreground hover:text-foreground"
+            className="px-2 py-1 text-left text-xs text-muted-foreground hover:text-foreground"
             onClick={() => setSettledShown(settledShown + SETTLED_PAGE_SIZE)}
           >
             Show more
@@ -716,7 +712,7 @@ export function SidebarBacklogList({
     >
       {upNext ? (
         <>
-          <div className="px-2 pt-3 pb-1 text-[11.5px] font-medium text-muted-foreground">
+          <div className="px-2 pt-3 pb-1 text-xs font-medium text-muted-foreground">
             Up next
           </div>
           <UpNextRow {...rowProps(upNext)} />
@@ -739,7 +735,7 @@ export function SidebarBacklogList({
             ) : null,
           )}
           {listed.length === 0 ? (
-            <p className="px-2 py-1 text-[12px] text-muted-foreground">
+            <p className="px-2 py-1 text-xs text-muted-foreground">
               Nothing on your plate.
             </p>
           ) : null}

@@ -820,7 +820,7 @@ function ProjectDetail({
           ))}
         </div>
         <div
-          className="toggle-group backlog-filter-tabs project-task-filter-tabs"
+          className="toggle-group project-task-filter-tabs"
           role="tablist"
           aria-label="Filter project tasks"
         >
@@ -833,13 +833,15 @@ function ProjectDetail({
                 role="tab"
                 aria-selected={isActive}
                 className={cn(
-                  "toggle-item backlog-filter-tab",
+                  "toggle-item inline-flex items-center gap-1.5",
                   isActive && "toggle-item-active",
                 )}
                 onClick={() => setTaskFilter(filter.value)}
               >
-                <span className="backlog-filter-label">{filter.label}</span>
-                <span className="backlog-filter-count">{filter.count}</span>
+                <span>{filter.label}</span>
+                <span className="font-mono text-[11px] text-muted-foreground">
+                  {filter.count}
+                </span>
               </button>
             );
           })}

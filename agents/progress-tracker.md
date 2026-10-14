@@ -13,7 +13,8 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
       every UI change screenshots and budget numbers.
 - [ ] Migrate the Time, Backlog, Projects and Settings pages to the foundation
       patterns, one pull request per area, each with before and after captures
-      and budget numbers.
+      and budget numbers. Time (#112) and Backlog, with the pull request pages,
+      are done; Projects and Settings remain.
 - [x] A running timer no longer re-renders the titlebar and Time page each
       second: running readouts share one clock (`useRunningClock`), and the
       status pulse animates on the compositor. Renderer work with a timer
