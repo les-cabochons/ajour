@@ -158,6 +158,15 @@ Feature: Open the local time workspace
     When I widen the app back to a desktop width
     Then the running entry's popover still has "Standup notes"
 
+  Scenario: Open one entry editor at a time
+    Given I have no saved Ajour workspace
+    When I open today's time workspace
+    And I start an empty entry from the titlebar
+    And I open a new entry from the titlebar "+"
+    Then only the new entry's editor is open
+    When I open the running entry from the timer dock
+    Then only the running entry's editor is open
+
   Scenario: Return from Settings to the same view
     Given I have no saved Ajour workspace
     When I open today's time workspace in the Week view

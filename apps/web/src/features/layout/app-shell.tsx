@@ -471,6 +471,8 @@ function GlobalTimerBar({
 
   const openNewEntry = useCallback(
     (values?: NewTimeEntryValues, anchor: HTMLElement | null = null) => {
+      // One entry editor at a time: the new entry closes the running one.
+      setRunningEntryEditorOpen(false);
       setNewEntryValues(values);
       setNewEntryAnchor(anchor);
       setEditor("new");
@@ -506,6 +508,10 @@ function GlobalTimerBar({
   // The running entry's editor state lives with the timer dock, so it and its
   // draft survive a move between the dock's popover and the narrow dialog.
   const runningEditorOpen = useRunningEntryEditor(currentTimer !== null);
+  // ...and opening the running entry, from a dock or Start, closes the new one.
+  useEffect(() => {
+    if (runningEditorOpen) setEditor(null);
+  }, [runningEditorOpen]);
 
   /**
    * Starts an empty running entry today, then opens it so the user can fill it
