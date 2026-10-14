@@ -78,6 +78,22 @@ describe("summarizeRunningEntry", () => {
     expect(summary.remainingMs).toBe(1.25 * HOUR_MS);
   });
 
+  it("empties the bar when a correction clears an overrun", () => {
+    const summary = summarizeRunningEntry(timer({ workItemId: "item-1" }), {
+      projects: [],
+      workItems: [
+        {
+          ...workItem,
+          remainingEstimateHours: 0,
+          remainingEstimateOverrunHours: 1,
+        },
+      ],
+      unsavedDurationMs: -2 * HOUR_MS,
+    });
+    expect(summary.remainingMs).toBe(HOUR_MS);
+    expect(summary.estimateUsed).toBe(0);
+  });
+
   it("starts from an overrun the item already logged", () => {
     const summary = summarizeRunningEntry(timer({ workItemId: "item-1" }), {
       projects: [],

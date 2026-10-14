@@ -52,6 +52,10 @@ export function summarizeRunningEntry(
           (workItem.remainingEstimateOverrunHours ?? 0)) *
         HOUR_MS
       : undefined;
+  const remainingMs =
+    estimateMs === undefined
+      ? undefined
+      : estimateMs - context.unsavedDurationMs;
 
   return {
     title:
@@ -62,17 +66,17 @@ export function summarizeRunningEntry(
       "Untitled entry",
     meta: [projectLabel, task?.name].filter(Boolean).join(" · "),
     workItem,
-    remainingMs:
-      estimateMs === undefined
-        ? undefined
-        : estimateMs - context.unsavedDurationMs,
+    remainingMs,
     estimateUsed:
-      estimateMs === undefined
+      estimateMs === undefined || remainingMs === undefined
         ? undefined
-        : estimateMs <= 0
+        : remainingMs <= 0
           ? 1
-          : // A continued entry corrected below its saved time adds nothing yet.
-            Math.min(1, Math.max(0, context.unsavedDurationMs / estimateMs)),
+          : // A correction below the saved time can clear an overrun, or use
+            // none of the estimate yet: the bar stays empty.
+            estimateMs <= 0
+            ? 0
+            : Math.min(1, Math.max(0, context.unsavedDurationMs / estimateMs)),
   };
 }
 
