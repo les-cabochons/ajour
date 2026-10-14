@@ -24,8 +24,8 @@ import {
   getTimerContributionMs,
   getTimerDurationsMs,
 } from "@/lib/timer-totals";
-import { useNow, useRunningClock, useTodayIsoDate } from "@/lib/use-now";
-import { cn, todayIsoDate } from "@/lib/utils";
+import { useRunningClock, useTodayIsoDate } from "@/lib/use-now";
+import { cn } from "@/lib/utils";
 
 let runningEntryEditorOpen = false;
 const runningEntryEditorListeners = new Set<() => void>();
@@ -66,9 +66,6 @@ export function useRunningEntry() {
   const state = useLocalState();
   const timer = state.timers[0] ?? null;
   const now = useRunningClock(timer !== null);
-  // The running clock stops while idle; this minute tick rolls today's
-  // total over at midnight.
-  useNow(60_000);
 
   const { runningDurationMs } = getTimerDurationsMs(timer, now);
   // The running time not saved to an entry yet. A continued entry has
