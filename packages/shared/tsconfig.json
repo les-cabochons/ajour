@@ -1,6 +1,7 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": {
+    "erasableSyntaxOnly": true,
     "rootDir": ".",
     "outDir": "dist",
     "types": ["node", "vitest/globals"]
