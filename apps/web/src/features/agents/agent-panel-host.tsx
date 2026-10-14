@@ -1,4 +1,8 @@
-import { answerAgentQuestion, markAgentsSeen } from "@/lib/app-api";
+import {
+  answerAgentQuestion,
+  dismissAgentSession,
+  markAgentsSeen,
+} from "@/lib/app-api";
 import {
   closeAgentPanel,
   openAgentPanel,
@@ -11,6 +15,10 @@ async function answer(questionId: string, text: string) {
   setAgentsSnapshot(await answerAgentQuestion(questionId, text));
 }
 
+async function dismiss(sessionId: string) {
+  setAgentsSnapshot(await dismissAgentSession(sessionId));
+}
+
 function markSeen() {
   void markAgentsSeen()
     .then(setAgentsSnapshot)
@@ -19,7 +27,7 @@ function markSeen() {
 
 /**
  * Wires the agent panel to the MCP bridge's snapshot and the local API's
- * answer and seen routes. Mount once in the app shell, beside the page, where
+ * answer, dismiss and seen routes. Mount once in the app shell, beside the page, where
  * the wide window docks the panel.
  */
 export function AgentPanelHost() {
@@ -30,6 +38,7 @@ export function AgentPanelHost() {
       open={panelOpen}
       onOpenChange={(open) => (open ? openAgentPanel() : closeAgentPanel())}
       onAnswer={answer}
+      onDismiss={dismiss}
       onSeen={markSeen}
     />
   );

@@ -41,6 +41,14 @@ Feature: Agents through MCP
     And I choose "Globex" in the chat
     Then the answer "Globex" is sent for that question
 
+  Scenario: I dismiss a stalled session
+    Given MCP is on and "Claude Code" has a stalled session "Fill Workday"
+    When I open the app
+    And I open the agent panel
+    And I dismiss the session
+    Then the dismissal is sent for the session "Fill Workday"
+    And the session "Fill Workday" can no longer be dismissed
+
   Scenario: The panel opens as an overlay in a narrow window
     Given MCP is on and "Claude Code" asks "Which project gets the 2 hours?" with choices "Acme" and "Globex"
     When I open the app on a narrow screen

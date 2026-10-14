@@ -28,7 +28,7 @@ import { cn } from "@/lib/utils";
 /**
  * The agent panel: sessions with their chats, open questions, and an activity
  * and errors tab. It knows nothing about MCP. The caller gives it the data and
- * the three actions, so later LLM plugins can reuse it. In a wide window it is
+ * the actions, so later LLM plugins can reuse it. In a wide window it is
  * a docked side panel and the page stays usable; in a narrow window it is an
  * overlay that opens from the bottom.
  */
@@ -39,6 +39,8 @@ export interface AgentPanelProps {
   onOpenChange(open: boolean): void;
   /** Sends the answer. A rejection shows its message under the question. */
   onAnswer(questionId: string, text: string): Promise<void>;
+  /** Ends a session the agent left behind. A rejection shows its message. */
+  onDismiss(sessionId: string): Promise<void>;
   /** Runs each time the panel opens, to mark past errors and failures seen. */
   onSeen(): void;
 }
@@ -113,17 +115,55 @@ function QuestionForm({
   );
 }
 
-/** A session's updates and answers. An open question shows as a form instead. */
+/** Clears a session whose agent is gone, and withdraws its open questions. */
+function DismissButton({
+  sessionId,
+  onDismiss,
+}: {
+  sessionId: string;
+  onDismiss: AgentPanelProps["onDismiss"];
+}) {
+  const [error, setError] = useState<string | null>(null);
+  const dismiss = async () => {
+    setError(null);
+    try {
+      await onDismiss(sessionId);
+    } catch (cause) {
+      setError(cause instanceof Error ? cause.message : "Unknown error");
+    }
+  };
+  return (
+    <div className="flex flex-col gap-1">
+      <Button
+        variant="outline"
+        size="sm"
+        className="self-start"
+        onClick={() => void dismiss()}
+      >
+        Dismiss
+      </Button>
+      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+    </div>
+  );
+}
+
+/**
+ * A session's updates and answers. An open question shows as a form instead.
+ * A stalled session, or one with an open question, can be dismissed.
+ */
 function SessionChat({
   session,
   questions,
   onAnswer,
+  onDismiss,
 }: {
   session: AgentSession;
   questions: AgentQuestion[];
   onAnswer: AgentPanelProps["onAnswer"];
+  onDismiss: AgentPanelProps["onDismiss"];
 }) {
   const openIds = new Set(questions.map((question) => question.id));
+  const dismissable = session.state === "stalled" || questions.length > 0;
   return (
     <div className="flex flex-col gap-2" aria-label={`${session.title} chat`}>
       <ol className="flex flex-col gap-1 text-sm">
@@ -152,6 +192,9 @@ function SessionChat({
           onAnswer={onAnswer}
         />
       ))}
+      {dismissable ? (
+        <DismissButton sessionId={session.id} onDismiss={onDismiss} />
+      ) : null}
     </div>
   );
 }
@@ -191,7 +234,8 @@ function SessionRow({
 function AgentPanelTabs({
   snapshot,
   onAnswer,
-}: Pick<AgentPanelProps, "snapshot" | "onAnswer">) {
+  onDismiss,
+}: Pick<AgentPanelProps, "snapshot" | "onAnswer" | "onDismiss">) {
   const now = useNow();
   const [chosenId, setChosenId] = useState<string>();
   const sessions = snapshot?.sessions ?? [];
@@ -249,6 +293,7 @@ function AgentPanelTabs({
               (question) => question.sessionId === selected.id,
             )}
             onAnswer={onAnswer}
+            onDismiss={onDismiss}
           />
         ) : null}
       </TabsContent>
@@ -282,6 +327,7 @@ export function AgentPanel({
   open,
   onOpenChange,
   onAnswer,
+  onDismiss,
   onSeen,
 }: AgentPanelProps) {
   const narrow = useIsNarrowView();
@@ -291,7 +337,11 @@ export function AgentPanel({
   }, [open, onSeen]);
 
   const tabs: ReactNode = (
-    <AgentPanelTabs snapshot={snapshot} onAnswer={onAnswer} />
+    <AgentPanelTabs
+      snapshot={snapshot}
+      onAnswer={onAnswer}
+      onDismiss={onDismiss}
+    />
   );
 
   if (narrow) {

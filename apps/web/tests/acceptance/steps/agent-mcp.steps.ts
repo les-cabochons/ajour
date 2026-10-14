@@ -13,6 +13,7 @@ interface McpMockState {
   bridgeEvents: { event: string; data: unknown }[];
   postedResults: unknown[];
   postedAnswers: { questionId: string; text: string }[];
+  postedDismissals: string[];
 }
 
 /** What the API answers once the user has answered or seen everything. */
@@ -35,6 +36,7 @@ async function mockMcp(page: Page, initial: Partial<McpMockState> = {}) {
     bridgeEvents: [],
     postedResults: [],
     postedAnswers: [],
+    postedDismissals: [],
     ...initial,
   };
   let bridgeOpened = false;
@@ -100,6 +102,24 @@ async function mockMcp(page: Page, initial: Partial<McpMockState> = {}) {
     const { text } = route.request().postDataJSON() as { text: string };
     state.postedAnswers.push({ questionId, text });
     await route.fulfill({ json: emptySnapshot(), headers: cors });
+  });
+  await page.route(`${apiUrl}/api/mcp/sessions/*/dismiss`, async (route) => {
+    state.postedDismissals.push(route.request().url().split("/").at(-2)!);
+    // The API answers with the session ended as cancelled.
+    const snapshot = state.bridgeEvents.find(({ event }) => event === "agents")
+      ?.data as { sessions: { state: string }[] } | undefined;
+    await route.fulfill({
+      json: snapshot
+        ? {
+            ...snapshot,
+            sessions: snapshot.sessions.map((session) => ({
+              ...session,
+              state: "cancelled",
+            })),
+          }
+        : emptySnapshot(),
+      headers: cors,
+    });
   });
   await page.route(`${apiUrl}/api/mcp/seen`, (route) =>
     route.fulfill({
@@ -367,6 +387,43 @@ Given(
   },
 );
 
+Given(
+  "MCP is on and {string} has a stalled session {string}",
+  async ({ page }, clientName: string, title: string) => {
+    const now = Date.now();
+    mcp = await mockMcp(page, {
+      bridgeEvents: [
+        {
+          event: "agents",
+          data: {
+            sessions: [
+              {
+                id: "session-1",
+                client: { id: "client-1", name: clientName },
+                title,
+                state: "stalled",
+                startedAt: now - 30 * 60_000,
+                deadlineAt: now - 5 * 60_000,
+                messages: [
+                  {
+                    kind: "update",
+                    at: now - 20 * 60_000,
+                    text: "Reading the week",
+                  },
+                ],
+              },
+            ],
+            openQuestions: [],
+            activity: [],
+            errors: [],
+            seenAt: 0,
+          },
+        },
+      ],
+    });
+  },
+);
+
 When("I open Settings MCP on a narrow screen", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/settings/mcp");
@@ -417,6 +474,31 @@ When("I choose {string} in the chat", async ({ page }, choice: string) => {
     .getByRole("button", { name: choice, exact: true })
     .click();
 });
+
+When("I dismiss the session", async ({ page }) => {
+  await agentPanel(page)
+    .getByRole("button", { name: "Dismiss", exact: true })
+    .click();
+});
+
+Then(
+  "the dismissal is sent for the session {string}",
+  async ({}, _title: string) => {
+    await expect.poll(() => mcp.postedDismissals).toEqual(["session-1"]);
+  },
+);
+
+Then(
+  "the session {string} can no longer be dismissed",
+  async ({ page }, title: string) => {
+    await expect(
+      agentPanel(page).getByRole("button", { name: title }),
+    ).toContainText("cancelled");
+    await expect(
+      agentPanel(page).getByRole("button", { name: "Dismiss", exact: true }),
+    ).toHaveCount(0);
+  },
+);
 
 Then("the page stays usable beside the panel", async ({ page }) => {
   await page

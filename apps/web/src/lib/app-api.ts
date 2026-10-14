@@ -830,6 +830,15 @@ export async function answerAgentQuestion(questionId: string, text: string) {
   );
 }
 
+/** Ends an agent session the user no longer waits for. Returns the new snapshot. */
+export async function dismissAgentSession(sessionId: string) {
+  return appApiRequest(
+    `/api/mcp/sessions/${encodeURIComponent(sessionId)}/dismiss`,
+    { method: "POST", body: "{}" },
+    agentsSnapshotSchema,
+  );
+}
+
 /** Marks past agent errors and failures as seen. Returns the new snapshot. */
 export async function markAgentsSeen() {
   return appApiRequest(
