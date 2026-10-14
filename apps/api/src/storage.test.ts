@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type {
   ConnectorImportCandidateInput,
   ConnectorPluginManifest,
-} from "../../../packages/shared/src/connectors.ts";
+} from "../../../packages/shared/connectors.ts";
 import { AppApiStorage } from "./storage.ts";
 
 function buildPlugin(id: string, displayName: string): ConnectorPluginManifest {

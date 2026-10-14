@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { normalizeActivityContext } from "../src/normalization/activity";
+import { normalizeActivityContext } from "../index";
 
 const capture = {
   urlMode: "sanitized_path" as const,

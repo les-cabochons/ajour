@@ -201,6 +201,7 @@ apps/web/        React + Vite app for the main time-tracking UI
 apps/desktop/    Electron shell and packaging scripts
 apps/api/        local API for connectors and import flows
 packages/shared/ shared schemas, rules, and domain logic
+packages/example/ copy-me template for a new deep-module package
 docs/            architecture and logging notes
 ```
 

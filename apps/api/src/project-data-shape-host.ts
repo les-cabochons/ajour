@@ -12,7 +12,7 @@ import {
   type ProjectDataShapeImportProject,
   type ProjectDataShapePluginManifest,
   type ProjectDataShapeDataset,
-} from "../../../packages/shared/src/project-data-shapes.ts";
+} from "../../../packages/shared/project-data-shapes.ts";
 import {
   readProjectDataShapePlugin,
   type ResolvedProjectDataShapePlugin,

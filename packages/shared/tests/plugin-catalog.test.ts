@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   pluginCatalogEntrySchema,
   pluginCatalogResponseSchema,
-} from "../src/plugin-catalog";
+} from "../plugin-catalog";
 
 const azureDevOps = {
   schemaVersion: 2,

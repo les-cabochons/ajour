@@ -5,7 +5,7 @@ import {
   projectDataShapePluginManifestSchema,
   validateProjectDataShapeDatasets,
   type ProjectDataShapeDefinition,
-} from "../src/project-data-shapes";
+} from "../project-data-shapes";
 
 const definition: ProjectDataShapeDefinition = {
   apiVersion: 1,

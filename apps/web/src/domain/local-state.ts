@@ -12,7 +12,7 @@ import type {
 import type {
   LocalPriorityScale,
   PriorityLevel,
-} from "@/domain/backlog/priority";
+} from "@/domain/backlog/priority-types";
 import type { LocalProjectIcon } from "@/domain/projects/project-icon";
 import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
 

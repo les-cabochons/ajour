@@ -20,7 +20,7 @@ import {
   connectorPluginManifestSchema,
   connectorPluginIdSchema,
   type ConnectorPluginManifest,
-} from "../../../packages/shared/src/connectors.ts";
+} from "../../../packages/shared/connectors.ts";
 
 export const MAX_CONNECTOR_PLUGIN_ARCHIVE_BYTES = 25 * 1024 * 1024;
 const MAX_CONNECTOR_PLUGIN_FILES = 2_000;

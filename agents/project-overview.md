@@ -48,6 +48,7 @@ apps/web/        React + Vite product UI
 apps/desktop/    Electron runtime and packaging
 apps/api/        optional local API and connector plugin host
 packages/shared/ shared domain logic and types
+packages/example/ copy-me template for a new deep-module package
 docs/            architecture and strategy docs
 ```
 

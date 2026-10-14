@@ -2,14 +2,19 @@ import type {
   ConnectorBacklogSource,
   ConnectorPriorityScale,
 } from "@ajour/shared";
+import type {
+  LocalPriorityScale,
+  PriorityLevel,
+  PriorityRanges,
+} from "@/domain/backlog/priority-types";
 import type { LocalAppState } from "@/domain/local-state";
 
-/**
- * Ajour's five priority levels, from "Priority" in agents/ux-spec.md. An item
- * without a level has No priority. Connectors map their own source values to
- * levels with one range per level.
- */
-export type PriorityLevel = 1 | 2 | 3 | 4;
+export type {
+  LocalPriorityScale,
+  PriorityLevel,
+  PriorityRange,
+  PriorityRanges,
+} from "@/domain/backlog/priority-types";
 
 export const PRIORITY_LEVELS: readonly {
   level: PriorityLevel;
@@ -22,21 +27,6 @@ export const PRIORITY_LEVELS: readonly {
 ];
 
 export const NO_PRIORITY_NAME = "No priority";
-
-export interface PriorityRange {
-  min: number;
-  max: number;
-}
-
-/** The source values that map to each level. A level without a range gets none. */
-export type PriorityRanges = Partial<Record<PriorityLevel, PriorityRange>>;
-
-/** One connection's priority ranges, as set in Settings > Workflow. */
-export interface LocalPriorityScale {
-  source: ConnectorBacklogSource;
-  connectionId: string;
-  ranges: PriorityRanges;
-}
 
 /** Azure DevOps style: 1 Urgent, 2 High, 3 Medium, 4 Low. */
 export const DEFAULT_PRIORITY_RANGES: PriorityRanges = {
