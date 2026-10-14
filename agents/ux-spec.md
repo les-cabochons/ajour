@@ -122,7 +122,7 @@ Decided in [App shell and collapsible sidebar](https://github.com/les-cabochons/
 - The app sidebar is expanded (resizable, see the Backlog sidebar section for widths) or hidden. There is no icon rail. From the top: the logo with Search and Hide sidebar, the timer dock, Time, Backlog, Pull requests and Projects, then the work list. Settings sits at the bottom.
 - Cmd+B (Ctrl+B on Windows), Hide sidebar next to the logo and Show sidebar at the start of the titlebar toggle it. The View menu gets "Show sidebar" or "Hide sidebar" once the menu bar exists. There is no second shortcut.
 - The state is saved per device. Below 1100px the sidebar hides on its own, without changing the saved preference. Show sidebar and Cmd+B then open it over the page, and opening a page from it, Escape or a click outside closes it.
-- Settings opens inside the shell. The app sidebar stays visible with Settings active, and the settings pages are listed in a second column next to the page. There is no separate "back" control, because the user never leaves the app.
+- Settings opens inside the shell, in place of the app sidebar: the left column lists the settings pages under their App, Work and Data groups, at the app sidebar's width and at every desktop width. "Back to app" at its top returns to the last page outside Settings. While Settings is open the timer dock floats, fitted to the bottom of that column, and the titlebar shows no Show sidebar button.
 - Projects keeps its own list of projects next to the app sidebar, with no collapse control of its own.
 - The titlebar keeps New entry (+), Start (▶) and the totals pill. The date picker only shows in the narrow view. The running entry lives in the timer dock, not the titlebar.
 

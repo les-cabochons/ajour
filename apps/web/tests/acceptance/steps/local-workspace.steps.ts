@@ -588,7 +588,8 @@ Then("the running entry floats at the bottom left", async ({ page }) => {
     dock.boundingBox(),
     page.evaluate(() => ({ height: window.innerHeight })),
   ]);
-  expect(box?.x).toBe(16);
+  // 16px from the edge, or 8px inside the Settings column.
+  expect([8, 16]).toContain(box?.x);
   expect((box?.y ?? 0) + (box?.height ?? 0)).toBe(viewport.height - 16);
 });
 
@@ -1416,36 +1417,43 @@ Then("the app sidebar opens over the page", async ({ page }) => {
   await expect(overlay).toHaveCount(0);
 });
 
-Then(
-  "the Settings pages are listed beside the app sidebar",
-  async ({ page }) => {
-    const primaryNavigation = page.getByRole("navigation", {
-      name: "Primary navigation",
-    });
-    const settingsNavigation = page.getByRole("navigation", {
-      name: "Settings sections",
-    });
-    await expect(primaryNavigation).toBeVisible();
-    await expect(
-      primaryNavigation.getByRole("link", { name: "Settings" }),
-    ).toHaveAttribute("aria-current", "page");
-    await expect(settingsNavigation).toBeVisible();
-    await expect(
-      settingsNavigation.getByRole("link", { name: "General" }),
-    ).toHaveAttribute("aria-current", "page");
-    await expect(
-      page.getByRole("button", { name: "Back", exact: true }),
-    ).toHaveCount(0);
+Then("the Settings pages replace the app sidebar", async ({ page }) => {
+  const settingsNavigation = page.getByRole("navigation", {
+    name: "Settings sections",
+  });
+  await expect(
+    page.getByRole("navigation", { name: "Primary navigation" }),
+  ).toHaveCount(0);
+  await expect(settingsNavigation).toBeVisible();
+  await expect(
+    settingsNavigation.getByRole("link", { name: "General" }),
+  ).toHaveAttribute("aria-current", "page");
+  await expect(
+    settingsNavigation.getByRole("button", { name: "Back to app" }),
+  ).toBeVisible();
+  // The narrow view's back arrow does not show in wide windows.
+  await expect(
+    page.getByRole("button", { name: "Back", exact: true }),
+  ).toHaveCount(0);
 
-    const [primaryNavigationBox, settingsNavigationBox] = await Promise.all([
-      primaryNavigation.boundingBox(),
-      settingsNavigation.boundingBox(),
-    ]);
-    expect(settingsNavigationBox?.x).toBe(
-      (primaryNavigationBox?.x ?? 0) + (primaryNavigationBox?.width ?? 0),
-    );
-  },
-);
+  const [box, viewport] = await Promise.all([
+    settingsNavigation.boundingBox(),
+    page.evaluate(() => ({ height: window.innerHeight })),
+  ]);
+  expect(box?.x).toBe(0);
+  expect(box?.y).toBe(0);
+  expect(box?.height).toBe(viewport.height);
+});
+
+When("I go back to the app from Settings", async ({ page }) => {
+  await page
+    .getByRole("navigation", { name: "Settings sections" })
+    .getByRole("button", { name: "Back to app" })
+    .click();
+  await expect(
+    page.getByRole("navigation", { name: "Primary navigation" }),
+  ).toBeVisible();
+});
 
 Then(
   "the Projects sidebar remains expanded and left-aligned beside primary navigation",

@@ -1,5 +1,6 @@
 import { Link } from "@tanstack/react-router";
 import {
+  RiArrowLeftLine as ArrowLeft,
   RiArrowRightSLine as ChevronRight,
   RiBugLine as Bug,
   RiDownloadLine as Download,
@@ -12,20 +13,23 @@ import {
   RiFlowChart as Workflow,
 } from "@remixicon/react";
 import {
-  CustomSidebar,
   CustomSidebarMenuButton,
   SidebarContent,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
+  SidebarHeader,
   SidebarMenu,
   SidebarMenuItem,
 } from "@/components/custom-sidebar";
+import { Button } from "@/components/ui/button";
+import { Sidebar } from "@/components/ui/sidebar";
 import { useCodeHostConnections } from "@/lib/code-host-connections";
 
 /**
- * Wide windows show the settings pages in a column next to the app sidebar.
- * The narrow view shows them as a full-width list that opens Settings.
+ * Wide windows show the settings pages in the app's left column, in place of
+ * the app sidebar. The narrow view shows them as a full-width list that opens
+ * Settings.
  */
 export type SettingsNavigationView = "wide" | "narrow";
 
@@ -89,17 +93,20 @@ export function getSettingsPages(
 }
 
 /**
- * The list of settings pages. In wide windows it is a second column next to
- * the app sidebar, like the Projects list, and switching pages replaces the
- * history entry. In the narrow view it fills the page as headed sections of
- * full-width rows, and each page it opens has a back arrow to it.
+ * The list of settings pages. In wide windows the app shell shows it in place
+ * of the app sidebar, full height, headed by Back to app (`onBack`), and
+ * switching pages replaces the history entry. In the narrow view it fills the
+ * page as headed sections of full-width rows, and each page it opens has a
+ * back arrow to it.
  */
 export function SettingsNavigation({
   pathname,
   view,
+  onBack,
 }: {
   pathname: string;
   view: SettingsNavigationView;
+  onBack?: () => void;
 }) {
   const { groups: codeHosts } = useCodeHostConnections();
   const groups = getSettingsGroups(view, codeHosts.length > 0);
@@ -145,11 +152,28 @@ export function SettingsNavigation({
   }
 
   return (
-    <CustomSidebar
-      className="ajour-settings-navigation"
+    <Sidebar
+      className="ajour-shell-sidebar ajour-settings-navigation"
+      innerClassName="ajour-shell-sidebar-inner"
+      collapsible="none"
       role="navigation"
       aria-label="Settings sections"
     >
+      <div
+        className="ajour-sidebar-window-drag-region desktop-drag-region"
+        aria-hidden="true"
+      />
+      <SidebarHeader className="ajour-app-sidebar-header">
+        <Button
+          variant="ghost"
+          size="sm"
+          className="-ml-2 text-muted-foreground hover:text-foreground"
+          onClick={onBack}
+        >
+          <ArrowLeft />
+          Back to app
+        </Button>
+      </SidebarHeader>
       <SidebarContent>
         {groups.map((group) => (
           <SidebarGroup key={group.label}>
@@ -184,6 +208,6 @@ export function SettingsNavigation({
           </SidebarGroup>
         ))}
       </SidebarContent>
-    </CustomSidebar>
+    </Sidebar>
   );
 }

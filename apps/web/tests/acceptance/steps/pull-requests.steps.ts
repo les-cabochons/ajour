@@ -416,6 +416,7 @@ When("I deactivate the code host plugin", async ({ page }) => {
     .click();
 });
 When("I reactivate the code host plugin", async ({ page }) => {
+  await page.goto("/settings/plugins/github");
   await page
     .getByRole("switch", { name: "Activate GitHub", exact: true })
     .click();

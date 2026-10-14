@@ -51,6 +51,7 @@ import {
   type NewEntryRequest,
 } from "@/features/time/new-entry-request";
 import { TimeEntryModal } from "@/features/timer/time-entry-modal";
+import { SettingsNavigation } from "@/features/settings/settings-navigation";
 import { SubmitWeekButton } from "@/features/time/submit-week-controls";
 import { formatClockDuration } from "@/domain/time/duration";
 import { findPinnedTask } from "@/domain/projects/project-transitions";
@@ -436,10 +437,13 @@ type TitlebarEditor = "new" | "running" | null;
 function GlobalTimerBar({
   date,
   showsFloatingDock,
+  floatingDockWidth,
   onSubmit,
 }: {
   date: string;
   showsFloatingDock: boolean;
+  /** Fits the floating dock inside the left column, as in Settings. */
+  floatingDockWidth?: number;
   onSubmit: () => void;
 }) {
   const state = useLocalState();
@@ -580,7 +584,14 @@ function GlobalTimerBar({
       {isNarrowView ? createPortal(controls, document.body) : controls}
       {currentTimer && showsFloatingDock && !isNarrowView
         ? createPortal(
-            <FloatingTimerDock className="ajour-floating-dock-desktop" />,
+            <FloatingTimerDock
+              className="ajour-floating-dock-desktop"
+              style={
+                floatingDockWidth
+                  ? { left: 8, width: floatingDockWidth - 16, maxWidth: "none" }
+                  : undefined
+              }
+            />,
             document.body,
           )
         : null}
@@ -638,7 +649,18 @@ export function AppShell() {
     closeOverlay();
   }, [pathname, closeOverlay]);
 
-  const isSidebarInline = appSidebar.display === "inline" && !isNarrowView;
+  // Back to app returns to the last page outside Settings.
+  const lastAppPathRef = useRef("/time/today");
+  useEffect(() => {
+    if (!isSettingsActive) lastAppPathRef.current = pathname;
+  }, [isSettingsActive, pathname]);
+
+  // In wide windows Settings takes the left column with its own pages list.
+  const showsSettingsSidebar = isSettingsActive && !isNarrowView;
+  const isSidebarInline =
+    !showsSettingsSidebar && appSidebar.display === "inline" && !isNarrowView;
+  const leftColumnWidth =
+    showsSettingsSidebar || isSidebarInline ? sidebarWidth : 0;
 
   return (
     <div
@@ -662,13 +684,13 @@ export function AppShell() {
           provider is controlled and its own shortcut stays off. */}
       <SidebarProvider
         className="ajour-app-body"
-        data-app-sidebar={isSidebarInline ? "inline" : "none"}
+        data-app-sidebar={leftColumnWidth ? "inline" : "none"}
         style={
           {
-            "--app-sidebar-width": `${isSidebarInline ? sidebarWidth : 0}px`,
+            "--app-sidebar-width": `${leftColumnWidth}px`,
             // Custom properties resolve where they are declared, so the
             // centering offset is restated with the dragged width.
-            "--app-centered-workspace-right-offset": `calc(${isSidebarInline ? sidebarWidth / 2 : 0}px + var(--app-workspace-half-width))`,
+            "--app-centered-workspace-right-offset": `calc(${leftColumnWidth / 2}px + var(--app-workspace-half-width))`,
           } as CSSProperties
         }
         open={isSidebarInline}
@@ -677,6 +699,15 @@ export function AppShell() {
         {/* The narrow view has no sidebars. Its titlebar holds the
             navigation instead. Narrow desktop windows show the sidebar over
             the page while the user has it open. */}
+        {showsSettingsSidebar ? (
+          <SettingsNavigation
+            pathname={pathname}
+            view="wide"
+            onBack={() =>
+              void navigate({ to: lastAppPathRef.current } as never)
+            }
+          />
+        ) : null}
         {isSidebarInline ? (
           <AppNavigationSidebar
             pathname={pathname}
@@ -685,7 +716,7 @@ export function AppShell() {
             onStateChange={appSidebar.setState}
           />
         ) : null}
-        {!isNarrowView && appSidebar.isHiddenForced ? (
+        {!isNarrowView && !showsSettingsSidebar && appSidebar.isHiddenForced ? (
           <Sheet
             open={appSidebar.display === "overlay"}
             onOpenChange={(open) => {
@@ -733,7 +764,7 @@ export function AppShell() {
                   isDesktopShell && "desktop-shell-nav-main",
                 )}
               >
-                {isNarrowView || isSidebarInline ? null : (
+                {isNarrowView || leftColumnWidth ? null : (
                   <SidebarToggleButton
                     label="Show sidebar"
                     onToggle={appSidebar.toggle}
@@ -785,7 +816,12 @@ export function AppShell() {
 
               <GlobalTimerBar
                 date={selectedTimeDate}
-                showsFloatingDock={appSidebar.display === "none"}
+                floatingDockWidth={
+                  showsSettingsSidebar ? leftColumnWidth : undefined
+                }
+                showsFloatingDock={
+                  showsSettingsSidebar || appSidebar.display === "none"
+                }
                 onSubmit={() => {
                   if (isTimeActive && /^\/time\/[^/]+$/.test(pathname)) {
                     void navigate({

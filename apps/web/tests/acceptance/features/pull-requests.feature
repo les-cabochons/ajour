@@ -22,8 +22,10 @@ Feature: Pull requests on your plate
   Scenario: Plugin deactivation hides navigation and preserves local choices
     When I open the pull request list
     And I deactivate the code host plugin
+    And I go back to the app from Settings
     Then pull request navigation disappears and local records remain
     When I reactivate the code host plugin
+    And I go back to the app from Settings
     Then pull request navigation returns with the same local records
 
   Scenario: Connection removal asks before deleting its pull requests
@@ -74,4 +76,5 @@ Feature: Pull requests on your plate
     And I set the sidebar to its minimum width
     Then the sidebar section labels fit inside the sidebar
     When I deactivate the code host plugin
+    And I go back to the app from Settings
     Then the sidebar has no Pull requests section and backlog controls are visible

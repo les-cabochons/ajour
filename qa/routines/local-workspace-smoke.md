@@ -32,7 +32,7 @@ Confirm that a tester can open the local daily time workspace and reach its prim
 4. Find the `Submit week` action.
    - Expected: The action is visible and enabled. On a window wider than 1640px, the day labels remain centered in a 1440px column while the day color band, table header background, and row separators stretch to both workspace edges without an enclosing outer border.
 5. Open Settings from the sidebar.
-   - Expected: The primary sidebar stays visible with `Settings` current, and the settings pages are listed in a second column beside it. There is no `Back` action.
+   - Expected: The settings pages replace the primary sidebar in the full-height left column, grouped under App, Work and Data, with `Back to app` at the top. A running entry floats at the bottom of that column. `Back to app` returns to the page you came from.
 6. Start an entry with Start in the titlebar, close its editor, select `Hide sidebar` next to the logo, reload, then press Cmd+B (Ctrl+B outside macOS).
    - Expected: The timer dock shows the running entry and the window title starts with `●`. Hiding the sidebar leaves `Show sidebar` at the start of the titlebar and the running entry floating at the bottom left. The sidebar stays hidden after the reload and shows again with the shortcut. Narrowing the window below 1100px hides it; `Show sidebar` then opens it over the page, and widening the window restores the expanded sidebar.
 7. Open Projects.

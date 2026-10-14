@@ -173,6 +173,7 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] The window title shows the running entry, such as "● 1:24 · Fix export rounding — Ajour".
 - [x] Navigation rows show today's total, the backlog count and the pull requests that need the user. The Backlog and Pull requests tabs become collapsible sections of one work list, with one-line rows, an Up next row instead of the card, and a settle circle on hover.
 - [x] Verified with web unit tests, type checks, the Chromium acceptance suite and browser checks at 1440px, 1000px (overlay) and 420px (narrow view).
+- [x] Merged the cardless Settings redesign from main. In wide windows the settings pages replace the app sidebar in the left column, headed by Back to app, and the timer dock floats inside that column. The sidebar list keeps main's memoized rows and hover-mounted controls, and the dock ticks on the shared running clock.
 
 ## App shell, 2026-10-11
 

@@ -1,4 +1,9 @@
-import { useEffect, useMemo, useSyncExternalStore } from "react";
+import {
+  useEffect,
+  useMemo,
+  useSyncExternalStore,
+  type CSSProperties,
+} from "react";
 import {
   RiPlayFill as PlayIcon,
   RiStopFill as StopIcon,
@@ -227,9 +232,11 @@ export function TimerDock({ upNext }: { upNext?: LocalWorkItem }) {
 export function FloatingTimerDock({
   onEdit,
   className,
+  style,
 }: {
   onEdit?: () => void;
   className?: string;
+  style?: CSSProperties;
 }) {
   const { timer, summary, runningDurationMs } = useRunningEntry();
   const editorOpen = useRunningEntryEditor(Boolean(timer));
@@ -255,6 +262,7 @@ export function FloatingTimerDock({
         "ajour-floating-dock flex h-10 max-w-[22rem] items-center gap-2 rounded-lg border bg-background pr-1.5 shadow-[var(--shadow-popup)]",
         className,
       )}
+      style={style}
     >
       {onEdit ? (
         <button

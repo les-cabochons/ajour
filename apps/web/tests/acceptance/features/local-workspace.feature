@@ -32,7 +32,10 @@ Feature: Open the local time workspace
     And I start an empty entry from the titlebar
     Then the timer dock opens the running entry
     And the window title shows the running entry
-    When I hide the app sidebar with its button
+    When I open Settings from the desktop sidebar
+    Then the running entry floats at the bottom left
+    When I go back to the app from Settings
+    And I hide the app sidebar with its button
     Then the running entry floats at the bottom left
     When I stop the running entry from the floating dock
     Then nothing runs and the window title is plain
@@ -136,19 +139,19 @@ Feature: Open the local time workspace
     When I undo with the toast button
     Then the "Code review" cell on Monday shows "1:00"
 
-  Scenario: Open Settings inside the app shell
+  Scenario: Open Settings in place of the app sidebar
     Given I have no saved Ajour workspace
     When I open today's new-entry workspace
     And I open Settings from the desktop sidebar
-    Then the Settings pages are listed beside the app sidebar
+    Then the Settings pages replace the app sidebar
     When I open Plugins from the Settings navigation
-    And I open Time from the app sidebar
+    And I go back to the app from Settings
     Then the Time workspace is visible
 
   Scenario: Open Settings directly
     Given I have no saved Ajour workspace
     When I open Settings directly
-    Then the Settings pages are listed beside the app sidebar
+    Then the Settings pages replace the app sidebar
 
   Scenario: Keep the desktop Projects sidebar expanded
     Given I have projects with searchable tasks
