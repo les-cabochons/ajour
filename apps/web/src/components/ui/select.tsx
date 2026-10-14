@@ -10,19 +10,6 @@ import {
 
 const Select = SelectPrimitive.Root;
 
-function NativeSelect({ className, ...props }: React.ComponentProps<"select">) {
-  return (
-    <select
-      data-slot="native-select"
-      className={cn(
-        "h-[var(--control-height-lg)] w-full rounded-[var(--field-radius)] border border-[var(--field-border)] bg-[var(--field-bg)] px-2.5 py-1 text-[length:var(--control-font-size)] leading-[var(--control-line-height)] text-foreground outline-none focus-visible:border-ring focus-visible:ring-2 focus-visible:ring-ring/40 disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20",
-        className,
-      )}
-      {...props}
-    />
-  );
-}
-
 function SelectGroup({ className, ...props }: SelectPrimitive.Group.Props) {
   return (
     <SelectPrimitive.Group
@@ -207,7 +194,6 @@ function SelectScrollDownButton({
 }
 
 export {
-  NativeSelect,
   Select,
   SelectContent,
   SelectGroup,

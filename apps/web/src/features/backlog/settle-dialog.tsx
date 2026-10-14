@@ -16,7 +16,7 @@ import {
   FieldError,
   FieldLabel,
 } from "@/components/ui/field";
-import { NativeSelect } from "@/components/ui/select";
+import { OptionSelect } from "@/components/ui/option-select";
 import {
   settleArchivesWorkItem,
   type BacklogSettleChange,
@@ -268,30 +268,34 @@ export function SettleDialogHost() {
           <Field>
             <FieldLabel htmlFor="settle-state">State</FieldLabel>
             <FieldContent>
-              <NativeSelect
+              <OptionSelect
                 id="settle-state"
+                size="default"
                 value={stateName}
-                aria-invalid={load.status === "ready" && !stateDraftValid}
+                invalid={load.status === "ready" && !stateDraftValid}
                 disabled={load.status !== "ready" || pending}
-                onChange={(event) => setStateName(event.target.value)}
-              >
-                {!draftListed ? (
-                  <option value={stateName}>
-                    {load.status === "loading"
-                      ? "Loading states…"
-                      : stateName || "No state"}
-                  </option>
-                ) : null}
-                {groupSettleStates(states).map((group) => (
-                  <optgroup key={group.category} label={group.category}>
-                    {group.states.map((state) => (
-                      <option key={state.name} value={state.name}>
-                        {state.name}
-                      </option>
-                    ))}
-                  </optgroup>
-                ))}
-              </NativeSelect>
+                onChange={setStateName}
+                options={
+                  draftListed
+                    ? []
+                    : [
+                        {
+                          value: stateName,
+                          label:
+                            load.status === "loading"
+                              ? "Loading states…"
+                              : stateName || "No state",
+                        },
+                      ]
+                }
+                groups={groupSettleStates(states).map((group) => ({
+                  label: group.category,
+                  options: group.states.map((state) => ({
+                    value: state.name,
+                    label: state.name,
+                  })),
+                }))}
+              />
               {load.status === "failed" ? (
                 <FieldError>Couldn't load states: {load.message}</FieldError>
               ) : load.status === "ready" && !stateDraftValid ? (
@@ -309,27 +313,26 @@ export function SettleDialogHost() {
           <Field>
             <FieldLabel htmlFor="settle-priority">Priority</FieldLabel>
             <FieldContent>
-              <NativeSelect
+              <OptionSelect
                 id="settle-priority"
+                size="default"
                 disabled={pending}
                 value={priority}
-                onChange={(event) => setPriority(event.target.value)}
-              >
-                <option value="" disabled={sourceHasPriority}>
-                  {NO_PRIORITY_NAME}
-                </option>
-                {PRIORITY_LEVELS.map(({ level, name }) => (
-                  <option
-                    key={level}
-                    value={String(level)}
-                    disabled={
-                      getSourcePriority(level, priorityRanges) === undefined
-                    }
-                  >
-                    {name}
-                  </option>
-                ))}
-              </NativeSelect>
+                onChange={setPriority}
+                options={[
+                  {
+                    value: "",
+                    label: NO_PRIORITY_NAME,
+                    disabled: sourceHasPriority,
+                  },
+                  ...PRIORITY_LEVELS.map(({ level, name }) => ({
+                    value: String(level),
+                    label: name,
+                    disabled:
+                      getSourcePriority(level, priorityRanges) === undefined,
+                  })),
+                ]}
+              />
               {change === null && stateDraftValid ? (
                 <FieldError>
                   {priority === "" && sourceHasPriority

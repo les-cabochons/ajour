@@ -7,7 +7,7 @@ import {
 import { MessagePanel } from "@/components/app-surface";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { NativeSelect } from "@/components/ui/select";
+import { OptionSelect } from "@/components/ui/option-select";
 import {
   getPriorityRanges,
   PRIORITY_LEVELS,
@@ -284,41 +284,40 @@ function SourceProjectMapping({
                   <div className="backlog-settings-source-label">
                     {sourceState.label}
                   </div>
-                  <NativeSelect
-                    aria-label={`Map ${sourceState.label} to a workflow state`}
+                  <OptionSelect
+                    label={`Map ${sourceState.label} to a workflow state`}
                     value={
                       effective.inherited
                         ? INHERIT
                         : (effective.workflowStateId ?? "")
                     }
-                    onChange={(event) =>
-                      setMapping(
-                        sourceState.key,
-                        sourceState.label,
-                        event.target.value,
-                      )
+                    onChange={(value) =>
+                      setMapping(sourceState.key, sourceState.label, value)
                     }
-                  >
-                    {project.sourceProjectName ? (
-                      <option value={INHERIT}>
-                        {effective.inherited
-                          ? `Same as all projects (${
-                              state.workflowStates.find(
-                                (workflowState) =>
-                                  workflowState._id ===
-                                  effective.workflowStateId,
-                              )?.name ?? "No state"
-                            })`
-                          : "Same as all projects"}
-                      </option>
-                    ) : null}
-                    <option value="">No state (not mapped)</option>
-                    {state.workflowStates.map((workflowState) => (
-                      <option key={workflowState._id} value={workflowState._id}>
-                        {workflowState.name}
-                      </option>
-                    ))}
-                  </NativeSelect>
+                    options={[
+                      ...(project.sourceProjectName
+                        ? [
+                            {
+                              value: INHERIT,
+                              label: effective.inherited
+                                ? `Same as all projects (${
+                                    state.workflowStates.find(
+                                      (workflowState) =>
+                                        workflowState._id ===
+                                        effective.workflowStateId,
+                                    )?.name ?? "No state"
+                                  })`
+                                : "Same as all projects",
+                            },
+                          ]
+                        : []),
+                      { value: "", label: "No state (not mapped)" },
+                      ...state.workflowStates.map((workflowState) => ({
+                        value: workflowState._id,
+                        label: workflowState.name,
+                      })),
+                    ]}
+                  />
                 </div>
               );
             })}
@@ -375,29 +374,26 @@ function WriteRules({
             <div className="backlog-settings-source-label">
               {workflowState.name}
             </div>
-            <NativeSelect
-              aria-label={`What moving an item to ${workflowState.name} writes`}
+            <OptionSelect
+              label={`What moving an item to ${workflowState.name} writes`}
               value={value}
-              onChange={(event) =>
-                onChange(workflowState._id, event.target.value)
-              }
-            >
-              <option value="">
-                {project.sourceProjectName && rule && !own
-                  ? "Same as all projects"
-                  : `${mapped[0]!.label} (default)`}
-              </option>
-              {mapped.map((sourceState) => (
-                <option
-                  key={sourceState.key}
-                  value={`state:${sourceState.label}`}
-                >
-                  {sourceState.label}
-                </option>
-              ))}
-              {mapped.length > 1 ? <option value="ask">Ask</option> : null}
-              <option value="none">Don't write</option>
-            </NativeSelect>
+              onChange={(next) => onChange(workflowState._id, next)}
+              options={[
+                {
+                  value: "",
+                  label:
+                    project.sourceProjectName && rule && !own
+                      ? "Same as all projects"
+                      : `${mapped[0]!.label} (default)`,
+                },
+                ...mapped.map((sourceState) => ({
+                  value: `state:${sourceState.label}`,
+                  label: sourceState.label,
+                })),
+                ...(mapped.length > 1 ? [{ value: "ask", label: "Ask" }] : []),
+                { value: "none", label: "Don't write" },
+              ]}
+            />
           </div>
         );
       })}

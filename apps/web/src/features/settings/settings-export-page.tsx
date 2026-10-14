@@ -1,4 +1,4 @@
-import { useMemo, useState, type ChangeEvent } from "react";
+import { useMemo, useState } from "react";
 import {
   RiDownloadLine as Download,
   RiUploadLine as Upload,
@@ -11,7 +11,9 @@ import {
 } from "@/components/app-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { DateField } from "@/components/ui/date-field";
+import { isValidLocalDate } from "@/domain/time/local-date";
+import { FileField } from "@/components/ui/file-field";
 import { Label } from "@/components/ui/label";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { useLocalState } from "@/lib/local-hooks";
@@ -64,7 +66,11 @@ export function SettingsExportPage() {
   const [error, setError] = useState("");
   const [exportMessage, setExportMessage] = useState("");
   const [exportError, setExportError] = useState("");
-  const hasInvalidRange = startDate > endDate;
+  // The Date field passes a partial typed value through, so both days must
+  // be real before the range means anything.
+  const hasInvalidDate =
+    !isValidLocalDate(startDate) || !isValidLocalDate(endDate);
+  const hasInvalidRange = hasInvalidDate || startDate > endDate;
 
   const rows = useMemo(
     () =>
@@ -123,8 +129,8 @@ export function SettingsExportPage() {
     }
   }
 
-  function handleImportFileChange(event: ChangeEvent<HTMLInputElement>) {
-    setSelectedImportFile(event.target.files?.[0] ?? null);
+  function handleImportFileChange(file: File | null) {
+    setSelectedImportFile(file);
     setError("");
     setStatusMessage("");
   }
@@ -205,12 +211,10 @@ export function SettingsExportPage() {
                 >
                   From
                 </Label>
-                <Input
+                <DateField
                   id="time-entries-export-start"
-                  type="date"
                   value={startDate}
-                  onChange={(event) => setStartDate(event.target.value)}
-                  max={endDate}
+                  onChange={setStartDate}
                 />
               </div>
 
@@ -221,18 +225,20 @@ export function SettingsExportPage() {
                 >
                   To
                 </Label>
-                <Input
+                <DateField
                   id="time-entries-export-end"
-                  type="date"
                   value={endDate}
-                  onChange={(event) => setEndDate(event.target.value)}
-                  min={startDate}
+                  onChange={setEndDate}
                 />
               </div>
             </div>
           </SettingRow>
 
-          {hasInvalidRange ? (
+          {hasInvalidDate ? (
+            <MessagePanel tone="warning">
+              Enter both days as YYYY-MM-DD.
+            </MessagePanel>
+          ) : hasInvalidRange ? (
             <MessagePanel tone="warning">
               The start day must be on or before the end day.
             </MessagePanel>
@@ -249,9 +255,11 @@ export function SettingsExportPage() {
                   </p>
                 )}
                 <p className="mt-1 text-xs text-[var(--text-tertiary)]">
-                  Filename: {buildTimesheetExportFilename(startDate, endDate)}
-                  {" · "}Rows without an assigned project or task are exported
-                  with blank cells.
+                  {hasInvalidDate
+                    ? null
+                    : `Filename: ${buildTimesheetExportFilename(startDate, endDate)} · `}
+                  Rows without an assigned project or task are exported with
+                  blank cells.
                 </p>
               </>
             }
@@ -284,19 +292,15 @@ export function SettingsExportPage() {
           <SettingRow
             label="Workbook"
             labelFor="time-entries-import-file"
-            description={
-              selectedImportFile
-                ? selectedImportFile.name
-                : "Choose a .xlsx file with a Time entries sheet."
-            }
+            description="Choose a .xlsx file with a Time entries sheet."
             stacked
           >
-            <Input
+            <FileField
               id="time-entries-import-file"
-              type="file"
               accept=".xlsx"
+              file={selectedImportFile}
               onChange={handleImportFileChange}
-              className="min-w-0 flex-[1_1_14rem] desktop:max-w-sm"
+              className="flex-[1_1_14rem]"
             />
             <Button
               type="button"
