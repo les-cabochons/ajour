@@ -2843,3 +2843,26 @@ describe("localStore subscriptions", () => {
     expect(localStore.snapshot().updatedAt).toBe(before.updatedAt + 1);
   });
 });
+
+describe("runWithUndo", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    installMockWindow();
+  });
+
+  it("makes commands without their own undo undoable", async () => {
+    const { localStore } = await import("./local-store");
+    const { undoToken } = localStore.runWithUndo(() =>
+      localStore.startTimer({ note: "Agent work" }),
+    );
+
+    expect(localStore.snapshot().timers).toHaveLength(1);
+    expect(localStore.undo(undoToken!)).toBe("restored");
+    expect(localStore.snapshot().timers).toHaveLength(0);
+  });
+
+  it("returns no token when nothing changed", async () => {
+    const { localStore } = await import("./local-store");
+    expect(localStore.runWithUndo(() => undefined).undoToken).toBeNull();
+  });
+});

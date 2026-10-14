@@ -1,5 +1,8 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const { offerUndo } = vi.hoisted(() => ({ offerUndo: vi.fn() }));
+vi.mock("@/features/feedback/undo-toast", () => ({ offerUndo }));
+
 const client = { id: "c1", name: "Claude Code" };
 
 function installMockWindow() {
@@ -50,6 +53,7 @@ async function setup() {
 beforeEach(() => {
   vi.resetModules();
   installMockWindow();
+  offerUndo.mockClear();
 });
 
 describe("agent read tools", () => {
@@ -85,6 +89,88 @@ describe("agent read tools", () => {
     expect(call("delete_everything")).toMatchObject({
       ok: false,
       error: "Ajour has no tool named delete_everything.",
+    });
+  });
+});
+
+describe("agent timer and entry tools", () => {
+  it("starts an entry on a task, labels the Undo toast and can be undone", async () => {
+    const { call, localStore, project, task } = await setup();
+
+    const result = call("start_timer", {
+      projectId: project._id,
+      taskId: task("Build")._id,
+      note: "Pairing",
+    });
+
+    expect(result).toMatchObject({
+      ok: true,
+      activity: { action: "Started an entry", objectTitle: "Acme · Build" },
+    });
+    expect(localStore.snapshot().timers[0]).toMatchObject({ note: "Pairing" });
+    const [token, options] = offerUndo.mock.calls[0]!;
+    expect(options.title).toBe("Claude Code: Started an entry");
+    expect(localStore.undo(token)).toBe("restored");
+    expect(localStore.snapshot().timers).toHaveLength(0);
+  });
+
+  it("refuses to start an entry on an archived task", async () => {
+    const { call, project, task } = await setup();
+    expect(
+      call("start_timer", { projectId: project._id, taskId: task("Old")._id }),
+    ).toMatchObject({ ok: false, error: "Restore the task first" });
+  });
+
+  it("refuses to move the running entry", async () => {
+    const { call, localStore, project, task } = await setup();
+    const { todayIsoDate } = await import("@/lib/utils");
+    localStore.saveManualTimeEntry({
+      localDate: todayIsoDate(),
+      projectId: project._id,
+      taskId: task("Build")._id,
+      durationMs: 30 * 60_000,
+    });
+    const entry = localStore.snapshot().timesheetEntries[0]!;
+    localStore.continueTimesheetEntry(entry._id);
+
+    expect(
+      call("move_entry", { entryId: entry._id, date: "2026-01-05" }),
+    ).toMatchObject({ ok: false, error: "Stop the running entry first" });
+  });
+
+  it("creates an entry and marks it submitted", async () => {
+    const { call, localStore, project, task } = await setup();
+    const created = call("create_entry", {
+      date: "2026-10-13",
+      projectId: project._id,
+      taskId: task("Build")._id,
+      minutes: 90,
+      note: "Workshop",
+    });
+    expect(created).toMatchObject({
+      ok: true,
+      output: { date: "2026-10-13", minutes: 90, state: "saved" },
+    });
+
+    const entryId = (created as { output: { entryId: string } }).output.entryId;
+    expect(
+      call("mark_entries_submitted", { entryIds: [entryId] }),
+    ).toMatchObject({ ok: true });
+    expect(
+      localStore
+        .snapshot()
+        .timesheetEntries.find((entry) => entry._id === entryId)?.submittedAt,
+    ).toBeDefined();
+  });
+
+  it("stops the running entry", async () => {
+    const { call, localStore, project } = await setup();
+    call("start_timer", { projectId: project._id });
+    expect(call("stop_timer")).toMatchObject({ ok: true });
+    expect(localStore.snapshot().timers).toHaveLength(0);
+    expect(call("stop_timer")).toMatchObject({
+      ok: false,
+      error: "No entry is running.",
     });
   });
 });

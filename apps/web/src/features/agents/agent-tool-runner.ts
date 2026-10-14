@@ -14,6 +14,13 @@ import {
   readRunningTimer,
 } from "@/domain/agents/agent-read-model";
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
+import {
+  ENTRY_WRITE_TOOLS,
+  runEntryWriteTool,
+  type AgentWriteOutcome,
+  type EntryWriteTool,
+} from "@/features/agents/agent-write-tools";
+import { offerUndo } from "@/features/feedback/undo-toast";
 import { localStore } from "@/lib/local-store";
 import { getIsoWeekDates } from "@/lib/utils";
 
@@ -75,6 +82,31 @@ function runReadTool(tool: ReadToolName, rawInput: unknown): unknown {
   }
 }
 
+function isEntryWriteTool(tool: string): tool is EntryWriteTool {
+  return (ENTRY_WRITE_TOOLS as readonly string[]).includes(tool);
+}
+
+/** Shows the Undo toast with the client's name and builds the result. */
+function finishWrite(
+  call: BridgeToolCall,
+  outcome: AgentWriteOutcome,
+): BridgeToolResult {
+  offerUndo(outcome.undoToken, {
+    title: `${call.client.name}: ${outcome.action}`,
+    subject: outcome.undoSubject,
+  });
+  return {
+    requestId: call.requestId,
+    ok: true,
+    output: outcome.output,
+    activity: {
+      action: outcome.action,
+      objectId: outcome.objectId,
+      objectTitle: outcome.objectTitle,
+    },
+  };
+}
+
 export function runAgentToolCall(call: BridgeToolCall): BridgeToolResult {
   const refuse = (error: string): BridgeToolResult => ({
     requestId: call.requestId,
@@ -89,6 +121,9 @@ export function runAgentToolCall(call: BridgeToolCall): BridgeToolResult {
         ok: true,
         output: runReadTool(call.tool, call.input),
       };
+    }
+    if (isEntryWriteTool(call.tool)) {
+      return finishWrite(call, runEntryWriteTool(call.tool, call.input));
     }
     return refuse(`Ajour has no tool named ${call.tool}.`);
   } catch (error) {

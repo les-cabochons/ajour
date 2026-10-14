@@ -297,6 +297,32 @@ describe("MCP endpoint", () => {
     expect(logged.every((event) => !("input" in event))).toBe(true);
   });
 
+  it("lists the read and write tools and forwards a write with its input", async () => {
+    const { baseUrl } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl, "Claude Code");
+    const calls: BridgeToolCall[] = [];
+    await openFakeRenderer(baseUrl, (call) => {
+      calls.push(call);
+      return { requestId: call.requestId, ok: true, output: { marked: 1 } };
+    });
+    const agent = await connectAgent(baseUrl, token);
+
+    const { tools } = await agent.listTools();
+    expect(tools).toHaveLength(14);
+    expect(tools.map((tool) => tool.name)).toEqual(
+      expect.arrayContaining(["start_timer", "mark_entries_submitted"]),
+    );
+
+    await agent.callTool({
+      name: "mark_entries_submitted",
+      arguments: { entryIds: ["e1"] },
+    });
+    expect(calls[0]).toMatchObject({
+      tool: "mark_entries_submitted",
+      input: { entryIds: ["e1"] },
+    });
+  });
+
   it("returns the renderer's refusal as a tool error", async () => {
     const { baseUrl } = await startTestApi();
     const { token } = await enableMcpWithClient(baseUrl);

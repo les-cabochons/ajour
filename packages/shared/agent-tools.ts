@@ -107,3 +107,59 @@ export type ReadToolName = keyof typeof readToolInputSchemas;
 export type ReadToolInput<Name extends ReadToolName> = z.infer<
   (typeof readToolInputSchemas)[Name]
 >;
+
+const minutesSchema = z
+  .number()
+  .int()
+  .min(1)
+  .max(24 * 60);
+const noteSchema = z.string().max(2000);
+
+/** Input schemas of the write tools, by MCP tool name. */
+export const writeToolInputSchemas = {
+  start_timer: z.object({
+    workItemId: z.string().optional(),
+    projectId: z.string().optional(),
+    taskId: z.string().optional(),
+    note: noteSchema.optional(),
+  }),
+  stop_timer: z.object({}),
+  edit_running_entry: z.object({
+    projectId: z.string().optional(),
+    taskId: z.string().optional(),
+    note: noteSchema.optional(),
+    countedMinutes: z
+      .number()
+      .int()
+      .min(0)
+      .max(24 * 60)
+      .optional(),
+  }),
+  create_entry: z.object({
+    date: isoDateSchema,
+    projectId: z.string(),
+    taskId: z.string().optional(),
+    workItemId: z.string().optional(),
+    note: noteSchema.optional(),
+    minutes: minutesSchema,
+  }),
+  edit_entry: z.object({
+    entryId: z.string(),
+    projectId: z.string().optional(),
+    taskId: z.string().optional(),
+    note: noteSchema.optional(),
+    minutes: minutesSchema.optional(),
+  }),
+  move_entry: z.object({ entryId: z.string(), date: isoDateSchema }),
+  duplicate_entry: z.object({
+    entryId: z.string(),
+    date: isoDateSchema.optional(),
+  }),
+  mark_entries_submitted: z.object({
+    entryIds: z.array(z.string()).min(1).max(500),
+  }),
+} as const;
+export type WriteToolName = keyof typeof writeToolInputSchemas;
+export type WriteToolInput<Name extends WriteToolName> = z.infer<
+  (typeof writeToolInputSchemas)[Name]
+>;

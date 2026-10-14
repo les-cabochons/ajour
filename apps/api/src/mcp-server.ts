@@ -3,8 +3,10 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
   readToolInputSchemas,
+  writeToolInputSchemas,
   type AgentClientRef,
   type ReadToolName,
+  type WriteToolName,
 } from "../../../packages/shared/agent-tools.ts";
 import { BridgeCallError, type McpBridge } from "./mcp-bridge.ts";
 import { authenticateMcpRequest } from "./mcp-clients.ts";
@@ -36,8 +38,8 @@ const AJOUR_INSTRUCTIONS = [
   "A write refused by Ajour returns an error with the reason. Do not retry it unchanged.",
 ].join("\n");
 
-/** Tool descriptions, by tool name. Later tasks add write and session tools. */
-export const TOOL_DESCRIPTIONS: Record<ReadToolName, string> = {
+/** Tool descriptions, by tool name. Later tasks add session tools. */
+export const TOOL_DESCRIPTIONS: Record<ReadToolName | WriteToolName, string> = {
   get_running_timer:
     "The running entry, with its project, task, note and counted minutes. Null when nothing runs.",
   list_time_entries:
@@ -48,6 +50,18 @@ export const TOOL_DESCRIPTIONS: Record<ReadToolName, string> = {
   get_work_item: "One backlog item with its note, source link and subitems.",
   get_submit_lines:
     "The week's timesheet lines as the Submit page groups them, with hours, merged comments and warnings. `weekOf` is any date in the week.",
+  start_timer:
+    "Starts an entry now on a backlog item, or on a project with an optional task. A running entry is saved first, as Switch does in Ajour.",
+  stop_timer: "Stops and saves the running entry.",
+  edit_running_entry:
+    "Changes the running entry's project, task or note, or corrects its counted minutes. It keeps running.",
+  create_entry: "Adds a saved entry of `minutes` on a date.",
+  edit_entry:
+    "Changes a saved entry. Editing a submitted entry marks it as not submitted, as in Ajour.",
+  move_entry: "Moves an entry to another date.",
+  duplicate_entry: "Copies an entry, to the same date or another one.",
+  mark_entries_submitted:
+    "Marks entries as submitted after the user entered them in their timesheet.",
 };
 
 export function textResult(value: unknown): ToolResult {
@@ -110,6 +124,16 @@ export function registerTools(
       // The SDK has already parsed `input` against this tool's schema. The
       // bridge only forwards it, so `unknown` is enough (and the union of
       // schemas in this loop gives the SDK nothing to infer from).
+      async (input: unknown) => forwardToRenderer(name, input, client, context),
+    );
+  }
+  for (const name of Object.keys(writeToolInputSchemas) as WriteToolName[]) {
+    server.registerTool(
+      name,
+      {
+        description: TOOL_DESCRIPTIONS[name],
+        inputSchema: writeToolInputSchemas[name].shape,
+      },
       async (input: unknown) => forwardToRenderer(name, input, client, context),
     );
   }

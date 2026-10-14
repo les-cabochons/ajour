@@ -124,4 +124,77 @@ Then(
   },
 );
 
+Given(
+  "MCP is on and {string} starts an entry on {string} {string}",
+  async (
+    { page },
+    clientName: string,
+    projectName: string,
+    taskName: string,
+  ) => {
+    await page.addInitScript(
+      ({ projectName, taskName }) => {
+        if (sessionStorage.getItem("agent-fixture")) return;
+        localStorage.clear();
+        sessionStorage.setItem("agent-fixture", "true");
+        localStorage.setItem(
+          "ajour.local-state.v2",
+          JSON.stringify({
+            projects: [
+              {
+                _id: "p-acme",
+                name: projectName,
+                color: "#4f46e5",
+                status: "active",
+                tasks: [
+                  {
+                    _id: "t-build",
+                    name: taskName,
+                    status: "active",
+                    createdAt: 1,
+                  },
+                ],
+              },
+            ],
+          }),
+        );
+      },
+      { projectName, taskName },
+    );
+    mcp = await mockMcp(page, {
+      bridgeEvents: [
+        {
+          event: "tool-call",
+          data: {
+            requestId: "call-1",
+            tool: "start_timer",
+            input: {
+              projectId: "p-acme",
+              taskId: "t-build",
+              note: "From the agent",
+            },
+            client: { id: "client-1", name: clientName },
+          },
+        },
+      ],
+    });
+  },
+);
+
+When("I open the app", async ({ page }) => {
+  await page.goto("/");
+});
+
+Then("an entry is running", async () => {
+  await expect.poll(() => mcp.postedResults.length).toBeGreaterThan(0);
+});
+
+Then("a toast reads {string}", async ({ page }, text: string) => {
+  await expect(page.getByText(text)).toBeVisible();
+});
+
+Then("the bridge received a successful result", async () => {
+  expect(mcp.postedResults[0]).toMatchObject({ requestId: "call-1", ok: true });
+});
+
 export { mockMcp, mcp };
