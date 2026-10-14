@@ -76,12 +76,20 @@ export function useWorkItemIconData(
       .catch(() => undefined);
   }, []);
 
-  return {
-    projectsById,
-    connectorIconsBySource,
-    connectorCurrentColor: resolvedTheme === "dark" ? "#fafafa" : "#171717",
-    connectorTaskIconModesByConnectionId,
-  };
+  return useMemo(
+    () => ({
+      projectsById,
+      connectorIconsBySource,
+      connectorCurrentColor: resolvedTheme === "dark" ? "#fafafa" : "#171717",
+      connectorTaskIconModesByConnectionId,
+    }),
+    [
+      projectsById,
+      connectorIconsBySource,
+      resolvedTheme,
+      connectorTaskIconModesByConnectionId,
+    ],
+  );
 }
 
 const FIXED_SVG_PAINT_ATTRIBUTE =

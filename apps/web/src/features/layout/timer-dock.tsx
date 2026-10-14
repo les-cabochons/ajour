@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useSyncExternalStore } from "react";
 import {
   RiPlayFill as PlayIcon,
   RiStopFill as StopIcon,
@@ -19,6 +19,7 @@ import {
   getTimerContributionMs,
   getTimerDurationsMs,
 } from "@/lib/timer-totals";
+import { useRunningClock } from "@/lib/use-now";
 import { cn, todayIsoDate } from "@/lib/utils";
 
 let runningEntryEditorOpen = false;
@@ -52,20 +53,14 @@ function useRunningEntryEditor(hasTimer: boolean) {
 }
 
 /**
- * The running entry and today's total, ticking every `intervalMs` while an
- * entry runs. The dock, the floating dock and the window title share it.
+ * The running entry and today's total, ticking every second while an entry
+ * runs. Call it in the component that shows them, so the surface around it
+ * does not re-render each second.
  */
-export function useRunningEntry(intervalMs = 1000) {
+export function useRunningEntry() {
   const state = useLocalState();
   const timer = state.timers[0] ?? null;
-  const [now, setNow] = useState(() => Date.now());
-
-  useEffect(() => {
-    if (!timer) return;
-    setNow(Date.now());
-    const intervalId = window.setInterval(() => setNow(Date.now()), intervalMs);
-    return () => window.clearInterval(intervalId);
-  }, [timer, intervalMs]);
+  const now = useRunningClock(timer !== null);
 
   const { runningDurationMs } = getTimerDurationsMs(timer, now);
   const summary = useMemo(
@@ -292,7 +287,7 @@ export function FloatingTimerDock({
  * other windows. It changes once a minute.
  */
 export function RunningEntryWindowTitle() {
-  const { summary, runningDurationMs } = useRunningEntry(15_000);
+  const { summary, runningDurationMs } = useRunningEntry();
   const title = summary
     ? `● ${formatClockDuration(runningDurationMs)} · ${summary.title} — Ajour`
     : "Ajour";
@@ -304,4 +299,9 @@ export function RunningEntryWindowTitle() {
   useEffect(() => () => void (document.title = "Ajour"), []);
 
   return null;
+}
+
+/** Today's total, counting the running entry, as "5:12". */
+export function TodayTotal() {
+  return formatClockDuration(useRunningEntry().todayTotalMs);
 }

@@ -41,18 +41,57 @@ export function isSubtaskWorkItem(
   );
 }
 
+interface ChildIndex {
+  byParentKey: Map<string, LocalWorkItem[]>;
+  positionById: Map<string, number>;
+}
+
+/**
+ * Children grouped by the lookup key of their parent, built once per work item
+ * list. The store replaces a list instead of editing it, so the list itself is
+ * the cache key, and a list no longer held lets its index go.
+ */
+const childIndexes = new WeakMap<readonly LocalWorkItem[], ChildIndex>();
+
+function indexChildren(workItems: readonly LocalWorkItem[]): ChildIndex {
+  const cached = childIndexes.get(workItems);
+  if (cached) {
+    return cached;
+  }
+
+  const index: ChildIndex = { byParentKey: new Map(), positionById: new Map() };
+  workItems.forEach((workItem, position) => {
+    index.positionById.set(workItem._id, position);
+    const parentKey = getWorkItemParentKey(workItem);
+    if (!parentKey) {
+      return;
+    }
+
+    const siblings = index.byParentKey.get(parentKey);
+    if (siblings) {
+      siblings.push(workItem);
+    } else {
+      index.byParentKey.set(parentKey, [workItem]);
+    }
+  });
+  childIndexes.set(workItems, index);
+  return index;
+}
+
+/** Newest first; children created at the same time keep their list order. */
 export function getDirectChildWorkItems(
   workItem: LocalWorkItem,
-  workItems: LocalWorkItem[],
+  workItems: readonly LocalWorkItem[],
 ) {
-  const parentKeys = new Set(getWorkItemLookupKeys(workItem));
+  const index = indexChildren(workItems);
 
-  return workItems
-    .filter((candidate) => {
-      const parentKey = getWorkItemParentKey(candidate);
-      return parentKey ? parentKeys.has(parentKey) : false;
-    })
-    .sort((left, right) => right.createdAt - left.createdAt);
+  return getWorkItemLookupKeys(workItem)
+    .flatMap((key) => index.byParentKey.get(key) ?? [])
+    .sort(
+      (left, right) =>
+        right.createdAt - left.createdAt ||
+        index.positionById.get(left._id)! - index.positionById.get(right._id)!,
+    );
 }
 
 function hasDirectChildWorkItems(

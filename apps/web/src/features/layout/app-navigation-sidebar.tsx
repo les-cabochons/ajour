@@ -1,4 +1,10 @@
-import { useMemo, useRef, type KeyboardEvent, type PointerEvent } from "react";
+import {
+  useMemo,
+  useRef,
+  type KeyboardEvent,
+  type PointerEvent,
+  type ReactNode,
+} from "react";
 import { Link } from "@tanstack/react-router";
 import {
   RiFolderChartLine as FolderKanban,
@@ -28,14 +34,13 @@ import {
 } from "@/components/tooltip-button";
 import { selectSidebarBacklogItems } from "@/domain/backlog/backlog-item-lifecycle";
 import { isPullRequestReturned } from "@/domain/pull-requests/pull-request-lifecycle";
-import { formatClockDuration } from "@/domain/time/duration";
 import { openCommandPalette } from "@/features/command-palette/command-palette";
 import { SidebarBacklogList } from "@/features/layout/sidebar-backlog-list";
 import {
   SidebarPullRequests,
   useSidebarPullRequests,
 } from "@/features/layout/sidebar-pull-requests";
-import { TimerDock, useRunningEntry } from "@/features/layout/timer-dock";
+import { TimerDock, TodayTotal } from "@/features/layout/timer-dock";
 import type { AppSidebarState } from "@/lib/app-sidebar";
 import { useLocalState } from "@/lib/local-hooks";
 import {
@@ -175,7 +180,7 @@ function NavigationCount({
   value,
   highlighted = false,
 }: {
-  value?: string | number;
+  value?: ReactNode;
   highlighted?: boolean;
 }) {
   if (value === undefined) return null;
@@ -216,7 +221,6 @@ export function AppNavigationSidebar({
   const now = useNow();
   const isSettingsActive = isAppNavigationItemActive(pathname, "/settings");
   const pullRequests = useSidebarPullRequests();
-  const { todayTotalMs } = useRunningEntry(30_000);
   const listed = useMemo(
     () => selectSidebarBacklogItems(state, now),
     [state, now],
@@ -231,7 +235,7 @@ export function AppNavigationSidebar({
       label: "Time",
       icon: Timer,
       shortcut: "go.time",
-      count: formatClockDuration(todayTotalMs),
+      count: <TodayTotal />,
     },
     {
       to: "/backlog",

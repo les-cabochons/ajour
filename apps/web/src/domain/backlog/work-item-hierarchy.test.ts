@@ -4,6 +4,17 @@ import {
   getDirectChildWorkItems,
   inferInheritedParentMapping,
 } from "./work-item-hierarchy";
+import type { LocalWorkItem } from "@/domain/local-state";
+
+function workItem(overrides: Partial<LocalWorkItem> & { _id: string }) {
+  return {
+    title: overrides._id,
+    status: "active",
+    source: "manual",
+    createdAt: 0,
+    ...overrides,
+  } as LocalWorkItem;
+}
 
 function installMockWindow() {
   const storage = new Map<string, string>();
@@ -136,5 +147,33 @@ describe("work item hierarchy", () => {
         },
       ),
     ).toBe(false);
+  });
+
+  it("lists children by local and source parent, newest first, ties in list order", () => {
+    const parent = workItem({ _id: "parent", sourceId: "ado/7" });
+    const list = [
+      workItem({ _id: "later-b", parentWorkItemId: "parent", createdAt: 2 }),
+      workItem({ _id: "older", parentSourceId: "ado/7", createdAt: 1 }),
+      parent,
+      workItem({ _id: "later-a", parentWorkItemId: "parent", createdAt: 2 }),
+      workItem({
+        _id: "other",
+        parentWorkItemId: "someone-else",
+        createdAt: 3,
+      }),
+    ];
+
+    expect(
+      getDirectChildWorkItems(parent, list).map((item) => item._id),
+    ).toEqual(["later-b", "later-a", "older"]);
+  });
+
+  it("reads a replaced list instead of the index of the one before", () => {
+    const parent = workItem({ _id: "parent" });
+    const child = workItem({ _id: "child", parentWorkItemId: "parent" });
+
+    expect(getDirectChildWorkItems(parent, [parent, child])).toEqual([child]);
+    expect(getDirectChildWorkItems(parent, [parent])).toEqual([]);
+    expect(getDirectChildWorkItems(parent, [child, parent])).toEqual([child]);
   });
 });

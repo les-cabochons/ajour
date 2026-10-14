@@ -266,110 +266,105 @@ export function SettingsImportReviewPage() {
         </p>
 
         {syncIssues.length > 0 ? (
-          <AppPanel className="space-y-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge>
-                {syncIssues.length} estimate issue
-                {syncIssues.length === 1 ? "" : "s"}
-              </Badge>
-            </div>
-            <div className="space-y-3">
-              {syncIssues.map(({ workItem, fieldKey, fieldState }) => (
-                <div
-                  key={`${workItem._id}:${fieldKey}`}
-                  className="rounded-xl border border-amber-500/30 bg-amber-500/10 p-4"
-                >
-                  <div className="flex flex-wrap items-start justify-between gap-3">
-                    <div className="space-y-1">
-                      <div className="flex items-center gap-2 text-sm font-medium">
-                        <AlertTriangle className="h-4 w-4 text-amber-300" />
-                        <span>{workItem.title}</span>
-                        <Badge className="bg-muted">
-                          {ESTIMATE_FIELD_LABELS[fieldKey]}
-                        </Badge>
-                      </div>
-                      {fieldState?.conflict ? (
-                        <div className="text-sm text-foreground/70">
-                          Local: {fieldState.conflict.localValue ?? "empty"} ·
-                          Remote: {fieldState.conflict.remoteValue ?? "empty"} ·
-                          Last synced:{" "}
-                          {fieldState.conflict.baselineValue ?? "empty"}
-                        </div>
-                      ) : null}
-                      {fieldState?.error ? (
-                        <div className="text-sm text-foreground/70">
-                          {fieldState.error.message}
-                        </div>
-                      ) : null}
+          <AppPanel>
+            <h3 className="settings-subsection-title">
+              {syncIssues.length} estimate issue
+              {syncIssues.length === 1 ? "" : "s"}
+            </h3>
+            {syncIssues.map(({ workItem, fieldKey, fieldState }) => (
+              <div
+                key={`${workItem._id}:${fieldKey}`}
+                className="flex flex-col gap-3 desktop:flex-row desktop:items-start desktop:justify-between"
+              >
+                <div className="flex min-w-0 items-start gap-3">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-300" />
+                  <div className="min-w-0 space-y-0.5">
+                    <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                      <span className="text-sm font-medium break-words text-foreground">
+                        {workItem.title}
+                      </span>
+                      <Badge className="bg-muted">
+                        {ESTIMATE_FIELD_LABELS[fieldKey]}
+                      </Badge>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      {fieldState?.conflict ? (
-                        <>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() =>
-                              localStore.keepLocalEstimateConflict(
-                                workItem._id,
-                                fieldKey,
-                              )
-                            }
-                          >
-                            Keep local
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={() =>
-                              localStore.acceptRemoteEstimateValue(
-                                workItem._id,
-                                fieldKey,
-                              )
-                            }
-                          >
-                            Accept remote
-                          </Button>
-                        </>
-                      ) : null}
+                    {fieldState?.conflict ? (
+                      <div className="text-[13px] leading-5 text-muted-foreground">
+                        Local: {fieldState.conflict.localValue ?? "empty"} ·
+                        Remote: {fieldState.conflict.remoteValue ?? "empty"} ·
+                        Last synced:{" "}
+                        {fieldState.conflict.baselineValue ?? "empty"}
+                      </div>
+                    ) : null}
+                    {fieldState?.error ? (
+                      <div className="text-[13px] leading-5 text-muted-foreground">
+                        {fieldState.error.message}
+                      </div>
+                    ) : null}
+                  </div>
+                </div>
+                <div className="flex shrink-0 flex-wrap gap-2 pl-7 desktop:pl-0">
+                  {fieldState?.conflict ? (
+                    <>
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() =>
-                          localStore.dismissEstimateIssue(
+                          localStore.keepLocalEstimateConflict(
                             workItem._id,
                             fieldKey,
                           )
                         }
                       >
-                        Dismiss
+                        Keep local
                       </Button>
-                    </div>
-                  </div>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() =>
+                          localStore.acceptRemoteEstimateValue(
+                            workItem._id,
+                            fieldKey,
+                          )
+                        }
+                      >
+                        Accept remote
+                      </Button>
+                    </>
+                  ) : null}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() =>
+                      localStore.dismissEstimateIssue(workItem._id, fieldKey)
+                    }
+                  >
+                    Dismiss
+                  </Button>
                 </div>
-              ))}
-            </div>
+              </div>
+            ))}
           </AppPanel>
         ) : connectorApiMissing ? (
-          <MessagePanel>Nothing to review.</MessagePanel>
+          <p className="text-sm text-muted-foreground">Nothing to review.</p>
         ) : null}
 
         {connectorApiMissing ? null : (
-          <AppPanel className="import-review-toolbar">
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge>
+          <div className="flex flex-col gap-3">
+            <p className="text-[13px] leading-5 text-muted-foreground">
+              <span className="font-medium text-foreground">
                 {overview?.totalPendingImportCount ?? items.length} staged items
-              </Badge>
-              <Badge className="bg-muted">{selectedCount} selected</Badge>
-              <Badge className="bg-muted">
-                {overview?.connectionGroups.reduce(
-                  (sum, group) => sum + group.connections.length,
-                  0,
-                ) ?? 0}{" "}
-                connector connections
-              </Badge>
-            </div>
+              </span>
+              {" · "}
+              {selectedCount} selected
+              {" · "}
+              {overview?.connectionGroups.reduce(
+                (sum, group) => sum + group.connections.length,
+                0,
+              ) ?? 0}{" "}
+              connector connections
+            </p>
 
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-2">
               <Button
                 variant="outline"
                 size="sm"
@@ -439,22 +434,30 @@ export function SettingsImportReviewPage() {
                 Sync selected to backlog
               </Button>
             </div>
-          </AppPanel>
+          </div>
         )}
 
-        {statusMessage ? <MessagePanel>{statusMessage}</MessagePanel> : null}
+        {statusMessage ? (
+          <p className="text-sm text-foreground">{statusMessage}</p>
+        ) : null}
         {error ? <MessagePanel tone="warning">{error}</MessagePanel> : null}
 
         {connectorApiMissing ? null : isLoading ? (
-          <MessagePanel>Loading staged imports…</MessagePanel>
+          <p className="text-sm text-muted-foreground">
+            Loading staged imports…
+          </p>
         ) : connectionGroups.length === 0 ? (
-          <MessagePanel>
+          <p className="text-sm text-muted-foreground">
             No staged imports yet. Go to{" "}
-            <Link to="/settings/plugins" replace>
+            <Link
+              to="/settings/plugins"
+              replace
+              className="font-medium text-foreground underline underline-offset-4"
+            >
               Plugins
             </Link>{" "}
             and sync one of your connector connections first.
-          </MessagePanel>
+          </p>
         ) : (
           <div className="import-review-groups">
             {connectionGroups.map((group) => {
@@ -467,60 +470,55 @@ export function SettingsImportReviewPage() {
                 .map((item) => item.id);
 
               return (
-                <AppPanel
+                <section
                   key={group.connectionId}
-                  as="section"
-                  className="import-review-panel"
+                  className="import-review-group"
                 >
-                  <div className="import-review-panel-header">
-                    <div className="import-review-panel-title-wrap">
-                      <div className="import-review-panel-kicker">
+                  <div className="import-review-group-header">
+                    <div className="import-review-group-title-wrap">
+                      <div className="import-review-group-kicker">
                         {group.tenantLabel}
                       </div>
-                      <h3 className="import-review-panel-title">
+                      <h3 className="import-review-group-title">
                         {group.connectionLabel}
                       </h3>
+                      <div className="import-review-group-meta">
+                        {group.items.length} staged · {selectedIds.length}{" "}
+                        selected
+                      </div>
                     </div>
-                    <div className="flex flex-wrap gap-2">
-                      <Badge className="bg-muted">
-                        {group.items.length} staged
-                      </Badge>
-                      <Badge className="bg-muted">
-                        {selectedIds.length} selected
-                      </Badge>
-                    </div>
-                  </div>
 
-                  <div className="flex flex-wrap gap-3">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={isMutating || selectableIds.length === 0}
-                      onClick={() => void toggleItems(selectableIds, true)}
-                    >
-                      <CheckSquare className="h-3.5 w-3.5" />
-                      Select connection
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={isMutating || group.items.length === 0}
-                      onClick={() =>
-                        void dismissItems(group.items.map((item) => item.id))
-                      }
-                    >
-                      <X className="h-3.5 w-3.5" />
-                      Dismiss connection
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={isMutating || selectedIds.length === 0}
-                      onClick={() => void toggleItems(selectedIds, false)}
-                    >
-                      <MinusSquare className="h-3.5 w-3.5" />
-                      Clear connection
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={isMutating || selectableIds.length === 0}
+                        onClick={() => void toggleItems(selectableIds, true)}
+                      >
+                        <CheckSquare className="h-3.5 w-3.5" />
+                        Select connection
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={isMutating || group.items.length === 0}
+                        onClick={() =>
+                          void dismissItems(group.items.map((item) => item.id))
+                        }
+                      >
+                        <X className="h-3.5 w-3.5" />
+                        Dismiss connection
+                      </Button>
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        disabled={isMutating || selectedIds.length === 0}
+                        onClick={() => void toggleItems(selectedIds, false)}
+                      >
+                        <MinusSquare className="h-3.5 w-3.5" />
+                        Clear connection
+                      </Button>
+                    </div>
                   </div>
 
                   <div className="import-review-list">
@@ -684,7 +682,7 @@ export function SettingsImportReviewPage() {
                       },
                     )}
                   </div>
-                </AppPanel>
+                </section>
               );
             })}
           </div>

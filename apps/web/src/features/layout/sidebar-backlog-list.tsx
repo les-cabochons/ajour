@@ -1,5 +1,7 @@
 import {
+  memo,
   useMemo,
+  useRef,
   useState,
   type KeyboardEvent,
   type MouseEvent,
@@ -57,6 +59,7 @@ import {
   useSidebarLayout,
   type SidebarDensity,
 } from "@/lib/sidebar-layout";
+import { useHoverOrFocusWithin } from "@/lib/use-hover-or-focus-within";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
@@ -86,69 +89,94 @@ function getMetaLine(workItem: LocalWorkItem) {
     .join(" · ");
 }
 
-/** Shared by every row: actions, keys and navigation for one backlog item. */
+function countSubitems(
+  workItem: LocalWorkItem,
+  workItems: readonly LocalWorkItem[],
+) {
+  return isSubtaskWorkItem(workItem)
+    ? 0
+    : getDirectChildWorkItems(workItem, workItems).length;
+}
+
+/**
+ * What a row can do: actions, keys and navigation for one backlog item. The
+ * rows are memoized, so this is one object for the life of the list that reads
+ * the latest list and time when a row asks.
+ */
 function useBacklogItemRow(state: LocalAppState, now: number) {
   const navigate = useNavigate();
+  const latest = useRef({ state, now });
+  latest.current = { state, now };
 
-  function open(workItem: LocalWorkItem) {
-    void navigate({ to: "/backlog/$itemId", params: { itemId: workItem._id } });
-  }
+  return useMemo(() => {
+    function open(workItem: LocalWorkItem) {
+      void navigate({
+        to: "/backlog/$itemId",
+        params: { itemId: workItem._id },
+      });
+    }
 
-  function actionsFor(workItem: LocalWorkItem) {
-    const isSubitem = isSubtaskWorkItem(workItem);
-    return getBacklogItemActions(workItem, {
-      isRunning: state.timers.some(
-        (timer) => timer.workItemId === workItem._id,
-      ),
-      isSubitem,
-      isSnoozed: isBacklogItemSnoozed(workItem, now),
-      subitemCount: isSubitem
-        ? 0
-        : getDirectChildWorkItems(workItem, state.workItems).length,
-      settleOpensDialog: settleOpensDialog(workItem),
-      otherSourceStateCount: getOtherSourceStates(workItem).length,
-    });
-  }
+    /** The list passes `subitemCount` when it has counted, so a row does not count again. */
+    function actionsFor(workItem: LocalWorkItem, subitemCount?: number) {
+      const { state, now } = latest.current;
+      return getBacklogItemActions(workItem, {
+        isRunning: state.timers.some(
+          (timer) => timer.workItemId === workItem._id,
+        ),
+        isSubitem: isSubtaskWorkItem(workItem),
+        isSnoozed: isBacklogItemSnoozed(workItem, now),
+        subitemCount: subitemCount ?? countSubitems(workItem, state.workItems),
+        settleOpensDialog: settleOpensDialog(workItem),
+        otherSourceStateCount: getOtherSourceStates(workItem).length,
+      });
+    }
 
-  function run(
-    workItem: LocalWorkItem,
-    actionId: BacklogItemActionId,
-    options?: { askToSettle?: boolean },
-  ) {
-    const action = actionsFor(workItem).find((item) => item.id === actionId);
-    if (!action || action.disabledReason) return;
+    function run(
+      workItem: LocalWorkItem,
+      actionId: BacklogItemActionId,
+      options?: { askToSettle?: boolean },
+    ) {
+      const action = actionsFor(workItem).find((item) => item.id === actionId);
+      if (!action || action.disabledReason) return;
 
-    // Edit and Add subitem open the editor on the item's page.
-    runBacklogItemAction(
-      workItem,
-      actionId,
-      (hosted) =>
-        navigate({
-          to: "/backlog/$itemId",
-          params: { itemId: workItem._id },
-          search: { action: hosted },
-        }),
-      options,
-    );
-  }
+      // Edit and Add subitem open the editor on the item's page.
+      runBacklogItemAction(
+        workItem,
+        actionId,
+        (hosted) =>
+          navigate({
+            to: "/backlog/$itemId",
+            params: { itemId: workItem._id },
+            search: { action: hosted },
+          }),
+        options,
+      );
+    }
 
-  return { open, actionsFor, run };
+    return { open, actionsFor, run };
+  }, [navigate]);
 }
 
 type RowApi = ReturnType<typeof useBacklogItemRow>;
+type RowActionList = ReturnType<RowApi["actionsFor"]>;
 
 const iconButton =
   "flex size-6 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-foreground/10 hover:text-foreground";
 
-/** Hover and focus swap the type icon for the settle circle. Shift asks first. */
+/**
+ * Hover and focus swap the type icon for the settle circle, which mounts only
+ * while the row is `revealed`. Shift asks first.
+ */
 function LeadingIcon({
   workItem,
   iconData,
   rows,
+  revealed,
 }: {
   workItem: LocalWorkItem;
   iconData: IconData;
   rows: RowApi;
+  revealed: boolean;
 }) {
   return (
     <span
@@ -158,30 +186,34 @@ function LeadingIcon({
       <span className="flex group-focus-within:hidden group-hover:hidden">
         <WorkItemIcon icon={resolveWorkItemIcon(workItem, iconData)} />
       </span>
-      <TooltipButton
-        label="Settle"
-        shortcut="item.settle"
-        className="hidden size-4 rounded-full border-[1.5px] border-foreground/50 group-focus-within:flex group-hover:flex hover:border-foreground hover:bg-foreground/10"
-        onClick={(event) =>
-          rows.run(workItem, "settle", { askToSettle: event.shiftKey })
-        }
-      />
+      {revealed ? (
+        <TooltipButton
+          label="Settle"
+          shortcut="item.settle"
+          className="hidden size-4 rounded-full border-[1.5px] border-foreground/50 group-focus-within:flex group-hover:flex hover:border-foreground hover:bg-foreground/10"
+          onClick={(event) =>
+            rows.run(workItem, "settle", { askToSettle: event.shiftKey })
+          }
+        />
+      ) : null}
     </span>
   );
 }
 
 function StartButton({
   workItem,
+  actions,
   rows,
   variant = "icon",
 }: {
   workItem: LocalWorkItem;
+  actions: RowActionList;
   rows: RowApi;
   variant?: "icon" | "round";
 }) {
-  const disabledReason = rows
-    .actionsFor(workItem)
-    .find((action) => action.id === "start-entry")?.disabledReason;
+  const disabledReason = actions.find(
+    (action) => action.id === "start-entry",
+  )?.disabledReason;
   return (
     <TooltipButton
       label={disabledReason ? `Start entry. ${disabledReason}` : "Start entry"}
@@ -210,11 +242,13 @@ function StartButton({
 /** Start entry, Snooze and "…". They replace the row's end on hover and focus. */
 function RowActions({
   workItem,
+  actions,
   rows,
   showStart = true,
   className,
 }: {
   workItem: LocalWorkItem;
+  actions: RowActionList;
   rows: RowApi;
   showStart?: boolean;
   className?: string;
@@ -224,7 +258,9 @@ function RowActions({
       className={cn("items-center gap-0.5", className)}
       onClick={(event) => event.stopPropagation()}
     >
-      {showStart ? <StartButton workItem={workItem} rows={rows} /> : null}
+      {showStart ? (
+        <StartButton workItem={workItem} actions={actions} rows={rows} />
+      ) : null}
       <TooltipButton
         label="Snooze…"
         shortcut="item.snooze"
@@ -234,7 +270,7 @@ function RowActions({
         <SnoozeIcon className="size-3.5" />
       </TooltipButton>
       <ObjectActionsButton
-        actions={rows.actionsFor(workItem)}
+        actions={actions}
         keys={BACKLOG_ITEM_ACTION_KEYS}
         onAction={(actionId) => rows.run(workItem, actionId)}
         label={`Actions for ${workItem.title}`}
@@ -285,6 +321,7 @@ function Markers({
 interface ItemRowProps {
   workItem: LocalWorkItem;
   parentTitle?: string;
+  subitemCount: number;
   density: SidebarDensity;
   isActive: boolean;
   isRunning: boolean;
@@ -294,8 +331,8 @@ interface ItemRowProps {
 }
 
 /** Click, modified click, keys and the context menu, shared by the item rows. */
-function useItemRowHandlers({ workItem, rows }: ItemRowProps) {
-  const actions = rows.actionsFor(workItem);
+function useItemRowHandlers({ workItem, subitemCount, rows }: ItemRowProps) {
+  const actions = rows.actionsFor(workItem, subitemCount);
   return {
     actions,
     onClick: (event: MouseEvent<HTMLElement>) => {
@@ -318,11 +355,15 @@ function useItemRowHandlers({ workItem, rows }: ItemRowProps) {
 
 /**
  * One line: the type icon, the title, then the markers and, in Comfortable,
- * the remaining estimate. A subitem shows its parent after its title.
+ * the remaining estimate. A subitem shows its parent after its title. A row
+ * re-renders for its own props only, and its hover controls mount while it is
+ * hovered or focused: a tooltip button per action for every row is most of
+ * the cost of a long list.
  */
-function BacklogItemRow(props: ItemRowProps) {
+const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
   const { workItem, parentTitle, density, isActive, iconData, rows } = props;
   const { actions, onClick, onKeyDown } = useItemRowHandlers(props);
+  const reveal = useHoverOrFocusWithin();
   const hours =
     density === "comfortable"
       ? formatHours(workItem.remainingEstimateHours)
@@ -341,6 +382,7 @@ function BacklogItemRow(props: ItemRowProps) {
           data-backlog-item-id={workItem._id}
           aria-current={isActive ? "page" : undefined}
           title={parentTitle ? `${workItem.title} · ${parentTitle}` : undefined}
+          {...reveal.props}
           className={cn(
             "group flex shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 text-[13px] outline-none hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring",
             density === "compact" ? "h-[26px]" : "h-7",
@@ -351,7 +393,12 @@ function BacklogItemRow(props: ItemRowProps) {
         />
       }
     >
-      <LeadingIcon workItem={workItem} iconData={iconData} rows={rows} />
+      <LeadingIcon
+        workItem={workItem}
+        iconData={iconData}
+        rows={rows}
+        revealed={reveal.active}
+      />
       <span
         className={cn(
           "min-w-0 flex-1 truncate",
@@ -378,22 +425,26 @@ function BacklogItemRow(props: ItemRowProps) {
           </span>
         ) : null}
       </span>
-      <RowActions
-        workItem={workItem}
-        rows={rows}
-        className="hidden group-focus-within:flex group-hover:flex"
-      />
+      {reveal.active ? (
+        <RowActions
+          workItem={workItem}
+          actions={actions}
+          rows={rows}
+          className="hidden group-focus-within:flex group-hover:flex"
+        />
+      ) : null}
     </ObjectContextMenu>
   );
-}
+});
 
 /**
  * The first item, highlighted above the list with its meta line and a Start
  * entry button that is always visible.
  */
-function UpNextRow(props: ItemRowProps) {
+const UpNextRow = memo(function UpNextRow(props: ItemRowProps) {
   const { workItem, parentTitle, isActive, iconData, rows } = props;
   const { actions, onClick, onKeyDown } = useItemRowHandlers(props);
+  const reveal = useHoverOrFocusWithin();
 
   return (
     <ObjectContextMenu
@@ -408,6 +459,7 @@ function UpNextRow(props: ItemRowProps) {
           data-backlog-item-id={workItem._id}
           aria-current={isActive ? "page" : undefined}
           aria-label={`Up next: ${workItem.title}`}
+          {...reveal.props}
           className={cn(
             "group flex shrink-0 cursor-pointer items-center gap-2 rounded-md bg-foreground/5 py-1.5 pr-1.5 pl-2 outline-none hover:bg-foreground/[0.08] focus-visible:ring-1 focus-visible:ring-ring",
             isActive && "bg-foreground/10",
@@ -417,7 +469,12 @@ function UpNextRow(props: ItemRowProps) {
         />
       }
     >
-      <LeadingIcon workItem={workItem} iconData={iconData} rows={rows} />
+      <LeadingIcon
+        workItem={workItem}
+        iconData={iconData}
+        rows={rows}
+        revealed={reveal.active}
+      />
       <span className="min-w-0 flex-1">
         <span
           className={cn(
@@ -437,18 +494,26 @@ function UpNextRow(props: ItemRowProps) {
           isReturned={props.isReturned}
         />
       </span>
-      <RowActions
-        workItem={workItem}
-        rows={rows}
-        showStart={false}
-        className="hidden group-focus-within:flex group-hover:flex"
-      />
+      {reveal.active ? (
+        <RowActions
+          workItem={workItem}
+          actions={actions}
+          rows={rows}
+          showStart={false}
+          className="hidden group-focus-within:flex group-hover:flex"
+        />
+      ) : null}
       <span onClick={(event) => event.stopPropagation()}>
-        <StartButton workItem={workItem} rows={rows} variant="round" />
+        <StartButton
+          workItem={workItem}
+          actions={actions}
+          rows={rows}
+          variant="round"
+        />
       </span>
     </ObjectContextMenu>
   );
-}
+});
 
 /** A collapsible section label: "Backlog 11", "Snoozed 3", "Settled". */
 export function SidebarSectionHeader({
@@ -483,21 +548,23 @@ export function SidebarSectionHeader({
   );
 }
 
-function OffListRow({
+const OffListRow = memo(function OffListRow({
   workItem,
   detail,
   restoreLabel,
-  onRestore,
+  restoreAction,
   iconData,
   rows,
 }: {
   workItem: LocalWorkItem;
   detail?: string;
   restoreLabel: string;
-  onRestore: () => void;
+  restoreAction: BacklogItemActionId;
   iconData: IconData;
   rows: RowApi;
 }) {
+  const reveal = useHoverOrFocusWithin();
+
   return (
     <div
       role="link"
@@ -505,6 +572,7 @@ function OffListRow({
       data-focus-column="0"
       data-backlog-item-id={workItem._id}
       className="group flex h-7 shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 text-[13px] text-muted-foreground outline-none hover:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring"
+      {...reveal.props}
       onClick={(event) => {
         if (!openModifiedSourceClick(event, workItem.sourceUrl))
           rows.open(workItem);
@@ -525,21 +593,23 @@ function OffListRow({
           {detail}
         </span>
       ) : null}
-      <span
-        className="hidden group-focus-within:flex group-hover:flex"
-        onClick={(event) => event.stopPropagation()}
-      >
-        <TooltipButton
-          label={restoreLabel}
-          className={iconButton}
-          onClick={onRestore}
+      {reveal.active ? (
+        <span
+          className="hidden group-focus-within:flex group-hover:flex"
+          onClick={(event) => event.stopPropagation()}
         >
-          <UndoIcon className="size-3.5" />
-        </TooltipButton>
-      </span>
+          <TooltipButton
+            label={restoreLabel}
+            className={iconButton}
+            onClick={() => rows.run(workItem, restoreAction)}
+          >
+            <UndoIcon className="size-3.5" />
+          </TooltipButton>
+        </span>
+      ) : null}
     </div>
   );
-}
+});
 
 /**
  * The work list in the expanded app sidebar, from "Backlog sidebar" in
@@ -596,6 +666,7 @@ export function SidebarBacklogList({
   const rowProps = (workItem: LocalWorkItem): ItemRowProps => ({
     workItem,
     parentTitle: parentTitleOf(workItem),
+    subitemCount: countSubitems(workItem, state.workItems),
     density: layout.density,
     isActive: activeItemId === workItem._id,
     isRunning: runningWorkItemId === workItem._id,
@@ -619,7 +690,7 @@ export function SidebarBacklogList({
                 : undefined
             }
             restoreLabel="Unsettle"
-            onRestore={() => rows.run(workItem, "unsettle")}
+            restoreAction="unsettle"
             iconData={iconData}
             rows={rows}
           />
@@ -692,7 +763,7 @@ export function SidebarBacklogList({
               workItem={workItem}
               detail={formatSnoozeTime(workItem.snoozedUntil!, now)}
               restoreLabel="Unsnooze"
-              onRestore={() => rows.run(workItem, "unsnooze")}
+              restoreAction="unsnooze"
               iconData={iconData}
               rows={rows}
             />

@@ -49,6 +49,7 @@ import { offerUndo } from "@/features/feedback/undo-toast";
 import { settleOpensDialog } from "@/features/backlog/settle-dialog";
 import { BACKLOG_ITEM_ACTION_KEYS } from "@/lib/item-keys";
 import { localStore } from "@/lib/local-store";
+import { useHoverOrFocusWithin } from "@/lib/use-hover-or-focus-within";
 import { cn } from "@/lib/utils";
 
 export function patchBacklogItemWithUndo(
@@ -67,15 +68,37 @@ export function BacklogStatePicker({
   state,
   full = false,
   beforeChange,
+  live = true,
 }: {
   item: LocalWorkItem;
   state: LocalAppState;
   full?: boolean;
   beforeChange?: () => boolean | Promise<boolean>;
+  /** False renders the button alone; see `ObjectActionsButton`. */
+  live?: boolean;
 }) {
   const workflow = state.workflowStates.find(
     (s) => s._id === item.workflowStateId,
   );
+  const dot = (
+    <span className="backlog-state-dot" style={{ color: workflow?.color }} />
+  );
+  if (!live) {
+    return (
+      <Button
+        variant="ghost"
+        size="sm"
+        className={full ? "justify-start" : "size-7 p-0"}
+        aria-label={`Change state of ${item.title}`}
+        aria-haspopup="menu"
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {dot}
+        {full && (workflow?.name ?? "No state")}
+      </Button>
+    );
+  }
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -90,10 +113,7 @@ export function BacklogStatePicker({
         }
         onClick={(e) => e.stopPropagation()}
       >
-        <span
-          className="backlog-state-dot"
-          style={{ color: workflow?.color }}
-        />
+        {dot}
         {full && (workflow?.name ?? "No state")}
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start">
@@ -126,12 +146,32 @@ export function BacklogPriorityPicker({
   full = false,
   beforeChange,
   hidden = false,
+  live = true,
 }: {
   item: LocalWorkItem;
   full?: boolean;
   beforeChange?: () => boolean | Promise<boolean>;
   hidden?: boolean;
+  /** False renders the button alone; see `ObjectActionsButton`. */
+  live?: boolean;
 }) {
+  if (!live) {
+    // The hidden picker only serves the focused row's keys, so it waits too.
+    return hidden ? null : (
+      <Button
+        variant="ghost"
+        size="sm"
+        className={full ? "justify-start" : "size-7 p-0"}
+        aria-label={`Change priority of ${item.title}`}
+        aria-haspopup="menu"
+        tabIndex={-1}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <PriorityIcon priority={item.priority} decorative />
+        {full && getPriorityLevelName(item.priority)}
+      </Button>
+    );
+  }
   return (
     <DropdownMenu>
       <DropdownMenuTrigger
@@ -205,6 +245,7 @@ export function BacklogItemSurface({
   column,
   now,
   selected,
+  alwaysLive = false,
   onSelect,
   onOpen,
   onAction,
@@ -221,12 +262,19 @@ export function BacklogItemSurface({
   column: number;
   now: number;
   selected: boolean;
+  /**
+   * Mounts the row's menus and tooltips at once instead of while the row is
+   * hovered or focused. The narrow view passes it: its actions always show.
+   */
+  alwaysLive?: boolean;
   onSelect: () => void;
   onOpen: () => void;
   onAction: (action: BacklogItemActionId) => void;
   onKeyDown: (event: KeyboardEvent<HTMLElement>) => void;
   onPointerDown?: (event: PointerEvent<HTMLElement>) => void;
 }) {
+  const reveal = useHoverOrFocusWithin();
+  const live = alwaysLive || reveal.active;
   const project = state.projects.find((p) => p._id === item.projectId);
   const parent = item.parentWorkItemId
     ? state.workItems.find((i) => i._id === item.parentWorkItemId)
@@ -343,15 +391,25 @@ export function BacklogItemSurface({
           }}
           onKeyDown={onKeyDown}
           onPointerDown={onPointerDown}
+          {...reveal.props}
         />
       }
     >
       {!view.properties.priority && (
-        <BacklogPriorityPicker item={item} beforeChange={beforeChange} hidden />
+        <BacklogPriorityPicker
+          item={item}
+          beforeChange={beforeChange}
+          hidden
+          live={live}
+        />
       )}
       <div className="backlog-item-leading">
         {view.properties.priority && !board && (
-          <BacklogPriorityPicker item={item} beforeChange={beforeChange} />
+          <BacklogPriorityPicker
+            item={item}
+            beforeChange={beforeChange}
+            live={live}
+          />
         )}
         {view.properties.id && reference && (
           <span className="backlog-item-id">{reference}</span>
@@ -360,6 +418,7 @@ export function BacklogItemSurface({
           item={item}
           state={state}
           beforeChange={beforeChange}
+          live={live}
         />
         {!board && <WorkItemIcon icon={resolveWorkItemIcon(item, icons)} />}
       </div>
@@ -382,7 +441,11 @@ export function BacklogItemSurface({
       </div>
       <div className="backlog-item-properties">
         {board && view.properties.priority && (
-          <BacklogPriorityPicker item={item} beforeChange={beforeChange} />
+          <BacklogPriorityPicker
+            item={item}
+            beforeChange={beforeChange}
+            live={live}
+          />
         )}
         {board && <WorkItemIcon icon={resolveWorkItemIcon(item, icons)} />}
         {board && markers}
@@ -406,36 +469,54 @@ export function BacklogItemSurface({
             </span>
           )}
         <div className="backlog-item-actions">
-          {item.status !== "archived" && (
-            <TooltipButton
-              label={
-                startDisabledReason
-                  ? `${startLabel}. ${startDisabledReason}`
-                  : startLabel
-              }
-              aria-label={startLabel}
-              aria-description={startDisabledReason}
-              aria-disabled={Boolean(startDisabledReason)}
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="aria-disabled:opacity-50"
-                />
-              }
-              onClick={(e) => {
-                e.stopPropagation();
-                if (!startDisabledReason) onAction("start-entry");
-              }}
-            >
-              <RiPlayLine className="size-3.5" />
-            </TooltipButton>
-          )}
+          {item.status !== "archived" &&
+            (live ? (
+              <TooltipButton
+                label={
+                  startDisabledReason
+                    ? `${startLabel}. ${startDisabledReason}`
+                    : startLabel
+                }
+                aria-label={startLabel}
+                aria-description={startDisabledReason}
+                aria-disabled={Boolean(startDisabledReason)}
+                render={
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="aria-disabled:opacity-50"
+                  />
+                }
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!startDisabledReason) onAction("start-entry");
+                }}
+              >
+                <RiPlayLine className="size-3.5" />
+              </TooltipButton>
+            ) : (
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                className="aria-disabled:opacity-50"
+                aria-label={startLabel}
+                aria-description={startDisabledReason}
+                aria-disabled={Boolean(startDisabledReason)}
+                tabIndex={-1}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (!startDisabledReason) onAction("start-entry");
+                }}
+              >
+                <RiPlayLine className="size-3.5" />
+              </Button>
+            ))}
           <ObjectActionsButton
             label={`Actions for ${item.title}`}
             actions={actions}
             onAction={onAction}
             keys={BACKLOG_ITEM_ACTION_KEYS}
+            live={live}
           />
         </div>
       </div>

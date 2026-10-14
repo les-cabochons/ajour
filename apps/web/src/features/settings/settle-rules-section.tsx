@@ -73,7 +73,7 @@ export function SettleRulesSection({
         Shift+E still opens the dialog.
       </p>
 
-      <AppPanel className="space-y-4">
+      <AppPanel>
         {groups.length === 0 ? (
           <MessagePanel>
             No source projects yet. Sync a connector that can settle items
@@ -84,9 +84,9 @@ export function SettleRulesSection({
             {groups.map(([key, projects]) => (
               <section key={key} className="backlog-settings-source-group">
                 <div className="backlog-settings-source-header">
-                  <div className="backlog-settings-source-title">
+                  <h3 className="backlog-settings-source-title">
                     {projects[0]?.connectionLabel}
-                  </div>
+                  </h3>
                 </div>
                 <div className="backlog-settings-source-list">
                   {projects.map((project) => (
@@ -174,11 +174,11 @@ function SettleRuleRow({
 
   const label = `Settle rule for ${project.sourceProjectName}`;
   return (
-    <div className="backlog-settings-source-row flex-wrap">
+    <div className="backlog-settings-source-row">
       <div className="backlog-settings-source-label">
         {project.sourceProjectName}
       </div>
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-2">
         <NativeSelect
           aria-label={label}
           className="w-auto"
@@ -244,7 +244,7 @@ function SettleRuleRow({
         ) : null}
       </div>
       {load.status === "failed" ? (
-        <p className="w-full text-sm text-destructive">
+        <p className="text-[13px] text-destructive desktop:col-span-2">
           Couldn't load states: {load.message}
         </p>
       ) : null}

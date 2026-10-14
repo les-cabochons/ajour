@@ -394,7 +394,7 @@ function backlogItemSection(
     isSnoozed: isBacklogItemSnoozed(workItem, Date.now()),
     subitemCount: isSubitem
       ? 0
-      : getDirectChildWorkItems(workItem, [...workItems]).length,
+      : getDirectChildWorkItems(workItem, workItems).length,
     settleOpensDialog: settleOpensDialog?.(workItem),
     otherSourceStateCount: getOtherSourceStates(workItem).length,
   });

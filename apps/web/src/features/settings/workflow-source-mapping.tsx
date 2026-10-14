@@ -1,6 +1,9 @@
 import { useMemo, useState } from "react";
 import type { ConnectorBacklogStatus } from "@ajour/shared";
-import { RiDownloadLine as LoadIcon } from "@remixicon/react";
+import {
+  RiArrowRightSLine as ChevronRight,
+  RiDownloadLine as LoadIcon,
+} from "@remixicon/react";
 import { MessagePanel } from "@/components/app-surface";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -107,9 +110,9 @@ export function WorkflowSourceMapping({
                 {connection.tenantLabel}
               </div>
             ) : null}
-            <div className="backlog-settings-source-title">
+            <h3 className="backlog-settings-source-title">
               {connection.connectionLabel}
-            </div>
+            </h3>
           </div>
 
           <PriorityRangesEditor
@@ -220,23 +223,31 @@ function SourceProjectMapping({
 
   return (
     <details
-      className="rounded-lg border border-border/70"
+      className="group"
       open={open}
       onToggle={(event) => setOpen(event.currentTarget.open)}
     >
-      <summary className="flex cursor-pointer items-center gap-3 px-3 py-2 text-[13px]">
-        <span className="font-medium">{title}</span>
-        <span className="text-muted-foreground">
-          {project.states.length} source{" "}
-          {project.states.length === 1 ? "state" : "states"}
-          {unmapped > 0 ? ` · ${unmapped} not mapped` : ""}
+      <summary className="-mx-2 flex cursor-pointer list-none items-center gap-2 rounded-md px-2 py-1.5 text-[13px] hover:bg-[var(--hover-bg)] [&::-webkit-details-marker]:hidden">
+        <ChevronRight
+          aria-hidden="true"
+          className="size-4 shrink-0 text-muted-foreground transition-transform group-open:rotate-90"
+        />
+        <span className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-2">
+          <span className="font-medium [overflow-wrap:anywhere] text-foreground">
+            {title}
+          </span>
+          <span className="text-[12px] text-[var(--text-tertiary)]">
+            {project.states.length} source{" "}
+            {project.states.length === 1 ? "state" : "states"}
+            {unmapped > 0 ? ` · ${unmapped} not mapped` : ""}
+          </span>
         </span>
         {canLoad ? (
           <Button
             type="button"
             variant="ghost"
             size="xs"
-            className="ml-auto"
+            className="shrink-0"
             disabled={loading}
             onClick={(event) => {
               event.preventDefault();
@@ -249,13 +260,13 @@ function SourceProjectMapping({
         ) : null}
       </summary>
 
-      <div className="flex flex-col gap-4 px-3 pt-1 pb-3">
+      <div className="flex flex-col gap-5 pt-2 pb-3 pl-6">
         {project.states.length === 0 ? (
           <p className="text-[13px] text-muted-foreground">
             No source states seen in this project yet.
           </p>
         ) : (
-          <div className="flex flex-col gap-1.5">
+          <div className="flex flex-col gap-3 desktop:gap-1.5">
             <div className="text-[12px] text-muted-foreground">
               Items in this source state show in
             </div>
@@ -341,7 +352,7 @@ function WriteRules({
   if (rows.length === 0) return null;
 
   return (
-    <div className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-3 desktop:gap-1.5">
       <div className="text-[12px] text-muted-foreground">
         Moving an item into a workflow state writes
       </div>

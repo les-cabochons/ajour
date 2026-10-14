@@ -47,6 +47,7 @@ import { handleItemKeyDown, TIME_ENTRY_ACTION_KEYS } from "@/lib/item-keys";
 import { ProjectIcon } from "@/lib/project-icons";
 import { cn } from "@/lib/utils";
 import { useLocalProjects, useLocalState } from "@/lib/local-hooks";
+import { useRunningClock } from "@/lib/use-now";
 
 type EntryDragState = {
   entryId: string;
@@ -108,7 +109,6 @@ export function TimerPanel({
 }) {
   const state = useLocalState();
   const projects = useLocalProjects();
-  const [now, setNow] = useState(() => Date.now());
   const entryRowRefs = useRef(new Map<string, HTMLTableRowElement>());
   const entryPointerSessionRef = useRef<SharedTableDragPointerSession | null>(
     null,
@@ -121,6 +121,7 @@ export function TimerPanel({
   );
 
   const currentTimer = state.timers[0] ?? null;
+  const now = useRunningClock(currentTimer?.localDate === date);
   const entryActions = useTimeEntryActions({
     onEdit: (target) =>
       onOpenEntry(
@@ -181,16 +182,6 @@ export function TimerPanel({
     [entryDragState, visibleEntries],
   );
   const canReorderEntries = draggableEntryIds.length > 1;
-
-  useEffect(() => {
-    if (!currentTimer || currentTimer.localDate !== date) {
-      return;
-    }
-
-    setNow(Date.now());
-    const intervalId = window.setInterval(() => setNow(Date.now()), 1000);
-    return () => window.clearInterval(intervalId);
-  }, [currentTimer?._id, currentTimer?.localDate, date]);
 
   useEffect(() => {
     entryDragStateRef.current = entryDragState;

@@ -95,13 +95,13 @@ export function SettingsDebugPage() {
             this setting changes.
           </p>
 
-          <AppPanel className="gap-4">
-            <div className="space-y-2">
+          <AppPanel>
+            <div className="space-y-1">
               {developmentPlugins.directories.length > 0 ? (
                 developmentPlugins.directories.map((directory) => (
                   <code
                     key={directory}
-                    className="block rounded-md bg-muted px-3 py-2 text-xs break-all text-foreground"
+                    className="block font-mono text-xs leading-5 break-all text-foreground"
                   >
                     {directory}
                   </code>
@@ -112,8 +112,9 @@ export function SettingsDebugPage() {
                 </p>
               )}
             </div>
-            <div className="flex flex-wrap gap-3">
+            <div className="flex flex-wrap gap-2">
               <Button
+                size="sm"
                 disabled={isUpdatingDevelopmentPlugins}
                 onClick={() => void chooseDevelopmentPluginDirectory()}
               >
@@ -122,6 +123,7 @@ export function SettingsDebugPage() {
               </Button>
               <Button
                 variant="outline"
+                size="sm"
                 disabled={isUpdatingDevelopmentPlugins}
                 onClick={() => void resetDevelopmentPluginDirectories()}
               >
@@ -140,16 +142,15 @@ export function SettingsDebugPage() {
       {/* ── Local storage status ──────────────────────────────────── */}
       <section className="settings-section">
         <h2 className="settings-section-title">Local storage status</h2>
+        <p className="settings-section-desc">
+          Sync should stay limited to committed timesheets, project metadata,
+          and any explicitly accepted rules if shared storage returns later.
+        </p>
 
-        <div className="space-y-1 text-sm text-foreground/70">
+        <div className="space-y-1 text-sm text-foreground">
           <p>{state.timesheetEntries.length} committed timesheet entries</p>
           <p>{state.rules.length} explicit local rules</p>
         </div>
-
-        <MessagePanel>
-          Sync should stay limited to committed timesheets, project metadata,
-          and any explicitly accepted rules if shared storage returns later.
-        </MessagePanel>
       </section>
     </div>
   );

@@ -1273,7 +1273,19 @@
     flex-shrink: 0;
   }
 
+  /* The ring scales and fades on the compositor. Animating box-shadow restyled
+     and repainted the titlebar on every frame while a timer ran. */
   .status-dot-pulse {
+    position: relative;
+  }
+
+  .status-dot-pulse::after {
+    content: "";
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: var(--success-ring);
+    pointer-events: none;
     animation: pulse-ring 2s infinite;
   }
 
@@ -2074,29 +2086,36 @@
     color: color-mix(in srgb, var(--text-secondary) 65%, transparent);
   }
 
+  /* Settings pages carry no cards. Space and type size order the page:
+     sections sit far apart under a heading, rows sit closer under it. */
   .settings-sections {
     display: flex;
     flex-direction: column;
-    gap: 2.5rem;
+    gap: 3rem;
   }
 
   .settings-section {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 1.25rem;
   }
 
   .settings-section-title {
-    font-size: 15px;
+    font-size: 16px;
     font-weight: 600;
     color: var(--text);
     line-height: 1.3;
   }
 
   .settings-section-desc {
+    max-width: 62ch;
     font-size: 13px;
     line-height: 1.5;
     color: var(--text-secondary);
+  }
+
+  .settings-section-title + .settings-section-desc {
+    margin-top: -0.875rem;
   }
 
   .settings-subsection-title {
@@ -2109,82 +2128,61 @@
   .settings-panel {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    padding: 1rem;
-    border-radius: var(--radius);
-    border: 1px solid var(--border);
-    background: var(--surface-lowest);
+    gap: 1.25rem;
     font-size: 13px;
     color: var(--text-secondary);
   }
 
-  .theme-option-card {
+  .settings-row {
     display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem 2rem;
+    min-height: 2.25rem;
+  }
+
+  .settings-row[data-stacked] {
     flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 1rem 1.25rem;
-    min-width: 140px;
-    border-radius: var(--radius-md);
-    border: 1px solid var(--border);
-    background: var(--surface-low);
-    cursor: pointer;
-    transition:
-      border-color var(--duration) var(--ease),
-      background var(--duration) var(--ease);
-    text-align: center;
+    flex-wrap: nowrap;
+    align-items: stretch;
   }
 
-  .theme-option-card:hover {
-    border-color: var(--border-hover);
-    background: var(--surface);
+  .settings-row[data-stacked] .settings-row-text {
+    flex: none;
   }
 
-  .theme-option-card-selected {
-    border-color: var(--indigo);
-    background: var(--indigo-muted);
-  }
-
-  .theme-option-card-selected:hover {
-    border-color: var(--indigo-light);
-    background: var(--indigo-muted);
-  }
-
-  .theme-option-icon-wrapper {
+  .settings-row-text {
     display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    border-radius: var(--radius);
-    background: var(--surface-high);
+    flex: 1 1 16rem;
+    flex-direction: column;
+    gap: 0.125rem;
+    min-width: 0;
   }
 
-  .theme-option-card-selected .theme-option-icon-wrapper {
-    background: var(--indigo-muted);
-  }
-
-  .theme-option-icon {
-    width: 18px;
-    height: 18px;
-    color: var(--text-secondary);
-  }
-
-  .theme-option-card-selected .theme-option-icon {
-    color: var(--indigo-light);
-  }
-
-  .theme-option-label {
-    font-size: 13px;
-    font-weight: 600;
+  .settings-row-label {
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.4;
     color: var(--text);
   }
 
-  .theme-option-description {
-    font-size: 11px;
-    color: var(--text-tertiary);
-    max-width: 120px;
-    line-height: 1.4;
+  .settings-row-desc {
+    max-width: 62ch;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--text-secondary);
+  }
+
+  .settings-row-control {
+    display: flex;
+    flex-shrink: 0;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .settings-row[data-stacked] .settings-row-control {
+    flex-wrap: wrap;
   }
 
   .backlog-settings-status-create,
@@ -2203,33 +2201,38 @@
     grid-template-columns: minmax(0, 1fr) minmax(220px, 280px);
   }
 
+  /* The state's name leads; its color, Done and actions trail, and the
+     narrow view moves them to a second line. */
   .backlog-settings-status-row {
-    grid-template-columns: auto auto minmax(0, 1fr) auto auto auto auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
   }
 
   .backlog-settings-status-list,
-  .backlog-settings-source-groups,
   .backlog-settings-source-list {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
   }
 
+  /* Connections carry no frame: a heading over its rows, with wide space
+     between connections. */
+  .backlog-settings-source-groups {
+    display: flex;
+    flex-direction: column;
+    gap: 2.25rem;
+  }
+
   .backlog-settings-source-group {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
-    padding: 0.85rem 0.9rem;
-    border: 1px solid color-mix(in srgb, var(--border) 85%, transparent);
-    border-radius: var(--radius);
-    background: color-mix(in srgb, var(--surface-low) 78%, transparent);
+    gap: 1rem;
   }
 
   .backlog-settings-source-header {
     display: flex;
     flex-direction: column;
-    gap: 0.1rem;
+    gap: 0.125rem;
   }
 
   .backlog-settings-source-kicker {
@@ -2240,173 +2243,88 @@
     color: var(--text-tertiary);
   }
 
-  .backlog-settings-source-title,
+  .backlog-settings-source-title {
+    font-size: 14px;
+    font-weight: 600;
+    line-height: 1.4;
+    color: var(--text);
+  }
+
+  /* Centered on the first line of the 36px control beside it. */
   .backlog-settings-source-label {
-    color: var(--text);
-    font-weight: 600;
-  }
-
-  .backlog-settings-source-meta {
-    font-size: 12px;
-    color: var(--text-tertiary);
-  }
-
-  .backlog-settings-source-select {
-    min-width: 220px;
-  }
-
-  .connector-review-link {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    height: 28px;
-    padding: 0 0.75rem;
-    border: 1px solid transparent;
-    border-radius: var(--radius-sm);
-    background: var(--text);
-    color: var(--bg);
-    font-size: 12px;
-    font-weight: 600;
-    text-decoration: none;
-    transition:
-      opacity var(--duration) var(--ease),
-      transform var(--duration) var(--ease);
-  }
-
-  .connector-review-link:hover {
-    opacity: 0.92;
-    transform: translateY(-1px);
-  }
-
-  .connector-form-panel,
-  .connector-card,
-  .import-review-panel {
-    background:
-      radial-gradient(
-        circle at top right,
-        var(--highlight-bg),
-        transparent 36%
-      ),
-      var(--surface-lowest);
-  }
-
-  .connector-form-header,
-  .connector-tenant-header,
-  .import-review-panel-header {
     display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 1rem;
-  }
-
-  .connector-form-kicker,
-  .connector-tenant-kicker,
-  .import-review-panel-kicker {
-    font-size: 11px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--text-tertiary);
-  }
-
-  .connector-form-title,
-  .connector-tenant-title,
-  .import-review-panel-title {
-    margin-top: 0.2rem;
-    font-size: 15px;
-    font-weight: 600;
+    align-items: center;
+    min-width: 0;
+    min-height: 2.25rem;
+    font-size: 13px;
+    font-weight: 500;
     color: var(--text);
+    overflow-wrap: anywhere;
   }
 
-  .connector-form-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.875rem;
-  }
-
-  .connector-form-field-wide {
-    grid-column: 1 / -1;
-  }
-
-  .connector-groups,
+  /* Sync review carries no cards. Each connection is a heading over plain
+     rows; indentation and type size show children, and only the hover tint
+     marks a row that toggles its checkbox. */
   .import-review-groups {
     display: flex;
     flex-direction: column;
-    gap: 1rem;
+    gap: 2.5rem;
   }
 
-  .connector-tenant-group {
+  .import-review-group {
     display: flex;
     flex-direction: column;
     gap: 0.75rem;
   }
 
-  .connector-card-grid {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 0.75rem;
-  }
-
-  .connector-card {
+  .import-review-group-header {
     display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    padding: 1rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-  }
-
-  .connector-card-topline {
-    display: flex;
-    align-items: flex-start;
+    flex-wrap: wrap;
+    align-items: flex-end;
     justify-content: space-between;
-    gap: 0.75rem;
+    gap: 0.75rem 2rem;
   }
 
-  .connector-card-title {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--text);
+  .import-review-group-title-wrap {
+    flex: 1 1 16rem;
+    min-width: 0;
   }
 
-  .connector-card-subtitle,
-  .connector-card-meta,
-  .connector-card-message {
+  .import-review-group-kicker {
     font-size: 12px;
-    line-height: 1.45;
+    line-height: 1.4;
     color: var(--text-tertiary);
   }
 
-  .connector-card-meta {
-    display: flex;
-    flex-direction: column;
-    gap: 0.15rem;
+  .import-review-group-title {
+    font-size: 15px;
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--text);
+    word-break: break-word;
   }
 
-  .connector-card-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .import-review-toolbar {
-    gap: 1rem;
-  }
-
-  .import-review-panel-title-wrap {
-    min-width: 0;
+  .import-review-group-meta {
+    margin-top: 0.125rem;
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--text-secondary);
   }
 
   .import-review-list {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: 0.5rem;
   }
 
-  .import-review-node {
+  .import-review-node,
+  .import-review-children {
     display: flex;
     flex-direction: column;
-    gap: 0.4rem;
+  }
+
+  .import-review-children {
+    margin-left: 1.75rem;
   }
 
   .import-review-item {
@@ -2414,32 +2332,33 @@
     grid-template-columns: auto minmax(0, 1fr);
     gap: 0.75rem;
     align-items: flex-start;
-    padding: 0.85rem 0.9rem;
-    border: 1px solid var(--border);
-    border-radius: var(--radius);
-    background: color-mix(in srgb, var(--surface-lowest) 82%, transparent);
+    margin-inline: -0.625rem;
+    padding: 0.5rem 0.625rem;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background var(--duration) var(--ease);
+  }
+
+  .import-review-item:hover {
+    background: var(--hover-bg);
   }
 
   .import-review-item.is-context-only {
-    border-style: dashed;
+    cursor: default;
   }
 
-  .import-review-item.is-child {
-    margin-left: 1.5rem;
-    background: color-mix(in srgb, var(--surface) 55%, transparent);
+  .import-review-item.is-context-only:hover {
+    background: transparent;
   }
 
-  .import-review-item input {
-    width: 16px;
-    height: 16px;
-    margin-top: 0.15rem;
-    accent-color: var(--success);
+  .import-review-item [data-slot="checkbox"] {
+    margin-top: 0.125rem;
   }
 
   .import-review-item-main {
     display: flex;
     flex-direction: column;
-    gap: 0.18rem;
+    gap: 0.125rem;
     min-width: 0;
   }
 
@@ -2447,7 +2366,7 @@
     display: flex;
     align-items: center;
     flex-wrap: wrap;
-    gap: 0.5rem;
+    gap: 0.25rem 0.5rem;
   }
 
   .import-review-item-priority {
@@ -2469,10 +2388,15 @@
   }
 
   .import-review-item-title {
-    font-size: 13px;
-    font-weight: 600;
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.4;
     color: var(--text);
     word-break: break-word;
+  }
+
+  .import-review-item.is-child .import-review-item-title {
+    font-size: 13px;
   }
 
   .import-review-item-meta,
@@ -2481,12 +2405,6 @@
     line-height: 1.45;
     color: var(--text-tertiary);
     word-break: break-word;
-  }
-
-  .import-review-children {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
   }
 
   /* ----------------------------------------------------------------
@@ -4878,15 +4796,16 @@
   }
 }
 
+/* Scales the 6px dot's ring to the old 8px spread: (6 + 2 * 8) / 6. */
 @keyframes pulse-ring {
   0% {
-    box-shadow: 0 0 0 0 var(--success-ring);
+    transform: scale(1);
+    opacity: 1;
   }
-  70% {
-    box-shadow: 0 0 0 8px transparent;
-  }
+  70%,
   100% {
-    box-shadow: 0 0 0 0 transparent;
+    transform: scale(3.667);
+    opacity: 0;
   }
 }
 
@@ -4973,7 +4892,71 @@
 }
 
 .ajour-settings-navigation [data-sidebar="content"] {
+  gap: 0.75rem;
   padding-top: 0.5rem;
+}
+
+.ajour-settings-navigation-label {
+  height: 1.5rem;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+}
+
+/* The narrow Settings list: headed groups of full-width rows, no cards. */
+.settings-narrow-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 1.75rem;
+  padding-block: 1rem 2rem;
+}
+
+.settings-narrow-nav-heading {
+  padding-inline: 1.25rem;
+  padding-bottom: 0.25rem;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-tertiary);
+}
+
+.settings-narrow-nav-link {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  min-height: 3.25rem;
+  padding-inline: 1.25rem;
+  color: var(--text);
+  outline: none;
+  transition: background var(--duration) var(--ease);
+}
+
+.settings-narrow-nav-link:hover,
+.settings-narrow-nav-link:active {
+  background: var(--hover-bg);
+}
+
+.settings-narrow-nav-link:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--ring);
+}
+
+.settings-narrow-nav-icon {
+  width: 1.25rem;
+  height: 1.25rem;
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+
+.settings-narrow-nav-label {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+}
+
+.settings-narrow-nav-chevron {
+  width: 1.125rem;
+  height: 1.125rem;
+  flex-shrink: 0;
+  color: var(--text-tertiary);
 }
 
 @variant desktop {
@@ -5211,10 +5194,6 @@
 
   .ajour-project-layout[data-slot="sidebar-wrapper"] .settings-content {
     max-width: none;
-  }
-
-  .connector-card-grid {
-    grid-template-columns: 1fr;
   }
 }
 
@@ -5468,30 +5447,25 @@
   }
 
   .settings-content {
-    padding: 1rem;
+    padding: 1.25rem 1.25rem 2.5rem;
   }
 
-  .settings-content:has(> .ajour-settings-navigation) {
+  .settings-content:has(> .settings-narrow-nav) {
     padding: 0;
   }
 
-  .connector-form-grid,
-  .connector-card-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .backlog-settings-status-create,
   .backlog-settings-status-row,
   .backlog-settings-source-row {
     grid-template-columns: 1fr;
+    row-gap: 0.375rem;
   }
 
-  .backlog-settings-source-select {
-    min-width: 0;
+  .backlog-settings-status-list {
+    gap: 1.25rem;
   }
 
-  .import-review-item.is-child {
-    margin-left: 0;
+  .backlog-settings-source-label {
+    min-height: 0;
   }
 
   .profile-bar {

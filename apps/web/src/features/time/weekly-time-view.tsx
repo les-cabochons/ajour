@@ -61,6 +61,7 @@ import {
   CapacityValue,
   formatWeekDay,
 } from "@/features/time/weekly-capacity-value";
+import { useRunningClock } from "@/lib/use-now";
 import { addDaysIsoDate, cn, todayIsoDate } from "@/lib/utils";
 
 type CrossDayDragState = {
@@ -105,7 +106,6 @@ export function WeeklyTimeView({
   activeCell,
   activeEntryId,
   anchorDate,
-  now,
   onClosePanel,
   onNewEntry,
   onOpenCellEntries,
@@ -119,7 +119,6 @@ export function WeeklyTimeView({
   /** The entry open in the editor, highlighted on its card or Grid cell. */
   activeEntryId?: string;
   anchorDate: string;
-  now: number;
   /** Saves and closes the side panel. Returns false when its draft is invalid and stays open. */
   onClosePanel: () => boolean;
   onNewEntry: (localDate: string) => void;
@@ -154,6 +153,7 @@ export function WeeklyTimeView({
   const dayTargetRefs = useRef(new Map<string, HTMLElement>());
   const suppressClickUntilRef = useRef(0);
   const currentTimer = state.timers[0] ?? null;
+  const now = useRunningClock(currentTimer !== null);
   const entryActions = useTimeEntryActions({
     onEdit: (target) =>
       onOpenEntry(

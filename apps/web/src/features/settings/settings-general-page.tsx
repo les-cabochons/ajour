@@ -4,12 +4,11 @@ import {
   RiComputerLine as Monitor,
   RiErrorWarningLine as Alert,
   RiExternalLinkLine as ExternalLink,
-  RiGitBranchLine as GitBranch,
   RiMoonLine as Moon,
   RiRefreshLine as Refresh,
   RiSunLine as Sun,
 } from "@remixicon/react";
-import { AppPanel } from "@/components/app-surface";
+import { AppPanel, SettingRow } from "@/components/app-surface";
 import { Button } from "@/components/ui/button";
 import { Field, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
@@ -232,46 +231,37 @@ export function SettingsGeneralPage() {
         </p>
 
         <AppPanel>
-          <div className="space-y-4">
-            <div>
-              <label className="text-sm font-medium text-foreground/90">
-                Theme
-              </label>
-              <p className="mt-0.5 text-sm text-foreground/60">
-                {preferences.themeMode === "system"
-                  ? `Currently using ${resolvedTheme} mode based on system preference`
-                  : `Using ${preferences.themeMode} mode`}
-              </p>
-            </div>
-
-            <div className="flex flex-wrap gap-3">
+          <SettingRow
+            label="Theme"
+            description={
+              preferences.themeMode === "system"
+                ? `Currently using ${resolvedTheme} mode based on system preference.`
+                : THEME_OPTIONS.find(
+                    (option) => option.value === preferences.themeMode,
+                  )?.description
+            }
+          >
+            <ToggleGroup
+              aria-label="Theme"
+              variant="outline"
+              size="sm"
+              value={[preferences.themeMode]}
+              onValueChange={(next) => {
+                const mode = next[0] as ThemeMode | undefined;
+                if (mode) handleThemeChange(mode);
+              }}
+            >
               {THEME_OPTIONS.map((option) => {
                 const Icon = option.icon;
-                const isSelected = preferences.themeMode === option.value;
                 return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    onClick={() => handleThemeChange(option.value)}
-                    className={cn(
-                      "theme-option-card",
-                      isSelected && "theme-option-card-selected",
-                    )}
-                  >
-                    <div className="theme-option-icon-wrapper">
-                      <Icon className="theme-option-icon" />
-                    </div>
-                    <div className="theme-option-label">
-                      {getThemeModeLabel(option.value)}
-                    </div>
-                    <div className="theme-option-description">
-                      {option.description}
-                    </div>
-                  </button>
+                  <ToggleGroupItem key={option.value} value={option.value}>
+                    <Icon data-icon="inline-start" />
+                    {getThemeModeLabel(option.value)}
+                  </ToggleGroupItem>
                 );
               })}
-            </div>
-          </div>
+            </ToggleGroup>
+          </SettingRow>
         </AppPanel>
       </section>
 
@@ -282,75 +272,52 @@ export function SettingsGeneralPage() {
         </p>
 
         <AppPanel>
-          <div className="grid gap-3 desktop:grid-cols-2">
-            <Field
-              orientation="horizontal"
-              className="rounded-2xl border border-border/70 p-4"
+          <SettingRow
+            label="Changes end a snooze early"
+            labelFor="changes-end-snooze"
+            description="Return pull requests when someone asks you to act, and backlog items when their source state or priority changes."
+          >
+            <Switch
+              id="changes-end-snooze"
+              checked={preferences.changesEndSnoozeEarly === true}
+              onCheckedChange={(checked) =>
+                localStore.setUserPreferences({
+                  changesEndSnoozeEarly: checked,
+                })
+              }
+            />
+          </SettingRow>
+          <SettingRow
+            label="Density"
+            description="Compact shows one line per item in a narrower sidebar."
+          >
+            <ToggleGroup
+              aria-label="Sidebar density"
+              variant="outline"
+              size="sm"
+              value={[sidebarLayout.density]}
+              onValueChange={(next) => {
+                const density = next[0] as SidebarDensity | undefined;
+                if (density) updateSidebarLayout({ density });
+              }}
             >
-              <div className="flex-1">
-                <FieldLabel htmlFor="changes-end-snooze">
-                  Changes end a snooze early
-                </FieldLabel>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Return pull requests when someone asks you to act, and backlog
-                  items when their source state or priority changes.
-                </p>
-              </div>
-              <Switch
-                id="changes-end-snooze"
-                checked={preferences.changesEndSnoozeEarly === true}
-                onCheckedChange={(checked) =>
-                  localStore.setUserPreferences({
-                    changesEndSnoozeEarly: checked,
-                  })
-                }
-              />
-            </Field>
-            <Field
-              orientation="horizontal"
-              className="rounded-2xl border border-border/70 p-4"
-            >
-              <div className="flex-1">
-                <FieldLabel>Density</FieldLabel>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  One line per item, narrower sidebar.
-                </p>
-              </div>
-              <ToggleGroup
-                aria-label="Sidebar density"
-                variant="outline"
-                size="sm"
-                value={[sidebarLayout.density]}
-                onValueChange={(next) => {
-                  const density = next[0] as SidebarDensity | undefined;
-                  if (density) updateSidebarLayout({ density });
-                }}
-              >
-                <ToggleGroupItem value="comfortable">
-                  Comfortable
-                </ToggleGroupItem>
-                <ToggleGroupItem value="compact">Compact</ToggleGroupItem>
-              </ToggleGroup>
-            </Field>
-            <Field
-              orientation="horizontal"
-              className="rounded-2xl border border-border/70 p-4"
-            >
-              <div className="flex-1">
-                <FieldLabel htmlFor="show-up-next">Show Up next</FieldLabel>
-                <p className="mt-1 text-sm text-muted-foreground">
-                  Show the first backlog item as a card with its actions.
-                </p>
-              </div>
-              <Switch
-                id="show-up-next"
-                checked={sidebarLayout.showUpNext}
-                onCheckedChange={(checked) =>
-                  updateSidebarLayout({ showUpNext: checked })
-                }
-              />
-            </Field>
-          </div>
+              <ToggleGroupItem value="comfortable">Comfortable</ToggleGroupItem>
+              <ToggleGroupItem value="compact">Compact</ToggleGroupItem>
+            </ToggleGroup>
+          </SettingRow>
+          <SettingRow
+            label="Show Up next"
+            labelFor="show-up-next"
+            description="Show the first backlog item as a card with its actions."
+          >
+            <Switch
+              id="show-up-next"
+              checked={sidebarLayout.showUpNext}
+              onCheckedChange={(checked) =>
+                updateSidebarLayout({ showUpNext: checked })
+              }
+            />
+          </SettingRow>
         </AppPanel>
       </section>
 
@@ -362,73 +329,53 @@ export function SettingsGeneralPage() {
         </p>
 
         <AppPanel>
-          <div className="space-y-6">
-            <div className="grid grid-cols-2 gap-3 desktop:grid-cols-4 desktop:xl:grid-cols-7">
-              {CAPACITY_DAYS.map((day) => (
-                <CapacityInput
-                  key={day.key}
-                  label={day.label}
-                  value={preferences.weeklyCapacityTargets[day.key]}
-                  onCommit={(value) =>
-                    localStore.setUserPreferences({
-                      weeklyCapacityTargets: {
-                        ...preferences.weeklyCapacityTargets,
-                        [day.key]: value,
-                      },
-                    })
-                  }
-                />
-              ))}
-            </div>
-
-            <div className="grid gap-3 border-t border-border/70 pt-5 desktop:grid-cols-2">
-              <Field
-                orientation="horizontal"
-                className="rounded-2xl border border-border/70 p-4"
-              >
-                <div className="flex-1">
-                  <FieldLabel htmlFor="warn-over-capacity">
-                    Over-capacity warning
-                  </FieldLabel>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Show a compact warning when logged time exceeds a target.
-                  </p>
-                </div>
-                <Switch
-                  id="warn-over-capacity"
-                  checked={preferences.warnWhenOverCapacity}
-                  onCheckedChange={(checked) =>
-                    localStore.setUserPreferences({
-                      warnWhenOverCapacity: checked,
-                    })
-                  }
-                />
-              </Field>
-              <Field
-                orientation="horizontal"
-                className="rounded-2xl border border-border/70 p-4"
-              >
-                <div className="flex-1">
-                  <FieldLabel htmlFor="warn-under-capacity">
-                    Under-target submit warning
-                  </FieldLabel>
-                  <p className="mt-1 text-sm text-muted-foreground">
-                    Ask for confirmation when submitted time is below the week
-                    target.
-                  </p>
-                </div>
-                <Switch
-                  id="warn-under-capacity"
-                  checked={preferences.warnWhenSubmittingUnderCapacity}
-                  onCheckedChange={(checked) =>
-                    localStore.setUserPreferences({
-                      warnWhenSubmittingUnderCapacity: checked,
-                    })
-                  }
-                />
-              </Field>
-            </div>
+          <div className="grid grid-cols-2 gap-3 pb-3 desktop:grid-cols-4 desktop:xl:grid-cols-7">
+            {CAPACITY_DAYS.map((day) => (
+              <CapacityInput
+                key={day.key}
+                label={day.label}
+                value={preferences.weeklyCapacityTargets[day.key]}
+                onCommit={(value) =>
+                  localStore.setUserPreferences({
+                    weeklyCapacityTargets: {
+                      ...preferences.weeklyCapacityTargets,
+                      [day.key]: value,
+                    },
+                  })
+                }
+              />
+            ))}
           </div>
+          <SettingRow
+            label="Over-capacity warning"
+            labelFor="warn-over-capacity"
+            description="Show a compact warning when logged time exceeds a target."
+          >
+            <Switch
+              id="warn-over-capacity"
+              checked={preferences.warnWhenOverCapacity}
+              onCheckedChange={(checked) =>
+                localStore.setUserPreferences({
+                  warnWhenOverCapacity: checked,
+                })
+              }
+            />
+          </SettingRow>
+          <SettingRow
+            label="Under-target submit warning"
+            labelFor="warn-under-capacity"
+            description="Ask for confirmation when submitted time is below the week target."
+          >
+            <Switch
+              id="warn-under-capacity"
+              checked={preferences.warnWhenSubmittingUnderCapacity}
+              onCheckedChange={(checked) =>
+                localStore.setUserPreferences({
+                  warnWhenSubmittingUnderCapacity: checked,
+                })
+              }
+            />
+          </SettingRow>
         </AppPanel>
       </section>
 
@@ -441,161 +388,143 @@ export function SettingsGeneralPage() {
         </p>
 
         <AppPanel>
-          <div className="flex flex-col gap-5">
-            <div className="flex flex-col gap-3 desktop:flex-row desktop:items-start desktop:justify-between">
-              <div className="min-w-0 space-y-1">
-                <div className="flex items-center gap-2 text-sm font-medium text-foreground/90">
-                  <GitBranch className="h-4 w-4 text-muted-foreground" />
-                  Update track
-                </div>
-                <p className="text-sm leading-5 text-foreground/60">
-                  {UPDATE_TRACK_DETAILS[preferences.updateTrack].description}
-                </p>
-              </div>
+          <SettingRow
+            label="Update track"
+            description={
+              UPDATE_TRACK_DETAILS[preferences.updateTrack].description
+            }
+          >
+            <ToggleGroup
+              aria-label="Update track"
+              variant="outline"
+              size="sm"
+              value={[preferences.updateTrack]}
+              onValueChange={handleTrackChange}
+            >
+              {(Object.keys(UPDATE_TRACK_DETAILS) as UpdateTrack[]).map(
+                (track) => (
+                  <ToggleGroupItem
+                    key={track}
+                    value={track}
+                    aria-label={`Use ${track} updates`}
+                  >
+                    {UPDATE_TRACK_DETAILS[track].label}
+                  </ToggleGroupItem>
+                ),
+              )}
+            </ToggleGroup>
+          </SettingRow>
 
-              <ToggleGroup
-                aria-label="Update track"
-                className="shrink-0 rounded-[var(--control-radius)]"
-                spacing={1}
-                value={[preferences.updateTrack]}
-                onValueChange={handleTrackChange}
-              >
-                {(Object.keys(UPDATE_TRACK_DETAILS) as UpdateTrack[]).map(
-                  (track) => (
-                    <ToggleGroupItem
-                      key={track}
-                      value={track}
-                      variant="outline"
-                      size="sm"
-                      aria-label={`Use ${track} updates`}
-                      className={cn(
-                        "!rounded-[var(--control-radius)] px-4 capitalize",
-                        preferences.updateTrack === track &&
-                          "border-[var(--indigo)] bg-[var(--indigo-muted)] text-foreground hover:bg-[var(--indigo-muted)] hover:text-foreground",
-                      )}
-                    >
-                      {UPDATE_TRACK_DETAILS[track].label}
-                    </ToggleGroupItem>
-                  ),
+          <div
+            className="flex min-h-16 flex-col gap-3 pt-2 desktop:flex-row desktop:items-center desktop:justify-between"
+            aria-live="polite"
+          >
+            <div className="flex min-w-0 items-start gap-3">
+              {updateCheck.status === "error" ? (
+                <Alert className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+              ) : (
+                <CheckCircle
+                  className={cn(
+                    "mt-0.5 h-4 w-4 shrink-0",
+                    updateCheck.status === "success" &&
+                      updateCheck.result.updateAvailable
+                      ? "text-primary"
+                      : "text-muted-foreground",
+                  )}
+                />
+              )}
+              <div className="min-w-0">
+                {!desktopUpdates ? (
+                  <>
+                    <p className="text-sm font-medium text-foreground">
+                      Desktop app required
+                    </p>
+                    <p className="text-sm leading-5 text-muted-foreground">
+                      Release checks are unavailable in the web preview.
+                    </p>
+                  </>
+                ) : updateCheck.status === "checking" ? (
+                  <>
+                    <p className="text-sm font-medium text-foreground">
+                      Checking {preferences.updateTrack} releases…
+                    </p>
+                    <p className="text-sm leading-5 text-muted-foreground">
+                      Looking at the Ajour GitHub repository.
+                    </p>
+                  </>
+                ) : updateCheck.status === "success" ? (
+                  <>
+                    <p className="text-sm font-medium text-foreground">
+                      {!updateCheck.result.latestTag
+                        ? `No ${preferences.updateTrack} release has been published yet`
+                        : updateCheck.result.updateAvailable
+                          ? `${updateCheck.result.latestTag} is available`
+                          : `Ajour ${updateCheck.result.currentVersion} is up to date`}
+                    </p>
+                    <p className="text-sm leading-5 text-muted-foreground">
+                      {!updateCheck.result.latestTag
+                        ? `Checked the Ajour GitHub repository ${formatCheckedAt(updateCheck.result.checkedAt)}`
+                        : updateCheck.result.updateAvailable
+                          ? `Installed ${updateCheck.result.currentVersion} · checked ${formatCheckedAt(updateCheck.result.checkedAt)}`
+                          : `Latest ${preferences.updateTrack} release ${updateCheck.result.latestTag} · checked ${formatCheckedAt(updateCheck.result.checkedAt)}`}
+                    </p>
+                  </>
+                ) : updateCheck.status === "error" ? (
+                  <>
+                    <p className="text-sm font-medium text-destructive">
+                      Update check failed
+                    </p>
+                    <p className="text-sm leading-5 text-muted-foreground">
+                      {updateCheck.message}
+                    </p>
+                  </>
+                ) : (
+                  <>
+                    <p className="text-sm font-medium text-foreground">
+                      Ready to check
+                    </p>
+                    <p className="text-sm leading-5 text-muted-foreground">
+                      Current version{" "}
+                      {window.ajourDesktop?.runtime?.version ?? "unknown"}.
+                    </p>
+                  </>
                 )}
-              </ToggleGroup>
+                {releaseOpenError ? (
+                  <p
+                    className="mt-1 text-sm leading-5 text-destructive"
+                    role="alert"
+                  >
+                    Release page could not be opened: {releaseOpenError}
+                  </p>
+                ) : null}
+              </div>
             </div>
 
-            <div
-              className="flex min-h-16 flex-col gap-3 border-t border-border/70 pt-4 desktop:flex-row desktop:items-center desktop:justify-between"
-              aria-live="polite"
-            >
-              <div className="flex min-w-0 items-start gap-3">
-                {updateCheck.status === "error" ? (
-                  <Alert className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
-                ) : (
-                  <CheckCircle
-                    className={cn(
-                      "mt-0.5 h-4 w-4 shrink-0",
-                      updateCheck.status === "success" &&
-                        updateCheck.result.updateAvailable
-                        ? "text-primary"
-                        : "text-muted-foreground",
-                    )}
-                  />
-                )}
-                <div className="min-w-0">
-                  {!desktopUpdates ? (
-                    <>
-                      <p className="text-sm font-medium text-foreground">
-                        Desktop app required
-                      </p>
-                      <p className="text-sm leading-5 text-muted-foreground">
-                        Release checks are unavailable in the web preview.
-                      </p>
-                    </>
-                  ) : updateCheck.status === "checking" ? (
-                    <>
-                      <p className="text-sm font-medium text-foreground">
-                        Checking {preferences.updateTrack} releases…
-                      </p>
-                      <p className="text-sm leading-5 text-muted-foreground">
-                        Looking at the Ajour GitHub repository.
-                      </p>
-                    </>
-                  ) : updateCheck.status === "success" ? (
-                    <>
-                      <p className="text-sm font-medium text-foreground">
-                        {!updateCheck.result.latestTag
-                          ? `No ${preferences.updateTrack} release has been published yet`
-                          : updateCheck.result.updateAvailable
-                            ? `${updateCheck.result.latestTag} is available`
-                            : `Ajour ${updateCheck.result.currentVersion} is up to date`}
-                      </p>
-                      <p className="text-sm leading-5 text-muted-foreground">
-                        {!updateCheck.result.latestTag
-                          ? `Checked the Ajour GitHub repository ${formatCheckedAt(updateCheck.result.checkedAt)}`
-                          : updateCheck.result.updateAvailable
-                            ? `Installed ${updateCheck.result.currentVersion} · checked ${formatCheckedAt(updateCheck.result.checkedAt)}`
-                            : `Latest ${preferences.updateTrack} release ${updateCheck.result.latestTag} · checked ${formatCheckedAt(updateCheck.result.checkedAt)}`}
-                      </p>
-                    </>
-                  ) : updateCheck.status === "error" ? (
-                    <>
-                      <p className="text-sm font-medium text-destructive">
-                        Update check failed
-                      </p>
-                      <p className="text-sm leading-5 text-muted-foreground">
-                        {updateCheck.message}
-                      </p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-sm font-medium text-foreground">
-                        Ready to check
-                      </p>
-                      <p className="text-sm leading-5 text-muted-foreground">
-                        Current version{" "}
-                        {window.ajourDesktop?.runtime?.version ?? "unknown"}.
-                      </p>
-                    </>
-                  )}
-                  {releaseOpenError ? (
-                    <p
-                      className="mt-1 text-sm leading-5 text-destructive"
-                      role="alert"
-                    >
-                      Release page could not be opened: {releaseOpenError}
-                    </p>
-                  ) : null}
-                </div>
-              </div>
-
-              <div className="flex shrink-0 items-center gap-2 pl-7 desktop:pl-0">
-                {updateCheck.status === "success" &&
-                updateCheck.result.updateAvailable &&
-                updateCheck.result.releaseUrl ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    onClick={() =>
-                      void handleOpenRelease(updateCheck.result.releaseUrl!)
-                    }
-                  >
-                    View release
-                    <ExternalLink data-icon="inline-end" />
-                  </Button>
-                ) : null}
+            <div className="flex shrink-0 items-center gap-2 pl-7 desktop:pl-0">
+              {updateCheck.status === "success" &&
+              updateCheck.result.updateAvailable &&
+              updateCheck.result.releaseUrl ? (
                 <Button
                   type="button"
-                  variant="outline"
                   size="sm"
-                  disabled={
-                    !desktopUpdates || updateCheck.status === "checking"
+                  onClick={() =>
+                    void handleOpenRelease(updateCheck.result.releaseUrl!)
                   }
-                  onClick={() => void runUpdateCheck(preferences.updateTrack)}
                 >
-                  <Refresh data-icon="inline-start" />
-                  {updateCheck.status === "checking"
-                    ? "Checking"
-                    : "Check again"}
+                  View release
+                  <ExternalLink data-icon="inline-end" />
                 </Button>
-              </div>
+              ) : null}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={!desktopUpdates || updateCheck.status === "checking"}
+                onClick={() => void runUpdateCheck(preferences.updateTrack)}
+              >
+                <Refresh data-icon="inline-start" />
+                {updateCheck.status === "checking" ? "Checking" : "Check again"}
+              </Button>
             </div>
           </div>
         </AppPanel>

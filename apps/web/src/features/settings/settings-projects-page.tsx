@@ -2,19 +2,17 @@ import { useEffect, useMemo, useState, type ChangeEvent } from "react";
 import type { ProjectDataShapePluginManifest } from "@ajour/shared";
 import {
   RiDownloadLine as Download,
-  RiFolderChartLine as FolderKanban,
   RiUploadLine as Upload,
 } from "@remixicon/react";
 import {
   AppPanel,
   MessagePanel,
-  SurfaceCallout,
+  ResultLine,
+  SettingRow,
 } from "@/components/app-surface";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { NativeSelect } from "@/components/ui/select";
 import {
   exportProjectsWithDataShape,
@@ -260,51 +258,51 @@ export function SettingsProjectsPage() {
         </p>
 
         <AppPanel>
-          <div className="grid gap-4 desktop:grid-cols-[minmax(0,20rem)_minmax(0,1fr)] desktop:items-end">
-            <div className="space-y-2">
-              <Label htmlFor="project-data-shape">Schema</Label>
-              <NativeSelect
-                id="project-data-shape"
-                value={selectedShapeId}
-                onChange={(event) => handleShapeChange(event.target.value)}
-              >
-                <option value={DEFAULT_PROJECT_DATA_SHAPE_ID}>
-                  Ajour default
+          <SettingRow
+            label="Schema"
+            labelFor="project-data-shape"
+            description={
+              selectedShapePlugin?.description ??
+              "Ajour's built-in schema is always available, even when no plugins are installed."
+            }
+          >
+            <NativeSelect
+              id="project-data-shape"
+              className="w-60 max-w-full"
+              value={selectedShapeId}
+              onChange={(event) => handleShapeChange(event.target.value)}
+            >
+              <option value={DEFAULT_PROJECT_DATA_SHAPE_ID}>
+                Ajour default
+              </option>
+              {shapePlugins.map((plugin) => (
+                <option key={plugin.id} value={plugin.id}>
+                  {plugin.displayName}
                 </option>
-                {shapePlugins.map((plugin) => (
-                  <option key={plugin.id} value={plugin.id}>
-                    {plugin.displayName}
-                  </option>
-                ))}
-              </NativeSelect>
-            </div>
-            <p className="text-sm leading-5 text-foreground/65">
-              {selectedShapePlugin?.description ??
-                "Ajour's built-in schema is always available, even when no plugins are installed."}
-            </p>
-          </div>
+              ))}
+            </NativeSelect>
+          </SettingRow>
         </AppPanel>
+      </section>
+
+      <section className="settings-section">
+        <h2 className="settings-section-title">Export projects</h2>
+        <p className="settings-section-desc">
+          Select the projects to export using the {selectedShapeName} schema.
+          Excel controls the file format; the schema controls its fields.
+        </p>
 
         <AppPanel>
-          <SurfaceCallout icon={FolderKanban} title="Excel workbook export">
-            Select the projects to export using the {selectedShapeName} schema.
-            Excel controls the file format; the schema controls its fields.
-          </SurfaceCallout>
-
-          <div className="flex flex-wrap items-center gap-2 text-sm text-foreground/70">
-            <Badge className="bg-muted">
-              {formatCount(selectedProjects.length, "project")} selected
-            </Badge>
-            <Badge className="bg-muted">
-              {formatCount(selectedTaskCount, "task")} included
-            </Badge>
-          </div>
-
-          {sortedProjects.length === 0 ? (
-            <MessagePanel>No projects are available yet.</MessagePanel>
-          ) : (
-            <div className="space-y-3 rounded-lg border border-[var(--border)] bg-[var(--surface-low)] p-4">
-              <div className="flex flex-wrap gap-2">
+          <SettingRow
+            label="Projects"
+            description={
+              sortedProjects.length === 0
+                ? "No projects are available yet."
+                : `${formatCount(selectedProjects.length, "project")} selected · ${formatCount(selectedTaskCount, "task")} included`
+            }
+          >
+            {sortedProjects.length === 0 ? null : (
+              <>
                 <Button
                   type="button"
                   variant="outline"
@@ -325,58 +323,65 @@ export function SettingsProjectsPage() {
                 >
                   Clear
                 </Button>
-              </div>
+              </>
+            )}
+          </SettingRow>
 
-              <div className="grid gap-3 desktop:grid-cols-2">
-                {sortedProjects.map((project) => {
-                  const isSelected = selectedProjectIds.includes(project._id);
-                  return (
-                    <label
-                      key={project._id}
-                      className="flex items-start gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface)] p-3"
-                    >
-                      <Checkbox
-                        checked={isSelected}
-                        onCheckedChange={(checked) =>
-                          setProjectSelection(project._id, checked)
-                        }
-                        className="mt-1"
-                      />
-                      <div className="min-w-0 space-y-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <ProjectIcon
-                            icon={project.icon}
-                            color={project.color}
-                            className="size-3.5"
-                          />
-                          <span className="text-sm font-medium text-foreground">
-                            {project.name}
-                          </span>
-                          {project.code ? (
-                            <Badge className="bg-muted">{project.code}</Badge>
-                          ) : null}
-                          <Badge className="bg-muted">{project.status}</Badge>
-                        </div>
-                        <p className="text-sm text-foreground/65">
-                          {formatCount(project.tasks.length, "task")}
-                        </p>
+          {sortedProjects.length === 0 ? null : (
+            <div className="-mx-2 grid gap-x-6 gap-y-1 desktop:grid-cols-2">
+              {sortedProjects.map((project) => {
+                const isSelected = selectedProjectIds.includes(project._id);
+                return (
+                  <label
+                    key={project._id}
+                    className="flex cursor-pointer items-start gap-3 rounded-md px-2 py-2 hover:bg-[var(--hover-bg)]"
+                  >
+                    <Checkbox
+                      checked={isSelected}
+                      onCheckedChange={(checked) =>
+                        setProjectSelection(project._id, checked)
+                      }
+                      className="mt-0.5"
+                    />
+                    <div className="flex min-w-0 flex-col gap-0.5">
+                      <div className="flex min-w-0 items-center gap-2">
+                        <ProjectIcon
+                          icon={project.icon}
+                          color={project.color}
+                          className="size-3.5 shrink-0"
+                        />
+                        <span className="truncate text-sm font-medium text-foreground">
+                          {project.name}
+                        </span>
                       </div>
-                    </label>
-                  );
-                })}
-              </div>
+                      <p className="text-xs text-[var(--text-tertiary)]">
+                        {[
+                          project.code,
+                          project.status,
+                          formatCount(project.tasks.length, "task"),
+                        ]
+                          .filter(Boolean)
+                          .join(" · ")}
+                      </p>
+                    </div>
+                  </label>
+                );
+              })}
             </div>
           )}
 
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-[var(--border)] bg-[var(--surface-low)] p-4">
-            <div className="space-y-1 text-sm text-foreground/65">
-              <p>Filename: {buildProjectTransferFilename()}</p>
-              <p>
-                Projects without tasks still export one row so they can be
-                re-imported later.
-              </p>
-            </div>
-
+          <SettingRow
+            label="Excel workbook"
+            description={
+              <>
+                <p>Filename: {buildProjectTransferFilename()}</p>
+                <p className="mt-1 text-xs text-[var(--text-tertiary)]">
+                  Projects without tasks still export one row so they can be
+                  re-imported later.
+                </p>
+              </>
+            }
+          >
             <Button
               type="button"
               onClick={handleExport}
@@ -385,36 +390,41 @@ export function SettingsProjectsPage() {
               <Download className="h-4 w-4" />
               Export to Excel
             </Button>
-          </div>
-          {exportMessage ? <MessagePanel>{exportMessage}</MessagePanel> : null}
+          </SettingRow>
+
+          {exportMessage ? <ResultLine>{exportMessage}</ResultLine> : null}
           {exportError ? (
             <MessagePanel tone="warning">{exportError}</MessagePanel>
           ) : null}
         </AppPanel>
+      </section>
+
+      <section className="settings-section">
+        <h2 className="settings-section-title">Import projects</h2>
+        <p className="settings-section-desc">
+          Import an Excel workbook using the {selectedShapeName} schema to merge
+          projects by name, update project metadata, and add missing tasks.
+        </p>
 
         <AppPanel>
-          <SurfaceCallout icon={Upload} title="Excel workbook import">
-            Import an Excel workbook using the {selectedShapeName} schema to
-            merge projects by name, update project metadata, and add missing
-            tasks.
-          </SurfaceCallout>
-
-          <div className="grid gap-4 desktop:grid-cols-[minmax(0,1fr)_auto] desktop:items-end">
-            <div className="space-y-2">
-              <Label>Workbook</Label>
-              <Input
-                key={selectedShapeId}
-                type="file"
-                accept=".xlsx"
-                onChange={handleImportFileChange}
-              />
-              <p className="text-sm text-foreground/65">
-                {selectedImportFile
-                  ? selectedImportFile.name
-                  : "Choose a .xlsx file with a Projects sheet."}
-              </p>
-            </div>
-
+          <SettingRow
+            label="Workbook"
+            labelFor="project-import-file"
+            description={
+              selectedImportFile
+                ? selectedImportFile.name
+                : "Choose a .xlsx file with a Projects sheet."
+            }
+            stacked
+          >
+            <Input
+              key={selectedShapeId}
+              id="project-import-file"
+              type="file"
+              accept=".xlsx"
+              onChange={handleImportFileChange}
+              className="min-w-0 flex-[1_1_14rem] desktop:max-w-sm"
+            />
             <Button
               type="button"
               onClick={handleImport}
@@ -423,12 +433,14 @@ export function SettingsProjectsPage() {
               <Upload className="h-4 w-4" />
               Import workbook
             </Button>
-          </div>
+          </SettingRow>
 
-          {statusMessage ? <MessagePanel>{statusMessage}</MessagePanel> : null}
+          {statusMessage ? <ResultLine>{statusMessage}</ResultLine> : null}
           {error ? <MessagePanel tone="warning">{error}</MessagePanel> : null}
         </AppPanel>
       </section>
     </div>
   );
 }
+
+/** A finished export or import, said in plain text under the action. */
