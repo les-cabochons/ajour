@@ -131,7 +131,10 @@ export async function forwardToRenderer(
     const result = await context.bridge.call(tool, input, client);
     event.bridge_ms = Date.now() - startedAt;
     if (!result.ok) {
-      event.outcome = "refused";
+      // A refusal is the tool working as designed. A failure is an exception
+      // in the renderer, so the indicator shows it.
+      event.outcome = result.failed ? "error" : "refused";
+      if (result.failed) context.sessions.recordError(result.error, client);
       return errorResult(result.error);
     }
     event.outcome = "ok";

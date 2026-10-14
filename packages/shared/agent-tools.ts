@@ -68,7 +68,11 @@ export const bridgeToolCallSchema = z.object({
 });
 export type BridgeToolCall = z.infer<typeof bridgeToolCallSchema>;
 
-/** What the renderer posts back. A refusal carries a sentence for the agent. */
+/**
+ * What the renderer posts back. A refusal carries a sentence for the agent.
+ * `failed` marks an unexpected exception in the renderer, which the API logs
+ * as an error instead of a refusal.
+ */
 export const bridgeToolResultSchema = z.discriminatedUnion("ok", [
   z.object({
     requestId: z.string().min(1),
@@ -87,6 +91,7 @@ export const bridgeToolResultSchema = z.discriminatedUnion("ok", [
     requestId: z.string().min(1),
     ok: z.literal(false),
     error: z.string(),
+    failed: z.literal(true).optional(),
   }),
 ]);
 export type BridgeToolResult = z.infer<typeof bridgeToolResultSchema>;

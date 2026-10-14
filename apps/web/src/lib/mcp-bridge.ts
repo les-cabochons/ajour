@@ -38,6 +38,10 @@ export interface McpBridgeHandlers {
   onAgents?(snapshot: AgentsSnapshot): void;
 }
 
+/**
+ * Runs a tool call. Refusals and invalid input come back as results from the
+ * handler. Anything thrown is a bug, so it is marked `failed`.
+ */
 async function runSafely(
   handlers: McpBridgeHandlers,
   call: BridgeToolCall,
@@ -50,6 +54,7 @@ async function runSafely(
       ok: false,
       error:
         error instanceof Error ? error.message : "The tool failed in Ajour.",
+      failed: true,
     };
   }
 }

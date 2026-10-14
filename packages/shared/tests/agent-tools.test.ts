@@ -23,6 +23,22 @@ describe("agent tool contracts", () => {
     ).toMatchObject({ ok: false, error: "Stop the running entry first" });
   });
 
+  it("marks a result that failed unexpectedly apart from a refusal", () => {
+    const refusal = bridgeToolResultSchema.parse({
+      requestId: "r1",
+      ok: false,
+      error: "Stop the running entry first",
+    });
+    const failure = bridgeToolResultSchema.parse({
+      requestId: "r2",
+      ok: false,
+      error: "Boom",
+      failed: true,
+    });
+    expect(refusal).not.toHaveProperty("failed");
+    expect(failure).toMatchObject({ ok: false, failed: true });
+  });
+
   it("fills list_work_items defaults so an empty call returns the sidebar", () => {
     expect(readToolInputSchemas.list_work_items.parse({})).toEqual({
       filter: "sidebar",

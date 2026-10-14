@@ -347,6 +347,40 @@ describe("MCP endpoint", () => {
     expect(resultText(result)).toBe("No backlog item has the id x.");
   });
 
+  it("logs a renderer exception as an error and shows it in the indicator", async () => {
+    const { baseUrl, logged } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl);
+    const renderer = await openFakeRenderer(baseUrl, (call) => ({
+      requestId: call.requestId,
+      ok: false,
+      error: "Cannot read properties of undefined",
+      failed: true,
+    }));
+    const agent = await connectAgent(baseUrl, token);
+
+    const result = await agent.callTool({
+      name: "list_projects",
+      arguments: {},
+    });
+
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toBe("Cannot read properties of undefined");
+    expect(logged).toContainEqual(
+      expect.objectContaining({
+        event: "mcp.request",
+        tool: "list_projects",
+        outcome: "error",
+      }),
+    );
+    const published = await renderer.waitFor(
+      "agents",
+      (data) => data.errors.length === 1,
+    );
+    expect(published.data).toMatchObject({
+      errors: [{ message: "Cannot read properties of undefined" }],
+    });
+  });
+
   it("tells the agent to open Ajour when no window is connected", async () => {
     const { baseUrl } = await startTestApi();
     const { token } = await enableMcpWithClient(baseUrl);

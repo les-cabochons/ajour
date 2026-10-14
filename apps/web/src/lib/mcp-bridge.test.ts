@@ -1,5 +1,16 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { BridgeToolResult } from "@ajour/shared/agent-tools";
 import { connectMcpBridge, type McpBridgeStatus } from "./mcp-bridge";
+
+const { postMcpBridgeResult } = vi.hoisted(() => ({
+  postMcpBridgeResult: vi.fn((_result: BridgeToolResult) =>
+    Promise.resolve({ ok: true }),
+  ),
+}));
+vi.mock("@/lib/app-api", () => ({
+  getAppApiBaseUrl: () => "http://api.test",
+  postMcpBridgeResult,
+}));
 
 /** An EventSource the test drives by hand. */
 class FakeEventSource {
@@ -16,7 +27,14 @@ class FakeEventSource {
   constructor(readonly url: string) {
     FakeEventSource.instances.push(this);
   }
-  addEventListener() {}
+  listeners = new Map<string, (message: { data: string }) => void>();
+  addEventListener(name: string, listener: (message: never) => void) {
+    this.listeners.set(name, listener);
+  }
+  /** The API sends a tool call. */
+  sendToolCall(call: object) {
+    this.listeners.get("tool-call")?.({ data: JSON.stringify(call) });
+  }
   open() {
     this.readyState = FakeEventSource.OPEN;
     this.onopen?.();
@@ -43,6 +61,7 @@ describe("MCP bridge connection", () => {
 
   beforeEach(() => {
     vi.useFakeTimers();
+    postMcpBridgeResult.mockClear();
     statuses = [];
     FakeEventSource.instances = [];
     vi.stubGlobal("EventSource", FakeEventSource);
@@ -78,5 +97,41 @@ describe("MCP bridge connection", () => {
     close();
     vi.advanceTimersByTime(60_000);
     expect(FakeEventSource.instances).toHaveLength(1);
+  });
+
+  it("posts an exception as a failure and a refusal as a plain refusal", async () => {
+    const results = [
+      { throws: new Error("Boom") },
+      { returns: { requestId: "r2", ok: false, error: "Not allowed" } },
+    ];
+    let next = 0;
+    connectMcpBridge({
+      runToolCall: () => {
+        const step = results[next++]!;
+        if (step.throws) throw step.throws;
+        return step.returns as BridgeToolResult;
+      },
+      onStatus: () => undefined,
+    });
+    const stream = FakeEventSource.instances[0]!;
+    const client = { id: "c1", name: "Claude Code" };
+
+    stream.sendToolCall({ requestId: "r1", tool: "list_projects", client });
+    stream.sendToolCall({ requestId: "r2", tool: "list_projects", client });
+    await vi.waitFor(() =>
+      expect(postMcpBridgeResult).toHaveBeenCalledTimes(2),
+    );
+
+    expect(postMcpBridgeResult.mock.calls[0]![0]).toEqual({
+      requestId: "r1",
+      ok: false,
+      error: "Boom",
+      failed: true,
+    });
+    expect(postMcpBridgeResult.mock.calls[1]![0]).toEqual({
+      requestId: "r2",
+      ok: false,
+      error: "Not allowed",
+    });
   });
 });
