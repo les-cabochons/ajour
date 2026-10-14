@@ -258,6 +258,7 @@
     width: 52px;
     justify-content: flex-end;
     opacity: 0;
+    pointer-events: none;
   }
 
   .backlog-list-row:hover .backlog-item-actions,
@@ -267,6 +268,7 @@
   .backlog-board-card:focus-within .backlog-item-actions,
   .backlog-board-card:has([data-popup-open]) .backlog-item-actions {
     opacity: 1;
+    pointer-events: auto;
   }
 
   .backlog-item-marker {
@@ -639,6 +641,7 @@
 
   .backlog-item-actions {
     opacity: 1;
+    pointer-events: auto;
   }
 
   .backlog-group-header {
@@ -662,6 +665,7 @@
 @media (pointer: coarse) {
   .backlog-item-actions {
     opacity: 1;
+    pointer-events: auto;
   }
 }
 

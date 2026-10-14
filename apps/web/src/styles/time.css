@@ -258,12 +258,14 @@
     gap: 0.125rem;
     margin-right: 0.5rem;
     opacity: 0;
+    pointer-events: none;
   }
 
   .time-entry-row:hover .time-entry-actions,
   .time-entry-row:focus-within .time-entry-actions,
   .time-entry-row:has([data-popup-open]) .time-entry-actions {
     opacity: 1;
+    pointer-events: auto;
   }
 
   .time-entry-more {
@@ -1133,6 +1135,7 @@
   /* Rows always show their "…" in the narrow view. */
   .time-entry-actions {
     opacity: 1;
+    pointer-events: auto;
   }
 
   .time-entry-actions > :not(.time-entry-more) {
