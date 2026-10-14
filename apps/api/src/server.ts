@@ -608,6 +608,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         request.method === "GET" &&
         requestUrl.pathname === "/api/mcp/bridge"
       ) {
+        // A new stream replaces the renderer's. A web page can open one with
+        // an <img> tag, which sends no Origin, so require the renderer's.
+        // EventSource sends Origin because the renderer is cross-origin:
+        // http://127.0.0.1:5173 in development, app://local when packaged.
+        if (!requestOrigin) {
+          writeJson(response, 403, { error: "The bridge needs an Origin." });
+          return;
+        }
         if (!(await storage.getMcpSettings()).enabled) {
           writeJson(response, 404, { error: "MCP is off." });
           return;

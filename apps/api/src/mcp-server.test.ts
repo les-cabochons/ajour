@@ -214,6 +214,19 @@ describe("MCP settings routes", () => {
     expect(renderer.status).toBe(404);
   });
 
+  it("refuses a bridge request with no Origin, as a web page's image tag sends", async () => {
+    const { baseUrl } = await startTestApi();
+    await apiRequest(baseUrl, "/api/mcp/settings", { enabled: true });
+    const controller = new AbortController();
+
+    const response = await fetch(`${baseUrl}/api/mcp/bridge`, {
+      signal: controller.signal,
+    });
+    controller.abort();
+
+    expect(response.status).toBe(403);
+  });
+
   it("turning MCP off closes the bridge", async () => {
     const { baseUrl } = await startTestApi();
     await apiRequest(baseUrl, "/api/mcp/settings", { enabled: true });
