@@ -28,7 +28,10 @@ class FakeEventSource {
     FakeEventSource.instances.push(this);
   }
   listeners = new Map<string, (message: { data: string }) => void>();
-  addEventListener(name: string, listener: (message: never) => void) {
+  addEventListener(
+    name: string,
+    listener: (message: { data: string }) => void,
+  ) {
     this.listeners.set(name, listener);
   }
   /** The API sends a tool call. */
