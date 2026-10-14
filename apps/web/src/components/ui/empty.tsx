@@ -29,7 +29,8 @@ function Empty({
   return (
     <div
       data-slot="empty"
-      className={cn(emptyVariants({ align }), className)}
+      data-align={align}
+      className={cn("group/empty", emptyVariants({ align }), className)}
       {...props}
     />
   );
@@ -103,7 +104,7 @@ function EmptyContent({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="empty-content"
       className={cn(
-        "flex w-full max-w-sm min-w-0 flex-col gap-3 text-sm text-balance",
+        "flex w-full max-w-sm min-w-0 flex-col items-center gap-3 text-sm text-balance group-data-[align=start]/empty:items-start",
         className,
       )}
       {...props}

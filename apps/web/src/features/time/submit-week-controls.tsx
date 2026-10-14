@@ -3,8 +3,8 @@ import {
   RiCheckLine as Check,
   RiSendPlaneLine as Send,
 } from "@remixicon/react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
 import { getSubmitWeekStatus } from "@/domain/time/timesheet-submission";
 import { useLocalState } from "@/lib/local-hooks";
 
@@ -34,9 +34,9 @@ export function WeekSubmittedBadge({ weekDates }: { weekDates: string[] }) {
   }
 
   return (
-    <Badge variant="outline" className="text-[var(--success)]">
-      <Check data-icon="inline-start" />
+    <Chip tone="success">
+      <Check />
       Submitted
-    </Badge>
+    </Chip>
   );
 }

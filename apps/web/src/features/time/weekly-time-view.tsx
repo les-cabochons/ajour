@@ -7,17 +7,10 @@ import {
   type CSSProperties,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import {
-  RiAddLine as Plus,
-  RiArrowLeftLine as ArrowLeft,
-  RiArrowLeftSLine as ChevronLeft,
-  RiArrowRightSLine as ChevronRight,
-  RiLockLine as Lock,
-} from "@remixicon/react";
-import { TooltipButton } from "@/components/tooltip-button";
-import { Badge } from "@/components/ui/badge";
+import { RiAddLine as Plus } from "@remixicon/react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
+import { Chip } from "@/components/ui/chip";
 import {
   ObjectActionsButton,
   ObjectContextMenu,
@@ -38,7 +31,6 @@ import {
   useLocalState,
   useUserPreferences,
 } from "@/lib/local-hooks";
-import { WeekSubmittedBadge } from "@/features/time/submit-week-controls";
 import {
   formatToastDay,
   offerTimeEntryUndo,
@@ -62,7 +54,7 @@ import {
   formatWeekDay,
 } from "@/features/time/weekly-capacity-value";
 import { useRunningClock } from "@/lib/use-now";
-import { addDaysIsoDate, cn, todayIsoDate } from "@/lib/utils";
+import { cn, todayIsoDate } from "@/lib/utils";
 
 type CrossDayDragState = {
   entryId: string;
@@ -76,27 +68,6 @@ type CrossDayDragState = {
   width: number;
 };
 
-function dateAtNoon(localDate: string) {
-  return new Date(`${localDate}T12:00:00`);
-}
-
-function formatWeekRange(weekDates: string[]) {
-  const start = weekDates[0];
-  const end = weekDates.at(-1);
-  if (!start || !end) return "";
-  const startDate = dateAtNoon(start);
-  const endDate = dateAtNoon(end);
-  const startLabel = new Intl.DateTimeFormat("en-CA", {
-    month: "long",
-    day: "numeric",
-  }).format(startDate);
-  const endLabel = new Intl.DateTimeFormat("en-CA", {
-    month: startDate.getMonth() === endDate.getMonth() ? undefined : "long",
-    day: "numeric",
-  }).format(endDate);
-  return `${startLabel}–${endLabel}`;
-}
-
 /**
  * The Week view: the Grid of project and task rows by day, or the Days columns of
  * entry cards. Clicks open entries and cells in the page's side panel. Dragging a
@@ -105,20 +76,16 @@ function formatWeekRange(weekDates: string[]) {
 export function WeeklyTimeView({
   activeCell,
   activeEntryId,
-  anchorDate,
   onClosePanel,
   onNewEntry,
   onOpenCellEntries,
   onOpenEntry,
-  onReturnToDay,
-  onSelectWeek,
   weekDates,
 }: {
   /** The Grid cell shown in the side panel, highlighted in the Grid. */
   activeCell?: WeekGridCell | null;
   /** The entry open in the editor, highlighted on its card or Grid cell. */
   activeEntryId?: string;
-  anchorDate: string;
   /** Saves and closes the side panel. Returns false when its draft is invalid and stays open. */
   onClosePanel: () => boolean;
   onNewEntry: (localDate: string) => void;
@@ -130,8 +97,6 @@ export function WeeklyTimeView({
     timerId?: string;
     cell?: WeekGridCell;
   }) => void;
-  onReturnToDay: () => void;
-  onSelectWeek: (anchorDate: string) => void;
   weekDates: string[];
 }) {
   const state = useLocalState();
@@ -361,69 +326,25 @@ export function WeeklyTimeView({
 
   return (
     <section className="weekly-time-view" aria-label="Week">
-      <header className="weekly-time-header">
-        <div className="weekly-time-heading">
-          <Button
-            className="weekly-return-day"
-            variant="ghost"
-
-            onClick={onReturnToDay}
-          >
-            <ArrowLeft data-icon="inline-start" />
-            Day
-          </Button>
-          <div className="weekly-time-navigation">
-            <TooltipButton
-              label="Previous week"
-              shortcut="time.previous"
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => onSelectWeek(addDaysIsoDate(anchorDate, -7))}
-                />
-              }
-            >
-              <ChevronLeft />
-            </TooltipButton>
-            <TooltipButton
-              label="Next week"
-              shortcut="time.next"
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => onSelectWeek(addDaysIsoDate(anchorDate, 7))}
-                />
-              }
-            >
-              <ChevronRight />
-            </TooltipButton>
-          </div>
-          <h2 className="weekly-time-title">{formatWeekRange(weekDates)}</h2>
-          <WeekSubmittedBadge weekDates={weekDates} />
-        </div>
-        <div className="weekly-time-actions">
-          <ToggleGroup
-            value={[preferences.weeklyTimeViewStyle]}
-            onValueChange={changeStyle}
-            variant="outline"
-
-            aria-label="Week layout"
-          >
-            <ToggleGroupItem value="grid">Grid</ToggleGroupItem>
-            <ToggleGroupItem value="days">Days</ToggleGroupItem>
-          </ToggleGroup>
-          <CapacityValue
-            microLabel="Week total"
-            capacityMs={projection.capacityMs}
-            totalMs={projection.totalMs}
-            label="Week capacity"
-            overCapacity={projection.overCapacity}
-            showWarning={preferences.warnWhenOverCapacity}
-          />
-        </div>
-      </header>
+      <div className="weekly-toolbar">
+        <ToggleGroup
+          value={[preferences.weeklyTimeViewStyle]}
+          onValueChange={changeStyle}
+          variant="outline"
+          aria-label="Week layout"
+        >
+          <ToggleGroupItem value="grid">Grid</ToggleGroupItem>
+          <ToggleGroupItem value="days">Days</ToggleGroupItem>
+        </ToggleGroup>
+        <CapacityValue
+          microLabel="Week total"
+          capacityMs={projection.capacityMs}
+          totalMs={projection.totalMs}
+          label="Week capacity"
+          overCapacity={projection.overCapacity}
+          showWarning={preferences.warnWhenOverCapacity}
+        />
+      </div>
 
       {preferences.weeklyTimeViewStyle === "grid" ? (
         <WeekGrid
@@ -524,9 +445,7 @@ export function WeeklyTimeView({
                       }
                     >
                       <div className="weekly-entry-card-project">
-                        <Badge>
-                          <Lock data-icon="inline-start" /> Running
-                        </Badge>
+                        <Chip tone="success">Running</Chip>
                         <ObjectActionsButton
                           actions={entryActions.getActions(runningTarget)}
                           keys={TIME_ENTRY_ACTION_KEYS}

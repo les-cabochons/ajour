@@ -672,9 +672,7 @@ export function WeekGrid({
           </TableBody>
           <TableFooter>
             <TableRow className="weekly-grid-footer-row">
-              <TableCell className="weekly-grid-task-cell">
-                Daily totals
-              </TableCell>
+              <TableCell className="weekly-grid-task-cell">Totals</TableCell>
               {projection.days.map((day, index) => (
                 <TableCell
                   key={day.localDate}

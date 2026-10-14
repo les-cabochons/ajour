@@ -1268,12 +1268,9 @@ Then("the day surfaces stretch around centered content", async ({ page }) => {
 
   const workspace = page.locator(".ajour-app-workspace");
   const content = page.locator(".app-content-shell");
-  const dayViewer = page.locator(".time-page-stack .day-viewer");
-  const dayViewerStrip = dayViewer.locator(".day-viewer-strip");
-  const entriesShell = page.locator(
-    ".time-page-stack .entries-table-scroll-shell-time",
-  );
-  const entriesHeader = entriesShell.locator(".entries-table-header-table");
+  const dayViewer = page.locator(".time-page-stack .day-strip");
+  const dayViewerStrip = dayViewer;
+  const entriesHeader = page.locator(".time-page-stack .time-entries");
   const [
     workspaceBox,
     contentBox,
@@ -1300,26 +1297,13 @@ Then("the day surfaces stretch around centered content", async ({ page }) => {
   expect(entriesHeaderBox?.x).toBe(contentBox?.x);
   expect(entriesHeaderBox?.width).toBe(contentBox?.width);
 
-  const stripLeftInset = (dayViewerStripBox?.x ?? 0) - (contentBox?.x ?? 0);
-  const stripRightInset =
-    (contentBox?.x ?? 0) +
-    (contentBox?.width ?? 0) -
-    ((dayViewerStripBox?.x ?? 0) + (dayViewerStripBox?.width ?? 0));
-  expect(dayViewerStripBox?.width).toBe(1440);
-  expect(Math.abs(stripLeftInset - stripRightInset)).toBeLessThanOrEqual(1);
-
-  const projectHeadingPadding = await entriesHeader
-    .locator(".entry-project-heading")
-    .evaluate((element) =>
-      Number.parseFloat(getComputedStyle(element).paddingLeft),
-    );
-  expect(projectHeadingPadding).toBeCloseTo(stripLeftInset + 16, 0);
+  // The strip and the entry list run edge to edge.
+  expect(dayViewerStripBox?.width).toBe(contentBox?.width);
 
   await expect(dayViewer).toHaveCSS("border-left-width", "0px");
   await expect(dayViewer).toHaveCSS("border-right-width", "0px");
-  await expect(entriesShell).toHaveCSS("border-left-width", "0px");
-  await expect(entriesShell).toHaveCSS("border-right-width", "0px");
-  await expect(entriesShell).toHaveCSS("border-bottom-width", "0px");
+  await expect(entriesHeader).toHaveCSS("border-left-width", "0px");
+  await expect(entriesHeader).toHaveCSS("border-right-width", "0px");
 });
 
 Then("the Backlog workspace fills the available page", async ({ page }) => {
@@ -1583,9 +1567,9 @@ Then(
 
 Then("the timesheet can be submitted", async ({ page }) => {
   await page.getByRole("button", { name: "Show day and week totals" }).click();
-  const submitTimesheet = page.getByRole("button", {
-    name: "Submit week",
-  });
+  const submitTimesheet = page
+    .getByLabel("Current time totals")
+    .getByRole("button", { name: "Submit week" });
 
   await expect(submitTimesheet).toBeVisible();
   await expect(submitTimesheet).toBeEnabled();
@@ -2023,14 +2007,18 @@ When(
     await expect(page.locator(".time-page-stack")).toBeVisible({
       timeout: 15_000,
     });
+    // The page header has its own Submit week; the totals popover keeps one too.
     await expect(page.getByRole("button", { name: "Submit week" })).toHaveCount(
-      0,
+      1,
     );
     await page
       .getByRole("button", { name: "Show day and week totals" })
       .click();
     await expect(page.getByLabel("Current time totals")).toContainText("5:00");
-    await page.getByRole("button", { name: "Submit week" }).click();
+    await page
+      .getByLabel("Current time totals")
+      .getByRole("button", { name: "Submit week" })
+      .click();
     await expect(page).toHaveURL(/\/time\/2026-10-05\/submit/);
   },
 );
@@ -2080,7 +2068,10 @@ When(
     await page
       .getByRole("button", { name: "Show day and week totals" })
       .click();
-    await page.getByRole("button", { name: "Submit week" }).click();
+    await page
+      .getByLabel("Current time totals")
+      .getByRole("button", { name: "Submit week" })
+      .click();
   },
 );
 

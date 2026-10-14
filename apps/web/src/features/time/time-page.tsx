@@ -1,8 +1,7 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { RiAddLine as Plus } from "@remixicon/react";
 import { MessagePanel } from "@/components/app-surface";
-import { DayViewerCard } from "@/components/day-viewer-card";
 import { SidePanel } from "@/components/side-panel";
 import { Button } from "@/components/ui/button";
 import { findPinnedTask } from "@/domain/projects/project-transitions";
@@ -13,7 +12,8 @@ import {
   type TimeEntryEditorTarget,
 } from "@/features/time/time-entry-editor-form";
 import type { TimeEntryEditorFields } from "@/features/time/time-entry-editor";
-import { TimeViewScopeMenu } from "@/features/time/time-view-scope-menu";
+import { DayStrip } from "@/features/time/day-strip";
+import { TimePageHeader } from "@/features/time/time-page-header";
 import {
   formatAddAnotherEntryLabel,
   isSameWeekGridCell,
@@ -162,7 +162,12 @@ export function TimePage({ date }: { date: string }) {
   }
 
   function changeTimeView(nextView: "day" | "week") {
-    if (nextView === "week" && leaveEditorDraft()) {
+    if (nextView === "day") {
+      returnToDayView();
+      return;
+    }
+    if (leaveEditorDraft()) {
+      clearGridCells();
       void navigate({
         to: "/time/$date",
         params: { date },
@@ -317,10 +322,21 @@ export function TimePage({ date }: { date: string }) {
 
   return (
     <div className={cn("time-page-stack", isWeekView && "is-week-view")}>
+      {isNarrowView ? null : (
+        <TimePageHeader
+          date={date}
+          today={today}
+          view={isWeekView ? "week" : "day"}
+          weekDates={weekDates}
+          weekAvailable={weekAvailable}
+          onSelectDate={goToDate}
+          onChangeView={changeTimeView}
+          onSubmit={openSubmitPage}
+        />
+      )}
       <div className="time-page-main">
         {isWeekView ? (
           <WeeklyTimeView
-            anchorDate={date}
             weekDates={weekDates}
             activeEntryId={activeEntryId}
             activeCell={editorTarget ? panelCell : panelListedCell}
@@ -328,24 +344,17 @@ export function TimePage({ date }: { date: string }) {
             onNewEntry={(localDate) => openEditor({}, localDate)}
             onOpenCellEntries={openCellEntries}
             onOpenEntry={(request) => openEditor(request)}
-            onReturnToDay={returnToDayView}
-            onSelectWeek={goToDate}
           />
         ) : (
           <>
-            <DayTotalsViewerCard
+            <DayTotalsStrip
               date={date}
               today={today}
               weekDates={weekDates}
               onSelectDate={goToDate}
-              dateScopeControl={
-                weekAvailable ? (
-                  <TimeViewScopeMenu value="day" onChange={changeTimeView} />
-                ) : undefined
-              }
             />
             {showsWeekUnavailableNote ? (
-              <MessagePanel role="status" className="mx-3 mt-2">
+              <MessagePanel role="status" className="time-page-note">
                 Week needs a wider window. Showing Day instead.
               </MessagePanel>
             ) : null}
@@ -419,18 +428,16 @@ export function TimePage({ date }: { date: string }) {
  * The Day view's week strip with day and week totals. It ticks with the running
  * timer on its own, so the page and its open editor do not re-render each second.
  */
-function DayTotalsViewerCard({
+function DayTotalsStrip({
   date,
   today,
   weekDates,
   onSelectDate,
-  dateScopeControl,
 }: {
   date: string;
   today: string;
   weekDates: string[];
   onSelectDate: (date: string) => void;
-  dateScopeControl?: ReactNode;
 }) {
   const state = useLocalState();
   const currentTimer = state.timers[0] ?? null;
@@ -472,15 +479,14 @@ function DayTotalsViewerCard({
   );
 
   return (
-    <DayViewerCard
+    <DayStrip
       date={date}
       today={today}
       weekDates={weekDates}
-      totalLabel="Week total"
+      totalLabel="Week"
       totalValue={formatClockDuration(weekTotalMs)}
       getDayValue={(day) => formatClockDuration(totalsByDate.get(day) ?? 0)}
       onSelectDate={onSelectDate}
-      dateScopeControl={dateScopeControl}
     />
   );
 }
