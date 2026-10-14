@@ -34,7 +34,7 @@ export function TimeViewScopeMenu({
               <Button
                 type="button"
                 variant="ghost"
-                size="icon-xs"
+                size="icon-sm"
                 className="day-viewer-date-scope-trigger"
               />
             }
@@ -62,7 +62,7 @@ export function TimeViewScopeMenu({
           }}
           orientation="vertical"
           variant="default"
-          size="sm"
+
           aria-label="Time view"
           className="time-view-scope-options"
         >

@@ -306,7 +306,7 @@ export function SettingsProjectsPage() {
                 <Button
                   type="button"
                   variant="outline"
-                  size="sm"
+
                   onClick={() =>
                     setSelectedProjectIds(
                       sortedProjects.map((project) => project._id),
@@ -318,7 +318,7 @@ export function SettingsProjectsPage() {
                 <Button
                   type="button"
                   variant="outline"
-                  size="sm"
+
                   onClick={() => setSelectedProjectIds([])}
                 >
                   Clear

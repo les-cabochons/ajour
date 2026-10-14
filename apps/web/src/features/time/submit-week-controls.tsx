@@ -11,7 +11,7 @@ import { useLocalState } from "@/lib/local-hooks";
 /** Opens the selected week's submission page from the titlebar totals popover. */
 export function SubmitWeekButton({ onClick }: { onClick: () => void }) {
   return (
-    <Button variant="outline" size="sm" onClick={onClick}>
+    <Button variant="outline" onClick={onClick}>
       <Send data-icon="inline-start" />
       Submit week
     </Button>

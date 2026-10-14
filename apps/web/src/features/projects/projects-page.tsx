@@ -797,7 +797,7 @@ function ProjectDetail({
           />
         </ObjectContextMenu>
         {!isArchived ? (
-          <Button type="button" variant="outline" size="sm" onClick={onNewTask}>
+          <Button type="button" variant="outline" onClick={onNewTask}>
             <Plus data-icon="inline-start" />
             New task
           </Button>
@@ -917,14 +917,14 @@ function ProjectDetail({
                       </EmptyHeader>
                       {!isArchived && !isArchivedTaskFilter ? (
                         <EmptyContent className="max-w-none flex-row justify-center gap-2">
-                          <Button type="button" size="sm" onClick={onNewTask}>
+                          <Button type="button" onClick={onNewTask}>
                             <Plus data-icon="inline-start" />
                             New task
                           </Button>
                           <Button
                             type="button"
                             variant="secondary"
-                            size="sm"
+
                             disabled={isImporting}
                             onClick={openImportPicker}
                           >

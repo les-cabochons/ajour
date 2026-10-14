@@ -11,10 +11,13 @@ import { pluginHasConnector, pluginHasCodeHost } from "@ajour/shared";
 import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   RiAddLine as Plus,
+  RiArrowDownSLine as ChevronDown,
   RiArrowGoBackLine as ReturnIcon,
   RiPlayLine as Play,
 } from "@remixicon/react";
+import { PageTitle } from "@/components/page-header";
 import { TooltipButton } from "@/components/tooltip-button";
+import { Chip } from "@/components/ui/chip";
 import { Calendar } from "@/components/ui/calendar";
 import {
   Popover,
@@ -53,7 +56,10 @@ import {
   type NewEntryRequest,
 } from "@/features/time/new-entry-request";
 import { TimeEntryModal } from "@/features/timer/time-entry-modal";
-import { SettingsNavigation } from "@/features/settings/settings-navigation";
+import {
+  SettingsNavigation,
+  getSettingsPages,
+} from "@/features/settings/settings-navigation";
 import { SubmitWeekButton } from "@/features/time/submit-week-controls";
 import { formatClockDuration } from "@/domain/time/duration";
 import { findPinnedTask } from "@/domain/projects/project-transitions";
@@ -63,6 +69,7 @@ import {
   syncCodeHostConnection,
 } from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
+import { setPageHeaderSlot, useHasPageHeader } from "@/lib/page-header";
 import {
   getTimerContributionMs,
   getTimerDurationsMs,
@@ -109,6 +116,15 @@ function formatTitlebarDate(localDate: string) {
   }).format(dateAtNoon(localDate));
 }
 
+/** "Wednesday, Oct 14": the Time page's title in the top bar. */
+function formatLongTitlebarDate(localDate: string) {
+  return new Intl.DateTimeFormat("en-CA", {
+    weekday: "long",
+    month: "short",
+    day: "numeric",
+  }).format(dateAtNoon(localDate));
+}
+
 function formatCalendarIsoDate(date: Date) {
   return new Intl.DateTimeFormat("en-CA").format(date);
 }
@@ -122,12 +138,19 @@ function getTimeRouteDate(pathname: string) {
   return match[1] === "today" ? todayIsoDate() : match[1];
 }
 
+/**
+ * The selected day with a calendar popover. The narrow titlebar shows it short
+ * ("Oct 14"); as the Time page's default title (`long`) it reads "Wednesday,
+ * Oct 14" with a chevron.
+ */
 function CompactTimeDatePicker({
   date,
   onSelectDate,
+  long = false,
 }: {
   date: string;
   onSelectDate: (date: string) => void;
+  long?: boolean;
 }) {
   const [isOpen, setIsOpen] = useState(false);
 
@@ -141,10 +164,14 @@ function CompactTimeDatePicker({
   return (
     <Popover open={isOpen} onOpenChange={setIsOpen}>
       <PopoverTrigger
-        className="ajour-titlebar-date-trigger desktop-no-drag"
+        className={cn(
+          long ? "ajour-page-title-date" : "ajour-titlebar-date-trigger",
+          "desktop-no-drag",
+        )}
         aria-label={`Select time entry date. Current date ${formatTitlebarDate(date)}`}
       >
-        {formatTitlebarDate(date)}
+        {long ? formatLongTitlebarDate(date) : formatTitlebarDate(date)}
+        {long ? <ChevronDown aria-hidden="true" /> : null}
       </PopoverTrigger>
       <PopoverContent
         className="ajour-titlebar-date-popover"
@@ -165,6 +192,75 @@ function CompactTimeDatePicker({
         />
       </PopoverContent>
     </Popover>
+  );
+}
+
+/** The top bar's title while the page has not mounted its own `PageHeader`. */
+function DefaultPageHeader({
+  pathname,
+  selectedTimeDate,
+  onSelectDate,
+}: {
+  pathname: string;
+  selectedTimeDate: string;
+  onSelectDate: (date: string) => void;
+}) {
+  if (pathname.startsWith("/time/")) {
+    return (
+      <>
+        <CompactTimeDatePicker
+          date={selectedTimeDate}
+          onSelectDate={onSelectDate}
+          long
+        />
+        {selectedTimeDate === todayIsoDate() ? <Chip>Today</Chip> : null}
+      </>
+    );
+  }
+  const settingsPage = pathname.startsWith("/settings")
+    ? getSettingsPages("wide").find((page) => pathname.startsWith(page.to))
+    : undefined;
+  const title = settingsPage
+    ? settingsPage.label
+    : pathname.startsWith("/settings")
+      ? "Settings"
+      : pathname.startsWith("/backlog")
+        ? "Backlog"
+        : pathname.startsWith("/projects")
+          ? "Projects"
+          : pathname.startsWith("/pull-requests")
+            ? "Pull requests"
+            : "Ajour";
+  return <PageTitle as="div">{title}</PageTitle>;
+}
+
+/**
+ * Where a page's `PageHeader` lands in the top bar: its title or breadcrumb,
+ * then its actions. Until a page mounts one, the route's default title shows.
+ */
+function PageHeaderSlot({
+  pathname,
+  selectedTimeDate,
+  onSelectDate,
+}: {
+  pathname: string;
+  selectedTimeDate: string;
+  onSelectDate: (date: string) => void;
+}) {
+  const hasPageHeader = useHasPageHeader();
+  return (
+    <div
+      className={cn("ajour-page-header", isDesktopShell && "desktop-no-drag")}
+    >
+      <div ref={setPageHeaderSlot} className="ajour-page-header-slot" />
+      {hasPageHeader ? null : (
+        <DefaultPageHeader
+          pathname={pathname}
+          selectedTimeDate={selectedTimeDate}
+          onSelectDate={onSelectDate}
+        />
+      )}
+    </div>
   );
 }
 
@@ -374,22 +470,22 @@ function DayTotalsPill({
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger
         className={cn(
-          "stat-pill global-timer-today stat-pill-clickable shrink-0",
+          "ajour-nav-total shrink-0",
           isDesktopShell && "desktop-no-drag",
         )}
         aria-label="Show day and week totals"
       >
-        <span className="stat-pill-label">
+        <span className="ajour-nav-total-label">
           {date === todayIsoDate() ? "Today" : "Day"}
         </span>
-        <span className="stat-pill-value">
+        <span className="ajour-nav-total-value">
           {formatClockDuration(dayTotalMs)}
         </span>
       </PopoverTrigger>
       <PopoverContent
         align="end"
         sideOffset={8}
-        className="w-auto min-w-38 gap-2 rounded-2xl px-3 py-2.5"
+        className="w-auto min-w-38 gap-2 rounded-lg px-3 py-2.5"
         aria-label="Current time totals"
       >
         <div className="day-totals-popup-row">
@@ -660,6 +756,16 @@ export function AppShell() {
 
   useApplyTheme();
 
+  const selectTimeDate = useCallback(
+    (nextDate: string) => {
+      setSelectedTimeDate(nextDate);
+      if (isTimeActive) {
+        void navigate({ to: "/time/$date", params: { date: nextDate } });
+      }
+    },
+    [isTimeActive, navigate],
+  );
+
   useEffect(() => {
     void window.ajourDesktop
       ?.configureAutomaticUpdates?.(updateTrack)
@@ -860,6 +966,13 @@ export function AppShell() {
                     <ReturnIcon className="h-2.5 w-2.5" />
                   </TooltipButton>
                 ) : null}
+                {isNarrowView ? null : (
+                  <PageHeaderSlot
+                    pathname={pathname}
+                    selectedTimeDate={selectedTimeDate}
+                    onSelectDate={selectTimeDate}
+                  />
+                )}
               </div>
 
               <GlobalTimerBar

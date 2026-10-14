@@ -26,7 +26,7 @@ export function SettingsBacklogPage() {
             <ToggleGroup
               aria-label="When closing a parent with open subitems"
               variant="outline"
-              size="sm"
+
               value={[state.userPreferences.closeParentSubitems]}
               onValueChange={(next) => {
                 const choice = next[0] as CloseParentSubitems | undefined;

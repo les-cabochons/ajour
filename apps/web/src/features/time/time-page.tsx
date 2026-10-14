@@ -377,7 +377,7 @@ export function TimePage({ date }: { date: string }) {
               <Button
                 type="button"
                 variant="outline"
-                size="sm"
+
                 onClick={() => openEditor({ cell: panelCell })}
               >
                 <Plus data-icon="inline-start" />

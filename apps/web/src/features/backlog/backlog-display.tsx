@@ -55,7 +55,6 @@ export function BacklogLayoutToggle({
           updateBacklogView({ layout });
       }}
       aria-label="Backlog layout"
-      size="sm"
     >
       <ToggleGroupItem value="list" aria-label="List layout">
         <RiListCheck className="size-4" />
@@ -77,7 +76,7 @@ export function BacklogDisplay({
 }) {
   return (
     <Popover>
-      <PopoverTrigger render={<Button variant="ghost" size="sm" />}>
+      <PopoverTrigger render={<Button variant="ghost" />}>
         <RiEqualizerLine className="size-4" />
         Display
       </PopoverTrigger>
@@ -310,7 +309,7 @@ export function BacklogFilters({
   return (
     <div className="flex flex-wrap items-center gap-1.5">
       <Popover open={open} onOpenChange={setOpen}>
-        <PopoverTrigger render={<Button variant="ghost" size="sm" />}>
+        <PopoverTrigger render={<Button variant="ghost" />}>
           <RiFilterLine className="size-4" />
           Filter
         </PopoverTrigger>
@@ -363,7 +362,7 @@ export function BacklogFilters({
           <Button
             key={`${filter.field}:${filter.value}`}
             variant="outline"
-            size="sm"
+
             className="h-7 gap-1.5 text-xs"
             onClick={() =>
               updateBacklogView({
@@ -380,7 +379,7 @@ export function BacklogFilters({
       {view.filters.length > 1 && (
         <Button
           variant="ghost"
-          size="sm"
+
           onClick={() => updateBacklogView({ filters: [] })}
         >
           Clear filters

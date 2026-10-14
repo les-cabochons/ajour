@@ -408,7 +408,7 @@ export function BacklogItemEditorForm({
           ) : null}
           <TooltipButton
             label="Close"
-            render={<Button variant="ghost" size="icon-sm" onClick={onClose} />}
+            render={<Button variant="ghost" size="icon" onClick={onClose} />}
           >
             <X />
           </TooltipButton>
@@ -489,7 +489,7 @@ export function BacklogItemEditorForm({
               <Button
                 type="button"
                 variant="ghost"
-                size="xs"
+                size="sm"
                 onClick={() =>
                   updateFields({ priority: editor.priorityReset ?? "" })
                 }
@@ -501,7 +501,7 @@ export function BacklogItemEditorForm({
               <Button
                 type="button"
                 variant="ghost"
-                size="xs"
+                size="sm"
                 onClick={() =>
                   updateFields({ workflowStateId: editor.statusReset ?? "" })
                 }
@@ -583,7 +583,7 @@ export function BacklogItemEditorForm({
                           <Button
                             type="button"
                             variant="ghost"
-                            size="icon-xs"
+                            size="icon-sm"
                             className="absolute top-1/2 right-1 -translate-y-1/2"
                             aria-label={`Reset ${label.toLowerCase()} estimate to subitem total, ${resetValue}`}
                             onClick={() => updateFields({ [key]: resetValue })}
@@ -627,12 +627,12 @@ export function BacklogItemEditorForm({
       </FieldGroup>
 
       <footer className="flex flex-wrap justify-end gap-2">
-        <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+        <Button type="button" variant="ghost" onClick={onClose}>
           Cancel
         </Button>
         <Button
           type="button"
-          size="sm"
+
           disabled={!validation.canSave}
           onClick={save}
         >

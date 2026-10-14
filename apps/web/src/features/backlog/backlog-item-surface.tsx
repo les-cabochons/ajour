@@ -87,7 +87,7 @@ export function BacklogStatePicker({
     return (
       <Button
         variant="ghost"
-        size="sm"
+
         className={full ? "justify-start" : "size-7 p-0"}
         aria-label={`Change state of ${item.title}`}
         aria-haspopup="menu"
@@ -106,7 +106,7 @@ export function BacklogStatePicker({
         render={
           <Button
             variant="ghost"
-            size="sm"
+
             className={full ? "justify-start" : "size-7 p-0"}
             aria-label={`Change state of ${item.title}`}
           />
@@ -160,7 +160,7 @@ export function BacklogPriorityPicker({
     return hidden ? null : (
       <Button
         variant="ghost"
-        size="sm"
+
         className={full ? "justify-start" : "size-7 p-0"}
         aria-label={`Change priority of ${item.title}`}
         aria-haspopup="menu"
@@ -179,7 +179,7 @@ export function BacklogPriorityPicker({
         render={
           <Button
             variant="ghost"
-            size="sm"
+
             className={
               hidden
                 ? "backlog-hidden-picker"
@@ -483,7 +483,7 @@ export function BacklogItemSurface({
                 render={
                   <Button
                     variant="ghost"
-                    size="icon-sm"
+                    size="icon"
                     className="aria-disabled:opacity-50"
                   />
                 }
@@ -497,7 +497,7 @@ export function BacklogItemSurface({
             ) : (
               <Button
                 variant="ghost"
-                size="icon-sm"
+                size="icon"
                 className="aria-disabled:opacity-50"
                 aria-label={startLabel}
                 aria-description={startDisabledReason}

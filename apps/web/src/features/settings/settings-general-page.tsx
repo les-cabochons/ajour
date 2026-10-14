@@ -244,7 +244,7 @@ export function SettingsGeneralPage() {
             <ToggleGroup
               aria-label="Theme"
               variant="outline"
-              size="sm"
+
               value={[preferences.themeMode]}
               onValueChange={(next) => {
                 const mode = next[0] as ThemeMode | undefined;
@@ -294,7 +294,7 @@ export function SettingsGeneralPage() {
             <ToggleGroup
               aria-label="Sidebar density"
               variant="outline"
-              size="sm"
+
               value={[sidebarLayout.density]}
               onValueChange={(next) => {
                 const density = next[0] as SidebarDensity | undefined;
@@ -397,7 +397,7 @@ export function SettingsGeneralPage() {
             <ToggleGroup
               aria-label="Update track"
               variant="outline"
-              size="sm"
+
               value={[preferences.updateTrack]}
               onValueChange={handleTrackChange}
             >
@@ -506,7 +506,7 @@ export function SettingsGeneralPage() {
               updateCheck.result.releaseUrl ? (
                 <Button
                   type="button"
-                  size="sm"
+
                   onClick={() =>
                     void handleOpenRelease(updateCheck.result.releaseUrl!)
                   }
@@ -518,7 +518,7 @@ export function SettingsGeneralPage() {
               <Button
                 type="button"
                 variant="outline"
-                size="sm"
+
                 disabled={!desktopUpdates || updateCheck.status === "checking"}
                 onClick={() => void runUpdateCheck(preferences.updateTrack)}
               >

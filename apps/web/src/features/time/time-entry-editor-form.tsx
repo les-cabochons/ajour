@@ -384,7 +384,7 @@ export function TimeEntryEditorForm({
           ) : null}
           <TooltipButton
             label="Close"
-            render={<Button variant="ghost" size="icon-sm" onClick={onClose} />}
+            render={<Button variant="ghost" size="icon" onClick={onClose} />}
           >
             <X />
           </TooltipButton>
@@ -421,14 +421,14 @@ export function TimeEntryEditorForm({
             Starts today
           </span>
         ) : null}
-        <Button type="button" variant="ghost" size="sm" onClick={onClose}>
+        <Button type="button" variant="ghost" onClick={onClose}>
           Cancel
         </Button>
         {runningTimer ? (
           <Button
             type="button"
             variant="outline"
-            size="sm"
+
             disabled={editor.hasChanges && !editor.canSave}
             onClick={stop}
           >
@@ -439,7 +439,7 @@ export function TimeEntryEditorForm({
           <Button
             type="button"
             variant="outline"
-            size="sm"
+
             disabled={editor.hasChanges && !editor.canSave}
             onClick={continueEntry}
           >
@@ -450,7 +450,7 @@ export function TimeEntryEditorForm({
           <Button
             type="button"
             variant="outline"
-            size="sm"
+
             disabled={editor.durationMs === null}
             onClick={start}
           >
@@ -460,7 +460,7 @@ export function TimeEntryEditorForm({
         )}
         <Button
           type="button"
-          size="sm"
+
           disabled={!editor.canSave}
           title={editor.isTimerMode ? START_OR_ENTER_HOURS_HINT : undefined}
           onClick={save}

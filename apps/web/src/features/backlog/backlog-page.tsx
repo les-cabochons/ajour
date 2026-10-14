@@ -505,7 +505,7 @@ export function BacklogPage() {
             {archive && (
               <TooltipButton
                 label="Back to backlog"
-                render={<Button variant="ghost" size="icon-sm" />}
+                render={<Button variant="ghost" size="icon" />}
                 onClick={() => setArchive(false)}
               >
                 <RiArrowLeftLine className="size-4" />
@@ -530,7 +530,7 @@ export function BacklogPage() {
                 render={
                   <Button
                     variant="ghost"
-                    size="icon-sm"
+                    size="icon"
                     aria-label="Backlog options"
                   />
                 }
@@ -551,7 +551,7 @@ export function BacklogPage() {
               </DropdownMenuContent>
             </DropdownMenu>
             {!archive && (
-              <Button size="sm" onClick={() => add()} className="narrow:hidden">
+              <Button onClick={() => add()} className="narrow:hidden">
                 <RiAddLine className="size-4" />
                 New backlog item
               </Button>
@@ -606,7 +606,7 @@ export function BacklogPage() {
                     : "Create a backlog item or import items from a connector."}
               </p>
               {!archive && !view.filters.length && (
-                <Button variant="outline" size="sm" onClick={() => add()}>
+                <Button variant="outline" onClick={() => add()}>
                   New backlog item
                 </Button>
               )}
@@ -690,7 +690,7 @@ export function BacklogPage() {
                                 <TooltipButton
                                   label={`New item in ${group.label}`}
                                   render={
-                                    <Button variant="ghost" size="icon-sm" />
+                                    <Button variant="ghost" size="icon" />
                                   }
                                   onClick={() => add(group, lane)}
                                 >

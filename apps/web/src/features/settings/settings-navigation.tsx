@@ -166,7 +166,7 @@ export function SettingsNavigation({
       <SidebarHeader className="ajour-app-sidebar-header">
         <Button
           variant="ghost"
-          size="sm"
+
           className="-ml-2 text-muted-foreground hover:text-foreground"
           onClick={onBack}
         >

@@ -275,7 +275,7 @@ function ProjectIconField({
         <Button
           type="button"
           variant={fields.icon.kind === "upload" ? "default" : "outline"}
-          size="sm"
+
           disabled={isProcessingUpload}
           onClick={handleUploadPickerOpen}
         >
@@ -288,7 +288,7 @@ function ProjectIconField({
               ? "default"
               : "outline"
           }
-          size="sm"
+
           disabled={fields.icon.kind !== "upload"}
           onClick={() =>
             onChange((current) => {

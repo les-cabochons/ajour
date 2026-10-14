@@ -183,7 +183,7 @@ function PluginCatalogRow({
       ) : !installed && catalog.status === "available" ? (
         <Button
           className="shrink-0"
-          size="sm"
+
           variant="outline"
           disabled={
             !canDownload || isMutating || !canInstallCatalogPlugin(catalog)
@@ -249,7 +249,7 @@ function PluginsHeader({
             </p>
           </div>
           {canInstall ? (
-            <Button size="sm" disabled={isMutating} onClick={onInstall}>
+            <Button disabled={isMutating} onClick={onInstall}>
               <Upload data-icon="inline-start" />
               Install from file
             </Button>
@@ -618,7 +618,6 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
               </p>
             </div>
             <Button
-              size="sm"
               disabled={
                 isMutatingConnector || connectors?.pluginsEnabled === false
               }
@@ -783,7 +782,6 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                   </div>
                   <div className="flex shrink-0 flex-wrap gap-2">
                     <Button
-                      size="sm"
                       variant="outline"
                       disabled={isMutatingConnector}
                       onClick={() => handleEdit(group.plugin, connection)}
@@ -793,7 +791,6 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                     </Button>
                     {pluginHasConnector(group.plugin) ? (
                       <Button
-                        size="sm"
                         variant="outline"
                         disabled={
                           isMutatingConnector ||
@@ -817,7 +814,6 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                         <AlertDialogTrigger
                           render={
                             <Button
-                              size="sm"
                               variant="destructive"
                               disabled={isMutatingConnector}
                             >
@@ -861,7 +857,6 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                       </AlertDialog>
                     ) : (
                       <Button
-                        size="sm"
                         variant="destructive"
                         disabled={isMutatingConnector}
                         onClick={() =>

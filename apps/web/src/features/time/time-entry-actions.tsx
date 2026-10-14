@@ -239,12 +239,12 @@ export function useTimeEntryActions({
           <Button
             type="button"
             variant="ghost"
-            size="sm"
+
             onClick={() => setDateAction(null)}
           >
             Cancel
           </Button>
-          <Button type="button" size="sm" onClick={confirmDateAction}>
+          <Button type="button" onClick={confirmDateAction}>
             {isMove ? "Move" : "Duplicate"}
           </Button>
         </DialogFooter>

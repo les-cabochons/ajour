@@ -652,7 +652,7 @@ export function WeekGrid({
                     />
                     <Button
                       variant="ghost"
-                      size="sm"
+
                       onClick={() => setIsAddingRow(false)}
                     >
                       Cancel
@@ -661,7 +661,7 @@ export function WeekGrid({
                 ) : (
                   <Button
                     variant="ghost"
-                    size="sm"
+
                     onClick={() => setIsAddingRow(true)}
                   >
                     <Plus data-icon="inline-start" /> Add row
