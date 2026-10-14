@@ -179,6 +179,20 @@
     flex-shrink: 0;
   }
 
+  /* The Display choices drop the priority or id column, and the others keep
+     their widths. */
+  .backlog-item-leading[data-no-priority] {
+    grid-template-columns: 64px 24px 16px;
+  }
+
+  .backlog-item-leading[data-no-id] {
+    grid-template-columns: 16px 24px 16px;
+  }
+
+  .backlog-item-leading[data-no-priority][data-no-id] {
+    grid-template-columns: 24px 16px;
+  }
+
   .backlog-item-leading > * {
     justify-self: start;
   }
@@ -605,8 +619,14 @@
     padding: 0 0.75rem;
   }
 
-  .backlog-item-leading {
+  .backlog-item-leading,
+  .backlog-item-leading[data-no-id] {
     grid-template-columns: 16px 24px 16px;
+  }
+
+  .backlog-item-leading[data-no-priority],
+  .backlog-item-leading[data-no-priority][data-no-id] {
+    grid-template-columns: 24px 16px;
   }
 
   .backlog-item-id,

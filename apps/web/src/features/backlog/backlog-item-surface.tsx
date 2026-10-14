@@ -404,7 +404,11 @@ export function BacklogItemSurface({
           live={live}
         />
       )}
-      <div className="backlog-item-leading">
+      <div
+        className="backlog-item-leading"
+        data-no-priority={view.properties.priority && !board ? undefined : ""}
+        data-no-id={view.properties.id ? undefined : ""}
+      >
         {view.properties.priority && !board && (
           <BacklogPriorityPicker
             item={item}
