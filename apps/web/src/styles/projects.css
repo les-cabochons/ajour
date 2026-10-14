@@ -359,29 +359,6 @@
     pointer-events: auto;
   }
 
-  .project-task-consumed {
-    min-width: 6.5rem;
-    color: var(--text-secondary);
-    text-align: right;
-  }
-
-  .project-task-consumed.is-success {
-    color: var(--success);
-  }
-
-  .project-task-consumed.is-warning {
-    color: var(--warning);
-  }
-
-  .project-task-consumed.is-danger,
-  .project-task-consumed.is-danger-strong {
-    color: var(--danger);
-  }
-
-  .project-task-consumed.is-danger-strong {
-    font-weight: 600;
-  }
-
   .project-task-empty {
     padding-inline: 0.25rem;
     border-top: 1px solid var(--border);
@@ -473,6 +450,30 @@
 .ajour-project-sidebar-item:focus-within .object-actions-button,
 .ajour-project-sidebar-item:has([data-popup-open]) .object-actions-button {
   opacity: 1;
+}
+
+/* The consumed hours: a Value, whose own text color these tones replace. */
+.project-task-consumed {
+  min-width: 6.5rem;
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+.project-task-consumed.is-success {
+  color: var(--success);
+}
+
+.project-task-consumed.is-warning {
+  color: var(--warning);
+}
+
+.project-task-consumed.is-danger,
+.project-task-consumed.is-danger-strong {
+  color: var(--danger);
+}
+
+.project-task-consumed.is-danger-strong {
+  font-weight: 600;
 }
 
 .color-field-trigger {
