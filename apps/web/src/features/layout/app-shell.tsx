@@ -608,6 +608,19 @@ function GlobalTimerBar({
   );
 }
 
+/**
+ * Whether a click or Enter in the sidebar chose a page: a link or an item row,
+ * not a button inside a row such as Start entry or "…".
+ */
+function isDestination(target: EventTarget) {
+  if (!(target instanceof Element)) return false;
+  const destination = target.closest('a[href], [role="link"]');
+  const button = target.closest("button");
+  return (
+    destination !== null && (button === null || !destination.contains(button))
+  );
+}
+
 /* ── App Shell ─────────────────────────────────────────────────────── */
 
 export function AppShell() {
@@ -733,6 +746,20 @@ export function AppShell() {
               style={
                 { "--app-sidebar-width": `${sidebarWidth}px` } as CSSProperties
               }
+              // Choosing a destination closes the overlay, even the page
+              // already open, which leaves the route as it is.
+              onClick={(event) => {
+                if (
+                  !event.metaKey &&
+                  !event.ctrlKey &&
+                  isDestination(event.target)
+                )
+                  closeOverlay();
+              }}
+              onKeyDown={(event) => {
+                if (event.key === "Enter" && isDestination(event.target))
+                  closeOverlay();
+              }}
             >
               <SheetTitle className="sr-only">Navigation</SheetTitle>
               <AppNavigationSidebar

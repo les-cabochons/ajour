@@ -1415,6 +1415,10 @@ Then("the app sidebar opens over the page", async ({ page }) => {
   await overlay.getByRole("link", { name: "Backlog" }).click();
   await expect(page).toHaveURL(/\/backlog$/);
   await expect(overlay).toHaveCount(0);
+  // So does choosing the page already open, which leaves the route alone.
+  await page.getByRole("button", { name: "Show sidebar" }).click();
+  await overlay.getByRole("link", { name: "Backlog" }).click();
+  await expect(overlay).toHaveCount(0);
 });
 
 Then("the Settings pages replace the app sidebar", async ({ page }) => {
