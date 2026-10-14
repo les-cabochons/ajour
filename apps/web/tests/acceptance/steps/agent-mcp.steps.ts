@@ -367,6 +367,21 @@ Given(
   },
 );
 
+When("I open Settings MCP on a narrow screen", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/settings/mcp");
+});
+
+// The agent panel's row around the page must not push it past the window.
+Then("the page content ends within the window", async ({ page }) => {
+  await expect(
+    page.getByRole("heading", { name: "MCP", exact: true }).first(),
+  ).toBeVisible();
+  const main = await page.locator("main.app-content-shell").boundingBox();
+  const viewport = page.viewportSize()!;
+  expect(main!.y + main!.height).toBeLessThanOrEqual(viewport.height + 0.5);
+});
+
 When("I open the app on a narrow screen", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/");

@@ -46,3 +46,8 @@ Feature: Agents through MCP
     When I open the app on a narrow screen
     And I open the agent panel
     Then the agent panel is an overlay
+
+  Scenario: The narrow view keeps the page inside the window under the back bar
+    Given MCP is on with no clients
+    When I open Settings MCP on a narrow screen
+    Then the page content ends within the window

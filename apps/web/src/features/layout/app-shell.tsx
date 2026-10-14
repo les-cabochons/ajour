@@ -935,9 +935,11 @@ export function AppShell() {
           {isNarrowView ? <NarrowBackBar pathname={pathname} /> : null}
 
           {/* Page content */}
-          {/* The agent panel docks beside the page, below the titlebar. */}
+          {/* The agent panel docks beside the page, below the titlebar. In
+              the row, main takes the row's height: its own explicit height
+              would overflow under the narrow back bar. */}
           <div className="flex min-h-0 flex-1">
-            <main className="app-content-shell min-w-0 flex-1">
+            <main className="app-content-shell h-auto min-w-0 flex-1 self-stretch">
               <ScrollArea className="app-content-scroll-area">
                 {isSettingsActive ? (
                   <Outlet />
