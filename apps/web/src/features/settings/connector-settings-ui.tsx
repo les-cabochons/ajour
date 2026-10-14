@@ -1,5 +1,3 @@
-import { Badge } from "@/components/ui/badge";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   Field,
   FieldContent,
@@ -11,36 +9,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { NativeSelect } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import type {
-  ConnectorField,
-  ConnectorFieldValue,
-  ConnectorPluginManifest,
-} from "@ajour/shared";
+import type { ConnectorField, ConnectorFieldValue } from "@ajour/shared";
 import { SAVED_SECRET_MASK } from "./connector-form-state";
-
-function ConnectorPluginIcon({
-  plugin,
-  className,
-  imageClassName,
-}: {
-  plugin: ConnectorPluginManifest;
-  className?: string;
-  imageClassName?: string;
-}) {
-  const iconSource = `data:image/svg+xml,${encodeURIComponent(plugin.iconSvg)}`;
-
-  return (
-    <span
-      className={cn(
-        "inline-flex size-10 shrink-0 items-center justify-center rounded-lg border border-border/60 bg-muted/60 text-foreground",
-        className,
-      )}
-      aria-hidden="true"
-    >
-      <img className={cn("size-5", imageClassName)} src={iconSource} alt="" />
-    </span>
-  );
-}
 
 function ConnectorFieldInput({
   field,
@@ -58,10 +28,7 @@ function ConnectorFieldInput({
 
   if (field.type === "checkbox") {
     return (
-      <Field
-        orientation="horizontal"
-        className="rounded-3xl border border-border/60 bg-muted/10 p-4 desktop:col-span-2"
-      >
+      <Field orientation="horizontal" className="desktop:col-span-2">
         <Checkbox
           id={field.id}
           checked={value === true}
@@ -156,35 +123,4 @@ function ConnectorFieldInput({
   );
 }
 
-function ConnectorMessageCard({
-  label,
-  message,
-  destructive = false,
-}: {
-  label: string;
-  message: string;
-  destructive?: boolean;
-}) {
-  return (
-    <Card
-      size="sm"
-      className={cn(
-        "gap-3",
-        destructive && "border border-destructive/30 bg-destructive/5",
-      )}
-    >
-      <CardHeader>
-        <CardTitle className="flex items-center gap-2 text-sm">
-          <Badge variant={destructive ? "destructive" : "secondary"}>
-            {label}
-          </Badge>
-        </CardTitle>
-      </CardHeader>
-      <CardContent>
-        <p className="text-sm text-muted-foreground">{message}</p>
-      </CardContent>
-    </Card>
-  );
-}
-
-export { ConnectorFieldInput, ConnectorMessageCard, ConnectorPluginIcon };
+export { ConnectorFieldInput };

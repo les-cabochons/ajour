@@ -61,6 +61,8 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Root context files created and aligned with the current local-first product direction.
 - [x] Repeated app surfaces use `AppPanel`, `MessagePanel`, and `SurfaceCallout`.
 - [x] Feature checkboxes use the shared `Checkbox` UI primitive.
+- [x] Settings pages carry no cards: sections and `SettingRow`s order them by space and type size, and the narrow Settings list groups its pages under App, Work and Data headings.
+- [ ] Visually verify plugin connection rows and populated Sync review items in the desktop app; the catalog, schema plugin detail and empty Sync review were checked in the browser.
 - [x] Connector settings plugin field rendering is extracted to a feature-local UI module.
 - [x] Settings presents connectors as activatable Plugins catalog entries with dedicated configuration detail routes.
 - [x] The Plugins catalog is populated from the Ajour plugin index, caches and

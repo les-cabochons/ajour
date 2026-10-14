@@ -8,7 +8,7 @@ import {
   RiRefreshLine as RefreshCw,
   RiUpload2Line as Upload,
 } from "@remixicon/react";
-import { AppPanel, MessagePanel } from "@/components/app-surface";
+import { AppPanel, MessagePanel, SettingRow } from "@/components/app-surface";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -23,15 +23,6 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
-  Card,
-  CardAction,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import {
   Empty,
   EmptyDescription,
   EmptyHeader,
@@ -39,7 +30,6 @@ import {
 } from "@/components/ui/empty";
 import { FieldGroup } from "@/components/ui/field";
 import { NativeSelect } from "@/components/ui/select";
-import { Separator } from "@/components/ui/separator";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getAppApiBaseUrl, getAppApiDescription } from "@/lib/app-api";
@@ -96,7 +86,32 @@ function prettifySummaryKey(key: string) {
     .replace(/\b\w/g, (match) => match.toUpperCase());
 }
 
-function PluginCatalogCard({
+/** An empty list as plain text in the list's place, with no frame. */
+function EmptyListText({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
+  return (
+    <Empty className="items-start p-0 text-left">
+      <EmptyHeader className="items-start gap-0.5">
+        <EmptyTitle className="font-sans text-sm font-medium tracking-normal text-foreground">
+          {title}
+        </EmptyTitle>
+        <EmptyDescription className="text-[13px]">{children}</EmptyDescription>
+      </EmptyHeader>
+    </Empty>
+  );
+}
+
+/**
+ * One catalog entry as a plain row: identity mark, name and status, the
+ * description, a line of metadata, and the trailing action. Spacing between
+ * rows separates entries; only hover paints a background.
+ */
+function PluginCatalogRow({
   entry,
   canDownload,
   pluginsEnabled,
@@ -123,37 +138,39 @@ function PluginCatalogCard({
         : "Available";
 
   return (
-    <AppPanel className="group min-h-32 flex-col items-stretch gap-3 p-4 transition-colors hover:bg-[var(--surface-high)] desktop:flex-row desktop:items-start">
+    <div className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-[var(--hover-bg)]">
       <Link
         to="/settings/plugins/$pluginId"
         params={{ pluginId: catalog.id }}
         replace
-        className="flex w-full min-w-0 flex-1 items-start gap-3 rounded-[var(--control-radius)] outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
+        className="flex min-w-0 flex-1 items-start gap-3 rounded-[var(--control-radius)] outline-none focus-visible:ring-3 focus-visible:ring-ring/30"
         aria-label={`View ${catalog.title}`}
       >
         <PluginIdentityMark
           entry={catalog}
           iconSvg={connectorGroup?.plugin.iconSvg ?? dataShapePlugin?.iconSvg}
         />
-        <span className="min-w-0 flex-1">
-          <span className="block text-sm font-semibold text-foreground">
-            {catalog.title}
-          </span>
-          <span className="mt-1 line-clamp-2 block text-sm leading-5 text-muted-foreground">
-            {catalog.description}
-          </span>
-          <span className="mt-3 flex flex-wrap gap-2">
-            <Badge variant="outline">{pluginCapabilitiesLabel(catalog)}</Badge>
+        <span className="flex min-w-0 flex-1 flex-col gap-0.5">
+          <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+            <span className="min-w-0 text-sm font-medium break-words text-foreground">
+              {catalog.title}
+            </span>
             <Badge variant={installed ? "secondary" : "outline"}>
               {statusLabel}
             </Badge>
-            {version ? <Badge variant="outline">v{version}</Badge> : null}
+          </span>
+          <span className="line-clamp-2 text-[13px] leading-5 text-muted-foreground">
+            {catalog.description}
+          </span>
+          <span className="text-xs text-[var(--text-tertiary)]">
+            {pluginCapabilitiesLabel(catalog)}
+            {version ? ` · v${version}` : null}
           </span>
         </span>
       </Link>
       {connectorGroup ? (
         <Switch
-          className="self-end desktop:self-auto"
+          className="shrink-0"
           checked={connectorGroup.enabled}
           disabled={
             isMutating ||
@@ -165,7 +182,7 @@ function PluginCatalogCard({
         />
       ) : !installed && catalog.status === "available" ? (
         <Button
-          className="w-full desktop:w-auto"
+          className="shrink-0"
           size="sm"
           variant="outline"
           disabled={
@@ -185,7 +202,7 @@ function PluginCatalogCard({
           Download
         </Button>
       ) : null}
-    </AppPanel>
+    </div>
   );
 }
 
@@ -222,11 +239,11 @@ function PluginsHeader({
       onValueChange={(value) => onFilterChange(value as PluginCatalogFilter)}
       className="contents"
     >
-      <section className="settings-section gap-4">
+      <section className="settings-section">
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div>
             <h1 className="text-lg font-semibold text-foreground">Plugins</h1>
-            <p className="mt-1 max-w-2xl text-sm text-muted-foreground">
+            <p className="settings-section-desc mt-1">
               Discover extensions, download the ones you need, then activate and
               configure them locally.
             </p>
@@ -239,46 +256,21 @@ function PluginsHeader({
           ) : null}
         </div>
 
-        <TabsList
-          variant="line"
-          aria-label="Filter plugins"
-          className="max-w-full gap-0 border-b border-border/70 p-0 desktop:gap-1 desktop:p-1"
-        >
-          <TabsTrigger value="all" className="px-1.5 desktop:px-3">
-            All
-          </TabsTrigger>
-          <TabsTrigger value="connector" className="px-1.5 desktop:px-3">
-            Connectors
-          </TabsTrigger>
-          <TabsTrigger value="codeHost" className="px-1.5 desktop:px-3">
-            Code hosts
-          </TabsTrigger>
-          <TabsTrigger value="schema" className="px-1.5 desktop:px-3">
-            Schemas
-          </TabsTrigger>
-        </TabsList>
-
-        <div className="flex flex-col gap-3 border-y border-border/60 py-3 desktop:flex-row desktop:items-center desktop:justify-between">
-          <div className="flex min-w-0 items-center justify-between gap-4 desktop:justify-start">
-            <div>
-              <p className="text-sm font-medium text-foreground">
-                Plugin system
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Deactivating pauses every installed plugin without removing its
-                data.
-              </p>
-            </div>
+        <AppPanel>
+          <SettingRow
+            label="Plugin system"
+            description="Deactivating pauses every installed plugin without removing its data."
+          >
             <Switch
               checked={pluginsEnabled}
               disabled={isMutating}
               aria-label={`${pluginsEnabled ? "Deactivate" : "Activate"} all plugins`}
               onCheckedChange={onPluginsEnabledChange}
             />
-          </div>
-          <label className="flex items-center justify-between gap-3 text-xs text-muted-foreground desktop:justify-end">
-            Refresh catalog
+          </SettingRow>
+          <SettingRow label="Refresh catalog" labelFor="plugin-catalog-refresh">
             <NativeSelect
+              id="plugin-catalog-refresh"
               className="w-36"
               value={String(refreshMinutes)}
               disabled={!canConfigureRefresh}
@@ -296,63 +288,94 @@ function PluginsHeader({
               <option value="60">Every hour</option>
               <option value="240">Every 4 hours</option>
             </NativeSelect>
-          </label>
-        </div>
+          </SettingRow>
+        </AppPanel>
       </section>
-      <TabsContent value={filter} className="contents">
-        {children}
-      </TabsContent>
+
+      <section className="settings-section">
+        <TabsList
+          variant="line"
+          aria-label="Filter plugins"
+          className="max-w-full gap-0 p-0 desktop:gap-1 desktop:p-1"
+        >
+          <TabsTrigger value="all" className="px-1.5 desktop:px-3">
+            All
+          </TabsTrigger>
+          <TabsTrigger value="connector" className="px-1.5 desktop:px-3">
+            Connectors
+          </TabsTrigger>
+          <TabsTrigger value="codeHost" className="px-1.5 desktop:px-3">
+            Code hosts
+          </TabsTrigger>
+          <TabsTrigger value="schema" className="px-1.5 desktop:px-3">
+            Schemas
+          </TabsTrigger>
+        </TabsList>
+        <TabsContent value={filter} className="contents">
+          {children}
+        </TabsContent>
+      </section>
     </Tabs>
   );
 }
 
+function AllPluginsLink() {
+  return (
+    <Link
+      to="/settings/plugins"
+      replace
+      className="inline-flex w-fit items-center gap-1.5 rounded-[var(--control-radius)] text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30"
+    >
+      <ArrowLeft className="size-4" />
+      All plugins
+    </Link>
+  );
+}
+
+/**
+ * The top of a plugin's page: back link, identity, status badges, then any
+ * notices and the capability band passed as children. No frame; the page's
+ * sections follow with section spacing.
+ */
 function PluginDetailHeader({
   entry,
   iconSvg,
   action,
   badges,
+  children,
 }: {
   entry: PluginCatalogEntry;
   iconSvg?: string;
   action?: ReactNode;
   badges: ReactNode;
+  children?: ReactNode;
 }) {
   return (
-    <>
-      <Link
-        to="/settings/plugins"
-        replace
-        className="inline-flex w-fit items-center gap-1.5 rounded-[var(--control-radius)] text-sm text-muted-foreground outline-none hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/30"
-      >
-        <ArrowLeft className="size-4" />
-        All plugins
-      </Link>
-      <AppPanel as="section" className="gap-5 p-5">
-        <div className="flex flex-col items-start gap-4 desktop:flex-row">
-          <PluginIdentityMark
-            entry={entry}
-            iconSvg={iconSvg}
-            className="size-14"
-          />
-          <div className="min-w-0 flex-1">
-            <h1 className="text-lg font-semibold text-foreground">
-              {entry.title}
-            </h1>
-            <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">
-              {entry.description}
-            </p>
-            <p className="mt-2 text-xs text-[var(--text-tertiary)]">
-              {entry.author.name} · {pluginCapabilitiesLabel(entry)} ·{" "}
-              {entry.license.spdxId}
-            </p>
-          </div>
-          {action ? (
-            <div className="w-full desktop:w-auto">{action}</div>
-          ) : null}
+    <section className="settings-section">
+      <AllPluginsLink />
+      <div className="flex flex-col items-start gap-4 desktop:flex-row">
+        <PluginIdentityMark
+          entry={entry}
+          iconSvg={iconSvg}
+          className="size-14"
+        />
+        <div className="min-w-0 flex-1">
+          <h1 className="text-lg font-semibold break-words text-foreground">
+            {entry.title}
+          </h1>
+          <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">
+            {entry.description}
+          </p>
+          <p className="mt-2 text-xs text-[var(--text-tertiary)]">
+            {entry.author.name} · {pluginCapabilitiesLabel(entry)} ·{" "}
+            {entry.license.spdxId}
+          </p>
         </div>
-        <div className="flex flex-wrap gap-2">{badges}</div>
-      </AppPanel>
-    </>
+        {action ? <div className="w-full desktop:w-auto">{action}</div> : null}
+      </div>
+      <div className="flex flex-wrap gap-2">{badges}</div>
+      {children}
+    </section>
   );
 }
 
@@ -559,10 +582,10 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
               </Badge>
             </>
           }
-        />
-        {renderMessages()}
-
-        <PluginCapabilityBand entry={entry} />
+        >
+          {renderMessages()}
+          <PluginCapabilityBand entry={entry} />
+        </PluginDetailHeader>
 
         <section className="settings-section">
           <h2 className="settings-section-title">Features</h2>
@@ -589,7 +612,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
         <section className="settings-section">
           <div className="flex flex-wrap items-start justify-between gap-3">
             <div>
-              <h3 className="settings-section-title">Configuration</h3>
+              <h2 className="settings-section-title">Configuration</h2>
               <p className="settings-section-desc mt-1">
                 Manage the local connections used by this plugin.
               </p>
@@ -606,14 +629,14 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
           </div>
 
           {groupFormState ? (
-            <AppPanel className="gap-5 p-5">
+            <AppPanel className="pb-4">
               <div>
-                <h4 className="text-sm font-semibold text-foreground">
+                <h3 className="text-sm font-medium text-foreground">
                   {groupFormState.editingConnectionId
                     ? `Edit ${group.plugin.displayName} connection`
                     : `New ${group.plugin.displayName} connection`}
-                </h4>
-                <p className="mt-1 text-sm text-muted-foreground">
+                </h3>
+                <p className="mt-0.5 text-[13px] text-muted-foreground">
                   {groupFormState.editingConnectionId
                     ? "Update this connection without re-entering unchanged secrets."
                     : "The connection is validated by the plugin and stored locally."}
@@ -650,8 +673,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                   );
                 })}
               </FieldGroup>
-              <Separator />
-              <div className="flex flex-wrap justify-end gap-3">
+              <div className="flex flex-wrap justify-end gap-3 pt-2">
                 <Button
                   variant="outline"
                   disabled={isMutatingConnector}
@@ -684,35 +706,22 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
           ) : null}
 
           {group.connections.length === 0 ? (
-            <AppPanel>
-              <Empty className="border border-dashed border-border/70 bg-muted/10 py-10">
-                <EmptyHeader>
-                  <EmptyTitle>No connections yet</EmptyTitle>
-                  <EmptyDescription>
-                    Add a {group.plugin.displayName} connection to configure its
-                    source and sync behavior.
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
-            </AppPanel>
+            <EmptyListText title="No connections yet">
+              Add a {group.plugin.displayName} connection to configure its
+              source and sync behavior.
+            </EmptyListText>
           ) : (
-            <div className="grid gap-3 desktop:grid-cols-2">
+            <div className="flex flex-col gap-6">
               {group.connections.map((connection) => (
-                <Card
+                <div
                   key={connection.id}
-                  size="sm"
-                  className="rounded-lg shadow-none ring-1 ring-border/70"
+                  className="flex flex-col gap-3 desktop:flex-row desktop:items-start desktop:justify-between desktop:gap-8"
                 >
-                  <CardHeader className="rounded-t-lg">
-                    <div>
-                      <CardTitle className="font-sans tracking-normal">
+                  <div className="flex min-w-0 flex-1 flex-col gap-1">
+                    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                      <h3 className="min-w-0 text-sm font-medium break-words text-foreground">
                         {connection.label}
-                      </CardTitle>
-                      <CardDescription>
-                        {connection.tenantLabel}
-                      </CardDescription>
-                    </div>
-                    <CardAction>
+                      </h3>
                       <Badge
                         variant={
                           connection.lastError ? "destructive" : "outline"
@@ -724,10 +733,11 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                             ? "Stage for review"
                             : "Manual sync"}
                       </Badge>
-                    </CardAction>
-                  </CardHeader>
-                  <CardContent className="flex flex-col gap-4">
-                    <div className="flex flex-col gap-1 text-sm text-muted-foreground">
+                    </div>
+                    <p className="text-[13px] break-words text-muted-foreground">
+                      {connection.tenantLabel}
+                    </p>
+                    <div className="flex flex-col gap-0.5 text-xs break-words text-[var(--text-tertiary)]">
                       {Object.entries(connection.configSummary).map(
                         ([key, value]) => (
                           <span key={key}>
@@ -757,7 +767,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                     </div>
                     <p
                       className={cn(
-                        "text-sm text-muted-foreground",
+                        "mt-1 text-[13px] text-muted-foreground",
                         connection.lastError && "text-destructive",
                       )}
                     >
@@ -770,102 +780,100 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                               ? "Connection ready to sync directly into backlog."
                               : "Connection ready to stage imports.")}
                     </p>
-                  </CardContent>
-                  <CardFooter className="rounded-b-lg border-t border-border/60">
-                    <div className="flex flex-wrap gap-2">
+                  </div>
+                  <div className="flex shrink-0 flex-wrap gap-2">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={isMutatingConnector}
+                      onClick={() => handleEdit(group.plugin, connection)}
+                    >
+                      <Pencil data-icon="inline-start" />
+                      Edit
+                    </Button>
+                    {pluginHasConnector(group.plugin) ? (
                       <Button
                         size="sm"
                         variant="outline"
-                        disabled={isMutatingConnector}
-                        onClick={() => handleEdit(group.plugin, connection)}
+                        disabled={
+                          isMutatingConnector ||
+                          connectors?.pluginsEnabled === false ||
+                          !group.enabled
+                        }
+                        onClick={() =>
+                          void workflow.execute({
+                            type: "sync",
+                            pluginId: group.plugin.id,
+                            connectionId: connection.id,
+                          })
+                        }
                       >
-                        <Pencil data-icon="inline-start" />
-                        Edit
+                        <RefreshCw data-icon="inline-start" />
+                        Sync
                       </Button>
-                      {pluginHasConnector(group.plugin) ? (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={
-                            isMutatingConnector ||
-                            connectors?.pluginsEnabled === false ||
-                            !group.enabled
+                    ) : null}
+                    {group.plugin.capabilities.codeHost ? (
+                      <AlertDialog>
+                        <AlertDialogTrigger
+                          render={
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              disabled={isMutatingConnector}
+                            >
+                              <Trash2 data-icon="inline-start" />
+                              Remove
+                            </Button>
                           }
-                          onClick={() =>
-                            void workflow.execute({
-                              type: "sync",
-                              pluginId: group.plugin.id,
-                              connectionId: connection.id,
-                            })
-                          }
-                        >
-                          <RefreshCw data-icon="inline-start" />
-                          Sync
-                        </Button>
-                      ) : null}
-                      {group.plugin.capabilities.codeHost ? (
-                        <AlertDialog>
-                          <AlertDialogTrigger
-                            render={
-                              <Button
-                                size="sm"
-                                variant="destructive"
-                                disabled={isMutatingConnector}
-                              >
-                                <Trash2 data-icon="inline-start" />
-                                Remove
-                              </Button>
-                            }
-                          />
-                          <AlertDialogContent>
-                            <AlertDialogHeader>
-                              <AlertDialogTitle>
-                                Remove {connection.label}?
-                              </AlertDialogTitle>
-                              <AlertDialogDescription>
-                                This removes the connection and its{" "}
-                                {
-                                  (state.pullRequests ?? []).filter(
-                                    (item) =>
-                                      item.pluginId === group.plugin.id &&
-                                      item.connectionId === connection.id,
-                                  ).length
-                                }{" "}
-                                saved pull requests from this device.
-                              </AlertDialogDescription>
-                            </AlertDialogHeader>
-                            <AlertDialogFooter>
-                              <AlertDialogCancel>Cancel</AlertDialogCancel>
-                              <AlertDialogAction
-                                variant="destructive"
-                                onClick={() =>
-                                  void handleDelete(
-                                    group.plugin.id,
-                                    connection.id,
-                                  )
-                                }
-                              >
-                                Remove connection
-                              </AlertDialogAction>
-                            </AlertDialogFooter>
-                          </AlertDialogContent>
-                        </AlertDialog>
-                      ) : (
-                        <Button
-                          size="sm"
-                          variant="destructive"
-                          disabled={isMutatingConnector}
-                          onClick={() =>
-                            void handleDelete(group.plugin.id, connection.id)
-                          }
-                        >
-                          <Trash2 data-icon="inline-start" />
-                          Remove
-                        </Button>
-                      )}
-                    </div>
-                  </CardFooter>
-                </Card>
+                        />
+                        <AlertDialogContent>
+                          <AlertDialogHeader>
+                            <AlertDialogTitle>
+                              Remove {connection.label}?
+                            </AlertDialogTitle>
+                            <AlertDialogDescription>
+                              This removes the connection and its{" "}
+                              {
+                                (state.pullRequests ?? []).filter(
+                                  (item) =>
+                                    item.pluginId === group.plugin.id &&
+                                    item.connectionId === connection.id,
+                                ).length
+                              }{" "}
+                              saved pull requests from this device.
+                            </AlertDialogDescription>
+                          </AlertDialogHeader>
+                          <AlertDialogFooter>
+                            <AlertDialogCancel>Cancel</AlertDialogCancel>
+                            <AlertDialogAction
+                              variant="destructive"
+                              onClick={() =>
+                                void handleDelete(
+                                  group.plugin.id,
+                                  connection.id,
+                                )
+                              }
+                            >
+                              Remove connection
+                            </AlertDialogAction>
+                          </AlertDialogFooter>
+                        </AlertDialogContent>
+                      </AlertDialog>
+                    ) : (
+                      <Button
+                        size="sm"
+                        variant="destructive"
+                        disabled={isMutatingConnector}
+                        onClick={() =>
+                          void handleDelete(group.plugin.id, connection.id)
+                        }
+                      >
+                        <Trash2 data-icon="inline-start" />
+                        Remove
+                      </Button>
+                    )}
+                  </div>
+                </div>
               ))}
             </div>
           )}
@@ -873,13 +881,13 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
 
         {canUninstallConnectorPlugins ? (
           <section className="settings-section">
-            <h3 className="settings-section-title">Uninstall plugin</h3>
+            <h2 className="settings-section-title">Uninstall plugin</h2>
             <p className="settings-section-desc">
               Remove the plugin package and its saved connections from this
               device. Imported backlog items will remain available.
             </p>
-            <AppPanel className="flex-row items-center justify-between gap-4 border-destructive/30">
-              <p className="text-sm text-muted-foreground">
+            <div className="flex flex-wrap items-center justify-between gap-x-8 gap-y-3">
+              <p className="max-w-[62ch] min-w-0 flex-1 basis-64 text-[13px] text-muted-foreground">
                 Deactivate the plugin instead if you want to keep its
                 configuration for later.
               </p>
@@ -918,7 +926,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                   </AlertDialogFooter>
                 </AlertDialogContent>
               </AlertDialog>
-            </AppPanel>
+            </div>
           </section>
         ) : null}
       </>
@@ -999,9 +1007,10 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
               ) : null}
             </>
           }
-        />
-        {renderMessages()}
-        <PluginCapabilityBand entry={catalogEntry} />
+        >
+          {renderMessages()}
+          <PluginCapabilityBand entry={catalogEntry} />
+        </PluginDetailHeader>
 
         <section className="settings-section">
           <h2 className="settings-section-title">Features</h2>
@@ -1037,7 +1046,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
 
   if (pluginId) {
     return (
-      <div className="settings-sections gap-6">
+      <div className="settings-sections">
         {selectedDisplayEntry?.connectorGroup ? (
           renderConnectorDetail(
             selectedDisplayEntry.catalog,
@@ -1046,36 +1055,22 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
         ) : selectedDisplayEntry ? (
           renderCatalogDetail(selectedDisplayEntry)
         ) : catalog === null || connectors === null ? (
-          <>
-            <Link
-              to="/settings/plugins"
-              replace
-              className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground"
-            >
-              <ArrowLeft className="size-4" />
-              All plugins
-            </Link>
+          <section className="settings-section">
+            <AllPluginsLink />
             {renderMessages()}
             {connectorApiMissing ? null : (
               <MessagePanel>Loading plugin…</MessagePanel>
             )}
-          </>
+          </section>
         ) : (
-          <>
-            <Link
-              to="/settings/plugins"
-              replace
-              className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground"
-            >
-              <ArrowLeft className="size-4" />
-              All plugins
-            </Link>
+          <section className="settings-section">
+            <AllPluginsLink />
             {renderMessages()}
             <MessagePanel tone="warning">
               That plugin is not present in the Ajour index or installed on this
               device.
             </MessagePanel>
-          </>
+          </section>
         )}
       </div>
     );
@@ -1083,8 +1078,8 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
 
   if (connectorApiMissing) {
     return (
-      <div className="settings-sections gap-6">
-        <section className="settings-section gap-4">
+      <div className="settings-sections">
+        <section className="settings-section">
           <h1 className="text-lg font-semibold text-foreground">Plugins</h1>
           {renderMessages()}
         </section>
@@ -1093,7 +1088,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
   }
 
   return (
-    <div className="settings-sections gap-6">
+    <div className="settings-sections">
       <PluginsHeader
         canInstall={canInstallConnectorPlugins}
         isMutating={isMutatingConnector}
@@ -1114,11 +1109,11 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
       >
         <>
           {renderMessages()}
-          <section className="settings-section">
+          <div className="flex flex-col gap-3">
             {filteredDisplayEntries.length > 0 ? (
-              <div className="grid gap-3 desktop:grid-cols-2">
+              <div className="flex flex-col gap-1">
                 {filteredDisplayEntries.map((entry) => (
-                  <PluginCatalogCard
+                  <PluginCatalogRow
                     key={entry.catalog.id}
                     entry={entry}
                     canDownload={canDownloadCatalogPlugins}
@@ -1137,22 +1132,17 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                 ))}
               </div>
             ) : catalog || connectors ? (
-              <Empty className="border border-dashed border-border/70 bg-muted/10 py-10">
-                <EmptyHeader>
-                  <EmptyTitle>No matching plugins</EmptyTitle>
-                  <EmptyDescription>
-                    Choose another category or install a compatible plugin from
-                    a local file.
-                  </EmptyDescription>
-                </EmptyHeader>
-              </Empty>
+              <EmptyListText title="No matching plugins">
+                Choose another category or install a compatible plugin from a
+                local file.
+              </EmptyListText>
             ) : null}
             {catalog === null && connectors === null && !connectorError ? (
               <MessagePanel>Loading plugins…</MessagePanel>
             ) : null}
-          </section>
+          </div>
 
-          <p className="text-xs text-muted-foreground">
+          <p className="pt-4 text-xs text-[var(--text-tertiary)]">
             Plugin runtime: {getAppApiDescription()}
             {getAppApiDescription() !== getAppApiBaseUrl()
               ? ` · ${getAppApiBaseUrl()}`

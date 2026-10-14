@@ -1,6 +1,5 @@
 import { SettleRulesSection } from "@/features/settings/settle-rules-section";
-import { AppPanel } from "@/components/app-surface";
-import { Field, FieldLabel } from "@/components/ui/field";
+import { AppPanel, SettingRow } from "@/components/app-surface";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import type { CloseParentSubitems } from "@/domain/local-state";
 import { useLocalState } from "@/lib/local-hooks";
@@ -20,16 +19,10 @@ export function SettingsBacklogPage() {
         </p>
 
         <AppPanel>
-          <Field
-            orientation="horizontal"
-            className="rounded-2xl border border-border/70 p-4"
+          <SettingRow
+            label="When closing a parent with open subitems"
+            description="Subitems already settled or archived stay as they are."
           >
-            <div className="flex-1">
-              <FieldLabel>When closing a parent with open subitems</FieldLabel>
-              <p className="mt-1 text-sm text-muted-foreground">
-                Subitems already settled or archived stay as they are.
-              </p>
-            </div>
             <ToggleGroup
               aria-label="When closing a parent with open subitems"
               variant="outline"
@@ -48,7 +41,7 @@ export function SettingsBacklogPage() {
               <ToggleGroupItem value="include">Include them</ToggleGroupItem>
               <ToggleGroupItem value="leave">Leave them</ToggleGroupItem>
             </ToggleGroup>
-          </Field>
+          </SettingRow>
         </AppPanel>
       </section>
       <SettleRulesSection

@@ -1,13 +1,13 @@
 import { useMemo, useState, type ChangeEvent } from "react";
 import {
   RiDownloadLine as Download,
-  RiFileExcel2Line as FileSpreadsheet,
   RiUploadLine as Upload,
 } from "@remixicon/react";
 import {
   AppPanel,
   MessagePanel,
-  SurfaceCallout,
+  ResultLine,
+  SettingRow,
 } from "@/components/app-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -187,70 +187,75 @@ export function SettingsExportPage() {
   return (
     <div className="settings-sections">
       <section className="settings-section">
-        <h2 className="settings-section-title">
-          Import and export time entries
-        </h2>
+        <h2 className="settings-section-title">Export time entries</h2>
         <p className="settings-section-desc">
-          Export time entries to Excel or import workbook rows into a staged
-          review queue before adding them to your local timesheet.
+          Export time entries to an Excel workbook.{" "}
+          {state.timesheetEntries.length === 0
+            ? "No time entries are available yet."
+            : `Time entries available from ${availableRange.startDate} to ${availableRange.endDate}.`}
         </p>
 
         <AppPanel>
-          <SurfaceCallout icon={FileSpreadsheet} title="Excel workbook export">
-            {state.timesheetEntries.length === 0
-              ? "No time entries are available yet."
-              : `Time entries available from ${availableRange.startDate} to ${availableRange.endDate}.`}
-          </SurfaceCallout>
+          <SettingRow label="Date range" stacked>
+            <div className="grid w-full gap-3 desktop:max-w-md desktop:grid-cols-2">
+              <div className="flex flex-col gap-1.5">
+                <Label
+                  htmlFor="time-entries-export-start"
+                  className="text-[13px] font-normal text-[var(--text-secondary)]"
+                >
+                  From
+                </Label>
+                <Input
+                  id="time-entries-export-start"
+                  type="date"
+                  value={startDate}
+                  onChange={(event) => setStartDate(event.target.value)}
+                  max={endDate}
+                />
+              </div>
 
-          <div className="grid gap-4 desktop:grid-cols-2">
-            <div className="space-y-2">
-              <Label>From</Label>
-              <Input
-                type="date"
-                value={startDate}
-                onChange={(event) => setStartDate(event.target.value)}
-                max={endDate}
-              />
+              <div className="flex flex-col gap-1.5">
+                <Label
+                  htmlFor="time-entries-export-end"
+                  className="text-[13px] font-normal text-[var(--text-secondary)]"
+                >
+                  To
+                </Label>
+                <Input
+                  id="time-entries-export-end"
+                  type="date"
+                  value={endDate}
+                  onChange={(event) => setEndDate(event.target.value)}
+                  min={startDate}
+                />
+              </div>
             </div>
-
-            <div className="space-y-2">
-              <Label>To</Label>
-              <Input
-                type="date"
-                value={endDate}
-                onChange={(event) => setEndDate(event.target.value)}
-                min={startDate}
-              />
-            </div>
-          </div>
+          </SettingRow>
 
           {hasInvalidRange ? (
             <MessagePanel tone="warning">
               The start day must be on or before the end day.
             </MessagePanel>
-          ) : (
-            <div className="flex flex-col gap-1 text-sm text-foreground/70">
-              <p>
-                {rows.length} {rows.length === 1 ? "entry" : "entries"} selected
-              </p>
-              <p>
-                {formatDecimalHours(totalHours)} hours in decimal format will be
-                exported.
-              </p>
-            </div>
-          )}
+          ) : null}
 
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-dashed border-[var(--border)] bg-[var(--surface-low)] p-4">
-            <div className="space-y-1 text-sm text-foreground/65">
-              <p>
-                Filename: {buildTimesheetExportFilename(startDate, endDate)}
-              </p>
-              <p>
-                Rows without an assigned project or task are exported with blank
-                cells.
-              </p>
-            </div>
-
+          <SettingRow
+            label={`${rows.length} ${rows.length === 1 ? "entry" : "entries"} selected`}
+            description={
+              <>
+                {hasInvalidRange ? null : (
+                  <p>
+                    {formatDecimalHours(totalHours)} hours in decimal format
+                    will be exported.
+                  </p>
+                )}
+                <p className="mt-1 text-xs text-[var(--text-tertiary)]">
+                  Filename: {buildTimesheetExportFilename(startDate, endDate)}
+                  {" · "}Rows without an assigned project or task are exported
+                  with blank cells.
+                </p>
+              </>
+            }
+          >
             <Button
               type="button"
               onClick={handleExport}
@@ -259,35 +264,40 @@ export function SettingsExportPage() {
               <Download className="h-4 w-4" />
               Export to Excel
             </Button>
-          </div>
+          </SettingRow>
 
-          {exportMessage ? <MessagePanel>{exportMessage}</MessagePanel> : null}
+          {exportMessage ? <ResultLine>{exportMessage}</ResultLine> : null}
           {exportError ? (
             <MessagePanel tone="warning">{exportError}</MessagePanel>
           ) : null}
         </AppPanel>
+      </section>
+
+      <section className="settings-section">
+        <h2 className="settings-section-title">Import time entries</h2>
+        <p className="settings-section-desc">
+          Upload the exported workbook format and review every row in a staged
+          queue before it is added to your local timesheet.
+        </p>
 
         <AppPanel>
-          <SurfaceCallout icon={Upload} title="Excel workbook import">
-            Upload the exported workbook format and review every row before it
-            is added locally.
-          </SurfaceCallout>
-
-          <div className="grid gap-4 desktop:grid-cols-[minmax(0,1fr)_auto] desktop:items-end">
-            <div className="space-y-2">
-              <Label>Workbook</Label>
-              <Input
-                type="file"
-                accept=".xlsx"
-                onChange={handleImportFileChange}
-              />
-              <p className="text-sm text-foreground/65">
-                {selectedImportFile
-                  ? selectedImportFile.name
-                  : "Choose a .xlsx file with a Time entries sheet."}
-              </p>
-            </div>
-
+          <SettingRow
+            label="Workbook"
+            labelFor="time-entries-import-file"
+            description={
+              selectedImportFile
+                ? selectedImportFile.name
+                : "Choose a .xlsx file with a Time entries sheet."
+            }
+            stacked
+          >
+            <Input
+              id="time-entries-import-file"
+              type="file"
+              accept=".xlsx"
+              onChange={handleImportFileChange}
+              className="min-w-0 flex-[1_1_14rem] desktop:max-w-sm"
+            />
             <Button
               type="button"
               onClick={handleReviewImport}
@@ -296,34 +306,35 @@ export function SettingsExportPage() {
               <Upload className="h-4 w-4" />
               Review import
             </Button>
-          </div>
+          </SettingRow>
 
-          {statusMessage ? <MessagePanel>{statusMessage}</MessagePanel> : null}
+          {statusMessage ? <ResultLine>{statusMessage}</ResultLine> : null}
           {error ? <MessagePanel tone="warning">{error}</MessagePanel> : null}
 
-          <div className="flex flex-wrap items-center gap-2 text-sm text-foreground/70">
-            <Badge className="bg-muted">{pendingImportCount} pending</Badge>
-            <Badge className="bg-muted">{pendingReadyCount} ready</Badge>
-            <Badge
-              className={
-                pendingConflictCount > 0
-                  ? "bg-[var(--danger-muted)] text-[var(--danger-light)]"
-                  : "bg-muted"
-              }
-            >
-              {pendingConflictCount} potential conflict
-              {pendingConflictCount === 1 ? "" : "s"}
-            </Badge>
-          </div>
-
-          {pendingImportCount === 0 ? (
-            <MessagePanel>
-              No staged workbook rows yet. Upload a workbook and review it
-              before importing.
-            </MessagePanel>
-          ) : (
-            <div className="space-y-3">
-              <div className="flex flex-wrap gap-2">
+          <SettingRow
+            label="Staged rows"
+            description={
+              pendingImportCount === 0 ? (
+                "No staged workbook rows yet. Upload a workbook and review it before importing."
+              ) : (
+                <>
+                  {pendingImportCount} pending · {pendingReadyCount} ready ·{" "}
+                  <span
+                    className={
+                      pendingConflictCount > 0
+                        ? "text-[var(--danger-light)]"
+                        : undefined
+                    }
+                  >
+                    {pendingConflictCount} potential conflict
+                    {pendingConflictCount === 1 ? "" : "s"}
+                  </span>
+                </>
+              )
+            }
+          >
+            {pendingImportCount === 0 ? null : (
+              <>
                 <Button
                   type="button"
                   variant="secondary"
@@ -339,68 +350,70 @@ export function SettingsExportPage() {
                 >
                   Dismiss all
                 </Button>
-              </div>
+              </>
+            )}
+          </SettingRow>
 
-              <div className="space-y-2">
-                {state.timesheetImportDrafts.map((draft) => (
+          {pendingImportCount === 0 ? null : (
+            <div className="flex flex-col gap-4">
+              {state.timesheetImportDrafts.map((draft) => {
+                const assignment = [draft.projectName, draft.taskName]
+                  .filter(Boolean)
+                  .join(" · ");
+                return (
                   <div
                     key={draft._id}
-                    className="flex flex-col gap-3 rounded-lg border border-[var(--border)] bg-[var(--surface-low)] p-4"
+                    className="flex flex-wrap items-center justify-between gap-x-6 gap-y-2"
                   >
-                    <div className="flex flex-wrap items-start justify-between gap-3">
-                      <div className="space-y-1">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-sm font-medium text-foreground">
-                            {draft.localDate}
+                    <div className="flex min-w-0 flex-[1_1_16rem] flex-col gap-0.5">
+                      <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+                        <span className="text-sm font-medium text-foreground">
+                          {draft.localDate}
+                        </span>
+                        {assignment ? (
+                          <span className="min-w-0 text-[13px] break-words text-[var(--text-secondary)]">
+                            {assignment}
                           </span>
-                          {draft.projectName ? (
-                            <Badge className="bg-muted">
-                              {draft.projectName}
-                            </Badge>
-                          ) : null}
-                          {draft.taskName ? (
-                            <Badge className="bg-muted">{draft.taskName}</Badge>
-                          ) : null}
-                          <Badge
-                            className={
-                              draft.potentialConflict
-                                ? "bg-[var(--danger-muted)] text-[var(--danger-light)]"
-                                : "bg-muted"
-                            }
-                          >
-                            {draft.potentialConflict
-                              ? "Potential conflict"
-                              : "Ready to add"}
+                        ) : null}
+                        {draft.potentialConflict ? (
+                          <Badge className="bg-[var(--danger-muted)] text-[var(--danger-light)]">
+                            Potential conflict
                           </Badge>
-                        </div>
-                        <div className="text-sm text-foreground/65">
-                          {formatDraftHours(draft.durationMs)} hours
-                          {draft.note ? ` · ${draft.note}` : ""}
-                        </div>
+                        ) : (
+                          <span className="text-xs text-[var(--text-tertiary)]">
+                            Ready to add
+                          </span>
+                        )}
                       </div>
-
-                      <div className="flex flex-wrap gap-2">
-                        <Button
-                          type="button"
-                          variant={
-                            draft.potentialConflict ? "outline" : "secondary"
-                          }
-                          onClick={() => handleAddDraft(draft._id)}
-                        >
-                          Add
-                        </Button>
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          onClick={() => handleDismissDraft(draft._id)}
-                        >
-                          Dismiss
-                        </Button>
+                      <div className="text-[13px] break-words text-[var(--text-secondary)]">
+                        {formatDraftHours(draft.durationMs)} hours
+                        {draft.note ? ` · ${draft.note}` : ""}
                       </div>
                     </div>
+
+                    <div className="flex shrink-0 gap-2">
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant={
+                          draft.potentialConflict ? "outline" : "secondary"
+                        }
+                        onClick={() => handleAddDraft(draft._id)}
+                      >
+                        Add
+                      </Button>
+                      <Button
+                        type="button"
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleDismissDraft(draft._id)}
+                      >
+                        Dismiss
+                      </Button>
+                    </div>
                   </div>
-                ))}
-              </div>
+                );
+              })}
             </div>
           )}
         </AppPanel>
@@ -408,3 +421,5 @@ export function SettingsExportPage() {
     </div>
   );
 }
+
+/** A finished export or import, said in plain text under the action. */
