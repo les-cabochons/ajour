@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const { offerUndo, canWriteToSource } = vi.hoisted(() => ({
   offerUndo: vi.fn(),
-  canWriteToSource: vi.fn(() => false),
+  canWriteToSource: vi.fn((_item: { title: string }) => false),
 }));
 vi.mock("@/features/feedback/undo-toast", () => ({ offerUndo }));
 vi.mock("@/features/backlog/backlog-source-writes", async (importOriginal) => ({
@@ -328,5 +328,38 @@ describe("agent work item tools", () => {
       ok: false,
       error: expect.stringContaining("done state"),
     });
+  });
+
+  it("refuses to close a parent whose carried subitem writes to its source", async () => {
+    const { call, localStore } = await setup();
+    const parentId = localStore.addWorkItem({ title: "Parent" });
+    localStore.addWorkItem({
+      title: "Synced child",
+      parentWorkItemId: parentId,
+    });
+    canWriteToSource.mockImplementation(
+      (item: { title: string }) => item.title === "Synced child",
+    );
+    const done = localStore
+      .snapshot()
+      .workflowStates.find((state) => state.done)!;
+    const before = localStore.snapshot().workItems;
+
+    expect(
+      call("move_work_item", {
+        workItemId: parentId,
+        workflowStateId: done._id,
+        includeSubitems: true,
+      }),
+    ).toMatchObject({
+      ok: false,
+      error: expect.stringContaining(
+        "A subitem writes its state to its source",
+      ),
+    });
+    expect(
+      call("settle_work_item", { workItemId: parentId, includeSubitems: true }),
+    ).toMatchObject({ ok: false });
+    expect(localStore.snapshot().workItems).toEqual(before);
   });
 });

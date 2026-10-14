@@ -64,7 +64,8 @@ function requireWorkflowState(state: LocalAppState, workflowStateId: string) {
 
 /**
  * Whether a close or settle takes the item's open subitems along: the
- * agent's answer, else the user's setting. Refuses when the setting says Ask.
+ * agent's answer, else the user's setting. Refuses when the setting says Ask,
+ * and when a carried subitem writes its state to its source.
  */
 function resolveIncludeSubitems(
   state: LocalAppState,
@@ -74,7 +75,18 @@ function resolveIncludeSubitems(
 ) {
   const open = getOpenSubitems(state, item._id, verb);
   if (open.length === 0) return false;
-  if (requested !== undefined) return requested;
+  const include = requested ?? defaultIncludeSubitems(state, open.length);
+  // The UI writes each carried subitem's state to its source too.
+  if (include && open.some(canWriteToSource)) {
+    throw new AgentToolRefusal(
+      "A subitem writes its state to its source, which can need a choice in Ajour. Ask the user to do it.",
+    );
+  }
+  return include;
+}
+
+/** The user's setting for open subitems. Refuses when it says Ask. */
+function defaultIncludeSubitems(state: LocalAppState, openCount: number) {
   switch (state.userPreferences.closeParentSubitems) {
     case "include":
       return true;
@@ -82,7 +94,7 @@ function resolveIncludeSubitems(
       return false;
     default:
       throw new AgentToolRefusal(
-        `This item has ${open.length} open ${open.length === 1 ? "subitem" : "subitems"}. Call again with includeSubitems true or false.`,
+        `This item has ${openCount} open ${openCount === 1 ? "subitem" : "subitems"}. Call again with includeSubitems true or false.`,
       );
   }
 }
