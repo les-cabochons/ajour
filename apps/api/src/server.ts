@@ -55,7 +55,14 @@ import {
   projectDataShapeListResponseSchema,
   projectDataShapePluginIdSchema,
 } from "../../../packages/shared/project-data-shapes.ts";
+import {
+  bridgeToolResultSchema,
+  mcpClientCreateRequestSchema,
+  mcpSettingsUpdateSchema,
+} from "../../../packages/shared/agent-tools.ts";
 import { mergeConnectionConfigForSave } from "./connection-values.ts";
+import { McpBridge } from "./mcp-bridge.ts";
+import { createMcpClient } from "./mcp-clients.ts";
 import { ConnectorPluginManager } from "./plugin-host.ts";
 import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";
 import { AppApiStorage } from "./storage.ts";
@@ -71,6 +78,10 @@ interface AppApiServerOptions {
   pluginRequestTimeoutMs?: number;
   projectDataShapePluginDirectories?: string[];
   allowedOrigins?: string[];
+  /** How long a data tool waits for the renderer. Tests shorten it. */
+  mcpBridgeTimeoutMs?: number;
+  /** Receives MCP wide events. Defaults to one JSON line on stdout. */
+  mcpLogEvent?: (event: Record<string, unknown>) => void;
 }
 
 interface AppApiRuntime {
@@ -452,6 +463,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     projectDataShapePluginManager,
     stopping: false,
   };
+  const mcpBridge = new McpBridge({ timeoutMs: options.mcpBridgeTimeoutMs });
 
   const server = createServer(async (request, response) => {
     if (runtime.stopping) {
@@ -485,6 +497,68 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     try {
       if (request.method === "GET" && requestUrl.pathname === "/api/health") {
         writeJson(response, 200, { ok: true });
+        return;
+      }
+
+      if (requestUrl.pathname === "/api/mcp/settings") {
+        if (request.method === "POST") {
+          const payload = mcpSettingsUpdateSchema.parse(
+            await readJsonBody(request),
+          );
+          await storage.setMcpEnabled(payload.enabled);
+          if (!payload.enabled) mcpBridge.close();
+        }
+        writeJson(response, 200, await storage.getMcpSettings());
+        return;
+      }
+
+      if (
+        request.method === "POST" &&
+        requestUrl.pathname === "/api/mcp/clients"
+      ) {
+        const payload = mcpClientCreateRequestSchema.parse(
+          await readJsonBody(request),
+        );
+        writeJson(response, 201, await createMcpClient(storage, payload.name));
+        return;
+      }
+
+      const mcpRevokeRoute = requestUrl.pathname.match(
+        /^\/api\/mcp\/clients\/([^/]+)\/revoke$/,
+      );
+      if (request.method === "POST" && mcpRevokeRoute) {
+        const revoked = await storage.revokeMcpClient(
+          decodeURIComponent(mcpRevokeRoute[1] ?? ""),
+          Date.now(),
+        );
+        if (!revoked) {
+          writeJson(response, 404, { error: "Unknown MCP client." });
+          return;
+        }
+        writeJson(response, 200, await storage.getMcpSettings());
+        return;
+      }
+
+      if (
+        request.method === "GET" &&
+        requestUrl.pathname === "/api/mcp/bridge"
+      ) {
+        if (!(await storage.getMcpSettings()).enabled) {
+          writeJson(response, 404, { error: "MCP is off." });
+          return;
+        }
+        mcpBridge.attach(response);
+        return;
+      }
+
+      if (
+        request.method === "POST" &&
+        requestUrl.pathname === "/api/mcp/bridge/results"
+      ) {
+        const result = bridgeToolResultSchema.parse(
+          await readJsonBody(request),
+        );
+        writeJson(response, 200, { ok: mcpBridge.resolve(result) });
         return;
       }
 
@@ -1164,6 +1238,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
 
   appApiRuntimesByServer.set(server, runtime);
   server.once("close", () => {
+    mcpBridge.close();
     void pluginManager.shutdown();
     void projectDataShapePluginManager.shutdown();
   });
