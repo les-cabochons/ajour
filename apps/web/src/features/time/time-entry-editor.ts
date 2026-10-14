@@ -1,3 +1,4 @@
+import { isValidLocalDate } from "@/domain/time/local-date";
 import {
   formatDurationHoursInput,
   parseHoursInput,
@@ -67,7 +68,6 @@ export interface TimeEntryEditorState {
 /** Shown under Hours, and as the blocked Save reason, for a new entry with no hours. */
 export const START_OR_ENTER_HOURS_HINT = "Enter hours, or press Start";
 const NON_POSITIVE_DURATION_ERROR = "Enter a positive duration";
-const ISO_DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/;
 
 /** Seeds the draft shared by every entry editor host. */
 export function createTimeEntryEditorFields(
@@ -130,9 +130,7 @@ export function evaluateTimeEntryEditor(
     metadata.note !== original.note ||
     durationMs !== original.durationMs ||
     fields.localDate !== original.localDate;
-  const dateError = ISO_DATE_PATTERN.test(fields.localDate)
-    ? null
-    : "Enter a date";
+  const dateError = isValidLocalDate(fields.localDate) ? null : "Enter a date";
   const canSave =
     durationMs !== null &&
     (durationMs > 0 || (isRunning && durationMs === 0)) &&

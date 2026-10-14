@@ -9,9 +9,8 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { isValidLocalDate } from "@/domain/time/local-date";
 import { cn } from "@/lib/utils";
-
-const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 function dateAtNoon(localDate: string) {
   return new Date(`${localDate}T12:00:00`);
@@ -39,7 +38,7 @@ export function DateField({
   calendarLabel?: string;
 }) {
   const [open, setOpen] = useState(false);
-  const selected = ISO_DATE.test(value) ? dateAtNoon(value) : undefined;
+  const selected = isValidLocalDate(value) ? dateAtNoon(value) : undefined;
 
   return (
     <div className={cn("relative", className)}>
