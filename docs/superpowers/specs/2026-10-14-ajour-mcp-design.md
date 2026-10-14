@@ -176,7 +176,8 @@ The API emits one wide event per MCP request, `mcp.request`, with the client ID,
 
 Spec B covers:
 
-- The agent runner: Ajour starts Claude Code or Codex headless with a session token, a clean configuration and the Playwright MCP for the browser. The runner ends the session when the process exits.
+- The agent runner: Ajour starts Claude Code or Codex headless with a clean configuration and the Playwright MCP for the browser. The runner ends the session when the process exits.
+- Runner tokens: for each run, the runner creates an MCP client, keeps its token in memory and passes it to the agent in the `AJOUR_MCP_TOKEN` environment variable. The MCP server config goes on the command line. No config file holds the token. The runner revokes the client when the process exits. The ready-to-paste config in Settings > MCP stays for agents the user starts.
 - The `mcp` plugin capability: plugin tools and prompts at `/mcp/plugins/<pluginId>`, each call in a stateless worker. Waiting stays in the API.
 - The Workday plugin: a prompt that fills the week's timesheet from `get_submit_lines`, opens Workday in the user's browser and lets the browser handle sign-in. The user still clicks Submit in Workday, then confirms in Ajour, which marks the entries as submitted.
 - An "Enter in Workday" action on the Submit page, after `feat/ui-time` merges.
