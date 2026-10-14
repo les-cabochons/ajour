@@ -1,7 +1,7 @@
 # Ajour MCP: data tools, agent sessions and the agent indicator
 
 - Date: 2026-10-14
-- Status: Agreed in a brainstorming session, waiting for spec review
+- Status: Implemented. Plan: docs/superpowers/plans/2026-10-14-ajour-mcp.md
 - Scope: MCP endpoint in the local API, client tokens, Ajour data tools, agent sessions, questions, the agent indicator and panel
 - Decisions: [ADR 0004](../../../agents/adr/0004-mcp-sends-local-data-to-the-clients-model.md)
 - Follow-up: spec B, the agent runner and the Workday plugin (see "Later")
@@ -60,7 +60,7 @@ The renderer owns all data in browser storage. Plugins and the API never get the
 
 - Each request carries `Authorization: Bearer <token>`. A missing, unknown or revoked token gets 401.
 - Requests to `/mcp/*` that carry an `Origin` header get 403. Agents are not browsers, so this blocks web pages from reaching MCP even with a leaked token.
-- Settings > MCP creates a client with a name and shows its token once, with ready-to-paste config for Claude Code and Codex. The API stores the SHA-256 hash of the token, the name, the creation time and the last use, in `app-api-state.json`. Revoking a client deletes its hash.
+- Settings > MCP creates a client with a name and shows its token once, with ready-to-paste config for Claude Code and Codex. The API stores the SHA-256 hash of the token, the name, the creation time and the last use, in `app-api-state.json`. Revoking a client keeps its record with a `revokedAt` time and the token stops working, so the 401 error can name the client.
 - The MCP on/off flag lives in the same file, so the API knows it without a renderer.
 - The toggle and the client management routes live under `/api/mcp/settings` and `/api/mcp/clients` and use the existing origin allowlist, like the rest of `/api`.
 

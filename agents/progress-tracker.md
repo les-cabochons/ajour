@@ -166,6 +166,11 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
       compact 48px rails; Settings Back restores the full prior workspace URL
       without leaving Settings in browser history.
 
+## Ajour MCP, 2026-10-14
+
+- [x] Spec A: MCP endpoint at `/mcp/ajour` (off by default, per-client tokens, Origin and Host checks), the renderer bridge, data tools for timers, entries, projects and backlog items with Undo, agent sessions and questions, and the agent indicator and panel. Spec: `docs/superpowers/specs/2026-10-14-ajour-mcp-design.md`.
+- [ ] Spec B: agent runner, the `mcp` plugin capability and the Workday plugin.
+
 ## Architecture follow-up, 2026-10-10
 
 - [x] Day inline and Week/mobile dialog time editors share one draft interpretation module, preserve unchanged notes and exact milliseconds, and save the current inline draft on outside click.

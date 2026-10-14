@@ -44,10 +44,10 @@ Font weights: 400 for text, 500 for labels, buttons and row titles, 600 for page
 Semantic variables, light and dark under `:root` and `:root.dark`:
 
 - `--background`, `--foreground`, `--card`, `--popover`, `--secondary`, `--muted`, `--muted-foreground`, `--accent`, `--border`, `--input`, `--ring`
-- `--primary`: the one accent, the logo's indigo. Primary buttons, focus rings, links, selected options and the returned pull request badge. Not the active nav row.
+- `--primary`: the one accent, the logo's indigo. Primary buttons, focus rings, links, selected options, the returned pull request badge and a working agent in the agent indicator. Not the active nav row.
 - `--success`: the running indicator and the dock's remaining-estimate bar. Nothing else.
-- `--warning`: amber, with an icon, for days under target, over capacity and unmapped source states.
-- `--destructive`: destructive actions and failures only.
+- `--warning`: amber, with an icon, for days under target, over capacity, unmapped source states and an agent question.
+- `--destructive`: destructive actions and failures only, including a failed agent session and an agent error.
 - `--scrollbar-thumb`: the scrollbar thumb, on native scrollers and `ScrollArea`. The track is transparent. The sidebar backlog list shows the thumb only on hover or when focus is inside it.
 - Workflow states and projects carry their own colors.
 
