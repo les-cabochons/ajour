@@ -1,10 +1,23 @@
 import type { LocalWorkItem } from "@/domain/local-state";
 
+/** Parsed once per source id: every synced backlog row shows its reference. */
+const referencesBySourceId = new Map<string, string | undefined>();
+
 export function parseWorkItemReference(sourceId?: string) {
   if (!sourceId) {
     return undefined;
   }
 
+  if (referencesBySourceId.has(sourceId)) {
+    return referencesBySourceId.get(sourceId);
+  }
+
+  const reference = parseReference(sourceId);
+  referencesBySourceId.set(sourceId, reference);
+  return reference;
+}
+
+function parseReference(sourceId: string) {
   try {
     const pathnameSegments = new URL(sourceId).pathname
       .split("/")

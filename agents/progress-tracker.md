@@ -8,9 +8,20 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
       second: running readouts share one clock (`useRunningClock`), and the
       status pulse animates on the compositor. Renderer work with a timer
       running fell from about 51 to 4 ms per second on Windows.
+- [x] A large workspace (600 backlog items, 1,800 entries) no longer stalls on
+      every click: a store write announces itself without re-reading storage per
+      subscriber, children are indexed once per work item list, and sidebar
+      rows are memoized with hover actions that mount on hover or focus. On
+      Windows a Start click fell from about 280 ms to 38 ms and cold load from
+      about 450 ms to 150 ms.
+- [ ] The Backlog page still mounts a context menu, pickers and tooltip buttons
+      per row (about 225 ms for 300 rows). A shared context menu per list and
+      hover-mounted actions that keep their footprint would bring it in line
+      with the sidebar.
 - [ ] macOS sluggishness on a fresh install, with no timer running, is not
       reproduced on Windows. Collect a trace from a Mac, and check whether the
-      x64 build runs under Rosetta on Apple Silicon.
+      x64 build runs under Rosetta on Apple Silicon. The titlebar and sidebar
+      `backdrop-filter` blurs are the first thing to try removing there.
 - [ ] A failed plugin connection save shows its error at the top of the page,
       off-screen from the form, and the error clears after about 6 seconds.
 
