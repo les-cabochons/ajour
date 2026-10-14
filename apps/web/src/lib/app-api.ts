@@ -50,6 +50,7 @@ import {
   type ProjectDataShapeExportProject,
 } from "@ajour/shared";
 import {
+  agentsSnapshotSchema,
   mcpBridgeResultAckSchema,
   mcpClientCreateResponseSchema,
   mcpSettingsSchema,
@@ -817,5 +818,23 @@ export async function postMcpBridgeResult(result: BridgeToolResult) {
     "/api/mcp/bridge/results",
     { method: "POST", body: JSON.stringify(result) },
     mcpBridgeResultAckSchema,
+  );
+}
+
+/** Answers an agent's open question. Returns the new agents snapshot. */
+export async function answerAgentQuestion(questionId: string, text: string) {
+  return appApiRequest(
+    `/api/mcp/questions/${encodeURIComponent(questionId)}/answer`,
+    { method: "POST", body: JSON.stringify({ text }) },
+    agentsSnapshotSchema,
+  );
+}
+
+/** Marks past agent errors and failures as seen. Returns the new snapshot. */
+export async function markAgentsSeen() {
+  return appApiRequest(
+    "/api/mcp/seen",
+    { method: "POST", body: "{}" },
+    agentsSnapshotSchema,
   );
 }

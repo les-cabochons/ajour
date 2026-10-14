@@ -15,6 +15,15 @@ interface McpMockState {
   postedAnswers: { questionId: string; text: string }[];
 }
 
+/** What the API answers once the user has answered or seen everything. */
+const emptySnapshot = () => ({
+  sessions: [],
+  openQuestions: [],
+  activity: [],
+  errors: [],
+  seenAt: Date.now(),
+});
+
 /**
  * Stubs the local API's MCP routes. The bridge stream sends `bridgeEvents`
  * once, then nothing, so EventSource's reconnects don't replay tool calls.
@@ -85,6 +94,21 @@ async function mockMcp(page: Page, initial: Partial<McpMockState> = {}) {
     state.postedResults.push(route.request().postDataJSON());
     await route.fulfill({ json: { ok: true }, headers: cors });
   });
+  // Opening the panel keeps open questions open. Answering closes them.
+  await page.route(`${apiUrl}/api/mcp/questions/*/answer`, async (route) => {
+    const questionId = route.request().url().split("/").at(-2)!;
+    const { text } = route.request().postDataJSON() as { text: string };
+    state.postedAnswers.push({ questionId, text });
+    await route.fulfill({ json: emptySnapshot(), headers: cors });
+  });
+  await page.route(`${apiUrl}/api/mcp/seen`, (route) =>
+    route.fulfill({
+      json:
+        state.bridgeEvents.find(({ event }) => event === "agents")?.data ??
+        emptySnapshot(),
+      headers: cors,
+    }),
+  );
   return state;
 }
 
@@ -208,6 +232,79 @@ Then("a toast reads {string}", async ({ page }, text: string) => {
 
 Then("the bridge received a successful result", async () => {
   expect(mcp.postedResults[0]).toMatchObject({ requestId: "call-1", ok: true });
+});
+
+Given("MCP is off", async ({ page }) => {
+  mcp = await mockMcp(page, { enabled: false });
+});
+
+Given(
+  "MCP is on and {string} asks {string} with choices {string} and {string}",
+  async (
+    { page },
+    clientName: string,
+    text: string,
+    first: string,
+    second: string,
+  ) => {
+    const client = { id: "client-1", name: clientName };
+    mcp = await mockMcp(page, {
+      bridgeEvents: [
+        {
+          event: "agents",
+          data: {
+            sessions: [],
+            openQuestions: [
+              {
+                id: "question-1",
+                client,
+                text,
+                choices: [first, second],
+                askedAt: Date.now(),
+              },
+            ],
+            activity: [],
+            errors: [],
+            seenAt: 0,
+          },
+        },
+      ],
+    });
+  },
+);
+
+Then("the agent indicator is absent", async ({ page }) => {
+  await page.waitForLoadState("networkidle");
+  await expect(page.getByRole("button", { name: /^Agents:/ })).toHaveCount(0);
+});
+
+Then("the agent indicator reads {string}", async ({ page }, label: string) => {
+  await expect(
+    page.getByRole("button", { name: `Agents: ${label}` }),
+  ).toBeVisible();
+});
+
+When(
+  "I open the agent panel and choose {string}",
+  async ({ page }, choice: string) => {
+    await page.getByRole("button", { name: /^Agents:/ }).click();
+    await page.getByRole("button", { name: choice, exact: true }).click();
+  },
+);
+
+Then(
+  "the answer {string} is sent for that question",
+  async ({}, text: string) => {
+    await expect
+      .poll(() => mcp.postedAnswers)
+      .toEqual([{ questionId: "question-1", text }]);
+  },
+);
+
+Then("the question toast is gone", async ({ page }) => {
+  await expect(
+    page.getByText("Claude Code asks: Which project gets the 2 hours?"),
+  ).toHaveCount(0);
 });
 
 export { mockMcp, mcp };

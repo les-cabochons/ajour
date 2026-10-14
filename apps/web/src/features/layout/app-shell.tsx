@@ -43,6 +43,7 @@ import { AppMenuBar } from "@/features/layout/app-menu-bar";
 import { getAppSection } from "@/features/layout/app-section";
 import { CommandPalette } from "@/features/command-palette/command-palette";
 import { AgentBridgeHost } from "@/features/agents/agent-bridge-host";
+import { AgentIndicator } from "@/features/agents/agent-indicator";
 import { ShortcutOverlay } from "@/features/layout/shortcut-overlay";
 import { useGlobalShortcuts } from "@/features/layout/use-global-shortcuts";
 import {
@@ -733,6 +734,7 @@ export function AppShell() {
       <PendingSourceWritesFlush />
       <ShortcutOverlay />
       <AgentBridgeHost />
+      <AgentIndicator />
       <CommandPalette />
       <SnoozePickerHost />
       <SettleDialogHost />
