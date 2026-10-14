@@ -2,6 +2,8 @@ import os from "node:os";
 import path from "node:path";
 import type { AddressInfo } from "node:net";
 import { mkdtemp, rm } from "node:fs/promises";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { afterEach, describe, expect, it } from "vitest";
 import type {
   BridgeToolCall,
@@ -156,6 +158,24 @@ async function openFakeRenderer(
   };
 }
 
+/** Connects an MCP client the way Claude Code or Codex would. */
+async function connectAgent(baseUrl: string, token: string) {
+  const agent = new Client({ name: "test-agent", version: "1.0.0" });
+  await agent.connect(
+    new StreamableHTTPClientTransport(new URL(`${baseUrl}/mcp/ajour`), {
+      requestInit: { headers: { Authorization: `Bearer ${token}` } },
+    }),
+  );
+  running.push(() => agent.close());
+  return agent;
+}
+
+/** The text of a tool result's first content block. */
+function resultText(result: Awaited<ReturnType<Client["callTool"]>>) {
+  const [first] = result.content as { type: string; text: string }[];
+  return first?.text ?? "";
+}
+
 describe("MCP settings routes", () => {
   it("keeps MCP off by default and turns it on", async () => {
     const { baseUrl } = await startTestApi();
@@ -202,5 +222,125 @@ describe("MCP settings routes", () => {
 
     await apiRequest(baseUrl, "/api/mcp/settings", { enabled: false });
     await renderer.ended;
+  });
+});
+
+describe("MCP endpoint", () => {
+  it("answers 404 while MCP is off", async () => {
+    const { baseUrl } = await startTestApi();
+    const response = await fetch(`${baseUrl}/mcp/ajour`, {
+      method: "POST",
+      headers: { Authorization: "Bearer ajour_x" },
+    });
+    expect(response.status).toBe(404);
+  });
+
+  it("refuses browser requests even with a valid token", async () => {
+    const { baseUrl } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl);
+    const response = await fetch(`${baseUrl}/mcp/ajour`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${token}`, Origin: TEST_ORIGIN },
+    });
+    expect(response.status).toBe(403);
+  });
+
+  it("answers 401 without a token and with a revoked one", async () => {
+    const { baseUrl } = await startTestApi();
+    const created = await enableMcpWithClient(baseUrl);
+    const missing = await fetch(`${baseUrl}/mcp/ajour`, { method: "POST" });
+    expect(missing.status).toBe(401);
+
+    await apiRequest(
+      baseUrl,
+      `/api/mcp/clients/${created.client.id}/revoke`,
+      {},
+    );
+    const revoked = await fetch(`${baseUrl}/mcp/ajour`, {
+      method: "POST",
+      headers: { Authorization: `Bearer ${created.token}` },
+    });
+    expect(revoked.status).toBe(401);
+  });
+
+  it("runs a read tool in the renderer and names the client", async () => {
+    const { baseUrl, logged } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl, "Claude Code");
+    const calls: BridgeToolCall[] = [];
+    await openFakeRenderer(baseUrl, (call) => {
+      calls.push(call);
+      return {
+        requestId: call.requestId,
+        ok: true,
+        output: { projects: ["Acme"] },
+      };
+    });
+    const agent = await connectAgent(baseUrl, token);
+
+    const result = await agent.callTool({
+      name: "list_projects",
+      arguments: {},
+    });
+
+    expect(JSON.parse(resultText(result))).toEqual({ projects: ["Acme"] });
+    expect(calls[0]).toMatchObject({
+      tool: "list_projects",
+      client: { name: "Claude Code" },
+    });
+    expect(logged).toContainEqual(
+      expect.objectContaining({
+        event: "mcp.request",
+        tool: "list_projects",
+        outcome: "ok",
+      }),
+    );
+    expect(logged.every((event) => !("input" in event))).toBe(true);
+  });
+
+  it("returns the renderer's refusal as a tool error", async () => {
+    const { baseUrl } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl);
+    await openFakeRenderer(baseUrl, (call) => ({
+      requestId: call.requestId,
+      ok: false,
+      error: "No backlog item has the id x.",
+    }));
+    const agent = await connectAgent(baseUrl, token);
+
+    const result = await agent.callTool({
+      name: "get_work_item",
+      arguments: { workItemId: "x" },
+    });
+
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toBe("No backlog item has the id x.");
+  });
+
+  it("tells the agent to open Ajour when no window is connected", async () => {
+    const { baseUrl } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl);
+    const agent = await connectAgent(baseUrl, token);
+
+    const result = await agent.callTool({
+      name: "list_projects",
+      arguments: {},
+    });
+
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toBe("Open the Ajour window to use this tool.");
+  });
+
+  it("times out when the window does not answer", async () => {
+    const { baseUrl } = await startTestApi({ mcpBridgeTimeoutMs: 100 });
+    const { token } = await enableMcpWithClient(baseUrl);
+    await openFakeRenderer(baseUrl, () => undefined);
+    const agent = await connectAgent(baseUrl, token);
+
+    const result = await agent.callTool({
+      name: "list_projects",
+      arguments: {},
+    });
+
+    expect(resultText(result)).toBe("Ajour did not answer in time.");
   });
 });

@@ -63,6 +63,7 @@ import {
 import { mergeConnectionConfigForSave } from "./connection-values.ts";
 import { McpBridge } from "./mcp-bridge.ts";
 import { createMcpClient } from "./mcp-clients.ts";
+import { handleMcpRequest } from "./mcp-server.ts";
 import { ConnectorPluginManager } from "./plugin-host.ts";
 import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";
 import { AppApiStorage } from "./storage.ts";
@@ -464,6 +465,21 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     stopping: false,
   };
   const mcpBridge = new McpBridge({ timeoutMs: options.mcpBridgeTimeoutMs });
+  const mcpContext = {
+    storage,
+    bridge: mcpBridge,
+    logEvent:
+      options.mcpLogEvent ??
+      ((event: Record<string, unknown>) =>
+        console.info(
+          JSON.stringify({
+            timestamp: new Date().toISOString(),
+            level: "info",
+            ...event,
+          }),
+        )),
+    readBody: readJsonBody,
+  };
 
   const server = createServer(async (request, response) => {
     if (runtime.stopping) {
@@ -472,6 +488,19 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     }
     if (request.headers.host && !isAllowedRequestHost(request.headers.host)) {
       writeJson(response, 403, { error: "Request host is not allowed." });
+      return;
+    }
+    const requestPath = new URL(request.url ?? "/", "http://127.0.0.1")
+      .pathname;
+    // MCP has its own rules: bearer tokens, and no browser origins at all.
+    if (requestPath === "/mcp" || requestPath.startsWith("/mcp/")) {
+      try {
+        await handleMcpRequest(request, response, requestPath, mcpContext);
+      } catch (error) {
+        if (!response.headersSent) {
+          writeJson(response, 500, { error: errorMessage(error) });
+        }
+      }
       return;
     }
     const requestOrigin = request.headers.origin;
