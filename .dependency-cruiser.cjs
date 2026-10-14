@@ -100,10 +100,9 @@ module.exports = {
     exclude: {
       path: "(^|/)(dist|dist-desktop|out|out-embedded|build|\\.features-gen)/",
     },
-    // The base config maps @ajour/shared to its entry point. App-local aliases
-    // such as the web app's @/ stay unresolved, so cycles through them are not
-    // seen from the repo root.
-    tsConfig: { fileName: "tsconfig.base.json" },
+    // Resolves @ajour/shared and the web app's @/ alias from the repo root.
+    // Keep its paths in sync with tsconfig.base.json and apps/web/tsconfig.json.
+    tsConfig: { fileName: "tsconfig.depcruise.json" },
     // Count type-only and unused imports too, so `import type` cannot reach
     // into a package's internals unnoticed.
     tsPreCompilationDeps: true,

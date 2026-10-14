@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "paths": {
+      "@ajour/shared": ["packages/shared/index.ts"],
+      "@ajour/shared/*": ["packages/shared/*"],
+      "@/*": ["apps/web/src/*"]
+    }
+  }
+}
