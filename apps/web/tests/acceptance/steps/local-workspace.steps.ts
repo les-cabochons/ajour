@@ -1484,6 +1484,29 @@ Then(
   },
 );
 
+When('I open a new entry from the titlebar "+"', async ({ page }) => {
+  await page.getByRole("button", { name: "Create time entry" }).click();
+});
+
+When("I open the running entry from the timer dock", async ({ page }) => {
+  await page
+    .getByRole("region", { name: "Running entry" })
+    .getByRole("button", { name: "Edit the running entry" })
+    .click();
+});
+
+Then("only the new entry's editor is open", async ({ page }) => {
+  const editors = page.locator('[data-slot="popover-content"]');
+  await expect(editors).toHaveCount(1);
+  await expect(editors).toContainText("New time entry");
+});
+
+Then("only the running entry's editor is open", async ({ page }) => {
+  const editors = page.locator('[data-slot="popover-content"]');
+  await expect(editors).toHaveCount(1);
+  await expect(editors).toContainText("Running");
+});
+
 When("I open today's time workspace in the Week view", async ({ page }) => {
   await page.goto("/time/today?view=week");
 });
