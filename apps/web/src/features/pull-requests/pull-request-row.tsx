@@ -37,6 +37,17 @@ export const reasonLabels: Record<PullRequestReason, string> = {
   manual: "On your plate",
 };
 
+/** The sidebar's one-line reasons. "On your plate" needs no label there. */
+const shortReasonLabels: Record<PullRequestReason, string | undefined> = {
+  "review-requested": "Review",
+  "changes-requested": "New commits",
+  "new-reply": "Reply",
+  mentioned: "Mention",
+  "new-review": "New review",
+  "new-comment": "Comment",
+  manual: undefined,
+};
+
 type PullRequestAction =
   "open" | "open-in-source" | "settle" | "unsettle" | "snooze" | "unsnooze";
 const keys: ActionKeys<PullRequestAction> = {
@@ -129,8 +140,10 @@ export function PullRequestRow({
           data-pull-request-id={item._id}
           data-focus-column="0"
           className={cn(
-            "group flex min-w-0 cursor-pointer items-start gap-2 rounded-md text-[13px] outline-none hover:bg-[var(--surface-high)] focus-visible:ring-2 focus-visible:ring-ring",
-            compact ? "px-2 py-2" : "border-b border-border/50 px-3 py-3",
+            "group flex min-w-0 cursor-pointer gap-2 rounded-md text-[13px] outline-none focus-visible:ring-2 focus-visible:ring-ring",
+            compact
+              ? "h-7 shrink-0 items-center px-2 hover:bg-foreground/5 focus-visible:ring-1"
+              : "items-start border-b border-border/50 px-3 py-3 hover:bg-[var(--surface-high)]",
             selected && "bg-foreground/[0.07]",
           )}
           onClick={(event) => {
@@ -147,66 +160,96 @@ export function PullRequestRow({
         />
       }
     >
-      {item.facts.state === "open" ? (
-        <PullRequestIcon
-          className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-          aria-hidden="true"
-        />
-      ) : (
-        <Check
-          className="mt-0.5 size-4 shrink-0 text-muted-foreground"
-          aria-hidden="true"
-        />
-      )}
-      <div className="min-w-0 flex-1">
-        <div className={cn("flex items-start gap-2", compact && "block")}>
+      {compact ? (
+        <>
+          {item.facts.state === "open" ? (
+            <PullRequestIcon
+              className="size-4 shrink-0 text-[var(--success)]"
+              aria-hidden="true"
+            />
+          ) : (
+            <Check
+              className="size-4 shrink-0 text-muted-foreground"
+              aria-hidden="true"
+            />
+          )}
           <span
             className={cn(
-              "font-medium",
-              compact ? "line-clamp-2" : "break-words",
+              "min-w-0 flex-1 truncate",
+              returned && "font-semibold",
             )}
+            title={`${item.facts.repository} #${item.facts.number}${showConnection ? ` · ${item.connectionLabel}` : ""}`}
           >
             {item.facts.title}
           </span>
-          {returned ? (
-            <span className="inline-flex items-center gap-1 text-xs text-primary">
-              <Return className="size-3" />
-              Returned
-            </span>
-          ) : null}
-        </div>
-        <p className="mt-1 truncate text-xs text-muted-foreground">
-          {item.facts.repository} #{item.facts.number}
-          {showConnection ? ` · ${item.connectionLabel}` : ""}
-        </p>
-        {!compact ? (
-          <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-            <span>
-              {item.facts.state !== "open"
-                ? item.facts.state === "merged"
-                  ? "Merged"
-                  : "Closed"
-                : isPullRequestSnoozed(item, now)
-                  ? `Snoozed until ${formatSnoozeTime(item.snoozedUntil!, now)}`
-                  : item.status === "settled"
-                    ? "Settled"
-                    : reasonLabels[item.reason ?? "manual"]}
-            </span>
-            {item.facts.draft ? <Badge variant="outline">Draft</Badge> : null}
-            {item.facts.checks !== "none" ? (
-              <span>
-                Checks{" "}
-                {item.facts.checks === "success"
-                  ? "passed"
-                  : item.facts.checks === "failure"
-                    ? "failed"
-                    : "pending"}
+          <span className="shrink-0 text-[11.5px] text-muted-foreground group-focus-within:hidden group-hover:hidden">
+            {[
+              returned
+                ? "Returned"
+                : shortReasonLabels[item.reason ?? "manual"],
+              waitingAge(item.activeAt, now),
+            ]
+              .filter(Boolean)
+              .join(" · ")}
+          </span>
+        </>
+      ) : (
+        <>
+          {item.facts.state === "open" ? (
+            <PullRequestIcon
+              className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+              aria-hidden="true"
+            />
+          ) : (
+            <Check
+              className="mt-0.5 size-4 shrink-0 text-muted-foreground"
+              aria-hidden="true"
+            />
+          )}
+          <div className="min-w-0 flex-1">
+            <div className="flex items-start gap-2">
+              <span className="font-medium break-words">
+                {item.facts.title}
               </span>
-            ) : null}
-            <span>{waitingAge(item.activeAt, now)}</span>
+              {returned ? (
+                <span className="inline-flex items-center gap-1 text-xs text-primary">
+                  <Return className="size-3" />
+                  Returned
+                </span>
+              ) : null}
+            </div>
+            <p className="mt-1 truncate text-xs text-muted-foreground">
+              {item.facts.repository} #{item.facts.number}
+              {showConnection ? ` · ${item.connectionLabel}` : ""}
+            </p>
+            <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+              <span>
+                {item.facts.state !== "open"
+                  ? item.facts.state === "merged"
+                    ? "Merged"
+                    : "Closed"
+                  : isPullRequestSnoozed(item, now)
+                    ? `Snoozed until ${formatSnoozeTime(item.snoozedUntil!, now)}`
+                    : item.status === "settled"
+                      ? "Settled"
+                      : reasonLabels[item.reason ?? "manual"]}
+              </span>
+              {item.facts.draft ? <Badge variant="outline">Draft</Badge> : null}
+              {item.facts.checks !== "none" ? (
+                <span>
+                  Checks{" "}
+                  {item.facts.checks === "success"
+                    ? "passed"
+                    : item.facts.checks === "failure"
+                      ? "failed"
+                      : "pending"}
+                </span>
+              ) : null}
+              <span>{waitingAge(item.activeAt, now)}</span>
+            </div>
           </div>
-        ) : null}
-      </div>
+        </>
+      )}
       <ObjectActionsButton
         actions={actions}
         keys={keys}
@@ -217,6 +260,11 @@ export function PullRequestRow({
           )
         }
         label={`Actions for ${item.facts.title}`}
+        className={
+          compact
+            ? "hidden size-6 group-focus-within:flex group-hover:flex"
+            : undefined
+        }
       />
     </ObjectContextMenu>
   );

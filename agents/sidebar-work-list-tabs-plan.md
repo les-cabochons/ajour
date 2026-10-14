@@ -1,5 +1,9 @@
 # Sidebar work list tabs
 
+Superseded by the sidebar redesign: the tabs are gone, and Backlog and Pull
+requests are collapsible sections of one work list. See "Backlog sidebar" in
+`agents/ux-spec.md`.
+
 Requested after issue #78. Replace the stacked pull request and backlog sidebar
 lists with Backlog and Pull requests tabs in the same area under navigation.
 

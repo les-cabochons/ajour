@@ -10,6 +10,7 @@ import {
   TimeEntryEditorForm,
   type TimeEntryEditorTarget,
 } from "@/features/time/time-entry-editor-form";
+import type { TimeEntryEditorFields } from "@/features/time/time-entry-editor";
 import type { ShortcutActionId } from "@/lib/shortcuts";
 
 /**
@@ -28,6 +29,8 @@ export function TimeEntryEditorPopover({
   iconTrigger = false,
   triggerShortcut,
   anchor,
+  initialFields,
+  onFieldsChange,
   children,
 }: {
   /** What the form edits. The popover shows nothing while this is null. */
@@ -46,6 +49,9 @@ export function TimeEntryEditorPopover({
    * row that New entry… came from. Closing gives focus back to it.
    */
   anchor?: HTMLElement | null;
+  /** An unsaved draft carried over from another host, such as the dialog. */
+  initialFields?: TimeEntryEditorFields;
+  onFieldsChange?: (fields: TimeEntryEditorFields) => void;
   /** The trigger button's content. */
   children: ReactNode;
 }) {
@@ -96,6 +102,8 @@ export function TimeEntryEditorPopover({
             }
             target={target}
             titleAs={PopoverTitle}
+            initialFields={initialFields}
+            onFieldsChange={onFieldsChange}
             onClose={() => onOpenChange(false)}
           />
         ) : null}

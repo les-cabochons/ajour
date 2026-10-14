@@ -22,8 +22,10 @@ Feature: Pull requests on your plate
   Scenario: Plugin deactivation hides navigation and preserves local choices
     When I open the pull request list
     And I deactivate the code host plugin
+    And I go back to the app from Settings
     Then pull request navigation disappears and local records remain
     When I reactivate the code host plugin
+    And I go back to the app from Settings
     Then pull request navigation returns with the same local records
 
   Scenario: Connection removal asks before deleting its pull requests
@@ -61,18 +63,18 @@ Feature: Pull requests on your plate
     Then the requested pull request is absent from the sidebar
     And the requested pull request appears under Recently closed
 
-  Scenario: Alternate the sidebar lists without navigating away
+  Scenario: List pull requests and backlog items in one sidebar
     When I open the pull request list
-    And I select Backlog in the sidebar tabs
-    Then the sidebar shows backlog controls instead of pull requests
-    And the pull request page stays open
-    When I select Pull requests with the sidebar keyboard tabs
-    Then the pull request sidebar contains only active review requests
-    And the backlog controls are hidden
+    Then the sidebar shows backlog controls and pull requests together
+    And the pull request sidebar contains only active review requests
+    When I collapse the sidebar Pull requests section
+    Then the pull request page stays open
+    And the sidebar pull requests are collapsed
 
-  Scenario: Fit the sidebar tabs at the minimum width and hide them for inactive code hosts
+  Scenario: Fit the sidebar at its minimum width and drop pull requests for inactive code hosts
     When I open the pull request list
     And I set the sidebar to its minimum width
-    Then both sidebar tab labels fit inside the sidebar
+    Then the sidebar section labels fit inside the sidebar
     When I deactivate the code host plugin
-    Then the sidebar tabs are hidden and backlog controls are visible
+    And I go back to the app from Settings
+    Then the sidebar has no Pull requests section and backlog controls are visible

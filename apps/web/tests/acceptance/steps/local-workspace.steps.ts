@@ -550,8 +550,59 @@ When("I widen the app back to a desktop width", async ({ page }) => {
   await page.setViewportSize({ width: 1280, height: 900 });
 });
 
-When("I collapse the app sidebar with its button", async ({ page }) => {
-  await page.getByRole("button", { name: "Collapse sidebar" }).click();
+When("I hide the app sidebar with its button", async ({ page }) => {
+  await page.getByRole("button", { name: "Hide sidebar" }).click();
+});
+
+When("I show the app sidebar from the titlebar", async ({ page }) => {
+  await page.getByRole("button", { name: "Show sidebar" }).click();
+});
+
+When("I start an empty entry from the titlebar", async ({ page }) => {
+  await page
+    .locator(".ajour-nav")
+    .getByRole("button", { name: "Start", exact: true })
+    .click();
+});
+
+Then("the timer dock opens the running entry", async ({ page }) => {
+  const dock = page
+    .getByRole("navigation", { name: "Primary navigation" })
+    .getByRole("region", { name: "Running entry" });
+  await expect(dock).toContainText("Untitled entry");
+  await expect(
+    page.getByRole("dialog").getByRole("button", { name: "Stop", exact: true }),
+  ).toBeVisible();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+Then("the window title shows the running entry", async ({ page }) => {
+  await expect(page).toHaveTitle(/^● 0:00 · Untitled entry — Ajour$/);
+});
+
+Then("the running entry floats at the bottom left", async ({ page }) => {
+  const dock = page.locator(".ajour-floating-dock-desktop");
+  await expect(dock).toContainText("Untitled entry");
+  const [box, viewport] = await Promise.all([
+    dock.boundingBox(),
+    page.evaluate(() => ({ height: window.innerHeight })),
+  ]);
+  // 16px from the edge, or 8px inside the Settings column.
+  expect([8, 16]).toContain(box?.x);
+  expect((box?.y ?? 0) + (box?.height ?? 0)).toBe(viewport.height - 16);
+});
+
+When("I stop the running entry from the floating dock", async ({ page }) => {
+  await page
+    .locator(".ajour-floating-dock-desktop")
+    .getByRole("button", { name: "Stop", exact: true })
+    .click();
+});
+
+Then("nothing runs and the window title is plain", async ({ page }) => {
+  await expect(page.locator(".ajour-floating-dock-desktop")).toHaveCount(0);
+  await expect(page).toHaveTitle("Ajour");
 });
 
 When("I reload the app", async ({ page }) => {
@@ -913,7 +964,7 @@ When("I start a fresh timer from the Time page", async ({ page }) => {
 });
 
 When(
-  "I open the running entry from the titlebar on the Backlog page",
+  "I open the running entry from the timer dock on the Backlog page",
   async ({ page }) => {
     await page.goto("/backlog");
     await page.getByRole("button", { name: "Edit the running entry" }).click();
@@ -938,9 +989,8 @@ When(
 );
 
 Then("the running entry keeps running from one hour", async ({ page }) => {
-  await expect(
-    page.getByRole("button", { name: "Stop", exact: true }),
-  ).toHaveCount(0);
+  // The editor closed. The timer dock keeps its own Stop.
+  await expect(page.getByRole("dialog")).toHaveCount(0);
   const state = await page.evaluate(() =>
     JSON.parse(window.localStorage.getItem("ajour.local-state.v2") ?? "null"),
   );
@@ -1347,47 +1397,138 @@ Then("the app sidebar is expanded", async ({ page }) => {
   ).toBeVisible();
 });
 
-Then("the app sidebar is an icon rail", async ({ page }) => {
-  await expectAppSidebarWidth(page, 52);
-  const primaryNavigation = page.getByRole("navigation", {
-    name: "Primary navigation",
+Then("the app sidebar is hidden", async ({ page }) => {
+  await expect(
+    page.getByRole("navigation", { name: "Primary navigation" }),
+  ).toHaveCount(0);
+  await expect(
+    page.getByRole("button", { name: "Show sidebar" }),
+  ).toBeVisible();
+});
+
+Then("the app sidebar opens over the page", async ({ page }) => {
+  const overlay = page.getByRole("dialog", { name: "Navigation" });
+  await expect(
+    overlay.getByRole("navigation", { name: "Primary navigation" }),
+  ).toBeVisible();
+  // Opening a page from it closes it.
+  await overlay.getByRole("link", { name: "Backlog" }).click();
+  await expect(page).toHaveURL(/\/backlog$/);
+  await expect(overlay).toHaveCount(0);
+  // So does choosing the page already open, which leaves the route alone.
+  await page.getByRole("button", { name: "Show sidebar" }).click();
+  await overlay.getByRole("link", { name: "Backlog" }).click();
+  await expect(overlay).toHaveCount(0);
+});
+
+Then("the Settings pages replace the app sidebar", async ({ page }) => {
+  const settingsNavigation = page.getByRole("navigation", {
+    name: "Settings sections",
   });
   await expect(
-    primaryNavigation.getByRole("link", { name: "Time" }),
-  ).toBeVisible();
+    page.getByRole("navigation", { name: "Primary navigation" }),
+  ).toHaveCount(0);
+  await expect(settingsNavigation).toBeVisible();
   await expect(
-    primaryNavigation.getByText("Time", { exact: true }),
-  ).toBeHidden();
+    settingsNavigation.getByRole("link", { name: "General" }),
+  ).toHaveAttribute("aria-current", "page");
+  await expect(
+    settingsNavigation.getByRole("button", { name: "Back to app" }),
+  ).toBeVisible();
+  // The narrow view's back arrow does not show in wide windows.
+  await expect(
+    page.getByRole("button", { name: "Back", exact: true }),
+  ).toHaveCount(0);
+
+  const [box, viewport] = await Promise.all([
+    settingsNavigation.boundingBox(),
+    page.evaluate(() => ({ height: window.innerHeight })),
+  ]);
+  expect(box?.x).toBe(0);
+  expect(box?.y).toBe(0);
+  expect(box?.height).toBe(viewport.height);
+});
+
+When(
+  "I type {string} in the running entry's note",
+  async ({ page }, note: string) => {
+    await page
+      .getByRole("dialog")
+      .getByRole("textbox", { name: "Note", exact: true })
+      .fill(note);
+  },
+);
+
+When("I narrow the window to the narrow view", async ({ page }) => {
+  await page.setViewportSize({ width: 420, height: 800 });
 });
 
 Then(
-  "the Settings pages are listed beside the app sidebar",
-  async ({ page }) => {
-    const primaryNavigation = page.getByRole("navigation", {
-      name: "Primary navigation",
-    });
-    const settingsNavigation = page.getByRole("navigation", {
-      name: "Settings sections",
-    });
-    await expect(primaryNavigation).toBeVisible();
+  "the running entry's dialog still has {string}",
+  async ({ page }, note: string) => {
+    const dialog = page.getByRole("dialog");
+    await expect(dialog).toHaveCount(1);
     await expect(
-      primaryNavigation.getByRole("link", { name: "Settings" }),
-    ).toHaveAttribute("aria-current", "page");
-    await expect(settingsNavigation).toBeVisible();
-    await expect(
-      settingsNavigation.getByRole("link", { name: "General" }),
-    ).toHaveAttribute("aria-current", "page");
-    await expect(page.getByRole("button", { name: "Back" })).toHaveCount(0);
-
-    const [primaryNavigationBox, settingsNavigationBox] = await Promise.all([
-      primaryNavigation.boundingBox(),
-      settingsNavigation.boundingBox(),
-    ]);
-    expect(settingsNavigationBox?.x).toBe(
-      (primaryNavigationBox?.x ?? 0) + (primaryNavigationBox?.width ?? 0),
-    );
+      dialog.getByRole("textbox", { name: "Note", exact: true }),
+    ).toHaveValue(note);
   },
 );
+
+Then(
+  "the running entry's popover still has {string}",
+  async ({ page }, note: string) => {
+    const popover = page.locator('[data-slot="popover-content"]');
+    await expect(
+      popover.getByRole("textbox", { name: "Note", exact: true }),
+    ).toHaveValue(note);
+  },
+);
+
+When('I open a new entry from the titlebar "+"', async ({ page }) => {
+  await page.getByRole("button", { name: "Create time entry" }).click();
+});
+
+When("I open the running entry from the timer dock", async ({ page }) => {
+  await page
+    .getByRole("region", { name: "Running entry" })
+    .getByRole("button", { name: "Edit the running entry" })
+    .click();
+});
+
+Then("only the new entry's editor is open", async ({ page }) => {
+  const editors = page.locator('[data-slot="popover-content"]');
+  await expect(editors).toHaveCount(1);
+  await expect(editors).toContainText("New time entry");
+});
+
+Then("only the running entry's editor is open", async ({ page }) => {
+  const editors = page.locator('[data-slot="popover-content"]');
+  await expect(editors).toHaveCount(1);
+  await expect(editors).toContainText("Running");
+});
+
+When("I open today's time workspace in the Week view", async ({ page }) => {
+  await page.goto("/time/today?view=week");
+});
+
+Then(
+  "the Week view is back and the browser's Back skips Settings",
+  async ({ page }) => {
+    await expect(page).toHaveURL(/view=week/);
+    await page.goBack();
+    await expect(page).not.toHaveURL(/\/settings/);
+  },
+);
+
+When("I go back to the app from Settings", async ({ page }) => {
+  await page
+    .getByRole("navigation", { name: "Settings sections" })
+    .getByRole("button", { name: "Back to app" })
+    .click();
+  await expect(
+    page.getByRole("navigation", { name: "Primary navigation" }),
+  ).toBeVisible();
+});
 
 Then(
   "the Projects sidebar remains expanded and left-aligned beside primary navigation",
@@ -1425,7 +1566,9 @@ Then(
     const projectsNavigation = page.getByRole("navigation", {
       name: "Projects",
     });
-    await expectAppSidebarWidth(page, 52);
+    await expect(
+      page.getByRole("navigation", { name: "Primary navigation" }),
+    ).toHaveCount(0);
     await expect(projectsNavigation).toBeVisible();
     const projectsNavigationBox = await projectsNavigation.boundingBox();
     expect(projectsNavigationBox?.width).toBe(48);

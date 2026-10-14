@@ -9,20 +9,36 @@ Feature: Open the local time workspace
     And the day surfaces stretch around centered content
     And the timesheet can be submitted
 
-  Scenario: Collapse the desktop sidebar to an icon rail
+  Scenario: Hide the desktop sidebar and open it over narrow windows
     Given I have no saved Ajour workspace, even after a reload
     When I open today's time workspace
     Then the app sidebar is expanded
-    When I collapse the app sidebar with its button
-    Then the app sidebar is an icon rail
+    When I hide the app sidebar with its button
+    Then the app sidebar is hidden
     When I reload the app
-    Then the app sidebar is an icon rail
+    Then the app sidebar is hidden
     When I press the sidebar shortcut
     Then the app sidebar is expanded
     When I narrow the app below the expanded sidebar width
-    Then the app sidebar is an icon rail
+    Then the app sidebar is hidden
+    When I show the app sidebar from the titlebar
+    Then the app sidebar opens over the page
     When I widen the app back to a desktop width
     Then the app sidebar is expanded
+
+  Scenario: Follow the running entry with the sidebar hidden
+    Given I have no saved Ajour workspace
+    When I open today's time workspace
+    And I start an empty entry from the titlebar
+    Then the timer dock opens the running entry
+    And the window title shows the running entry
+    When I open Settings from the desktop sidebar
+    Then the running entry floats at the bottom left
+    When I go back to the app from Settings
+    And I hide the app sidebar with its button
+    Then the running entry floats at the bottom left
+    When I stop the running entry from the floating dock
+    Then nothing runs and the window title is plain
 
   Scenario: Use single-key shortcuts outside text fields
     Given I have no saved Ajour workspace
@@ -123,19 +139,45 @@ Feature: Open the local time workspace
     When I undo with the toast button
     Then the "Code review" cell on Monday shows "1:00"
 
-  Scenario: Open Settings inside the app shell
+  Scenario: Open Settings in place of the app sidebar
     Given I have no saved Ajour workspace
     When I open today's new-entry workspace
     And I open Settings from the desktop sidebar
-    Then the Settings pages are listed beside the app sidebar
+    Then the Settings pages replace the app sidebar
     When I open Plugins from the Settings navigation
-    And I open Time from the app sidebar
+    And I go back to the app from Settings
     Then the Time workspace is visible
+
+  Scenario: Keep the running entry's draft across the narrow breakpoint
+    Given I have no saved Ajour workspace
+    When I open today's time workspace
+    And I start an empty entry from the titlebar
+    And I type "Standup notes" in the running entry's note
+    And I narrow the window to the narrow view
+    Then the running entry's dialog still has "Standup notes"
+    When I widen the app back to a desktop width
+    Then the running entry's popover still has "Standup notes"
+
+  Scenario: Open one entry editor at a time
+    Given I have no saved Ajour workspace
+    When I open today's time workspace
+    And I start an empty entry from the titlebar
+    And I open a new entry from the titlebar "+"
+    Then only the new entry's editor is open
+    When I open the running entry from the timer dock
+    Then only the running entry's editor is open
+
+  Scenario: Return from Settings to the same view
+    Given I have no saved Ajour workspace
+    When I open today's time workspace in the Week view
+    And I open Settings from the desktop sidebar
+    And I go back to the app from Settings
+    Then the Week view is back and the browser's Back skips Settings
 
   Scenario: Open Settings directly
     Given I have no saved Ajour workspace
     When I open Settings directly
-    Then the Settings pages are listed beside the app sidebar
+    Then the Settings pages replace the app sidebar
 
   Scenario: Keep the desktop Projects sidebar expanded
     Given I have projects with searchable tasks
@@ -239,9 +281,9 @@ Feature: Open the local time workspace
     When I start a fresh timer from the Time page
     Then the first timer is saved and the fresh timer is running
 
-  Scenario: Correct the running entry's hours from the titlebar
+  Scenario: Correct the running entry's hours from the timer dock
     Given I have two saved entries with a timer running on the first
-    When I open the running entry from the titlebar on the Backlog page
+    When I open the running entry from the timer dock on the Backlog page
     And I change its hours to "1:00" and save
     Then the running entry keeps running from one hour
 

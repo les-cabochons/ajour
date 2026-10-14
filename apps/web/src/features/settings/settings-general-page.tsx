@@ -289,7 +289,7 @@ export function SettingsGeneralPage() {
           </SettingRow>
           <SettingRow
             label="Density"
-            description="Compact shows one line per item in a narrower sidebar."
+            description="Compact rows are shorter and hide estimates, in a narrower sidebar."
           >
             <ToggleGroup
               aria-label="Sidebar density"
@@ -308,7 +308,7 @@ export function SettingsGeneralPage() {
           <SettingRow
             label="Show Up next"
             labelFor="show-up-next"
-            description="Show the first backlog item as a card with its actions."
+            description="Show the first backlog item above the list with a Start button."
           >
             <Switch
               id="show-up-next"

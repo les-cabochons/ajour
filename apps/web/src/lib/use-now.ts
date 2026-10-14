@@ -54,3 +54,38 @@ export function useRunningClock(running: boolean) {
     getRunningClockNow,
   );
 }
+
+/** Milliseconds from `now` to the next local midnight, plus a second of slack. */
+function msUntilNextLocalDay(now: number) {
+  const next = new Date(now);
+  next.setHours(24, 0, 0, 0);
+  return Math.max(1000, next.getTime() - now + 1000);
+}
+
+/**
+ * Today's ISO date, refreshed once the local day changes. One timeout per
+ * subscriber, so an idle app rolls its "today" readouts over at midnight
+ * without a running clock.
+ */
+export function useTodayIsoDate() {
+  const [today, setToday] = useState(() => todayIsoDateFrom(Date.now()));
+
+  useEffect(() => {
+    let id: number | undefined;
+    const schedule = () => {
+      id = window.setTimeout(() => {
+        setToday(todayIsoDateFrom(Date.now()));
+        schedule();
+      }, msUntilNextLocalDay(Date.now()));
+    };
+    schedule();
+    return () => window.clearTimeout(id);
+  }, []);
+
+  return today;
+}
+
+/** The same local ISO date as `todayIsoDate` in `lib/utils`, for a given instant. */
+function todayIsoDateFrom(now: number) {
+  return new Intl.DateTimeFormat("en-CA").format(new Date(now));
+}
