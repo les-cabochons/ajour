@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { aggregateSegmentsToBlocks } from "../src/timeline/aggregation";
-import type { ActivitySegmentRecord } from "../src/types/domain";
+import { aggregateSegmentsToBlocks } from "../index";
+import type { ActivitySegmentRecord } from "../index";
 
 function makeSegment(
   overrides: Partial<ActivitySegmentRecord>,

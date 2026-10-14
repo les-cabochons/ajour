@@ -4,7 +4,7 @@ import { serialize } from "node:v8";
 const MAX_CONNECTOR_PLUGIN_RESULT_BYTES = 8 * 1024 * 1024;
 const MAX_CONNECTOR_PLUGIN_ERROR_MESSAGE_CHARACTERS = 4_096;
 
-// Keep in sync with `codeHostOperations` in packages/shared/src/code-host.ts.
+// Keep in sync with `codeHostOperations` in packages/shared/code-host.ts.
 const CODE_HOST_METHODS = new Set([
   "syncPullRequests",
   "getPullRequestContent",

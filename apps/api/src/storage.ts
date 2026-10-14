@@ -14,7 +14,7 @@ import {
   type ConnectorPluginManifest,
   type ConnectorsOverview,
   type ConnectorSummaryValues,
-} from "../../../packages/shared/src/connectors.ts";
+} from "../../../packages/shared/connectors.ts";
 
 interface StoredConnection {
   id: string;

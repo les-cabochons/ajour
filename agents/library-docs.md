@@ -113,7 +113,7 @@ The backlog editor module is feature-local because its vocabulary and commands b
 - Connector discovery, request/reply validation, and package mutation coordination: `apps/api/src/plugin-host.ts`
 - Shared ephemeral worker admission, cancellation, timeout, termination, and shutdown drain: `apps/api/src/plugin-worker-lifetime.ts`. Each connector/data-shape manager owns a separate four-operation quota and its own worker script.
 - Worker entrypoint bridge: `apps/api/src/plugin-worker.mjs`
-- Project data-shape manifest and dataset contracts: `packages/shared/src/project-data-shapes.ts`
+- Project data-shape manifest and dataset contracts: `packages/shared/project-data-shapes.ts`
 - Project data-shape discovery and worker orchestration: `apps/api/src/project-data-shape-plugin.ts` and `apps/api/src/project-data-shape-host.ts`
 - Standalone Workday shape plugin: `les-cabochons/ajp-workday`
 
@@ -136,9 +136,9 @@ The backlog editor module is feature-local because its vocabulary and commands b
   `"connector": { "settle": true }` also exports
   `listSettleStates(connection, { sourceId })` and
   `writeSettle(connection, { sourceId, state?, priority? })`. The contract is
-  in `packages/shared/src/connectors.ts`. See ADR 0001.
+  in `packages/shared/connectors.ts`. See ADR 0001.
 - A code host exports one function per entry of `codeHostOperations` in
-  `packages/shared/src/code-host.ts`, each called as
+  `packages/shared/code-host.ts`, each called as
   `operation(connection, request)`. The API exposes them at
   `POST /api/code-hosts/:pluginId/connections/:connectionId/:operation`.
   The GitHub code host lives in `les-cabochons/ajc-github`. See ADR 0002 and

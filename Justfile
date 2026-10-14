@@ -190,8 +190,16 @@ format-check:
     echo >&2 "[1/1] Checking formatting"
     {{PNPM}} format:check
 
-[doc("Runs TypeScript checks across the workspace")]
+[doc("Runs TypeScript checks and package boundary checks across the workspace")]
 [group("app")]
 typecheck:
-    echo >&2 "[1/1] Running TypeScript checks"
+    echo >&2 "[1/2] Running TypeScript checks"
     {{PNPM}} typecheck
+    echo >&2 "[2/2] Checking package boundaries"
+    {{PNPM}} lint:boundaries
+
+[doc("Fails when code imports a package's internals instead of its entry points")]
+[group("app")]
+lint-boundaries:
+    echo >&2 "[1/1] Checking package boundaries"
+    {{PNPM}} lint:boundaries

@@ -12,8 +12,8 @@
     "skipLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@ajour/shared": ["packages/shared/src/index.ts"],
-      "@ajour/shared/*": ["packages/shared/src/*"]
+      "@ajour/shared": ["packages/shared/index.ts"],
+      "@ajour/shared/*": ["packages/shared/*"]
     }
   }
 }

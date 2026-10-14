@@ -2,7 +2,7 @@ import type {
   ConnectorFieldValue,
   ConnectorFieldValues,
   ConnectorPluginManifest,
-} from "../../../packages/shared/src/connectors.ts";
+} from "../../../packages/shared/connectors.ts";
 
 function isEmptySecretValue(value: ConnectorFieldValue | undefined) {
   return (

@@ -42,11 +42,11 @@ import {
   connectorImportSelectionResponseSchema,
   connectorImportSelectionUpdateSchema,
   connectorsOverviewSchema,
-} from "../../../packages/shared/src/connectors.ts";
+} from "../../../packages/shared/connectors.ts";
 import {
   codeHostOperationSchema,
   codeHostOperations,
-} from "../../../packages/shared/src/code-host.ts";
+} from "../../../packages/shared/code-host.ts";
 import {
   projectDataShapeExportRequestSchema,
   projectDataShapeExportResponseSchema,
@@ -54,7 +54,7 @@ import {
   projectDataShapeImportResponseSchema,
   projectDataShapeListResponseSchema,
   projectDataShapePluginIdSchema,
-} from "../../../packages/shared/src/project-data-shapes.ts";
+} from "../../../packages/shared/project-data-shapes.ts";
 import { mergeConnectionConfigForSave } from "./connection-values.ts";
 import { ConnectorPluginManager } from "./plugin-host.ts";
 import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";

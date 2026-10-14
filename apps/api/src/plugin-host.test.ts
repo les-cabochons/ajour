@@ -11,7 +11,7 @@ import {
 } from "node:fs/promises";
 import { create } from "tar";
 import { afterEach, describe, expect, it } from "vitest";
-import { codeHostOperations } from "../../../packages/shared/src/code-host.ts";
+import { codeHostOperations } from "../../../packages/shared/code-host.ts";
 import { ConnectorPluginManager } from "./plugin-host.ts";
 import { readConnectorPlugin } from "./plugin-package.ts";
 

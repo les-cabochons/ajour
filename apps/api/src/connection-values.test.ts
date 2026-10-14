@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { ConnectorPluginManifest } from "../../../packages/shared/src/connectors.ts";
+import type { ConnectorPluginManifest } from "../../../packages/shared/connectors.ts";
 import { mergeConnectionConfigForSave } from "./connection-values.ts";
 
 const plugin: ConnectorPluginManifest = {
