@@ -49,6 +49,12 @@ import {
   type ProjectDataShapeDataset,
   type ProjectDataShapeExportProject,
 } from "@ajour/shared";
+import {
+  mcpBridgeResultAckSchema,
+  mcpClientCreateResponseSchema,
+  mcpSettingsSchema,
+  type BridgeToolResult,
+} from "@ajour/shared/agent-tools";
 import { localStore } from "@/lib/local-store";
 import {
   priorityRangesFromConnectorScale,
@@ -775,4 +781,41 @@ export function buildImportHierarchy(items: ConnectorImportCandidate[]) {
     item,
     children: childrenByParent.get(item.sourceId) ?? [],
   }));
+}
+
+export async function getMcpSettings() {
+  return appApiRequest("/api/mcp/settings", undefined, mcpSettingsSchema);
+}
+
+export async function updateMcpSettings(enabled: boolean) {
+  return appApiRequest(
+    "/api/mcp/settings",
+    { method: "POST", body: JSON.stringify({ enabled }) },
+    mcpSettingsSchema,
+  );
+}
+
+/** Creates an agent client. The response holds its token, shown once. */
+export async function createMcpClient(name: string) {
+  return appApiRequest(
+    "/api/mcp/clients",
+    { method: "POST", body: JSON.stringify({ name }) },
+    mcpClientCreateResponseSchema,
+  );
+}
+
+export async function revokeMcpClient(clientId: string) {
+  return appApiRequest(
+    `/api/mcp/clients/${encodeURIComponent(clientId)}/revoke`,
+    { method: "POST", body: "{}" },
+    mcpSettingsSchema,
+  );
+}
+
+export async function postMcpBridgeResult(result: BridgeToolResult) {
+  return appApiRequest(
+    "/api/mcp/bridge/results",
+    { method: "POST", body: JSON.stringify(result) },
+    mcpBridgeResultAckSchema,
+  );
 }
