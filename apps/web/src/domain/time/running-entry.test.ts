@@ -68,6 +68,16 @@ describe("summarizeRunningEntry", () => {
     expect(summary.estimateUsed).toBe(0.5);
   });
 
+  it("keeps the bar empty when a continued entry is corrected below its saved time", () => {
+    const summary = summarizeRunningEntry(timer({ workItemId: "item-1" }), {
+      projects: [],
+      workItems: [{ ...workItem, remainingEstimateHours: 1 }],
+      unsavedDurationMs: -HOUR_MS / 4,
+    });
+    expect(summary.estimateUsed).toBe(0);
+    expect(summary.remainingMs).toBe(1.25 * HOUR_MS);
+  });
+
   it("starts from an overrun the item already logged", () => {
     const summary = summarizeRunningEntry(timer({ workItemId: "item-1" }), {
       projects: [],

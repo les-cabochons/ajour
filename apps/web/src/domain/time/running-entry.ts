@@ -71,7 +71,8 @@ export function summarizeRunningEntry(
         ? undefined
         : estimateMs <= 0
           ? 1
-          : Math.min(1, context.unsavedDurationMs / estimateMs),
+          : // A continued entry corrected below its saved time adds nothing yet.
+            Math.min(1, Math.max(0, context.unsavedDurationMs / estimateMs)),
   };
 }
 
