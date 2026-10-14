@@ -96,3 +96,64 @@ describe.each([0, 1])(
     });
   },
 );
+
+describe("row controls", () => {
+  function renderRow(alwaysLive: boolean) {
+    vi.stubGlobal("window", {
+      localStorage: {
+        length: 0,
+        getItem: () => null,
+        key: () => null,
+        setItem: vi.fn(),
+        removeItem: vi.fn(),
+      },
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    });
+    alternatives.mockReturnValue([]);
+    const state = { ...localStore.snapshot(), workItems: [item] };
+    return renderToStaticMarkup(
+      <BacklogItemSurface
+        item={item}
+        state={state}
+        view={DEFAULT_BACKLOG_VIEW_SETTINGS}
+        icons={{
+          projectsById: new Map(),
+          connectorIconsBySource: {},
+          connectorCurrentColor: "currentColor",
+          connectorTaskIconModesByConnectionId: {},
+        }}
+        board={false}
+        column={0}
+        now={1}
+        selected={false}
+        alwaysLive={alwaysLive}
+        beforeChange={() => true}
+        onSelect={noop}
+        onOpen={noop}
+        onAction={noop}
+        onKeyDown={noop}
+      />,
+    );
+  }
+
+  it("keeps the buttons and their labels but mounts the menus once live", () => {
+    const resting = renderRow(false);
+    const live = renderRow(true);
+
+    for (const label of [
+      `Change state of ${item.title}`,
+      `Start ${item.title}`,
+      `Actions for ${item.title}`,
+    ]) {
+      expect(resting).toContain(`aria-label="${label}"`);
+      expect(live).toContain(`aria-label="${label}"`);
+    }
+    expect(resting).not.toContain("data-state-picker");
+    expect(resting).not.toContain("data-priority-picker");
+    expect(resting).not.toContain('aria-haspopup="menu" tabindex="0"');
+    expect(live).toContain("data-state-picker");
+    expect(live).toContain("data-priority-picker");
+  });
+});

@@ -97,8 +97,37 @@ export function ObjectActionsButton<Id extends string>({
   keys,
   label,
   className,
-}: ObjectActionsProps<Id> & { label: string; className?: string }) {
+  live = true,
+}: ObjectActionsProps<Id> & {
+  label: string;
+  className?: string;
+  /**
+   * False renders the button alone, with the same footprint and label but no
+   * menu or tooltip. A long list passes it until the row is hovered or
+   * focused, which always comes before a click or a key on the button.
+   */
+  live?: boolean;
+}) {
   const triggerRef = React.useRef<HTMLButtonElement>(null);
+
+  if (!live) {
+    return (
+      <Button
+        type="button"
+        variant="ghost"
+        size="icon-sm"
+        className={cn("object-actions-button", className)}
+        aria-label={label}
+        aria-haspopup="menu"
+        tabIndex={-1}
+        data-no-entry-drag="true"
+        onClick={(event) => event.stopPropagation()}
+        onPointerDown={(event) => event.stopPropagation()}
+      >
+        <More />
+      </Button>
+    );
+  }
 
   return (
     <DropdownMenu>

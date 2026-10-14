@@ -14,10 +14,13 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
       rows are memoized with hover actions that mount on hover or focus. On
       Windows a Start click fell from about 280 ms to 38 ms and cold load from
       about 450 ms to 150 ms.
-- [ ] The Backlog page still mounts a context menu, pickers and tooltip buttons
-      per row (about 225 ms for 300 rows). A shared context menu per list and
-      hover-mounted actions that keep their footprint would bring it in line
-      with the sidebar.
+- [x] Backlog page rows keep their buttons but mount their pickers, tooltips
+      and actions menu only while hovered or focused (always in the narrow
+      view). A store write while on the page fell from about 240 ms to 75 ms
+      for 300 rows, and opening the page from a 230 ms task to 76 ms.
+- [ ] Each backlog row, in the sidebar and on the Backlog page, still mounts
+      its own context menu root. One context menu per list, told which row was
+      right-clicked, would remove the last per-row Base UI root.
 - [ ] macOS sluggishness on a fresh install, with no timer running, is not
       reproduced on Windows. Collect a trace from a Mac, and check whether the
       x64 build runs under Rosetta on Apple Silicon. The titlebar and sidebar
