@@ -24,7 +24,7 @@ import {
   getTimerContributionMs,
   getTimerDurationsMs,
 } from "@/lib/timer-totals";
-import { useNow, useRunningClock } from "@/lib/use-now";
+import { useNow, useRunningClock, useTodayIsoDate } from "@/lib/use-now";
 import { cn, todayIsoDate } from "@/lib/utils";
 
 let runningEntryEditorOpen = false;
@@ -86,7 +86,8 @@ export function useRunningEntry() {
       })
     : null;
 
-  const today = todayIsoDate();
+  // Rolls over at midnight even while nothing runs.
+  const today = useTodayIsoDate();
   // Saved entries change rarely; only the running part ticks.
   const savedTodayMs = useMemo(
     () =>
