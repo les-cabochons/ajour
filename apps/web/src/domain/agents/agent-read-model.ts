@@ -16,12 +16,14 @@ import {
   type LocalTimesheetEntry,
   type LocalWorkItem,
 } from "@/domain/local-state";
+import { computeWeekPace } from "@/domain/time/week-pace";
 import {
   groupSubmitLines,
   summarizeSubmitSelection,
   type SubmitGroupBy,
 } from "@/domain/time/timesheet-submission";
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
+import { submitLineId } from "@/domain/agents/submit-line-id";
 
 /**
  * What the read tools return to agents: plain ids, names and minutes, shaped
@@ -245,14 +247,26 @@ export function getWorkItemForAgent(
 const toHours = (durationMs: number) =>
   Math.round((durationMs / HOUR) * 100) / 100;
 
-/** The Submit page's lines for a week, in decimal hours as Workday wants them. */
+/**
+ * The Submit page's lines for a week, in decimal hours as Workday wants them,
+ * plus the week's pace check. `today` is passed in because domain code does
+ * not read the clock.
+ */
 export function getSubmitLinesForAgent(
   state: LocalAppState,
   {
     weekDates,
     groupBy,
     onlyUnsubmitted,
-  }: { weekDates: string[]; groupBy: SubmitGroupBy; onlyUnsubmitted: boolean },
+    today,
+    paceTolerancePercent,
+  }: {
+    weekDates: string[];
+    groupBy: SubmitGroupBy;
+    onlyUnsubmitted: boolean;
+    today: string;
+    paceTolerancePercent: number;
+  },
 ): DataToolOutput<"get_submit_lines"> {
   const weekDateSet = new Set(weekDates);
   const weekEntries = state.timesheetEntries.filter((entry) =>
@@ -280,7 +294,9 @@ export function getSubmitLinesForAgent(
     sections: sections.map((section) => ({
       ...(section.localDate ? { date: section.localDate } : {}),
       lines: section.lines.map((line) => ({
+        lineId: submitLineId(line.entryIds),
         ...(line.projectName ? { projectName: line.projectName } : {}),
+        ...(line.projectCode ? { projectCode: line.projectCode } : {}),
         ...(line.taskName ? { taskName: line.taskName } : {}),
         hours: toHours(line.durationMs),
         comments: line.comments,
@@ -293,5 +309,15 @@ export function getSubmitLinesForAgent(
       targetHours: toHours(summary.targetMs),
       warnings: summary.warnings,
     },
+    pace: computeWeekPace({
+      weekDates,
+      today,
+      capacityTargets: state.userPreferences.weeklyCapacityTargets,
+      loggedMs: weekEntries.reduce(
+        (total, entry) => total + entry.durationMs,
+        0,
+      ),
+      tolerancePercent: paceTolerancePercent,
+    }),
   };
 }

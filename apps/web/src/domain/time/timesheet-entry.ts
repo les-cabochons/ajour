@@ -412,6 +412,39 @@ export function markTimesheetEntriesSubmitted(
 }
 
 /**
+ * Returns submitted entries to saved, for example when an agent could not
+ * enter them in the external timesheet. Keeps the old submission time in
+ * `previousSubmittedAt`, as an edit does. Saved entries are left alone.
+ */
+export function markTimesheetEntriesNotSubmitted(
+  state: LocalAppState,
+  entryIds: string[],
+): LocalAppState {
+  const selectedIds = new Set(entryIds);
+  let changed = false;
+  const timesheetEntries = state.timesheetEntries.map((entry) => {
+    if (!selectedIds.has(entry._id) || entry.submittedAt === undefined) {
+      return entry;
+    }
+
+    changed = true;
+    return {
+      ...entry,
+      submittedAt: undefined,
+      submittedFingerprint: undefined,
+      previousSubmittedAt: entry.submittedAt,
+    };
+  });
+
+  return changed
+    ? {
+        ...state,
+        timesheetEntries,
+      }
+    : state;
+}
+
+/**
  * The ids of a day's saved entries in the order the Day list and the Week's
  * Days cards show them, top first: the highest `committedAt` first.
  * `excludeEntryId` leaves out the entry the running entry resumed, which stays

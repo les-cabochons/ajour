@@ -139,6 +139,47 @@ describe("plugin settings workflow", () => {
     },
   );
 
+  it("lists an agent task plugin with the agentTask capability", async () => {
+    const { deps } = dependencies();
+    const agentPlugin = {
+      id: "ajp-workday",
+      version: "1.0.0",
+      apiVersion: 3 as const,
+      displayName: "Workday",
+      iconSvg: "<svg />",
+      connectionFields: [],
+      capabilities: {
+        agentTask: {
+          tasks: [
+            {
+              id: "enter-week",
+              label: "Enter in Workday",
+              placement: "submit-week" as const,
+              prompt: "prompts/enter-week.md",
+              estimateMinutes: 10,
+              settings: [],
+            },
+          ],
+        },
+      },
+    };
+    deps.getConnectorsOverview = async () => ({
+      ...overview,
+      plugins: [agentPlugin],
+      connectionGroups: [
+        { plugin: agentPlugin, enabled: true, connections: [] },
+      ],
+    });
+    const workflow = createPluginSettingsWorkflow(deps);
+    await workflow.refresh();
+    const entry = workflow
+      .getSnapshot()
+      .displayEntries.find((item) => item.catalog.id === agentPlugin.id);
+    expect(entry?.catalog.capabilities).toEqual(["agentTask"]);
+    expect(entry?.catalog.features).toEqual(["agent-task"]);
+    expect(entry?.catalog.tags).toEqual(["agent-task"]);
+  });
+
   it("retains installed capabilities when the remote catalog fails", async () => {
     const { deps } = dependencies();
     deps.getPluginCatalog = vi.fn(async () => {

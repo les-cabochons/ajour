@@ -43,6 +43,7 @@ import {
   type SubmitWeekStatus,
 } from "@/domain/time/timesheet-submission";
 import type { LocalProjectIcon } from "@/domain/projects/project-icon";
+import { AgentTaskButtons } from "@/features/agents/agent-task-buttons";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { useLocalProjects, useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
@@ -377,11 +378,14 @@ export function SubmitPage({
       <PageHeader
         title={title}
         actions={
-          isReadOnly ? null : (
-            <Button disabled={selectedIds.size === 0} onClick={handleMark}>
-              {getSubmitButtonLabel(status, selectedIds)}
-            </Button>
-          )
+          <>
+            <AgentTaskButtons weekOf={weekDates[0]!} />
+            {isReadOnly ? null : (
+              <Button disabled={selectedIds.size === 0} onClick={handleMark}>
+                {getSubmitButtonLabel(status, selectedIds)}
+              </Button>
+            )}
+          </>
         }
       >
         <TooltipButton

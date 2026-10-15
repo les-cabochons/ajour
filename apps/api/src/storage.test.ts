@@ -468,7 +468,7 @@ describe("AppApiStorage", () => {
 
   // Regression: a plugin that fails to load (for example an older plugin API
   // version) left its connections behind, and the whole overview failed the
-  // shared schema because the placeholder has no entrypoint.
+  // shared schema because the placeholder had an empty entrypoint.
   it("keeps the overview valid when a saved connection's plugin is missing", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
     tempDirs.push(tempDir);
@@ -488,7 +488,10 @@ describe("AppApiStorage", () => {
 
     expect(overview.connectionGroups).toMatchObject([
       {
-        plugin: { id: "jira", entrypoint: "" },
+        plugin: {
+          id: "jira",
+          unavailableReason: expect.stringContaining("not installed"),
+        },
         enabled: false,
         connections: [{ label: "Main Jira" }],
       },
@@ -616,5 +619,54 @@ describe("AppApiStorage", () => {
         }),
       ],
     });
+  });
+
+  it("keeps the agent runner settings and task values", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
+    tempDirs.push(tempDir);
+    const statePath = path.join(tempDir, "app-api-state.json");
+    const storage = new AppApiStorage(statePath);
+    expect(await storage.getAgentRunnerSettings()).toEqual({
+      cli: null,
+      browserMode: "ajour-chrome",
+      model: "",
+    });
+    await storage.updateAgentRunnerSettings({ cli: "claude-code" });
+    await storage.setAgentTaskValues("ajp-workday", "enter-week", {
+      timesheetUrl: "https://wd.example/t",
+    });
+    const reloaded = new AppApiStorage(statePath);
+    expect((await reloaded.getAgentRunnerSettings()).cli).toBe("claude-code");
+    expect(
+      await reloaded.getAgentTaskValues("ajp-workday", "enter-week"),
+    ).toEqual({
+      timesheetUrl: "https://wd.example/t",
+    });
+    await reloaded.removeConnectorPluginData("ajp-workday");
+    expect(
+      await reloaded.getAgentTaskValues("ajp-workday", "enter-week"),
+    ).toEqual({});
+  });
+
+  it("ignores stored keys that would write to Object.prototype", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
+    tempDirs.push(tempDir);
+    const statePath = path.join(tempDir, "app-api-state.json");
+    // JSON.parse gives the state an own "__proto__" key, as a file on disk can.
+    await writeFile(
+      statePath,
+      `{"version":7,"connections":[],"agentRunner":{"taskValues":{"__proto__":{"x":{"a":"b"}},"ajp":{"constructor":{"a":"b"},"task":{"__proto__":"y","url":"https://wd.example/t"}}}}}\n`,
+      "utf8",
+    );
+    const storage = new AppApiStorage(statePath);
+    expect(await storage.getAgentTaskValues("ajp", "task")).toEqual({
+      url: "https://wd.example/t",
+    });
+    await storage.setAgentTaskValues("__proto__", "x", { a: "b" });
+    await storage.setAgentTaskValues("ajp", "prototype", { a: "b" });
+    await storage.getAgentTaskValues("__proto__", "x");
+    expect(({} as Record<string, unknown>).x).toBeUndefined();
+    expect(await storage.getAgentTaskValues("ajp", "constructor")).toEqual({});
+    expect(await storage.getAgentTaskValues("ajp", "prototype")).toEqual({});
   });
 });

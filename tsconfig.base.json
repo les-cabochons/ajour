@@ -9,6 +9,8 @@
     "noFallthroughCasesInSwitch": true,
     "useDefineForClassFields": true,
     "resolveJsonModule": true,
+    "allowImportingTsExtensions": true,
+    "noEmit": true,
     "skipLibCheck": true,
     "baseUrl": ".",
     "paths": {

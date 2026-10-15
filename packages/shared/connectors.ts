@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { allowedTaskSlots, listTemplateSlots } from "./agent-task-templates.ts";
 
 export const CONNECTOR_PLUGIN_API_VERSION = 3;
 export const CONNECTOR_PLUGIN_ARCHIVE_EXTENSION = ".ajour-connector";
@@ -120,6 +121,38 @@ export type ConnectorPriorityLevel = z.infer<
 >;
 
 /**
+ * A task an agent runs for the plugin, from a prompt file. No plugin code
+ * runs. See docs/superpowers/specs/2026-10-15-ajour-agent-runner-design.md.
+ */
+export const agentTaskSchema = z
+  .object({
+    id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/),
+    label: z.string().trim().min(1).max(60),
+    /** Where Ajour shows the task's button. */
+    placement: z.literal("submit-week"),
+    /** A Markdown file inside the plugin folder, at most 64 KB. */
+    prompt: z.string().trim().min(1).max(240),
+    estimateMinutes: z.number().int().min(1).max(240),
+    /** URL template for the week in the external tool. Must give https. */
+    weekLink: z.string().trim().min(1).max(500).optional(),
+    settings: z.array(connectorFieldSchema).max(20).default([]),
+  })
+  .superRefine((task, context) => {
+    if (!task.weekLink) return;
+    const allowed = allowedTaskSlots(task.settings.map((field) => field.id));
+    for (const slot of listTemplateSlots(task.weekLink)) {
+      if (!allowed.has(slot)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["weekLink"],
+          message: `The week link uses {{${slot}}}, which Ajour does not fill.`,
+        });
+      }
+    }
+  });
+export type AgentTask = z.infer<typeof agentTaskSchema>;
+
+/**
  * What a plugin provides. A plugin declares at least one capability, and its
  * connections serve all of them. A connector without `settle` keeps working:
  * Ajour settles its items locally, with no write. See ADR 0001 and ADR 0003.
@@ -132,12 +165,16 @@ export const connectorPluginCapabilitiesSchema = z
       })
       .optional(),
     codeHost: z.object({}).optional(),
+    agentTask: z
+      .object({ tasks: z.array(agentTaskSchema).min(1).max(10) })
+      .optional(),
   })
   .refine(
     (capabilities) =>
       capabilities.connector !== undefined ||
-      capabilities.codeHost !== undefined,
-    "A plugin must declare the connector capability, the codeHost capability or both.",
+      capabilities.codeHost !== undefined ||
+      capabilities.agentTask !== undefined,
+    "A plugin must declare at least one capability: connector, codeHost or agentTask.",
   );
 export type ConnectorPluginCapabilities = z.infer<
   typeof connectorPluginCapabilitiesSchema
@@ -155,7 +192,21 @@ export function pluginHasCodeHost(manifest: {
   return manifest.capabilities.codeHost !== undefined;
 }
 
-export const connectorPluginManifestSchema = z.object({
+export function pluginHasAgentTasks(manifest: {
+  capabilities: ConnectorPluginCapabilities;
+}) {
+  return manifest.capabilities.agentTask !== undefined;
+}
+
+/** Whether the plugin runs code: it syncs items or serves pull requests. */
+export function pluginRunsCode(manifest: {
+  capabilities: ConnectorPluginCapabilities;
+}) {
+  return pluginHasConnector(manifest) || pluginHasCodeHost(manifest);
+}
+
+/** The manifest fields, before the cross-field rules. The overview extends it. */
+const connectorPluginManifestObjectSchema = z.object({
   id: connectorPluginIdSchema,
   version: z
     .string()
@@ -165,10 +216,30 @@ export const connectorPluginManifestSchema = z.object({
   displayName: z.string().trim().min(1).max(120),
   description: z.string().trim().max(500).optional(),
   iconSvg: z.string().min(1).max(20000),
-  entrypoint: z.string().trim().min(1).max(240),
-  connectionFields: z.array(connectorFieldSchema).min(1).max(50),
+  /** Absent for a plugin that only declares agent tasks: it runs no code. */
+  entrypoint: z.string().trim().min(1).max(240).optional(),
+  connectionFields: z.array(connectorFieldSchema).max(50).default([]),
   capabilities: connectorPluginCapabilitiesSchema,
 });
+
+export const connectorPluginManifestSchema =
+  connectorPluginManifestObjectSchema.superRefine((manifest, context) => {
+    if (!pluginRunsCode(manifest)) return;
+    if (!manifest.entrypoint) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["entrypoint"],
+        message: "A connector or code host plugin needs an entrypoint.",
+      });
+    }
+    if (manifest.connectionFields.length === 0) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["connectionFields"],
+        message: "A connector or code host plugin needs connection fields.",
+      });
+    }
+  });
 export type ConnectorPluginManifest = z.infer<
   typeof connectorPluginManifestSchema
 >;
@@ -197,14 +268,16 @@ export type ConnectorConnectionSummary = z.infer<
 /**
  * A plugin as the overview reports it. Saved connections can outlive their
  * plugin (uninstalled, or rejected for another plugin API version), so the API
- * fills the gap with a placeholder whose empty `entrypoint` marks it as
- * unavailable, and `unavailableReason` tells the user why. Plugin packages
- * still go through the strict manifest schema.
+ * fills the gap with a placeholder, and `unavailableReason` tells the user
+ * why. An unavailable plugin is the one with `unavailableReason`; an absent
+ * entrypoint only means the plugin runs no code. Plugin packages still go
+ * through the strict manifest schema.
  */
-const connectorOverviewPluginSchema = connectorPluginManifestSchema.extend({
-  entrypoint: z.string().trim().max(240),
-  unavailableReason: z.string().max(1000).optional(),
-});
+const connectorOverviewPluginSchema =
+  connectorPluginManifestObjectSchema.extend({
+    entrypoint: z.string().trim().max(240).optional(),
+    unavailableReason: z.string().max(1000).optional(),
+  });
 export type ConnectorOverviewPlugin = z.infer<
   typeof connectorOverviewPluginSchema
 >;

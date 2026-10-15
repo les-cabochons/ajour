@@ -47,7 +47,7 @@ import type {
   PluginCatalogEntry,
   PluginCatalogSettings,
 } from "@ajour/shared";
-import { pluginHasConnector } from "@ajour/shared";
+import { pluginHasConnector, pluginRunsCode } from "@ajour/shared";
 import {
   areConnectorFormValuesEqual,
   buildConnectorFormValues,
@@ -212,7 +212,7 @@ function PluginCatalogRow({
           disabled={
             isMutating ||
             !pluginsEnabled ||
-            connectorGroup.plugin.entrypoint.length === 0
+            connectorGroup.plugin.unavailableReason !== undefined
           }
           aria-label={`${connectorGroup.enabled ? "Deactivate" : "Activate"} ${catalog.title}`}
           onCheckedChange={onEnabledChange}
@@ -616,7 +616,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                   disabled={
                     isMutatingConnector ||
                     connectors?.pluginsEnabled === false ||
-                    group.plugin.entrypoint.length === 0
+                    group.plugin.unavailableReason !== undefined
                   }
                   aria-label={`${group.enabled ? "Deactivate" : "Activate"} ${entry.title}`}
                   onCheckedChange={(enabled) =>
@@ -679,249 +679,270 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
           </MessagePanel>
         ) : null}
 
-        <section className="settings-section">
-          <div className="flex flex-wrap items-start justify-between gap-3">
-            <div>
-              <h2 className="settings-section-title">Configuration</h2>
-              <p className="settings-section-desc mt-1">
-                Manage the local connections used by this plugin.
-              </p>
-            </div>
-            <Button
-              disabled={
-                isMutatingConnector ||
-                connectors?.pluginsEnabled === false ||
-                Boolean(unavailableReason)
-              }
-              onClick={() => handleCreate(group.plugin)}
-            >
-              Add a connection
-            </Button>
-          </div>
-
-          {groupFormState ? (
-            <AppPanel className="pb-4">
+        {pluginRunsCode(group.plugin) ? (
+          <section className="settings-section">
+            <div className="flex flex-wrap items-start justify-between gap-3">
               <div>
-                <h3 className="text-sm font-medium text-foreground">
-                  {groupFormState.editingConnectionId
-                    ? `Edit ${group.plugin.displayName} connection`
-                    : `New ${group.plugin.displayName} connection`}
-                </h3>
-                <p className="mt-0.5 text-[13px] text-muted-foreground">
-                  {groupFormState.editingConnectionId
-                    ? "Update this connection without re-entering unchanged secrets."
-                    : "The connection is validated by the plugin and stored locally."}
+                <h2 className="settings-section-title">Configuration</h2>
+                <p className="settings-section-desc mt-1">
+                  Manage the local connections used by this plugin.
                 </p>
               </div>
-              <FieldGroup className="desktop:grid desktop:grid-cols-2 desktop:gap-x-6 desktop:gap-y-5">
-                {group.plugin.connectionFields.map((field) => {
-                  if (
-                    field.id === "autoSyncIntervalMinutes" &&
-                    groupFormState.values.autoSync !== true
-                  ) {
-                    return null;
-                  }
+              <Button
+                disabled={
+                  isMutatingConnector ||
+                  connectors?.pluginsEnabled === false ||
+                  Boolean(unavailableReason)
+                }
+                onClick={() => handleCreate(group.plugin)}
+              >
+                Add a connection
+              </Button>
+            </div>
 
-                  return (
-                    <ConnectorFieldInput
-                      key={field.id}
-                      field={field}
-                      value={groupFormState.values[field.id]}
-                      onChange={(nextValue) =>
-                        setFormState((current) =>
-                          current
-                            ? {
-                                ...current,
-                                values: {
-                                  ...current.values,
-                                  [field.id]: nextValue,
-                                },
-                              }
-                            : current,
-                        )
-                      }
-                    />
-                  );
-                })}
-              </FieldGroup>
-              <div className="flex flex-wrap justify-end gap-3 pt-2">
-                <Button
-                  variant="outline"
-                  disabled={isMutatingConnector}
-                  onClick={() => setFormState(null)}
-                >
-                  Cancel
-                </Button>
-                <Button
-                  disabled={
-                    isMutatingConnector ||
-                    !isFormDirty ||
-                    !canSubmitConnectorForm(
-                      activePlugin,
-                      groupFormState.values,
-                      {
-                        allowSavedSecrets: Boolean(
-                          groupFormState.editingConnectionId,
-                        ),
-                      },
-                    )
-                  }
-                  onClick={() => void handleSave()}
-                >
-                  {groupFormState.editingConnectionId
-                    ? "Update connection"
-                    : "Add connection"}
-                </Button>
-              </div>
-            </AppPanel>
-          ) : null}
+            {groupFormState ? (
+              <AppPanel className="pb-4">
+                <div>
+                  <h3 className="text-sm font-medium text-foreground">
+                    {groupFormState.editingConnectionId
+                      ? `Edit ${group.plugin.displayName} connection`
+                      : `New ${group.plugin.displayName} connection`}
+                  </h3>
+                  <p className="mt-0.5 text-[13px] text-muted-foreground">
+                    {groupFormState.editingConnectionId
+                      ? "Update this connection without re-entering unchanged secrets."
+                      : "The connection is validated by the plugin and stored locally."}
+                  </p>
+                </div>
+                <FieldGroup className="desktop:grid desktop:grid-cols-2 desktop:gap-x-6 desktop:gap-y-5">
+                  {group.plugin.connectionFields.map((field) => {
+                    if (
+                      field.id === "autoSyncIntervalMinutes" &&
+                      groupFormState.values.autoSync !== true
+                    ) {
+                      return null;
+                    }
 
-          {group.connections.length === 0 ? (
-            <EmptyListText title="No connections yet">
-              Add a {group.plugin.displayName} connection to configure its
-              source and sync behavior.
-            </EmptyListText>
-          ) : (
-            <div className="flex flex-col gap-6">
-              {group.connections.map((connection) => (
-                <div
-                  key={connection.id}
-                  className="flex flex-col gap-3 desktop:flex-row desktop:items-start desktop:justify-between desktop:gap-8"
-                >
-                  <div className="flex min-w-0 flex-1 flex-col gap-1">
-                    <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-                      <h3 className="min-w-0 text-sm font-medium break-words text-foreground">
-                        {connection.label}
-                      </h3>
-                      <Chip tone={connection.lastError ? "danger" : "neutral"}>
-                        {unavailableReason
-                          ? "Unavailable"
-                          : connectors?.pluginsEnabled === false ||
-                              !group.enabled
-                            ? "Paused"
-                            : connection.lastError
-                              ? "Error"
-                              : "Connected"}
-                      </Chip>
-                      <Badge variant="outline">
-                        {connection.autoSync
-                          ? `Auto every ${connection.autoSyncIntervalMinutes} min`
-                          : pluginHasConnector(group.plugin)
-                            ? "Stage for review"
-                            : "Manual sync"}
-                      </Badge>
+                    return (
+                      <ConnectorFieldInput
+                        key={field.id}
+                        field={field}
+                        value={groupFormState.values[field.id]}
+                        onChange={(nextValue) =>
+                          setFormState((current) =>
+                            current
+                              ? {
+                                  ...current,
+                                  values: {
+                                    ...current.values,
+                                    [field.id]: nextValue,
+                                  },
+                                }
+                              : current,
+                          )
+                        }
+                      />
+                    );
+                  })}
+                </FieldGroup>
+                <div className="flex flex-wrap justify-end gap-3 pt-2">
+                  <Button
+                    variant="outline"
+                    disabled={isMutatingConnector}
+                    onClick={() => setFormState(null)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    disabled={
+                      isMutatingConnector ||
+                      !isFormDirty ||
+                      !canSubmitConnectorForm(
+                        activePlugin,
+                        groupFormState.values,
+                        {
+                          allowSavedSecrets: Boolean(
+                            groupFormState.editingConnectionId,
+                          ),
+                        },
+                      )
+                    }
+                    onClick={() => void handleSave()}
+                  >
+                    {groupFormState.editingConnectionId
+                      ? "Update connection"
+                      : "Add connection"}
+                  </Button>
+                </div>
+              </AppPanel>
+            ) : null}
+
+            {group.connections.length === 0 ? (
+              <EmptyListText title="No connections yet">
+                Add a {group.plugin.displayName} connection to configure its
+                source and sync behavior.
+              </EmptyListText>
+            ) : (
+              <div className="flex flex-col gap-6">
+                {group.connections.map((connection) => (
+                  <div
+                    key={connection.id}
+                    className="flex flex-col gap-3 desktop:flex-row desktop:items-start desktop:justify-between desktop:gap-8"
+                  >
+                    <div className="flex min-w-0 flex-1 flex-col gap-1">
+                      <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                        <h3 className="min-w-0 text-sm font-medium break-words text-foreground">
+                          {connection.label}
+                        </h3>
+                        <Chip
+                          tone={connection.lastError ? "danger" : "neutral"}
+                        >
+                          {unavailableReason
+                            ? "Unavailable"
+                            : connectors?.pluginsEnabled === false ||
+                                !group.enabled
+                              ? "Paused"
+                              : connection.lastError
+                                ? "Error"
+                                : "Connected"}
+                        </Chip>
+                        <Badge variant="outline">
+                          {connection.autoSync
+                            ? `Auto every ${connection.autoSyncIntervalMinutes} min`
+                            : pluginHasConnector(group.plugin)
+                              ? "Stage for review"
+                              : "Manual sync"}
+                        </Badge>
+                      </div>
+                      <p className="text-[13px] break-words text-muted-foreground">
+                        {connection.tenantLabel}
+                      </p>
+                      {!connection.autoSync &&
+                      pluginHasConnector(group.plugin) ? (
+                        <p className="text-xs text-[var(--text-tertiary)]">
+                          {connection.pendingImportCount} staged ·{" "}
+                          {connection.selectedImportCount} selected
+                        </p>
+                      ) : null}
+                      {connection.lastError ? (
+                        <p className="text-sm break-words text-destructive">
+                          {connection.lastError}
+                        </p>
+                      ) : null}
                     </div>
-                    <p className="text-[13px] break-words text-muted-foreground">
-                      {connection.tenantLabel}
-                    </p>
-                    {!connection.autoSync &&
-                    pluginHasConnector(group.plugin) ? (
-                      <p className="text-xs text-[var(--text-tertiary)]">
-                        {connection.pendingImportCount} staged ·{" "}
-                        {connection.selectedImportCount} selected
-                      </p>
-                    ) : null}
-                    {connection.lastError ? (
-                      <p className="text-sm break-words text-destructive">
-                        {connection.lastError}
-                      </p>
-                    ) : null}
-                  </div>
-                  <div className="flex shrink-0 flex-wrap gap-2">
-                    <Button
-                      variant="outline"
-                      disabled={
-                        isMutatingConnector || Boolean(unavailableReason)
-                      }
-                      onClick={() => handleEdit(group.plugin, connection)}
-                    >
-                      <Pencil data-icon="inline-start" />
-                      Edit
-                    </Button>
-                    {pluginHasConnector(group.plugin) ? (
+                    <div className="flex shrink-0 flex-wrap gap-2">
                       <Button
                         variant="outline"
                         disabled={
-                          isMutatingConnector ||
-                          connectors?.pluginsEnabled === false ||
-                          !group.enabled
+                          isMutatingConnector || Boolean(unavailableReason)
                         }
-                        onClick={() =>
-                          void workflow.execute({
-                            type: "sync",
-                            pluginId: group.plugin.id,
-                            connectionId: connection.id,
-                          })
-                        }
+                        onClick={() => handleEdit(group.plugin, connection)}
                       >
-                        <RefreshCw data-icon="inline-start" />
-                        Sync
+                        <Pencil data-icon="inline-start" />
+                        Edit
                       </Button>
-                    ) : null}
-                    {group.plugin.capabilities.codeHost ? (
-                      <AlertDialog>
-                        <AlertDialogTrigger
-                          render={
-                            <Button
-                              variant="destructive"
-                              disabled={isMutatingConnector}
-                            >
-                              <Trash2 data-icon="inline-start" />
-                              Remove
-                            </Button>
+                      {pluginHasConnector(group.plugin) ? (
+                        <Button
+                          variant="outline"
+                          disabled={
+                            isMutatingConnector ||
+                            connectors?.pluginsEnabled === false ||
+                            !group.enabled
                           }
-                        />
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>
-                              Remove {connection.label}?
-                            </AlertDialogTitle>
-                            <AlertDialogDescription>
-                              This removes the connection and its{" "}
-                              {
-                                (state.pullRequests ?? []).filter(
-                                  (item) =>
-                                    item.pluginId === group.plugin.id &&
-                                    item.connectionId === connection.id,
-                                ).length
-                              }{" "}
-                              saved pull requests from this device.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Cancel</AlertDialogCancel>
-                            <AlertDialogAction
-                              variant="destructive"
-                              onClick={() =>
-                                void handleDelete(
-                                  group.plugin.id,
-                                  connection.id,
-                                )
-                              }
-                            >
-                              Remove connection
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
-                    ) : (
-                      <Button
-                        variant="destructive"
-                        disabled={isMutatingConnector}
-                        onClick={() =>
-                          void handleDelete(group.plugin.id, connection.id)
-                        }
-                      >
-                        <Trash2 data-icon="inline-start" />
-                        Remove
-                      </Button>
-                    )}
+                          onClick={() =>
+                            void workflow.execute({
+                              type: "sync",
+                              pluginId: group.plugin.id,
+                              connectionId: connection.id,
+                            })
+                          }
+                        >
+                          <RefreshCw data-icon="inline-start" />
+                          Sync
+                        </Button>
+                      ) : null}
+                      {group.plugin.capabilities.codeHost ? (
+                        <AlertDialog>
+                          <AlertDialogTrigger
+                            render={
+                              <Button
+                                variant="destructive"
+                                disabled={isMutatingConnector}
+                              >
+                                <Trash2 data-icon="inline-start" />
+                                Remove
+                              </Button>
+                            }
+                          />
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>
+                                Remove {connection.label}?
+                              </AlertDialogTitle>
+                              <AlertDialogDescription>
+                                This removes the connection and its{" "}
+                                {
+                                  (state.pullRequests ?? []).filter(
+                                    (item) =>
+                                      item.pluginId === group.plugin.id &&
+                                      item.connectionId === connection.id,
+                                  ).length
+                                }{" "}
+                                saved pull requests from this device.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <AlertDialogFooter>
+                              <AlertDialogCancel>Cancel</AlertDialogCancel>
+                              <AlertDialogAction
+                                variant="destructive"
+                                onClick={() =>
+                                  void handleDelete(
+                                    group.plugin.id,
+                                    connection.id,
+                                  )
+                                }
+                              >
+                                Remove connection
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      ) : (
+                        <Button
+                          variant="destructive"
+                          disabled={isMutatingConnector}
+                          onClick={() =>
+                            void handleDelete(group.plugin.id, connection.id)
+                          }
+                        >
+                          <Trash2 data-icon="inline-start" />
+                          Remove
+                        </Button>
+                      )}
+                    </div>
                   </div>
-                </div>
+                ))}
+              </div>
+            )}
+          </section>
+        ) : (
+          <section className="settings-section">
+            <h2 className="settings-section-title">Tasks</h2>
+            <p className="settings-section-desc">
+              An agent runs these tasks from a prompt. Pick the agent and fill
+              in each task's settings in{" "}
+              <Link to="/settings/agents" className="underline">
+                Settings &gt; Agents
+              </Link>
+              .
+            </p>
+            <AppPanel>
+              {group.plugin.capabilities.agentTask?.tasks.map((task) => (
+                <SettingRow key={task.id} label={task.label} />
               ))}
-            </div>
-          )}
-        </section>
+            </AppPanel>
+          </section>
+        )}
 
         {canUninstallConnectorPlugins ? (
           <section className="settings-section">
