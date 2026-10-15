@@ -355,28 +355,29 @@ describe("MCP endpoint", () => {
     const calls: BridgeToolCall[] = [];
     await openFakeRenderer(baseUrl, (call) => {
       calls.push(call);
-      return { requestId: call.requestId, ok: true, output: { marked: 1 } };
+      return { requestId: call.requestId, ok: true, output: { committed: 1 } };
     });
     const agent = await connectAgent(baseUrl, token);
 
     const { tools } = await agent.listTools();
-    expect(tools).toHaveLength(29);
+    expect(tools).toHaveLength(28);
     expect(tools.map((tool) => tool.name)).toEqual(
       expect.arrayContaining([
         "start_timer",
-        "mark_entries_submitted",
-        "mark_entries_not_submitted",
+        "get_week_changes",
+        "mark_entries_committed",
         "create_work_item",
         "restore_work_item",
       ]),
     );
+    expect(tools.map((tool) => tool.name)).not.toContain("get_submit_lines");
 
     await agent.callTool({
-      name: "mark_entries_submitted",
+      name: "mark_entries_committed",
       arguments: { entryIds: ["e1"] },
     });
     expect(calls[0]).toMatchObject({
-      tool: "mark_entries_submitted",
+      tool: "mark_entries_committed",
       input: { entryIds: ["e1"] },
     });
   });
