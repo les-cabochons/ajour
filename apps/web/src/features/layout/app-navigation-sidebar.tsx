@@ -36,7 +36,11 @@ import {
   SidebarViewSwitcher,
   type SidebarViewOption,
 } from "@/features/layout/sidebar-view-switcher";
-import { TimerDock, TodayTotal } from "@/features/layout/timer-dock";
+import {
+  NewEntryButton,
+  TimerDock,
+  TodayTotal,
+} from "@/features/layout/timer-dock";
 import type { AppSidebarState } from "@/lib/app-sidebar";
 import { useLocalState } from "@/lib/local-hooks";
 import { isDesktopShell } from "@/lib/runtime";
@@ -158,7 +162,7 @@ export function SidebarToggleButton({
 /**
  * The app sidebar on desktop widths, from the top: the sidebar toggle and the
  * logo beside the macOS traffic lights (in the corner elsewhere), the view
- * switcher with Start (while nothing runs), Search and the project filter, the
+ * switcher with Search, the project filter and New entry, the
  * timer dock, then the work list, narrowed by the search and the filter. Search
  * expands into a search box in place of the switcher. It shows beside the page, or over it in narrow
  * desktop windows (`overlay`), where it cannot be resized. `useAppSidebar`
@@ -262,6 +266,7 @@ export function AppNavigationSidebar({
             projectId={layout.projectId}
             onChange={(projectId) => updateSidebarLayout({ projectId })}
           />
+          <NewEntryButton className="ajour-app-sidebar-toggle border-0" />
         </span>
       </div>
 

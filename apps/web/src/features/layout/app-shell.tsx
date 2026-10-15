@@ -447,12 +447,12 @@ type TitlebarEditor = "new" | null;
 
 /**
  * The titlebar totals and the host of the new entry editor. In the sidebar,
- * "+" sits in the timer dock and Start beside Search; while the sidebar is off
- * screen (`showsFloatingDock`), the running entry floats at the bottom left
+ * "+" sits beside Search and the project filter, and Start in the timer dock.
+ * While the sidebar is off screen (`showsFloatingDock`), the running entry floats at the bottom left
  * instead, or "+" and Start while nothing runs. In the narrow view, New entry
  * (+) and Start (▶) float at the bottom right, with the floating dock beside
  * them, and open the dialog. Elsewhere the editor opens in a popover anchored
- * to where it was asked for: the dock's "+", or the task or backlog row of New
+ * to where it was asked for: the "+" button, or the task or backlog row of New
  * entry… (`openNewEntryEditor`). N and requests whose row is off screen anchor
  * it to the titlebar's totals. New entries default to today; Start starts one
  * at once.
