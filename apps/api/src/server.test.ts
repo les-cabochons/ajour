@@ -257,65 +257,104 @@ describe("connector plugin installation boundary", () => {
     ).rejects.toThrow();
   });
 
-  it("reports an outdated installed package and updates it in place", async () => {
-    const root = await tempDir();
-    const installedRoot = path.join(root, "installed");
-    const source = "export async function validateConnection() {}";
-    await createPlugin(installedRoot, source, "plugin.mjs", { apiVersion: 2 });
-    const pluginDirectory = await createPlugin(
-      path.join(root, "source"),
-      source,
-    );
-    const archivePath = path.join(root, "jira-1.0.0.ajour-connector");
-    await create({ cwd: pluginDirectory, file: archivePath, gzip: true }, [
-      "plugin.json",
-      "plugin.mjs",
-    ]);
-    const server = createAppApiServer({
-      statePath: path.join(root, "state.json"),
-      installedPluginDirectory: installedRoot,
-      allowDevelopmentPlugins: false,
-    });
-    servers.push(server);
-
-    const before = await dispatchJsonRequest(server, {
-      method: "GET",
-      path: "/api/connectors",
-    });
-    expect(before.body).toMatchObject({
-      connectionGroups: [
-        {
-          plugin: {
-            id: "jira",
-            version: "1.0.0",
-            entrypoint: "",
-            unavailableReason: expect.stringContaining(
-              "Update the plugin to use it again.",
-            ),
-          },
-          enabled: false,
+  it.each([true, false])(
+    "updates an outdated package and preserves its connections and enabled=%s choice",
+    async (enabled) => {
+      const root = await tempDir();
+      const installedRoot = path.join(root, "installed");
+      const source = "export async function validateConnection() {}";
+      await createPlugin(installedRoot, source, "plugin.mjs", {
+        apiVersion: 2,
+      });
+      const statePath = path.join(root, "state.json");
+      const savedConnection = {
+        id: "saved-jira",
+        pluginId: "jira",
+        label: "My Jira",
+        tenantLabel: "My workspace",
+        autoSync: true,
+        autoSyncIntervalMinutes: 30,
+        connectedAt: 1,
+        config: {
+          baseUrl: "https://jira.example.com",
+          token: "fixture-secret",
         },
-      ],
-    });
-
-    const update = await installConnectorPluginForServer(
-      server,
-      await readFile(archivePath),
-      path.basename(archivePath),
-      { enableAfterInstall: false },
-    );
-
-    expect(update.replaced).toBe(true);
-    // An update keeps the activation state instead of switching the plugin off.
-    expect(update.overview.connectionGroups).toEqual([
-      expect.objectContaining({
-        plugin: expect.not.objectContaining({
-          unavailableReason: expect.anything(),
+        configSummary: { baseUrl: "https://jira.example.com" },
+      };
+      await writeFile(
+        statePath,
+        JSON.stringify({
+          version: 7,
+          connections: [savedConnection],
+          disabledPluginIds: enabled ? [] : ["jira"],
+          pluginsEnabled: true,
         }),
-        enabled: true,
-      }),
-    ]);
-  });
+      );
+      const pluginDirectory = await createPlugin(
+        path.join(root, "source"),
+        source,
+      );
+      const archivePath = path.join(root, "jira-1.0.0.ajour-connector");
+      await create({ cwd: pluginDirectory, file: archivePath, gzip: true }, [
+        "plugin.json",
+        "plugin.mjs",
+      ]);
+      const server = createAppApiServer({
+        statePath,
+        installedPluginDirectory: installedRoot,
+        allowDevelopmentPlugins: false,
+      });
+      servers.push(server);
+
+      const before = await dispatchJsonRequest(server, {
+        method: "GET",
+        path: "/api/connectors",
+      });
+      expect(before.body).toMatchObject({
+        connectionGroups: [
+          {
+            plugin: {
+              id: "jira",
+              version: "1.0.0",
+              entrypoint: "",
+              unavailableReason: expect.stringContaining(
+                "Update the plugin to use it again.",
+              ),
+            },
+            enabled: false,
+          },
+        ],
+      });
+
+      const update = await installConnectorPluginForServer(
+        server,
+        await readFile(archivePath),
+        path.basename(archivePath),
+        { enableAfterInstall: false },
+      );
+
+      expect(update.replaced).toBe(true);
+      // An update keeps the activation state instead of switching the plugin off.
+      expect(update.overview.connectionGroups).toEqual([
+        expect.objectContaining({
+          plugin: expect.not.objectContaining({
+            unavailableReason: expect.anything(),
+          }),
+          enabled,
+        }),
+      ]);
+      expect(update.overview.connectionGroups[0]?.connections).toMatchObject([
+        {
+          id: savedConnection.id,
+          label: savedConnection.label,
+          autoSync: true,
+        },
+      ]);
+      const savedState = JSON.parse(await readFile(statePath, "utf8"));
+      expect(savedState.connections).toEqual([savedConnection]);
+      expect(savedState.disabledPluginIds).toEqual(enabled ? [] : ["jira"]);
+    },
+  );
 
   it("does not expose connector package changes through the loopback HTTP server", async () => {
     const root = await tempDir();

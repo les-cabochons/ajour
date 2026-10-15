@@ -378,8 +378,11 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
         }
         case "download": {
           const { result } = await deps.downloadCatalogPlugin(command.pluginId);
+          // A download over an installed package is an update.
           finish(
-            `${result.plugin.displayName} ${result.plugin.version} downloaded. Activate it when you are ready to configure it.`,
+            result.replaced
+              ? `${result.plugin.displayName} updated to ${result.plugin.version}.`
+              : `${result.plugin.displayName} ${result.plugin.version} downloaded. Activate it when you are ready to configure it.`,
             result.overview,
           );
           break;
