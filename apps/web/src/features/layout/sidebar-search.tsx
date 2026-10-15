@@ -5,6 +5,7 @@ import {
   RiFilter3Line as FilterIcon,
   RiFolderLine as AllProjectsIcon,
   RiSearchLine as SearchIcon,
+  RiSortDesc as PriorityOrderIcon,
 } from "@remixicon/react";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
@@ -32,7 +33,6 @@ import {
   type BacklogSortMode,
   type LocalProject,
 } from "@/domain/local-state";
-import { PriorityIcon } from "@/features/backlog/priority-icon";
 import { ProjectIcon } from "@/lib/project-icons";
 import { updateSidebarSearch, useSidebarSearch } from "@/lib/sidebar-search";
 import { cn } from "@/lib/utils";
@@ -138,7 +138,7 @@ const SIDEBAR_ORDERINGS = [
   {
     value: "priority_asc",
     label: "Priority order",
-    icon: <PriorityIcon priority={2} decorative className="text-current" />,
+    icon: <PriorityOrderIcon className="size-4" />,
   },
 ] as const satisfies readonly {
   value: BacklogSortMode;
