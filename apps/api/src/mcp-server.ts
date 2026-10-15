@@ -96,7 +96,7 @@ const TOOL_DESCRIPTIONS: Record<
   move_entry: "Moves an entry to another date.",
   duplicate_entry: "Copies an entry, to the same date or another one.",
   mark_entries_committed:
-    "Marks changes as committed once the external timesheet saved them: saves each entry's committed copy, or forgets a deleted entry. Pass entryIds from get_week_changes. Never mark a change you did not apply.",
+    "Marks changes as committed once the external timesheet saved them: saves each entry's committed copy, or forgets a deleted entry. Pass entryIds from get_week_changes. A deleted change's ID is accepted once: after its tombstone is cleared, the ID is unknown and the call refuses. Never mark a change you did not apply.",
   create_work_item:
     "Adds a manual backlog item, or a subitem with parentWorkItemId.",
   edit_work_item:

@@ -6,7 +6,10 @@ import {
 import { Checkbox } from "@/components/ui/checkbox";
 import { Value } from "@/components/ui/value";
 import type { LocalProject } from "@/domain/local-state";
-import { formatClockDuration } from "@/domain/time/duration";
+import {
+  formatChangedClockDurations,
+  formatClockDuration,
+} from "@/domain/time/duration";
 import {
   describeTimesheetCommitValues,
   type TimesheetChange,
@@ -103,6 +106,16 @@ function CommitChangeRow({
     projects,
     change.kind === "deleted" ? undefined : change.current,
   );
+  // An updated duration that rounds to the same h:mm shows seconds, so the row
+  // always shows what changed.
+  if (before && after && change.kind === "updated") {
+    const hours = formatChangedClockDurations(
+      change.committed.durationMs,
+      change.current.durationMs,
+    );
+    before.hours = hours.before;
+    after.hours = hours.after;
+  }
   const shown = (after ?? before)!;
   const label = CHANGE_KIND_LABELS[change.kind];
   const title = `${shown.project} / ${shown.task}, ${shown.day}`;

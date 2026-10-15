@@ -149,7 +149,12 @@ export function cancelTimer(
   const timer = state.timers.find((item) => item._id === timerId);
   const provisionalEntry = timer?.entryId
     ? state.timesheetEntries.find(
-        (entry) => entry._id === timer.entryId && entry.durationMs === 0,
+        (entry) =>
+          entry._id === timer.entryId &&
+          entry.durationMs === 0 &&
+          // A committed entry stays: removing it silently would hide a
+          // deletion the user never asked for from the Commit page.
+          !entry.commit,
       )
     : undefined;
   return {

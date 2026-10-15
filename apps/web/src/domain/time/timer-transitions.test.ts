@@ -7,6 +7,7 @@ import type {
 } from "@/domain/local-state";
 import {
   normalizeTimer,
+  cancelTimer,
   continueTimesheetEntry,
   editRunningEntry,
   saveTimer,
@@ -278,6 +279,37 @@ describe("timer and timesheet entry lifecycle", () => {
       durationMs: 500,
       committedAt: 1_000,
     });
+  });
+
+  it("keeps a committed entry when its resumed timer is cancelled at zero", () => {
+    const commit = {
+      at: 650,
+      localDate: "2026-07-30",
+      projectId: "project-1",
+      taskId: "task-1",
+      note: "Existing work",
+      durationMs: 0,
+    };
+    const committedEntry = createEntry({ durationMs: 0, commit });
+    const state = createState({
+      timesheetEntries: [committedEntry],
+      timers: [createRunningTimer({ entryId: committedEntry._id })],
+    });
+
+    const cancelled = cancelTimer(state, "timer-1");
+
+    expect(cancelled.timers).toEqual([]);
+    expect(cancelled.timesheetEntries).toEqual([committedEntry]);
+  });
+
+  it("removes an uncommitted provisional entry when its timer is cancelled", () => {
+    const provisional = createEntry({ durationMs: 0 });
+    const state = createState({
+      timesheetEntries: [provisional],
+      timers: [createRunningTimer({ entryId: provisional._id })],
+    });
+
+    expect(cancelTimer(state, "timer-1").timesheetEntries).toEqual([]);
   });
 
   it("keeps the resumed entry's committed copy, so the added time shows as a change", () => {

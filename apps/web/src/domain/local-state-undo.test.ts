@@ -22,6 +22,7 @@ import {
 import {
   deleteTimesheetEntry,
   duplicateTimesheetEntry,
+  markTimesheetEntriesCommitted,
   moveTimesheetEntry,
   updateTimesheetEntry,
 } from "@/domain/time/timesheet-entry";
@@ -170,6 +171,55 @@ describe("time entry undo", () => {
     expect(restored.result).toBe("restored");
     expect(restored.state.timesheetTombstones).toEqual([]);
     expect(restored.state.timesheetEntries).toEqual(before.timesheetEntries);
+  });
+
+  it("undoes Mark as committed: previous copies return and the tombstone comes back", () => {
+    const base = createState();
+    const olderCommit = {
+      at: 5,
+      localDate: "2026-10-07",
+      projectId: "project-1",
+      taskId: "task-1",
+      note: "Before the edit",
+      durationMs: HOUR,
+    };
+    const before: LocalAppState = {
+      ...base,
+      timesheetEntries: [
+        // Added: never committed.
+        entry({ _id: "entry-a", note: "First" }),
+        // Updated: its older copy has another note.
+        entry({ _id: "entry-b", note: "After the edit", commit: olderCommit }),
+      ],
+      // Deleted: its committed copy is on a tombstone.
+      timesheetTombstones: [
+        {
+          entryId: "entry-d",
+          commit: { ...olderCommit, note: "Removed work" },
+        },
+      ],
+    };
+    const { after, undo } = undoAction(before, (state) =>
+      markTimesheetEntriesCommitted(
+        state,
+        ["entry-a", "entry-b", "entry-d"],
+        () => 900,
+      ),
+    );
+    expect(after.timesheetTombstones).toEqual([]);
+    expect(after.timesheetEntries.map((item) => item.commit?.at)).toEqual([
+      900, 900,
+    ]);
+
+    const restored = restoreUndo(after, undo);
+
+    expect(restored.result).toBe("restored");
+    expect(restored.state.timesheetEntries).toEqual(before.timesheetEntries);
+    expect(restored.state.timesheetEntries[0]!.commit).toBeUndefined();
+    expect(restored.state.timesheetEntries[1]!.commit).toEqual(olderCommit);
+    expect(restored.state.timesheetTombstones).toEqual(
+      before.timesheetTombstones,
+    );
   });
 
   it("refuses to undo a delete whose deletion was committed since", () => {
