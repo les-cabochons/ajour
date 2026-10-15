@@ -533,16 +533,15 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                 </PropertyRow>
               </BacklogItemProperties>
               {archiveAction && !archiveAction.disabledReason ? (
-                <div className="border-t pt-3">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="-ms-1.5 text-destructive hover:text-destructive"
+                <div className="backlog-item-card-actions border-t pt-3">
+                  <button
+                    type="button"
+                    className="backlog-item-card-action is-destructive"
                     onClick={() => runAction("archive")}
                   >
-                    <ArchiveIcon data-icon="inline-start" />
+                    <ArchiveIcon aria-hidden="true" />
                     {archiveAction.label}
-                  </Button>
+                  </button>
                 </div>
               ) : null}
             </section>
