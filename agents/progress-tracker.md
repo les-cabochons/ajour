@@ -166,6 +166,12 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
       compact 48px rails; Settings Back restores the full prior workspace URL
       without leaving Settings in browser history.
 
+## Sidebar search and project filter, 2026-10-14
+
+- [x] Search expands into a search box that filters the sidebar's work list by item and project name. A T3 Code style project filter sits next to it and is saved per device. See "Search and project filter" in `agents/ux-spec.md`.
+- [x] `sidebar-search.feature` covers both. The full Chromium suite passed 127 of 132 on a free port. The 5 failures (board close, workflow settings draft, packaged connector install, Backlog preferences render, pull request Ctrl-click) fail the same way on `main`.
+- [x] `just ui-perf`, 2026-10-14, port 4187, medians of 5 runs, main then this branch: cold load 1388 / 1273 ms, Start click 90 / 93 ms, Backlog store write 268 / 45 ms, renderer work with a timer running 25.1 / 25.6 ms per second. Nothing is more than 10% worse. The store write varies a lot between runs, so its drop is noise.
+
 ## Ajour MCP, 2026-10-14
 
 - [x] Spec A: MCP endpoint at `/mcp/ajour` (off by default, per-client tokens, Origin and Host checks), the renderer bridge, data tools for timers, entries, projects and backlog items with Undo, agent sessions and questions, and the agent indicator and panel. Spec: `docs/superpowers/specs/2026-10-14-ajour-mcp-design.md`.

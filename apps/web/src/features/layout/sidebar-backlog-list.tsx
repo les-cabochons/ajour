@@ -36,6 +36,7 @@ import {
   isSubtaskWorkItem,
 } from "@/domain/backlog/work-item-hierarchy";
 import type { LocalAppState, LocalWorkItem } from "@/domain/local-state";
+import type { SidebarMatcher } from "@/domain/backlog/sidebar-filter";
 import { settleOpensDialog } from "@/features/backlog/settle-dialog";
 import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
 import { formatSnoozeTime } from "@/features/backlog/snooze-presets";
@@ -537,13 +538,16 @@ const OffListRow = memo(function OffListRow({
  * The work list in the expanded app sidebar, from "Backlog sidebar" in
  * agents/ux-spec.md: the collapsible Backlog section with the
  * active items in the Backlog page's order, `children` (the Pull requests
- * section), then the collapsible Snoozed and Settled sections.
+ * section), then the collapsible Snoozed and Settled sections. Every section
+ * keeps only the rows `matcher` accepts, and its count follows.
  */
 export function SidebarBacklogList({
   pathname,
+  matcher,
   children,
 }: {
   pathname: string;
+  matcher: SidebarMatcher;
   children?: ReactNode;
 }) {
   const state = useLocalState();
@@ -566,20 +570,25 @@ export function SidebarBacklogList({
       ),
     );
     return {
-      listed: selectSidebarBacklogItems(state, now),
+      listed: selectSidebarBacklogItems(state, now).filter(matcher.workItem),
       snoozed: state.workItems
-        .filter((workItem) => isBacklogItemSnoozed(workItem, now))
+        .filter(
+          (workItem) =>
+            isBacklogItemSnoozed(workItem, now) && matcher.workItem(workItem),
+        )
         .sort((left, right) => left.snoozedUntil! - right.snoozedUntil!),
       // Subitems settled along with their parent show on the parent's page.
       settled: state.workItems
         .filter(
           (workItem) =>
-            workItem.status === "settled" && !workItem.settledWithParentId,
+            workItem.status === "settled" &&
+            !workItem.settledWithParentId &&
+            matcher.workItem(workItem),
         )
         .sort((left, right) => (right.settledAt ?? 0) - (left.settledAt ?? 0)),
       titleByLookupKey: titles,
     };
-  }, [state, now]);
+  }, [state, now, matcher]);
 
   const parentTitleOf = (workItem: LocalWorkItem) => {
     const key = getWorkItemParentKey(workItem);
@@ -631,7 +640,7 @@ export function SidebarBacklogList({
 
   return (
     <div
-      className="scrollbar-on-hover flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2"
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2 scrollbar-on-hover"
       aria-label="Backlog items"
       data-focus-scope
     >
@@ -650,7 +659,7 @@ export function SidebarBacklogList({
           ))}
           {listed.length === 0 ? (
             <p className="px-2 py-1 text-xs text-muted-foreground">
-              Nothing on your plate.
+              {matcher.active ? "No matching items." : "Nothing on your plate."}
             </p>
           ) : null}
         </>
@@ -682,6 +691,8 @@ export function SidebarBacklogList({
 
       <SidebarSectionHeader
         label="Settled"
+        // Unfiltered, the count would be every settled item ever.
+        count={matcher.active ? settled.length : undefined}
         open={layout.settledOpen}
         onToggle={() =>
           updateSidebarLayout({ settledOpen: !layout.settledOpen })
