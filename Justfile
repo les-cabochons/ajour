@@ -191,6 +191,11 @@ acceptance-test *args:
 agent-codex-smoke:
     node --experimental-strip-types qa/agents/smoke-codex.mjs
 
+[doc("Smoke-tests the OpenCode agent adapter with temporary MCP data and a blank browser")]
+[group("qa")]
+agent-opencode-smoke:
+    node --experimental-strip-types qa/agents/smoke-opencode.mjs
+
 [private]
 acceptance-server:
     {{PNPM}} --filter @ajour/web dev --host {{WEB_HOST}} --port {{ACCEPTANCE_WEB_PORT}} --strictPort --mode test
