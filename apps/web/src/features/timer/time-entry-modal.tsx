@@ -1,8 +1,9 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
 import {
   TimeEntryEditorForm,
   type NewTimeEntryValues,
+  type TimeEntryEditorFormHandle,
   type TimeEntryEditorTarget,
 } from "@/features/time/time-entry-editor-form";
 import type { TimeEntryEditorFields } from "@/features/time/time-entry-editor";
@@ -26,7 +27,8 @@ interface TimeEntryModalProps {
  * Dialog host for the entry editor: a saved entry, a new entry, or the running entry.
  * The narrow view uses it everywhere, including New entry… on tasks and backlog
  * items. It closes on its own when the entry it shows goes away. A click
- * outside closes the running entry's dialog and does nothing on the others.
+ * outside the running entry's dialog saves a valid draft and closes it; the
+ * entry keeps running. On the other dialogs a click outside does nothing.
  */
 export function TimeEntryModal({
   date,
@@ -46,6 +48,7 @@ export function TimeEntryModal({
       ? state.timesheetEntries.find((candidate) => candidate._id === entryId)
       : undefined;
   const isMissing = timerId ? !runningTimer : Boolean(entryId) && !entry;
+  const formRef = useRef<TimeEntryEditorFormHandle>(null);
   // Captured on open so a parent re-render cannot reset the draft.
   const [newEntryValues] = useState(initialValues);
 
@@ -66,10 +69,16 @@ export function TimeEntryModal({
   return (
     <Dialog
       open
-      // The running entry keeps running without its editor, so a click
-      // outside closes it like Escape. Other entries wait for Save or Cancel.
-      disablePointerDismissal={!runningTimer}
-      onOpenChange={(open) => !open && onClose()}
+      onOpenChange={(open, details) => {
+        if (open) return;
+        if (details.reason === "outside-press") {
+          // Other entries wait for Save or Cancel. The running entry keeps
+          // running without its editor, so a click outside saves the draft,
+          // or keeps the dialog open with the error when it is invalid.
+          if (!runningTimer || !formRef.current?.commitBeforeSwitch()) return;
+        }
+        onClose();
+      }}
     >
       {/* The narrow view's full-width host: the dialog spans the window, less a
           small margin, at every width below the desktop breakpoint. */}
@@ -78,6 +87,7 @@ export function TimeEntryModal({
         showCloseButton={false}
       >
         <TimeEntryEditorForm
+          ref={formRef}
           target={target}
           titleAs={DialogTitle}
           initialFields={initialFields}
