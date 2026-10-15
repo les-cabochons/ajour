@@ -547,7 +547,7 @@ export function BacklogItemEditorForm({
             id={`${idPrefix}-note`}
             value={fields.note}
             onChange={(event) => updateFields({ note: event.target.value })}
-            placeholder="Description (optional)"
+            placeholder="Description, markdown supported (optional)"
             rows={4}
           />
         </Field>

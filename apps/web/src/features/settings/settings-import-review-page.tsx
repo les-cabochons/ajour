@@ -9,6 +9,7 @@ import {
   RiNodeTree as FolderTree,
   RiRefreshLine as RefreshCw,
 } from "@remixicon/react";
+import { Markdown } from "@/components/markdown";
 import { AppPanel, MessagePanel } from "@/components/app-surface";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -590,9 +591,9 @@ export function SettingsImportReviewPage() {
                                   </div>
                                 ) : null}
                                 {rootItem.note ? (
-                                  <div className="import-review-item-note">
+                                  <Markdown className="import-review-item-note text-xs">
                                     {rootItem.note}
-                                  </div>
+                                  </Markdown>
                                 ) : null}
                               </div>
                             </label>
@@ -663,9 +664,9 @@ export function SettingsImportReviewPage() {
                                           </div>
                                         ) : null}
                                         {childItem.note ? (
-                                          <div className="import-review-item-note">
+                                          <Markdown className="import-review-item-note text-xs">
                                             {childItem.note}
-                                          </div>
+                                          </Markdown>
                                         ) : null}
                                       </div>
                                     </label>

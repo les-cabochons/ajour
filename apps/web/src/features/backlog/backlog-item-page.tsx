@@ -7,6 +7,7 @@ import {
   RiPlayLine as PlayIcon,
   RiTimeLine as SnoozeIcon,
 } from "@remixicon/react";
+import { Markdown } from "@/components/markdown";
 import { ObjectActionsButton } from "@/components/object-actions-menu";
 import { PageHeader } from "@/components/page-header";
 import { PropertyList, PropertyRow } from "@/components/property-list";
@@ -435,11 +436,11 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
           <div className="backlog-item-page-columns">
             <div className="flex min-w-0 flex-col">
               <SectionHeading>Note</SectionHeading>
-              <p className="text-sm leading-relaxed whitespace-pre-line">
-                {item.note ?? (
-                  <span className="text-muted-foreground">No note.</span>
-                )}
-              </p>
+              {item.note ? (
+                <Markdown>{item.note}</Markdown>
+              ) : (
+                <p className="text-sm text-muted-foreground">No note.</p>
+              )}
               {!isSubitem ? (
                 <>
                   <SectionHeading
