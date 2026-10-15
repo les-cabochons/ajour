@@ -10,6 +10,10 @@ import {
 import type { LocalSettleRule, LocalWorkItem } from "@/domain/local-state";
 import { canWriteSettle } from "@/features/backlog/backlog-source-writes";
 import {
+  formatPriorityInput,
+  parsePriorityInput,
+} from "@/features/backlog/backlog-task-editor";
+import {
   findSettleState,
   groupSettleStates,
 } from "@/features/backlog/settle-draft";
@@ -212,13 +216,9 @@ function SettleRuleRow({
             <OptionSelect
               label={`Priority for ${project.sourceProjectName}`}
               className="w-auto"
-              value={rule?.priority ? String(rule.priority) : ""}
+              value={formatPriorityInput(rule?.priority)}
               onChange={(value) =>
-                save({
-                  priority: PRIORITY_LEVELS.find(
-                    ({ level }) => String(level) === value,
-                  )?.level,
-                })
+                save({ priority: parsePriorityInput(value) ?? undefined })
               }
               options={[
                 { value: "", label: "Keep the priority" },

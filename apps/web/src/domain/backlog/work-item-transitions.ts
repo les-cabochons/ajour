@@ -127,7 +127,9 @@ export function normalizePersistedWorkItem(
     ...persisted
   } = workItem;
   // Source priorities were raw source values before plugins sent levels. A
-  // value that is not a level is dropped and the next sync brings the level.
+  // stored value of 1 to 4 is read as that level, even if a custom range gave
+  // it another one. Any other value is dropped and the next sync brings the
+  // level. Ajour has no users to migrate, so this stays a best effort.
   const sourceLevel = (value: unknown) =>
     isPriorityLevel(value) ? value : undefined;
 

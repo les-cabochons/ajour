@@ -439,7 +439,7 @@ Settings > Workflow lists, for each connection and source project, its source st
 
 - Priority has five levels with Linear's icons: Urgent, High, Medium, Low and No priority.
 - Each connector plugin maps its source priority values to levels. A plugin can let the user set that mapping in its connection settings, such as Azure DevOps 1 Urgent, 2 High, 3 Medium and 4 Low by default. A value the plugin maps to no level is No priority.
-- Settle and moving into a done state write the lowest value of the level's range, and only when the level changed.
+- Settle and moving into a done state write the level only when it changed. The plugin picks the source value, such as the lowest value of the level's range.
 - Within a level, items keep the custom order.
 
 ### Layouts
