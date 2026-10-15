@@ -9,6 +9,7 @@ Feature: Sidebar search and project filter
   Scenario: Search the sidebar by item name and project name
     When I search the sidebar for "backup"
     Then the sidebar lists only "Backup pipeline"
+    And the Backlog page still lists every item
     When I search the sidebar for "ajour"
     Then the sidebar lists only "Sidebar search"
     When I press Escape in the sidebar search

@@ -110,3 +110,9 @@ Then("the sidebar Search button has focus", async ({ page }) => {
     sidebar(page).getByRole("button", { name: "Search", exact: true }),
   ).toBeFocused();
 });
+
+Then("the Backlog page still lists every item", async ({ page }) => {
+  await expect(
+    page.locator(".backlog-workspace [data-work-item-id]"),
+  ).toHaveCount(ALL_TITLES.length);
+});

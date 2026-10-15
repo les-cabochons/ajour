@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import {
   RiCloseLine as CloseIcon,
   RiFilter3Line as FilterIcon,
@@ -14,6 +14,12 @@ import {
   CommandItem,
   CommandList,
 } from "@/components/ui/command";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupButton,
+  InputGroupInput,
+} from "@/components/ui/input-group";
 import {
   Popover,
   PopoverContent,
@@ -42,16 +48,9 @@ export function SidebarSearch({
   onOpenChange: (open: boolean) => void;
   onQueryChange: (query: string) => void;
 }) {
-  const buttonRef = useRef<HTMLButtonElement>(null);
-  // Escape gives focus back to the button; a click elsewhere keeps it there.
-  const [refocus, setRefocus] = useState(false);
-
-  useEffect(() => {
-    if (!open && refocus) {
-      buttonRef.current?.focus();
-      setRefocus(false);
-    }
-  }, [open, refocus]);
+  // Escape gives focus back to the button when it mounts again; a click
+  // elsewhere leaves focus where the user put it.
+  const refocusRef = useRef(false);
 
   function close() {
     onQueryChange("");
@@ -65,7 +64,12 @@ export function SidebarSearch({
         side="bottom"
         render={
           <Button
-            ref={buttonRef}
+            ref={(button) => {
+              if (button && refocusRef.current) {
+                refocusRef.current = false;
+                button.focus();
+              }
+            }}
             variant="ghost"
             size="icon"
             className="ajour-app-sidebar-toggle"
@@ -79,9 +83,11 @@ export function SidebarSearch({
   }
 
   return (
-    <div className="flex h-8 min-w-0 flex-1 items-center gap-1.5 rounded-md bg-foreground/5 pr-0.5 pl-2 focus-within:ring-1 focus-within:ring-ring">
-      <SearchIcon className="size-4 shrink-0 text-muted-foreground" />
-      <input
+    <InputGroup className="h-8 min-w-0 flex-1">
+      <InputGroupAddon>
+        <SearchIcon />
+      </InputGroupAddon>
+      <InputGroupInput
         autoFocus
         type="search"
         aria-label="Search the sidebar"
@@ -91,27 +97,33 @@ export function SidebarSearch({
         onKeyDown={(event) => {
           if (event.key === "Escape") {
             event.preventDefault();
-            setRefocus(true);
+            refocusRef.current = true;
             close();
           }
         }}
         onBlur={() => {
           if (!query.trim()) close();
         }}
-        className="h-full min-w-0 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground [&::-webkit-search-cancel-button]:hidden"
+        className="[&::-webkit-search-cancel-button]:hidden"
       />
       {query ? (
-        <TooltipButton
-          label="Clear search"
-          className="flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
-          // Keeps focus in the box, so its blur does not close it first.
-          onPointerDown={(event) => event.preventDefault()}
-          onClick={() => onQueryChange("")}
-        >
-          <CloseIcon className="size-3.5" />
-        </TooltipButton>
+        <InputGroupAddon align="inline-end">
+          <TooltipButton
+            label="Clear search"
+            render={
+              <InputGroupButton
+                size="icon-xs"
+                // Keeps focus in the box, so its blur does not close it first.
+                onPointerDown={(event) => event.preventDefault()}
+                onClick={() => onQueryChange("")}
+              />
+            }
+          >
+            <CloseIcon />
+          </TooltipButton>
+        </InputGroupAddon>
       ) : null}
-    </div>
+    </InputGroup>
   );
 }
 
@@ -170,7 +182,15 @@ export function SidebarProjectFilter({
         className="w-64 gap-0 overflow-hidden p-0"
         aria-label="Filter the sidebar by project"
       >
-        <Command className="rounded-none bg-transparent p-0">
+        <Command
+          className="rounded-none bg-transparent p-0"
+          // Items search their names in `keywords`, never their ids.
+          filter={(_value, search, keywords = []) =>
+            keywords.join(" ").toLowerCase().includes(search.toLowerCase())
+              ? 1
+              : 0
+          }
+        >
           <CommandInput autoFocus placeholder="Search projects..." />
           <CommandList className="max-h-[min(22rem,55vh)] p-1">
             <CommandEmpty>No projects found.</CommandEmpty>
