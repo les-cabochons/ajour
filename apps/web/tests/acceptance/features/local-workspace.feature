@@ -9,7 +9,7 @@ Feature: Open the local time workspace
     And the day surfaces stretch around centered content
     And the timesheet can be submitted
 
-  Scenario: Hide the desktop sidebar and open it over narrow windows
+  Scenario: Hide the desktop sidebar and keep it beside the page in small windows
     Given I have no saved Ajour workspace, even after a reload
     When I open today's time workspace
     Then the app sidebar is expanded
@@ -19,12 +19,12 @@ Feature: Open the local time workspace
     Then the app sidebar is hidden
     When I press the sidebar shortcut
     Then the app sidebar is expanded
-    When I narrow the app below the expanded sidebar width
+    When I narrow the app to the smallest desktop width
+    Then the app sidebar is expanded beside the page
+    When I hide the app sidebar with its button
     Then the app sidebar is hidden
     When I show the app sidebar from the titlebar
-    Then the app sidebar opens over the page
-    When I widen the app back to a desktop width
-    Then the app sidebar is expanded
+    Then the app sidebar is expanded beside the page
 
   Scenario: Follow the running entry with the sidebar hidden
     Given I have no saved Ajour workspace
@@ -249,7 +249,7 @@ Feature: Open the local time workspace
     Given I have projects with searchable tasks
     When I open the Projects workspace
     Then the Projects list opens beside primary navigation
-    And the Projects list still opens where the app sidebar is a rail
+    And the Projects list still opens beside the sidebar in a small window
 
   Scenario: Move around the narrow view from its navigation toggle
     Given I have projects with searchable tasks

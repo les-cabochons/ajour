@@ -166,20 +166,17 @@ export function SidebarToggleButton({
  * logo beside the macOS traffic lights (in the corner elsewhere), the view
  * switcher with Search, the project filter and New entry, the
  * timer dock, then the work list, narrowed by the search and the filter. Search
- * expands into a search box in place of the switcher. It shows beside the page, or over it in narrow
- * desktop windows (`overlay`), where it cannot be resized. `useAppSidebar`
- * owns whether it shows.
+ * expands into a search box in place of the switcher. It shows beside the
+ * page. `useAppSidebar` owns whether it shows.
  */
 export function AppNavigationSidebar({
   pathname,
   selectedTimeDate,
-  overlay = false,
   onToggle,
   onStateChange,
 }: {
   pathname: string;
   selectedTimeDate: string;
-  overlay?: boolean;
   onToggle: () => void;
   onStateChange: (state: AppSidebarState) => void;
 }) {
@@ -227,10 +224,7 @@ export function AppNavigationSidebar({
 
   return (
     <Sidebar
-      className={cn(
-        "ajour-shell-sidebar ajour-app-navigation-sidebar",
-        overlay && "ajour-shell-sidebar-overlay",
-      )}
+      className="ajour-shell-sidebar ajour-app-navigation-sidebar"
       innerClassName="ajour-shell-sidebar-inner"
       collapsible="none"
       role="navigation"
@@ -316,7 +310,7 @@ export function AppNavigationSidebar({
           </SidebarMenuItem>
         </SidebarMenu>
       </SidebarFooter>
-      {overlay ? null : <SidebarResizeHandle onStateChange={onStateChange} />}
+      <SidebarResizeHandle onStateChange={onStateChange} />
     </Sidebar>
   );
 }

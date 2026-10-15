@@ -26,7 +26,6 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Sheet, SheetContent, SheetTitle } from "@/components/ui/sheet";
 import { SidebarProvider } from "@/components/ui/sidebar";
 import { showErrorToast } from "@/components/ui/toast";
 import {
@@ -688,19 +687,6 @@ function GlobalTimerBar({
   );
 }
 
-/**
- * Whether a click or Enter in the sidebar chose a page: a link or an item row,
- * not a button inside a row such as Start entry or "…".
- */
-function isDestination(target: EventTarget) {
-  if (!(target instanceof Element)) return false;
-  const destination = target.closest('a[href], [role="link"]');
-  const button = target.closest("button");
-  return (
-    destination !== null && (button === null || !destination.contains(button))
-  );
-}
-
 /* ── App Shell ─────────────────────────────────────────────────────── */
 
 export function AppShell() {
@@ -721,7 +707,6 @@ export function AppShell() {
   const appSidebar = useAppSidebar({
     suspended: isSettingsActive && !isNarrowView,
   });
-  const { closeOverlay } = appSidebar;
   const sidebarWidth = resolveSidebarWidth(useSidebarLayout());
   useGlobalShortcuts(selectedTimeDate);
 
@@ -751,11 +736,6 @@ export function AppShell() {
     }
   }, [timeRouteDate]);
 
-  // Opening a page from the sidebar over the page closes it.
-  useEffect(() => {
-    closeOverlay();
-  }, [pathname, closeOverlay]);
-
   // Back to app returns to the last page outside Settings, with its search
   // state, such as the Week view or the entry open in the side panel.
   const href = useRouterState({ select: (state) => state.location.href });
@@ -767,7 +747,7 @@ export function AppShell() {
   // In wide windows Settings takes the left column with its own pages list.
   const showsSettingsSidebar = isSettingsActive && !isNarrowView;
   const isSidebarInline =
-    !showsSettingsSidebar && appSidebar.display === "inline" && !isNarrowView;
+    !showsSettingsSidebar && appSidebar.state === "expanded" && !isNarrowView;
   const leftColumnWidth =
     showsSettingsSidebar || isSidebarInline ? sidebarWidth : 0;
 
@@ -808,8 +788,7 @@ export function AppShell() {
         keyboardShortcut={false}
       >
         {/* The narrow view has no sidebars. Its titlebar holds the
-            navigation instead. Narrow desktop windows show the sidebar over
-            the page while the user has it open. */}
+            navigation instead. */}
         {showsSettingsSidebar ? (
           <SettingsNavigation
             pathname={pathname}
@@ -828,46 +807,6 @@ export function AppShell() {
             onToggle={appSidebar.toggle}
             onStateChange={appSidebar.setState}
           />
-        ) : null}
-        {!isNarrowView && !showsSettingsSidebar && appSidebar.isHiddenForced ? (
-          <Sheet
-            open={appSidebar.display === "overlay"}
-            onOpenChange={(open) => {
-              if (!open) closeOverlay();
-            }}
-          >
-            <SheetContent
-              side="left"
-              showCloseButton={false}
-              className="ajour-sidebar-overlay gap-0 p-0 data-[side=left]:w-(--app-sidebar-width) data-[side=left]:sm:max-w-none"
-              style={
-                { "--app-sidebar-width": `${sidebarWidth}px` } as CSSProperties
-              }
-              // Choosing a destination closes the overlay, even the page
-              // already open, which leaves the route as it is.
-              onClick={(event) => {
-                if (
-                  !event.metaKey &&
-                  !event.ctrlKey &&
-                  isDestination(event.target)
-                )
-                  closeOverlay();
-              }}
-              onKeyDown={(event) => {
-                if (event.key === "Enter" && isDestination(event.target))
-                  closeOverlay();
-              }}
-            >
-              <SheetTitle className="sr-only">Navigation</SheetTitle>
-              <AppNavigationSidebar
-                pathname={pathname}
-                selectedTimeDate={selectedTimeDate}
-                overlay
-                onToggle={appSidebar.toggle}
-                onStateChange={appSidebar.setState}
-              />
-            </SheetContent>
-          </Sheet>
         ) : null}
 
         <div className="ajour-app-workspace">
@@ -948,7 +887,7 @@ export function AppShell() {
                   showsSettingsSidebar ? leftColumnWidth : undefined
                 }
                 showsFloatingDock={
-                  showsSettingsSidebar || appSidebar.display === "none"
+                  showsSettingsSidebar || appSidebar.state === "hidden"
                 }
                 onSubmit={() => {
                   if (isTimeActive && /^\/time\/[^/]+$/.test(pathname)) {

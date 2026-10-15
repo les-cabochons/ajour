@@ -29,12 +29,3 @@ Feature: Sidebar search and project filter
     And I clear the sidebar search from the keyboard
     Then the sidebar lists every backlog item
     And the empty sidebar search box has focus
-
-  Scenario: Keep the query after opening a row from the overlay sidebar
-    When I use a narrow desktop window
-    And I show the sidebar
-    And I search the sidebar for "backup"
-    And I open "Backup pipeline" from the sidebar
-    Then the sidebar is hidden
-    When I show the sidebar
-    Then the sidebar lists only "Backup pipeline"

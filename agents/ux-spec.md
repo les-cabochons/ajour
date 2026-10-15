@@ -125,7 +125,7 @@ Decided in [App shell and collapsible sidebar](https://github.com/les-cabochons/
 - Hide sidebar and the logo sit on the titlebar's row, as in T3 Code: right of the traffic lights on macOS, in the window's top left corner elsewhere. Hide sidebar sits where Show sidebar sits in the titlebar, so the button does not move when the sidebar toggles.
 - The view switcher works like ChatGPT's: the open view's name, such as "Time", opens a menu of Time, Backlog, Pull requests (only while a code host plugin is enabled) and Projects with their live counts, today's total next to Time, the number of listed items next to Backlog, and next to Pull requests the number that need the user, as a filled badge when any returned. A check marks the open view. A backlog item's page belongs to Backlog, unless it was opened from the sidebar while Time, Projects or Pull requests showed: that view stays selected.
 - Cmd+B (Ctrl+B on Windows), Hide sidebar next to the logo and Show sidebar at the start of the titlebar toggle it. The View menu gets "Show sidebar" or "Hide sidebar" once the menu bar exists. There is no second shortcut.
-- The state is saved per device. Below 1100px the sidebar hides on its own, without changing the saved preference. Show sidebar and Cmd+B then open it over the page, and opening a page from it, Escape or a click outside closes it.
+- The state is saved per device. The sidebar stays beside the page at every desktop width, down to the narrow view. It never opens over the page.
 - Settings opens inside the shell, in place of the app sidebar: the left column lists the settings pages under their App, Work and Data groups, at the app sidebar's width and at every desktop width. "Back to app" at its top returns to the last page outside Settings. While Settings is open the timer dock floats, fitted to the bottom of that column, and the titlebar shows no Show sidebar button.
 - Projects keeps its own list of projects next to the app sidebar, with no collapse control of its own.
 - The titlebar keeps the totals pill. New entry (+) and Start (▶) live in the timer dock. The date picker only shows in the narrow view. The running entry lives in the timer dock, not the titlebar.
@@ -149,11 +149,10 @@ Decided in [Narrow view](https://github.com/les-cabochons/ajour/issues/13). Prot
 
 ### Breakpoints
 
-| Width           | Layout                                                 |
-| --------------- | ------------------------------------------------------ |
-| 1100px and up   | Desktop, sidebar expanded or hidden by preference      |
-| 768px to 1099px | Desktop, sidebar hidden, opens over the page on demand |
-| Below 768px     | Narrow view, no sidebars                               |
+| Width        | Layout                                            |
+| ------------ | ------------------------------------------------- |
+| 768px and up | Desktop, sidebar expanded or hidden by preference |
+| Below 768px  | Narrow view, no sidebars                          |
 
 Today's splits at 640px and 1023px go away.
 
@@ -556,7 +555,6 @@ Decided after the prototype on branch `prototype/backlog-sidebar`: variant B is 
 - One dragged width is saved per device. Switching density keeps it.
 - Dragging the edge below 200px hides the sidebar, as in VS Code, and keeps the saved width for when it shows again.
 - Show sidebar at the start of the titlebar is always visible while the sidebar is hidden. Cmd+B still toggles it.
-- The sidebar over the page in narrow desktop windows uses the saved width and cannot be resized.
 
 ### Rows
 
