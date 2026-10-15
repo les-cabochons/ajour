@@ -8,6 +8,7 @@ import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { TooltipButton } from "@/components/tooltip-button";
 import { ObjectActionsButton } from "@/components/object-actions-menu";
+import { Markdown } from "@/components/markdown";
 import { PropertyList, PropertyRow } from "@/components/property-list";
 import { SectionHeading } from "@/components/section-heading";
 import { SearchableSelect } from "@/components/ui/searchable-select";
@@ -219,9 +220,7 @@ export function BacklogPeek({
           ))}
         </PropertyList>
         {item.note && (
-          <p className="text-sm whitespace-pre-wrap text-muted-foreground">
-            {item.note}
-          </p>
+          <Markdown className="text-muted-foreground">{item.note}</Markdown>
         )}
         {children.length > 0 && (
           <section>

@@ -22,6 +22,7 @@ Use this file as the local index for important library choices. Check official d
 - date-fns
 - zod
 - ExcelJS
+- react-markdown with remark-gfm and remark-breaks
 
 ## Web UI Usage
 
@@ -31,6 +32,7 @@ Use this file as the local index for important library choices. Check official d
 - The settings connector form renders plugin fields through `apps/web/src/features/settings/connector-settings-ui.tsx`.
 - Settings exposes installed capabilities through `/settings/plugins`; the catalog owns activation and links to `/settings/plugins/$pluginId`, where connector-specific forms and connection actions live.
 - Use `@remixicon/react` for icons. Keep icon imports in feature modules or local UI modules; do not inline custom SVGs for common actions.
+- Render markdown text, such as backlog item notes, through `Markdown` in `apps/web/src/components/markdown.tsx`. It lazy-loads the parser from `markdown-renderer.tsx`, so do not import `react-markdown` elsewhere.
 - Use `Checkbox` from `apps/web/src/components/ui/checkbox.tsx` for app checkboxes, including indeterminate selection states.
 
 ## Web Domain Modules
