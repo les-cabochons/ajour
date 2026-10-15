@@ -243,13 +243,18 @@ describe("MCP settings routes", () => {
 });
 
 describe("MCP endpoint", () => {
-  it("answers 404 while MCP is off", async () => {
+  it("answers 404 while MCP is off, to agents and web pages alike", async () => {
     const { baseUrl } = await startTestApi();
     const response = await fetch(`${baseUrl}/mcp/ajour`, {
       method: "POST",
       headers: { Authorization: "Bearer ajour_x" },
     });
     expect(response.status).toBe(404);
+    const fromPage = await fetch(`${baseUrl}/mcp/ajour`, {
+      method: "POST",
+      headers: { Origin: TEST_ORIGIN },
+    });
+    expect(fromPage.status).toBe(404);
   });
 
   it("refuses browser requests even with a valid token", async () => {

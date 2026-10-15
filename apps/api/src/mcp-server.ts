@@ -339,17 +339,18 @@ export async function handleMcpRequest(
   pathname: string,
   context: McpRequestContext,
 ) {
-  // Agents are not browsers. An Origin header means a web page is calling.
-  if (request.headers.origin) {
-    context.logEvent({ event: "mcp.request", outcome: "browser_refused" });
-    writeError(response, 403, "MCP does not accept browser requests.");
-    return;
-  }
+  // While MCP is off, every /mcp path is absent, whoever asks.
   if (
     pathname !== "/mcp/ajour" ||
     !(await context.storage.getMcpSettings()).enabled
   ) {
     writeError(response, 404, "Not found.");
+    return;
+  }
+  // Agents are not browsers. An Origin header means a web page is calling.
+  if (request.headers.origin) {
+    context.logEvent({ event: "mcp.request", outcome: "browser_refused" });
+    writeError(response, 403, "MCP does not accept browser requests.");
     return;
   }
 
