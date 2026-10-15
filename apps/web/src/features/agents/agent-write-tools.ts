@@ -99,6 +99,19 @@ export function requireProjectTask(
   };
 }
 
+/**
+ * The task after an edit: the one the agent passed, else the current one.
+ * A different project drops the current task, which belongs to the old one.
+ */
+export function nextTaskId(
+  current: { projectId?: string; taskId?: string },
+  projectId: string | undefined,
+  requestedTaskId: string | undefined,
+) {
+  if (requestedTaskId !== undefined) return requestedTaskId;
+  return projectId === current.projectId ? current.taskId : undefined;
+}
+
 export function backlogActionOptions(
   state: LocalAppState,
   item: LocalWorkItem,
@@ -258,11 +271,7 @@ export function runEntryWriteTool(
       const timer = state.timers[0];
       if (!timer) throw new AgentToolRefusal("No entry is running.");
       const projectId = input.projectId ?? timer.projectId;
-      // A different project drops the old task, which belongs to the old project.
-      const taskId =
-        input.projectId && input.projectId !== timer.projectId
-          ? input.taskId
-          : (input.taskId ?? timer.taskId);
+      const taskId = nextTaskId(timer, projectId, input.taskId);
       if (projectId) requireProjectTask(state, projectId, taskId);
       const { undoToken } = localStore.runWithUndo(() =>
         localStore.editRunningEntry(timer._id, {
@@ -328,11 +337,7 @@ export function runEntryWriteTool(
       }
       assertAllowed(entryActions(state, entry), "edit");
       const projectId = input.projectId ?? entry.projectId;
-      // A different project drops the old task, which belongs to the old project.
-      const taskId =
-        input.projectId && input.projectId !== entry.projectId
-          ? input.taskId
-          : (input.taskId ?? entry.taskId);
+      const taskId = nextTaskId(entry, projectId, input.taskId);
       if (projectId) requireProjectTask(state, projectId, taskId);
       const { undoToken } = localStore.runWithUndo(() =>
         localStore.updateTimesheetEntry(entry._id, {

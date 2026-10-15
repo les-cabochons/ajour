@@ -26,6 +26,7 @@ import { findSettleState } from "@/features/backlog/settle-draft";
 import {
   assertAllowed,
   backlogActionOptions,
+  nextTaskId,
   requireProjectTask,
   type AgentWriteOutcome,
 } from "@/features/agents/agent-write-tools";
@@ -242,14 +243,11 @@ export async function runWorkItemWriteTool(
           input.projectId === undefined
             ? item.projectId
             : (input.projectId ?? undefined);
-        // A different project drops the old task, which belongs to the old project.
-        const projectChanged = projectId !== item.projectId;
+        // Null clears the task.
         const taskId =
-          input.taskId !== undefined
-            ? (input.taskId ?? undefined)
-            : projectChanged
-              ? undefined
-              : item.taskId;
+          input.taskId === null
+            ? undefined
+            : nextTaskId(item, projectId, input.taskId);
         if (taskId && !projectId) {
           throw new AgentToolRefusal("Pass a projectId with the taskId.");
         }
