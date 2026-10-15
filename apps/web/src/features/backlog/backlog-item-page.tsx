@@ -11,7 +11,11 @@ import {
   RiTimeLine as SnoozeIcon,
 } from "@remixicon/react";
 import { PageHeader } from "@/components/page-header";
-import { PropertyRow } from "@/components/property-list";
+import {
+  PropertyAction,
+  PropertyActions,
+  PropertyRow,
+} from "@/components/property-list";
 import { SectionHeading } from "@/components/section-heading";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
@@ -533,16 +537,12 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                 </PropertyRow>
               </BacklogItemProperties>
               {archiveAction && !archiveAction.disabledReason ? (
-                <div className="backlog-item-card-actions border-t pt-3">
-                  <button
-                    type="button"
-                    className="backlog-item-card-action is-destructive"
-                    onClick={() => runAction("archive")}
-                  >
+                <PropertyActions>
+                  <PropertyAction onClick={() => runAction("archive")}>
                     <ArchiveIcon aria-hidden="true" />
                     {archiveAction.label}
-                  </button>
-                </div>
+                  </PropertyAction>
+                </PropertyActions>
               ) : null}
             </section>
           </div>

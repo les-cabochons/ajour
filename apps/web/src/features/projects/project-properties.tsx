@@ -4,7 +4,12 @@ import {
   RiDownloadLine as Download,
   RiInboxUnarchiveLine as RestoreIcon,
 } from "@remixicon/react";
-import { PropertyList, PropertyRow } from "@/components/property-list";
+import {
+  PropertyAction,
+  PropertyActions,
+  PropertyList,
+  PropertyRow,
+} from "@/components/property-list";
 import { Button } from "@/components/ui/button";
 import { ColorField } from "@/components/ui/color-field";
 import { Input } from "@/components/ui/input";
@@ -323,43 +328,27 @@ export function ProjectPropertiesCard({
           {isArchived ? "Archived" : "Active"}
         </PropertyRow>
       </PropertyList>
-      <div className="flex flex-col items-start gap-0.5 border-t pt-3">
-        <Button
-          type="button"
-          variant="ghost"
-          size="sm"
-          className="project-properties-action"
+      <PropertyActions>
+        <PropertyAction
           disabled={isArchived || isImporting}
           title={isArchived ? "Restore the project first" : undefined}
           onClick={onImport}
         >
-          <Download data-icon="inline-start" />
+          <Download aria-hidden="true" />
           {isImporting ? "Importing tasks…" : "Import tasks…"}
-        </Button>
+        </PropertyAction>
         {isArchived ? (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="project-properties-action"
-            onClick={onRestore}
-          >
-            <RestoreIcon data-icon="inline-start" />
+          <PropertyAction onClick={onRestore}>
+            <RestoreIcon aria-hidden="true" />
             Restore
-          </Button>
+          </PropertyAction>
         ) : (
-          <Button
-            type="button"
-            variant="ghost"
-            size="sm"
-            className="project-properties-action"
-            onClick={onArchive}
-          >
-            <ArchiveIcon data-icon="inline-start" />
+          <PropertyAction onClick={onArchive}>
+            <ArchiveIcon aria-hidden="true" />
             Archive
-          </Button>
+          </PropertyAction>
         )}
-      </div>
+      </PropertyActions>
     </section>
   );
 }
