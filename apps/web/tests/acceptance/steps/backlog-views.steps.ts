@@ -136,6 +136,56 @@ Then("the saved board uses a narrow list", async ({ page }) => {
     ),
   ).toBe("board");
 });
+Given("the other Backlog item has 1:30 logged", async ({ page }) => {
+  await page.evaluate(() => {
+    const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
+    // Two entries, so the row shows their sum.
+    state.timesheetEntries = [60, 30].map((minutes, index) => ({
+      _id: `other-entry-${index}`,
+      localDate: "2026-01-05",
+      workItemId: "other",
+      projectId: "p",
+      taskId: "t",
+      label: "Other backlog item",
+      durationMs: minutes * 60_000,
+      sourceBlockIds: [],
+      committedAt: 1,
+    }));
+    localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+  });
+  await page.reload();
+});
+function otherSidebarRow(page: Page) {
+  return page
+    .getByRole("navigation", { name: "Primary navigation" })
+    .locator('[data-backlog-item-id="other"]');
+}
+Then(
+  "the other item's sidebar row shows {string} and {string}",
+  async ({ page }, project: string, logged: string) => {
+    const row = otherSidebarRow(page);
+    await expect(row).toContainText(project);
+    await expect(row).toContainText("Other backlog item");
+    await expect(row).toContainText(logged);
+  },
+);
+When("I hover the other item in the sidebar", async ({ page }) => {
+  await otherSidebarRow(page).hover();
+});
+Then(
+  'its sidebar row offers Start entry, Snooze and Settle without a "…" button',
+  async ({ page }) => {
+    const row = otherSidebarRow(page);
+    for (const name of ["Start entry", "Snooze…", "Settle"]) {
+      await expect(
+        row.getByRole("button", { name, exact: true }),
+      ).toBeVisible();
+    }
+    await expect(
+      row.getByRole("button", { name: "Actions for Other backlog item" }),
+    ).toHaveCount(0);
+  },
+);
 When("I filter the Backlog to Urgent", async ({ page }) => {
   await page.getByRole("button", { name: "Filter", exact: true }).click();
   await chooseSelectOption(page, "Filter property", "priority");

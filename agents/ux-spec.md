@@ -542,14 +542,15 @@ Decided after the prototype on branch `prototype/backlog-sidebar`: variant B is 
 
 ### Rows
 
-- Every row is one line: the type icon and the title. A subitem shows its parent after the title in muted text, such as "Fix token refresh · Login page".
-- Comfortable rows are 28px and end with the remaining estimate, such as "2.5h". Compact rows are 26px and show no estimate.
-- Hover and keyboard focus swap the type icon for a settle circle and replace the end of the row with Start entry, Snooze… and "…". Nothing floats over the title. Clicking the circle settles; Shift-click asks first.
+- Comfortable rows are 44px and two lines, like T3 Code threads: the project's icon and name ("No project" without one) with the logged time at the end, such as "4:00", then the title. The logged time counts saved entries and does not show at zero.
+- Compact rows are 26px and one line: the type icon and the title.
+- In both densities, a subitem shows its parent after the title in muted text, such as "Fix token refresh · Login page".
+- In Comfortable, hover and keyboard focus replace the end of the project line with Start entry, Snooze… and Settle. In Compact, they swap the type icon for a settle circle and replace the end of the row with Start entry and Snooze…. Nothing floats over the title. Shift-click on Settle or the circle asks first.
 - A marker shows on the item with the running entry.
 - A dot shows on a returned item. Opening the item from anywhere, or clicking the dot, clears it.
 - Clicking a row opens the backlog item page.
 - With Show Up next on, the first item of the list shows above the Backlog section as a highlighted row: type icon, title, a meta line with the external id ("Local" for a manual item), the source state and the remaining estimate, such as "#48213 · Active · 2.5h left", and a Start entry button that is always visible. The Backlog section starts at the second item.
-- Right-click and "…" open the full action set.
+- Right-click opens the full action set, as do ".", Shift+F10 and the context menu key. Sidebar backlog rows have no "…" button.
 - Pull request rows are one line too: the pull request icon, the title (bold when returned), and its reason and age, such as "Review · 2h". Hover and focus show "…".
 
 ### Snoozed and Settled sections

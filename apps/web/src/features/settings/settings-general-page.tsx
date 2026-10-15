@@ -289,7 +289,7 @@ export function SettingsGeneralPage() {
           </SettingRow>
           <SettingRow
             label="Density"
-            description="Compact rows are shorter and hide estimates, in a narrower sidebar."
+            description="Comfortable rows show the project and logged time. Compact rows are one line, in a narrower sidebar."
           >
             <ToggleGroup
               aria-label="Sidebar density"

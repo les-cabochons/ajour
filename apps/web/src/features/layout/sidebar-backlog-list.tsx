@@ -11,15 +11,14 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   RiArrowDownSLine as ChevronDown,
   RiArrowGoBackLine as UndoIcon,
+  RiCheckLine as SettleIcon,
   RiPlayFill as PlayFillIcon,
   RiPlayLine as PlayIcon,
   RiTimeLine as SnoozeIcon,
 } from "@remixicon/react";
-import {
-  ObjectActionsButton,
-  ObjectContextMenu,
-} from "@/components/object-actions-menu";
+import { ObjectContextMenu } from "@/components/object-actions-menu";
 import { TooltipButton } from "@/components/tooltip-button";
+import { Value } from "@/components/ui/value";
 import {
   getBacklogItemActions,
   type BacklogItemActionId,
@@ -35,7 +34,13 @@ import {
   getWorkItemParentKey,
   isSubtaskWorkItem,
 } from "@/domain/backlog/work-item-hierarchy";
-import type { LocalAppState, LocalWorkItem } from "@/domain/local-state";
+import {
+  getLocalProjectDisplayName,
+  type LocalAppState,
+  type LocalProject,
+  type LocalWorkItem,
+} from "@/domain/local-state";
+import { formatClockDuration } from "@/domain/time/duration";
 import { settleOpensDialog } from "@/features/backlog/settle-dialog";
 import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
 import { formatSnoozeTime } from "@/features/backlog/snooze-presets";
@@ -53,12 +58,9 @@ import {
 } from "@/lib/item-keys";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
+import { ProjectIcon } from "@/lib/project-icons";
 import { openModifiedSourceClick } from "@/lib/source-navigation";
-import {
-  updateSidebarLayout,
-  useSidebarLayout,
-  type SidebarDensity,
-} from "@/lib/sidebar-layout";
+import { updateSidebarLayout, useSidebarLayout } from "@/lib/sidebar-layout";
 import { useHoverOrFocusWithin } from "@/lib/use-hover-or-focus-within";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
@@ -205,11 +207,13 @@ function StartButton({
   actions,
   rows,
   variant = "icon",
+  className,
 }: {
   workItem: LocalWorkItem;
   actions: RowActionList;
   rows: RowApi;
   variant?: "icon" | "round";
+  className?: string;
 }) {
   const disabledReason = actions.find(
     (action) => action.id === "start-entry",
@@ -225,6 +229,7 @@ function StartButton({
           ? "flex size-6 shrink-0 items-center justify-center rounded-full border bg-background text-foreground hover:bg-foreground/10"
           : iconButton,
         "aria-disabled:opacity-50",
+        className,
       )}
       onClick={() => {
         if (!disabledReason) rows.run(workItem, "start-entry");
@@ -239,18 +244,27 @@ function StartButton({
   );
 }
 
-/** Start entry, Snooze and "…". They replace the row's end on hover and focus. */
+/**
+ * Start entry, Snooze… and, with `showSettle`, a labeled Settle button. They
+ * replace the row's end on hover and focus. Right-click opens the full action
+ * set, so the rows have no "…" button. `buttonClassName` resizes the icon
+ * buttons to fit the line they sit on.
+ */
 function RowActions({
   workItem,
   actions,
   rows,
   showStart = true,
+  showSettle = false,
+  buttonClassName,
   className,
 }: {
   workItem: LocalWorkItem;
   actions: RowActionList;
   rows: RowApi;
   showStart?: boolean;
+  showSettle?: boolean;
+  buttonClassName?: string;
   className?: string;
 }) {
   return (
@@ -259,23 +273,34 @@ function RowActions({
       onClick={(event) => event.stopPropagation()}
     >
       {showStart ? (
-        <StartButton workItem={workItem} actions={actions} rows={rows} />
+        <StartButton
+          workItem={workItem}
+          actions={actions}
+          rows={rows}
+          className={buttonClassName}
+        />
       ) : null}
       <TooltipButton
         label="Snooze…"
         shortcut="item.snooze"
-        className={iconButton}
+        className={cn(iconButton, buttonClassName)}
         onClick={() => rows.run(workItem, "snooze")}
       >
         <SnoozeIcon className="size-3.5" />
       </TooltipButton>
-      <ObjectActionsButton
-        actions={actions}
-        keys={BACKLOG_ITEM_ACTION_KEYS}
-        onAction={(actionId) => rows.run(workItem, actionId)}
-        label={`Actions for ${workItem.title}`}
-        className="size-6"
-      />
+      {showSettle ? (
+        <TooltipButton
+          label="Settle"
+          shortcut="item.settle"
+          className="flex h-5 shrink-0 items-center gap-1 rounded-sm px-1 text-xs text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+          onClick={(event) =>
+            rows.run(workItem, "settle", { askToSettle: event.shiftKey })
+          }
+        >
+          <SettleIcon className="size-3.5" />
+          Settle
+        </TooltipButton>
+      ) : null}
     </div>
   );
 }
@@ -322,7 +347,9 @@ interface ItemRowProps {
   workItem: LocalWorkItem;
   parentTitle?: string;
   subitemCount: number;
-  density: SidebarDensity;
+  project?: LocalProject;
+  /** The saved entries' time on the item. The running entry is not counted. */
+  loggedMs: number;
   isActive: boolean;
   isRunning: boolean;
   isReturned: boolean;
@@ -354,20 +381,18 @@ function useItemRowHandlers({ workItem, subitemCount, rows }: ItemRowProps) {
 }
 
 /**
- * One line: the type icon, the title, then the markers and, in Comfortable,
- * the remaining estimate. A subitem shows its parent after its title. A row
- * re-renders for its own props only, and its hover controls mount while it is
- * hovered or focused: a tooltip button per action for every row is most of
- * the cost of a long list.
+ * The Comfortable row, laid out like a T3 Code thread: the project's icon and
+ * name over the title, with the markers and the logged time at the end of the
+ * project line. Hover and focus replace that end with Start entry, Snooze… and
+ * Settle. Like the compact row, it re-renders for its own props only and
+ * mounts its hover controls while hovered or focused.
  */
-const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
-  const { workItem, parentTitle, density, isActive, iconData, rows } = props;
+const ComfortableItemRow = memo(function ComfortableItemRow(
+  props: ItemRowProps,
+) {
+  const { workItem, parentTitle, project, loggedMs, isActive, rows } = props;
   const { actions, onClick, onKeyDown } = useItemRowHandlers(props);
   const reveal = useHoverOrFocusWithin();
-  const hours =
-    density === "comfortable"
-      ? formatHours(workItem.remainingEstimateHours)
-      : undefined;
 
   return (
     <ObjectContextMenu
@@ -384,8 +409,91 @@ const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
           title={parentTitle ? `${workItem.title} · ${parentTitle}` : undefined}
           {...reveal.props}
           className={cn(
-            "group flex shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 text-sm outline-none hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring",
-            density === "compact" ? "h-[26px]" : "h-7",
+            "group flex h-11 shrink-0 cursor-pointer flex-col justify-center rounded-md px-2 outline-none hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring",
+            isActive && "bg-foreground/[0.07]",
+          )}
+          onClick={onClick}
+          onKeyDown={onKeyDown}
+        />
+      }
+    >
+      <span className="flex h-5 items-center gap-1.5 text-xs text-muted-foreground">
+        {project ? (
+          <ProjectIcon
+            icon={project.icon}
+            color={project.color}
+            className="ajour-sidebar-icon shrink-0"
+          />
+        ) : null}
+        <span className="min-w-0 flex-1 truncate">
+          {project ? getLocalProjectDisplayName(project) : "No project"}
+        </span>
+        <span className="flex shrink-0 items-center gap-1.5 group-focus-within:hidden group-hover:hidden">
+          <Markers
+            workItem={workItem}
+            isRunning={props.isRunning}
+            isReturned={props.isReturned}
+          />
+          {loggedMs > 0 ? (
+            <Value tone="muted">{formatClockDuration(loggedMs)}</Value>
+          ) : null}
+        </span>
+        {reveal.active ? (
+          <RowActions
+            workItem={workItem}
+            actions={actions}
+            rows={rows}
+            showSettle
+            buttonClassName="size-5"
+            className="hidden group-focus-within:flex group-hover:flex"
+          />
+        ) : null}
+      </span>
+      <span
+        className={cn(
+          "truncate text-sm leading-5",
+          props.isReturned && "font-semibold",
+        )}
+      >
+        {workItem.title}
+        {parentTitle ? (
+          <span className="font-normal text-muted-foreground">
+            {" "}
+            · {parentTitle}
+          </span>
+        ) : null}
+      </span>
+    </ObjectContextMenu>
+  );
+});
+
+/**
+ * The Compact row, one line: the type icon, the title, then the markers. A
+ * subitem shows its parent after its title. A row re-renders for its own
+ * props only, and its hover controls mount while it is hovered or focused: a
+ * tooltip button per action for every row is most of the cost of a long list.
+ */
+const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
+  const { workItem, parentTitle, isActive, iconData, rows } = props;
+  const { actions, onClick, onKeyDown } = useItemRowHandlers(props);
+  const reveal = useHoverOrFocusWithin();
+
+  return (
+    <ObjectContextMenu
+      actions={actions}
+      keys={BACKLOG_ITEM_ACTION_KEYS}
+      onAction={(actionId) => rows.run(workItem, actionId)}
+      render={
+        <div
+          role="link"
+          tabIndex={0}
+          data-focus-column="0"
+          data-backlog-item-id={workItem._id}
+          aria-current={isActive ? "page" : undefined}
+          title={parentTitle ? `${workItem.title} · ${parentTitle}` : undefined}
+          {...reveal.props}
+          className={cn(
+            "group flex h-[26px] shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 text-sm outline-none hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring",
             isActive && "bg-foreground/[0.07]",
           )}
           onClick={onClick}
@@ -419,11 +527,6 @@ const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
           isRunning={props.isRunning}
           isReturned={props.isReturned}
         />
-        {hours ? (
-          <span className="text-xs text-muted-foreground tabular-nums">
-            {hours}
-          </span>
-        ) : null}
       </span>
       {reveal.active ? (
         <RowActions
@@ -655,6 +758,23 @@ export function SidebarBacklogList({
     };
   }, [state, now]);
 
+  // Apart from the list above so the clock does not recount them every minute.
+  const projectById = useMemo(
+    () => new Map(state.projects.map((project) => [project._id, project])),
+    [state.projects],
+  );
+  const loggedMsByItemId = useMemo(() => {
+    const totals = new Map<string, number>();
+    for (const entry of state.timesheetEntries) {
+      if (!entry.workItemId) continue;
+      totals.set(
+        entry.workItemId,
+        (totals.get(entry.workItemId) ?? 0) + entry.durationMs,
+      );
+    }
+    return totals;
+  }, [state.timesheetEntries]);
+
   const parentTitleOf = (workItem: LocalWorkItem) => {
     const key = getWorkItemParentKey(workItem);
     return key ? titleByLookupKey.get(key) : undefined;
@@ -663,7 +783,10 @@ export function SidebarBacklogList({
     workItem,
     parentTitle: parentTitleOf(workItem),
     subitemCount: countSubitems(workItem, state.workItems),
-    density: layout.density,
+    project: workItem.projectId
+      ? projectById.get(workItem.projectId)
+      : undefined,
+    loggedMs: loggedMsByItemId.get(workItem._id) ?? 0,
     isActive: activeItemId === workItem._id,
     isRunning: runningWorkItemId === workItem._id,
     isReturned: isBacklogItemReturned(workItem, now),
@@ -671,6 +794,8 @@ export function SidebarBacklogList({
     rows,
   });
   const [upNext, ...rest] = layout.showUpNext ? listed : [undefined, ...listed];
+  const ItemRow =
+    layout.density === "comfortable" ? ComfortableItemRow : BacklogItemRow;
 
   let settledRows: ReactNode = null;
   if (layout.settledOpen) {
@@ -731,7 +856,7 @@ export function SidebarBacklogList({
         <>
           {rest.map((workItem) =>
             workItem ? (
-              <BacklogItemRow key={workItem._id} {...rowProps(workItem)} />
+              <ItemRow key={workItem._id} {...rowProps(workItem)} />
             ) : null,
           )}
           {listed.length === 0 ? (

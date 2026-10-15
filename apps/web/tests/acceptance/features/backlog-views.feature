@@ -23,6 +23,12 @@ Feature: Backlog list and board views
     When I remove the Urgent filter
     Then all open Backlog items return
 
+  Scenario: Show the project and logged time on comfortable sidebar rows
+    Given the other Backlog item has 1:30 logged
+    Then the other item's sidebar row shows "Example project" and "1:30"
+    When I hover the other item in the sidebar
+    Then its sidebar row offers Start entry, Snooze and Settle without a "…" button
+
   Scenario: Peek and edit in the same side panel
     When I peek at the Backlog parent
     Then the peek shows the parent and its subitem
