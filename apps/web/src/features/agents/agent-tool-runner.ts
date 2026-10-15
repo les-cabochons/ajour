@@ -84,7 +84,16 @@ const readTools: {
     ),
   get_submit_lines: async (rawInput) => {
     const input = readToolInputSchemas.get_submit_lines.parse(rawInput);
-    const projectPropertyPlugins = await listProjectPropertyPlugins();
+    // Project properties are optional context; without them the lines still go out.
+    const projectPropertyPlugins = await listProjectPropertyPlugins().catch(
+      (error: unknown) => {
+        console.warn(
+          "Plugin project properties unavailable for get_submit_lines.",
+          error,
+        );
+        return [];
+      },
+    );
     const state = localStore.snapshot();
     return getSubmitLinesForAgent(state, {
       weekDates: getIsoWeekDates(input.weekOf),

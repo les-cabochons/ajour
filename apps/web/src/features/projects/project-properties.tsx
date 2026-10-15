@@ -25,6 +25,7 @@ import {
   type LocalProject,
 } from "@/domain/local-state";
 import {
+  PLUGIN_PROPERTY_MAX_LENGTH,
   resolvePluginProperties,
   setPluginProperty,
   type ProjectPropertyPlugin,
@@ -80,6 +81,7 @@ function InlineText({
   readOnly,
   className,
   inputClassName,
+  maxLength,
   onSave,
   renderValue,
 }: {
@@ -93,6 +95,8 @@ function InlineText({
   readOnly: boolean;
   className?: string;
   inputClassName?: string;
+  /** Longest text the field accepts while editing. */
+  maxLength?: number;
   onSave: (value: string) => void;
   renderValue?: (props: {
     className: string;
@@ -148,6 +152,7 @@ function InlineText({
       autoFocus
       aria-label={label}
       defaultValue={value}
+      maxLength={maxLength}
       placeholder={defaultValue || placeholder}
       className={cn("-mx-1 h-7 px-1", inputClassName)}
       onFocus={(event) => event.currentTarget.select()}
@@ -216,6 +221,11 @@ function patchPluginProperty(
   field: ProjectPropertyField,
   value: string,
 ) {
+  const current = resolvePluginProperties(project, plugin).find(
+    (property) => property.field.id === field.id,
+  );
+  if (value.trim() === (current && !current.isDefault ? current.value : ""))
+    return;
   const pluginProperties = setPluginProperty(
     project,
     plugin.pluginId,
@@ -268,13 +278,10 @@ function PluginPropertySection({
                 label={property.field.label}
                 placeholder="None"
                 readOnly={readOnly}
-                onSave={(value) => {
-                  if (
-                    value.trim() === (property.isDefault ? "" : property.value)
-                  )
-                    return;
-                  patchPluginProperty(project, plugin, property.field, value);
-                }}
+                maxLength={PLUGIN_PROPERTY_MAX_LENGTH}
+                onSave={(value) =>
+                  patchPluginProperty(project, plugin, property.field, value)
+                }
               />
             </PropertyRow>
           ))}
@@ -311,7 +318,9 @@ export function ProjectPropertiesCard({
     // A failed overview shows no plugin sections; the rest of the card works.
     void listProjectPropertyPlugins()
       .then((next) => active && setPlugins(next))
-      .catch(() => undefined);
+      .catch((error: unknown) => {
+        console.warn("Plugin project properties unavailable.", error);
+      });
     return () => {
       active = false;
     };
