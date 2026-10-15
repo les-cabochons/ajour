@@ -53,6 +53,7 @@ export function PageHeader({
       {backLink ? (
         <Link
           to={backLink.to}
+          search={backLink.search as never}
           onClick={backLink.onClick}
           className="inline-flex h-7 w-fit items-center gap-1.5 rounded-sm text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
         >
@@ -95,6 +96,8 @@ export function PageTitle({
 export interface PageBackLink {
   label: string;
   to: string;
+  /** Search params of `to`, such as the Week view of a Time day. */
+  search?: Record<string, unknown>;
   /** Runs before navigation; call `preventDefault` to stay. */
   onClick?: MouseEventHandler<HTMLAnchorElement>;
 }

@@ -8,7 +8,7 @@ import {
   type MouseEvent,
   type ReactNode,
 } from "react";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouter } from "@tanstack/react-router";
 import {
   RiArrowDownSLine as ChevronDown,
   RiArrowGoBackLine as UndoIcon,
@@ -49,6 +49,7 @@ import { formatCompactDuration } from "@/domain/time/duration";
 import { findWorkItemTimer } from "@/domain/time/running-entry";
 import { settleOpensDialog } from "@/features/backlog/settle-dialog";
 import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
+import { getBacklogItemOriginFor } from "@/features/backlog/backlog-item-search";
 import { formatSnoozeTime } from "@/features/backlog/snooze-presets";
 import {
   WorkItemIcon,
@@ -97,14 +98,22 @@ function countSubitems(
  */
 function useBacklogItemRow(state: LocalAppState, now: number) {
   const navigate = useNavigate();
+  const router = useRouter();
   const latest = useRef({ state, now });
   latest.current = { state, now };
 
   return useMemo(() => {
+    // The item page remembers the page it was opened from, so Time or
+    // Projects stays selected and its back link returns there.
+    function from() {
+      return getBacklogItemOriginFor(router.state.location);
+    }
+
     function open(workItem: LocalWorkItem) {
       void navigate({
         to: "/backlog/$itemId",
         params: { itemId: workItem._id },
+        search: { from: from() },
       });
     }
 
@@ -137,14 +146,14 @@ function useBacklogItemRow(state: LocalAppState, now: number) {
           navigate({
             to: "/backlog/$itemId",
             params: { itemId: workItem._id },
-            search: { action: hosted },
+            search: { action: hosted, from: from() },
           }),
         options,
       );
     }
 
     return { open, actionsFor, run };
-  }, [navigate]);
+  }, [navigate, router]);
 }
 
 type RowApi = ReturnType<typeof useBacklogItemRow>;

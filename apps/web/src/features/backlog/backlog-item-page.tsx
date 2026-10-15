@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Link, useNavigate } from "@tanstack/react-router";
+import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import {
   RiArrowGoBackLine as UnsettleIcon,
   RiCheckboxCircleLine as SettleIcon,
@@ -54,6 +54,7 @@ import {
   ESTIMATE_FIGURES,
   formatHours,
 } from "@/features/backlog/backlog-estimates";
+import { getBacklogItemBackLink } from "@/features/backlog/backlog-item-search";
 import { getBacklogItemNotice } from "@/features/backlog/backlog-item-notice";
 import {
   WorkItemIcon,
@@ -86,6 +87,10 @@ import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
 export function BacklogItemPage({ itemId }: { itemId: string }) {
   const state = useLocalState();
   const navigate = useNavigate();
+  // The page the item was opened from, such as a Time day, which the back
+  // link and the item links below keep.
+  const { from } = useSearch({ from: "/app/backlog/$itemId" });
+  const backLink = getBacklogItemBackLink(from);
   const now = useNow();
   const isNarrowLayout = useIsNarrowView();
   const iconData = useWorkItemIconData(state.projects);
@@ -137,7 +142,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
   if (!workItem) {
     return (
       <div className="backlog-item-page">
-        <PageHeader backLink={{ label: "Backlog", to: "/backlog" }} />
+        <PageHeader backLink={backLink} />
         <Empty align="start" className="px-0">
           <EmptyHeader>
             <EmptyTitle>This backlog item no longer exists</EmptyTitle>
@@ -192,7 +197,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
     if (!action || action.disabledReason) return;
 
     if (actionId === "delete") {
-      void navigate({ to: "/backlog" });
+      void navigate({ to: backLink.to, search: backLink.search as never });
     }
     runBacklogItemAction(
       localStore
@@ -293,7 +298,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
           }
         >
           <PageHeader
-            backLink={{ label: "Backlog", to: "/backlog" }}
+            backLink={backLink}
             actions={
               <>
                 {headerButtons}
@@ -350,6 +355,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                   <Link
                     to="/backlog/$itemId"
                     params={{ itemId: parent._id }}
+                    search={{ from }}
                     className="truncate"
                   >
                     ↳ {parent.title}
@@ -424,6 +430,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                           key={subitem._id}
                           to="/backlog/$itemId"
                           params={{ itemId: subitem._id }}
+                          search={{ from }}
                           className="backlog-item-row"
                         >
                           <WorkItemIcon

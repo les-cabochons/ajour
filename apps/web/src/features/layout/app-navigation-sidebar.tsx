@@ -1,5 +1,5 @@
 import { useMemo, useRef, type KeyboardEvent, type PointerEvent } from "react";
-import { Link } from "@tanstack/react-router";
+import { Link, useRouterState } from "@tanstack/react-router";
 import {
   RiSettings3Line as Settings,
   RiSideBarLine as SidebarIcon,
@@ -22,6 +22,7 @@ import {
 import { selectSidebarBacklogItems } from "@/domain/backlog/backlog-item-lifecycle";
 import { createSidebarMatcher } from "@/domain/backlog/sidebar-filter";
 import { isPullRequestReturned } from "@/domain/pull-requests/pull-request-lifecycle";
+import { getSectionPathname } from "@/features/backlog/backlog-item-search";
 import { getAppSection } from "@/features/layout/app-section";
 import { SidebarBacklogList } from "@/features/layout/sidebar-backlog-list";
 import {
@@ -185,6 +186,11 @@ export function AppNavigationSidebar({
   const now = useNow();
   const layout = useSidebarLayout();
   const isSettingsActive = getAppSection(pathname) === "settings";
+  // A backlog item opened from Time or Projects keeps that view selected.
+  const sectionPathname = useRouterState({
+    select: (router) =>
+      getSectionPathname(router.location.pathname, router.location.search),
+  });
   const { open: searchOpen, query } = useSidebarSearch();
   const matcher = useMemo(
     () =>
@@ -249,7 +255,7 @@ export function AppNavigationSidebar({
       <div className="flex shrink-0 items-center justify-between gap-1 px-2 pb-1">
         {searchOpen ? null : (
           <SidebarViewSwitcher
-            pathname={pathname}
+            pathname={sectionPathname}
             selectedTimeDate={selectedTimeDate}
             options={views}
           />
