@@ -563,7 +563,7 @@ export function WeekGrid({
   return (
     <div className="weekly-grid-stack">
       <div className="weekly-grid-table-scroll">
-        <Table>
+        <Table className="weekly-grid-table">
           <TableHeader>
             <TableRow>
               <TableHead className="weekly-grid-task-column">
@@ -579,11 +579,13 @@ export function WeekGrid({
                   )}
                 >
                   <div className="weekly-grid-day-heading">
-                    <span className="weekly-grid-weekday">
-                      {formatWeekDay(day.localDate, { weekday: "short" })}
-                    </span>
-                    <span className="weekly-grid-day-number">
-                      {formatWeekDay(day.localDate, { day: "numeric" })}
+                    <span>
+                      <span className="weekly-grid-weekday">
+                        {formatWeekDay(day.localDate, { weekday: "short" })}
+                      </span>
+                      <span className="weekly-grid-day-number">
+                        {formatWeekDay(day.localDate, { day: "numeric" })}
+                      </span>
                     </span>
                     <CapacityValue
                       capacityMs={day.capacityMs}
@@ -612,7 +614,7 @@ export function WeekGrid({
                       className="weekly-project-mark"
                       fallback="dot"
                     />
-                    <div>
+                    <div title={`${row.projectName} · ${row.taskName}`}>
                       <span>{row.projectName}</span>
                       <strong>{row.taskName}</strong>
                     </div>
