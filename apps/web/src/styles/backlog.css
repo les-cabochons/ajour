@@ -382,6 +382,14 @@
     justify-content: space-between;
   }
 
+  .backlog-board-project {
+    display: flex;
+    flex: 1;
+    align-items: center;
+    gap: 0.375rem;
+    min-width: 0;
+  }
+
   .backlog-board-card .backlog-item-content {
     flex-direction: column;
     align-items: flex-start;
@@ -405,10 +413,6 @@
 
   .backlog-board-card .backlog-item-estimate {
     min-width: 0;
-  }
-
-  .backlog-board-card .backlog-item-project {
-    margin-left: auto;
   }
 
   .backlog-board-card .backlog-item-actions {
