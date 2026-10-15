@@ -4,13 +4,12 @@ import { SHORTCUTS, type ShortcutActionId } from "@/lib/shortcuts";
  * What an app menu action does in the renderer. Most actions run their
  * shortcut handler. Check for updates has no key: it opens Settings General,
  * which checks on open, or asks that page to check again when it is open.
- * The sidebar layout toggles have no key either.
+ * The sidebar density toggle has no key either.
  */
 export type AppMenuCommand =
   | { kind: "shortcut"; id: ShortcutActionId }
   | { kind: "check-for-updates" }
-  | { kind: "toggle-sidebar-density" }
-  | { kind: "toggle-sidebar-up-next" };
+  | { kind: "toggle-sidebar-density" };
 
 /**
  * Validates an action id that came from the main process over IPC. Unknown ids
@@ -22,9 +21,6 @@ export function resolveAppMenuAction(action: unknown): AppMenuCommand | null {
   }
   if (action === "app.toggle-sidebar-density") {
     return { kind: "toggle-sidebar-density" };
-  }
-  if (action === "app.toggle-sidebar-up-next") {
-    return { kind: "toggle-sidebar-up-next" };
   }
 
   const shortcut = SHORTCUTS.find((item) => item.id === action);
