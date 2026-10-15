@@ -257,6 +257,66 @@ describe("connector plugin installation boundary", () => {
     ).rejects.toThrow();
   });
 
+  it("reports an outdated installed package and updates it in place", async () => {
+    const root = await tempDir();
+    const installedRoot = path.join(root, "installed");
+    const source = "export async function validateConnection() {}";
+    await createPlugin(installedRoot, source, "plugin.mjs", { apiVersion: 2 });
+    const pluginDirectory = await createPlugin(
+      path.join(root, "source"),
+      source,
+    );
+    const archivePath = path.join(root, "jira-1.0.0.ajour-connector");
+    await create({ cwd: pluginDirectory, file: archivePath, gzip: true }, [
+      "plugin.json",
+      "plugin.mjs",
+    ]);
+    const server = createAppApiServer({
+      statePath: path.join(root, "state.json"),
+      installedPluginDirectory: installedRoot,
+      allowDevelopmentPlugins: false,
+    });
+    servers.push(server);
+
+    const before = await dispatchJsonRequest(server, {
+      method: "GET",
+      path: "/api/connectors",
+    });
+    expect(before.body).toMatchObject({
+      connectionGroups: [
+        {
+          plugin: {
+            id: "jira",
+            version: "1.0.0",
+            entrypoint: "",
+            unavailableReason: expect.stringContaining(
+              "Update the plugin to use it again.",
+            ),
+          },
+          enabled: false,
+        },
+      ],
+    });
+
+    const update = await installConnectorPluginForServer(
+      server,
+      await readFile(archivePath),
+      path.basename(archivePath),
+      { enableAfterInstall: false },
+    );
+
+    expect(update.replaced).toBe(true);
+    // An update keeps the activation state instead of switching the plugin off.
+    expect(update.overview.connectionGroups).toEqual([
+      expect.objectContaining({
+        plugin: expect.not.objectContaining({
+          unavailableReason: expect.anything(),
+        }),
+        enabled: true,
+      }),
+    ]);
+  });
+
   it("does not expose connector package changes through the loopback HTTP server", async () => {
     const root = await tempDir();
     const server = createAppApiServer({
