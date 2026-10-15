@@ -2069,9 +2069,8 @@ When(
     await expect(page.locator(".time-page-stack")).toBeVisible({
       timeout: 15_000,
     });
-    // The page header has its own Submit week; the totals popover keeps one too.
     await expect(page.getByRole("button", { name: "Submit week" })).toHaveCount(
-      1,
+      0,
     );
     await page
       .getByRole("button", { name: "Show day and week totals" })
