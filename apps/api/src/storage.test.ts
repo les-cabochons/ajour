@@ -647,4 +647,26 @@ describe("AppApiStorage", () => {
       await reloaded.getAgentTaskValues("ajp-workday", "enter-week"),
     ).toEqual({});
   });
+
+  it("ignores stored keys that would write to Object.prototype", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
+    tempDirs.push(tempDir);
+    const statePath = path.join(tempDir, "app-api-state.json");
+    // JSON.parse gives the state an own "__proto__" key, as a file on disk can.
+    await writeFile(
+      statePath,
+      `{"version":7,"connections":[],"agentRunner":{"taskValues":{"__proto__":{"x":{"a":"b"}},"ajp":{"constructor":{"a":"b"},"task":{"__proto__":"y","url":"https://wd.example/t"}}}}}\n`,
+      "utf8",
+    );
+    const storage = new AppApiStorage(statePath);
+    expect(await storage.getAgentTaskValues("ajp", "task")).toEqual({
+      url: "https://wd.example/t",
+    });
+    await storage.setAgentTaskValues("__proto__", "x", { a: "b" });
+    await storage.setAgentTaskValues("ajp", "prototype", { a: "b" });
+    await storage.getAgentTaskValues("__proto__", "x");
+    expect(({} as Record<string, unknown>).x).toBeUndefined();
+    expect(await storage.getAgentTaskValues("ajp", "constructor")).toEqual({});
+    expect(await storage.getAgentTaskValues("ajp", "prototype")).toEqual({});
+  });
 });

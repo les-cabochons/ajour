@@ -136,20 +136,39 @@ function defaultAgentRunnerSettings(): AgentRunnerSettings {
   return { cli: null, browserMode: "ajour-chrome", model: "" };
 }
 
+/** Keys that would reach Object.prototype if a stored name were used as a key. */
+const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+/**
+ * Copies `values` into a map without a prototype and without the unsafe
+ * keys, so a stored key can never write to Object.prototype.
+ */
+function safeValues(values: ConnectorFieldValues): ConnectorFieldValues {
+  const copy: ConnectorFieldValues = Object.create(null);
+  for (const [key, value] of Object.entries(values)) {
+    if (!UNSAFE_KEYS.has(key)) copy[key] = value;
+  }
+  return copy;
+}
+
 function normalizeAgentRunnerState(raw: unknown): StoredAgentRunnerState {
   const record =
     typeof raw === "object" && raw !== null
       ? (raw as Record<string, unknown>)
       : {};
   const settings = agentRunnerSettingsSchema.safeParse(record.settings);
-  const taskValues: StoredAgentRunnerState["taskValues"] = {};
+  const taskValues: StoredAgentRunnerState["taskValues"] = Object.create(null);
   if (typeof record.taskValues === "object" && record.taskValues !== null) {
     for (const [pluginId, tasks] of Object.entries(record.taskValues)) {
+      if (UNSAFE_KEYS.has(pluginId)) continue;
       if (typeof tasks !== "object" || tasks === null) continue;
       for (const [taskId, values] of Object.entries(tasks)) {
+        if (UNSAFE_KEYS.has(taskId)) continue;
         const parsed = connectorFieldValuesSchema.safeParse(values);
         if (parsed.success) {
-          (taskValues[pluginId] ??= {})[taskId] = parsed.data;
+          (taskValues[pluginId] ??= Object.create(null))[taskId] = safeValues(
+            parsed.data,
+          );
         }
       }
     }
@@ -857,22 +876,24 @@ export class AppApiStorage {
     taskId: string,
     values: ConnectorFieldValues,
   ): Promise<void> {
-    await this.mutate((state) => ({
-      nextState: {
-        ...state,
-        agentRunner: {
-          ...state.agentRunner,
-          taskValues: {
-            ...state.agentRunner.taskValues,
-            [pluginId]: {
-              ...state.agentRunner.taskValues[pluginId],
-              [taskId]: values,
-            },
-          },
+    if (UNSAFE_KEYS.has(pluginId) || UNSAFE_KEYS.has(taskId)) return;
+    await this.mutate((state) => {
+      const taskValues: StoredAgentRunnerState["taskValues"] =
+        Object.create(null);
+      Object.assign(taskValues, state.agentRunner.taskValues);
+      taskValues[pluginId] = Object.assign(
+        Object.create(null),
+        taskValues[pluginId],
+        { [taskId]: safeValues(values) },
+      );
+      return {
+        nextState: {
+          ...state,
+          agentRunner: { ...state.agentRunner, taskValues },
         },
-      },
-      result: undefined,
-    }));
+        result: undefined,
+      };
+    });
   }
 
   async setConnectorPluginEnabled(

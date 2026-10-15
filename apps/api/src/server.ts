@@ -28,6 +28,7 @@ import {
   connectorSettleWriteResultSchema,
   connectorSyncRequestSchema,
   connectorSyncResultSchema,
+  type ConnectorField,
   type ConnectorFieldValues,
   type ConnectorImportCandidate,
   type ConnectorImportCandidateInput,
@@ -362,6 +363,39 @@ function parseConnectionValues(values: ConnectorFieldValues) {
   };
 }
 
+function isHttpUrl(value: unknown): boolean {
+  if (typeof value !== "string") return false;
+  try {
+    const { protocol } = new URL(value);
+    return protocol === "http:" || protocol === "https:";
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Keeps only the values for the task's declared settings fields and checks
+ * each against its field. A required field may be saved empty: the runner
+ * blocks a run until it is filled. Returns the error message when a value is bad.
+ */
+function parseAgentTaskValues(
+  fields: readonly ConnectorField[],
+  values: ConnectorFieldValues,
+): { values: ConnectorFieldValues } | { error: string } {
+  const kept: ConnectorFieldValues = {};
+  for (const field of fields) {
+    if (!Object.hasOwn(values, field.id)) continue;
+    const value = values[field.id]!;
+    if (field.type === "url" && value !== "") {
+      if (!isHttpUrl(value)) {
+        return { error: `${field.label} must be an http or https URL.` };
+      }
+    }
+    kept[field.id] = value;
+  }
+  return { values: kept };
+}
+
 async function getOverview(
   storage: AppApiStorage,
   pluginManager: ConnectorPluginManager,
@@ -640,11 +674,25 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         const payload = agentTaskSettingsUpdateSchema.parse(
           await readJsonBody(request),
         );
-        await storage.setAgentTaskValues(
-          decodeURIComponent(agentTaskSettingsRoute[1] ?? ""),
-          decodeURIComponent(agentTaskSettingsRoute[2] ?? ""),
-          payload.values,
-        );
+        const pluginId = decodeURIComponent(agentTaskSettingsRoute[1] ?? "");
+        const taskId = decodeURIComponent(agentTaskSettingsRoute[2] ?? "");
+        const task = (await pluginManager.listPlugins())
+          .find((plugin) => plugin.id === pluginId)
+          ?.capabilities.agentTask?.tasks.find(
+            (candidate) => candidate.id === taskId,
+          );
+        if (!task) {
+          writeJson(response, 404, {
+            error: "This agent task is not available.",
+          });
+          return;
+        }
+        const parsed = parseAgentTaskValues(task.settings, payload.values);
+        if ("error" in parsed) {
+          writeJson(response, 400, { error: parsed.error });
+          return;
+        }
+        await storage.setAgentTaskValues(pluginId, taskId, parsed.values);
         writeJson(response, 200, await agentRunner.overview());
         return;
       }
