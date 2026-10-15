@@ -1,69 +1,120 @@
 import { useSyncExternalStore } from "react";
 
 /**
- * The width the user dragged a resizable side panel to, per device. Like the
- * sidebar layout, it lives outside the local app state so it is never exported.
- * The panel's CSS still caps it at half the page.
+ * The widths the user dragged the side panels to, one per page, per device.
+ * Like the sidebar layout, they live outside the local app state so they are
+ * never exported. A page without a saved width uses the default.
  */
-export const SIDE_PANEL_WIDTH_STORAGE_KEY = "ajour.side-panel-width";
+const SIDE_PANEL_WIDTH_KEYS = [
+  "agents",
+  "backlog",
+  "backlog-item",
+  "projects",
+  "time",
+] as const;
+
+/** The page a side panel belongs to. Each page keeps its own width. */
+export type SidePanelWidthKey = (typeof SIDE_PANEL_WIDTH_KEYS)[number];
+
+export type SidePanelWidths = Partial<Record<SidePanelWidthKey, number>>;
+
+function isSidePanelWidthKey(key: string): key is SidePanelWidthKey {
+  return (SIDE_PANEL_WIDTH_KEYS as readonly string[]).includes(key);
+}
+
+export const SIDE_PANEL_WIDTHS_STORAGE_KEY = "ajour.side-panel-widths";
 export const SIDE_PANEL_DEFAULT_WIDTH = 340;
 export const SIDE_PANEL_MIN_WIDTH = 300;
 export const SIDE_PANEL_MAX_WIDTH = 720;
 
-export function clampSidePanelWidth(width: number) {
-  return Math.round(
-    Math.min(SIDE_PANEL_MAX_WIDTH, Math.max(SIDE_PANEL_MIN_WIDTH, width)),
+/**
+ * Keeps a width between the minimum and the maximum. `available` is the width
+ * of the page the panel sits in: the panel never takes more than half of it,
+ * which is also the CSS cap, so a drag never saves a width that cannot show.
+ */
+export function clampSidePanelWidth(width: number, available = Infinity) {
+  const max = Math.max(
+    SIDE_PANEL_MIN_WIDTH,
+    Math.min(SIDE_PANEL_MAX_WIDTH, available / 2),
   );
+  return Math.round(Math.min(max, Math.max(SIDE_PANEL_MIN_WIDTH, width)));
 }
 
-/** Unknown or broken values fall back to the default width. */
-export function parseSidePanelWidth(value: string | null) {
-  const width = Number(value);
-  return value && Number.isFinite(width)
-    ? clampSidePanelWidth(width)
-    : SIDE_PANEL_DEFAULT_WIDTH;
+/** Unknown keys and broken values are dropped, page by page. */
+export function parseSidePanelWidths(value: string | null): SidePanelWidths {
+  try {
+    const parsed: unknown = value ? JSON.parse(value) : {};
+    if (!parsed || typeof parsed !== "object") return {};
+    const widths: SidePanelWidths = {};
+    for (const [key, width] of Object.entries(parsed)) {
+      if (
+        isSidePanelWidthKey(key) &&
+        typeof width === "number" &&
+        Number.isFinite(width)
+      ) {
+        widths[key] = clampSidePanelWidth(width);
+      }
+    }
+    return widths;
+  } catch {
+    return {};
+  }
 }
 
-let width: number | undefined;
+let widths: SidePanelWidths | undefined;
 const listeners = new Set<() => void>();
 
-function getWidth() {
-  if (width === undefined) {
+function getWidths() {
+  if (widths === undefined) {
     try {
-      width = parseSidePanelWidth(
-        window.localStorage.getItem(SIDE_PANEL_WIDTH_STORAGE_KEY),
+      widths = parseSidePanelWidths(
+        window.localStorage.getItem(SIDE_PANEL_WIDTHS_STORAGE_KEY),
       );
     } catch {
       // Storage can be unavailable under restrictive privacy settings.
-      width = SIDE_PANEL_DEFAULT_WIDTH;
+      widths = {};
     }
   }
-  return width;
+  return widths;
 }
 
-/** Sets the width and saves it for this device. Undefined resets it. */
-export function setSidePanelWidth(next: number | undefined) {
-  width =
-    next === undefined ? SIDE_PANEL_DEFAULT_WIDTH : clampSidePanelWidth(next);
-  try {
-    if (next === undefined) {
-      window.localStorage.removeItem(SIDE_PANEL_WIDTH_STORAGE_KEY);
-    } else {
-      window.localStorage.setItem(SIDE_PANEL_WIDTH_STORAGE_KEY, String(width));
-    }
-  } catch {
-    // The width then only lasts for this session.
-  }
+/**
+ * Sets a page's panel width, or resets it with undefined. A drag passes
+ * `save: false` on every move and calls `saveSidePanelWidths` once it ends.
+ */
+export function setSidePanelWidth(
+  key: SidePanelWidthKey,
+  width: number | undefined,
+  { save = true } = {},
+) {
+  const next = { ...getWidths() };
+  if (width === undefined) delete next[key];
+  else next[key] = width;
+  widths = next;
   listeners.forEach((listener) => listener());
+  if (save) saveSidePanelWidths();
 }
 
-export function useSidePanelWidth() {
+/** Writes the current widths to this device's storage. */
+export function saveSidePanelWidths() {
+  try {
+    window.localStorage.setItem(
+      SIDE_PANEL_WIDTHS_STORAGE_KEY,
+      JSON.stringify(getWidths()),
+    );
+  } catch {
+    // The widths then only last for this session.
+  }
+}
+
+/** The width of a page's side panel: the saved width, else the default. */
+export function useSidePanelWidth(key: SidePanelWidthKey) {
   return useSyncExternalStore(
     (listener) => {
       listeners.add(listener);
       return () => listeners.delete(listener);
     },
-    getWidth,
+    () => getWidths()[key] ?? SIDE_PANEL_DEFAULT_WIDTH,
     () => SIDE_PANEL_DEFAULT_WIDTH,
   );
 }

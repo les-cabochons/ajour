@@ -67,4 +67,5 @@ The chrome is solid: `--nav-bg` and `--app-sidebar-bg` are opaque, with no blur.
 ## Layout
 
 - `--app-sidebar-width` (272px comfortable, 200px compact, user-resizable), `--app-workspace-max-width: 1440px`.
+- `--side-panel-width` (340px default, user-resizable from 300px to 720px and at most half the page, saved per page). `SidePanel` sets it on its parent element.
 - The top bar is 48px. Sidebar rows are 28px. Day-view rows are 40px. Backlog rows are 36px.

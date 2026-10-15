@@ -2151,6 +2151,7 @@ export function ProjectsPage() {
       {taskEditorForm && !isNarrowView ? (
         <SidePanel
           contentKey={visibleTaskEditor?.taskId ?? "new"}
+          widthKey="projects"
           className="project-task-side-panel"
           aria-label="Task editor"
         >

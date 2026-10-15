@@ -372,6 +372,7 @@ export function AgentPanel({
     // The bottom padding keeps the last row clear of the corner indicator.
     <SidePanel
       contentKey="agents"
+      widthKey="agents"
       aria-label="Agents"
       contentClassName="flex flex-col gap-3 pb-14"
       onKeyDown={(event) => {

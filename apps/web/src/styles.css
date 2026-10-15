@@ -925,7 +925,7 @@
     padding-top: 1.25rem;
   }
   /* Docked on the right; the page next to it stays visible and clickable.
-     SidePanel sets --side-panel-width on the root from the saved width.
+     SidePanel sets --side-panel-width on its parent from the page's saved width.
      The 340px default leaves room for the seven 128px Week columns beside a
      200px sidebar at 1440px. The handle stays still while the content scrolls. */
   .side-panel {
