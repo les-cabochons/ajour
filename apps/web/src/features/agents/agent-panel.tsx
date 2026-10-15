@@ -373,7 +373,7 @@ export function AgentPanel({
     <SidePanel
       contentKey="agents"
       aria-label="Agents"
-      className="flex flex-col gap-3 pb-14"
+      contentClassName="flex flex-col gap-3 pb-14"
       onKeyDown={(event) => {
         if (event.key === "Escape") onOpenChange(false);
       }}

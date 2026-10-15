@@ -28,13 +28,18 @@ const KEYBOARD_STEP = 16;
  * Dragging the left edge resizes the panel. The width is saved per device in
  * `lib/side-panel-width.ts`, shared by every side panel, and published as the
  * `--side-panel-width` root variable so page layouts can make room for it.
+ * The content scrolls in an inner element; `contentClassName` styles it.
  */
 export function SidePanel({
   contentKey,
   className,
+  contentClassName,
   children,
   ...props
-}: ComponentProps<"aside"> & { contentKey: string }) {
+}: ComponentProps<"aside"> & {
+  contentKey: string;
+  contentClassName?: string;
+}) {
   const panelRef = useRef<HTMLElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const width = useSidePanelWidth();
@@ -76,7 +81,9 @@ export function SidePanel({
       {...props}
     >
       <SidePanelResizeHandle width={width} />
-      <div className="side-panel-scroll">{children}</div>
+      <div className={cn("side-panel-scroll", contentClassName)}>
+        {children}
+      </div>
     </aside>
   );
 }
