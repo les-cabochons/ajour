@@ -225,6 +225,10 @@ Then("the other item is pinned at the top of the sidebar", async ({ page }) => {
     .getByRole("navigation", { name: "Primary navigation" })
     .locator("[data-backlog-item-id]");
   await expect(rows.first()).toHaveAttribute("data-backlog-item-id", "other");
+  // The row's markers, the pin among them, give way to its actions on hover
+  // and focus, and the menu gives focus back to the row when it closes.
+  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+  await page.getByRole("main").hover();
   await expect(
     otherSidebarRow(page).getByRole("img", { name: "Pinned" }),
   ).toBeVisible();
