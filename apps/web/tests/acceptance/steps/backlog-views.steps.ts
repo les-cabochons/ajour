@@ -1618,7 +1618,10 @@ When(
     });
     const [settings] = await Promise.all([
       page.context().waitForEvent("page", { timeout: 5000 }),
-      link.click({ modifiers: [modifier] }),
+      // macOS turns Ctrl-click into a right-click, so press Cmd there.
+      link.click({
+        modifiers: [modifier === "Control" ? "ControlOrMeta" : modifier],
+      }),
     ]);
     await expect(settings).toHaveURL(/\/settings\/workflow$/);
     await settings.close();
