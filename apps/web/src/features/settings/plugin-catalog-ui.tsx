@@ -22,6 +22,7 @@ const featureDescriptions: Record<string, string> = {
 const capabilityLabels: Record<PluginCatalogCapability, string> = {
   connector: "Connector",
   codeHost: "Code host",
+  agentTask: "Agent tasks",
   schema: "Schema",
 };
 
@@ -60,6 +61,7 @@ const capabilityFlows: Record<
 > = {
   connector: { start: "External service", end: "Local backlog" },
   codeHost: { start: "Code host", end: "Pull requests" },
+  agentTask: { start: "Task prompt", end: "Coding agent" },
   schema: { start: "Ajour projects", end: "Excel files" },
 };
 

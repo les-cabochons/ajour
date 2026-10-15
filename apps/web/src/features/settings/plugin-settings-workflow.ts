@@ -95,13 +95,16 @@ function localCatalogEntry(
       : [
           ...(plugin.capabilities.connector ? (["connector"] as const) : []),
           ...(plugin.capabilities.codeHost ? (["codeHost"] as const) : []),
+          ...(plugin.capabilities.agentTask ? (["agentTask"] as const) : []),
         ];
   const features = capabilities.map((capability) =>
     capability === "connector"
       ? "work-item-sync"
       : capability === "codeHost"
         ? "pull-requests"
-        : "project-data-shape",
+        : capability === "agentTask"
+          ? "agent-task"
+          : "project-data-shape",
   );
   return {
     schemaVersion: 2,
@@ -133,7 +136,9 @@ function localCatalogEntry(
         ? "connector"
         : capability === "codeHost"
           ? "code-host"
-          : "data-shape",
+          : capability === "agentTask"
+            ? "agent-task"
+            : "data-shape",
     ),
   };
 }
