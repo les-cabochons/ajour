@@ -56,6 +56,7 @@ import { offerUndo } from "@/features/feedback/undo-toast";
 import { settleOpensDialog } from "@/features/backlog/settle-dialog";
 import { BACKLOG_ITEM_ACTION_KEYS } from "@/lib/item-keys";
 import { localStore } from "@/lib/local-store";
+import { ProjectIcon } from "@/lib/project-icons";
 import { useHoverOrFocusWithin } from "@/lib/use-hover-or-focus-within";
 import { cn } from "@/lib/utils";
 
@@ -428,8 +429,34 @@ export function BacklogItemSurface({
             live={live}
           />
         )}
-        {view.properties.id && (
-          <span className="backlog-item-id">{reference ?? ""}</span>
+        {board ? (
+          <span
+            className="backlog-board-project"
+            title={
+              view.properties.project && project
+                ? getLocalProjectDisplayName(project)
+                : undefined
+            }
+          >
+            {view.properties.project && (
+              <>
+                {project && (
+                  <ProjectIcon
+                    icon={project.icon}
+                    color={project.color}
+                    className="size-3.5"
+                  />
+                )}
+                <span className="backlog-item-id">
+                  {project ? getLocalProjectDisplayName(project) : "No project"}
+                </span>
+              </>
+            )}
+          </span>
+        ) : (
+          view.properties.id && (
+            <span className="backlog-item-id">{reference ?? ""}</span>
+          )
         )}
         <BacklogStatePicker
           item={item}
@@ -467,7 +494,7 @@ export function BacklogItemSurface({
         {board && <WorkItemIcon icon={resolveWorkItemIcon(item, icons)} />}
         {board && markers}
         {board && progressLabel}
-        {view.properties.project && project && (
+        {!board && view.properties.project && project && (
           <Chip
             className="backlog-item-project max-w-40"
             color={project.color}
