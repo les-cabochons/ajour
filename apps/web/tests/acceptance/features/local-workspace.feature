@@ -108,7 +108,7 @@ Feature: Open the local time workspace
     Then Monday's "API" entry has keyboard focus
     When I press the "Backspace" key
     Then the entry is gone and a toast offers Undo
-    And Monday's "Login form" entry has keyboard focus
+    And Monday's "Code review" entry has keyboard focus
     When I press the "ControlOrMeta+z" key
     Then the "API" entry is back exactly as it was
 
@@ -129,16 +129,62 @@ Feature: Open the local time workspace
   Scenario: Reorder a day by dragging a card in the Week Days view
     Given I have a week of saved entries
     When I open the Week Days view
-    Then Monday's cards read "Code review", "API", "Login form"
-    When I drag Monday's "Login form" card above its "Code review" card
-    Then Monday's cards read "Login form", "Code review", "API"
+    Then Monday's cards read "Login form", "API", "Code review"
+    When I drag Monday's "Code review" card above its "Login form" card
+    Then Monday's cards read "Code review", "Login form", "API"
 
   Scenario: Move an entry to another day by dragging its card
     Given I have a week of saved entries
     When I open the Week Days view
     And I drag Monday's "API" card onto Wednesday
-    Then Monday's cards read "Code review", "Login form"
+    Then Monday's cards read "Login form", "Code review"
     And Wednesday's cards read "API"
+
+  Scenario: Add an entry by double-clicking a day's empty space
+    Given I have a week of saved entries
+    When I open the Week Days view
+    Then Wednesday's column reaches the bottom of the page
+    When I double-click the empty space at the bottom of Wednesday's column
+    Then the side panel opens a new entry on "2026-10-07"
+
+  Scenario: Add an entry at the end of a day by double-clicking its header
+    Given I have a week of saved entries
+    When I open the Week Days view
+    And I double-click Monday's header
+    And I save the new entry with note "Wrap-up" and hours "0:30"
+    Then Monday's cards read "Login form", "API", "Code review", "Wrap-up"
+
+  Scenario: Go back to the Day view after switching to Week
+    Given I have a week of saved entries
+    When I open Monday in the Day view
+    And I switch the Time page to Week
+    And I go back in the browser
+    Then the Day view is visible
+
+  Scenario: Double-clicking the capacity card does not add an entry
+    Given I have a week of saved entries
+    When I open the Week Days view
+    And I double-click the text of Monday's capacity card
+    Then no entry editor is open
+
+  Scenario: The entry panel floats over a narrow Time page and docks on a wide one
+    Given I have a week of saved entries
+    When the window is 1280 pixels wide
+    And I open the Week Days view
+    Then opening Monday's "API" card floats the entry panel over the Week
+    When the window is 1800 pixels wide
+    Then the entry panel sits beside the Week and narrows it
+
+  Scenario: Reopen Time in the view I used last
+    Given I have a week of saved entries
+    When I open the Week Days view
+    And I open Backlog from the app sidebar
+    And I open Time from the app sidebar
+    Then the Week Days view is visible
+    When I switch the Time page to Day
+    And I open Backlog from the app sidebar
+    And I open Time from the app sidebar
+    Then the Day view is visible
 
   Scenario: Type hours in the Week Grid
     Given I have a week of saved entries

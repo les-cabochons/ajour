@@ -14,11 +14,16 @@ import {
   RiStopLine as Stop,
 } from "@remixicon/react";
 import { ObjectActionsButton } from "@/components/object-actions-menu";
-import { RunningDot } from "@/components/running-dot";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
 import type { TimeEntryActionId } from "@/domain/actions/object-actions";
-import type { LocalTimer, LocalTimesheetEntry } from "@/domain/local-state";
+import {
+  getLocalProjectDisplayName,
+  type LocalTimer,
+  type LocalTimesheetEntry,
+} from "@/domain/local-state";
+import { isTimesheetEntryCommitted } from "@/domain/time/timesheet-commit";
 import { syncBacklogWorkItemToSource } from "@/features/backlog/work-item-source-sync";
 import {
   commitTimeEntryDraft,
@@ -123,10 +128,13 @@ function seedEditor(target: TimeEntryEditorTarget): {
  * Hosts (the side panel, the dialog, the titlebar popovers) only supply the container,
  * so keys, buttons and save rules stay the same everywhere.
  *
- * Footer: Cancel · Start (Switch while another entry runs, Continue on a saved entry,
- * Stop on the running entry) · Save. Save: the Save button, Enter in Hours or Note, or
- * Cmd/Ctrl+Enter. A new entry with no hours cannot be saved; those keys press Start.
- * Escape, Cancel or × discard the draft. Save on the running entry keeps it running.
+ * Laid out like the backlog peek: the form's title, "…" and × on top, then the task
+ * as a heading with status, project and date chips, then Start (Switch while another
+ * entry runs, Continue on a saved entry, Stop on the running entry), the property rows
+ * and the note. Footer: Cancel · Save. Save: the Save button, Enter in Hours or Note,
+ * or Cmd/Ctrl+Enter. A new entry with no hours cannot be saved; those keys press
+ * Start. Escape, Cancel or × discard the draft. Save on the running entry keeps it
+ * running.
  *
  * Keep the host remount keyed by target: the draft is seeded once, on mount.
  * A host that can swap containers mid-edit (side panel and dialog across a
@@ -192,6 +200,13 @@ export function TimeEntryEditorForm({
   const isAnotherEntryRunning = state.timers.some(
     (timer) => timer._id !== runningTimer?._id,
   );
+  // The header names the draft's task and project, so it follows the picker.
+  const selectedProject = projects.find(
+    (project) => project._id === fields.projectId,
+  );
+  const selectedTask = selectedProject?.tasks.find(
+    (task) => task._id === fields.taskId,
+  );
   // Start and Continue always count on today, whatever day the form shows.
   const startsToday = !runningTimer && fields.localDate !== today;
 
@@ -202,7 +217,7 @@ export function TimeEntryEditorForm({
   useEffect(() => {
     rootRef.current
       ?.querySelector<HTMLElement>(
-        "[data-slot='field'] :is(button, input, textarea)",
+        ".time-entry-fields :is(button, input, textarea)",
       )
       ?.focus();
   }, []);
@@ -351,26 +366,14 @@ export function TimeEntryEditorForm({
   return (
     <div
       ref={rootRef}
-      className={cn("flex flex-col gap-4", className)}
+      className={cn("time-entry-editor flex flex-col gap-5", className)}
       onKeyDown={handleKeyDown}
     >
-      <header className="flex items-start justify-between gap-2">
-        <div className="flex min-w-0 flex-col gap-0.5">
-          <Title className="text-base font-semibold">
-            {target.kind === "create" ? "New time entry" : "Edit time entry"}
-          </Title>
-          <span className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            {runningTimer ? (
-              <>
-                <RunningDot />
-                Running · {formatEntryDate(runningTimer.localDate)}
-              </>
-            ) : (
-              formatEntryDate(fields.localDate)
-            )}
-          </span>
-        </div>
-        <div className="flex items-center gap-1">
+      <div className="flex h-7 items-center justify-between gap-2">
+        <Title className="truncate text-xs font-normal text-muted-foreground">
+          {target.kind === "create" ? "New time entry" : "Edit time entry"}
+        </Title>
+        <div className="flex items-center">
           {actionTarget ? (
             <ObjectActionsButton
               actions={entryActions.getActions(actionTarget, {
@@ -390,7 +393,72 @@ export function TimeEntryEditorForm({
             <X />
           </TooltipButton>
         </div>
+      </div>
+
+      <header className="flex min-w-0 flex-col gap-1">
+        <p
+          className={cn(
+            "text-lg leading-6 font-semibold",
+            !selectedTask && "text-muted-foreground",
+          )}
+        >
+          {selectedTask?.name ?? (selectedProject ? "No task" : "No project")}
+        </p>
+        <div className="time-entry-editor-meta">
+          {runningTimer ? (
+            <Chip tone="success">Running</Chip>
+          ) : entry && isTimesheetEntryCommitted(entry) ? (
+            <Chip>Committed</Chip>
+          ) : null}
+          {selectedProject ? (
+            <Chip color={selectedProject.color}>
+              {getLocalProjectDisplayName(selectedProject)}
+            </Chip>
+          ) : null}
+          <span>
+            {formatEntryDate(
+              runningTimer ? runningTimer.localDate : fields.localDate,
+            )}
+          </span>
+        </div>
       </header>
+
+      <div className="flex flex-wrap items-center gap-2">
+        {runningTimer ? (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={editor.hasChanges && !editor.canSave}
+            onClick={stop}
+          >
+            <Stop data-icon="inline-start" />
+            Stop
+          </Button>
+        ) : entry ? (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={editor.hasChanges && !editor.canSave}
+            onClick={continueEntry}
+          >
+            <Play data-icon="inline-start" />
+            Continue
+          </Button>
+        ) : (
+          <Button
+            type="button"
+            variant="outline"
+            disabled={editor.durationMs === null}
+            onClick={start}
+          >
+            <Play data-icon="inline-start" />
+            {isAnotherEntryRunning ? "Switch" : "Start"}
+          </Button>
+        )}
+        {startsToday ? (
+          <span className="text-xs text-muted-foreground">Starts today</span>
+        ) : null}
+      </div>
 
       <TimeEntryFields
         idPrefix={`time-entry-editor-${entry?._id ?? runningTimer?._id ?? "new"}`}
@@ -416,52 +484,12 @@ export function TimeEntryEditorForm({
         onDateChange={(localDate) => updateFields({ localDate })}
       />
 
-      <footer className="flex flex-wrap items-center justify-end gap-2">
-        {startsToday ? (
-          <span className="mr-auto text-xs text-muted-foreground">
-            Starts today
-          </span>
-        ) : null}
+      <footer className="flex items-center justify-end gap-2 border-t pt-3">
         <Button type="button" variant="ghost" onClick={onClose}>
           Cancel
         </Button>
-        {runningTimer ? (
-          <Button
-            type="button"
-            variant="outline"
-
-            disabled={editor.hasChanges && !editor.canSave}
-            onClick={stop}
-          >
-            <Stop data-icon="inline-start" />
-            Stop
-          </Button>
-        ) : entry ? (
-          <Button
-            type="button"
-            variant="outline"
-
-            disabled={editor.hasChanges && !editor.canSave}
-            onClick={continueEntry}
-          >
-            <Play data-icon="inline-start" />
-            Continue
-          </Button>
-        ) : (
-          <Button
-            type="button"
-            variant="outline"
-
-            disabled={editor.durationMs === null}
-            onClick={start}
-          >
-            <Play data-icon="inline-start" />
-            {isAnotherEntryRunning ? "Switch" : "Start"}
-          </Button>
-        )}
         <Button
           type="button"
-
           disabled={!editor.canSave}
           title={editor.isTimerMode ? START_OR_ENTER_HOURS_HINT : undefined}
           onClick={save}

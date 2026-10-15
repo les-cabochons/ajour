@@ -38,7 +38,7 @@ Decided in [Action model for entries, timers, projects, tasks and work items](ht
 
 - Continue on today's entry resumes that entry. Continue on another day's entry starts a new running entry today with the same task and note. Today the code adds the new time to the original entry, even on a past day. That changes.
 - Discard throws away the time counted since the entry last started. A running entry that started from nothing disappears.
-- Move up and Move down apply to saved and committed entries. The running entry stays first in its day, so Move up and Move down are disabled on it: "The running entry stays on top".
+- Move up and Move down apply to saved and committed entries. Each day lists its entries oldest first, so a new entry lands at the end. The running entry stays last in its day, so Move up and Move down are disabled on it: "The running entry stays last".
 
 ### Project
 
@@ -364,7 +364,7 @@ Frequent in-app actions use single keys. They only work when focus is not in a t
 - Escape, a click on empty space, or showing another day or week clears the selection.
 - Cmd+C, Cmd+X and Delete act on every selected entry, with one Undo for Delete. The Delete key follows the selection even when focus sits on an entry Cmd+click just deselected; a menu's Delete on an unselected entry deletes that entry. The other item keys act on the focused entry. Copy, cut and a multiple Delete skip the running entry.
 - Ajour listens to the browser's copy, cut and paste events, so the desktop Edit menu works too, and text fields keep their own clipboard. The entries stay in memory, and their text summary goes on the system clipboard. Cmd+V pastes entries only while the system clipboard still holds that summary.
-- Cut entries stay dimmed until the paste moves them, like Move to…. Copies are new entries, which the Commit page lists as added. Pasted entries go to the top of their day in reading order.
+- Cut entries stay dimmed until the paste moves them, like Move to…. Copies are new entries, which the Commit page lists as added. Pasted entries go to the end of their day in reading order.
 - Cmd+V on the Day view pastes on the shown day. On the Week view each entry keeps its weekday in the shown week. A right-click on a Days column's empty space offers Paste here and Paste on same weekdays.
 
 ### Command palette

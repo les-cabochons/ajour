@@ -470,7 +470,7 @@ function focusedSection(input: PaletteInput): PaletteSection | null {
           },
           focused,
           platform,
-          "The running entry stays on top",
+          "The running entry stays last",
         );
       }
 

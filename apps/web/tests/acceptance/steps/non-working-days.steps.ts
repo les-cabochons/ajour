@@ -81,7 +81,7 @@ When(
 Then(
   "the day strip and both Week layouts show only the five working days",
   async ({ page }) => {
-    await page.goto("/time/2026-10-05");
+    await page.goto("/time/2026-10-05?view=day");
     await expectWorkingDayStrip(page);
     await page.goto("/time/2026-10-05?view=week");
     const headings = page.locator(".weekly-grid-day-column");
@@ -112,7 +112,7 @@ Then(
   "the narrow day strip shows only the five working days",
   async ({ page }) => {
     await page.setViewportSize({ width: 390, height: 844 });
-    await page.goto("/time/2026-10-05");
+    await page.goto("/time/2026-10-05?view=day");
     await expectWorkingDayStrip(page);
   },
 );
@@ -132,7 +132,7 @@ When("I disable hiding non-working days", async ({ page }) => {
 Then(
   "the day strip and Week grid show all seven days again",
   async ({ page }) => {
-    await page.goto("/time/2026-10-05");
+    await page.goto("/time/2026-10-05?view=day");
     await expect(
       page.getByRole("tablist", { name: "Days of the week" }).getByRole("tab"),
     ).toHaveCount(7);
@@ -159,7 +159,7 @@ Then("the Week view explains that every day is hidden", async ({ page }) => {
     "5:00",
   );
   await expect(page.locator(".weekly-grid-day-column")).toHaveCount(0);
-  await page.goto("/time/2026-10-05");
+  await page.goto("/time/2026-10-05?view=day");
   await expect(
     page.getByRole("tablist", { name: "Days of the week" }).getByRole("tab"),
   ).toHaveCount(0);

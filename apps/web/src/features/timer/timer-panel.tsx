@@ -129,10 +129,11 @@ function EntryMain({
 }
 
 /**
- * The Day view's entry list: one 40px row per entry, the running entry first,
- * and a "New entry" row at the end. A click selects a row for copy, cut and
- * paste; a double click, Enter and "New entry" ask the page to open the entry
- * editor through `onOpenEntry`. An empty target means a new entry on `date`.
+ * The Day view's entry list: one 40px row per entry, oldest first with the
+ * running entry last, then a "New entry" row. A click selects a row for copy,
+ * cut and paste; a double click, Enter and "New entry" ask the page to open the
+ * entry editor through `onOpenEntry`. An empty target means a new entry on
+ * `date`.
  */
 export function TimerPanel({
   date,
@@ -191,7 +192,7 @@ export function TimerPanel({
     () =>
       state.timesheetEntries
         .filter((entry) => entry.localDate === date)
-        .sort((left, right) => right.committedAt - left.committedAt),
+        .sort((left, right) => left.committedAt - right.committedAt),
     [date, state.timesheetEntries],
   );
   const visibleEntries = useMemo(() => {
@@ -200,7 +201,8 @@ export function TimerPanel({
         ? recentEntries.filter((entry) => entry._id !== currentTimer.entryId)
         : recentEntries;
 
-    return runningEntry ? [runningEntry, ...filteredEntries] : filteredEntries;
+    // Oldest first, so the running entry, the latest work, comes last.
+    return runningEntry ? [...filteredEntries, runningEntry] : filteredEntries;
   }, [currentTimer?.entryId, recentEntries, runningEntry]);
   const draggableEntryIds = useMemo(
     () =>
@@ -558,7 +560,7 @@ export function TimerPanel({
                           actions: rowActions,
                           keys: TIME_ENTRY_ACTION_KEYS,
                           onAction: runRowAction,
-                          // The running entry stays on top.
+                          // The running entry stays last.
                           onReorder: isRunning
                             ? undefined
                             : (step) => reorderEntry(entry._id, step),

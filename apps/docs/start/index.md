@@ -6,7 +6,7 @@ This guide takes you through a first week in Ajour. You set up a project, track 
 
 [Install the desktop app](/start/install). Ajour has no account and no sign-in. Your workspace lives on your machine from the first launch.
 
-A new workspace has two projects, **Internal** and **Client Work**, and no tasks. It opens on today's [Day view](/time/day-view).
+A new workspace has two projects, **Internal** and **Client Work**, and no tasks. It opens on today's [Day view](/time/day-view). After that, Ajour opens the Time page in the view you used last.
 
 <Shot name="empty-workspace" alt="A new workspace on the Day view, with no entries" />
 

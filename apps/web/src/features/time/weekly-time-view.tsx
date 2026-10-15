@@ -99,8 +99,10 @@ type ColumnPasteActionId = "paste-here" | "paste-same-weekdays";
 /**
  * The Week view: the Grid of project and task rows by day, or the Days columns of
  * entry cards. Grid clicks open cells in the page's side panel. A click selects a
- * card for copy, cut and paste, and a double click opens it. Dragging a card to
- * another day moves it; dragging it within its day reorders the day.
+ * card for copy, cut and paste, and a double click opens it. A double click on a
+ * day's header or empty space opens a new entry for that day. Days lists each day
+ * oldest first, with the running entry last. Dragging a card to another day moves
+ * it; dragging it within its day reorders the day.
  */
 export function WeeklyTimeView({
   activeCell,
@@ -208,12 +210,12 @@ export function WeeklyTimeView({
   const orderedCardIds = useMemo(
     () =>
       projection.days.flatMap((day) => [
-        ...(runningTime?.localDate === day.localDate && runningEntryId
-          ? [runningEntryId]
-          : []),
         ...day.entries
           .filter((entry) => entry._id !== currentTimer?.entryId)
           .map((entry) => entry._id),
+        ...(runningTime?.localDate === day.localDate && runningEntryId
+          ? [runningEntryId]
+          : []),
       ]),
     [currentTimer?.entryId, projection.days, runningEntryId, runningTime],
   );
@@ -490,6 +492,35 @@ export function WeeklyTimeView({
     };
   }
 
+  /**
+   * True when a pointer event lands on a day column's own empty space: not on a
+   * card or button, and not in a portal such as the capacity hover card, whose
+   * React events still bubble to the column.
+   */
+  function isColumnEmptySpace(event: ReactMouseEvent<HTMLElement>) {
+    return (
+      event.target instanceof Element &&
+      event.currentTarget.contains(event.target) &&
+      !event.target.closest(".weekly-entry-card, button")
+    );
+  }
+
+  /**
+   * A double-click on a day column's header or empty space opens a new entry
+   * for that day. Cards and buttons keep their own clicks.
+   */
+  function handleColumnDoubleClick(
+    localDate: string,
+    event: ReactMouseEvent<HTMLElement>,
+  ) {
+    if (isColumnEmptySpace(event)) onNewEntry(localDate);
+  }
+
+  /** Keeps the second press of a double-click from selecting nearby text. */
+  function handleColumnMouseDown(event: ReactMouseEvent<HTMLElement>) {
+    if (event.detail > 1 && isColumnEmptySpace(event)) event.preventDefault();
+  }
+
   function addGridRow(row: WeeklyGridAddedRow) {
     setAddedRows({ weekStart: weekDates[0], rows: [...weekAddedRows, row] });
   }
@@ -580,6 +611,10 @@ export function WeeklyTimeView({
               <section
                 key={day.localDate}
                 ref={(node) => registerDayTarget(day.localDate, node)}
+                onDoubleClick={(event) =>
+                  handleColumnDoubleClick(day.localDate, event)
+                }
+                onMouseDown={handleColumnMouseDown}
                 className={cn(
                   "weekly-days-column",
                   weekDates.indexOf(day.localDate) >= 5 && "is-weekend",
@@ -625,70 +660,6 @@ export function WeeklyTimeView({
                   role="group"
                   aria-label={`${formatWeekDay(day.localDate, { weekday: "long" })} entries`}
                 >
-                  {runningHere && runningTarget && runningEntryId ? (
-                    <ObjectContextMenu
-                      actions={entryActions.getActions(runningTarget)}
-                      keys={TIME_ENTRY_ACTION_KEYS}
-                      onAction={(actionId) =>
-                        entryActions.runAction(runningTarget, actionId)
-                      }
-                      render={
-                        <div
-                          tabIndex={0}
-                          aria-label={`Running entry, ${formatClockDuration(runningTime.displayDurationMs)}`}
-                          // Cards are buttons, so their selection is a pressed state.
-                          role="button"
-                          aria-pressed={selection.selectedIds.has(
-                            runningEntryId,
-                          )}
-                          className={cn(
-                            "weekly-entry-card is-running",
-                            selection.selectedIds.has(runningEntryId) &&
-                              "is-selected",
-                          )}
-                          data-running-entry="true"
-                          data-entry-id={currentTimer?.entryId ?? ""}
-                          data-focus-column={index}
-                          onClick={(event) => selectCard(runningEntryId, event)}
-                          onDoubleClick={() =>
-                            runningTarget &&
-                            onOpenEntry({ timerId: runningTarget.timerId })
-                          }
-                          onFocus={(event) =>
-                            selection.handleFocus(runningEntryId, event)
-                          }
-                          onKeyDown={(event) =>
-                            handleItemKeyDown(event, {
-                              actions: entryActions.getActions(runningTarget),
-                              keys: TIME_ENTRY_ACTION_KEYS,
-                              onAction: (actionId, key) =>
-                                runCardAction(
-                                  runningTarget,
-                                  runningEntryId,
-                                  actionId,
-                                  key,
-                                ),
-                            })
-                          }
-                        />
-                      }
-                    >
-                      <div className="weekly-entry-card-project">
-                        <Chip tone="success">Running</Chip>
-                        <ObjectActionsButton
-                          actions={entryActions.getActions(runningTarget)}
-                          keys={TIME_ENTRY_ACTION_KEYS}
-                          onAction={(actionId) =>
-                            entryActions.runAction(runningTarget, actionId)
-                          }
-                          label="Entry actions"
-                        />
-                      </div>
-                      <strong>
-                        {formatClockDuration(runningTime.displayDurationMs)}
-                      </strong>
-                    </ObjectContextMenu>
-                  ) : null}
                   {visibleEntries.map((entry) => {
                     const summary = renderEntrySummary(entry);
                     const target = { kind: "entry" as const, entry };
@@ -794,6 +765,70 @@ export function WeeklyTimeView({
                       </ObjectContextMenu>
                     );
                   })}
+                  {runningHere && runningTarget && runningEntryId ? (
+                    <ObjectContextMenu
+                      actions={entryActions.getActions(runningTarget)}
+                      keys={TIME_ENTRY_ACTION_KEYS}
+                      onAction={(actionId) =>
+                        entryActions.runAction(runningTarget, actionId)
+                      }
+                      render={
+                        <div
+                          tabIndex={0}
+                          aria-label={`Running entry, ${formatClockDuration(runningTime.displayDurationMs)}`}
+                          // Cards are buttons, so their selection is a pressed state.
+                          role="button"
+                          aria-pressed={selection.selectedIds.has(
+                            runningEntryId,
+                          )}
+                          className={cn(
+                            "weekly-entry-card is-running",
+                            selection.selectedIds.has(runningEntryId) &&
+                              "is-selected",
+                          )}
+                          data-running-entry="true"
+                          data-entry-id={currentTimer?.entryId ?? ""}
+                          data-focus-column={index}
+                          onClick={(event) => selectCard(runningEntryId, event)}
+                          onDoubleClick={() =>
+                            runningTarget &&
+                            onOpenEntry({ timerId: runningTarget.timerId })
+                          }
+                          onFocus={(event) =>
+                            selection.handleFocus(runningEntryId, event)
+                          }
+                          onKeyDown={(event) =>
+                            handleItemKeyDown(event, {
+                              actions: entryActions.getActions(runningTarget),
+                              keys: TIME_ENTRY_ACTION_KEYS,
+                              onAction: (actionId, key) =>
+                                runCardAction(
+                                  runningTarget,
+                                  runningEntryId,
+                                  actionId,
+                                  key,
+                                ),
+                            })
+                          }
+                        />
+                      }
+                    >
+                      <div className="weekly-entry-card-project">
+                        <Chip tone="success">Running</Chip>
+                        <ObjectActionsButton
+                          actions={entryActions.getActions(runningTarget)}
+                          keys={TIME_ENTRY_ACTION_KEYS}
+                          onAction={(actionId) =>
+                            entryActions.runAction(runningTarget, actionId)
+                          }
+                          label="Entry actions"
+                        />
+                      </div>
+                      <strong>
+                        {formatClockDuration(runningTime.displayDurationMs)}
+                      </strong>
+                    </ObjectContextMenu>
+                  ) : null}
                   <Button
                     variant="ghost"
 

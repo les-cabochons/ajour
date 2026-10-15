@@ -25,6 +25,14 @@
     margin-top: -1.25rem;
   }
 
+  /* The Week view fills the content area, so the Days columns run to the
+     bottom of the page even when a day has few cards. */
+  .page-container:has(> .time-page-stack.is-week-view) {
+    height: 100%;
+    min-height: 0;
+    padding-bottom: 0;
+  }
+
   .time-page-stack.is-week-view,
   .desktop-page-container .time-page-stack.is-week-view {
     height: 100%;
@@ -364,6 +372,34 @@
 
   .time-entry-side-panel {
     background: var(--background);
+  }
+
+  /* The Week Grid needs about 820px beside the 340px panel. On a narrower
+     Time page the entry panel floats over the page's right side instead of
+     narrowing it: its negative margin cancels its width in the row. The page
+     stays clickable, as beside a docked panel. Measured on the page, not the
+     window, so it holds with the app sidebar shown or hidden. */
+  .time-page-stack {
+    container: time-page / inline-size;
+  }
+
+  @container time-page (width < 1160px) {
+    .time-entry-side-panel {
+      z-index: 30;
+      margin-left: calc(-1 * min(var(--side-panel-width, 340px), 50%));
+      box-shadow: var(--shadow-lg);
+    }
+  }
+
+  /* The entry editor follows the backlog peek: chips and the date under the
+     task heading. */
+  .time-entry-editor-meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.375rem 0.5rem;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
   }
 
   /* -- Week view -------------------------------------------------- */
@@ -1269,6 +1305,42 @@
   .commit-page {
     padding: 0.25rem 0.75rem 6rem;
   }
+}
+
+/* The entry editor's property rows read as values, like the backlog peek's:
+   the task picker, Hours and Date show their field only on hover and focus,
+   and an invalid value keeps its red border. Unlayered, so they win over the
+   fields' utility classes. */
+.time-entry-fields dd :is(.time-entry-task-picker, [data-slot="input"]) {
+  height: var(--control-height);
+  padding-inline-start: 0.625rem;
+  border-color: transparent;
+  background: transparent;
+}
+
+.time-entry-fields
+  dd
+  :is(.time-entry-task-picker, [data-slot="input"]):is(
+    :hover,
+    :focus,
+    [data-popup-open]
+  ) {
+  border-color: var(--field-border);
+  background: var(--field-bg);
+}
+
+.time-entry-fields dd [data-slot="input"][aria-invalid="true"] {
+  border-color: var(--destructive);
+}
+
+/* Each field shifts left by its border and padding, so every value's text
+   lines up with the rows' start. Date shifts its wrapper, which holds the
+   calendar button. */
+.time-entry-fields dd > .time-entry-task-picker,
+.time-entry-fields dd > div > [data-slot="input"],
+.time-entry-fields dd > div > .relative {
+  width: calc(100% + 0.625rem + 1px);
+  margin-inline-start: calc(-0.625rem - 1px);
 }
 
 @media (prefers-reduced-motion: reduce) {

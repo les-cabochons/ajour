@@ -665,6 +665,12 @@ When("I open Time from the app sidebar", async ({ page }) => {
   await page.getByRole("menuitem", { name: /^Time/ }).press("Enter");
 });
 
+When("I open Backlog from the app sidebar", async ({ page }) => {
+  await viewSwitcher(page).press("Enter");
+  await page.getByRole("menuitem", { name: /^Backlog/ }).press("Enter");
+  await expect(page).toHaveURL(/\/backlog$/);
+});
+
 When("I open Settings directly", async ({ page }) => {
   await page.goto("/settings");
 });
@@ -2153,7 +2159,8 @@ Then("the Commit page includes the saved entry draft", async ({ page }) => {
 Then(
   "the invalid entry draft stays open instead of opening the Commit page",
   async ({ page }) => {
-    await expect(page).toHaveURL(/\/time\/2026-10-05\?entry=mon-dev-1$/);
+    // Still the day with the entry open, not the submit page.
+    await expect(page).toHaveURL(/\/time\/2026-10-05\?[^/]*entry=mon-dev-1/);
     await expect(
       page.getByRole("textbox", { name: "Hours", exact: true }),
     ).toHaveValue("invalid");
@@ -2284,9 +2291,9 @@ Then(
     await monday.getByRole("button", { name: "Copy hours: 3.00" }).click();
     await expect.poll(readClipboard).toBe("3.00");
     await monday
-      .getByRole("button", { name: "Copy comments: API | Login form" })
+      .getByRole("button", { name: "Copy comments: Login form | API" })
       .click();
-    await expect.poll(readClipboard).toBe("API | Login form");
+    await expect.poll(readClipboard).toBe("Login form | API");
   },
 );
 
@@ -2681,6 +2688,149 @@ Then(
       .toEqual(expected);
   },
 );
+
+Then(
+  "{word}'s column reaches the bottom of the page",
+  async ({ page }, day: string) => {
+    const columnBox = await daysColumn(page, day).boundingBox();
+    const viewport = page.viewportSize();
+    if (!columnBox || !viewport) throw new Error(`${day} is not rendered`);
+    expect(columnBox.y + columnBox.height).toBeGreaterThan(viewport.height - 4);
+  },
+);
+
+When(
+  "I double-click the empty space at the bottom of {word}'s column",
+  async ({ page }, day: string) => {
+    const columnBox = await daysColumn(page, day).boundingBox();
+    if (!columnBox) throw new Error(`${day} is not rendered`);
+    await page.mouse.dblclick(
+      columnBox.x + columnBox.width / 2,
+      columnBox.y + columnBox.height - 40,
+    );
+  },
+);
+
+When("I double-click {word}'s header", async ({ page }, day: string) => {
+  await daysColumn(page, day).locator(".weekly-days-column-header").dblclick();
+});
+
+When(
+  "I save the new entry with note {string} and hours {string}",
+  async ({ page }, note: string, hours: string) => {
+    const editor = page.getByRole("complementary", {
+      name: "Time entry editor",
+    });
+    await expect(editor).toContainText("New time entry");
+    await editor.getByRole("textbox", { name: "Note", exact: true }).fill(note);
+    await editor
+      .getByRole("textbox", { name: "Hours", exact: true })
+      .fill(hours);
+    await editor.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(editor).toHaveCount(0);
+  },
+);
+
+Then(
+  "the side panel opens a new entry on {string}",
+  async ({ page }, localDate: string) => {
+    const editor = page.getByRole("complementary", {
+      name: "Time entry editor",
+    });
+    await expect(editor).toContainText("New time entry");
+    await expect(page).toHaveURL(
+      new RegExp(`/time/${localDate}\\?.*entry=new`),
+    );
+  },
+);
+
+Then("the Week Days view is visible", async ({ page }) => {
+  await expect(page.getByRole("region", { name: "Week" })).toBeVisible();
+  await expect(daysColumn(page, "Monday")).toBeVisible();
+});
+
+When("I switch the Time page to Day", async ({ page }) => {
+  await page.getByRole("button", { name: "Day", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Week" })).toHaveCount(0);
+});
+
+When("I open Monday in the Day view", async ({ page }) => {
+  await page.goto("/time/2026-10-05");
+  await expect(page.locator(".day-strip")).toBeVisible();
+});
+
+When("I switch the Time page to Week", async ({ page }) => {
+  await page.getByRole("button", { name: "Week", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Week" })).toBeVisible();
+});
+
+When("I go back in the browser", async ({ page }) => {
+  await page.goBack();
+});
+
+When(
+  "I double-click the text of {word}'s capacity card",
+  async ({ page }, day: string) => {
+    await daysColumn(page, day).locator(".weekly-capacity-trigger").hover();
+    const card = page.locator('[data-slot="hover-card-content"]');
+    await expect(card).toBeVisible();
+    await card.locator("span").first().dblclick();
+  },
+);
+
+Then("no entry editor is open", async ({ page }) => {
+  await expect(
+    page.getByRole("complementary", { name: "Time entry editor" }),
+  ).toHaveCount(0);
+  await expect(page).not.toHaveURL(/entry=new/);
+});
+
+When("the window is {int} pixels wide", async ({ page }, width: number) => {
+  await page.setViewportSize({ width, height: 800 });
+});
+
+Then(
+  "opening {word}'s {string} card floats the entry panel over the Week",
+  async ({ page }, day: string, text: string) => {
+    const week = page.getByRole("region", { name: "Week" });
+    const before = await week.boundingBox();
+    await daysCard(page, day, text).dblclick();
+    const panel = page.getByRole("complementary", {
+      name: "Time entry editor",
+    });
+    await expect(panel).toBeVisible();
+    const after = await week.boundingBox();
+    const panelBox = await panel.boundingBox();
+    if (!before || !after || !panelBox) throw new Error("Not rendered");
+    // The Week keeps its width and the panel covers its right side.
+    expect(after.width).toBe(before.width);
+    expect(panelBox.x).toBeLessThan(after.x + after.width);
+  },
+);
+
+Then(
+  "the entry panel sits beside the Week and narrows it",
+  async ({ page }) => {
+    const week = page.getByRole("region", { name: "Week" });
+    const panel = page.getByRole("complementary", {
+      name: "Time entry editor",
+    });
+    await expect
+      .poll(async () => {
+        const weekBox = await week.boundingBox();
+        const panelBox = await panel.boundingBox();
+        return weekBox && panelBox
+          ? panelBox.x - (weekBox.x + weekBox.width)
+          : null;
+      })
+      .toBeGreaterThanOrEqual(0);
+  },
+);
+
+Then("the Day view is visible", async ({ page }) => {
+  await expect(page.locator(".day-strip")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Week" })).toHaveCount(0);
+});
 
 When("I open the Week Grid", async ({ page }) => {
   // Grid is the default Week layout.

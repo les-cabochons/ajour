@@ -1,6 +1,6 @@
 # Day view
 
-The Day view lists the entries of one day. Ajour opens on today's Day view.
+The Day view lists the entries of one day. Ajour opens on today, in the view you used last: Day or [Week](/time/week-view).
 
 <Shot name="time-day" alt="The Day view: the week strip, today's entries and the running entry" />
 
@@ -30,11 +30,11 @@ To log time while you work instead, start a [running entry](/time/running-entrie
 
 ## Edit an entry
 
-Double-click a row, or press <kbd>Enter</kbd> on it, to open it in the side panel. A single click selects the row, so you can [copy and paste](/time/entries#select-copy-and-paste-entries) it. Change the task, the hours, the note or the date, then press **Save** or <kbd>⌘</kbd> <kbd>Enter</kbd>.
+Double-click a row, or press <kbd>Enter</kbd> on it, to open it in the side panel. A single click selects the row, so you can [copy and paste](/time/entries#select-copy-and-paste-entries) it. The panel shows the task, its project and the date at the top, with **Continue** to start the entry again. Change the task, the hours, the date or the note, then press **Save** or <kbd>⌘</kbd> <kbd>Enter</kbd>.
 
 <Shot name="time-entry-editor" alt="An entry open in the side panel next to the day" />
 
-Drag the panel's edge to resize it. Ajour remembers the width for each page.
+Drag the panel's edge to resize it. Ajour remembers the width for each page. When the Time page is narrower than about 1160 pixels, the panel floats over the right side of the page instead of squeezing it. The page behind it still responds to clicks.
 
 ::: tip
 Press <kbd>Esc</kbd> to close the editor without saving. Clicking outside the panel does not close it, so a stray click never loses your changes.
@@ -59,4 +59,4 @@ Hover a row and press **…**, or right-click it, for the actions on that entry.
 
 ## Reorder entries
 
-Drag a row, or press <kbd>Alt</kbd> <kbd>↑</kbd> and <kbd>Alt</kbd> <kbd>↓</kbd>. The running entry always stays first.
+The day lists entries oldest first, so a new entry lands at the bottom. Drag a row, or press <kbd>Alt</kbd> <kbd>↑</kbd> and <kbd>Alt</kbd> <kbd>↓</kbd>. The running entry always stays last.

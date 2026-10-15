@@ -66,12 +66,6 @@ Then("no entry is selected", async ({ page }) => {
   ).toHaveCount(0);
 });
 
-Then("no entry editor is open", async ({ page }) => {
-  await expect(
-    page.getByRole("complementary", { name: "Time entry editor" }),
-  ).toHaveCount(0);
-});
-
 When("I go to {word} in the day strip", async ({ page }, day: string) => {
   await page
     .getByRole("tab", { name: new RegExp(`^${day.slice(0, 3)}`, "i") })

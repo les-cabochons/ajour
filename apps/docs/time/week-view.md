@@ -4,7 +4,7 @@ The Week view shows a whole week at once. Use it to fill gaps at the end of the 
 
 <Shot name="time-week-grid" alt="The Week view as a grid: one row per task, one column per day" />
 
-Press <kbd>W</kbd> on the Time page, or press **Week** in the header. Press <kbd>D</kbd> to go back to the Day view, and <kbd>[</kbd> or <kbd>]</kbd> to move a week back or forward.
+Press <kbd>W</kbd> on the Time page, or press **Week** in the header. Press <kbd>D</kbd> to go back to the Day view, and <kbd>[</kbd> or <kbd>]</kbd> to move a week back or forward. Ajour remembers which view you used last and opens the Time page on it.
 
 The Week view has two layouts. Switch between **Grid** and **Days** at the top of the page. Ajour remembers your choice.
 
@@ -34,14 +34,14 @@ To delete a row, right-click its name and choose **Delete row**, or press <kbd>S
 
 ## Days
 
-The Days layout has one column per day, with a card per entry. Use it to see the order of your day and your notes.
+The Days layout has one column per day, with a card per entry. Use it to see the order of your day and your notes. Each day reads from top to bottom in the order you worked: the oldest entry first, the running entry last.
 
 <Shot name="time-week-days" alt="The Week view as days: one column per day with a card per entry" />
 
 - Drag a card to another day to move the entry there. Drag it within a day to reorder it.
 - Double-click a card, or press <kbd>Space</kbd> on it, to open it in the side panel. A single click selects it, so you can [copy and paste](/time/entries#select-copy-and-paste-entries) it.
 - Right-click a column's empty space to paste copied entries there.
-- Press **+ Add** at the bottom of a column for a new entry on that day.
+- Press **+ Add** at the bottom of a column, or double-click the day's header or the empty space in its column, for a new entry on that day. It lands at the end of the day.
 
 ::: info Narrow windows
 The Week view needs a window at least 768 pixels wide. In a narrower window, Ajour shows the Day view instead.

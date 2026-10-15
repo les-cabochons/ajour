@@ -180,7 +180,7 @@ export function projectWeeklyTime({
   const days = weekDates.map((localDate, index) => {
     const dayEntries = entries
       .filter((entry) => entry.localDate === localDate)
-      .sort((left, right) => right.committedAt - left.committedAt);
+      .sort((left, right) => left.committedAt - right.committedAt);
     const savedTotalMs = dayEntries.reduce(
       (total, entry) => total + entry.durationMs,
       0,

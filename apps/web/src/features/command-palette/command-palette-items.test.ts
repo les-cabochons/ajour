@@ -364,7 +364,7 @@ describe("buildPaletteSections", () => {
     expect(running.heading).toBe("Running · Time entry");
     expect(
       running.items.find((item) => item.label === "Move up")?.disabledReason,
-    ).toBe("The running entry stays on top");
+    ).toBe("The running entry stays last");
     expect(
       running.items.find((item) => item.label === "Duplicate"),
     ).toMatchObject({

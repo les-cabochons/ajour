@@ -560,9 +560,11 @@ describe("timesheet entry lifecycle", () => {
       ],
     });
 
+    // The day shows entry-2 (200) then entry-1 (300); putting entry-1 first
+    // gives it the earlier timestamp.
     const reordered = reorderTimesheetEntries(state, "2026-07-30", [
-      "entry-2",
       "entry-1",
+      "entry-2",
     ]);
 
     expect(
@@ -571,9 +573,9 @@ describe("timesheet entry lifecycle", () => {
         committedAt,
       })),
     ).toEqual([
-      { _id: "entry-2", committedAt: 300 },
-      { _id: "other-day", committedAt: 250 },
       { _id: "entry-1", committedAt: 200 },
+      { _id: "other-day", committedAt: 250 },
+      { _id: "entry-2", committedAt: 300 },
     ]);
   });
 
@@ -643,24 +645,24 @@ describe("Move up and Move down on time entries", () => {
   }
 
   const entries = [
-    savedEntry("middle", "2026-07-30", 200),
-    savedEntry("top", "2026-07-30", 300),
+    savedEntry("second", "2026-07-30", 200),
+    savedEntry("third", "2026-07-30", 300),
     savedEntry("other-day", "2026-07-29", 900),
-    savedEntry("bottom", "2026-07-30", 100),
+    savedEntry("first", "2026-07-30", 100),
   ];
 
-  it("steps through the day's order as the Day list shows it", () => {
+  it("steps through the day's order as the Day list shows it, oldest first", () => {
     expect(selectSortableDayEntryIds(entries, "2026-07-30")).toEqual([
-      "top",
-      "middle",
-      "bottom",
+      "first",
+      "second",
+      "third",
     ]);
   });
 
   it("leaves out the entry the running entry resumed", () => {
-    expect(selectSortableDayEntryIds(entries, "2026-07-30", "top")).toEqual([
-      "middle",
-      "bottom",
+    expect(selectSortableDayEntryIds(entries, "2026-07-30", "third")).toEqual([
+      "first",
+      "second",
     ]);
   });
 
@@ -668,7 +670,7 @@ describe("Move up and Move down on time entries", () => {
     const state = createState({ timesheetEntries: entries });
     const next = getSharedTableStepOrder(
       selectSortableDayEntryIds(state.timesheetEntries, "2026-07-30"),
-      "top",
+      "first",
       1,
     );
 
@@ -676,7 +678,7 @@ describe("Move up and Move down on time entries", () => {
 
     expect(
       selectSortableDayEntryIds(reordered.timesheetEntries, "2026-07-30"),
-    ).toEqual(["middle", "top", "bottom"]);
+    ).toEqual(["second", "first", "third"]);
   });
 });
 
@@ -692,16 +694,30 @@ describe("selectMostRecentTimesheetEntry", () => {
     };
   }
 
-  it("picks the top entry of the latest day up to today", () => {
+  it("picks the last entry of the latest day up to today", () => {
     const entries = [
-      savedEntry("monday-top", "2026-10-05", 50),
-      savedEntry("tuesday-bottom", "2026-10-06", 10),
-      savedEntry("tuesday-top", "2026-10-06", 20),
+      savedEntry("monday-last", "2026-10-05", 50),
+      savedEntry("tuesday-first", "2026-10-06", 10),
+      savedEntry("tuesday-last", "2026-10-06", 20),
       savedEntry("next-week", "2026-10-13", 99),
     ];
 
     expect(selectMostRecentTimesheetEntry(entries, "2026-10-11")?._id).toBe(
-      "tuesday-top",
+      "tuesday-last",
+    );
+  });
+
+  it("picks the entry the Day view shows last when timestamps tie", () => {
+    const entries = [
+      savedEntry("imported-a", "2026-10-06", 20),
+      savedEntry("imported-b", "2026-10-06", 20),
+    ];
+
+    expect(selectSortableDayEntryIds(entries, "2026-10-06").at(-1)).toBe(
+      "imported-b",
+    );
+    expect(selectMostRecentTimesheetEntry(entries, "2026-10-11")?._id).toBe(
+      "imported-b",
     );
   });
 
@@ -942,7 +958,7 @@ describe("pasteTimesheetEntries", () => {
     expect(pasted.workItems[0]).toMatchObject({ completedEstimateHours: 2 });
   });
 
-  it("moves cut entries and keeps their pasted order newest first", () => {
+  it("moves cut entries and keeps their pasted order oldest first", () => {
     const state = createState({
       timesheetEntries: [
         entry("first", "2026-10-05", 10),
@@ -955,12 +971,12 @@ describe("pasteTimesheetEntries", () => {
       })),
     });
 
-    // Pasted in reading order: "second" was shown above "first".
+    // Pasted in reading order: "first" was shown above "second".
     const pasted = pasteTimesheetEntries(
       state,
       [
-        { entryId: "second", localDate: "2026-10-07" },
         { entryId: "first", localDate: "2026-10-07" },
+        { entryId: "second", localDate: "2026-10-07" },
       ],
       "cut",
       { createId: () => "unused", now: () => 500 },

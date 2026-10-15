@@ -25,6 +25,7 @@ import { WeeklyTimeView } from "@/features/time/weekly-time-view";
 import { TimerPanel } from "@/features/timer/timer-panel";
 import { TimeEntryModal } from "@/features/timer/time-entry-modal";
 import { useLocalState, useUserPreferences } from "@/lib/local-hooks";
+import { localStore } from "@/lib/local-store";
 import { useShortcut } from "@/lib/shortcut-handlers";
 import { useActionRequest } from "@/lib/action-request";
 import {
@@ -65,13 +66,22 @@ export function TimePage({ date }: { date: string }) {
   const currentTimer = state.timers[0] ?? null;
   // Week needs a desktop width. The narrow view does not offer it: a Week link
   // shows Day with a note and keeps `view=week`, so widening the window shows
-  // Week. The narrow view also edits entries in a full-width dialog instead of
+  // Week. A remembered Week shows Day without the note. The narrow view also edits entries in a full-width dialog instead of
   // the side panel.
   const isNarrowView = useIsNarrowView();
   const weekAvailable = !isNarrowView;
   const editsInDialog = isNarrowView;
-  const isWeekView = search.view === "week" && weekAvailable;
+  // `view=week` and `view=day` pick a view. A link without `view`, such as the
+  // sidebar's Time link, opens the view the user last picked.
+  const wantsWeek =
+    search.view === "week" ||
+    (search.view !== "day" && preferences.timeView === "week");
+  const isWeekView = wantsWeek && weekAvailable;
   const showsWeekUnavailableNote = search.view === "week" && !weekAvailable;
+  // The `view` this page writes into its links. On a desktop width every Time
+  // URL names its view, so Back returns to the view it showed even after the
+  // remembered view changed. The narrow view only shows Day and leaves it out.
+  const viewParam = isWeekView ? "week" : weekAvailable ? "day" : undefined;
   const editorFormRef = useRef<TimeEntryEditorFormHandle>(null);
   // The unsaved draft of the open entry, kept above the side panel and the dialog so
   // crossing the dialog breakpoint mid-edit hands the draft to the other host.
@@ -130,6 +140,30 @@ export function TimePage({ date }: { date: string }) {
   const showsCellEntries = panelListedCell !== null;
   const showsEditor = editorTarget !== null;
 
+  // The view shown on a desktop width becomes the remembered view, whether it
+  // came from the toggle, a shortcut or a link. The narrow view always shows
+  // Day, so it leaves the choice alone.
+  const shownView = isWeekView ? "week" : "day";
+  useEffect(() => {
+    if (weekAvailable && preferences.timeView !== shownView) {
+      localStore.setUserPreferences({ timeView: shownView });
+    }
+  }, [weekAvailable, shownView, preferences.timeView]);
+
+  // A link without `view` resolved to the remembered view; name it in the URL
+  // in place, so this history entry keeps its view.
+  useEffect(() => {
+    if (search.view !== undefined || !weekAvailable) return;
+    void navigate({
+      to: ".",
+      search: (previous: Record<string, unknown>) => ({
+        ...previous,
+        view: shownView,
+      }),
+      replace: true,
+    } as never);
+  }, [navigate, search.view, shownView, weekAvailable]);
+
   // Once the URL opens an editor, the listed cell is done, so Back past the editor
   // closes the panel. It clears after the editor shows, so the panel never empties
   // between the click and the navigation.
@@ -158,7 +192,7 @@ export function TimePage({ date }: { date: string }) {
       params: { date: nextDate },
       search: isWeekView
         ? ({ view: "week" } as never)
-        : ({ view: undefined, entry: undefined, timer: undefined } as never),
+        : ({ view: viewParam, entry: undefined, timer: undefined } as never),
     });
   }
 
@@ -184,7 +218,7 @@ export function TimePage({ date }: { date: string }) {
       to: "/time/$date",
       params: { date },
       search: {
-        view: undefined,
+        view: weekAvailable ? "day" : undefined,
         entry: undefined,
         timer: undefined,
       } as never,
@@ -197,9 +231,11 @@ export function TimePage({ date }: { date: string }) {
     void navigate({
       to: "/time/$date",
       params: { date },
-      search: isWeekView
-        ? ({ view: "week", entry: undefined, timer: undefined } as never)
-        : ({ view: undefined, entry: undefined, timer: undefined } as never),
+      search: {
+        view: viewParam,
+        entry: undefined,
+        timer: undefined,
+      } as never,
       replace: true,
     });
   }
@@ -239,7 +275,7 @@ export function TimePage({ date }: { date: string }) {
         timer: request.timerId,
         project: task?.projectId,
         task: task?.taskId,
-        view: isWeekView ? "week" : undefined,
+        view: viewParam,
       } as never,
       // Switching entries in the panel should not stack history entries.
       replace: editorTarget !== null || showsCellEntries,

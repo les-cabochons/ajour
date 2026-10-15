@@ -20,10 +20,10 @@ Feature: Select, copy, cut and paste time entries
     And I press the "ControlOrMeta+c" key
     And I go to Thursday in the day strip
     And I press the "ControlOrMeta+v" key
-    Then the Day list reads "API", "Login form"
+    Then the Day list reads "Login form", "API"
     And a toast says "Pasted 2 entries"
     When I go to Monday in the day strip
-    Then the Day list reads "Code review", "API", "Login form"
+    Then the Day list reads "Login form", "API", "Code review"
 
   Scenario: Delete every selected entry at once
     Given I have a week of saved entries
@@ -41,7 +41,7 @@ Feature: Select, copy, cut and paste time entries
     And I Cmd-click the "API" entry
     And I Cmd-click the "API" entry
     And I press the "Backspace" key
-    Then the Day list reads "API", "Login form"
+    Then the Day list reads "Login form", "API"
 
   Scenario: Leaving a day clears its selection
     Given I have a week of saved entries
@@ -54,13 +54,13 @@ Feature: Select, copy, cut and paste time entries
   Scenario: Cut a range of cards and paste them on the same weekdays of the next week
     Given I have a week of saved entries
     When I open the Week Days view
-    And I click Monday's "Code review" card
+    And I click Monday's "Login form" card
     And I Shift-click Tuesday's "Login form" card
     And I press the "ControlOrMeta+x" key
     Then 4 cards are dimmed as cut
     When I press the "]" key
     And I press the "ControlOrMeta+v" key
-    Then Monday's cards read "Code review", "API", "Login form"
+    Then Monday's cards read "Login form", "API", "Code review"
     And Tuesday's cards read "Login form"
     And a toast says "Moved 4 entries"
     When I press the "[" key
