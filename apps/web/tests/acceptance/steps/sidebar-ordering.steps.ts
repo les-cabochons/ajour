@@ -91,5 +91,9 @@ Then("the sidebar row {string} has focus", async ({ page }, title: string) => {
 
 When("I order the sidebar by {string}", async ({ page }, label: string) => {
   await sidebar(page).getByRole("button", { name: "Filter and order" }).click();
-  await page.getByRole("option", { name: label, exact: true }).click();
+  const toggle = page.getByRole("button", { name: `${label} order` });
+  await toggle.click();
+  // The menu stays open, so the pick shows as pressed. Escape closes it.
+  await expect(toggle).toHaveAttribute("aria-pressed", "true");
+  await page.keyboard.press("Escape");
 });
