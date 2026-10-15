@@ -202,6 +202,12 @@ docs-build:
     echo >&2 "[1/1] Building the docs site"
     {{PNPM}} --filter @ajour/docs build
 
+[doc("Takes the docs screenshots into apps/docs/public/shots. Pass shot names to take only those")]
+[group("docs")]
+docs-shots *names:
+    echo >&2 "[1/1] Taking the docs screenshots"
+    node qa/ui/docs-shots.mjs {{names}}
+
 [doc("Serves the built docs site, as GitHub Pages would")]
 [group("docs")]
 docs-preview:
