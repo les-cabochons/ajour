@@ -28,7 +28,8 @@ const INDICATOR_CLEARANCE = "2.5rem";
 
 /**
  * The corner control for agents. Present whenever MCP is on. Its label and
- * color give the most urgent state, so color is never the only signal.
+ * color give the most urgent state. Idle shows only its dot until hovered
+ * or keyboard-focused; its accessible name always includes the full label.
  * Clicking it opens the agent panel, or closes it while it is open.
  */
 export function AgentIndicator() {
@@ -60,19 +61,23 @@ export function AgentIndicator() {
   return (
     <button
       type="button"
+      data-state={indicator.state}
       aria-label={`Agents: ${indicator.label}`}
       aria-expanded={panelOpen}
       onClick={panelOpen ? closeAgentPanel : openAgentPanel}
       className={cn(
-        "ajour-agent-indicator fixed right-4 bottom-4 z-50 flex h-[var(--control-height)] items-center gap-2 rounded-[var(--radius-md)] border border-border bg-popover px-3 text-xs text-popover-foreground shadow-[var(--shadow-popup)]",
+        "ajour-agent-indicator fixed right-4 bottom-4 z-50 flex h-[var(--control-height)] items-center gap-2 rounded-[var(--radius-md)] border border-border bg-popover px-3 text-xs text-popover-foreground shadow-[var(--shadow-popup)] focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring",
         indicator.state === "needs-input" && "border-warning",
       )}
     >
       <span
         aria-hidden="true"
-        className={cn("size-2 rounded-full", DOT_CLASS[indicator.state])}
+        className={cn(
+          "size-2 shrink-0 rounded-full",
+          DOT_CLASS[indicator.state],
+        )}
       />
-      {indicator.label}
+      <span className="ajour-agent-indicator-label">{indicator.label}</span>
     </button>
   );
 }
