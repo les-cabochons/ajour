@@ -30,7 +30,6 @@ Given("I have a backlog view fixture", async ({ page }) => {
     localStorage.setItem(
       "ajour.local-state.v2",
       JSON.stringify({
-        priorityFormat: "levels",
         workflowStates: [
           { _id: "todo", name: "To do", color: "#64748b", createdAt: 1 },
           { _id: "doing", name: "In progress", color: "#d97706", createdAt: 1 },
@@ -164,7 +163,30 @@ Then(
 Then(
   "the other item's sidebar row shows its workflow state {string}",
   async ({ page }, state: string) => {
-    await expect(otherSidebarRow(page)).toContainText(state);
+    const row = otherSidebarRow(page);
+    const stateLine = row.getByText(state, { exact: true });
+    await expect(stateLine).toBeVisible();
+    const tertiary = await row.evaluate(() =>
+      getComputedStyle(document.documentElement)
+        .getPropertyValue("--text-tertiary")
+        .trim(),
+    );
+    await expect(stateLine).toHaveCSS("color", tertiary);
+  },
+);
+When("I press S on the other item on the Backlog page", async ({ page }) => {
+  await page.locator('[data-work-item-id="other"]').focus();
+  await page.keyboard.press("s");
+});
+When(
+  "I use the {string} Backlog sidebar",
+  async ({ page }, density: string) => {
+    await page.evaluate(async (density) => {
+      const { updateSidebarLayout } = await import(
+        /* @vite-ignore */ "/src/lib/sidebar-layout.ts"
+      );
+      updateSidebarLayout({ density });
+    }, density);
   },
 );
 When("I press S on the other item in the sidebar", async ({ page }) => {
@@ -184,7 +206,11 @@ Then("no entry runs", async ({ page }) => {
   await expect.poll(() => runningWorkItemIds(page)).toEqual([]);
 });
 When("I hover the other item in the sidebar", async ({ page }) => {
-  await otherSidebarRow(page).hover();
+  const row = otherSidebarRow(page);
+  const title = row.locator("[data-row-title]");
+  const before = await title.boundingBox();
+  await row.hover();
+  expect(await title.boundingBox()).toEqual(before);
 });
 Then(
   'its sidebar row offers Start entry, Snooze and Settle without a "…" button',
@@ -352,7 +378,12 @@ When("I start an entry from the Backlog peek", async ({ page }) => {
     .getByRole("button", { name: "Start entry", exact: true });
   await expect(start).toBeEnabled();
   await start.click();
-  await expect(start).toBeDisabled();
+  // Stop takes Start entry's place while the item's entry runs.
+  await expect(
+    page
+      .getByRole("complementary", { name: "Backlog item peek" })
+      .getByRole("button", { name: "Stop", exact: true }),
+  ).toBeVisible();
   await page.evaluate(() => {
     const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
     sessionStorage.setItem(
@@ -366,46 +397,23 @@ When("I start an entry from the Backlog peek", async ({ page }) => {
 });
 Then("the parent peek cannot restart its running entry", async ({ page }) => {
   const peek = page.getByRole("complementary", { name: "Backlog item peek" });
-  const start = peek.getByRole("button", { name: "Start entry", exact: true });
-  await expect(start).toBeDisabled();
-  await expect(start).toHaveAccessibleDescription("Already running");
-  await peek.getByRole("button", { name: "Open page", exact: true }).hover();
-  await start.hover();
+  // The running item offers Stop where Start entry was, never a restart.
   await expect(
-    page.locator('[data-slot="tooltip-content"][data-open]'),
-  ).toHaveText("Start entry. Already running");
-  await start.focus();
-  await page.keyboard.press("Tab");
-  await page.keyboard.press("Shift+Tab");
-  await expect(start).toBeFocused();
+    peek.getByRole("button", { name: "Stop", exact: true }),
+  ).toBeVisible();
   await expect(
-    page.locator('[data-slot="tooltip-content"][data-open]'),
-  ).toHaveText("Start entry. Already running");
-  await start.click({ force: true });
-  await start.focus();
-  await page.keyboard.press("Enter");
-  await page.keyboard.press("Space");
-  await page.keyboard.press("Tab");
-  await peek
-    .getByRole("button", { name: "Actions for Backlog parent", exact: true })
-    .click();
-  await expect(
-    page.getByRole("menuitem", { name: /^Start entry/ }),
-  ).toBeDisabled();
-  await expect(
-    page.getByRole("menuitem", { name: /^Start entry/ }),
-  ).toContainText("Already running");
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("menu")).toHaveCount(0);
+    peek.getByRole("button", { name: "Start entry", exact: true }),
+  ).toHaveCount(0);
   // The row's actions take pointer events only once the row is hovered.
   const parentRow = page.locator('[data-work-item-id="parent"]');
   await parentRow.hover();
   await parentRow
     .getByRole("button", { name: "Actions for Backlog parent", exact: true })
     .click();
+  await expect(page.getByRole("menuitem", { name: /^Stop/ })).toBeEnabled();
   await expect(
     page.getByRole("menuitem", { name: /^Start entry/ }),
-  ).toBeDisabled();
+  ).toHaveCount(0);
   await page.keyboard.press("Escape");
   await expect(page.getByRole("menu")).toHaveCount(0);
   await expect(peek).toBeVisible();
@@ -418,6 +426,7 @@ Then("the parent peek cannot restart its running entry", async ({ page }) => {
   ]);
   expect(snapshot.state.timesheetEntries).toEqual([]);
 });
+
 When("I peek at the other Backlog item", async ({ page }) => {
   await page.locator('[data-work-item-id="other"] .backlog-item-title').click();
 });
@@ -432,18 +441,6 @@ Then("the other peek can start an entry", async ({ page }) => {
       .getByRole("complementary", { name: "Backlog item peek" })
       .getByRole("button", { name: "Start entry", exact: true }),
   ).toHaveAccessibleDescription("");
-  await page
-    .getByRole("complementary", { name: "Backlog item peek" })
-    .getByRole("button", {
-      name: "Actions for Other backlog item",
-      exact: true,
-    })
-    .click();
-  await expect(
-    page.getByRole("menuitem", { name: "Start entry", exact: true }),
-  ).toBeEnabled();
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("menu")).toHaveCount(0);
 });
 When(
   "I stop the Backlog running entry from the timer dock",
@@ -470,17 +467,12 @@ Then("the parent peek can start a new entry after Stop", async ({ page }) => {
   await expect(
     page.locator('[data-slot="tooltip-content"][data-open]'),
   ).toHaveText("Start entry");
-  await page
-    .getByRole("complementary", { name: "Backlog item peek" })
-    .getByRole("button", { name: "Actions for Backlog parent", exact: true })
-    .click();
-  await expect(
-    page.getByRole("menuitem", { name: "Start entry", exact: true }),
-  ).toBeEnabled();
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("menu")).toHaveCount(0);
   await start.click();
-  await expect(start).toBeDisabled();
+  const peek = page.getByRole("complementary", { name: "Backlog item peek" });
+  await expect(
+    peek.getByRole("button", { name: "Stop", exact: true }),
+  ).toBeVisible();
+  await expect(start).toHaveCount(0);
   const snapshot = await page.evaluate(() => ({
     state: JSON.parse(localStorage.getItem("ajour.local-state.v2")!),
     baseline: JSON.parse(sessionStorage.getItem("peek-running-entry")!),
@@ -491,14 +483,6 @@ Then("the parent peek can start a new entry after Stop", async ({ page }) => {
   expect(snapshot.state.timers).toHaveLength(1);
   expect(snapshot.state.timers[0].workItemId).toBe("parent");
   expect(snapshot.state.timers[0]._id).not.toBe(snapshot.baseline._id);
-});
-When("I use the compact Backlog sidebar", async ({ page }) => {
-  await page.evaluate(async () => {
-    const { updateSidebarLayout } = await import(
-      /* @vite-ignore */ "/src/lib/sidebar-layout.ts"
-    );
-    updateSidebarLayout({ density: "compact" });
-  });
 });
 function parentSidebarRow(page: Page) {
   return page
@@ -544,48 +528,24 @@ When("I use the Backlog {string} layout", async ({ page }, layout: string) => {
     .getByRole("button", { name: `${layout} layout`, exact: true })
     .click();
 });
-Then(
-  "the parent Start icon explains that it is already running",
-  async ({ page }) => {
-    const row = page.locator('[data-work-item-id="parent"]');
-    await row.hover();
-    const start = row.getByRole("button", {
-      name: "Start Backlog parent",
+Then("the parent row offers Stop for its running entry", async ({ page }) => {
+  const row = page.locator('[data-work-item-id="parent"]');
+  await row.hover();
+  await expect(
+    row.getByRole("button", { name: "Stop Backlog parent", exact: true }),
+  ).toBeEnabled();
+  await expect(
+    row.getByRole("button", { name: "Start Backlog parent", exact: true }),
+  ).toHaveCount(0);
+  const other = page.locator('[data-work-item-id="other"]');
+  await other.hover();
+  await expect(
+    other.getByRole("button", {
+      name: "Switch to Other backlog item",
       exact: true,
-    });
-    await expect(start).toBeDisabled();
-    await expect(start).toHaveAccessibleDescription("Already running");
-    await start.focus();
-    await page.keyboard.press("Tab");
-    await page.keyboard.press("Shift+Tab");
-    await expect(start).toBeFocused();
-    await expect(
-      page.locator('[data-slot="tooltip-content"][data-open]'),
-    ).toContainText("Already running");
-    await start.hover();
-    await expect(
-      page.locator('[data-slot="tooltip-content"][data-open]'),
-    ).toHaveText("Start Backlog parent. Already running");
-    await start.click({ force: true });
-    await start.focus();
-    await page.keyboard.press("Enter");
-    await page.keyboard.press("Space");
-    await expect(start).toBeFocused();
-    await page.keyboard.press("Escape");
-    const other = page.locator('[data-work-item-id="other"]');
-    await other.hover();
-    await expect(
-      other.getByRole("button", {
-        name: "Switch to Other backlog item",
-        exact: true,
-      }),
-    ).toBeEnabled();
-    await page.getByRole("main").hover();
-    await expect(
-      page.locator('[data-slot="tooltip-content"][data-open]'),
-    ).toHaveCount(0);
-  },
-);
+    }),
+  ).toBeEnabled();
+});
 Then(
   "the parent Start icon is enabled without a disabled reason",
   async ({ page }) => {
@@ -653,7 +613,9 @@ async function inspectBacklogStart(
       .filter({ hasText: "Backlog parent" })
       .first()
       .click();
-    action = palette.getByRole("option", { name: /^Start entry/ });
+    action = palette.getByRole("option", {
+      name: running ? /^Stop/ : /^Start entry/,
+    });
   } else {
     if (control === "item page") {
       if (!new URL(page.url()).pathname.endsWith("/backlog/parent")) {
@@ -664,12 +626,12 @@ async function inspectBacklogStart(
       }
       // The item page's actions sit in the top bar, beside its breadcrumb.
       const header = page.locator(".ajour-page-header-slot");
-      const start = header.getByRole("button", {
-        name: "Start entry",
-        exact: true,
-      });
-      if (running) await expect(start).toBeDisabled();
-      else await expect(start).toBeEnabled();
+      await expect(
+        header.getByRole("button", {
+          name: running ? "Stop" : "Start entry",
+          exact: true,
+        }),
+      ).toBeEnabled();
       await header
         .getByRole("button", {
           name: "Actions for Backlog parent",
@@ -707,14 +669,12 @@ async function inspectBacklogStart(
     } else {
       throw new Error(`Unknown Backlog control: ${control}`);
     }
-    action = page.getByRole("menuitem", { name: /^Start entry/ });
+    action = page.getByRole("menuitem", {
+      name: running ? /^Stop/ : /^Start entry/,
+    });
   }
-  if (running) {
-    await expect(action).toBeDisabled();
-    await expect(action).toContainText("Already running");
-  } else {
-    await expect(action).toBeEnabled();
-  }
+  // Stop takes Start entry's slot while the item's entry runs.
+  await expect(action).toBeEnabled();
   await page.keyboard.press("Escape");
   if (control === "command palette") {
     await expect(
@@ -725,7 +685,7 @@ async function inspectBacklogStart(
   }
 }
 Then(
-  "Start entry is disabled for the running item in the {string}",
+  "Stop replaces Start entry for the running item in the {string}",
   async ({ page }, control: string) => {
     await inspectBacklogStart(page, control, true);
   },
@@ -1277,7 +1237,7 @@ Given(
     const plugin = {
       id: "azure_devops",
       version: "1.0.0",
-      apiVersion: 2,
+      apiVersion: 3,
       displayName: "Fixture source",
       description: "Acceptance fixture. All source requests are intercepted.",
       iconSvg:
@@ -1567,9 +1527,12 @@ Then("the subitem is back in To do", async ({ page }) => {
   ).toBeVisible();
 });
 When("I move the parent to Done and include its subitems", async ({ page }) => {
-  await page
-    .locator('[data-work-item-id="parent"]')
-    .getByRole("button", { name: "Change state of Backlog parent" })
+  // Cards mount their real pickers on hover, so hover before the click.
+  const card = page.locator('[data-work-item-id="parent"]');
+  await card.hover();
+  await card
+    .locator("[data-state-picker]")
+    .and(page.getByRole("button", { name: "Change state of Backlog parent" }))
     .click();
   await page.getByRole("menuitem", { name: "Done", exact: true }).click();
   await page
@@ -1770,7 +1733,10 @@ When(
     });
     const [settings] = await Promise.all([
       page.context().waitForEvent("page", { timeout: 5000 }),
-      link.click({ modifiers: [modifier] }),
+      // macOS turns Ctrl-click into a right-click, so press Cmd there.
+      link.click({
+        modifiers: [modifier === "Control" ? "ControlOrMeta" : modifier],
+      }),
     ]);
     await expect(settings).toHaveURL(/\/settings\/workflow$/);
     await settings.close();

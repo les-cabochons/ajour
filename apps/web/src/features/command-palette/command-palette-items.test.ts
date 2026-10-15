@@ -409,9 +409,17 @@ describe("buildPaletteSections", () => {
           .find(
             (item) =>
               item.command.kind === "backlog-item" &&
-              item.command.actionId === "start-entry",
+              (item.command.actionId === "start-entry" ||
+                item.command.actionId === "stop-entry"),
           );
-      expect(list(backlog._id)?.disabledReason).toBe("Already running");
+      // The running item offers Stop in Start entry's slot.
+      expect(list(backlog._id)?.command).toMatchObject({
+        actionId: "stop-entry",
+      });
+      expect(list(backlog._id)?.disabledReason).toBeUndefined();
+      expect(list("another")?.command).toMatchObject({
+        actionId: "start-entry",
+      });
       expect(list("another")?.disabledReason).toBeUndefined();
       expect(list()?.disabledReason).toBeUndefined();
     },

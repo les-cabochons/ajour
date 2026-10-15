@@ -45,9 +45,10 @@ function readUnchangedItem(expected: LocalWorkItem) {
     : undefined;
 }
 
-async function loadSourceStates(
-  workItem: LocalWorkItem,
-): Promise<string[] | null> {
+/** The connector couldn't list an item's source states. */
+export class SourceStatesLoadError extends Error {}
+
+async function loadSourceStates(workItem: LocalWorkItem): Promise<string[]> {
   try {
     const result = await listConnectorSettleStates(
       workItem.source,
@@ -56,22 +57,59 @@ async function loadSourceStates(
     );
     return result.states.map((state) => state.name);
   } catch (error) {
-    showErrorToast({
-      title: "Couldn't load the item's source states",
-      description: error instanceof Error ? error.message : "Unknown error",
-    });
-    return null;
+    throw new SourceStatesLoadError(
+      error instanceof Error ? error.message : "Unknown error",
+    );
   }
 }
 
+function showSourceStatesError(error: SourceStatesLoadError) {
+  showErrorToast({
+    title: "Couldn't load the item's source states",
+    description: error.message,
+  });
+}
+
+/**
+ * Answers whether open subitems go along when the user's setting says Ask.
+ * Null cancels.
+ */
+export type AskAboutSubitems = (
+  workItem: LocalWorkItem,
+  subitems: LocalWorkItem[],
+  verb: CloseSubitemsVerb,
+) => Promise<boolean | null>;
+
+/** The close subitems dialog. Null when the subitems changed meanwhile. */
+const askUserAboutSubitems: AskAboutSubitems = async (
+  workItem,
+  subitems,
+  verb,
+) => {
+  const answer = await requestCloseSubitemsChoice(workItem, subitems, verb);
+  if (answer === null) return null;
+  const currentSubitems = getOpenSubitems(
+    localStore.snapshot(),
+    workItem._id,
+    verb,
+  );
+  return currentSubitems.length === subitems.length &&
+    subitems.every((item) =>
+      currentSubitems.some((current) => current._id === item._id),
+    )
+    ? answer
+    : null;
+};
+
 /**
  * Whether closing or settling this item takes its open subitems along, from
- * the user's setting or, when it says Ask, the dialog. Null means the user
- * cancelled or the displayed subitem set changed while they answered.
+ * the user's setting or, when it says Ask, from `ask`: the dialog unless the
+ * caller answers another way. Null means cancelled.
  */
 export async function resolveIncludeSubitems(
   workItem: LocalWorkItem,
   verb: CloseSubitemsVerb,
+  ask: AskAboutSubitems = askUserAboutSubitems,
 ): Promise<boolean | null> {
   const state = localStore.snapshot();
   const subitems = getOpenSubitems(state, workItem._id, verb);
@@ -82,34 +120,49 @@ export async function resolveIncludeSubitems(
       return true;
     case "leave":
       return false;
-    default: {
-      const answer = await requestCloseSubitemsChoice(workItem, subitems, verb);
-      if (answer === null) return null;
-      const currentSubitems = getOpenSubitems(
-        localStore.snapshot(),
-        workItem._id,
-        verb,
-      );
-      return currentSubitems.length === subitems.length &&
-        subitems.every((item) =>
-          currentSubitems.some((current) => current._id === item._id),
-        )
-        ? answer
-        : null;
-    }
+    default:
+      return ask(workItem, subitems, verb);
   }
 }
 
+/** A move's source write that the item's write rule leaves to a person. */
+export interface SourceStateRequest {
+  workItem: LocalWorkItem;
+  workflowStateName: string;
+  sourceStatusLabels: string[];
+}
+
+/** How a move gets the answers the UI asks for in dialogs. */
+export interface BacklogMoveChoices {
+  /** Whether a close takes the open subitems along. Null cancels. */
+  includeSubitems: (workItem: LocalWorkItem) => Promise<boolean | null>;
+  /** Picks the moved item's source state. "" writes nothing, null cancels. */
+  chooseSourceState: (request: SourceStateRequest) => Promise<string | null>;
+}
+
+const askUserForSourceState: BacklogMoveChoices["chooseSourceState"] = ({
+  workItem,
+  workflowStateName,
+  sourceStatusLabels,
+}) =>
+  requestSourceStateChoice({
+    workItem,
+    title: `Which source state for ${workflowStateName}?`,
+    description: `${workflowStateName} stands for more than one state in the source. It is written when the Undo toast closes.`,
+    sourceStatusLabels,
+    allowNoWrite: true,
+  });
+
 /**
  * The source state a move writes for one item, from its source project's
- * write rule. Ask opens the source state dialog when `ask` is set, and takes
- * the first source state otherwise. "" writes nothing; null cancels the move.
+ * write rule. Ask goes to `choose` when given, and takes the first source
+ * state otherwise. "" writes nothing; null cancels the move.
  */
 async function resolveSourceWrite(
   workItem: LocalWorkItem,
   workflowStateId: string,
   workflowStateName: string,
-  ask: boolean,
+  choose: BacklogMoveChoices["chooseSourceState"] | undefined,
 ): Promise<string | null> {
   if (!canWriteToSource(workItem)) return "";
   const state = localStore.snapshot();
@@ -132,7 +185,6 @@ async function resolveSourceWrite(
   )
     return "";
   const available = await loadSourceStates(workItem);
-  if (available === null) return null;
   if (!readUnchangedItem(workItem)) return null;
   const plan = planWorkflowStateWrite(
     localStore.snapshot(),
@@ -146,27 +198,44 @@ async function resolveSourceWrite(
     case "write":
       return plan.sourceStatusLabel;
     case "ask":
-      return ask
-        ? requestSourceStateChoice({
+      return choose
+        ? choose({
             workItem,
-            title: `Which source state for ${workflowStateName}?`,
-            description: `${workflowStateName} stands for more than one state in the source. It is written when the Undo toast closes.`,
+            workflowStateName,
             sourceStatusLabels: plan.sourceStatusLabels,
-            allowNoWrite: true,
           })
         : (plan.sourceStatusLabels[0] ?? "");
   }
 }
 
 /**
- * Moves a backlog item to a workflow state from any surface, with Undo in a
- * toast. A done state closes the item, asking about its open subitems first,
- * and leaving one reopens it. Synced items write their new source state when
- * the toast closes, as their source project's write rule says.
+ * What a move did. `unchanged` means the item was already in that state, so
+ * only the patch was saved. `cancelled` means a choice was cancelled or the
+ * item changed while the move waited.
  */
-export async function moveBacklogItemWithUndo(
+export type BacklogMoveResult =
+  | { kind: "cancelled" }
+  | { kind: "unchanged" }
+  | {
+      kind: "moved";
+      undoToken: string | null;
+      /** "Closed in Done", "Reopened in Doing" or "Moved to Review". */
+      title: string;
+      /** Items with a source write to send when the Undo window closes. */
+      sourceWriteIds: string[];
+    };
+
+/**
+ * Moves a backlog item to a workflow state. A done state closes the item,
+ * with its open subitems when `choices` says so, and leaving one reopens it.
+ * Synced items get a pending write of their new source state, as their
+ * source project's write rule says; subitems take the rule's first state.
+ * Throws SourceStatesLoadError when the connector can't list the states.
+ */
+export async function moveBacklogItem(
   workItem: LocalWorkItem,
   workflowStateId: string | undefined,
+  choices: BacklogMoveChoices,
   {
     patch,
     orderedIds,
@@ -174,17 +243,18 @@ export async function moveBacklogItemWithUndo(
     patch?: Omit<WorkItemPatch, "workflowStateId">;
     orderedIds?: string[];
   } = {},
-) {
+): Promise<BacklogMoveResult> {
+  const cancelled = { kind: "cancelled" } as const;
   const state = localStore.snapshot();
   workItem =
     state.workItems.find((item) => item._id === workItem._id) ?? workItem;
   const destination = state.workflowStates.find(
     (state) => state._id === workflowStateId,
   );
-  if (workflowStateId !== undefined && !destination) return false;
+  if (workflowStateId !== undefined && !destination) return cancelled;
   if (workItem.workflowStateId === workflowStateId) {
     if (patch) localStore.updateWorkItem(workItem._id, patch);
-    return true;
+    return { kind: "unchanged" };
   }
   const name = destination?.name ?? "No state";
   const stillCurrent = () => {
@@ -201,10 +271,10 @@ export async function moveBacklogItemWithUndo(
 
   const closes = destination?.done === true && workItem.status !== "archived";
   const includeSubitems = closes
-    ? await resolveIncludeSubitems(workItem, "close")
+    ? await choices.includeSubitems(workItem)
     : false;
-  if (includeSubitems === null) return false;
-  if (!stillCurrent()) return false;
+  if (includeSubitems === null) return cancelled;
+  if (!stillCurrent()) return cancelled;
   const subitems = includeSubitems
     ? getOpenSubitems(localStore.snapshot(), workItem._id, "close")
     : [];
@@ -227,9 +297,14 @@ export async function moveBacklogItemWithUndo(
   const itemWrite =
     workflowStateId === undefined
       ? ""
-      : await resolveSourceWrite(workItem, workflowStateId, name, true);
-  if (itemWrite === null) return false;
-  if (!readyToCommit()) return false;
+      : await resolveSourceWrite(
+          workItem,
+          workflowStateId,
+          name,
+          choices.chooseSourceState,
+        );
+  if (itemWrite === null) return cancelled;
+  if (!readyToCommit()) return cancelled;
   if (itemWrite) sourceWrites[workItem._id] = itemWrite;
   if (includeSubitems && workflowStateId !== undefined) {
     for (const subitem of subitems) {
@@ -237,10 +312,10 @@ export async function moveBacklogItemWithUndo(
         subitem,
         workflowStateId,
         name,
-        false,
+        undefined,
       );
-      if (write === null) return false;
-      if (!readyToCommit()) return false;
+      if (write === null) return cancelled;
+      if (!readyToCommit()) return cancelled;
       if (write) sourceWrites[subitem._id] = write;
     }
   }
@@ -262,30 +337,66 @@ export async function moveBacklogItemWithUndo(
         workflowStateId!,
       ).some((state) => state.label === label)
     )
-      return false;
+      return cancelled;
   }
   // Save the editor's other fields only after every move prompt succeeds.
   if (patch) localStore.updateWorkItem(workItem._id, patch);
-  const writtenIds = Object.keys(sourceWrites);
-  offerUndo(
-    localStore.moveWorkItemToState(workItem._id, workflowStateId, {
+  return {
+    kind: "moved",
+    undoToken: localStore.moveWorkItemToState(workItem._id, workflowStateId, {
       includeSubitems,
       sourceWrites,
       orderedIds,
     }),
-    {
-      title: closes
-        ? `Closed in ${name}`
-        : reopens
-          ? `Reopened in ${name}`
-          : `Moved to ${name}`,
-      subject: "backlog item",
-      onWindowClosed:
-        writtenIds.length > 0
-          ? () => void sendPendingSourceWrites(writtenIds)
-          : undefined,
-    },
-  );
+    title: closes
+      ? `Closed in ${name}`
+      : reopens
+        ? `Reopened in ${name}`
+        : `Moved to ${name}`,
+    sourceWriteIds: Object.keys(sourceWrites),
+  };
+}
+
+/**
+ * Moves a backlog item to a workflow state from any surface, with Undo in a
+ * toast. The dialogs answer the choices. Synced items write their new source
+ * state when the toast closes.
+ */
+export async function moveBacklogItemWithUndo(
+  workItem: LocalWorkItem,
+  workflowStateId: string | undefined,
+  options: {
+    patch?: Omit<WorkItemPatch, "workflowStateId">;
+    orderedIds?: string[];
+  } = {},
+) {
+  let result: BacklogMoveResult;
+  try {
+    result = await moveBacklogItem(
+      workItem,
+      workflowStateId,
+      {
+        includeSubitems: (item) => resolveIncludeSubitems(item, "close"),
+        chooseSourceState: askUserForSourceState,
+      },
+      options,
+    );
+  } catch (error) {
+    if (!(error instanceof SourceStatesLoadError)) throw error;
+    showSourceStatesError(error);
+    return false;
+  }
+  if (result.kind === "cancelled") return false;
+  if (result.kind === "unchanged") return true;
+  const { sourceWriteIds } = result;
+  offerUndo(result.undoToken, {
+    title: result.title,
+    subject: "backlog item",
+    onWindowClosed:
+      sourceWriteIds.length > 0
+        ? () => void sendPendingSourceWrites(sourceWriteIds)
+        : undefined,
+  });
   return true;
 }
 
@@ -319,8 +430,14 @@ export async function changeSourceStateWithUndo(workItem: LocalWorkItem) {
     return current && canWriteToSource(current) ? current : undefined;
   };
   if (!currentItem()) return;
-  const available = await loadSourceStates(workItem);
-  if (available === null) return;
+  let available: string[];
+  try {
+    available = await loadSourceStates(workItem);
+  } catch (error) {
+    if (!(error instanceof SourceStatesLoadError)) throw error;
+    showSourceStatesError(error);
+    return;
+  }
   const current = currentItem();
   if (!current) return;
   const options = getOtherSourceStates(current).filter((label) =>

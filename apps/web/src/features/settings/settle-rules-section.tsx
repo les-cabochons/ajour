@@ -1,14 +1,18 @@
 import { useEffect, useMemo, useState } from "react";
 import type { ConnectorSettleState } from "@ajour/shared";
 import { AppPanel, MessagePanel } from "@/components/app-surface";
-import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
+import { PRIORITY_LEVELS } from "@/domain/backlog/priority";
 import {
   listSettleRuleSourceProjects,
   type SettleRuleSourceProject,
 } from "@/domain/backlog/settle-rules";
 import type { LocalSettleRule, LocalWorkItem } from "@/domain/local-state";
 import { canWriteSettle } from "@/features/backlog/backlog-source-writes";
+import {
+  formatPriorityInput,
+  parsePriorityInput,
+} from "@/features/backlog/backlog-task-editor";
 import {
   findSettleState,
   groupSettleStates,
@@ -20,10 +24,6 @@ import {
   subscribeConnectorsOverview,
 } from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
-
-function formatSourcePriorityInput(priority: number | undefined) {
-  return priority === undefined ? "" : String(priority);
-}
 
 /**
  * Settings > Backlog: the settle rule of each source project seen in syncs,
@@ -124,19 +124,12 @@ function SettleRuleRow({
   rule: LocalSettleRule | undefined;
 }) {
   const [load, setLoad] = useState<StatesLoad>({ status: "idle" });
-  const [priority, setPriority] = useState(
-    formatSourcePriorityInput(rule?.priority),
-  );
   const applies = Boolean(rule);
   const key = {
     source: project.source,
     connectionId: project.connectionId,
     sourceProjectName: project.sourceProjectName,
   };
-
-  useEffect(() => {
-    setPriority(formatSourcePriorityInput(rule?.priority));
-  }, [rule?.priority]);
 
   useEffect(() => {
     if (!applies || load.status !== "idle") return;
@@ -156,12 +149,6 @@ function SettleRuleRow({
   }, [applies, load.status, project]);
 
   const states = load.status === "ready" ? load.states : [];
-  const priorityValue = priority.trim() === "" ? undefined : Number(priority);
-  const priorityIsValid =
-    priorityValue === undefined ||
-    (Number.isInteger(priorityValue) &&
-      priorityValue >= 0 &&
-      priorityValue <= 999);
 
   function save(next: Partial<Pick<LocalSettleRule, "state" | "priority">>) {
     localStore.applySettleRule({
@@ -226,19 +213,20 @@ function SettleRuleRow({
                 })),
               }))}
             />
-            <Input
-              aria-label={`Priority for ${project.sourceProjectName}`}
-              aria-invalid={!priorityIsValid}
-              className="w-36"
-              inputMode="numeric"
-              placeholder="Keep the priority"
-              value={priority}
-              onChange={(event) => setPriority(event.target.value)}
-              onBlur={() => {
-                if (priorityIsValid && priorityValue !== rule?.priority) {
-                  save({ priority: priorityValue });
-                }
-              }}
+            <OptionSelect
+              label={`Priority for ${project.sourceProjectName}`}
+              className="w-auto"
+              value={formatPriorityInput(rule?.priority)}
+              onChange={(value) =>
+                save({ priority: parsePriorityInput(value) ?? undefined })
+              }
+              options={[
+                { value: "", label: "Keep the priority" },
+                ...PRIORITY_LEVELS.map(({ level, name }) => ({
+                  value: String(level),
+                  label: name,
+                })),
+              ]}
             />
           </>
         ) : null}

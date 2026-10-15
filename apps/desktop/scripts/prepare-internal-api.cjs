@@ -3,6 +3,7 @@ const {
   existsSync,
   mkdirSync,
   readFileSync,
+  realpathSync,
   rmSync,
 } = require("node:fs");
 const path = require("node:path");
@@ -46,11 +47,36 @@ for (const target of copyTargets) {
 const copiedRuntimePackages = new Set();
 copyRuntimePackage("zod", [repoRoot]);
 copyRuntimePackage("tar", [path.resolve(repoRoot, "apps/api")]);
+copyRuntimePackage("@modelcontextprotocol/sdk", [
+  path.resolve(repoRoot, "apps/api"),
+]);
+
+/**
+ * Finds a package's own package.json from `searchPaths`, walking up the
+ * node_modules folders like Node does. require.resolve can't be used: packages
+ * with an `exports` wildcard map package.json to a file in their dist folder.
+ */
+function findPackageJson(packageName, searchPaths) {
+  for (const searchPath of searchPaths) {
+    let directory = realpathSync(searchPath);
+    for (;;) {
+      const candidate = path.join(
+        directory,
+        "node_modules",
+        packageName,
+        "package.json",
+      );
+      if (existsSync(candidate)) return realpathSync(candidate);
+      const parent = path.dirname(directory);
+      if (parent === directory) break;
+      directory = parent;
+    }
+  }
+  throw new Error(`Missing internal API runtime package: ${packageName}`);
+}
 
 function copyRuntimePackage(packageName, searchPaths) {
-  const packageJsonPath = require.resolve(`${packageName}/package.json`, {
-    paths: searchPaths,
-  });
+  const packageJsonPath = findPackageJson(packageName, searchPaths);
   const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf8"));
   const packageKey = `${packageJson.name}@${packageJson.version}`;
   if (copiedRuntimePackages.has(packageKey)) {

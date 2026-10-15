@@ -72,3 +72,24 @@ export function createCrossDayEntryDragPointerSession(options: {
     onPressEnd: options.onPressEnd,
   });
 }
+
+/**
+ * Where the drop line shows while a card is dragged within its own day: above
+ * the card it would land in front of, or below the last card. `targetIndex` is
+ * the card's index in the day after the drop, as `getSharedTableDragTargetIndex`
+ * gives it. Returns null when the card would land where it started.
+ */
+export function getSameDayDropLine(
+  entryIds: readonly string[],
+  draggedId: string,
+  targetIndex: number,
+): { entryId: string; edge: "before" | "after" } | null {
+  if (entryIds.indexOf(draggedId) === targetIndex) return null;
+
+  const others = entryIds.filter((entryId) => entryId !== draggedId);
+  const before = others[targetIndex];
+  if (before) return { entryId: before, edge: "before" };
+
+  const last = others.at(-1);
+  return last ? { entryId: last, edge: "after" } : null;
+}

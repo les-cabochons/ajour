@@ -498,7 +498,8 @@ When("I Ctrl-click the requested pull request", async ({ page }) => {
   await page
     .getByRole("region", { name: "Active", exact: true })
     .getByRole("link", { name: "Open Fix request handling" })
-    .click({ modifiers: ["Control"] });
+    // macOS turns Ctrl-click into a right-click, so press Cmd there.
+    .click({ modifiers: ["ControlOrMeta"] });
 });
 Then("its source opens and the list stays open", async ({ page }) => {
   await expect(page).toHaveURL(/\/pull-requests$/);

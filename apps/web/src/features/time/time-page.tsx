@@ -370,6 +370,7 @@ export function TimePage({ date }: { date: string }) {
       {editorTarget && !editsInDialog ? (
         <SidePanel
           contentKey={editorKey}
+          widthKey="time"
           className="time-entry-side-panel"
           aria-label="Time entry editor"
         >
@@ -398,6 +399,7 @@ export function TimePage({ date }: { date: string }) {
       ) : panelListedCell ? (
         <SidePanel
           contentKey={`cell-${panelListedCell.rowKey}-${panelListedCell.localDate}`}
+          widthKey="time"
           className="time-entry-side-panel"
           aria-label="Cell entries"
         >

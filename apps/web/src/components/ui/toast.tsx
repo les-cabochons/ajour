@@ -11,6 +11,8 @@ export const UNDO_TOAST_TIMEOUT_MS = 8000;
 interface ToastData {
   /** Present on Undo toasts. The Undo button and Cmd+Z / Ctrl+Z call it. */
   onUndo?: () => void;
+  /** A button other than Undo, such as Answer on an agent's question. */
+  action?: { label: string; run: () => void };
 }
 
 /** One manager for the app, so feature code can show toasts outside React. */
@@ -64,6 +66,35 @@ export function closeUndoToast() {
 /** Shows a short toast with no action, such as an Undo that could not run. */
 export function showToast(title: string) {
   toastManager.add({ title });
+}
+
+/**
+ * Shows a toast with one action button, such as "Answer". It stays until the
+ * user acts on it or dismisses it. Returns a function that closes it.
+ */
+export function showActionToast({
+  title,
+  actionLabel,
+  onAction,
+}: {
+  title: string;
+  actionLabel: string;
+  onAction: () => void;
+}) {
+  const id = toastManager.add({
+    title,
+    timeout: 0,
+    data: {
+      action: {
+        label: actionLabel,
+        run: () => {
+          onAction();
+          toastManager.close(id);
+        },
+      },
+    },
+  });
+  return () => toastManager.close(id);
 }
 
 /**
@@ -167,6 +198,14 @@ function ToastList() {
             Undo
           </ToastPrimitive.Action>
         ) : null}
+        {toast.data?.action ? (
+          <ToastPrimitive.Action
+            className={cn(buttonVariants({ variant: "outline", size: "sm" }))}
+            onClick={toast.data.action.run}
+          >
+            {toast.data.action.label}
+          </ToastPrimitive.Action>
+        ) : null}
       </ToastPrimitive.Content>
       <ToastPrimitive.Close
         aria-label="Dismiss"
@@ -181,7 +220,8 @@ function ToastList() {
 /**
  * Renders the app's toasts: bottom right in a full window, bottom center in the
  * narrow view (the `narrow` variant from `lib/breakpoints.ts`). At most three
- * show, newest on top. Mount it once at the app root.
+ * show, newest on top. While the agent indicator shows, the viewport sits above
+ * it (`--agent-indicator-clearance`). Mount it once at the app root.
  */
 export function Toaster() {
   return (
@@ -189,8 +229,8 @@ export function Toaster() {
       <ToastPrimitive.Portal>
         <ToastPrimitive.Viewport
           className={cn(
-            "fixed right-4 bottom-4 z-[60] flex w-[min(360px,calc(100vw-2rem))] flex-col gap-2 outline-none",
-            "narrow:right-auto narrow:bottom-[var(--narrow-timer-clearance)] narrow:left-1/2 narrow:-translate-x-1/2",
+            "fixed right-4 bottom-[calc(1rem+var(--agent-indicator-clearance,0px))] z-[60] flex w-[min(360px,calc(100vw-2rem))] flex-col gap-2 outline-none",
+            "narrow:right-auto narrow:bottom-[calc(var(--narrow-timer-clearance)+var(--agent-indicator-clearance,0px))] narrow:left-1/2 narrow:-translate-x-1/2",
           )}
         >
           <ToastList />

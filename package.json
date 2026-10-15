@@ -17,7 +17,7 @@
     "dev:extension": "corepack pnpm --filter @ajour/extension dev",
     "build:extension:firefox": "corepack pnpm --filter @ajour/extension build:firefox",
     "start:desktop": "corepack pnpm --filter @ajour/desktop start",
-    "test": "corepack pnpm -r --if-present test",
+    "test": "corepack pnpm -r --workspace-concurrency=1 --if-present test",
     "typecheck": "corepack pnpm -r typecheck",
     "lint:boundaries": "depcruise packages apps",
     "format": "prettier --write .",

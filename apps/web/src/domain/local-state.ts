@@ -9,10 +9,7 @@ import type {
   RuleRecord,
   TeamSettings,
 } from "@ajour/shared";
-import type {
-  LocalPriorityScale,
-  PriorityLevel,
-} from "@/domain/backlog/priority-types";
+import type { PriorityLevel } from "@/domain/backlog/priority";
 import type { LocalProjectIcon } from "@/domain/projects/project-icon";
 import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
 
@@ -281,8 +278,8 @@ export interface LocalWorkItem {
   parentSourceId?: string;
   /** Ajour's level. A synced item follows its source value until the user sets one. */
   priority?: PriorityLevel;
-  /** The source's own priority value, mapped to a level by the connection's ranges. */
-  importedPriority?: number;
+  /** The level the source reports. The connector plugin maps its own values to levels. */
+  importedPriority?: PriorityLevel;
   workflowStateId?: string;
   importedWorkflowStateId?: string;
   sourceStatusKey?: string;
@@ -323,7 +320,7 @@ export interface LocalWorkItem {
   /** The source state key when the item was settled, to notice changes made in the source since. */
   settledSourceStatusKey?: string;
   /** The imported priority when the item was settled, to notice changes made in the source since. */
-  settledImportedPriority?: number;
+  settledImportedPriority?: PriorityLevel;
   /**
    * A settle's change waiting to be written to the source tool. It is sent when
    * the Undo toast closes, or at the next launch. See ADR 0001.
@@ -342,7 +339,7 @@ export interface LocalSettleRule {
   connectionId: string;
   sourceProjectName: string;
   state?: { name: string; done: boolean };
-  priority?: number;
+  priority?: PriorityLevel;
 }
 
 export type LocalWorkItemMoveSnapshot = Pick<
@@ -365,12 +362,12 @@ export type LocalWorkItemMoveSnapshot = Pick<
 export interface LocalPendingSourceWrite {
   readyAt?: number;
   state?: string;
-  priority?: number;
+  priority?: PriorityLevel;
   /** The item's source values before the settle, put back if the write fails. */
   previous: {
     sourceStatusKey?: string;
     sourceStatusLabel?: string;
-    importedPriority?: number;
+    importedPriority?: PriorityLevel;
     priority?: PriorityLevel;
     /** Set by a move, which a failed write undoes. */
     workflowStateId?: string;
@@ -401,13 +398,29 @@ export interface LocalPendingSourceWrite {
 
 export type PersistedLocalWorkItem = Omit<
   LocalWorkItem,
-  "status" | "archivedAt" | "priority" | "pendingSourceWrite"
+  | "status"
+  | "archivedAt"
+  | "priority"
+  | "importedPriority"
+  | "settledImportedPriority"
+  | "pendingSourceWrite"
 > & {
   /** Any whole number before priority had levels. */
   priority?: number;
-  pendingSourceWrite?: Omit<LocalPendingSourceWrite, "previous"> & {
-    previous: Omit<LocalPendingSourceWrite["previous"], "priority"> & {
+  /** A raw source value before connector plugins sent levels. */
+  importedPriority?: number;
+  settledImportedPriority?: number;
+  pendingSourceWrite?: Omit<
+    LocalPendingSourceWrite,
+    "priority" | "previous"
+  > & {
+    priority?: number;
+    previous: Omit<
+      LocalPendingSourceWrite["previous"],
+      "priority" | "importedPriority"
+    > & {
       priority?: number;
+      importedPriority?: number;
     };
   };
   status?: LocalWorkItem["status"] | "open" | "done";
@@ -468,7 +481,6 @@ export interface ExtensionBridgeStatus {
 }
 
 export interface LocalAppState {
-  priorityFormat?: "levels";
   user: {
     _id: string;
     name: string;
@@ -489,7 +501,6 @@ export interface LocalAppState {
   workflowStates: LocalWorkflowState[];
   workflowStateMappings: LocalWorkflowStateMapping[];
   workflowStateWriteRules: LocalWorkflowStateWriteRule[];
-  priorityScales: LocalPriorityScale[];
   backlogSortMode: BacklogSortMode;
   /** Apply rules by source project. A source project without one asks. */
   settleRules?: LocalSettleRule[];

@@ -45,9 +45,9 @@ Semantic variables, light and dark under `:root` and `:root.dark`:
 
 - `--background`, `--foreground`, `--card`, `--popover`, `--secondary`, `--muted`, `--muted-foreground`, `--accent`, `--border`, `--input`, `--ring`
 - `--primary`: the one accent, the logo's indigo. Primary buttons, focus rings, links, selected options and the returned pull request badge. Not the active nav row.
-- `--success`: the running indicator and the dock's remaining-estimate bar. Nothing else.
-- `--warning`: amber, with an icon, for days under target, over capacity and unmapped source states.
-- `--destructive`: destructive actions and failures only.
+- `--success`: the running indicator, the dock's remaining-estimate bar and an active agent in the agent indicator. Nothing else.
+- `--warning`: amber, with an icon, for days under target, over capacity, unmapped source states and an agent question.
+- `--destructive`: destructive actions and failures only, including a failed agent session (a red ring in the agent indicator) and an agent error (a solid red dot).
 - `--scrollbar-thumb`: the scrollbar thumb, on native scrollers and `ScrollArea`. The track is transparent. The sidebar backlog list shows the thumb only on hover or when focus is inside it.
 - Workflow states and projects carry their own colors.
 
@@ -67,4 +67,5 @@ The chrome is solid: `--nav-bg` and `--app-sidebar-bg` are opaque, with no blur.
 ## Layout
 
 - `--app-sidebar-width` (272px comfortable, 200px compact, user-resizable), `--app-workspace-max-width: 1440px`.
-- The top bar is 48px. Sidebar rows are 28px. Day-view rows are 40px. Backlog rows are 36px.
+- `--side-panel-width` (340px default, user-resizable from 300px to 720px and at most half the page, saved per page). `SidePanel` sets it on its parent element.
+- The top bar is 48px. Sidebar backlog rows are 80px in Comfortable and 26px in Compact. Other sidebar rows are 28px. Day-view rows are 40px. Backlog rows are 36px.

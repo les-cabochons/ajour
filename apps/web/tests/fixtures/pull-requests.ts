@@ -33,7 +33,7 @@ export const codeHostOverview: ConnectorsOverview = {
       plugin: {
         id: "github",
         version: "0.1.0",
-        apiVersion: 2,
+        apiVersion: 3,
         displayName: "GitHub",
         iconSvg: "<svg />",
         entrypoint: "plugin.mjs",

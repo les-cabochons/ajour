@@ -8,6 +8,7 @@ import {
   RiInboxLine as Inbox,
   RiListCheck3 as ListTodo,
   RiPuzzle2Line as Puzzle,
+  RiRobot2Line as Agents,
   RiSettings3Line as Settings,
   RiGitPullRequestLine as PullRequestIcon,
   RiFlowChart as Workflow,
@@ -49,6 +50,7 @@ export function getSettingsGroups(
       pages: [
         { to: "/settings/general", label: "General", icon: Settings },
         { to: "/settings/plugins", label: "Plugins", icon: Puzzle },
+        { to: "/settings/mcp", label: "MCP", icon: Agents },
         // Debug exists only in development builds.
         ...(import.meta.env.DEV
           ? [{ to: "/settings/debug", label: "Debug", icon: Bug } as const]
@@ -167,7 +169,7 @@ export function SettingsNavigation({
         <Button
           variant="ghost"
 
-          className="-ml-2 text-muted-foreground hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground"
           onClick={onBack}
         >
           <ArrowLeft />

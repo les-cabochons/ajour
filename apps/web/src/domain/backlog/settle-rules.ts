@@ -3,6 +3,7 @@ import type {
   LocalSettleRule,
   LocalWorkItem,
 } from "@/domain/local-state";
+import { isPriorityLevel } from "@/domain/backlog/priority";
 
 /**
  * Settle rules, from "Settle rules" in agents/ux-spec.md. Each source project
@@ -148,13 +149,13 @@ export function normalizeSettleRules(value: unknown): LocalSettleRule[] {
       typeof rule.state.done === "boolean"
         ? { name: rule.state.name, done: rule.state.done }
         : undefined;
-    const priority =
-      typeof rule.priority === "number" &&
-      Number.isInteger(rule.priority) &&
-      rule.priority >= 0 &&
-      rule.priority <= 999
-        ? rule.priority
-        : undefined;
+    // Rules held raw source values before connector plugins sent levels. A
+    // rule that only set such a value goes back to Ask, so it never settles
+    // without the write the user chose.
+    const priority = isPriorityLevel(rule.priority) ? rule.priority : undefined;
+    if (rule.priority !== undefined && priority === undefined && !state) {
+      return [];
+    }
     return [
       {
         source: rule.source,

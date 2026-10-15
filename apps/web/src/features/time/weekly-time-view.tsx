@@ -9,7 +9,6 @@ import {
 } from "react";
 import { RiAddLine as Plus } from "@remixicon/react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
 import {
   ObjectActionsButton,
@@ -25,7 +24,10 @@ import {
   projectWeeklyTime,
   type WeeklyGridAddedRow,
 } from "@/domain/time/weekly-time";
-import { createCrossDayEntryDragPointerSession } from "@/lib/cross-day-entry-drag";
+import {
+  createCrossDayEntryDragPointerSession,
+  getSameDayDropLine,
+} from "@/lib/cross-day-entry-drag";
 import {
   useLocalProjects,
   useLocalState,
@@ -39,6 +41,8 @@ import {
 import { handleItemKeyDown, TIME_ENTRY_ACTION_KEYS } from "@/lib/item-keys";
 import { localStore } from "@/lib/local-store";
 import {
+  getSharedTableDragTargetIndex,
+  getSharedTableDropOrder,
   getSharedTableStepOrder,
   setSharedTableDragDocumentState,
   SHARED_TABLE_DRAG_CLICK_SUPPRESSION_MS,
@@ -56,22 +60,26 @@ import {
 import { useRunningClock } from "@/lib/use-now";
 import { cn, todayIsoDate } from "@/lib/utils";
 
-type CrossDayDragState = {
+type EntryCardDragState = {
   entryId: string;
   height: number;
   offsetX: number;
   offsetY: number;
+  /** The card's index among its day's cards when the drag started. */
+  originIndex: number;
   pointerId: number;
   pointerX: number;
   pointerY: number;
   targetDate: string | null;
+  /** The card's index after the drop, while the pointer is over its own day. Null over another day. */
+  targetIndex: number | null;
   width: number;
 };
 
 /**
  * The Week view: the Grid of project and task rows by day, or the Days columns of
  * entry cards. Clicks open entries and cells in the page's side panel. Dragging a
- * card to another day moves it.
+ * card to another day moves it; dragging it within its day reorders the day.
  */
 export function WeeklyTimeView({
   activeCell,
@@ -112,8 +120,8 @@ export function WeeklyTimeView({
     setAddedRows({ weekStart: weekDates[0], rows: [] });
   }
   const weekAddedRows = addedRows.rows;
-  const [dragState, setDragState] = useState<CrossDayDragState | null>(null);
-  const dragStateRef = useRef<CrossDayDragState | null>(null);
+  const [dragState, setDragState] = useState<EntryCardDragState | null>(null);
+  const dragStateRef = useRef<EntryCardDragState | null>(null);
   const dragSessionRef = useRef<SharedTableDragPointerSession | null>(null);
   const dayTargetRefs = useRef(new Map<string, HTMLElement>());
   const suppressClickUntilRef = useRef(0);
@@ -236,8 +244,13 @@ export function WeeklyTimeView({
     }
   }
 
+  /**
+   * Starts a card drag. Over another day the drop moves the entry there; over
+   * its own day it reorders `dayEntries`, the day's cards without the running one.
+   */
   function handleEntryPointerDown(
     entry: LocalTimesheetEntry,
+    dayEntries: LocalTimesheetEntry[],
     event: ReactPointerEvent<HTMLElement>,
   ) {
     if (
@@ -251,6 +264,26 @@ export function WeeklyTimeView({
 
     const rect = event.currentTarget.getBoundingClientRect();
     const { clientX, clientY, pointerId, pointerType } = event;
+    const dayEntryIds = dayEntries.map((dayEntry) => dayEntry._id);
+    const originIndex = dayEntryIds.indexOf(entry._id);
+    // Cards keep their place during the drag (the drop line takes no space),
+    // so the elements found now stay valid until the drop.
+    const dayCards = new Map<string, HTMLElement>();
+    dayTargetRefs.current
+      .get(entry.localDate)
+      ?.querySelectorAll<HTMLElement>(".weekly-entry-card[data-entry-id]")
+      .forEach((card) => {
+        if (card.dataset.entryId) dayCards.set(card.dataset.entryId, card);
+      });
+    const targetIndexAt = (pointerY: number, targetDate: string | null) =>
+      targetDate === entry.localDate
+        ? getSharedTableDragTargetIndex(
+            dayEntryIds,
+            entry._id,
+            pointerY,
+            dayCards,
+          )
+        : null;
     dragSessionRef.current = createCrossDayEntryDragPointerSession({
       pointerId,
       pointerType,
@@ -260,15 +293,17 @@ export function WeeklyTimeView({
       isDragging: () => dragStateRef.current?.pointerId === pointerId,
       onStart: (pointer, targetDate) => {
         setSharedTableDragDocumentState(true, "cross-day-entry-drag-active");
-        const nextState: CrossDayDragState = {
+        const nextState: EntryCardDragState = {
           entryId: entry._id,
           height: rect.height,
           offsetX: clientX - rect.left,
           offsetY: clientY - rect.top,
+          originIndex,
           pointerId,
           pointerX: pointer.clientX,
           pointerY: pointer.clientY,
           targetDate,
+          targetIndex: targetIndexAt(pointer.clientY, targetDate),
           width: rect.width,
         };
         dragStateRef.current = nextState;
@@ -282,6 +317,7 @@ export function WeeklyTimeView({
           pointerX: pointer.clientX,
           pointerY: pointer.clientY,
           targetDate,
+          targetIndex: targetIndexAt(pointer.clientY, targetDate),
         };
         dragStateRef.current = nextState;
         setDragState(nextState);
@@ -290,7 +326,16 @@ export function WeeklyTimeView({
         suppressClickUntilRef.current =
           performance.now() + SHARED_TABLE_DRAG_CLICK_SUPPRESSION_MS;
         dragSessionRef.current = null;
-        if (commit && targetDate) moveEntry(entry, targetDate);
+        if (commit && targetDate === entry.localDate) {
+          const order = getSharedTableDropOrder(
+            dayEntryIds,
+            originIndex,
+            dragStateRef.current?.targetIndex ?? originIndex,
+          );
+          if (order) localStore.reorderTimesheetEntries(entry.localDate, order);
+        } else if (commit && targetDate) {
+          moveEntry(entry, targetDate);
+        }
         clearDrag();
       },
       onPressEnd: () => {
@@ -372,6 +417,17 @@ export function WeeklyTimeView({
               : day.entries;
             const runningHere = runningTime?.localDate === day.localDate;
             const isToday = day.localDate === today;
+            const isOriginDay = draggedEntry?.localDate === day.localDate;
+            const dropLine =
+              isOriginDay &&
+              dragState?.targetDate === day.localDate &&
+              dragState.targetIndex !== null
+                ? getSameDayDropLine(
+                    visibleEntries.map((entry) => entry._id),
+                    dragState.entryId,
+                    dragState.targetIndex,
+                  )
+                : null;
             return (
               <section
                 key={day.localDate}
@@ -380,7 +436,9 @@ export function WeeklyTimeView({
                   "weekly-days-column",
                   index >= 5 && "is-weekend",
                   isToday && "is-today",
-                  dragState?.targetDate === day.localDate && "is-drop-target",
+                  dragState?.targetDate === day.localDate &&
+                    !isOriginDay &&
+                    "is-drop-target",
                 )}
                 aria-label={formatWeekDay(day.localDate, {
                   weekday: "long",
@@ -426,7 +484,7 @@ export function WeeklyTimeView({
                         entryActions.runAction(runningTarget, actionId)
                       }
                       render={
-                        <Card
+                        <div
                           tabIndex={0}
                           aria-label={`Running entry, ${formatClockDuration(runningTime.displayDurationMs)}`}
                           className="weekly-entry-card is-running"
@@ -473,7 +531,7 @@ export function WeeklyTimeView({
                           entryActions.runAction(target, actionId)
                         }
                         render={
-                          <Card
+                          <div
                             tabIndex={0}
                             role="button"
                             data-entry-id={entry._id}
@@ -488,6 +546,8 @@ export function WeeklyTimeView({
                               "weekly-entry-card",
                               activeEntryId === entry._id && "is-selected",
                               dragState?.entryId === entry._id && "is-dragging",
+                              dropLine?.entryId === entry._id &&
+                                `is-drop-${dropLine.edge}`,
                             )}
                             onClick={() => openEntry(entry._id)}
                             onKeyDown={(event) => {
@@ -515,7 +575,11 @@ export function WeeklyTimeView({
                               });
                             }}
                             onPointerDown={(event) =>
-                              handleEntryPointerDown(entry, event)
+                              handleEntryPointerDown(
+                                entry,
+                                visibleEntries,
+                                event,
+                              )
                             }
                           />
                         }

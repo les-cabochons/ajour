@@ -38,7 +38,6 @@ const defaults: LocalAppState = {
   workflowStates: [],
   workflowStateMappings: [],
   workflowStateWriteRules: [],
-  priorityScales: [],
   backlogSortMode: "custom",
   capture: {
     urlMode: "sanitized_path",

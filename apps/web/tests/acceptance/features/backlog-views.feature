@@ -36,6 +36,21 @@ Feature: Backlog list and board views
     When I press S on the other item in the sidebar
     Then no entry runs
 
+  Scenario Outline: Switch to and stop a focused Backlog page item with S
+    When I use the Backlog "<layout>" layout
+    And I peek at the Backlog parent
+    And I start an entry from the Backlog peek
+    And I close the Backlog peek with Escape
+    And I press S on the other item on the Backlog page
+    Then an entry runs on "other"
+    When I press S on the other item on the Backlog page
+    Then no entry runs
+
+    Examples:
+      | layout |
+      | List   |
+      | Board  |
+
   Scenario: Open a subitem's parent from its comfortable sidebar row
     Then the subitem's sidebar row does not show its parent's title
     When I open the parent from the subitem's sidebar arrow
@@ -146,8 +161,8 @@ Feature: Backlog list and board views
     When I stop the Backlog running entry from the timer dock
     Then the parent peek can start a new entry after Stop
 
-  Scenario: Stop the running item from its compact sidebar row
-    When I use the compact Backlog sidebar
+  Scenario Outline: Stop the running item from its sidebar row
+    When I use the "<density>" Backlog sidebar
     And I peek at the Backlog parent
     And I start an entry from the Backlog peek
     Then the parent's sidebar row offers Stop instead of Start entry
@@ -155,11 +170,16 @@ Feature: Backlog list and board views
     Then no entry runs
     And the sidebar Start icon enables the parent without a disabled reason
 
-  Scenario Outline: Explain the running item's Start icon in rows and cards
+    Examples:
+      | density     |
+      | comfortable |
+      | compact     |
+
+  Scenario Outline: Offer Stop on the running item's row and card
     When I use the Backlog "<layout>" layout
     And I peek at the Backlog parent
     And I start an entry from the Backlog peek
-    Then the parent Start icon explains that it is already running
+    Then the parent row offers Stop for its running entry
     And the running entry has not restarted
     When I stop the Backlog running entry from the timer dock
     Then the parent Start icon is enabled without a disabled reason
@@ -172,7 +192,7 @@ Feature: Backlog list and board views
   Scenario Outline: Show running ownership in every Backlog action set
     When I peek at the Backlog parent
     And I start an entry from the Backlog peek
-    Then Start entry is disabled for the running item in the "<control>"
+    Then Stop replaces Start entry for the running item in the "<control>"
     And the running entry has not restarted
     When I stop the Backlog running entry from the timer dock
     Then Start entry is enabled after Stop in the "<control>"

@@ -15,7 +15,7 @@ Given("I have a writable synced parent Settle fixture", async ({ page }) => {
   const plugin = {
     id: "example",
     version: "1.0.0",
-    apiVersion: 2,
+    apiVersion: 3,
     displayName: "Fixture source",
     iconSvg:
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/></svg>',
@@ -64,7 +64,6 @@ Given("I have a writable synced parent Settle fixture", async ({ page }) => {
     localStorage.setItem(
       "ajour.local-state.v2",
       JSON.stringify({
-        priorityFormat: "levels",
         workflowStates: [
           { _id: "doing", name: "Doing", color: "#000000", createdAt: 1 },
           {
@@ -149,7 +148,7 @@ When("I open the parent Settle dialog", async ({ page }) => {
 async function refreshSettleParent(
   page: Page,
   state: string,
-  priority: number,
+  priority: "urgent" | "high",
 ) {
   await page.evaluate(
     async ({ state, priority }) => {
@@ -182,14 +181,14 @@ async function refreshSettleParent(
 }
 When(
   "the source changes the parent's priority to Urgent during Settle",
-  async ({ page }) => refreshSettleParent(page, "Active", 1),
+  async ({ page }) => refreshSettleParent(page, "Active", "urgent"),
 );
 When("I reopen Settle on an unlisted source state", async ({ page }) => {
   await page
     .getByRole("dialog", { name: "Settle", exact: true })
     .getByRole("button", { name: "Cancel", exact: true })
     .click();
-  await refreshSettleParent(page, "Unlisted", 2);
+  await refreshSettleParent(page, "Unlisted", "high");
   await openSettleParentActions(page);
   await page.getByRole("menuitem", { name: /^Settle/ }).click();
   await expect(
@@ -201,7 +200,7 @@ When("I reopen Settle on an unlisted source state", async ({ page }) => {
 When(
   "the source changes the parent's state to Active during Settle",
   async ({ page }) => {
-    await refreshSettleParent(page, "Active", 2);
+    await refreshSettleParent(page, "Active", "high");
   },
 );
 Then("the Settle state draft remains Unlisted", async ({ page }) => {
@@ -225,7 +224,7 @@ Then(
     ).toBeVisible();
     await expect(
       dialog.getByText(
-        "This priority has no source range. Choose another priority.",
+        "This connector cannot clear its source priority. Choose a priority.",
         { exact: true },
       ),
     ).toHaveCount(0);

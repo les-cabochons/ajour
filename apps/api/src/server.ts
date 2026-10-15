@@ -55,7 +55,17 @@ import {
   projectDataShapeListResponseSchema,
   projectDataShapePluginIdSchema,
 } from "../../../packages/shared/project-data-shapes.ts";
+import {
+  agentAnswerRequestSchema,
+  bridgeToolResultSchema,
+  mcpClientCreateRequestSchema,
+  mcpSettingsUpdateSchema,
+} from "../../../packages/shared/agent-tools.ts";
 import { mergeConnectionConfigForSave } from "./connection-values.ts";
+import { AgentSessions } from "./agent-sessions.ts";
+import { McpBridge } from "./mcp-bridge.ts";
+import { createMcpClient } from "./mcp-clients.ts";
+import { handleMcpRequest, MAX_WAIT_FOR_ANSWER_MS } from "./mcp-server.ts";
 import { ConnectorPluginManager } from "./plugin-host.ts";
 import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";
 import { AppApiStorage } from "./storage.ts";
@@ -71,6 +81,12 @@ interface AppApiServerOptions {
   pluginRequestTimeoutMs?: number;
   projectDataShapePluginDirectories?: string[];
   allowedOrigins?: string[];
+  /** How long a data tool waits for the renderer. Tests shorten it. */
+  mcpBridgeTimeoutMs?: number;
+  /** Receives MCP wide events. Defaults to one JSON line on stdout. */
+  mcpLogEvent?: (event: Record<string, unknown>) => void;
+  /** How long one wait_for_answer call holds. Tests shorten it. */
+  mcpWaitForAnswerMs?: number;
 }
 
 interface AppApiRuntime {
@@ -452,6 +468,54 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     projectDataShapePluginManager,
     stopping: false,
   };
+  const logMcpEvent =
+    options.mcpLogEvent ??
+    ((event: Record<string, unknown>) =>
+      console.info(
+        JSON.stringify({
+          timestamp: new Date().toISOString(),
+          level: "info",
+          ...event,
+        }),
+      ));
+  // The bridge and the sessions publish through each other. Both closures
+  // run after both constants exist, so the forward reference is safe.
+  const mcpBridge: McpBridge = new McpBridge({
+    timeoutMs: options.mcpBridgeTimeoutMs,
+    onAttach: () => mcpBridge.publish("agents", agentSessions.snapshot()),
+  });
+  const agentSessions = new AgentSessions({
+    onChange: () => mcpBridge.publish("agents", agentSessions.snapshot()),
+    // Ids, outcome, counts and durations only. Messages hold what the agent
+    // and the user wrote, so they stay out of the log.
+    onEnded: (session) =>
+      logMcpEvent({
+        event: "mcp.session_ended",
+        client_id: session.client.id,
+        session_id: session.id,
+        outcome: session.state,
+        duration_ms: (session.endedAt ?? Date.now()) - session.startedAt,
+        update_count: session.messages.filter(
+          (message) => message.kind === "update",
+        ).length,
+        question_count: session.messages.filter(
+          (message) => message.kind === "question",
+        ).length,
+      }),
+  });
+  const stallTimer = setInterval(() => agentSessions.tick(), 15_000);
+  stallTimer.unref();
+  const mcpContext = {
+    storage,
+    bridge: mcpBridge,
+    sessions: agentSessions,
+    waitForAnswerMs: Math.min(
+      options.mcpWaitForAnswerMs ?? MAX_WAIT_FOR_ANSWER_MS,
+      MAX_WAIT_FOR_ANSWER_MS,
+    ),
+    logEvent: logMcpEvent,
+    readBody: readJsonBody,
+  };
 
   const server = createServer(async (request, response) => {
     if (runtime.stopping) {
@@ -460,6 +524,19 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     }
     if (request.headers.host && !isAllowedRequestHost(request.headers.host)) {
       writeJson(response, 403, { error: "Request host is not allowed." });
+      return;
+    }
+    const requestPath = new URL(request.url ?? "/", "http://127.0.0.1")
+      .pathname;
+    // MCP has its own rules: bearer tokens, and no browser origins at all.
+    if (requestPath === "/mcp" || requestPath.startsWith("/mcp/")) {
+      try {
+        await handleMcpRequest(request, response, requestPath, mcpContext);
+      } catch (error) {
+        if (!response.headersSent) {
+          writeJson(response, 500, { error: errorMessage(error) });
+        }
+      }
       return;
     }
     const requestOrigin = request.headers.origin;
@@ -485,6 +562,123 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     try {
       if (request.method === "GET" && requestUrl.pathname === "/api/health") {
         writeJson(response, 200, { ok: true });
+        return;
+      }
+
+      if (requestUrl.pathname === "/api/mcp/settings") {
+        if (request.method === "POST") {
+          const payload = mcpSettingsUpdateSchema.parse(
+            await readJsonBody(request),
+          );
+          await storage.setMcpEnabled(payload.enabled);
+          if (!payload.enabled) mcpBridge.close();
+        }
+        writeJson(response, 200, await storage.getMcpSettings());
+        return;
+      }
+
+      if (
+        request.method === "POST" &&
+        requestUrl.pathname === "/api/mcp/clients"
+      ) {
+        const payload = mcpClientCreateRequestSchema.parse(
+          await readJsonBody(request),
+        );
+        writeJson(response, 201, await createMcpClient(storage, payload.name));
+        return;
+      }
+
+      const mcpRevokeRoute = requestUrl.pathname.match(
+        /^\/api\/mcp\/clients\/([^/]+)\/revoke$/,
+      );
+      if (request.method === "POST" && mcpRevokeRoute) {
+        const revoked = await storage.revokeMcpClient(
+          decodeURIComponent(mcpRevokeRoute[1] ?? ""),
+          Date.now(),
+        );
+        if (!revoked) {
+          writeJson(response, 404, { error: "Unknown MCP client." });
+          return;
+        }
+        writeJson(response, 200, await storage.getMcpSettings());
+        return;
+      }
+
+      if (
+        request.method === "GET" &&
+        requestUrl.pathname === "/api/mcp/bridge"
+      ) {
+        // A new stream replaces the renderer's. A web page can open one with
+        // an <img> tag, which sends no Origin, so require the renderer's.
+        // EventSource sends Origin because the renderer is cross-origin:
+        // http://127.0.0.1:5173 in development, app://local when packaged.
+        if (!requestOrigin) {
+          writeJson(response, 403, { error: "The bridge needs an Origin." });
+          return;
+        }
+        if (!(await storage.getMcpSettings()).enabled) {
+          writeJson(response, 404, { error: "MCP is off." });
+          return;
+        }
+        mcpBridge.attach(response);
+        return;
+      }
+
+      if (
+        request.method === "POST" &&
+        requestUrl.pathname === "/api/mcp/bridge/results"
+      ) {
+        const result = bridgeToolResultSchema.parse(
+          await readJsonBody(request),
+        );
+        writeJson(response, 200, { ok: mcpBridge.resolve(result) });
+        return;
+      }
+
+      // The user's answer to an agent's question, from the agent panel.
+      const mcpAnswerRoute = requestUrl.pathname.match(
+        /^\/api\/mcp\/questions\/([^/]+)\/answer$/,
+      );
+      if (request.method === "POST" && mcpAnswerRoute) {
+        const payload = agentAnswerRequestSchema.parse(
+          await readJsonBody(request),
+        );
+        try {
+          agentSessions.answer(
+            decodeURIComponent(mcpAnswerRoute[1] ?? ""),
+            payload.text,
+          );
+        } catch (error) {
+          writeJson(response, 409, { error: errorMessage(error) });
+          return;
+        }
+        writeJson(response, 200, agentSessions.snapshot());
+        return;
+      }
+
+      // The user clears a session from the panel, for an agent that died
+      // without ending it.
+      const mcpDismissRoute = requestUrl.pathname.match(
+        /^\/api\/mcp\/sessions\/([^/]+)\/dismiss$/,
+      );
+      if (request.method === "POST" && mcpDismissRoute) {
+        try {
+          agentSessions.dismiss(decodeURIComponent(mcpDismissRoute[1] ?? ""));
+        } catch (error) {
+          writeJson(response, 409, { error: errorMessage(error) });
+          return;
+        }
+        writeJson(response, 200, agentSessions.snapshot());
+        return;
+      }
+
+      // The user opened the agent panel: earlier errors and failures are seen.
+      if (
+        request.method === "POST" &&
+        requestUrl.pathname === "/api/mcp/seen"
+      ) {
+        agentSessions.markSeen();
+        writeJson(response, 200, agentSessions.snapshot());
         return;
       }
 
@@ -1164,6 +1358,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
 
   appApiRuntimesByServer.set(server, runtime);
   server.once("close", () => {
+    mcpBridge.close();
+    clearInterval(stallTimer);
+    agentSessions.close();
     void pluginManager.shutdown();
     void projectDataShapePluginManager.shutdown();
   });

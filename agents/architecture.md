@@ -8,6 +8,7 @@ Ajour is a local-first time-tracking workspace built as a pnpm monorepo. Keep ar
 - `apps/desktop`: Electron shell that wraps the web renderer and provides desktop packaging/runtime bootstrap.
 - `apps/api`: Optional local API for connector configuration, connector sync, plugin workers, and local import flows.
 - `packages/shared`: Cross-runtime domain types, validation schemas, normalization, aggregation, rule evaluation, and connector contracts.
+- MCP: the local API serves an MCP endpoint at `/mcp/ajour` for agents such as Claude Code and Codex. It is off by default, and each agent client has its own token (ADR 0004). The API forwards every data tool to the renderer over `/api/mcp/bridge`, and `features/agents/agent-tool-runner.ts` runs it through the object action sets with Undo. Sessions, questions and the activity list live in API memory (`apps/api/src/agent-sessions.ts`).
 
 ## Product Boundary
 
@@ -17,6 +18,7 @@ The default workflow is local-first:
 - automatic activity capture is not part of the supported baseline workflow
 - any future sync or external sink must be explicit, opt-in, and privacy-scoped
 - never upload tracking data, private notes, raw URLs, query strings, hashes, meeting subjects, organizers, locations, or full window titles by default
+- MCP is an explicit external sink: turning it on and creating a client send local data to that client's model provider (ADR 0004).
 
 ## Data Flow
 
@@ -36,7 +38,7 @@ Current deep domain modules demonstrate this boundary:
 - `domain/backlog/work-item-transitions.ts` owns manual work-item creation, hierarchy-aware mapping changes, ordering, deletion, and estimate-conflict decisions.
 - `domain/backlog/backlog-item-lifecycle.ts` owns backlog item status: moves between workflow states (a done state closes the item, leaving one reopens it), settle, unsettle, archive, restore, which open subitems a close or settle takes along, snooze, the Returned mark, and the sidebar's item order.
 - `domain/backlog/workflow-states.ts` owns the workflow: the default states, the Done flag and the rule that one done state always remains, ordering, how source states map onto workflow states per source project (with the connection's mapping as the fallback), automatic mapping of new source states, and the write rules that plan what a move writes to the source.
-- `domain/backlog/priority.ts` owns the five priority levels and each connection's ranges of source values, seeded from the connector manifest's `priorityScale`.
+- `domain/backlog/priority.ts` owns the priority levels: Urgent, High, Medium, Low and No priority. Connector plugins map their source priority values to levels (`urgent`, `high`, `medium`, `low`) on sync and back on a settle write, so Ajour stores only levels.
 - `domain/pull-requests/pull-request-lifecycle.ts` owns provider-neutral pull request reconciliation, local settle and snooze choices, Returned, enabled-connection visibility and closed-item retention. Sync facts exclude bodies and diffs.
 - `domain/backlog/work-item-connector.ts` owns connector import, merge, disappearance, reactivation, and estimate-sync transitions.
 - `domain/projects/project-transitions.ts` owns project and task creation, legacy hydration, ordering, edits, and archive state.
