@@ -646,7 +646,8 @@ export function WeekGrid({
         key={model.cell.localDate}
         className={cn(
           "weekly-grid-time-cell",
-          dayIndex >= 5 && "is-weekend",
+          new Date(`${model.cell.localDate}T12:00:00`).getDay() % 6 === 0 &&
+            "is-weekend",
           model.cell.localDate === today && "is-today",
           isEditing && "is-editing",
         )}
@@ -717,18 +718,24 @@ export function WeekGrid({
   return (
     <div className="weekly-grid-stack">
       <div className="weekly-grid-table-scroll">
-        <Table className="weekly-grid-table">
+        <Table
+          className="weekly-grid-table"
+          style={{
+            minWidth: `calc(var(--weekly-grid-task-min-width) + ${weekDates.length} * var(--weekly-grid-day-width) + var(--weekly-grid-total-width))`,
+          }}
+        >
           <TableHeader>
             <TableRow>
               <TableHead className="weekly-grid-task-column">
                 Project / task
               </TableHead>
-              {projection.days.map((day, index) => (
+              {projection.days.map((day) => (
                 <TableHead
                   key={day.localDate}
                   className={cn(
                     "weekly-grid-day-column",
-                    index >= 5 && "is-weekend",
+                    new Date(`${day.localDate}T12:00:00`).getDay() % 6 === 0 &&
+                      "is-weekend",
                     day.localDate === today && "is-today",
                   )}
                 >
@@ -840,12 +847,13 @@ export function WeekGrid({
           <TableFooter>
             <TableRow className="weekly-grid-footer-row">
               <TableCell className="weekly-grid-task-cell">Totals</TableCell>
-              {projection.days.map((day, index) => (
+              {projection.days.map((day) => (
                 <TableCell
                   key={day.localDate}
                   className={cn(
                     "weekly-grid-time-cell",
-                    index >= 5 && "is-weekend",
+                    new Date(`${day.localDate}T12:00:00`).getDay() % 6 === 0 &&
+                      "is-weekend",
                   )}
                 >
                   {formatClockDuration(day.totalMs)}

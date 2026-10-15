@@ -186,7 +186,8 @@ the week holds today and the Submitted chip once every entry is submitted.
 Under the bar a 44px toolbar holds Grid | Days (persisted locally as `grid` or
 `days`) and the week total. The Grid table uses a fixed layout: 84px day
 columns, a 72px total column, and the project and task column takes the rest,
-ellipsizing the project name first. It scrolls sideways only below 820px.
+ellipsizing the project name first. It scrolls sideways when its visible columns
+do not fit, below 820px with all seven days.
 Grid rows are 40px with the project and task on one line, day headings show
 "Mon 12" over the logged time, today's column is tinted, weekends
 are muted, and a "Totals" footer closes the table. A click on a Grid cell
@@ -204,7 +205,7 @@ an invalid draft blocks deletion. A row with time confirms its entry count and
 total in an AlertDialog, then deletes its week's entries with one Undo toast.
 Rows containing a running entry or its saved part cannot be deleted.
 
-Days use seven 40px column headers and flat 6px entry cards
+Days use up to seven 40px column headers and flat 6px entry cards
 with the project's color as a rail; the running card wears a success-tone
 chip. Cards drag between days with thresholded pointer dragging, explicit
 weekday drop targets, and Escape/pointer-cancel cleanup. Dropping a card on
@@ -223,7 +224,12 @@ surface.
 
 Capacity targets and the two independent warning switches live in General
 Settings. Targets are Monday-first, default to eight hours on weekdays and zero
-on weekends, and remain local user preferences.
+on weekends, and remain local user preferences. The Hide non-working days switch
+defaults to off. When enabled, zero-capacity days leave the Day strip and both
+Week layouts, while logged time on those days stays in weekly and row totals.
+Working weekends remain visible. If every day has zero capacity, Week shows a
+message explaining how to restore the columns. The date picker and submission
+still include every day.
 
 ### Submit Page
 
