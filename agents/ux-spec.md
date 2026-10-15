@@ -119,7 +119,7 @@ Decided in [App shell and collapsible sidebar](https://github.com/les-cabochons/
 
 ### Desktop widths
 
-- The app sidebar is expanded (resizable, see the Backlog sidebar section for widths) or hidden. There is no icon rail. From the top: Hide sidebar and the logo, the view switcher with Search, the timer dock, then the work list. Settings sits at the bottom.
+- The app sidebar is expanded (resizable, see the Backlog sidebar section for widths) or hidden. There is no icon rail. From the top: Hide sidebar and the logo, the view switcher with Search and the project filter, the timer dock, then the work list. Settings sits at the bottom.
 - Hide sidebar and the logo sit on the titlebar's row, as in T3 Code: right of the traffic lights on macOS, in the window's top left corner elsewhere. Hide sidebar sits where Show sidebar sits in the titlebar, so the button does not move when the sidebar toggles.
 - The view switcher works like ChatGPT's: the open view's name, such as "Time", opens a menu of Time, Backlog, Pull requests (only while a code host plugin is enabled) and Projects with their live counts, today's total next to Time, the number of listed items next to Backlog, and next to Pull requests the number that need the user, as a filled badge when any returned. A check marks the open view. A backlog item's page belongs to Backlog.
 - Cmd+B (Ctrl+B on Windows), Hide sidebar next to the logo and Show sidebar at the start of the titlebar toggle it. The View menu gets "Show sidebar" or "Hide sidebar" once the menu bar exists. There is no second shortcut.
@@ -438,8 +438,8 @@ Settings > Workflow lists, for each connection and source project, its source st
 ### Priority
 
 - Priority has five levels with Linear's icons: Urgent, High, Medium, Low and No priority.
-- Each connection maps source priority values to levels with a range for each level, set in Settings > Workflow. The connector supplies default ranges, such as Azure DevOps 1 Urgent, 2 High, 3 Medium and 4 Low. A value outside every range is No priority.
-- Settle and moving into a done state write the lowest value of the level's range, and only when the level changed.
+- Each connector plugin maps its source priority values to levels. A plugin can let the user set that mapping in its connection settings, such as Azure DevOps 1 Urgent, 2 High, 3 Medium and 4 Low by default. A value the plugin maps to no level is No priority.
+- Settle and moving into a done state write the level only when it changed. The plugin picks the source value, such as the lowest value of the level's range.
 - Within a level, items keep the custom order.
 
 ### Layouts
@@ -472,7 +472,9 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 ### Peek
 
 - Clicking a row or card opens the peek on the right. Space toggles it on the focused row. It follows the clicked item until Escape or × closes it.
-- The peek shows the type and id, the title, Start entry and Open page, then state, source state, priority, lifecycle, project, task, estimates and subitems.
+- The peek is a smaller item page. It shows the id with Open page and ×, the title with its type, project and source link, the item page's snoozed, settled, archived or returned notice, Start entry and Edit, the estimate figures, then the properties (state, source state, priority, lifecycle, project, task), the note and the subitems.
+- The peek has no "…" menu. The row's context menu and the item page carry the other actions.
+- Dragging the peek's left edge resizes it, like every side panel: 300px to 720px, at most half the page. Arrow keys on the edge move it by 16px and a double-click resets 340px. Each page keeps its own panel width, per device: Backlog (peek and editor), the backlog item page, Time, Projects and Agents.
 - State, priority, project and task change in place and save at once with Undo, like the pickers on a card.
 - Edit turns the peek into the backlog item editor in the same slot, with its explicit Save. Saving or discarding goes back to the peek.
 - Enter, a double-click or Open page opens the backlog item page.
@@ -524,6 +526,15 @@ The sidebar works like the T3 Code and Linear sidebars: the view switcher, the t
 - With priority order, a subitem with its own priority mixes with top-level items by priority. With custom order, it sits right below its parent. If its parent is snoozed or settled, it takes the parent's place.
 - Snoozed, settled and archived items leave the list.
 - The narrow view has no item list. The Backlog page is the way in.
+
+### Search and project filter
+
+- Search, next to the view switcher, expands into a search box in place of the switcher. It filters the work list as the user types. Cmd+K still opens the command palette.
+- Every typed word must appear in the item's title or its project's name, display name or code. Case and accents do not count. A pull request matches on its title and repository.
+- Escape clears the box and closes it. Leaving the box empty closes it too. A typed query stays while the user opens the rows it found, including when the sidebar hides in between, as the overlay does after a row opens. It is not saved across launches.
+- The filter button, like T3 Code's, opens a menu with its own search, "All projects", then the active projects. Picking a project keeps only its items. Pull requests have no project, so they hide while a project is picked. The pick is saved per device. The button stays highlighted while a project is picked.
+- Every section keeps only the matching rows, and its count follows. A section left with no rows is not shown. While the list is narrowed, Settled shows its count and an empty backlog list says "No matching items."
+- The view switcher's counts, the timer dock's Up next and the Backlog page ignore the sidebar's search and filter.
 
 ### Layout options
 

@@ -924,21 +924,44 @@
   .desktop-page-container {
     padding-top: 1.25rem;
   }
-  /* Docked on the right; the page next to it stays visible and clickable. */
+  /* Docked on the right; the page next to it stays visible and clickable.
+     SidePanel sets --side-panel-width on its parent from the page's saved width.
+     The 340px default leaves room for the seven 128px Week columns beside a
+     200px sidebar at 1440px. The handle stays still while the content scrolls. */
   .side-panel {
-    /* Leaves room for the seven 128px Week columns beside a 200px sidebar at 1440px. */
-    --side-panel-width: 340px;
     position: sticky;
     top: 0;
     align-self: flex-start;
-    width: var(--side-panel-width);
+    display: flex;
+    flex-direction: column;
+    width: var(--side-panel-width, 340px);
     max-width: 50%;
     height: var(--app-content-height, 100dvh);
     flex: 0 0 auto;
-    overflow-y: auto;
+    overflow: hidden;
     border-left: 1px solid var(--border);
     background: var(--surface-low);
+  }
+  .side-panel-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
     padding: 1rem;
+  }
+  .side-panel-resize-handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 20;
+    width: 6px;
+    cursor: col-resize;
+    touch-action: none;
+  }
+  .side-panel-resize-handle:hover,
+  .side-panel-resize-handle:focus-visible {
+    outline: none;
+    background: var(--focus-ring);
   }
   .desktop-shell-app {
     --desktop-shell-chrome-height: 52px;
@@ -1743,7 +1766,9 @@
   padding: 0 0.5rem;
 }
 
-.desktop-shell-macos .ajour-app-sidebar-header {
+/* Only the app sidebar's header shares the traffic lights' row. Settings
+   keeps a drag strip above its header, so Back to app needs no inset. */
+.desktop-shell-macos .ajour-app-navigation-sidebar .ajour-app-sidebar-header {
   padding-left: 5rem;
 }
 

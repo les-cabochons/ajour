@@ -1,11 +1,4 @@
 import {
-  normalizePriorityScales,
-  seedPriorityScales,
-  setPriorityScale as applySetPriorityScale,
-  type LocalPriorityScale,
-  type PriorityRanges,
-} from "@/domain/backlog/priority";
-import {
   BUILT_IN_PROJECT_DATA_SHAPE_ID,
   type ActivityBlockRecord,
   type BrowserActivityBucket,
@@ -298,8 +291,6 @@ function createDefaultState(): LocalAppState {
     workflowStates: [],
     workflowStateMappings: [],
     workflowStateWriteRules: [],
-    priorityScales: [],
-    priorityFormat: "levels",
     backlogSortMode: "custom",
     capture: defaultCapture,
     userPreferences: defaultUserPreferences,
@@ -313,6 +304,9 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
     activityLoggerEnabled: _removedActivityLoggerEnabled,
     outlookIntegration: _removedOutlookIntegration,
     outlookMeetingDrafts: _removedOutlookMeetingDrafts,
+    // Connector plugins map priority values to levels now.
+    priorityScales: _removedPriorityScales,
+    priorityFormat: _removedPriorityFormat,
     // Workflow states were called backlog statuses before.
     backlogStatuses: legacyWorkflowStates,
     backlogStatusMappings: legacyWorkflowStateMappings,
@@ -321,6 +315,8 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
     activityLoggerEnabled?: boolean;
     outlookIntegration?: unknown;
     outlookMeetingDrafts?: unknown;
+    priorityScales?: unknown;
+    priorityFormat?: unknown;
     backlogStatuses?: LocalAppState["workflowStates"];
     backlogStatusMappings?: Array<
       Omit<LocalWorkflowStateMapping, "workflowStateId"> & {
@@ -334,10 +330,7 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
   );
   const workItems = normalizeSourceWriteRecovery(
     rawWorkItems.map((workItem) =>
-      normalizePersistedWorkItem(workItem, Date.now, {
-        priorityScales: normalizePriorityScales(persistedState.priorityScales),
-        priorityFormat: persistedState.priorityFormat,
-      }),
+      normalizePersistedWorkItem(workItem, Date.now),
     ),
   );
   const workflowStates = normalizeWorkflowStates(
@@ -435,8 +428,6 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
             (rule.write?.kind === "state" && rule.write.sourceStatusLabel)),
         ),
       ),
-      priorityScales: normalizePriorityScales(persistedState.priorityScales),
-      priorityFormat: "levels",
       backlogSortMode,
       capture: {
         ...defaults.capture,
@@ -1184,10 +1175,6 @@ export const localStore = {
       applyDeleteWorkflowState(state, statusId),
     );
   },
-  /** Sets the source priority values each level holds for one connection. Throws when invalid. */
-  setPriorityScale(scale: LocalPriorityScale) {
-    updateState((state) => applySetPriorityScale(state, scale));
-  },
   /** Maps new source states that match a workflow state or a done category. */
   autoMapSourceStates(reported: ReportedSourceState[]) {
     updateState((state) =>
@@ -1318,15 +1305,11 @@ export const localStore = {
       parentWorkItemId,
     });
   },
-  /**
-   * Imports synced items. `priorityDefaults` holds each plugin's default
-   * priority ranges, given to connections that have none yet.
-   */
+  /** Imports synced items. */
   importConnectorWorkItems(
     workItems: ConnectorImportCandidate[],
     options?: {
       archiveMissingFromConnectionId?: string;
-      priorityDefaults?: Readonly<Record<string, PriorityRanges>>;
     },
   ) {
     return updateStateWithResult((state) =>
@@ -1334,14 +1317,7 @@ export const localStore = {
         applyWorkflowStateLifecycle(
           state,
           autoMapSourceStates(
-            seedPriorityScales(
-              state,
-              workItems.map((workItem) => ({
-                source: workItem.source,
-                connectionId: workItem.connectionId,
-              })),
-              options?.priorityDefaults ?? {},
-            ),
+            state,
             workItems.flatMap((workItem) =>
               workItem.state
                 ? [
@@ -1692,6 +1668,23 @@ export const localStore = {
     if (lastUndo?.token === token) {
       lastUndo = undefined;
     }
+  },
+  /**
+   * Runs store commands as one undoable action, for callers such as agent
+   * tools whose commands keep no undo of their own. The undo covers every
+   * record the commands changed. Replaces the last undo, like any action.
+   */
+  runWithUndo<T>(run: () => T): { result: T; undoToken: string | null } {
+    const before = readState();
+    const result = run();
+    const after = readState();
+    if (after === before) return { result, undoToken: null };
+
+    const undo = captureUndo(before, after);
+    if (!undo) return { result, undoToken: null };
+    const token = createId("undo");
+    lastUndo = { token, undo };
+    return { result, undoToken: token };
   },
   saveTimer(timerId: string) {
     updateState((state) =>

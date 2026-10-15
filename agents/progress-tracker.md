@@ -98,7 +98,7 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Project task and workbook import transitions are isolated from browser persistence and have direct domain tests.
 - [x] Workflow state hydration (including data saved as backlog statuses), CRUD, ordering, the Done flag, and source state mapping transitions are isolated from browser persistence and have direct domain tests.
 - [x] Moving a backlog item into a done state closes it and leaving one reopens it, with the open-subitems prompt and its Settings > Backlog choice (#85, #89).
-- [x] Priority has five levels with per-connection ranges, seeded from the connector manifest's `priorityScale` (#86, #88).
+- [x] Priority has five levels (#86, #88). Since plugin API 3, connector plugins map source values to levels and Ajour stores only levels.
 - [x] Source states map to workflow states per source project, new ones map automatically by name or done category, and moves of synced items write the source state after the Undo window through per-state write rules (#87).
 - [x] Work-item hierarchy, estimates, manual lifecycle, and connector reconciliation have canonical domain modules with direct tests.
 - [x] Timesheet entry lifecycle and linked estimate adjustments are isolated from browser persistence and have direct tests.
@@ -165,6 +165,19 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
       1023px, application, Settings, and Projects navigation remains available as
       compact 48px rails; Settings Back restores the full prior workspace URL
       without leaving Settings in browser history.
+
+## Sidebar search and project filter, 2026-10-14
+
+- [x] Search expands into a search box that filters the sidebar's work list by item and project name. A T3 Code style project filter sits next to it and is saved per device. See "Search and project filter" in `agents/ux-spec.md`.
+- [x] `sidebar-search.feature` covers both. The full Chromium suite passed 127 of 132 on a free port. The 5 failures (board close, workflow settings draft, packaged connector install, Backlog preferences render, pull request Ctrl-click) fail the same way on `main`.
+- [x] `just ui-perf`, 2026-10-14, port 4187, medians of 5 runs, main then this branch: cold load 1388 / 1273 ms, Start click 90 / 93 ms, Backlog store write 268 / 45 ms, renderer work with a timer running 25.1 / 25.6 ms per second. Nothing is more than 10% worse. The store write varies a lot between runs, so its drop is noise.
+
+## Ajour MCP, 2026-10-14
+
+- [x] Spec A: MCP endpoint at `/mcp/ajour` (off by default, per-client tokens, Origin and Host checks), the renderer bridge, data tools for timers, entries, projects and backlog items with Undo, agent sessions and questions, and the agent indicator and panel. Spec: `docs/superpowers/specs/2026-10-14-ajour-mcp-design.md`.
+- [x] Review fixes: agents settle and move synced items through the UI's move and settle rules, with a `sourceState` input where the UI opens a dialog. Every tool has a zod output schema, checked in the API. Refused writes show in the activity list.
+- [x] `just ui-perf`, 2026-10-14, on a free port (`AJOUR_QA_PORT`), medians of 5 runs, main then this branch: cold load 1153 / 1178 ms, Start click 111 / 117 ms, Backlog store write 272 / 253 ms, renderer work with a timer running 37.2 / 24.1 ms per second. All within 10%. Runs vary a lot: one main run gave 30 ms for the store write. The script reuses any server already on port 4173, even another checkout's.
+- [ ] Spec B: agent runner, the `mcp` plugin capability and the Workday plugin.
 
 ## Architecture follow-up, 2026-10-10
 
@@ -656,7 +669,6 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Parent closes carry only active subitems. Independently settled and archived subitems retain their lifecycle and reopen behavior.
 - [x] Settings > Backlog renders its settle rules once, outside the preferences field.
 - [x] Editor workflow changes use the shared move command, including source writes and Undo between open states.
-- [x] Manifest priority ranges reconcile migrated source-following values while preserving local overrides.
 - [x] Failed parent reopens restore carried children without overwriting independent edits.
 - [x] Project mappings persist explicit No state overrides. Remapping source states clears incompatible write rules and blocks stale inherited rules.
 - [x] Row and peek source-state pickers allow a single alternative. Archiving closes the editor and disables the peek's Edit action.

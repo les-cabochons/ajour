@@ -14,3 +14,4 @@ The Backlog page gets a list and a board grouped by the user's workflow states. 
 - Write planning filters mapped states against the connector's available states for the actual item. A failed state lookup cancels the move; Don't write rules and unmapped destinations still move locally without a lookup.
 - Connectors need a capability that lists all source states of a source project, so states can be mapped before any item reaches them. Plugins without it fall back to the states seen in syncs.
 - Priority becomes five levels (Urgent, High, Medium, Low, No priority). Each connection maps source priority values to levels with ranges, and Settle or Done write back the lowest value of the level's range.
+  - Changed with plugin API 3: the ranges moved into the connector plugins. Plugins send and receive levels, and Ajour no longer stores ranges.

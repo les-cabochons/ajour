@@ -27,10 +27,7 @@ import {
   getBacklogItemActions,
   type BacklogItemActionId,
 } from "@/domain/actions/object-actions";
-import {
-  isBacklogItemReturned,
-  isBacklogItemSnoozed,
-} from "@/domain/backlog/backlog-item-lifecycle";
+import { isBacklogItemSnoozed } from "@/domain/backlog/backlog-item-lifecycle";
 import {
   getDirectChildWorkItems,
   getWorkItemLookupKeys,
@@ -40,7 +37,6 @@ import {
 import {
   getLocalProjectDisplayName,
   type LocalWorkItem,
-  type LocalWorkItemEstimateFieldKey,
 } from "@/domain/local-state";
 import { formatClockDuration } from "@/domain/time/duration";
 import { settleOpensDialog } from "@/features/backlog/settle-dialog";
@@ -53,7 +49,11 @@ import {
   type BacklogItemEditorFormHandle,
 } from "@/features/backlog/backlog-item-editor-form";
 import type { BacklogTaskEditorTarget } from "@/features/backlog/backlog-task-editor";
-import { formatSnoozeTime } from "@/features/backlog/snooze-presets";
+import {
+  ESTIMATE_FIGURES,
+  formatHours,
+} from "@/features/backlog/backlog-estimates";
+import { getBacklogItemNotice } from "@/features/backlog/backlog-item-notice";
 import {
   WorkItemIcon,
   resolveWorkItemIcon,
@@ -70,47 +70,6 @@ import { cn } from "@/lib/utils";
 import { getPriorityLevelName } from "@/domain/backlog/priority";
 import { PriorityIcon } from "@/features/backlog/priority-icon";
 import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
-
-const ESTIMATE_FIGURES: {
-  key: LocalWorkItemEstimateFieldKey;
-  label: string;
-}[] = [
-  { key: "originalEstimateHours", label: "Original" },
-  { key: "remainingEstimateHours", label: "Remaining" },
-  { key: "completedEstimateHours", label: "Completed" },
-];
-
-function formatHours(hours?: number) {
-  if (hours === undefined) return "–";
-  return `${Number.isInteger(hours) ? hours : hours.toFixed(1)}h`;
-}
-
-/** The notice under the header when the item is off the list or came back. */
-function stateNotice(workItem: LocalWorkItem, now: number) {
-  if (isBacklogItemSnoozed(workItem, now)) {
-    return `Snoozed until ${formatSnoozeTime(workItem.snoozedUntil!, now)}`;
-  }
-  if (workItem.status === "settled") {
-    const settled = workItem.settledAt
-      ? `Settled ${formatSnoozeTime(workItem.settledAt, now).replace(
-          /^(Today|Tomorrow)/,
-          (word) => word.toLowerCase(),
-        )}`
-      : "Settled";
-    return workItem.sourceStatusLabel
-      ? `${settled} · waiting in "${workItem.sourceStatusLabel}"`
-      : settled;
-  }
-  if (workItem.status === "archived") {
-    return "Archived";
-  }
-  if (isBacklogItemReturned(workItem, now)) {
-    return workItem.returnedAt
-      ? "Changed in the source since you settled it"
-      : "Back from snooze";
-  }
-  return null;
-}
 
 /**
  * The backlog item page at /backlog/$itemId, from "Backlog item page" in
@@ -223,7 +182,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
     item.originalEstimateHours && item.completedEstimateHours !== undefined
       ? Math.min(1, item.completedEstimateHours / item.originalEstimateHours)
       : 0;
-  const notice = stateNotice(item, now);
+  const notice = getBacklogItemNotice(item, now);
 
   function runAction(
     actionId: BacklogItemActionId,
@@ -588,6 +547,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
       {editorTarget && !isNarrowLayout ? (
         <SidePanel
           contentKey={`${editor}-${item._id}`}
+          widthKey="backlog-item"
           className="backlog-side-panel"
           aria-label="Backlog item editor"
         >

@@ -42,6 +42,9 @@ import {
 import { AppMenuBar } from "@/features/layout/app-menu-bar";
 import { getAppSection } from "@/features/layout/app-section";
 import { CommandPalette } from "@/features/command-palette/command-palette";
+import { AgentBridgeHost } from "@/features/agents/agent-bridge-host";
+import { AgentIndicator } from "@/features/agents/agent-indicator";
+import { AgentPanelHost } from "@/features/agents/agent-panel-host";
 import { ShortcutOverlay } from "@/features/layout/shortcut-overlay";
 import { useGlobalShortcuts } from "@/features/layout/use-global-shortcuts";
 import {
@@ -731,6 +734,8 @@ export function AppShell() {
       <ConnectorAutoSyncScheduler />
       <PendingSourceWritesFlush />
       <ShortcutOverlay />
+      <AgentBridgeHost />
+      <AgentIndicator />
       <CommandPalette />
       <SnoozePickerHost />
       <SettleDialogHost />
@@ -930,22 +935,28 @@ export function AppShell() {
           {isNarrowView ? <NarrowBackBar pathname={pathname} /> : null}
 
           {/* Page content */}
-          <main className="app-content-shell flex-1">
-            <ScrollArea className="app-content-scroll-area">
-              {isSettingsActive ? (
-                <Outlet />
-              ) : (
-                <div
-                  className={cn(
-                    "page-container",
-                    isDesktopShell && "desktop-page-container",
-                  )}
-                >
+          {/* The agent panel docks beside the page, below the titlebar. In
+              the row, main takes the row's height: its own explicit height
+              would overflow under the narrow back bar. */}
+          <div className="flex min-h-0 flex-1">
+            <main className="app-content-shell h-auto min-w-0 flex-1 self-stretch">
+              <ScrollArea className="app-content-scroll-area">
+                {isSettingsActive ? (
                   <Outlet />
-                </div>
-              )}
-            </ScrollArea>
-          </main>
+                ) : (
+                  <div
+                    className={cn(
+                      "page-container",
+                      isDesktopShell && "desktop-page-container",
+                    )}
+                  >
+                    <Outlet />
+                  </div>
+                )}
+              </ScrollArea>
+            </main>
+            <AgentPanelHost />
+          </div>
         </div>
       </SidebarProvider>
     </div>

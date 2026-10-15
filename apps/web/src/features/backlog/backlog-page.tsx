@@ -790,6 +790,7 @@ export function BacklogPage() {
       {!narrow && (target || peek) && (
         <SidePanel
           contentKey={target ? `editor:${editorSerial}` : `peek:${peekId}`}
+          widthKey="backlog"
           className="backlog-side-panel"
           aria-label={target ? "Backlog item editor" : "Backlog item peek"}
         >

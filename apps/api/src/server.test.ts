@@ -32,7 +32,7 @@ async function createPlugin(
     JSON.stringify({
       id: "jira",
       version: "1.0.0",
-      apiVersion: 2,
+      apiVersion: 3,
       displayName: "Jira",
       description: "Test connector.",
       iconSvg: ICON,
@@ -645,12 +645,12 @@ describe("connector settle routes", () => {
         body: JSON.stringify({
           sourceId: "OPEN-1",
           state: "Waiting",
-          priority: 25,
+          priority: "high",
         }),
       }),
     ).resolves.toEqual({
       status: 200,
-      body: { state: "Waiting", priority: 25 },
+      body: { state: "Waiting", priority: "high" },
     });
   });
 

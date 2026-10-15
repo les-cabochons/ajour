@@ -118,6 +118,7 @@ The backlog editor module is feature-local because its vocabulary and commands b
 - Project data-shape manifest and dataset contracts: `packages/shared/project-data-shapes.ts`
 - Project data-shape discovery and worker orchestration: `apps/api/src/project-data-shape-plugin.ts` and `apps/api/src/project-data-shape-host.ts`
 - Standalone Workday shape plugin: `les-cabochons/ajp-workday`
+- `@modelcontextprotocol/sdk`: the MCP server over Streamable HTTP in stateless mode, at `/mcp/ajour`. Transport, authentication and the tool table: `apps/api/src/mcp-server.ts`. Client tokens: `apps/api/src/mcp-clients.ts`. Sessions, questions and activity: `apps/api/src/agent-sessions.ts`. Tool schemas: `packages/shared/agent-tools.ts`. The renderer side: `apps/web/src/lib/mcp-bridge.ts` holds the bridge connection and `features/agents/agent-tool-runner.ts` runs the tools.
 
 ## Connector Plugins
 

@@ -137,3 +137,24 @@ A plugin capability that defines how projects and tasks map to an external file 
 A plugin capability that provides the user's pull requests from a tool such as GitHub, and carries out the user's reviews, comments and merges there.
 _Avoid_: Git provider, PR plugin, forge
 _Avoid_: Data shape, project data shape (in user-facing text)
+
+### Agents
+
+**Agent**:
+A program driven by an LLM that uses Ajour through MCP, such as Claude Code or Codex.
+
+**Agent client**:
+One configured connection for an agent, with its own name and token, such as "Claude Code on this Mac".
+
+**Agent session**:
+A stretch of work an agent announces, with a title, a deadline it extends, progress updates and an outcome.
+_Avoid_: Transaction, run, job
+
+**Question**:
+Something an agent asks the user during an agent session. It waits until the user answers.
+
+**Agent indicator**:
+The corner control that shows whether agents are idle, active, waiting for the user, failed or in error.
+
+**Agent panel**:
+The chat the agent indicator opens, with the agent sessions, their questions and the activity list.

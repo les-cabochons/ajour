@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useRef, useState } from "react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
 import {
   Command,
@@ -39,17 +39,6 @@ import { cn, todayIsoDate } from "@/lib/utils";
 
 const platform = getShortcutPlatform();
 const ROOT_VIEW: PaletteView = { kind: "root" };
-
-let openListener: (() => void) | null = null;
-
-/**
- * Opens the command palette, as Cmd+K does. For buttons such as the Projects
- * list's Search and the narrow view's search button. Does nothing until the app
- * shell has mounted the palette.
- */
-export function openCommandPalette() {
-  openListener?.();
-}
 
 /**
  * The app-wide command palette (Cmd+K, Ctrl+K elsewhere). It lists the focused
@@ -125,13 +114,6 @@ export function CommandPalette() {
     setView(ROOT_VIEW);
     setIsOpen(true);
   }, []);
-
-  useEffect(() => {
-    openListener = open;
-    return () => {
-      if (openListener === open) openListener = null;
-    };
-  }, [open]);
 
   useShortcut(
     "app.command-palette",

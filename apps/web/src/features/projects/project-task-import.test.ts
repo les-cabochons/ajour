@@ -195,7 +195,7 @@ describe("localStore.importProjectTasks", () => {
           workItemType: "Task",
           state: "Active",
           assignedTo: "Ada Lovelace",
-          priority: 7,
+          priority: "low",
           depth: 0,
           selectable: true,
           selected: true,
@@ -230,7 +230,7 @@ describe("localStore.importProjectTasks", () => {
           workItemType: "Task",
           state: "Committed",
           assignedTo: "Ada Lovelace",
-          priority: 3,
+          priority: "medium",
           depth: 0,
           selectable: true,
           selected: true,
@@ -336,7 +336,7 @@ describe("localStore.importProjectTasks", () => {
         workItemType: "Task",
         state: "Active",
         assignedTo: "Ada Lovelace",
-        priority: 8,
+        priority: "low",
         depth: 0,
         selectable: true,
         selected: true,
@@ -364,7 +364,7 @@ describe("localStore.importProjectTasks", () => {
         workItemType: "Task",
         state: "Active",
         assignedTo: "Ada Lovelace",
-        priority: 5,
+        priority: "medium",
         depth: 0,
         selectable: true,
         selected: true,
@@ -376,7 +376,7 @@ describe("localStore.importProjectTasks", () => {
     expect(localStore.snapshot().workItems[0]).toMatchObject({
       _id: importedWorkItem?._id,
       priority: 2,
-      importedPriority: 5,
+      importedPriority: 3,
     });
   });
 });

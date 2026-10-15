@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import {
   CONNECTOR_PLUGIN_API_VERSION,
   connectorPluginManifestSchema,
+  connectorSettleWriteRequestSchema,
+  connectorSettleWriteResultSchema,
   pluginHasCodeHost,
   pluginHasConnector,
 } from "../connectors";
@@ -78,38 +80,18 @@ describe("connector plugin manifest", () => {
     expect(pluginHasCodeHost(manifest)).toBe(true);
   });
 
-  it("accepts a priority scale with ranges for Ajour's levels", () => {
-    const manifest = connectorPluginManifestSchema.parse({
-      ...validManifest,
-      capabilities: {
-        connector: {
-          settle: true,
-          priorityScale: {
-            urgent: { min: 1, max: 1 },
-            high: { min: 2, max: 2 },
-            low: { min: 3, max: 9 },
-          },
-        },
-      },
-    });
-    expect(manifest.capabilities.connector?.priorityScale?.low).toEqual({
-      min: 3,
-      max: 9,
-    });
-  });
-
-  it("rejects priority ranges that overlap or run backwards", () => {
-    for (const priorityScale of [
-      { urgent: { min: 1, max: 5 }, high: { min: 5, max: 9 } },
-      { medium: { min: 9, max: 1 } },
-      { low: { min: 1, max: 1000 } },
-    ]) {
-      expect(() =>
-        connectorPluginManifestSchema.parse({
-          ...validManifest,
-          capabilities: { connector: { priorityScale } },
-        }),
-      ).toThrow();
-    }
+  it("carries priority as an Ajour level, never a source value", () => {
+    expect(
+      connectorSettleWriteRequestSchema.parse({
+        sourceId: "42",
+        priority: "high",
+      }).priority,
+    ).toBe("high");
+    expect(() =>
+      connectorSettleWriteRequestSchema.parse({ sourceId: "42", priority: 2 }),
+    ).toThrow();
+    expect(() =>
+      connectorSettleWriteResultSchema.parse({ priority: 25 }),
+    ).toThrow();
   });
 });

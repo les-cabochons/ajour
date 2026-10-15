@@ -36,6 +36,7 @@ import {
   getWorkItemParentKey,
   isSubtaskWorkItem,
 } from "@/domain/backlog/work-item-hierarchy";
+import type { SidebarMatcher } from "@/domain/backlog/sidebar-filter";
 import {
   getLocalProjectDisplayName,
   type LocalAppState,
@@ -525,10 +526,15 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
             />
           ) : null}
         </span>
-        {/* Clears Start entry, which sits over the end of this line on hover. */}
+        {/*
+          The padding clears Start entry, which sits over the end of this line
+          on hover. It stays when the row is at rest, so hovering never
+          re-truncates the title.
+        */}
         <span
+          data-row-title
           className={cn(
-            "truncate text-base leading-5 group-focus-within:pr-7 group-hover:pr-7",
+            "truncate pr-7 text-base leading-5",
             props.isReturned && "font-semibold",
           )}
         >
@@ -619,7 +625,7 @@ const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
           props.isReturned && "font-semibold",
         )}
       >
-        {workItem.title}
+        <span data-row-title>{workItem.title}</span>
         {parentTitle ? (
           <span className="font-normal text-muted-foreground">
             {" "}
@@ -719,7 +725,9 @@ const OffListRow = memo(function OffListRow({
         icon={resolveWorkItemIcon(workItem, iconData)}
         className="opacity-70"
       />
-      <span className="min-w-0 flex-1 truncate">{workItem.title}</span>
+      <span data-row-title className="min-w-0 flex-1 truncate">
+        {workItem.title}
+      </span>
       {detail ? (
         <span className="shrink-0 text-xs group-focus-within:hidden group-hover:hidden">
           {detail}
@@ -747,13 +755,16 @@ const OffListRow = memo(function OffListRow({
  * The work list in the expanded app sidebar, from "Backlog sidebar" in
  * agents/ux-spec.md: the active items in the Backlog page's order with no
  * header, `children` (the Pull requests section), then the collapsible
- * Snoozed and Settled sections. Empty sections are not shown.
+ * Snoozed and Settled sections. Every section keeps only the rows `matcher`
+ * accepts, and its count follows. Empty sections are not shown.
  */
 export function SidebarBacklogList({
   pathname,
+  matcher,
   children,
 }: {
   pathname: string;
+  matcher: SidebarMatcher;
   children?: ReactNode;
 }) {
   const state = useLocalState();
@@ -774,20 +785,25 @@ export function SidebarBacklogList({
       ),
     );
     return {
-      listed: selectSidebarBacklogItems(state, now),
+      listed: selectSidebarBacklogItems(state, now).filter(matcher.workItem),
       snoozed: state.workItems
-        .filter((workItem) => isBacklogItemSnoozed(workItem, now))
+        .filter(
+          (workItem) =>
+            isBacklogItemSnoozed(workItem, now) && matcher.workItem(workItem),
+        )
         .sort((left, right) => left.snoozedUntil! - right.snoozedUntil!),
       // Subitems settled along with their parent show on the parent's page.
       settled: state.workItems
         .filter(
           (workItem) =>
-            workItem.status === "settled" && !workItem.settledWithParentId,
+            workItem.status === "settled" &&
+            !workItem.settledWithParentId &&
+            matcher.workItem(workItem),
         )
         .sort((left, right) => (right.settledAt ?? 0) - (left.settledAt ?? 0)),
       workItemByLookupKey: byLookupKey,
     };
-  }, [state, now]);
+  }, [state, now, matcher]);
 
   // Apart from the list above so the clock does not rebuild them every minute.
   const projectById = useMemo(
@@ -867,7 +883,7 @@ export function SidebarBacklogList({
         ))}
         {listed.length === 0 ? (
           <p className="px-2 pt-1 pb-1 text-xs text-muted-foreground">
-            Nothing on your plate.
+            {matcher.active ? "No matching items." : "Nothing on your plate."}
           </p>
         ) : null}
       </div>
@@ -905,6 +921,8 @@ export function SidebarBacklogList({
         <>
           <SidebarSectionHeader
             label="Settled"
+            // Unfiltered, the count would be every settled item ever.
+            count={matcher.active ? settled.length : undefined}
             open={layout.settledOpen}
             onToggle={() =>
               updateSidebarLayout({ settledOpen: !layout.settledOpen })

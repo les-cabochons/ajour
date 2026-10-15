@@ -2,6 +2,7 @@ import {
   selectSidebarPullRequests,
   selectVisiblePullRequests,
 } from "@/domain/pull-requests/pull-request-lifecycle";
+import type { SidebarMatcher } from "@/domain/backlog/sidebar-filter";
 import { SidebarSectionHeader } from "@/features/layout/sidebar-backlog-list";
 import { PullRequestRow } from "@/features/pull-requests/pull-request-row";
 import { useCodeHostConnections } from "@/lib/code-host-connections";
@@ -32,13 +33,20 @@ export function useSidebarPullRequests() {
 
 /**
  * The collapsible Pull requests section of the sidebar work list, shown while
- * pull requests need the user. The view switcher lists the Pull requests page
- * as soon as a code host plugin is enabled.
+ * pull requests need the user and `matcher` accepts some. The view switcher
+ * lists the Pull requests page as soon as a code host plugin is enabled.
  */
-export function SidebarPullRequests({ pathname }: { pathname: string }) {
+export function SidebarPullRequests({
+  pathname,
+  matcher,
+}: {
+  pathname: string;
+  matcher: SidebarMatcher;
+}) {
   const layout = useSidebarLayout();
-  const { enabled, items, connectionCount, now } = useSidebarPullRequests();
-  // Like the backlog sections, an empty section is not shown.
+  const pullRequests = useSidebarPullRequests();
+  const { enabled, connectionCount, now } = pullRequests;
+  const items = pullRequests.items.filter(matcher.pullRequest);
   if (!enabled || items.length === 0) return null;
 
   return (
