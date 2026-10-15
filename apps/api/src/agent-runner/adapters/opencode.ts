@@ -1,6 +1,26 @@
 import path from "node:path";
 import type { AgentCliAdapter, RunnerEvent } from "../adapter.ts";
 
+/** OPENCODE_ variables that carry the user's login, not their config. */
+const KEPT_OPENCODE_VARIABLES = new Set([
+  "OPENCODE_API_KEY",
+  "OPENCODE_AUTH_CONTENT",
+]);
+
+/**
+ * The environment without the user's OpenCode overrides, such as
+ * OPENCODE_CONFIG_CONTENT or OPENCODE_PERMISSION, which OpenCode merges over
+ * the generated config.
+ */
+function withoutOpencodeOverrides(env: Record<string, string>) {
+  return Object.fromEntries(
+    Object.entries(env).filter(
+      ([name]) =>
+        !name.startsWith("OPENCODE_") || KEPT_OPENCODE_VARIABLES.has(name),
+    ),
+  );
+}
+
 /**
  * OpenCode `run` with the user's login, which lives in its data folder, but
  * with a config folder of its own: no user config, agents, plugins, skills or
@@ -62,7 +82,7 @@ export const opencodeAdapter: AgentCliAdapter = {
         "Do the task in your instructions now.",
       ],
       env: {
-        ...input.baseEnv,
+        ...withoutOpencodeOverrides(input.baseEnv),
         AJOUR_MCP_TOKEN: input.token,
         // The user's global config folder holds their agents, plugins and AGENTS.md.
         XDG_CONFIG_HOME: path.join(input.workDirectory, "config"),

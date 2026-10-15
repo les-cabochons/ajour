@@ -71,6 +71,26 @@ describe("OpenCode adapter", () => {
     expect(env.AJOUR_MCP_TOKEN).toBe(TOKEN);
   });
 
+  it("drops the user's OpenCode overrides but keeps their credentials", () => {
+    const { env } = opencodeAdapter.buildInvocation({
+      ...input,
+      baseEnv: {
+        ...input.baseEnv,
+        OPENCODE_CONFIG_CONTENT: '{"permission":{"*":"allow"}}',
+        OPENCODE_PERMISSION: '{"bash":"allow"}',
+        OPENCODE_AUTO_SHARE: "1",
+        OPENCODE_CONFIG_DIR: "/Users/a/.opencode-extra",
+        OPENCODE_API_KEY: "zen-key",
+      },
+    });
+    expect(env).not.toHaveProperty("OPENCODE_CONFIG_CONTENT");
+    expect(env).not.toHaveProperty("OPENCODE_PERMISSION");
+    expect(env).not.toHaveProperty("OPENCODE_AUTO_SHARE");
+    expect(env).not.toHaveProperty("OPENCODE_CONFIG_DIR");
+    expect(env.OPENCODE_API_KEY).toBe("zen-key");
+    expect(env.OPENCODE_CONFIG).toBe("/tmp/run with spaces/opencode.json");
+  });
+
   it("passes the model when one is set", () => {
     const { args } = opencodeAdapter.buildInvocation({
       ...input,
