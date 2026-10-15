@@ -8,6 +8,8 @@ import {
 } from "react";
 
 import {
+  SIDE_PANEL_MAX_WIDTH,
+  SIDE_PANEL_MIN_WIDTH,
   clampSidePanelWidth,
   saveSidePanelWidths,
   setSidePanelWidth,
@@ -163,6 +165,8 @@ function SidePanelResizeHandle({
       aria-orientation="vertical"
       aria-label="Resize panel"
       aria-valuenow={width}
+      aria-valuemin={SIDE_PANEL_MIN_WIDTH}
+      aria-valuemax={SIDE_PANEL_MAX_WIDTH}
       tabIndex={0}
       className="side-panel-resize-handle"
       onPointerDown={handlePointerDown}
