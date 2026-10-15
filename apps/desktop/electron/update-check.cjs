@@ -224,8 +224,11 @@ function isFallbackUpdateAvailable(currentVersion, latestRelease) {
     return baseComparison > 0;
   }
 
+  // The installed version was never published, so publication order is
+  // unknown. Switching tracks on the same core offers that track's latest
+  // build, matching the automatic updater's same-core downgrade allowance.
   if (current.track !== latest.track) {
-    return latest.track === "stable";
+    return true;
   }
 
   if (latest.track === "stable") {

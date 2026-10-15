@@ -143,6 +143,51 @@ describe("desktop update checks", () => {
     ).toBe(true);
   });
 
+  it("offers the selected track to unpublished builds on the same core", () => {
+    const releases = normalizeReleases([
+      githubRelease("v0.0.1-nightly.20261014.68", "2026-10-14T23:54:55Z"),
+      githubRelease("v0.0.1", "2026-10-10T14:00:00Z", false),
+    ]);
+    const nightly = releases[0]!;
+    const stable = releases[1]!;
+
+    expect(isUpdateAvailable("0.0.1", nightly, [nightly])).toBe(true);
+    expect(
+      isUpdateAvailable("0.0.1-nightly.20261014.9", stable, [stable]),
+    ).toBe(true);
+    expect(isUpdateAvailable("0.1.0", nightly, [nightly])).toBe(false);
+    expect(isUpdateAvailable("0.0.0", nightly, [nightly])).toBe(true);
+  });
+
+  it("reports the latest nightly to a local stable build that GitHub does not know", async () => {
+    const fetchImpl = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        json: vi
+          .fn()
+          .mockResolvedValue([
+            githubRelease("v0.0.1-nightly.20261014.68", "2026-10-14T23:54:55Z"),
+          ]),
+      })
+      .mockResolvedValueOnce({ ok: false, status: 404 });
+
+    await expect(
+      checkForUpdates({
+        track: "nightly",
+        currentVersion: "0.0.1",
+        fetchImpl,
+      }),
+    ).resolves.toMatchObject({
+      latestTag: "v0.0.1-nightly.20261014.68",
+      updateAvailable: true,
+    });
+    expect(fetchImpl.mock.calls[1]?.[0]).toBe(
+      "https://api.github.com/repos/les-cabochons/ajour/releases/tags/v0.0.1",
+    );
+  });
+
   it("checks GitHub releases and returns a renderer-safe result", async () => {
     const fetchImpl = vi.fn().mockResolvedValue({
       ok: true,

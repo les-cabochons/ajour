@@ -1,6 +1,6 @@
 {
   "name": "@ajour/desktop",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "private": true,
   "productName": "Ajour",
   "description": "Ajour desktop app for local-first time tracking.",
