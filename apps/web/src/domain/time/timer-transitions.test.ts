@@ -309,7 +309,10 @@ describe("timer and timesheet entry lifecycle", () => {
 
     const saved = saveTimer(state, "timer-1", createFactories());
 
-    expect(saved.timesheetEntries[0]).toMatchObject({ durationMs: 600, commit });
+    expect(saved.timesheetEntries[0]).toMatchObject({
+      durationMs: 600,
+      commit,
+    });
   });
 
   it("replaces a restarted entry and clears stale submission state", () => {

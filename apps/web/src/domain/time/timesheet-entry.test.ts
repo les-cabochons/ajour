@@ -887,7 +887,11 @@ describe("committed copies", () => {
   }
 
   it("commits only the listed changes", () => {
-    const next = markTimesheetEntriesCommitted(savedEntries(), ["a"], () => 500);
+    const next = markTimesheetEntriesCommitted(
+      savedEntries(),
+      ["a"],
+      () => 500,
+    );
 
     expect(find(next, "a").commit).toEqual({ at: 500, ...values });
     expect(changeOf(next, "a")).toBeUndefined();
