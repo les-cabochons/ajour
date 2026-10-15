@@ -758,3 +758,7 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Settings joins Time and Backlog in the segmented toggle, which floats at the bottom left. The separate cog is gone. Settings stays active on Projects pages.
 - [x] The TanStack Router devtools no longer load in the acceptance run's `--mode test`: their corner button covered the toggle.
 - [x] Verification: 875 web unit tests, `just typecheck`, and the 26 narrow and running-entry Chromium scenarios passed, with a new scenario for the narrow running entry. The full acceptance suite passed on the first version of this change and was not rerun since. Browser screenshots at 390px and 600px checked the idle, running and Settings layouts. `just ui-perf` was not run: it measures at 1440px, where this change renders nothing new.
+
+## Plugin project properties, 2026-10-15
+
+- [x] Plugins can declare `projectProperties` (a section and text fields with optional defaults from the full name or code). The project page shows one collapsed section per active plugin, and `get_submit_lines` sends the resolved values. Spec: `docs/superpowers/specs/2026-10-15-plugin-project-properties-design.md`.
