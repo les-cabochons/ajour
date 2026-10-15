@@ -409,3 +409,52 @@ Then(
     );
   },
 );
+When("I reopen Settle after the parent gets a long title", async ({ page }) => {
+  await page
+    .getByRole("dialog", { name: "Settle", exact: true })
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  // The renamed item's "…" button changes its name, so the dialog opens
+  // through the same entry point the action menu uses.
+  await page.evaluate(async () => {
+    const { localStore } = await import(
+      /* @vite-ignore */ "/src/lib/local-store.ts"
+    );
+    const { requestSettle } = await import(
+      /* @vite-ignore */ "/src/features/backlog/settle-dialog.tsx"
+    );
+    localStore.updateWorkItem("settle-parent", {
+      title:
+        "Transfer the whole process so the team uses tasks well, and also review how comments get synced back to the source",
+    });
+    requestSettle("settle-parent");
+  });
+  await expect(
+    page.getByRole("dialog", { name: "Settle", exact: true }),
+  ).toBeVisible();
+});
+When("I open Snooze on the parent instead", async ({ page }) => {
+  await page
+    .getByRole("dialog", { name: "Settle", exact: true })
+    .getByRole("button", { name: "Cancel", exact: true })
+    .click();
+  await page.evaluate(async () => {
+    const { requestSnooze } = await import(
+      /* @vite-ignore */ "/src/features/backlog/snooze-picker.tsx"
+    );
+    requestSnooze("settle-parent");
+  });
+});
+/** Both dialogs truncate the item title, which once widened the popup. */
+Then(
+  "the {string} dialog fits its width without a horizontal scroll",
+  async ({ page }, name: string) => {
+    const dialog = page.getByRole("dialog", { name, exact: true });
+    await expect(dialog).toBeVisible();
+    const { scrollWidth, clientWidth } = await dialog.evaluate((element) => ({
+      scrollWidth: element.scrollWidth,
+      clientWidth: element.clientWidth,
+    }));
+    expect(scrollWidth).toBeLessThanOrEqual(clientWidth);
+  },
+);
