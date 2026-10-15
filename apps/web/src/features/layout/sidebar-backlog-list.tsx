@@ -13,6 +13,7 @@ import {
   RiArrowGoBackLine as UndoIcon,
   RiCheckLine as SettleIcon,
   RiCornerLeftUpLine as ParentIcon,
+  RiPlayFill as PlayFillIcon,
   RiPlayLine as PlayIcon,
   RiPushpinLine as PinIcon,
   RiTimeLine as SnoozeIcon,
@@ -182,15 +183,22 @@ function LeadingIcon({
   );
 }
 
+/**
+ * Start entry. The Compact row shows it as an icon among its hover actions;
+ * the Comfortable row shows the `round` variant on its own, centered at the
+ * row's end.
+ */
 function StartButton({
   workItem,
   actions,
   rows,
+  variant = "icon",
   className,
 }: {
   workItem: LocalWorkItem;
   actions: RowActionList;
   rows: RowApi;
+  variant?: "icon" | "round";
   className?: string;
 }) {
   const disabledReason = actions.find(
@@ -202,26 +210,37 @@ function StartButton({
       aria-label="Start entry"
       aria-description={disabledReason}
       aria-disabled={Boolean(disabledReason)}
-      className={cn(iconButton, "aria-disabled:opacity-50", className)}
+      className={cn(
+        variant === "round"
+          ? "flex size-6 shrink-0 items-center justify-center rounded-full border bg-background text-foreground hover:bg-foreground/10"
+          : iconButton,
+        "aria-disabled:opacity-50",
+        className,
+      )}
       onClick={() => {
         if (!disabledReason) rows.run(workItem, "start-entry");
       }}
     >
-      <PlayIcon className="size-3.5" />
+      {variant === "round" ? (
+        <PlayFillIcon className="size-3" />
+      ) : (
+        <PlayIcon className="size-3.5" />
+      )}
     </TooltipButton>
   );
 }
 
 /**
- * Start entry, Snooze… and, with `showSettle`, a labeled Settle button. They
- * replace the row's end on hover and focus. Right-click opens the full action
- * set, so the rows have no "…" button. `buttonClassName` resizes the icon
- * buttons to fit the line they sit on.
+ * Start entry (unless `showStart` is off), Snooze… and, with `showSettle`, a
+ * Settle check. They replace the row's end on hover and focus. Right-click
+ * opens the full action set, so the rows have no "…" button.
+ * `buttonClassName` resizes the icon buttons to fit the line they sit on.
  */
 function RowActions({
   workItem,
   actions,
   rows,
+  showStart = true,
   showSettle = false,
   buttonClassName,
   className,
@@ -229,6 +248,7 @@ function RowActions({
   workItem: LocalWorkItem;
   actions: RowActionList;
   rows: RowApi;
+  showStart?: boolean;
   showSettle?: boolean;
   buttonClassName?: string;
   className?: string;
@@ -238,12 +258,14 @@ function RowActions({
       className={cn("items-center gap-0.5", className)}
       onClick={(event) => event.stopPropagation()}
     >
-      <StartButton
-        workItem={workItem}
-        actions={actions}
-        rows={rows}
-        className={buttonClassName}
-      />
+      {showStart ? (
+        <StartButton
+          workItem={workItem}
+          actions={actions}
+          rows={rows}
+          className={buttonClassName}
+        />
+      ) : null}
       <TooltipButton
         label="Snooze…"
         shortcut="item.snooze"
@@ -256,13 +278,12 @@ function RowActions({
         <TooltipButton
           label="Settle"
           shortcut="item.settle"
-          className="flex h-5 shrink-0 items-center gap-1 rounded-sm px-1 text-xs text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+          className={cn(iconButton, buttonClassName)}
           onClick={(event) =>
             rows.run(workItem, "settle", { askToSettle: event.shiftKey })
           }
         >
           <SettleIcon className="size-3.5" />
-          Settle
         </TooltipButton>
       ) : null}
     </div>
@@ -397,9 +418,9 @@ function ParentLink({
  * name over the title, with the markers and the logged time at the end of the
  * project line, then the workflow state on a faint third line, which ends with
  * an arrow to the parent on a subitem. Hover and focus replace the end of the
- * project line with Start entry, Snooze… and Settle. Like the compact row, it
- * re-renders for its own props only and mounts its hover controls while
- * hovered or focused.
+ * project line with Snooze… and Settle, and show a round Start entry button
+ * centered at the row's end. Like the compact row, it re-renders for its own
+ * props only and mounts its hover controls while hovered or focused.
  */
 const ComfortableItemRow = memo(function ComfortableItemRow(
   props: ItemRowProps,
@@ -458,6 +479,7 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
               workItem={workItem}
               actions={actions}
               rows={rows}
+              showStart={false}
               showSettle
               buttonClassName="size-5"
               className="hidden group-focus-within:flex group-hover:flex"
@@ -488,6 +510,20 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
           ) : null}
         </span>
       </span>
+      {/* Logging time is the main job, so Start gets its own place. */}
+      {reveal.active ? (
+        <span
+          className="hidden group-focus-within:flex group-hover:flex"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <StartButton
+            workItem={workItem}
+            actions={actions}
+            rows={rows}
+            variant="round"
+          />
+        </span>
+      ) : null}
     </ObjectContextMenu>
   );
 });
