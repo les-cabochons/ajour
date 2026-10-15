@@ -194,8 +194,18 @@ export type ConnectorConnectionSummary = z.infer<
   typeof connectorConnectionSummarySchema
 >;
 
+/**
+ * A plugin as the overview reports it. Saved connections can outlive their
+ * plugin (uninstalled, or rejected for an older plugin API version), so the API
+ * fills the gap with a placeholder whose empty `entrypoint` marks it as
+ * unavailable. Plugin packages still go through the strict manifest schema.
+ */
+const connectorOverviewPluginSchema = connectorPluginManifestSchema.extend({
+  entrypoint: z.string().trim().max(240),
+});
+
 export const connectorOverviewGroupSchema = z.object({
-  plugin: connectorPluginManifestSchema,
+  plugin: connectorOverviewPluginSchema,
   enabled: z.boolean(),
   connections: z.array(connectorConnectionSummarySchema),
 });
@@ -205,7 +215,7 @@ export type ConnectorOverviewGroup = z.infer<
 
 export const connectorsOverviewSchema = z.object({
   pluginsEnabled: z.boolean(),
-  plugins: z.array(connectorPluginManifestSchema),
+  plugins: z.array(connectorOverviewPluginSchema),
   connectionGroups: z.array(connectorOverviewGroupSchema),
   totalPendingImportCount: z.number().int().nonnegative(),
   totalSelectedImportCount: z.number().int().nonnegative(),

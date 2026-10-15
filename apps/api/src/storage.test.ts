@@ -2,9 +2,10 @@ import os from "node:os";
 import path from "node:path";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
-import type {
-  ConnectorImportCandidateInput,
-  ConnectorPluginManifest,
+import {
+  connectorsOverviewSchema,
+  type ConnectorImportCandidateInput,
+  type ConnectorPluginManifest,
 } from "../../../packages/shared/connectors.ts";
 import { AppApiStorage } from "./storage.ts";
 
@@ -463,6 +464,35 @@ describe("AppApiStorage", () => {
     await expect(
       reloaded.isConnectorPluginEnabled("jira", availablePluginIds),
     ).resolves.toBe(false);
+  });
+
+  // Regression: a plugin that fails to load (for example an older plugin API
+  // version) left its connections behind, and the whole overview failed the
+  // shared schema because the placeholder has no entrypoint.
+  it("keeps the overview valid when a saved connection's plugin is missing", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
+    tempDirs.push(tempDir);
+    const storage = new AppApiStorage(path.join(tempDir, "app-api-state.json"));
+    await storage.upsertConnection("jira", {
+      label: "Main Jira",
+      tenantLabel: "Acme",
+      autoSync: false,
+      autoSyncIntervalMinutes: 15,
+      config: {},
+      configSummary: {},
+    });
+
+    const overview = connectorsOverviewSchema.parse(
+      await storage.getConnectorsOverview([]),
+    );
+
+    expect(overview.connectionGroups).toMatchObject([
+      {
+        plugin: { id: "jira", entrypoint: "" },
+        enabled: false,
+        connections: [{ label: "Main Jira" }],
+      },
+    ]);
   });
 
   it("migrates version 5 activation state and tolerates invalid disabled IDs", async () => {
