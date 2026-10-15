@@ -5,6 +5,7 @@ import {
   type BridgeToolCall,
   type BridgeToolResult,
 } from "@ajour/shared/agent-tools";
+import type { AgentBridgeStatus } from "@/domain/agents/agent-indicator";
 import { getAppApiBaseUrl, postMcpBridgeResult } from "@/lib/app-api";
 
 /**
@@ -19,12 +20,8 @@ import { getAppApiBaseUrl, postMcpBridgeResult } from "@/lib/app-api";
  * seconds later and reports `disconnected` until it succeeds.
  */
 
-/**
- * `connecting` is the first attempt. `reconnecting` is a failed attempt the
- * browser is retrying. `disconnected` is a closed stream waiting for a retry.
- */
-export type McpBridgeStatus =
-  "connecting" | "connected" | "reconnecting" | "disconnected";
+/** The bridge's own statuses. `off` belongs to the MCP setting. */
+export type McpBridgeStatus = Exclude<AgentBridgeStatus, "off">;
 
 /** How long to wait before reopening a stream the browser closed for good. */
 const REOPEN_DELAY_MS = 3000;

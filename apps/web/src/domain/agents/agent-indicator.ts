@@ -15,14 +15,21 @@ export interface AgentIndicator {
   label: string;
 }
 
+/**
+ * The bridge's status. `connecting` is the first attempt, `reconnecting` a
+ * failed attempt the browser retries, `disconnected` a closed stream waiting
+ * for a retry, and `off` means MCP is off.
+ */
+export type AgentBridgeStatus =
+  "off" | "connecting" | "connected" | "reconnecting" | "disconnected";
+
 export function getAgentIndicator({
   mcpEnabled,
   bridgeStatus,
   snapshot,
 }: {
   mcpEnabled: boolean;
-  bridgeStatus:
-    "off" | "connecting" | "connected" | "reconnecting" | "disconnected";
+  bridgeStatus: AgentBridgeStatus;
   snapshot: AgentsSnapshot | null;
 }): AgentIndicator {
   if (!mcpEnabled) return { state: "hidden", label: "" };

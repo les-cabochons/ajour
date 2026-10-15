@@ -1,9 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { AgentsSnapshot } from "@ajour/shared/agent-tools";
-import type { McpBridgeStatus } from "@/lib/mcp-bridge";
-
-/** The bridge's status for the agent indicator. `off` while MCP is off. */
-export type AgentBridgeStatus = McpBridgeStatus | "off";
+import type { AgentBridgeStatus } from "@/domain/agents/agent-indicator";
 
 interface AgentBridgeState {
   status: AgentBridgeStatus;

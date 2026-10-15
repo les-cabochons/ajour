@@ -5,6 +5,7 @@ import type {
   AgentError,
   AgentQuestion,
   AgentSession,
+  AgentSessionOutcome,
   AgentsSnapshot,
   OpenAgentQuestion,
 } from "../../../packages/shared/agent-tools.ts";
@@ -127,7 +128,7 @@ export class AgentSessions {
     client: AgentClientRef,
     input: {
       sessionId: string;
-      outcome: "done" | "failed" | "cancelled";
+      outcome: AgentSessionOutcome;
       summary: string;
     },
   ): AgentSession {
@@ -340,7 +341,7 @@ export class AgentSessions {
   /** Ends an open session and releases the agents waiting on its questions. */
   private finish(
     session: AgentSession,
-    outcome: "done" | "failed" | "cancelled",
+    outcome: AgentSessionOutcome,
     summary: string,
   ) {
     const now = this.now();

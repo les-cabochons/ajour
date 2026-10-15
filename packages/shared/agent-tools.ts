@@ -369,6 +369,14 @@ export type DataToolOutput<Name extends ReadToolName | WriteToolName> = z.infer<
   (typeof dataToolOutputSchemas)[Name]
 >;
 
+/** How an agent session ended. */
+export const agentSessionOutcomeSchema = z.enum([
+  "done",
+  "failed",
+  "cancelled",
+]);
+export type AgentSessionOutcome = z.infer<typeof agentSessionOutcomeSchema>;
+
 export const agentSessionMessageSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("update"), at: z.number(), text: z.string() }),
   z.object({
@@ -387,7 +395,7 @@ export const agentSessionMessageSchema = z.discriminatedUnion("kind", [
   z.object({
     kind: z.literal("end"),
     at: z.number(),
-    outcome: z.enum(["done", "failed", "cancelled"]),
+    outcome: agentSessionOutcomeSchema,
     summary: z.string(),
   }),
 ]);
@@ -398,7 +406,7 @@ export const agentSessionSchema = z.object({
   id: z.string(),
   client: agentClientRefSchema,
   title: z.string(),
-  state: z.enum(["active", "stalled", "done", "failed", "cancelled"]),
+  state: z.enum(["active", "stalled", ...agentSessionOutcomeSchema.options]),
   startedAt: z.number(),
   /** Unset while a question pauses the session, and once it ends. */
   deadlineAt: z.number().optional(),
@@ -507,7 +515,7 @@ export const sessionToolInputSchemas = {
   }),
   end_session: z.object({
     sessionId: z.string(),
-    outcome: z.enum(["done", "failed", "cancelled"]),
+    outcome: agentSessionOutcomeSchema,
     summary: z.string().trim().min(1).max(4000),
   }),
   ask: z.object({
