@@ -34,12 +34,12 @@ A new capability, `projectProperties`. It counts as a capability on its own, and
 }
 ```
 
-| Key                    | Rules                                                                 |
-| ---------------------- | --------------------------------------------------------------------- |
-| `section`              | The section title. 1 to 60 characters.                                |
-| `fields`               | 1 to 10 fields.                                                       |
-| `fields[].id`          | Lowercase letters, digits and `-`, up to 63 characters. Unique.       |
-| `fields[].label`       | The row label. 1 to 60 characters.                                    |
+| Key                    | Rules                                                                    |
+| ---------------------- | ------------------------------------------------------------------------ |
+| `section`              | The section title. 1 to 60 characters.                                   |
+| `fields`               | 1 to 10 fields.                                                          |
+| `fields[].id`          | Lowercase letters, digits and `-`, up to 63 characters. Unique.          |
+| `fields[].label`       | The row label. 1 to 60 characters.                                       |
 | `fields[].defaultFrom` | Optional. `fullName` or `code`: the Ajour project value used as default. |
 
 Fields are plain text, at most 240 characters. No other types until a plugin needs one.
@@ -69,7 +69,7 @@ Without the local API, as in the web build, the overview is unavailable: the car
 
 ## Workday (agent) plugin
 
-- `plugin.json` declares the section above. Version 0.3.0. It needs an Ajour with this change. Older Ajour builds refuse the unknown capability at install, with the existing error.
+- `plugin.json` declares the section above. Version 0.3.0. It needs an Ajour with this change. Older Ajour builds install the plugin but ignore its project properties, so the prompt falls back to projectCode.
 - The prompt matches the Workday project by `projectProperties["workday-agent"].code`, then `.name`, then `projectFullName`. It never uses `projectName`, the display name.
 
 ## Docs

@@ -202,7 +202,9 @@ describe("plugin manifest capabilities", () => {
         capabilities: {
           projectProperties: {
             ...projectProperties,
-            fields: [{ id: "name", label: "Workday name", defaultFrom: "color" }],
+            fields: [
+              { id: "name", label: "Workday name", defaultFrom: "color" },
+            ],
           },
         },
       }),
