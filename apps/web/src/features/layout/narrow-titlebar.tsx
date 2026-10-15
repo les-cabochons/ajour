@@ -132,7 +132,7 @@ export function NarrowBackBar({ pathname }: { pathname: string }) {
         )}
       >
         <ArrowLeft className="size-4" />
-        {backLink.label}
+        {backLink.label === "Projects" ? "Back to Projects" : backLink.label}
       </Link>
     </div>
   );

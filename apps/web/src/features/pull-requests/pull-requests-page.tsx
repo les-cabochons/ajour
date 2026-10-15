@@ -1,10 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link } from "@tanstack/react-router";
-import {
-  RiRefreshLine as Refresh,
-  RiArrowLeftLine as Back,
-} from "@remixicon/react";
-import { TooltipButton } from "@/components/tooltip-button";
+import { RiRefreshLine as Refresh } from "@remixicon/react";
 import { MessagePanel } from "@/components/app-surface";
 import { PageHeader } from "@/components/page-header";
 import { PropertyList, PropertyRow } from "@/components/property-list";
@@ -82,13 +77,7 @@ export function PullRequestsPage({ itemId }: { itemId?: string }) {
     return (
       <div className="backlog-item-page">
         <PageHeader
-          breadcrumb={[
-            { label: "Pull requests", to: "/pull-requests" },
-            {
-              label: item ? `#${item.facts.number}` : "Pull request",
-              mono: Boolean(item),
-            },
-          ]}
+          backLink={{ label: "Pull requests", to: "/pull-requests" }}
           actions={
             item
               ? pullRequestActions(item, now).map((action) => (
@@ -107,22 +96,7 @@ export function PullRequestsPage({ itemId }: { itemId?: string }) {
                 ))
               : null
           }
-        >
-          <TooltipButton
-            label="Back to pull requests"
-            render={
-              <Button
-                variant="ghost"
-                size="icon-sm"
-                className="order-first -ml-1 text-muted-foreground"
-                nativeButton={false}
-                render={<Link to="/pull-requests" />}
-              />
-            }
-          >
-            <Back />
-          </TooltipButton>
-        </PageHeader>
+        />
         {!item ? (
           <MessagePanel>
             This pull request is no longer in the local list.
