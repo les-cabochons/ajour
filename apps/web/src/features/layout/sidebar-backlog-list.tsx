@@ -104,6 +104,25 @@ type IconData = ReturnType<typeof useWorkItemIconData>;
 const PINNED_BLOCK = "pinned/items";
 const OTHERS_BLOCK = "others/items";
 
+type RowDragState = "dragging" | "drop-before" | "drop-after";
+
+const ROW_DRAG_CLASS: Record<RowDragState | "none", string | undefined> = {
+  none: undefined,
+  dragging: "opacity-30",
+  "drop-before": "backlog-drop-before",
+  "drop-after": "backlog-drop-after",
+};
+
+function getRowDragState(
+  itemId: string,
+  draggedId: string | undefined,
+  dropMark: ReturnType<typeof getBacklogDropMark>,
+): RowDragState | undefined {
+  if (itemId === draggedId) return "dragging";
+  if (itemId !== dropMark?.itemId) return undefined;
+  return dropMark.edge === "before" ? "drop-before" : "drop-after";
+}
+
 function findBlock(targets: readonly BacklogDropTarget[], itemId: string) {
   return targets.find((target) => target.itemIds.includes(itemId));
 }
@@ -220,8 +239,17 @@ function useBacklogItemRow(
     ) {
       const { drag, targets } = latest.current.reorder;
       const key = findBlock(targets, workItem._id)?.key;
-      if (key && drag.canDrag(workItem._id, key))
-        drag.pointerDown(workItem._id, key, event);
+      if (!key || !drag.canDrag(workItem._id, key)) return;
+      // The drag measures the block's rows. They are read here, once per
+      // press, rather than tracked by a ref on every row of a long list.
+      drag.rowRefs.current.clear();
+      const block = event.currentTarget.closest("[data-reorder-block]");
+      block
+        ?.querySelectorAll<HTMLElement>("[data-backlog-item-id]")
+        .forEach((row) =>
+          drag.rowRefs.current.set(row.dataset.backlogItemId!, row),
+        );
+      drag.pointerDown(workItem._id, key, event);
     }
 
     /** False right after a drag, so its release does not open the row. */
@@ -477,6 +505,11 @@ interface ItemRowProps {
   isReturned: boolean;
   iconData: IconData;
   rows: RowApi;
+  /**
+   * The row's part in a drag: dimmed while dragged, or drawing the drop line.
+   * Only the rows involved change, so the other rows stay memoized.
+   */
+  dragState?: RowDragState;
 }
 
 /**
@@ -584,6 +617,7 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
           className={cn(
             "group relative flex h-20 shrink-0 cursor-pointer items-center rounded-md px-2.5 outline-none hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring",
             isActive && "bg-foreground/[0.07]",
+            ROW_DRAG_CLASS[props.dragState ?? "none"],
           )}
           onClick={onClick}
           onPointerDown={onPointerDown}
@@ -704,6 +738,7 @@ const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
           className={cn(
             "group flex h-[26px] shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 text-sm outline-none hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring",
             isActive && "bg-foreground/[0.07]",
+            ROW_DRAG_CLASS[props.dragState ?? "none"],
           )}
           onClick={onClick}
           onPointerDown={onPointerDown}
@@ -1025,26 +1060,19 @@ export function SidebarBacklogList({
               if (element) drag.groupRefs.current.set(block.key, element);
               else drag.groupRefs.current.delete(block.key);
             }}
+            data-reorder-block
             className="flex flex-col"
           >
             {block.workItems.map((workItem) => (
-              <div
+              <ItemRow
                 key={workItem._id}
-                ref={(element) => {
-                  if (element) drag.rowRefs.current.set(workItem._id, element);
-                  else drag.rowRefs.current.delete(workItem._id);
-                }}
-                className={cn(
-                  "flex flex-col",
-                  dragging?.itemId === workItem._id && "opacity-30",
-                  dropMark?.itemId === workItem._id &&
-                    (dropMark.edge === "before"
-                      ? "backlog-drop-before"
-                      : "backlog-drop-after"),
+                {...rowProps(workItem)}
+                dragState={getRowDragState(
+                  workItem._id,
+                  dragging?.itemId,
+                  dropMark,
                 )}
-              >
-                <ItemRow {...rowProps(workItem)} />
-              </div>
+              />
             ))}
           </div>
         ))}
