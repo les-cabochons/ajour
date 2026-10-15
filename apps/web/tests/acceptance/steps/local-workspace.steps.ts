@@ -732,7 +732,9 @@ Then("the project page has no actions menu", async ({ page }) => {
 When(
   "I rename the project to {string} from its title",
   async ({ page }, name: string) => {
-    await page.getByRole("heading", { level: 1 }).click();
+    // Enter on the focused title, so the rename works from the keyboard too.
+    await page.getByRole("heading", { level: 1 }).getByRole("button").focus();
+    await page.keyboard.press("Enter");
     const field = page.getByRole("textbox", { name: "Display name" });
     await field.fill(name);
     await field.press("Enter");

@@ -8,13 +8,13 @@ Ajour is an operational desktop/web app. Build interfaces for scanning, repeated
 - Dense but organized: 13px body, 28px controls, 28px to 40px rows. The sidebar's Comfortable backlog rows are the exception: 80px, three lines, like T3 Code's thread list.
 - One accent color, used for actions and selection, never for decoration.
 - No decorative gradients, blobs, blur, or purely atmospheric visuals.
-- Every page shares the same anatomy: the top bar carries the page title and actions, the content below is cardless.
+- Every page shares the same anatomy: the top bar carries the page title and actions, the content below is cardless. Pages that edit in place, the backlog item page and the project page, keep their actions next to the content they act on instead.
 
 ## Layout
 
 - The 48px top bar is the page header. List pages (Time, Backlog, Submit, Settings pages) put their title there with `PageHeader`. Projects leaves the top bar title empty. Detail pages (backlog item, project) keep a small muted "Back to" link above the object's title in the content at 20px. Page actions sit after the title; the global entry controls and the day total stay at the right end.
 - No second title band under the top bar. A page may have one toolbar row (filters, a week strip) at most.
-- Cardless everywhere except dialogs, popovers, the timer dock and the backlog item page's properties card. Stats are a `FigureRow`, object properties a `PropertyList`, lists are bordered rows with no outer frame, and sections are separated by a `SectionHeading` and space.
+- Cardless everywhere except dialogs, popovers, the timer dock and the properties cards of the backlog item page and the project page. Stats are a `FigureRow`, object properties a `PropertyList`, lists are bordered rows with no outer frame, and sections are separated by a `SectionHeading` and space.
 - Settings pages: sections 3rem apart under a 16px heading; each setting is a `SettingRow` (13px label, 12px description, control trailing) with no border or background between rows.
 - Prefer full-width app surfaces with constrained inner content where needed.
 - Keep fixed-format elements stable with explicit width, height, grid tracks, or aspect ratios. Rows, headers and controls have fixed heights, so a state change never causes layout work.

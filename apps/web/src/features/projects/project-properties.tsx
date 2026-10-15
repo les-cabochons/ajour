@@ -166,9 +166,20 @@ export function ProjectTitle({
           "Project renamed",
         )
       }
+      // The heading holds a button so Tab and Enter reach the rename too.
       renderValue={({ className, onClick }) => (
-        <h1 className={cn("project-detail-title", className)} onClick={onClick}>
-          {displayName}
+        <h1 className="project-detail-title">
+          {onClick ? (
+            <button
+              type="button"
+              className={cn("max-w-full truncate text-left", className)}
+              onClick={onClick}
+            >
+              {displayName}
+            </button>
+          ) : (
+            displayName
+          )}
         </h1>
       )}
     />
