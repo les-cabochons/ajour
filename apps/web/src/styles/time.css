@@ -274,7 +274,10 @@
     color: var(--text-secondary);
   }
 
+  /* Tailwind's preflight makes every svg a block, which would push the
+     duration onto its own line. */
   .time-entry-submitted {
+    display: inline-block;
     width: 14px;
     height: 14px;
     margin-right: 0.5rem;
