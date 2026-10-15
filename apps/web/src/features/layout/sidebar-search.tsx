@@ -230,8 +230,17 @@ export function SidebarFilterMenu({
               value={[ordering]}
               onValueChange={(next) => {
                 // Pressing the pressed button would clear it; keep the ordering.
-                const picked = next.find((value) => value !== ordering);
-                if (picked) onOrderingChange(picked as BacklogSortMode);
+                const nextOrdering = SIDEBAR_ORDERINGS.find(
+                  (option) =>
+                    option.value !== ordering && next.includes(option.value),
+                )?.value;
+                if (nextOrdering) onOrderingChange(nextOrdering);
+              }}
+              // The Command around the toggle takes Enter and the arrows for
+              // its list. Keep them on the toggle; Escape still closes the menu.
+              onKeyDown={(event) => {
+                if (event.key !== "Escape" && event.key !== "Tab")
+                  event.stopPropagation();
               }}
             >
               {SIDEBAR_ORDERINGS.map((option) => (

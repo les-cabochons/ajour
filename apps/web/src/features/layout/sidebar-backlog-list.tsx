@@ -31,7 +31,9 @@ import {
 import {
   isBacklogItemReturned,
   isBacklogItemSnoozed,
+  canReorderSidebarItem,
   selectSidebarBacklogItems,
+  splitSidebarBacklogItems,
 } from "@/domain/backlog/backlog-item-lifecycle";
 import {
   getDirectChildWorkItems,
@@ -53,7 +55,7 @@ import { settleOpensDialog } from "@/features/backlog/settle-dialog";
 import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
 import { getBacklogItemOriginFor } from "@/features/backlog/backlog-item-search";
 import {
-  getBacklogDropOrder,
+  getBacklogDropMark,
   useBacklogDrag,
   type BacklogDropTarget,
 } from "@/features/backlog/use-backlog-drag";
@@ -83,7 +85,10 @@ import { openModifiedSourceClick } from "@/lib/source-navigation";
 import { updateSidebarLayout, useSidebarLayout } from "@/lib/sidebar-layout";
 import { useHoverOrFocusWithin } from "@/lib/use-hover-or-focus-within";
 import { useNow } from "@/lib/use-now";
-import { getSharedTableStepOrder } from "@/lib/table-drag";
+import {
+  getSharedTableDragOverlayTransform,
+  getSharedTableStepOrder,
+} from "@/lib/table-drag";
 import { cn } from "@/lib/utils";
 import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
 
@@ -92,52 +97,15 @@ const SETTLED_PAGE_SIZE = 20;
 type IconData = ReturnType<typeof useWorkItemIconData>;
 
 /**
- * Under Custom ordering, pinned items and the rest reorder apart: a drag or
- * Move up and Move down stays in its block. The keys put each block in its
- * own drag lane.
+ * Drag lanes for the sidebar's two blocks, pinned items and the rest. The
+ * drag hook reads the lane from the part before "/", and allows drops within
+ * a lane only, so a row never moves across blocks.
  */
 const PINNED_BLOCK = "pinned/items";
-const LISTED_BLOCK = "listed/items";
+const OTHERS_BLOCK = "others/items";
 
-function getBlockKey(workItem: LocalWorkItem) {
-  return workItem.pinnedAt !== undefined ? PINNED_BLOCK : LISTED_BLOCK;
-}
-
-function getReorderBlocks(
-  listed: readonly LocalWorkItem[],
-): BacklogDropTarget[] {
-  return [PINNED_BLOCK, LISTED_BLOCK].map((key) => ({
-    key,
-    itemIds: listed
-      .filter((workItem) => getBlockKey(workItem) === key)
-      .map((workItem) => workItem._id),
-  }));
-}
-
-/**
- * Where the dragged row would land, for the drop line: before the row that
- * would follow it, or after the block's last row. Undefined when the drop
- * changes nothing.
- */
-function getDropMark(
-  drag: ReturnType<typeof useBacklogDrag>["drag"],
-  blocks: readonly BacklogDropTarget[],
-  canReorder: (itemId: string) => boolean,
-): { itemId: string; edge: "before" | "after" } | undefined {
-  const block = blocks.find((target) => target.key === drag?.targetKey);
-  if (!drag || !block) return undefined;
-  const order = getBacklogDropOrder(
-    block.itemIds,
-    drag.itemId,
-    drag.index,
-    drag.originKey === drag.targetKey,
-    canReorder,
-  );
-  if (!order) return undefined;
-  const next = order[order.indexOf(drag.itemId) + 1];
-  return next
-    ? { itemId: next, edge: "before" }
-    : { itemId: block.itemIds.at(-1)!, edge: "after" };
+function findBlock(targets: readonly BacklogDropTarget[], itemId: string) {
+  return targets.find((target) => target.itemIds.includes(itemId));
 }
 
 function offerReorderUndo(orderedIds: string[]) {
@@ -158,7 +126,7 @@ function countSubitems(
 
 /** The list's reorder state that rows read when a key or a press asks. */
 interface RowReorder {
-  blocks: readonly BacklogDropTarget[];
+  targets: readonly BacklogDropTarget[];
   canReorder: (itemId: string) => boolean;
   drag: ReturnType<typeof useBacklogDrag>;
 }
@@ -234,10 +202,8 @@ function useBacklogItemRow(
 
     /** Move up (-1) or Move down (1) within the item's block, with Undo. */
     function step(workItem: LocalWorkItem, direction: -1 | 1) {
-      const { blocks, canReorder } = latest.current.reorder;
-      const block = blocks.find(
-        (target) => target.key === getBlockKey(workItem),
-      );
+      const { targets, canReorder } = latest.current.reorder;
+      const block = findBlock(targets, workItem._id);
       const next =
         block &&
         getSharedTableStepOrder(
@@ -252,9 +218,9 @@ function useBacklogItemRow(
       workItem: LocalWorkItem,
       event: PointerEvent<HTMLElement>,
     ) {
-      const { drag } = latest.current.reorder;
-      const key = getBlockKey(workItem);
-      if (drag.canDrag(workItem._id, key))
+      const { drag, targets } = latest.current.reorder;
+      const key = findBlock(targets, workItem._id)?.key;
+      if (key && drag.canDrag(workItem._id, key))
         drag.pointerDown(workItem._id, key, event);
     }
 
@@ -935,26 +901,46 @@ export function SidebarBacklogList({
     };
   }, [state, now, matcher]);
 
-  const custom = state.backlogSortMode === "custom";
-  const blocks = useMemo(() => getReorderBlocks(listed), [listed]);
-  // Subitems sit under their parent, so only top-level items move.
+  const sortMode = state.backlogSortMode;
+  const blocks = useMemo(() => {
+    const { pinned, others } = splitSidebarBacklogItems(listed);
+    return [
+      { key: PINNED_BLOCK, workItems: pinned },
+      { key: OTHERS_BLOCK, workItems: others },
+    ];
+  }, [listed]);
+  const targets = useMemo(
+    () =>
+      blocks.map((block) => ({
+        key: block.key,
+        itemIds: block.workItems.map((workItem) => workItem._id),
+      })),
+    [blocks],
+  );
+  // Keyed on the work items, not the list, so the clock's tick that rebuilds
+  // the list does not cancel a drag in progress.
+  const workItemById = useMemo(
+    () => new Map(state.workItems.map((workItem) => [workItem._id, workItem])),
+    [state.workItems],
+  );
   const canReorder = useCallback(
     (itemId: string) => {
-      const workItem = state.workItems.find((item) => item._id === itemId);
-      return custom && Boolean(workItem && !isSubtaskWorkItem(workItem));
+      const workItem = workItemById.get(itemId);
+      return Boolean(workItem && canReorderSidebarItem(sortMode, workItem));
     },
-    [custom, state.workItems],
+    [sortMode, workItemById],
   );
   const drag = useBacklogDrag({
-    targets: blocks,
+    targets,
     canReorder,
-    disabled: !custom,
+    disabled: sortMode !== "custom",
     onDrop: (_itemId, _key, order) => {
       if (order) offerReorderUndo(order);
     },
   });
-  const dropMark = getDropMark(drag.drag, blocks, canReorder);
-  const rows = useBacklogItemRow(state, now, { blocks, canReorder, drag });
+  const dragging = drag.drag;
+  const dropMark = getBacklogDropMark(dragging, targets, canReorder);
+  const rows = useBacklogItemRow(state, now, { targets, canReorder, drag });
 
   // Apart from the list above so the clock does not rebuild them every minute.
   const projectById = useMemo(
@@ -988,10 +974,6 @@ export function SidebarBacklogList({
   });
   const ItemRow =
     layout.density === "comfortable" ? ComfortableItemRow : BacklogItemRow;
-  const listedById = new Map(
-    listed.map((workItem) => [workItem._id, workItem]),
-  );
-  const draggedItem = drag.drag ? listedById.get(drag.drag.itemId) : undefined;
 
   let settledRows: ReactNode = null;
   if (layout.settledOpen) {
@@ -1045,28 +1027,25 @@ export function SidebarBacklogList({
             }}
             className="flex flex-col"
           >
-            {block.itemIds.map((itemId) => {
-              const workItem = listedById.get(itemId)!;
-              return (
-                <div
-                  key={itemId}
-                  ref={(element) => {
-                    if (element) drag.rowRefs.current.set(itemId, element);
-                    else drag.rowRefs.current.delete(itemId);
-                  }}
-                  className={cn(
-                    "flex flex-col",
-                    drag.drag?.itemId === itemId && "opacity-30",
-                    dropMark?.itemId === itemId &&
-                      (dropMark.edge === "before"
-                        ? "shadow-[inset_0_2px_0_var(--primary)]"
-                        : "shadow-[inset_0_-2px_0_var(--primary)]"),
-                  )}
-                >
-                  <ItemRow {...rowProps(workItem)} />
-                </div>
-              );
-            })}
+            {block.workItems.map((workItem) => (
+              <div
+                key={workItem._id}
+                ref={(element) => {
+                  if (element) drag.rowRefs.current.set(workItem._id, element);
+                  else drag.rowRefs.current.delete(workItem._id);
+                }}
+                className={cn(
+                  "flex flex-col",
+                  dragging?.itemId === workItem._id && "opacity-30",
+                  dropMark?.itemId === workItem._id &&
+                    (dropMark.edge === "before"
+                      ? "backlog-drop-before"
+                      : "backlog-drop-after"),
+                )}
+              >
+                <ItemRow {...rowProps(workItem)} />
+              </div>
+            ))}
           </div>
         ))}
         {listed.length === 0 ? (
@@ -1120,16 +1099,21 @@ export function SidebarBacklogList({
         </>
       ) : null}
 
-      {draggedItem ? (
+      {dragging ? (
         <div
           className="backlog-move-preview"
           aria-hidden="true"
           style={{
-            width: drag.drag!.width,
-            transform: `translate3d(${drag.drag!.x - drag.drag!.offsetX}px,${drag.drag!.y - drag.drag!.offsetY}px,0)`,
+            width: dragging.width,
+            transform: getSharedTableDragOverlayTransform({
+              originLeft: dragging.originLeft,
+              minTop: 0,
+              pointerY: dragging.y,
+              offsetY: dragging.offsetY,
+            }),
           }}
         >
-          {draggedItem.title}
+          {workItemById.get(dragging.itemId)?.title}
         </div>
       ) : null}
     </div>

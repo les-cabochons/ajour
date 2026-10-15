@@ -89,6 +89,38 @@ Then("the sidebar row {string} has focus", async ({ page }, title: string) => {
   await expect(sidebarRow(page, title)).toBeFocused();
 });
 
+When("I open the sidebar filter menu", async ({ page }) => {
+  await sidebar(page).getByRole("button", { name: "Filter and order" }).click();
+});
+
+When(
+  "I order the sidebar by {string} from the keyboard",
+  async ({ page }, label: string) => {
+    await sidebar(page)
+      .getByRole("button", { name: "Filter and order" })
+      .click();
+    const toggle = page.getByRole("button", { name: `${label} order` });
+    await toggle.focus();
+    await page.keyboard.press("Enter");
+    await expect(toggle).toHaveAttribute("aria-pressed", "true");
+    await page.keyboard.press("Escape");
+  },
+);
+
+Then("neither sidebar ordering is pressed", async ({ page }) => {
+  for (const name of ["Custom order", "Priority order"]) {
+    await expect(page.getByRole("button", { name })).toHaveAttribute(
+      "aria-pressed",
+      "false",
+    );
+  }
+});
+
+When("I pin {string} from the sidebar", async ({ page }, title: string) => {
+  await sidebarRow(page, title).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Pin", exact: true }).click();
+});
+
 When("I order the sidebar by {string}", async ({ page }, label: string) => {
   await sidebar(page).getByRole("button", { name: "Filter and order" }).click();
   const toggle = page.getByRole("button", { name: `${label} order` });

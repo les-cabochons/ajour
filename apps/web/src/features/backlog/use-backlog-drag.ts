@@ -54,6 +54,33 @@ export function getBacklogDropOrder(
   order.splice(targetIndex, 0, itemId);
   return order;
 }
+/**
+ * Where the dragged item would land, for a drop line: before the item that
+ * would follow it, or after the target's last item. Undefined when the drop
+ * changes nothing. Items `canReorder` refuses, such as subitems, stay in
+ * place, so the line follows the reorderable items only.
+ */
+export function getBacklogDropMark(
+  drag: Pick<Drag, "itemId" | "originKey" | "targetKey" | "index"> | null,
+  targets: readonly BacklogDropTarget[],
+  canReorder: (itemId: string) => boolean,
+): { itemId: string; edge: "before" | "after" } | undefined {
+  const target = targets.find((candidate) => candidate.key === drag?.targetKey);
+  if (!drag || !target) return undefined;
+  const order = getBacklogDropOrder(
+    target.itemIds,
+    drag.itemId,
+    drag.index,
+    drag.originKey === drag.targetKey,
+    canReorder,
+  );
+  if (!order) return undefined;
+  const next = order[order.indexOf(drag.itemId) + 1];
+  return next
+    ? { itemId: next, edge: "before" }
+    : { itemId: target.itemIds.at(-1)!, edge: "after" };
+}
+
 interface Drag {
   itemId: string;
   originKey: string;
@@ -61,6 +88,8 @@ interface Drag {
   index: number;
   x: number;
   y: number;
+  /** The pressed row's left edge, for an overlay that moves up and down only. */
+  originLeft: number;
   width: number;
   height: number;
   offsetX: number;
@@ -141,6 +170,7 @@ export function useBacklogDrag({
           ?.itemIds.indexOf(itemId) ?? 0,
       x: event.clientX,
       y: event.clientY,
+      originLeft: rect.left,
       width: rect.width,
       height: rect.height,
       offsetX: event.clientX - rect.left,

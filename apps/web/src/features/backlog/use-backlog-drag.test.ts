@@ -1,6 +1,7 @@
-import { expect, it } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   canDragBacklogItem,
+  getBacklogDropMark,
   getBacklogDropOrder,
   type BacklogDropTarget,
 } from "./use-backlog-drag";
@@ -142,3 +143,36 @@ it.each([
     ).toEqual(expected);
   },
 );
+
+describe("the drop line", () => {
+  const targets = [{ key: "lane/list", itemIds: ["a", "b", "b-sub", "c"] }];
+  const canReorder = (itemId: string) => itemId !== "b-sub";
+  const drag = (itemId: string, index: number) => ({
+    itemId,
+    originKey: "lane/list",
+    targetKey: "lane/list",
+    index,
+  });
+
+  it("marks the item the dragged one would land before", () => {
+    // Dragging "a" below "b" and its subitem lands it before "c".
+    expect(getBacklogDropMark(drag("a", 2), targets, canReorder)).toEqual({
+      itemId: "c",
+      edge: "before",
+    });
+  });
+
+  it("marks the end of the list after its last row", () => {
+    expect(getBacklogDropMark(drag("a", 3), targets, canReorder)).toEqual({
+      itemId: "c",
+      edge: "after",
+    });
+  });
+
+  it("shows no line when the drop changes nothing", () => {
+    expect(getBacklogDropMark(drag("a", 0), targets, canReorder)).toBe(
+      undefined,
+    );
+    expect(getBacklogDropMark(null, targets, canReorder)).toBe(undefined);
+  });
+});
