@@ -22,8 +22,6 @@ const KEEP_ALIVE_MS = 25_000;
 export class BridgeCallError extends Error {
   readonly reason: "unavailable" | "timeout";
 
-  // No parameter property: Node runs the API with type stripping, which
-  // rejects that syntax.
   constructor(message: string, reason: "unavailable" | "timeout") {
     super(message);
     this.name = "BridgeCallError";

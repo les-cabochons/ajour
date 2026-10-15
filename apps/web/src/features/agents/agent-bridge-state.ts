@@ -42,10 +42,6 @@ export function closeAgentPanel() {
   update({ panelOpen: false });
 }
 
-export function getAgentBridgeState() {
-  return state;
-}
-
 export function useAgentBridgeState(): AgentBridgeState {
   return useSyncExternalStore(
     (listener) => {

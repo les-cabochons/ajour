@@ -483,8 +483,14 @@ When("I dismiss the session", async ({ page }) => {
 
 Then(
   "the dismissal is sent for the session {string}",
-  async ({}, _title: string) => {
-    await expect.poll(() => mcp.postedDismissals).toEqual(["session-1"]);
+  async ({}, title: string) => {
+    const snapshot = mcp.bridgeEvents.find(({ event }) => event === "agents")
+      ?.data as { sessions: { id: string; title: string }[] };
+    const session = snapshot.sessions.find(
+      (candidate) => candidate.title === title,
+    );
+    expect(session).toBeDefined();
+    await expect.poll(() => mcp.postedDismissals).toEqual([session!.id]);
   },
 );
 
@@ -528,5 +534,3 @@ Then("the question toast is gone", async ({ page }) => {
     page.getByText("Claude Code asks: Which project gets the 2 hours?"),
   ).toHaveCount(0);
 });
-
-export { mockMcp, mcp };
