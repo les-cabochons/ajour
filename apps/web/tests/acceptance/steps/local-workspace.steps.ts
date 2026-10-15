@@ -2827,6 +2827,48 @@ Then("no entry editor is open", async ({ page }) => {
   await expect(page).not.toHaveURL(/entry=new/);
 });
 
+When("the window is {int} pixels wide", async ({ page }, width: number) => {
+  await page.setViewportSize({ width, height: 800 });
+});
+
+Then(
+  "opening {word}'s {string} card floats the entry panel over the Week",
+  async ({ page }, day: string, text: string) => {
+    const week = page.getByRole("region", { name: "Week" });
+    const before = await week.boundingBox();
+    await daysCard(page, day, text).click();
+    const panel = page.getByRole("complementary", {
+      name: "Time entry editor",
+    });
+    await expect(panel).toBeVisible();
+    const after = await week.boundingBox();
+    const panelBox = await panel.boundingBox();
+    if (!before || !after || !panelBox) throw new Error("Not rendered");
+    // The Week keeps its width and the panel covers its right side.
+    expect(after.width).toBe(before.width);
+    expect(panelBox.x).toBeLessThan(after.x + after.width);
+  },
+);
+
+Then(
+  "the entry panel sits beside the Week and narrows it",
+  async ({ page }) => {
+    const week = page.getByRole("region", { name: "Week" });
+    const panel = page.getByRole("complementary", {
+      name: "Time entry editor",
+    });
+    await expect
+      .poll(async () => {
+        const weekBox = await week.boundingBox();
+        const panelBox = await panel.boundingBox();
+        return weekBox && panelBox
+          ? panelBox.x - (weekBox.x + weekBox.width)
+          : null;
+      })
+      .toBeGreaterThanOrEqual(0);
+  },
+);
+
 Then("the Day view is visible", async ({ page }) => {
   await expect(page.locator(".day-strip")).toBeVisible();
   await expect(page.getByRole("region", { name: "Week" })).toHaveCount(0);

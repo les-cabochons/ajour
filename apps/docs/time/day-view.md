@@ -34,7 +34,7 @@ Click a row to open it in the side panel. The panel shows the task, its project 
 
 <Shot name="time-entry-editor" alt="An entry open in the side panel next to the day" />
 
-Drag the panel's edge to resize it. Ajour remembers the width for each page.
+Drag the panel's edge to resize it. Ajour remembers the width for each page. When the Time page is narrower than about 1160 pixels, the panel floats over the right side of the page instead of squeezing it. The page behind it still responds to clicks.
 
 ::: tip
 Press <kbd>Esc</kbd> to close the editor without saving. Clicking outside the panel does not close it, so a stray click never loses your changes.

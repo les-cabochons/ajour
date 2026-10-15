@@ -363,6 +363,23 @@
     background: var(--background);
   }
 
+  /* The Week Grid needs about 820px beside the 340px panel. On a narrower
+     Time page the entry panel floats over the page's right side instead of
+     narrowing it: its negative margin cancels its width in the row. The page
+     stays clickable, as beside a docked panel. Measured on the page, not the
+     window, so it holds with the app sidebar shown or hidden. */
+  .time-page-stack {
+    container: time-page / inline-size;
+  }
+
+  @container time-page (width < 1160px) {
+    .time-entry-side-panel {
+      z-index: 30;
+      margin-left: calc(-1 * min(var(--side-panel-width, 340px), 50%));
+      box-shadow: var(--shadow-lg);
+    }
+  }
+
   /* The entry editor follows the backlog peek: chips and the date under the
      task heading. */
   .time-entry-editor-meta {
