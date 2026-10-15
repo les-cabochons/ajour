@@ -11,6 +11,43 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* Idle stays quiet. Its fixed corner control expands without moving the page. */
+.ajour-agent-indicator[data-state="idle"] {
+  gap: 0;
+  padding-inline: calc((var(--control-height) - 0.5rem - 2px) / 2);
+}
+
+.ajour-agent-indicator[data-state="idle"]:not(:hover):not(:focus-visible) {
+  border-color: transparent;
+  background: transparent;
+  box-shadow: none;
+}
+
+.ajour-agent-indicator[data-state="idle"] .ajour-agent-indicator-label {
+  max-width: 0;
+  margin-left: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  opacity: 0;
+  transition:
+    max-width 150ms var(--ease),
+    margin-left 150ms var(--ease),
+    opacity 150ms var(--ease);
+}
+
+.ajour-agent-indicator[data-state="idle"]:is(:hover, :focus-visible)
+  .ajour-agent-indicator-label {
+  max-width: 8rem;
+  margin-left: 0.5rem;
+  opacity: 1;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .ajour-agent-indicator[data-state="idle"] .ajour-agent-indicator-label {
+    transition: none;
+  }
+}
+
 /* The scrollbar stays hidden until the pointer is over the scroller or focus is inside it. */
 @utility scrollbar-on-hover {
   scrollbar-color: transparent transparent;
@@ -1786,22 +1823,6 @@
   bottom: 1rem;
   z-index: 40;
 }
-@media (min-width: 1641px) {
-  .desktop-shell-windows .desktop-shell-nav-inner {
-    padding-right: max(
-      2rem,
-      calc(
-        50vw + var(--app-centered-workspace-right-offset) - 100vw +
-          var(--windows-caption-controls-width) + 1rem
-      ),
-      calc(
-        50vw + var(--app-centered-workspace-right-offset) -
-          env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 1rem
-      )
-    );
-  }
-}
-
 @media (max-width: 1040px) {
   .desktop-shell-nav-inner {
     padding-left: 1rem;

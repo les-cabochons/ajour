@@ -38,7 +38,7 @@ export function seedScript(options = {}) {
     { _id:"ws-done", name:"Done", color:"#059669", done:true, createdAt:4 },
   ];
   const wi = (id, title, extra) => ({ _id:id, title, status:"active", source:"manual", createdAt:t0-1e6, ...extra });
-  const ado = (id, type, key, label) => ({ source:"azure-devops", sourceId:id, sourceConnectionId:"ado-work", sourceConnectionLabel:"Contoso", sourceProjectName:"Atlas", sourceWorkItemType:type, sourceStatusKey:key, sourceStatusLabel:label, sourceUrl:"https://dev.azure.com/contoso/atlas/_workitems/edit/"+id });
+  const ado = (id, type, key, label) => ({ source:"azure_devops", sourceId:id, sourceConnectionId:"ado-work", sourceConnectionLabel:"Contoso", sourceProjectName:"Atlas", sourceWorkItemType:type, sourceStatusKey:key, sourceStatusLabel:label, sourceUrl:"https://dev.azure.com/contoso/atlas/_workitems/edit/"+id });
   const workItems = [
     wi("w1","Fix export rounding on half-hour entries",{ priority:1, workflowStateId:"ws-doing", projectId:"p-atlas", taskId:"t-atlas-dev", originalEstimateHours:4, remainingEstimateHours:1.5, completedEstimateHours:2.5, ...ado("48213","Bug","active","Active") }),
     wi("w2","Week grid: keyboard editing of cells",{ priority:2, workflowStateId:"ws-doing", projectId:"p-atlas", taskId:"t-atlas-dev", originalEstimateHours:8, remainingEstimateHours:5, completedEstimateHours:3, ...ado("48190","User Story","active","Active") }),

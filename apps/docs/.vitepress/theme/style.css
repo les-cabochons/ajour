@@ -456,3 +456,15 @@ kbd,
     transition: none !important;
   }
 }
+
+/* Two shots side by side, such as the narrow layout's pages. */
+.shot-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 16px;
+  align-items: start;
+}
+
+.shot-row .shot {
+  margin: 0;
+}

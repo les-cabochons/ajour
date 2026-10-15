@@ -1,11 +1,14 @@
 <script setup lang="ts">
+import { ref } from "vue";
 import { withBase } from "vitepress";
 
 /**
  * A screenshot of the app that follows the docs theme: the light capture in
  * light mode, the dark one in dark mode. Files live in `public/shots` as
- * `<name>-light.png` and `<name>-dark.png`. Without `name`, it draws an empty
- * frame with the alt text, for pages whose screenshots are not taken yet.
+ * `<name>-light.webp` and `<name>-dark.webp`, taken at 2x by `just docs-shots`.
+ * A cropped shot, such as a menu, shows at its size in the app instead of
+ * stretching to the column. Without `name`, it draws an empty frame with the
+ * alt text, for pages whose screenshots are not taken yet.
  */
 const props = defineProps<{
   name?: string;
@@ -14,15 +17,36 @@ const props = defineProps<{
 }>();
 
 const src = (theme: "light" | "dark") =>
-  withBase(`/shots/${props.name}-${theme}.png`);
+  withBase(`/shots/${props.name}-${theme}.webp`);
+
+// The width in CSS pixels: half the 2x capture.
+const width = ref<number>();
+const measure = (event: Event) => {
+  width.value = (event.target as HTMLImageElement).naturalWidth / 2;
+};
 </script>
 
 <template>
   <figure class="shot">
-    <div class="shot-frame">
+    <div
+      class="shot-frame"
+      :style="width ? { maxWidth: `${width}px` } : undefined"
+    >
       <template v-if="name">
-        <img class="shot-light" :src="src('light')" :alt="alt" loading="lazy" />
-        <img class="shot-dark" :src="src('dark')" :alt="alt" loading="lazy" />
+        <img
+          class="shot-light"
+          :src="src('light')"
+          :alt="alt"
+          loading="lazy"
+          @load="measure"
+        />
+        <img
+          class="shot-dark"
+          :src="src('dark')"
+          :alt="alt"
+          loading="lazy"
+          @load="measure"
+        />
       </template>
       <div v-else class="shot-placeholder" role="img" :aria-label="alt">
         <span>{{ alt }}</span>
@@ -50,12 +74,18 @@ const src = (theme: "light" | "dark") =>
   height: auto;
 }
 
-.shot-dark,
-:global(.dark) .shot-light {
+/* One theme's capture shows at a time. The selectors must outrank
+   `.shot-frame img` above. The dark ones are global because the theme's .dark
+   class sits on <html>, outside this component. */
+.shot-frame .shot-dark {
   display: none;
 }
 
-:global(.dark) .shot-dark {
+:global(.dark .shot .shot-frame .shot-light) {
+  display: none;
+}
+
+:global(.dark .shot .shot-frame .shot-dark) {
   display: block;
 }
 
