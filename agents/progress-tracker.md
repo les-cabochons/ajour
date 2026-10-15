@@ -762,3 +762,9 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 ## Plugin project properties, 2026-10-15
 
 - [x] Plugins can declare `projectProperties` (a section and text fields with optional defaults from the full name or code). The project page shows one collapsed section per active plugin, and `get_submit_lines` sends the resolved values. Spec: `docs/superpowers/specs/2026-10-15-plugin-project-properties-design.md`.
+
+## Commit week, slice 1, 2026-10-15
+
+- [x] Entries keep a committed copy, deleted committed entries leave a tombstone, and the Commit page lists added, updated and deleted changes with partial selection and Mark as committed with Undo. Stored submitted entries migrate to committed copies.
+- [x] Agents use `get_week_changes` and `mark_entries_committed`; the external ID is `ajour:` and the FNV-1a hash of the entry ID. Plugin placement `submit-week` is now `commit-week`.
+- [ ] Workday (agent) 0.4.0 with `prompts/commit-week.md` in `les-cabochons/ajp-workday-agent`, then a smoke run by Alex.

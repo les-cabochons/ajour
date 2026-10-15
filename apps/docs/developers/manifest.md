@@ -85,10 +85,10 @@ An agent task is a Markdown prompt that Ajour gives to the user's coding agent, 
   "agentTask": {
     "tasks": [
       {
-        "id": "enter-week",
-        "label": "Enter in Workday",
-        "placement": "submit-week",
-        "prompt": "prompts/enter-week.md",
+        "id": "commit-week",
+        "label": "Commit to Workday",
+        "placement": "commit-week",
+        "prompt": "prompts/commit-week.md",
         "estimateMinutes": 10,
         "weekLink": "{{settings.timesheetUrl}}",
         "settings": [
@@ -103,8 +103,8 @@ An agent task is a Markdown prompt that Ajour gives to the user's coding agent, 
 | Key               | Type   | Rules                                                                                                                         |
 | ----------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------- |
 | `id`              | string | Unique in the plugin.                                                                                                         |
-| `label`           | string | The button label on the Submit page.                                                                                          |
-| `placement`       | string | `submit-week`, the only value: a button on the Submit page for the week on screen.                                            |
+| `label`           | string | The button label on the Commit page.                                                                                          |
+| `placement`       | string | `commit-week`, the only value: a button next to **Mark as committed** on the Commit page, for the week on screen.             |
 | `prompt`          | string | Relative path to a Markdown file in the package. A regular file, no symlinks, at most 64 KB.                                  |
 | `estimateMinutes` | number | How long a run usually takes. The agent panel uses it to tell a slow run from a stuck one.                                    |
 | `weekLink`        | string | Optional. A URL template for **Open the week in…**. Shown only when it fills to an `https:` URL.                              |

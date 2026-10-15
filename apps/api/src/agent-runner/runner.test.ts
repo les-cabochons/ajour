@@ -91,7 +91,7 @@ function fakePlugins(prompt: string, weekLink: string) {
           {
             id: "enter-week",
             label: "Enter in Workday",
-            placement: "submit-week" as const,
+            placement: "commit-week" as const,
             prompt: "p.md",
             estimateMinutes: 10,
             weekLink,

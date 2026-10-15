@@ -4,7 +4,7 @@
 This plugin types your hours into Workday's web page. It does not use a Workday API, so it breaks when Workday changes that page. A plugin that uses Workday's API may replace it.
 :::
 
-The Workday (agent) plugin adds an **Enter in Workday** button to the [Commit page](/time/commit). Ajour starts a coding agent, Claude Code, Codex or OpenCode, which reads your week from Ajour and enters it in your Workday timesheet in a Chrome window. You watch it work, and it asks you when it cannot go on.
+The Workday (agent) plugin adds a **Commit to Workday** button to the [Commit page](/time/commit). Ajour starts a coding agent, Claude Code, Codex or OpenCode, which reads your week's changes from Ajour and applies them to your Workday timesheet in a Chrome window. You watch it work, and it asks you when it cannot go on.
 
 It is a different plugin from [Workday](/plugins/workday), the schema for importing and exporting projects.
 
@@ -16,33 +16,32 @@ It is a different plugin from [Workday](/plugins/workday), the schema for import
 
 ## Set it up
 
-1. Install the plugin from its `.ajour-connector` file in **Settings › Plugins**. It needs version 0.3.0 or later.
+1. Install the plugin from its `.ajour-connector` file in **Settings › Plugins**. It needs version 0.4.0 or later.
 2. In **Settings › Agents**, pick the agent. Leave **Browser** on **Ajour's Chrome window** unless you want the agent to use your own Chrome profile.
 3. Open **Settings › Plugins › Workday (agent)**. Under **Tasks**, fill in:
    - **Workday timesheet URL**: open Enter Time in Workday and copy the address.
    - **Sign-in username**, optional: your work email. See [Sign-in](#sign-in).
-4. Press **Save**. The task says **Ready to run from the Submit page.**
+4. Press **Save**. The task says **Ready to run from the Commit page.**
 
 ## Match your projects
 
 The agent finds each project in Workday by its Workday code, then its Workday name. Both default to the project's code and full name in Ajour. When Workday uses other ones, open the project, open the **Workday** section of its properties and type them.
 
-## Enter a week
+## Commit a week
 
-On the Submit page, press **Enter in Workday**. The agent panel opens with the run. The agent:
+On the Commit page, press **Commit to Workday**. The agent panel opens with the run. The agent:
 
-1. Reads the week's lines that are not submitted yet. If the week is over its target, or far from where it should be by today, it asks before entering.
+1. Reads the week's checked changes.
 2. Opens Workday and goes to the week.
-3. Enters each line on its day, with the project and task, the hours, and the comments followed by the line's ID, such as `Code review · ajour:1a2b3c4d`. It marks the line as submitted in Ajour right after Workday saves it.
-4. Compares each day's total in Ajour and in Workday. When they differ, it asks whether to update Workday, or whether you will fix Ajour.
+3. Applies each change: adds an added entry, updates an updated one, deletes a deleted one. The comment is the note, then `·` and the entry's ID, such as `Code review · ajour:1a2b3c4d`, so the agent finds its own entries again. It marks each change as committed in Ajour right after Workday saves it.
 
-The panel ends with a summary, such as "Entered 9 lines. Skipped 1: Wed, Acme · Support, not found in Workday. Totals match." Press **Stop** in the panel to end a run at any time.
+The panel ends with a summary. Press **Stop** in the panel to end a run at any time.
 
 **Open the week in Workday**, under the week summary, opens the timesheet in your browser.
 
 ### Run it again
 
-The line ID lets a second run find what the first one entered. Lines already in Workday are marked and skipped. A line you changed in Ajour since gets a new ID, and the final comparison shows the difference.
+Each entry keeps its ID whatever you edit, so a later run finds the entries an earlier one saved. Only the changes left on the Commit page go to Workday.
 
 ## Sign-in
 
@@ -54,11 +53,9 @@ The first run always asks you to sign in. Ajour's Chrome window keeps its own pr
 
 ## What it asks you
 
-- The week is off pace: **Enter** or **Stop**.
-- An entry in Workday looks like one of yours but has no line ID: **Same entry, mark it**, **Different, add mine** or **Skip**.
+- An entry in Workday looks like one of yours but has no entry ID: **Same entry, mark it**, **Different, add mine** or **Skip**.
 - Workday has several close matches for a task: pick one, or **Skip**.
-- The totals differ: **Update Workday**, **I'll fix Ajour** or **Leave it**.
 
 ## Privacy
 
-The agent sends your week's lines and Workday's pages to its model provider. Ajour's Chrome window holds only what you sign in to there. With **My Chrome**, the agent can use every site your Chrome profile is signed in to.
+The agent sends your week's changes and Workday's pages to its model provider. Ajour's Chrome window holds only what you sign in to there. With **My Chrome**, the agent can use every site your Chrome profile is signed in to.

@@ -991,7 +991,7 @@ describe("agent task settings route", () => {
               {
                 id: "enter-week",
                 label: "Enter",
-                placement: "submit-week",
+                placement: "commit-week",
                 prompt: "prompts/enter-week.md",
                 estimateMinutes: 5,
                 settings: [

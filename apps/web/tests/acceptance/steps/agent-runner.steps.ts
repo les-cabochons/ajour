@@ -23,7 +23,7 @@ const enterWeek = {
   pluginName: "Workday",
   taskId: "enter-week",
   label: "Enter in Workday",
-  placement: "submit-week",
+  placement: "commit-week",
   estimateMinutes: 10,
   settings: [
     {

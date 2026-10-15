@@ -55,7 +55,7 @@ export function AgentTaskButtons({ weekOf }: { weekOf: string }) {
 
   if (state.kind !== "ready") return null;
   const tasks = state.overview.tasks.filter(
-    (task) => task.placement === "submit-week",
+    (task) => task.placement === "commit-week",
   );
   if (tasks.length === 0) return null;
   // The API's current run covers a CLI that outlives its ended session.
@@ -139,7 +139,7 @@ export function AgentTaskWeekLinks({ weekOf }: { weekOf: string }) {
   if (state.kind !== "ready") return null;
   const links = state.overview.tasks.flatMap((task) => {
     const url =
-      task.placement === "submit-week" ? weekLinkFor(task, weekOf) : undefined;
+      task.placement === "commit-week" ? weekLinkFor(task, weekOf) : undefined;
     return url ? [{ key: `${task.pluginId}/${task.taskId}`, url, task }] : [];
   });
   if (links.length === 0) return null;
