@@ -192,6 +192,35 @@ Then(
     ).toHaveCount(0);
   },
 );
+function subitemSidebarRow(page: Page) {
+  return page
+    .getByRole("navigation", { name: "Primary navigation" })
+    .locator('[data-backlog-item-id="child"]');
+}
+Then(
+  "the subitem's sidebar row does not show its parent's title",
+  async ({ page }) => {
+    const row = subitemSidebarRow(page);
+    await expect(row).toContainText("Backlog subitem");
+    await expect(row).not.toContainText("Backlog parent");
+  },
+);
+When("I open the parent from the subitem's sidebar arrow", async ({ page }) => {
+  const row = subitemSidebarRow(page);
+  await row.hover();
+  const arrow = row.getByRole("button", {
+    name: "Open parent: Backlog parent",
+    exact: true,
+  });
+  await arrow.hover();
+  await expect(
+    page.locator('[data-slot="tooltip-content"][data-open]'),
+  ).toHaveText("Backlog parent");
+  await arrow.click();
+});
+Then("the Backlog parent page is open", async ({ page }) => {
+  await expect(page).toHaveURL(/\/backlog\/parent$/);
+});
 When("I filter the Backlog to Urgent", async ({ page }) => {
   await page.getByRole("button", { name: "Filter", exact: true }).click();
   await chooseSelectOption(page, "Filter property", "priority");

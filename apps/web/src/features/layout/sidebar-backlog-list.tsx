@@ -12,6 +12,7 @@ import {
   RiArrowDownSLine as ChevronDown,
   RiArrowGoBackLine as UndoIcon,
   RiCheckLine as SettleIcon,
+  RiCornerLeftUpLine as ParentIcon,
   RiPlayFill as PlayFillIcon,
   RiPlayLine as PlayIcon,
   RiTimeLine as SnoozeIcon,
@@ -346,7 +347,8 @@ function Markers({
 
 interface ItemRowProps {
   workItem: LocalWorkItem;
-  parentTitle?: string;
+  /** The subitem's parent, when it is in the workspace. */
+  parent?: LocalWorkItem;
   subitemCount: number;
   project?: LocalProject;
   workflowState?: LocalWorkflowState;
@@ -383,24 +385,57 @@ function useItemRowHandlers({ workItem, subitemCount, rows }: ItemRowProps) {
 }
 
 /**
+ * The arrow at the end of a subitem's state line. It opens the parent and its
+ * tooltip names it. Like the other hover controls, the button and its tooltip
+ * mount only while the row is `revealed`; until then it is a plain icon.
+ */
+function ParentLink({
+  parent,
+  rows,
+  revealed,
+}: {
+  parent: LocalWorkItem;
+  rows: RowApi;
+  revealed: boolean;
+}) {
+  const className =
+    "ml-auto flex size-4 shrink-0 items-center justify-center rounded-sm";
+  const icon = <ParentIcon className="size-3" />;
+  if (!revealed) {
+    return (
+      <span aria-hidden className={className}>
+        {icon}
+      </span>
+    );
+  }
+  return (
+    <TooltipButton
+      label={parent.title}
+      aria-label={`Open parent: ${parent.title}`}
+      className={cn(className, "hover:bg-foreground/10 hover:text-foreground")}
+      onClick={(event) => {
+        event.stopPropagation();
+        rows.open(parent);
+      }}
+    >
+      {icon}
+    </TooltipButton>
+  );
+}
+
+/**
  * The Comfortable row, laid out like a T3 Code thread: the project's icon and
  * name over the title, with the markers and the logged time at the end of the
- * project line, then the workflow state on a faint third line. Hover and focus replace that end with Start entry, Snooze… and
+ * project line, then the workflow state on a faint third line, which ends with
+ * an arrow to the parent on a subitem. Hover and focus replace that end with Start entry, Snooze… and
  * Settle. Like the compact row, it re-renders for its own props only and
  * mounts its hover controls while hovered or focused.
  */
 const ComfortableItemRow = memo(function ComfortableItemRow(
   props: ItemRowProps,
 ) {
-  const {
-    workItem,
-    parentTitle,
-    project,
-    workflowState,
-    loggedMs,
-    isActive,
-    rows,
-  } = props;
+  const { workItem, parent, project, workflowState, loggedMs, isActive, rows } =
+    props;
   const { actions, onClick, onKeyDown } = useItemRowHandlers(props);
   const reveal = useHoverOrFocusWithin();
 
@@ -416,7 +451,6 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
           data-focus-column="0"
           data-backlog-item-id={workItem._id}
           aria-current={isActive ? "page" : undefined}
-          title={parentTitle ? `${workItem.title} · ${parentTitle}` : undefined}
           {...reveal.props}
           className={cn(
             "group flex h-20 shrink-0 cursor-pointer flex-col justify-center gap-1 rounded-md px-2.5 outline-none hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring",
@@ -466,12 +500,6 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
         )}
       >
         {workItem.title}
-        {parentTitle ? (
-          <span className="font-normal text-muted-foreground">
-            {" "}
-            · {parentTitle}
-          </span>
-        ) : null}
       </span>
       {/* Kept empty without a state, so every row is the same height. */}
       <span className="flex h-4 items-center gap-1.5 text-xs text-muted-foreground/70">
@@ -481,8 +509,11 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
               className="backlog-state-dot size-2.5 opacity-70"
               style={{ color: workflowState.color }}
             />
-            <span className="truncate">{workflowState.name}</span>
+            <span className="min-w-0 truncate">{workflowState.name}</span>
           </>
+        ) : null}
+        {parent ? (
+          <ParentLink parent={parent} rows={rows} revealed={reveal.active} />
         ) : null}
       </span>
     </ObjectContextMenu>
@@ -496,7 +527,8 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
  * tooltip button per action for every row is most of the cost of a long list.
  */
 const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
-  const { workItem, parentTitle, isActive, iconData, rows } = props;
+  const { workItem, parent, isActive, iconData, rows } = props;
+  const parentTitle = parent?.title;
   const { actions, onClick, onKeyDown } = useItemRowHandlers(props);
   const reveal = useHoverOrFocusWithin();
 
@@ -567,7 +599,8 @@ const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
  * entry button that is always visible.
  */
 const UpNextRow = memo(function UpNextRow(props: ItemRowProps) {
-  const { workItem, parentTitle, isActive, iconData, rows } = props;
+  const { workItem, parent, isActive, iconData, rows } = props;
+  const parentTitle = parent?.title;
   const { actions, onClick, onKeyDown } = useItemRowHandlers(props);
   const reveal = useHoverOrFocusWithin();
 
@@ -756,12 +789,10 @@ export function SidebarBacklogList({
     : undefined;
   const runningWorkItemId = state.timers[0]?.workItemId;
 
-  const { listed, snoozed, settled, titleByLookupKey } = useMemo(() => {
-    const titles = new Map(
+  const { listed, snoozed, settled, workItemByLookupKey } = useMemo(() => {
+    const byLookupKey = new Map(
       state.workItems.flatMap((workItem) =>
-        getWorkItemLookupKeys(workItem).map(
-          (key) => [key, workItem.title] as const,
-        ),
+        getWorkItemLookupKeys(workItem).map((key) => [key, workItem] as const),
       ),
     );
     return {
@@ -776,7 +807,7 @@ export function SidebarBacklogList({
             workItem.status === "settled" && !workItem.settledWithParentId,
         )
         .sort((left, right) => (right.settledAt ?? 0) - (left.settledAt ?? 0)),
-      titleByLookupKey: titles,
+      workItemByLookupKey: byLookupKey,
     };
   }, [state, now]);
 
@@ -801,13 +832,13 @@ export function SidebarBacklogList({
     return totals;
   }, [state.timesheetEntries]);
 
-  const parentTitleOf = (workItem: LocalWorkItem) => {
+  const parentOf = (workItem: LocalWorkItem) => {
     const key = getWorkItemParentKey(workItem);
-    return key ? titleByLookupKey.get(key) : undefined;
+    return key ? workItemByLookupKey.get(key) : undefined;
   };
   const rowProps = (workItem: LocalWorkItem): ItemRowProps => ({
     workItem,
-    parentTitle: parentTitleOf(workItem),
+    parent: parentOf(workItem),
     subitemCount: countSubitems(workItem, state.workItems),
     project: workItem.projectId
       ? projectById.get(workItem.projectId)

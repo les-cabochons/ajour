@@ -30,6 +30,11 @@ Feature: Backlog list and board views
     When I hover the other item in the sidebar
     Then its sidebar row offers Start entry, Snooze and Settle without a "…" button
 
+  Scenario: Open a subitem's parent from its comfortable sidebar row
+    Then the subitem's sidebar row does not show its parent's title
+    When I open the parent from the subitem's sidebar arrow
+    Then the Backlog parent page is open
+
   Scenario: Peek and edit in the same side panel
     When I peek at the Backlog parent
     Then the peek shows the parent and its subitem
