@@ -14,25 +14,8 @@ import {
   DropdownMenuLinkItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
+import { getAppSection, type AppView } from "@/features/layout/app-section";
 import { cn } from "@/lib/utils";
-
-/** A page group the sidebar's view switcher opens. */
-export type AppView = "time" | "backlog" | "pull-requests" | "projects";
-
-/**
- * The view a page belongs to, such as Backlog for a backlog item's page.
- * Settings and unknown paths belong to none.
- */
-export function getAppView(pathname: string): AppView | undefined {
-  const within = (root: string) =>
-    pathname === root || pathname.startsWith(`${root}/`);
-
-  if (pathname.startsWith("/time/")) return "time";
-  if (within("/backlog")) return "backlog";
-  if (within("/pull-requests")) return "pull-requests";
-  if (within("/projects")) return "projects";
-  return undefined;
-}
 
 /** One line of the switcher's menu. */
 export interface SidebarViewOption {
@@ -100,7 +83,8 @@ export function SidebarViewSwitcher({
   selectedTimeDate: string;
   options: SidebarViewOption[];
 }) {
-  const current = getAppView(pathname);
+  const section = getAppSection(pathname);
+  const current = section === "settings" ? undefined : section;
 
   return (
     <DropdownMenu>

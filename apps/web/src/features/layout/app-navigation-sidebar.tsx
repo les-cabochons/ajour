@@ -23,6 +23,7 @@ import {
 } from "@/components/tooltip-button";
 import { selectSidebarBacklogItems } from "@/domain/backlog/backlog-item-lifecycle";
 import { isPullRequestReturned } from "@/domain/pull-requests/pull-request-lifecycle";
+import { getAppSection } from "@/features/layout/app-section";
 import { openCommandPalette } from "@/features/command-palette/command-palette";
 import { SidebarBacklogList } from "@/features/layout/sidebar-backlog-list";
 import {
@@ -123,27 +124,6 @@ function SidebarResizeHandle({
   );
 }
 
-export function isAppNavigationItemActive(
-  pathname: string,
-  to: "/time/$date" | "/backlog" | "/projects" | "/settings" | "/pull-requests",
-) {
-  if (to === "/time/$date") {
-    return pathname.startsWith("/time/");
-  }
-
-  if (to === "/projects") {
-    return pathname === "/projects" || pathname.startsWith("/projects/");
-  }
-
-  if (to === "/settings") {
-    return pathname.startsWith("/settings");
-  }
-  if (to === "/pull-requests")
-    return pathname === to || pathname.startsWith(`${to}/`);
-
-  return pathname === to;
-}
-
 /** The sidebar toggle, beside the logo and in the titlebar while the sidebar is hidden. */
 export function SidebarToggleButton({
   label,
@@ -199,7 +179,7 @@ export function AppNavigationSidebar({
 }) {
   const state = useLocalState();
   const now = useNow();
-  const isSettingsActive = isAppNavigationItemActive(pathname, "/settings");
+  const isSettingsActive = getAppSection(pathname) === "settings";
   const pullRequests = useSidebarPullRequests();
   const listed = useMemo(
     () => selectSidebarBacklogItems(state, now),

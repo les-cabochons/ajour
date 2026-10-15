@@ -29,7 +29,6 @@ import { showErrorToast } from "@/components/ui/toast";
 import {
   AppNavigationSidebar,
   SidebarToggleButton,
-  isAppNavigationItemActive,
 } from "@/features/layout/app-navigation-sidebar";
 import {
   FloatingStartDock,
@@ -41,6 +40,7 @@ import {
   useRunningEntryEditor,
 } from "@/features/layout/timer-dock";
 import { AppMenuBar } from "@/features/layout/app-menu-bar";
+import { getAppSection } from "@/features/layout/app-section";
 import { CommandPalette } from "@/features/command-palette/command-palette";
 import { ShortcutOverlay } from "@/features/layout/shortcut-overlay";
 import { useGlobalShortcuts } from "@/features/layout/use-global-shortcuts";
@@ -656,8 +656,9 @@ export function AppShell() {
     select: (state) => state.location.pathname,
   });
   const navigate = useNavigate();
-  const isTimeActive = isAppNavigationItemActive(pathname, "/time/$date");
-  const isSettingsActive = isAppNavigationItemActive(pathname, "/settings");
+  const section = getAppSection(pathname);
+  const isTimeActive = section === "time";
+  const isSettingsActive = section === "settings";
   const timeRouteDate = getTimeRouteDate(pathname);
   const [selectedTimeDate, setSelectedTimeDate] = useState(
     () => timeRouteDate ?? todayIsoDate(),
