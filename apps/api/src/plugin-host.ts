@@ -1,7 +1,7 @@
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { PluginWorkerLifetime } from "./plugin-worker-lifetime.ts";
-import { readFile } from "node:fs/promises";
+import { readFile, realpath } from "node:fs/promises";
 import {
   CONNECTOR_PLUGIN_API_VERSION,
   connectorFieldValuesSchema,
@@ -33,6 +33,7 @@ import {
   discoverInstalledConnectorPlugins,
   installConnectorPluginArchive,
   reconcileConnectorPluginInstallRoot,
+  readAgentTaskPromptFile,
   readConnectorPlugin,
   uninstallConnectorPluginPackage,
   type InstalledConnectorPlugin,
@@ -238,6 +239,24 @@ export class ConnectorPluginManager {
     return plugin?.manifest.capabilities[capability] !== undefined;
   }
 
+  /** An agent task's prompt, read fresh from the plugin folder. */
+  async readAgentTaskPrompt(pluginId: string, taskId: string): Promise<string> {
+    this.assertRunning();
+    const plugin = await this.getPlugin(pluginId);
+    const task = plugin.manifest.capabilities.agentTask?.tasks.find(
+      (candidate) => candidate.id === taskId,
+    );
+    if (!task) {
+      throw new Error(`Plugin "${pluginId}" has no agent task "${taskId}".`);
+    }
+    return await readAgentTaskPromptFile(
+      plugin.directory,
+      await realpath(plugin.directory),
+      plugin.manifest,
+      task,
+    );
+  }
+
   /** Runs one code host operation. See `codeHostOperations`. */
   async runCodeHostOperation<Operation extends CodeHostOperation>(
     pluginId: string,
@@ -324,6 +343,9 @@ export class ConnectorPluginManager {
       const plugin = await this.getPlugin(pluginId);
       // Discovery awaited, so shutdown or a package change may have started meanwhile.
       this.assertCanInvoke();
+      if (!plugin.entrypointPath) {
+        throw new Error(`Plugin "${pluginId}" runs no code.`);
+      }
       return {
         workerData: {
           apiVersion: CONNECTOR_PLUGIN_API_VERSION,

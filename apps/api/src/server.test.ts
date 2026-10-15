@@ -316,7 +316,6 @@ describe("connector plugin installation boundary", () => {
             plugin: {
               id: "jira",
               version: "1.0.0",
-              entrypoint: "",
               unavailableReason: expect.stringContaining(
                 "Update the plugin to use it again.",
               ),

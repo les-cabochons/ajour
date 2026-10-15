@@ -258,7 +258,6 @@ function createMissingPluginManifest(
     unavailableReason:
       "This plugin is not installed. Download it again to use its saved connections.",
     iconSvg: MISSING_PLUGIN_ICON_SVG,
-    entrypoint: "",
     capabilities: { connector: {} },
     connectionFields: [
       {
@@ -587,7 +586,7 @@ export class AppApiStorage {
 
   /**
    * `unavailable` lists installed packages the host cannot run. They show up
-   * with their own name and version, an empty entrypoint, and the reason.
+   * with their own name and version, and the reason.
    */
   async getConnectorsOverview(
     plugins: ConnectorPluginManifest[],
@@ -604,7 +603,6 @@ export class AppApiStorage {
       if (!pluginMap.has(manifest.id)) {
         pluginMap.set(manifest.id, {
           ...manifest,
-          entrypoint: "",
           unavailableReason: reason,
         });
       }
@@ -626,7 +624,7 @@ export class AppApiStorage {
       plugin,
       enabled:
         state.pluginsEnabled &&
-        plugin.entrypoint.length > 0 &&
+        plugin.unavailableReason === undefined &&
         !state.disabledPluginIds.includes(plugin.id),
       connections: state.connections
         .filter((connection) => connection.pluginId === plugin.id)

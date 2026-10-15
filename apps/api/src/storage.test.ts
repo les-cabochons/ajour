@@ -468,7 +468,7 @@ describe("AppApiStorage", () => {
 
   // Regression: a plugin that fails to load (for example an older plugin API
   // version) left its connections behind, and the whole overview failed the
-  // shared schema because the placeholder has no entrypoint.
+  // shared schema because the placeholder had an empty entrypoint.
   it("keeps the overview valid when a saved connection's plugin is missing", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
     tempDirs.push(tempDir);
@@ -488,7 +488,10 @@ describe("AppApiStorage", () => {
 
     expect(overview.connectionGroups).toMatchObject([
       {
-        plugin: { id: "jira", entrypoint: "" },
+        plugin: {
+          id: "jira",
+          unavailableReason: expect.stringContaining("not installed"),
+        },
         enabled: false,
         connections: [{ label: "Main Jira" }],
       },

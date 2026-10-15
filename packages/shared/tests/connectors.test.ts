@@ -4,6 +4,7 @@ import {
   connectorPluginManifestSchema,
   connectorSettleWriteRequestSchema,
   connectorSettleWriteResultSchema,
+  pluginHasAgentTasks,
   pluginHasCodeHost,
   pluginHasConnector,
 } from "../connectors";
@@ -59,7 +60,7 @@ describe("connector plugin manifest", () => {
         ...validManifest,
         capabilities: {},
       }),
-    ).toThrow("connector capability, the codeHost capability or both");
+    ).toThrow("at least one capability");
   });
 
   it("accepts a plugin that is both a connector and a code host", () => {
@@ -92,6 +93,71 @@ describe("connector plugin manifest", () => {
     ).toThrow();
     expect(() =>
       connectorSettleWriteResultSchema.parse({ priority: 25 }),
+    ).toThrow();
+  });
+});
+
+const agentTaskBase = {
+  id: "ajp-workday",
+  version: "1.0.0",
+  apiVersion: CONNECTOR_PLUGIN_API_VERSION,
+  displayName: "Workday",
+  iconSvg: "<svg/>",
+};
+const agentTask = {
+  id: "enter-week",
+  label: "Enter in Workday",
+  placement: "submit-week",
+  prompt: "prompts/enter-week.md",
+  estimateMinutes: 10,
+  weekLink: "{{settings.timesheetUrl}}?date={{weekOf}}",
+  settings: [
+    {
+      id: "timesheetUrl",
+      label: "Workday timesheet URL",
+      type: "url",
+      required: true,
+    },
+  ],
+};
+
+describe("plugin manifest capabilities", () => {
+  it("accepts a plugin with only agent tasks, without entrypoint or connection fields", () => {
+    const manifest = connectorPluginManifestSchema.parse({
+      ...agentTaskBase,
+      capabilities: { agentTask: { tasks: [agentTask] } },
+    });
+    expect(manifest.entrypoint).toBeUndefined();
+    expect(manifest.connectionFields).toEqual([]);
+    expect(pluginHasAgentTasks(manifest)).toBe(true);
+  });
+
+  it("still requires an entrypoint and connection fields for a connector", () => {
+    expect(() =>
+      connectorPluginManifestSchema.parse({
+        ...agentTaskBase,
+        capabilities: { connector: {} },
+      }),
+    ).toThrow(/entrypoint/);
+  });
+
+  it("refuses a week link slot that is not known", () => {
+    expect(() =>
+      connectorPluginManifestSchema.parse({
+        ...agentTaskBase,
+        capabilities: {
+          agentTask: { tasks: [{ ...agentTask, weekLink: "{{settings.nope}}" }] },
+        },
+      }),
+    ).toThrow(/settings.nope/);
+  });
+
+  it("refuses a plugin with no capability", () => {
+    expect(() =>
+      connectorPluginManifestSchema.parse({
+        ...agentTaskBase,
+        capabilities: {},
+      }),
     ).toThrow();
   });
 });
