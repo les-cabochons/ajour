@@ -220,8 +220,10 @@ function ToastList() {
 /**
  * Renders the app's toasts: bottom right in a full window, bottom center in the
  * narrow view (the `narrow` variant from `lib/breakpoints.ts`). At most three
- * show, newest on top. While the agent indicator shows, the viewport sits above
- * it (`--agent-indicator-clearance`). Mount it once at the app root.
+ * show, newest on top. While the agent indicator shows in a full window, the
+ * viewport sits above it (`--agent-indicator-clearance`). In the narrow view
+ * the indicator sits beside the navigation toggle, below the toasts. Mount it
+ * once at the app root.
  */
 export function Toaster() {
   return (
@@ -230,7 +232,7 @@ export function Toaster() {
         <ToastPrimitive.Viewport
           className={cn(
             "fixed right-4 bottom-[calc(1rem+var(--agent-indicator-clearance,0px))] z-[60] flex w-[min(360px,calc(100vw-2rem))] flex-col gap-2 outline-none",
-            "narrow:right-auto narrow:bottom-[calc(var(--narrow-nav-clearance)+var(--agent-indicator-clearance,0px))] narrow:left-1/2 narrow:-translate-x-1/2",
+            "narrow:right-auto narrow:bottom-[var(--narrow-nav-clearance)] narrow:left-1/2 narrow:-translate-x-1/2",
           )}
         >
           <ToastList />

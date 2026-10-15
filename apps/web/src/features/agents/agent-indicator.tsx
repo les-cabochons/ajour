@@ -20,7 +20,10 @@ const DOT_CLASS = {
   error: "bg-destructive",
 } as const;
 
-/** How far the toasts rise while the indicator shows: its height plus a gap. */
+/**
+ * How far the toasts rise in a full window while the indicator shows: its
+ * height plus a gap. In the narrow view the toasts already clear it.
+ */
 const INDICATOR_CLEARANCE = "2.5rem";
 
 /**
@@ -61,8 +64,7 @@ export function AgentIndicator() {
       aria-expanded={panelOpen}
       onClick={panelOpen ? closeAgentPanel : openAgentPanel}
       className={cn(
-        "fixed right-4 bottom-4 z-50 flex h-[var(--control-height)] items-center gap-2 rounded-[var(--radius-md)] border border-border bg-popover px-3 text-xs text-popover-foreground shadow-[var(--shadow-popup)]",
-        "narrow:bottom-[var(--narrow-nav-clearance)]",
+        "ajour-agent-indicator fixed right-4 bottom-4 z-50 flex h-[var(--control-height)] items-center gap-2 rounded-[var(--radius-md)] border border-border bg-popover px-3 text-xs text-popover-foreground shadow-[var(--shadow-popup)]",
         indicator.state === "needs-input" && "border-warning",
       )}
     >

@@ -52,7 +52,8 @@ Feature: Agents through MCP
   Scenario: The panel opens as an overlay in a narrow window
     Given MCP is on and "Claude Code" asks "Which project gets the 2 hours?" with choices "Acme" and "Globex"
     When I open the app on a narrow screen
-    And I open the agent panel
+    Then the agent indicator sits on the navigation toggle's row
+    When I open the agent panel
     Then the agent panel is an overlay
 
   Scenario: The narrow view keeps the page inside the window under the back bar
