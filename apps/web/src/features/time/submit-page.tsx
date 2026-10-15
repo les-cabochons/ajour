@@ -43,7 +43,10 @@ import {
   type SubmitWeekStatus,
 } from "@/domain/time/timesheet-submission";
 import type { LocalProjectIcon } from "@/domain/projects/project-icon";
-import { AgentTaskButtons } from "@/features/agents/agent-task-buttons";
+import {
+  AgentTaskButtons,
+  AgentTaskWeekLinks,
+} from "@/features/agents/agent-task-buttons";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { useLocalProjects, useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
@@ -425,6 +428,7 @@ export function SubmitPage({
           </ul>
         ) : null}
         <StatusLine status={status} />
+        <AgentTaskWeekLinks weekOf={weekDates[0]!} />
       </section>
 
       <div
