@@ -27,9 +27,7 @@ import {
   getBacklogItemActions,
   type BacklogItemActionId,
 } from "@/domain/actions/object-actions";
-import {
-  isBacklogItemSnoozed,
-} from "@/domain/backlog/backlog-item-lifecycle";
+import { isBacklogItemSnoozed } from "@/domain/backlog/backlog-item-lifecycle";
 import {
   getDirectChildWorkItems,
   getWorkItemLookupKeys,
