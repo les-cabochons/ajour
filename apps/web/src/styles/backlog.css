@@ -362,10 +362,14 @@
     min-width: 100%;
   }
 
+  /* Columns sit on a faint tint and cards one step above it, so each
+     column reads as a lane without borders between them. */
   .backlog-board-column {
     min-width: 0;
     min-height: 240px;
+    padding: 0 0.5rem 0.5rem;
     border-radius: var(--radius-md);
+    background: var(--highlight-bg);
   }
 
   .backlog-board-column .backlog-group-header {
@@ -390,15 +394,22 @@
     padding: 0.625rem 0.75rem;
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
-    background: var(--background);
+    background: var(--surface);
     font-size: var(--text-sm);
     cursor: pointer;
     outline: none;
   }
 
+  /* Opaque hover and selection, because the shared row colors are
+     translucent and would let the column tint through. */
   .backlog-board-card:hover {
     border-color: var(--border-hover);
-    background: var(--background);
+    background: var(--surface-high);
+  }
+
+  .backlog-board-card.is-selected {
+    border-color: var(--border-hover);
+    background: var(--surface-high);
   }
 
   .backlog-board-card .backlog-item-leading {
