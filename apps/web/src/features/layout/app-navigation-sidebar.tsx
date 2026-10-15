@@ -1,7 +1,6 @@
 import { useMemo, useRef, type KeyboardEvent, type PointerEvent } from "react";
 import { Link } from "@tanstack/react-router";
 import {
-  RiPlayLine as PlayIcon,
   RiSettings3Line as Settings,
   RiSideBarLine as SidebarIcon,
 } from "@remixicon/react";
@@ -37,11 +36,7 @@ import {
   SidebarViewSwitcher,
   type SidebarViewOption,
 } from "@/features/layout/sidebar-view-switcher";
-import {
-  startBlankEntry,
-  TimerDock,
-  TodayTotal,
-} from "@/features/layout/timer-dock";
+import { TimerDock, TodayTotal } from "@/features/layout/timer-dock";
 import type { AppSidebarState } from "@/lib/app-sidebar";
 import { useLocalState } from "@/lib/local-hooks";
 import { isDesktopShell } from "@/lib/runtime";
@@ -261,24 +256,6 @@ export function AppNavigationSidebar({
             searchOpen ? "min-w-0 flex-1" : "ml-auto",
           )}
         >
-          {/* An empty entry, unlike the dock's start for the Up next item. */}
-          {state.timers.length === 0 && !searchOpen ? (
-            <TooltipButton
-              label="Start"
-              shortcut="entry.stop-or-start"
-              side="bottom"
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="ajour-app-sidebar-toggle"
-                  onClick={startBlankEntry}
-                />
-              }
-            >
-              <PlayIcon />
-            </TooltipButton>
-          ) : null}
           <SidebarSearch />
           <SidebarProjectFilter
             projects={state.projects}
@@ -288,7 +265,7 @@ export function AppNavigationSidebar({
         </span>
       </div>
 
-      <TimerDock upNext={listed[0]} />
+      <TimerDock />
 
       <SidebarContent>
         <SidebarBacklogList pathname={pathname} matcher={matcher}>
