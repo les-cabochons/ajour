@@ -381,6 +381,51 @@ export function moveTimesheetEntry(
   };
 }
 
+/** One entry of a paste: the copied or cut entry and the day it lands on. */
+export interface PastedTimesheetEntry {
+  entryId: string;
+  localDate: string;
+}
+
+/**
+ * Pastes copied or cut entries in one change. `copy` duplicates each entry with its
+ * saved values, as Duplicate to… does; `cut` moves it, as Move to… does. Entries
+ * linked to a running timer, or gone since the copy, are skipped.
+ *
+ * Every pasted entry gets the same committed time, so the Day list shows them at the
+ * top of their day in the order of `entries`.
+ */
+export function pasteTimesheetEntries(
+  state: LocalAppState,
+  entries: readonly PastedTimesheetEntry[],
+  mode: "copy" | "cut",
+  factories: TimesheetEntryFactories,
+): LocalAppState {
+  const pastedAt = factories.now();
+  const pasteFactories = { ...factories, now: () => pastedAt };
+  const paste = mode === "cut" ? moveTimesheetEntry : duplicateTimesheetEntry;
+
+  return entries.reduce((current, { entryId, localDate }) => {
+    const entry = current.timesheetEntries.find((item) => item._id === entryId);
+    if (!entry) {
+      return current;
+    }
+
+    return paste(
+      current,
+      entryId,
+      {
+        localDate,
+        projectId: entry.projectId,
+        taskId: entry.taskId,
+        note: entry.note,
+        durationMs: entry.durationMs,
+      },
+      pasteFactories,
+    );
+  }, state);
+}
+
 export function markTimesheetEntriesSubmitted(
   state: LocalAppState,
   entryIds: string[],

@@ -85,6 +85,8 @@ import {
   markTimesheetEntriesSubmitted as applyMarkTimesheetEntriesSubmitted,
   moveTimesheetEntry as applyMoveTimesheetEntry,
   normalizeTimesheetEntry,
+  pasteTimesheetEntries as applyPasteTimesheetEntries,
+  type PastedTimesheetEntry,
   reorderTimesheetEntries as applyReorderTimesheetEntries,
   saveManualTimesheetEntry,
   updateTimesheetEntry as applyUpdateTimesheetEntry,
@@ -1683,6 +1685,21 @@ export const localStore = {
   ) {
     return updateStateWithUndo((state) =>
       applyMoveTimesheetEntry(state, entryId, values, {
+        createId,
+        now: Date.now,
+      }),
+    );
+  },
+  /**
+   * Pastes copied entries as new entries, or moves cut ones, in one change.
+   * Returns an undo token, or null when nothing changed.
+   */
+  pasteTimesheetEntries(
+    entries: readonly PastedTimesheetEntry[],
+    mode: "copy" | "cut",
+  ) {
+    return updateStateWithUndo((state) =>
+      applyPasteTimesheetEntries(state, entries, mode, {
         createId,
         now: Date.now,
       }),
