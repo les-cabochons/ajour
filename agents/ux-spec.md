@@ -531,7 +531,7 @@ The sidebar works like the T3 Code and Linear sidebars: the view switcher, the t
 
 - Search, next to the view switcher, expands into a search box in place of the switcher. It filters the work list as the user types. Cmd+K still opens the command palette.
 - Every typed word must appear in the item's title or its project's name, display name or code. Case and accents do not count. A pull request matches on its title and repository.
-- Escape clears the box and closes it. Leaving the box empty closes it too. A typed query stays while the user opens the rows it found.
+- Escape clears the box and closes it. Leaving the box empty closes it too. A typed query stays while the user opens the rows it found, including when the sidebar hides in between, as the overlay does after a row opens. It is not saved across launches.
 - The filter button, like T3 Code's, opens a menu with its own search, "All projects", then the active projects. Picking a project keeps only its items. Pull requests have no project, so they hide while a project is picked. The pick is saved per device. The button stays highlighted while a project is picked.
 - Every section keeps only the matching rows, and its count follows. While the list is narrowed, Settled shows its count and an empty Backlog says "No matching items."
 - The view switcher's counts, the timer dock's Up next and the Backlog page ignore the sidebar's search and filter.

@@ -30,31 +30,24 @@ import {
   type LocalProject,
 } from "@/domain/local-state";
 import { ProjectIcon } from "@/lib/project-icons";
+import { updateSidebarSearch, useSidebarSearch } from "@/lib/sidebar-search";
 import { cn } from "@/lib/utils";
 
 /**
  * The sidebar's Search: a button that expands into a search box over the view
  * switcher's row. Escape clears and closes it. Leaving it empty closes it too;
- * a typed query stays so the user can open the rows it found.
+ * a typed query stays so the user can open the rows it found, even when the
+ * sidebar hides in between. `lib/sidebar-search.ts` holds the state.
  */
-export function SidebarSearch({
-  open,
-  query,
-  onOpenChange,
-  onQueryChange,
-}: {
-  open: boolean;
-  query: string;
-  onOpenChange: (open: boolean) => void;
-  onQueryChange: (query: string) => void;
-}) {
+export function SidebarSearch() {
+  const { open, query } = useSidebarSearch();
+  const inputRef = useRef<HTMLInputElement>(null);
   // Escape gives focus back to the button when it mounts again; a click
   // elsewhere leaves focus where the user put it.
   const refocusRef = useRef(false);
 
   function close() {
-    onQueryChange("");
-    onOpenChange(false);
+    updateSidebarSearch({ open: false, query: "" });
   }
 
   if (!open) {
@@ -73,7 +66,7 @@ export function SidebarSearch({
             variant="ghost"
             size="icon"
             className="ajour-app-sidebar-toggle"
-            onClick={() => onOpenChange(true)}
+            onClick={() => updateSidebarSearch({ open: true })}
           />
         }
       >
@@ -88,12 +81,13 @@ export function SidebarSearch({
         <SearchIcon />
       </InputGroupAddon>
       <InputGroupInput
+        ref={inputRef}
         autoFocus
         type="search"
         aria-label="Search the sidebar"
         placeholder="Search"
         value={query}
-        onChange={(event) => onQueryChange(event.target.value)}
+        onChange={(event) => updateSidebarSearch({ query: event.target.value })}
         onKeyDown={(event) => {
           if (event.key === "Escape") {
             event.preventDefault();
@@ -113,9 +107,12 @@ export function SidebarSearch({
             render={
               <InputGroupButton
                 size="icon-xs"
-                // Keeps focus in the box, so its blur does not close it first.
-                onPointerDown={(event) => event.preventDefault()}
-                onClick={() => onQueryChange("")}
+                // The button unmounts with the query, so focus goes back to
+                // the box, whether it was clicked or pressed from the keyboard.
+                onClick={() => {
+                  updateSidebarSearch({ query: "" });
+                  inputRef.current?.focus();
+                }}
               />
             }
           >

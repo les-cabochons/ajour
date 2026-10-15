@@ -1,10 +1,4 @@
-import {
-  useMemo,
-  useRef,
-  useState,
-  type KeyboardEvent,
-  type PointerEvent,
-} from "react";
+import { useMemo, useRef, type KeyboardEvent, type PointerEvent } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   RiPlayLine as PlayIcon,
@@ -51,6 +45,7 @@ import {
 import type { AppSidebarState } from "@/lib/app-sidebar";
 import { useLocalState } from "@/lib/local-hooks";
 import { isDesktopShell } from "@/lib/runtime";
+import { useSidebarSearch } from "@/lib/sidebar-search";
 import {
   SIDEBAR_MIN_WIDTH,
   clampSidebarWidth,
@@ -191,8 +186,7 @@ export function AppNavigationSidebar({
   const now = useNow();
   const layout = useSidebarLayout();
   const isSettingsActive = getAppSection(pathname) === "settings";
-  const [searchOpen, setSearchOpen] = useState(false);
-  const [query, setQuery] = useState("");
+  const { open: searchOpen, query } = useSidebarSearch();
   const matcher = useMemo(
     () =>
       createSidebarMatcher(
@@ -285,12 +279,7 @@ export function AppNavigationSidebar({
               <PlayIcon />
             </TooltipButton>
           ) : null}
-          <SidebarSearch
-            open={searchOpen}
-            query={query}
-            onOpenChange={setSearchOpen}
-            onQueryChange={setQuery}
-          />
+          <SidebarSearch />
           <SidebarProjectFilter
             projects={state.projects}
             projectId={layout.projectId}

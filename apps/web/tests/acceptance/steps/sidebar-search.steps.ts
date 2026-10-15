@@ -116,3 +116,38 @@ Then("the Backlog page still lists every item", async ({ page }) => {
     page.locator(".backlog-workspace [data-work-item-id]"),
   ).toHaveCount(ALL_TITLES.length);
 });
+
+When("I clear the sidebar search from the keyboard", async ({ page }) => {
+  await sidebar(page)
+    .getByRole("searchbox", { name: "Search the sidebar" })
+    .press("Tab");
+  const clear = sidebar(page).getByRole("button", { name: "Clear search" });
+  await expect(clear).toBeFocused();
+  await page.keyboard.press("Enter");
+});
+
+Then("the empty sidebar search box has focus", async ({ page }) => {
+  const box = sidebar(page).getByRole("searchbox", {
+    name: "Search the sidebar",
+  });
+  await expect(box).toHaveValue("");
+  await expect(box).toBeFocused();
+});
+
+When("I use a narrow desktop window", async ({ page }) => {
+  // Below 1100px the sidebar hides and opens over the page.
+  await page.setViewportSize({ width: 1000, height: 720 });
+});
+
+When("I show the sidebar", async ({ page }) => {
+  await page.getByRole("button", { name: "Show sidebar" }).click();
+  await expect(sidebar(page)).toBeVisible();
+});
+
+When("I open {string} from the sidebar", async ({ page }, title: string) => {
+  await sidebarTitles(page).filter({ hasText: title }).click();
+});
+
+Then("the sidebar is hidden", async ({ page }) => {
+  await expect(sidebar(page)).toHaveCount(0);
+});
