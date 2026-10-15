@@ -17,6 +17,10 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
       (#113), Projects (#114) and Settings. Each page area owns a stylesheet
       under `apps/web/src/styles/`, and the browser's select, date, file and
       color controls are gone.
+- [x] Projects is a list page like the Backlog (rows with code, task count,
+      this week and budget) and a full-width project page with figures over a
+      budget bar and Tasks | Time entries tabs; the second project sidebar is
+      gone.
 - [x] A running timer no longer re-renders the titlebar and Time page each
       second: running readouts share one clock (`useRunningClock`), and the
       status pulse animates on the compositor. Renderer work with a timer

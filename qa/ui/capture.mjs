@@ -74,11 +74,13 @@ await session({ name: "light" }, async (page, shot) => {
   await page.keyboard.press("Escape");
   await go(page, "/backlog/w2");
   await shot("backlog-item");
+  await go(page, "/projects");
+  await shot("projects-list");
   await go(page, "/projects/p-atlas");
   await shot("projects");
   await go(page, "/projects/archive");
   await shot("projects-archive");
-  await go(page, "/projects/p-atlas");
+  await go(page, "/projects");
   await page.getByRole("button", { name: "New project" }).click();
   await shot("project-form");
   await page.getByRole("button", { name: /^Project color/ }).click();

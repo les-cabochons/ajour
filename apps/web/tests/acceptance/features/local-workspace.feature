@@ -179,11 +179,11 @@ Feature: Open the local time workspace
     When I open Settings directly
     Then the Settings pages replace the app sidebar
 
-  Scenario: Keep the desktop Projects sidebar expanded
+  Scenario: Open the Projects list beside primary navigation
     Given I have projects with searchable tasks
     When I open the Projects workspace
-    Then the Projects sidebar remains expanded and left-aligned beside primary navigation
-    And the Projects navigation remains available as a compact rail
+    Then the Projects list opens beside primary navigation
+    And the Projects list still opens where the app sidebar is a rail
 
   Scenario: Move around the narrow view from its titlebar
     Given I have projects with searchable tasks
