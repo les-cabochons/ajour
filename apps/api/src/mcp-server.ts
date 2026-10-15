@@ -84,7 +84,7 @@ const TOOL_DESCRIPTIONS: Record<
     "Backlog items. The default `sidebar` filter returns the user's current work list in their order. Filter by workflow state, project or text.",
   get_work_item: "One backlog item with its note, source link and subitems.",
   get_submit_lines:
-    "The week's timesheet lines as the Submit page groups them, with hours, merged comments, warnings, each line's lineId and project code, and Ajour's pace check. `weekOf` is any date in the week.",
+    "The week's timesheet lines as the Submit page groups them, with hours, merged comments, warnings, each line's lineId and project code, and Ajour's pace check. `weekOf` is any date in the week. When you enter a line in an external timesheet, write its lineId at the end of the comment, so a rerun can recognize the entry. When `pace.status` is not \"on-pace\", ask the user before entering anything.",
   start_timer:
     "Starts an entry now on a backlog item, or on a project with an optional task. A running entry is saved first, as Switch does in Ajour.",
   stop_timer: "Stops and saves the running entry.",

@@ -87,6 +87,26 @@ describe("computeWeekPace", () => {
     });
   });
 
+  it("is on pace with logged time and no targets", () => {
+    expect(
+      computeWeekPace({
+        weekDates: WEEK,
+        today: "2026-10-14",
+        capacityTargets: {
+          monday: 0,
+          tuesday: 0,
+          wednesday: 0,
+          thursday: 0,
+          friday: 0,
+          saturday: 0,
+          sunday: 0,
+        },
+        loggedMs: 12 * HOUR,
+        tolerancePercent: 20,
+      }),
+    ).toMatchObject({ targetHours: 0, loggedHours: 12, status: "on-pace" });
+  });
+
   it("expects nothing before the week starts", () => {
     expect(pace("2026-10-11", 0)).toMatchObject({
       expectedHours: 0,

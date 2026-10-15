@@ -34,7 +34,8 @@ const toHours = (ms: number) => Math.round((ms / HOUR) * 100) / 100;
  * `weekDates` runs Monday to Sunday. Days up to and including `today` count
  * as past, and only days with a target count as workdays, so the expected
  * hours are the targets of the past days. Over the week's target is always
- * `over`. Otherwise more than `tolerancePercent` away from the expected
+ * `over`. A week with no target at all is always `on-pace`: there is nothing
+ * to check it against. Otherwise more than `tolerancePercent` away from the expected
  * hours is `over` or `under`.
  */
 export function computeWeekPace({
@@ -64,13 +65,15 @@ export function computeWeekPace({
   });
   const tolerance = (expectedMs * tolerancePercent) / 100;
   const status: WeekPaceStatus =
-    loggedMs > targetMs && targetMs > 0
-      ? "over"
-      : loggedMs > expectedMs + tolerance
+    targetMs === 0
+      ? "on-pace"
+      : loggedMs > targetMs
         ? "over"
-        : loggedMs < expectedMs - tolerance
-          ? "under"
-          : "on-pace";
+        : loggedMs > expectedMs + tolerance
+          ? "over"
+          : loggedMs < expectedMs - tolerance
+            ? "under"
+            : "on-pace";
   return {
     loggedHours: toHours(loggedMs),
     targetHours: toHours(targetMs),
