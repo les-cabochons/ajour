@@ -2557,8 +2557,11 @@ Then(
     await expect(
       preference.getByRole("button", { name: "Ask", exact: true }),
     ).toBeVisible();
-    await expect(page.locator('[data-slot="field"]')).not.toContainText(
-      "Settle rules",
-    );
+    // Settle rules render once, in their own section, not under Subitems.
+    const subitems = page.locator("section", {
+      has: page.getByRole("heading", { name: "Subitems", exact: true }),
+    });
+    await expect(subitems).toHaveCount(1);
+    await expect(subitems).not.toContainText("Settle rules");
   },
 );
