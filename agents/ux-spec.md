@@ -472,7 +472,9 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 ### Peek
 
 - Clicking a row or card opens the peek on the right. Space toggles it on the focused row. It follows the clicked item until Escape or × closes it.
-- The peek shows the type and id, the title, Start entry and Open page, then state, source state, priority, lifecycle, project, task, estimates and subitems.
+- The peek is a smaller item page. It shows the id with Open page and ×, the title with its type, project and source link, Start entry and Edit, the estimate figures, then the properties (state, source state, priority, lifecycle, project, task), the note and the subitems.
+- The peek has no "…" menu. The row's context menu and the item page carry the other actions.
+- Dragging the peek's left edge resizes it from 300px to 720px, at most half the page. Arrow keys on the edge move it by 16px and a double-click resets 340px. The width is kept per device and the editor in the same slot uses it too.
 - State, priority, project and task change in place and save at once with Undo, like the pickers on a card.
 - Edit turns the peek into the backlog item editor in the same slot, with its explicit Save. Saving or discarding goes back to the peek.
 - Enter, a double-click or Open page opens the backlog item page.

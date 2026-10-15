@@ -593,20 +593,6 @@
     margin-top: 0.25rem;
   }
 
-  /* Project and task read as values, like the state and priority pickers
-     beside them, and show their field only on hover and focus. */
-  .backlog-peek .searchable-select-input-group {
-    height: 1.75rem;
-    border-color: transparent;
-    background: transparent;
-  }
-
-  .backlog-peek .searchable-select-input-group:hover,
-  .backlog-peek .searchable-select-input-group:focus-within {
-    border-color: var(--field-border);
-    background: var(--field-bg);
-  }
-
   /* -- Carried from the editor and the icons --------------------- */
 
   .backlog-task-meta {
@@ -701,4 +687,28 @@
   .backlog-swimlane-header {
     padding-inline: calc(1rem + var(--app-workspace-content-gutter, 0px));
   }
+}
+
+/* The peek's properties read as values. Project and task show their field
+   only on hover and focus, like the state and priority pickers beside them.
+   Unlayered, so they win over the input group's utility classes. Controls
+   shift left by their border and padding so every value's text lines up. */
+.backlog-peek .searchable-select-input-group {
+  height: var(--control-height);
+  border-color: transparent;
+  background: transparent;
+}
+
+.backlog-peek .searchable-select-input-group:hover,
+.backlog-peek .searchable-select-input-group:focus-within {
+  border-color: var(--field-border);
+  background: var(--field-bg);
+}
+
+.backlog-peek [data-slot="property-list"] dd > :is(button, .searchable-select) {
+  margin-inline-start: calc(-0.625rem - 1px);
+}
+
+.backlog-peek [data-slot="property-list"] dd > .searchable-select {
+  width: calc(100% + 0.625rem + 1px);
 }
