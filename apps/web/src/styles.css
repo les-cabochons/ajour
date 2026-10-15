@@ -38,6 +38,11 @@
 @layer base {
   :root {
     color-scheme: light;
+    /* Week Grid dimensions keep all seven days visible above an 820px content width. */
+    --weekly-grid-day-width: 84px;
+    --weekly-grid-total-width: 72px;
+    --weekly-grid-task-min-width: 160px;
+    --weekly-grid-heading-line-height: 1.2;
     /* Neutrals carry a trace of the accent hue so grays read warm-cool, not flat. */
     --background: oklch(1 0 0);
     --foreground: oklch(0.17 0.006 285);

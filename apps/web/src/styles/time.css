@@ -450,23 +450,35 @@
     text-align: left;
   }
 
+  /* Fixed layout keeps long task names from widening the first column.
+     Day and total columns stay compact, the task column takes the rest and
+     ellipsizes. Below the min-width the grid scrolls horizontally. */
+  .weekly-grid-table {
+    min-width: calc(
+      var(--weekly-grid-task-min-width) + 7 * var(--weekly-grid-day-width) +
+        var(--weekly-grid-total-width)
+    );
+    table-layout: fixed;
+  }
+
   .weekly-grid-task-column,
   .weekly-grid-task-cell {
-    width: 260px;
-    min-width: 200px;
     padding-left: 1rem !important;
   }
 
   .weekly-grid-day-column {
-    min-width: 96px;
+    width: var(--weekly-grid-day-width);
   }
 
+  /* Date on top, logged time below, both right-aligned with the cell values. */
   .weekly-grid-day-heading {
     display: flex;
-    align-items: baseline;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0 0.75rem;
+    flex-direction: column;
+    align-items: flex-end;
+    gap: 0.125rem;
+    padding: 0 0.5rem;
+    line-height: var(--weekly-grid-heading-line-height);
+    white-space: nowrap;
   }
 
   .weekly-grid-weekday {
@@ -499,7 +511,7 @@
 
   .weekly-grid-total-column,
   .weekly-grid-total-cell {
-    width: 96px;
+    width: var(--weekly-grid-total-width);
     padding-right: 1rem !important;
     text-align: right !important;
   }
@@ -508,7 +520,7 @@
     height: 40px;
   }
 
-  .weekly-grid-task-cell > div {
+  .weekly-grid-task-name {
     display: flex;
     align-items: baseline;
     gap: 0.5rem;
@@ -516,19 +528,23 @@
     white-space: nowrap;
   }
 
-  .weekly-grid-task-cell > div > span {
+  .weekly-grid-task-name > span {
     color: var(--text-secondary);
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  .weekly-grid-task-cell > div > span::after {
+  .weekly-grid-task-name > span::after {
     content: "·";
     margin-left: 0.5rem;
     color: var(--text-tertiary);
   }
 
-  .weekly-grid-task-cell > div > strong {
+  /* The task name keeps its full width up to 70% of the cell, so a long
+     project name truncates first but never disappears. */
+  .weekly-grid-task-name > strong {
+    flex-shrink: 0;
+    max-width: 70%;
     color: var(--text);
     font-weight: 500;
     overflow: hidden;
@@ -553,7 +569,7 @@
     display: block;
     width: 100%;
     height: 40px;
-    padding: 0 0.75rem;
+    padding: 0 0.5rem;
     border: 0;
     background: transparent;
     color: var(--text);
@@ -637,7 +653,7 @@
   }
 
   .weekly-grid-footer-row > .weekly-grid-time-cell {
-    padding-right: 0.75rem !important;
+    padding-right: 0.5rem !important;
   }
 
   /* Grid cell list in the side panel */

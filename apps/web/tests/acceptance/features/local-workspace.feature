@@ -156,6 +156,55 @@ Feature: Open the local time workspace
     When I undo with the toast button
     Then the "Code review" cell on Monday shows "1:00"
 
+  Scenario: Delete a Week Grid row that has time
+    Given I have a week of saved entries
+    When I open the Week Grid
+    And I press Shift+Backspace on the "Code review" cell on Monday
+    Then a dialog warns that deleting the "Code review" row deletes its entries
+    When I confirm deleting the row
+    Then the Week Grid has no "Code review" row
+    When I undo with the toast button
+    Then the "Code review" cell on Monday shows "1:00"
+
+  Scenario: Delete an empty Week Grid row without confirmation
+    Given I have a week of saved entries
+    When I open the Week Grid
+    And I add a Week Grid row without a task
+    And I delete the "No task" row from its name menu
+    Then the Week Grid has no "No task" row
+    And no row deletion dialog is open
+    And the "Development" cell on Monday has keyboard focus
+
+  Scenario: Include an open draft when deleting a Week Grid row
+    Given I have a week of saved entries
+    When I open the Week Grid
+    And I draft "2:00" hours in the "Code review" cell on Tuesday
+    And I press Shift+Backspace on the "Code review" cell on Monday
+    Then the row deletion dialog counts "2 entries (3:00)"
+    When I confirm deleting the row
+    Then the Week Grid has no "Code review" row
+    When I undo with the toast button
+    Then the "Code review" cell on Tuesday shows "2:00"
+
+  Scenario: Include an open draft when deleting an initially empty Week Grid row
+    Given I have a week of saved entries
+    When I open the Week Grid
+    And I add a Week Grid row without a task
+    And I draft "0:30" hours in the "No task" cell on Tuesday
+    And I press Shift+Backspace on the "No task" cell on Monday
+    Then the row deletion dialog counts "1 entry (0:30)"
+    When I confirm deleting the row
+    Then the Week Grid has no "No task" row
+
+  Scenario: Keep an invalid draft when deleting a Week Grid row
+    Given I have a week of saved entries
+    When I open the Week Grid
+    And I draft "invalid" hours in the "Code review" cell on Tuesday
+    And I press Shift+Backspace on the "Code review" cell on Monday
+    Then no row deletion dialog is open
+    And the Week Grid entry draft still has invalid hours
+    And the "Code review" cell on Monday shows "1:00"
+
   Scenario: Open Settings in place of the app sidebar
     Given I have no saved Ajour workspace
     When I open today's new-entry workspace

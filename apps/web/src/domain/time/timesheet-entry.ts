@@ -286,6 +286,17 @@ export function deleteTimesheetEntry(
   };
 }
 
+/**
+ * Deletes several entries in one change, such as a Week Grid row. An entry linked
+ * to a running timer stays, as in `deleteTimesheetEntry`.
+ */
+export function deleteTimesheetEntries(
+  state: LocalAppState,
+  entryIds: readonly string[],
+): LocalAppState {
+  return entryIds.reduce(deleteTimesheetEntry, state);
+}
+
 export function duplicateTimesheetEntry(
   state: LocalAppState,
   entryId: string,
