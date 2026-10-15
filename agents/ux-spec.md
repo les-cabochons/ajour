@@ -321,22 +321,22 @@ Frequent in-app actions use single keys. They only work when focus is not in a t
 
 ### Global shortcuts
 
-| Key                | Action                                                                      |
-| ------------------ | --------------------------------------------------------------------------- |
-| N                  | New entry: side panel on the Time pages, popover elsewhere                  |
-| S                  | Stop the running entry, or start a new one when nothing runs                |
-| C                  | Continue the focused entry, or the most recent entry when none is focused   |
-| T                  | Go to today                                                                 |
-| [ / ]              | Previous / next day, or week in the Week view                               |
-| D / W              | Day view / Week view                                                        |
-| G then T, B, P, S  | Go to Time, Backlog, Projects, Settings                                     |
-| 1 to 0             | Open the new entry form with the pinned task in that slot filled in         |
-| Shift+1 to Shift+0 | Start a running entry for that pinned task, switching if another entry runs |
-| Cmd+B              | Show or hide the sidebar                                                    |
-| Cmd+Z              | Press Undo on the visible Undo toast                                        |
-| Cmd+,              | Settings                                                                    |
-| Cmd+K              | Command palette                                                             |
-| ?                  | Keyboard shortcuts                                                          |
+| Key                | Action                                                                                                             |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| N                  | New entry: side panel on the Time pages, popover elsewhere                                                         |
+| S                  | Start an entry on the focused backlog item; otherwise stop the running entry, or start a new one when nothing runs |
+| C                  | Continue the focused entry, or the most recent entry when none is focused                                          |
+| T                  | Go to today                                                                                                        |
+| [ / ]              | Previous / next day, or week in the Week view                                                                      |
+| D / W              | Day view / Week view                                                                                               |
+| G then T, B, P, S  | Go to Time, Backlog, Projects, Settings                                                                            |
+| 1 to 0             | Open the new entry form with the pinned task in that slot filled in                                                |
+| Shift+1 to Shift+0 | Start a running entry for that pinned task, switching if another entry runs                                        |
+| Cmd+B              | Show or hide the sidebar                                                                                           |
+| Cmd+Z              | Press Undo on the visible Undo toast                                                                               |
+| Cmd+,              | Settings                                                                                                           |
+| Cmd+K              | Command palette                                                                                                    |
+| ?                  | Keyboard shortcuts                                                                                                 |
 
 ### Pinned tasks
 
