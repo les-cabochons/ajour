@@ -81,6 +81,7 @@ import {
   deleteTimesheetEntries as applyDeleteTimesheetEntries,
   deleteTimesheetEntry as applyDeleteTimesheetEntry,
   duplicateTimesheetEntry as applyDuplicateTimesheetEntry,
+  markTimesheetEntriesNotSubmitted as applyMarkTimesheetEntriesNotSubmitted,
   markTimesheetEntriesSubmitted as applyMarkTimesheetEntriesSubmitted,
   moveTimesheetEntry as applyMoveTimesheetEntry,
   normalizeTimesheetEntry,
@@ -1714,6 +1715,16 @@ export const localStore = {
 
     updateState((state) =>
       applyMarkTimesheetEntriesSubmitted(state, entryIds, Date.now),
+    );
+  },
+  /** Returns entries to saved. See `markTimesheetEntriesNotSubmitted`. */
+  markTimesheetEntriesNotSubmitted(entryIds: string[]) {
+    if (entryIds.length === 0) {
+      return;
+    }
+
+    updateState((state) =>
+      applyMarkTimesheetEntriesNotSubmitted(state, entryIds),
     );
   },
   continueTimesheetEntry(entryId: string) {

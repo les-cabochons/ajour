@@ -187,6 +187,7 @@ export const ENTRY_WRITE_TOOLS = [
   "move_entry",
   "duplicate_entry",
   "mark_entries_submitted",
+  "mark_entries_not_submitted",
 ] as const satisfies readonly WriteToolName[];
 export type EntryWriteTool = (typeof ENTRY_WRITE_TOOLS)[number];
 
@@ -432,6 +433,30 @@ export function runEntryWriteTool(
         action: `Marked ${count} ${count === 1 ? "entry" : "entries"} as submitted`,
         objectId: input.entryIds[0]!,
         objectTitle: `${count} ${count === 1 ? "entry" : "entries"}`,
+        undoSubject: "entry",
+      };
+    }
+
+    case "mark_entries_not_submitted": {
+      const input =
+        writeToolInputSchemas.mark_entries_not_submitted.parse(rawInput);
+      for (const entryId of input.entryIds) {
+        const entry = requireEntry(state, entryId);
+        if (isEntryRunning(state, entry)) {
+          throw new AgentToolRefusal("Stop the running entry first");
+        }
+      }
+      const { undoToken } = localStore.runWithUndo(() =>
+        localStore.markTimesheetEntriesNotSubmitted(input.entryIds),
+      );
+      const count = input.entryIds.length;
+      const noun = count === 1 ? "entry" : "entries";
+      return {
+        output: { unmarked: count },
+        undoToken,
+        action: `Marked ${count} ${noun} as not submitted`,
+        objectId: input.entryIds[0]!,
+        objectTitle: `${count} ${noun}`,
         undoSubject: "entry",
       };
     }

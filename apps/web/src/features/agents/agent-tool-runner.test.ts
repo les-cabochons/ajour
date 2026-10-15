@@ -373,6 +373,41 @@ describe("agent timer and entry tools", () => {
       "Claude Code: Duplicated an entry",
     );
   });
+
+  it("marks entries as not submitted, with Undo", async () => {
+    const { call, localStore, project, task } = await setup();
+    localStore.saveManualTimeEntry({
+      localDate: "2026-10-13",
+      projectId: project._id,
+      taskId: task("Build")._id,
+      durationMs: 30 * 60_000,
+    });
+    const entryId = localStore.snapshot().timesheetEntries[0]!._id;
+    await call("mark_entries_submitted", { entryIds: [entryId] });
+
+    expect(
+      await call("mark_entries_not_submitted", { entryIds: [entryId] }),
+    ).toMatchObject({ ok: true, output: { unmarked: 1 } });
+    expect(
+      localStore.snapshot().timesheetEntries[0]!.submittedAt,
+    ).toBeUndefined();
+    expect(offerUndo.mock.calls.at(-1)![1].title).toBe(
+      "Claude Code: Marked 1 entry as not submitted",
+    );
+  });
+
+  it("refuses to unmark the running entry", async () => {
+    const { call, localStore, project } = await setup();
+    await call("start_timer", { projectId: project._id });
+    await call("stop_timer");
+    const entryId = localStore.snapshot().timesheetEntries[0]!._id;
+    await call("mark_entries_submitted", { entryIds: [entryId] });
+    localStore.continueTimesheetEntry(entryId);
+
+    expect(
+      await call("mark_entries_not_submitted", { entryIds: [entryId] }),
+    ).toMatchObject({ ok: false, error: "Stop the running entry first" });
+  });
 });
 
 describe("agent work item tools", () => {

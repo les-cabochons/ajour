@@ -186,6 +186,9 @@ export const writeToolInputSchemas = {
   mark_entries_submitted: z.object({
     entryIds: z.array(z.string()).min(1).max(500),
   }),
+  mark_entries_not_submitted: z.object({
+    entryIds: z.array(z.string()).min(1).max(500),
+  }),
   create_work_item: z.object({
     title: z.string().trim().min(1).max(500),
     note: z.string().max(10_000).optional(),
@@ -355,6 +358,7 @@ export const dataToolOutputSchemas = {
   move_entry: agentTimeEntrySchema,
   duplicate_entry: agentTimeEntrySchema,
   mark_entries_submitted: z.object({ marked: z.number() }),
+  mark_entries_not_submitted: z.object({ unmarked: z.number() }),
   create_work_item: agentWorkItemSchema,
   edit_work_item: agentWorkItemSchema,
   move_work_item: agentWorkItemSchema,

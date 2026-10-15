@@ -97,6 +97,8 @@ const TOOL_DESCRIPTIONS: Record<
   duplicate_entry: "Copies an entry, to the same date or another one.",
   mark_entries_submitted:
     "Marks entries as submitted after the user entered them in their timesheet.",
+  mark_entries_not_submitted:
+    "Returns entries to saved, for lines that failed in the external timesheet. Undo the marks you made for a line you could not enter.",
   create_work_item:
     "Adds a manual backlog item, or a subitem with parentWorkItemId.",
   edit_work_item:
