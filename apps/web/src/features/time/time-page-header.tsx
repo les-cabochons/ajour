@@ -8,7 +8,7 @@ import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { WeekSubmittedBadge } from "@/features/time/submit-week-controls";
+import { WeekCommittedBadge } from "@/features/time/commit-week-controls";
 import { TimeDatePicker, dateAtNoon } from "@/features/time/time-date-picker";
 import { addDaysIsoDate } from "@/lib/utils";
 
@@ -131,7 +131,7 @@ export function TimePageHeader({
           <ReturnIcon className="size-3.5" />
         </TooltipButton>
       )}
-      {view === "week" ? <WeekSubmittedBadge weekDates={weekDates} /> : null}
+      {view === "week" ? <WeekCommittedBadge weekDates={weekDates} /> : null}
     </PageHeader>
   );
 }

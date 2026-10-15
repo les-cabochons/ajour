@@ -8,11 +8,13 @@ import type {
 
 /**
  * The local state lists that undoable actions change. A project's tasks live
- * inside the project record, so archiving a task changes its project.
+ * inside the project record, so archiving a task changes its project. Deleting
+ * a committed entry adds a tombstone, so Undo takes it back with the entry.
  */
 const UNDO_COLLECTIONS = [
   "projects",
   "timesheetEntries",
+  "timesheetTombstones",
   "timers",
   "timesheetImportDrafts",
   "workItems",
@@ -30,6 +32,7 @@ const recordKeys: {
 } = {
   projects: (project) => project._id,
   timesheetEntries: (entry) => entry._id,
+  timesheetTombstones: (tombstone) => tombstone.entryId,
   timers: (timer) => timer._id,
   timesheetImportDrafts: (draft) => draft._id,
   workItems: (workItem) => workItem._id,
@@ -181,6 +184,7 @@ export function captureUndo(
     workItems: diffCollection("workItems", before, after),
     timers: diffCollection("timers", before, after),
     timesheetEntries: diffCollection("timesheetEntries", before, after),
+    timesheetTombstones: diffCollection("timesheetTombstones", before, after),
     timesheetImportDrafts: diffCollection(
       "timesheetImportDrafts",
       before,
@@ -377,6 +381,11 @@ export function restoreUndo(
       ...state,
       projects: restoreCollection("projects", state, undo),
       timesheetEntries: restoreCollection("timesheetEntries", state, undo),
+      timesheetTombstones: restoreCollection(
+        "timesheetTombstones",
+        state,
+        undo,
+      ),
       timers,
       timesheetImportDrafts: restoreCollection(
         "timesheetImportDrafts",

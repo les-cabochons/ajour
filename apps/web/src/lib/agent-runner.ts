@@ -4,7 +4,7 @@ import { getAgentRunner, isConnectorApiMissing } from "@/lib/app-api";
 
 /**
  * The agent runner's overview from the local API, shared by Settings >
- * Agents and the Submit page. `unavailable` means Ajour runs as a plain web
+ * Agents and the Commit page. `unavailable` means Ajour runs as a plain web
  * app without the API.
  */
 export type AgentRunnerState =

@@ -29,7 +29,7 @@ Confirm that a tester can open the local daily time workspace and reach its prim
 3. Find the desktop primary navigation sidebar.
    - Expected: The tinted sidebar reaches the top and bottom of the window, the timer dock reads `Nothing running`, `Time`, `Backlog`, and `Projects` are visible below it with their counts, `Settings` is aligned to the bottom, and `Time` is the current page.
    - On Windows, the timer controls do not sit beneath minimize, maximize, or close. On macOS, the traffic lights occupy the reserved strip above the sidebar brand and navigation.
-4. Find the `Submit week` action.
+4. Find the `Commit week` action.
    - Expected: The action is visible and enabled. On a window wider than 1640px, the day labels remain centered in a 1440px column while the day color band, table header background, and row separators stretch to both workspace edges without an enclosing outer border.
 5. Open Settings from the sidebar.
    - Expected: The settings pages replace the primary sidebar in the full-height left column, grouped under App, Work and Data, with `Back to app` at the top. A running entry floats at the bottom of that column. `Back to app` returns to the page you came from.
@@ -48,7 +48,7 @@ Confirm that a tester can open the local daily time workspace and reach its prim
 
 ## Evidence
 
-- Capture one screenshot showing the full-height Time workspace sidebar, unobstructed native window controls, and the `Submit week` action.
+- Capture one screenshot showing the full-height Time workspace sidebar, unobstructed native window controls, and the `Commit week` action.
 - Capture one screenshot showing the Settings sidebar replacement and bottom `Back` action.
 - Record any browser console error that blocks the routine.
 

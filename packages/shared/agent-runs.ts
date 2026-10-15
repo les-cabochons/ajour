@@ -48,7 +48,7 @@ export const agentTaskStatusSchema = z.object({
   pluginName: z.string(),
   taskId: z.string(),
   label: z.string(),
-  placement: z.literal("submit-week"),
+  placement: z.literal("commit-week"),
   estimateMinutes: z.number().int(),
   settings: z.array(connectorFieldSchema),
   values: connectorFieldValuesSchema,

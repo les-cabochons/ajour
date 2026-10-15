@@ -99,15 +99,23 @@ The state of the one time entry the clock is currently counting. At most one tim
 _Avoid_: Open, active, timer (as a separate thing the user sees)
 
 **Saved**:
-The state of a time entry that is neither running nor submitted.
-_Avoid_: Closed, stopped, committed
+The state of a time entry that is not running.
+_Avoid_: Closed, stopped
 
-**Submitted**:
-The state of a time entry included in a submitted timesheet. Editing it returns it to saved.
-_Avoid_: Locked, approved, sent
+**Committed**:
+A saved time entry whose committed copy matches it: the external timesheet holds it as it is in Ajour. Editing it makes an updated change.
+_Avoid_: Submitted, synced, sent
+
+**Committed copy**:
+The values of a time entry as it was last committed: its day, project, task, note and duration.
+_Avoid_: Snapshot, fingerprint
+
+**Change**:
+A time entry that differs from its committed copy: added (never committed), updated (its copy differs) or deleted (committed, then deleted, kept as a tombstone).
+_Avoid_: Diff, delta, dirty entry
 
 **Timesheet**:
-One person's time entries for one week, submitted together.
+One person's time entries for one week, committed to an external timesheet tool.
 _Avoid_: Time report, time card
 
 ### Time entry actions

@@ -172,7 +172,7 @@ export class AgentRunner {
     return this.active?.run ?? null;
   }
 
-  /** Settings > Agents and the Submit page read this. */
+  /** Settings > Agents and the Commit page read this. */
   async overview(): Promise<AgentRunnerOverview> {
     const settings = await this.options.storage.getAgentRunnerSettings();
     const clis = await this.detectClis();

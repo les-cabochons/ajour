@@ -112,7 +112,7 @@ const shots = [
       return page.getByRole("menu");
     },
   },
-  { name: "submit-week", run: (page) => go(page, "/time/today/submit") },
+  { name: "commit-week", run: (page) => go(page, "/time/today/commit") },
   // Backlog
   { name: "backlog-list", run: (page) => go(page, "/backlog") },
   {

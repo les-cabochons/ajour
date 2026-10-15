@@ -18,7 +18,7 @@ Ajour is a time tracker for people who fill a timesheet every week. It keeps you
 
 <DocLinks :items="[
   { icon: 'download', title: 'Install Ajour', text: 'Download the desktop app for macOS or Windows.', link: '/start/install' },
-  { icon: 'timer', title: 'Start guide', text: 'Track your first day, from the first entry to a submitted week.', link: '/start/' },
+  { icon: 'timer', title: 'Start guide', text: 'Track your first day, from the first entry to a committed week.', link: '/start/' },
   { icon: 'lightbulb', title: 'Concepts', text: 'Projects, tasks, entries, backlog items and how they fit together.', link: '/start/concepts' },
   { icon: 'keyboard', title: 'Keyboard shortcuts', text: 'Every key Ajour listens to, on one page.', link: '/start/shortcuts' },
 ]" />
@@ -28,7 +28,7 @@ Ajour is a time tracker for people who fill a timesheet every week. It keeps you
 <DocLinks :items="[
   { icon: 'calendar', title: 'Day view', text: 'Log, start and fix the entries of one day.', link: '/time/day-view' },
   { icon: 'list', title: 'Week view', text: 'See and edit a whole week in a grid.', link: '/time/week-view' },
-  { icon: 'send', title: 'Submit your week', text: 'Copy your week into your timesheet tool and mark it as submitted.', link: '/time/submit' },
+  { icon: 'send', title: 'Commit your week', text: 'Copy the changes of your week into your timesheet tool and mark them as committed.', link: '/time/commit' },
   { icon: 'backlog', title: 'Backlog', text: 'Plan the work you will spend time on.', link: '/backlog/' },
   { icon: 'projects', title: 'Projects', text: 'Group tasks, set budgets and assign shortcuts.', link: '/projects/' },
   { icon: 'command', title: 'Command palette', text: 'Find anything and run any action from the keyboard.', link: '/app/command-palette' },

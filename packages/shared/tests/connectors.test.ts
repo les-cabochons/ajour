@@ -108,7 +108,7 @@ const agentTaskBase = {
 const agentTask = {
   id: "enter-week",
   label: "Enter in Workday",
-  placement: "submit-week",
+  placement: "commit-week",
   prompt: "prompts/enter-week.md",
   estimateMinutes: 10,
   weekLink: "{{settings.timesheetUrl}}?date={{weekOf}}",
@@ -123,6 +123,17 @@ const agentTask = {
 };
 
 describe("plugin manifest capabilities", () => {
+  it("refuses the old submit-week placement", () => {
+    expect(() =>
+      connectorPluginManifestSchema.parse({
+        ...agentTaskBase,
+        capabilities: {
+          agentTask: { tasks: [{ ...agentTask, placement: "submit-week" }] },
+        },
+      }),
+    ).toThrow(/placement/);
+  });
+
   it("accepts a plugin with only agent tasks, without entrypoint or connection fields", () => {
     const manifest = connectorPluginManifestSchema.parse({
       ...agentTaskBase,

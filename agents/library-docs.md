@@ -46,8 +46,9 @@ Use this file as the local index for important library choices. Check official d
 - Pull request fact reconciliation, local lifecycle, snooze, Returned, visibility and seven-day closure retention: `apps/web/src/domain/pull-requests/pull-request-lifecycle.ts`
 - Connector work-item identity, local-decision-preserving merge, missing-item archive provenance, done-category archives, and estimate-sync updates: `apps/web/src/domain/backlog/work-item-connector.ts`
 - Clock and decimal-hours formatting and hours-input parsing: `apps/web/src/domain/time/duration.ts`
-- Timesheet entry creation, editing, deletion, ordering, submission state, and linked estimate adjustments: `apps/web/src/domain/time/timesheet-entry.ts`
-- Submit page lines (grouping, comment merging), selection, summary warnings, and week submission status: `apps/web/src/domain/time/timesheet-submission.ts`
+- Timesheet entry creation, editing, deletion and tombstones, ordering, marking as committed, and linked estimate adjustments: `apps/web/src/domain/time/timesheet-entry.ts`
+- Committed copies, change detection (added, updated, deleted), the week's change list and the names an external timesheet matches: `apps/web/src/domain/time/timesheet-commit.ts`
+- Commit page lines (grouping, comment merging) and the week summary warnings: `apps/web/src/domain/time/timesheet-submission.ts`
 - Timesheet import normalization, conflict detection, draft lifecycle, project/task recovery, and commits: `apps/web/src/domain/time/timesheet-import.ts`
 - Timer hydration, single-active-timer enforcement, start/edit/cancel/save/continue transitions, elapsed duration, and continued-entry replacement: `apps/web/src/domain/time/timer-transitions.ts`
 - Imported browser review preservation, timeline materialization, dismissals, commits, and rule creation: `apps/web/src/domain/time/timeline-transitions.ts`

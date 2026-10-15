@@ -27,18 +27,18 @@ Decided in [Action model for entries, timers, projects, tasks and work items](ht
 
 ### Time entry
 
-| Slot             | Saved    | Submitted                                                | Running                                     |
-| ---------------- | -------- | -------------------------------------------------------- | ------------------------------------------- |
-| Edit             | Enabled  | Enabled, with "Saving marks this entry as not submitted" | Enabled, saved with the form, keeps running |
-| Continue / Stop  | Continue | Continue                                                 | Stop                                        |
-| Duplicate        | Enabled  | Enabled, the copy is saved                               | Disabled: "Stop the timer first"            |
-| Duplicate to…    | Enabled  | Enabled, the copy is saved                               | Disabled: "Stop the timer first"            |
-| Move to…         | Enabled  | Enabled, marks the entry as not submitted                | Disabled: "Stop the timer first"            |
-| Delete / Discard | Delete   | Delete                                                   | Discard                                     |
+| Slot             | Saved    | Committed                  | Running                                     |
+| ---------------- | -------- | -------------------------- | ------------------------------------------- |
+| Edit             | Enabled  | Enabled                    | Enabled, saved with the form, keeps running |
+| Continue / Stop  | Continue | Continue                   | Stop                                        |
+| Duplicate        | Enabled  | Enabled, the copy is saved | Disabled: "Stop the timer first"            |
+| Duplicate to…    | Enabled  | Enabled, the copy is saved | Disabled: "Stop the timer first"            |
+| Move to…         | Enabled  | Enabled                    | Disabled: "Stop the timer first"            |
+| Delete / Discard | Delete   | Delete                     | Discard                                     |
 
 - Continue on today's entry resumes that entry. Continue on another day's entry starts a new running entry today with the same task and note. Today the code adds the new time to the original entry, even on a past day. That changes.
 - Discard throws away the time counted since the entry last started. A running entry that started from nothing disappears.
-- Move up and Move down apply to saved and submitted entries. The running entry stays first in its day, so Move up and Move down are disabled on it: "The running entry stays on top".
+- Move up and Move down apply to saved and committed entries. The running entry stays first in its day, so Move up and Move down are disabled on it: "The running entry stays on top".
 
 ### Project
 
@@ -377,6 +377,8 @@ Cmd+K opens one palette with navigation, global actions, the focused item's acti
 ### Shortcut reference
 
 "?" opens an overlay listing every shortcut, with a search field.
+
+Superseded by the Commit page: `docs/superpowers/specs/2026-10-15-commit-week-design.md`.
 
 ## Submit timesheet
 

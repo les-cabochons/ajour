@@ -54,11 +54,13 @@ export function seedScript(options = {}) {
     wi("w10","Migrate CI to Node 26",{ priority:3, status:"archived", archivedAt:t0-3*86400000, workflowStateId:"ws-done", projectId:"p-internal", taskId:"t-int-admin", originalEstimateHours:4, completedEstimateHours:4, remainingEstimateHours:0 }),
   ];
   const e = (id, date, pid, tid, label, note, hrs, extra={}) => ({ _id:id, localDate:date, projectId:pid, taskId:tid, label, note, durationMs:h(hrs), sourceBlockIds:[], committedAt:t0-5e5, ...extra });
+  // A committed copy of the entry's values. "changes" makes the copy differ, so the entry shows as updated.
+  const committed = (entry, at, changes = {}) => ({ ...entry, commit: { at, localDate: entry.localDate, projectId: entry.projectId, taskId: entry.taskId, note: entry.note, durationMs: entry.durationMs, ...changes } });
   const timesheetEntries = [
-    e("e1", monday(0), "p-atlas","t-atlas-dev","Development","Export rounding spike", 3.5, {workItemId:"w1", submittedAt:t0-4e5}),
-    e("e2", monday(0), "p-atlas","t-atlas-meet","Meetings","Sprint planning", 1, {submittedAt:t0-4e5}),
-    e("e3", monday(0), "p-internal","t-int-admin","Admin","Expense report", 0.5, {submittedAt:t0-4e5}),
-    e("e4", monday(0), "p-harbor","t-harbor-dev","Development","Conflict dialog scaffolding", 2.5, {workItemId:"w4", submittedAt:t0-4e5}),
+    committed(e("e1", monday(0), "p-atlas","t-atlas-dev","Development","Export rounding spike", 3.5, {workItemId:"w1"}), t0-4e5),
+    committed(e("e2", monday(0), "p-atlas","t-atlas-meet","Meetings","Sprint planning", 1), t0-4e5, { durationMs: h(0.5) }),
+    committed(e("e3", monday(0), "p-internal","t-int-admin","Admin","Expense report", 0.5), t0-4e5),
+    committed(e("e4", monday(0), "p-harbor","t-harbor-dev","Development","Conflict dialog scaffolding", 2.5, {workItemId:"w4"}), t0-4e5),
     e("e5", monday(1), "p-atlas","t-atlas-dev","Development","Week grid keyboard editing", 4, {workItemId:"w2"}),
     e("e6", monday(1), "p-atlas","t-atlas-review","Code review","Worker timeouts PR", 1.5, {workItemId:"w3"}),
     e("e7", monday(1), "p-atlas","t-atlas-meet","Meetings","1:1 with Sam", 0.5),
@@ -66,12 +68,12 @@ export function seedScript(options = {}) {
     e("e9", today, "p-atlas","t-atlas-dev","Development","Export rounding: fixed half-hour case", 2, {workItemId:"w1"}),
     e("e10", today, "p-atlas","t-atlas-meet","Meetings","Standup", 0.25),
     e("e11", today, "p-internal","t-int-learning","Learning","OKLCH guide", 0.75, {workItemId:"w7"}),
-    e("e12", monday(-7), "p-atlas","t-atlas-dev","Development","Last week carry-over", 6, {submittedAt:t0-8e5}),
-    e("e13", monday(-6), "p-atlas","t-atlas-dev","Development","", 7.5, {submittedAt:t0-8e5}),
-    e("e14", monday(-5), "p-harbor","t-harbor-dev","Development","", 8, {submittedAt:t0-8e5}),
-    e("e15", monday(-4), "p-atlas","t-atlas-review","Code review","", 4, {submittedAt:t0-8e5}),
-    e("e16", monday(-4), "p-internal","t-int-admin","Admin","", 3.5, {submittedAt:t0-8e5}),
-    e("e17", monday(-3), "p-atlas","t-atlas-dev","Development","", 6.5, {submittedAt:t0-8e5}),
+    committed(e("e12", monday(-7), "p-atlas","t-atlas-dev","Development","Last week carry-over", 6), t0-8e5),
+    committed(e("e13", monday(-6), "p-atlas","t-atlas-dev","Development","", 7.5), t0-8e5),
+    committed(e("e14", monday(-5), "p-harbor","t-harbor-dev","Development","", 8), t0-8e5),
+    committed(e("e15", monday(-4), "p-atlas","t-atlas-review","Code review","", 4), t0-8e5),
+    committed(e("e16", monday(-4), "p-internal","t-int-admin","Admin","", 3.5), t0-8e5),
+    committed(e("e17", monday(-3), "p-atlas","t-atlas-dev","Development","", 6.5), t0-8e5),
   ];
   if (options.large) {
     const states = ["ws-todo", "ws-doing", "ws-review"];
@@ -82,7 +84,7 @@ export function seedScript(options = {}) {
     }
     for (let i = 0; i < 1800; i += 1) {
       const [pid, tid] = tasks[i % 3];
-      timesheetEntries.push(e("big-e-" + i, dayOffset(-(Math.floor(i / 6) + 1)), pid, tid, "Development", "Entry " + i, 0.5 + (i % 4) * 0.5, { submittedAt: t0 - 9e5 }));
+      timesheetEntries.push(committed(e("big-e-" + i, dayOffset(-(Math.floor(i / 6) + 1)), pid, tid, "Development", "Entry " + i, 0.5 + (i % 4) * 0.5), t0 - 9e5));
     }
   }
   const timers = options.running === false ? [] : [ { _id:"timer-1", startedAt:t0-47*60000, localDate:today, workItemId:"w1", projectId:"p-atlas", taskId:"t-atlas-dev", note:"Export rounding: edge cases", accumulatedDurationMs:0 } ];
@@ -92,7 +94,8 @@ export function seedScript(options = {}) {
   localStorage.clear();
   // An empty workspace: nothing persisted, so the app starts as on a fresh install.
   if (options.empty) return;
-  localStorage.setItem("ajour.local-state.v2", JSON.stringify({ projects, workflowStates, workItems, timesheetEntries, timers, userPreferences }));
+  const timesheetTombstones = [{ entryId: "e0", commit: { at: t0 - 4e5, localDate: monday(0), projectId: "p-atlas", taskId: "t-atlas-meet", note: "Sprint retro", durationMs: h(0.5) } }];
+  localStorage.setItem("ajour.local-state.v2", JSON.stringify({ projects, workflowStates, workItems, timesheetEntries, timesheetTombstones, timers, userPreferences }));
   if (options.backlogLayout) localStorage.setItem("ajour.backlog-view", JSON.stringify({ layout: options.backlogLayout }));
   if (options.sidebar) localStorage.setItem("ajour.app-sidebar", options.sidebar);
 })()`;

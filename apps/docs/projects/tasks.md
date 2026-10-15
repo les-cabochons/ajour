@@ -1,6 +1,6 @@
 # Tasks
 
-A task is a kind of work inside one project, such as `Development`, `Code review` or `Meetings`. Time entries point at a task, and the Submit page groups your week by task.
+A task is a kind of work inside one project, such as `Development`, `Code review` or `Meetings`. Time entries point at a task, and the Commit page groups your week by task.
 
 <Shot name="project-task-editor" alt="A project page with the task editor open" />
 

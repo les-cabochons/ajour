@@ -7,7 +7,7 @@ Feature: Open the local time workspace
     Then the Time workspace is visible
     And the desktop sidebar owns the full left edge
     And the day surfaces stretch around centered content
-    And the timesheet can be submitted
+    And the week can be committed
 
   Scenario: Hide the desktop sidebar and keep it beside the page in small windows
     Given I have no saved Ajour workspace, even after a reload
@@ -60,35 +60,31 @@ Feature: Open the local time workspace
     And I search the shortcut overlay for "sidebar"
     Then the shortcut overlay lists only "Show or hide the sidebar"
 
-  Scenario: Submit part of a week from the submit page
+  Scenario: Copy a week's lines from the Commit page
     Given I have a week of saved entries
-    When I open the submit page from the Week totals dropdown
-    Then the submit page merges Monday's task entries
+    When I open the Commit page from the Week totals dropdown
+    Then the Commit page merges Monday's task entries
     And copying the merged line gives decimal hours and merged comments
-    When I drop Tuesday from the submission
-    And I mark the selected entries as submitted under the target
-    Then only Monday's entries are submitted
-    And the submit page shows the week as partly submitted
 
-  Scenario: Open the submit page from the narrow view
+  Scenario: Open the Commit page from the narrow view
     Given I have a week of saved entries
-    When I open the submit page from the narrow totals dropdown
-    Then the submit page lists the week's entries
+    When I open the Commit page from the narrow totals dropdown
+    Then the Commit page lists the week's entries
 
-  Scenario: Open the selected week's submit page from Settings
+  Scenario: Open the selected week's Commit page from Settings
     Given I have a week of saved entries
-    When I open the submit page from Settings totals
-    Then the submit page lists the week's entries
+    When I open the Commit page from Settings totals
+    Then the Commit page lists the week's entries
 
-  Scenario: Save a valid entry draft before opening submission
+  Scenario: Save a valid entry draft before opening the Commit page
     Given I have a week of saved entries
-    When I request week submission with "02:00" hours in an open entry
-    Then the submit page includes the saved entry draft
+    When I open the Commit page with "02:00" hours in an open entry
+    Then the Commit page includes the saved entry draft
 
-  Scenario: Keep an invalid entry draft open when requesting submission
+  Scenario: Keep an invalid entry draft open when opening the Commit page
     Given I have a week of saved entries
-    When I request week submission with "invalid" hours in an open entry
-    Then the invalid entry draft stays open instead of submitting
+    When I open the Commit page with "invalid" hours in an open entry
+    Then the invalid entry draft stays open instead of opening the Commit page
 
   Scenario Outline: Undo deleting a time entry
     Given I have a week of saved entries

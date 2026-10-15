@@ -11,13 +11,13 @@ Ajour has a few objects, and each one has one job. This page names them and show
 : A kind of work inside one project, such as `Development` or `Meetings`. Every time entry points at a task, or at a project with no task. A task can be billable, have a budget, and hold a number shortcut from <kbd>1</kbd> to <kbd>0</kbd>.
 
 **Time entry**
-: Time spent on a task on one day, with an optional note. An entry is **running**, **saved** or **submitted**. Editing a submitted entry makes it saved again, so you know to submit it again.
+: Time spent on a task on one day, with an optional note. An entry is **running** or **saved**. A saved entry is **committed** when your timesheet tool has it as it is; editing it makes a change to commit.
 
 **Running entry**
 : The entry that is counting now. At most one entry runs at a time, and it is always on today. Ajour has no separate "timer": you start, switch and stop entries.
 
 **Timesheet**
-: Your entries for one week, submitted together. Ajour does not send your timesheet anywhere. You copy it into your company's tool and mark the entries as submitted.
+: Your entries for one week. Ajour does not send your timesheet anywhere. You copy its changes into your company's tool and mark them as committed.
 
 **Capacity**
 : How many hours you plan to work each weekday. Ajour compares each day and week against it, and can warn you when you go over or submit under it.

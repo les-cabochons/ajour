@@ -154,7 +154,7 @@ describe("plugin settings workflow", () => {
             {
               id: "enter-week",
               label: "Enter in Workday",
-              placement: "submit-week" as const,
+              placement: "commit-week" as const,
               prompt: "prompts/enter-week.md",
               estimateMinutes: 10,
               settings: [],

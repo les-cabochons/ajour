@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  formatChangedClockDurations,
   formatCompactDuration,
   formatDecimalHours,
   parseHoursInput,
@@ -32,5 +33,28 @@ describe("formatCompactDuration", () => {
     expect(formatCompactDuration(245 * 60_000)).toBe("4h05");
     expect(formatCompactDuration(45 * 60_000)).toBe("45m");
     expect(formatCompactDuration(0)).toBe("0m");
+  });
+});
+
+describe("formatChangedClockDurations", () => {
+  it("shows h:mm when the two sides differ by minutes", () => {
+    expect(formatChangedClockDurations(3_600_000, 5_400_000)).toEqual({
+      before: "1:00",
+      after: "1:30",
+    });
+  });
+
+  it("shows seconds when a change of under a minute rounds to the same h:mm", () => {
+    expect(formatChangedClockDurations(3_600_000, 3_620_000)).toEqual({
+      before: "1:00:00",
+      after: "1:00:20",
+    });
+  });
+
+  it("keeps h:mm when the durations are equal", () => {
+    expect(formatChangedClockDurations(3_600_000, 3_600_000)).toEqual({
+      before: "1:00",
+      after: "1:00",
+    });
   });
 });

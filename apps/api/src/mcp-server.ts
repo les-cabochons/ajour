@@ -78,13 +78,13 @@ const TOOL_DESCRIPTIONS: Record<
   get_running_timer:
     "The running entry, with its project, task, note and counted minutes. `running` is null when nothing runs.",
   list_time_entries:
-    "Time entries between two dates (inclusive, at most 62 days), each with its state: saved, submitted, or running when the running entry continues it. The running entry itself is in `running`.",
+    "Time entries between two dates (inclusive, at most 62 days), each with its state: saved, committed when the external timesheet holds it as it is, or running when the running entry continues it. The running entry itself is in `running`.",
   list_projects: "Active projects and their active tasks, with their ids.",
   list_work_items:
     "Backlog items. The default `sidebar` filter returns the user's current work list in their order. Filter by workflow state, project or text.",
   get_work_item: "One backlog item with its note, source link and subitems.",
-  get_submit_lines:
-    "The week's timesheet lines as the Submit page groups them, with hours, merged comments, warnings, each line's lineId and project code, and Ajour's pace check. `weekOf` is any date in the week. When you enter a line in an external timesheet, write its lineId at the end of the comment, so a rerun can recognize the entry. When `pace.status` is not \"on-pace\", ask the user before entering anything.",
+  get_week_changes:
+    "The week's changes since its last commit, one per entry: added, updated or deleted, with the entry's externalId, its current values and, for updated and deleted ones, its committed values. `weekOf` is any date in the week. By default only the changes the user left checked on the Commit page. Write the externalId at the end of the external entry's comment, so later runs find the entry. An entry moved to another week shows in both weeks.",
   start_timer:
     "Starts an entry now on a backlog item, or on a project with an optional task. A running entry is saved first, as Switch does in Ajour.",
   stop_timer: "Stops and saves the running entry.",
@@ -92,13 +92,11 @@ const TOOL_DESCRIPTIONS: Record<
     "Changes the running entry's project, task or note, or corrects its counted minutes. It keeps running.",
   create_entry: "Adds a saved entry of `minutes` on a date.",
   edit_entry:
-    "Changes a saved entry. Editing a submitted entry marks it as not submitted, as in Ajour.",
+    "Changes a saved entry. A committed entry then shows as an updated change, as in Ajour.",
   move_entry: "Moves an entry to another date.",
   duplicate_entry: "Copies an entry, to the same date or another one.",
-  mark_entries_submitted:
-    "Marks entries as submitted after the user entered them in their timesheet.",
-  mark_entries_not_submitted:
-    "Returns entries to saved, for lines that failed in the external timesheet. Undo the marks you made for a line you could not enter.",
+  mark_entries_committed:
+    "Marks changes as committed once the external timesheet saved them: saves each entry's committed copy, or forgets a deleted entry. Pass entryIds from get_week_changes. A deleted change's ID is accepted once: after its tombstone is cleared, the ID is unknown and the call refuses. Never mark a change you did not apply.",
   create_work_item:
     "Adds a manual backlog item, or a subitem with parentWorkItemId.",
   edit_work_item:

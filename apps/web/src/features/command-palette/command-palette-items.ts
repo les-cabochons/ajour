@@ -9,7 +9,6 @@ import {
   getBacklogItemActions,
   getProjectActions,
   getTaskActions,
-  getTimeEntryActionState,
   getTimeEntryActions,
   type BacklogItemActionId,
   type ObjectAction,
@@ -111,7 +110,6 @@ export interface PaletteInput {
   workItems: readonly LocalWorkItem[];
   timesheetEntries: readonly LocalTimesheetEntry[];
   timer: LocalTimer | null;
-  today: string;
   /** Shortcuts with a mounted handler, in registry order. */
   shortcuts: readonly ShortcutDefinition[];
   /** The settings pages, in display order. */
@@ -486,9 +484,7 @@ function focusedSection(input: PaletteInput): PaletteSection | null {
           heading: describeEntry(entry, projects),
           items: toItems(
             prefix,
-            getTimeEntryActions(getTimeEntryActionState(entry), {
-              isToday: entry.localDate === input.today,
-            }),
+            getTimeEntryActions("saved"),
             (actionId) => ({
               kind: "time-entry",
               entryId: entry._id,

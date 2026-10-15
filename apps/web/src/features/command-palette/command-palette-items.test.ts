@@ -64,7 +64,6 @@ function input(overrides: Partial<PaletteInput> = {}): PaletteInput {
     workItems: [],
     timesheetEntries: [],
     timer: null,
-    today: "2026-10-11",
     shortcuts: SHORTCUTS,
     settingsPages: [{ to: "/settings/general", label: "General" }],
     platform: "mac",
