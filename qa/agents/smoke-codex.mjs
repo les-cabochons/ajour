@@ -11,6 +11,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { createInterface } from "node:readline";
+import { pathToFileURL } from "node:url";
 import { codexAdapter } from "../../apps/api/src/agent-runner/adapters/codex.ts";
 import {
   findExecutable,
@@ -70,6 +71,20 @@ try {
     profileDirectory: path.join(work, "chrome"),
   });
   playwright.args.push("--headless");
+  // Check env forwarding even when this smoke test runs with ordinary Node.
+  // Electron needs ELECTRON_RUN_AS_NODE on the same stdio-server boundary.
+  const [playwrightCli, ...browserArgs] = playwright.args;
+  const envCheck = path.join(work, "playwright-env-check.mjs");
+  await writeFile(
+    envCheck,
+    [
+      'import assert from "node:assert/strict";',
+      'assert.equal(process.env.AJOUR_SMOKE_MCP_ENV, "forwarded");',
+      `await import(${JSON.stringify(pathToFileURL(playwrightCli).href)});`,
+    ].join("\n"),
+  );
+  playwright.args = [envCheck, ...browserArgs];
+  playwright.env.AJOUR_SMOKE_MCP_ENV = "forwarded";
   const invocation = codexAdapter.buildInvocation({
     executable,
     workDirectory: work,
@@ -142,7 +157,7 @@ try {
   assert(!events.some((event) => event.item?.type === "command_execution"));
   console.log(summary);
   console.log(
-    "PASS: real Codex login, blocked file write, ignored AGENTS.md, token authentication, Ajour MCP tool and Playwright navigation.",
+    "PASS: real Codex login, blocked file write, ignored AGENTS.md, token authentication, stdio environment, Ajour MCP tool and Playwright navigation.",
   );
 } finally {
   child?.kill("SIGKILL");

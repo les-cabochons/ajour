@@ -64,7 +64,7 @@ describe("Codex adapter", () => {
         'mcp_servers.playwright.default_tools_approval_mode="approve"',
         'mcp_servers.playwright.command="/Ajour app/MacOS/Ajour"',
         `mcp_servers.playwright.args=${JSON.stringify(input.playwright.args)}`,
-        'mcp_servers.playwright.env."ELECTRON_RUN_AS_NODE"="1"',
+        'mcp_servers.playwright.env.ELECTRON_RUN_AS_NODE="1"',
       ]),
     );
   });
