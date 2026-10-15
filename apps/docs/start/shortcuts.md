@@ -1,6 +1,6 @@
 # Keyboard shortcuts
 
-Ajour is built to be used from the keyboard. Press <kbd>?</kbd> anywhere to see every shortcut, with a search box.
+Ajour is built to be used from the keyboard. Press <kbd>?</kbd> anywhere to see the shortcuts, with a search box. This page also lists the keys of editors and the Undo key.
 
 <Shot name="shortcuts" alt="The keyboard shortcuts overlay" />
 
@@ -38,22 +38,22 @@ Single keys such as <kbd>N</kbd> or <kbd>S</kbd> work when focus is not in a tex
 
 Use <kbd>↑</kbd> and <kbd>↓</kbd> to move focus between rows, and <kbd>←</kbd> and <kbd>→</kbd> between days in the Week view. These keys then act on the focused row.
 
-| Key                                                        | Action                                                   |
-| ---------------------------------------------------------- | -------------------------------------------------------- |
-| <kbd>Enter</kbd>                                           | Open or edit                                             |
-| <kbd>Space</kbd>                                           | Open or close the peek of a backlog item                 |
-| <kbd>.</kbd> or <kbd>Shift</kbd> <kbd>F10</kbd>            | Open the actions menu                                    |
-| <kbd>E</kbd>                                               | Settle a backlog item or pull request                    |
-| <kbd>Shift</kbd> <kbd>E</kbd>                              | Settle a backlog item with the settle dialog             |
-| <kbd>B</kbd>                                               | Snooze a backlog item or pull request                    |
-| <kbd>Shift</kbd> <kbd>S</kbd>                              | Change state                                             |
-| <kbd>P</kbd>                                               | Change priority                                          |
-| <kbd>Alt</kbd> <kbd>←</kbd> or <kbd>Alt</kbd> <kbd>→</kbd> | Move to the previous or next workflow state              |
-| <kbd>Alt</kbd> <kbd>↑</kbd> or <kbd>Alt</kbd> <kbd>↓</kbd> | Move up or down                                          |
-| <kbd>⌘</kbd> <kbd>D</kbd>                                  | Duplicate an entry                                       |
-| <kbd>M</kbd>                                               | Move an entry to another day                             |
-| <kbd>Backspace</kbd> or <kbd>Delete</kbd>                  | Delete an entry, discard a running entry, archive a task |
-| <kbd>Shift</kbd> <kbd>Backspace</kbd>                      | Delete a row of the Week grid                            |
+| Key                                                        | Action                                                                   |
+| ---------------------------------------------------------- | ------------------------------------------------------------------------ |
+| <kbd>Enter</kbd>                                           | Open or edit                                                             |
+| <kbd>Space</kbd>                                           | Open or close the peek of a backlog item                                 |
+| <kbd>.</kbd> or <kbd>Shift</kbd> <kbd>F10</kbd>            | Open the actions menu                                                    |
+| <kbd>E</kbd>                                               | Settle a backlog item or pull request                                    |
+| <kbd>Shift</kbd> <kbd>E</kbd>                              | Settle a backlog item with the settle dialog                             |
+| <kbd>B</kbd>                                               | Snooze a backlog item or pull request                                    |
+| <kbd>Shift</kbd> <kbd>S</kbd>                              | Change state                                                             |
+| <kbd>P</kbd>                                               | Change priority                                                          |
+| <kbd>Alt</kbd> <kbd>←</kbd> or <kbd>Alt</kbd> <kbd>→</kbd> | Move to the previous or next workflow state                              |
+| <kbd>Alt</kbd> <kbd>↑</kbd> or <kbd>Alt</kbd> <kbd>↓</kbd> | Move up or down                                                          |
+| <kbd>⌘</kbd> <kbd>D</kbd>                                  | Duplicate an entry                                                       |
+| <kbd>M</kbd>                                               | Move an entry to another day                                             |
+| <kbd>Backspace</kbd> or <kbd>Delete</kbd>                  | Delete an entry or backlog item, discard a running entry, archive a task |
+| <kbd>Shift</kbd> <kbd>Backspace</kbd>                      | Delete a row of the Week grid                                            |
 
 ## In editors
 

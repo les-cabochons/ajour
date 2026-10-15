@@ -80,7 +80,7 @@ Ajour draws the connection form from `connectionFields`, in order. The values re
 
 | Key                  | Type                        | Rules                                                        |
 | -------------------- | --------------------------- | ------------------------------------------------------------ |
-| `id`                 | string                      | 1 to 120 characters. Unique in the manifest.                 |
+| `id`                 | string                      | 1 to 120 characters. Keep it unique: values are keyed by it. |
 | `label`              | string                      | The form label. 1 to 120 characters.                         |
 | `type`               | string                      | `text`, `password`, `url`, `select`, `number` or `checkbox`. |
 | `placeholder`        | string                      | Optional. Up to 240 characters.                              |

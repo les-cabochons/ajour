@@ -26,7 +26,7 @@ On the board, each workflow state is a column. Drag a card to another column to 
 
 ## Create an item
 
-Press **New backlog item**, or the **+** next to a group or column name to create the item in that group. Give it a title, then optionally a priority, a workflow state, a project and task, a note and estimates. See [Backlog items](/backlog/items).
+Press the **+** next to a group or column name to create an item in that group. With **None** grouping, use the **New backlog item** row at the end of the list. Give it a title, then optionally a priority, a workflow state, a project and task, a note and estimates. See [Backlog items](/backlog/items).
 
 ## Filter the backlog
 
@@ -36,13 +36,13 @@ Press **Filter** and pick a property, then a value. You can filter by state, pri
 
 ## Peek at an item
 
-Focus a row and press <kbd>Space</kbd> to open the peek: the item's estimates, properties, note and subitems in a side panel, next to the list. Press <kbd>Space</kbd> again to close it, or **Open page** to go to the item's page.
+Click a row, or focus it and press <kbd>Space</kbd>, to open the peek: the item's estimates, properties, note and subitems in a side panel, next to the list. Press <kbd>Space</kbd> again to close it. Double-click a row, or press **Open page** in the peek, to go to the item's page.
 
 <Shot name="backlog-peek" alt="The peek next to the backlog list" />
 
 ## Archive
 
-Done items move to the archive. Open it from the **…** menu at the top right, then **Archive**. From there, **Restore** puts an item back in your backlog.
+Done items are archived. To see them, press **Filter**, choose **State**, then **Archived**. Open an archived item and press **Restore** to put it back in your backlog.
 
 ## Unmapped source states
 

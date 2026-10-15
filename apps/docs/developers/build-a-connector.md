@@ -51,7 +51,7 @@ Add `tsconfig.json`. Ajour loads plain ES modules, so compile to ES2022 and keep
 ```
 
 ::: warning Bundle your dependencies
-Ajour loads `dist/plugin.js` and whatever it imports from inside the plugin folder. A package archive holds `plugin.json` and `dist/` only, so a runtime dependency in `node_modules` is missing once installed. Use Node built-ins and `fetch`, or bundle dependencies into `dist/` with a bundler such as esbuild.
+Ajour loads `dist/plugin.js` and whatever it imports from inside the plugin folder. The packaging script archives `plugin.json` and `dist/` only, so a runtime dependency in `node_modules` is missing once installed. Use Node built-ins and `fetch`, or bundle dependencies into `dist/` with a bundler such as esbuild.
 :::
 
 ## 2. Write the manifest

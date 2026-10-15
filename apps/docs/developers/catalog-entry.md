@@ -64,7 +64,7 @@ tags:
 | Field              | Rules                                                                                                         |
 | ------------------ | ------------------------------------------------------------------------------------------------------------- |
 | `method`           | `github-release`.                                                                                             |
-| `allowPrereleases` | `true` to install pre-releases. Without it, Ajour only installs full releases.                                |
+| `allowPrereleases` | Required. `true` to install pre-releases, `false` for full releases only.                                     |
 | `assetPattern`     | A regular expression for the archive's file name, anchored with `^` and `$`. It must not match an empty name. |
 
 Each release must have exactly one asset that matches `assetPattern`.

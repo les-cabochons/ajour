@@ -33,7 +33,7 @@ For the catalog, publish each version as a GitHub release of your plugin's repos
 - Tag the release with the version, such as `v0.1.0`.
 - Attach exactly one archive that matches your catalog entry's `assetPattern`, such as `github_issues-0.1.0.ajour-connector`.
 
-When a user presses **Download** or **Update**, Ajour lists the repository's last 30 releases, skips drafts, skips pre-releases unless your entry allows them, and installs the archive of the highest version.
+When a user presses **Download**, or **Update** on a plugin built for an older API, Ajour lists the repository's last 30 releases, skips drafts, skips pre-releases unless your entry allows them, and installs the archive of the highest version.
 
 The official plugins publish a pre-release from every push to `main`, with a version such as `1.0.0-main.12.f3e1b45`. Their workflow is [`.github/workflows/build.yml`](https://github.com/les-cabochons/ajc-jira/blob/main/.github/workflows/build.yml): it tests, stamps the version, packages, and runs `gh release create`.
 
@@ -47,7 +47,7 @@ The catalog lives in [les-cabochons/ajour-plugins-index](https://github.com/les-
 4. Run `just validate`.
 5. Open a pull request.
 
-Once merged, Ajour picks up the entry at its next catalog refresh, every 15 minutes by default. You do not need to update the index for new versions. Ajour finds them in your releases.
+Once merged, Ajour picks up the entry at its next catalog refresh, every 15 minutes by default. You do not need to update the index for new versions: **Download** always takes your newest release. Users who already installed your plugin do not get new versions from the catalog, though. Tell them to install the new archive with **Install from file**.
 
 ## When the plugin API changes
 

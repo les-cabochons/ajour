@@ -60,7 +60,7 @@ An item whose value is in no range, or has no priority, gets no priority in Ajou
 ## What it writes
 
 - **Estimates**: when you change an estimate in Ajour, the next sync writes it to the field you mapped. If the estimate also changed in Azure DevOps, Ajour asks you which to keep in [Sync review](/plugins/sync-review).
-- **State and priority**: when you settle an item or move it to another workflow state, Ajour writes the state and priority in one update, after the Undo toast closes. See [Settle and snooze](/backlog/settle-and-snooze).
+- **State and priority**: when you settle an item, Ajour writes the state and priority in one update. When you move an item to another workflow state, it writes the state only. Both writes go after the Undo toast closes. See [Settle and snooze](/backlog/settle-and-snooze).
 
 Work item URLs must belong to the organization of the connection. The plugin refuses to write elsewhere.
 

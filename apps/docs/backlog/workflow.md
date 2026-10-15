@@ -10,7 +10,7 @@ Workflow states are the steps your backlog items go through. Ajour starts with f
 - **Rename a state.** Click its name.
 - **Reorder states.** Use the up and down arrows. The order is the order of the groups and board columns.
 - **Mark a state done.** Turn on **Done**. Moving an item into a done state archives it, and moving it out makes it active again. You can have several done states, and at least one is required.
-- **Remove a state.** Press its **×**. An Undo toast shows.
+- **Remove a state.** Press its **Remove** button. An Undo toast shows.
 
 ## Map source states
 

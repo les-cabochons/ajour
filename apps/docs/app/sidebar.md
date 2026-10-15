@@ -42,7 +42,7 @@ A dot on an item means it came back on its own, from a snooze or a change in its
 
 Choose **Comfortable** or **Compact** rows in **Settings › General › Sidebar**. Comfortable rows show the project, the title, the state and the remaining estimate. Compact rows show the title only.
 
-Drag the sidebar's edge to resize it, between 200 and 400 pixels. Double-click the edge to reset it. Dragging it narrower than 200 pixels hides the sidebar.
+Drag the sidebar's edge to resize it, between 200 and 400 pixels. Double-click the edge to reset it. Dragging it well past the 200 pixel minimum hides the sidebar.
 
 ## Smaller windows
 

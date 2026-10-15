@@ -22,10 +22,12 @@ On macOS, open the app once, then go to **System Settings › Privacy & Security
 
 Ajour checks GitHub for a newer version when you open **Settings › General**, or when you choose **Ajour › Check for updates…** in the menu bar. Pick the track in **Settings › General › Application updates**:
 
-- **Stable** follows stable releases.
+- **Stable**, the default, follows stable releases.
 - **Nightly** follows the nightly builds.
 
-On Windows, Ajour downloads the update in the background. When it is ready, Ajour asks you to restart now or later. If you choose later, the update installs when you next quit the app.
+Until the first stable release, choose **Nightly**, or Ajour never finds an update.
+
+On Windows, Ajour also checks every 4 hours, and downloads the update in the background. When it is ready, Ajour asks you to restart now or later. If you choose later, the update installs when you next quit the app.
 
 On macOS, Ajour shows that a new version is available, with a **View release** button. Download the new `.dmg` and replace the app. Automatic updates on macOS need a signed app, which Ajour does not have yet.
 

@@ -8,12 +8,12 @@ A time entry is time spent on a task on one day, with an optional note. This pag
 
 Press <kbd>N</kbd>, or the **+** button in the sidebar. You can also choose **New entry…** on a task or a backlog item, which fills in its project and task.
 
-| Field              | What to enter                                                                                           |
-| ------------------ | ------------------------------------------------------------------------------------------------------- |
-| **Project / task** | Search by project, task or code. Choose **Use project without a task** to log time on the project only. |
-| **Note**           | Optional. What you did. Notes become the comments of your timesheet lines.                              |
-| **Hours**          | `1:30`, `1.5` or `1,5`. Ajour shows it as `01:30` once you leave the field.                             |
-| **Date**           | The day of the entry. It defaults to the day you are looking at.                                        |
+| Field              | What to enter                                                                                                                     |
+| ------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| **Project / task** | Search by project, task or code. Choose **Use project without a task** to log time on the project only.                           |
+| **Note**           | Optional. What you did. Notes become the comments of your timesheet lines.                                                        |
+| **Hours**          | `1:30`, `1.5` or `1,5`. Ajour shows it as `01:30` once you leave the field.                                                       |
+| **Date**           | The day of the entry. <kbd>N</kbd> and the sidebar **+** start on today. The **New entry** row and Week cells start on their day. |
 
 Press **Save**, <kbd>Enter</kbd> or <kbd>⌘</kbd> <kbd>Enter</kbd>. To start the entry instead of logging hours, leave **Hours** empty and press **Start**.
 

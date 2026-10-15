@@ -10,14 +10,14 @@ Pull requests need a code host plugin, such as [GitHub](/plugins/github). Once i
 
 A pull request is active when it needs you. Ajour decides from what happened on it, and shows the reason:
 
-| Reason                                    | When                                                     |
-| ----------------------------------------- | -------------------------------------------------------- |
-| **Review requested**                      | Someone asked you, or one of your teams, to review it.   |
-| **New commits after your change request** | The author pushed after you requested changes.           |
-| **New review**                            | Someone reviewed your pull request.                      |
-| **New reply**                             | Someone commented in a thread after you took part in it. |
-| **New comment**                           | Someone commented on your pull request.                  |
-| **You were mentioned**                    | Someone mentioned you.                                   |
+| Reason                                    | When                                                    |
+| ----------------------------------------- | ------------------------------------------------------- |
+| **Review requested**                      | Someone asked you, or one of your teams, to review it.  |
+| **New commits after your change request** | The author pushed after you requested changes.          |
+| **New review**                            | Someone reviewed your pull request.                     |
+| **New reply**                             | The author replied in a review thread you took part in. |
+| **New comment**                           | Someone commented on your pull request.                 |
+| **You were mentioned**                    | Someone mentioned you.                                  |
 
 The page lists pull requests in three sections: **Active**, **Settled**, and **Recently closed** for the last seven days.
 
@@ -32,7 +32,7 @@ Settling a pull request never writes to GitHub.
 
 ## Open a pull request
 
-Click a pull request for its state, author, checks and last update. **Open in GitHub** takes you to it. Press **Sync** to refresh the list now. Otherwise, the GitHub connection syncs every 5 minutes while Ajour is open.
+Click a pull request for its state, author, checks and last update. **Open in GitHub** takes you to it. Press **Sync** to refresh the list now. Otherwise, the GitHub connection syncs on its timer, every 5 minutes while Ajour is open.
 
 ::: info Reviews happen on GitHub for now
 Ajour lists pull requests and tracks what needs you. Reading the diff, commenting and merging still happen on GitHub.

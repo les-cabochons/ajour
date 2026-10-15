@@ -25,7 +25,7 @@ Want to connect another tool? See [Build a plugin](/developers/).
 To install a plugin from a file, press **Install from file** and choose its `.ajour-connector` file. Use this for plugins that are not in the catalog.
 
 ::: info
-Plugins need the desktop app. The web version shows the catalog but cannot install or run plugins.
+Plugins need the desktop app. The web version cannot show the catalog, install plugins or run them.
 :::
 
 ## Add a connection
@@ -48,9 +48,11 @@ Press **Edit** to change a connection. Secret fields, such as tokens, show as do
 
 ## Update a plugin
 
-When a newer version is in the catalog, the plugin shows **Update**. Updating keeps your connections and whether the plugin is active.
+When Ajour changes its plugin API, a plugin built for the old API shows as **Unavailable**, with the reason. Press **Update** to download the version for the new API from the catalog. Your connections, imported items and activation stay.
 
-If Ajour itself changed its plugin API, an older plugin shows as **Unavailable** with the reason, until you update it. Your connections and imported items stay.
+::: info Newer versions of a working plugin
+The catalog does not offer newer versions of a plugin that works. To update it, download the new `.ajour-connector` file from the plugin's GitHub releases and press **Install from file**. Ajour replaces the plugin and keeps its connections.
+:::
 
 ## Turn plugins off
 

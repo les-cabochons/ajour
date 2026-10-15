@@ -5,7 +5,7 @@ A schema maps Ajour's projects and tasks to the columns of another tool's files,
 The schema API is version 1, separate from the connector API.
 
 ::: warning Not installable yet
-Ajour cannot install packaged schema plugins yet. It loads them only from a `plugins/` folder next to its local API, in a development checkout. The [Workday](/plugins/workday) schema is the only one so far, and it is not released. Expect this page to change when installation lands.
+Ajour cannot install packaged schema plugins yet. It loads them only from the `plugins/` folder at the root of an Ajour checkout, in development. The [Workday](/plugins/workday) schema is the only one so far, and it is not released. Expect this page to change when installation lands.
 :::
 
 ## Manifest
@@ -99,7 +99,7 @@ interface ImportProject {
 
 Ajour checks your datasets against the manifest:
 
-- On export, every declared dataset must be present, with no unknown dataset or column. Required columns must have a value of the declared type.
+- On export, every declared dataset must be present, with no unknown dataset or column. Required columns must have a value, and every value must have the declared type.
 - On import, unknown datasets and columns are refused. Types are not checked, since files hold anything. Convert and validate values yourself, and throw a message with the row number, such as `Row 4 is invalid. A project name is required.`
 
 Each dataset holds at most 100,000 rows.

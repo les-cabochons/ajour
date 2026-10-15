@@ -13,7 +13,7 @@ Ajour keeps your changes to a synced item. A sync updates what changed in the so
 
 ## The item page
 
-Click an item anywhere to open its page. The page has:
+Click an item in the sidebar to open its page. On the Backlog page, a click opens the [peek](/backlog/#peek-at-an-item), and a double-click or <kbd>Enter</kbd> opens the page. The page has:
 
 - **The header**, with the title and the item's actions: **Start entry**, **Snooze**, **Settle** and **New entry**. Click the title to rename it.
 - **The estimates**: **Original**, **Remaining**, **Completed** and **Logged in Ajour**, with a bar of completed over original. Click an estimate to edit it.
@@ -36,7 +36,7 @@ Set the item's **Project** and **Task** so the time you log on it lands on the r
 | **Remaining** | What is left. The sidebar shows this one.  |
 | **Completed** | What was spent, as recorded in the source. |
 
-**Logged in Ajour** is the sum of your time entries on the item. On a parent, a button next to each estimate resets it to the total of its subitems.
+**Logged in Ajour** is the sum of your time entries on the item. On a parent, the item editor (**Edit**) has a button next to each estimate that resets it to the total of its subitems.
 
 For synced items, connectors write estimate changes back to the source when they sync. See the [Azure DevOps](/plugins/azure-devops) and [Jira](/plugins/jira) pages for which fields they use.
 

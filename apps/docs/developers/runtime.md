@@ -18,14 +18,14 @@ The desktop app runs a local API inside its main process, on `127.0.0.1:8787`. T
 
 ## What you cannot use
 
-| Not available                    | Why                                                                          |
-| -------------------------------- | ---------------------------------------------------------------------------- |
-| Ajour's data                     | The window owns the workspace. The API and plugins never get it.             |
-| Environment variables            | `process.env` is empty in the worker.                                        |
-| Logs                             | `console` output is discarded. Throw errors with clear messages instead.     |
-| UI                               | Ajour draws every screen. Describe fields in the manifest.                   |
-| Packages outside your folder     | Installed packages hold `plugin.json` and `dist/` only. Bundle dependencies. |
-| Capabilities beyond the manifest | Ajour only calls the functions your capabilities declare.                    |
+| Not available                    | Why                                                                                |
+| -------------------------------- | ---------------------------------------------------------------------------------- |
+| Ajour's data                     | The window owns the workspace. The API and plugins never get it.                   |
+| Environment variables            | `process.env` is empty in the worker.                                              |
+| Logs                             | `console` output is discarded. Throw errors with clear messages instead.           |
+| UI                               | Ajour draws every screen. Describe fields in the manifest.                         |
+| Packages outside your folder     | The packaging script archives `plugin.json` and `dist/` only. Bundle dependencies. |
+| Capabilities beyond the manifest | Ajour only calls the functions your capabilities declare.                          |
 
 ## Limits
 

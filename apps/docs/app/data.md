@@ -26,13 +26,13 @@ Connection tokens, such as an Azure DevOps personal access token, are stored in 
 
 ## When Ajour uses the network
 
-Ajour sends nothing on its own. It connects to:
+Ajour never sends your time entries anywhere. It connects to the network for these, some of them on a timer:
 
-- **GitHub releases**, to check for updates.
-- **The plugin catalog** on GitHub, to list plugins, and GitHub releases to download them.
-- **The tools you connect**, such as Azure DevOps, Jira or GitHub, when a plugin syncs.
+- **GitHub releases**, to check for updates. On Windows, every 4 hours.
+- **The plugin catalog** on GitHub, at launch and every 15 minutes, and GitHub releases when you download a plugin.
+- **The tools you connect**, such as Azure DevOps, Jira or GitHub, when you press **Sync** or on the connection's timer.
 
-Your time entries never leave your machine, unless you export them or [turn on MCP](/app/agents) for an agent.
+Your time entries stay on your machine, unless you export them or [turn on MCP](/app/agents) for an agent.
 
 ## What plugins can see
 

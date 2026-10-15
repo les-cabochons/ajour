@@ -14,7 +14,7 @@ Below 768 pixels wide, Ajour switches to a narrow layout made for a window snapp
 - **The toggle** at the bottom left switches between **Time**, **Backlog** and **Settings**.
 - **The sidebar** is gone.
 - **Editors** open full width instead of in a side panel.
-- **Rows** always show their **…** button. A long press opens the same menu.
+- **Rows** always show their **…** button.
 - **New backlog items** start from the **+** of a group header.
 - **Projects** and **Pull requests** open from the Settings list.
 
