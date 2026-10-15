@@ -92,14 +92,14 @@ describe("settle rules", () => {
         {
           ...mercury,
           state: { name: "Waiting", done: false },
-          priority: 5,
+          priority: 2,
         },
-        { ...mercury, state: { name: "" }, priority: 1000 },
+        { ...mercury, state: { name: "" }, priority: 25 },
         { source: "azure_devops" },
         null,
       ]),
     ).toEqual([
-      { ...mercury, state: { name: "Waiting", done: false }, priority: 5 },
+      { ...mercury, state: { name: "Waiting", done: false }, priority: 2 },
       { ...mercury, state: undefined, priority: undefined },
     ]);
     expect(normalizeSettleRules(undefined)).toEqual([]);

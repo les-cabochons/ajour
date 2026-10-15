@@ -1,6 +1,7 @@
 import { showErrorToast } from "@/components/ui/toast";
 import type { LocalWorkItem } from "@/domain/local-state";
 import { hasSameSourceWriteRequest } from "@/domain/backlog/backlog-item-lifecycle";
+import { connectorPriorityFromLevel } from "@/domain/backlog/priority";
 import {
   getCachedConnectorsOverview,
   writeConnectorSettle,
@@ -84,7 +85,7 @@ async function sendSourceWrite(
     await writeConnectorSettle(workItem.source, workItem.sourceConnectionId, {
       sourceId: workItem.sourceId,
       state: write.state,
-      priority: write.priority,
+      priority: connectorPriorityFromLevel(write.priority),
     });
     localStore.completeSourceWrite(workItem._id, sentItems);
   } catch (error) {

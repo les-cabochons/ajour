@@ -12,9 +12,8 @@ import {
   isSubtaskWorkItem,
 } from "@/domain/backlog/work-item-hierarchy";
 import {
+  isPriorityLevel,
   normalizePriorityLevel,
-  getPriorityLevel,
-  getWorkItemPriorityRanges,
 } from "@/domain/backlog/priority";
 import { normalizeWorkItemEstimateValue } from "@/domain/backlog/work-item-estimates";
 
@@ -26,14 +25,6 @@ export interface WorkItemFactories {
 export type WorkItemPatch = Partial<
   Omit<LocalWorkItem, "_id" | "createdAt" | "source">
 >;
-
-export function normalizeWorkItemPriority(priority?: number) {
-  if (typeof priority !== "number" || !Number.isFinite(priority)) {
-    return undefined;
-  }
-
-  return Math.max(0, Math.round(priority));
-}
 
 /** Older move snapshots omitted archive provenance, including carried items. */
 export function normalizeSourceWriteRecovery(workItems: LocalWorkItem[]) {
@@ -118,7 +109,6 @@ export function normalizeSourceWriteRecovery(workItems: LocalWorkItem[]) {
 export function normalizePersistedWorkItem(
   workItem: PersistedLocalWorkItem,
   now: () => number,
-  priorityContext?: Pick<LocalAppState, "priorityScales" | "priorityFormat">,
 ): LocalWorkItem {
   const parentWorkItemId = workItem.parentWorkItemId;
   const status =
@@ -136,20 +126,10 @@ export function normalizePersistedWorkItem(
     importedBacklogStatusId: legacyImportedWorkflowStateId,
     ...persisted
   } = workItem;
-  const normalizePriority = (priority?: number, importedPriority?: number) =>
-    priorityContext &&
-    priorityContext.priorityFormat !== "levels" &&
-    workItem.source !== "manual" &&
-    workItem.source !== "outlook" &&
-    priority === importedPriority
-      ? getPriorityLevel(
-          importedPriority,
-          getWorkItemPriorityRanges(priorityContext, {
-            source: workItem.source ?? "manual",
-            sourceConnectionId: workItem.sourceConnectionId,
-          }),
-        )
-      : normalizePriorityLevel(priority);
+  // Source priorities were raw source values before plugins sent levels. A
+  // value that is not a level is dropped and the next sync brings the level.
+  const sourceLevel = (value: unknown) =>
+    isPriorityLevel(value) ? value : undefined;
 
   return {
     ...persisted,
@@ -175,14 +155,17 @@ export function normalizePersistedWorkItem(
     parentSourceId: isRetiredBuiltInSource
       ? undefined
       : workItem.parentSourceId,
-    priority: normalizePriority(workItem.priority, workItem.importedPriority),
+    priority: normalizePriorityLevel(workItem.priority),
     pendingSourceWrite: workItem.pendingSourceWrite
       ? {
           ...workItem.pendingSourceWrite,
+          priority: sourceLevel(workItem.pendingSourceWrite.priority),
           previous: {
             ...workItem.pendingSourceWrite.previous,
-            priority: normalizePriority(
+            priority: normalizePriorityLevel(
               workItem.pendingSourceWrite.previous.priority,
+            ),
+            importedPriority: sourceLevel(
               workItem.pendingSourceWrite.previous.importedPriority,
             ),
           },
@@ -190,7 +173,8 @@ export function normalizePersistedWorkItem(
       : undefined,
     importedPriority: isRetiredBuiltInSource
       ? undefined
-      : normalizeWorkItemPriority(workItem.importedPriority),
+      : sourceLevel(workItem.importedPriority),
+    settledImportedPriority: sourceLevel(workItem.settledImportedPriority),
     workflowStateId: workItem.workflowStateId ?? legacyWorkflowStateId,
     importedWorkflowStateId: isRetiredBuiltInSource
       ? undefined

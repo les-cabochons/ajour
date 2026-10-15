@@ -37,7 +37,6 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
     workflowStates: [],
     workflowStateMappings: [],
     workflowStateWriteRules: [],
-    priorityScales: [],
     backlogSortMode: "custom",
     capture: {
       urlMode: "sanitized_path",
@@ -86,7 +85,7 @@ function createCandidate(
     workItemType: "Task",
     state: "Active",
     assignedTo: "Local User",
-    priority: 2,
+    priority: "high",
     originalEstimateHours: 8,
     remainingEstimateHours: 5,
     completedEstimateHours: 3,
@@ -125,7 +124,10 @@ describe("connector work item imports", () => {
           snoozedUntil: 1000,
         })),
       };
-      for (const patch of [{ state: "Review" }, { priority: 9 }]) {
+      for (const patch of [
+        { state: "Review" },
+        { priority: "urgent" as const },
+      ]) {
         const result = importConnectorWorkItems(
           state,
           [createCandidate(patch)],
@@ -238,7 +240,7 @@ describe("connector work item imports", () => {
           ...imported.workItems[0]!,
           status: "settled" as const,
           settledSourceStatusKey: "active",
-          settledImportedPriority: 2,
+          settledImportedPriority: 2 as const,
         },
         {
           _id: "child",
@@ -254,7 +256,7 @@ describe("connector work item imports", () => {
     };
     const returned = importConnectorWorkItems(
       carried,
-      [createCandidate({ priority: 1 })],
+      [createCandidate({ priority: "urgent" })],
       undefined,
       factories,
     ).state;
@@ -572,7 +574,7 @@ describe("connector sync of settled items", () => {
   it("brings a settled item back as returned when its priority changed in the source", () => {
     const refreshed = importConnectorWorkItems(
       importAndSettle(),
-      [createCandidate({ priority: 1 })],
+      [createCandidate({ priority: "urgent" })],
       undefined,
       factories,
     ).state;
@@ -660,7 +662,13 @@ describe("connector sync of settled items", () => {
   it("keeps a subitem's own priority from the source", () => {
     const imported = importConnectorWorkItems(
       createState(),
-      [createCandidate({ depth: 1, parentSourceId: "parent-1", priority: 2 })],
+      [
+        createCandidate({
+          depth: 1,
+          parentSourceId: "parent-1",
+          priority: "high",
+        }),
+      ],
       undefined,
       factories,
     ).state;

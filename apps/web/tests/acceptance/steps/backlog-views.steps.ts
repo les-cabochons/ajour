@@ -30,7 +30,6 @@ Given("I have a backlog view fixture", async ({ page }) => {
     localStorage.setItem(
       "ajour.local-state.v2",
       JSON.stringify({
-        priorityFormat: "levels",
         workflowStates: [
           { _id: "todo", name: "To do", color: "#64748b", createdAt: 1 },
           { _id: "doing", name: "In progress", color: "#d97706", createdAt: 1 },

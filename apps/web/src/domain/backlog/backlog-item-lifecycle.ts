@@ -22,11 +22,7 @@ import {
   isDoneWorkflowState,
   syncImportedWorkflowState,
 } from "@/domain/backlog/workflow-states";
-import {
-  getPriorityLevel,
-  getWorkItemPriorityRanges,
-  type PriorityRanges,
-} from "@/domain/backlog/priority";
+import type { PriorityLevel } from "@/domain/backlog/priority";
 import { orderBacklogItems } from "@/domain/backlog/backlog-view";
 import { saveTimer } from "@/domain/time/timer-transitions";
 
@@ -548,7 +544,7 @@ function moveWithoutWrites(
 /** What the settle dialog or a settle rule asks to change in the source. */
 export interface BacklogSettleChange {
   state?: { name: string; done: boolean };
-  priority?: number;
+  priority?: PriorityLevel;
 }
 
 /** Only source state or imported priority changes can end a snooze early. */
@@ -713,11 +709,7 @@ export function settleBacklogItem(
     workItems: saved.workItems.map((workItem) => {
       if (workItem._id === workItemId) {
         const written = sourceWrite
-          ? withSourceWrite(
-              workItem,
-              sourceWrite,
-              getWorkItemPriorityRanges(state, workItem),
-            )
+          ? withSourceWrite(workItem, sourceWrite)
           : workItem;
         return settle(
           sourceWrite?.state !== undefined
@@ -743,11 +735,9 @@ export function settleBacklogItem(
 function withSourceWrite(
   workItem: LocalWorkItem,
   sourceWrite: LocalPendingSourceWrite,
-  priorityRanges: PriorityRanges,
 ): LocalWorkItem {
   const followsImportedPriority =
-    workItem.priority ===
-    getPriorityLevel(workItem.importedPriority, priorityRanges);
+    workItem.priority === workItem.importedPriority;
   return {
     ...workItem,
     pendingSourceWrite: sourceWrite,
@@ -761,7 +751,7 @@ function withSourceWrite(
       ? {
           importedPriority: sourceWrite.priority,
           priority: followsImportedPriority
-            ? getPriorityLevel(sourceWrite.priority, priorityRanges)
+            ? sourceWrite.priority
             : workItem.priority,
         }
       : {}),

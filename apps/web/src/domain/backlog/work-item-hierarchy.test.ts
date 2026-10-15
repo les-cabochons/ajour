@@ -68,7 +68,7 @@ describe("work item hierarchy", () => {
         workItemType: "Task",
         state: "Active",
         assignedTo: "Ada Lovelace",
-        priority: 3,
+        priority: "medium",
         depth: 0,
         selectable: true,
         selected: true,
