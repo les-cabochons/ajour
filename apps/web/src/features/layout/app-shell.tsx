@@ -158,7 +158,7 @@ function DefaultPageHeader({
 }
 
 /**
- * Where a page's `PageHeader` lands in the top bar: its title or back link,
+ * Where a page's `PageHeader` lands in the top bar: its title,
  * then its actions. Until a page mounts one, the route's default title shows.
  */
 function PageHeaderSlot({

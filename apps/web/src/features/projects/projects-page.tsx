@@ -2067,9 +2067,10 @@ export function ProjectsPage() {
           />
         ) : (
           <>
+            <h1 className="sr-only">
+              {isArchivePage ? "Archived projects" : "Projects"}
+            </h1>
             <PageHeader
-              title={isArchivePage ? "Archive" : "Projects"}
-              meta={listProjects.length}
               actions={
                 <>
                   <DropdownMenu>

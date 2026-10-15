@@ -6,10 +6,8 @@ import { registerPageHeader, usePageHeaderSlot } from "@/lib/page-header";
 import { cn } from "@/lib/utils";
 
 /**
- * A page's title or back link and its actions, shown in the top bar. List
- * pages give a `title`; detail pages give a `backLink` and keep the object's
- * title in the content. `actions` sit after the title, before the global
- * entry controls. Renders through a portal into the shell's slot.
+ * A page's title and actions, shown in the top bar through the shell's slot.
+ * Detail pages keep their title and optional back link in the page content.
  */
 export function PageHeader({
   title,
@@ -32,17 +30,7 @@ export function PageHeader({
   const content = (
     <>
       <div className="ajour-page-header-title">
-        {backLink ? (
-          <Link
-            to={backLink.to}
-            onClick={backLink.onClick}
-            aria-label={`Back to ${backLink.label}`}
-            className="inline-flex h-7 items-center gap-1.5 rounded-sm text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
-          >
-            <ArrowLeft aria-hidden="true" className="size-3.5" />
-            {backLink.label}
-          </Link>
-        ) : title !== undefined ? (
+        {title !== undefined ? (
           <PageTitle meta={meta}>{title}</PageTitle>
         ) : null}
         {children}
@@ -55,11 +43,25 @@ export function PageHeader({
 
   // The narrow view's titlebar holds the section switcher, not a slot: the
   // header renders where the page put it instead, as the page's first row.
-  if (!slot) {
-    return <div className="ajour-page-header-inline">{content}</div>;
-  }
-
-  return createPortal(content, slot);
+  return (
+    <>
+      {slot ? (
+        createPortal(content, slot)
+      ) : (
+        <div className="ajour-page-header-inline">{content}</div>
+      )}
+      {backLink ? (
+        <Link
+          to={backLink.to}
+          onClick={backLink.onClick}
+          className="inline-flex h-7 w-fit items-center gap-1.5 rounded-sm text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+        >
+          <ArrowLeft aria-hidden="true" className="size-3.5" />
+          Back to {backLink.label}
+        </Link>
+      ) : null}
+    </>
+  );
 }
 
 /**
