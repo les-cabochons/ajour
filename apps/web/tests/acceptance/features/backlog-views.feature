@@ -11,6 +11,7 @@ Feature: Backlog list and board views
     When I narrow the Backlog window
     Then the saved board uses a narrow list
     And the Backlog items allow native touch scrolling
+    And the narrow Backlog adds items from its group headers only
     When I widen the Backlog window
     Then the Backlog has workflow columns and standalone subitems
     When I reload the app

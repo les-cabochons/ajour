@@ -76,7 +76,7 @@ The redesign direction decided on 2026-10-14: Linear's density and structure, Ve
 - Logging time from a task or backlog item goes through New entry…. Its row menus, the right-click menu and the palette call `openNewEntryEditor` from `features/time/new-entry-request.ts`. The titlebar's popover opens with the task, and for a backlog item the work item link and note, filled in and Date on today. It anchors to the object's row while any of it shows on screen (`pickOnScreenAnchor`), otherwise to the titlebar's totals. The narrow view opens the dialog instead. The backlog has no inline hours field. Backlog rows show Start entry, replaced by Stop while the item's entry runs.
 - The narrow view always shows the "…" on project, task and backlog rows.
 - On touch screens, a long press on any row or card with an action set opens the same menu as right-click. Base UI's `ContextMenu.Trigger` handles the press (500ms, cancelled by a 10px move); styles.css turns off text selection on those elements for coarse pointers so iOS does not start a selection on the same gesture.
-- In the narrow view, Backlog keeps Display and filter chips in its header and shows an icon-only floating New backlog item action at the bottom right. Reserve scroll space and safe-area padding for it.
+- In the narrow view, Backlog keeps Display and filter chips in its header. New items start from the "+" in each group header, or the New backlog item row that ends an ungrouped list, as in a wide window. There is no floating add button.
 
 ## Icons
 

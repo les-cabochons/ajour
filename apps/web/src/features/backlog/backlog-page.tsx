@@ -720,15 +720,6 @@ export function BacklogPage() {
             </section>
           ))}
         </div>
-        {narrow && (
-          <TooltipButton
-            label="New backlog item"
-            render={<Button className="backlog-narrow-add" size="icon" />}
-            onClick={() => add()}
-          >
-            <RiAddLine className="size-5" />
-          </TooltipButton>
-        )}
       </div>
       {!narrow && (target || peek) && (
         <SidePanel
