@@ -119,7 +119,7 @@ Decided in [App shell and collapsible sidebar](https://github.com/les-cabochons/
 
 ### Desktop widths
 
-- The app sidebar is expanded (resizable, see the Backlog sidebar section for widths) or hidden. There is no icon rail. From the top: Hide sidebar and the logo, the view switcher with Search, the timer dock, then the work list. Settings sits at the bottom.
+- The app sidebar is expanded (resizable, see the Backlog sidebar section for widths) or hidden. There is no icon rail. From the top: Hide sidebar and the logo, the view switcher with Search and the project filter, the timer dock, then the work list. Settings sits at the bottom.
 - Hide sidebar and the logo sit on the titlebar's row, as in T3 Code: right of the traffic lights on macOS, in the window's top left corner elsewhere. Hide sidebar sits where Show sidebar sits in the titlebar, so the button does not move when the sidebar toggles.
 - The view switcher works like ChatGPT's: the open view's name, such as "Time", opens a menu of Time, Backlog, Pull requests (only while a code host plugin is enabled) and Projects with their live counts, today's total next to Time, the number of listed items next to Backlog, and next to Pull requests the number that need the user, as a filled badge when any returned. A check marks the open view. A backlog item's page belongs to Backlog.
 - Cmd+B (Ctrl+B on Windows), Hide sidebar next to the logo and Show sidebar at the start of the titlebar toggle it. The View menu gets "Show sidebar" or "Hide sidebar" once the menu bar exists. There is no second shortcut.
@@ -526,6 +526,15 @@ The sidebar works like the T3 Code and Linear sidebars: the view switcher, the t
 - With priority order, a subitem with its own priority mixes with top-level items by priority. With custom order, it sits right below its parent. If its parent is snoozed or settled, it takes the parent's place.
 - Snoozed, settled and archived items leave the list.
 - The narrow view has no item list. The Backlog page is the way in.
+
+### Search and project filter
+
+- Search, next to the view switcher, expands into a search box in place of the switcher. It filters the work list as the user types. Cmd+K still opens the command palette.
+- Every typed word must appear in the item's title or its project's name, display name or code. Case and accents do not count. A pull request matches on its title and repository.
+- Escape clears the box and closes it. Leaving the box empty closes it too. A typed query stays while the user opens the rows it found.
+- The filter button, like T3 Code's, opens a menu with its own search, "All projects", then the active projects. Picking a project keeps only its items. Pull requests have no project, so they hide while a project is picked. The pick is saved per device. The button stays highlighted while a project is picked.
+- Every section keeps only the matching rows, and its count follows. While the list is narrowed, Settled shows its count and an empty Backlog says "No matching items."
+- The view switcher's counts, the timer dock's Up next and the Backlog page ignore the sidebar's search and filter.
 
 ### Layout options
 
