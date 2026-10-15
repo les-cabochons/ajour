@@ -1,11 +1,13 @@
 import {
   memo,
+  useCallback,
   useMemo,
   useRef,
   useState,
   type ComponentProps,
   type KeyboardEvent,
   type MouseEvent,
+  type PointerEvent,
   type ReactNode,
 } from "react";
 import { useNavigate, useRouter } from "@tanstack/react-router";
@@ -50,6 +52,12 @@ import { findWorkItemTimer } from "@/domain/time/running-entry";
 import { settleOpensDialog } from "@/features/backlog/settle-dialog";
 import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
 import { getBacklogItemOriginFor } from "@/features/backlog/backlog-item-search";
+import {
+  getBacklogDropOrder,
+  useBacklogDrag,
+  type BacklogDropTarget,
+} from "@/features/backlog/use-backlog-drag";
+import { offerUndo } from "@/features/feedback/undo-toast";
 import { formatSnoozeTime } from "@/features/backlog/snooze-presets";
 import {
   WorkItemIcon,
@@ -75,12 +83,69 @@ import { openModifiedSourceClick } from "@/lib/source-navigation";
 import { updateSidebarLayout, useSidebarLayout } from "@/lib/sidebar-layout";
 import { useHoverOrFocusWithin } from "@/lib/use-hover-or-focus-within";
 import { useNow } from "@/lib/use-now";
+import { getSharedTableStepOrder } from "@/lib/table-drag";
 import { cn } from "@/lib/utils";
 import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
 
 const SETTLED_PAGE_SIZE = 20;
 
 type IconData = ReturnType<typeof useWorkItemIconData>;
+
+/**
+ * Under Custom ordering, pinned items and the rest reorder apart: a drag or
+ * Move up and Move down stays in its block. The keys put each block in its
+ * own drag lane.
+ */
+const PINNED_BLOCK = "pinned/items";
+const LISTED_BLOCK = "listed/items";
+
+function getBlockKey(workItem: LocalWorkItem) {
+  return workItem.pinnedAt !== undefined ? PINNED_BLOCK : LISTED_BLOCK;
+}
+
+function getReorderBlocks(
+  listed: readonly LocalWorkItem[],
+): BacklogDropTarget[] {
+  return [PINNED_BLOCK, LISTED_BLOCK].map((key) => ({
+    key,
+    itemIds: listed
+      .filter((workItem) => getBlockKey(workItem) === key)
+      .map((workItem) => workItem._id),
+  }));
+}
+
+/**
+ * Where the dragged row would land, for the drop line: before the row that
+ * would follow it, or after the block's last row. Undefined when the drop
+ * changes nothing.
+ */
+function getDropMark(
+  drag: ReturnType<typeof useBacklogDrag>["drag"],
+  blocks: readonly BacklogDropTarget[],
+  canReorder: (itemId: string) => boolean,
+): { itemId: string; edge: "before" | "after" } | undefined {
+  const block = blocks.find((target) => target.key === drag?.targetKey);
+  if (!drag || !block) return undefined;
+  const order = getBacklogDropOrder(
+    block.itemIds,
+    drag.itemId,
+    drag.index,
+    drag.originKey === drag.targetKey,
+    canReorder,
+  );
+  if (!order) return undefined;
+  const next = order[order.indexOf(drag.itemId) + 1];
+  return next
+    ? { itemId: next, edge: "before" }
+    : { itemId: block.itemIds.at(-1)!, edge: "after" };
+}
+
+function offerReorderUndo(orderedIds: string[]) {
+  offerUndo(localStore.reorderWorkItemsWithUndo(orderedIds), {
+    title: "Backlog item reordered",
+    subject: "backlog item",
+  });
+}
 
 function countSubitems(
   workItem: LocalWorkItem,
@@ -91,16 +156,27 @@ function countSubitems(
     : getDirectChildWorkItems(workItem, workItems).length;
 }
 
+/** The list's reorder state that rows read when a key or a press asks. */
+interface RowReorder {
+  blocks: readonly BacklogDropTarget[];
+  canReorder: (itemId: string) => boolean;
+  drag: ReturnType<typeof useBacklogDrag>;
+}
+
 /**
- * What a row can do: actions, keys and navigation for one backlog item. The
- * rows are memoized, so this is one object for the life of the list that reads
- * the latest list and time when a row asks.
+ * What a row can do: actions, keys, navigation and reordering for one backlog
+ * item. The rows are memoized, so this is one object for the life of the list
+ * that reads the latest list, time and drag when a row asks.
  */
-function useBacklogItemRow(state: LocalAppState, now: number) {
+function useBacklogItemRow(
+  state: LocalAppState,
+  now: number,
+  reorder: RowReorder,
+) {
   const navigate = useNavigate();
   const router = useRouter();
-  const latest = useRef({ state, now });
-  latest.current = { state, now };
+  const latest = useRef({ state, now, reorder });
+  latest.current = { state, now, reorder };
 
   return useMemo(() => {
     // The item page remembers the page it was opened from, so Time or
@@ -152,7 +228,50 @@ function useBacklogItemRow(state: LocalAppState, now: number) {
       );
     }
 
-    return { open, actionsFor, run };
+    function canReorder(workItem: LocalWorkItem) {
+      return latest.current.reorder.canReorder(workItem._id);
+    }
+
+    /** Move up (-1) or Move down (1) within the item's block, with Undo. */
+    function step(workItem: LocalWorkItem, direction: -1 | 1) {
+      const { blocks, canReorder } = latest.current.reorder;
+      const block = blocks.find(
+        (target) => target.key === getBlockKey(workItem),
+      );
+      const next =
+        block &&
+        getSharedTableStepOrder(
+          block.itemIds.filter(canReorder),
+          workItem._id,
+          direction,
+        );
+      if (next) offerReorderUndo(next.order);
+    }
+
+    function pointerDown(
+      workItem: LocalWorkItem,
+      event: PointerEvent<HTMLElement>,
+    ) {
+      const { drag } = latest.current.reorder;
+      const key = getBlockKey(workItem);
+      if (drag.canDrag(workItem._id, key))
+        drag.pointerDown(workItem._id, key, event);
+    }
+
+    /** False right after a drag, so its release does not open the row. */
+    function clickAllowed() {
+      return latest.current.reorder.drag.clickAllowed();
+    }
+
+    return {
+      open,
+      actionsFor,
+      run,
+      canReorder,
+      step,
+      pointerDown,
+      clickAllowed,
+    };
   }, [navigate, router]);
 }
 
@@ -394,15 +513,21 @@ interface ItemRowProps {
   rows: RowApi;
 }
 
-/** Click, modified click, keys and the context menu, shared by the item rows. */
+/**
+ * Click, modified click, keys, drag and the context menu, shared by the item
+ * rows. Under Custom ordering, dragging a row or Alt+Up and Alt+Down move it.
+ */
 function useItemRowHandlers({ workItem, subitemCount, rows }: ItemRowProps) {
   const actions = rows.actionsFor(workItem, subitemCount);
   return {
     actions,
     onClick: (event: MouseEvent<HTMLElement>) => {
+      if (!rows.clickAllowed()) return;
       if (!openModifiedSourceClick(event, workItem.sourceUrl))
         rows.open(workItem);
     },
+    onPointerDown: (event: PointerEvent<HTMLElement>) =>
+      rows.pointerDown(workItem, event),
     onKeyDown: (event: KeyboardEvent<HTMLElement>) =>
       handleItemKeyDown(event, {
         actions: [...actions, OPEN_BACKLOG_ITEM_ACTION],
@@ -413,6 +538,9 @@ function useItemRowHandlers({ workItem, subitemCount, rows }: ItemRowProps) {
             : rows.run(workItem, actionId, {
                 askToSettle: shortcutId === "item.settle-ask",
               }),
+        onReorder: rows.canReorder(workItem)
+          ? (direction) => rows.step(workItem, direction)
+          : undefined,
       }),
   };
 }
@@ -470,7 +598,8 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
 ) {
   const { workItem, parent, project, workflowState, isActive, rows } = props;
   const remainingHours = workItem.remainingEstimateHours;
-  const { actions, onClick, onKeyDown } = useItemRowHandlers(props);
+  const { actions, onClick, onPointerDown, onKeyDown } =
+    useItemRowHandlers(props);
   const reveal = useHoverOrFocusWithin();
 
   return (
@@ -491,6 +620,7 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
             isActive && "bg-foreground/[0.07]",
           )}
           onClick={onClick}
+          onPointerDown={onPointerDown}
           onKeyDown={onKeyDown}
         />
       }
@@ -587,7 +717,8 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
 const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
   const { workItem, parent, isActive, iconData, rows } = props;
   const parentTitle = parent?.title;
-  const { actions, onClick, onKeyDown } = useItemRowHandlers(props);
+  const { actions, onClick, onPointerDown, onKeyDown } =
+    useItemRowHandlers(props);
   const reveal = useHoverOrFocusWithin();
 
   return (
@@ -609,6 +740,7 @@ const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
             isActive && "bg-foreground/[0.07]",
           )}
           onClick={onClick}
+          onPointerDown={onPointerDown}
           onKeyDown={onKeyDown}
         />
       }
@@ -770,7 +902,6 @@ export function SidebarBacklogList({
   const now = useNow();
   const layout = useSidebarLayout();
   const iconData = useWorkItemIconData(state.projects);
-  const rows = useBacklogItemRow(state, now);
   const [settledShown, setSettledShown] = useState(SETTLED_PAGE_SIZE);
   const activeItemId = pathname.startsWith("/backlog/")
     ? decodeURIComponent(pathname.slice("/backlog/".length))
@@ -804,6 +935,27 @@ export function SidebarBacklogList({
     };
   }, [state, now, matcher]);
 
+  const custom = state.backlogSortMode === "custom";
+  const blocks = useMemo(() => getReorderBlocks(listed), [listed]);
+  // Subitems sit under their parent, so only top-level items move.
+  const canReorder = useCallback(
+    (itemId: string) => {
+      const workItem = state.workItems.find((item) => item._id === itemId);
+      return custom && Boolean(workItem && !isSubtaskWorkItem(workItem));
+    },
+    [custom, state.workItems],
+  );
+  const drag = useBacklogDrag({
+    targets: blocks,
+    canReorder,
+    disabled: !custom,
+    onDrop: (_itemId, _key, order) => {
+      if (order) offerReorderUndo(order);
+    },
+  });
+  const dropMark = getDropMark(drag.drag, blocks, canReorder);
+  const rows = useBacklogItemRow(state, now, { blocks, canReorder, drag });
+
   // Apart from the list above so the clock does not rebuild them every minute.
   const projectById = useMemo(
     () => new Map(state.projects.map((project) => [project._id, project])),
@@ -836,6 +988,10 @@ export function SidebarBacklogList({
   });
   const ItemRow =
     layout.density === "comfortable" ? ComfortableItemRow : BacklogItemRow;
+  const listedById = new Map(
+    listed.map((workItem) => [workItem._id, workItem]),
+  );
+  const draggedItem = drag.drag ? listedById.get(drag.drag.itemId) : undefined;
 
   let settledRows: ReactNode = null;
   if (layout.settledOpen) {
@@ -875,10 +1031,43 @@ export function SidebarBacklogList({
       aria-label="Backlog items"
       data-focus-scope
     >
-      {/* The backlog items have no header, like T3 Code's thread list. */}
+      {/*
+        The backlog items have no header, like T3 Code's thread list. Pinned
+        items and the rest are separate blocks, so a drag stays in its own.
+      */}
       <div className="flex shrink-0 flex-col pt-2">
-        {listed.map((workItem) => (
-          <ItemRow key={workItem._id} {...rowProps(workItem)} />
+        {blocks.map((block) => (
+          <div
+            key={block.key}
+            ref={(element) => {
+              if (element) drag.groupRefs.current.set(block.key, element);
+              else drag.groupRefs.current.delete(block.key);
+            }}
+            className="flex flex-col"
+          >
+            {block.itemIds.map((itemId) => {
+              const workItem = listedById.get(itemId)!;
+              return (
+                <div
+                  key={itemId}
+                  ref={(element) => {
+                    if (element) drag.rowRefs.current.set(itemId, element);
+                    else drag.rowRefs.current.delete(itemId);
+                  }}
+                  className={cn(
+                    "flex flex-col",
+                    drag.drag?.itemId === itemId && "opacity-30",
+                    dropMark?.itemId === itemId &&
+                      (dropMark.edge === "before"
+                        ? "shadow-[inset_0_2px_0_var(--primary)]"
+                        : "shadow-[inset_0_-2px_0_var(--primary)]"),
+                  )}
+                >
+                  <ItemRow {...rowProps(workItem)} />
+                </div>
+              );
+            })}
+          </div>
         ))}
         {listed.length === 0 ? (
           <p className="px-2 pt-1 pb-1 text-xs text-muted-foreground">
@@ -929,6 +1118,19 @@ export function SidebarBacklogList({
           />
           {settledRows}
         </>
+      ) : null}
+
+      {draggedItem ? (
+        <div
+          className="backlog-move-preview"
+          aria-hidden="true"
+          style={{
+            width: drag.drag!.width,
+            transform: `translate3d(${drag.drag!.x - drag.drag!.offsetX}px,${drag.drag!.y - drag.drag!.offsetY}px,0)`,
+          }}
+        >
+          {draggedItem.title}
+        </div>
       ) : null}
     </div>
   );

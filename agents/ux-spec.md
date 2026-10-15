@@ -523,6 +523,7 @@ The sidebar works like the T3 Code and Linear sidebars: the view switcher, the t
 ### List
 
 - Below the timer dock, the sidebar lists active backlog items in the Backlog page's current order, custom or priority. There is one ordering.
+- With Custom ordering, dragging a row or pressing Alt+Up and Alt+Down moves it in the one custom order, with Undo. Pinned items and the rest move apart: a row stays among the pinned items or among the others. Subitems follow their parent and do not move. Other orderings do not allow dragging.
 - The work list is one scroll: the backlog items, pinned ones first, with no header and no collapse, like T3 Code's thread list, then collapsible sections for Pull requests (only while pull requests need the user), Snoozed and Settled. A section with nothing in it is not shown. Pull requests starts open, and every section's state is saved per device. The Backlog and Pull requests tabs are gone.
 - The list holds top-level items and subitems that have their own priority. A subitem without a priority follows its parent and does not show.
 - With priority order, a subitem with its own priority mixes with top-level items by priority. With custom order, it sits right below its parent. If its parent is snoozed or settled, it takes the parent's place.
@@ -535,7 +536,7 @@ The sidebar works like the T3 Code and Linear sidebars: the view switcher, the t
 - Search, next to the view switcher, expands into a search box in place of the switcher. It filters the work list as the user types. Cmd+K still opens the command palette.
 - Every typed word must appear in the item's title or its project's name, display name or code. Case and accents do not count. A pull request matches on its title and repository.
 - Escape clears the box and closes it. Leaving the box empty closes it too. A typed query stays while the user opens the rows it found, including when the sidebar hides in between, as the overlay does after a row opens. It is not saved across launches.
-- The filter button, like T3 Code's, opens a menu with its own search, "All projects", then the active projects. Picking a project keeps only its items. Pull requests have no project, so they hide while a project is picked. The pick is saved per device. The button stays highlighted while a project is picked.
+- The filter button, like T3 Code's, opens a menu with its own search, an Ordering group, then "All projects" and the active projects. Ordering offers Custom and Priority, plus the current ordering when the Backlog page picked another. Picking one changes the Backlog page's ordering too. Picking a project keeps only its items. Pull requests have no project, so they hide while a project is picked. The pick is saved per device. The button stays highlighted while a project is picked.
 - Every section keeps only the matching rows, and its count follows. A section left with no rows is not shown. While the list is narrowed, Settled shows its count and an empty backlog list says "No matching items."
 - The view switcher's counts and the Backlog page ignore the sidebar's search and filter.
 
