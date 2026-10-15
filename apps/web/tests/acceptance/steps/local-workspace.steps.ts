@@ -603,8 +603,28 @@ When("I stop the running entry from the floating dock", async ({ page }) => {
 });
 
 Then("nothing runs and the window title is plain", async ({ page }) => {
-  await expect(page.locator(".ajour-floating-dock-desktop")).toHaveCount(0);
+  // With the sidebar hidden, the floating dock offers "+" and Start instead.
+  const dock = page.locator(".ajour-floating-dock-desktop");
+  await expect(
+    dock.getByRole("button", { name: "Stop", exact: true }),
+  ).toHaveCount(0);
+  await expect(
+    dock.getByRole("button", { name: "Create time entry" }),
+  ).toBeVisible();
   await expect(page).toHaveTitle("Ajour");
+});
+
+When("I start an empty entry from the floating dock", async ({ page }) => {
+  await page
+    .locator(".ajour-floating-dock-desktop")
+    .getByRole("button", { name: "Start", exact: true })
+    .click();
+});
+
+Then("the floating dock opens the running entry", async ({ page }) => {
+  await expect(
+    page.getByRole("dialog").getByRole("button", { name: "Stop", exact: true }),
+  ).toBeVisible();
 });
 
 When("I reload the app", async ({ page }) => {

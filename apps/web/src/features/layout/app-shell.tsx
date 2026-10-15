@@ -32,6 +32,7 @@ import {
   isAppNavigationItemActive,
 } from "@/features/layout/app-navigation-sidebar";
 import {
+  FloatingStartDock,
   FloatingTimerDock,
   RunningEntryWindowTitle,
   runningEntryDraftProps,
@@ -445,7 +446,7 @@ type TitlebarEditor = "new" | null;
  * The titlebar totals and the host of the new entry editor. The timer dock in
  * the sidebar has the "+" and the start buttons; while the sidebar is off
  * screen (`showsFloatingDock`), the running entry floats at the bottom left
- * instead. In the narrow view, New entry (+) and Start (▶) float at the bottom
+ * instead, or "+" and Start while nothing runs. In the narrow view, New entry (+) and Start (▶) float at the bottom
  * right, with the floating dock beside them, and open the dialog. Elsewhere the
  * editor opens in a popover anchored to where it was asked for: the dock's
  * "+", or the task or backlog row of New entry… (`openNewEntryEditor`). N and
@@ -599,6 +600,16 @@ function GlobalTimerBar({
                   ? { left: 8, width: floatingDockWidth - 16, maxWidth: "none" }
                   : undefined
               }
+            />,
+            document.body,
+          )
+        : null}
+      {!currentTimer && showsFloatingDock && !isNarrowView
+        ? createPortal(
+            <FloatingStartDock
+              className="ajour-floating-dock-desktop"
+              // In Settings it sits inside the left column, like the running dock.
+              style={floatingDockWidth ? { left: 8 } : undefined}
             />,
             document.body,
           )

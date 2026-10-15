@@ -39,6 +39,9 @@ Feature: Open the local time workspace
     Then the running entry floats at the bottom left
     When I stop the running entry from the floating dock
     Then nothing runs and the window title is plain
+    When I start an empty entry from the floating dock
+    Then the running entry floats at the bottom left
+    And the floating dock opens the running entry
 
   Scenario: Use single-key shortcuts outside text fields
     Given I have no saved Ajour workspace

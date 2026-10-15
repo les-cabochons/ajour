@@ -134,7 +134,7 @@ Decided in [App shell and collapsible sidebar](https://github.com/les-cabochons/
 - Clicking the dock opens the running entry's editor in a popover. New entry (+) opens a blank entry editor in a popover anchored to it.
 - With nothing running, the dock shows "Nothing running", today's total, New entry (+) and a one-click start for the first item of the list, marked Up next. With an empty list, "Start an entry" starts an empty entry and opens its editor.
 - N opens the new entry editor from anywhere, anchored to the titlebar's totals off the Time pages. S starts an empty entry.
-- While the sidebar is not on screen, the dock floats at the bottom left on one line: dot, title, time counted and Stop. It shows only while an entry runs.
+- While the sidebar is not on screen, the dock floats at the bottom left on one line: dot, title, time counted and Stop. While nothing runs it holds New entry (+) and Start (▶), the only buttons that start an entry there.
 - The window title shows the running entry, such as "● 1:24 · Fix export rounding — Ajour", so it shows on the taskbar or Dock. It changes once a minute and goes back to "Ajour" when nothing runs.
 
 ### Narrow view

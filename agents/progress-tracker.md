@@ -684,6 +684,6 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 - [x] Hide sidebar and the logo sit on the titlebar's row, right of the macOS traffic lights and in the top left corner elsewhere, as in T3 Code.
 - [x] A ChatGPT-style view switcher replaces the Time, Backlog, Pull requests and Projects rows. Search sits beside it.
-- [x] New entry (+) moves from the titlebar to the timer dock. Start (▶) leaves the titlebar: the dock starts the Up next item, or an empty entry when the list is empty. The narrow view keeps its floating buttons.
+- [x] New entry (+) moves from the titlebar to the timer dock. Start (▶) leaves the titlebar: the dock starts the Up next item, or an empty entry when the list is empty. With the sidebar hidden and nothing running, the floating dock holds "+" and Start. The narrow view keeps its floating buttons.
 - [x] The work list's Up next section, its setting and its View menu entry are gone. The dock already offers the first item.
 - [x] Verification passed: unit tests, typecheck and the acceptance scenarios, except five that also fail on main at `7ed5ab4` (board close with subitems, Ctrl-click workflow settings link, packaged connector install, settle rules section, pull request Ctrl-click).

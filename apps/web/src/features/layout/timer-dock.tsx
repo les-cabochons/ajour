@@ -295,6 +295,39 @@ export function TimerDock({ upNext }: { upNext?: LocalWorkItem }) {
 }
 
 /**
+ * The floating dock while nothing runs and the sidebar is not on screen on
+ * desktop: "+" and Start, the only buttons that start an entry there. Start
+ * turns it into the running `FloatingTimerDock`, with the editor open.
+ */
+export function FloatingStartDock({
+  className,
+  style,
+}: {
+  className?: string;
+  style?: CSSProperties;
+}) {
+  return (
+    <div
+      style={style}
+      className={cn(
+        "ajour-floating-dock flex h-10 items-center gap-1.5 rounded-lg border bg-popover px-1.5 shadow-[var(--shadow-popup)]",
+        className,
+      )}
+    >
+      <NewEntryButton />
+      <TooltipButton
+        label="Start"
+        shortcut="entry.stop-or-start"
+        className="flex size-7 shrink-0 items-center justify-center rounded-md bg-foreground text-background hover:bg-foreground/85"
+        onClick={startBlankEntry}
+      >
+        <PlayIcon className="size-3.5" />
+      </TooltipButton>
+    </div>
+  );
+}
+
+/**
  * The dock on one line, shown while an entry runs and the sidebar is not on
  * screen: floating at the bottom left on desktop, and with the narrow view's
  * entry buttons. Desktop opens the editor in a popover; the narrow view passes
