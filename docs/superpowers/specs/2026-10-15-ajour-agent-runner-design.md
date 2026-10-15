@@ -83,7 +83,7 @@ A plugin declares tasks under a new `agentTask` capability:
       "estimateMinutes": 10,
       "weekLink": "{{settings.timesheetUrl}}?date={{weekOf}}",
       "settings": [
-        { "key": "timesheetUrl", "label": "Workday timesheet URL", "type": "url", "required": true }
+        { "id": "timesheetUrl", "label": "Workday timesheet URL", "type": "url", "required": true }
       ]
     }]
   }
@@ -92,9 +92,9 @@ A plugin declares tasks under a new `agentTask` capability:
 
 - `placement`: `submit-week` is the only value in this spec. The Submit page shows the task's button for the week on screen. The button is disabled until the required settings are filled, an agent is picked, and no run is going.
 - `prompt`: a Markdown file inside the plugin folder. The host only reads it. It follows the manifest file rules: a regular file in the canonical plugin folder, no symbolic links, at most 64 KB.
-- Slots: `{{weekOf}}` (ISO date of the week's Monday), `{{sessionId}}` and `{{settings.<key>}}`. A slot Ajour does not know is an install error, not a blank.
+- Slots: `{{weekOf}}` (ISO date of the week's Monday), `{{sessionId}}` and `{{settings.<id>}}`, where `<id>` is a settings field's `id`. A slot Ajour does not know is an install error, not a blank.
 - `weekLink`: a URL template with the same slots. It must give an `https:` URL after filling. The plugin owns its shape, since only it knows the external tool.
-- `settings`: the existing connector field schema. Values are plain, not secrets, and live in the API's storage under the plugin ID. The plugin's settings page renders them with the connector settings field UI.
+- `settings`: the existing connector field schema. Values are plain, not secrets, and live in the API's storage under the plugin ID and task ID. Settings > Agents renders them under the task's name with the connector settings field UI. The plugin's page on Settings > Plugins lists its tasks and points to Settings > Agents, and shows no connection form for a plugin without `connector` or `codeHost`.
 - A plugin that declares only `agentTask` has no `entrypoint` and no `connectionFields`. The manifest schema makes both optional in that case and keeps them required for `connector` and `codeHost`. Such a plugin has no connections and no workers.
 - Install, activation, the master gate and uninstall work as for connectors, with the same `.ajour-connector` archive. Renaming the archive format waits.
 
@@ -106,7 +106,7 @@ A plugin declares tasks under a new `agentTask` capability:
 - Before spawning, the runner checks: MCP is on, the picked CLI is installed, the task's required settings are set, and in the default browser mode, Google Chrome is installed. Each failure is a 400 with a sentence the Submit page shows.
 - The runner creates the MCP client named "<Task label> run", keeps its token in memory, and begins the session itself, titled with the task label and the week, with the task's `estimateMinutes`. The panel shows the run even if the agent never calls `begin_session`. The prompt gives the agent the session ID.
 - Routes: `POST /api/agent-runs` starts a run and returns its ID and session ID. `POST /api/agent-runs/:id/stop` stops it. `GET /api/agent-runs/current` returns the run or null. All three sit behind the existing origin allowlist.
-- In the panel, a runner session shows Stop instead of Dismiss.
+- A runner session carries `runId` and a `link` ("Open the week in <plugin name>", the filled `weekLink`). In the panel, it shows Stop instead of Dismiss while open, and the link once it ends.
 
 ### Prompts
 
