@@ -716,3 +716,33 @@ describe("agent sessions over MCP", () => {
     });
   });
 });
+
+describe("agent runner routes", () => {
+  it("answers 404 to Stop for a run that is not going", async () => {
+    const { baseUrl } = await startTestApi();
+    const response = await fetch(`${baseUrl}/api/agent-runs/nope/stop`, {
+      method: "POST",
+      headers: { Origin: TEST_ORIGIN },
+    });
+    expect(response.status).toBe(404);
+  });
+
+  it("lists the agents and keeps their settings", async () => {
+    const { baseUrl } = await startTestApi();
+    const update = await fetch(`${baseUrl}/api/agents/settings`, {
+      method: "POST",
+      headers: { Origin: TEST_ORIGIN, "Content-Type": "application/json" },
+      body: JSON.stringify({ browserMode: "my-chrome" }),
+    });
+    const overview = (await update.json()) as {
+      settings: { browserMode: string };
+      clis: { id: string }[];
+    };
+    expect(overview.settings.browserMode).toBe("my-chrome");
+    expect(overview.clis.map((cli) => cli.id)).toEqual([
+      "claude-code",
+      "codex",
+      "opencode",
+    ]);
+  });
+});

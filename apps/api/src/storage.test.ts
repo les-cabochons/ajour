@@ -620,4 +620,31 @@ describe("AppApiStorage", () => {
       ],
     });
   });
+
+  it("keeps the agent runner settings and task values", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
+    tempDirs.push(tempDir);
+    const statePath = path.join(tempDir, "app-api-state.json");
+    const storage = new AppApiStorage(statePath);
+    expect(await storage.getAgentRunnerSettings()).toEqual({
+      cli: null,
+      browserMode: "ajour-chrome",
+      model: "",
+    });
+    await storage.updateAgentRunnerSettings({ cli: "claude-code" });
+    await storage.setAgentTaskValues("ajp-workday", "enter-week", {
+      timesheetUrl: "https://wd.example/t",
+    });
+    const reloaded = new AppApiStorage(statePath);
+    expect((await reloaded.getAgentRunnerSettings()).cli).toBe("claude-code");
+    expect(
+      await reloaded.getAgentTaskValues("ajp-workday", "enter-week"),
+    ).toEqual({
+      timesheetUrl: "https://wd.example/t",
+    });
+    await reloaded.removeConnectorPluginData("ajp-workday");
+    expect(
+      await reloaded.getAgentTaskValues("ajp-workday", "enter-week"),
+    ).toEqual({});
+  });
 });

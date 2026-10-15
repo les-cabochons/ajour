@@ -56,6 +56,11 @@ import {
   projectDataShapePluginIdSchema,
 } from "../../../packages/shared/project-data-shapes.ts";
 import {
+  agentRunnerSettingsUpdateSchema,
+  agentRunStartRequestSchema,
+  agentTaskSettingsUpdateSchema,
+} from "../../../packages/shared/agent-runs.ts";
+import {
   agentAnswerRequestSchema,
   bridgeToolResultSchema,
   mcpClientCreateRequestSchema,
@@ -66,6 +71,14 @@ import { AgentSessions } from "./agent-sessions.ts";
 import { McpBridge } from "./mcp-bridge.ts";
 import { createMcpClient } from "./mcp-clients.ts";
 import { handleMcpRequest, MAX_WAIT_FOR_ANSWER_MS } from "./mcp-server.ts";
+import { claudeCodeAdapter } from "./agent-runner/adapters/claude-code.ts";
+import { isChromeInstalled } from "./agent-runner/chrome.ts";
+import {
+  findExecutable,
+  resolveLoginShellPath,
+} from "./agent-runner/cli-path.ts";
+import { playwrightMcpServer } from "./agent-runner/playwright-mcp.ts";
+import { AgentRunError, AgentRunner } from "./agent-runner/runner.ts";
 import { ConnectorPluginManager } from "./plugin-host.ts";
 import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";
 import { AppApiStorage } from "./storage.ts";
@@ -93,6 +106,7 @@ interface AppApiRuntime {
   storage: AppApiStorage;
   pluginManager: ConnectorPluginManager;
   projectDataShapePluginManager: ProjectDataShapePluginManager;
+  agentRunner: AgentRunner;
   stopping: boolean;
 }
 
@@ -462,12 +476,6 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   const allowedOrigins = new Set(
     options.allowedOrigins ?? configuredAllowedOrigins(),
   );
-  const runtime: AppApiRuntime = {
-    storage,
-    pluginManager,
-    projectDataShapePluginManager,
-    stopping: false,
-  };
   const logMcpEvent =
     options.mcpLogEvent ??
     ((event: Record<string, unknown>) =>
@@ -503,7 +511,50 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         ).length,
       }),
   });
-  const stallTimer = setInterval(() => agentSessions.tick(), 15_000);
+  const agentRunner = new AgentRunner({
+    storage: {
+      getMcpSettings: () => storage.getMcpSettings(),
+      getAgentRunnerSettings: () => storage.getAgentRunnerSettings(),
+      getAgentTaskValues: (pluginId, taskId) =>
+        storage.getAgentTaskValues(pluginId, taskId),
+      createMcpClient: (name) => createMcpClient(storage, name),
+      revokeMcpClient: (clientId) =>
+        storage.revokeMcpClient(clientId, Date.now()),
+    },
+    sessions: agentSessions,
+    plugins: {
+      listPlugins: () => pluginManager.listPlugins(),
+      isPluginEnabled: async (pluginId) =>
+        storage.isConnectorPluginEnabled(
+          pluginId,
+          new Set(
+            (await pluginManager.listPlugins()).map((plugin) => plugin.id),
+          ),
+        ),
+      readAgentTaskPrompt: (pluginId, taskId) =>
+        pluginManager.readAgentTaskPrompt(pluginId, taskId),
+    },
+    adapters: [claudeCodeAdapter],
+    findExecutable: (name, pathValue) => findExecutable(name, pathValue),
+    loginShellPath: resolveLoginShellPath,
+    chromeInstalled: () => isChromeInstalled(),
+    playwright: playwrightMcpServer,
+    profileDirectory: path.join(storage.dataDirectory, "agent-browser-profile"),
+    tempRoot: os.tmpdir(),
+    ajourMcpUrl: `http://${host}:${port}/mcp/ajour`,
+    logEvent: logMcpEvent,
+  });
+  const runtime: AppApiRuntime = {
+    storage,
+    pluginManager,
+    projectDataShapePluginManager,
+    agentRunner,
+    stopping: false,
+  };
+  const stallTimer = setInterval(() => {
+    agentSessions.tick();
+    agentRunner.tick();
+  }, 15_000);
   stallTimer.unref();
   const mcpContext = {
     storage,
@@ -562,6 +613,79 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     try {
       if (request.method === "GET" && requestUrl.pathname === "/api/health") {
         writeJson(response, 200, { ok: true });
+        return;
+      }
+
+      if (request.method === "GET" && requestUrl.pathname === "/api/agents") {
+        writeJson(response, 200, await agentRunner.overview());
+        return;
+      }
+
+      if (
+        request.method === "POST" &&
+        requestUrl.pathname === "/api/agents/settings"
+      ) {
+        const payload = agentRunnerSettingsUpdateSchema.parse(
+          await readJsonBody(request),
+        );
+        await storage.updateAgentRunnerSettings(payload);
+        writeJson(response, 200, await agentRunner.overview());
+        return;
+      }
+
+      const agentTaskSettingsRoute = requestUrl.pathname.match(
+        /^\/api\/agents\/tasks\/([^/]+)\/([^/]+)\/settings$/,
+      );
+      if (request.method === "POST" && agentTaskSettingsRoute) {
+        const payload = agentTaskSettingsUpdateSchema.parse(
+          await readJsonBody(request),
+        );
+        await storage.setAgentTaskValues(
+          decodeURIComponent(agentTaskSettingsRoute[1] ?? ""),
+          decodeURIComponent(agentTaskSettingsRoute[2] ?? ""),
+          payload.values,
+        );
+        writeJson(response, 200, await agentRunner.overview());
+        return;
+      }
+
+      if (
+        request.method === "POST" &&
+        requestUrl.pathname === "/api/agent-runs"
+      ) {
+        const payload = agentRunStartRequestSchema.parse(
+          await readJsonBody(request),
+        );
+        try {
+          writeJson(response, 201, await agentRunner.start(payload));
+        } catch (error) {
+          if (!(error instanceof AgentRunError)) throw error;
+          writeJson(response, error.status, { error: error.message });
+        }
+        return;
+      }
+
+      if (
+        request.method === "GET" &&
+        requestUrl.pathname === "/api/agent-runs/current"
+      ) {
+        writeJson(response, 200, {
+          run: (await agentRunner.overview()).currentRun,
+        });
+        return;
+      }
+
+      const agentRunStopRoute = requestUrl.pathname.match(
+        /^\/api\/agent-runs\/([^/]+)\/stop$/,
+      );
+      if (request.method === "POST" && agentRunStopRoute) {
+        if (!agentRunner.stop(decodeURIComponent(agentRunStopRoute[1] ?? ""))) {
+          writeJson(response, 404, {
+            error: "That agent task is not running.",
+          });
+          return;
+        }
+        writeJson(response, 200, agentSessions.snapshot());
         return;
       }
 
@@ -1361,6 +1485,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     mcpBridge.close();
     clearInterval(stallTimer);
     agentSessions.close();
+    void agentRunner.shutdown();
     void pluginManager.shutdown();
     void projectDataShapePluginManager.shutdown();
   });
@@ -1456,6 +1581,8 @@ export async function stopAppApiServer(server: Server): Promise<void> {
     });
   });
   server.closeIdleConnections();
+  // The run's cleanup revokes its MCP client, so finish it before the plugins stop.
+  await runtime?.agentRunner.shutdown();
   await Promise.all([
     runtime?.pluginManager.shutdown(),
     runtime?.projectDataShapePluginManager.shutdown(),
