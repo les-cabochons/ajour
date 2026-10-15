@@ -50,7 +50,9 @@ export const codexAdapter: AgentCliAdapter = {
       "mcp_servers.playwright.default_tools_approval_mode": "approve",
     };
     for (const [name, value] of Object.entries(input.playwright.env)) {
-      config[`mcp_servers.playwright.env.${JSON.stringify(name)}`] = value;
+      // Codex splits override paths on dots without parsing quoted keys.
+      // The host supplies portable environment names, such as ELECTRON_RUN_AS_NODE.
+      config[`mcp_servers.playwright.env.${name}`] = value;
     }
     return {
       command: input.executable,
