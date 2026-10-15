@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Locator, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 import { viewSwitcher } from "../../fixtures/sidebar";
 
@@ -2476,6 +2476,77 @@ function weekGridCell(page: Page, task: string, day: string) {
     .getByRole("region", { name: "Week" })
     .getByRole("button", { name: new RegExp(`^${task}, ${day},`) });
 }
+
+/** A Days column, named like "Monday, October 5". */
+function daysColumn(page: Page, day: string) {
+  return page.getByRole("region", { name: new RegExp(`^${day},`) });
+}
+
+/** A Days card, found by its task or note. */
+function daysCard(page: Page, day: string, text: string) {
+  return daysColumn(page, day).locator(".weekly-entry-card", { hasText: text });
+}
+
+/** Presses a card and moves the pointer in steps, past the drag threshold. */
+async function dragCardTo(
+  page: Page,
+  card: Locator,
+  target: { x: number; y: number },
+) {
+  const box = await card.boundingBox();
+  if (!box) throw new Error("The dragged card is not rendered");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(target.x, target.y, { steps: 10 });
+  await page.mouse.up();
+}
+
+When("I open the Week Days view", async ({ page }) => {
+  await page.goto("/time/2026-10-05?view=week");
+  await page.getByRole("button", { name: "Days", exact: true }).click();
+  await expect(daysColumn(page, "Monday")).toBeVisible();
+});
+
+When(
+  "I drag {word}'s {string} card above its {string} card",
+  async ({ page }, day: string, dragged: string, target: string) => {
+    const targetBox = await daysCard(page, day, target).boundingBox();
+    if (!targetBox) throw new Error(`The ${target} card is not rendered`);
+    // Above the target card's middle drops the card in front of it.
+    await dragCardTo(page, daysCard(page, day, dragged), {
+      x: targetBox.x + targetBox.width / 2,
+      y: targetBox.y + 4,
+    });
+  },
+);
+
+When(
+  "I drag {word}'s {string} card onto {word}",
+  async ({ page }, day: string, dragged: string, targetDay: string) => {
+    const columnBox = await daysColumn(page, targetDay).boundingBox();
+    if (!columnBox) throw new Error(`The ${targetDay} column is not rendered`);
+    await dragCardTo(page, daysCard(page, day, dragged), {
+      x: columnBox.x + columnBox.width / 2,
+      y: columnBox.y + 120,
+    });
+  },
+);
+
+Then(
+  /^(\w+)'s cards read (.+)$/,
+  async ({ page }, day: string, list: string) => {
+    const expected = [...list.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+    const cards = daysColumn(page, day).locator(".weekly-entry-card");
+    // Each card names its task and note; match each card to one expected text.
+    await expect
+      .poll(async () =>
+        (await cards.allInnerTexts()).map(
+          (text) => expected.find((label) => text.includes(label)) ?? text,
+        ),
+      )
+      .toEqual(expected);
+  },
+);
 
 When("I open the Week Grid", async ({ page }) => {
   // Grid is the default Week layout.

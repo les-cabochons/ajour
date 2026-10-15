@@ -130,6 +130,20 @@ Feature: Open the local time workspace
     When I choose "Edit" from the action menu
     Then the entry editor opens in a full-width dialog
 
+  Scenario: Reorder a day by dragging a card in the Week Days view
+    Given I have a week of saved entries
+    When I open the Week Days view
+    Then Monday's cards read "Code review", "API", "Login form"
+    When I drag Monday's "Login form" card above its "Code review" card
+    Then Monday's cards read "Login form", "Code review", "API"
+
+  Scenario: Move an entry to another day by dragging its card
+    Given I have a week of saved entries
+    When I open the Week Days view
+    And I drag Monday's "API" card onto Wednesday
+    Then Monday's cards read "Code review", "Login form"
+    And Wednesday's cards read "API"
+
   Scenario: Type hours in the Week Grid
     Given I have a week of saved entries
     When I open the Week Grid

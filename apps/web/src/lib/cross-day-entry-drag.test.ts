@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createCrossDayEntryDragPointerSession,
   getCrossDayDragTarget,
+  getSameDayDropLine,
 } from "@/lib/cross-day-entry-drag";
 
 describe("cross-day entry drag geometry", () => {
@@ -94,5 +95,31 @@ describe("cross-day entry drag geometry", () => {
       stopPropagation: vi.fn(),
     } as unknown as Event);
     expect(onEnd).toHaveBeenCalledWith(null, false);
+  });
+});
+
+describe("same-day drop line", () => {
+  const ids = ["a", "b", "c"];
+
+  it("shows above the card the dragged card lands in front of", () => {
+    expect(getSameDayDropLine(ids, "c", 0)).toEqual({
+      entryId: "a",
+      edge: "before",
+    });
+    expect(getSameDayDropLine(ids, "a", 1)).toEqual({
+      entryId: "c",
+      edge: "before",
+    });
+  });
+
+  it("shows below the last card when the dragged card goes to the end", () => {
+    expect(getSameDayDropLine(ids, "a", 2)).toEqual({
+      entryId: "c",
+      edge: "after",
+    });
+  });
+
+  it("hides when the card would land where it started", () => {
+    expect(getSameDayDropLine(ids, "b", 1)).toBeNull();
   });
 });
