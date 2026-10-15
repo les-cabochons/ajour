@@ -47,6 +47,11 @@ async function go(page, route) {
   await page.goto(BASE_URL + route, { waitUntil: "networkidle" });
 }
 
+/** Scrolls the page so the element sits at the top of the window. */
+async function scrollToTop(locator) {
+  await locator.first().evaluate((element) => element.scrollIntoView({ block: "start" }));
+}
+
 /**
  * Every shot. `run` opens the surface and may return a locator: the shot is
  * then cropped to it, with some margin. `seed` passes options to seed.mjs,
@@ -234,12 +239,19 @@ const shots = [
     run: (page) => go(page, "/settings/plugins/azure_devops"),
   },
   {
-    name: "settings-plugin-connection",
+    name: "settings-plugin-connections",
+    run: async (page) => {
+      await go(page, "/settings/plugins/azure_devops");
+      await scrollToTop(page.getByRole("heading", { name: "Configuration" }));
+    },
+  },
+  {
+    name: "settings-plugin-connection-form",
     run: async (page) => {
       await go(page, "/settings/plugins/azure_devops");
       await page.getByRole("button", { name: "Edit" }).first().click();
+      await scrollToTop(page.getByText("Edit Azure DevOps connection"));
     },
-    height: 1400,
   },
   // Anywhere
   {
