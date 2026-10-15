@@ -437,80 +437,6 @@ const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
   );
 });
 
-/**
- * The first item, highlighted above the list with its meta line and a Start
- * entry button that is always visible.
- */
-const UpNextRow = memo(function UpNextRow(props: ItemRowProps) {
-  const { workItem, parentTitle, isActive, iconData, rows } = props;
-  const { actions, onClick, onKeyDown } = useItemRowHandlers(props);
-  const reveal = useHoverOrFocusWithin();
-
-  return (
-    <ObjectContextMenu
-      actions={actions}
-      keys={BACKLOG_ITEM_ACTION_KEYS}
-      onAction={(actionId) => rows.run(workItem, actionId)}
-      render={
-        <div
-          role="link"
-          tabIndex={0}
-          data-focus-column="0"
-          data-backlog-item-id={workItem._id}
-          aria-current={isActive ? "page" : undefined}
-          aria-label={`Up next: ${workItem.title}`}
-          {...reveal.props}
-          className={cn(
-            "group flex shrink-0 cursor-pointer items-center gap-2 rounded-md bg-foreground/5 py-1.5 pr-1.5 pl-2 outline-none hover:bg-foreground/[0.08] focus-visible:ring-1 focus-visible:ring-ring",
-            isActive && "bg-foreground/10",
-          )}
-          onClick={onClick}
-          onKeyDown={onKeyDown}
-        />
-      }
-    >
-      <LeadingIcon
-        workItem={workItem}
-        iconData={iconData}
-        rows={rows}
-        revealed={reveal.active}
-      />
-      <span className="min-w-0 flex-1">
-        <span className={cn("block truncate text-sm leading-snug font-medium")}>
-          {workItem.title}
-        </span>
-        <span className="block truncate text-xs text-muted-foreground">
-          {parentTitle ? `↳ ${parentTitle}` : getMetaLine(workItem)}
-        </span>
-      </span>
-      <span className="flex shrink-0 items-center gap-1 group-focus-within:hidden group-hover:hidden">
-        <Markers
-          workItem={workItem}
-          isRunning={props.isRunning}
-          isReturned={props.isReturned}
-        />
-      </span>
-      {reveal.active ? (
-        <RowActions
-          workItem={workItem}
-          actions={actions}
-          rows={rows}
-          showStart={false}
-          className="hidden group-focus-within:flex group-hover:flex"
-        />
-      ) : null}
-      <span onClick={(event) => event.stopPropagation()}>
-        <StartButton
-          workItem={workItem}
-          actions={actions}
-          rows={rows}
-          variant="round"
-        />
-      </span>
-    </ObjectContextMenu>
-  );
-});
-
 /** A collapsible section label: "Backlog 11", "Snoozed 3", "Settled". */
 export function SidebarSectionHeader({
   label,
@@ -609,7 +535,7 @@ const OffListRow = memo(function OffListRow({
 
 /**
  * The work list in the expanded app sidebar, from "Backlog sidebar" in
- * agents/ux-spec.md: the Up next row, the collapsible Backlog section with the
+ * agents/ux-spec.md: the collapsible Backlog section with the
  * active items in the Backlog page's order, `children` (the Pull requests
  * section), then the collapsible Snoozed and Settled sections.
  */
@@ -670,7 +596,6 @@ export function SidebarBacklogList({
     iconData,
     rows,
   });
-  const [upNext, ...rest] = layout.showUpNext ? listed : [undefined, ...listed];
 
   let settledRows: ReactNode = null;
   if (layout.settledOpen) {
@@ -710,18 +635,9 @@ export function SidebarBacklogList({
       aria-label="Backlog items"
       data-focus-scope
     >
-      {upNext ? (
-        <>
-          <div className="px-2 pt-3 pb-1 text-xs font-medium text-muted-foreground">
-            Up next
-          </div>
-          <UpNextRow {...rowProps(upNext)} />
-        </>
-      ) : null}
-
       <SidebarSectionHeader
         label="Backlog"
-        count={rest.length}
+        count={listed.length}
         open={layout.backlogOpen}
         onToggle={() =>
           updateSidebarLayout({ backlogOpen: !layout.backlogOpen })
@@ -729,11 +645,9 @@ export function SidebarBacklogList({
       />
       {layout.backlogOpen ? (
         <>
-          {rest.map((workItem) =>
-            workItem ? (
-              <BacklogItemRow key={workItem._id} {...rowProps(workItem)} />
-            ) : null,
-          )}
+          {listed.map((workItem) => (
+            <BacklogItemRow key={workItem._id} {...rowProps(workItem)} />
+          ))}
           {listed.length === 0 ? (
             <p className="px-2 py-1 text-xs text-muted-foreground">
               Nothing on your plate.

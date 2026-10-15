@@ -31,13 +31,14 @@ export function useSidebarPullRequests() {
 }
 
 /**
- * The collapsible Pull requests section of the sidebar work list, shown while a
- * code host plugin is enabled.
+ * The collapsible Pull requests section of the sidebar work list, shown while
+ * pull requests need the user. The view switcher lists the Pull requests page
+ * as soon as a code host plugin is enabled.
  */
 export function SidebarPullRequests({ pathname }: { pathname: string }) {
   const layout = useSidebarLayout();
   const { enabled, items, connectionCount, now } = useSidebarPullRequests();
-  if (!enabled) return null;
+  if (!enabled || items.length === 0) return null;
 
   return (
     <section
@@ -52,9 +53,8 @@ export function SidebarPullRequests({ pathname }: { pathname: string }) {
           updateSidebarLayout({ pullRequestsOpen: !layout.pullRequestsOpen })
         }
       />
-      {layout.pullRequestsOpen ? (
-        items.length ? (
-          items.map((item) => (
+      {layout.pullRequestsOpen
+        ? items.map((item) => (
             <PullRequestRow
               key={item._id}
               item={item}
@@ -64,12 +64,7 @@ export function SidebarPullRequests({ pathname }: { pathname: string }) {
               showConnection={connectionCount > 1}
             />
           ))
-        ) : (
-          <p className="px-2 py-1 text-[12px] text-muted-foreground">
-            No pull requests need you.
-          </p>
-        )
-      ) : null}
+        : null}
     </section>
   );
 }

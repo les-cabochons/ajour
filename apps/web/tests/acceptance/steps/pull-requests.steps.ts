@@ -4,6 +4,7 @@ import {
   codeHostOverview,
   pullRequestFacts,
 } from "../../fixtures/pull-requests";
+import { viewSwitcherOptions } from "../../fixtures/sidebar";
 
 const { Given, When, Then } = createBdd();
 const apiUrl = "http://127.0.0.1:8787";
@@ -21,10 +22,10 @@ Then(
       page.getByRole("button", { name: "Settled", exact: true }),
     ).toBeVisible();
     await expect(
-      page.getByRole("link", {
-        name: "Up next: Plan next release",
-        exact: true,
-      }),
+      page
+        .getByRole("navigation", { name: "Primary navigation" })
+        .locator("[data-backlog-item-id]")
+        .filter({ hasText: "Plan next release" }),
     ).toBeVisible();
   },
 );
@@ -33,6 +34,13 @@ Then("the pull request page stays open", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "Pull requests", exact: true }),
   ).toBeVisible();
+});
+Then("the sidebar has no Pull requests section", async ({ page }) => {
+  // The view switcher still lists the Pull requests page.
+  await expect(
+    page.getByRole("region", { name: "Pull requests on your plate" }),
+  ).toHaveCount(0);
+  expect(await viewSwitcherOptions(page)).toContain("Pull requests");
 });
 When("I collapse the sidebar Pull requests section", async ({ page }) => {
   await page
@@ -424,11 +432,7 @@ When("I reactivate the code host plugin", async ({ page }) => {
 Then(
   "pull request navigation disappears and local records remain",
   async ({ page }) => {
-    await expect(
-      page
-        .getByRole("navigation", { name: "Primary navigation" })
-        .getByRole("link", { name: "Pull requests", exact: true }),
-    ).toHaveCount(0);
+    expect(await viewSwitcherOptions(page)).not.toContain("Pull requests");
     expect(
       await page.evaluate(
         () =>
@@ -441,11 +445,7 @@ Then(
 Then(
   "pull request navigation returns with the same local records",
   async ({ page }) => {
-    await expect(
-      page
-        .getByRole("navigation", { name: "Primary navigation" })
-        .getByRole("link", { name: "Pull requests", exact: true }),
-    ).toBeVisible();
+    expect(await viewSwitcherOptions(page)).toContain("Pull requests");
     expect(
       await page.evaluate(
         () =>
