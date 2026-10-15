@@ -43,6 +43,12 @@ export interface AgentPanelProps {
   onDismiss(sessionId: string): Promise<void>;
   /** Stops a run Ajour started. A rejection shows its message. */
   onStop(runId: string): Promise<void>;
+  /**
+   * The run the API still reports as going. A runner session keeps its Stop
+   * button while its run is current, even after the session ended, because
+   * the agent CLI can outlive its session.
+   */
+  currentRunId?: string | null;
   /** Runs each time the panel opens, to mark past errors and failures seen. */
   onSeen(): void;
 }
@@ -151,7 +157,8 @@ function EndSessionButton({
 
 /**
  * A session's updates and answers. An open question shows as a form instead.
- * A runner session shows Stop while open and its link once ended. Other
+ * A runner session shows Stop while open or while its run is still current,
+ * and its link once ended. Other
  * stalled sessions, or ones with an open question, can be dismissed.
  */
 function SessionChat({
@@ -160,12 +167,14 @@ function SessionChat({
   onAnswer,
   onDismiss,
   onStop,
+  currentRunId,
 }: {
   session: AgentSession;
   questions: AgentQuestion[];
   onAnswer: AgentPanelProps["onAnswer"];
   onDismiss: AgentPanelProps["onDismiss"];
   onStop: AgentPanelProps["onStop"];
+  currentRunId: string | null | undefined;
 }) {
   const openIds = new Set(questions.map((question) => question.id));
   const open = session.state === "active" || session.state === "stalled";
@@ -200,7 +209,7 @@ function SessionChat({
           onAnswer={onAnswer}
         />
       ))}
-      {runId && open ? (
+      {runId && (open || runId === currentRunId) ? (
         <EndSessionButton label="Stop" onEnd={() => onStop(runId)} />
       ) : dismissable ? (
         <EndSessionButton label="Dismiss" onEnd={() => onDismiss(session.id)} />
@@ -256,7 +265,11 @@ function AgentPanelTabs({
   onAnswer,
   onDismiss,
   onStop,
-}: Pick<AgentPanelProps, "snapshot" | "onAnswer" | "onDismiss" | "onStop">) {
+  currentRunId,
+}: Pick<
+  AgentPanelProps,
+  "snapshot" | "onAnswer" | "onDismiss" | "onStop" | "currentRunId"
+>) {
   const now = useNow();
   const [chosenId, setChosenId] = useState<string>();
   const sessions = snapshot?.sessions ?? [];
@@ -316,6 +329,7 @@ function AgentPanelTabs({
             onAnswer={onAnswer}
             onDismiss={onDismiss}
             onStop={onStop}
+            currentRunId={currentRunId}
           />
         ) : null}
       </TabsContent>
@@ -358,6 +372,7 @@ export function AgentPanel({
   onAnswer,
   onDismiss,
   onStop,
+  currentRunId,
   onSeen,
 }: AgentPanelProps) {
   const narrow = useIsNarrowView();
@@ -372,6 +387,7 @@ export function AgentPanel({
       onAnswer={onAnswer}
       onDismiss={onDismiss}
       onStop={onStop}
+      currentRunId={currentRunId}
     />
   );
 

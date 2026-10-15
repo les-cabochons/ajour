@@ -36,12 +36,14 @@ export function weekLinkFor(task: AgentTaskStatus, weekOf: string) {
 /**
  * The Submit page's plugin agent tasks for the week on screen: one button
  * each, disabled with the reason while the task cannot run or a run is
- * going, and the task's week link.
+ * going or a start is in flight, and the task's week link.
  */
 export function AgentTaskButtons({ weekOf }: { weekOf: string }) {
   const state = useAgentRunner();
   const { snapshot } = useAgentBridgeState();
   const [error, setError] = useState<string | null>(null);
+  // True from the click until the API answers, so a second click cannot send a second request.
+  const [starting, setStarting] = useState(false);
 
   // The overview loads once per page load, so a CLI or plugin installed since
   // then shows up when the page opens.
@@ -54,14 +56,19 @@ export function AgentTaskButtons({ weekOf }: { weekOf: string }) {
     (task) => task.placement === "submit-week",
   );
   if (tasks.length === 0) return null;
-  const running = (snapshot?.sessions ?? []).some(
-    (session) =>
-      session.runId &&
-      (session.state === "active" || session.state === "stalled"),
-  );
+  // The API's current run covers a CLI that outlives its ended session.
+  const running =
+    state.overview.currentRun !== null ||
+    (snapshot?.sessions ?? []).some(
+      (session) =>
+        session.runId &&
+        (session.state === "active" || session.state === "stalled"),
+    );
 
   const start = async (task: AgentTaskStatus) => {
+    if (starting) return;
     setError(null);
+    setStarting(true);
     try {
       await startAgentRun({
         pluginId: task.pluginId,
@@ -72,6 +79,8 @@ export function AgentTaskButtons({ weekOf }: { weekOf: string }) {
       await refreshAgentRunner();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unknown error");
+    } finally {
+      setStarting(false);
     }
   };
 
@@ -85,7 +94,7 @@ export function AgentTaskButtons({ weekOf }: { weekOf: string }) {
         const button = (
           <Button
             variant="outline"
-            disabled={Boolean(reason)}
+            disabled={Boolean(reason) || starting}
             onClick={() => void start(task)}
           >
             {task.label}

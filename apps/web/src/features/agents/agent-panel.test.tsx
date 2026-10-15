@@ -26,7 +26,7 @@ function snapshotWith(session: Partial<AgentSession>): AgentsSnapshot {
   };
 }
 
-function renderPanel(snapshot: AgentsSnapshot) {
+function renderPanel(snapshot: AgentsSnapshot, currentRunId?: string | null) {
   return renderToStaticMarkup(
     <AgentPanel
       snapshot={snapshot}
@@ -35,6 +35,7 @@ function renderPanel(snapshot: AgentsSnapshot) {
       onAnswer={noop}
       onDismiss={noop}
       onStop={noop}
+      currentRunId={currentRunId}
       onSeen={() => {}}
     />,
   );
@@ -58,5 +59,12 @@ describe("agent panel runner sessions", () => {
     expect(markup).toContain('href="https://wd.example/t"');
     expect(markup).toContain(">Open the week in Workday</a>");
     expect(markup).not.toContain(">Stop</button>");
+  });
+
+  it("keeps Stop on an ended runner session while its run is current", () => {
+    const ended = snapshotWith({ runId: "run-1", state: "done", link });
+    expect(renderPanel(ended, "run-1")).toContain(">Stop</button>");
+    expect(renderPanel(ended, "run-2")).not.toContain(">Stop</button>");
+    expect(renderPanel(ended, null)).not.toContain(">Stop</button>");
   });
 });
