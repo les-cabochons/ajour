@@ -40,10 +40,17 @@ export function resolvePluginProperties(
   project: LocalProject,
   plugin: ProjectPropertyPlugin,
 ): ResolvedPluginProperty[] {
-  const stored = project.pluginProperties?.[plugin.pluginId] ?? {};
+  const plugins = project.pluginProperties;
+  // Own keys only, so an id such as "constructor" never reads Object.prototype.
+  const stored =
+    plugins && Object.hasOwn(plugins, plugin.pluginId)
+      ? (plugins[plugin.pluginId] ?? {})
+      : {};
   return plugin.capability.fields.map((field) => {
     const fallback = defaultValue(project, field);
-    const override = stored[field.id];
+    const override = Object.hasOwn(stored, field.id)
+      ? stored[field.id]
+      : undefined;
     return override
       ? { field, value: override, defaultValue: fallback, isDefault: false }
       : { field, value: fallback, defaultValue: fallback, isDefault: true };

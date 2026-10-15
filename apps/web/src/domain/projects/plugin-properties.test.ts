@@ -107,4 +107,24 @@ describe("plugin project properties", () => {
     expect(normalizePluginProperties(undefined)).toBeUndefined();
     expect(normalizePluginProperties([])).toBeUndefined();
   });
+
+  it("never reads inherited properties for ids such as constructor", () => {
+    const plugin: ProjectPropertyPlugin = {
+      pluginId: "constructor",
+      capability: {
+        section: "Odd",
+        fields: [{ id: "constructor", label: "Odd", defaultFrom: "code" }],
+      },
+    };
+    expect(
+      resolvePluginProperties(project({ pluginProperties: {} }), plugin),
+    ).toEqual([
+      {
+        field: plugin.capability.fields[0],
+        value: "CA004",
+        defaultValue: "CA004",
+        isDefault: true,
+      },
+    ]);
+  });
 });
