@@ -1415,9 +1415,14 @@ Then("the subitem is back in To do", async ({ page }) => {
   ).toBeVisible();
 });
 When("I move the parent to Done and include its subitems", async ({ page }) => {
-  await page
-    .locator('[data-work-item-id="parent"]')
-    .getByRole("button", { name: "Change state of Backlog parent" })
+  // Cards mount their real pickers on hover, so hover before the click.
+  const card = page.locator('[data-work-item-id="parent"]');
+  await card.hover();
+  await card
+    .locator("[data-state-picker]")
+    .and(
+      page.getByRole("button", { name: "Change state of Backlog parent" }),
+    )
     .click();
   await page.getByRole("menuitem", { name: "Done", exact: true }).click();
   await page
