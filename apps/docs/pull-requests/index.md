@@ -10,14 +10,14 @@ Pull requests need a code host plugin, such as [GitHub](/plugins/github). Once i
 
 A pull request is active when it needs you. Ajour decides from what happened on it, and shows the reason:
 
-| Reason                                    | When                                                    |
-| ----------------------------------------- | ------------------------------------------------------- |
-| **Review requested**                      | Someone asked you, or one of your teams, to review it.  |
-| **New commits after your change request** | The author pushed after you requested changes.          |
-| **New review**                            | Someone reviewed your pull request.                     |
+| Reason                                    | When                                                     |
+| ----------------------------------------- | -------------------------------------------------------- |
+| **Review requested**                      | Someone asked you, or one of your teams, to review it.   |
+| **New commits after your change request** | The author pushed after you requested changes.           |
+| **New review**                            | Someone reviewed your pull request.                      |
 | **New reply**                             | Someone commented in a thread after you took part in it. |
-| **New comment**                           | Someone commented on your pull request.                 |
-| **You were mentioned**                    | Someone mentioned you.                                  |
+| **New comment**                           | Someone commented on your pull request.                  |
+| **You were mentioned**                    | Someone mentioned you.                                   |
 
 The page lists pull requests in three sections: **Active**, **Settled**, and **Recently closed** for the last seven days.
 

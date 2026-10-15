@@ -8,15 +8,15 @@ Ajour saves display options on this device. Ordering is shared with the sidebar,
 
 ## Options
 
-| Option            | Values                                                                                   |
-| ----------------- | ---------------------------------------------------------------------------------------- |
-| **Layout**        | List or board.                                                                           |
-| **Grouping**      | **Workflow state** (default), **Priority**, **Project**, or **None** in the list layout. |
-| **Swimlanes**     | On the board: **None** or **Project**.                                                   |
-| **Ordering**      | **Custom** (default), **Priority**, **Created**, **Remaining estimate** or **Title**.    |
-| **Done items**    | **Past week** (default), **All** or **None**.                                            |
-| **Show settled items** | Shows settled items, marked **Settled**. On by default.                             |
-| **Show subitems** | Shows subitems. On by default.                                                           |
+| Option                 | Values                                                                                   |
+| ---------------------- | ---------------------------------------------------------------------------------------- |
+| **Layout**             | List or board.                                                                           |
+| **Grouping**           | **Workflow state** (default), **Priority**, **Project**, or **None** in the list layout. |
+| **Swimlanes**          | On the board: **None** or **Project**.                                                   |
+| **Ordering**           | **Custom** (default), **Priority**, **Created**, **Remaining estimate** or **Title**.    |
+| **Done items**         | **Past week** (default), **All** or **None**.                                            |
+| **Show settled items** | Shows settled items, marked **Settled**. On by default.                                  |
+| **Show subitems**      | Shows subitems. On by default.                                                           |
 
 ## Custom order
 

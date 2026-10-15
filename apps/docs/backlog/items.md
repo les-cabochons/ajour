@@ -50,19 +50,19 @@ Right-click an item, press **…**, or focus it and press <kbd>.</kbd>.
 
 <Shot name="backlog-item-menu" alt="The actions menu of a backlog item" />
 
-| Action                      | What it does                                                         |
-| --------------------------- | -------------------------------------------------------------------- |
-| **Start entry** or **Stop** | Starts or stops a running entry on the item.                         |
-| **New entry…**              | Logs hours on the item.                                              |
-| **Edit**                    | Opens the item editor.                                               |
-| **Add subitem**             | Creates a subitem.                                                   |
-| **Snooze…**                 | Hides the item from the sidebar until a time you pick.               |
-| **Pin**                     | Keeps the item at the top of the sidebar.                            |
+| Action                      | What it does                                                                        |
+| --------------------------- | ----------------------------------------------------------------------------------- |
+| **Start entry** or **Stop** | Starts or stops a running entry on the item.                                        |
+| **New entry…**              | Logs hours on the item.                                                             |
+| **Edit**                    | Opens the item editor.                                                              |
+| **Add subitem**             | Creates a subitem.                                                                  |
+| **Snooze…**                 | Hides the item from the sidebar until a time you pick.                              |
+| **Pin**                     | Keeps the item at the top of the sidebar.                                           |
 | **Settle**                  | Takes the item off your plate. See [Settle and snooze](/backlog/settle-and-snooze). |
-| **Change source state…**    | Picks the exact source state, when several map to the same workflow state. |
-| **Open in …**               | Opens the item in its source tool.                                   |
-| **Archive**                 | Archives a synced item.                                              |
-| **Delete**                  | Deletes the item and its subitems, with Undo.                        |
+| **Change source state…**    | Picks the exact source state, when several map to the same workflow state.          |
+| **Open in …**               | Opens the item in its source tool.                                                  |
+| **Archive**                 | Archives a synced item.                                                             |
+| **Delete**                  | Deletes the item and its subitems, with Undo.                                       |
 
 ## Keep when missing from sync
 

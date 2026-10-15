@@ -10,17 +10,17 @@ Open **Settings › Projects**, or choose **Import and export…** in the **…*
 
 A schema decides which columns the file has and how each project and task becomes a row. **Ajour default** works without any plugin. Its sheet has these columns:
 
-| Column             | Contents                                 |
-| ------------------ | ---------------------------------------- |
-| `project`          | The project's full name                  |
-| `code`             | The project code                         |
-| `color`            | The project color                        |
-| `status`           | `active` or `archived`                   |
-| `task`             | The task's name                          |
-| `task_status`      | `active` or `archived`                   |
-| `billable`         | Whether the task is billable             |
-| `budget_hours`     | The task's budget                        |
-| `adjustment_hours` | The task's adjustment                    |
+| Column             | Contents                     |
+| ------------------ | ---------------------------- |
+| `project`          | The project's full name      |
+| `code`             | The project code             |
+| `color`            | The project color            |
+| `status`           | `active` or `archived`       |
+| `task`             | The task's name              |
+| `task_status`      | `active` or `archived`       |
+| `billable`         | Whether the task is billable |
+| `budget_hours`     | The task's budget            |
+| `adjustment_hours` | The task's adjustment        |
 
 A schema plugin, such as [Workday](/plugins/workday), can map the same data to another tool's layout. Pick it under **Schema** once it is installed.
 

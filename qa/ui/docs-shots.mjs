@@ -49,7 +49,9 @@ async function go(page, route) {
 
 /** Scrolls the page so the element sits at the top of the window. */
 async function scrollToTop(locator) {
-  await locator.first().evaluate((element) => element.scrollIntoView({ block: "start" }));
+  await locator
+    .first()
+    .evaluate((element) => element.scrollIntoView({ block: "start" }));
 }
 
 /**

@@ -16,12 +16,12 @@ Press **New project**.
 
 <Shot name="project-form" alt="The New project dialog with name, code, icon and color" />
 
-| Field            | What it is for                                                                         |
-| ---------------- | -------------------------------------------------------------------------------------- |
-| **Full name**    | The project's official name, as your timesheet tool knows it. The Submit page copies it. |
-| **Display name** | A short name for Ajour's lists.                                                        |
-| **Code**         | A few letters, such as `ATL`. The running entry shows it.                              |
-| **Color**        | Pick a preset or type a hex color.                                                     |
+| Field            | What it is for                                                                                                                                                      |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Full name**    | The project's official name, as your timesheet tool knows it. The Submit page copies it.                                                                            |
+| **Display name** | A short name for Ajour's lists.                                                                                                                                     |
+| **Code**         | A few letters, such as `ATL`. The running entry shows it.                                                                                                           |
+| **Color**        | Pick a preset or type a hex color.                                                                                                                                  |
 | **Project icon** | One of 67 presets, or upload a favicon (`.png`, `.svg` or `.ico`). Turn on **Keep native colors** to show an upload in its own colors instead of the project color. |
 
 ## The project page

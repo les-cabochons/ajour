@@ -8,12 +8,12 @@ A time entry is time spent on a task on one day, with an optional note. This pag
 
 Press <kbd>N</kbd>, or the **+** button in the sidebar. You can also choose **New entry…** on a task or a backlog item, which fills in its project and task.
 
-| Field              | What to enter                                                                                  |
-| ------------------ | ---------------------------------------------------------------------------------------------- |
+| Field              | What to enter                                                                                           |
+| ------------------ | ------------------------------------------------------------------------------------------------------- |
 | **Project / task** | Search by project, task or code. Choose **Use project without a task** to log time on the project only. |
-| **Note**           | Optional. What you did. Notes become the comments of your timesheet lines.                    |
-| **Hours**          | `1:30`, `1.5` or `1,5`. Ajour shows it as `01:30` once you leave the field.                    |
-| **Date**           | The day of the entry. It defaults to the day you are looking at.                               |
+| **Note**           | Optional. What you did. Notes become the comments of your timesheet lines.                              |
+| **Hours**          | `1:30`, `1.5` or `1,5`. Ajour shows it as `01:30` once you leave the field.                             |
+| **Date**           | The day of the entry. It defaults to the day you are looking at.                                        |
 
 Press **Save**, <kbd>Enter</kbd> or <kbd>⌘</kbd> <kbd>Enter</kbd>. To start the entry instead of logging hours, leave **Hours** empty and press **Start**.
 
@@ -25,11 +25,11 @@ If the entry was submitted, editing it marks it as not submitted, so you remembe
 
 ## Copy and move entries
 
-| Action             | Key                       | What it does                       |
-| ------------------ | ------------------------- | ---------------------------------- |
-| **Duplicate**      | <kbd>⌘</kbd> <kbd>D</kbd> | Copies the entry on the same day.  |
-| **Duplicate to…**  |                           | Copies the entry to a day you pick. |
-| **Move to…**       | <kbd>M</kbd>              | Moves the entry to a day you pick. |
+| Action            | Key                       | What it does                        |
+| ----------------- | ------------------------- | ----------------------------------- |
+| **Duplicate**     | <kbd>⌘</kbd> <kbd>D</kbd> | Copies the entry on the same day.   |
+| **Duplicate to…** |                           | Copies the entry to a day you pick. |
+| **Move to…**      | <kbd>M</kbd>              | Moves the entry to a day you pick.  |
 
 Stop a running entry before you copy or move it.
 

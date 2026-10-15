@@ -118,7 +118,11 @@ export default defineConfig({
     ],
     nav: [
       { text: "Docs", link: "/start/", activeMatch: "^/(?!developers/)" },
-      { text: "Developers", link: "/developers/", activeMatch: "^/developers/" },
+      {
+        text: "Developers",
+        link: "/developers/",
+        activeMatch: "^/developers/",
+      },
       {
         text: "Download",
         link: "https://github.com/les-cabochons/ajour/releases",

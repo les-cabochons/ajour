@@ -8,13 +8,13 @@ A task is a kind of work inside one project, such as `Development`, `Code review
 
 Open a project and press **New task**. The task editor opens in the side panel.
 
-| Field          | What it is for                                                                               |
-| -------------- | -------------------------------------------------------------------------------------------- |
-| **Name**       | The task's name, as your timesheet tool knows it.                                            |
-| **Billable**   | Whether the time is billable. Exports and schemas carry it.                                  |
-| **Budget**     | Optional. The hours planned for the task. The project page shows the time used against it.   |
-| **Adjustment** | Optional. Hours to add to the time used, for time tracked outside Ajour.                     |
-| **Shortcut**   | Optional. A number key for the task. See below.                                              |
+| Field          | What it is for                                                                             |
+| -------------- | ------------------------------------------------------------------------------------------ |
+| **Name**       | The task's name, as your timesheet tool knows it.                                          |
+| **Billable**   | Whether the time is billable. Exports and schemas carry it.                                |
+| **Budget**     | Optional. The hours planned for the task. The project page shows the time used against it. |
+| **Adjustment** | Optional. Hours to add to the time used, for time tracked outside Ajour.                   |
+| **Shortcut**   | Optional. A number key for the task. See below.                                            |
 
 Press **Save** or <kbd>⌘</kbd> <kbd>Enter</kbd>.
 
@@ -29,13 +29,13 @@ Then, anywhere in Ajour:
 
 ## Task actions
 
-| Action               | What it does                                     |
-| -------------------- | ------------------------------------------------ |
-| **Start entry**      | Starts a running entry on the task.              |
-| **New entry…**       | Logs hours on the task.                          |
-| **Edit**             | Opens the task editor.                           |
-| **Assign shortcut…** | Gives the task a number key.                     |
-| **Archive**          | Hides the task from pickers. Its entries stay.   |
+| Action               | What it does                                   |
+| -------------------- | ---------------------------------------------- |
+| **Start entry**      | Starts a running entry on the task.            |
+| **New entry…**       | Logs hours on the task.                        |
+| **Edit**             | Opens the task editor.                         |
+| **Assign shortcut…** | Gives the task a number key.                   |
+| **Archive**          | Hides the task from pickers. Its entries stay. |
 
 Tasks are archived, never deleted. Press <kbd>Backspace</kbd> on a focused task to archive it. The **Archived** tab of the task list shows archived tasks, with **Restore**.
 

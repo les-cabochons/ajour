@@ -22,15 +22,15 @@ Fix these from the Day or Week view, then come back.
 Each line has the project, the task, the hours and the comments. Click a value to copy it, then paste it in your timesheet tool.
 
 - **Hours** copy as decimals, such as `5.00`, which most timesheet tools expect. The page shows them as clock time.
-- **Comments** are the notes of the line's entries, joined with ` | `.
+- **Comments** are the notes of the line's entries, joined with a vertical bar, such as `Standup | Code review`.
 
 **Group by** changes how entries become lines:
 
-| Option            | One line per            |
-| ----------------- | ----------------------- |
-| **Day and task**  | task and day (default)  |
-| **Day**           | day                     |
-| **Task**          | task, for the whole week |
+| Option           | One line per             |
+| ---------------- | ------------------------ |
+| **Day and task** | task and day (default)   |
+| **Day**          | day                      |
+| **Task**         | task, for the whole week |
 
 Use the day chips to drop or add a whole day, and the checkboxes to leave out a line.
 

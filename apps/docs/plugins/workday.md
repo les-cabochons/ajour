@@ -12,17 +12,17 @@ It does not connect to Workday. It never signs in to Workday, reads from it or w
 
 The file has one row per task, or one row for a project with no tasks.
 
-| Column             | Contents                                                     |
-| ------------------ | ------------------------------------------------------------ |
-| `project`          | The project's full name                                      |
-| `code`             | The project code                                             |
-| `color`            | The project color                                            |
-| `status`           | `active` or `archived`                                       |
-| `task`             | The task's name                                              |
-| `task_status`      | `active` or `archived`                                       |
-| `billable`         | `billable` or `non_billable`                                 |
-| `budget_hours`     | The task's budget, in hours                                  |
-| `adjustment_hours` | The task's adjustment, in hours                              |
+| Column             | Contents                        |
+| ------------------ | ------------------------------- |
+| `project`          | The project's full name         |
+| `code`             | The project code                |
+| `color`            | The project color               |
+| `status`           | `active` or `archived`          |
+| `task`             | The task's name                 |
+| `task_status`      | `active` or `archived`          |
+| `billable`         | `billable` or `non_billable`    |
+| `budget_hours`     | The task's budget, in hours     |
+| `adjustment_hours` | The task's adjustment, in hours |
 
 On import, the plugin also accepts `true`, `yes`, `false` and `no` for billable, and a decimal comma in hours. It skips blank rows, and tells you the row number of a row it cannot read.
 

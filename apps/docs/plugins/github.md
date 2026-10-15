@@ -16,18 +16,18 @@ The connection syncs every 5 minutes while Ajour is open. **Pull requests** then
 
 ## Connection fields
 
-| Field                                         | What to enter                                                                                 |
-| --------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| **Connection label**                          | A name for this connection, such as `Work`.                                                   |
-| **Account**                                   | Which account this is, such as `Acme on GitHub`.                                              |
-| **GitHub URL**                                | `https://github.com`, or your GitHub Enterprise Server URL.                                   |
-| **Personal access token**                     | The token from step 2. Ajour never shows it again.                                            |
-| **Only these organizations or repositories**  | Optional, comma-separated. `acme` is an organization or user, `acme/api` a repository.        |
-| **Never these organizations or repositories** | Optional, same format.                                                                        |
-| **Hide drafts**                               | Leave out draft pull requests. Off by default.                                                |
-| **Include team review requests**              | Include reviews requested from your teams. On by default. Needs the `read:org` permission.    |
-| **Sync automatically**                        | On by default.                                                                                |
-| **Sync interval (minutes)**                   | Defaults to 5.                                                                                |
+| Field                                         | What to enter                                                                              |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------ |
+| **Connection label**                          | A name for this connection, such as `Work`.                                                |
+| **Account**                                   | Which account this is, such as `Acme on GitHub`.                                           |
+| **GitHub URL**                                | `https://github.com`, or your GitHub Enterprise Server URL.                                |
+| **Personal access token**                     | The token from step 2. Ajour never shows it again.                                         |
+| **Only these organizations or repositories**  | Optional, comma-separated. `acme` is an organization or user, `acme/api` a repository.     |
+| **Never these organizations or repositories** | Optional, same format.                                                                     |
+| **Hide drafts**                               | Leave out draft pull requests. Off by default.                                             |
+| **Include team review requests**              | Include reviews requested from your teams. On by default. Needs the `read:org` permission. |
+| **Sync automatically**                        | On by default.                                                                             |
+| **Sync interval (minutes)**                   | Defaults to 5.                                                                             |
 
 ## What it syncs
 

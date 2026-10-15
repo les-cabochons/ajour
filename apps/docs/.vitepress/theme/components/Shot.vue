@@ -74,12 +74,18 @@ const measure = (event: Event) => {
   height: auto;
 }
 
-.shot-dark,
-:global(.dark) .shot-light {
+/* One theme's capture shows at a time. The selectors must outrank
+   `.shot-frame img` above. The dark ones are global because the theme's .dark
+   class sits on <html>, outside this component. */
+.shot-frame .shot-dark {
   display: none;
 }
 
-:global(.dark) .shot-dark {
+:global(.dark .shot .shot-frame .shot-light) {
+  display: none;
+}
+
+:global(.dark .shot .shot-frame .shot-dark) {
   display: block;
 }
 

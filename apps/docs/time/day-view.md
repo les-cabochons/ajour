@@ -13,12 +13,12 @@ The Day view lists the entries of one day. Ajour opens on today's Day view.
 
 ## Move between days
 
-| Key          | Action          |
-| ------------ | --------------- |
-| <kbd>T</kbd> | Go to today     |
-| <kbd>[</kbd> | Previous day    |
-| <kbd>]</kbd> | Next day        |
-| <kbd>W</kbd> | Switch to Week  |
+| Key          | Action         |
+| ------------ | -------------- |
+| <kbd>T</kbd> | Go to today    |
+| <kbd>[</kbd> | Previous day   |
+| <kbd>]</kbd> | Next day       |
+| <kbd>W</kbd> | Switch to Week |
 
 When you are not on today, a **Return to today** button shows next to the date.
 
@@ -46,16 +46,16 @@ Hover a row and press **…**, or right-click it, for the actions on that entry.
 
 <Shot name="time-entry-menu" alt="The actions menu of an entry" />
 
-| Action           | What it does                                                                                  |
-| ---------------- | --------------------------------------------------------------------------------------------- |
-| **Edit**         | Opens the entry in the side panel.                                                            |
-| **Continue**     | Starts the entry again. On another day, it starts a new entry today with the same task and note. |
-| **Stop**         | Stops the running entry.                                                                      |
-| **Duplicate**    | Copies the entry on the same day.                                                             |
-| **Duplicate to…** | Copies the entry to another day.                                             |
-| **Move to…**     | Moves the entry to another day.                                                               |
-| **Delete**       | Deletes the entry. An Undo toast shows for 8 seconds.                                         |
-| **Discard**      | On the running entry: throws away the time counted since it last started.                     |
+| Action            | What it does                                                                                     |
+| ----------------- | ------------------------------------------------------------------------------------------------ |
+| **Edit**          | Opens the entry in the side panel.                                                               |
+| **Continue**      | Starts the entry again. On another day, it starts a new entry today with the same task and note. |
+| **Stop**          | Stops the running entry.                                                                         |
+| **Duplicate**     | Copies the entry on the same day.                                                                |
+| **Duplicate to…** | Copies the entry to another day.                                                                 |
+| **Move to…**      | Moves the entry to another day.                                                                  |
+| **Delete**        | Deletes the entry. An Undo toast shows for 8 seconds.                                            |
+| **Discard**       | On the running entry: throws away the time counted since it last started.                        |
 
 ## Reorder entries
 

@@ -6,10 +6,10 @@ Ajour keeps your work on your machine. It has no account, no server and no telem
 
 The desktop app keeps everything in one folder:
 
-| Platform | Folder                                   |
-| -------- | ---------------------------------------- |
-| macOS    | `~/Library/Application Support/Ajour`    |
-| Windows  | `%APPDATA%\Ajour`                        |
+| Platform | Folder                                |
+| -------- | ------------------------------------- |
+| macOS    | `~/Library/Application Support/Ajour` |
+| Windows  | `%APPDATA%\Ajour`                     |
 
 The folder holds:
 

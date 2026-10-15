@@ -11,21 +11,21 @@ The Jira plugin syncs your Jira issues into Ajour's backlog. It writes estimate 
 
 ## Connection fields
 
-| Field                            | What to enter                                                                     |
-| -------------------------------- | --------------------------------------------------------------------------------- |
-| **Connection label**             | A name for this connection, such as `Product backlog`.                            |
-| **Workspace**                    | The site or client, such as `Acme Jira`.                                          |
-| **Site URL**                     | `https://your-domain.atlassian.net`.                                              |
-| **Email**                        | The email of your Atlassian account.                                              |
-| **API token**                    | The token from step 2. Ajour never shows it again.                                |
-| **Project key**                  | Optional. Sync one project only, such as `ENG`.                                    |
-| **Import scope**                 | **Assigned to me** (default), or **Open issues**.                                  |
-| **Imported task icon**           | Whether imported issues show the Jira icon, or their project's icon.              |
-| **Original estimate field**      | The field name or ID of the original estimate.                                    |
-| **Remaining field**              | The field name or ID of the remaining estimate.                                   |
-| **Completed field**              | The field name or ID of the time spent.                                           |
-| **Auto sync to backlog**         | Sync on a timer while Ajour is open, and add issues straight to the backlog.      |
-| **Auto sync interval (minutes)** | How often to sync. Defaults to 15.                                                |
+| Field                            | What to enter                                                                |
+| -------------------------------- | ---------------------------------------------------------------------------- |
+| **Connection label**             | A name for this connection, such as `Product backlog`.                       |
+| **Workspace**                    | The site or client, such as `Acme Jira`.                                     |
+| **Site URL**                     | `https://your-domain.atlassian.net`.                                         |
+| **Email**                        | The email of your Atlassian account.                                         |
+| **API token**                    | The token from step 2. Ajour never shows it again.                           |
+| **Project key**                  | Optional. Sync one project only, such as `ENG`.                              |
+| **Import scope**                 | **Assigned to me** (default), or **Open issues**.                            |
+| **Imported task icon**           | Whether imported issues show the Jira icon, or their project's icon.         |
+| **Original estimate field**      | The field name or ID of the original estimate.                               |
+| **Remaining field**              | The field name or ID of the remaining estimate.                              |
+| **Completed field**              | The field name or ID of the time spent.                                      |
+| **Auto sync to backlog**         | Sync on a timer while Ajour is open, and add issues straight to the backlog. |
+| **Auto sync interval (minutes)** | How often to sync. Defaults to 15.                                           |
 
 ## What it syncs
 
@@ -37,12 +37,12 @@ When an issue Ajour tracks reaches the **Done** status category, Ajour archives 
 
 Jira priorities map to Ajour's levels by name:
 
-| Jira              | Ajour      |
-| ----------------- | ---------- |
-| Highest           | Urgent     |
-| High              | High       |
-| Medium            | Medium     |
-| Low, Lowest       | Low        |
+| Jira        | Ajour  |
+| ----------- | ------ |
+| Highest     | Urgent |
+| High        | High   |
+| Medium      | Medium |
+| Low, Lowest | Low    |
 
 When Ajour writes a level, it sends Highest, High, Medium or Low. Custom priority names map to no priority.
 

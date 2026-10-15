@@ -15,8 +15,7 @@ Ajour has no stable release yet. Every release on the page is a nightly build, m
 ::: warning Unsigned builds
 The installers are not signed yet. macOS and Windows show a warning the first time you open Ajour.
 
-- **macOS.** Open the app once, then go to **System Settings › Privacy & Security** and press **Open Anyway**.
-- **Windows.** In the SmartScreen dialog, press **More info**, then **Run anyway**.
+On macOS, open the app once, then go to **System Settings › Privacy & Security** and press **Open Anyway**. On Windows, press **More info** in the SmartScreen dialog, then **Run anyway**.
 :::
 
 ## Updates
