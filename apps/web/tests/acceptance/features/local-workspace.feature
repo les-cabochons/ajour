@@ -151,6 +151,17 @@ Feature: Open the local time workspace
     When I double-click the empty space at the bottom of Wednesday's column
     Then the side panel opens a new entry on "2026-10-07"
 
+  Scenario: Reopen Time in the view I used last
+    Given I have a week of saved entries
+    When I open the Week Days view
+    And I open Backlog from the app sidebar
+    And I open Time from the app sidebar
+    Then the Week Days view is visible
+    When I switch the Time page to Day
+    And I open Backlog from the app sidebar
+    And I open Time from the app sidebar
+    Then the Day view is visible
+
   Scenario: Type hours in the Week Grid
     Given I have a week of saved entries
     When I open the Week Grid

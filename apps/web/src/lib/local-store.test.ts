@@ -1382,6 +1382,7 @@ describe("localStore workflow state sync", () => {
       JSON.stringify({
         userPreferences: {
           weeklyTimeViewStyle: "stream",
+          timeView: "month",
           weeklyCapacityTargets: {
             monday: -1,
             tuesday: 123,
@@ -1396,6 +1397,7 @@ describe("localStore workflow state sync", () => {
     const { localStore } = await import("./local-store");
     expect(localStore.snapshot().userPreferences).toMatchObject({
       weeklyTimeViewStyle: "grid",
+      timeView: "day",
       weeklyCapacityTargets: {
         monday: 8 * 60 * 60 * 1000,
         tuesday: 123,

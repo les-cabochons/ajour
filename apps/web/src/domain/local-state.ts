@@ -192,6 +192,8 @@ export type BacklogSortMode =
 export type ThemeMode = "system" | "dark" | "light";
 export type UpdateTrack = "stable" | "nightly";
 export type WeeklyTimeViewStyle = "grid" | "days";
+/** The Time page's view: one day, or the week as a Grid or Days columns. */
+export type TimeView = "day" | "week";
 
 export interface WeeklyCapacityTargets {
   monday: number;
@@ -211,6 +213,8 @@ export interface UserPreferences {
   updateTrack: UpdateTrack;
   projectDataShapeId: string;
   weeklyTimeViewStyle: WeeklyTimeViewStyle;
+  /** The view the user last picked. A Time link without a view opens it. Default "day". */
+  timeView?: TimeView;
   weeklyCapacityTargets: WeeklyCapacityTargets;
   /** Hide zero-capacity days in the Time page's day strip and Week layouts. */
   hideNonWorkingDays?: boolean;

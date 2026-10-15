@@ -665,6 +665,12 @@ When("I open Time from the app sidebar", async ({ page }) => {
   await page.getByRole("menuitem", { name: /^Time/ }).press("Enter");
 });
 
+When("I open Backlog from the app sidebar", async ({ page }) => {
+  await viewSwitcher(page).press("Enter");
+  await page.getByRole("menuitem", { name: /^Backlog/ }).press("Enter");
+  await expect(page).toHaveURL(/\/backlog$/);
+});
+
 When("I open Settings directly", async ({ page }) => {
   await page.goto("/settings");
 });
@@ -2758,6 +2764,21 @@ Then(
     );
   },
 );
+
+Then("the Week Days view is visible", async ({ page }) => {
+  await expect(page.getByRole("region", { name: "Week" })).toBeVisible();
+  await expect(daysColumn(page, "Monday")).toBeVisible();
+});
+
+When("I switch the Time page to Day", async ({ page }) => {
+  await page.getByRole("button", { name: "Day", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Week" })).toHaveCount(0);
+});
+
+Then("the Day view is visible", async ({ page }) => {
+  await expect(page.locator(".day-strip")).toBeVisible();
+  await expect(page.getByRole("region", { name: "Week" })).toHaveCount(0);
+});
 
 When("I open the Week Grid", async ({ page }) => {
   // Grid is the default Week layout.

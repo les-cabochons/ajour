@@ -474,6 +474,8 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
           persistedState.userPreferences?.weeklyTimeViewStyle === "days"
             ? "days"
             : "grid",
+        timeView:
+          persistedState.userPreferences?.timeView === "week" ? "week" : "day",
         weeklyCapacityTargets: {
           monday: normalizeCapacityTarget(
             persistedState.userPreferences?.weeklyCapacityTargets?.monday,

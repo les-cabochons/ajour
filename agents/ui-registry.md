@@ -178,8 +178,11 @@ update guidance while preserving the same release-track status and link.
 Files: `apps/web/src/features/time/weekly-time-view.tsx`, `apps/web/src/features/time/week-grid.tsx`, `apps/web/src/features/time/week-grid-cell-panel.tsx`, `apps/web/src/features/time/time-entry-fields.tsx`
 Last updated: 2026-10-14
 
-Day remains the default, timer-first time surface. The top bar's Day | Week
-control switches views at desktop widths of 768px and above. The narrow view
+Day is the default, timer-first time surface. The top bar's Day | Week
+control switches views at desktop widths of 768px and above. The view shown
+at those widths is remembered (`timeView` in the user preferences), and a Time
+link without `view`, such as the sidebar's, opens it; `?view=day` and
+`?view=week` pick one. The narrow view
 has no switcher. A Week link there (`?view=week`) shows Day with a note that
 Week needs a wider window, and keeps `view=week`, so widening the window shows
 Week. The week's range is the top bar's title in Week, with a Today chip while
