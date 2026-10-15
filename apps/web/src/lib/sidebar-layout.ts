@@ -15,6 +15,8 @@ export interface SidebarLayout {
   pullRequestsOpen: boolean;
   snoozedOpen: boolean;
   settledOpen: boolean;
+  /** The project the work list is filtered to. Missing means all projects. */
+  projectId?: string;
 }
 
 export const SIDEBAR_LAYOUT_STORAGE_KEY = "ajour.sidebar-layout";
@@ -58,6 +60,10 @@ export function parseSidebarLayout(value: string | null): SidebarLayout {
       pullRequestsOpen: parsed.pullRequestsOpen !== false,
       snoozedOpen: parsed.snoozedOpen === true,
       settledOpen: parsed.settledOpen === true,
+      projectId:
+        typeof parsed.projectId === "string" && parsed.projectId
+          ? parsed.projectId
+          : undefined,
     };
   } catch {
     return DEFAULT_LAYOUT;

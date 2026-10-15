@@ -1,8 +1,13 @@
-import { useMemo, useRef, type KeyboardEvent, type PointerEvent } from "react";
+import {
+  useMemo,
+  useRef,
+  useState,
+  type KeyboardEvent,
+  type PointerEvent,
+} from "react";
 import { Link } from "@tanstack/react-router";
 import {
   RiPlayLine as PlayIcon,
-  RiSearchLine as SearchIcon,
   RiSettings3Line as Settings,
   RiSideBarLine as SidebarIcon,
 } from "@remixicon/react";
@@ -22,14 +27,18 @@ import {
   TooltipButton,
 } from "@/components/tooltip-button";
 import { selectSidebarBacklogItems } from "@/domain/backlog/backlog-item-lifecycle";
+import { createSidebarMatcher } from "@/domain/backlog/sidebar-filter";
 import { isPullRequestReturned } from "@/domain/pull-requests/pull-request-lifecycle";
 import { getAppSection } from "@/features/layout/app-section";
-import { openCommandPalette } from "@/features/command-palette/command-palette";
 import { SidebarBacklogList } from "@/features/layout/sidebar-backlog-list";
 import {
   SidebarPullRequests,
   useSidebarPullRequests,
 } from "@/features/layout/sidebar-pull-requests";
+import {
+  SidebarProjectFilter,
+  SidebarSearch,
+} from "@/features/layout/sidebar-search";
 import {
   SidebarViewSwitcher,
   type SidebarViewOption,
@@ -159,8 +168,9 @@ export function SidebarToggleButton({
 /**
  * The app sidebar on desktop widths, from the top: the sidebar toggle and the
  * logo beside the macOS traffic lights (in the corner elsewhere), the view
- * switcher with Start (while nothing runs) and Search, the timer dock, then
- * the work list. It shows beside the page, or over it in narrow
+ * switcher with Start (while nothing runs), Search and the project filter, the
+ * timer dock, then the work list, narrowed by the search and the filter. Search
+ * expands into a search box in place of the switcher. It shows beside the page, or over it in narrow
  * desktop windows (`overlay`), where it cannot be resized. `useAppSidebar`
  * owns whether it shows.
  */
@@ -179,7 +189,18 @@ export function AppNavigationSidebar({
 }) {
   const state = useLocalState();
   const now = useNow();
+  const layout = useSidebarLayout();
   const isSettingsActive = getAppSection(pathname) === "settings";
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [query, setQuery] = useState("");
+  const matcher = useMemo(
+    () =>
+      createSidebarMatcher(
+        { query, projectId: layout.projectId },
+        state.projects,
+      ),
+    [query, layout.projectId, state.projects],
+  );
   const pullRequests = useSidebarPullRequests();
   const listed = useMemo(
     () => selectSidebarBacklogItems(state, now),
@@ -233,14 +254,21 @@ export function AppNavigationSidebar({
       </SidebarHeader>
 
       <div className="flex shrink-0 items-center justify-between gap-1 px-2 pb-1">
-        <SidebarViewSwitcher
-          pathname={pathname}
-          selectedTimeDate={selectedTimeDate}
-          options={views}
-        />
-        <span className="ml-auto flex items-center gap-0.5">
+        {searchOpen ? null : (
+          <SidebarViewSwitcher
+            pathname={pathname}
+            selectedTimeDate={selectedTimeDate}
+            options={views}
+          />
+        )}
+        <span
+          className={cn(
+            "flex items-center gap-0.5",
+            searchOpen ? "min-w-0 flex-1" : "ml-auto",
+          )}
+        >
           {/* An empty entry, unlike the dock's start for the Up next item. */}
-          {state.timers.length === 0 ? (
+          {state.timers.length === 0 && !searchOpen ? (
             <TooltipButton
               label="Start"
               shortcut="entry.stop-or-start"
@@ -257,29 +285,25 @@ export function AppNavigationSidebar({
               <PlayIcon />
             </TooltipButton>
           ) : null}
-          <TooltipButton
-            label="Search"
-            shortcut="app.command-palette"
-            side="bottom"
-            render={
-              <Button
-                variant="ghost"
-                size="icon"
-                className="ajour-app-sidebar-toggle"
-                onClick={openCommandPalette}
-              />
-            }
-          >
-            <SearchIcon />
-          </TooltipButton>
+          <SidebarSearch
+            open={searchOpen}
+            query={query}
+            onOpenChange={setSearchOpen}
+            onQueryChange={setQuery}
+          />
+          <SidebarProjectFilter
+            projects={state.projects}
+            projectId={layout.projectId}
+            onChange={(projectId) => updateSidebarLayout({ projectId })}
+          />
         </span>
       </div>
 
       <TimerDock upNext={listed[0]} />
 
       <SidebarContent>
-        <SidebarBacklogList pathname={pathname}>
-          <SidebarPullRequests pathname={pathname} />
+        <SidebarBacklogList pathname={pathname} matcher={matcher}>
+          <SidebarPullRequests pathname={pathname} matcher={matcher} />
         </SidebarBacklogList>
       </SidebarContent>
 
