@@ -1788,7 +1788,10 @@ Then("Outlook Calendar is not offered", async ({ page }) => {
 Then("the connector plugin is reported as installed", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Plugins" })).toBeVisible();
   await expect(page.getByText("Example 1.2.3 installed.")).toBeVisible();
-  await expect(page.getByText("v1.2.3", { exact: true })).toBeVisible();
+  // The row shows the plugin's capabilities, then its version.
+  await expect(
+    page.getByText("Connector · v1.2.3", { exact: true }),
+  ).toBeVisible();
 });
 
 Then("I can open the connector plugin configuration", async ({ page }) => {
