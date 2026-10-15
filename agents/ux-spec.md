@@ -542,7 +542,7 @@ Decided after the prototype on branch `prototype/backlog-sidebar`: variant B is 
 
 ### Rows
 
-- Comfortable rows are 44px and two lines, like T3 Code threads: the project's icon and name ("No project" without one) with the logged time at the end, such as "4:00", then the title. The logged time counts saved entries and does not show at zero.
+- Comfortable rows are 64px and two lines, like T3 Code threads: the project's icon and name ("No project" without one) at 13px with the logged time at the end, such as "4:00", then the title at 14px. The logged time counts saved entries and does not show at zero.
 - Compact rows are 26px and one line: the type icon and the title.
 - In both densities, a subitem shows its parent after the title in muted text, such as "Fix token refresh · Login page".
 - In Comfortable, hover and keyboard focus replace the end of the project line with Start entry, Snooze… and Settle. In Compact, they swap the type icon for a settle circle and replace the end of the row with Start entry and Snooze…. Nothing floats over the title. Shift-click on Settle or the circle asks first.

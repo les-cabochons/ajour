@@ -409,7 +409,7 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
           title={parentTitle ? `${workItem.title} · ${parentTitle}` : undefined}
           {...reveal.props}
           className={cn(
-            "group flex h-11 shrink-0 cursor-pointer flex-col justify-center rounded-md px-2 outline-none hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring",
+            "group flex h-16 shrink-0 cursor-pointer flex-col justify-center gap-1 rounded-md px-2.5 outline-none hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring",
             isActive && "bg-foreground/[0.07]",
           )}
           onClick={onClick}
@@ -417,7 +417,7 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
         />
       }
     >
-      <span className="flex h-5 items-center gap-1.5 text-xs text-muted-foreground">
+      <span className="flex h-5 items-center gap-1.5 text-sm text-muted-foreground">
         {project ? (
           <ProjectIcon
             icon={project.icon}
@@ -451,7 +451,7 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
       </span>
       <span
         className={cn(
-          "truncate text-sm leading-5",
+          "truncate text-base leading-5",
           props.isReturned && "font-semibold",
         )}
       >
@@ -831,7 +831,7 @@ export function SidebarBacklogList({
 
   return (
     <div
-      className="scrollbar-on-hover flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2"
+      className="flex min-h-0 flex-1 flex-col overflow-y-auto px-2 pb-2 scrollbar-on-hover"
       aria-label="Backlog items"
       data-focus-scope
     >
