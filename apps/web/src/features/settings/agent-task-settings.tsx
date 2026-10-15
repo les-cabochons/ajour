@@ -102,7 +102,7 @@ function TaskSettings({
           </div>
         ) : (
           <p className="mt-0.5 text-[13px] text-muted-foreground">
-            Ready to run from the Submit page.
+            Ready to run from the Commit page.
           </p>
         )}
       </div>

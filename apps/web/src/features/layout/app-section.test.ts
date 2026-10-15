@@ -4,7 +4,7 @@ import { getAppSection } from "./app-section";
 describe("getAppSection", () => {
   it("names the section of a page and of the pages inside it", () => {
     expect(getAppSection("/time/2026-10-14")).toBe("time");
-    expect(getAppSection("/time/2026-10-14/submit")).toBe("time");
+    expect(getAppSection("/time/2026-10-14/commit")).toBe("time");
     expect(getAppSection("/backlog")).toBe("backlog");
     expect(getAppSection("/backlog/w2")).toBe("backlog");
     expect(getAppSection("/pull-requests/pr-1")).toBe("pull-requests");

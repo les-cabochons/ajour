@@ -35,7 +35,7 @@ export function weekLinkFor(task: AgentTaskStatus, weekOf: string) {
 }
 
 /**
- * The Submit page's plugin agent tasks for the week on screen: one button
+ * The Commit page's plugin agent tasks for the week on screen: one button
  * each, disabled with the reason while the task cannot run or a run is
  * going or a start is in flight. The week links sit in the week summary,
  * see `AgentTaskWeekLinks`.
@@ -131,7 +131,7 @@ export function AgentTaskButtons({ weekOf }: { weekOf: string }) {
 }
 
 /**
- * Muted links to the week in each task's external tool, for the Submit
+ * Muted links to the week in each task's external tool, for the Commit
  * page's week summary. A task whose link does not fill to https shows none.
  */
 export function AgentTaskWeekLinks({ weekOf }: { weekOf: string }) {

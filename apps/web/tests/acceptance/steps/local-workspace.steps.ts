@@ -1624,14 +1624,14 @@ Then(
   },
 );
 
-Then("the timesheet can be submitted", async ({ page }) => {
+Then("the week can be committed", async ({ page }) => {
   await page.getByRole("button", { name: "Show day and week totals" }).click();
-  const submitTimesheet = page
+  const commitWeek = page
     .getByLabel("Current time totals")
-    .getByRole("button", { name: "Submit week" });
+    .getByRole("button", { name: "Commit week" });
 
-  await expect(submitTimesheet).toBeVisible();
-  await expect(submitTimesheet).toBeEnabled();
+  await expect(commitWeek).toBeVisible();
+  await expect(commitWeek).toBeEnabled();
   await page.keyboard.press("Escape");
 });
 
@@ -2063,13 +2063,13 @@ Given("I have a week of saved entries", async ({ page }) => {
 });
 
 When(
-  "I open the submit page from the Week totals dropdown",
+  "I open the Commit page from the Week totals dropdown",
   async ({ page }) => {
     await page.goto("/time/2026-10-05?view=week");
     await expect(page.locator(".time-page-stack")).toBeVisible({
       timeout: 15_000,
     });
-    await expect(page.getByRole("button", { name: "Submit week" })).toHaveCount(
+    await expect(page.getByRole("button", { name: "Commit week" })).toHaveCount(
       0,
     );
     await page
@@ -2078,32 +2078,32 @@ When(
     await expect(page.getByLabel("Current time totals")).toContainText("5:00");
     await page
       .getByLabel("Current time totals")
-      .getByRole("button", { name: "Submit week" })
+      .getByRole("button", { name: "Commit week" })
       .click();
-    await expect(page).toHaveURL(/\/time\/2026-10-05\/submit/);
+    await expect(page).toHaveURL(/\/time\/2026-10-05\/commit/);
   },
 );
 
 When(
-  "I open the submit page from the narrow totals dropdown",
+  "I open the Commit page from the narrow totals dropdown",
   async ({ page }) => {
     await page.setViewportSize({ width: 420, height: 860 });
     await page.goto("/time/2026-10-05");
     await expect(page.locator(".time-page-stack")).toBeVisible({
       timeout: 15_000,
     });
-    await expect(page.getByRole("button", { name: "Submit week" })).toHaveCount(
+    await expect(page.getByRole("button", { name: "Commit week" })).toHaveCount(
       0,
     );
     await page
       .getByRole("button", { name: "Show day and week totals" })
       .click();
-    await page.getByRole("button", { name: "Submit week" }).click();
-    await expect(page).toHaveURL(/\/time\/2026-10-05\/submit/);
+    await page.getByRole("button", { name: "Commit week" }).click();
+    await expect(page).toHaveURL(/\/time\/2026-10-05\/commit/);
   },
 );
 
-When("I open the submit page from Settings totals", async ({ page }) => {
+When("I open the Commit page from Settings totals", async ({ page }) => {
   await page.goto("/time/2026-10-05");
   await expect(page.locator(".time-page-stack")).toBeVisible({
     timeout: 15_000,
@@ -2114,12 +2114,12 @@ When("I open the submit page from Settings totals", async ({ page }) => {
   await expect(page).toHaveURL(/\/settings\/general$/);
   await page.getByRole("button", { name: "Show day and week totals" }).click();
   await expect(page.getByLabel("Current time totals")).toContainText("5:00");
-  await page.getByRole("button", { name: "Submit week" }).click();
-  await expect(page).toHaveURL(/\/time\/2026-10-05\/submit/);
+  await page.getByRole("button", { name: "Commit week" }).click();
+  await expect(page).toHaveURL(/\/time\/2026-10-05\/commit/);
 });
 
 When(
-  "I request week submission with {string} hours in an open entry",
+  "I open the Commit page with {string} hours in an open entry",
   async ({ page }, hours: string) => {
     await page.goto("/time/2026-10-05?entry=mon-dev-1");
     await page
@@ -2131,13 +2131,13 @@ When(
       .click();
     await page
       .getByLabel("Current time totals")
-      .getByRole("button", { name: "Submit week" })
+      .getByRole("button", { name: "Commit week" })
       .click();
   },
 );
 
-Then("the submit page includes the saved entry draft", async ({ page }) => {
-  await expect(page).toHaveURL(/\/time\/2026-10-05\/submit/);
+Then("the Commit page includes the saved entry draft", async ({ page }) => {
+  await expect(page).toHaveURL(/\/time\/2026-10-05\/commit/);
   const savedEntry = await page.evaluate(() => {
     const state = JSON.parse(
       localStorage.getItem("ajour.local-state.v2") ?? "null",
@@ -2151,7 +2151,7 @@ Then("the submit page includes the saved entry draft", async ({ page }) => {
 });
 
 Then(
-  "the invalid entry draft stays open instead of submitting",
+  "the invalid entry draft stays open instead of opening the Commit page",
   async ({ page }) => {
     await expect(page).toHaveURL(/\/time\/2026-10-05\?entry=mon-dev-1$/);
     await expect(
@@ -2250,23 +2250,24 @@ Then("the entry editor opens in a full-width dialog", async ({ page }) => {
   await expect.poll(async () => (await dialog.boundingBox())?.width).toBe(404);
 });
 
-Then("the submit page lists the week's entries", async ({ page }) => {
+Then("the Commit page lists the week's entries", async ({ page }) => {
   await expect(
-    page.getByRole("heading", { name: "Submit week of Oct 5 to Oct 11" }),
+    page.getByRole("heading", { name: "Commit week of Oct 5 to Oct 11" }),
   ).toBeVisible({ timeout: 15_000 });
+  // None of the fixture's entries was ever committed.
   await expect(
-    page.getByRole("button", { name: "Mark 4 entries as submitted" }),
-  ).toBeVisible();
-  await expect(page.getByRole("checkbox", { name: /^Include / })).toHaveCount(
-    3,
-  );
+    page
+      .getByRole("list", { name: "Changes" })
+      .getByRole("img", { name: "Added" }),
+  ).toHaveCount(4);
+  await expect(
+    page.getByRole("button", { name: "Mark as committed" }),
+  ).toBeEnabled();
 });
 
-Then("the submit page merges Monday's task entries", async ({ page }) => {
+Then("the Commit page merges Monday's task entries", async ({ page }) => {
   const monday = page.getByRole("region", { name: "Monday, Oct 5" });
-  await expect(monday.getByRole("checkbox", { name: /^Include / })).toHaveCount(
-    2,
-  );
+  await expect(monday.getByRole("listitem")).toHaveCount(2);
   await expect(
     monday.getByRole("button", { name: "Copy hours: 3.00" }),
   ).toHaveText("3:00");
@@ -2288,49 +2289,6 @@ Then(
     await expect.poll(readClipboard).toBe("API | Login form");
   },
 );
-
-When("I drop Tuesday from the submission", async ({ page }) => {
-  await page
-    .getByRole("group", { name: "Days to submit" })
-    .getByRole("button", { name: "Tuesday, Oct 6" })
-    .click();
-});
-
-When(
-  "I mark the selected entries as submitted under the target",
-  async ({ page }) => {
-    await page
-      .getByRole("button", { name: "Mark 3 entries as submitted" })
-      .click();
-    await page.getByRole("button", { name: "Submit anyway" }).click();
-  },
-);
-
-Then("only Monday's entries are submitted", async ({ page }) => {
-  await expect
-    .poll(async () =>
-      page.evaluate(() => {
-        const state = JSON.parse(
-          window.localStorage.getItem("ajour.local-state.v2") ?? "null",
-        );
-        return state?.timesheetEntries
-          .filter((entry: { submittedAt?: number }) => entry.submittedAt)
-          .map((entry: { _id: string }) => entry._id)
-          .sort();
-      }),
-    )
-    .toEqual(["mon-dev-1", "mon-dev-2", "mon-review"]);
-});
-
-Then("the submit page shows the week as partly submitted", async ({ page }) => {
-  const result = page.getByRole("status");
-  await expect(result).toContainText("Partly submitted on");
-  await expect(result).toContainText("3 entries · 4:00");
-  // Tuesday stays out of the selection after the others are marked.
-  await expect(
-    page.getByRole("button", { name: "Mark 0 entries as submitted" }),
-  ).toBeDisabled();
-});
 
 function narrowTotalsPill(page: Page) {
   return page.getByRole("button", { name: "Show day and week totals" });

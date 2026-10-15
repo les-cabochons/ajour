@@ -6,9 +6,9 @@ Feature: Agent tasks from plugins
     Then the agent choice offers "Claude Code 2.1.0"
     And the agent choice shows "Codex (not installed)" as unavailable
 
-  Scenario: I start Enter in Workday from the Submit page
+  Scenario: I start Enter in Workday from the Commit page
     Given the local API reports a ready "Enter in Workday" task with a week link
-    When I open the Submit page for the week of 2026-10-12
+    When I open the Commit page for the week of 2026-10-12
     Then I see a link "Open the week in Workday" to "https://wd.example/t?date=2026-10-12"
     When I press "Enter in Workday"
     Then the run is requested for the week of 2026-10-12
@@ -16,7 +16,7 @@ Feature: Agent tasks from plugins
 
   Scenario: The button says what is missing
     Given the local API reports the "Enter in Workday" task blocked by "Fill in Workday timesheet URL in Settings > Plugins > Workday"
-    When I open the Submit page for the week of 2026-10-12
+    When I open the Commit page for the week of 2026-10-12
     Then "Enter in Workday" is disabled with the reason "Fill in Workday timesheet URL in Settings > Plugins > Workday"
 
   Scenario: I fill in the task settings on the plugin's page
@@ -26,4 +26,4 @@ Feature: Agent tasks from plugins
     When I fill in "Workday timesheet URL" with "https://wd.example/t"
     And I press "Save"
     Then the timesheet URL "https://wd.example/t" is saved
-    And the task says "Ready to run from the Submit page."
+    And the task says "Ready to run from the Commit page."

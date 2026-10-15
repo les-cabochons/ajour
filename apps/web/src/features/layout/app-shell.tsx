@@ -66,7 +66,7 @@ import {
   SettingsNavigation,
   getSettingsPages,
 } from "@/features/settings/settings-navigation";
-import { SubmitWeekButton } from "@/features/time/submit-week-controls";
+import { CommitWeekButton } from "@/features/time/commit-week-controls";
 import { formatClockDuration } from "@/domain/time/duration";
 import { formatElapsedDuration } from "@/domain/time/running-entry";
 import { findPinnedTask } from "@/domain/projects/project-transitions";
@@ -346,18 +346,18 @@ function ConnectorAutoSyncScheduler() {
 }
 
 /**
- * The selected day's titlebar pill, with day and week totals and Submit week.
+ * The selected day's titlebar pill, with day and week totals and Commit week.
  * With `showsRunningEntry`, as in the narrow view, a running entry replaces
  * the day total on the pill with its own time, and the popover gets a Current
  * timer row that opens the entry's editor.
  */
 function DayTotalsPill({
   date,
-  onSubmit,
+  onCommit,
   showsRunningEntry = false,
 }: {
   date: string;
-  onSubmit: () => void;
+  onCommit: () => void;
   showsRunningEntry?: boolean;
 }) {
   const state = useLocalState();
@@ -447,10 +447,10 @@ function DayTotalsPill({
           </span>
         </div>
         <div className="mt-1 border-t border-border pt-2">
-          <SubmitWeekButton
+          <CommitWeekButton
             onClick={() => {
               setOpen(false);
-              onSubmit();
+              onCommit();
             }}
           />
         </div>
@@ -510,13 +510,13 @@ function GlobalTimerBar({
   date,
   showsFloatingDock,
   floatingDockWidth,
-  onSubmit,
+  onCommit,
 }: {
   date: string;
   showsFloatingDock: boolean;
   /** Fits the floating dock inside the left column, as in Settings. */
   floatingDockWidth?: number;
-  onSubmit: () => void;
+  onCommit: () => void;
 }) {
   const state = useLocalState();
   const projects = useLocalProjects();
@@ -665,7 +665,7 @@ function GlobalTimerBar({
       ) : null}
       <DayTotalsPill
         date={date}
-        onSubmit={onSubmit}
+        onCommit={onCommit}
         showsRunningEntry={isNarrowView}
       />
       {isNarrowView && editor === "new" ? (
@@ -889,7 +889,7 @@ export function AppShell() {
                 showsFloatingDock={
                   showsSettingsSidebar || appSidebar.state === "hidden"
                 }
-                onSubmit={() => {
+                onCommit={() => {
                   if (isTimeActive && /^\/time\/[^/]+$/.test(pathname)) {
                     void navigate({
                       to: "/time/$date",
@@ -898,12 +898,12 @@ export function AppShell() {
                       },
                       search: ((previous: Record<string, unknown>) => ({
                         ...previous,
-                        action: "submit-week",
+                        action: "commit-week",
                       })) as never,
                     });
                   } else {
                     void navigate({
-                      to: "/time/$date/submit",
+                      to: "/time/$date/commit",
                       params: { date: selectedTimeDate },
                     });
                   }

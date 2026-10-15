@@ -296,9 +296,9 @@ Then(
 );
 
 When(
-  "I open the Submit page for the week of {word}",
+  "I open the Commit page for the week of {word}",
   async ({ page }, weekOf: string) => {
-    await page.goto(`/time/${weekOf}/submit`);
+    await page.goto(`/time/${weekOf}/commit`);
   },
 );
 
