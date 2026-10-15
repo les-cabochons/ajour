@@ -103,7 +103,7 @@ export function AgentTaskButtons({ weekOf }: { weekOf: string }) {
         return (
           <div
             key={`${task.pluginId}/${task.taskId}`}
-            className="flex items-center gap-2"
+            className="flex flex-wrap items-center gap-2"
           >
             {reason ? (
               // A disabled button gets no pointer events, so the wrapper
