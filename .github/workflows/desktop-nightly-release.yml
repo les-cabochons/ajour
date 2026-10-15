@@ -4,6 +4,10 @@ on:
   push:
     branches:
       - main
+    # A push that only changes the docs site ships nothing in the desktop app.
+    paths-ignore:
+      - apps/docs/**
+      - .github/workflows/docs-pages.yml
 
 permissions:
   contents: read
