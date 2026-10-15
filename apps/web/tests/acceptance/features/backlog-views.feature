@@ -400,3 +400,12 @@ Feature: Backlog list and board views
       | key       | state | status   |
       | Alt+ArrowLeft  | todo  | active   |
       | Alt+ArrowRight | done  | archived |
+
+  Scenario: Edit a backlog item in place on its page
+    When I open the Backlog parent page
+    And I rename the item on its page to "Renamed parent"
+    And I set its remaining estimate on its page to "5"
+    And I write "**Bold** note" as its note on its page
+    And I add the subitem "Inline subitem" on its page
+    Then the Backlog parent keeps the inline edits
+    And the item page has no actions menu and no editor panel

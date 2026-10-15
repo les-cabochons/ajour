@@ -46,11 +46,8 @@ Given("I have a parent editor close fixture", async ({ page }) => {
       }),
     );
   });
-  await page.goto("/backlog/editor-parent");
-  await page
-    .getByRole("button", { name: "Actions for Editor parent", exact: true })
-    .click();
-  await page.getByRole("menuitem", { name: "Edit", exact: true }).click();
+  // The item page edits in place; the editor panel lives on the Backlog page.
+  await page.goto("/backlog?action=edit&target=editor-parent");
   await expect(
     page.getByRole("complementary", { name: "Backlog item editor" }),
   ).toBeVisible();

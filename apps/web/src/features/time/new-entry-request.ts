@@ -85,15 +85,17 @@ let requestListener: ((request: NewEntryRequest) => void) | null = null;
 
 /**
  * New entry… on a task or a backlog item. Opens the entry editor in the
- * titlebar's popover, anchored to the object's row while that row shows on
- * screen, otherwise to the titlebar's totals. The narrow view opens the
- * full-width dialog instead. Does nothing until the titlebar has mounted.
+ * titlebar's popover, anchored to `button` when the request came from one,
+ * else to the object's row while that row shows on screen, otherwise to the
+ * titlebar's totals. The narrow view opens the full-width dialog instead.
+ * Does nothing until the titlebar has mounted.
  */
 export function openNewEntryEditor(
   object: NewEntryObjectRef,
   values: NewTimeEntryValues,
+  button?: HTMLElement,
 ) {
-  const row = findObjectRow(object);
+  const row = button ?? findObjectRow(object);
   const anchor = row ? pickOnScreenAnchor(row, getClipRects(row)) : null;
   requestListener?.({ values, anchor });
 }

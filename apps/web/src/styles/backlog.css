@@ -534,8 +534,41 @@
 
   .backlog-item-page-columns {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 15rem;
+    grid-template-columns: minmax(0, 1fr) 17rem;
     gap: 2.5rem;
+  }
+
+  /* The one card on the item page: properties read as a unit beside the
+     note, subitems and time entries. */
+  .backlog-item-properties-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.875rem;
+    align-self: start;
+    padding: 0.875rem 1rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+  }
+
+  /* Text that turns into a field on click: the title and the estimates. */
+  .backlog-item-inline-target {
+    border-radius: 4px;
+    cursor: text;
+  }
+
+  .backlog-item-inline-target:not(:disabled):hover {
+    background: var(--highlight-bg);
+  }
+
+  /* A quiet text button in a section heading, such as the note's Edit. */
+  .backlog-item-subtle-action {
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+  }
+
+  .backlog-item-subtle-action:hover {
+    color: var(--text);
+    text-decoration: underline;
   }
 
   .backlog-item-progress {
@@ -694,26 +727,34 @@
   }
 }
 
-/* The peek's properties read as values. Project and task show their field
-   only on hover and focus, like the state and priority pickers beside them.
-   Unlayered, so they win over the input group's utility classes. Controls
-   shift left by their border and padding so every value's text lines up. */
-.backlog-peek .searchable-select-input-group {
+/* The peek's and the item page's properties read as values. Project and task
+   show their field only on hover and focus, like the state and priority
+   pickers beside them. Unlayered, so they win over the input group's utility
+   classes. Controls shift left by their border and padding so every value's
+   text lines up. */
+:is(.backlog-peek, .backlog-item-properties-card)
+  .searchable-select-input-group {
   height: var(--control-height);
   border-color: transparent;
   background: transparent;
 }
 
-.backlog-peek .searchable-select-input-group:hover,
-.backlog-peek .searchable-select-input-group:focus-within {
+:is(.backlog-peek, .backlog-item-properties-card)
+  .searchable-select-input-group:is(:hover, :focus-within) {
   border-color: var(--field-border);
   background: var(--field-bg);
 }
 
-.backlog-peek [data-slot="property-list"] dd > :is(button, .searchable-select) {
+:is(.backlog-peek, .backlog-item-properties-card)
+  [data-slot="property-list"]
+  dd
+  > :is(button, .searchable-select) {
   margin-inline-start: calc(-0.625rem - 1px);
 }
 
-.backlog-peek [data-slot="property-list"] dd > .searchable-select {
+:is(.backlog-peek, .backlog-item-properties-card)
+  [data-slot="property-list"]
+  dd
+  > .searchable-select {
   width: calc(100% + 0.625rem + 1px);
 }

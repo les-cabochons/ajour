@@ -11,9 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Markdown } from "@/components/markdown";
-import { PropertyList, PropertyRow } from "@/components/property-list";
 import { SectionHeading } from "@/components/section-heading";
-import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Figure, FigureRow, Value } from "@/components/ui/value";
 import { getDirectChildWorkItems } from "@/domain/backlog/work-item-hierarchy";
 import {
@@ -22,16 +20,8 @@ import {
   type LocalWorkItem,
 } from "@/domain/local-state";
 import type { BacklogItemActionId } from "@/domain/actions/object-actions";
-import {
-  BacklogPriorityPicker,
-  BacklogStatePicker,
-  getBacklogSurfaceActions,
-  patchBacklogItemWithUndo,
-} from "@/features/backlog/backlog-item-surface";
-import {
-  changeSourceStateWithUndo,
-  getOtherSourceStates,
-} from "@/features/backlog/backlog-item-moves";
+import { getBacklogSurfaceActions } from "@/features/backlog/backlog-item-surface";
+import { BacklogItemProperties } from "@/features/backlog/backlog-item-properties";
 import {
   ESTIMATE_FIGURES,
   formatHours,
@@ -211,74 +201,7 @@ export function BacklogPeek({
       </div>
       <section>
         <SectionHeading>Properties</SectionHeading>
-        <PropertyList>
-          <PropertyRow label="State">
-            <BacklogStatePicker item={item} state={state} full />
-          </PropertyRow>
-          {item.sourceStatusLabel && (
-            <PropertyRow label="Source state">
-              <Button
-                variant="ghost"
-                aria-label={`Change source state of ${item.title}`}
-                disabled={getOtherSourceStates(item).length === 0}
-                onClick={() => void changeSourceStateWithUndo(item)}
-              >
-                {item.sourceStatusLabel}
-              </Button>
-            </PropertyRow>
-          )}
-          <PropertyRow label="Priority">
-            <BacklogPriorityPicker item={item} full />
-          </PropertyRow>
-          <PropertyRow label="Lifecycle">
-            <span className="capitalize">{item.status}</span>
-          </PropertyRow>
-          <PropertyRow label="Project">
-            <SearchableSelect
-              value={item.projectId ?? ""}
-              options={state.projects
-                .filter(
-                  (p) => p.status === "active" || p._id === item.projectId,
-                )
-                .map((p) => ({
-                  value: p._id,
-                  label: getLocalProjectDisplayName(p),
-                }))}
-              placeholder="No project"
-              emptyMessage="No projects"
-              ariaLabel="Peek project"
-              clearLabel="No project"
-              onChange={(value) => {
-                if (value === (item.projectId ?? "")) return;
-                patchBacklogItemWithUndo(
-                  item,
-                  { projectId: value || undefined, taskId: undefined },
-                  "Project changed",
-                );
-              }}
-            />
-          </PropertyRow>
-          <PropertyRow label="Task">
-            <SearchableSelect
-              value={item.taskId ?? ""}
-              options={(project?.tasks ?? [])
-                .filter((t) => t.status === "active" || t._id === item.taskId)
-                .map((t) => ({ value: t._id, label: t.name }))}
-              placeholder="No task"
-              emptyMessage="No tasks"
-              ariaLabel="Peek task"
-              clearLabel="No task"
-              disabled={!project}
-              onChange={(value) =>
-                patchBacklogItemWithUndo(
-                  item,
-                  { taskId: value || undefined },
-                  "Task changed",
-                )
-              }
-            />
-          </PropertyRow>
-        </PropertyList>
+        <BacklogItemProperties item={item} state={state} />
       </section>
       {item.note ? (
         <section>

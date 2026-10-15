@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import {
+  RiAddLine as AddIcon,
   RiArrowGoBackLine as UnsettleIcon,
   RiCheckboxCircleLine as SettleIcon,
   RiExternalLinkLine as ExternalIcon,
@@ -8,15 +9,12 @@ import {
   RiStopLine as StopIcon,
   RiTimeLine as SnoozeIcon,
 } from "@remixicon/react";
-import { Markdown } from "@/components/markdown";
-import { ObjectActionsButton } from "@/components/object-actions-menu";
 import { PageHeader } from "@/components/page-header";
-import { PropertyList, PropertyRow } from "@/components/property-list";
+import { PropertyRow } from "@/components/property-list";
 import { SectionHeading } from "@/components/section-heading";
-import { SidePanel } from "@/components/side-panel";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
-import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
+import { Switch } from "@/components/ui/switch";
 import {
   Empty,
   EmptyDescription,
@@ -35,26 +33,25 @@ import {
   getWorkItemParentKey,
   isSubtaskWorkItem,
 } from "@/domain/backlog/work-item-hierarchy";
-import {
-  getLocalProjectDisplayName,
-  type LocalWorkItem,
-} from "@/domain/local-state";
+import { getLocalProjectDisplayName } from "@/domain/local-state";
 import { formatClockDuration } from "@/domain/time/duration";
 import { settleOpensDialog } from "@/features/backlog/settle-dialog";
+import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
 import {
-  runBacklogItemAction,
-  type HostedBacklogItemActionId,
-} from "@/features/backlog/backlog-item-actions";
-import {
-  BacklogItemEditorForm,
-  type BacklogItemEditorFormHandle,
-} from "@/features/backlog/backlog-item-editor-form";
-import type { BacklogTaskEditorTarget } from "@/features/backlog/backlog-task-editor";
+  AddSubitemRow,
+  EstimateFigure,
+  InlineTitle,
+  NoteSection,
+} from "@/features/backlog/backlog-item-inline-edit";
+import { BacklogItemProperties } from "@/features/backlog/backlog-item-properties";
+import { patchBacklogItemWithUndo } from "@/features/backlog/backlog-item-surface";
 import {
   ESTIMATE_FIGURES,
   formatHours,
 } from "@/features/backlog/backlog-estimates";
 import { getBacklogItemBackLink } from "@/features/backlog/backlog-item-search";
+import { getWorkItemEntryValues } from "@/features/backlog/work-item-timer-comment";
+import { openNewEntryEditor } from "@/features/time/new-entry-request";
 import { getBacklogItemNotice } from "@/features/backlog/backlog-item-notice";
 import {
   WorkItemIcon,
@@ -66,10 +63,8 @@ import { useActionRequest } from "@/lib/action-request";
 import { BACKLOG_ITEM_ACTION_KEYS, handleItemKeyDown } from "@/lib/item-keys";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
-import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
-import { getPriorityLevelName } from "@/domain/backlog/priority";
 import { findWorkItemTimer } from "@/domain/time/running-entry";
 import { PriorityIcon } from "@/features/backlog/priority-icon";
 import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
@@ -78,11 +73,11 @@ import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
  * The backlog item page at /backlog/$itemId, from "Backlog item page" in
  * agents/ux-spec.md. The top bar holds the item's actions;
  * the page holds the back link, title, estimate figures and progress, then the note,
- * subitems and time entries beside the properties. Edit opens the backlog
- * item editor in a side panel over the page.
+ * subitems and time entries beside the properties card. Every field edits in
+ * place, so the page has no editor panel and no "…" menu.
  *
  * The page itself is the focused object, so E settles, B snoozes and Enter
- * edits as soon as it opens.
+ * renames as soon as it opens.
  */
 export function BacklogItemPage({ itemId }: { itemId: string }) {
   const state = useLocalState();
@@ -92,22 +87,29 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
   const { from } = useSearch({ from: "/app/backlog/$itemId" });
   const backLink = getBacklogItemBackLink(from);
   const now = useNow();
-  const isNarrowLayout = useIsNarrowView();
   const iconData = useWorkItemIconData(state.projects);
   const focusRef = useRef<HTMLDivElement>(null);
-  const editorFormRef = useRef<BacklogItemEditorFormHandle>(null);
-  const [editor, setEditor] = useState<"edit" | "add-subitem" | null>(null);
+  const [editingTitle, setEditingTitle] = useState(false);
+  const [addingSubitem, setAddingSubitem] = useState(false);
   const workItem = state.workItems.find((item) => item._id === itemId);
+
+  /** Edit and Add subitem have no panel here: they open the inline fields. */
+  function runHosted(action: "edit" | "add-subitem") {
+    if (action === "edit") setEditingTitle(true);
+    else setAddingSubitem(true);
+  }
 
   // Opening the item clears its Returned mark.
   useEffect(() => {
     localStore.markWorkItemOpened(itemId);
-    setEditor(null);
+    setEditingTitle(false);
+    setAddingSubitem(false);
     focusRef.current?.focus({ preventScroll: true });
   }, [itemId]);
 
   // The sidebar and the command palette ask for Edit and Add subitem with
-  // `?action=`. Only enabled actions of the item run.
+  // `?action=`. Only enabled actions of the item run: Edit renames the item,
+  // Add subitem opens the name field under its subitems.
   useActionRequest(({ action }) => {
     if (action !== "edit" && action !== "add-subitem") return;
     const currentState = localStore.snapshot();
@@ -123,7 +125,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
       otherSourceStateCount: getOtherSourceStates(current).length,
     }).find((candidate) => candidate.id === action);
     if (requested && !requested.disabledReason) {
-      setEditor(action);
+      runHosted(action);
     }
   });
 
@@ -158,6 +160,8 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
   const item = workItem;
   const isSubitem = isSubtaskWorkItem(item);
   const isSnoozed = isBacklogItemSnoozed(item, now);
+  // An archived item is read-only until Restore, like its Edit action.
+  const readOnly = item.status === "archived";
   const actions = getBacklogItemActions(item, {
     isRunning: Boolean(findWorkItemTimer(state.timers, item._id)),
     isSubitem,
@@ -174,10 +178,6 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
       )
     : undefined;
   const project = state.projects.find((entry) => entry._id === item.projectId);
-  const task = project?.tasks.find((entry) => entry._id === item.taskId);
-  const workflowState = state.workflowStates.find(
-    (status) => status._id === item.workflowStateId,
-  );
   const reference =
     item.source === "azure_devops"
       ? parseWorkItemReference(item.sourceId)
@@ -204,28 +204,19 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
         .snapshot()
         .workItems.find((current) => current._id === item._id) ?? item,
       actionId,
-      (hosted: HostedBacklogItemActionId) => setEditor(hosted),
+      runHosted,
       options,
     );
   }
 
-  const editorTarget: BacklogTaskEditorTarget | null =
-    editor === "edit"
-      ? { kind: "edit", workItem: item }
-      : editor === "add-subitem"
-        ? { kind: "create", parent: item }
-        : null;
-  const renderEditor = (titleAs?: typeof DialogTitle) =>
-    editorTarget ? (
-      <BacklogItemEditorForm
-        key={`${editor}-${item._id}`}
-        ref={editorFormRef}
-        target={editorTarget}
-        titleAs={titleAs}
-        onClose={() => setEditor(null)}
-        onAction={(_saved, actionId) => runAction(actionId)}
-      />
-    ) : null;
+  /** New entry on this item, in the titlebar's popover anchored to `button`. */
+  function openNewEntry(button: HTMLElement) {
+    openNewEntryEditor(
+      { kind: "backlog-item", workItemId: item._id },
+      getWorkItemEntryValues(item),
+      button,
+    );
+  }
 
   const headerButtons =
     item.status === "archived" ? (
@@ -272,12 +263,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
     );
 
   return (
-    <div
-      className={cn(
-        "backlog-page-stack",
-        editorTarget && !isNarrowLayout && "has-side-panel",
-      )}
-    >
+    <div className="backlog-page-stack">
       <div className="backlog-page-main overflow-y-auto">
         <div
           ref={focusRef}
@@ -302,12 +288,14 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
             actions={
               <>
                 {headerButtons}
-                <ObjectActionsButton
-                  actions={actions}
-                  keys={BACKLOG_ITEM_ACTION_KEYS}
-                  onAction={runAction}
-                  label={`Actions for ${item.title}`}
-                />
+                {!readOnly ? (
+                  <Button
+                    variant="ghost"
+                    onClick={(event) => openNewEntry(event.currentTarget)}
+                  >
+                    <AddIcon data-icon="inline-start" /> New entry
+                  </Button>
+                ) : null}
               </>
             }
           />
@@ -317,8 +305,18 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
               icon={resolveWorkItemIcon(item, iconData)}
               className="mt-1.5"
             />
-            <div className="min-w-0">
-              <h1 className="backlog-item-page-title">{item.title}</h1>
+            <div className="min-w-0 flex-1">
+              <InlineTitle
+                item={item}
+                editing={editingTitle}
+                readOnly={readOnly}
+                onEditingChange={(editing) => {
+                  setEditingTitle(editing);
+                  // Enter and Escape give the keys back to the page.
+                  if (!editing)
+                    focusRef.current?.focus({ preventScroll: true });
+                }}
+              />
               <div className="backlog-item-page-meta">
                 {item.sourceWorkItemType ? (
                   <Chip>{item.sourceWorkItemType}</Chip>
@@ -371,19 +369,16 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
 
           <div className="flex flex-col gap-2.5">
             <FigureRow>
-              {ESTIMATE_FIGURES.map((figure) => {
-                const fieldState = item.estimateSync?.[figure.key];
-                return (
-                  <Figure key={figure.key} label={figure.label}>
-                    {formatHours(item[figure.key])}
-                    {fieldState?.conflict ? (
-                      <span className="ml-1.5 font-sans text-xs font-normal text-destructive">
-                        Conflict
-                      </span>
-                    ) : null}
-                  </Figure>
-                );
-              })}
+              {ESTIMATE_FIGURES.map((figure) => (
+                <EstimateFigure
+                  key={figure.key}
+                  item={item}
+                  field={figure.key}
+                  label={figure.label}
+                  conflict={Boolean(item.estimateSync?.[figure.key]?.conflict)}
+                  readOnly={readOnly}
+                />
+              ))}
               <Figure label="Logged in Ajour">
                 {formatClockDuration(loggedMs)}
               </Figure>
@@ -402,12 +397,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
 
           <div className="backlog-item-page-columns">
             <div className="flex min-w-0 flex-col">
-              <SectionHeading>Note</SectionHeading>
-              {item.note ? (
-                <Markdown>{item.note}</Markdown>
-              ) : (
-                <p className="text-sm text-muted-foreground">No note.</p>
-              )}
+              <NoteSection key={item._id} item={item} readOnly={readOnly} />
               {!isSubitem ? (
                 <>
                   <SectionHeading
@@ -419,7 +409,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                   >
                     Subitems
                   </SectionHeading>
-                  {subitems.length === 0 ? (
+                  {subitems.length === 0 && !addingSubitem ? (
                     <p className="text-sm text-muted-foreground">
                       No subitems.
                     </p>
@@ -460,6 +450,13 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                       ))}
                     </div>
                   )}
+                  {!readOnly ? (
+                    <AddSubitemRow
+                      parent={item}
+                      adding={addingSubitem}
+                      onAddingChange={setAddingSubitem}
+                    />
+                  ) : null}
                 </>
               ) : null}
               <SectionHeading
@@ -503,43 +500,29 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                   ))}
                 </div>
               )}
+              {!readOnly ? (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="mt-1 w-fit text-muted-foreground"
+                  onClick={(event) => openNewEntry(event.currentTarget)}
+                >
+                  <AddIcon data-icon="inline-start" />
+                  Add time entry
+                </Button>
+              ) : null}
             </div>
-            <div>
-              <SectionHeading>Properties</SectionHeading>
-              <PropertyList>
-                <PropertyRow label="State">
-                  {workflowState ? (
-                    <>
-                      <span
-                        className="backlog-state-dot"
-                        style={{ color: workflowState.color }}
-                      />
-                      {workflowState.name}
-                    </>
-                  ) : (
-                    "–"
-                  )}
-                </PropertyRow>
-                <PropertyRow label="Source state">
-                  {item.sourceStatusLabel ?? "–"}
-                </PropertyRow>
-                <PropertyRow label="Priority">
-                  <PriorityIcon priority={item.priority} decorative />
-                  {getPriorityLevelName(item.priority)}
-                </PropertyRow>
-                <PropertyRow label="Lifecycle">
-                  <span className="capitalize">{item.status}</span>
-                </PropertyRow>
-                <PropertyRow label="Project">
-                  {project ? (
-                    <Chip color={project.color}>
-                      {getLocalProjectDisplayName(project)}
-                    </Chip>
-                  ) : (
-                    "–"
-                  )}
-                </PropertyRow>
-                <PropertyRow label="Task">{task?.name ?? "–"}</PropertyRow>
+            <section
+              className="backlog-item-properties-card"
+              aria-labelledby={`${item._id}-properties`}
+            >
+              <h2
+                id={`${item._id}-properties`}
+                className="text-xs font-medium text-muted-foreground"
+              >
+                Properties
+              </h2>
+              <BacklogItemProperties item={item} state={state}>
                 <PropertyRow label="Source">
                   {item.source === "manual"
                     ? "Ajour"
@@ -547,33 +530,37 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                       item.sourceConnectionLabel ??
                       "–")}
                 </PropertyRow>
-              </PropertyList>
-            </div>
+              </BacklogItemProperties>
+              {item.source !== "manual" ? (
+                <label className="flex items-start gap-2.5 border-t pt-3 text-sm">
+                  <Switch
+                    size="sm"
+                    className="mt-0.5"
+                    checked={item.keepWhenMissingFromSync ?? false}
+                    disabled={readOnly}
+                    onCheckedChange={(keepWhenMissingFromSync) =>
+                      patchBacklogItemWithUndo(
+                        item,
+                        { keepWhenMissingFromSync },
+                        keepWhenMissingFromSync
+                          ? "Kept when missing from sync"
+                          : "Archived when missing from sync",
+                      )
+                    }
+                  />
+                  <span className="flex flex-col gap-0.5">
+                    Keep when missing from sync
+                    <span className="text-xs text-muted-foreground">
+                      Do not archive this item when it disappears from the
+                      synced source list.
+                    </span>
+                  </span>
+                </label>
+              ) : null}
+            </section>
           </div>
         </div>
       </div>
-
-      {editorTarget && !isNarrowLayout ? (
-        <SidePanel
-          contentKey={`${editor}-${item._id}`}
-          widthKey="backlog-item"
-          className="backlog-side-panel"
-          aria-label="Backlog item editor"
-        >
-          {renderEditor()}
-        </SidePanel>
-      ) : null}
-      {editorTarget && isNarrowLayout ? (
-        <Dialog
-          open
-          disablePointerDismissal
-          onOpenChange={(open) => !open && setEditor(null)}
-        >
-          <DialogContent className="max-w-xl" showCloseButton={false}>
-            {renderEditor(DialogTitle)}
-          </DialogContent>
-        </Dialog>
-      ) : null}
     </div>
   );
 }
