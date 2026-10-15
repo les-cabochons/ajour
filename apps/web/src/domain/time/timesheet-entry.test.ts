@@ -735,16 +735,30 @@ describe("selectMostRecentTimesheetEntry", () => {
     };
   }
 
-  it("picks the top entry of the latest day up to today", () => {
+  it("picks the last entry of the latest day up to today", () => {
     const entries = [
-      savedEntry("monday-top", "2026-10-05", 50),
-      savedEntry("tuesday-bottom", "2026-10-06", 10),
-      savedEntry("tuesday-top", "2026-10-06", 20),
+      savedEntry("monday-last", "2026-10-05", 50),
+      savedEntry("tuesday-first", "2026-10-06", 10),
+      savedEntry("tuesday-last", "2026-10-06", 20),
       savedEntry("next-week", "2026-10-13", 99),
     ];
 
     expect(selectMostRecentTimesheetEntry(entries, "2026-10-11")?._id).toBe(
-      "tuesday-top",
+      "tuesday-last",
+    );
+  });
+
+  it("picks the entry the Day view shows last when timestamps tie", () => {
+    const entries = [
+      savedEntry("imported-a", "2026-10-06", 20),
+      savedEntry("imported-b", "2026-10-06", 20),
+    ];
+
+    expect(selectSortableDayEntryIds(entries, "2026-10-06").at(-1)).toBe(
+      "imported-b",
+    );
+    expect(selectMostRecentTimesheetEntry(entries, "2026-10-11")?._id).toBe(
+      "imported-b",
     );
   });
 

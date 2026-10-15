@@ -152,7 +152,7 @@ function compareLines(left: SubmitLine, right: SubmitLine) {
  * - "task": one section, a line per task for the whole week.
  *
  * Days keep the week order and skip days without entries. Within a day,
- * entries keep the Day view order (latest committed first). With
+ * entries keep the Day view order (oldest committed first). With
  * `onlyUnsubmitted`, lines whose entries are all submitted are left out, but a
  * line that remains still adds up its submitted entries.
  */
@@ -175,7 +175,7 @@ export function groupSubmitLines({
   const described = describeEntries(
     entries
       .filter((entry) => weekDateSet.has(entry.localDate))
-      .sort((left, right) => right.committedAt - left.committedAt),
+      .sort((left, right) => left.committedAt - right.committedAt),
     projects,
   );
 

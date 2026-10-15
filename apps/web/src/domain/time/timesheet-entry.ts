@@ -544,8 +544,10 @@ export function selectMostRecentTimesheetEntry(
     if (
       !mostRecent ||
       entry.localDate > mostRecent.localDate ||
+      // On a tie the later stored entry wins: the Day view's stable sort
+      // shows it last.
       (entry.localDate === mostRecent.localDate &&
-        entry.committedAt > mostRecent.committedAt)
+        entry.committedAt >= mostRecent.committedAt)
     ) {
       mostRecent = entry;
     }

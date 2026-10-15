@@ -95,13 +95,13 @@ describe("submit lines", () => {
     expect(sections[0]!.lines).toEqual([
       {
         key: "2026-10-05::atlas::dev",
-        entryIds: ["mon-dev-2", "mon-dev-1"],
-        unsubmittedEntryIds: ["mon-dev-2", "mon-dev-1"],
+        entryIds: ["mon-dev-1", "mon-dev-2"],
+        unsubmittedEntryIds: ["mon-dev-1", "mon-dev-2"],
         projectId: "atlas",
         projectName: "Client Atlas",
         taskName: "Development",
         durationMs: 3 * HOUR,
-        comments: "API | Login form",
+        comments: "Login form | API",
       },
       expect.objectContaining({
         entryIds: ["mon-review"],
@@ -121,7 +121,7 @@ describe("submit lines", () => {
 
     expect(
       sections.map((section) => section.lines.map((line) => line.entryIds)),
-    ).toEqual([[["mon-dev-2"], ["mon-review"], ["mon-dev-1"]], [["tue-dev"]]]);
+    ).toEqual([[["mon-dev-1"], ["mon-review"], ["mon-dev-2"]], [["tue-dev"]]]);
   });
 
   it("merges the whole week per task when grouping by task", () => {
@@ -141,7 +141,7 @@ describe("submit lines", () => {
         durationMs: 4 * HOUR,
         // The repeated "Login form" note appears once.
         comments: "Login form | API",
-        entryIds: ["tue-dev", "mon-dev-2", "mon-dev-1"],
+        entryIds: ["mon-dev-1", "mon-dev-2", "tue-dev"],
       }),
     ]);
   });
@@ -170,10 +170,10 @@ describe("submit lines", () => {
     expect(sections).toHaveLength(1);
     expect(sections[0]!.lines).toEqual([
       expect.objectContaining({
-        entryIds: ["kept", "changed"],
+        entryIds: ["changed", "kept"],
         unsubmittedEntryIds: ["changed"],
         durationMs: 2 * HOUR,
-        comments: "Kept | Edited",
+        comments: "Edited | Kept",
       }),
     ]);
   });

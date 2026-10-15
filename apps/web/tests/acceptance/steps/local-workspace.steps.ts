@@ -2290,9 +2290,9 @@ Then(
     await monday.getByRole("button", { name: "Copy hours: 3.00" }).click();
     await expect.poll(readClipboard).toBe("3.00");
     await monday
-      .getByRole("button", { name: "Copy comments: API | Login form" })
+      .getByRole("button", { name: "Copy comments: Login form | API" })
       .click();
-    await expect.poll(readClipboard).toBe("API | Login form");
+    await expect.poll(readClipboard).toBe("Login form | API");
   },
 );
 

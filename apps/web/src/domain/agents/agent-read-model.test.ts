@@ -71,8 +71,8 @@ function createState(): LocalAppState {
       },
     ],
     timesheetEntries: [
-      entry({ _id: "e1", note: "Morning", committedAt: 20 }),
-      entry({ _id: "e2", note: "Afternoon", committedAt: 10, submittedAt: 5 }),
+      entry({ _id: "e1", note: "Afternoon", committedAt: 20 }),
+      entry({ _id: "e2", note: "Morning", committedAt: 10, submittedAt: 5 }),
       entry({ _id: "e3", localDate: "2026-10-20" }),
     ],
     workItems: [
