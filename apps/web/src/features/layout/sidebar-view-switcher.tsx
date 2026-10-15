@@ -70,9 +70,9 @@ function ViewCount({
 }
 
 /**
- * The sidebar's view switcher, like ChatGPT's: the current view's name opens a
- * menu of the views with their live counts. Time opens on the day the
- * titlebar shows.
+ * The sidebar's view switcher, like ChatGPT's: the current view's icon and
+ * name open a menu of the views with their live counts. Time opens on the day
+ * the titlebar shows.
  */
 export function SidebarViewSwitcher({
   pathname,
@@ -85,10 +85,14 @@ export function SidebarViewSwitcher({
 }) {
   const section = getAppSection(pathname);
   const current = section === "settings" ? undefined : section;
+  const CurrentIcon = current ? VIEW_DETAILS[current].icon : undefined;
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger className="flex h-8 min-w-0 items-center gap-1 rounded-md px-2 text-base font-semibold outline-none hover:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring data-[popup-open]:bg-foreground/5">
+      <DropdownMenuTrigger className="flex h-8 min-w-0 items-center gap-1.5 rounded-md px-2 text-base font-semibold outline-none hover:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring data-[popup-open]:bg-foreground/5">
+        {CurrentIcon ? (
+          <CurrentIcon className="size-4 shrink-0 text-muted-foreground" />
+        ) : null}
         <span className="truncate">
           {current ? VIEW_DETAILS[current].label : "Views"}
         </span>
