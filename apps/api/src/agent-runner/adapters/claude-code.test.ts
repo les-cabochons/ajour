@@ -125,6 +125,29 @@ describe("Claude Code adapter", () => {
     expect(init(undefined)).toBeNull();
   });
 
+  it("counts only failed and needs-auth servers as failed", () => {
+    const init = (status: string) =>
+      claudeCodeAdapter.parseEvent(
+        JSON.stringify({
+          type: "system",
+          subtype: "init",
+          mcp_servers: [{ name: "playwright", status }],
+        }),
+      );
+    expect(init("pending")).toBeNull();
+    expect(init("disabled")).toBeNull();
+    expect(init("connected")).toBeNull();
+    expect(init("something-new")).toBeNull();
+    expect(init("needs-auth")).toEqual({
+      kind: "mcp-failed",
+      server: "playwright",
+    });
+    expect(init("failed")).toEqual({
+      kind: "mcp-failed",
+      server: "playwright",
+    });
+  });
+
   it("reads the version", () => {
     expect(claudeCodeAdapter.parseVersion("2.1.293 (Claude Code)\n")).toBe(
       "2.1.293",

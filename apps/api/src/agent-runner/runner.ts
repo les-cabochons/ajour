@@ -38,6 +38,8 @@ import { buildPrompt } from "./prompts.ts";
  */
 
 const STALL_LIMIT_MS = 10 * 60_000;
+/** How long a CLI may keep running after its session ended before tick stops it. */
+const ENDED_GRACE_MS = 2 * 60_000;
 /** How long a CLI gets to exit after SIGTERM before it is killed. */
 const DEFAULT_KILL_GRACE_MS = 5000;
 const ERROR_LINES = 20;
@@ -118,7 +120,7 @@ interface ActiveRun {
   cli: AgentCliStatus["id"];
   version: string | undefined;
   browserMode: AgentRunnerSettings["browserMode"];
-  stopReason?: "user" | "stalled" | "mcp" | "shutdown";
+  stopReason?: "user" | "stalled" | "mcp" | "shutdown" | "ended";
   /** Sends SIGKILL if the CLI ignores SIGTERM. Cleared when it exits. */
   killTimer?: NodeJS.Timeout;
   mcpFailure?: string;
@@ -127,6 +129,8 @@ interface ActiveRun {
   errorLines: string[];
   toolCalls: number;
   stalledSince?: number;
+  /** When tick first saw the session ended while the CLI still ran. */
+  endedSince?: number;
   exited: Promise<void>;
 }
 
@@ -304,10 +308,11 @@ export class AgentRunner {
       request.pluginId,
       request.taskId,
     );
+    // Every declared field has a slot: an unset optional one fills as "".
     const settingValues = Object.fromEntries(
-      Object.entries(task.values).map(([id, value]) => [
-        `settings.${id}`,
-        String(value),
+      task.settings.map((field) => [
+        `settings.${field.id}`,
+        String(task.values[field.id] ?? ""),
       ]),
     );
     const weekLink = task.weekLink
@@ -531,20 +536,33 @@ export class AgentRunner {
     return true;
   }
 
-  /** Kills a run whose session stayed stalled for 10 minutes. Runs with the stall timer. */
+  /**
+   * Kills a run whose session stayed stalled for 10 minutes, or whose CLI kept
+   * running 2 minutes after its session ended. Runs with the stall timer.
+   */
   tick() {
     const active = this.active;
-    if (!active) return;
+    if (!active || active.stopReason) return;
     const session = this.options.sessions.get(active.run.sessionId);
+    const open = session?.state === "active" || session?.state === "stalled";
+    if (session && !open) {
+      // The agent ended the session but the CLI keeps running. Stop shows only
+      // for open sessions in older panels, so Ajour ends it after a grace period.
+      active.stalledSince = undefined;
+      active.endedSince ??= this.now();
+      if (this.now() - active.endedSince >= ENDED_GRACE_MS) {
+        active.stopReason = "ended";
+        this.terminate(active);
+      }
+      return;
+    }
+    active.endedSince = undefined;
     if (session?.state !== "stalled") {
       active.stalledSince = undefined;
       return;
     }
     active.stalledSince ??= this.now();
-    if (
-      this.now() - active.stalledSince >= STALL_LIMIT_MS &&
-      !active.stopReason
-    ) {
+    if (this.now() - active.stalledSince >= STALL_LIMIT_MS) {
       active.stopReason = "stalled";
       this.terminate(active);
     }
@@ -590,6 +608,9 @@ function describeEnding(
       return { outcome: "cancelled", summary: "Ajour quit during the run." };
     case "stalled":
       return { outcome: "failed", summary: "The agent stopped answering." };
+    case "ended":
+      // The session is already ended, so finish() never asks for this.
+      return { outcome: "failed", summary: "The agent kept running." };
     case "mcp":
       return {
         outcome: "failed",

@@ -33,6 +33,23 @@ const fakeAdapter = (script: unknown[], report: string): AgentCliAdapter => ({
   }),
 });
 
+const fakeSettings = [
+  {
+    id: "url",
+    label: "URL",
+    type: "url" as const,
+    required: true,
+    secret: false,
+  },
+  {
+    id: "note",
+    label: "Note",
+    type: "text" as const,
+    required: false,
+    secret: false,
+  },
+];
+
 function fakeStorage({
   cli,
   values,
@@ -61,7 +78,7 @@ function fakeStorage({
   };
 }
 
-function fakePlugins(prompt: string) {
+function fakePlugins(prompt: string, weekLink: string) {
   const manifest = {
     id: "ajp-test",
     displayName: "Workday",
@@ -74,16 +91,8 @@ function fakePlugins(prompt: string) {
             placement: "submit-week" as const,
             prompt: "p.md",
             estimateMinutes: 10,
-            weekLink: "{{settings.url}}?date={{weekOf}}",
-            settings: [
-              {
-                id: "url",
-                label: "URL",
-                type: "url" as const,
-                required: true,
-                secret: false,
-              },
-            ],
+            weekLink,
+            settings: fakeSettings,
           },
         ],
       },
@@ -103,6 +112,8 @@ async function setup(
     sessions?: AgentSessions;
     adapter?: AgentCliAdapter;
     killGraceMs?: number;
+    values?: Record<string, string>;
+    weekLink?: string;
   } = {},
 ) {
   const work = await mkdtemp(path.join(tmpdir(), "ajour-runner-test-"));
@@ -113,11 +124,14 @@ async function setup(
   const runner = new AgentRunner({
     storage: fakeStorage({
       cli: "claude-code",
-      values: { url: "https://wd.example/t" },
+      values: options.values ?? { url: "https://wd.example/t" },
       revoked,
     }),
     sessions,
-    plugins: fakePlugins("Enter week {{weekOf}} in {{settings.url}}."),
+    plugins: fakePlugins(
+      "Enter week {{weekOf}} in {{settings.url}}.",
+      options.weekLink ?? "{{settings.url}}?date={{weekOf}}",
+    ),
     adapters: [options.adapter ?? fakeAdapter(script, report)],
     findExecutable: async () => "/fake/claude",
     readVersion: async () => "1.0.0",
@@ -375,5 +389,91 @@ describe("AgentRunner", () => {
     expect(runner.currentRun()).toBeNull();
     const [session] = sessions.snapshot().sessions;
     expect(session!.state).toBe("failed");
+  });
+
+  it("fails the session when an MCP server did not start", async () => {
+    const init = JSON.stringify({
+      type: "system",
+      subtype: "init",
+      mcp_servers: [{ name: "playwright", status: "failed" }],
+    });
+    const { runner, sessions } = await setup([
+      { stdout: init },
+      { hang: true },
+    ]);
+    const run = await runner.start(request);
+    await settled(runner);
+    const session = sessions.get(run.sessionId)!;
+    expect(session.state).toBe("failed");
+    expect(session.messages.at(-1)).toMatchObject({
+      kind: "end",
+      summary: "The playwright MCP server did not start.",
+    });
+    expect(sessions.snapshot().errors[0]!.message).toContain(
+      "The playwright MCP server did not start.",
+    );
+  });
+
+  it("gives the session its run ID and an https week link", async () => {
+    const { runner, sessions } = await setup([{ hang: true }]);
+    const run = await runner.start(request);
+    const session = sessions.get(run.sessionId)!;
+    expect(session.runId).toBe(run.id);
+    expect(session.link).toEqual({
+      label: "Open the week in Workday",
+      url: "https://wd.example/t?date=2026-10-12",
+    });
+    runner.stop(run.id);
+    await settled(runner);
+  });
+
+  it("gives no link when the week link fills to a non-https URL", async () => {
+    const { runner, sessions } = await setup([{ hang: true }], {
+      values: { url: "http://wd.example/t" },
+    });
+    const run = await runner.start(request);
+    expect(sessions.get(run.sessionId)!.link).toBeUndefined();
+    runner.stop(run.id);
+    await settled(runner);
+  });
+
+  it("fills an unset optional setting as an empty string", async () => {
+    const { runner, sessions } = await setup([{ hang: true }], {
+      weekLink: "{{settings.url}}?note={{settings.note}}",
+    });
+    const run = await runner.start(request);
+    expect(sessions.get(run.sessionId)!.link?.url).toBe(
+      "https://wd.example/t?note=",
+    );
+    runner.stop(run.id);
+    await settled(runner);
+  });
+
+  it("stops a CLI that keeps running 2 minutes after its session ended", async () => {
+    vi.useFakeTimers({ toFake: ["Date"] });
+    try {
+      const { runner, sessions } = await setup([{ hang: true }]);
+      const run = await runner.start(request);
+      sessions.end(sessions.get(run.sessionId)!.client, {
+        sessionId: run.sessionId,
+        outcome: "done",
+        summary: "Entered 9 lines.",
+      });
+      runner.tick();
+      vi.setSystemTime(Date.now() + 60_000);
+      runner.tick();
+      expect(runner.currentRun()).not.toBeNull();
+      vi.setSystemTime(Date.now() + 60_000);
+      runner.tick();
+      await settled(runner);
+      const session = sessions.get(run.sessionId)!;
+      expect(session.state).toBe("done");
+      expect(session.messages.at(-1)).toMatchObject({
+        kind: "end",
+        summary: "Entered 9 lines.",
+      });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

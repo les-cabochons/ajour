@@ -2,6 +2,13 @@ import path from "node:path";
 import type { AgentCliAdapter, RunnerEvent } from "../adapter.ts";
 
 /**
+ * Init statuses that mean an MCP server will not work. `pending` (still
+ * connecting), `disabled`, `connected` and any status Ajour does not know
+ * do not end the run.
+ */
+const FAILED_MCP_STATUSES = new Set<unknown>(["failed", "needs-auth"]);
+
+/**
  * Claude Code, run headless with only Ajour's MCP servers. The MCP config
  * file holds `${AJOUR_MCP_TOKEN}`, which Claude Code expands from the
  * environment, so no file holds the token. Flags confirmed by
@@ -84,7 +91,7 @@ export const claudeCodeAdapter: AgentCliAdapter = {
           typeof server === "object" &&
           server !== null &&
           typeof (server as { name?: unknown }).name === "string" &&
-          (server as { status?: unknown }).status !== "connected",
+          FAILED_MCP_STATUSES.has((server as { status?: unknown }).status),
       );
       return failed ? { kind: "mcp-failed", server: failed.name } : null;
     }
