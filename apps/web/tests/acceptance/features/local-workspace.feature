@@ -293,6 +293,18 @@ Feature: Open the local time workspace
     When I rename task "111 000" to "111 final" and save
     Then the project lists task "111 final"
 
+  Scenario: Edit a project in place from its page
+    Given I have projects with searchable tasks
+    When I open project "aaa xyz"
+    Then the project page has no actions menu
+    When I rename the project to "aaa renamed" from its title
+    And I set the project code to "ZZZ" in its properties
+    Then project "aaa renamed" is open with code "ZZZ"
+    When I add a task from the New task row
+    Then the task editor opens for a new task
+    When I archive the project from its properties
+    Then the project properties offer Restore
+
   Scenario: Pin tasks to number keys
     Given I have projects with searchable tasks
     When I open project "aaa xyz"

@@ -717,6 +717,79 @@ When(
   },
 );
 
+function projectProperties(page: Page) {
+  return page.getByRole("region", { name: "Properties" });
+}
+
+Then("the project page has no actions menu", async ({ page }) => {
+  await expect(projectProperties(page)).toBeVisible();
+  // Task rows keep their own "…"; the project's menu is gone.
+  await expect(
+    page.getByRole("button", { name: "Actions for aaa xyz" }),
+  ).toHaveCount(0);
+});
+
+When(
+  "I rename the project to {string} from its title",
+  async ({ page }, name: string) => {
+    await page.getByRole("heading", { level: 1 }).click();
+    const field = page.getByRole("textbox", { name: "Display name" });
+    await field.fill(name);
+    await field.press("Enter");
+  },
+);
+
+When(
+  "I set the project code to {string} in its properties",
+  async ({ page }, code: string) => {
+    await projectProperties(page)
+      .getByRole("button", { name: /^Edit code/ })
+      .click();
+    const field = page.getByRole("textbox", { name: "Code" });
+    await field.fill(code);
+    await field.press("Enter");
+  },
+);
+
+Then(
+  "project {string} is open with code {string}",
+  async ({ page }, name: string, code: string) => {
+    await expect(
+      page.getByRole("heading", { level: 1, name, exact: true }),
+    ).toBeVisible();
+    await expect(
+      projectProperties(page).getByRole("button", {
+        name: `Edit code, ${code}`,
+      }),
+    ).toBeVisible();
+  },
+);
+
+When("I add a task from the New task row", async ({ page }) => {
+  await page.getByRole("button", { name: "New task", exact: true }).click();
+});
+
+Then("the task editor opens for a new task", async ({ page }) => {
+  const editor = page.getByRole("complementary", { name: "Task editor" });
+  await expect(editor.getByText("New task", { exact: true })).toBeVisible();
+  await expect(editor.getByRole("textbox", { name: "Name" })).toBeFocused();
+});
+
+When("I archive the project from its properties", async ({ page }) => {
+  await projectProperties(page)
+    .getByRole("button", { name: "Archive" })
+    .click();
+});
+
+Then("the project properties offer Restore", async ({ page }) => {
+  await expect(
+    projectProperties(page).getByRole("button", { name: "Restore" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "New task", exact: true }),
+  ).toHaveCount(0);
+});
+
 When("I open the Backlog workspace", async ({ page }) => {
   await page.goto("/backlog");
 });

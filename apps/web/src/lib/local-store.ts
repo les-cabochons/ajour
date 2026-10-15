@@ -972,6 +972,19 @@ export const localStore = {
       projects: applyUpdateProject(state.projects, projectId, patch),
     }));
   },
+  /**
+   * Updates a project like `updateProject`, for the in-place edits of the project
+   * page. Returns an undo token, or null when nothing changed.
+   */
+  updateProjectWithUndo(
+    projectId: string,
+    patch: Partial<Omit<LocalProject, "_id">>,
+  ) {
+    return updateStateWithUndo((state) => ({
+      ...state,
+      projects: applyUpdateProject(state.projects, projectId, patch),
+    }));
+  },
   reorderProjects(orderedIds: string[]) {
     if (orderedIds.length < 2) {
       return;

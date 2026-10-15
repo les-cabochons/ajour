@@ -89,3 +89,26 @@ export function getProjectFormValues(
     icon: fields.icon,
   };
 }
+
+/**
+ * The project page's in-place edits: applies `change` to the saved project's
+ * fields and returns the values to save, or `null` when the result is invalid
+ * (an empty full name keeps the saved one) or changes nothing.
+ */
+export function getProjectPatch(
+  project: LocalProject,
+  change: (fields: ProjectFormFields) => ProjectFormFields,
+): ProjectFormValues | null {
+  const values = getProjectFormValues(change(createProjectFormFields(project)));
+  if (!values) {
+    return null;
+  }
+
+  const unchanged =
+    values.name === project.name &&
+    values.displayName === getLocalProjectDisplayName(project) &&
+    values.code === (project.code || undefined) &&
+    values.color === project.color &&
+    JSON.stringify(values.icon) === JSON.stringify(project.icon);
+  return unchanged ? null : values;
+}
