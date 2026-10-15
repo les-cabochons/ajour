@@ -136,21 +136,13 @@ Then("the saved board uses a narrow list", async ({ page }) => {
     ),
   ).toBe("board");
 });
-Given("the other Backlog item has 1:30 logged", async ({ page }) => {
+Given("the other Backlog item has 1.5 hours remaining", async ({ page }) => {
   await page.evaluate(() => {
     const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
-    // Two entries, so the row shows their sum.
-    state.timesheetEntries = [60, 30].map((minutes, index) => ({
-      _id: `other-entry-${index}`,
-      localDate: "2026-01-05",
-      workItemId: "other",
-      projectId: "p",
-      taskId: "t",
-      label: "Other backlog item",
-      durationMs: minutes * 60_000,
-      sourceBlockIds: [],
-      committedAt: 1,
-    }));
+    const other = state.workItems.find(
+      (item: { _id: string }) => item._id === "other",
+    );
+    other.remainingEstimateHours = 1.5;
     localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
   });
   await page.reload();
