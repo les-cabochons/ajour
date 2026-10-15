@@ -15,6 +15,7 @@ import {
   RiCornerLeftUpLine as ParentIcon,
   RiPlayFill as PlayFillIcon,
   RiPlayLine as PlayIcon,
+  RiPushpinLine as PinIcon,
   RiTimeLine as SnoozeIcon,
 } from "@remixicon/react";
 import { ObjectContextMenu } from "@/components/object-actions-menu";
@@ -28,6 +29,7 @@ import {
   isBacklogItemReturned,
   isBacklogItemSnoozed,
   selectSidebarBacklogItems,
+  selectUpNextBacklogItem,
 } from "@/domain/backlog/backlog-item-lifecycle";
 import {
   getDirectChildWorkItems,
@@ -318,6 +320,13 @@ function Markers({
 }) {
   return (
     <>
+      {workItem.pinnedAt !== undefined ? (
+        <PinIcon
+          className="size-3.5 shrink-0 text-muted-foreground"
+          role="img"
+          aria-label="Pinned"
+        />
+      ) : null}
       {isRunning ? (
         <span
           className="relative flex size-2 shrink-0"
@@ -795,8 +804,8 @@ const OffListRow = memo(function OffListRow({
 
 /**
  * The work list in the expanded app sidebar, from "Backlog sidebar" in
- * agents/ux-spec.md: the Up next row, the rest of the active items in the
- * Backlog page's order with no header, `children` (the Pull requests
+ * agents/ux-spec.md: the pinned items, the Up next row, the rest of the active
+ * items in the Backlog page's order with no header, `children` (the Pull requests
  * section), then the collapsible Snoozed and Settled sections. Empty sections
  * are not shown.
  */
@@ -882,7 +891,14 @@ export function SidebarBacklogList({
     iconData,
     rows,
   });
-  const [upNext, ...rest] = layout.showUpNext ? listed : [undefined, ...listed];
+  const upNext = layout.showUpNext
+    ? selectUpNextBacklogItem(listed)
+    : undefined;
+  // The list puts pinned items first, so they show above Up next.
+  const pinned = listed.filter((workItem) => workItem.pinnedAt !== undefined);
+  const rest = listed.filter(
+    (workItem) => workItem.pinnedAt === undefined && workItem !== upNext,
+  );
   const ItemRow =
     layout.density === "comfortable" ? ComfortableItemRow : BacklogItemRow;
 
@@ -924,6 +940,14 @@ export function SidebarBacklogList({
       aria-label="Backlog items"
       data-focus-scope
     >
+      {pinned.length > 0 ? (
+        <div className="flex shrink-0 flex-col pt-2">
+          {pinned.map((workItem) => (
+            <ItemRow key={workItem._id} {...rowProps(workItem)} />
+          ))}
+        </div>
+      ) : null}
+
       {upNext ? (
         <>
           <div className="px-2 pt-3 pb-1 text-xs font-medium text-muted-foreground">
@@ -938,12 +962,15 @@ export function SidebarBacklogList({
       ) : null}
 
       {/* The rest of the list has no header, like T3 Code's thread list. */}
-      <div className={cn("flex shrink-0 flex-col", upNext && "pt-2")}>
-        {rest.map((workItem) =>
-          workItem ? (
-            <ItemRow key={workItem._id} {...rowProps(workItem)} />
-          ) : null,
+      <div
+        className={cn(
+          "flex shrink-0 flex-col",
+          (upNext || pinned.length > 0) && "pt-2",
         )}
+      >
+        {rest.map((workItem) => (
+          <ItemRow key={workItem._id} {...rowProps(workItem)} />
+        ))}
         {listed.length === 0 ? (
           <p className="px-2 pt-3 pb-1 text-xs text-muted-foreground">
             Nothing on your plate.

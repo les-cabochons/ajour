@@ -54,6 +54,8 @@ import {
   snoozeBacklogItem as applySnoozeBacklogItem,
   unsettleBacklogItem as applyUnsettleBacklogItem,
   unsnoozeBacklogItem as applyUnsnoozeBacklogItem,
+  pinBacklogItem as applyPinBacklogItem,
+  unpinBacklogItem as applyUnpinBacklogItem,
   type BacklogSettleChange,
   type CloseSubitemsOptions,
   type MoveBacklogItemOptions,
@@ -1585,6 +1587,13 @@ export const localStore = {
   },
   unsnoozeWorkItem(workItemId: string) {
     updateState((state) => applyUnsnoozeBacklogItem(state, workItemId));
+  },
+  /** Pins an item to the top of the sidebar list. Unpin is its own undo. */
+  pinWorkItem(workItemId: string) {
+    updateState((state) => applyPinBacklogItem(state, workItemId, Date.now()));
+  },
+  unpinWorkItem(workItemId: string) {
+    updateState((state) => applyUnpinBacklogItem(state, workItemId));
   },
   /** Clears the item's Returned mark when the user opens it. */
   markWorkItemOpened(workItemId: string) {

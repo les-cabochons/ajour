@@ -277,6 +277,7 @@ describe("buildPaletteSections", () => {
       "Edit",
       "Add subitem",
       "Snooze…",
+      "Pin",
       "Settle",
       "Delete (and 1 subitem)",
     ]);
