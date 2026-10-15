@@ -9,7 +9,8 @@ function sidebar(page: Page) {
 }
 
 function sidebarTitles(page: Page) {
-  return sidebar(page).locator("[data-backlog-item-id]");
+  // Comfortable rows also show the project name, so read the title alone.
+  return sidebar(page).locator("[data-backlog-item-id] [data-row-title]");
 }
 
 Given("I have backlog items in two projects", async ({ page }) => {

@@ -102,7 +102,11 @@ function waitingAge(time: number, now: number) {
       : "Just now";
 }
 
-/** The list and sidebar share the action set, modified click, keys, and Returned mark. */
+/**
+ * The list and sidebar share the action set, modified click, keys, and
+ * Returned mark. The `compact` sidebar row has no "…" button: right-click and
+ * the menu keys open the same menu.
+ */
 export function PullRequestRow({
   item,
   now,
@@ -182,7 +186,7 @@ export function PullRequestRow({
           >
             {item.facts.title}
           </span>
-          <span className="shrink-0 text-xs text-muted-foreground group-focus-within:hidden group-hover:hidden">
+          <span className="shrink-0 text-xs text-muted-foreground">
             {[
               returned
                 ? "Returned"
@@ -250,22 +254,19 @@ export function PullRequestRow({
           </div>
         </>
       )}
-      <ObjectActionsButton
-        actions={actions}
-        keys={keys}
-        onAction={(action) =>
-          runPullRequestAction(
-            item,
-            action as Exclude<PullRequestAction, "open">,
-          )
-        }
-        label={`Actions for ${item.facts.title}`}
-        className={
-          compact
-            ? "hidden size-6 group-focus-within:flex group-hover:flex"
-            : undefined
-        }
-      />
+      {compact ? null : (
+        <ObjectActionsButton
+          actions={actions}
+          keys={keys}
+          onAction={(action) =>
+            runPullRequestAction(
+              item,
+              action as Exclude<PullRequestAction, "open">,
+            )
+          }
+          label={`Actions for ${item.facts.title}`}
+        />
+      )}
     </ObjectContextMenu>
   );
 }

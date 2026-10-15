@@ -1,6 +1,14 @@
 import { useNavigate } from "@tanstack/react-router";
+import { getBacklogItemActions } from "@/domain/actions/object-actions";
+import {
+  getDirectChildWorkItems,
+  isSubtaskWorkItem,
+} from "@/domain/backlog/work-item-hierarchy";
 import { findPinnedTask } from "@/domain/projects/project-transitions";
+import { findWorkItemTimer } from "@/domain/time/running-entry";
 import { selectMostRecentTimesheetEntry } from "@/domain/time/timesheet-entry";
+import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
+import { resolveFocusedObject } from "@/lib/focused-object";
 import { localStore } from "@/lib/local-store";
 import { useShortcut } from "@/lib/shortcut-handlers";
 import { isNarrowView } from "@/lib/use-narrow-view";
@@ -26,7 +34,32 @@ export function useGlobalShortcuts(selectedTimeDate: string) {
   useShortcut(
     "entry.stop-or-start",
     () => {
-      const runningTimer = localStore.snapshot().timers[0];
+      const state = localStore.snapshot();
+      const runningTimer = state.timers[0];
+      // Like C on a focused entry, S on a focused backlog item runs the action
+      // in its Start entry slot: Start entry, switching from any running
+      // entry, or Stop on the item that is running.
+      const focused = resolveFocusedObject(document.activeElement);
+      const workItem =
+        focused?.kind === "backlog-item"
+          ? state.workItems.find((item) => item._id === focused.workItemId)
+          : undefined;
+      if (workItem) {
+        const action = getBacklogItemActions(workItem, {
+          subitemCount: getDirectChildWorkItems(workItem, state.workItems)
+            .length,
+          isSubitem: isSubtaskWorkItem(workItem),
+          isRunning: Boolean(findWorkItemTimer(state.timers, workItem._id)),
+        }).find(
+          (candidate) =>
+            candidate.id === "start-entry" || candidate.id === "stop-entry",
+        );
+        if (action && !action.disabledReason) {
+          runBacklogItemAction(workItem, action.id, () => undefined);
+        }
+        return;
+      }
+
       if (runningTimer) {
         localStore.saveTimer(runningTimer._id);
       } else {

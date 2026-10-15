@@ -5,6 +5,7 @@ import {
   RiCheckboxCircleLine as SettleIcon,
   RiExternalLinkLine as ExternalIcon,
   RiPlayLine as PlayIcon,
+  RiStopLine as StopIcon,
   RiTimeLine as SnoozeIcon,
 } from "@remixicon/react";
 import { Markdown } from "@/components/markdown";
@@ -68,6 +69,7 @@ import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { getPriorityLevelName } from "@/domain/backlog/priority";
+import { findWorkItemTimer } from "@/domain/time/running-entry";
 import { PriorityIcon } from "@/features/backlog/priority-icon";
 import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
 
@@ -110,9 +112,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
     if (!current) return;
     const isSubitem = isSubtaskWorkItem(current);
     const requested = getBacklogItemActions(current, {
-      isRunning: currentState.timers.some(
-        (timer) => timer.workItemId === current._id,
-      ),
+      isRunning: Boolean(findWorkItemTimer(currentState.timers, current._id)),
       isSubitem,
       subitemCount: 0,
       otherSourceStateCount: getOtherSourceStates(current).length,
@@ -154,7 +154,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
   const isSubitem = isSubtaskWorkItem(item);
   const isSnoozed = isBacklogItemSnoozed(item, now);
   const actions = getBacklogItemActions(item, {
-    isRunning: state.timers.some((timer) => timer.workItemId === item._id),
+    isRunning: Boolean(findWorkItemTimer(state.timers, item._id)),
     isSubitem,
     isSnoozed,
     subitemCount: isSubitem ? 0 : subitems.length,
@@ -237,14 +237,21 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
       </Button>
     ) : (
       <>
-        <Button
-          variant="outline"
-          onClick={() => runAction("start-entry")}
-          disabled={Boolean(startAction?.disabledReason)}
-          title={startAction?.disabledReason}
-        >
-          <PlayIcon data-icon="inline-start" /> Start entry
-        </Button>
+        {startAction ? (
+          <Button
+            variant="outline"
+            onClick={() => runAction("start-entry")}
+            disabled={Boolean(startAction.disabledReason)}
+            title={startAction.disabledReason}
+          >
+            <PlayIcon data-icon="inline-start" /> Start entry
+          </Button>
+        ) : (
+          // Stop takes Start entry's slot while the item's entry runs.
+          <Button variant="outline" onClick={() => runAction("stop-entry")}>
+            <StopIcon data-icon="inline-start" /> Stop
+          </Button>
+        )}
         <Button variant="ghost" onClick={() => runAction("snooze")}>
           <SnoozeIcon data-icon="inline-start" /> Snooze
         </Button>

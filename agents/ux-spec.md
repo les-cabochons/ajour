@@ -59,7 +59,7 @@ Start entry · New entry… · Edit · Assign shortcut… · Archive (Restore wh
 
 ### Backlog item
 
-Start entry · New entry… · Edit · Add subitem · Snooze… (Unsnooze when snoozed) · Settle… (Unsettle when settled, Restore when archived) · Open in source · Archive · Delete
+Start entry (Stop while its entry runs) · New entry… · Edit · Add subitem · Snooze… (Unsnooze when snoozed) · Pin (Unpin when pinned) · Settle… (Unsettle when settled, Restore when archived) · Open in source · Archive · Delete
 
 Changed in [#69](https://github.com/les-cabochons/ajour/issues/69). See the Backlog sidebar section for what Snooze and Settle do.
 
@@ -67,8 +67,8 @@ Changed in [#69](https://github.com/les-cabochons/ajour/issues/69). See the Back
 - Archive is listed only for synced items. It archives the item in Ajour and leaves the source tool as it is. On a manual item, Settle already archives. An archived item disables Archive: "The item is archived".
 - Settle shows as "Settle…" when it opens the settle dialog, and as "Settle" when a settle rule applies a fixed change.
 - New entry… replaces the inline "Log time" field as the action for logging time.
-- An archived item disables Start entry, New entry…, Edit, Add subitem and Snooze…: "Restore the item first".
-- A settled item disables Snooze…: "Unsettle the item first".
+- An archived item disables Start entry, New entry…, Edit, Add subitem, Snooze… and Pin: "Restore the item first".
+- A settled item disables Snooze… and Pin: "Unsettle the item first".
 - A subitem disables Add subitem: "Subitems can't have subitems".
 - Delete removes the item's subitems too, and its label states the count, for example "Delete (and 2 subitems)".
 
@@ -128,14 +128,13 @@ Decided in [App shell and collapsible sidebar](https://github.com/les-cabochons/
 - The state is saved per device. Below 1100px the sidebar hides on its own, without changing the saved preference. Show sidebar and Cmd+B then open it over the page, and opening a page from it, Escape or a click outside closes it.
 - Settings opens inside the shell, in place of the app sidebar: the left column lists the settings pages under their App, Work and Data groups, at the app sidebar's width and at every desktop width. "Back to app" at its top returns to the last page outside Settings. While Settings is open the timer dock floats, fitted to the bottom of that column, and the titlebar shows no Show sidebar button.
 - Projects keeps its own list of projects next to the app sidebar, with no collapse control of its own.
-- The titlebar keeps the totals pill. New entry (+) lives in the timer dock and Start (▶) beside Search. The date picker only shows in the narrow view. The running entry lives in the timer dock, not the titlebar.
+- The titlebar keeps the totals pill. New entry (+) and Start (▶) live in the timer dock. The date picker only shows in the narrow view. The running entry lives in the timer dock, not the titlebar.
 
 ### Timer dock
 
 - While an entry runs, the dock shows it: a running dot, its title (the backlog item's, else the note, the task or the project), the time counted with seconds, New entry (+) and Stop. With a remaining estimate, a bar shows how much of it the running time uses, with "1.1h left" or "0.4h over", next to the project code and task.
 - Clicking the dock opens the running entry's editor in a popover. New entry (+) opens a blank entry editor in a popover anchored to it.
-- With nothing running, the dock shows "Nothing running", today's total, New entry (+) and a one-click start for the first item of the list, marked Up next.
-- With nothing running, a small Start (▶) beside Search, above the dock, starts an empty entry and opens its editor. It hides while an entry runs.
+- With nothing running, the dock shows New entry (+), Start (▶) and today's total on one line. Start begins an empty entry and opens its editor; the dock does not suggest a backlog item.
 - N opens the new entry editor from anywhere, anchored to the titlebar's totals off the Time pages. S starts an empty entry.
 - While the sidebar is not on screen, the dock floats at the bottom left on one line: dot, title, time counted and Stop. While nothing runs it holds New entry (+) and Start (▶), the only buttons that start an entry there.
 - The window title shows the running entry, such as "● 1:24 · Fix export rounding — Ajour", so it shows on the taskbar or Dock. It changes once a minute and goes back to "Ajour" when nothing runs.
@@ -324,22 +323,22 @@ Frequent in-app actions use single keys. They only work when focus is not in a t
 
 ### Global shortcuts
 
-| Key                | Action                                                                      |
-| ------------------ | --------------------------------------------------------------------------- |
-| N                  | New entry: side panel on the Time pages, popover elsewhere                  |
-| S                  | Stop the running entry, or start a new one when nothing runs                |
-| C                  | Continue the focused entry, or the most recent entry when none is focused   |
-| T                  | Go to today                                                                 |
-| [ / ]              | Previous / next day, or week in the Week view                               |
-| D / W              | Day view / Week view                                                        |
-| G then T, B, P, S  | Go to Time, Backlog, Projects, Settings                                     |
-| 1 to 0             | Open the new entry form with the pinned task in that slot filled in         |
-| Shift+1 to Shift+0 | Start a running entry for that pinned task, switching if another entry runs |
-| Cmd+B              | Show or hide the sidebar                                                    |
-| Cmd+Z              | Press Undo on the visible Undo toast                                        |
-| Cmd+,              | Settings                                                                    |
-| Cmd+K              | Command palette                                                             |
-| ?                  | Keyboard shortcuts                                                          |
+| Key                | Action                                                                                                             |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| N                  | New entry: side panel on the Time pages, popover elsewhere                                                         |
+| S                  | Start an entry on the focused backlog item; otherwise stop the running entry, or start a new one when nothing runs |
+| C                  | Continue the focused entry, or the most recent entry when none is focused                                          |
+| T                  | Go to today                                                                                                        |
+| [ / ]              | Previous / next day, or week in the Week view                                                                      |
+| D / W              | Day view / Week view                                                                                               |
+| G then T, B, P, S  | Go to Time, Backlog, Projects, Settings                                                                            |
+| 1 to 0             | Open the new entry form with the pinned task in that slot filled in                                                |
+| Shift+1 to Shift+0 | Start a running entry for that pinned task, switching if another entry runs                                        |
+| Cmd+B              | Show or hide the sidebar                                                                                           |
+| Cmd+Z              | Press Undo on the visible Undo toast                                                                               |
+| Cmd+,              | Settings                                                                                                           |
+| Cmd+K              | Command palette                                                                                                    |
+| ?                  | Keyboard shortcuts                                                                                                 |
 
 ### Pinned tasks
 
@@ -354,7 +353,7 @@ Frequent in-app actions use single keys. They only work when focus is not in a t
 - Day rows become focusable, like Week cards.
 - ↑ and ↓ move focus between rows or cards. ← and → move between days in Days and between cells in the Grid.
 - Enter goes one level deeper. On a time entry, task or project it opens Edit. On a backlog item row it opens the backlog item page, and on that page it opens Edit. E no longer opens Edit. Delete or Backspace deletes, with the Undo toast. On a focused Grid cell, Shift+Backspace deletes the whole row.
-- On a focused backlog item, or on its page, E settles and B snoozes, as in Gmail. Shift+E opens the settle dialog even when a settle rule applies a fixed change. Cmd+D duplicates. M opens Move to…. Alt+↑ and Alt+↓ reorder.
+- On a focused backlog item, or on its page, S starts an entry on it (Stop when its entry runs), E settles and B snoozes, as in Gmail. Shift+E opens the settle dialog even when a settle rule applies a fixed change. Cmd+D duplicates. M opens Move to…. Alt+↑ and Alt+↓ reorder.
 - The context menu key, Shift+F10 or "." opens the "…" menu. Escape closes whatever is open.
 - Every item in the "…" and right-click menus shows its key, so the menus teach the shortcuts.
 
@@ -524,10 +523,11 @@ The sidebar works like the T3 Code and Linear sidebars: the view switcher, the t
 ### List
 
 - Below the timer dock, the sidebar lists active backlog items in the Backlog page's current order, custom or priority. There is one ordering.
-- The work list is one scroll of collapsible sections: Backlog, Pull requests (only while pull requests need the user), Snoozed and Settled. Backlog and Pull requests start open, and every section's state is saved per device. The Backlog and Pull requests tabs are gone.
+- The work list is one scroll: the backlog items, pinned ones first, with no header and no collapse, like T3 Code's thread list, then collapsible sections for Pull requests (only while pull requests need the user), Snoozed and Settled. A section with nothing in it is not shown. Pull requests starts open, and every section's state is saved per device. The Backlog and Pull requests tabs are gone.
 - The list holds top-level items and subitems that have their own priority. A subitem without a priority follows its parent and does not show.
 - With priority order, a subitem with its own priority mixes with top-level items by priority. With custom order, it sits right below its parent. If its parent is snoozed or settled, it takes the parent's place.
 - Snoozed, settled and archived items leave the list.
+- Pin puts an item at the top of the list with a pin icon. Pinned items keep the list's order among themselves. Pinning does not select an item for the timer dock's Start action. Pin is local, a sync keeps it, and the item stays pinned through a snooze or a settle. Pull requests cannot be pinned.
 - The narrow view has no item list. The Backlog page is the way in.
 
 ### Search and project filter
@@ -536,12 +536,12 @@ The sidebar works like the T3 Code and Linear sidebars: the view switcher, the t
 - Every typed word must appear in the item's title or its project's name, display name or code. Case and accents do not count. A pull request matches on its title and repository.
 - Escape clears the box and closes it. Leaving the box empty closes it too. A typed query stays while the user opens the rows it found, including when the sidebar hides in between, as the overlay does after a row opens. It is not saved across launches.
 - The filter button, like T3 Code's, opens a menu with its own search, "All projects", then the active projects. Picking a project keeps only its items. Pull requests have no project, so they hide while a project is picked. The pick is saved per device. The button stays highlighted while a project is picked.
-- Every section keeps only the matching rows, and its count follows. While the list is narrowed, Settled shows its count and an empty Backlog says "No matching items."
-- The view switcher's counts, the timer dock's Up next and the Backlog page ignore the sidebar's search and filter.
+- Every section keeps only the matching rows, and its count follows. A section left with no rows is not shown. While the list is narrowed, Settled shows its count and an empty backlog list says "No matching items."
+- The view switcher's counts and the Backlog page ignore the sidebar's search and filter.
 
 ### Layout options
 
-Decided after the prototype on branch `prototype/backlog-sidebar`: variant B is the default and variant A is the compact layout. Variant C's Up next card became the timer dock's start row.
+Decided after the prototype on branch `prototype/backlog-sidebar`: variant B is the default and variant A is the compact layout. Variant C's Up next card was removed; the idle timer dock starts an empty entry.
 
 - Density has two values. Comfortable is the default. Compact fits more items.
 - Density lives in a "Sidebar" group in Settings > General and as a View menu entry next to Show or Hide sidebar. It is saved per device.
@@ -558,18 +558,19 @@ Decided after the prototype on branch `prototype/backlog-sidebar`: variant B is 
 
 ### Rows
 
-- Every row is one line: the type icon and the title. A subitem shows its parent after the title in muted text, such as "Fix token refresh · Login page".
-- Comfortable rows are 28px and end with the remaining estimate, such as "2.5h". Compact rows are 26px and show no estimate.
-- Hover and keyboard focus swap the type icon for a settle circle and replace the end of the row with Start entry, Snooze… and "…". Nothing floats over the title. Clicking the circle settles; Shift-click asks first.
+- Comfortable rows are 80px and three lines, like T3 Code threads: the project's icon and name ("No project" without one) at 13px with the remaining estimate at the end, such as "4h", "4h30" or "45m", then the title at 14px, then the workflow state's ring and name at 12px in a faint color. An item without a remaining estimate shows none.
+- Compact rows are 26px and one line: the type icon and the title.
+- In Compact, a subitem shows its parent after the title in muted text, such as "Fix token refresh · Login page". In Comfortable, the parent's title does not show: an arrow at the end of the state line opens the parent, and its tooltip is the parent's title.
+- In Comfortable, hover and keyboard focus show Start entry centered at the row's end, since logging time is the main job, and replace the end of the project line with Snooze… and Settle. In Compact, they swap the type icon for a settle circle and replace the end of the row with Start entry and Snooze…. Nothing floats over the title. These hover actions show no tooltip. On the item with the running entry, Start entry becomes Stop, which saves that entry. Shift-click on Settle or the circle asks first.
 - A marker shows on the item with the running entry.
 - A dot shows on a returned item. Opening the item from anywhere, or clicking the dot, clears it.
 - Clicking a row opens the backlog item page.
-- Right-click and "…" open the full action set.
-- Pull request rows are one line too: the pull request icon, the title (bold when returned), and its reason and age, such as "Review · 2h". Hover and focus show "…".
+- Right-click opens the full action set, as do ".", Shift+F10 and the context menu key. Sidebar backlog rows have no "…" button.
+- Pull request rows are one line too: the pull request icon, the title (bold when returned), and its reason and age, such as "Review · 2h". Like the backlog rows, they have no "…" button; right-click opens their actions.
 
 ### Snoozed and Settled sections
 
-- Two collapsible sections end the list: "Snoozed n", then "Settled". Both start collapsed. Their state is saved per device.
+- Two collapsible sections end the list: "Snoozed n", then "Settled". Both start collapsed, and each shows only while it has items. Their state is saved per device.
 - Snoozed lists items by the time they return, and each row shows it, such as "Tomorrow 9:00". The hover action is Unsnooze. An unsnoozed item goes back to the list with no dot.
 - Settled lists every settled item, newest first, 20 at a time with "Show more". Subitems settled along with their parent have no row of their own: they show on the parent's page. A subitem that has its own priority and isn't in a done state keeps its own state, so it gets its own row when it is settled. The hover action is Unsettle. Archived items are not listed. They live in the Backlog page's Archived view.
 - Clicking a row in either section opens the backlog item page.

@@ -191,6 +191,7 @@ describe("shortcut registry", () => {
       "item.duplicate",
     ]);
     expect(ids("BACKLOG")).toEqual([
+      "entry.stop-or-start",
       "go.backlog",
       "item.settle",
       "item.settle-ask",

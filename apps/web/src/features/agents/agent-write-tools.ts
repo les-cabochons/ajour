@@ -20,6 +20,7 @@ import {
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
 import { isBacklogItemSnoozed } from "@/domain/backlog/backlog-item-lifecycle";
 import { isSubtaskWorkItem } from "@/domain/backlog/work-item-hierarchy";
+import { findWorkItemTimer } from "@/domain/time/running-entry";
 import {
   getLocalProjectDisplayName,
   type LocalAppState,
@@ -122,7 +123,7 @@ export function backlogActionOptions(
       (candidate) => candidate.parentWorkItemId === item._id,
     ).length,
     isSubitem: isSubtaskWorkItem(item),
-    isRunning: state.timers.some((timer) => timer.workItemId === item._id),
+    isRunning: Boolean(findWorkItemTimer(state.timers, item._id)),
     isSnoozed: isBacklogItemSnoozed(item, now),
   };
 }
@@ -209,6 +210,10 @@ export function runEntryWriteTool(
           throw new AgentToolRefusal(
             `No backlog item has the id ${input.workItemId}. Call list_work_items.`,
           );
+        }
+        // Stop takes Start entry's slot on the running item.
+        if (findWorkItemTimer(state.timers, item._id)) {
+          throw new AgentToolRefusal("Already running");
         }
         assertAllowed(
           getBacklogItemActions(item, backlogActionOptions(state, item, now)),

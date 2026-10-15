@@ -167,11 +167,14 @@ export function getTaskActions(
 
 export type BacklogItemActionId =
   | "start-entry"
+  | "stop-entry"
   | "new-entry"
   | "edit"
   | "add-subitem"
   | "snooze"
   | "unsnooze"
+  | "pin"
+  | "unpin"
   | "settle"
   | "unsettle"
   | "restore"
@@ -210,9 +213,9 @@ function formatDeleteLabel(subitemCount: number) {
 
 /**
  * Lists a backlog item's actions:
- * Start entry · New entry… · Edit · Add subitem · Snooze…/Unsnooze ·
- * Settle/Unsettle/Restore · Change source state… · Open in source · Archive ·
- * Delete.
+ * Start entry/Stop · New entry… · Edit · Add subitem · Snooze…/Unsnooze ·
+ * Pin/Unpin · Settle/Unsettle/Restore · Change source state… · Open in
+ * source · Archive · Delete.
  *
  * Open in source is listed only when a connector provided the item's URL.
  * Archive is listed only for synced items: it archives in Ajour and leaves the
@@ -223,6 +226,7 @@ export function getBacklogItemActions(
     status: "active" | "settled" | "archived";
     source: string;
     sourceUrl?: string;
+    pinnedAt?: number;
   },
   options: BacklogItemActionOptions,
 ): ObjectAction<BacklogItemActionId>[] {
@@ -230,12 +234,14 @@ export function getBacklogItemActions(
   const isSettled = item.status === "settled";
   const archivedReason = isArchived ? RESTORE_ITEM_FIRST : undefined;
   const actions: ObjectAction<BacklogItemActionId>[] = [
-    {
-      id: "start-entry",
-      label: "Start entry",
-      disabledReason:
-        archivedReason ?? (options.isRunning ? "Already running" : undefined),
-    },
+    // Stop takes Start entry's slot while the item's entry runs.
+    options.isRunning
+      ? { id: "stop-entry", label: "Stop" }
+      : {
+          id: "start-entry",
+          label: "Start entry",
+          disabledReason: archivedReason,
+        },
     { id: "new-entry", label: "New entry…", disabledReason: archivedReason },
     {
       id: "edit",
@@ -255,6 +261,15 @@ export function getBacklogItemActions(
       : {
           id: "snooze",
           label: "Snooze…",
+          disabledReason:
+            archivedReason ??
+            (isSettled ? "Unsettle the item first" : undefined),
+        },
+    item.pinnedAt !== undefined
+      ? { id: "unpin", label: "Unpin" }
+      : {
+          id: "pin",
+          label: "Pin",
           disabledReason:
             archivedReason ??
             (isSettled ? "Unsettle the item first" : undefined),

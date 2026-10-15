@@ -203,6 +203,7 @@ describe("backlog item actions", () => {
       "edit",
       "add-subitem",
       "snooze",
+      "pin",
       "settle",
       "delete",
     ]);
@@ -226,19 +227,19 @@ describe("backlog item actions", () => {
     expect(actions.slice(-2).every((action) => action.destructive)).toBe(true);
   });
 
-  it("blocks Start entry for the running item and retains manual entry and archive rules", () => {
+  it("swaps Start entry for Stop on the running item and retains manual entry and archive rules", () => {
     const options = { subitemCount: 0, isSubitem: false, isRunning: true };
     const running = getBacklogItemActions(manualItem, options);
-    expect(
-      running.find((action) => action.id === "start-entry")?.disabledReason,
-    ).toBe("Already running");
+    expect(ids(running)[0]).toBe("stop-entry");
+    expect(ids(running)).not.toContain("start-entry");
+    expect(running[0]?.disabledReason).toBeUndefined();
     expect(
       running.find((action) => action.id === "new-entry")?.disabledReason,
     ).toBeUndefined();
     expect(
       getBacklogItemActions(
         { ...manualItem, status: "archived" },
-        options,
+        { ...options, isRunning: false },
       ).find((action) => action.id === "start-entry")?.disabledReason,
     ).toBe("Restore the item first");
     expect(
@@ -273,7 +274,17 @@ describe("backlog item actions", () => {
     expect(ids(actions)).not.toContain("snooze");
   });
 
-  it("swaps Settle for Unsettle and blocks Snooze on a settled item", () => {
+  it("swaps Pin for Unpin on a pinned item", () => {
+    const actions = getBacklogItemActions(
+      { ...manualItem, pinnedAt: 1 },
+      { subitemCount: 0, isSubitem: false, isRunning: false },
+    );
+
+    expect(ids(actions)).toContain("unpin");
+    expect(ids(actions)).not.toContain("pin");
+  });
+
+  it("swaps Settle for Unsettle and blocks Snooze and Pin on a settled item", () => {
     const actions = getBacklogItemActions(
       { ...syncedItem, status: "settled" },
       { subitemCount: 0, isSubitem: false, isRunning: false },
@@ -282,6 +293,7 @@ describe("backlog item actions", () => {
     expect(ids(actions)).toContain("unsettle");
     expect(disabledReasons(actions)).toEqual({
       snooze: "Unsettle the item first",
+      pin: "Unsettle the item first",
     });
   });
 
@@ -349,6 +361,7 @@ describe("backlog item actions", () => {
       "edit",
       "add-subitem",
       "snooze",
+      "pin",
       "restore",
       "open-in-source",
       "archive",
@@ -360,6 +373,7 @@ describe("backlog item actions", () => {
       edit: "Restore the item first",
       "add-subitem": "Restore the item first",
       snooze: "Restore the item first",
+      pin: "Restore the item first",
       archive: "The item is archived",
     });
     expect(actions.find((action) => action.id === "restore")?.destructive).toBe(

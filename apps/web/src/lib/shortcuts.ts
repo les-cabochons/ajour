@@ -113,7 +113,7 @@ export const SHORTCUTS: readonly ShortcutDefinition[] = [
   },
   {
     id: "entry.stop-or-start",
-    label: "Stop the running entry, or start one",
+    label: "Start the focused backlog item, or stop or start an entry",
     scope: "global",
     keys: [{ key: "s" }],
   },

@@ -15,6 +15,17 @@ export function formatClockDuration(durationMs: number): string {
 }
 
 /**
+ * Formats a duration in short form for tight spaces: "4h", "4h30", "4h05" or
+ * "45m". Rounds to the minute like `formatClockDuration`.
+ */
+export function formatCompactDuration(durationMs: number): string {
+  const { hours, minutes } = getRoundedDurationParts(durationMs);
+  if (hours === 0) return `${minutes}m`;
+  if (minutes === 0) return `${hours}h`;
+  return `${hours}h${String(minutes).padStart(2, "0")}`;
+}
+
+/**
  * Formats a duration as decimal hours with two places, such as "5.00" or
  * "1.25", for pasting into timesheet tools that expect decimals. Rounds to the
  * minute first so the value matches the clock time shown on screen.

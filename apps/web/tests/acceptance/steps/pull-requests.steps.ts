@@ -12,15 +12,19 @@ const apiUrl = "http://127.0.0.1:8787";
 Then(
   "the sidebar shows backlog controls and pull requests together",
   async ({ page }) => {
+    const section = page.getByRole("region", {
+      name: "Pull requests on your plate",
+    });
+    await expect(section).toBeVisible();
+    // Sidebar rows open their actions with right-click, not a "…" button.
     await expect(
-      page.getByRole("region", { name: "Pull requests on your plate" }),
-    ).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "Snoozed 0", exact: true }),
-    ).toBeVisible();
+      section.getByRole("button", { name: /^Actions for/ }),
+    ).toHaveCount(0);
+    // Nothing is snoozed or settled, so those sections are not shown.
+    await expect(page.getByRole("button", { name: /^Snoozed/ })).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "Settled", exact: true }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     await expect(
       page
         .getByRole("navigation", { name: "Primary navigation" })
@@ -72,7 +76,8 @@ Then("the sidebar section labels fit inside the sidebar", async ({ page }) => {
   });
   const navBox = await navigation.boundingBox();
   expect(navBox?.width).toBe(200);
-  for (const name of [/^Backlog \d+$/, /^Pull requests \d+$/]) {
+  // The backlog items have no section label; Pull requests is the one left.
+  for (const name of [/^Pull requests \d+$/]) {
     const tab = navigation.getByRole("button", { name });
     const box = await tab.boundingBox();
     expect(box!.x + box!.width).toBeLessThanOrEqual(navBox!.x + navBox!.width);
@@ -92,9 +97,7 @@ Then(
     await expect(
       page.getByRole("region", { name: "Pull requests on your plate" }),
     ).toHaveCount(0);
-    await expect(
-      page.getByRole("button", { name: "Snoozed 0", exact: true }),
-    ).toBeVisible();
+    await expect(page.locator('[aria-label="Backlog items"]')).toBeVisible();
   },
 );
 const makeFacts = () => {

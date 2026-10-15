@@ -1,4 +1,9 @@
-import { RiPlayLine, RiTimeLine, RiAlarmWarningLine } from "@remixicon/react";
+import {
+  RiAlarmWarningLine,
+  RiPlayLine,
+  RiStopLine,
+  RiTimeLine,
+} from "@remixicon/react";
 import { openModifiedSourceClick } from "@/lib/source-navigation";
 import type { KeyboardEvent, PointerEvent } from "react";
 import {
@@ -23,6 +28,7 @@ import {
   type BacklogViewSettings,
 } from "@/domain/backlog/backlog-view";
 import { isBacklogItemSnoozed } from "@/domain/backlog/backlog-item-lifecycle";
+import { findWorkItemTimer } from "@/domain/time/running-entry";
 import { getDirectChildWorkItems } from "@/domain/backlog/work-item-hierarchy";
 import {
   getPriorityLevelName,
@@ -227,7 +233,7 @@ export function getBacklogSurfaceActions(
   now: number,
 ) {
   return getBacklogItemActions(item, {
-    isRunning: state.timers.some((timer) => timer.workItemId === item._id),
+    isRunning: Boolean(findWorkItemTimer(state.timers, item._id)),
     isSubitem: Boolean(
       item.parentWorkItemId || item.parentSourceId || item.hierarchyLevel,
     ),
@@ -291,12 +297,16 @@ export function BacklogItemSurface({
     getDirectChildWorkItems(item, state.workItems),
   );
   const actions = getBacklogSurfaceActions(item, state, now);
-  const running = state.timers.some((t) => t.workItemId === item._id);
+  const running = Boolean(findWorkItemTimer(state.timers, item._id));
+  // The running item's button is Stop, like its action set.
+  const startAction = running ? "stop-entry" : "start-entry";
+  const StartIcon = running ? RiStopLine : RiPlayLine;
   const startDisabledReason = actions.find(
-    (action) => action.id === "start-entry",
+    (action) => action.id === startAction,
   )?.disabledReason;
-  const startLabel =
-    !startDisabledReason && state.timers.length
+  const startLabel = running
+    ? `Stop ${item.title}`
+    : !startDisabledReason && state.timers.length
       ? `Switch to ${item.title}`
       : `Start ${item.title}`;
   const reference = parseWorkItemReference(item.sourceId) ?? item.sourceId;
@@ -375,6 +385,8 @@ export function BacklogItemSurface({
           role="listitem"
           tabIndex={0}
           data-work-item-id={item._id}
+          // Names the focused object for S and the command palette.
+          data-backlog-item-id={item._id}
           data-focus-column={column}
           className={cn(
             board ? "backlog-board-card" : "backlog-list-row",
@@ -491,10 +503,10 @@ export function BacklogItemSurface({
                 }
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (!startDisabledReason) onAction("start-entry");
+                  if (!startDisabledReason) onAction(startAction);
                 }}
               >
-                <RiPlayLine className="size-3.5" />
+                <StartIcon className="size-3.5" />
               </TooltipButton>
             ) : (
               <Button
@@ -507,10 +519,10 @@ export function BacklogItemSurface({
                 tabIndex={-1}
                 onClick={(e) => {
                   e.stopPropagation();
-                  if (!startDisabledReason) onAction("start-entry");
+                  if (!startDisabledReason) onAction(startAction);
                 }}
               >
-                <RiPlayLine className="size-3.5" />
+                <StartIcon className="size-3.5" />
               </Button>
             ))}
           <ObjectActionsButton

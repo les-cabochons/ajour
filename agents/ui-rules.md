@@ -5,7 +5,7 @@ Ajour is an operational desktop/web app. Build interfaces for scanning, repeated
 ## Product Feel
 
 - Quiet, utilitarian, and work-focused.
-- Dense but organized: 13px body, 28px controls, 28px to 40px rows.
+- Dense but organized: 13px body, 28px controls, 28px to 40px rows. The sidebar's Comfortable backlog rows are the exception: 80px, three lines, like T3 Code's thread list.
 - One accent color, used for actions and selection, never for decoration.
 - No decorative gradients, blobs, blur, or purely atmospheric visuals.
 - Every page shares the same anatomy: the top bar carries the page title and actions, the content below is cardless.
@@ -34,7 +34,7 @@ Ajour is an operational desktop/web app. Build interfaces for scanning, repeated
 - Feature pages should not directly reference `settings-panel` or `message-panel`; those classes are owned by the app-surface module.
 - Use Remix icons already present in the app for icon buttons and navigation.
 - Use icon-only buttons for common commands when the icon is familiar and an accessible label is provided.
-- Every icon-only button shows a tooltip with its label and, when the action has a shortcut in `lib/shortcuts.ts`, its key. Use `TooltipButton` from `apps/web/src/components/tooltip-button.tsx`; its `render` prop takes a `Button`, a `Link` or a menu or popover trigger. Do not use `title=` on icon buttons.
+- Every icon-only button shows a tooltip with its label and, when the action has a shortcut in `lib/shortcuts.ts`, its key. Use `TooltipButton` from `apps/web/src/components/tooltip-button.tsx`; its `render` prop takes a `Button`, a `Link` or a menu or popover trigger. Do not use `title=` on icon buttons. The one exception is the sidebar rows' hover actions (Start entry or Stop, Snooze…, Settle): they have no tooltip, so hovering down the list does not cover it.
 - Every modal surface uses `Dialog`, `AlertDialog` or `Sheet` from `apps/web/src/components/ui`, and anchored surfaces use `Popover`. Do not build overlays by hand: no `role="dialog"` divs, fixed backdrops or `*-modal-overlay` classes.
 - Use segmented controls, toggles, selects, tabs, popovers, dialogs, and menus according to their existing local patterns.
 

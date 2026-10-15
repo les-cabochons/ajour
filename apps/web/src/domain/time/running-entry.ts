@@ -7,6 +7,17 @@ import {
 
 const HOUR_MS = 3_600_000;
 
+/**
+ * Finds the running entry linked to a backlog item. Action sets and runners
+ * use the same lookup so Start entry and Stop agree about ownership.
+ */
+export function findWorkItemTimer(
+  timers: readonly LocalTimer[],
+  workItemId: string,
+): LocalTimer | undefined {
+  return timers.find((timer) => timer.workItemId === workItemId);
+}
+
 export interface RunningEntrySummary {
   /** The backlog item's title, else the note, the task or the project. */
   title: string;

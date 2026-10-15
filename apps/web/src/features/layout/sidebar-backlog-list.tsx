@@ -3,6 +3,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentProps,
   type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
@@ -11,15 +12,16 @@ import { useNavigate } from "@tanstack/react-router";
 import {
   RiArrowDownSLine as ChevronDown,
   RiArrowGoBackLine as UndoIcon,
-  RiPlayFill as PlayFillIcon,
+  RiCheckLine as SettleIcon,
+  RiCornerLeftUpLine as ParentIcon,
   RiPlayLine as PlayIcon,
+  RiPushpinLine as PinIcon,
+  RiStopLine as StopIcon,
   RiTimeLine as SnoozeIcon,
 } from "@remixicon/react";
-import {
-  ObjectActionsButton,
-  ObjectContextMenu,
-} from "@/components/object-actions-menu";
+import { ObjectContextMenu } from "@/components/object-actions-menu";
 import { TooltipButton } from "@/components/tooltip-button";
+import { Value } from "@/components/ui/value";
 import {
   getBacklogItemActions,
   type BacklogItemActionId,
@@ -35,8 +37,16 @@ import {
   getWorkItemParentKey,
   isSubtaskWorkItem,
 } from "@/domain/backlog/work-item-hierarchy";
-import type { LocalAppState, LocalWorkItem } from "@/domain/local-state";
 import type { SidebarMatcher } from "@/domain/backlog/sidebar-filter";
+import {
+  getLocalProjectDisplayName,
+  type LocalAppState,
+  type LocalProject,
+  type LocalWorkItem,
+  type LocalWorkflowState,
+} from "@/domain/local-state";
+import { formatCompactDuration } from "@/domain/time/duration";
+import { findWorkItemTimer } from "@/domain/time/running-entry";
 import { settleOpensDialog } from "@/features/backlog/settle-dialog";
 import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
 import { formatSnoozeTime } from "@/features/backlog/snooze-presets";
@@ -45,7 +55,6 @@ import {
   resolveWorkItemIcon,
   useWorkItemIconData,
 } from "@/features/backlog/work-item-icons";
-import { parseWorkItemReference } from "@/features/backlog/work-item-timer-comment";
 import {
   BACKLOG_ITEM_ACTION_KEYS,
   BACKLOG_ITEM_ROW_KEYS,
@@ -54,12 +63,15 @@ import {
 } from "@/lib/item-keys";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
-import { openModifiedSourceClick } from "@/lib/source-navigation";
+import { ProjectIcon } from "@/lib/project-icons";
 import {
-  updateSidebarLayout,
-  useSidebarLayout,
-  type SidebarDensity,
-} from "@/lib/sidebar-layout";
+  formatAriaKeyShortcuts,
+  getShortcut,
+  getShortcutPlatform,
+  type ShortcutActionId,
+} from "@/lib/shortcuts";
+import { openModifiedSourceClick } from "@/lib/source-navigation";
+import { updateSidebarLayout, useSidebarLayout } from "@/lib/sidebar-layout";
 import { useHoverOrFocusWithin } from "@/lib/use-hover-or-focus-within";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
@@ -68,27 +80,6 @@ import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
 const SETTLED_PAGE_SIZE = 20;
 
 type IconData = ReturnType<typeof useWorkItemIconData>;
-
-function formatHours(hours?: number) {
-  if (hours === undefined) return undefined;
-  return `${Number.isInteger(hours) ? hours : hours.toFixed(1)}h`;
-}
-
-/** "#48213 · Active · 2.5h left", or "Local" for a manual item. */
-function getMetaLine(workItem: LocalWorkItem) {
-  const reference =
-    workItem.source === "azure_devops"
-      ? parseWorkItemReference(workItem.sourceId)
-      : workItem.sourceId;
-  const hours = formatHours(workItem.remainingEstimateHours);
-  return [
-    workItem.source === "manual" ? "Local" : reference && `#${reference}`,
-    workItem.sourceStatusLabel,
-    hours && `${hours} left`,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-}
 
 function countSubitems(
   workItem: LocalWorkItem,
@@ -121,9 +112,7 @@ function useBacklogItemRow(state: LocalAppState, now: number) {
     function actionsFor(workItem: LocalWorkItem, subitemCount?: number) {
       const { state, now } = latest.current;
       return getBacklogItemActions(workItem, {
-        isRunning: state.timers.some(
-          (timer) => timer.workItemId === workItem._id,
-        ),
+        isRunning: Boolean(findWorkItemTimer(state.timers, workItem._id)),
         isSubitem: isSubtaskWorkItem(workItem),
         isSnoozed: isBacklogItemSnoozed(workItem, now),
         subitemCount: subitemCount ?? countSubitems(workItem, state.workItems),
@@ -161,8 +150,35 @@ function useBacklogItemRow(state: LocalAppState, now: number) {
 type RowApi = ReturnType<typeof useBacklogItemRow>;
 type RowActionList = ReturnType<RowApi["actionsFor"]>;
 
+const platform = getShortcutPlatform();
+
+/**
+ * A row's hover action: Start entry, Snooze… or Settle. It has no tooltip; the
+ * icons are familiar and a tooltip on every hover would cover the list.
+ * `label` is the accessible name and `shortcut` its key, as on `TooltipButton`.
+ */
+function RowActionButton({
+  label,
+  shortcut,
+  ...props
+}: ComponentProps<"button"> & { label: string; shortcut?: ShortcutActionId }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-keyshortcuts={
+        shortcut
+          ? formatAriaKeyShortcuts(getShortcut(shortcut), platform)
+          : undefined
+      }
+      {...props}
+    />
+  );
+}
+
+/** Row icon buttons: hover only darkens the icon, with no background. */
 const iconButton =
-  "flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-foreground/10 hover:text-foreground";
+  "flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground";
 
 /**
  * Hover and focus swap the type icon for the settle circle, which mounts only
@@ -188,10 +204,10 @@ function LeadingIcon({
         <WorkItemIcon icon={resolveWorkItemIcon(workItem, iconData)} />
       </span>
       {revealed ? (
-        <TooltipButton
+        <RowActionButton
           label="Settle"
           shortcut="item.settle"
-          className="hidden size-4 rounded-full border-[1.5px] border-foreground/50 group-focus-within:flex group-hover:flex hover:border-foreground hover:bg-foreground/10"
+          className="hidden size-4 rounded-full border-[1.5px] border-foreground/50 group-focus-within:flex group-hover:flex hover:border-foreground"
           onClick={(event) =>
             rows.run(workItem, "settle", { askToSettle: event.shiftKey })
           }
@@ -201,57 +217,75 @@ function LeadingIcon({
   );
 }
 
+/**
+ * Start entry, or Stop on the item whose entry is running. The Compact row
+ * shows it among its hover actions; the Comfortable row shows it on its own,
+ * centered at the row's end.
+ */
 function StartButton({
   workItem,
   actions,
   rows,
-  variant = "icon",
+  className,
 }: {
   workItem: LocalWorkItem;
   actions: RowActionList;
   rows: RowApi;
-  variant?: "icon" | "round";
+  className?: string;
 }) {
+  if (actions.some((action) => action.id === "stop-entry")) {
+    return (
+      <RowActionButton
+        label="Stop"
+        shortcut="entry.stop-or-start"
+        className={cn(iconButton, className)}
+        onClick={() => rows.run(workItem, "stop-entry")}
+      >
+        <StopIcon className="size-3.5" />
+      </RowActionButton>
+    );
+  }
+
   const disabledReason = actions.find(
     (action) => action.id === "start-entry",
   )?.disabledReason;
   return (
-    <TooltipButton
-      label={disabledReason ? `Start entry. ${disabledReason}` : "Start entry"}
-      aria-label="Start entry"
+    <RowActionButton
+      label="Start entry"
+      shortcut="entry.stop-or-start"
       aria-description={disabledReason}
       aria-disabled={Boolean(disabledReason)}
-      className={cn(
-        variant === "round"
-          ? "flex size-6 shrink-0 items-center justify-center rounded-full border bg-background text-foreground hover:bg-foreground/10"
-          : iconButton,
-        "aria-disabled:opacity-50",
-      )}
+      className={cn(iconButton, "aria-disabled:opacity-50", className)}
       onClick={() => {
         if (!disabledReason) rows.run(workItem, "start-entry");
       }}
     >
-      {variant === "round" ? (
-        <PlayFillIcon className="size-3" />
-      ) : (
-        <PlayIcon className="size-3.5" />
-      )}
-    </TooltipButton>
+      <PlayIcon className="size-3.5" />
+    </RowActionButton>
   );
 }
 
-/** Start entry, Snooze and "…". They replace the row's end on hover and focus. */
+/**
+ * Start entry (unless `showStart` is off), Snooze… and, with `showSettle`, a
+ * labeled Settle button. They replace the row's end on hover and focus. Right-click
+ * opens the full action set, so the rows have no "…" button.
+ * `buttonClassName` resizes the icon buttons to fit the line they sit on.
+ */
 function RowActions({
   workItem,
   actions,
   rows,
   showStart = true,
+  showSettle = false,
+  buttonClassName,
   className,
 }: {
   workItem: LocalWorkItem;
   actions: RowActionList;
   rows: RowApi;
   showStart?: boolean;
+  showSettle?: boolean;
+  buttonClassName?: string;
   className?: string;
 }) {
   return (
@@ -260,23 +294,34 @@ function RowActions({
       onClick={(event) => event.stopPropagation()}
     >
       {showStart ? (
-        <StartButton workItem={workItem} actions={actions} rows={rows} />
+        <StartButton
+          workItem={workItem}
+          actions={actions}
+          rows={rows}
+          className={buttonClassName}
+        />
       ) : null}
-      <TooltipButton
+      <RowActionButton
         label="Snooze…"
         shortcut="item.snooze"
-        className={iconButton}
+        className={cn(iconButton, buttonClassName)}
         onClick={() => rows.run(workItem, "snooze")}
       >
         <SnoozeIcon className="size-3.5" />
-      </TooltipButton>
-      <ObjectActionsButton
-        actions={actions}
-        keys={BACKLOG_ITEM_ACTION_KEYS}
-        onAction={(actionId) => rows.run(workItem, actionId)}
-        label={`Actions for ${workItem.title}`}
-        className="size-6"
-      />
+      </RowActionButton>
+      {showSettle ? (
+        <RowActionButton
+          label="Settle"
+          shortcut="item.settle"
+          className="flex h-5 shrink-0 items-center gap-1 rounded-sm px-1 text-xs text-muted-foreground hover:text-foreground"
+          onClick={(event) =>
+            rows.run(workItem, "settle", { askToSettle: event.shiftKey })
+          }
+        >
+          <SettleIcon className="size-3.5" />
+          Settle
+        </RowActionButton>
+      ) : null}
     </div>
   );
 }
@@ -292,6 +337,13 @@ function Markers({
 }) {
   return (
     <>
+      {workItem.pinnedAt !== undefined ? (
+        <PinIcon
+          className="size-3.5 shrink-0 text-muted-foreground"
+          role="img"
+          aria-label="Pinned"
+        />
+      ) : null}
       {isRunning ? (
         <span
           className="relative flex size-2 shrink-0"
@@ -321,9 +373,11 @@ function Markers({
 
 interface ItemRowProps {
   workItem: LocalWorkItem;
-  parentTitle?: string;
+  /** The subitem's parent, when it is in the workspace. */
+  parent?: LocalWorkItem;
   subitemCount: number;
-  density: SidebarDensity;
+  project?: LocalProject;
+  workflowState?: LocalWorkflowState;
   isActive: boolean;
   isRunning: boolean;
   isReturned: boolean;
@@ -355,20 +409,177 @@ function useItemRowHandlers({ workItem, subitemCount, rows }: ItemRowProps) {
 }
 
 /**
- * One line: the type icon, the title, then the markers and, in Comfortable,
- * the remaining estimate. A subitem shows its parent after its title. A row
- * re-renders for its own props only, and its hover controls mount while it is
- * hovered or focused: a tooltip button per action for every row is most of
- * the cost of a long list.
+ * The arrow at the end of a subitem's state line. It opens the parent and its
+ * tooltip names it. Like the other hover controls, the button and its tooltip
+ * mount only while the row is `revealed`; until then it is a plain icon.
  */
-const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
-  const { workItem, parentTitle, density, isActive, iconData, rows } = props;
+function ParentLink({
+  parent,
+  rows,
+  revealed,
+}: {
+  parent: LocalWorkItem;
+  rows: RowApi;
+  revealed: boolean;
+}) {
+  const className =
+    "ml-auto flex size-4 shrink-0 items-center justify-center rounded-sm";
+  const icon = <ParentIcon className="size-3" />;
+  if (!revealed) {
+    return (
+      <span aria-hidden className={className}>
+        {icon}
+      </span>
+    );
+  }
+  return (
+    <TooltipButton
+      label={parent.title}
+      aria-label={`Open parent: ${parent.title}`}
+      className={cn(className, "hover:text-foreground")}
+      onClick={(event) => {
+        event.stopPropagation();
+        rows.open(parent);
+      }}
+    >
+      {icon}
+    </TooltipButton>
+  );
+}
+
+/**
+ * The Comfortable row, laid out like a T3 Code thread: the project's icon and
+ * name over the title, with the markers and the remaining estimate at the end
+ * of the project line, then the workflow state on a faint third line, which ends with
+ * an arrow to the parent on a subitem. Hover and focus replace the end of the
+ * project line with Snooze… and Settle, and show Start entry centered at the
+ * row's end. Like the compact row, it re-renders for its own
+ * props only and mounts its hover controls while hovered or focused.
+ */
+const ComfortableItemRow = memo(function ComfortableItemRow(
+  props: ItemRowProps,
+) {
+  const { workItem, parent, project, workflowState, isActive, rows } = props;
+  const remainingHours = workItem.remainingEstimateHours;
   const { actions, onClick, onKeyDown } = useItemRowHandlers(props);
   const reveal = useHoverOrFocusWithin();
-  const hours =
-    density === "comfortable"
-      ? formatHours(workItem.remainingEstimateHours)
-      : undefined;
+
+  return (
+    <ObjectContextMenu
+      actions={actions}
+      keys={BACKLOG_ITEM_ACTION_KEYS}
+      onAction={(actionId) => rows.run(workItem, actionId)}
+      render={
+        <div
+          role="link"
+          tabIndex={0}
+          data-focus-column="0"
+          data-backlog-item-id={workItem._id}
+          aria-current={isActive ? "page" : undefined}
+          {...reveal.props}
+          className={cn(
+            "group relative flex h-20 shrink-0 cursor-pointer items-center rounded-md px-2.5 outline-none hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring",
+            isActive && "bg-foreground/[0.07]",
+          )}
+          onClick={onClick}
+          onKeyDown={onKeyDown}
+        />
+      }
+    >
+      <span className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="flex h-5 items-center gap-1.5 text-sm text-muted-foreground">
+          {project ? (
+            <ProjectIcon
+              icon={project.icon}
+              color={project.color}
+              className="ajour-sidebar-icon shrink-0"
+            />
+          ) : null}
+          <span className="min-w-0 flex-1 truncate">
+            {project ? getLocalProjectDisplayName(project) : "No project"}
+          </span>
+          <span className="flex shrink-0 items-center gap-1.5 group-focus-within:hidden group-hover:hidden">
+            <Markers
+              workItem={workItem}
+              isRunning={props.isRunning}
+              isReturned={props.isReturned}
+            />
+            {remainingHours !== undefined ? (
+              <Value tone="muted">
+                {formatCompactDuration(remainingHours * 3_600_000)}
+              </Value>
+            ) : null}
+          </span>
+          {reveal.active ? (
+            <RowActions
+              workItem={workItem}
+              actions={actions}
+              rows={rows}
+              showStart={false}
+              showSettle
+              buttonClassName="size-5"
+              className="hidden group-focus-within:flex group-hover:flex"
+            />
+          ) : null}
+        </span>
+        {/*
+          The padding clears Start entry, which sits over the end of this line
+          on hover. It stays when the row is at rest, so hovering never
+          re-truncates the title.
+        */}
+        <span
+          data-row-title
+          className={cn(
+            "truncate pr-7 text-base leading-5",
+            props.isReturned && "font-semibold",
+          )}
+        >
+          {workItem.title}
+        </span>
+        {/* Kept empty without a state, so every row is the same height. */}
+        <span className="flex h-4 items-center gap-1.5 text-xs text-[var(--text-tertiary)]">
+          {workflowState ? (
+            <>
+              <span
+                className="backlog-state-dot size-2.5"
+                style={{ color: workflowState.color }}
+              />
+              <span className="min-w-0 truncate">{workflowState.name}</span>
+            </>
+          ) : null}
+          {parent ? (
+            <ParentLink parent={parent} rows={rows} revealed={reveal.active} />
+          ) : null}
+        </span>
+      </span>
+      {/*
+        Logging time is the main job, so Start gets its own place: centered at
+        the row's end, level with the title, so the project line's Snooze and
+        Settle still reach the edge.
+      */}
+      {reveal.active ? (
+        <span
+          className="absolute top-1/2 right-2.5 hidden -translate-y-1/2 group-focus-within:flex group-hover:flex"
+          onClick={(event) => event.stopPropagation()}
+        >
+          <StartButton workItem={workItem} actions={actions} rows={rows} />
+        </span>
+      ) : null}
+    </ObjectContextMenu>
+  );
+});
+
+/**
+ * The Compact row, one line: the type icon, the title, then the markers. A
+ * subitem shows its parent after its title. A row re-renders for its own
+ * props only, and its hover controls mount while it is hovered or focused: a
+ * set of action buttons for every row is most of the cost of a long list.
+ */
+const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
+  const { workItem, parent, isActive, iconData, rows } = props;
+  const parentTitle = parent?.title;
+  const { actions, onClick, onKeyDown } = useItemRowHandlers(props);
+  const reveal = useHoverOrFocusWithin();
 
   return (
     <ObjectContextMenu
@@ -385,8 +596,7 @@ const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
           title={parentTitle ? `${workItem.title} · ${parentTitle}` : undefined}
           {...reveal.props}
           className={cn(
-            "group flex shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 text-sm outline-none hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring",
-            density === "compact" ? "h-[26px]" : "h-7",
+            "group flex h-[26px] shrink-0 cursor-pointer items-center gap-2 rounded-md px-2 text-sm outline-none hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring",
             isActive && "bg-foreground/[0.07]",
           )}
           onClick={onClick}
@@ -406,7 +616,7 @@ const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
           props.isReturned && "font-semibold",
         )}
       >
-        {workItem.title}
+        <span data-row-title>{workItem.title}</span>
         {parentTitle ? (
           <span className="font-normal text-muted-foreground">
             {" "}
@@ -420,11 +630,6 @@ const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
           isRunning={props.isRunning}
           isReturned={props.isReturned}
         />
-        {hours ? (
-          <span className="text-xs text-muted-foreground tabular-nums">
-            {hours}
-          </span>
-        ) : null}
       </span>
       {reveal.active ? (
         <RowActions
@@ -510,7 +715,9 @@ const OffListRow = memo(function OffListRow({
         icon={resolveWorkItemIcon(workItem, iconData)}
         className="opacity-70"
       />
-      <span className="min-w-0 flex-1 truncate">{workItem.title}</span>
+      <span data-row-title className="min-w-0 flex-1 truncate">
+        {workItem.title}
+      </span>
       {detail ? (
         <span className="shrink-0 text-xs group-focus-within:hidden group-hover:hidden">
           {detail}
@@ -536,10 +743,10 @@ const OffListRow = memo(function OffListRow({
 
 /**
  * The work list in the expanded app sidebar, from "Backlog sidebar" in
- * agents/ux-spec.md: the collapsible Backlog section with the
- * active items in the Backlog page's order, `children` (the Pull requests
- * section), then the collapsible Snoozed and Settled sections. Every section
- * keeps only the rows `matcher` accepts, and its count follows.
+ * agents/ux-spec.md: the active items in the Backlog page's order with no
+ * header, pinned items first, `children` (the Pull requests section), then
+ * the collapsible Snoozed and Settled sections. Every section keeps only the
+ * rows `matcher` accepts, and its count follows. Empty sections are not shown.
  */
 export function SidebarBacklogList({
   pathname,
@@ -561,12 +768,10 @@ export function SidebarBacklogList({
     : undefined;
   const runningWorkItemId = state.timers[0]?.workItemId;
 
-  const { listed, snoozed, settled, titleByLookupKey } = useMemo(() => {
-    const titles = new Map(
+  const { listed, snoozed, settled, workItemByLookupKey } = useMemo(() => {
+    const byLookupKey = new Map(
       state.workItems.flatMap((workItem) =>
-        getWorkItemLookupKeys(workItem).map(
-          (key) => [key, workItem.title] as const,
-        ),
+        getWorkItemLookupKeys(workItem).map((key) => [key, workItem] as const),
       ),
     );
     return {
@@ -586,25 +791,42 @@ export function SidebarBacklogList({
             matcher.workItem(workItem),
         )
         .sort((left, right) => (right.settledAt ?? 0) - (left.settledAt ?? 0)),
-      titleByLookupKey: titles,
+      workItemByLookupKey: byLookupKey,
     };
   }, [state, now, matcher]);
 
-  const parentTitleOf = (workItem: LocalWorkItem) => {
+  // Apart from the list above so the clock does not rebuild them every minute.
+  const projectById = useMemo(
+    () => new Map(state.projects.map((project) => [project._id, project])),
+    [state.projects],
+  );
+  const workflowStateById = useMemo(
+    () => new Map(state.workflowStates.map((status) => [status._id, status])),
+    [state.workflowStates],
+  );
+
+  const parentOf = (workItem: LocalWorkItem) => {
     const key = getWorkItemParentKey(workItem);
-    return key ? titleByLookupKey.get(key) : undefined;
+    return key ? workItemByLookupKey.get(key) : undefined;
   };
   const rowProps = (workItem: LocalWorkItem): ItemRowProps => ({
     workItem,
-    parentTitle: parentTitleOf(workItem),
+    parent: parentOf(workItem),
     subitemCount: countSubitems(workItem, state.workItems),
-    density: layout.density,
+    project: workItem.projectId
+      ? projectById.get(workItem.projectId)
+      : undefined,
+    workflowState: workItem.workflowStateId
+      ? workflowStateById.get(workItem.workflowStateId)
+      : undefined,
     isActive: activeItemId === workItem._id,
     isRunning: runningWorkItemId === workItem._id,
     isReturned: isBacklogItemReturned(workItem, now),
     iconData,
     rows,
   });
+  const ItemRow =
+    layout.density === "comfortable" ? ComfortableItemRow : BacklogItemRow;
 
   let settledRows: ReactNode = null;
   if (layout.settledOpen) {
@@ -644,61 +866,61 @@ export function SidebarBacklogList({
       aria-label="Backlog items"
       data-focus-scope
     >
-      <SidebarSectionHeader
-        label="Backlog"
-        count={listed.length}
-        open={layout.backlogOpen}
-        onToggle={() =>
-          updateSidebarLayout({ backlogOpen: !layout.backlogOpen })
-        }
-      />
-      {layout.backlogOpen ? (
-        <>
-          {listed.map((workItem) => (
-            <BacklogItemRow key={workItem._id} {...rowProps(workItem)} />
-          ))}
-          {listed.length === 0 ? (
-            <p className="px-2 py-1 text-xs text-muted-foreground">
-              {matcher.active ? "No matching items." : "Nothing on your plate."}
-            </p>
-          ) : null}
-        </>
-      ) : null}
+      {/* The backlog items have no header, like T3 Code's thread list. */}
+      <div className="flex shrink-0 flex-col pt-2">
+        {listed.map((workItem) => (
+          <ItemRow key={workItem._id} {...rowProps(workItem)} />
+        ))}
+        {listed.length === 0 ? (
+          <p className="px-2 pt-1 pb-1 text-xs text-muted-foreground">
+            {matcher.active ? "No matching items." : "Nothing on your plate."}
+          </p>
+        ) : null}
+      </div>
 
       {children}
 
-      <SidebarSectionHeader
-        label="Snoozed"
-        count={snoozed.length}
-        open={layout.snoozedOpen}
-        onToggle={() =>
-          updateSidebarLayout({ snoozedOpen: !layout.snoozedOpen })
-        }
-      />
-      {layout.snoozedOpen
-        ? snoozed.map((workItem) => (
-            <OffListRow
-              key={workItem._id}
-              workItem={workItem}
-              detail={formatSnoozeTime(workItem.snoozedUntil!, now)}
-              restoreLabel="Unsnooze"
-              restoreAction="unsnooze"
-              iconData={iconData}
-              rows={rows}
-            />
-          ))
-        : null}
+      {/* A section with nothing in it is not shown. */}
+      {snoozed.length > 0 ? (
+        <>
+          <SidebarSectionHeader
+            label="Snoozed"
+            count={snoozed.length}
+            open={layout.snoozedOpen}
+            onToggle={() =>
+              updateSidebarLayout({ snoozedOpen: !layout.snoozedOpen })
+            }
+          />
+          {layout.snoozedOpen
+            ? snoozed.map((workItem) => (
+                <OffListRow
+                  key={workItem._id}
+                  workItem={workItem}
+                  detail={formatSnoozeTime(workItem.snoozedUntil!, now)}
+                  restoreLabel="Unsnooze"
+                  restoreAction="unsnooze"
+                  iconData={iconData}
+                  rows={rows}
+                />
+              ))
+            : null}
+        </>
+      ) : null}
 
-      <SidebarSectionHeader
-        label="Settled"
-        // Unfiltered, the count would be every settled item ever.
-        count={matcher.active ? settled.length : undefined}
-        open={layout.settledOpen}
-        onToggle={() =>
-          updateSidebarLayout({ settledOpen: !layout.settledOpen })
-        }
-      />
-      {settledRows}
+      {settled.length > 0 ? (
+        <>
+          <SidebarSectionHeader
+            label="Settled"
+            // Unfiltered, the count would be every settled item ever.
+            count={matcher.active ? settled.length : undefined}
+            open={layout.settledOpen}
+            onToggle={() =>
+              updateSidebarLayout({ settledOpen: !layout.settledOpen })
+            }
+          />
+          {settledRows}
+        </>
+      ) : null}
     </div>
   );
 }

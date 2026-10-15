@@ -1130,6 +1130,40 @@ export function snoozeBacklogItem(
   );
 }
 
+/** Pins an active item to the top of the sidebar list. */
+export function pinBacklogItem(
+  state: LocalAppState,
+  workItemId: string,
+  now: number,
+): LocalAppState {
+  const target = state.workItems.find(
+    (workItem) => workItem._id === workItemId,
+  );
+  if (target?.status !== "active" || target.pinnedAt !== undefined) {
+    return state;
+  }
+  return updateOne(state, workItemId, (workItem) => ({
+    ...workItem,
+    pinnedAt: now,
+  }));
+}
+
+export function unpinBacklogItem(
+  state: LocalAppState,
+  workItemId: string,
+): LocalAppState {
+  const target = state.workItems.find(
+    (workItem) => workItem._id === workItemId,
+  );
+  if (target?.pinnedAt === undefined) {
+    return state;
+  }
+  return updateOne(state, workItemId, (workItem) => ({
+    ...workItem,
+    pinnedAt: undefined,
+  }));
+}
+
 /** Ends a snooze early. The item goes back to the list without the Returned dot. */
 export function unsnoozeBacklogItem(
   state: LocalAppState,
@@ -1193,9 +1227,32 @@ export function isBacklogItemReturned(workItem: LocalWorkItem, now: number) {
  * priority. In custom order it sits right below its parent, or in its parent's
  * place when the parent is not listed. In priority order it mixes with
  * top-level items by priority. A missing priority sorts as the largest value,
- * as on the Backlog page.
+ * as on the Backlog page. Pinned items come first, in that same order.
  */
 export function selectSidebarBacklogItems(
+  state: LocalAppState,
+  now: number,
+): LocalWorkItem[] {
+  const ordered = orderSidebarBacklogItems(state, now);
+  // Pinned items go first, keeping the list's order among themselves.
+  return [
+    ...ordered.filter((workItem) => workItem.pinnedAt !== undefined),
+    ...ordered.filter((workItem) => workItem.pinnedAt === undefined),
+  ];
+}
+
+/**
+ * The item the sidebar and the timer dock offer as Up next: the first listed
+ * item that is not pinned. Pinning keeps an item in view without making it
+ * the next thing to start.
+ */
+export function selectUpNextBacklogItem(
+  listed: readonly LocalWorkItem[],
+): LocalWorkItem | undefined {
+  return listed.find((workItem) => workItem.pinnedAt === undefined);
+}
+
+function orderSidebarBacklogItems(
   state: LocalAppState,
   now: number,
 ): LocalWorkItem[] {

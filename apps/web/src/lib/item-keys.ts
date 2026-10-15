@@ -51,6 +51,9 @@ export const TIME_ENTRY_ACTION_KEYS: ActionKeys<TimeEntryActionId> = {
  * editor use these keys, where Enter is Edit.
  */
 export const BACKLOG_ITEM_ACTION_KEYS: ActionKeys<BacklogItemActionId> = {
+  // S is app-wide; on a focused backlog item it starts or stops that item.
+  "start-entry": "entry.stop-or-start",
+  "stop-entry": "entry.stop-or-start",
   edit: "item.edit",
   snooze: "item.snooze",
   settle: "item.settle",
