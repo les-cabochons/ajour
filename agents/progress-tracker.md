@@ -749,7 +749,7 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 - [x] Added General Settings > Time capacity > Hide non-working days, off by default and saved locally. Zero-capacity weekdays and weekends leave the Day strip and both Week layouts. Working weekends remain visible.
 - [x] Preserved weekly and row totals, including logged and running time on hidden days. Grid cell arrays stay aligned with visible dates. A week with no capacity shows an explanation.
-- [x] Verification passed: 910 web unit tests, 13 related Chromium acceptance scenarios, workspace typecheck and package boundaries, web production build, and formatting checks for changed files. Inspected Settings, both Week layouts, and the Day strip at 390px in a browser.
+- [x] Verification against the latest remote main passed: 886 web unit tests, 13 related Chromium acceptance scenarios, workspace typecheck and package boundaries, web production build, and formatting checks for changed files. Inspected Settings, both Week layouts, and the Day strip at 390px in a browser before rebasing.
 
 ## Narrow view floating navigation, 2026-10-15
 

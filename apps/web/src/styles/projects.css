@@ -230,11 +230,6 @@
     border-radius: var(--radius-md);
   }
 
-  .project-properties-action {
-    margin-inline-start: -0.5rem;
-    color: var(--text-secondary);
-  }
-
   /* Text that turns into a field on click: the title and the card's names. */
   .project-inline-target {
     border-radius: 4px;

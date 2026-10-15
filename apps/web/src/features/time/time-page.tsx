@@ -332,7 +332,6 @@ export function TimePage({ date }: { date: string }) {
           weekAvailable={weekAvailable}
           onSelectDate={goToDate}
           onChangeView={changeTimeView}
-          onSubmit={openSubmitPage}
         />
       )}
       <div className="time-page-main">
