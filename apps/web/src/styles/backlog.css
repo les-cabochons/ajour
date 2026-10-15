@@ -71,6 +71,30 @@
     flex-shrink: 0;
   }
 
+  /* One filtered field: its values open the editor, the × removes it. */
+  .backlog-filter-chip {
+    display: inline-flex;
+    align-items: center;
+    max-width: 100%;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+  }
+
+  .backlog-filter-chip > button {
+    border-radius: 0;
+  }
+
+  .backlog-filter-chip > button:first-child {
+    border-start-start-radius: inherit;
+    border-end-start-radius: inherit;
+  }
+
+  .backlog-filter-chip > button:last-child {
+    border-inline-start: 1px solid var(--border);
+    border-start-end-radius: inherit;
+    border-end-end-radius: inherit;
+  }
+
   .backlog-unmapped {
     display: inline-flex;
     align-items: center;

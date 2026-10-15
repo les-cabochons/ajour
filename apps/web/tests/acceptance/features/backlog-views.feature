@@ -24,9 +24,12 @@ Feature: Backlog list and board views
     Then all open Backlog items return
 
   Scenario: Combine filters to see one project's to do items
-    When I filter the Backlog by "State" "To do"
-    And I filter the Backlog by "Project" "Example project"
+    When I open the Backlog filters
+    And I pick the "State" filter "To do"
+    And I pick the "State" filter "No state"
+    And I pick the "Project" filter "Example project"
     Then only the Backlog parent and its subitem appear on the Backlog page
+    And the filter row has one chip per field
 
   Scenario: Show the project and remaining estimate on comfortable sidebar rows
     Given the other Backlog item has 1.5 hours remaining
