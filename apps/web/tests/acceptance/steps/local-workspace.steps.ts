@@ -1635,7 +1635,7 @@ When("I install a packaged connector from settings", async ({ page }) => {
   const plugin = {
     id: "example",
     version: "1.2.3",
-    apiVersion: 2,
+    apiVersion: 3,
     displayName: "Example",
     description: "Example connector used by the acceptance test.",
     iconSvg:

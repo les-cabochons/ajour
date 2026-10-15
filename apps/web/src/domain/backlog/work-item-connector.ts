@@ -28,12 +28,7 @@ import {
   createImportedEstimateSyncState,
   normalizeWorkItemEstimateValue,
 } from "@/domain/backlog/work-item-estimates";
-import { normalizeWorkItemPriority } from "@/domain/backlog/work-item-transitions";
-import {
-  getPriorityLevel,
-  getPriorityRanges,
-  type PriorityRanges,
-} from "@/domain/backlog/priority";
+import { priorityLevelFromConnector } from "@/domain/backlog/priority";
 
 export interface ConnectorWorkItemFactories {
   createId: (prefix: string) => string;
@@ -60,11 +55,10 @@ function getWorkItemSourceKey(workItem: {
 function createConnectorWorkItem(
   workItem: ConnectorImportCandidate,
   mappedWorkflowStateId: string | undefined,
-  priorityRanges: PriorityRanges,
   createId: (prefix: string) => string,
   existingId?: string,
 ): LocalWorkItem {
-  const importedPriority = normalizeWorkItemPriority(workItem.priority);
+  const importedPriority = priorityLevelFromConnector(workItem.priority);
   const sourceStatusLabel = workItem.state?.trim() || undefined;
   const sourceStatusKey = sourceStatusLabel
     ? normalizeConnectorStatusKey(sourceStatusLabel)
@@ -83,7 +77,7 @@ function createConnectorWorkItem(
     sourceWorkItemType: workItem.workItemType,
     hierarchyLevel: workItem.depth,
     parentSourceId: workItem.parentSourceId,
-    priority: getPriorityLevel(importedPriority, priorityRanges),
+    priority: importedPriority,
     importedPriority,
     workflowStateId: mappedWorkflowStateId,
     importedWorkflowStateId: mappedWorkflowStateId,
@@ -113,7 +107,6 @@ function mergeConnectorWorkItem(
   existingWorkItem: LocalWorkItem,
   importedWorkItem: ConnectorImportCandidate,
   mappedWorkflowStateId: string | undefined,
-  priorityRanges: PriorityRanges,
   factories: ConnectorWorkItemFactories,
   changesEndSnoozeEarly: boolean,
   preserveSource: boolean,
@@ -121,7 +114,6 @@ function mergeConnectorWorkItem(
   const nextImportedState = createConnectorWorkItem(
     importedWorkItem,
     mappedWorkflowStateId,
-    priorityRanges,
     factories.createId,
     existingWorkItem._id,
   );
@@ -136,8 +128,7 @@ function mergeConnectorWorkItem(
     );
   };
   const followsImportedPriority =
-    existingWorkItem.priority ===
-    getPriorityLevel(existingWorkItem.importedPriority, priorityRanges);
+    existingWorkItem.priority === existingWorkItem.importedPriority;
   // A local move stays until the source shows a different state; then the
   // mapping wins again.
   const followsImportedWorkflowState =
@@ -388,11 +379,6 @@ export function importConnectorWorkItems(
         existingWorkItem,
         workItem,
         mappedWorkflowStateId,
-        getPriorityRanges(
-          state.priorityScales,
-          workItem.source,
-          workItem.connectionId,
-        ),
         factories,
         state.userPreferences.changesEndSnoozeEarly === true,
         pendingMoveItemIds.has(existingWorkItem._id),
@@ -430,11 +416,6 @@ export function importConnectorWorkItems(
     const importedItem = createConnectorWorkItem(
       workItem,
       mappedWorkflowStateId,
-      getPriorityRanges(
-        state.priorityScales,
-        workItem.source,
-        workItem.connectionId,
-      ),
       factories.createId,
     );
     existingItemsByKey.set(key, importedItem);

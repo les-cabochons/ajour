@@ -23,7 +23,7 @@ const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
       url: "https://github.com/les-cabochons/ajc-azure-devops",
     },
     status: "available",
-    compatibility: { pluginApiVersion: 2 },
+    compatibility: { pluginApiVersion: 3 },
     capabilities: ["connector"],
     features: ["work-item-sync", "estimate-update"],
     install: {
@@ -55,7 +55,7 @@ const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
       url: "https://github.com/les-cabochons/ajc-github",
     },
     status: "available",
-    compatibility: { pluginApiVersion: 2 },
+    compatibility: { pluginApiVersion: 3 },
     capabilities: ["codeHost"],
     features: ["pull-requests"],
     install: {
@@ -87,7 +87,7 @@ const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
       url: "https://github.com/les-cabochons/ajc-jira",
     },
     status: "available",
-    compatibility: { pluginApiVersion: 2 },
+    compatibility: { pluginApiVersion: 3 },
     capabilities: ["connector"],
     features: ["work-item-sync", "estimate-update"],
     install: {

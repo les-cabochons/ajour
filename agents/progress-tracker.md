@@ -98,7 +98,7 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Project task and workbook import transitions are isolated from browser persistence and have direct domain tests.
 - [x] Workflow state hydration (including data saved as backlog statuses), CRUD, ordering, the Done flag, and source state mapping transitions are isolated from browser persistence and have direct domain tests.
 - [x] Moving a backlog item into a done state closes it and leaving one reopens it, with the open-subitems prompt and its Settings > Backlog choice (#85, #89).
-- [x] Priority has five levels with per-connection ranges, seeded from the connector manifest's `priorityScale` (#86, #88).
+- [x] Priority has five levels (#86, #88). Since plugin API 3, connector plugins map source values to levels and Ajour stores only levels.
 - [x] Source states map to workflow states per source project, new ones map automatically by name or done category, and moves of synced items write the source state after the Undo window through per-state write rules (#87).
 - [x] Work-item hierarchy, estimates, manual lifecycle, and connector reconciliation have canonical domain modules with direct tests.
 - [x] Timesheet entry lifecycle and linked estimate adjustments are isolated from browser persistence and have direct tests.
@@ -663,7 +663,6 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Parent closes carry only active subitems. Independently settled and archived subitems retain their lifecycle and reopen behavior.
 - [x] Settings > Backlog renders its settle rules once, outside the preferences field.
 - [x] Editor workflow changes use the shared move command, including source writes and Undo between open states.
-- [x] Manifest priority ranges reconcile migrated source-following values while preserving local overrides.
 - [x] Failed parent reopens restore carried children without overwriting independent edits.
 - [x] Project mappings persist explicit No state overrides. Remapping source states clears incompatible write rules and blocks stale inherited rules.
 - [x] Row and peek source-state pickers allow a single alternative. Archiving closes the editor and disables the peek's Edit action.

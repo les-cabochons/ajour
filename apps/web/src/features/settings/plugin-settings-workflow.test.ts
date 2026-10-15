@@ -12,7 +12,7 @@ import {
 const plugin = {
   id: "test-connector",
   version: "1.0.0",
-  apiVersion: 2 as const,
+  apiVersion: 3 as const,
   displayName: "Test connector",
   description: "Test",
   iconSvg: "<svg />",

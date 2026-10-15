@@ -9,12 +9,6 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
 import {
-  getPriorityRanges,
-  PRIORITY_LEVELS,
-  type PriorityLevel,
-  type PriorityRanges,
-} from "@/domain/backlog/priority";
-import {
   findWorkflowStateWriteRule,
   getSourceStatesMappedTo,
 } from "@/domain/backlog/workflow-states";
@@ -36,9 +30,9 @@ import { localStore } from "@/lib/local-store";
 const INHERIT = "__inherit";
 
 /**
- * Settings > Workflow's source states: for each connection, its priority
- * ranges, then for each source project how its source states map to workflow
- * states and what moving an item into each workflow state writes back.
+ * Settings > Workflow's source states: for each connection and source
+ * project, how its source states map to workflow states and what moving an
+ * item into each workflow state writes back.
  */
 export function WorkflowSourceMapping({
   state,
@@ -114,16 +108,6 @@ export function WorkflowSourceMapping({
               {connection.connectionLabel}
             </h3>
           </div>
-
-          <PriorityRangesEditor
-            connection={connection}
-            ranges={getPriorityRanges(
-              state.priorityScales,
-              connection.source,
-              connection.connectionId,
-            )}
-            onError={onError}
-          />
 
           {connection.projects
             .filter(
@@ -398,116 +382,5 @@ function WriteRules({
         );
       })}
     </div>
-  );
-}
-
-function PriorityRangesEditor({
-  connection,
-  ranges,
-  onError,
-}: {
-  connection: SourceConnectionGroup;
-  ranges: PriorityRanges;
-  onError: (message: string | null) => void;
-}) {
-  const [draft, setDraft] = useState(() => toDraft(ranges));
-  const [savedFrom, setSavedFrom] = useState(ranges);
-  if (savedFrom !== ranges) {
-    setSavedFrom(ranges);
-    setDraft(toDraft(ranges));
-  }
-
-  function save() {
-    const next: PriorityRanges = {};
-    for (const { level } of PRIORITY_LEVELS) {
-      const { min, max } = draft[level];
-      if (min.trim() === "" && max.trim() === "") continue;
-      next[level] = {
-        min: Number(min),
-        max: Number(max === "" ? min : max),
-      };
-    }
-    try {
-      localStore.setPriorityScale({
-        source: connection.source,
-        connectionId: connection.connectionId,
-        ranges: next,
-      });
-      onError(null);
-    } catch (error) {
-      onError(
-        error instanceof Error ? error.message : "Unable to save the ranges.",
-      );
-    }
-  }
-
-  return (
-    <div className="flex flex-col gap-1.5">
-      <div className="text-[12px] text-muted-foreground">
-        Priority: the source values each level holds
-      </div>
-      <div className="grid w-fit grid-cols-[6rem_5rem_auto_5rem] items-center gap-x-2 gap-y-1.5 text-[13px]">
-        {PRIORITY_LEVELS.map(({ level, name }) => (
-          <PriorityRangeRow
-            key={level}
-            name={name}
-            value={draft[level]}
-            onChange={(value) =>
-              setDraft((current) => ({ ...current, [level]: value }))
-            }
-          />
-        ))}
-      </div>
-      <div>
-        <Button type="button" variant="outline" onClick={save}>
-          Save priority ranges
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-type RangeDraft = Record<PriorityLevel, { min: string; max: string }>;
-
-function toDraft(ranges: PriorityRanges): RangeDraft {
-  const draft = {} as RangeDraft;
-  for (const { level } of PRIORITY_LEVELS) {
-    const range = ranges[level];
-    draft[level] = {
-      min: range ? String(range.min) : "",
-      max: range ? String(range.max) : "",
-    };
-  }
-  return draft;
-}
-
-function PriorityRangeRow({
-  name,
-  value,
-  onChange,
-}: {
-  name: string;
-  value: { min: string; max: string };
-  onChange: (value: { min: string; max: string }) => void;
-}) {
-  return (
-    <>
-      <span>{name}</span>
-      <Input
-        aria-label={`${name} from`}
-        inputMode="numeric"
-        className="h-8 font-mono"
-        value={value.min}
-        onChange={(event) => onChange({ ...value, min: event.target.value })}
-      />
-      <span className="text-muted-foreground">to</span>
-      <Input
-        aria-label={`${name} to`}
-        inputMode="numeric"
-        className="h-8 font-mono"
-        value={value.max}
-        onChange={(event) => onChange({ ...value, max: event.target.value })}
-      />
-    </>
   );
 }

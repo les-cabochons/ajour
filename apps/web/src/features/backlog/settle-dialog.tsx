@@ -21,13 +21,7 @@ import {
   settleArchivesWorkItem,
   type BacklogSettleChange,
 } from "@/domain/backlog/backlog-item-lifecycle";
-import {
-  getPriorityLevel,
-  getSourcePriority,
-  getWorkItemPriorityRanges,
-  NO_PRIORITY_NAME,
-  PRIORITY_LEVELS,
-} from "@/domain/backlog/priority";
+import { NO_PRIORITY_NAME, PRIORITY_LEVELS } from "@/domain/backlog/priority";
 import type { LocalWorkItem } from "@/domain/local-state";
 import { findSettleRule } from "@/domain/backlog/settle-rules";
 import {
@@ -168,10 +162,7 @@ export function SettleDialogHost() {
       setStateName(prefill?.state?.name ?? item.sourceStatusLabel ?? "");
       setPriority(
         formatPriorityInput(
-          getPriorityLevel(
-            prefill?.priority ?? item.importedPriority,
-            getWorkItemPriorityRanges(localStore.snapshot(), item),
-          ) ?? item.priority,
+          prefill?.priority ?? item.importedPriority ?? item.priority,
         ),
       );
       setLoad({ status: "loading" });
@@ -217,17 +208,11 @@ export function SettleDialogHost() {
     stateName,
     currentItem?.sourceStatusLabel,
   );
-  const priorityRanges = currentItem
-    ? getWorkItemPriorityRanges(state, currentItem)
-    : {};
-  const sourceHasPriority =
-    getPriorityLevel(currentItem?.importedPriority, priorityRanges) !==
-    undefined;
+  const sourceHasPriority = currentItem?.importedPriority !== undefined;
   const change = currentItem
     ? buildSettleChange(states, stateName, priority, {
         sourceStatusLabel: currentItem.sourceStatusLabel,
         importedPriority: currentItem.importedPriority,
-        ranges: priorityRanges,
       })
     : null;
   const archives = Boolean(
@@ -328,16 +313,13 @@ export function SettleDialogHost() {
                   ...PRIORITY_LEVELS.map(({ level, name }) => ({
                     value: String(level),
                     label: name,
-                    disabled:
-                      getSourcePriority(level, priorityRanges) === undefined,
                   })),
                 ]}
               />
               {change === null && stateDraftValid ? (
                 <FieldError>
-                  {priority === "" && sourceHasPriority
-                    ? "This connector cannot clear its source priority. Choose a priority."
-                    : "This priority has no source range. Choose another priority."}
+                  This connector cannot clear its source priority. Choose a
+                  priority.
                 </FieldError>
               ) : null}
             </FieldContent>

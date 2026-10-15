@@ -99,7 +99,6 @@ function createState(): LocalAppState {
     workflowStates: [],
     workflowStateMappings: [],
     workflowStateWriteRules: [],
-    priorityScales: [],
   } as unknown as LocalAppState;
 }
 

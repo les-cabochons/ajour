@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const CONNECTOR_PLUGIN_API_VERSION = 2;
+export const CONNECTOR_PLUGIN_API_VERSION = 3;
 export const CONNECTOR_PLUGIN_ARCHIVE_EXTENSION = ".ajour-connector";
 
 export const connectorSourceSchema = z.string().trim().min(1).max(120);
@@ -104,55 +104,31 @@ export const connectorFieldSchema = z.object({
 });
 export type ConnectorField = z.infer<typeof connectorFieldSchema>;
 
-/** Source priority values from `min` to `max`, both included. */
-export const connectorPriorityRangeSchema = z
-  .object({
-    min: z.number().int().min(0).max(999),
-    max: z.number().int().min(0).max(999),
-  })
-  .refine((range) => range.min <= range.max, "A range starts after it ends.");
-export type ConnectorPriorityRange = z.infer<
-  typeof connectorPriorityRangeSchema
->;
-
 /**
- * The source priority values that map to each of Ajour's levels by default.
- * The user can change them per connection in Settings > Workflow.
+ * Ajour's priority levels. Each plugin maps its source's priority values to
+ * these levels on sync, and back to a source value on a settle write. An item
+ * without a level has No priority.
  */
-export const connectorPriorityScaleSchema = z
-  .object({
-    urgent: connectorPriorityRangeSchema.optional(),
-    high: connectorPriorityRangeSchema.optional(),
-    medium: connectorPriorityRangeSchema.optional(),
-    low: connectorPriorityRangeSchema.optional(),
-  })
-  .refine((scale) => {
-    const ranges = [scale.urgent, scale.high, scale.medium, scale.low].filter(
-      (range): range is ConnectorPriorityRange => range !== undefined,
-    );
-    return ranges.every((range, index) =>
-      ranges
-        .slice(index + 1)
-        .every((other) => other.min > range.max || range.min > other.max),
-    );
-  }, "Priority ranges overlap.");
-export type ConnectorPriorityScale = z.infer<
-  typeof connectorPriorityScaleSchema
+export const connectorPriorityLevelSchema = z.enum([
+  "urgent",
+  "high",
+  "medium",
+  "low",
+]);
+export type ConnectorPriorityLevel = z.infer<
+  typeof connectorPriorityLevelSchema
 >;
 
 /**
  * What a plugin provides. A plugin declares at least one capability, and its
  * connections serve all of them. A connector without `settle` keeps working:
  * Ajour settles its items locally, with no write. See ADR 0001 and ADR 0003.
- * A connector's `priorityScale` supplies default source ranges for Ajour's
- * levels. Without it, source values 1 to 4 map to Urgent, High, Medium and Low.
  */
 export const connectorPluginCapabilitiesSchema = z
   .object({
     connector: z
       .object({
         settle: z.boolean().optional(),
-        priorityScale: connectorPriorityScaleSchema.optional(),
       })
       .optional(),
     codeHost: z.object({}).optional(),
@@ -393,7 +369,7 @@ export const connectorImportCandidateInputSchema = z.object({
    */
   stateDone: z.boolean().optional(),
   assignedTo: z.string().trim().max(240).optional(),
-  priority: z.number().int().min(0).max(999).optional(),
+  priority: connectorPriorityLevelSchema.optional(),
   originalEstimateHours: z.number().finite().nonnegative().optional(),
   remainingEstimateHours: z.number().finite().nonnegative().optional(),
   completedEstimateHours: z.number().finite().nonnegative().optional(),
@@ -468,14 +444,14 @@ export type ConnectorSettleStatesResult = z.infer<
 >;
 
 /**
- * Writes a settle to one backlog item. Only changed fields are sent. Priority
- * goes to whatever source field the plugin maps to Ajour's priority.
+ * Writes a settle to one backlog item. Only changed fields are sent. The
+ * plugin turns the priority level into a value of its source priority field.
  */
 export const connectorSettleWriteRequestSchema = z
   .object({
     sourceId: z.string().trim().min(1).max(400),
     state: z.string().trim().min(1).max(120).optional(),
-    priority: z.number().int().min(0).max(999).optional(),
+    priority: connectorPriorityLevelSchema.optional(),
   })
   .refine(
     (request) => request.state !== undefined || request.priority !== undefined,
@@ -490,7 +466,7 @@ export const connectorSettleWriteResultSchema = z.object({
   state: z.string().trim().max(120).optional(),
   stateCategory: z.string().trim().max(120).optional(),
   stateDone: z.boolean().optional(),
-  priority: z.number().int().min(0).max(999).optional(),
+  priority: connectorPriorityLevelSchema.optional(),
 });
 export type ConnectorSettleWriteResult = z.infer<
   typeof connectorSettleWriteResultSchema

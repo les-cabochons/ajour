@@ -86,20 +86,27 @@ describe("settle rules", () => {
     ]);
   });
 
-  it("keeps only well-formed persisted rules", () => {
+  it("keeps well-formed rules and sends a rule left with no change to Ask", () => {
     expect(
       normalizeSettleRules([
         {
           ...mercury,
           state: { name: "Waiting", done: false },
-          priority: 5,
+          priority: 2,
         },
-        { ...mercury, state: { name: "" }, priority: 1000 },
+        { ...mercury, state: { name: "" }, priority: 25 },
+        { ...mercury, state: { name: "Waiting", done: false }, priority: 50 },
+        { ...mercury },
         { source: "azure_devops" },
         null,
       ]),
     ).toEqual([
-      { ...mercury, state: { name: "Waiting", done: false }, priority: 5 },
+      { ...mercury, state: { name: "Waiting", done: false }, priority: 2 },
+      {
+        ...mercury,
+        state: { name: "Waiting", done: false },
+        priority: undefined,
+      },
       { ...mercury, state: undefined, priority: undefined },
     ]);
     expect(normalizeSettleRules(undefined)).toEqual([]);

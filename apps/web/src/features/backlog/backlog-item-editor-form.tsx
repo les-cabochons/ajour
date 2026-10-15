@@ -47,11 +47,7 @@ import {
 import { settleOpensDialog } from "@/features/backlog/settle-dialog";
 import { buildWorkflowStateOptions } from "@/features/backlog/workflow-states";
 import { isDoneWorkflowState } from "@/domain/backlog/workflow-states";
-import {
-  getWorkItemPriorityRanges,
-  NO_PRIORITY_NAME,
-  PRIORITY_LEVELS,
-} from "@/domain/backlog/priority";
+import { NO_PRIORITY_NAME, PRIORITY_LEVELS } from "@/domain/backlog/priority";
 import { OptionSelect } from "@/components/ui/option-select";
 import {
   BACKLOG_ESTIMATE_FIELD_KEYS,
@@ -182,9 +178,6 @@ export function BacklogItemEditorForm({
   );
   const editor = evaluateBacklogTaskEditor(fields, target, {
     subitemTotals: subitems.length > 0 ? sumSubitemEstimates(subitems) : null,
-    priorityRanges: workItem
-      ? getWorkItemPriorityRanges(localStore.snapshot(), workItem)
-      : undefined,
   });
   const { validation } = editor;
 

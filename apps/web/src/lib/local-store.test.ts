@@ -50,7 +50,7 @@ function buildImportCandidate(overrides: Record<string, unknown> = {}) {
     workItemType: "Task",
     state: "Active",
     assignedTo: "Ada Lovelace",
-    priority: 2,
+    priority: "high" as const,
     originalEstimateHours: 12,
     remainingEstimateHours: 8,
     completedEstimateHours: 4,

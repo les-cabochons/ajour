@@ -12,7 +12,7 @@ function buildPlugin(id: string, displayName: string): ConnectorPluginManifest {
   return {
     id,
     version: "1.0.0",
-    apiVersion: 2,
+    apiVersion: 3,
     displayName,
     description: `${displayName} connector`,
     iconSvg: `<svg viewBox="0 0 16 16" data-plugin="${id}"><path d="M0 0h16v16H0z" /></svg>`,

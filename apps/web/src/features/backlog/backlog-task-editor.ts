@@ -1,13 +1,7 @@
 import type { LocalWorkItem, LocalWorkItemDraft } from "@/domain/local-state";
 import type { WorkItemPatch } from "@/domain/backlog/work-item-transitions";
 import { isSubtaskWorkItem } from "@/domain/backlog/work-item-hierarchy";
-import {
-  DEFAULT_PRIORITY_RANGES,
-  getPriorityLevel,
-  isPriorityLevel,
-  type PriorityLevel,
-  type PriorityRanges,
-} from "@/domain/backlog/priority";
+import { isPriorityLevel, type PriorityLevel } from "@/domain/backlog/priority";
 
 /**
  * The editor model for backlog items. The side panel and the narrow dialog render the
@@ -400,8 +394,6 @@ export function evaluateBacklogTaskEditor(
   target: BacklogTaskEditorTarget,
   options: {
     subitemTotals?: SubitemEstimateTotals | null;
-    /** The synced item's connection ranges, for "Reset priority to synced". */
-    priorityRanges?: PriorityRanges;
   } = {},
 ): BacklogTaskEditorState {
   const original = target.kind === "edit" ? target.workItem : undefined;
@@ -425,12 +417,7 @@ export function evaluateBacklogTaskEditor(
     }
   }
 
-  const syncedPriority = formatPriorityInput(
-    getPriorityLevel(
-      original?.importedPriority,
-      options.priorityRanges ?? DEFAULT_PRIORITY_RANGES,
-    ),
-  );
+  const syncedPriority = formatPriorityInput(original?.importedPriority);
   const syncedStatus = original?.importedWorkflowStateId ?? "";
 
   return {
