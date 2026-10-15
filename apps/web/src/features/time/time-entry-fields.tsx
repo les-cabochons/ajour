@@ -1,10 +1,6 @@
 import type { KeyboardEvent } from "react";
-import {
-  Field,
-  FieldDescription,
-  FieldGroup,
-  FieldLabel,
-} from "@/components/ui/field";
+import { PropertyList, PropertyRow } from "@/components/property-list";
+import { SectionHeading } from "@/components/section-heading";
 import { DateField } from "@/components/ui/date-field";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
@@ -17,8 +13,10 @@ import {
 import { cn } from "@/lib/utils";
 
 /**
- * Project / task, Note, Hours and Date, shared by every time entry editor. Leave
- * `localDate` out to hide Date, as the running entry does: it is always today.
+ * Project / task, Hours and Date as property rows, then the Note section, shared
+ * by every time entry editor. The rows read as values, like the backlog peek's,
+ * and show their field on hover and focus. Leave `localDate` out to hide Date,
+ * as the running entry does: it is always today.
  */
 export function TimeEntryFields({
   className,
@@ -64,19 +62,69 @@ export function TimeEntryFields({
   const dateId = `${idPrefix}-date`;
 
   return (
-    <FieldGroup className={cn("gap-4", className)}>
-      <Field>
-        <FieldLabel>Project / task</FieldLabel>
-        <ProjectTaskPicker
-          projects={projects}
-          projectId={projectId}
-          taskId={taskId}
-          onChange={onProjectTaskChange}
-          placeholder="Select project or task"
-        />
-      </Field>
-      <Field>
-        <FieldLabel htmlFor={noteId}>Note</FieldLabel>
+    <div className={cn("time-entry-fields flex flex-col gap-5", className)}>
+      <section aria-label="Properties">
+        <PropertyList>
+          <PropertyRow label="Task">
+            <ProjectTaskPicker
+              projects={projects}
+              projectId={projectId}
+              taskId={taskId}
+              onChange={onProjectTaskChange}
+              placeholder="Select project or task"
+              className="time-entry-task-picker"
+            />
+          </PropertyRow>
+          <PropertyRow label={<label htmlFor={durationId}>Hours</label>}>
+            <div className="flex w-full min-w-0 flex-col gap-1">
+              <Input
+                id={durationId}
+                className="font-mono"
+                value={durationHours}
+                onChange={(event) => onDurationChange(event.target.value)}
+                onBlur={(event) =>
+                  onDurationChange(normalizeHoursInput(event.target.value))
+                }
+                onKeyDown={onDurationKeyDown}
+                placeholder="01:30"
+                aria-invalid={Boolean(durationError)}
+                aria-describedby={
+                  !durationError && durationHint ? durationHintId : undefined
+                }
+              />
+              {durationError ? (
+                <span className="field-error">{durationError}</span>
+              ) : durationHint ? (
+                <span
+                  id={durationHintId}
+                  className="text-xs text-muted-foreground"
+                >
+                  {durationHint}
+                </span>
+              ) : null}
+            </div>
+          </PropertyRow>
+          {localDate !== undefined ? (
+            <PropertyRow label={<label htmlFor={dateId}>Date</label>}>
+              <div className="flex w-full min-w-0 flex-col gap-1">
+                <DateField
+                  id={dateId}
+                  value={localDate}
+                  onChange={(value) => onDateChange?.(value)}
+                  aria-invalid={Boolean(dateError)}
+                />
+                {dateError ? (
+                  <span className="field-error">{dateError}</span>
+                ) : null}
+              </div>
+            </PropertyRow>
+          ) : null}
+        </PropertyList>
+      </section>
+      <section>
+        <SectionHeading>
+          <label htmlFor={noteId}>Note</label>
+        </SectionHeading>
         <Textarea
           id={noteId}
           value={note}
@@ -85,48 +133,7 @@ export function TimeEntryFields({
           placeholder="Notes (optional)"
           rows={3}
         />
-      </Field>
-      <div className="grid grid-cols-2 items-start gap-4">
-        <Field data-invalid={Boolean(durationError)}>
-          <FieldLabel htmlFor={durationId}>Hours</FieldLabel>
-          <Input
-            id={durationId}
-            className="font-mono"
-            value={durationHours}
-            onChange={(event) => onDurationChange(event.target.value)}
-            onBlur={(event) =>
-              onDurationChange(normalizeHoursInput(event.target.value))
-            }
-            onKeyDown={onDurationKeyDown}
-            placeholder="01:30"
-            aria-invalid={Boolean(durationError)}
-            aria-describedby={
-              !durationError && durationHint ? durationHintId : undefined
-            }
-          />
-          {durationError ? (
-            <span className="field-error">{durationError}</span>
-          ) : durationHint ? (
-            <FieldDescription id={durationHintId} className="text-xs">
-              {durationHint}
-            </FieldDescription>
-          ) : null}
-        </Field>
-        {localDate !== undefined ? (
-          <Field data-invalid={Boolean(dateError)}>
-            <FieldLabel htmlFor={dateId}>Date</FieldLabel>
-            <DateField
-              id={dateId}
-              value={localDate}
-              onChange={(value) => onDateChange?.(value)}
-              aria-invalid={Boolean(dateError)}
-            />
-            {dateError ? (
-              <span className="field-error">{dateError}</span>
-            ) : null}
-          </Field>
-        ) : null}
-      </div>
-    </FieldGroup>
+      </section>
+    </div>
   );
 }

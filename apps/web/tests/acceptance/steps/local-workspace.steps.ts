@@ -2730,9 +2730,7 @@ Then(
     const columnBox = await daysColumn(page, day).boundingBox();
     const viewport = page.viewportSize();
     if (!columnBox || !viewport) throw new Error(`${day} is not rendered`);
-    expect(columnBox.y + columnBox.height).toBeGreaterThan(
-      viewport.height - 4,
-    );
+    expect(columnBox.y + columnBox.height).toBeGreaterThan(viewport.height - 4);
   },
 );
 

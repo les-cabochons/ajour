@@ -371,6 +371,14 @@ export function WeeklyTimeView({
     };
   }
 
+  /** True when a pointer event lands on a day column's empty space, not on a card or button. */
+  function isColumnEmptySpace(event: ReactMouseEvent<HTMLElement>) {
+    return !(
+      event.target instanceof Element &&
+      event.target.closest(".weekly-entry-card, button")
+    );
+  }
+
   /**
    * A double-click on a day column's empty space, below its header, opens a new
    * entry for that day. Cards and buttons keep their own clicks.
@@ -379,13 +387,12 @@ export function WeeklyTimeView({
     localDate: string,
     event: ReactMouseEvent<HTMLElement>,
   ) {
-    if (
-      event.target instanceof Element &&
-      event.target.closest(".weekly-entry-card, button")
-    ) {
-      return;
-    }
-    onNewEntry(localDate);
+    if (isColumnEmptySpace(event)) onNewEntry(localDate);
+  }
+
+  /** Keeps the second press of a double-click from selecting nearby text. */
+  function handleColumnMouseDown(event: ReactMouseEvent<HTMLElement>) {
+    if (event.detail > 1 && isColumnEmptySpace(event)) event.preventDefault();
   }
 
   function addGridRow(row: WeeklyGridAddedRow) {
@@ -522,6 +529,7 @@ export function WeeklyTimeView({
                   onDoubleClick={(event) =>
                     handleColumnDoubleClick(day.localDate, event)
                   }
+                  onMouseDown={handleColumnMouseDown}
                 >
                   {runningHere && runningTarget ? (
                     <ObjectContextMenu
