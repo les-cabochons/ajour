@@ -408,17 +408,36 @@ export const agentSessionSchema = z.object({
 });
 export type AgentSession = z.infer<typeof agentSessionSchema>;
 
-export const agentQuestionSchema = z.object({
+const agentQuestionBaseShape = {
   id: z.string(),
   client: agentClientRefSchema,
   sessionId: z.string().optional(),
   text: z.string(),
   choices: z.array(z.string()).optional(),
   askedAt: z.number(),
-  answer: z.string().optional(),
-  answeredAt: z.number().optional(),
-  withdrawn: z.boolean().optional(),
+};
+
+/** A question waiting for the user, as the indicator and panel show it. */
+export const openAgentQuestionSchema = z.object({
+  ...agentQuestionBaseShape,
+  status: z.literal("open"),
 });
+export type OpenAgentQuestion = z.infer<typeof openAgentQuestionSchema>;
+
+/**
+ * A question an agent asked. Ending its session withdraws it while it is
+ * still open.
+ */
+export const agentQuestionSchema = z.discriminatedUnion("status", [
+  openAgentQuestionSchema,
+  z.object({
+    ...agentQuestionBaseShape,
+    status: z.literal("answered"),
+    answer: z.string(),
+    answeredAt: z.number(),
+  }),
+  z.object({ ...agentQuestionBaseShape, status: z.literal("withdrawn") }),
+]);
 export type AgentQuestion = z.infer<typeof agentQuestionSchema>;
 
 const agentActivityBaseShape = {
@@ -459,7 +478,7 @@ export type AgentError = z.infer<typeof agentErrorSchema>;
 /** Everything the agent indicator and panel show, newest first. */
 export const agentsSnapshotSchema = z.object({
   sessions: z.array(agentSessionSchema),
-  openQuestions: z.array(agentQuestionSchema),
+  openQuestions: z.array(openAgentQuestionSchema),
   activity: z.array(agentActivitySchema),
   errors: z.array(agentErrorSchema),
   /** When the user last opened the panel. Older errors and failures are seen. */

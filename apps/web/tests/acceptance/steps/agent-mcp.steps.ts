@@ -276,6 +276,7 @@ Given(
             sessions: [],
             openQuestions: [
               {
+                status: "open",
                 id: "question-1",
                 client,
                 text,
@@ -369,6 +370,7 @@ Given(
             ],
             openQuestions: [
               {
+                status: "open",
                 id: "question-1",
                 sessionId: "session-1",
                 client,

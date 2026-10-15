@@ -47,7 +47,13 @@ describe("agent indicator", () => {
         ...empty,
         errors: [{ at: 200, message: "Ajour did not answer in time." }],
         openQuestions: [
-          { id: "q", client, text: "Which project?", askedAt: 200 },
+          {
+            status: "open",
+            id: "q",
+            client,
+            text: "Which project?",
+            askedAt: 200,
+          },
         ],
       }),
     ).toBe("needs-input");

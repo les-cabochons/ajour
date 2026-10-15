@@ -6,6 +6,7 @@ import type {
   AgentQuestion,
   AgentSession,
   AgentsSnapshot,
+  OpenAgentQuestion,
 } from "../../../packages/shared/agent-tools.ts";
 
 /**
@@ -64,8 +65,9 @@ interface AgentSessionsOptions {
 
 const isOpen = (session: AgentSession) =>
   session.state === "active" || session.state === "stalled";
-const isOpenQuestion = (question: AgentQuestion) =>
-  question.answer === undefined && !question.withdrawn;
+const isOpenQuestion = (
+  question: AgentQuestion,
+): question is OpenAgentQuestion => question.status === "open";
 
 export class AgentSessions {
   private readonly options: AgentSessionsOptions;
@@ -156,6 +158,7 @@ export class AgentSessions {
       ? this.openSession(client, input.sessionId)
       : undefined;
     const question: AgentQuestion = {
+      status: "open",
       id: this.createId(),
       client,
       ...(session ? { sessionId: session.id } : {}),
@@ -192,8 +195,13 @@ export class AgentSessions {
       throw new AgentSessionError("This question is no longer open.");
     }
     const now = this.now();
-    question.answer = text;
-    question.answeredAt = now;
+    const answered: AgentQuestion = {
+      ...question,
+      status: "answered",
+      answer: text,
+      answeredAt: now,
+    };
+    this.questions.set(questionId, answered);
     const session = question.sessionId
       ? this.sessions.get(question.sessionId)
       : undefined;
@@ -209,7 +217,7 @@ export class AgentSessions {
     }
     this.wake(questionId);
     this.changed();
-    return question;
+    return answered;
   }
 
   /** Holds until the question is answered or withdrawn, or `timeoutMs` passes. */
@@ -235,10 +243,16 @@ export class AgentSessions {
         this.waiters.set(questionId, waiters);
       });
     }
-    if (question.answer !== undefined) {
-      return { status: "answered", answer: question.answer };
+    // An answer or a withdrawal replaces the question in the map.
+    const current = this.questions.get(questionId) ?? question;
+    switch (current.status) {
+      case "answered":
+        return { status: "answered", answer: current.answer };
+      case "withdrawn":
+        return { status: "withdrawn" };
+      case "open":
+        return { status: "waiting" };
     }
-    return question.withdrawn ? { status: "withdrawn" } : { status: "waiting" };
   }
 
   /** Marks active sessions past their deadline as stalled. */
@@ -337,7 +351,7 @@ export class AgentSessions {
     session.messages.push({ kind: "end", at: now, outcome, summary });
     for (const question of this.questions.values()) {
       if (question.sessionId === session.id && isOpenQuestion(question)) {
-        question.withdrawn = true;
+        this.questions.set(question.id, { ...question, status: "withdrawn" });
         this.wake(question.id);
       }
     }

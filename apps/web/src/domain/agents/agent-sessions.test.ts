@@ -21,6 +21,7 @@ const session = (
   ...patch,
 });
 const question = (sessionId?: string): AgentQuestion => ({
+  status: "open",
   id: "q",
   client,
   text: "Which?",
