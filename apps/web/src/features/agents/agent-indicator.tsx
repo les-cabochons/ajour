@@ -8,11 +8,15 @@ import {
   useAgentBridgeState,
 } from "@/features/agents/agent-bridge-state";
 
+/**
+ * One dot per state. A failed session, which the agent reported, is a red
+ * ring; an error in Ajour or its connection is a solid red dot.
+ */
 const DOT_CLASS = {
   idle: "bg-muted-foreground",
   active: "bg-success",
   "needs-input": "bg-warning",
-  failed: "bg-destructive",
+  failed: "border-2 border-destructive",
   error: "bg-destructive",
 } as const;
 

@@ -136,7 +136,7 @@ The indicator is in the bottom right corner whenever MCP is on, and absent when 
 4. **Active**: at least one session is active.
 5. **Idle**: MCP is on and nothing is running.
 
-Each state has its own color from the semantic tokens and a short label, so color is never the only signal. Opening the panel clears the past errors and failures. A stalled session or a lost API connection keeps its state until it recovers.
+Each state has its own dot, from the semantic tokens, and a short label, so color is never the only signal. Failed and Error share the destructive color: Failed is a ring, Error a solid dot. Opening the panel clears the past errors and failures. A stalled session or a lost API connection keeps its state until it recovers.
 
 The panel is a sidebar in a wide window and an overlay in a narrow one. It lists sessions with their title, client, state and time left. Selecting one shows its updates and questions as a chat, and the user answers there, by choice or free text. A separate tab shows the activity list and errors. The panel takes sessions as generic data, so later LLM plugins can reuse it without knowing about MCP.
 
