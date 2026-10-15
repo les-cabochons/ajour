@@ -10,9 +10,11 @@ import { Button } from "@/components/ui/button";
 import {
   Command,
   CommandEmpty,
+  CommandGroup,
   CommandInput,
   CommandItem,
   CommandList,
+  CommandSeparator,
 } from "@/components/ui/command";
 import {
   InputGroup,
@@ -25,8 +27,10 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover";
+import { BACKLOG_ORDERINGS } from "@/domain/backlog/backlog-view";
 import {
   getLocalProjectDisplayName,
+  type BacklogSortMode,
   type LocalProject,
 } from "@/domain/local-state";
 import { ProjectIcon } from "@/lib/project-icons";
@@ -124,27 +128,53 @@ export function SidebarSearch() {
   );
 }
 
+/** The orderings the sidebar menu offers. Custom allows dragging rows. */
+const SIDEBAR_ORDERINGS: readonly BacklogSortMode[] = [
+  "custom",
+  "priority_asc",
+];
+
+function getOrderingLabel(mode: BacklogSortMode) {
+  return (
+    BACKLOG_ORDERINGS.find((ordering) => ordering.value === mode)?.label ??
+    "Priority descending"
+  );
+}
+
 /**
- * The project filter beside Search, like T3 Code's: a menu with its own
- * search, "All projects", then the active projects. The pick is saved per
- * device in the sidebar layout.
+ * The filter menu beside Search, like T3 Code's: a search box, the ordering,
+ * then "All projects" and the active projects. The ordering is the Backlog
+ * page's, so switching it here switches both. The menu offers Custom and
+ * Priority, plus the current ordering when the Backlog page picked another.
+ * The project pick is saved per device in the sidebar layout.
  */
-export function SidebarProjectFilter({
+export function SidebarFilterMenu({
   projects,
   projectId,
   onChange,
+  ordering,
+  onOrderingChange,
 }: {
   projects: readonly LocalProject[];
   projectId?: string;
   onChange: (projectId: string | undefined) => void;
+  ordering: BacklogSortMode;
+  onOrderingChange: (ordering: BacklogSortMode) => void;
 }) {
   const [open, setOpen] = useState(false);
   const active = projects.filter((project) => project.status === "active");
   const picked = active.find((project) => project._id === projectId);
-  if (active.length === 0) return null;
+  const orderings = SIDEBAR_ORDERINGS.includes(ordering)
+    ? SIDEBAR_ORDERINGS
+    : [...SIDEBAR_ORDERINGS, ordering];
 
   function pick(nextProjectId: string | undefined) {
     onChange(nextProjectId);
+    setOpen(false);
+  }
+
+  function order(nextOrdering: BacklogSortMode) {
+    onOrderingChange(nextOrdering);
     setOpen(false);
   }
 
@@ -154,7 +184,7 @@ export function SidebarProjectFilter({
         label={
           picked
             ? `Filtered to ${getLocalProjectDisplayName(picked)}`
-            : "Filter by project"
+            : "Filter and order"
         }
         side="bottom"
         render={
@@ -177,7 +207,7 @@ export function SidebarProjectFilter({
       <PopoverContent
         align="end"
         className="w-64 gap-0 overflow-hidden p-0"
-        aria-label="Filter the sidebar by project"
+        aria-label="Filter and order the sidebar"
       >
         <Command
           className="rounded-none bg-transparent p-0"
@@ -188,40 +218,62 @@ export function SidebarProjectFilter({
               : 0
           }
         >
-          <CommandInput autoFocus placeholder="Search projects..." />
-          <CommandList className="max-h-[min(22rem,55vh)] p-1">
-            <CommandEmpty>No projects found.</CommandEmpty>
-            <CommandItem
-              value="all-projects"
-              keywords={["All projects"]}
-              data-checked={picked ? undefined : "true"}
-              onSelect={() => pick(undefined)}
-            >
-              <AllProjectsIcon className="text-muted-foreground" />
-              <span className="flex-1">All projects</span>
-            </CommandItem>
-            {active.map((project) => (
-              <CommandItem
-                key={project._id}
-                value={project._id}
-                keywords={[
-                  getLocalProjectDisplayName(project),
-                  project.name,
-                  project.code ?? "",
-                ]}
-                data-checked={project._id === picked?._id ? "true" : undefined}
-                onSelect={() => pick(project._id)}
-              >
-                <ProjectIcon
-                  icon={project.icon}
-                  color={project.color}
-                  className="size-4 shrink-0"
-                />
-                <span className="min-w-0 flex-1 truncate">
-                  {getLocalProjectDisplayName(project)}
-                </span>
-              </CommandItem>
-            ))}
+          <CommandInput autoFocus placeholder="Search..." />
+          <CommandList className="max-h-[min(22rem,55vh)]">
+            <CommandEmpty>Nothing found.</CommandEmpty>
+            <CommandGroup heading="Ordering">
+              {orderings.map((mode) => (
+                <CommandItem
+                  key={mode}
+                  value={`ordering-${mode}`}
+                  keywords={[getOrderingLabel(mode)]}
+                  data-checked={mode === ordering ? "true" : undefined}
+                  onSelect={() => order(mode)}
+                >
+                  <span className="flex-1">{getOrderingLabel(mode)}</span>
+                </CommandItem>
+              ))}
+            </CommandGroup>
+            {active.length > 0 ? (
+              <>
+                <CommandSeparator />
+                <CommandGroup heading="Project">
+                  <CommandItem
+                    value="all-projects"
+                    keywords={["All projects"]}
+                    data-checked={picked ? undefined : "true"}
+                    onSelect={() => pick(undefined)}
+                  >
+                    <AllProjectsIcon className="text-muted-foreground" />
+                    <span className="flex-1">All projects</span>
+                  </CommandItem>
+                  {active.map((project) => (
+                    <CommandItem
+                      key={project._id}
+                      value={project._id}
+                      keywords={[
+                        getLocalProjectDisplayName(project),
+                        project.name,
+                        project.code ?? "",
+                      ]}
+                      data-checked={
+                        project._id === picked?._id ? "true" : undefined
+                      }
+                      onSelect={() => pick(project._id)}
+                    >
+                      <ProjectIcon
+                        icon={project.icon}
+                        color={project.color}
+                        className="size-4 shrink-0"
+                      />
+                      <span className="min-w-0 flex-1 truncate">
+                        {getLocalProjectDisplayName(project)}
+                      </span>
+                    </CommandItem>
+                  ))}
+                </CommandGroup>
+              </>
+            ) : null}
           </CommandList>
         </Command>
       </PopoverContent>
