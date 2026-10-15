@@ -159,12 +159,12 @@ The API emits one wide event per MCP request, `mcp.request`, with the client ID,
 ## Testing
 
 - `agent-sessions` unit tests with an injected clock cover the deadline margin and limits, stall and revival, the pause while a question is open, and withdrawal on end.
-- API tests cover 401 without a token or with a revoked one, 403 with an `Origin` header, 404 when MCP is off, the error without a bridge and the bridge timeout.
-- `agent-tool-runner` tests in the web app run each write tool against a real `localStore` and check one refusal from the action sets per object kind, such as moving a running entry.
-- One acceptance feature, `agent-mcp.feature`, uses the SDK's MCP client against the real API and web app:
+- API tests use the SDK's MCP client against the real API, with a fake renderer on the bridge. They cover 401 without a token or with a revoked one, 403 with an `Origin` header, 404 when MCP is off, the error without a bridge, the bridge timeout, an output that breaks its schema, and `wait_for_answer` returning the user's answer.
+- `agent-tool-runner` tests in the web app run each write tool against a real `localStore`, check every output against its schema, and check one refusal from the action sets per object kind, such as moving a running entry.
+- One acceptance feature, `agent-mcp.feature`, runs the web app with the local API stubbed, as the other features do. The stubbed bridge sends tool calls and snapshots:
   - An agent starts a timer. The timer runs, and the Undo toast names the client.
-  - An agent asks a question. The indicator shows Needs input, the user answers in the panel, and `wait_for_answer` returns the answer.
-  - MCP is off. The indicator is absent and `/mcp/ajour` answers 404.
+  - An agent asks a question. The indicator shows Needs input, the user answers in the panel, and the answer reaches the API.
+  - MCP is off. The indicator is absent.
 
 ## Slices
 

@@ -142,7 +142,7 @@ When("I open Settings MCP", async ({ page }) => {
   await page.goto("/settings/mcp");
 });
 
-When("I add the MCP client {string}", async ({ page }, name: string) => {
+When("I add the agent client {string}", async ({ page }, name: string) => {
   await page.getByLabel("Client name").fill(name);
   await page.getByRole("button", { name: "Add client" }).click();
 });
