@@ -92,7 +92,7 @@ import {
 import { ProjectIcon } from "@/lib/project-icons";
 import { openNewEntryEditor } from "@/features/time/new-entry-request";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
-import { cn, startOfWeekIsoDate } from "@/lib/utils";
+import { addDaysIsoDate, cn, startOfWeekIsoDate } from "@/lib/utils";
 
 type ProjectMetrics = {
   durationMs: number;
@@ -221,6 +221,13 @@ function BudgetBar({
   );
 }
 
+/** "-1:30" for a negative adjustment that outweighs the tracked time. */
+function formatSignedClock(durationMs: number) {
+  return durationMs < 0
+    ? `-${formatClockDuration(-durationMs)}`
+    : formatClockDuration(durationMs);
+}
+
 function formatEntryDay(localDate: string) {
   return new Date(`${localDate}T12:00:00`).toLocaleDateString(undefined, {
     weekday: "short",
@@ -335,6 +342,7 @@ function ProjectsList({
   onPointerDown,
   onOpen,
   onProjectAction,
+  onReorder,
   onNewProject,
 }: {
   projects: LocalProject[];
@@ -351,6 +359,7 @@ function ProjectsList({
   ) => void;
   onOpen: (projectId: string) => void;
   onProjectAction: (project: LocalProject, actionId: ProjectActionId) => void;
+  onReorder: (projectId: string, step: -1 | 1) => void;
   onNewProject: () => void;
 }) {
   return (
@@ -510,6 +519,19 @@ function ProjectsList({
                       params={{ projectId: project._id }}
                       className="project-task-name project-list-name"
                       draggable={false}
+                      // Alt+Up and Alt+Down reorder, like a drag. No other
+                      // item key acts on projects.
+                      onKeyDown={(event) =>
+                        handleItemKeyDown(event, {
+                          actions,
+                          keys: {},
+                          onAction,
+                          onReorder:
+                            !archived && canReorder
+                              ? (step) => onReorder(project._id, step)
+                              : undefined,
+                        })
+                      }
                     >
                       {name}
                     </Link>
@@ -588,7 +610,7 @@ function ProjectDetail({
   onOpenTask: (task: LocalProjectTask) => void;
   /** Opens a blank task in the task editor. */
   onNewTask: () => void;
-  /** Guards the breadcrumb back to the list, like the sidebar links. */
+  /** Guards the breadcrumb and the entry links out of the project. */
   onLeave: (event: React.MouseEvent<HTMLAnchorElement>) => void;
   /** Opens the slot picker for a task, like the palette's Assign shortcut…. */
   onAssignShortcut: (task: LocalProjectTask) => void;
@@ -944,7 +966,7 @@ function ProjectDetail({
     if (!budgetMs) {
       return (
         <Value className={cn("project-task-consumed", tone)}>
-          {formatClockDuration(consumedMs)}
+          {formatSignedClock(consumedMs)}
         </Value>
       );
     }
@@ -952,7 +974,7 @@ function ProjectDetail({
       <span className="project-budget">
         <BudgetBar ratio={Math.max(0, consumedMs) / budgetMs} />
         <Value className={cn("project-task-consumed", tone)}>
-          {formatClockDuration(consumedMs)} / {formatClockDuration(budgetMs)}
+          {formatSignedClock(consumedMs)} / {formatClockDuration(budgetMs)}
         </Value>
       </span>
     );
@@ -1301,6 +1323,7 @@ function ProjectDetail({
                         to="/time/$date"
                         params={{ date: entry.localDate }}
                         className="project-entry-row"
+                        onClick={onLeave}
                       >
                         <span className="project-entry-task">
                           {task?.name ?? "No task"}
@@ -1444,9 +1467,15 @@ export function ProjectsPage() {
 
   const weekMsByProject = useMemo(() => {
     const weekStart = startOfWeekIsoDate();
+    const weekEnd = addDaysIsoDate(weekStart, 6);
     const totals = new Map<string, number>();
     for (const entry of state.timesheetEntries) {
-      if (!entry.projectId || entry.localDate < weekStart) continue;
+      if (
+        !entry.projectId ||
+        entry.localDate < weekStart ||
+        entry.localDate > weekEnd
+      )
+        continue;
       totals.set(
         entry.projectId,
         (totals.get(entry.projectId) ?? 0) + entry.durationMs,
@@ -1879,7 +1908,9 @@ export function ProjectsPage() {
 
   /** Goes to a project, or to the archive with `null`, after `leaveProject`. */
   const goToProject = (projectId: string | null) => {
-    if (projectId === selectedProjectId || !leaveProject()) {
+    // Where we are: a project id, null on the archive, undefined on the list.
+    const here = isArchivePage ? null : (selectedProjectId ?? undefined);
+    if (projectId === here || !leaveProject()) {
       return;
     }
 
@@ -2084,6 +2115,7 @@ export function ProjectsPage() {
               goToProject(projectId);
             }}
             onProjectAction={runProjectAction}
+            onReorder={reorderProject}
             onNewProject={openCreateProjectModal}
           />
         </>
