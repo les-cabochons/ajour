@@ -9,7 +9,6 @@ import {
 } from "react";
 import { RiAddLine as Plus } from "@remixicon/react";
 import { Button } from "@/components/ui/button";
-import { Card } from "@/components/ui/card";
 import { Chip } from "@/components/ui/chip";
 import {
   ObjectActionsButton,
@@ -426,7 +425,7 @@ export function WeeklyTimeView({
                         entryActions.runAction(runningTarget, actionId)
                       }
                       render={
-                        <Card
+                        <div
                           tabIndex={0}
                           aria-label={`Running entry, ${formatClockDuration(runningTime.displayDurationMs)}`}
                           className="weekly-entry-card is-running"
@@ -473,7 +472,7 @@ export function WeeklyTimeView({
                           entryActions.runAction(target, actionId)
                         }
                         render={
-                          <Card
+                          <div
                             tabIndex={0}
                             role="button"
                             data-entry-id={entry._id}
