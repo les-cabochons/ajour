@@ -18,7 +18,7 @@ export const EMPTY_ENTRY_SELECTION: EntrySelection = {
   anchorId: null,
 };
 
-/** The modifier keys held during a click. `toggle` is Cmd on macOS, Ctrl elsewhere. */
+/** The modifier keys held during a click. `toggle` is Cmd or Ctrl. */
 export interface EntrySelectionModifiers {
   range: boolean;
   toggle: boolean;

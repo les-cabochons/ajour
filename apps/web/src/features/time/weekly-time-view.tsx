@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { RiAddLine as Plus } from "@remixicon/react";
@@ -12,10 +13,20 @@ import { Button } from "@/components/ui/button";
 import { MessagePanel } from "@/components/app-surface";
 import { Chip } from "@/components/ui/chip";
 import {
+  ObjectActionItems,
   ObjectActionsButton,
   ObjectContextMenu,
 } from "@/components/object-actions-menu";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
+import type {
+  ObjectAction,
+  TimeEntryActionId,
+} from "@/domain/actions/object-actions";
 import type {
   LocalTimesheetEntry,
   WeeklyTimeViewStyle,
@@ -40,6 +51,7 @@ import {
   offerTimeEntryUndo,
   useTimeEntryActions,
 } from "@/features/time/time-entry-actions";
+import { useEntrySelection } from "@/features/time/use-entry-selection";
 import { handleItemKeyDown, TIME_ENTRY_ACTION_KEYS } from "@/lib/item-keys";
 import { localStore } from "@/lib/local-store";
 import {
@@ -78,10 +90,13 @@ type EntryCardDragState = {
   width: number;
 };
 
+type ColumnPasteActionId = "paste-here" | "paste-same-weekdays";
+
 /**
  * The Week view: the Grid of project and task rows by day, or the Days columns of
- * entry cards. Clicks open entries and cells in the page's side panel. Dragging a
- * card to another day moves it; dragging it within its day reorders the day.
+ * entry cards. Grid clicks open cells in the page's side panel. A click selects a
+ * card for copy, cut and paste, and a double click opens it. Dragging a card to
+ * another day moves it; dragging it within its day reorders the day.
  */
 export function WeeklyTimeView({
   activeCell,
@@ -182,6 +197,55 @@ export function WeeklyTimeView({
       weekDates,
     ],
   );
+  const runningEntryId = currentTimer
+    ? (currentTimer.entryId ?? `running-${currentTimer._id}`)
+    : undefined;
+  // The Days cards in reading order: Monday's from the top, then Tuesday's.
+  const orderedCardIds = useMemo(
+    () =>
+      projection.days.flatMap((day) => [
+        ...(runningTime?.localDate === day.localDate && runningEntryId
+          ? [runningEntryId]
+          : []),
+        ...day.entries
+          .filter((entry) => entry._id !== currentTimer?.entryId)
+          .map((entry) => entry._id),
+      ]),
+    [currentTimer?.entryId, projection.days, runningEntryId, runningTime],
+  );
+  const sameWeekdayTarget = useMemo(
+    () => ({ kind: "same-weekday" as const, weekDates }),
+    [weekDates],
+  );
+  const selection = useEntrySelection({
+    resetKey: weekDates[0] ?? "",
+    orderedIds:
+      preferences.weeklyTimeViewStyle === "days" ? orderedCardIds : [],
+    runningEntryId,
+    pasteTarget: sameWeekdayTarget,
+    onOpen: (entryId) =>
+      entryId === runningEntryId && currentTimer
+        ? onOpenEntry({ timerId: currentTimer._id })
+        : openEntry(entryId),
+  });
+  // One right-click menu for every column, outside the cards' menu trees.
+  const [columnMenuDate, setColumnMenuDate] = useState<string | null>(null);
+  const columnMenuTriggerRef = useRef<HTMLDivElement>(null);
+  const pasteDisabledReason = selection.canPaste
+    ? undefined
+    : "Copy or cut entries first";
+  const columnPasteActions: ObjectAction<ColumnPasteActionId>[] = [
+    {
+      id: "paste-here",
+      label: "Paste here",
+      disabledReason: pasteDisabledReason,
+    },
+    {
+      id: "paste-same-weekdays",
+      label: "Paste on same weekdays",
+      disabledReason: pasteDisabledReason,
+    },
+  ];
   const draggedEntry = dragState
     ? (state.timesheetEntries.find(
         (entry) => entry._id === dragState.entryId,
@@ -354,6 +418,50 @@ export function WeeklyTimeView({
     }
   }
 
+  function selectCard(entryId: string, event: ReactMouseEvent<HTMLElement>) {
+    if (performance.now() >= suppressClickUntilRef.current) {
+      selection.handleClick(entryId, event);
+    }
+  }
+
+  /** Delete on a card that is part of a multiple selection deletes them all. */
+  function runCardAction(
+    target: Parameters<typeof entryActions.runAction>[0],
+    entryId: string,
+    actionId: TimeEntryActionId,
+  ) {
+    if (actionId === "delete" && selection.deleteSelection(entryId)) return;
+    entryActions.runAction(target, actionId);
+  }
+
+  /** Opens the paste menu for a column. A card's right-click opens its own menu. */
+  function openColumnMenu(localDate: string, event: ReactMouseEvent) {
+    if (
+      event.target instanceof Element &&
+      event.target.closest(".weekly-entry-card")
+    ) {
+      return;
+    }
+    event.preventDefault();
+    setColumnMenuDate(localDate);
+    columnMenuTriggerRef.current?.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: event.clientX,
+        clientY: event.clientY,
+      }),
+    );
+  }
+
+  function runColumnPaste(actionId: ColumnPasteActionId) {
+    if (actionId === "paste-same-weekdays") {
+      selection.paste(sameWeekdayTarget);
+    } else if (columnMenuDate) {
+      selection.paste({ kind: "day", localDate: columnMenuDate });
+    }
+  }
+
   function renderEntrySummary(entry: LocalTimesheetEntry) {
     const project = entry.projectId
       ? projectsById.get(entry.projectId)
@@ -433,6 +541,8 @@ export function WeeklyTimeView({
             gridTemplateColumns: `repeat(${projection.days.length}, minmax(0, 1fr))`,
           }}
           data-focus-scope
+          onPointerDown={selection.handleScopePointerDown}
+          onKeyDown={selection.handleScopeKeyDown}
         >
           {projection.days.map((day, index) => {
             const visibleEntries = currentTimer?.entryId
@@ -470,6 +580,7 @@ export function WeeklyTimeView({
                   month: "long",
                   day: "numeric",
                 })}
+                onContextMenu={(event) => openColumnMenu(day.localDate, event)}
               >
                 <header className="weekly-days-column-header">
                   <div>
@@ -501,7 +612,7 @@ export function WeeklyTimeView({
                   role="group"
                   aria-label={`${formatWeekDay(day.localDate, { weekday: "long" })} entries`}
                 >
-                  {runningHere && runningTarget ? (
+                  {runningHere && runningTarget && runningEntryId ? (
                     <ObjectContextMenu
                       actions={entryActions.getActions(runningTarget)}
                       keys={TIME_ENTRY_ACTION_KEYS}
@@ -512,10 +623,25 @@ export function WeeklyTimeView({
                         <div
                           tabIndex={0}
                           aria-label={`Running entry, ${formatClockDuration(runningTime.displayDurationMs)}`}
-                          className="weekly-entry-card is-running"
+                          aria-selected={selection.selectedIds.has(
+                            runningEntryId,
+                          )}
+                          className={cn(
+                            "weekly-entry-card is-running",
+                            selection.selectedIds.has(runningEntryId) &&
+                              "is-selected",
+                          )}
                           data-running-entry="true"
                           data-entry-id={currentTimer?.entryId ?? ""}
                           data-focus-column={index}
+                          onClick={(event) => selectCard(runningEntryId, event)}
+                          onDoubleClick={() =>
+                            runningTarget &&
+                            onOpenEntry({ timerId: runningTarget.timerId })
+                          }
+                          onFocus={(event) =>
+                            selection.handleFocus(runningEntryId, event)
+                          }
                           onKeyDown={(event) =>
                             handleItemKeyDown(event, {
                               actions: entryActions.getActions(runningTarget),
@@ -547,20 +673,21 @@ export function WeeklyTimeView({
                     const summary = renderEntrySummary(entry);
                     const target = { kind: "entry" as const, entry };
                     const actions = entryActions.getActions(target);
+                    const runAction = (actionId: TimeEntryActionId) =>
+                      runCardAction(target, entry._id, actionId);
                     return (
                       <ObjectContextMenu
                         key={entry._id}
                         actions={actions}
                         keys={TIME_ENTRY_ACTION_KEYS}
-                        onAction={(actionId) =>
-                          entryActions.runAction(target, actionId)
-                        }
+                        onAction={runAction}
                         render={
                           <div
                             tabIndex={0}
                             role="button"
                             data-entry-id={entry._id}
                             data-focus-column={index}
+                            aria-selected={selection.selectedIds.has(entry._id)}
                             aria-label={`${summary.projectName}, ${summary.taskName}, ${formatClockDuration(entry.durationMs)}`}
                             style={
                               {
@@ -569,12 +696,19 @@ export function WeeklyTimeView({
                             }
                             className={cn(
                               "weekly-entry-card",
-                              activeEntryId === entry._id && "is-selected",
+                              activeEntryId === entry._id && "is-editing",
+                              selection.selectedIds.has(entry._id) &&
+                                "is-selected",
+                              selection.cutIds.has(entry._id) && "is-cut",
                               dragState?.entryId === entry._id && "is-dragging",
                               dropLine?.entryId === entry._id &&
                                 `is-drop-${dropLine.edge}`,
                             )}
-                            onClick={() => openEntry(entry._id)}
+                            onClick={(event) => selectCard(entry._id, event)}
+                            onDoubleClick={() => openEntry(entry._id)}
+                            onFocus={(event) =>
+                              selection.handleFocus(entry._id, event)
+                            }
                             onKeyDown={(event) => {
                               // Space presses the card like a button; Enter is Edit.
                               if (
@@ -588,8 +722,7 @@ export function WeeklyTimeView({
                               handleItemKeyDown(event, {
                                 actions,
                                 keys: TIME_ENTRY_ACTION_KEYS,
-                                onAction: (actionId) =>
-                                  entryActions.runAction(target, actionId),
+                                onAction: runAction,
                                 onReorder: (step) =>
                                   reorderEntry(
                                     day.localDate,
@@ -630,9 +763,7 @@ export function WeeklyTimeView({
                           <ObjectActionsButton
                             actions={actions}
                             keys={TIME_ENTRY_ACTION_KEYS}
-                            onAction={(actionId) =>
-                              entryActions.runAction(target, actionId)
-                            }
+                            onAction={runAction}
                             label="Entry actions"
                           />
                         </footer>
@@ -667,6 +798,18 @@ export function WeeklyTimeView({
           <strong>{formatClockDuration(draggedEntry.durationMs)}</strong>
         </div>
       ) : null}
+      {/* Keep this root outside the columns so card menus are not nested under it. */}
+      <ContextMenu>
+        <ContextMenuTrigger
+          render={<div hidden ref={columnMenuTriggerRef} />}
+        />
+        <ContextMenuContent>
+          <ObjectActionItems
+            actions={columnPasteActions}
+            onAction={runColumnPaste}
+          />
+        </ContextMenuContent>
+      </ContextMenu>
       {entryActions.dialogs}
     </section>
   );

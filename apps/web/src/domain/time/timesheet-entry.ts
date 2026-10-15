@@ -392,8 +392,8 @@ export interface PastedTimesheetEntry {
  * saved values, as Duplicate to… does; `cut` moves it, as Move to… does. Entries
  * linked to a running timer, or gone since the copy, are skipped.
  *
- * Every pasted entry gets the same committed time, so the Day list shows them at the
- * top of their day in the order of `entries`.
+ * Pasted entries get the newest committed times, one millisecond apart, so the Day
+ * list and Week cards show them at the top of their day in the order of `entries`.
  */
 export function pasteTimesheetEntries(
   state: LocalAppState,
@@ -402,10 +402,9 @@ export function pasteTimesheetEntries(
   factories: TimesheetEntryFactories,
 ): LocalAppState {
   const pastedAt = factories.now();
-  const pasteFactories = { ...factories, now: () => pastedAt };
   const paste = mode === "cut" ? moveTimesheetEntry : duplicateTimesheetEntry;
 
-  return entries.reduce((current, { entryId, localDate }) => {
+  return entries.reduce((current, { entryId, localDate }, index) => {
     const entry = current.timesheetEntries.find((item) => item._id === entryId);
     if (!entry) {
       return current;
@@ -421,7 +420,8 @@ export function pasteTimesheetEntries(
         note: entry.note,
         durationMs: entry.durationMs,
       },
-      pasteFactories,
+      // Lists show newer entries first, so the first entry gets the latest time.
+      { ...factories, now: () => pastedAt + entries.length - 1 - index },
     );
   }, state);
 }

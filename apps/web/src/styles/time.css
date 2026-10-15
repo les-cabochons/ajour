@@ -164,11 +164,13 @@
     table-layout: fixed;
   }
 
+  /* No text selection, so Shift+click selects a range of rows instead. */
   .time-entry-row {
     height: 40px;
     border-bottom: 1px solid var(--border);
     cursor: pointer;
     outline: none;
+    user-select: none;
   }
 
   .time-entry-row:hover,
@@ -182,6 +184,15 @@
 
   .time-entry-row.is-editing {
     background: var(--hover-bg);
+  }
+
+  /* Selected for copy, cut and paste. */
+  .time-entry-row.is-selected {
+    background: var(--indigo-muted);
+  }
+
+  .time-entry-row.is-cut {
+    opacity: 0.5;
   }
 
   .time-entry-row.is-reorderable {
@@ -836,6 +847,7 @@
     font-size: var(--text-sm);
     cursor: pointer;
     outline: none;
+    user-select: none;
   }
 
   .weekly-entry-card:hover {
@@ -846,9 +858,18 @@
     box-shadow: 0 0 0 2px var(--focus-ring);
   }
 
-  .weekly-entry-card.is-selected {
+  .weekly-entry-card.is-editing {
     border-color: var(--ring);
     box-shadow: 0 0 0 1px var(--ring);
+  }
+
+  /* Selected for copy, cut and paste. The rail keeps the project color. */
+  .weekly-entry-card.is-selected {
+    background: var(--indigo-muted);
+  }
+
+  .weekly-entry-card.is-cut {
+    opacity: 0.5;
   }
 
   .weekly-entry-card.is-dragging {

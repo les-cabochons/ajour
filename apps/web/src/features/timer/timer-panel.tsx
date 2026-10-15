@@ -26,6 +26,8 @@ import {
   ObjectContextMenu,
 } from "@/components/object-actions-menu";
 import { useTimeEntryActions } from "@/features/time/time-entry-actions";
+import { useEntrySelection } from "@/features/time/use-entry-selection";
+import type { TimeEntryActionId } from "@/domain/actions/object-actions";
 import { formatClockDuration } from "@/domain/time/duration";
 import {
   getLocalProjectDisplayName,
@@ -124,9 +126,9 @@ function EntryMain({
 
 /**
  * The Day view's entry list: one 40px row per entry, the running entry first,
- * and a "New entry" row at the end. Rows and "New entry" ask the page to open
- * the entry editor through `onOpenEntry`; an empty target means a new entry on
- * `date`.
+ * and a "New entry" row at the end. A click selects a row for copy, cut and
+ * paste; a double click, Enter and "New entry" ask the page to open the entry
+ * editor through `onOpenEntry`. An empty target means a new entry on `date`.
  */
 export function TimerPanel({
   date,
@@ -213,6 +215,24 @@ export function TimerPanel({
     [entryDragState, visibleEntries],
   );
   const canReorderEntries = draggableEntryIds.length > 1;
+  const visibleEntryIds = useMemo(
+    () => visibleEntries.map((entry) => entry._id),
+    [visibleEntries],
+  );
+  const pasteTarget = useMemo(
+    () => ({ kind: "day" as const, localDate: date }),
+    [date],
+  );
+  const selection = useEntrySelection({
+    resetKey: date,
+    orderedIds: visibleEntryIds,
+    runningEntryId: runningEntry?._id,
+    pasteTarget,
+    onOpen: (entryId) => {
+      const entry = visibleEntries.find((item) => item._id === entryId);
+      if (entry) openEntry(entry);
+    },
+  });
 
   useEffect(() => {
     entryDragStateRef.current = entryDragState;
@@ -402,7 +422,11 @@ export function TimerPanel({
   }
 
   return (
-    <div className="time-entries">
+    <div
+      className="time-entries"
+      onPointerDown={selection.handleScopePointerDown}
+      onKeyDown={selection.handleScopeKeyDown}
+    >
       <table
         className={cn(
           "time-entries-table",
@@ -439,6 +463,15 @@ export function TimerPanel({
               ? { kind: "running" as const, timerId: entry.timerId }
               : { kind: "entry" as const, entry };
             const rowActions = entryActions.getActions(rowTarget);
+            const runRowAction = (actionId: TimeEntryActionId) => {
+              if (
+                actionId === "delete" &&
+                selection.deleteSelection(entry._id)
+              ) {
+                return;
+              }
+              entryActions.runAction(rowTarget, actionId);
+            };
             const draggableIndex = draggableEntryIds.indexOf(entry._id);
             const isDraggedEntry = entryDragState?.entryId === entry._id;
             const rowShift =
@@ -457,9 +490,7 @@ export function TimerPanel({
                 <ObjectContextMenu
                   actions={rowActions}
                   keys={TIME_ENTRY_ACTION_KEYS}
-                  onAction={(actionId) =>
-                    entryActions.runAction(rowTarget, actionId)
-                  }
+                  onAction={runRowAction}
                   render={
                     <tr
                       ref={(node) => {
@@ -478,6 +509,8 @@ export function TimerPanel({
                         "time-entry-row",
                         isRunning && "is-running",
                         isEditing && "is-editing",
+                        selection.selectedIds.has(entry._id) && "is-selected",
+                        selection.cutIds.has(entry._id) && "is-cut",
                         canReorderEntries &&
                           !isRunning &&
                           draggableIndex !== -1 &&
@@ -494,17 +527,28 @@ export function TimerPanel({
                           : undefined
                       }
                       aria-grabbed={isDraggedEntry}
+                      aria-selected={selection.selectedIds.has(entry._id)}
                       data-entry-id={entry._id}
                       data-running-entry={isRunning ? "true" : undefined}
                       data-focus-column="0"
                       tabIndex={0}
-                      onClick={() => openEntry(entry)}
+                      onClick={(event) => {
+                        if (
+                          performance.now() >=
+                          suppressEntryClickUntilRef.current
+                        ) {
+                          selection.handleClick(entry._id, event);
+                        }
+                      }}
+                      onDoubleClick={() => openEntry(entry)}
+                      onFocus={(event) =>
+                        selection.handleFocus(entry._id, event)
+                      }
                       onKeyDown={(event) =>
                         handleItemKeyDown(event, {
                           actions: rowActions,
                           keys: TIME_ENTRY_ACTION_KEYS,
-                          onAction: (actionId) =>
-                            entryActions.runAction(rowTarget, actionId),
+                          onAction: runRowAction,
                           // The running entry stays on top.
                           onReorder: isRunning
                             ? undefined
@@ -549,9 +593,7 @@ export function TimerPanel({
                       <ObjectActionsButton
                         actions={rowActions}
                         keys={TIME_ENTRY_ACTION_KEYS}
-                        onAction={(actionId) =>
-                          entryActions.runAction(rowTarget, actionId)
-                        }
+                        onAction={runRowAction}
                         label="Entry actions"
                         className="time-entry-more"
                       />

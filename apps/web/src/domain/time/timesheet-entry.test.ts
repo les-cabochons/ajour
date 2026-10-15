@@ -851,13 +851,11 @@ describe("pasteTimesheetEntries", () => {
       { _id: "copy-2", localDate: "2026-10-13", note: "tuesday" },
     ]);
     // The originals stay, and each copy logs its hour on the work item.
-    expect(pasted.timesheetEntries.slice(0, 2)).toEqual(
-      state.timesheetEntries,
-    );
+    expect(pasted.timesheetEntries.slice(0, 2)).toEqual(state.timesheetEntries);
     expect(pasted.workItems[0]).toMatchObject({ completedEstimateHours: 2 });
   });
 
-  it("moves cut entries and gives them one committed time", () => {
+  it("moves cut entries and keeps their pasted order newest first", () => {
     const state = createState({
       timesheetEntries: [
         entry("first", "2026-10-05", 10),
@@ -869,21 +867,21 @@ describe("pasteTimesheetEntries", () => {
         completedEstimateHours: 2,
       })),
     });
-    let clock = 500;
 
+    // Pasted in reading order: "second" was shown above "first".
     const pasted = pasteTimesheetEntries(
       state,
       [
-        { entryId: "first", localDate: "2026-10-07" },
         { entryId: "second", localDate: "2026-10-07" },
+        { entryId: "first", localDate: "2026-10-07" },
       ],
       "cut",
-      { createId: () => "unused", now: () => clock++ },
+      { createId: () => "unused", now: () => 500 },
     );
 
     expect(pasted.timesheetEntries).toMatchObject([
       { _id: "first", localDate: "2026-10-07", committedAt: 500 },
-      { _id: "second", localDate: "2026-10-07", committedAt: 500 },
+      { _id: "second", localDate: "2026-10-07", committedAt: 501 },
     ]);
     expect(pasted.workItems).toEqual(state.workItems);
   });

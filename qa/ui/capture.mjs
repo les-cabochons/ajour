@@ -56,7 +56,7 @@ const go = (page, route) =>
 await session({ name: "light" }, async (page, shot) => {
   await go(page, "/time/today");
   await shot("time-day");
-  await page.getByRole("row").nth(2).click();
+  await page.getByRole("row").nth(2).dblclick();
   await shot("time-day-editor");
   await page.keyboard.press("Escape");
   await go(page, "/time/today?view=week");
