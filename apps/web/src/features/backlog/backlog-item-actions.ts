@@ -4,6 +4,7 @@ import type { LocalWorkItem } from "@/domain/local-state";
 import { settleBacklogItem } from "@/features/backlog/settle-dialog";
 import { changeSourceStateWithUndo } from "@/features/backlog/backlog-item-moves";
 import { requestSnooze } from "@/features/backlog/snooze-picker";
+import { findWorkItemTimer } from "@/domain/time/running-entry";
 import { getWorkItemEntryValues } from "@/features/backlog/work-item-timer-comment";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { openNewEntryEditor } from "@/features/time/new-entry-request";
@@ -31,18 +32,21 @@ export function runBacklogItemAction(
 ) {
   switch (actionId) {
     case "start-entry":
-      if (
-        localStore
-          .snapshot()
-          .timers.some((timer) => timer.workItemId === workItem._id)
-      )
-        return;
+      if (findWorkItemTimer(localStore.snapshot().timers, workItem._id)) return;
       // Today, saving any running entry first.
       localStore.startTimer({
         ...getWorkItemEntryValues(workItem),
         accumulatedDurationMs: 0,
       });
       return;
+    case "stop-entry": {
+      const timer = findWorkItemTimer(
+        localStore.snapshot().timers,
+        workItem._id,
+      );
+      if (timer) localStore.saveTimer(timer._id);
+      return;
+    }
     case "new-entry":
       openNewEntryEditor(
         { kind: "backlog-item", workItemId: workItem._id },

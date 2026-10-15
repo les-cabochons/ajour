@@ -1,6 +1,11 @@
 import { useNavigate } from "@tanstack/react-router";
 import { getBacklogItemActions } from "@/domain/actions/object-actions";
+import {
+  getDirectChildWorkItems,
+  isSubtaskWorkItem,
+} from "@/domain/backlog/work-item-hierarchy";
 import { findPinnedTask } from "@/domain/projects/project-transitions";
+import { findWorkItemTimer } from "@/domain/time/running-entry";
 import { selectMostRecentTimesheetEntry } from "@/domain/time/timesheet-entry";
 import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
 import { resolveFocusedObject } from "@/lib/focused-object";
@@ -31,22 +36,26 @@ export function useGlobalShortcuts(selectedTimeDate: string) {
     () => {
       const state = localStore.snapshot();
       const runningTimer = state.timers[0];
-      // Like C on a focused entry, S on a focused backlog item starts an entry
-      // on it, switching from any running one. On the item already running, S
-      // stops it as usual.
+      // Like C on a focused entry, S on a focused backlog item runs the action
+      // in its Start entry slot: Start entry, switching from any running
+      // entry, or Stop on the item that is running.
       const focused = resolveFocusedObject(document.activeElement);
       const workItem =
         focused?.kind === "backlog-item"
           ? state.workItems.find((item) => item._id === focused.workItemId)
           : undefined;
-      if (workItem && runningTimer?.workItemId !== workItem._id) {
-        const start = getBacklogItemActions(workItem, {
-          subitemCount: 0,
-          isSubitem: false,
-          isRunning: false,
-        }).find((action) => action.id === "start-entry");
-        if (!start?.disabledReason) {
-          runBacklogItemAction(workItem, "start-entry", () => undefined);
+      if (workItem) {
+        const action = getBacklogItemActions(workItem, {
+          subitemCount: getDirectChildWorkItems(workItem, state.workItems)
+            .length,
+          isSubitem: isSubtaskWorkItem(workItem),
+          isRunning: Boolean(findWorkItemTimer(state.timers, workItem._id)),
+        }).find(
+          (candidate) =>
+            candidate.id === "start-entry" || candidate.id === "stop-entry",
+        );
+        if (action && !action.disabledReason) {
+          runBacklogItemAction(workItem, action.id, () => undefined);
         }
         return;
       }

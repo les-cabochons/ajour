@@ -45,6 +45,7 @@ import {
   type LocalWorkflowState,
 } from "@/domain/local-state";
 import { formatCompactDuration } from "@/domain/time/duration";
+import { findWorkItemTimer } from "@/domain/time/running-entry";
 import { settleOpensDialog } from "@/features/backlog/settle-dialog";
 import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
 import { formatSnoozeTime } from "@/features/backlog/snooze-presets";
@@ -110,9 +111,7 @@ function useBacklogItemRow(state: LocalAppState, now: number) {
     function actionsFor(workItem: LocalWorkItem, subitemCount?: number) {
       const { state, now } = latest.current;
       return getBacklogItemActions(workItem, {
-        isRunning: state.timers.some(
-          (timer) => timer.workItemId === workItem._id,
-        ),
+        isRunning: Boolean(findWorkItemTimer(state.timers, workItem._id)),
         isSubitem: isSubtaskWorkItem(workItem),
         isSnoozed: isBacklogItemSnoozed(workItem, now),
         subitemCount: subitemCount ?? countSubitems(workItem, state.workItems),
@@ -207,7 +206,7 @@ function LeadingIcon({
         <RowActionButton
           label="Settle"
           shortcut="item.settle"
-          className="hidden size-4 rounded-full border-[1.5px] border-foreground/50 group-focus-within:flex group-hover:flex hover:border-foreground hover:bg-foreground/10"
+          className="hidden size-4 rounded-full border-[1.5px] border-foreground/50 group-focus-within:flex group-hover:flex hover:border-foreground"
           onClick={(event) =>
             rows.run(workItem, "settle", { askToSettle: event.shiftKey })
           }
@@ -226,27 +225,20 @@ function StartButton({
   workItem,
   actions,
   rows,
-  isRunning,
   className,
 }: {
   workItem: LocalWorkItem;
   actions: RowActionList;
   rows: RowApi;
-  isRunning: boolean;
   className?: string;
 }) {
-  if (isRunning) {
+  if (actions.some((action) => action.id === "stop-entry")) {
     return (
       <RowActionButton
         label="Stop"
         shortcut="entry.stop-or-start"
         className={cn(iconButton, className)}
-        onClick={() => {
-          const timer = localStore
-            .snapshot()
-            .timers.find((entry) => entry.workItemId === workItem._id);
-          if (timer) localStore.saveTimer(timer._id);
-        }}
+        onClick={() => rows.run(workItem, "stop-entry")}
       >
         <StopIcon className="size-3.5" />
       </RowActionButton>
@@ -282,7 +274,6 @@ function RowActions({
   workItem,
   actions,
   rows,
-  isRunning,
   showStart = true,
   showSettle = false,
   buttonClassName,
@@ -291,7 +282,6 @@ function RowActions({
   workItem: LocalWorkItem;
   actions: RowActionList;
   rows: RowApi;
-  isRunning: boolean;
   showStart?: boolean;
   showSettle?: boolean;
   buttonClassName?: string;
@@ -307,7 +297,6 @@ function RowActions({
           workItem={workItem}
           actions={actions}
           rows={rows}
-          isRunning={isRunning}
           className={buttonClassName}
         />
       ) : null}
@@ -439,7 +428,7 @@ function ParentLink({
     <TooltipButton
       label={parent.title}
       aria-label={`Open parent: ${parent.title}`}
-      className={cn(className, "hover:bg-foreground/10 hover:text-foreground")}
+      className={cn(className, "hover:text-foreground")}
       onClick={(event) => {
         event.stopPropagation();
         rows.open(parent);
@@ -518,7 +507,6 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
               workItem={workItem}
               actions={actions}
               rows={rows}
-              isRunning={props.isRunning}
               showStart={false}
               showSettle
               buttonClassName="size-5"
@@ -541,11 +529,11 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
           {workItem.title}
         </span>
         {/* Kept empty without a state, so every row is the same height. */}
-        <span className="flex h-4 items-center gap-1.5 text-xs text-muted-foreground/70">
+        <span className="flex h-4 items-center gap-1.5 text-xs text-[var(--text-tertiary)]">
           {workflowState ? (
             <>
               <span
-                className="backlog-state-dot size-2.5 opacity-70"
+                className="backlog-state-dot size-2.5"
                 style={{ color: workflowState.color }}
               />
               <span className="min-w-0 truncate">{workflowState.name}</span>
@@ -566,12 +554,7 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
           className="absolute top-1/2 right-2.5 hidden -translate-y-1/2 group-focus-within:flex group-hover:flex"
           onClick={(event) => event.stopPropagation()}
         >
-          <StartButton
-            workItem={workItem}
-            actions={actions}
-            rows={rows}
-            isRunning={props.isRunning}
-          />
+          <StartButton workItem={workItem} actions={actions} rows={rows} />
         </span>
       ) : null}
     </ObjectContextMenu>
@@ -582,7 +565,7 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
  * The Compact row, one line: the type icon, the title, then the markers. A
  * subitem shows its parent after its title. A row re-renders for its own
  * props only, and its hover controls mount while it is hovered or focused: a
- * tooltip button per action for every row is most of the cost of a long list.
+ * set of action buttons for every row is most of the cost of a long list.
  */
 const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
   const { workItem, parent, isActive, iconData, rows } = props;
@@ -645,7 +628,6 @@ const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
           workItem={workItem}
           actions={actions}
           rows={rows}
-          isRunning={props.isRunning}
           className="hidden group-focus-within:flex group-hover:flex"
         />
       ) : null}

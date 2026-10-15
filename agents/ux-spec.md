@@ -57,7 +57,7 @@ Start entry · New entry… · Edit · Assign shortcut… · Archive (Restore wh
 
 ### Backlog item
 
-Start entry · New entry… · Edit · Add subitem · Snooze… (Unsnooze when snoozed) · Settle… (Unsettle when settled, Restore when archived) · Open in source · Archive · Delete
+Start entry (Stop while its entry runs) · New entry… · Edit · Add subitem · Snooze… (Unsnooze when snoozed) · Settle… (Unsettle when settled, Restore when archived) · Open in source · Archive · Delete
 
 Changed in [#69](https://github.com/les-cabochons/ajour/issues/69). See the Backlog sidebar section for what Snooze and Settle do.
 
@@ -351,7 +351,7 @@ Frequent in-app actions use single keys. They only work when focus is not in a t
 - Day rows become focusable, like Week cards.
 - ↑ and ↓ move focus between rows or cards. ← and → move between days in Days and between cells in the Grid.
 - Enter goes one level deeper. On a time entry, task or project it opens Edit. On a backlog item row it opens the backlog item page, and on that page it opens Edit. E no longer opens Edit. Delete or Backspace deletes, with the Undo toast.
-- On a focused backlog item, or on its page, E settles and B snoozes, as in Gmail. Shift+E opens the settle dialog even when a settle rule applies a fixed change. Cmd+D duplicates. M opens Move to…. Alt+↑ and Alt+↓ reorder.
+- On a focused backlog item, or on its page, S starts an entry on it (Stop when its entry runs), E settles and B snoozes, as in Gmail. Shift+E opens the settle dialog even when a settle rule applies a fixed change. Cmd+D duplicates. M opens Move to…. Alt+↑ and Alt+↓ reorder.
 - The context menu key, Shift+F10 or "." opens the "…" menu. Escape closes whatever is open.
 - Every item in the "…" and right-click menus shows its key, so the menus teach the shortcuts.
 

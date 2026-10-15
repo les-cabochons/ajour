@@ -4,6 +4,7 @@ import {
   RiExternalLinkLine,
   RiPencilLine,
   RiPlayLine,
+  RiStopLine,
 } from "@remixicon/react";
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
@@ -87,6 +88,7 @@ export function BacklogPeek({
   const project = state.projects.find((p) => p._id === item.projectId);
   const actions = getBacklogSurfaceActions(item, state, now);
   const startAction = actions.find((action) => action.id === "start-entry");
+  const stopAction = actions.find((action) => action.id === "stop-entry");
   const children = getDirectChildWorkItems(item, state.workItems);
   const reference = parseWorkItemReference(item.sourceId) ?? item.sourceId;
   const notice = getBacklogItemNotice(item, now);
@@ -153,7 +155,12 @@ export function BacklogPeek({
         <p className="text-xs text-muted-foreground">{notice}</p>
       ) : null}
       <div className="flex flex-wrap gap-2">
-        {item.status !== "archived" && (
+        {stopAction ? (
+          <Button variant="outline" onClick={() => onAction("stop-entry")}>
+            <RiStopLine data-icon="inline-start" />
+            Stop
+          </Button>
+        ) : item.status !== "archived" ? (
           <TooltipButton
             label={
               startAction?.disabledReason
@@ -173,7 +180,7 @@ export function BacklogPeek({
             <RiPlayLine data-icon="inline-start" />
             Start entry
           </TooltipButton>
-        )}
+        ) : null}
         <Button
           variant="ghost"
           disabled={item.status === "archived"}
