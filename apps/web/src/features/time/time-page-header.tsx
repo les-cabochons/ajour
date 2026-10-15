@@ -2,7 +2,6 @@ import {
   RiArrowGoBackLine as ReturnIcon,
   RiArrowLeftSLine as ChevronLeft,
   RiArrowRightSLine as ChevronRight,
-  RiSendPlaneLine as Send,
 } from "@remixicon/react";
 import { PageHeader, PageTitle } from "@/components/page-header";
 import { TooltipButton } from "@/components/tooltip-button";
@@ -35,8 +34,7 @@ export function formatWeekRange(weekDates: string[]) {
 
 /**
  * The Time page's top bar: previous and next, the day (a calendar trigger) or
- * the week's range, a Today chip or the way back to today, then Day | Week
- * and Submit week as the page's actions.
+ * the week's range, a Today chip or the way back to today, then Day | Week.
  */
 export function TimePageHeader({
   date,
@@ -46,7 +44,6 @@ export function TimePageHeader({
   weekAvailable,
   onSelectDate,
   onChangeView,
-  onSubmit,
 }: {
   date: string;
   today: string;
@@ -56,7 +53,6 @@ export function TimePageHeader({
   weekAvailable: boolean;
   onSelectDate: (date: string) => void;
   onChangeView: (view: TimeView) => void;
-  onSubmit: () => void;
 }) {
   const step = view === "week" ? 7 : 1;
   const unit = view === "week" ? "week" : "day";
@@ -66,28 +62,22 @@ export function TimePageHeader({
   return (
     <PageHeader
       actions={
-        <>
-          {weekAvailable ? (
-            <ToggleGroup
-              value={[view]}
-              onValueChange={(values) => {
-                const next = values[0];
-                if ((next === "day" || next === "week") && next !== view) {
-                  onChangeView(next);
-                }
-              }}
-              variant="outline"
-              aria-label="Time view"
-            >
-              <ToggleGroupItem value="day">Day</ToggleGroupItem>
-              <ToggleGroupItem value="week">Week</ToggleGroupItem>
-            </ToggleGroup>
-          ) : null}
-          <Button variant="outline" onClick={onSubmit}>
-            <Send data-icon="inline-start" />
-            Submit week
-          </Button>
-        </>
+        weekAvailable ? (
+          <ToggleGroup
+            value={[view]}
+            onValueChange={(values) => {
+              const next = values[0];
+              if ((next === "day" || next === "week") && next !== view) {
+                onChangeView(next);
+              }
+            }}
+            variant="outline"
+            aria-label="Time view"
+          >
+            <ToggleGroupItem value="day">Day</ToggleGroupItem>
+            <ToggleGroupItem value="week">Week</ToggleGroupItem>
+          </ToggleGroup>
+        ) : null
       }
     >
       <span className="ajour-page-header-nav">
