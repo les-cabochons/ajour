@@ -30,7 +30,7 @@ To log time while you work instead, start a [running entry](/time/running-entrie
 
 ## Edit an entry
 
-Click a row to open it in the side panel. Change the task, the hours, the note or the date, then press **Save** or <kbd>⌘</kbd> <kbd>Enter</kbd>.
+Double-click a row, or press <kbd>Enter</kbd> on it, to open it in the side panel. A single click selects the row, so you can [copy and paste](/time/entries#select-copy-and-paste-entries) it. Change the task, the hours, the note or the date, then press **Save** or <kbd>⌘</kbd> <kbd>Enter</kbd>.
 
 <Shot name="time-entry-editor" alt="An entry open in the side panel next to the day" />
 

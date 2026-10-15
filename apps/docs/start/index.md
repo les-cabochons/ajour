@@ -43,7 +43,7 @@ Forgot to start the timer? Press <kbd>N</kbd>, pick the task, type the hours as 
 
 ## 4. Fix an entry
 
-Click any row of the day to open it in the side panel. Change the task, the hours or the note, then press <kbd>⌘</kbd> <kbd>Enter</kbd> to save. Right-click a row for more actions, such as **Duplicate**, **Move to…** or **Delete**. See [Time entries](/time/entries).
+Double-click any row of the day to open it in the side panel. Change the task, the hours or the note, then press <kbd>⌘</kbd> <kbd>Enter</kbd> to save. Right-click a row for more actions, such as **Duplicate**, **Move to…** or **Delete**. See [Time entries](/time/entries).
 
 ## 5. Commit the week
 

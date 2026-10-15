@@ -1975,7 +1975,7 @@ When(
       await page
         .locator(".time-entry-row")
         .filter({ hasText: "Original note" })
-        .click();
+        .dblclick();
     }
     await page.getByLabel("Note", { exact: true }).fill("Changed note");
     await page.getByRole("button", { name: "Save", exact: true }).click();

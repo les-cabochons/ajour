@@ -8,6 +8,7 @@ import {
   markTimesheetEntriesCommitted,
   moveTimesheetEntry,
   normalizeTimesheetEntry,
+  pasteTimesheetEntries,
   reorderTimesheetEntries,
   saveManualTimesheetEntry,
   selectMostRecentTimesheetEntry,
@@ -888,5 +889,116 @@ describe("committed copies", () => {
     });
 
     expect(changeOf(duplicated, "copy")).toBe("added");
+  });
+});
+
+describe("pasteTimesheetEntries", () => {
+  const HOUR = 60 * 60 * 1000;
+  function entry(id: string, localDate: string, committedAt: number) {
+    return {
+      _id: id,
+      localDate,
+      workItemId: "work-item-1",
+      projectId: "project-1",
+      taskId: "task-1",
+      label: "Feature work",
+      note: id,
+      durationMs: HOUR,
+      sourceBlockIds: [],
+      committedAt,
+    };
+  }
+  let nextId = 0;
+  const pasteFactories = {
+    createId: () => `copy-${++nextId}`,
+    now: () => 500,
+  };
+
+  it("copies several entries to their days in one change", () => {
+    nextId = 0;
+    const state = createState({
+      timesheetEntries: [
+        entry("monday", "2026-10-05", 10),
+        entry("tuesday", "2026-10-06", 20),
+      ],
+    });
+
+    const pasted = pasteTimesheetEntries(
+      state,
+      [
+        { entryId: "monday", localDate: "2026-10-12" },
+        { entryId: "tuesday", localDate: "2026-10-13" },
+      ],
+      "copy",
+      pasteFactories,
+    );
+
+    expect(pasted.timesheetEntries.slice(2)).toMatchObject([
+      { _id: "copy-1", localDate: "2026-10-12", note: "monday" },
+      { _id: "copy-2", localDate: "2026-10-13", note: "tuesday" },
+    ]);
+    // The originals stay, and each copy logs its hour on the work item.
+    expect(pasted.timesheetEntries.slice(0, 2)).toEqual(state.timesheetEntries);
+    expect(pasted.workItems[0]).toMatchObject({ completedEstimateHours: 2 });
+  });
+
+  it("moves cut entries and keeps their pasted order newest first", () => {
+    const state = createState({
+      timesheetEntries: [
+        entry("first", "2026-10-05", 10),
+        entry("second", "2026-10-05", 20),
+      ],
+      // The two hours the entries already logged.
+      workItems: createState().workItems.map((workItem) => ({
+        ...workItem,
+        completedEstimateHours: 2,
+      })),
+    });
+
+    // Pasted in reading order: "second" was shown above "first".
+    const pasted = pasteTimesheetEntries(
+      state,
+      [
+        { entryId: "second", localDate: "2026-10-07" },
+        { entryId: "first", localDate: "2026-10-07" },
+      ],
+      "cut",
+      { createId: () => "unused", now: () => 500 },
+    );
+
+    expect(pasted.timesheetEntries).toMatchObject([
+      { _id: "first", localDate: "2026-10-07", committedAt: 500 },
+      { _id: "second", localDate: "2026-10-07", committedAt: 501 },
+    ]);
+    expect(pasted.workItems).toEqual(state.workItems);
+  });
+
+  it("skips entries that are gone or linked to the running timer", () => {
+    const state = createState({
+      timesheetEntries: [entry("running", "2026-10-05", 10)],
+      timers: [
+        {
+          _id: "timer-1",
+          startedAt: 1,
+          localDate: "2026-10-05",
+          projectId: "project-1",
+          taskId: "task-1",
+          accumulatedDurationMs: HOUR,
+          entryId: "running",
+        },
+      ],
+    });
+
+    const pasted = pasteTimesheetEntries(
+      state,
+      [
+        { entryId: "running", localDate: "2026-10-06" },
+        { entryId: "deleted", localDate: "2026-10-06" },
+      ],
+      "cut",
+      pasteFactories,
+    );
+
+    expect(pasted).toBe(state);
   });
 });

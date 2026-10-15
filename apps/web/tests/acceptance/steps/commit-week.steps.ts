@@ -119,7 +119,7 @@ When(
   async ({ page }, note: string, hours: string) => {
     await page.goto("/time/2026-10-05");
     const row = page.locator(".time-entry-row").filter({ hasText: note });
-    await row.click();
+    await row.dblclick();
     await page.getByRole("textbox", { name: "Hours", exact: true }).fill(hours);
     await page.getByRole("button", { name: "Save", exact: true }).click();
     await expect(row).toContainText(hours);

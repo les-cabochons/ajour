@@ -72,7 +72,7 @@ const shots = [
     name: "time-entry-editor",
     run: async (page) => {
       await go(page, "/time/today");
-      await page.getByRole("row").nth(2).click();
+      await page.getByRole("row").nth(2).dblclick();
     },
   },
   {
