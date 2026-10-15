@@ -1,6 +1,7 @@
 import { useMemo, useRef, type KeyboardEvent, type PointerEvent } from "react";
 import { Link } from "@tanstack/react-router";
 import {
+  RiPlayLine as PlayIcon,
   RiSearchLine as SearchIcon,
   RiSettings3Line as Settings,
   RiSideBarLine as SidebarIcon,
@@ -32,7 +33,11 @@ import {
   SidebarViewSwitcher,
   type SidebarViewOption,
 } from "@/features/layout/sidebar-view-switcher";
-import { TimerDock, TodayTotal } from "@/features/layout/timer-dock";
+import {
+  startBlankEntry,
+  TimerDock,
+  TodayTotal,
+} from "@/features/layout/timer-dock";
 import type { AppSidebarState } from "@/lib/app-sidebar";
 import { useLocalState } from "@/lib/local-hooks";
 import { isDesktopShell } from "@/lib/runtime";
@@ -174,7 +179,8 @@ export function SidebarToggleButton({
 /**
  * The app sidebar on desktop widths, from the top: the sidebar toggle and the
  * logo beside the macOS traffic lights (in the corner elsewhere), the view
- * switcher and Search, the timer dock, then the work list. It shows beside the page, or over it in narrow
+ * switcher with Start (while nothing runs) and Search, the timer dock, then
+ * the work list. It shows beside the page, or over it in narrow
  * desktop windows (`overlay`), where it cannot be resized. `useAppSidebar`
  * owns whether it shows.
  */
@@ -252,21 +258,41 @@ export function AppNavigationSidebar({
           selectedTimeDate={selectedTimeDate}
           options={views}
         />
-        <TooltipButton
-          label="Search"
-          shortcut="app.command-palette"
-          side="bottom"
-          render={
-            <Button
-              variant="ghost"
-              size="icon"
-              className="ajour-app-sidebar-toggle"
-              onClick={openCommandPalette}
-            />
-          }
-        >
-          <SearchIcon />
-        </TooltipButton>
+        <span className="ml-auto flex items-center gap-0.5">
+          {/* An empty entry, unlike the dock's start for the Up next item. */}
+          {state.timers.length === 0 ? (
+            <TooltipButton
+              label="Start"
+              shortcut="entry.stop-or-start"
+              side="bottom"
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="ajour-app-sidebar-toggle"
+                  onClick={startBlankEntry}
+                />
+              }
+            >
+              <PlayIcon />
+            </TooltipButton>
+          ) : null}
+          <TooltipButton
+            label="Search"
+            shortcut="app.command-palette"
+            side="bottom"
+            render={
+              <Button
+                variant="ghost"
+                size="icon"
+                className="ajour-app-sidebar-toggle"
+                onClick={openCommandPalette}
+              />
+            }
+          >
+            <SearchIcon />
+          </TooltipButton>
+        </span>
       </div>
 
       <TimerDock upNext={listed[0]} />

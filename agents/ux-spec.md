@@ -126,13 +126,14 @@ Decided in [App shell and collapsible sidebar](https://github.com/les-cabochons/
 - The state is saved per device. Below 1100px the sidebar hides on its own, without changing the saved preference. Show sidebar and Cmd+B then open it over the page, and opening a page from it, Escape or a click outside closes it.
 - Settings opens inside the shell, in place of the app sidebar: the left column lists the settings pages under their App, Work and Data groups, at the app sidebar's width and at every desktop width. "Back to app" at its top returns to the last page outside Settings. While Settings is open the timer dock floats, fitted to the bottom of that column, and the titlebar shows no Show sidebar button.
 - Projects keeps its own list of projects next to the app sidebar, with no collapse control of its own.
-- The titlebar keeps the totals pill. New entry (+) and Start (▶) live in the timer dock. The date picker only shows in the narrow view. The running entry lives in the timer dock, not the titlebar.
+- The titlebar keeps the totals pill. New entry (+) lives in the timer dock and Start (▶) beside Search. The date picker only shows in the narrow view. The running entry lives in the timer dock, not the titlebar.
 
 ### Timer dock
 
 - While an entry runs, the dock shows it: a running dot, its title (the backlog item's, else the note, the task or the project), the time counted with seconds, New entry (+) and Stop. With a remaining estimate, a bar shows how much of it the running time uses, with "1.1h left" or "0.4h over", next to the project code and task.
 - Clicking the dock opens the running entry's editor in a popover. New entry (+) opens a blank entry editor in a popover anchored to it.
-- With nothing running, the dock shows "Nothing running", today's total, New entry (+) and a one-click start for the first item of the list, marked Up next. With an empty list, "Start an entry" starts an empty entry and opens its editor.
+- With nothing running, the dock shows "Nothing running", today's total, New entry (+) and a one-click start for the first item of the list, marked Up next.
+- With nothing running, a small Start (▶) beside Search, above the dock, starts an empty entry and opens its editor. It hides while an entry runs.
 - N opens the new entry editor from anywhere, anchored to the titlebar's totals off the Time pages. S starts an empty entry.
 - While the sidebar is not on screen, the dock floats at the bottom left on one line: dot, title, time counted and Stop. While nothing runs it holds New entry (+) and Start (▶), the only buttons that start an entry there.
 - The window title shows the running entry, such as "● 1:24 · Fix export rounding — Ajour", so it shows on the taskbar or Dock. It changes once a minute and goes back to "Ajour" when nothing runs.

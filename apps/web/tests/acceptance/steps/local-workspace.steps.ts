@@ -559,10 +559,9 @@ When("I show the app sidebar from the titlebar", async ({ page }) => {
   await page.getByRole("button", { name: "Show sidebar" }).click();
 });
 
-When("I start an empty entry from the timer dock", async ({ page }) => {
+When("I start an empty entry from the sidebar", async ({ page }) => {
   await page
     .getByRole("navigation", { name: "Primary navigation" })
-    .getByRole("region", { name: "Timer" })
     .getByRole("button", { name: "Start", exact: true })
     .click();
 });

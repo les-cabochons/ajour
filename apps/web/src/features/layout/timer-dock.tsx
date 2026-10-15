@@ -133,17 +133,6 @@ export function useRunningEntry() {
   return { timer, summary, runningDurationMs, todayTotalMs };
 }
 
-const startRowClassName =
-  "flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md border pr-2 pl-1 text-left text-sm outline-none hover:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring";
-
-function StartIcon() {
-  return (
-    <span className="flex size-5 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-foreground text-background">
-      <PlayIcon className="size-3" />
-    </span>
-  );
-}
-
 function StopButton({
   timerId,
   className,
@@ -184,8 +173,8 @@ function NewEntryButton() {
  * The timer box in the expanded sidebar. While an entry runs: its title, the
  * time counted, "+", Stop, and how much of the item's remaining estimate it
  * uses. Clicking it opens the running entry's editor. Otherwise: today's total,
- * "+" and a one-click start for `upNext`, or for an empty entry when the
- * backlog is empty.
+ * "+" and a one-click start for `upNext`. Start for an empty entry sits above
+ * it, beside Search.
  */
 export function TimerDock({ upNext }: { upNext?: LocalWorkItem }) {
   const { timer, summary, runningDurationMs, todayTotalMs } = useRunningEntry();
@@ -208,13 +197,15 @@ export function TimerDock({ upNext }: { upNext?: LocalWorkItem }) {
           {upNext ? (
             <button
               type="button"
-              className={startRowClassName}
+              className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md border pr-2 pl-1 text-left text-sm outline-none hover:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring"
               aria-label={`Start entry on ${upNext.title}`}
               onClick={() =>
                 runBacklogItemAction(upNext, "start-entry", () => undefined)
               }
             >
-              <StartIcon />
+              <span className="flex size-5 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-foreground text-background">
+                <PlayIcon className="size-3" />
+              </span>
               <span className="min-w-0 flex-1 truncate font-medium">
                 {upNext.title}
               </span>
@@ -222,19 +213,7 @@ export function TimerDock({ upNext }: { upNext?: LocalWorkItem }) {
                 Up next
               </span>
             </button>
-          ) : (
-            <button
-              type="button"
-              className={startRowClassName}
-              aria-label="Start"
-              onClick={startBlankEntry}
-            >
-              <StartIcon />
-              <span className="min-w-0 flex-1 truncate text-muted-foreground">
-                Start an entry
-              </span>
-            </button>
-          )}
+          ) : null}
         </div>
       </section>
     );

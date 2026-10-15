@@ -29,7 +29,7 @@ Feature: Open the local time workspace
   Scenario: Follow the running entry with the sidebar hidden
     Given I have no saved Ajour workspace
     When I open today's time workspace
-    And I start an empty entry from the timer dock
+    And I start an empty entry from the sidebar
     Then the timer dock opens the running entry
     And the window title shows the running entry
     When I open Settings from the desktop sidebar
@@ -154,7 +154,7 @@ Feature: Open the local time workspace
   Scenario: Keep the running entry's draft across the narrow breakpoint
     Given I have no saved Ajour workspace
     When I open today's time workspace
-    And I start an empty entry from the timer dock
+    And I start an empty entry from the sidebar
     And I type "Standup notes" in the running entry's note
     And I narrow the window to the narrow view
     Then the running entry's dialog still has "Standup notes"
@@ -164,7 +164,7 @@ Feature: Open the local time workspace
   Scenario: Open one entry editor at a time
     Given I have no saved Ajour workspace
     When I open today's time workspace
-    And I start an empty entry from the timer dock
+    And I start an empty entry from the sidebar
     And I open a new entry from the titlebar "+"
     Then only the new entry's editor is open
     When I open the running entry from the timer dock
