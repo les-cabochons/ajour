@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ConnectorFieldValues } from "@ajour/shared";
 import type {
   AgentBrowserMode,
@@ -14,7 +14,11 @@ import {
   saveAgentTaskSettings,
   updateAgentRunnerSettings,
 } from "@/lib/app-api";
-import { setAgentRunner, useAgentRunner } from "@/lib/agent-runner";
+import {
+  refreshAgentRunner,
+  setAgentRunner,
+  useAgentRunner,
+} from "@/lib/agent-runner";
 
 /**
  * Settings > Agents: which coding agent Ajour starts for plugin agent tasks,
@@ -23,6 +27,13 @@ import { setAgentRunner, useAgentRunner } from "@/lib/agent-runner";
 export function SettingsAgentsPage() {
   const state = useAgentRunner();
   const [error, setError] = useState<string | null>(null);
+
+  // The overview loads once per page load, so a CLI or plugin installed since
+  // then shows up when this page opens.
+  useEffect(() => {
+    void refreshAgentRunner();
+  }, []);
+
   const run = async (action: () => Promise<void>) => {
     setError(null);
     try {

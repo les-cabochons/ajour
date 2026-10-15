@@ -153,6 +153,12 @@ _Avoid_: Transaction, run, job
 **Question**:
 Something an agent asks the user during an agent session. It waits until the user answers.
 
+**Agent task**:
+A task a plugin declares for an agent, such as "Enter in Workday": a prompt, its settings and where its button shows. No plugin code runs.
+
+**Agent run**:
+One agent task Ajour started: a coding agent CLI with Ajour's and the task's prompts, its own agent client and agent session. Ajour ends the session and revokes the client when the CLI exits.
+
 **Agent indicator**:
 The corner control that shows whether agents are idle, active, waiting for the user, failed or in error.
 

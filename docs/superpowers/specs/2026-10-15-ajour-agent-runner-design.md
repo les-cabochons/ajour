@@ -1,6 +1,6 @@
 # Ajour agent runner and the Workday task
 
-- Status: Draft
+- Status: Slices 1 and 2 implemented
 - Date: 2026-10-15
 - Builds on: `2026-10-14-ajour-mcp-design.md` (spec A, merged in PR #126)
 
