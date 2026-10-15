@@ -48,61 +48,59 @@
 ### Task 1: The `projectProperties` manifest capability
 
 **Files:**
-
 - Modify: `packages/shared/connectors.ts` (next to `agentTaskSchema`, around lines 123-200)
 - Test: `packages/shared/tests/connectors.test.ts`
 
 **Interfaces:**
-
 - Produces: `projectPropertiesSchema`, `type ProjectPropertiesCapability`, `type ProjectPropertyField`, `pluginHasProjectProperties(manifest)`, and `capabilities.projectProperties?: ProjectPropertiesCapability` on every manifest type.
 
 - [ ] **Step 1: Write the failing tests** in `packages/shared/tests/connectors.test.ts`, inside `describe("plugin manifest capabilities", ...)`. Import `pluginHasProjectProperties` from the same module as `pluginHasAgentTasks`.
 
 ```ts
-const projectProperties = {
-  section: "Workday",
-  fields: [
-    { id: "name", label: "Workday name", defaultFrom: "fullName" },
-    { id: "code", label: "Workday code", defaultFrom: "code" },
-  ],
-};
+  const projectProperties = {
+    section: "Workday",
+    fields: [
+      { id: "name", label: "Workday name", defaultFrom: "fullName" },
+      { id: "code", label: "Workday code", defaultFrom: "code" },
+    ],
+  };
 
-it("accepts a plugin with only project properties", () => {
-  const manifest = connectorPluginManifestSchema.parse({
-    ...agentTaskBase,
-    capabilities: { projectProperties },
+  it("accepts a plugin with only project properties", () => {
+    const manifest = connectorPluginManifestSchema.parse({
+      ...agentTaskBase,
+      capabilities: { projectProperties },
+    });
+    expect(pluginHasProjectProperties(manifest)).toBe(true);
+    expect(manifest.entrypoint).toBeUndefined();
   });
-  expect(pluginHasProjectProperties(manifest)).toBe(true);
-  expect(manifest.entrypoint).toBeUndefined();
-});
 
-it("refuses two project property fields with the same id", () => {
-  expect(() =>
-    connectorPluginManifestSchema.parse({
-      ...agentTaskBase,
-      capabilities: {
-        projectProperties: {
-          ...projectProperties,
-          fields: [projectProperties.fields[0], projectProperties.fields[0]],
+  it("refuses two project property fields with the same id", () => {
+    expect(() =>
+      connectorPluginManifestSchema.parse({
+        ...agentTaskBase,
+        capabilities: {
+          projectProperties: {
+            ...projectProperties,
+            fields: [projectProperties.fields[0], projectProperties.fields[0]],
+          },
         },
-      },
-    }),
-  ).toThrow(/name/);
-});
+      }),
+    ).toThrow(/name/);
+  });
 
-it("refuses a default from an unknown project value", () => {
-  expect(() =>
-    connectorPluginManifestSchema.parse({
-      ...agentTaskBase,
-      capabilities: {
-        projectProperties: {
-          ...projectProperties,
-          fields: [{ id: "name", label: "Workday name", defaultFrom: "color" }],
+  it("refuses a default from an unknown project value", () => {
+    expect(() =>
+      connectorPluginManifestSchema.parse({
+        ...agentTaskBase,
+        capabilities: {
+          projectProperties: {
+            ...projectProperties,
+            fields: [{ id: "name", label: "Workday name", defaultFrom: "color" }],
+          },
         },
-      },
-    }),
-  ).toThrow();
-});
+      }),
+    ).toThrow();
+  });
 ```
 
 - [ ] **Step 2: Run them to see them fail**
@@ -176,7 +174,6 @@ git commit -m "feat(plugins): add the projectProperties manifest capability"
 ### Task 2: Stored overrides and default rules
 
 **Files:**
-
 - Create: `apps/web/src/domain/projects/plugin-properties.ts`
 - Create: `apps/web/src/domain/projects/plugin-properties.test.ts`
 - Modify: `apps/web/src/domain/local-state.ts` (`LocalProject`, around line 16)
@@ -184,7 +181,6 @@ git commit -m "feat(plugins): add the projectProperties manifest capability"
 - Test: `apps/web/src/domain/projects/project-transitions.test.ts`
 
 **Interfaces:**
-
 - Consumes: `ProjectPropertiesCapability`, `ProjectPropertyField` from `@ajour/shared` (Task 1).
 - Produces:
   - `type PluginProperties = Record<string, Record<string, string>>`
@@ -438,20 +434,20 @@ In `project-transitions.ts`, import `normalizePluginProperties` and add to the o
 - [ ] **Step 4: Add a normalize test** to `apps/web/src/domain/projects/project-transitions.test.ts`, in its `normalizeProject` describe block (follow the file's existing fixture helper for a project):
 
 ```ts
-it("keeps plugin property overrides and drops broken ones", () => {
-  const normalized = normalizeProject(
-    {
-      ...existingProjectFixture,
-      pluginProperties: {
-        "workday-agent": { name: "Tech", code: 7 },
-      } as never,
-    },
-    () => 1,
-  );
-  expect(normalized.pluginProperties).toEqual({
-    "workday-agent": { name: "Tech" },
+  it("keeps plugin property overrides and drops broken ones", () => {
+    const normalized = normalizeProject(
+      {
+        ...existingProjectFixture,
+        pluginProperties: {
+          "workday-agent": { name: "Tech", code: 7 },
+        } as never,
+      },
+      () => 1,
+    );
+    expect(normalized.pluginProperties).toEqual({
+      "workday-agent": { name: "Tech" },
+    });
   });
-});
 ```
 
 Use the file's actual project fixture in place of `existingProjectFixture`.
@@ -473,7 +469,6 @@ git commit -m "feat(projects): store plugin project property overrides with defa
 ### Task 3: Plugin properties in `get_submit_lines`
 
 **Files:**
-
 - Create: `apps/web/src/lib/plugin-project-properties.ts`
 - Modify: `packages/shared/agent-tools.ts` (the `get_submit_lines` output line object, around line 333)
 - Modify: `apps/web/src/domain/agents/agent-read-model.ts` (`getSubmitLinesForAgent`, around line 255)
@@ -481,59 +476,58 @@ git commit -m "feat(projects): store plugin project property overrides with defa
 - Test: `apps/web/src/domain/agents/agent-read-model.test.ts`
 
 **Interfaces:**
-
 - Consumes: `resolvePluginProperties`, `ProjectPropertyPlugin` (Task 2); `pluginHasProjectProperties` (Task 1).
 - Produces: `listProjectPropertyPlugins(): Promise<ProjectPropertyPlugin[]>`, used by Task 4. `getSubmitLinesForAgent` takes a new required option `projectPropertyPlugins: ProjectPropertyPlugin[]`.
 
 - [ ] **Step 1: Write the failing test** in `agent-read-model.test.ts`, inside `describe("agent read model", ...)`. Add `projectPropertyPlugins: []` to the two existing `getSubmitLinesForAgent` calls first.
 
 ```ts
-it("sends the full name and resolved plugin properties of active plugins", () => {
-  const state = stateWithCodedProject();
-  state.projects[0]!.pluginProperties = {
-    "workday-agent": { name: "CA004 Tech & Design" },
-    inactive: { other: "hidden" },
-  };
-  const result = getSubmitLinesForAgent(state, {
-    weekDates: WEEK,
-    groupBy: "day-task",
-    onlyUnsubmitted: true,
-    today: "2026-10-14",
-    paceTolerancePercent: 20,
-    projectPropertyPlugins: [
-      {
-        pluginId: "workday-agent",
-        capability: {
-          section: "Workday",
-          fields: [
-            { id: "name", label: "Workday name", defaultFrom: "fullName" },
-            { id: "code", label: "Workday code", defaultFrom: "code" },
-            { id: "empty", label: "Empty" },
-          ],
+  it("sends the full name and resolved plugin properties of active plugins", () => {
+    const state = stateWithCodedProject();
+    state.projects[0]!.pluginProperties = {
+      "workday-agent": { name: "CA004 Tech & Design" },
+      inactive: { other: "hidden" },
+    };
+    const result = getSubmitLinesForAgent(state, {
+      weekDates: WEEK,
+      groupBy: "day-task",
+      onlyUnsubmitted: true,
+      today: "2026-10-14",
+      paceTolerancePercent: 20,
+      projectPropertyPlugins: [
+        {
+          pluginId: "workday-agent",
+          capability: {
+            section: "Workday",
+            fields: [
+              { id: "name", label: "Workday name", defaultFrom: "fullName" },
+              { id: "code", label: "Workday code", defaultFrom: "code" },
+              { id: "empty", label: "Empty" },
+            ],
+          },
         },
-      },
-    ],
+      ],
+    });
+    const line = result.sections[0]!.lines[0]!;
+    expect(line.projectFullName).toBe("Acme");
+    expect(line.projectProperties).toEqual({
+      "workday-agent": { name: "CA004 Tech & Design", code: "ACME-1" },
+    });
   });
-  const line = result.sections[0]!.lines[0]!;
-  expect(line.projectFullName).toBe("Acme");
-  expect(line.projectProperties).toEqual({
-    "workday-agent": { name: "CA004 Tech & Design", code: "ACME-1" },
-  });
-});
 
-it("sends no plugin properties when no plugin adds any", () => {
-  const result = getSubmitLinesForAgent(stateWithCodedProject(), {
-    weekDates: WEEK,
-    groupBy: "day-task",
-    onlyUnsubmitted: true,
-    today: "2026-10-14",
-    paceTolerancePercent: 20,
-    projectPropertyPlugins: [],
+  it("sends no plugin properties when no plugin adds any", () => {
+    const result = getSubmitLinesForAgent(stateWithCodedProject(), {
+      weekDates: WEEK,
+      groupBy: "day-task",
+      onlyUnsubmitted: true,
+      today: "2026-10-14",
+      paceTolerancePercent: 20,
+      projectPropertyPlugins: [],
+    });
+    const line = result.sections[0]!.lines[0]!;
+    expect(line.projectFullName).toBe("Acme");
+    expect(line).not.toHaveProperty("projectProperties");
   });
-  const line = result.sections[0]!.lines[0]!;
-  expect(line.projectFullName).toBe("Acme");
-  expect(line).not.toHaveProperty("projectProperties");
-});
 ```
 
 - [ ] **Step 2: Run to see it fail**
@@ -556,24 +550,24 @@ Expected: FAIL, `projectFullName` is undefined.
 - [ ] **Step 4: Implement the read model.** In `getSubmitLinesForAgent`, add `projectPropertyPlugins` to the destructured options and to their type (`projectPropertyPlugins: ProjectPropertyPlugin[];`). Before `return`, add:
 
 ```ts
-const projectsById = new Map(
-  state.projects.map((project) => [project._id, project]),
-);
-/** Non-empty values per active plugin, or undefined when there are none. */
-const pluginValues = (projectId: string | undefined) => {
-  const project = projectId ? projectsById.get(projectId) : undefined;
-  if (!project) return undefined;
-  const byPlugin: Record<string, Record<string, string>> = {};
-  for (const plugin of projectPropertyPlugins) {
-    const fields = Object.fromEntries(
-      resolvePluginProperties(project, plugin)
-        .filter((property) => property.value !== "")
-        .map((property) => [property.field.id, property.value]),
-    );
-    if (Object.keys(fields).length > 0) byPlugin[plugin.pluginId] = fields;
-  }
-  return Object.keys(byPlugin).length > 0 ? byPlugin : undefined;
-};
+  const projectsById = new Map(
+    state.projects.map((project) => [project._id, project]),
+  );
+  /** Non-empty values per active plugin, or undefined when there are none. */
+  const pluginValues = (projectId: string | undefined) => {
+    const project = projectId ? projectsById.get(projectId) : undefined;
+    if (!project) return undefined;
+    const byPlugin: Record<string, Record<string, string>> = {};
+    for (const plugin of projectPropertyPlugins) {
+      const fields = Object.fromEntries(
+        resolvePluginProperties(project, plugin)
+          .filter((property) => property.value !== "")
+          .map((property) => [property.field.id, property.value]),
+      );
+      if (Object.keys(fields).length > 0) byPlugin[plugin.pluginId] = fields;
+    }
+    return Object.keys(byPlugin).length > 0 ? byPlugin : undefined;
+  };
 ```
 
 In the line mapping, after the `projectCode` spread:
@@ -667,13 +661,11 @@ git commit -m "feat(agents): send the full name and plugin project properties in
 ### Task 4: Plugin sections in the project properties card
 
 **Files:**
-
 - Modify: `apps/web/src/features/projects/project-properties.tsx`
 - Create: `apps/web/tests/acceptance/features/plugin-project-properties.feature`
 - Create: `apps/web/tests/acceptance/steps/plugin-project-properties.steps.ts`
 
 **Interfaces:**
-
 - Consumes: `listProjectPropertyPlugins` (Task 3), `resolvePluginProperties`, `setPluginProperty`, `ProjectPropertyPlugin` (Task 2), `localStore.updateProjectWithUndo`, `offerUndo`, the file's `InlineText` and `PropertyList`/`PropertyRow`.
 - Produces: nothing for later tasks.
 
@@ -886,10 +878,7 @@ function PluginPropertySection({
                 placeholder="None"
                 readOnly={readOnly}
                 onSave={(value) => {
-                  if (
-                    value.trim() === (property.isDefault ? "" : property.value)
-                  )
-                    return;
+                  if (value.trim() === (property.isDefault ? "" : property.value)) return;
                   patchPluginProperty(project, plugin, property.field, value);
                 }}
               />
@@ -907,30 +896,28 @@ Import `RiArrowRightSLine as ChevronIcon` from `@remixicon/react`, `ProjectPrope
 3. In `ProjectPropertiesCard`, load the plugins once per mount and render the sections between `</PropertyList>` and `<PropertyActions>`:
 
 ```tsx
-const [plugins, setPlugins] = useState<ProjectPropertyPlugin[]>([]);
-useEffect(() => {
-  let active = true;
-  // A failed overview shows no plugin sections; the rest of the card works.
-  void listProjectPropertyPlugins()
-    .then((next) => active && setPlugins(next))
-    .catch(() => undefined);
-  return () => {
-    active = false;
-  };
-}, []);
+  const [plugins, setPlugins] = useState<ProjectPropertyPlugin[]>([]);
+  useEffect(() => {
+    let active = true;
+    // A failed overview shows no plugin sections; the rest of the card works.
+    void listProjectPropertyPlugins()
+      .then((next) => active && setPlugins(next))
+      .catch(() => undefined);
+    return () => {
+      active = false;
+    };
+  }, []);
 ```
 
 ```tsx
-{
-  plugins.map((plugin) => (
-    <PluginPropertySection
-      key={plugin.pluginId}
-      project={project}
-      plugin={plugin}
-      readOnly={isArchived}
-    />
-  ));
-}
+      {plugins.map((plugin) => (
+        <PluginPropertySection
+          key={plugin.pluginId}
+          project={project}
+          plugin={plugin}
+          readOnly={isArchived}
+        />
+      ))}
 ```
 
 Update the card's doc comment to mention the plugin sections.
@@ -959,7 +946,6 @@ git commit -m "feat(projects): show plugin properties in a collapsed card sectio
 ### Task 5: Docs
 
 **Files:**
-
 - Modify: `apps/docs/developers/manifest.md`, `apps/docs/projects/index.md`, `apps/docs/plugins/workday-agent.md`
 - Modify: `agents/ui-registry.md`, `agents/architecture.md`, `agents/progress-tracker.md`
 
@@ -991,7 +977,6 @@ git commit -m "docs: document plugin project properties"
 ### Task 6: Workday (agent) plugin 0.3.0
 
 **Files (repo `~/Repos/Personnal/ajp-workday-agent`, branch `feat/project-properties` from `feat/silent-sso`):**
-
 - Modify: `plugin.json`, `package.json`, `prompts/enter-week.md`, `README.md`
 
 - [ ] **Step 1: Branch.** `cd ~/Repos/Personnal/ajp-workday-agent && git checkout feat/silent-sso && git checkout -b feat/project-properties`.
