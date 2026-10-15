@@ -31,8 +31,8 @@
   line-gap-override: 0%;
   size-adjust: 102%;
 }
-/* Layout breakpoints from src/lib/breakpoints.ts: the `narrow`, `desktop`
-   and `forced-rail` variants. Use them instead of width media queries. */
+/* Layout breakpoints from src/lib/breakpoints.ts: the `narrow` and
+   `desktop` variants. Use them instead of width media queries. */
 @plugin "./lib/tailwind-breakpoints.ts";
 
 @layer base {
@@ -136,7 +136,7 @@
     --focus-ring: color-mix(in srgb, var(--ring) 40%, transparent);
     --highlight-bg: color-mix(in srgb, var(--foreground) 3%, transparent);
     /* Radii: 4px for chips, inputs and small buttons; 6px for buttons, rows,
-       cards and the dock; 8px for popovers, dialogs and the sidebar overlay. */
+       cards and the dock; 8px for popovers and dialogs. */
     --radius: 6px;
     --radius-sm: 4px;
     --radius-md: 6px;
@@ -1767,14 +1767,6 @@
   .ajour-app-body[data-app-sidebar="none"]
   .desktop-shell-nav-inner {
   padding-left: 5rem;
-}
-
-/* The sidebar over the page in narrow desktop windows. The sheet takes the
-   sidebar's width and draws its own edge. Its column layout would read the
-   sidebar's width basis as a height, so the sidebar fills the sheet instead. */
-.ajour-sidebar-overlay .ajour-shell-sidebar {
-  flex: 1 1 auto;
-  border-right: 0;
 }
 
 /* The timer dock on one line while the sidebar is off screen. */

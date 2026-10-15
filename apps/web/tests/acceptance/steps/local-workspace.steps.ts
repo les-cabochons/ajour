@@ -540,8 +540,9 @@ When("I open today's new-entry workspace", async ({ page }) => {
   await page.goto("/time/today?entry=new");
 });
 
-When("I narrow the app below the expanded sidebar width", async ({ page }) => {
-  await page.setViewportSize({ width: 1000, height: 900 });
+When("I narrow the app to the smallest desktop width", async ({ page }) => {
+  // DESKTOP_MIN_WIDTH in lib/breakpoints.ts. One pixel less is the narrow view.
+  await page.setViewportSize({ width: 768, height: 900 });
 });
 
 When("I widen the app back to a desktop width", async ({ page }) => {
@@ -1477,21 +1478,14 @@ Then("the app sidebar is hidden", async ({ page }) => {
   ).toBeVisible();
 });
 
-Then("the app sidebar opens over the page", async ({ page }) => {
-  const overlay = page.getByRole("dialog", { name: "Navigation" });
-  await expect(
-    overlay.getByRole("navigation", { name: "Primary navigation" }),
-  ).toBeVisible();
-  // Opening a page from it closes it.
-  await viewSwitcher(page).click();
-  await page.getByRole("menuitem", { name: /^Backlog/ }).click();
-  await expect(page).toHaveURL(/\/backlog$/);
-  await expect(overlay).toHaveCount(0);
-  // So does choosing the page already open, which leaves the route alone.
-  await page.getByRole("button", { name: "Show sidebar" }).click();
-  await viewSwitcher(page).click();
-  await page.getByRole("menuitem", { name: /^Backlog/ }).click();
-  await expect(overlay).toHaveCount(0);
+Then("the app sidebar is expanded beside the page", async ({ page }) => {
+  await expectAppSidebarWidth(page, 272);
+  // Beside the page, not over it: the page starts where the sidebar ends.
+  const sidebarBox = await page
+    .getByRole("navigation", { name: "Primary navigation" })
+    .boundingBox();
+  const pageBox = await page.getByRole("main").boundingBox();
+  expect(pageBox!.x).toBeGreaterThanOrEqual(sidebarBox!.x + sidebarBox!.width);
 });
 
 Then("the Settings pages replace the app sidebar", async ({ page }) => {
@@ -1618,12 +1612,12 @@ Then("the Projects list opens beside primary navigation", async ({ page }) => {
 });
 
 Then(
-  "the Projects list still opens where the app sidebar is a rail",
+  "the Projects list still opens beside the sidebar in a small window",
   async ({ page }) => {
     await page.setViewportSize({ width: 800, height: 900 });
     await expect(
       page.getByRole("navigation", { name: "Primary navigation" }),
-    ).toHaveCount(0);
+    ).toBeVisible();
     await expect(
       page.getByRole("link", { name: "aaa xyz", exact: true }),
     ).toBeVisible();

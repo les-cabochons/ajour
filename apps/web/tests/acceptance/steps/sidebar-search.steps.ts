@@ -135,20 +135,6 @@ Then("the empty sidebar search box has focus", async ({ page }) => {
   await expect(box).toBeFocused();
 });
 
-When("I use a narrow desktop window", async ({ page }) => {
-  // Below 1100px the sidebar hides and opens over the page.
-  await page.setViewportSize({ width: 1000, height: 720 });
-});
-
-When("I show the sidebar", async ({ page }) => {
-  await page.getByRole("button", { name: "Show sidebar" }).click();
-  await expect(sidebar(page)).toBeVisible();
-});
-
 When("I open {string} from the sidebar", async ({ page }, title: string) => {
   await sidebarTitles(page).filter({ hasText: title }).click();
-});
-
-Then("the sidebar is hidden", async ({ page }) => {
-  await expect(sidebar(page)).toHaveCount(0);
 });
