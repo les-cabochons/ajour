@@ -14,6 +14,7 @@ Settings has three groups: **App**, **Work** and **Data**.
 | **Changes end a snooze early**  | Brings back snoozed pull requests when someone asks you to act, and snoozed backlog items when their source state or priority changes. Off by default. |
 | **Density**                     | **Comfortable** or **Compact** sidebar rows.                                                                                                           |
 | **Time capacity**               | The hours you plan to work each weekday. Defaults to 8 hours Monday to Friday.                                                                         |
+| **Hide non-working days**       | Hides days with 0 hours of capacity, such as weekends, from the day strip and the Week view. Time logged on them still counts. Off by default.         |
 | **Over-capacity warning**       | Flags days and weeks over capacity. On by default.                                                                                                     |
 | **Under-target submit warning** | Asks before you submit a week under its target. On by default.                                                                                         |
 | **Update track**                | **Stable** or **Nightly**. See [Install Ajour](/start/install#updates).                                                                                |

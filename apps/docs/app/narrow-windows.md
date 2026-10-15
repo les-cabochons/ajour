@@ -9,12 +9,14 @@ Below 768 pixels wide, Ajour switches to a narrow layout made for a window snapp
 
 ## What changes
 
-- **The title bar** has **Time** and **Backlog** to switch pages, the date, today's total, and a cog for **Settings**.
-- **The sidebar** is gone. The **+** and **Start** buttons float at the bottom right, and the running entry joins them while it runs.
+- **The title bar** has the date, **+** for a new entry, **Start**, and the totals. While an entry runs, **Start** becomes **Stop**, and the totals show the running time.
+- **Click the totals** for the day and week totals, **Submit week**, and the running entry. Click outside the running entry's editor to save it and close it.
+- **The toggle** at the bottom left switches between **Time**, **Backlog** and **Settings**.
+- **The sidebar** is gone.
 - **Editors** open full width instead of in a side panel.
 - **Rows** always show their **…** button. A long press opens the same menu.
-- **Submit week** is in the totals popover. Click today's total in the title bar.
-- **Projects** and **Pull requests** open from the Settings page list.
+- **New backlog items** start from the **+** of a group header.
+- **Projects** and **Pull requests** open from the Settings list.
 
 ## What is not available
 

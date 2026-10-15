@@ -6,7 +6,7 @@ Submitting turns a week of entries into timesheet lines you can copy into your c
 
 ## Open the page
 
-Press **Submit week** in the header of the Day or Week view. In a narrow window, click the totals at the top and press **Submit week** there.
+Click the totals at the top right, such as `Today 3:47`, and press **Submit week**. This works on every page and at every window size.
 
 ## Review the week
 

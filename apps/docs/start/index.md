@@ -47,7 +47,7 @@ Click any row of the day to open it in the side panel. Change the task, the hour
 
 ## 5. Submit the week
 
-At the end of the week, press **Submit week**. Ajour groups the week's entries into lines with the project, the task, the hours and your notes. Copy each line into your company's timesheet tool, then press **Mark … as submitted**.
+At the end of the week, click today's total at the top right, then **Submit week**. Ajour groups the week's entries into lines with the project, the task, the hours and your notes. Copy each line into your company's timesheet tool, then press **Mark … as submitted**.
 
 <Shot name="submit-week" alt="The Submit week page with the week total and the lines to copy" />
 

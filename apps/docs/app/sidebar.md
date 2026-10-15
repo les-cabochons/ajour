@@ -30,6 +30,8 @@ Press the search icon and type. Every word must appear in the item's title or it
 
 Press the filter icon to show one project's items only. Ajour remembers the filter on this device. Search and filter apply to the sidebar only, not to the Backlog page.
 
+The filter menu also switches the order between **Custom** and **Priority**. The sidebar and the Backlog page share one order. With **Custom**, drag items in the sidebar, or press <kbd>Alt</kbd> <kbd>↑</kbd> and <kbd>Alt</kbd> <kbd>↓</kbd>, to reorder them. Pinned items reorder among themselves, and subitems stay under their parent.
+
 ## Work with an item
 
 Hover an item for **Start entry**, **Snooze…** and **Settle**. Click it to open its page. Right-click it, or focus it and press <kbd>.</kbd>, for every action. See [Backlog items](/backlog/items#actions).
@@ -44,4 +46,4 @@ Drag the sidebar's edge to resize it, between 200 and 400 pixels. Double-click t
 
 ## Smaller windows
 
-Between 768 and 1100 pixels wide, the sidebar is hidden, and <kbd>⌘</kbd> <kbd>B</kbd> opens it over the page. Below 768 pixels, Ajour switches to the [narrow layout](/app/narrow-windows).
+The sidebar stays beside the page at every width down to 768 pixels, shown or hidden as you chose. Below 768 pixels, Ajour switches to the [narrow layout](/app/narrow-windows), which has no sidebar.

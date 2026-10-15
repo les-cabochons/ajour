@@ -16,7 +16,7 @@ The grid has one row per project and task, and one column per day. Each cell hol
 - `3:30` for one entry.
 - `3:30 ×2` for several entries.
 
-The **Totals** row and the **Total** column add up the week. Hover a day's total to see it against your capacity target.
+The **Totals** row and the **Total** column add up the week. To leave out weekends and other days with no capacity, turn on **Settings › General › Hide non-working days**. Time logged on hidden days still counts in the totals. Hover a day's total to see it against your capacity target.
 
 ### Edit hours in a cell
 
