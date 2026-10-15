@@ -1,6 +1,6 @@
 # Day view
 
-The Day view lists the entries of one day. Ajour opens on today's Day view.
+The Day view lists the entries of one day. Ajour opens on today, in the view you used last: Day or [Week](/time/week-view).
 
 <Shot name="time-day" alt="The Day view: the week strip, today's entries and the running entry" />
 
@@ -30,7 +30,7 @@ To log time while you work instead, start a [running entry](/time/running-entrie
 
 ## Edit an entry
 
-Click a row to open it in the side panel. Change the task, the hours, the note or the date, then press **Save** or <kbd>⌘</kbd> <kbd>Enter</kbd>.
+Click a row to open it in the side panel. The panel shows the task, its project and the date at the top, with **Continue** to start the entry again. Change the task, the hours, the date or the note, then press **Save** or <kbd>⌘</kbd> <kbd>Enter</kbd>.
 
 <Shot name="time-entry-editor" alt="An entry open in the side panel next to the day" />
 
