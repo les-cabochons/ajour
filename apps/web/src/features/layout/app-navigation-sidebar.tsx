@@ -30,7 +30,7 @@ import {
   useSidebarPullRequests,
 } from "@/features/layout/sidebar-pull-requests";
 import {
-  SidebarProjectFilter,
+  SidebarFilterMenu,
   SidebarSearch,
 } from "@/features/layout/sidebar-search";
 import {
@@ -44,6 +44,7 @@ import {
 } from "@/features/layout/timer-dock";
 import type { AppSidebarState } from "@/lib/app-sidebar";
 import { useLocalState } from "@/lib/local-hooks";
+import { localStore } from "@/lib/local-store";
 import { isDesktopShell } from "@/lib/runtime";
 import { useSidebarSearch } from "@/lib/sidebar-search";
 import {
@@ -267,10 +268,12 @@ export function AppNavigationSidebar({
           )}
         >
           <SidebarSearch />
-          <SidebarProjectFilter
+          <SidebarFilterMenu
             projects={state.projects}
             projectId={layout.projectId}
             onChange={(projectId) => updateSidebarLayout({ projectId })}
+            ordering={state.backlogSortMode}
+            onOrderingChange={(mode) => localStore.setBacklogSortMode(mode)}
           />
           <NewEntryButton className="ajour-app-sidebar-toggle border-0" />
         </span>

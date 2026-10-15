@@ -1,5 +1,6 @@
 import { normalizeConnectorStatusKey } from "@ajour/shared";
 import type {
+  BacklogSortMode,
   LocalAppState,
   LocalPendingSourceWrite,
   LocalWorkItem,
@@ -1233,12 +1234,37 @@ export function selectSidebarBacklogItems(
   state: LocalAppState,
   now: number,
 ): LocalWorkItem[] {
-  const ordered = orderSidebarBacklogItems(state, now);
-  // Pinned items go first, keeping the list's order among themselves.
-  return [
-    ...ordered.filter((workItem) => workItem.pinnedAt !== undefined),
-    ...ordered.filter((workItem) => workItem.pinnedAt === undefined),
-  ];
+  const { pinned, others } = splitSidebarBacklogItems(
+    orderSidebarBacklogItems(state, now),
+  );
+  return [...pinned, ...others];
+}
+
+/**
+ * The sidebar list's two blocks: pinned items and the rest, each keeping the
+ * list's order. Pinned items show first, and a reorder stays in its block, so
+ * moving a row never pins or unpins it.
+ */
+export function splitSidebarBacklogItems(listed: readonly LocalWorkItem[]): {
+  pinned: LocalWorkItem[];
+  others: LocalWorkItem[];
+} {
+  return {
+    pinned: listed.filter((workItem) => workItem.pinnedAt !== undefined),
+    others: listed.filter((workItem) => workItem.pinnedAt === undefined),
+  };
+}
+
+/**
+ * Whether the sidebar lets the user move an item by drag or Alt+Up and
+ * Alt+Down: only under Custom ordering, and only a top-level item, since a
+ * subitem sits below its parent.
+ */
+export function canReorderSidebarItem(
+  sortMode: BacklogSortMode,
+  workItem: LocalWorkItem,
+): boolean {
+  return sortMode === "custom" && !isSubtaskWorkItem(workItem);
 }
 
 /**

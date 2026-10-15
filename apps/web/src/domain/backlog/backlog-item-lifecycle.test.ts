@@ -13,6 +13,8 @@ import {
   pinBacklogItem,
   restoreBacklogItem,
   selectSidebarBacklogItems,
+  splitSidebarBacklogItems,
+  canReorderSidebarItem,
   selectUpNextBacklogItem,
   settleBacklogItem,
   snoozeBacklogItem,
@@ -855,6 +857,31 @@ describe("the sidebar's backlog items", () => {
     const listed = [item("a", { pinnedAt: 1 })];
 
     expect(selectUpNextBacklogItem(listed)).toBeUndefined();
+  });
+
+  it("splits the list into pinned items and the rest, each in list order", () => {
+    const { pinned, others } = splitSidebarBacklogItems([
+      item("a"),
+      item("pinned-1", { pinnedAt: 5 }),
+      item("b"),
+      item("pinned-2", { pinnedAt: 1 }),
+    ]);
+
+    expect(ids(pinned)).toEqual(["pinned-1", "pinned-2"]);
+    expect(ids(others)).toEqual(["a", "b"]);
+  });
+
+  it("lets only top-level items move, and only under Custom ordering", () => {
+    const topLevel = item("top");
+    const subitem = item("sub", {
+      parentWorkItemId: "top",
+      hierarchyLevel: 1,
+      priority: 1,
+    });
+
+    expect(canReorderSidebarItem("custom", topLevel)).toBe(true);
+    expect(canReorderSidebarItem("custom", subitem)).toBe(false);
+    expect(canReorderSidebarItem("priority_asc", topLevel)).toBe(false);
   });
 });
 

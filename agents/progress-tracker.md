@@ -185,6 +185,12 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] `sidebar-search.feature` covers both. The full Chromium suite passed 127 of 132 on a free port. The 5 failures (board close, workflow settings draft, packaged connector install, Backlog preferences render, pull request Ctrl-click) fail the same way on `main`.
 - [x] `just ui-perf`, 2026-10-14, port 4187, medians of 5 runs, main then this branch: cold load 1388 / 1273 ms, Start click 90 / 93 ms, Backlog store write 268 / 45 ms, renderer work with a timer running 25.1 / 25.6 ms per second. Nothing is more than 10% worse. The store write varies a lot between runs, so its drop is noise.
 
+## Sidebar ordering, 2026-10-15
+
+- [x] With Custom ordering, sidebar rows reorder by drag or Alt+Up and Alt+Down, with Undo. Pinned rows and the rest reorder apart, and subitems stay below their parent. The filter menu has a Custom or Priority icon toggle beside its search box. See "List" and "Search and project filter" in `agents/ux-spec.md`.
+- [x] `sidebar-ordering.feature` covers drag, keys, the toggle by mouse and Enter, another Backlog ordering, a pinned row and a reorder under search. Domain tests cover `splitSidebarBacklogItems` and `canReorderSidebarItem`, and `use-backlog-drag.test.ts` covers the drop line.
+- [x] `just ui-perf`, 2026-10-15, ports 4188 and 4189, medians of 5 runs, main then this branch, in pairs that ran at the same machine speed: Start click 89 / 90 and 86 / 89 ms, Backlog store write 46 / 50 and 48 / 51 ms, renderer work with a timer running 21 / 21 and 26 / 20 ms per second. All within 10%. A first version wrapped every row in a `div` for drag refs and cost about 16% on Start click; rows now take their drag state as a prop and the drag reads row positions on press.
+
 ## Ajour MCP, 2026-10-14
 
 - [x] Spec A: MCP endpoint at `/mcp/ajour` (off by default, per-client tokens, Origin and Host checks), the renderer bridge, data tools for timers, entries, projects and backlog items with Undo, agent sessions and questions, and the agent indicator and panel. Spec: `docs/superpowers/specs/2026-10-14-ajour-mcp-design.md`.

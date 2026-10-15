@@ -81,7 +81,7 @@ When(
   "I filter the sidebar to the {string} project",
   async ({ page }, name: string) => {
     await sidebar(page)
-      .getByRole("button", { name: "Filter by project" })
+      .getByRole("button", { name: "Filter and order" })
       .click();
     await page.getByRole("option", { name }).click();
   },

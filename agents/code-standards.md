@@ -93,7 +93,7 @@ Prefer direct domain tests for rules and a smaller number of storage integration
 
 For UI-only changes, run typecheck and consider a browser check for layout or interaction risk.
 
-For shared interaction changes, add direct state/geometry tests and verify every current caller. Pointer reordering currently serves backlog work items, timesheet entries, project tasks, and project navigation.
+For shared interaction changes, add direct state/geometry tests and verify every current caller. Pointer reordering currently serves backlog work items on the Backlog page and in the sidebar, timesheet entries, project tasks, and project navigation.
 
 ## Logging And Privacy
 
