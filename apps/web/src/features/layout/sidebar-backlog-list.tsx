@@ -15,6 +15,7 @@ import {
   RiCheckLine as SettleIcon,
   RiCornerLeftUpLine as ParentIcon,
   RiPlayLine as PlayIcon,
+  RiStopLine as StopIcon,
   RiTimeLine as SnoozeIcon,
 } from "@remixicon/react";
 import { ObjectContextMenu } from "@/components/object-actions-menu";
@@ -216,20 +217,41 @@ function LeadingIcon({
 }
 
 /**
- * Start entry. The Compact row shows it among its hover actions; the
- * Comfortable row shows it on its own, centered at the row's end.
+ * Start entry, or Stop on the item whose entry is running. The Compact row
+ * shows it among its hover actions; the Comfortable row shows it on its own,
+ * centered at the row's end.
  */
 function StartButton({
   workItem,
   actions,
   rows,
+  isRunning,
   className,
 }: {
   workItem: LocalWorkItem;
   actions: RowActionList;
   rows: RowApi;
+  isRunning: boolean;
   className?: string;
 }) {
+  if (isRunning) {
+    return (
+      <RowActionButton
+        label="Stop"
+        shortcut="entry.stop-or-start"
+        className={cn(iconButton, className)}
+        onClick={() => {
+          const timer = localStore
+            .snapshot()
+            .timers.find((entry) => entry.workItemId === workItem._id);
+          if (timer) localStore.saveTimer(timer._id);
+        }}
+      >
+        <StopIcon className="size-3.5" />
+      </RowActionButton>
+    );
+  }
+
   const disabledReason = actions.find(
     (action) => action.id === "start-entry",
   )?.disabledReason;
@@ -259,6 +281,7 @@ function RowActions({
   workItem,
   actions,
   rows,
+  isRunning,
   showStart = true,
   showSettle = false,
   buttonClassName,
@@ -267,6 +290,7 @@ function RowActions({
   workItem: LocalWorkItem;
   actions: RowActionList;
   rows: RowApi;
+  isRunning: boolean;
   showStart?: boolean;
   showSettle?: boolean;
   buttonClassName?: string;
@@ -282,6 +306,7 @@ function RowActions({
           workItem={workItem}
           actions={actions}
           rows={rows}
+          isRunning={isRunning}
           className={buttonClassName}
         />
       ) : null}
@@ -492,6 +517,7 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
               workItem={workItem}
               actions={actions}
               rows={rows}
+              isRunning={props.isRunning}
               showStart={false}
               showSettle
               buttonClassName="size-5"
@@ -534,7 +560,12 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
           className="absolute top-1/2 right-2.5 hidden -translate-y-1/2 group-focus-within:flex group-hover:flex"
           onClick={(event) => event.stopPropagation()}
         >
-          <StartButton workItem={workItem} actions={actions} rows={rows} />
+          <StartButton
+            workItem={workItem}
+            actions={actions}
+            rows={rows}
+            isRunning={props.isRunning}
+          />
         </span>
       ) : null}
     </ObjectContextMenu>
@@ -608,6 +639,7 @@ const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
           workItem={workItem}
           actions={actions}
           rows={rows}
+          isRunning={props.isRunning}
           className="hidden group-focus-within:flex group-hover:flex"
         />
       ) : null}

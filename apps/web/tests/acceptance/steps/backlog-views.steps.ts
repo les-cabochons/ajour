@@ -464,28 +464,29 @@ When("I use the compact Backlog sidebar", async ({ page }) => {
     updateSidebarLayout({ density: "compact" });
   });
 });
+function parentSidebarRow(page: Page) {
+  return page
+    .getByRole("navigation", { name: "Primary navigation" })
+    .locator('[data-backlog-item-id="parent"]');
+}
 Then(
-  "the sidebar Start icon explains that the parent is already running",
+  "the parent's sidebar row offers Stop instead of Start entry",
   async ({ page }) => {
-    const row = page
-      .getByRole("navigation", { name: "Primary navigation" })
-      .locator('[data-backlog-item-id="parent"]');
+    const row = parentSidebarRow(page);
     await row.hover();
-    const start = row.getByRole("button", { name: "Start entry", exact: true });
-    await expect(start).toBeDisabled();
-    await expect(start).toHaveAccessibleDescription("Already running");
-    // Sidebar hover actions have no tooltip; the reason is the description.
-    await start.hover();
     await expect(
-      page.locator('[data-slot="tooltip-content"][data-open]'),
+      row.getByRole("button", { name: "Stop", exact: true }),
+    ).toBeVisible();
+    await expect(
+      row.getByRole("button", { name: "Start entry", exact: true }),
     ).toHaveCount(0);
-    await start.click({ force: true });
-    await start.focus();
-    await page.keyboard.press("Enter");
-    await page.keyboard.press("Space");
-    await page.keyboard.press("Escape");
   },
 );
+When("I stop the parent's entry from its sidebar row", async ({ page }) => {
+  const row = parentSidebarRow(page);
+  await row.hover();
+  await row.getByRole("button", { name: "Stop", exact: true }).click();
+});
 Then(
   "the sidebar Start icon enables the parent without a disabled reason",
   async ({ page }) => {
@@ -659,14 +660,13 @@ async function inspectBacklogStart(
       const row = page
         .getByRole("navigation", { name: "Primary navigation" })
         .locator('[data-backlog-item-id="parent"]');
-      // Rows show Start entry while the pointer is over them.
+      // Rows show Start entry, or Stop on the running item, on hover.
       await row.hover();
-      const start = row.getByRole("button", {
-        name: "Start entry",
+      const button = row.getByRole("button", {
+        name: running ? "Stop" : "Start entry",
         exact: true,
       });
-      if (running) await expect(start).toBeDisabled();
-      else await expect(start).toBeEnabled();
+      await expect(button).toBeEnabled();
       await row.click({ button: "right" });
     } else {
       throw new Error(`Unknown Backlog control: ${control}`);
