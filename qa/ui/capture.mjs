@@ -61,8 +61,8 @@ await session({ name: "light" }, async (page, shot) => {
   await page.keyboard.press("Escape");
   await go(page, "/time/today?view=week");
   await shot("time-week-grid");
-  await go(page, "/time/today/submit");
-  await shot("submit");
+  await go(page, "/time/today/commit");
+  await shot("commit");
   await go(page, "/backlog");
   await shot("backlog-list");
   await page
@@ -148,7 +148,7 @@ await session(
       ["/backlog/w2", "backlog-item"],
       ["/projects/p-atlas", "projects"],
       ["/settings/general", "settings-general"],
-      ["/time/today/submit", "submit"],
+      ["/time/today/commit", "commit"],
     ]) {
       await go(page, route);
       await shot(label);
@@ -177,7 +177,7 @@ await session(
       ["/projects/p-atlas", "project"],
       ["/settings", "settings"],
       ["/settings/general", "settings-general"],
-      ["/time/today/submit", "submit"],
+      ["/time/today/commit", "commit"],
     ]) {
       await go(page, route);
       await shot(label);

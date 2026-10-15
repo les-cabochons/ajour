@@ -48,7 +48,7 @@ Use this file as the local index for important library choices. Check official d
 - Clock and decimal-hours formatting and hours-input parsing: `apps/web/src/domain/time/duration.ts`
 - Timesheet entry creation, editing, deletion, ordering, submission state, and linked estimate adjustments: `apps/web/src/domain/time/timesheet-entry.ts`
 - Committed copies, change detection (added, updated, deleted), the week's change list and the names an external timesheet matches: `apps/web/src/domain/time/timesheet-commit.ts`
-- Submit page lines (grouping, comment merging), selection, summary warnings, and week submission status: `apps/web/src/domain/time/timesheet-submission.ts`
+- Commit page lines (grouping, comment merging) and the week summary warnings: `apps/web/src/domain/time/timesheet-submission.ts`
 - Timesheet import normalization, conflict detection, draft lifecycle, project/task recovery, and commits: `apps/web/src/domain/time/timesheet-import.ts`
 - Timer hydration, single-active-timer enforcement, start/edit/cancel/save/continue transitions, elapsed duration, and continued-entry replacement: `apps/web/src/domain/time/timer-transitions.ts`
 - Imported browser review preservation, timeline materialization, dismissals, commits, and rule creation: `apps/web/src/domain/time/timeline-transitions.ts`

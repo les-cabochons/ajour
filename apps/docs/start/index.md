@@ -1,6 +1,6 @@
 # Start guide
 
-This guide takes you through a first week in Ajour. You set up a project, track time against it, fix an entry and submit the week. It takes about ten minutes.
+This guide takes you through a first week in Ajour. You set up a project, track time against it, fix an entry and commit the week. It takes about ten minutes.
 
 ## Before you start
 
@@ -45,13 +45,13 @@ Forgot to start the timer? Press <kbd>N</kbd>, pick the task, type the hours as 
 
 Click any row of the day to open it in the side panel. Change the task, the hours or the note, then press <kbd>⌘</kbd> <kbd>Enter</kbd> to save. Right-click a row for more actions, such as **Duplicate**, **Move to…** or **Delete**. See [Time entries](/time/entries).
 
-## 5. Submit the week
+## 5. Commit the week
 
-At the end of the week, click today's total at the top right, then **Submit week**. Ajour groups the week's entries into lines with the project, the task, the hours and your notes. Copy each line into your company's timesheet tool, then press **Mark … as submitted**.
+At the end of the week, click today's total at the top right, then **Commit week**. Ajour lists the entries you added, changed or deleted, and groups the week into lines with the project, the task, the hours and your notes. Copy them into your company's timesheet tool, then press **Mark as committed**.
 
-<Shot name="submit-week" alt="The Submit week page with the week total and the lines to copy" />
+<Shot name="commit-week" alt="The Commit week page with the changes and the lines to copy" />
 
-See [Submit your week](/time/submit).
+See [Commit your week](/time/commit).
 
 ## Next steps
 
