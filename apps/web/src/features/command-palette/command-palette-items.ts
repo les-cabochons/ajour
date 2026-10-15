@@ -110,7 +110,6 @@ export interface PaletteInput {
   workItems: readonly LocalWorkItem[];
   timesheetEntries: readonly LocalTimesheetEntry[];
   timer: LocalTimer | null;
-  today: string;
   /** Shortcuts with a mounted handler, in registry order. */
   shortcuts: readonly ShortcutDefinition[];
   /** The settings pages, in display order. */

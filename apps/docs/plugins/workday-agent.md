@@ -53,7 +53,7 @@ The first run always asks you to sign in. Ajour's Chrome window keeps its own pr
 
 ## What it asks you
 
-- An entry in Workday looks like one of yours but has no entry ID: **Same entry, mark it**, **Different, add mine** or **Skip**.
+- An updated or deleted change has no Workday entry with its ID, and no single entry on that day and time type has its hours: **Skip** or **Stop**.
 - Workday has several close matches for a task: pick one, or **Skip**.
 
 ## Privacy
