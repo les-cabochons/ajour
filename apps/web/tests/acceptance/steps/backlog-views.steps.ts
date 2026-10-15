@@ -2086,3 +2086,38 @@ Then(
     expect(parent.note).toBeUndefined();
   },
 );
+Given("the Backlog parent is synced", async ({ page }) => {
+  await page.evaluate(() => {
+    const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
+    const parent = state.workItems.find(
+      (item: { _id: string }) => item._id === "parent",
+    );
+    Object.assign(parent, {
+      source: "example",
+      sourceId: "source-parent",
+      sourceConnectionId: "fixture",
+      sourceStatusLabel: "Active",
+    });
+    localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+  });
+});
+When("I archive it from its properties card", async ({ page }) => {
+  await page
+    .locator(".backlog-item-properties-card")
+    .getByRole("button", { name: "Archive", exact: true })
+    .click();
+});
+Then(
+  "the Backlog parent is archived and its page offers Restore",
+  async ({ page }) => {
+    await expect(
+      page
+        .locator(".ajour-page-header-slot")
+        .getByRole("button", { name: "Restore", exact: true }),
+    ).toBeVisible();
+    const { workItems } = await readBacklogState(page);
+    expect(
+      workItems.find((item: { _id: string }) => item._id === "parent").status,
+    ).toBe("archived");
+  },
+);

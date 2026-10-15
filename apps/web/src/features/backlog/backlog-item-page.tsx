@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { Link, useNavigate, useSearch } from "@tanstack/react-router";
 import {
   RiAddLine as AddIcon,
+  RiArchiveLine as ArchiveIcon,
   RiArrowGoBackLine as UnsettleIcon,
   RiCheckboxCircleLine as SettleIcon,
   RiExternalLinkLine as ExternalIcon,
@@ -169,6 +170,8 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
     otherSourceStateCount: getOtherSourceStates(item).length,
   });
   const startAction = actions.find((action) => action.id === "start-entry");
+  // Listed only for synced items: Archive leaves the source as it is.
+  const archiveAction = actions.find((action) => action.id === "archive");
   const parentKey = getWorkItemParentKey(item);
   const parent = parentKey
     ? state.workItems.find((candidate) =>
@@ -529,6 +532,19 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                       "–")}
                 </PropertyRow>
               </BacklogItemProperties>
+              {archiveAction && !archiveAction.disabledReason ? (
+                <div className="border-t pt-3">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="-ms-1.5 text-destructive hover:text-destructive"
+                    onClick={() => runAction("archive")}
+                  >
+                    <ArchiveIcon data-icon="inline-start" />
+                    {archiveAction.label}
+                  </Button>
+                </div>
+              ) : null}
             </section>
           </div>
         </div>

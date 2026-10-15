@@ -414,3 +414,9 @@ Feature: Backlog list and board views
     When I open the Backlog parent page
     And I type in the title, the remaining estimate and the note and press Escape each time
     Then the Backlog parent keeps its saved title, estimate and note
+
+  Scenario: Archive a synced item from the bottom of its properties card
+    Given the Backlog parent is synced
+    When I open the Backlog parent page
+    And I archive it from its properties card
+    Then the Backlog parent is archived and its page offers Restore
