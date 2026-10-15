@@ -270,6 +270,20 @@ Feature: Open the local time workspace
     And I open project import and export from the Projects list
     Then the project import and export page leads back to Projects
 
+  Scenario: Follow the running entry from the narrow titlebar
+    Given I have no saved Ajour workspace
+    When I open today's time workspace in a narrow window
+    And I press Start in the narrow titlebar
+    Then the running entry's dialog is open
+    When I click outside the running entry's dialog
+    Then no entry dialog is open
+    And the totals pill shows the running time instead of Today
+    When I open the current timer from the totals popover
+    Then the running entry's dialog is open
+    When I close the running entry's dialog with Escape
+    And I press Stop in the narrow titlebar
+    Then the totals pill shows Today again
+
   Scenario: Start a task from the command palette
     Given I have projects with searchable tasks
     When I open the Backlog workspace

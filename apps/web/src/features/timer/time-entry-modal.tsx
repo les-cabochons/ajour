@@ -25,7 +25,8 @@ interface TimeEntryModalProps {
 /**
  * Dialog host for the entry editor: a saved entry, a new entry, or the running entry.
  * The narrow view uses it everywhere, including New entry… on tasks and backlog
- * items. It closes on its own when the entry it shows goes away.
+ * items. It closes on its own when the entry it shows goes away. A click
+ * outside closes the running entry's dialog and does nothing on the others.
  */
 export function TimeEntryModal({
   date,
@@ -65,7 +66,9 @@ export function TimeEntryModal({
   return (
     <Dialog
       open
-      disablePointerDismissal
+      // The running entry keeps running without its editor, so a click
+      // outside closes it like Escape. Other entries wait for Save or Cancel.
+      disablePointerDismissal={!runningTimer}
       onOpenChange={(open) => !open && onClose()}
     >
       {/* The narrow view's full-width host: the dialog spans the window, less a

@@ -160,8 +160,9 @@ Today's splits at 640px and 1023px go away.
 ### Navigation
 
 - A segmented toggle for Time, Backlog and Settings floats at the bottom left, over the page. The active section shows its label, the others show only their icon. A search button may join it later.
-- The titlebar holds the date, the running entry while one runs, the totals pill, then New entry (+) and Start (▶). Start hides while an entry runs.
-- The running entry shows its title, time and Stop, and its title truncates first when space runs out. Clicking it opens the running entry in the full-width dialog. See [Keyboard model and command palette](https://github.com/les-cabochons/ajour/issues/18).
+- The titlebar holds the date, New entry (+), Start (▶), then the totals pill. Start turns into Stop while an entry runs.
+- While an entry runs, the totals pill shows its time instead of "Today". The pill's popover adds a Current timer row with the entry's title and an arrow, which opens the running entry in the full-width dialog.
+- Start opens the running entry's dialog too. A click outside it closes the dialog and the entry keeps running. The other entry dialogs ignore outside clicks. See [Keyboard model and command palette](https://github.com/les-cabochons/ajour/issues/18).
 - Settings opens on a list of its pages. Each page has a back arrow to that list.
 - Projects lives inside Settings in the narrow view. The Settings list has one Projects entry that opens the full Projects section: the project list, project detail and the archive. Importing and exporting projects is an action inside that section, not a separate settings page.
 - Pull requests also has a Settings-list entry in the narrow view, shown only while a code host plugin is enabled. Its Active, Settled and Recently closed groups use the same local actions as desktop.

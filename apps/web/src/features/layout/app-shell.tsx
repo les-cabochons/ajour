@@ -12,9 +12,12 @@ import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   RiAddLine as Plus,
   RiArrowGoBackLine as ReturnIcon,
+  RiArrowRightSLine as ChevronRight,
   RiPlayLine as Play,
+  RiStopFill as Stop,
 } from "@remixicon/react";
 import { PageTitle } from "@/components/page-header";
+import { RunningDot } from "@/components/running-dot";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Chip } from "@/components/ui/chip";
 import {
@@ -37,6 +40,7 @@ import {
   runningEntryDraftProps,
   setRunningEntryEditorOpen,
   startBlankEntry,
+  useRunningEntry,
   useRunningEntryEditor,
 } from "@/features/layout/timer-dock";
 import { AppMenuBar } from "@/features/layout/app-menu-bar";
@@ -65,6 +69,7 @@ import {
 } from "@/features/settings/settings-navigation";
 import { SubmitWeekButton } from "@/features/time/submit-week-controls";
 import { formatClockDuration } from "@/domain/time/duration";
+import { formatElapsedDuration } from "@/domain/time/running-entry";
 import { findPinnedTask } from "@/domain/projects/project-transitions";
 import {
   getConnectorsOverview,
@@ -343,13 +348,18 @@ function ConnectorAutoSyncScheduler() {
 
 /**
  * The selected day's titlebar pill, with day and week totals and Submit week.
+ * With `showsRunningEntry`, as in the narrow view, a running entry replaces
+ * the day total on the pill with its own time, and the popover gets a Current
+ * timer row that opens the entry's editor.
  */
 function DayTotalsPill({
   date,
   onSubmit,
+  showsRunningEntry = false,
 }: {
   date: string;
   onSubmit: () => void;
+  showsRunningEntry?: boolean;
 }) {
   const state = useLocalState();
   const [open, setOpen] = useState(false);
@@ -398,12 +408,23 @@ function DayTotalsPill({
         )}
         aria-label="Show day and week totals"
       >
-        <span className="ajour-nav-total-label">
-          {date === todayIsoDate() ? "Today" : "Day"}
-        </span>
-        <span className="ajour-nav-total-value">
-          {formatClockDuration(dayTotalMs)}
-        </span>
+        {showsRunningEntry && currentTimer ? (
+          <>
+            <RunningDot />
+            <span className="ajour-nav-total-value">
+              {formatElapsedDuration(runningDurationMs)}
+            </span>
+          </>
+        ) : (
+          <>
+            <span className="ajour-nav-total-label">
+              {date === todayIsoDate() ? "Today" : "Day"}
+            </span>
+            <span className="ajour-nav-total-value">
+              {formatClockDuration(dayTotalMs)}
+            </span>
+          </>
+        )}
       </PopoverTrigger>
       <PopoverContent
         align="end"
@@ -411,6 +432,9 @@ function DayTotalsPill({
         className="w-auto min-w-38 gap-2 rounded-lg px-3 py-2.5"
         aria-label="Current time totals"
       >
+        {showsRunningEntry && currentTimer ? (
+          <CurrentTimerRow onOpen={() => setOpen(false)} />
+        ) : null}
         <div className="day-totals-popup-row">
           <span className="day-totals-popup-label">Week total</span>
           <span className="day-totals-popup-value">
@@ -436,6 +460,31 @@ function DayTotalsPill({
   );
 }
 
+/**
+ * The totals popover's Current timer row: the running entry's title and an
+ * arrow. A click opens the running entry in its editor dialog.
+ */
+function CurrentTimerRow({ onOpen }: { onOpen: () => void }) {
+  const { summary } = useRunningEntry();
+  return (
+    <button
+      type="button"
+      className="day-totals-popup-row day-totals-popup-link"
+      aria-label="Edit the current timer"
+      onClick={() => {
+        onOpen();
+        setRunningEntryEditorOpen(true);
+      }}
+    >
+      <span className="day-totals-popup-label">Current timer</span>
+      <span className="flex min-w-0 items-center gap-1">
+        <span className="max-w-40 truncate text-xs">{summary?.title}</span>
+        <ChevronRight className="size-3.5 shrink-0 text-muted-foreground" />
+      </span>
+    </button>
+  );
+}
+
 /* ── Global Timer Bar ──────────────────────────────────────────────── */
 
 /**
@@ -449,8 +498,10 @@ type TitlebarEditor = "new" | null;
  * "+" sits beside Search and the project filter, and Start in the timer dock.
  * While the sidebar is off screen (`showsFloatingDock`), the running entry floats at the bottom left
  * instead, or "+" and Start while nothing runs. In the narrow view, New entry
- * (+) and Start (▶) sit in the titlebar after the totals and open the dialog,
- * and the running entry sits before the totals. Elsewhere the editor opens in a popover anchored
+ * (+) and Start (▶) sit in the titlebar before the totals and open the dialog.
+ * Start turns into Stop while an entry runs, and the totals pill shows the
+ * running time, with a Current timer row in its popover. Elsewhere the editor
+ * opens in a popover anchored
  * to where it was asked for: the "+" button, or the task or backlog row of New
  * entry… (`openNewEntryEditor`). N and requests whose row is off screen anchor
  * it to the titlebar's totals. New entries default to today; Start starts one
@@ -579,16 +630,9 @@ function GlobalTimerBar({
             document.body,
           )
         : null}
-      {/* The narrow view has no sidebar, so the running entry and the entry
-          buttons share the titlebar with the totals. Start hides while an
-          entry runs: the running entry has its Stop. */}
-      {isNarrowView ? (
-        <FloatingTimerDock
-          onEdit={() => setRunningEntryEditorOpen(true)}
-          className="h-8 min-w-0 flex-1 shadow-none"
-        />
-      ) : null}
-      <DayTotalsPill date={date} onSubmit={onSubmit} />
+      {/* The narrow view has no sidebar, so its entry buttons sit before the
+          totals. Start turns into Stop while an entry runs, and the totals
+          pill shows the running time. */}
       {isNarrowView ? (
         <div className="quick-timer-button-group">
           <TooltipButton
@@ -599,7 +643,16 @@ function GlobalTimerBar({
           >
             <Plus className="h-3.5 w-3.5" />
           </TooltipButton>
-          {currentTimer ? null : (
+          {currentTimer ? (
+            <TooltipButton
+              className="quick-timer-group-button"
+              onClick={() => localStore.saveTimer(currentTimer._id)}
+              label="Stop"
+              shortcut="entry.stop-or-start"
+            >
+              <Stop className="h-3.5 w-3.5" />
+            </TooltipButton>
+          ) : (
             <TooltipButton
               className="quick-timer-group-button quick-timer-group-button-play"
               onClick={startBlankEntry}
@@ -611,6 +664,11 @@ function GlobalTimerBar({
           )}
         </div>
       ) : null}
+      <DayTotalsPill
+        date={date}
+        onSubmit={onSubmit}
+        showsRunningEntry={isNarrowView}
+      />
       {isNarrowView && editor === "new" ? (
         <TimeEntryModal
           date={today}

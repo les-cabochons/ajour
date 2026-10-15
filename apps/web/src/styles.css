@@ -1383,6 +1383,28 @@
     gap: 0.85rem;
   }
 
+  /* The Current timer row: a button that opens the running entry. */
+  .day-totals-popup-link {
+    align-items: center;
+    margin: 0 -0.375rem;
+    padding: 0.25rem 0.375rem;
+    border: 0;
+    border-radius: var(--control-radius);
+    background: transparent;
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+  }
+
+  .day-totals-popup-link:hover {
+    background: var(--hover-bg);
+  }
+
+  .day-totals-popup-link:focus-visible {
+    outline: 2px solid var(--focus-ring);
+    outline-offset: 1px;
+  }
+
   .day-totals-popup-label {
     font-size: 10px;
     font-weight: 600;

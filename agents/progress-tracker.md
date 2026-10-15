@@ -739,7 +739,8 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Narrow view floating navigation, 2026-10-15
 
-- [x] The narrow view's titlebar holds the date, the running entry, today's total, New entry and Start. The running entry and the entry buttons left the floating bottom-right group.
+- [x] The narrow view's titlebar holds the date, New entry, Start, then the totals pill. Start turns into Stop while an entry runs. The entry buttons left the floating bottom-right group.
+- [x] While an entry runs, the totals pill shows its time instead of "Today", and the pill's popover has a Current timer row that opens the running entry's dialog. A click outside that dialog closes it.
 - [x] Settings joins Time and Backlog in the segmented toggle, which floats at the bottom left. The separate cog is gone. Settings stays active on Projects pages.
 - [x] The TanStack Router devtools no longer load in the acceptance run's `--mode test`: their corner button covered the toggle.
-- [x] Verification: 875 web unit tests, `just typecheck` and the 10 narrow Chromium scenarios passed. The full acceptance suite passed after the first round but was not rerun after the floating toggle: the shared server on port 4173 stopped mid-run. Browser screenshots at 390px and 600px checked the idle, running and Settings layouts. `just ui-perf` was not run: it measures at 1440px, where this change renders nothing new.
+- [x] Verification: 875 web unit tests, `just typecheck`, and the 26 narrow and running-entry Chromium scenarios passed, with a new scenario for the narrow running entry. The full acceptance suite passed on the first version of this change and was not rerun since. Browser screenshots at 390px and 600px checked the idle, running and Settings layouts. `just ui-perf` was not run: it measures at 1440px, where this change renders nothing new.
