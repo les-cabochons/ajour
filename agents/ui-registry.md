@@ -187,8 +187,14 @@ edits an empty or one-entry cell in place; the typed-cell rules live in
 `domain/time/week-grid-cell.ts`. A cell with several entries shows "3:30 ×2"
 and never edits in place. "+ Add row" adds an empty row for the week, never
 saved on its own. Right-click on the row name or a cell, or Shift+Backspace on
-a focused cell, offers Delete row, with no "…" button; a row with time confirms in an AlertDialog first, then deletes its week's
-entries with one Undo toast. Days use seven 40px column headers and flat 6px entry cards
+a focused cell, offers Delete row, with no "…" button. Row names share one
+context-menu root; its content mounts only while open. Only the cell menu shows
+the keyboard shortcut. Deletion saves and closes the row's side-panel draft first;
+an invalid draft blocks deletion. A row with time confirms its entry count and
+total in an AlertDialog, then deletes its week's entries with one Undo toast.
+Rows containing a running entry or its saved part cannot be deleted.
+
+Days use seven 40px column headers and flat 6px entry cards
 with the project's color as a rail; the running card wears a success-tone
 chip. Cards drag between days with thresholded pointer dragging, explicit
 weekday drop targets, and Escape/pointer-cancel cleanup. A click or Enter on a

@@ -2570,6 +2570,75 @@ Then("the Week Grid has no {string} row", async ({ page }, task: string) => {
   await expect(weekGridRow(page, task)).toHaveCount(0);
 });
 
+When("I add a Week Grid row without a task", async ({ page }) => {
+  await page.getByRole("button", { name: "Add row", exact: true }).click();
+  await page
+    .getByRole("button", { name: "Project or task for the new row" })
+    .click();
+  await page.getByRole("option", { name: /^Client Atlas/ }).click();
+  await page
+    .getByRole("option", { name: "Use project without a task", exact: true })
+    .click();
+  await expect(weekGridCell(page, "No task", "Monday")).toBeVisible();
+});
+
+When(
+  "I delete the {string} row from its name menu",
+  async ({ page }, task: string) => {
+    await weekGridRow(page, task)
+      .locator(".weekly-grid-task-cell")
+      .click({ button: "right" });
+    const action = page.getByRole("menuitem", {
+      name: "Delete row",
+      exact: true,
+    });
+    // The name cannot receive keyboard focus, so it must not advertise cell keys.
+    await expect(action).not.toHaveAttribute("aria-keyshortcuts");
+    await action.click();
+  },
+);
+
+When(
+  "I draft {string} hours in the {string} cell on {word}",
+  async ({ page }, hours: string, task: string, day: string) => {
+    await weekGridCell(page, task, day).click({ button: "right" });
+    await page
+      .getByRole("menuitem", { name: "Add entry", exact: true })
+      .click();
+    await page.getByRole("textbox", { name: "Hours", exact: true }).fill(hours);
+  },
+);
+
+Then(
+  "the row deletion dialog counts {string}",
+  async ({ page }, count: string) => {
+    await expect(page.getByRole("alertdialog")).toContainText(count);
+    await expect(
+      page.getByRole("textbox", { name: "Hours", exact: true }),
+    ).toHaveCount(0);
+  },
+);
+
+Then("no row deletion dialog is open", async ({ page }) => {
+  await expect(page.getByRole("alertdialog")).toHaveCount(0);
+});
+
+Then(
+  "the {string} cell on {word} has keyboard focus",
+  async ({ page }, task: string, day: string) => {
+    await expect(weekGridCell(page, task, day)).toBeFocused();
+  },
+);
+
+Then("the Week Grid entry draft still has invalid hours", async ({ page }) => {
+  await expect(
+    page.getByRole("textbox", { name: "Hours", exact: true }),
+  ).toHaveValue("invalid");
+  await expect(
+    page.getByText("Enter a valid duration", { exact: true }),
+  ).toBeVisible();
+});
+
 When("I open the Backlog settings", async ({ page }) => {
   await page.goto("/settings/backlog");
 });

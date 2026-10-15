@@ -454,9 +454,6 @@
      Day and total columns stay compact, the task column takes the rest and
      ellipsizes. Below the min-width the grid scrolls horizontally. */
   .weekly-grid-table {
-    --weekly-grid-day-width: 84px;
-    --weekly-grid-total-width: 72px;
-    --weekly-grid-task-min-width: 160px;
     min-width: calc(
       var(--weekly-grid-task-min-width) + 7 * var(--weekly-grid-day-width) +
         var(--weekly-grid-total-width)
@@ -480,7 +477,7 @@
     align-items: flex-end;
     gap: 0.125rem;
     padding: 0 0.5rem;
-    line-height: 1.2;
+    line-height: var(--weekly-grid-heading-line-height);
     white-space: nowrap;
   }
 

@@ -417,6 +417,9 @@ describe("timesheet entry lifecycle", () => {
     expect(deleteTimesheetEntry(runningState, "timesheet-1")).toBe(
       runningState,
     );
+    expect(deleteTimesheetEntries(runningState, ["timesheet-1"])).toBe(
+      runningState,
+    );
     expect(
       duplicateTimesheetEntry(
         runningState,

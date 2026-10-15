@@ -4,6 +4,19 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Current Baseline
 
+- [x] Compact Week Grid and row deletion (2026-10-15): seven 84px day columns
+      and a 72px total column fit above an 820px content width. Delete row uses
+      right-click or Shift+Backspace without an action icon. It saves a valid
+      side-panel draft before counting entries, blocks invalid drafts, protects
+      both rows of a running entry whose task changed, and offers one Undo.
+      Row names share one context-menu root outside the cell menus. Paired
+      large-workspace timer samples measured 49.3 ms/s on the base and 50.7 ms/s
+      after the change, a 3% increase within the 10% budget. Domain tests cover the running-entry
+      guard; six Chromium scenarios cover hours editing, confirmation, Undo,
+      empty rows, saved drafts and invalid drafts. All 1,069 workspace tests,
+      type checks, package boundaries and builds passed. The full formatting
+      check still flags two unchanged files, `backlog-item-page.tsx` and
+      `sidebar-backlog-list.tsx`.
 - [x] UI foundation (2026-10-14): Geist Sans and Mono replace Raleway and
       Noto Serif; one type scale (11 to 28px), 28px and 32px controls, 4/6/8px
       radii and an indigo accent are tokens in `styles.css`; the top bar is the

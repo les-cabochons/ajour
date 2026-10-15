@@ -21,7 +21,7 @@ import type {
 } from "@/domain/local-state";
 import { formatClockDuration } from "@/domain/time/duration";
 import {
-  getWeeklyGridRowKey,
+  getWeeklyGridAddedRowKey,
   projectWeeklyTime,
   type WeeklyGridAddedRow,
 } from "@/domain/time/weekly-time";
@@ -328,7 +328,7 @@ export function WeeklyTimeView({
     setAddedRows({
       weekStart: weekDates[0],
       rows: weekAddedRows.filter(
-        (row) => getWeeklyGridRowKey({ label: "", ...row }) !== rowKey,
+        (row) => getWeeklyGridAddedRowKey(row) !== rowKey,
       ),
     });
   }
