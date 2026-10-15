@@ -1,4 +1,6 @@
+import { readFileSync } from "node:fs";
 import { createRequire } from "node:module";
+import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 const require = createRequire(import.meta.url);
@@ -29,6 +31,18 @@ describe("desktop electron-builder config", () => {
       perMachine: false,
     });
     expect(JSON.stringify(config)).not.toMatch(/squirrel|nupkg/i);
+  });
+
+  it("keeps local builds on the configured release core", () => {
+    // Release builds rewrite package.json from the tag, but local builds ship
+    // this version as-is. A higher core than VERSION would look newer than
+    // every published release and block switching tracks.
+    const configuredVersion = readFileSync(
+      path.resolve(__dirname, "../../VERSION"),
+      "utf8",
+    ).trim();
+
+    expect(require("./package.json").version).toBe(configuredVersion);
   });
 
   it("publishes stable builds on the latest update channel", () => {
