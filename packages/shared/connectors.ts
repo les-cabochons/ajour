@@ -153,6 +153,41 @@ export const agentTaskSchema = z
 export type AgentTask = z.infer<typeof agentTaskSchema>;
 
 /**
+ * Text properties a plugin adds to every project, shown in a section of the
+ * project properties card. See
+ * docs/superpowers/specs/2026-10-15-plugin-project-properties-design.md.
+ */
+export const projectPropertyFieldSchema = z.object({
+  id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/),
+  label: z.string().trim().min(1).max(60),
+  /** The Ajour project value shown while the user has typed none. */
+  defaultFrom: z.enum(["fullName", "code"]).optional(),
+});
+export type ProjectPropertyField = z.infer<typeof projectPropertyFieldSchema>;
+
+export const projectPropertiesSchema = z
+  .object({
+    section: z.string().trim().min(1).max(60),
+    fields: z.array(projectPropertyFieldSchema).min(1).max(10),
+  })
+  .superRefine((capability, context) => {
+    const seen = new Set<string>();
+    capability.fields.forEach((field, index) => {
+      if (seen.has(field.id)) {
+        context.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["fields", index, "id"],
+          message: `Two project properties use the id ${field.id}.`,
+        });
+      }
+      seen.add(field.id);
+    });
+  });
+export type ProjectPropertiesCapability = z.infer<
+  typeof projectPropertiesSchema
+>;
+
+/**
  * What a plugin provides. A plugin declares at least one capability, and its
  * connections serve all of them. A connector without `settle` keeps working:
  * Ajour settles its items locally, with no write. See ADR 0001 and ADR 0003.
@@ -168,13 +203,15 @@ export const connectorPluginCapabilitiesSchema = z
     agentTask: z
       .object({ tasks: z.array(agentTaskSchema).min(1).max(10) })
       .optional(),
+    projectProperties: projectPropertiesSchema.optional(),
   })
   .refine(
     (capabilities) =>
       capabilities.connector !== undefined ||
       capabilities.codeHost !== undefined ||
-      capabilities.agentTask !== undefined,
-    "A plugin must declare at least one capability: connector, codeHost or agentTask.",
+      capabilities.agentTask !== undefined ||
+      capabilities.projectProperties !== undefined,
+    "A plugin must declare at least one capability: connector, codeHost, agentTask or projectProperties.",
   );
 export type ConnectorPluginCapabilities = z.infer<
   typeof connectorPluginCapabilitiesSchema
@@ -196,6 +233,12 @@ export function pluginHasAgentTasks(manifest: {
   capabilities: ConnectorPluginCapabilities;
 }) {
   return manifest.capabilities.agentTask !== undefined;
+}
+
+export function pluginHasProjectProperties(manifest: {
+  capabilities: ConnectorPluginCapabilities;
+}) {
+  return manifest.capabilities.projectProperties !== undefined;
 }
 
 /** Whether the plugin runs code: it syncs items or serves pull requests. */
