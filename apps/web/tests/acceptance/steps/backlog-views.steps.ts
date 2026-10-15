@@ -1,6 +1,9 @@
 import { expect, type Locator, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 const { Given, When, Then } = createBdd();
+/** The peek beside the Backlog list. */
+const peekPanel = (page: Page) =>
+  page.getByRole("complementary", { name: "Backlog item peek" });
 Given("I have a backlog view fixture", async ({ page }) => {
   await page.route("http://127.0.0.1:8787/api/connectors", (route) =>
     route.fulfill({
@@ -320,7 +323,7 @@ When("I peek at the Backlog parent", async ({ page }) => {
 When(
   "I reselect the current peek project with {string}",
   async ({ page }, control: string) => {
-    const project = page.getByRole("combobox", { name: "Peek project" });
+    const project = peekPanel(page).getByRole("combobox", { name: "Project" });
     await expect(project).toHaveValue("Example project");
     await project.click();
     if (control === "Enter") {
@@ -335,11 +338,11 @@ When(
 );
 Then("the peek retains the parent's project and task", async ({ page }) => {
   await expect(
-    page.getByRole("combobox", { name: "Peek project" }),
+    peekPanel(page).getByRole("combobox", { name: "Project" }),
   ).toHaveValue("Example project");
-  await expect(page.getByRole("combobox", { name: "Peek task" })).toHaveValue(
-    "Example task",
-  );
+  await expect(
+    peekPanel(page).getByRole("combobox", { name: "Task" }),
+  ).toHaveValue("Example task");
   const parent = await page.evaluate(() =>
     JSON.parse(localStorage.getItem("ajour.local-state.v2")!).workItems.find(
       (item: { _id: string }) => item._id === "parent",
@@ -348,14 +351,14 @@ Then("the peek retains the parent's project and task", async ({ page }) => {
   expect(parent).toMatchObject({ projectId: "p", taskId: "t" });
 });
 When("I clear the peek project", async ({ page }) => {
-  await page.getByRole("combobox", { name: "Peek project" }).click();
+  await peekPanel(page).getByRole("combobox", { name: "Project" }).click();
   await page.getByRole("option", { name: "No project", exact: true }).click();
 });
 Then("the peek has no project or task", async ({ page }) => {
   await expect(
-    page.getByRole("combobox", { name: "Peek project" }),
+    peekPanel(page).getByRole("combobox", { name: "Project" }),
   ).toHaveValue("");
-  const task = page.getByRole("combobox", { name: "Peek task" });
+  const task = peekPanel(page).getByRole("combobox", { name: "Task" });
   await expect(task).toHaveValue("");
   await expect(task).toBeDisabled();
   const parent = await page.evaluate(() =>
@@ -619,19 +622,14 @@ async function inspectBacklogStart(
           .click();
       }
       // The item page's actions sit in the top bar, beside its breadcrumb.
-      const header = page.locator(".ajour-page-header-slot");
+      // It has no "…" menu, so its Start entry or Stop button is the check.
       await expect(
-        header.getByRole("button", {
+        page.locator(".ajour-page-header-slot").getByRole("button", {
           name: running ? "Stop" : "Start entry",
           exact: true,
         }),
       ).toBeEnabled();
-      await header
-        .getByRole("button", {
-          name: "Actions for Backlog parent",
-          exact: true,
-        })
-        .click();
+      return;
     } else if (control === "editor") {
       const editor = page.getByRole("complementary", {
         name: "Backlog item editor",
@@ -1940,3 +1938,186 @@ Then("the other item is back in In progress", async ({ page }) => {
       .locator('[data-work-item-id="other"]'),
   ).toBeVisible();
 });
+
+/** The saved local state, read from the browser. */
+function readBacklogState(page: Page) {
+  return page.evaluate(() =>
+    JSON.parse(localStorage.getItem("ajour.local-state.v2")!),
+  );
+}
+When("I open the Backlog parent page", async ({ page }) => {
+  await page.goto("/backlog/parent");
+  await expect(
+    page.getByRole("heading", { name: "Backlog parent", level: 1 }),
+  ).toBeVisible();
+});
+When(
+  "I rename the item on its page to {string}",
+  async ({ page }, title: string) => {
+    await page
+      .getByRole("heading", { name: "Backlog parent", level: 1 })
+      .click();
+    const input = page.getByRole("textbox", { name: "Title", exact: true });
+    await input.fill(title);
+    await input.press("Enter");
+    await expect(
+      page.getByRole("heading", { name: title, level: 1 }),
+    ).toBeVisible();
+  },
+);
+When(
+  "I set its remaining estimate on its page to {string}",
+  async ({ page }, hours: string) => {
+    await page
+      .getByRole("button", { name: /^Edit remaining estimate/ })
+      .click();
+    const input = page.getByRole("textbox", {
+      name: "Remaining estimate in hours",
+    });
+    await input.fill(hours);
+    await input.press("Enter");
+  },
+);
+When(
+  "I write {string} as its note on its page",
+  async ({ page }, note: string) => {
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    const textarea = page.getByRole("textbox", { name: "Note", exact: true });
+    await textarea.fill(note);
+    // Leaving the field saves it; the rendered markdown comes back.
+    await textarea.blur();
+    await expect(page.locator("strong", { hasText: "Bold" })).toBeVisible();
+  },
+);
+When(
+  "I add the subitem {string} on its page",
+  async ({ page }, title: string) => {
+    await page
+      .getByRole("button", { name: "Add subitem", exact: true })
+      .click();
+    const input = page.getByRole("textbox", { name: "New subitem name" });
+    await input.fill(title);
+    await input.press("Enter");
+    await expect(page.getByRole("link", { name: title })).toBeVisible();
+  },
+);
+Then("the Backlog parent keeps the inline edits", async ({ page }) => {
+  await expect
+    .poll(async () => {
+      const { workItems } = await readBacklogState(page);
+      const parent = workItems.find(
+        (item: { _id: string }) => item._id === "parent",
+      );
+      const added = workItems.find(
+        (item: { title: string }) => item.title === "Inline subitem",
+      );
+      return {
+        title: parent.title,
+        note: parent.note,
+        remainingEstimateHours: parent.remainingEstimateHours,
+        added: added && {
+          parentWorkItemId: added.parentWorkItemId,
+          projectId: added.projectId,
+          taskId: added.taskId,
+        },
+      };
+    })
+    .toEqual({
+      title: "Renamed parent",
+      note: "**Bold** note",
+      remainingEstimateHours: 5,
+      added: { parentWorkItemId: "parent", projectId: "p", taskId: "t" },
+    });
+});
+Then(
+  "the item page has no actions menu and no editor panel",
+  async ({ page }) => {
+    // Sidebar rows keep their own "…"; only the page's is gone.
+    await expect(
+      page
+        .locator(".ajour-page-header-slot, .backlog-item-page")
+        .getByRole("button", { name: /^Actions for / }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("complementary", { name: "Backlog item editor" }),
+    ).toHaveCount(0);
+  },
+);
+When(
+  "I type in the title, the remaining estimate and the note and press Escape each time",
+  async ({ page }) => {
+    await page
+      .getByRole("heading", { name: "Backlog parent", level: 1 })
+      .click();
+    await page
+      .getByRole("textbox", { name: "Title", exact: true })
+      .fill("Cancelled title");
+    await page.keyboard.press("Escape");
+
+    await page
+      .getByRole("button", { name: /^Edit remaining estimate/ })
+      .click();
+    await page
+      .getByRole("textbox", { name: "Remaining estimate in hours" })
+      .fill("9");
+    await page.keyboard.press("Escape");
+
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    await page
+      .getByRole("textbox", { name: "Note", exact: true })
+      .fill("Cancelled note");
+    await page.keyboard.press("Escape");
+    await expect(
+      page.getByRole("heading", { name: "Backlog parent", level: 1 }),
+    ).toBeVisible();
+  },
+);
+Then(
+  "the Backlog parent keeps its saved title, estimate and note",
+  async ({ page }) => {
+    const { workItems } = await readBacklogState(page);
+    const parent = workItems.find(
+      (item: { _id: string }) => item._id === "parent",
+    );
+    expect(parent).toMatchObject({
+      title: "Backlog parent",
+      remainingEstimateHours: 3,
+    });
+    expect(parent.note).toBeUndefined();
+  },
+);
+Given("the Backlog parent is synced", async ({ page }) => {
+  await page.evaluate(() => {
+    const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
+    const parent = state.workItems.find(
+      (item: { _id: string }) => item._id === "parent",
+    );
+    Object.assign(parent, {
+      source: "example",
+      sourceId: "source-parent",
+      sourceConnectionId: "fixture",
+      sourceStatusLabel: "Active",
+    });
+    localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+  });
+});
+When("I archive it from its properties card", async ({ page }) => {
+  await page
+    .locator(".backlog-item-properties-card")
+    .getByRole("button", { name: "Archive", exact: true })
+    .click();
+});
+Then(
+  "the Backlog parent is archived and its page offers Restore",
+  async ({ page }) => {
+    await expect(
+      page
+        .locator(".ajour-page-header-slot")
+        .getByRole("button", { name: "Restore", exact: true }),
+    ).toBeVisible();
+    const { workItems } = await readBacklogState(page);
+    expect(
+      workItems.find((item: { _id: string }) => item._id === "parent").status,
+    ).toBe("archived");
+  },
+);

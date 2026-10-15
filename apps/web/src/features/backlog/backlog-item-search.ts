@@ -65,7 +65,8 @@ export function parseBacklogItemOrigin(value: unknown): string | undefined {
 export function getBacklogItemOriginFor(location: {
   pathname: string;
   href: string;
-  search: { from?: unknown };
+  /** The page's whole search, such as a Week view's `view`; only `from` is read. */
+  search: Record<string, unknown>;
 }): string | undefined {
   return location.pathname.startsWith("/backlog/")
     ? parseBacklogItemOrigin(location.search.from)

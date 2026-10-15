@@ -400,3 +400,23 @@ Feature: Backlog list and board views
       | key       | state | status   |
       | Alt+ArrowLeft  | todo  | active   |
       | Alt+ArrowRight | done  | archived |
+
+  Scenario: Edit a backlog item in place on its page
+    When I open the Backlog parent page
+    And I rename the item on its page to "Renamed parent"
+    And I set its remaining estimate on its page to "5"
+    And I write "**Bold** note" as its note on its page
+    And I add the subitem "Inline subitem" on its page
+    Then the Backlog parent keeps the inline edits
+    And the item page has no actions menu and no editor panel
+
+  Scenario: Escape cancels an inline edit on the item page
+    When I open the Backlog parent page
+    And I type in the title, the remaining estimate and the note and press Escape each time
+    Then the Backlog parent keeps its saved title, estimate and note
+
+  Scenario: Archive a synced item from the bottom of its properties card
+    Given the Backlog parent is synced
+    When I open the Backlog parent page
+    And I archive it from its properties card
+    Then the Backlog parent is archived and its page offers Restore
