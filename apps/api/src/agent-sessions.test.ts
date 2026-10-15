@@ -173,6 +173,7 @@ describe("ownership and activity", () => {
     });
     for (let index = 0; index < 205; index += 1) {
       sessions.recordActivity(claude, {
+        outcome: "ok",
         tool: "start_timer",
         action: "Started an entry",
         objectId: `t${index}`,

@@ -33,6 +33,14 @@ export function sessionWindowMs(minutes: number) {
 }
 
 /** A session or question call Ajour refuses. The message goes to the agent. */
+
+/** An activity entry as a tool call reports it, before Ajour files it. */
+export type AgentActivityEntry = AgentActivity extends infer Entry
+  ? Entry extends AgentActivity
+    ? Omit<Entry, "at" | "client" | "sessionId">
+    : never
+  : never;
+
 export class AgentSessionError extends Error {
   constructor(message: string) {
     super(message);
@@ -260,10 +268,7 @@ export class AgentSessions {
   }
 
   /** Files an agent write under the client's newest open session, if any. */
-  recordActivity(
-    client: AgentClientRef,
-    entry: Pick<AgentActivity, "tool" | "action" | "objectId" | "objectTitle">,
-  ) {
+  recordActivity(client: AgentClientRef, entry: AgentActivityEntry) {
     const sessionId = this.currentSessionId(client);
     this.activity = [
       {

@@ -421,16 +421,32 @@ export const agentQuestionSchema = z.object({
 });
 export type AgentQuestion = z.infer<typeof agentQuestionSchema>;
 
-/** One agent write. Never a note or a tool input. */
-export const agentActivitySchema = z.object({
+const agentActivityBaseShape = {
   at: z.number(),
   client: agentClientRefSchema,
   sessionId: z.string().optional(),
   tool: z.string(),
-  action: z.string(),
-  objectId: z.string(),
-  objectTitle: z.string(),
-});
+};
+
+/**
+ * One agent write, done or refused. Never a note or a tool input. A write
+ * that failed with an exception is an AgentError instead.
+ */
+export const agentActivitySchema = z.discriminatedUnion("outcome", [
+  z.object({
+    ...agentActivityBaseShape,
+    outcome: z.literal("ok"),
+    action: z.string(),
+    objectId: z.string(),
+    objectTitle: z.string(),
+  }),
+  z.object({
+    ...agentActivityBaseShape,
+    outcome: z.literal("refused"),
+    /** Ajour's sentence to the agent, such as "Restore the item first". */
+    reason: z.string(),
+  }),
+]);
 export type AgentActivity = z.infer<typeof agentActivitySchema>;
 
 export const agentErrorSchema = z.object({

@@ -308,12 +308,19 @@ function AgentPanelTabs({
             {error.message}
           </p>
         ))}
-        {(snapshot?.activity ?? []).map((entry, index) => (
-          <p key={index}>
-            <Time at={entry.at} /> {entry.client.name}: {entry.action} ·{" "}
-            {entry.objectTitle}
-          </p>
-        ))}
+        {(snapshot?.activity ?? []).map((entry, index) =>
+          entry.outcome === "ok" ? (
+            <p key={index}>
+              <Time at={entry.at} /> {entry.client.name}: {entry.action} ·{" "}
+              {entry.objectTitle}
+            </p>
+          ) : (
+            <p key={index} className="text-muted-foreground">
+              <Time at={entry.at} /> {entry.client.name}: Ajour refused{" "}
+              {entry.tool} · {entry.reason}
+            </p>
+          ),
+        )}
         {!snapshot?.errors.length && !snapshot?.activity.length ? (
           <p className="text-muted-foreground">Nothing yet.</p>
         ) : null}

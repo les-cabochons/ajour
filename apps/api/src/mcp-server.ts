@@ -187,7 +187,15 @@ function forwardToRenderer(
       // A refusal is the tool working as designed. A failure is an exception
       // in the renderer, so the indicator shows it.
       event.outcome = result.failed ? "error" : "refused";
-      if (result.failed) context.sessions.recordError(result.error, client);
+      if (result.failed) {
+        context.sessions.recordError(result.error, client);
+      } else if (Object.hasOwn(writeToolInputSchemas, tool)) {
+        context.sessions.recordActivity(client, {
+          outcome: "refused",
+          tool,
+          reason: result.error,
+        });
+      }
       return errorResult(result.error);
     }
     const output = dataToolOutputSchemas[tool].safeParse(result.output);
@@ -200,7 +208,11 @@ function forwardToRenderer(
     }
     event.outcome = "ok";
     if (result.activity) {
-      context.sessions.recordActivity(client, { tool, ...result.activity });
+      context.sessions.recordActivity(client, {
+        outcome: "ok",
+        tool,
+        ...result.activity,
+      });
     }
     return structuredResult(output.data);
   });

@@ -675,7 +675,43 @@ describe("agent sessions over MCP", () => {
       (data) => data.activity.length > 0,
     );
     expect(after.data).toMatchObject({
-      activity: [{ tool: "start_timer", objectTitle: "Acme \u00b7 Build" }],
+      activity: [
+        {
+          outcome: "ok",
+          tool: "start_timer",
+          objectTitle: "Acme \u00b7 Build",
+        },
+      ],
+    });
+  });
+
+  it("lists a refused write in the activity list, but not a refused read", async () => {
+    const { baseUrl } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl, "Codex");
+    const renderer = await openFakeRenderer(baseUrl, (call) => ({
+      requestId: call.requestId,
+      ok: false,
+      error: "Restore the item first",
+    }));
+    const agent = await connectAgent(baseUrl, token);
+
+    await agent.callTool({ name: "list_projects", arguments: {} });
+    await agent.callTool({
+      name: "edit_work_item",
+      arguments: { workItemId: "w1", title: "New" },
+    });
+    const after = await renderer.waitFor(
+      "agents",
+      (data) => data.activity.length > 0,
+    );
+    expect(after.data).toMatchObject({
+      activity: [
+        expect.objectContaining({
+          outcome: "refused",
+          tool: "edit_work_item",
+          reason: "Restore the item first",
+        }),
+      ],
     });
   });
 });
