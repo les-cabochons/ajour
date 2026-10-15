@@ -305,6 +305,11 @@ export interface LocalWorkItem {
   snoozedUntil?: number;
   /** Set when a sync brings a settled item back. Cleared when the user opens it. */
   returnedAt?: number;
+  /**
+   * When the user pinned the item to the top of the sidebar list. Local: a
+   * sync keeps it and never writes it to the source.
+   */
+  pinnedAt?: number;
   settledAt?: number;
   /**
    * The parent whose settle or close carried this subitem along, so they come

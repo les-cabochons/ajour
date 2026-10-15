@@ -10,10 +10,13 @@ import {
   isBacklogItemSnoozed,
   markBacklogItemOpened,
   moveBacklogItemToState,
+  pinBacklogItem,
   restoreBacklogItem,
   selectSidebarBacklogItems,
+  selectUpNextBacklogItem,
   settleBacklogItem,
   snoozeBacklogItem,
+  unpinBacklogItem,
   unsettleBacklogItem,
   unsnoozeBacklogItem,
 } from "@/domain/backlog/backlog-item-lifecycle";
@@ -738,6 +741,28 @@ describe("snoozing a backlog item", () => {
   });
 });
 
+describe("pinning a backlog item", () => {
+  it("pins an active item and unpins it", () => {
+    const pinned = pinBacklogItem(
+      createState({ workItems: [item("a")] }),
+      "a",
+      2_000,
+    );
+    expect(find(pinned, "a")!.pinnedAt).toBe(2_000);
+
+    const unpinned = unpinBacklogItem(pinned, "a");
+    expect(find(unpinned, "a")!.pinnedAt).toBeUndefined();
+  });
+
+  it("does not pin an item that is not active", () => {
+    const state = createState({
+      workItems: [synced("settled", { status: "settled" })],
+    });
+
+    expect(pinBacklogItem(state, "settled", 2_000)).toEqual(state);
+  });
+});
+
 describe("the sidebar's backlog items", () => {
   const ids = (items: LocalWorkItem[]) => items.map((workItem) => workItem._id);
 
@@ -809,6 +834,28 @@ describe("the sidebar's backlog items", () => {
       "p3",
       "none",
     ]);
+  });
+
+  it("puts pinned items first, in list order, and skips them for Up next", () => {
+    const state = createState({
+      backlogSortMode: "priority_asc",
+      workItems: [
+        item("p1", { priority: 1 }),
+        item("p3-pinned", { priority: 3, pinnedAt: 5 }),
+        item("p2", { priority: 2 }),
+        item("p4-pinned", { priority: 4, pinnedAt: 1 }),
+      ],
+    });
+    const listed = selectSidebarBacklogItems(state, 1_000);
+
+    expect(ids(listed)).toEqual(["p3-pinned", "p4-pinned", "p1", "p2"]);
+    expect(selectUpNextBacklogItem(listed)?._id).toBe("p1");
+  });
+
+  it("has no Up next when every listed item is pinned", () => {
+    const listed = [item("a", { pinnedAt: 1 })];
+
+    expect(selectUpNextBacklogItem(listed)).toBeUndefined();
   });
 });
 
