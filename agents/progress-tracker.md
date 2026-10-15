@@ -699,3 +699,14 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] New entry (+) moves from the titlebar to the timer dock. Start (▶) leaves the titlebar: a small ▶ beside Search starts an empty entry, and the dock starts the Up next item. With the sidebar hidden and nothing running, the floating dock holds "+" and Start. The narrow view keeps its floating buttons.
 - [x] The work list's Up next section, its setting and its View menu entry are gone. The dock already offers the first item.
 - [x] Verification passed: unit tests, typecheck and the acceptance scenarios, except five that also fail on main at `7ed5ab4` (board close with subitems, Ctrl-click workflow settings link, packaged connector install, settle rules section, pull request Ctrl-click).
+
+## Sidebar review fixes, 2026-10-15
+
+- [x] Merged main at `11c630a` into the Comfortable sidebar branch.
+- [x] Start entry and Stop share one running-entry lookup and action runner across sidebar rows, Backlog rows/cards, peek, page, editor menus and command palette. S switches or stops the focused item on the Backlog page as well as in the sidebar.
+- [x] Comfortable titles reserve their action padding at rest. The state line uses `--text-tertiary`. Both densities keep the row highlight and transparent icon buttons; Compact keeps its item icon.
+- [x] Updated the focused-row shortcuts and row-height documentation. Added List/Board shortcut coverage, Stop coverage in both sidebar densities, and rendered state-color and title-geometry assertions.
+- [x] `just test`: 1,080 tests passed, including 857 web tests. All 142 Chromium acceptance scenarios passed with an isolated test server. `just typecheck`, package boundaries and `just format-check` passed.
+- [x] Application production builds passed with `just --set PNPM 'corepack pnpm --recursive --filter !@ajour/docs' build`. The full `just build` remains blocked locally because the docs workspace has no installed VitePress dependency.
+- [x] Browser inspection confirmed the tertiary state color, stable title geometry, transparent hover icons, and highlighted rows in Comfortable and Compact.
+- [x] `just ui-perf`, identical script on main and this branch, five-run medians on the 600-item/1,800-entry fixture. Times in milliseconds, main / branch: cold load 1283.0 / 1272.6; Start click 89.5 / 86.0; Backlog store write 45.3 / 44.3; timer renderer work per second 28.6 / 31.0. The largest increase was 8.4%, below the 10% limit. Other local performance jobs overlapped parts of the measurements, so these are comparative development measurements, not production timings.
