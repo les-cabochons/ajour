@@ -532,10 +532,9 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                 </PropertyRow>
               </BacklogItemProperties>
               {item.source !== "manual" ? (
-                <label className="flex items-start gap-2.5 border-t pt-3 text-sm">
+                <label className="flex items-center gap-2.5 border-t pt-3 text-sm">
                   <Switch
                     size="sm"
-                    className="mt-0.5"
                     checked={item.keepWhenMissingFromSync ?? false}
                     disabled={readOnly}
                     onCheckedChange={(keepWhenMissingFromSync) =>
@@ -548,13 +547,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                       )
                     }
                   />
-                  <span className="flex flex-col gap-0.5">
-                    Keep when missing from sync
-                    <span className="text-xs text-muted-foreground">
-                      Do not archive this item when it disappears from the
-                      synced source list.
-                    </span>
-                  </span>
+                  Keep when missing from sync
                 </label>
               ) : null}
             </section>
