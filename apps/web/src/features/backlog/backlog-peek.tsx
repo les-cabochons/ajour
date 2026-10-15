@@ -199,8 +199,7 @@ export function BacklogPeek({
           <div style={{ width: `${progress * 100}%` }} />
         </div>
       </div>
-      <section>
-        <SectionHeading>Properties</SectionHeading>
+      <section aria-label="Properties">
         <BacklogItemProperties item={item} state={state} />
       </section>
       {item.note ? (

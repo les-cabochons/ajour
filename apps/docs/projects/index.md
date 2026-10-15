@@ -33,7 +33,7 @@ Click a project to open its page.
 - **The figures** show time this week and all time, and for budgeted tasks, the budget, the time used and what remains.
 - **Tasks** lists the project's tasks. See [Tasks](/projects/tasks).
 - **Time entries** lists every entry on the project.
-- **Properties** has the full name, code, color, icon and status. Change them in place.
+- **The properties card**, at the side, has the full name, code, color, icon and status. Change them in place.
 
 Plugins can add their own section to the properties card, such as **Workday** with the project's Workday name and code. Click the section title to open it. An empty row shows its default in grey.
 
