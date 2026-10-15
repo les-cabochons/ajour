@@ -209,6 +209,32 @@ describe("AgentRunner", () => {
     expect(sessions.snapshot().errors[0]!.message).toContain("boom");
   });
 
+  it("reports a provider session limit in the failed session and activity", async () => {
+    const message =
+      "You've hit your session limit · resets 7am (America/Toronto)";
+    const { runner, sessions, revoked } = await setup([
+      {
+        stdout: JSON.stringify({
+          type: "result",
+          subtype: "success",
+          is_error: true,
+          result: message,
+        }),
+      },
+      { exit: 1 },
+    ]);
+    const run = await runner.start(request);
+    await settled(runner);
+    const session = sessions.get(run.sessionId)!;
+    expect(session.state).toBe("failed");
+    expect(session.messages.at(-1)).toMatchObject({
+      kind: "end",
+      summary: message,
+    });
+    expect(sessions.snapshot().errors[0]!.message).toBe(message);
+    expect(revoked).toContain(session.client.id);
+  });
+
   it("stops a run as cancelled", async () => {
     const { runner, sessions } = await setup([{ hang: true }]);
     const run = await runner.start(request);

@@ -125,6 +125,40 @@ describe("Claude Code adapter", () => {
     expect(init(undefined)).toBeNull();
   });
 
+  it("shows the provider error even when the result subtype is success", () => {
+    const message =
+      "You've hit your session limit · resets 7am (America/Toronto)";
+    expect(
+      claudeCodeAdapter.parseEvent(
+        JSON.stringify({
+          type: "result",
+          subtype: "success",
+          is_error: true,
+          result: message,
+        }),
+      ),
+    ).toEqual({ kind: "failed", message });
+  });
+
+  it.each([undefined, null, 42, "", "   "])(
+    "keeps the error subtype when the result has no message: %s",
+    (result) => {
+      expect(
+        claudeCodeAdapter.parseEvent(
+          JSON.stringify({
+            type: "result",
+            subtype: "error_max_turns",
+            is_error: true,
+            result,
+          }),
+        ),
+      ).toEqual({
+        kind: "failed",
+        message: "Claude Code stopped: error_max_turns.",
+      });
+    },
+  );
+
   it("counts only failed and needs-auth servers as failed", () => {
     const init = (status: string) =>
       claudeCodeAdapter.parseEvent(

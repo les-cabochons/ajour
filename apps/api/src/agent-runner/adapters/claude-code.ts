@@ -103,10 +103,15 @@ export const claudeCodeAdapter: AgentCliAdapter = {
         : null;
     }
     if (event.type === "result") {
+      // Provider failures can use subtype "success". The result carries
+      // the useful explanation, such as a session limit and its reset time.
+      const message =
+        typeof event.result === "string" ? event.result.trim() : "";
       return event.is_error
         ? {
             kind: "failed",
-            message: `Claude Code stopped: ${String(event.subtype)}.`,
+            message:
+              message || `Claude Code stopped: ${String(event.subtype)}.`,
           }
         : { kind: "finished", summary: String(event.result ?? "") };
     }
