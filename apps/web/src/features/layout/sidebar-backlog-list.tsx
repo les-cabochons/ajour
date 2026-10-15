@@ -3,6 +3,7 @@ import {
   useMemo,
   useRef,
   useState,
+  type ComponentProps,
   type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
@@ -59,6 +60,12 @@ import {
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 import { ProjectIcon } from "@/lib/project-icons";
+import {
+  formatAriaKeyShortcuts,
+  getShortcut,
+  getShortcutPlatform,
+  type ShortcutActionId,
+} from "@/lib/shortcuts";
 import { openModifiedSourceClick } from "@/lib/source-navigation";
 import { updateSidebarLayout, useSidebarLayout } from "@/lib/sidebar-layout";
 import { useHoverOrFocusWithin } from "@/lib/use-hover-or-focus-within";
@@ -141,6 +148,32 @@ function useBacklogItemRow(state: LocalAppState, now: number) {
 type RowApi = ReturnType<typeof useBacklogItemRow>;
 type RowActionList = ReturnType<RowApi["actionsFor"]>;
 
+const platform = getShortcutPlatform();
+
+/**
+ * A row's hover action: Start entry, Snooze… or Settle. It has no tooltip; the
+ * icons are familiar and a tooltip on every hover would cover the list.
+ * `label` is the accessible name and `shortcut` its key, as on `TooltipButton`.
+ */
+function RowActionButton({
+  label,
+  shortcut,
+  ...props
+}: ComponentProps<"button"> & { label: string; shortcut?: ShortcutActionId }) {
+  return (
+    <button
+      type="button"
+      aria-label={label}
+      aria-keyshortcuts={
+        shortcut
+          ? formatAriaKeyShortcuts(getShortcut(shortcut), platform)
+          : undefined
+      }
+      {...props}
+    />
+  );
+}
+
 /** Row icon buttons: hover only darkens the icon, with no background. */
 const iconButton =
   "flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground";
@@ -169,7 +202,7 @@ function LeadingIcon({
         <WorkItemIcon icon={resolveWorkItemIcon(workItem, iconData)} />
       </span>
       {revealed ? (
-        <TooltipButton
+        <RowActionButton
           label="Settle"
           shortcut="item.settle"
           className="hidden size-4 rounded-full border-[1.5px] border-foreground/50 group-focus-within:flex group-hover:flex hover:border-foreground hover:bg-foreground/10"
@@ -201,9 +234,8 @@ function StartButton({
     (action) => action.id === "start-entry",
   )?.disabledReason;
   return (
-    <TooltipButton
-      label={disabledReason ? `Start entry. ${disabledReason}` : "Start entry"}
-      aria-label="Start entry"
+    <RowActionButton
+      label="Start entry"
       aria-description={disabledReason}
       aria-disabled={Boolean(disabledReason)}
       className={cn(iconButton, "aria-disabled:opacity-50", className)}
@@ -212,7 +244,7 @@ function StartButton({
       }}
     >
       <PlayIcon className="size-3.5" />
-    </TooltipButton>
+    </RowActionButton>
   );
 }
 
@@ -252,16 +284,16 @@ function RowActions({
           className={buttonClassName}
         />
       ) : null}
-      <TooltipButton
+      <RowActionButton
         label="Snooze…"
         shortcut="item.snooze"
         className={cn(iconButton, buttonClassName)}
         onClick={() => rows.run(workItem, "snooze")}
       >
         <SnoozeIcon className="size-3.5" />
-      </TooltipButton>
+      </RowActionButton>
       {showSettle ? (
-        <TooltipButton
+        <RowActionButton
           label="Settle"
           shortcut="item.settle"
           className="flex h-5 shrink-0 items-center gap-1 rounded-sm px-1 text-xs text-muted-foreground hover:text-foreground"
@@ -271,7 +303,7 @@ function RowActions({
         >
           <SettleIcon className="size-3.5" />
           Settle
-        </TooltipButton>
+        </RowActionButton>
       ) : null}
     </div>
   );

@@ -458,26 +458,16 @@ Then(
     const start = row.getByRole("button", { name: "Start entry", exact: true });
     await expect(start).toBeDisabled();
     await expect(start).toHaveAccessibleDescription("Already running");
-    await start.focus();
-    await page.keyboard.press("Tab");
-    await page.keyboard.press("Shift+Tab");
-    await expect(start).toBeFocused();
-    await expect(
-      page.locator('[data-slot="tooltip-content"][data-open]'),
-    ).toContainText("Already running");
+    // Sidebar hover actions have no tooltip; the reason is the description.
     await start.hover();
     await expect(
       page.locator('[data-slot="tooltip-content"][data-open]'),
-    ).toContainText("Start entry. Already running");
+    ).toHaveCount(0);
     await start.click({ force: true });
     await start.focus();
     await page.keyboard.press("Enter");
     await page.keyboard.press("Space");
     await page.keyboard.press("Escape");
-    await page.getByRole("main").hover();
-    await expect(
-      page.locator('[data-slot="tooltip-content"][data-open]'),
-    ).toHaveCount(0);
   },
 );
 Then(
@@ -493,7 +483,7 @@ Then(
     await start.hover();
     await expect(
       page.locator('[data-slot="tooltip-content"][data-open]'),
-    ).toHaveText("Start entry");
+    ).toHaveCount(0);
   },
 );
 When("I use the Backlog {string} layout", async ({ page }, layout: string) => {
