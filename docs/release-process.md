@@ -4,7 +4,7 @@ Ajour publishes Windows and macOS desktop distributables through two GitHub Acti
 
 ## Nightly releases
 
-Every push to `main` runs **Desktop Nightly Release**. The workflow:
+Every push to `main` runs **Desktop Nightly Release**, except a push that only changes the docs site (`apps/docs` and its workflow). The workflow:
 
 1. reads the release series from `VERSION` and existing release tags;
 2. creates a SemVer-compatible `America/Toronto`-dated tag such as `v0.0.1-nightly.20260804.10`;

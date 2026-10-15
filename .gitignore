@@ -26,6 +26,10 @@ output/playwright/
 *.log
 *.tsbuildinfo
 
+# Docs site build output and cache
+apps/docs/.vitepress/dist/
+apps/docs/.vitepress/cache/
+
 # Web and extension build outputs
 apps/web/dist/
 apps/web/dist-desktop/

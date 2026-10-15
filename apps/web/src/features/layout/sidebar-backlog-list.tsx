@@ -13,7 +13,6 @@ import {
   RiArrowGoBackLine as UndoIcon,
   RiCheckLine as SettleIcon,
   RiCornerLeftUpLine as ParentIcon,
-  RiPlayFill as PlayFillIcon,
   RiPlayLine as PlayIcon,
   RiTimeLine as SnoozeIcon,
 } from "@remixicon/react";
@@ -51,7 +50,6 @@ import {
   resolveWorkItemIcon,
   useWorkItemIconData,
 } from "@/features/backlog/work-item-icons";
-import { parseWorkItemReference } from "@/features/backlog/work-item-timer-comment";
 import {
   BACKLOG_ITEM_ACTION_KEYS,
   BACKLOG_ITEM_ROW_KEYS,
@@ -71,27 +69,6 @@ import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
 const SETTLED_PAGE_SIZE = 20;
 
 type IconData = ReturnType<typeof useWorkItemIconData>;
-
-function formatHours(hours?: number) {
-  if (hours === undefined) return undefined;
-  return `${Number.isInteger(hours) ? hours : hours.toFixed(1)}h`;
-}
-
-/** "#48213 · Active · 2.5h left", or "Local" for a manual item. */
-function getMetaLine(workItem: LocalWorkItem) {
-  const reference =
-    workItem.source === "azure_devops"
-      ? parseWorkItemReference(workItem.sourceId)
-      : workItem.sourceId;
-  const hours = formatHours(workItem.remainingEstimateHours);
-  return [
-    workItem.source === "manual" ? "Local" : reference && `#${reference}`,
-    workItem.sourceStatusLabel,
-    hours && `${hours} left`,
-  ]
-    .filter(Boolean)
-    .join(" · ");
-}
 
 function countSubitems(
   workItem: LocalWorkItem,
@@ -208,13 +185,11 @@ function StartButton({
   workItem,
   actions,
   rows,
-  variant = "icon",
   className,
 }: {
   workItem: LocalWorkItem;
   actions: RowActionList;
   rows: RowApi;
-  variant?: "icon" | "round";
   className?: string;
 }) {
   const disabledReason = actions.find(
@@ -226,22 +201,12 @@ function StartButton({
       aria-label="Start entry"
       aria-description={disabledReason}
       aria-disabled={Boolean(disabledReason)}
-      className={cn(
-        variant === "round"
-          ? "flex size-6 shrink-0 items-center justify-center rounded-full border bg-background text-foreground hover:bg-foreground/10"
-          : iconButton,
-        "aria-disabled:opacity-50",
-        className,
-      )}
+      className={cn(iconButton, "aria-disabled:opacity-50", className)}
       onClick={() => {
         if (!disabledReason) rows.run(workItem, "start-entry");
       }}
     >
-      {variant === "round" ? (
-        <PlayFillIcon className="size-3" />
-      ) : (
-        <PlayIcon className="size-3.5" />
-      )}
+      <PlayIcon className="size-3.5" />
     </TooltipButton>
   );
 }
@@ -256,7 +221,6 @@ function RowActions({
   workItem,
   actions,
   rows,
-  showStart = true,
   showSettle = false,
   buttonClassName,
   className,
@@ -264,7 +228,6 @@ function RowActions({
   workItem: LocalWorkItem;
   actions: RowActionList;
   rows: RowApi;
-  showStart?: boolean;
   showSettle?: boolean;
   buttonClassName?: string;
   className?: string;
@@ -274,14 +237,12 @@ function RowActions({
       className={cn("items-center gap-0.5", className)}
       onClick={(event) => event.stopPropagation()}
     >
-      {showStart ? (
-        <StartButton
-          workItem={workItem}
-          actions={actions}
-          rows={rows}
-          className={buttonClassName}
-        />
-      ) : null}
+      <StartButton
+        workItem={workItem}
+        actions={actions}
+        rows={rows}
+        className={buttonClassName}
+      />
       <TooltipButton
         label="Snooze…"
         shortcut="item.snooze"
@@ -428,24 +389,15 @@ function ParentLink({
  * name over the title, with the markers and the logged time at the end of the
  * project line, then the workflow state on a faint third line, which ends with
  * an arrow to the parent on a subitem. Hover and focus replace the end of the
- * project line with Start entry, Snooze… and Settle. As the Up next row
- * (`upNext`), it is highlighted and keeps a round Start entry button visible
- * at its end instead. Like the compact row, it re-renders for its own props
- * only and mounts its hover controls while hovered or focused.
+ * project line with Start entry, Snooze… and Settle. Like the compact row, it
+ * re-renders for its own props only and mounts its hover controls while
+ * hovered or focused.
  */
 const ComfortableItemRow = memo(function ComfortableItemRow(
-  props: ItemRowProps & { upNext?: boolean },
+  props: ItemRowProps,
 ) {
-  const {
-    workItem,
-    parent,
-    project,
-    workflowState,
-    loggedMs,
-    isActive,
-    rows,
-    upNext,
-  } = props;
+  const { workItem, parent, project, workflowState, loggedMs, isActive, rows } =
+    props;
   const { actions, onClick, onKeyDown } = useItemRowHandlers(props);
   const reveal = useHoverOrFocusWithin();
 
@@ -461,14 +413,10 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
           data-focus-column="0"
           data-backlog-item-id={workItem._id}
           aria-current={isActive ? "page" : undefined}
-          aria-label={upNext ? `Up next: ${workItem.title}` : undefined}
           {...reveal.props}
           className={cn(
-            "group flex h-20 shrink-0 cursor-pointer items-center gap-2 rounded-md px-2.5 outline-none focus-visible:ring-1 focus-visible:ring-ring",
-            upNext
-              ? "bg-foreground/5 hover:bg-foreground/[0.08]"
-              : "hover:bg-foreground/5 focus-visible:bg-foreground/5",
-            isActive && (upNext ? "bg-foreground/10" : "bg-foreground/[0.07]"),
+            "group flex h-20 shrink-0 cursor-pointer items-center gap-2 rounded-md px-2.5 outline-none hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring",
+            isActive && "bg-foreground/[0.07]",
           )}
           onClick={onClick}
           onKeyDown={onKeyDown}
@@ -502,7 +450,6 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
               workItem={workItem}
               actions={actions}
               rows={rows}
-              showStart={!upNext}
               showSettle
               buttonClassName="size-5"
               className="hidden group-focus-within:flex group-hover:flex"
@@ -533,16 +480,6 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
           ) : null}
         </span>
       </span>
-      {upNext ? (
-        <span onClick={(event) => event.stopPropagation()}>
-          <StartButton
-            workItem={workItem}
-            actions={actions}
-            rows={rows}
-            variant="round"
-          />
-        </span>
-      ) : null}
     </ObjectContextMenu>
   );
 });
@@ -617,82 +554,6 @@ const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
           className="hidden group-focus-within:flex group-hover:flex"
         />
       ) : null}
-    </ObjectContextMenu>
-  );
-});
-
-/**
- * The Compact Up next row: the first item, highlighted above the list with its
- * meta line and a Start entry button that is always visible. Comfortable uses
- * `ComfortableItemRow` with `upNext`.
- */
-const UpNextRow = memo(function UpNextRow(props: ItemRowProps) {
-  const { workItem, parent, isActive, iconData, rows } = props;
-  const parentTitle = parent?.title;
-  const { actions, onClick, onKeyDown } = useItemRowHandlers(props);
-  const reveal = useHoverOrFocusWithin();
-
-  return (
-    <ObjectContextMenu
-      actions={actions}
-      keys={BACKLOG_ITEM_ACTION_KEYS}
-      onAction={(actionId) => rows.run(workItem, actionId)}
-      render={
-        <div
-          role="link"
-          tabIndex={0}
-          data-focus-column="0"
-          data-backlog-item-id={workItem._id}
-          aria-current={isActive ? "page" : undefined}
-          aria-label={`Up next: ${workItem.title}`}
-          {...reveal.props}
-          className={cn(
-            "group flex shrink-0 cursor-pointer items-center gap-2 rounded-md bg-foreground/5 py-1.5 pr-1.5 pl-2 outline-none hover:bg-foreground/[0.08] focus-visible:ring-1 focus-visible:ring-ring",
-            isActive && "bg-foreground/10",
-          )}
-          onClick={onClick}
-          onKeyDown={onKeyDown}
-        />
-      }
-    >
-      <LeadingIcon
-        workItem={workItem}
-        iconData={iconData}
-        rows={rows}
-        revealed={reveal.active}
-      />
-      <span className="min-w-0 flex-1">
-        <span className={cn("block truncate text-sm leading-snug font-medium")}>
-          {workItem.title}
-        </span>
-        <span className="block truncate text-xs text-muted-foreground">
-          {parentTitle ? `↳ ${parentTitle}` : getMetaLine(workItem)}
-        </span>
-      </span>
-      <span className="flex shrink-0 items-center gap-1 group-focus-within:hidden group-hover:hidden">
-        <Markers
-          workItem={workItem}
-          isRunning={props.isRunning}
-          isReturned={props.isReturned}
-        />
-      </span>
-      {reveal.active ? (
-        <RowActions
-          workItem={workItem}
-          actions={actions}
-          rows={rows}
-          showStart={false}
-          className="hidden group-focus-within:flex group-hover:flex"
-        />
-      ) : null}
-      <span onClick={(event) => event.stopPropagation()}>
-        <StartButton
-          workItem={workItem}
-          actions={actions}
-          rows={rows}
-          variant="round"
-        />
-      </span>
     </ObjectContextMenu>
   );
 });
@@ -795,10 +656,9 @@ const OffListRow = memo(function OffListRow({
 
 /**
  * The work list in the expanded app sidebar, from "Backlog sidebar" in
- * agents/ux-spec.md: the Up next row, the rest of the active items in the
- * Backlog page's order with no header, `children` (the Pull requests
- * section), then the collapsible Snoozed and Settled sections. Empty sections
- * are not shown.
+ * agents/ux-spec.md: the active items in the Backlog page's order with no
+ * header, `children` (the Pull requests section), then the collapsible
+ * Snoozed and Settled sections. Empty sections are not shown.
  */
 export function SidebarBacklogList({
   pathname,
@@ -882,7 +742,6 @@ export function SidebarBacklogList({
     iconData,
     rows,
   });
-  const [upNext, ...rest] = layout.showUpNext ? listed : [undefined, ...listed];
   const ItemRow =
     layout.density === "comfortable" ? ComfortableItemRow : BacklogItemRow;
 
@@ -924,28 +783,13 @@ export function SidebarBacklogList({
       aria-label="Backlog items"
       data-focus-scope
     >
-      {upNext ? (
-        <>
-          <div className="px-2 pt-3 pb-1 text-xs font-medium text-muted-foreground">
-            Up next
-          </div>
-          {layout.density === "comfortable" ? (
-            <ComfortableItemRow {...rowProps(upNext)} upNext />
-          ) : (
-            <UpNextRow {...rowProps(upNext)} />
-          )}
-        </>
-      ) : null}
-
-      {/* The rest of the list has no header, like T3 Code's thread list. */}
-      <div className={cn("flex shrink-0 flex-col", upNext && "pt-2")}>
-        {rest.map((workItem) =>
-          workItem ? (
-            <ItemRow key={workItem._id} {...rowProps(workItem)} />
-          ) : null,
-        )}
+      {/* The backlog items have no header, like T3 Code's thread list. */}
+      <div className="flex shrink-0 flex-col pt-2">
+        {listed.map((workItem) => (
+          <ItemRow key={workItem._id} {...rowProps(workItem)} />
+        ))}
         {listed.length === 0 ? (
-          <p className="px-2 pt-3 pb-1 text-xs text-muted-foreground">
+          <p className="px-2 pt-1 pb-1 text-xs text-muted-foreground">
             Nothing on your plate.
           </p>
         ) : null}

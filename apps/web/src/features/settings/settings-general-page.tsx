@@ -305,19 +305,6 @@ export function SettingsGeneralPage() {
               <ToggleGroupItem value="compact">Compact</ToggleGroupItem>
             </ToggleGroup>
           </SettingRow>
-          <SettingRow
-            label="Show Up next"
-            labelFor="show-up-next"
-            description="Show the first backlog item above the list with a Start button."
-          >
-            <Switch
-              id="show-up-next"
-              checked={sidebarLayout.showUpNext}
-              onCheckedChange={(checked) =>
-                updateSidebarLayout({ showUpNext: checked })
-              }
-            />
-          </SettingRow>
         </AppPanel>
       </section>
 

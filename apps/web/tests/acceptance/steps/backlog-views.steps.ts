@@ -661,6 +661,8 @@ async function inspectBacklogStart(
       const row = page
         .getByRole("navigation", { name: "Primary navigation" })
         .locator('[data-backlog-item-id="parent"]');
+      // Rows show Start entry while the pointer is over them.
+      await row.hover();
       const start = row.getByRole("button", {
         name: "Start entry",
         exact: true,

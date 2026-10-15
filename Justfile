@@ -190,6 +190,24 @@ acceptance-test *args:
 acceptance-server:
     {{PNPM}} --filter @ajour/web dev --host {{WEB_HOST}} --port {{ACCEPTANCE_WEB_PORT}} --strictPort --mode test
 
+[doc("Starts the docs site locally on http://127.0.0.1:5174/ajour/")]
+[group("docs")]
+docs-start:
+    echo >&2 "[1/1] Starting the docs site on http://{{WEB_HOST}}:5174/ajour/"
+    {{PNPM}} --filter @ajour/docs dev --host {{WEB_HOST}} --port 5174
+
+[doc("Builds the docs site into apps/docs/.vitepress/dist")]
+[group("docs")]
+docs-build:
+    echo >&2 "[1/1] Building the docs site"
+    {{PNPM}} --filter @ajour/docs build
+
+[doc("Serves the built docs site, as GitHub Pages would")]
+[group("docs")]
+docs-preview:
+    echo >&2 "[1/1] Serving the built docs site on http://{{WEB_HOST}}:4174/ajour/"
+    {{PNPM}} --filter @ajour/docs preview --host {{WEB_HOST}} --port 4174
+
 [doc("Formats the workspace with Prettier")]
 [group("app")]
 format:

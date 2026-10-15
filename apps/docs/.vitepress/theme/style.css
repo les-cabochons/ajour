@@ -1,0 +1,458 @@
+/*
+ * The docs use the app's tokens from apps/web/src/styles.css (see
+ * agents/ui-tokens.md): Geist, the logo's indigo as the one accent, warm-cool
+ * neutrals, solid chrome and no shadows outside overlays. Change a value there
+ * first, then mirror it here.
+ */
+
+/* The system face stands in for Geist with matched metrics, as in the app. */
+@font-face {
+  font-family: "Geist Fallback";
+  src: local("Segoe UI"), local("Helvetica Neue"), local("Arial");
+  ascent-override: 95%;
+  descent-override: 24%;
+  line-gap-override: 0%;
+  size-adjust: 102%;
+}
+
+:root {
+  /* App tokens, light. */
+  --ajour-background: oklch(1 0 0);
+  --ajour-foreground: oklch(0.17 0.006 285);
+  --ajour-sidebar: oklch(0.975 0.002 285);
+  --ajour-secondary: oklch(0.965 0.002 285);
+  --ajour-muted-foreground: oklch(0.52 0.012 285);
+  --ajour-text-tertiary: oklch(0.68 0.01 285);
+  --ajour-border: oklch(0.915 0.004 285);
+  --ajour-primary: oklch(0.52 0.19 285);
+  --ajour-ring: oklch(0.62 0.17 285);
+  --ajour-warning: oklch(0.66 0.16 60);
+  --ajour-destructive: oklch(0.577 0.245 27.325);
+  --ajour-success: oklch(0.6 0.16 150);
+  --ajour-hover-bg: color-mix(
+    in srgb,
+    var(--ajour-foreground) 4.5%,
+    transparent
+  );
+  --ajour-active-bg: color-mix(
+    in srgb,
+    var(--ajour-foreground) 7%,
+    transparent
+  );
+  --ajour-radius-sm: 4px;
+  --ajour-radius-md: 6px;
+  --ajour-radius-lg: 8px;
+
+  /* VitePress variables, mapped to the app tokens. */
+  --vp-font-family-base:
+    "Geist Variable", "Geist Fallback", system-ui, "Segoe UI", sans-serif;
+  --vp-font-family-mono:
+    "Geist Mono Variable", ui-monospace, "Cascadia Mono", "Segoe UI Mono",
+    Menlo, monospace;
+
+  --vp-c-bg: var(--ajour-background);
+  --vp-c-bg-alt: var(--ajour-sidebar);
+  --vp-c-bg-elv: var(--ajour-background);
+  --vp-c-bg-soft: var(--ajour-secondary);
+  --vp-c-text-1: var(--ajour-foreground);
+  --vp-c-text-2: var(--ajour-muted-foreground);
+  --vp-c-text-3: var(--ajour-text-tertiary);
+  --vp-c-divider: var(--ajour-border);
+  --vp-c-border: var(--ajour-border);
+  --vp-c-gutter: var(--ajour-border);
+
+  --vp-c-brand-1: var(--ajour-primary);
+  --vp-c-brand-2: color-mix(in srgb, var(--ajour-primary) 88%, black);
+  --vp-c-brand-3: var(--ajour-primary);
+  --vp-c-brand-soft: color-mix(in srgb, var(--ajour-primary) 12%, transparent);
+
+  --vp-c-warning-1: var(--ajour-warning);
+  --vp-c-warning-soft: color-mix(
+    in srgb,
+    var(--ajour-warning) 12%,
+    transparent
+  );
+  --vp-c-danger-1: var(--ajour-destructive);
+  --vp-c-danger-soft: color-mix(
+    in srgb,
+    var(--ajour-destructive) 12%,
+    transparent
+  );
+
+  --vp-nav-height: 48px;
+  --vp-sidebar-width: 272px;
+  --vp-layout-max-width: 1440px;
+  --vp-code-font-size: 0.875em;
+  --vp-code-bg: var(--ajour-secondary);
+  --vp-code-color: var(--ajour-foreground);
+  --vp-code-block-bg: var(--ajour-sidebar);
+
+  --vp-button-brand-bg: var(--ajour-primary);
+  --vp-button-brand-hover-bg: var(--vp-c-brand-2);
+  --vp-button-brand-active-bg: var(--vp-c-brand-2);
+
+  /* No shadows on the page itself. Popovers keep the app's popup shadow. */
+  --vp-shadow-1: none;
+  --vp-shadow-2: none;
+  --vp-shadow-3:
+    0 12px 28px color-mix(in srgb, var(--ajour-foreground) 10%, transparent),
+    0 2px 6px color-mix(in srgb, var(--ajour-foreground) 6%, transparent);
+  --vp-shadow-4: var(--vp-shadow-3);
+  --vp-shadow-5: var(--vp-shadow-3);
+
+  --vp-local-search-highlight-bg: var(--vp-c-brand-soft);
+  --vp-local-search-highlight-text: var(--ajour-foreground);
+}
+
+.dark {
+  /* App tokens, dark. */
+  --ajour-background: oklch(0.17 0.004 285);
+  --ajour-foreground: oklch(0.93 0.003 285);
+  --ajour-sidebar: oklch(0.195 0.004 285);
+  --ajour-secondary: oklch(0.245 0.004 285);
+  --ajour-muted-foreground: oklch(0.68 0.008 285);
+  --ajour-text-tertiary: oklch(0.5 0.008 285);
+  --ajour-border: oklch(1 0 0 / 9%);
+  --ajour-primary: oklch(0.64 0.17 285);
+  --ajour-ring: oklch(0.64 0.17 285);
+  --ajour-warning: oklch(0.78 0.15 70);
+  --ajour-destructive: oklch(0.7 0.19 22);
+  --ajour-success: oklch(0.72 0.17 150);
+  --ajour-hover-bg: oklch(1 0 0 / 6%);
+  --ajour-active-bg: oklch(1 0 0 / 9%);
+
+  --vp-c-bg-elv: oklch(0.215 0.004 285);
+  --vp-c-brand-2: color-mix(in srgb, var(--ajour-primary) 85%, white);
+  --vp-shadow-3: 0 12px 28px oklch(0 0 0 / 45%), 0 2px 6px oklch(0 0 0 / 35%);
+}
+
+body {
+  font-variant-numeric: tabular-nums;
+}
+
+::selection {
+  background: var(--vp-c-brand-soft);
+}
+
+:focus-visible {
+  outline: 2px solid var(--ajour-ring);
+  outline-offset: 2px;
+}
+
+/* ---- Top bar: 48px, solid, a bottom border, as the app's top bar. ---- */
+
+.VPNavBar,
+.VPNavBar.has-sidebar .content-body,
+.VPNavBar:not(.home) .content-body,
+.VPNavBar.top .content-body {
+  background: var(--vp-c-bg) !important;
+}
+
+/* With the sidebar shown, the logo sits on the sidebar color, as in the app,
+   and nothing draws a line under it. */
+@media (min-width: 960px) {
+  .VPNavBar.has-sidebar {
+    background: linear-gradient(
+      to right,
+      var(--vp-c-bg-alt) var(--vp-sidebar-width),
+      var(--vp-c-bg) var(--vp-sidebar-width)
+    ) !important;
+  }
+
+  .VPNavBar.has-sidebar .title,
+  .VPNavBar.has-sidebar .VPNavBarTitle .title {
+    border-bottom-color: transparent !important;
+    background: transparent !important;
+  }
+}
+
+.VPNavBar .divider-line {
+  background-color: var(--vp-c-divider) !important;
+}
+
+.VPNavBar .title {
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.VPNavBar .logo {
+  height: 20px;
+}
+
+.VPNavBarMenuLink {
+  font-size: 13px !important;
+  font-weight: 500 !important;
+}
+
+/* ---- Sidebar: the app sidebar's rows and its neutral active tint. ---- */
+
+.VPSidebar {
+  background: var(--vp-c-bg-alt) !important;
+  border-right: 1px solid var(--vp-c-divider);
+}
+
+.VPSidebarItem.level-0 {
+  padding-bottom: 16px;
+}
+
+/* Groups are separated by space, not lines. */
+.VPSidebar .group + .group,
+.VPSidebarNav .group + .group {
+  border-top: none !important;
+  padding-top: 0 !important;
+}
+
+.VPSidebarItem.level-0 > .item > .text,
+.VPSidebarItem.level-0 > .item h2.text {
+  padding: 4px 8px;
+  color: var(--vp-c-text-2);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.VPSidebarItem.level-1 .item {
+  padding: 0;
+}
+
+.VPSidebarItem.level-1 .link {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+  padding: 0 8px;
+  border-radius: var(--ajour-radius-md);
+}
+
+.VPSidebarItem.level-1 .link:hover {
+  background: var(--ajour-hover-bg);
+}
+
+.VPSidebarItem.level-1 .text {
+  padding: 0;
+  color: var(--vp-c-text-1);
+  font-size: 13px;
+  font-weight: 400;
+  line-height: 28px;
+}
+
+/* The active row is a neutral tint, never the accent. */
+.VPSidebarItem.level-1.is-active > .item .link {
+  background: var(--ajour-active-bg);
+}
+
+.VPSidebarItem.level-1.is-active > .item .link > .text {
+  color: var(--vp-c-text-1) !important;
+  font-weight: 500;
+}
+
+.VPSidebarItem.level-0.has-active > .item > .text {
+  color: var(--vp-c-text-2) !important;
+}
+
+.VPSidebarItem .indicator {
+  display: none;
+}
+
+/* ---- Content: 15px body, the app's weights, no heavier than 600. ---- */
+
+.vp-doc {
+  font-size: 15px;
+  line-height: 1.65;
+}
+
+.vp-doc h1 {
+  font-size: 28px;
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.01em;
+}
+
+.vp-doc h2 {
+  margin-top: 48px;
+  padding-top: 0;
+  border-top: none;
+  font-size: 20px;
+  font-weight: 600;
+  line-height: 1.3;
+  letter-spacing: 0;
+}
+
+.vp-doc h3 {
+  margin-top: 32px;
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0;
+}
+
+.vp-doc p,
+.vp-doc li {
+  line-height: 1.65;
+}
+
+.vp-doc a {
+  font-weight: 400;
+  text-decoration: none;
+}
+
+.vp-doc a:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.vp-doc hr {
+  border-top: 1px solid var(--vp-c-divider);
+}
+
+/* The home page keeps a reading width even without the outline. */
+.ajour-home {
+  max-width: 880px;
+}
+
+/* Keys look like the app's keyboard hints. */
+kbd,
+.vp-doc kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: var(--ajour-radius-sm);
+  background: var(--vp-c-bg-soft);
+  color: var(--vp-c-text-1);
+  font-family: var(--vp-font-family-mono);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1;
+  vertical-align: 1px;
+}
+
+/* Inline code: mono, tabular, on the secondary surface. */
+.vp-doc :not(pre) > code {
+  padding: 2px 5px;
+  border-radius: var(--ajour-radius-sm);
+}
+
+/* Code blocks: the sidebar surface with a border, no shadow. */
+.vp-doc div[class*="language-"] {
+  border: 1px solid var(--vp-c-divider);
+  border-radius: var(--ajour-radius-lg) !important;
+}
+
+/* Tables: bordered rows, no outer frame, as the app's lists. */
+.vp-doc table {
+  display: table;
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.vp-doc tr,
+.vp-doc tr:nth-child(2n) {
+  border-top: none;
+  border-bottom: 1px solid var(--vp-c-divider);
+  background: transparent;
+}
+
+.vp-doc th,
+.vp-doc td {
+  padding: 8px 12px 8px 0;
+  border: none;
+}
+
+.vp-doc th {
+  background: transparent;
+  color: var(--vp-c-text-2);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* Callouts: quiet panels. Only warning and danger carry color, with the title. */
+.vp-doc .custom-block {
+  padding: 12px 16px;
+  border: 1px solid var(--vp-c-divider);
+  border-radius: var(--ajour-radius-md);
+  background: var(--vp-c-bg-alt);
+  color: var(--vp-c-text-1);
+  font-size: 14px;
+  line-height: 1.6;
+}
+
+.vp-doc .custom-block .custom-block-title {
+  margin-bottom: 4px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+.vp-doc .custom-block.tip .custom-block-title,
+.vp-doc .custom-block.info .custom-block-title,
+.vp-doc .custom-block.note .custom-block-title {
+  color: var(--vp-c-text-1);
+}
+
+.vp-doc .custom-block.warning {
+  border-color: color-mix(in srgb, var(--ajour-warning) 35%, transparent);
+  background: var(--vp-c-warning-soft);
+}
+
+.vp-doc .custom-block.warning .custom-block-title {
+  color: var(--ajour-warning);
+}
+
+.vp-doc .custom-block.danger {
+  border-color: color-mix(in srgb, var(--ajour-destructive) 35%, transparent);
+  background: var(--vp-c-danger-soft);
+}
+
+.vp-doc .custom-block.danger .custom-block-title {
+  color: var(--ajour-destructive);
+}
+
+.vp-doc .custom-block a {
+  color: var(--vp-c-brand-1);
+}
+
+/* ---- Outline and footer: 12px secondary text. ---- */
+
+.VPDocAsideOutline .outline-title {
+  color: var(--vp-c-text-2);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.VPDocAsideOutline .outline-link {
+  font-size: 13px;
+}
+
+.VPDocAsideOutline .outline-marker {
+  display: none;
+}
+
+.VPDocFooter .pager-link {
+  border-radius: var(--ajour-radius-md);
+}
+
+/* ---- Search: the app's 28px control on the sidebar surface. ---- */
+
+.DocSearch-Button,
+.VPNavBarSearch .DocSearch-Button {
+  height: 28px;
+  border-radius: var(--ajour-radius-md);
+  background: var(--vp-c-bg-soft);
+}
+
+/* ---- Motion: rows change instantly, as in the app. ---- */
+
+.VPSidebarItem .link,
+.VPSidebarItem .text,
+.VPNavBarMenuLink,
+.VPDocAsideOutline .outline-link {
+  transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  * {
+    transition: none !important;
+  }
+}
