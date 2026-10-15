@@ -7,6 +7,7 @@ import { AgentSessions } from "../agent-sessions.ts";
 import { claudeCodeAdapter } from "./adapters/claude-code.ts";
 import { codexAdapter } from "./adapters/codex.ts";
 import type { AgentCliId } from "../../../../packages/shared/agent-runs.ts";
+import type { ConnectorField } from "../../../../packages/shared/connectors.ts";
 import type { AgentCliAdapter } from "./adapter.ts";
 import { AgentRunner } from "./runner.ts";
 
@@ -35,7 +36,7 @@ const fakeAdapter = (script: unknown[], report: string): AgentCliAdapter => ({
   }),
 });
 
-const fakeSettings = [
+const fakeSettings: ConnectorField[] = [
   {
     id: "url",
     label: "URL",
@@ -509,6 +510,18 @@ describe("AgentRunner", () => {
     expect((await runner.overview()).tasks[0]!.blockers).toEqual([
       "Fill in URL in Settings > Plugins > Workday",
     ]);
+  });
+
+  it("uses a setting's manifest default until the user saves a value", async () => {
+    fakeSettings[0]!.defaultValue = "https://wd.example/default";
+    try {
+      const { runner } = await setup([], { values: {} });
+      const [task] = (await runner.overview()).tasks;
+      expect(task!.blockers).toEqual([]);
+      expect(task!.values.url).toBe("https://wd.example/default");
+    } finally {
+      delete fakeSettings[0]!.defaultValue;
+    }
   });
 
   it("fills an unset optional setting as an empty string", async () => {

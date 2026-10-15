@@ -223,10 +223,20 @@ export class AgentRunner {
     for (const plugin of await this.options.plugins.listPlugins()) {
       if (!(await this.options.plugins.isPluginEnabled(plugin.id))) continue;
       for (const task of plugin.capabilities.agentTask?.tasks ?? []) {
-        const values = await this.options.storage.getAgentTaskValues(
-          plugin.id,
-          task.id,
-        );
+        // A setting the user never saved falls back to its manifest default.
+        const values = {
+          ...Object.fromEntries(
+            task.settings.flatMap((field) =>
+              field.defaultValue === undefined
+                ? []
+                : [[field.id, field.defaultValue]],
+            ),
+          ),
+          ...(await this.options.storage.getAgentTaskValues(
+            plugin.id,
+            task.id,
+          )),
+        };
         const blockers = [
           ...(mcpEnabled ? [] : ["Turn on MCP in Settings > MCP"]),
           ...(cli?.supported && cli.installed
