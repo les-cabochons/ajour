@@ -65,6 +65,10 @@ export function SettingsAgentsPage() {
       disabled: !cli.installed,
     }));
 
+  const selectedCli = clis.find((cli) => cli.id === settings.cli);
+  const noneInstalled = !cliOptions.some((option) => !option.disabled);
+  const showInstallHint = noneInstalled || selectedCli?.installed === false;
+
   return (
     <div className="settings-sections">
       <section className="settings-section">
@@ -75,7 +79,27 @@ export function SettingsAgentsPage() {
           only, and gives it your Ajour data and a browser window.
         </p>
         <AppPanel>
-          <SettingRow label="Agent" labelFor="agent-cli" stacked>
+          <SettingRow
+            label="Agent"
+            labelFor="agent-cli"
+            description={
+              showInstallHint ? (
+                <>
+                  Claude Code is not installed. Install it from{" "}
+                  <a
+                    href="https://claude.com/claude-code"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline"
+                  >
+                    claude.com/claude-code
+                  </a>
+                  , then reopen this page.
+                </>
+              ) : undefined
+            }
+            stacked
+          >
             <OptionSelect<AgentCliId | "">
               id="agent-cli"
               value={settings.cli ?? ""}
@@ -93,9 +117,23 @@ export function SettingsAgentsPage() {
             label="Browser"
             labelFor="agent-browser"
             description={
-              settings.browserMode === "my-chrome"
-                ? "The agent uses your whole Chrome profile, with every site you are signed in to. It needs Playwright's Chrome extension."
-                : "Ajour opens Chrome with its own profile. Sign in to your tools there the first time."
+              settings.browserMode === "my-chrome" ? (
+                <>
+                  The agent uses your whole Chrome profile, with every site you
+                  are signed in to. It needs{" "}
+                  <a
+                    href="https://github.com/microsoft/playwright/tree/main/packages/extension#readme"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline"
+                  >
+                    {"Playwright's Chrome extension"}
+                  </a>
+                  .
+                </>
+              ) : (
+                "Ajour opens Chrome with its own profile. Sign in to your tools there the first time."
+              )
             }
             stacked
           >
@@ -163,34 +201,46 @@ function TaskSettings({
   onSave: (values: ConnectorFieldValues) => Promise<void>;
 }) {
   const [values, setValues] = useState<ConnectorFieldValues>(task.values);
-  if (task.settings.length === 0) return null;
+  if (task.settings.length === 0 && task.blockers.length === 0) return null;
   return (
     <section className="settings-section">
       <h2 className="settings-section-title">{task.label}</h2>
       <p className="settings-section-desc">
         From the {task.pluginName} plugin.
       </p>
-      <AppPanel>
-        <form
-          className="flex flex-col gap-3 p-3"
-          onSubmit={(event) => {
-            event.preventDefault();
-            void onSave(values);
-          }}
-        >
-          {task.settings.map((field) => (
-            <ConnectorFieldInput
-              key={field.id}
-              field={field}
-              value={values[field.id]}
-              onChange={(next) => setValues({ ...values, [field.id]: next })}
-            />
-          ))}
-          <Button type="submit" className="self-start">
-            Save
-          </Button>
-        </form>
-      </AppPanel>
+      {task.blockers.length > 0 ? (
+        <div className="settings-section-desc">
+          <p>This task cannot run yet:</p>
+          <ul className="list-disc pl-5">
+            {task.blockers.map((blocker) => (
+              <li key={blocker}>{blocker}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {task.settings.length > 0 ? (
+        <AppPanel>
+          <form
+            className="flex flex-col gap-3 p-3"
+            onSubmit={(event) => {
+              event.preventDefault();
+              void onSave(values);
+            }}
+          >
+            {task.settings.map((field) => (
+              <ConnectorFieldInput
+                key={field.id}
+                field={field}
+                value={values[field.id]}
+                onChange={(next) => setValues({ ...values, [field.id]: next })}
+              />
+            ))}
+            <Button type="submit" className="self-start">
+              Save
+            </Button>
+          </form>
+        </AppPanel>
+      ) : null}
     </section>
   );
 }
