@@ -167,6 +167,22 @@ Then(
     await expect(otherSidebarRow(page)).toContainText(state);
   },
 );
+When("I press S on the other item in the sidebar", async ({ page }) => {
+  await otherSidebarRow(page).focus();
+  await page.keyboard.press("s");
+});
+const runningWorkItemIds = (page: Page) =>
+  page.evaluate(() =>
+    (
+      JSON.parse(localStorage.getItem("ajour.local-state.v2")!).timers ?? []
+    ).map((timer: { workItemId?: string }) => timer.workItemId),
+  );
+Then("an entry runs on {string}", async ({ page }, workItemId: string) => {
+  await expect.poll(() => runningWorkItemIds(page)).toEqual([workItemId]);
+});
+Then("no entry runs", async ({ page }) => {
+  await expect.poll(() => runningWorkItemIds(page)).toEqual([]);
+});
 When("I hover the other item in the sidebar", async ({ page }) => {
   await otherSidebarRow(page).hover();
 });

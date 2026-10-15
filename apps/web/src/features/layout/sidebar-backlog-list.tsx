@@ -237,6 +237,7 @@ function StartButton({
   return (
     <RowActionButton
       label="Start entry"
+      shortcut="entry.stop-or-start"
       aria-description={disabledReason}
       aria-disabled={Boolean(disabledReason)}
       className={cn(iconButton, "aria-disabled:opacity-50", className)}

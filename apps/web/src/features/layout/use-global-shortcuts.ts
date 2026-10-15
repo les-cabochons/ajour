@@ -1,6 +1,9 @@
 import { useNavigate } from "@tanstack/react-router";
+import { getBacklogItemActions } from "@/domain/actions/object-actions";
 import { findPinnedTask } from "@/domain/projects/project-transitions";
 import { selectMostRecentTimesheetEntry } from "@/domain/time/timesheet-entry";
+import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
+import { resolveFocusedObject } from "@/lib/focused-object";
 import { localStore } from "@/lib/local-store";
 import { useShortcut } from "@/lib/shortcut-handlers";
 import { isNarrowView } from "@/lib/use-narrow-view";
@@ -26,7 +29,28 @@ export function useGlobalShortcuts(selectedTimeDate: string) {
   useShortcut(
     "entry.stop-or-start",
     () => {
-      const runningTimer = localStore.snapshot().timers[0];
+      const state = localStore.snapshot();
+      const runningTimer = state.timers[0];
+      // Like C on a focused entry, S on a focused backlog item starts an entry
+      // on it, switching from any running one. On the item already running, S
+      // stops it as usual.
+      const focused = resolveFocusedObject(document.activeElement);
+      const workItem =
+        focused?.kind === "backlog-item"
+          ? state.workItems.find((item) => item._id === focused.workItemId)
+          : undefined;
+      if (workItem && runningTimer?.workItemId !== workItem._id) {
+        const start = getBacklogItemActions(workItem, {
+          subitemCount: 0,
+          isSubitem: false,
+          isRunning: false,
+        }).find((action) => action.id === "start-entry");
+        if (!start?.disabledReason) {
+          runBacklogItemAction(workItem, "start-entry", () => undefined);
+        }
+        return;
+      }
+
       if (runningTimer) {
         localStore.saveTimer(runningTimer._id);
       } else {

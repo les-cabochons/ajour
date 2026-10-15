@@ -30,6 +30,12 @@ Feature: Backlog list and board views
     When I hover the other item in the sidebar
     Then its sidebar row offers Start entry, Snooze and Settle without a "…" button
 
+  Scenario: Start and stop a focused sidebar item with S
+    When I press S on the other item in the sidebar
+    Then an entry runs on "other"
+    When I press S on the other item in the sidebar
+    Then no entry runs
+
   Scenario: Open a subitem's parent from its comfortable sidebar row
     Then the subitem's sidebar row does not show its parent's title
     When I open the parent from the subitem's sidebar arrow
