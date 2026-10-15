@@ -2752,6 +2752,26 @@ When(
   },
 );
 
+When("I double-click {word}'s header", async ({ page }, day: string) => {
+  await daysColumn(page, day).locator(".weekly-days-column-header").dblclick();
+});
+
+When(
+  "I save the new entry with note {string} and hours {string}",
+  async ({ page }, note: string, hours: string) => {
+    const editor = page.getByRole("complementary", {
+      name: "Time entry editor",
+    });
+    await expect(editor).toContainText("New time entry");
+    await editor.getByRole("textbox", { name: "Note", exact: true }).fill(note);
+    await editor
+      .getByRole("textbox", { name: "Hours", exact: true })
+      .fill(hours);
+    await editor.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(editor).toHaveCount(0);
+  },
+);
+
 Then(
   "the side panel opens a new entry on {string}",
   async ({ page }, localDate: string) => {

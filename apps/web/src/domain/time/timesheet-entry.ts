@@ -445,8 +445,9 @@ export function markTimesheetEntriesNotSubmitted(
 }
 
 /**
- * The ids of a day's saved entries in the order the Day list and the Week's
- * Days cards show them, top first: the highest `committedAt` first.
+ * The ids of a day's saved entries in the order the Day list shows them, top
+ * first: the highest `committedAt` first. The Week's Days cards show the
+ * reverse, oldest first.
  * `excludeEntryId` leaves out the entry the running entry resumed, which stays
  * on top and is not sortable. Move up and Move down step through this order.
  */

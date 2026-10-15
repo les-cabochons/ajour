@@ -82,7 +82,8 @@ type EntryCardDragState = {
 /**
  * The Week view: the Grid of project and task rows by day, or the Days columns of
  * entry cards. Clicks open entries and cells in the page's side panel, and a
- * double-click on a day's empty space opens a new entry for that day. Dragging a
+ * double-click on a day's header or empty space opens a new entry for that day.
+ * Days lists each day oldest first, with the running entry last. Dragging a
  * card to another day moves it; dragging it within its day reorders the day.
  */
 export function WeeklyTimeView({
@@ -225,6 +226,15 @@ export function WeeklyTimeView({
     offerTimeEntryUndo(token, `Moved to ${formatToastDay(localDate)}`);
   }
 
+  /**
+   * Saves a day's cards in the order they show, top first. Days shows a day
+   * oldest first, the reverse of the stored order (newest first, as in the
+   * Day list), so the order flips before it is saved.
+   */
+  function saveDayOrder(localDate: string, shownOrder: string[]) {
+    localStore.reorderTimesheetEntries(localDate, [...shownOrder].reverse());
+  }
+
   /** Move up and Move down within a day's cards, persisted like the Day list's drag reorder. */
   function reorderEntry(
     localDate: string,
@@ -238,7 +248,7 @@ export function WeeklyTimeView({
       step,
     );
     if (next) {
-      localStore.reorderTimesheetEntries(localDate, next.order);
+      saveDayOrder(localDate, next.order);
     }
   }
 
@@ -338,7 +348,7 @@ export function WeeklyTimeView({
             originIndex,
             dragStateRef.current?.targetIndex ?? originIndex,
           );
-          if (order) localStore.reorderTimesheetEntries(entry.localDate, order);
+          if (order) saveDayOrder(entry.localDate, order);
         } else if (commit && targetDate) {
           moveEntry(entry, targetDate);
         }
@@ -380,8 +390,8 @@ export function WeeklyTimeView({
   }
 
   /**
-   * A double-click on a day column's empty space, below its header, opens a new
-   * entry for that day. Cards and buttons keep their own clicks.
+   * A double-click on a day column's header or empty space opens a new entry
+   * for that day. Cards and buttons keep their own clicks.
    */
   function handleColumnDoubleClick(
     localDate: string,
@@ -461,11 +471,11 @@ export function WeeklyTimeView({
           data-focus-scope
         >
           {projection.days.map((day, index) => {
-            const visibleEntries = currentTimer?.entryId
-              ? day.entries.filter(
-                  (entry) => entry._id !== currentTimer.entryId,
-                )
-              : day.entries;
+            // Oldest first, so a day reads top to bottom in the order the
+            // work happened and a new entry lands at the end.
+            const visibleEntries = day.entries
+              .filter((entry) => entry._id !== currentTimer?.entryId)
+              .reverse();
             const runningHere = runningTime?.localDate === day.localDate;
             const isToday = day.localDate === today;
             const isOriginDay = draggedEntry?.localDate === day.localDate;
@@ -483,6 +493,10 @@ export function WeeklyTimeView({
               <section
                 key={day.localDate}
                 ref={(node) => registerDayTarget(day.localDate, node)}
+                onDoubleClick={(event) =>
+                  handleColumnDoubleClick(day.localDate, event)
+                }
+                onMouseDown={handleColumnMouseDown}
                 className={cn(
                   "weekly-days-column",
                   weekDates.indexOf(day.localDate) >= 5 && "is-weekend",
@@ -526,53 +540,7 @@ export function WeeklyTimeView({
                   className="weekly-days-column-entries"
                   role="group"
                   aria-label={`${formatWeekDay(day.localDate, { weekday: "long" })} entries`}
-                  onDoubleClick={(event) =>
-                    handleColumnDoubleClick(day.localDate, event)
-                  }
-                  onMouseDown={handleColumnMouseDown}
                 >
-                  {runningHere && runningTarget ? (
-                    <ObjectContextMenu
-                      actions={entryActions.getActions(runningTarget)}
-                      keys={TIME_ENTRY_ACTION_KEYS}
-                      onAction={(actionId) =>
-                        entryActions.runAction(runningTarget, actionId)
-                      }
-                      render={
-                        <div
-                          tabIndex={0}
-                          aria-label={`Running entry, ${formatClockDuration(runningTime.displayDurationMs)}`}
-                          className="weekly-entry-card is-running"
-                          data-running-entry="true"
-                          data-entry-id={currentTimer?.entryId ?? ""}
-                          data-focus-column={index}
-                          onKeyDown={(event) =>
-                            handleItemKeyDown(event, {
-                              actions: entryActions.getActions(runningTarget),
-                              keys: TIME_ENTRY_ACTION_KEYS,
-                              onAction: (actionId) =>
-                                entryActions.runAction(runningTarget, actionId),
-                            })
-                          }
-                        />
-                      }
-                    >
-                      <div className="weekly-entry-card-project">
-                        <Chip tone="success">Running</Chip>
-                        <ObjectActionsButton
-                          actions={entryActions.getActions(runningTarget)}
-                          keys={TIME_ENTRY_ACTION_KEYS}
-                          onAction={(actionId) =>
-                            entryActions.runAction(runningTarget, actionId)
-                          }
-                          label="Entry actions"
-                        />
-                      </div>
-                      <strong>
-                        {formatClockDuration(runningTime.displayDurationMs)}
-                      </strong>
-                    </ObjectContextMenu>
-                  ) : null}
                   {visibleEntries.map((entry) => {
                     const summary = renderEntrySummary(entry);
                     const target = { kind: "entry" as const, entry };
@@ -669,6 +637,48 @@ export function WeeklyTimeView({
                       </ObjectContextMenu>
                     );
                   })}
+                  {runningHere && runningTarget ? (
+                    <ObjectContextMenu
+                      actions={entryActions.getActions(runningTarget)}
+                      keys={TIME_ENTRY_ACTION_KEYS}
+                      onAction={(actionId) =>
+                        entryActions.runAction(runningTarget, actionId)
+                      }
+                      render={
+                        <div
+                          tabIndex={0}
+                          aria-label={`Running entry, ${formatClockDuration(runningTime.displayDurationMs)}`}
+                          className="weekly-entry-card is-running"
+                          data-running-entry="true"
+                          data-entry-id={currentTimer?.entryId ?? ""}
+                          data-focus-column={index}
+                          onKeyDown={(event) =>
+                            handleItemKeyDown(event, {
+                              actions: entryActions.getActions(runningTarget),
+                              keys: TIME_ENTRY_ACTION_KEYS,
+                              onAction: (actionId) =>
+                                entryActions.runAction(runningTarget, actionId),
+                            })
+                          }
+                        />
+                      }
+                    >
+                      <div className="weekly-entry-card-project">
+                        <Chip tone="success">Running</Chip>
+                        <ObjectActionsButton
+                          actions={entryActions.getActions(runningTarget)}
+                          keys={TIME_ENTRY_ACTION_KEYS}
+                          onAction={(actionId) =>
+                            entryActions.runAction(runningTarget, actionId)
+                          }
+                          label="Entry actions"
+                        />
+                      </div>
+                      <strong>
+                        {formatClockDuration(runningTime.displayDurationMs)}
+                      </strong>
+                    </ObjectContextMenu>
+                  ) : null}
                   <Button
                     variant="ghost"
 

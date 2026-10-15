@@ -133,15 +133,15 @@ Feature: Open the local time workspace
   Scenario: Reorder a day by dragging a card in the Week Days view
     Given I have a week of saved entries
     When I open the Week Days view
-    Then Monday's cards read "Code review", "API", "Login form"
-    When I drag Monday's "Login form" card above its "Code review" card
-    Then Monday's cards read "Login form", "Code review", "API"
+    Then Monday's cards read "Login form", "API", "Code review"
+    When I drag Monday's "Code review" card above its "Login form" card
+    Then Monday's cards read "Code review", "Login form", "API"
 
   Scenario: Move an entry to another day by dragging its card
     Given I have a week of saved entries
     When I open the Week Days view
     And I drag Monday's "API" card onto Wednesday
-    Then Monday's cards read "Code review", "Login form"
+    Then Monday's cards read "Login form", "Code review"
     And Wednesday's cards read "API"
 
   Scenario: Add an entry by double-clicking a day's empty space
@@ -150,6 +150,13 @@ Feature: Open the local time workspace
     Then Wednesday's column reaches the bottom of the page
     When I double-click the empty space at the bottom of Wednesday's column
     Then the side panel opens a new entry on "2026-10-07"
+
+  Scenario: Add an entry at the end of a day by double-clicking its header
+    Given I have a week of saved entries
+    When I open the Week Days view
+    And I double-click Monday's header
+    And I save the new entry with note "Wrap-up" and hours "0:30"
+    Then Monday's cards read "Login form", "API", "Code review", "Wrap-up"
 
   Scenario: Reopen Time in the view I used last
     Given I have a week of saved entries
