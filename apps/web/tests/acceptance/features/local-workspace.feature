@@ -165,7 +165,7 @@ Feature: Open the local time workspace
     Given I have no saved Ajour workspace
     When I open today's time workspace
     And I start an empty entry from the sidebar
-    And I open a new entry from the titlebar "+"
+    And I open a new entry from the timer dock "+"
     Then only the new entry's editor is open
     When I open the running entry from the timer dock
     Then only the running entry's editor is open

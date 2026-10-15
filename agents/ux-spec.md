@@ -519,7 +519,7 @@ The sidebar works like the T3 Code and Linear sidebars: the view switcher, the t
 ### List
 
 - Below the timer dock, the sidebar lists active backlog items in the Backlog page's current order, custom or priority. There is one ordering.
-- The work list is one scroll of collapsible sections: Backlog, Pull requests (only while a code host plugin is enabled), Snoozed and Settled. Backlog and Pull requests start open, and every section's state is saved per device. The Backlog and Pull requests tabs are gone.
+- The work list is one scroll of collapsible sections: Backlog, Pull requests (only while pull requests need the user), Snoozed and Settled. Backlog and Pull requests start open, and every section's state is saved per device. The Backlog and Pull requests tabs are gone.
 - The list holds top-level items and subitems that have their own priority. A subitem without a priority follows its parent and does not show.
 - With priority order, a subitem with its own priority mixes with top-level items by priority. With custom order, it sits right below its parent. If its parent is snoozed or settled, it takes the parent's place.
 - Snoozed, settled and archived items leave the list.

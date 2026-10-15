@@ -443,15 +443,16 @@ function DayTotalsPill({
 type TitlebarEditor = "new" | null;
 
 /**
- * The titlebar totals and the host of the new entry editor. The timer dock in
- * the sidebar has the "+" and the start buttons; while the sidebar is off
+ * The titlebar totals and the host of the new entry editor. In the sidebar,
+ * "+" sits in the timer dock and Start beside Search; while the sidebar is off
  * screen (`showsFloatingDock`), the running entry floats at the bottom left
- * instead, or "+" and Start while nothing runs. In the narrow view, New entry (+) and Start (▶) float at the bottom
- * right, with the floating dock beside them, and open the dialog. Elsewhere the
- * editor opens in a popover anchored to where it was asked for: the dock's
- * "+", or the task or backlog row of New entry… (`openNewEntryEditor`). N and
- * requests whose row is off screen anchor it to the titlebar's totals. New
- * entries default to today; Start starts one at once.
+ * instead, or "+" and Start while nothing runs. In the narrow view, New entry
+ * (+) and Start (▶) float at the bottom right, with the floating dock beside
+ * them, and open the dialog. Elsewhere the editor opens in a popover anchored
+ * to where it was asked for: the dock's "+", or the task or backlog row of New
+ * entry… (`openNewEntryEditor`). N and requests whose row is off screen anchor
+ * it to the titlebar's totals. New entries default to today; Start starts one
+ * at once.
  */
 function GlobalTimerBar({
   date,

@@ -17,9 +17,10 @@ import type { ShortcutActionId } from "@/lib/shortcuts";
  * Popover host for the entry editor, anchored to its trigger, such as the timer
  * dock. Without `children` it renders no trigger and shows at `anchor`: the
  * titlebar's new entry host anchors to the row New entry… came from, the dock's
- * "+" or the titlebar's totals. Like every host, it only supplies the container. Clicking outside does
- * nothing; Escape, ×, Cancel or the trigger close it and drop the draft. The form
- * mounts each time the popover opens, so every opening starts fresh.
+ * "+" or the titlebar's totals. Like every host, it only supplies the
+ * container. Clicking outside does nothing; Escape, ×, Cancel or the trigger
+ * close it and drop the draft. The form mounts each time the popover opens, so
+ * every opening starts fresh.
  */
 export function TimeEntryEditorPopover({
   target,

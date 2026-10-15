@@ -27,10 +27,10 @@ export interface AnchorCandidate {
 export type ClipRect = Pick<DOMRect, "top" | "right" | "bottom" | "left">;
 
 /**
- * The row to anchor the popover to, when any of it shows inside every clip
- * rect (the viewport and each scroll container around the row). Otherwise
- * null, and the popover falls back to the titlebar's totals. A row can be missing
- * or scrolled away when the request comes from the command palette.
+ * The row to anchor the popover to, when any of it shows inside every clip rect
+ * (the viewport and each scroll container around the row). Otherwise null, and
+ * the popover falls back to the titlebar's totals. A row can be missing or
+ * scrolled away when the request comes from the command palette.
  */
 export function pickOnScreenAnchor<T extends AnchorCandidate>(
   candidate: T | null | undefined,
@@ -84,10 +84,10 @@ function findObjectRow(object: NewEntryObjectRef) {
 let requestListener: ((request: NewEntryRequest) => void) | null = null;
 
 /**
- * New entry… on a task or a backlog item. Opens the entry editor in the titlebar's
- * popover, anchored to the object's row while that row shows on screen, otherwise
- * to the titlebar's totals. The narrow view opens the full-width dialog instead. Does
- * nothing until the titlebar has mounted.
+ * New entry… on a task or a backlog item. Opens the entry editor in the
+ * titlebar's popover, anchored to the object's row while that row shows on
+ * screen, otherwise to the titlebar's totals. The narrow view opens the
+ * full-width dialog instead. Does nothing until the titlebar has mounted.
  */
 export function openNewEntryEditor(
   object: NewEntryObjectRef,

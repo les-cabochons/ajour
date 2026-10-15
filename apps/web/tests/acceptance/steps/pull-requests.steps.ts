@@ -35,6 +35,13 @@ Then("the pull request page stays open", async ({ page }) => {
     page.getByRole("heading", { name: "Pull requests", exact: true }),
   ).toBeVisible();
 });
+Then("the sidebar has no Pull requests section", async ({ page }) => {
+  // The view switcher still lists the Pull requests page.
+  await expect(
+    page.getByRole("region", { name: "Pull requests on your plate" }),
+  ).toHaveCount(0);
+  expect(await viewSwitcherOptions(page)).toContain("Pull requests");
+});
 When("I collapse the sidebar Pull requests section", async ({ page }) => {
   await page
     .getByRole("region", { name: "Pull requests on your plate" })

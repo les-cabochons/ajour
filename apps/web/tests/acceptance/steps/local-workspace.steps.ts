@@ -1485,7 +1485,7 @@ Then(
   },
 );
 
-When('I open a new entry from the titlebar "+"', async ({ page }) => {
+When('I open a new entry from the timer dock "+"', async ({ page }) => {
   await page.getByRole("button", { name: "Create time entry" }).click();
 });
 
