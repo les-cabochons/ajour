@@ -169,6 +169,12 @@ Then(
     await expect(row).toContainText(logged);
   },
 );
+Then(
+  "the other item's sidebar row shows its workflow state {string}",
+  async ({ page }, state: string) => {
+    await expect(otherSidebarRow(page)).toContainText(state);
+  },
+);
 When("I hover the other item in the sidebar", async ({ page }) => {
   await otherSidebarRow(page).hover();
 });

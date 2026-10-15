@@ -39,6 +39,7 @@ import {
   type LocalAppState,
   type LocalProject,
   type LocalWorkItem,
+  type LocalWorkflowState,
 } from "@/domain/local-state";
 import { formatCompactDuration } from "@/domain/time/duration";
 import { settleOpensDialog } from "@/features/backlog/settle-dialog";
@@ -348,6 +349,7 @@ interface ItemRowProps {
   parentTitle?: string;
   subitemCount: number;
   project?: LocalProject;
+  workflowState?: LocalWorkflowState;
   /** The saved entries' time on the item. The running entry is not counted. */
   loggedMs: number;
   isActive: boolean;
@@ -383,14 +385,22 @@ function useItemRowHandlers({ workItem, subitemCount, rows }: ItemRowProps) {
 /**
  * The Comfortable row, laid out like a T3 Code thread: the project's icon and
  * name over the title, with the markers and the logged time at the end of the
- * project line. Hover and focus replace that end with Start entry, Snooze… and
+ * project line, then the workflow state on a faint third line. Hover and focus replace that end with Start entry, Snooze… and
  * Settle. Like the compact row, it re-renders for its own props only and
  * mounts its hover controls while hovered or focused.
  */
 const ComfortableItemRow = memo(function ComfortableItemRow(
   props: ItemRowProps,
 ) {
-  const { workItem, parentTitle, project, loggedMs, isActive, rows } = props;
+  const {
+    workItem,
+    parentTitle,
+    project,
+    workflowState,
+    loggedMs,
+    isActive,
+    rows,
+  } = props;
   const { actions, onClick, onKeyDown } = useItemRowHandlers(props);
   const reveal = useHoverOrFocusWithin();
 
@@ -409,7 +419,7 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
           title={parentTitle ? `${workItem.title} · ${parentTitle}` : undefined}
           {...reveal.props}
           className={cn(
-            "group flex h-16 shrink-0 cursor-pointer flex-col justify-center gap-1 rounded-md px-2.5 outline-none hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring",
+            "group flex h-20 shrink-0 cursor-pointer flex-col justify-center gap-1 rounded-md px-2.5 outline-none hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring",
             isActive && "bg-foreground/[0.07]",
           )}
           onClick={onClick}
@@ -461,6 +471,18 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
             {" "}
             · {parentTitle}
           </span>
+        ) : null}
+      </span>
+      {/* Kept empty without a state, so every row is the same height. */}
+      <span className="flex h-4 items-center gap-1.5 text-xs text-muted-foreground/70">
+        {workflowState ? (
+          <>
+            <span
+              className="backlog-state-dot size-2.5 opacity-70"
+              style={{ color: workflowState.color }}
+            />
+            <span className="truncate">{workflowState.name}</span>
+          </>
         ) : null}
       </span>
     </ObjectContextMenu>
@@ -763,6 +785,10 @@ export function SidebarBacklogList({
     () => new Map(state.projects.map((project) => [project._id, project])),
     [state.projects],
   );
+  const workflowStateById = useMemo(
+    () => new Map(state.workflowStates.map((status) => [status._id, status])),
+    [state.workflowStates],
+  );
   const loggedMsByItemId = useMemo(() => {
     const totals = new Map<string, number>();
     for (const entry of state.timesheetEntries) {
@@ -785,6 +811,9 @@ export function SidebarBacklogList({
     subitemCount: countSubitems(workItem, state.workItems),
     project: workItem.projectId
       ? projectById.get(workItem.projectId)
+      : undefined,
+    workflowState: workItem.workflowStateId
+      ? workflowStateById.get(workItem.workflowStateId)
       : undefined,
     loggedMs: loggedMsByItemId.get(workItem._id) ?? 0,
     isActive: activeItemId === workItem._id,

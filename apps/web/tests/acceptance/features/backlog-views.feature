@@ -26,6 +26,7 @@ Feature: Backlog list and board views
   Scenario: Show the project and logged time on comfortable sidebar rows
     Given the other Backlog item has 1:30 logged
     Then the other item's sidebar row shows "Example project" and "1h30"
+    And the other item's sidebar row shows its workflow state "In progress"
     When I hover the other item in the sidebar
     Then its sidebar row offers Start entry, Snooze and Settle without a "…" button
 
