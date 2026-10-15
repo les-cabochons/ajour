@@ -795,9 +795,10 @@ const OffListRow = memo(function OffListRow({
 
 /**
  * The work list in the expanded app sidebar, from "Backlog sidebar" in
- * agents/ux-spec.md: the Up next row, the collapsible Backlog section with the
- * active items in the Backlog page's order, `children` (the Pull requests
- * section), then the collapsible Snoozed and Settled sections.
+ * agents/ux-spec.md: the Up next row, the rest of the active items in the
+ * Backlog page's order with no header, `children` (the Pull requests
+ * section), then the collapsible Snoozed and Settled sections. Empty sections
+ * are not shown.
  */
 export function SidebarBacklogList({
   pathname,
@@ -936,61 +937,61 @@ export function SidebarBacklogList({
         </>
       ) : null}
 
-      <SidebarSectionHeader
-        label="Backlog"
-        count={rest.length}
-        open={layout.backlogOpen}
-        onToggle={() =>
-          updateSidebarLayout({ backlogOpen: !layout.backlogOpen })
-        }
-      />
-      {layout.backlogOpen ? (
-        <>
-          {rest.map((workItem) =>
-            workItem ? (
-              <ItemRow key={workItem._id} {...rowProps(workItem)} />
-            ) : null,
-          )}
-          {listed.length === 0 ? (
-            <p className="px-2 py-1 text-xs text-muted-foreground">
-              Nothing on your plate.
-            </p>
-          ) : null}
-        </>
-      ) : null}
+      {/* The rest of the list has no header, like T3 Code's thread list. */}
+      <div className={cn("flex shrink-0 flex-col", upNext && "pt-2")}>
+        {rest.map((workItem) =>
+          workItem ? (
+            <ItemRow key={workItem._id} {...rowProps(workItem)} />
+          ) : null,
+        )}
+        {listed.length === 0 ? (
+          <p className="px-2 pt-3 pb-1 text-xs text-muted-foreground">
+            Nothing on your plate.
+          </p>
+        ) : null}
+      </div>
 
       {children}
 
-      <SidebarSectionHeader
-        label="Snoozed"
-        count={snoozed.length}
-        open={layout.snoozedOpen}
-        onToggle={() =>
-          updateSidebarLayout({ snoozedOpen: !layout.snoozedOpen })
-        }
-      />
-      {layout.snoozedOpen
-        ? snoozed.map((workItem) => (
-            <OffListRow
-              key={workItem._id}
-              workItem={workItem}
-              detail={formatSnoozeTime(workItem.snoozedUntil!, now)}
-              restoreLabel="Unsnooze"
-              restoreAction="unsnooze"
-              iconData={iconData}
-              rows={rows}
-            />
-          ))
-        : null}
+      {/* A section with nothing in it is not shown. */}
+      {snoozed.length > 0 ? (
+        <>
+          <SidebarSectionHeader
+            label="Snoozed"
+            count={snoozed.length}
+            open={layout.snoozedOpen}
+            onToggle={() =>
+              updateSidebarLayout({ snoozedOpen: !layout.snoozedOpen })
+            }
+          />
+          {layout.snoozedOpen
+            ? snoozed.map((workItem) => (
+                <OffListRow
+                  key={workItem._id}
+                  workItem={workItem}
+                  detail={formatSnoozeTime(workItem.snoozedUntil!, now)}
+                  restoreLabel="Unsnooze"
+                  restoreAction="unsnooze"
+                  iconData={iconData}
+                  rows={rows}
+                />
+              ))
+            : null}
+        </>
+      ) : null}
 
-      <SidebarSectionHeader
-        label="Settled"
-        open={layout.settledOpen}
-        onToggle={() =>
-          updateSidebarLayout({ settledOpen: !layout.settledOpen })
-        }
-      />
-      {settledRows}
+      {settled.length > 0 ? (
+        <>
+          <SidebarSectionHeader
+            label="Settled"
+            open={layout.settledOpen}
+            onToggle={() =>
+              updateSidebarLayout({ settledOpen: !layout.settledOpen })
+            }
+          />
+          {settledRows}
+        </>
+      ) : null}
     </div>
   );
 }

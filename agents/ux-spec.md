@@ -516,7 +516,7 @@ The sidebar works like the T3 Code and Linear sidebars: the timer dock, navigati
 
 - Below the navigation, the sidebar lists active backlog items in the Backlog page's current order, custom or priority. There is one ordering.
 - The navigation rows show live values: today's total next to Time, the number of listed items next to Backlog, and next to Pull requests the number that need the user, as a filled badge when any returned.
-- The work list is one scroll: Up next, then collapsible sections for Backlog (the rest of the list), Pull requests (only while a code host plugin is enabled), Snoozed and Settled. Backlog and Pull requests start open, and every section's state is saved per device. The Backlog and Pull requests tabs are gone.
+- The work list is one scroll: Up next, then the rest of the list with no header and no collapse, like T3 Code's thread list, then collapsible sections for Pull requests (only while a code host plugin is enabled), Snoozed and Settled. A section with nothing in it is not shown. Pull requests starts open, and every section's state is saved per device. The Backlog and Pull requests tabs are gone.
 - The list holds top-level items and subitems that have their own priority. A subitem without a priority follows its parent and does not show.
 - With priority order, a subitem with its own priority mixes with top-level items by priority. With custom order, it sits right below its parent. If its parent is snoozed or settled, it takes the parent's place.
 - Snoozed, settled and archived items leave the list.
@@ -549,13 +549,13 @@ Decided after the prototype on branch `prototype/backlog-sidebar`: variant B is 
 - A marker shows on the item with the running entry.
 - A dot shows on a returned item. Opening the item from anywhere, or clicking the dot, clears it.
 - Clicking a row opens the backlog item page.
-- With Show Up next on, the first item of the list shows above the Backlog section as a highlighted row with a Start entry button that is always visible. The Backlog section starts at the second item. In Comfortable, the row has the same three lines as the other rows, and its hover actions are Snooze… and Settle. In Compact, it shows the type icon, the title and a meta line with the external id ("Local" for a manual item), the source state and the remaining estimate, such as "#48213 · Active · 2.5h left".
+- With Show Up next on, the first item of the list shows above the rest as a highlighted row with a Start entry button that is always visible. The rest of the list starts at the second item. In Comfortable, the row has the same three lines as the other rows, and its hover actions are Snooze… and Settle. In Compact, it shows the type icon, the title and a meta line with the external id ("Local" for a manual item), the source state and the remaining estimate, such as "#48213 · Active · 2.5h left".
 - Right-click opens the full action set, as do ".", Shift+F10 and the context menu key. Sidebar backlog rows have no "…" button.
 - Pull request rows are one line too: the pull request icon, the title (bold when returned), and its reason and age, such as "Review · 2h". Hover and focus show "…".
 
 ### Snoozed and Settled sections
 
-- Two collapsible sections end the list: "Snoozed n", then "Settled". Both start collapsed. Their state is saved per device.
+- Two collapsible sections end the list: "Snoozed n", then "Settled". Both start collapsed, and each shows only while it has items. Their state is saved per device.
 - Snoozed lists items by the time they return, and each row shows it, such as "Tomorrow 9:00". The hover action is Unsnooze. An unsnoozed item goes back to the list with no dot.
 - Settled lists every settled item, newest first, 20 at a time with "Show more". Subitems settled along with their parent have no row of their own: they show on the parent's page. A subitem that has its own priority and isn't in a done state keeps its own state, so it gets its own row when it is settled. The hover action is Unsettle. Archived items are not listed. They live in the Backlog page's Archived view.
 - Clicking a row in either section opens the backlog item page.

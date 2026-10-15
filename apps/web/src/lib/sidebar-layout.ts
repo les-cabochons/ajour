@@ -12,7 +12,6 @@ export interface SidebarLayout {
   showUpNext: boolean;
   /** The width the user dragged to. Missing means the density's default. */
   width?: number;
-  backlogOpen: boolean;
   pullRequestsOpen: boolean;
   snoozedOpen: boolean;
   settledOpen: boolean;
@@ -29,7 +28,6 @@ const DEFAULT_WIDTH: Record<SidebarDensity, number> = {
 const DEFAULT_LAYOUT: SidebarLayout = {
   density: "comfortable",
   showUpNext: true,
-  backlogOpen: true,
   pullRequestsOpen: true,
   snoozedOpen: false,
   settledOpen: false,
@@ -57,7 +55,6 @@ export function parseSidebarLayout(value: string | null): SidebarLayout {
         typeof parsed.width === "number" && Number.isFinite(parsed.width)
           ? clampSidebarWidth(parsed.width)
           : undefined,
-      backlogOpen: parsed.backlogOpen !== false,
       pullRequestsOpen: parsed.pullRequestsOpen !== false,
       snoozedOpen: parsed.snoozedOpen === true,
       settledOpen: parsed.settledOpen === true,

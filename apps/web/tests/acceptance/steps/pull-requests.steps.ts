@@ -14,12 +14,11 @@ Then(
     await expect(
       page.getByRole("region", { name: "Pull requests on your plate" }),
     ).toBeVisible();
-    await expect(
-      page.getByRole("button", { name: "Snoozed 0", exact: true }),
-    ).toBeVisible();
+    // Nothing is snoozed or settled, so those sections are not shown.
+    await expect(page.getByRole("button", { name: /^Snoozed/ })).toHaveCount(0);
     await expect(
       page.getByRole("button", { name: "Settled", exact: true }),
-    ).toBeVisible();
+    ).toHaveCount(0);
     await expect(
       page.getByRole("link", {
         name: "Up next: Plan next release",
@@ -64,7 +63,8 @@ Then("the sidebar section labels fit inside the sidebar", async ({ page }) => {
   });
   const navBox = await navigation.boundingBox();
   expect(navBox?.width).toBe(200);
-  for (const name of [/^Backlog \d+$/, /^Pull requests \d+$/]) {
+  // The backlog items have no section label; Pull requests is the one left.
+  for (const name of [/^Pull requests \d+$/]) {
     const tab = navigation.getByRole("button", { name });
     const box = await tab.boundingBox();
     expect(box!.x + box!.width).toBeLessThanOrEqual(navBox!.x + navBox!.width);
@@ -84,9 +84,7 @@ Then(
     await expect(
       page.getByRole("region", { name: "Pull requests on your plate" }),
     ).toHaveCount(0);
-    await expect(
-      page.getByRole("button", { name: "Snoozed 0", exact: true }),
-    ).toBeVisible();
+    await expect(page.locator('[aria-label="Backlog items"]')).toBeVisible();
   },
 );
 const makeFacts = () => {
