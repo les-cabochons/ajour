@@ -1,19 +1,60 @@
 # Start guide
 
-This guide takes you through a first day in Ajour: create a project, track time against it, and review the day.
+This guide takes you through a first week in Ajour. You set up a project, track time against it, fix an entry and submit the week. It takes about ten minutes.
 
 ## Before you start
 
-Install the desktop app. See [Install Ajour](/start/install).
+[Install the desktop app](/start/install). Ajour has no account and no sign-in. Your workspace lives on your machine from the first launch.
 
-## Track your first entry
+A new workspace has two projects, **Internal** and **Client Work**, and no tasks. It opens on today's [Day view](/time/day-view).
 
-1. Press <kbd>N</kbd> to open a new entry.
-2. Pick a project and a task, then type a note.
-3. Press **Start**. The entry runs in the timer dock at the top of the sidebar.
+<Shot name="empty-workspace" alt="A new workspace on the Day view, with no entries" />
 
-<Shot alt="A new entry in the entry editor" caption="The entry editor opens next to the day." />
+## 1. Set up a project
 
-## Review the day
+Time is recorded against a task, and every task belongs to a project. Create the project you will work on first.
 
-Open **Time** in the sidebar. Each row is one entry, with its project, task, note and duration.
+1. Press <kbd>G</kbd> then <kbd>P</kbd> to open **Projects**.
+2. Press **New project**. Enter a full name, a short display name and a code such as `ATL`, then pick a color.
+3. Open the project and press **New task**. Name it, for example `Development`, and press **Save**.
+
+Add a task for each kind of work you report on your timesheet, such as `Meetings` or `Code review`. See [Projects](/projects/) and [Tasks](/projects/tasks).
+
+::: tip Pin the tasks you use every day
+Give a task a number with **Assign shortcut…**. Press that number anywhere to log time on it, or <kbd>Shift</kbd> and the number to start it.
+:::
+
+## 2. Track time as you work
+
+1. Press <kbd>S</kbd>, or **Start** at the top of the sidebar. A running entry starts and its editor opens.
+2. Pick a project and task, type a note, and close the editor.
+3. Keep working. The running entry counts up in the sidebar and in the window title.
+4. Press <kbd>S</kbd> again to stop. The time is saved as an entry on today.
+
+<Shot name="timer-dock" alt="The running entry at the top of the sidebar, with its time and estimate" />
+
+To switch to other work, start another entry. Ajour stops the running one and saves it. See [Running entries](/time/running-entries).
+
+## 3. Log time after the fact
+
+Forgot to start the timer? Press <kbd>N</kbd>, pick the task, type the hours as `1:30` or `1.5`, and press <kbd>Enter</kbd>.
+
+<Shot name="time-new-entry" alt="The new entry popover with project, note, hours and date" />
+
+## 4. Fix an entry
+
+Click any row of the day to open it in the side panel. Change the task, the hours or the note, then press <kbd>⌘</kbd> <kbd>Enter</kbd> to save. Right-click a row for more actions, such as **Duplicate**, **Move to…** or **Delete**. See [Time entries](/time/entries).
+
+## 5. Submit the week
+
+At the end of the week, press **Submit week**. Ajour groups the week's entries into lines with the project, the task, the hours and your notes. Copy each line into your company's timesheet tool, then press **Mark … as submitted**.
+
+<Shot name="submit-week" alt="The Submit week page with the week total and the lines to copy" />
+
+See [Submit your week](/time/submit).
+
+## Next steps
+
+- Plan your work in the [Backlog](/backlog/), and start entries from backlog items.
+- Connect [Azure DevOps](/plugins/azure-devops), [Jira](/plugins/jira) or [GitHub](/plugins/github) to bring your work items and pull requests into Ajour.
+- Learn the [keyboard shortcuts](/start/shortcuts). Press <kbd>?</kbd> in the app to see them.
