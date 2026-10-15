@@ -169,6 +169,8 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 ## Ajour MCP, 2026-10-14
 
 - [x] Spec A: MCP endpoint at `/mcp/ajour` (off by default, per-client tokens, Origin and Host checks), the renderer bridge, data tools for timers, entries, projects and backlog items with Undo, agent sessions and questions, and the agent indicator and panel. Spec: `docs/superpowers/specs/2026-10-14-ajour-mcp-design.md`.
+- [x] Review fixes: agents settle and move synced items through the UI's move and settle rules, with a `sourceState` input where the UI opens a dialog. Every tool has a zod output schema, checked in the API. Refused writes show in the activity list.
+- [x] `just ui-perf`, 2026-10-14, on a free port (`AJOUR_QA_PORT`), medians of 5 runs, main then this branch: cold load 1153 / 1178 ms, Start click 111 / 117 ms, Backlog store write 272 / 253 ms, renderer work with a timer running 37.2 / 24.1 ms per second. All within 10%. Runs vary a lot: one main run gave 30 ms for the store write. The script reuses any server already on port 4173, even another checkout's.
 - [ ] Spec B: agent runner, the `mcp` plugin capability and the Workday plugin.
 
 ## Architecture follow-up, 2026-10-10
