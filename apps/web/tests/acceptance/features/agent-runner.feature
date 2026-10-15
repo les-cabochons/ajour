@@ -15,6 +15,15 @@ Feature: Agent tasks from plugins
     And the agent panel shows "Enter in Workday, week of 2026-10-12" with Stop
 
   Scenario: The button says what is missing
-    Given the local API reports the "Enter in Workday" task blocked by "Fill in Workday timesheet URL in Settings > Agents"
+    Given the local API reports the "Enter in Workday" task blocked by "Fill in Workday timesheet URL in Settings > Plugins > Workday"
     When I open the Submit page for the week of 2026-10-12
-    Then "Enter in Workday" is disabled with the reason "Fill in Workday timesheet URL in Settings > Agents"
+    Then "Enter in Workday" is disabled with the reason "Fill in Workday timesheet URL in Settings > Plugins > Workday"
+
+  Scenario: I fill in the task settings on the plugin's page
+    Given the Workday plugin is installed without its timesheet URL
+    When I open the Workday plugin settings
+    Then the task says "Fill in Workday timesheet URL in Settings > Plugins > Workday"
+    When I fill in "Workday timesheet URL" with "https://wd.example/t"
+    And I press "Save"
+    Then the timesheet URL "https://wd.example/t" is saved
+    And the task says "Ready to run from the Submit page."

@@ -55,6 +55,7 @@ import {
   normalizeConnectorFormValuesForSave,
 } from "./connector-form-state";
 import { ConnectorFieldInput } from "./connector-settings-ui";
+import { PluginAgentTasks } from "./agent-task-settings";
 import {
   canInstallCatalogPlugin,
   canUpdateFromCatalog,
@@ -925,24 +926,14 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
               </div>
             )}
           </section>
-        ) : (
-          <section className="settings-section">
-            <h2 className="settings-section-title">Tasks</h2>
-            <p className="settings-section-desc">
-              An agent runs these tasks from a prompt. Pick the agent and fill
-              in each task's settings in{" "}
-              <Link to="/settings/agents" className="underline">
-                Settings &gt; Agents
-              </Link>
-              .
-            </p>
-            <AppPanel>
-              {group.plugin.capabilities.agentTask?.tasks.map((task) => (
-                <SettingRow key={task.id} label={task.label} />
-              ))}
-            </AppPanel>
-          </section>
-        )}
+        ) : null}
+
+        {group.plugin.capabilities.agentTask ? (
+          <PluginAgentTasks
+            pluginId={group.plugin.id}
+            tasks={group.plugin.capabilities.agentTask.tasks}
+          />
+        ) : null}
 
         {canUninstallConnectorPlugins ? (
           <section className="settings-section">

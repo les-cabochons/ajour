@@ -238,7 +238,10 @@ export class AgentRunner {
                 field.required &&
                 (values[field.id] === undefined || values[field.id] === ""),
             )
-            .map((field) => `Fill in ${field.label} in Settings > Agents`),
+            .map(
+              (field) =>
+                `Fill in ${field.label} in Settings > Plugins > ${plugin.displayName}`,
+            ),
         ];
         tasks.push({
           pluginId: plugin.id,

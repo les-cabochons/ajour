@@ -8,6 +8,8 @@ const cors = { "access-control-allow-origin": "*" };
 interface RunnerMockState {
   /** Bodies of the `POST /api/agent-runs` requests. */
   runRequests: unknown[];
+  /** Bodies of the task settings saves. */
+  settingsSaves: unknown[];
 }
 
 const cli = (
@@ -81,16 +83,24 @@ const runningSnapshot = () => {
  * requested. The bridge stream ends after each answer and EventSource
  * reconnects quickly, so the second connection carries the snapshot.
  */
-async function mockRunner(page: Page, overview: unknown) {
-  const state: RunnerMockState = { runRequests: [] };
+async function mockRunner(
+  page: Page,
+  overview: unknown,
+  installedPlugins: unknown[] = [],
+) {
+  const state: RunnerMockState = { runRequests: [], settingsSaves: [] };
   let runRequested = false;
 
   await page.route(`${apiUrl}/api/connectors`, (route) =>
     route.fulfill({
       json: {
-        pluginsEnabled: false,
-        plugins: [],
-        connectionGroups: [],
+        pluginsEnabled: installedPlugins.length > 0,
+        plugins: installedPlugins,
+        connectionGroups: installedPlugins.map((plugin) => ({
+          plugin,
+          enabled: true,
+          connections: [],
+        })),
         totalPendingImportCount: 0,
         totalSelectedImportCount: 0,
       },
@@ -128,6 +138,13 @@ async function mockRunner(page: Page, overview: unknown) {
   await page.route(`${apiUrl}/api/agents`, (route) =>
     route.fulfill({ json: overview, headers: cors }),
   );
+  await page.route(
+    `${apiUrl}/api/agents/tasks/ajp-workday/enter-week/settings`,
+    async (route) => {
+      state.settingsSaves.push(route.request().postDataJSON());
+      await route.fulfill({ json: readyOverview, headers: cors });
+    },
+  );
   await page.route(`${apiUrl}/api/agent-runs`, async (route) => {
     state.runRequests.push(route.request().postDataJSON());
     runRequested = true;
@@ -148,6 +165,81 @@ async function mockRunner(page: Page, overview: unknown) {
 }
 
 let runner: RunnerMockState;
+
+/** The installed manifest of a plugin that declares only the agent task. */
+const workdayPlugin = {
+  id: "ajp-workday",
+  displayName: "Workday",
+  version: "0.1.0",
+  apiVersion: 3,
+  iconSvg:
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M2 2h12v12H2z'/></svg>",
+  connectionFields: [],
+  capabilities: {
+    agentTask: {
+      tasks: [
+        {
+          id: enterWeek.taskId,
+          label: enterWeek.label,
+          placement: enterWeek.placement,
+          prompt: "prompts/enter-week.md",
+          estimateMinutes: enterWeek.estimateMinutes,
+          weekLink: enterWeek.weekLink,
+          settings: enterWeek.settings,
+        },
+      ],
+    },
+  },
+};
+
+Given(
+  "the Workday plugin is installed without its timesheet URL",
+  async ({ page }) => {
+    runner = await mockRunner(
+      page,
+      {
+        ...readyOverview,
+        tasks: [
+          {
+            ...enterWeek,
+            values: {},
+            blockers: [
+              "Fill in Workday timesheet URL in Settings > Plugins > Workday",
+            ],
+          },
+        ],
+      },
+      [workdayPlugin],
+    );
+    await page.route(`${apiUrl}/api/project-data-shapes`, (route) =>
+      route.fulfill({ json: { plugins: [] }, headers: cors }),
+    );
+  },
+);
+
+When("I open the Workday plugin settings", async ({ page }) => {
+  await page.goto("/settings/plugins/ajp-workday");
+});
+
+When(
+  "I fill in {string} with {string}",
+  async ({ page }, label: string, value: string) => {
+    await page.getByLabel(label, { exact: true }).fill(value);
+  },
+);
+
+Then("the task says {string}", async ({ page }, text: string) => {
+  await expect(page.getByText(text, { exact: true })).toBeVisible();
+});
+
+Then(
+  "the timesheet URL {string} is saved",
+  async ({}, timesheetUrl: string) => {
+    await expect
+      .poll(() => runner.settingsSaves)
+      .toEqual([{ values: { timesheetUrl } }]);
+  },
+);
 
 Given(
   "the local API reports Claude Code installed and Codex missing",

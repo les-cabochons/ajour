@@ -1,19 +1,9 @@
 import { useEffect, useState } from "react";
-import type { ConnectorFieldValues } from "@ajour/shared";
-import type {
-  AgentBrowserMode,
-  AgentCliId,
-  AgentTaskStatus,
-} from "@ajour/shared/agent-runs";
+import type { AgentBrowserMode, AgentCliId } from "@ajour/shared/agent-runs";
 import { AppPanel, SettingRow } from "@/components/app-surface";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
-import { ConnectorFieldInput } from "@/features/settings/connector-settings-ui";
-import {
-  saveAgentTaskSettings,
-  updateAgentRunnerSettings,
-} from "@/lib/app-api";
+import { updateAgentRunnerSettings } from "@/lib/app-api";
 import {
   refreshAgentRunner,
   setAgentRunner,
@@ -21,8 +11,9 @@ import {
 } from "@/lib/agent-runner";
 
 /**
- * Settings > Agents: which coding agent Ajour starts for plugin agent tasks,
- * which browser it drives, and each task's settings.
+ * Settings > Agents: which coding agent Ajour starts for plugin agent tasks
+ * and which browser it drives. Each task's own settings sit on its plugin's
+ * page, next to the connector settings of other plugins.
  */
 export function SettingsAgentsPage() {
   const state = useAgentRunner();
@@ -54,7 +45,7 @@ export function SettingsAgentsPage() {
   if (state.kind === "error") {
     return <p className="text-sm text-destructive">{state.message}</p>;
   }
-  const { settings, clis, tasks } = state.overview;
+  const { settings, clis } = state.overview;
   const cliOptions = clis
     .filter((cli) => cli.supported)
     .map((cli) => ({
@@ -184,72 +175,7 @@ export function SettingsAgentsPage() {
         </AppPanel>
       </section>
 
-      {tasks.map((task) => (
-        <TaskSettings
-          key={`${task.pluginId}/${task.taskId}`}
-          task={task}
-          onSave={(values) =>
-            run(async () =>
-              setAgentRunner(
-                await saveAgentTaskSettings(task.pluginId, task.taskId, values),
-              ),
-            )
-          }
-        />
-      ))}
       {error ? <p className="text-sm text-destructive">{error}</p> : null}
     </div>
-  );
-}
-
-function TaskSettings({
-  task,
-  onSave,
-}: {
-  task: AgentTaskStatus;
-  onSave: (values: ConnectorFieldValues) => Promise<void>;
-}) {
-  const [values, setValues] = useState<ConnectorFieldValues>(task.values);
-  if (task.settings.length === 0 && task.blockers.length === 0) return null;
-  return (
-    <section className="settings-section">
-      <h2 className="settings-section-title">{task.label}</h2>
-      <p className="settings-section-desc">
-        From the {task.pluginName} plugin.
-      </p>
-      {task.blockers.length > 0 ? (
-        <div className="settings-section-desc">
-          <p>This task cannot run yet:</p>
-          <ul className="list-disc pl-5">
-            {task.blockers.map((blocker) => (
-              <li key={blocker}>{blocker}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-      {task.settings.length > 0 ? (
-        <AppPanel>
-          <form
-            className="flex flex-col gap-3 p-3"
-            onSubmit={(event) => {
-              event.preventDefault();
-              void onSave(values);
-            }}
-          >
-            {task.settings.map((field) => (
-              <ConnectorFieldInput
-                key={field.id}
-                field={field}
-                value={values[field.id]}
-                onChange={(next) => setValues({ ...values, [field.id]: next })}
-              />
-            ))}
-            <Button type="submit" className="self-start">
-              Save
-            </Button>
-          </form>
-        </AppPanel>
-      ) : null}
-    </section>
   );
 }

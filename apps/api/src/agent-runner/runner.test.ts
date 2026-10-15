@@ -504,6 +504,13 @@ describe("AgentRunner", () => {
     await settled(runner);
   });
 
+  it("points a missing required setting to the plugin's settings page", async () => {
+    const { runner } = await setup([], { values: {} });
+    expect((await runner.overview()).tasks[0]!.blockers).toEqual([
+      "Fill in URL in Settings > Plugins > Workday",
+    ]);
+  });
+
   it("fills an unset optional setting as an empty string", async () => {
     const { runner, sessions } = await setup([{ hang: true }], {
       weekLink: "{{settings.url}}?note={{settings.note}}",
