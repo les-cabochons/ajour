@@ -78,7 +78,7 @@ Ajour only calls the functions your capabilities declare.
 
 ## Agent tasks
 
-An agent task is a Markdown prompt that Ajour gives to the user's coding agent, Claude Code or Codex, with the Ajour MCP tools and a Chrome window. Ajour only reads the prompt file. A plugin that declares only `agentTask` runs no code and needs no `entrypoint`.
+An agent task is a Markdown prompt that Ajour gives to the user's coding agent, Claude Code, Codex or OpenCode, with the Ajour MCP tools and a Chrome window. Ajour only reads the prompt file. A plugin that declares only `agentTask` runs no code and needs no `entrypoint`.
 
 ```json
 "capabilities": {

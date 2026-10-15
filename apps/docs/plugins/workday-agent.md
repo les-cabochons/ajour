@@ -4,13 +4,13 @@
 This plugin types your hours into Workday's web page. It does not use a Workday API, so it breaks when Workday changes that page. A plugin that uses Workday's API may replace it.
 :::
 
-The Workday (agent) plugin adds an **Enter in Workday** button to the [Submit page](/time/submit). Ajour starts a coding agent, Claude Code or Codex, which reads your week from Ajour and enters it in your Workday timesheet in a Chrome window. You watch it work, and it asks you when it cannot go on.
+The Workday (agent) plugin adds an **Enter in Workday** button to the [Submit page](/time/submit). Ajour starts a coding agent, Claude Code, Codex or OpenCode, which reads your week from Ajour and enters it in your Workday timesheet in a Chrome window. You watch it work, and it asks you when it cannot go on.
 
 It is a different plugin from [Workday](/plugins/workday), the schema for importing and exporting projects.
 
 ## Before you start
 
-- Claude Code or Codex, installed and signed in on this computer.
+- Claude Code, Codex or OpenCode, installed and signed in on this computer.
 - Google Chrome.
 - **Allow agents** turned on in **Settings › MCP**. You do not need to add a client: each run gets its own, and Ajour revokes it when the run ends.
 

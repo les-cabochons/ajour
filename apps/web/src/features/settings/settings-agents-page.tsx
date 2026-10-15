@@ -85,7 +85,7 @@ export function SettingsAgentsPage() {
                   >
                     Claude Code
                   </a>
-                  {" or "}
+                  {", "}
                   <a
                     href="https://developers.openai.com/codex/cli/"
                     target="_blank"
@@ -93,6 +93,15 @@ export function SettingsAgentsPage() {
                     className="underline"
                   >
                     Codex
+                  </a>
+                  {" or "}
+                  <a
+                    href="https://opencode.ai"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline"
+                  >
+                    OpenCode
                   </a>
                   , then reopen this page.
                 </>

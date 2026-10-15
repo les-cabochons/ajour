@@ -284,4 +284,14 @@ Codex 0.161.0, checked on 2026-10-15 with `just agent-codex-smoke`:
 - Required: both servers use `required=true` and `default_tools_approval_mode="approve"`. With `auto`, headless calls fail with "MCP tool call requires approval, but approval policy is never".
 - The task prompt is loaded from `model_instructions_file`. User MCP servers, plugins, hooks and memory are disabled. The session token is not written to a file or an argument.
 
-OpenCode: not run yet. Workday checks: not run yet.
+OpenCode 1.18.35, checked on 2026-10-15 with `just agent-opencode-smoke`:
+
+- Pass: the installed login (GitHub Copilot and OpenAI credentials in OpenCode's data folder) works with `XDG_CONFIG_HOME` pointed at the run folder, `OPENCODE_CONFIG` on a generated config, `OPENCODE_DISABLE_PROJECT_CONFIG`, `OPENCODE_DISABLE_CLAUDE_CODE`, `OPENCODE_DISABLE_EXTERNAL_SKILLS` and `--pure`. The user's global config, with its plugins, agents, skills and `AGENTS.md`, stays out.
+- Pass: the remote `ajour` server authenticates with `Authorization: Bearer {env:AJOUR_MCP_TOKEN}` in the config, so the token is only in the environment. The local Playwright server gets its environment.
+- Pass: an `AGENTS.md` planted in the run folder is ignored.
+- Pass: `permission` with `"*": "deny"` and `ajour_*` and `playwright_*` allowed leaves the agent no built-in tool. Asked to write a file, it tried `playwright_browser_evaluate`, which failed; no file was written.
+- Required: stdin must be closed. With an open stdin, `opencode run` waits for it and never starts. The runner already spawns with stdin ignored.
+- Note: OpenCode records the run in its own session history, as Claude Code and Codex do not.
+- Note: with no model set, OpenCode picks its default from the signed-in providers.
+
+The Workday run itself was checked by hand with Codex and Claude Code: entries survive closing Chrome. The week link opens the timesheet URL as is.

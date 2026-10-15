@@ -74,6 +74,7 @@ import { createMcpClient } from "./mcp-clients.ts";
 import { handleMcpRequest, MAX_WAIT_FOR_ANSWER_MS } from "./mcp-server.ts";
 import { claudeCodeAdapter } from "./agent-runner/adapters/claude-code.ts";
 import { codexAdapter } from "./agent-runner/adapters/codex.ts";
+import { opencodeAdapter } from "./agent-runner/adapters/opencode.ts";
 import { isChromeInstalled } from "./agent-runner/chrome.ts";
 import {
   findExecutable,
@@ -569,7 +570,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       readAgentTaskPrompt: (pluginId, taskId) =>
         pluginManager.readAgentTaskPrompt(pluginId, taskId),
     },
-    adapters: [claudeCodeAdapter, codexAdapter],
+    adapters: [claudeCodeAdapter, codexAdapter, opencodeAdapter],
     findExecutable: (name, pathValue) => findExecutable(name, pathValue),
     loginShellPath: resolveLoginShellPath,
     chromeInstalled: () => isChromeInstalled(),

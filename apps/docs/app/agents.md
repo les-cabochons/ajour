@@ -42,7 +42,7 @@ A plugin can also ask Ajour to start an agent for a task, such as [Workday (agen
 
 In **Settings › Agents**, pick:
 
-- **Agent**: Claude Code or Codex. Ajour lists the ones installed on this computer, with their version.
+- **Agent**: Claude Code, Codex or OpenCode. Ajour lists the ones installed on this computer, with their version.
 - **Browser**: **Ajour's Chrome window** opens Chrome with a profile only Ajour uses. **My Chrome** uses your own Chrome profile through Playwright's Chrome extension, with every site you are signed in to.
 - **Model**: leave it empty for the agent's default model.
 
