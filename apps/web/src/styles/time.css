@@ -25,6 +25,14 @@
     margin-top: -1.25rem;
   }
 
+  /* The Week view fills the content area, so the Days columns run to the
+     bottom of the page even when a day has few cards. */
+  .page-container:has(> .time-page-stack.is-week-view) {
+    height: 100%;
+    min-height: 0;
+    padding-bottom: 0;
+  }
+
   .time-page-stack.is-week-view,
   .desktop-page-container .time-page-stack.is-week-view {
     height: 100%;

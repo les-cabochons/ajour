@@ -2724,6 +2724,43 @@ Then(
   },
 );
 
+Then(
+  "{word}'s column reaches the bottom of the page",
+  async ({ page }, day: string) => {
+    const columnBox = await daysColumn(page, day).boundingBox();
+    const viewport = page.viewportSize();
+    if (!columnBox || !viewport) throw new Error(`${day} is not rendered`);
+    expect(columnBox.y + columnBox.height).toBeGreaterThan(
+      viewport.height - 4,
+    );
+  },
+);
+
+When(
+  "I double-click the empty space at the bottom of {word}'s column",
+  async ({ page }, day: string) => {
+    const columnBox = await daysColumn(page, day).boundingBox();
+    if (!columnBox) throw new Error(`${day} is not rendered`);
+    await page.mouse.dblclick(
+      columnBox.x + columnBox.width / 2,
+      columnBox.y + columnBox.height - 40,
+    );
+  },
+);
+
+Then(
+  "the side panel opens a new entry on {string}",
+  async ({ page }, localDate: string) => {
+    const editor = page.getByRole("complementary", {
+      name: "Time entry editor",
+    });
+    await expect(editor).toContainText("New time entry");
+    await expect(page).toHaveURL(
+      new RegExp(`/time/${localDate}\\?.*entry=new`),
+    );
+  },
+);
+
 When("I open the Week Grid", async ({ page }) => {
   // Grid is the default Week layout.
   await page.goto("/time/2026-10-05?view=week");

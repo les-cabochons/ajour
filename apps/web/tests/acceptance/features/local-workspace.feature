@@ -144,6 +144,13 @@ Feature: Open the local time workspace
     Then Monday's cards read "Code review", "Login form"
     And Wednesday's cards read "API"
 
+  Scenario: Add an entry by double-clicking a day's empty space
+    Given I have a week of saved entries
+    When I open the Week Days view
+    Then Wednesday's column reaches the bottom of the page
+    When I double-click the empty space at the bottom of Wednesday's column
+    Then the side panel opens a new entry on "2026-10-07"
+
   Scenario: Type hours in the Week Grid
     Given I have a week of saved entries
     When I open the Week Grid

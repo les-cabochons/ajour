@@ -5,6 +5,7 @@ import {
   useRef,
   useState,
   type CSSProperties,
+  type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import { RiAddLine as Plus } from "@remixicon/react";
@@ -80,7 +81,8 @@ type EntryCardDragState = {
 
 /**
  * The Week view: the Grid of project and task rows by day, or the Days columns of
- * entry cards. Clicks open entries and cells in the page's side panel. Dragging a
+ * entry cards. Clicks open entries and cells in the page's side panel, and a
+ * double-click on a day's empty space opens a new entry for that day. Dragging a
  * card to another day moves it; dragging it within its day reorders the day.
  */
 export function WeeklyTimeView({
@@ -369,6 +371,23 @@ export function WeeklyTimeView({
     };
   }
 
+  /**
+   * A double-click on a day column's empty space, below its header, opens a new
+   * entry for that day. Cards and buttons keep their own clicks.
+   */
+  function handleColumnDoubleClick(
+    localDate: string,
+    event: ReactMouseEvent<HTMLElement>,
+  ) {
+    if (
+      event.target instanceof Element &&
+      event.target.closest(".weekly-entry-card, button")
+    ) {
+      return;
+    }
+    onNewEntry(localDate);
+  }
+
   function addGridRow(row: WeeklyGridAddedRow) {
     setAddedRows({ weekStart: weekDates[0], rows: [...weekAddedRows, row] });
   }
@@ -500,6 +519,9 @@ export function WeeklyTimeView({
                   className="weekly-days-column-entries"
                   role="group"
                   aria-label={`${formatWeekDay(day.localDate, { weekday: "long" })} entries`}
+                  onDoubleClick={(event) =>
+                    handleColumnDoubleClick(day.localDate, event)
+                  }
                 >
                   {runningHere && runningTarget ? (
                     <ObjectContextMenu
