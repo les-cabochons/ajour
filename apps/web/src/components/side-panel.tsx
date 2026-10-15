@@ -3,7 +3,6 @@ import {
   useLayoutEffect,
   useRef,
   type ComponentProps,
-  type CSSProperties,
   type KeyboardEvent,
   type PointerEvent,
 } from "react";
@@ -26,17 +25,16 @@ const KEYBOARD_STEP = 16;
  * opens, the panel remembers the element focused outside it, usually the row or card
  * that was clicked. Closing the panel gives focus back to that element.
  *
- * `resizable` adds a drag handle on the left edge. The width is saved per device
- * in `lib/side-panel-width.ts` and shared by every resizable panel.
+ * Dragging the left edge resizes the panel. The width is saved per device in
+ * `lib/side-panel-width.ts`, shared by every side panel, and published as the
+ * `--side-panel-width` root variable so page layouts can make room for it.
  */
 export function SidePanel({
   contentKey,
-  resizable = false,
   className,
-  style,
   children,
   ...props
-}: ComponentProps<"aside"> & { contentKey: string; resizable?: boolean }) {
+}: ComponentProps<"aside"> & { contentKey: string }) {
   const panelRef = useRef<HTMLElement>(null);
   const returnFocusRef = useRef<HTMLElement | null>(null);
   const width = useSidePanelWidth();
@@ -53,6 +51,13 @@ export function SidePanel({
     }
   }, [contentKey]);
 
+  useLayoutEffect(() => {
+    document.documentElement.style.setProperty(
+      "--side-panel-width",
+      `${width}px`,
+    );
+  }, [width]);
+
   useEffect(
     () => () => {
       const target = returnFocusRef.current;
@@ -67,23 +72,11 @@ export function SidePanel({
     <aside
       ref={panelRef}
       data-slot="side-panel"
-      data-resizable={resizable ? "true" : undefined}
       className={cn("side-panel", className)}
-      style={
-        resizable
-          ? ({ "--side-panel-width": `${width}px`, ...style } as CSSProperties)
-          : style
-      }
       {...props}
     >
-      {resizable ? (
-        <>
-          <SidePanelResizeHandle width={width} />
-          <div className="side-panel-scroll">{children}</div>
-        </>
-      ) : (
-        children
-      )}
+      <SidePanelResizeHandle width={width} />
+      <div className="side-panel-scroll">{children}</div>
     </aside>
   );
 }

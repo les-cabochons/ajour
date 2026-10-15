@@ -924,28 +924,23 @@
   .desktop-page-container {
     padding-top: 1.25rem;
   }
-  /* Docked on the right; the page next to it stays visible and clickable. */
+  /* Docked on the right; the page next to it stays visible and clickable.
+     SidePanel sets --side-panel-width on the root from the saved width.
+     The 340px default leaves room for the seven 128px Week columns beside a
+     200px sidebar at 1440px. The handle stays still while the content scrolls. */
   .side-panel {
-    /* Leaves room for the seven 128px Week columns beside a 200px sidebar at 1440px. */
-    --side-panel-width: 340px;
     position: sticky;
     top: 0;
     align-self: flex-start;
-    width: var(--side-panel-width);
+    display: flex;
+    flex-direction: column;
+    width: var(--side-panel-width, 340px);
     max-width: 50%;
     height: var(--app-content-height, 100dvh);
     flex: 0 0 auto;
-    overflow-y: auto;
+    overflow: hidden;
     border-left: 1px solid var(--border);
     background: var(--surface-low);
-    padding: 1rem;
-  }
-  /* A resizable panel keeps its handle still and scrolls its content instead. */
-  .side-panel[data-resizable] {
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    padding: 0;
   }
   .side-panel-scroll {
     flex: 1 1 auto;

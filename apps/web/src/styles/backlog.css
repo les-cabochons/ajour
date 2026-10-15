@@ -18,14 +18,13 @@
     overflow: hidden;
   }
 
-  /* The centered columns give up half the side panel's width in gutter. The
-     backlog page sets --backlog-side-panel-width when its panel is resized. */
+  /* The centered columns give up half the side panel's width in gutter. */
   .backlog-page-stack.has-side-panel {
     --app-workspace-content-gutter: max(
       0px,
       calc(
         50vw - var(--app-centered-workspace-right-offset) -
-          var(--backlog-side-panel-width, 340px) / 2
+          var(--side-panel-width, 340px) / 2
       )
     );
   }
