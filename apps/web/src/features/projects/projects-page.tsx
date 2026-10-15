@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   RiAddLine as Plus,
-  RiArchiveLine as Archive,
   RiDownloadLine as Download,
   RiFileTransferLine as FileTransfer,
+  RiMoreLine as More,
 } from "@remixicon/react";
 import { Link, useNavigate, useRouterState } from "@tanstack/react-router";
 import { MessagePanel } from "@/components/app-surface";
@@ -14,7 +14,6 @@ import {
   ObjectContextMenu,
 } from "@/components/object-actions-menu";
 import { SidePanel } from "@/components/side-panel";
-import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
@@ -27,17 +26,13 @@ import {
 } from "@/components/ui/empty";
 import { Figure, FigureRow, Value } from "@/components/ui/value";
 import {
-  CustomSidebar,
-  CustomSidebarLayout,
-  CustomSidebarMenuButton,
-  SidebarContent,
-  SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
-  SidebarHeader,
-  SidebarMenu,
-  SidebarMenuItem,
-} from "@/components/custom-sidebar";
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
+import { formatClockDuration } from "@/domain/time/duration";
 import {
   getProjectActions,
   getTaskActions,
@@ -48,6 +43,8 @@ import {
 import {
   formatProjectTaskConsumedBadge,
   getProjectTaskConsumedTone,
+  getProjectTaskTrackedWithAdjustmentMs,
+  normalizeProjectTaskBudgetMs,
   type ProjectTaskConsumedTone,
 } from "@/domain/projects/task-budget";
 import { getProjectTaskBillableValueLabel } from "@/features/projects/project-task-options";
@@ -56,9 +53,9 @@ import {
   getLocalProjectDisplayName,
   type LocalProject,
   type LocalProjectTask,
+  type LocalTimesheetEntry,
   type PinnedTaskSlot,
 } from "@/domain/local-state";
-import { openCommandPalette } from "@/features/command-palette/command-palette";
 import {
   PinnedSlotBadge,
   PinnedSlotDialog,
@@ -95,20 +92,7 @@ import {
 import { ProjectIcon } from "@/lib/project-icons";
 import { openNewEntryEditor } from "@/features/time/new-entry-request";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
-import {
-  formatAriaKeyShortcuts,
-  getShortcut,
-  getShortcutPlatform,
-} from "@/lib/shortcuts";
-import { cn } from "@/lib/utils";
-
-const commandPaletteAriaKeys = formatAriaKeyShortcuts(
-  getShortcut("app.command-palette"),
-  getShortcutPlatform(),
-);
-
-/** Tooltip classes that show a project sidebar tooltip only in the 48px rail, where names are hidden. */
-const RAIL_ONLY_TOOLTIP = "hidden forced-rail:inline-flex";
+import { cn, startOfWeekIsoDate } from "@/lib/utils";
 
 type ProjectMetrics = {
   durationMs: number;
@@ -189,11 +173,60 @@ type ProjectDragState = {
   height: number;
 };
 
-function hoursLabel(durationMs: number) {
-  return `${new Intl.NumberFormat("en-CA", {
-    minimumFractionDigits: durationMs % 3600000 === 0 ? 0 : 1,
-    maximumFractionDigits: 1,
-  }).format(durationMs / 3600000)} h`;
+/** A project's budget: the sum of its active tasks' budgets, and what they consumed. */
+function getProjectBudget(
+  project: LocalProject,
+  taskMetrics: Map<string, ProjectMetrics>,
+) {
+  let budgetMs = 0;
+  let consumedMs = 0;
+  for (const task of project.tasks) {
+    if (task.status !== "active") continue;
+    const taskBudget = normalizeProjectTaskBudgetMs(task.budgetMs);
+    if (!taskBudget) continue;
+    budgetMs += taskBudget;
+    consumedMs += Math.max(
+      0,
+      getProjectTaskTrackedWithAdjustmentMs({
+        budgetMs: task.budgetMs,
+        trackedMs: taskMetrics.get(task._id)?.durationMs ?? 0,
+        adjustmentMs: task.adjustmentMs,
+      }),
+    );
+  }
+  return { budgetMs, consumedMs };
+}
+
+/** The bar's tone for a consumed share of a budget. */
+function budgetTone(ratio: number) {
+  if (ratio > 1) return "is-danger";
+  if (ratio >= 0.8) return "is-warning";
+  return "";
+}
+
+function BudgetBar({
+  ratio,
+  className,
+}: {
+  ratio: number;
+  className?: string;
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      className={cn("project-progress", budgetTone(ratio), className)}
+    >
+      <i style={{ width: `${Math.min(100, Math.round(ratio * 100))}%` }} />
+    </span>
+  );
+}
+
+function formatEntryDay(localDate: string) {
+  return new Date(`${localDate}T12:00:00`).toLocaleDateString(undefined, {
+    weekday: "short",
+    month: "short",
+    day: "numeric",
+  });
 }
 
 function taskSummary(project: LocalProject) {
@@ -285,39 +318,186 @@ function getProjectHeaderActions(
   ];
 }
 
-function ArchivedProjectsView({
+/**
+ * The Projects page: a row per project with its code, task count, this week's
+ * hours and budget. Active projects reorder by dragging; the archive is the
+ * same list under the Archived filter.
+ */
+function ProjectsList({
   projects,
+  archived,
+  weekMsByProject,
+  taskMetricsByProject,
+  dragState,
+  pressedProjectId,
+  canReorder,
+  rowRefs,
+  onPointerDown,
+  onOpen,
   onProjectAction,
+  onNewProject,
 }: {
   projects: LocalProject[];
+  archived: boolean;
+  weekMsByProject: Map<string, number>;
+  taskMetricsByProject: TaskMetricsByProject;
+  dragState: ProjectDragState | null;
+  pressedProjectId: string | null;
+  canReorder: boolean;
+  rowRefs: React.MutableRefObject<Map<string, HTMLTableRowElement>>;
+  onPointerDown: (
+    projectId: string,
+    event: React.PointerEvent<HTMLTableRowElement>,
+  ) => void;
+  onOpen: (projectId: string) => void;
   onProjectAction: (project: LocalProject, actionId: ProjectActionId) => void;
+  onNewProject: () => void;
 }) {
   return (
-    <div className="project-detail">
-      <PageHeader
-        breadcrumb={[
-          { label: "Projects", to: "/projects" },
-          { label: "Archive" },
-        ]}
-      />
-      <SectionHeading trailing={projects.length}>
-        Archived projects
-      </SectionHeading>
-      {projects.length > 0 ? (
-        <table className="project-task-table">
+    <div className="project-list">
+      <div className="project-list-filterbar">
+        <div
+          className="toggle-group project-task-filter-tabs"
+          role="tablist"
+          aria-label="Filter projects"
+        >
+          <Link
+            to="/projects"
+            role="tab"
+            aria-selected={!archived}
+            className={cn("toggle-item", !archived && "toggle-item-active")}
+          >
+            Active
+          </Link>
+          <Link
+            to="/projects/archive"
+            role="tab"
+            aria-selected={archived}
+            className={cn("toggle-item", archived && "toggle-item-active")}
+          >
+            Archived
+          </Link>
+        </div>
+        {/* Wide windows keep import and export as a settings page. */}
+        <Link
+          to="/settings/projects"
+          className="project-list-link desktop:hidden"
+        >
+          <FileTransfer data-icon="inline-start" />
+          Import and export
+        </Link>
+      </div>
+      {projects.length === 0 ? (
+        <Empty align="start" className="project-list-empty">
+          <EmptyHeader>
+            <EmptyTitle>
+              {archived ? "No archived projects" : "No projects yet"}
+            </EmptyTitle>
+            <EmptyDescription>
+              {archived
+                ? "Archived projects will appear here."
+                : "Create your first project."}
+            </EmptyDescription>
+          </EmptyHeader>
+          {archived ? null : (
+            <EmptyContent>
+              <Button type="button" variant="outline" onClick={onNewProject}>
+                <Plus data-icon="inline-start" />
+                New project
+              </Button>
+            </EmptyContent>
+          )}
+        </Empty>
+      ) : (
+        <table
+          className={cn(
+            "project-list-table",
+            dragState && "is-project-dragging",
+          )}
+        >
+          <thead>
+            <tr className="project-list-head">
+              <th scope="col">Project</th>
+              <th scope="col" className="project-list-col-tasks">
+                Tasks
+              </th>
+              <th scope="col" className="project-list-col-week">
+                This week
+              </th>
+              <th scope="col" className="project-list-col-budget">
+                Budget
+              </th>
+              <th scope="col" className="project-list-col-actions">
+                <span className="sr-only">Actions</span>
+              </th>
+            </tr>
+          </thead>
           <tbody>
-            {projects.map((project) => {
+            {projects.map((project, index) => {
               const actions = getProjectActions(project);
               const onAction = (actionId: ProjectActionId) =>
                 onProjectAction(project, actionId);
               const name = getProjectDisplayName(project);
+              const taskMetrics =
+                taskMetricsByProject.get(project._id) ?? new Map();
+              const budget = getProjectBudget(project, taskMetrics);
+              const activeTasks = project.tasks.filter(
+                (task) => task.status === "active",
+              ).length;
+              const isDragged = dragState?.projectId === project._id;
+              const rowShift =
+                !archived && dragState
+                  ? getSharedTableDragRowShift({
+                      itemIndex: index,
+                      originIndex: dragState.originIndex,
+                      targetIndex: dragState.targetIndex,
+                      rowHeight: dragState.height,
+                    })
+                  : 0;
 
               return (
                 <ObjectContextMenu
                   key={project._id}
                   actions={actions}
                   onAction={onAction}
-                  render={<tr className="project-task-row" />}
+                  render={
+                    <tr
+                      ref={(node) => {
+                        if (node) {
+                          rowRefs.current.set(project._id, node);
+                          return;
+                        }
+                        rowRefs.current.delete(project._id);
+                      }}
+                      className={cn(
+                        "project-task-row project-list-row",
+                        !archived && canReorder && "is-reorderable",
+                        pressedProjectId === project._id && "is-pressing",
+                        rowShift !== 0 && "is-shifting",
+                        isDragged && "is-drag-source",
+                      )}
+                      style={
+                        rowShift !== 0
+                          ? { transform: `translate3d(0, ${rowShift}px, 0)` }
+                          : undefined
+                      }
+                      aria-grabbed={!archived ? isDragged : undefined}
+                      {...{ [FOCUS_ATTRIBUTES.project]: project._id }}
+                      onClick={(event) => {
+                        if (
+                          event.target instanceof Element &&
+                          event.target.closest("a,button,[role=menu]")
+                        )
+                          return;
+                        onOpen(project._id);
+                      }}
+                      onPointerDown={
+                        !archived
+                          ? (event) => onPointerDown(project._id, event)
+                          : undefined
+                      }
+                    />
+                  }
                 >
                   <td className="project-task-name-cell">
                     <ProjectIcon
@@ -325,11 +505,45 @@ function ArchivedProjectsView({
                       color={project.color}
                       className="ajour-sidebar-icon"
                     />
-                    <span className="project-task-name">{name}</span>
+                    <Link
+                      to="/projects/$projectId"
+                      params={{ projectId: project._id }}
+                      className="project-task-name project-list-name"
+                      draggable={false}
+                    >
+                      {name}
+                    </Link>
                     {project.code ? <Chip>{project.code}</Chip> : null}
                   </td>
-                  <td className="project-task-trailing">
-                    <span className="project-task-trailing-content">
+                  <td className="project-list-col-tasks">
+                    <Value tone="muted">{activeTasks}</Value>
+                  </td>
+                  <td className="project-list-col-week">
+                    <Value>
+                      {formatClockDuration(
+                        weekMsByProject.get(project._id) ?? 0,
+                      )}
+                    </Value>
+                  </td>
+                  <td className="project-list-col-budget">
+                    {budget.budgetMs > 0 ? (
+                      <span className="project-budget">
+                        <BudgetBar
+                          ratio={budget.consumedMs / budget.budgetMs}
+                        />
+                        <Value tone="muted">
+                          {Math.round(
+                            (budget.consumedMs / budget.budgetMs) * 100,
+                          )}
+                          %
+                        </Value>
+                      </span>
+                    ) : (
+                      <span className="text-muted-foreground">No budget</span>
+                    )}
+                  </td>
+                  <td className="project-list-col-actions">
+                    <span className="project-task-actions">
                       <ObjectActionsButton
                         actions={actions}
                         onAction={onAction}
@@ -342,15 +556,6 @@ function ArchivedProjectsView({
             })}
           </tbody>
         </table>
-      ) : (
-        <Empty align="start" className="project-task-empty">
-          <EmptyHeader>
-            <EmptyTitle>No archived projects</EmptyTitle>
-            <EmptyDescription>
-              Archived projects will appear here.
-            </EmptyDescription>
-          </EmptyHeader>
-        </Empty>
       )}
     </div>
   );
@@ -366,10 +571,16 @@ function ProjectDetail({
   onNewTask,
   onLeave,
   onAssignShortcut,
+  entries,
+  weekMs,
 }: {
   project: LocalProject;
   metrics: ProjectMetrics;
   taskMetrics: Map<string, ProjectMetrics>;
+  /** The project's time entries, newest first. */
+  entries: LocalTimesheetEntry[];
+  /** Time logged on the project this week. */
+  weekMs: number;
   /** The task open in the side panel, highlighted in the list. */
   editingTaskId?: string;
   onProjectAction: (project: LocalProject, actionId: ProjectActionId) => void;
@@ -726,16 +937,24 @@ function ProjectDetail({
       trackedMs: taskMetrics.get(task._id)?.durationMs ?? 0,
       adjustmentMs: task.adjustmentMs,
     };
+    const budgetMs = normalizeProjectTaskBudgetMs(task.budgetMs);
+    const consumedMs = getProjectTaskTrackedWithAdjustmentMs(options);
+    const tone = projectTaskToneClassName[getProjectTaskConsumedTone(options)];
 
+    if (!budgetMs) {
+      return (
+        <Value className={cn("project-task-consumed", tone)}>
+          {formatClockDuration(consumedMs)}
+        </Value>
+      );
+    }
     return (
-      <Value
-        className={cn(
-          "project-task-consumed",
-          projectTaskToneClassName[getProjectTaskConsumedTone(options)],
-        )}
-      >
-        {formatProjectTaskConsumedBadge(options)}
-      </Value>
+      <span className="project-budget">
+        <BudgetBar ratio={Math.max(0, consumedMs) / budgetMs} />
+        <Value className={cn("project-task-consumed", tone)}>
+          {formatClockDuration(consumedMs)} / {formatClockDuration(budgetMs)}
+        </Value>
+      </span>
     );
   }
 
@@ -837,6 +1056,18 @@ function ProjectDetail({
     );
   }
 
+  const budget = getProjectBudget(project, taskMetrics);
+  const [tab, setTab] = useState<"tasks" | "entries">("tasks");
+  const entryDays = useMemo(() => {
+    const days: { localDate: string; entries: LocalTimesheetEntry[] }[] = [];
+    for (const entry of entries) {
+      const last = days.at(-1);
+      if (last && last.localDate === entry.localDate) last.entries.push(entry);
+      else days.push({ localDate: entry.localDate, entries: [entry] });
+    }
+    return days;
+  }, [entries]);
+
   return (
     <div
       className="project-detail"
@@ -893,10 +1124,41 @@ function ProjectDetail({
       ) : null}
 
       <FigureRow>
-        <Figure label="Tracked">{hoursLabel(metrics.durationMs)}</Figure>
-        <Figure label="Entries">{metrics.entryCount}</Figure>
-        <Figure label="Active tasks">{summary.active}</Figure>
+        <Figure label="This week">{formatClockDuration(weekMs)}</Figure>
+        <Figure label="All time">
+          {formatClockDuration(metrics.durationMs)}
+        </Figure>
+        {budget.budgetMs > 0 ? (
+          <>
+            <Figure label="Budget">
+              {formatClockDuration(budget.budgetMs)}
+            </Figure>
+            <Figure label="Used">
+              <span
+                className={cn(
+                  "project-task-consumed",
+                  budgetTone(budget.consumedMs / budget.budgetMs),
+                )}
+              >
+                {formatClockDuration(budget.consumedMs)}
+              </span>
+            </Figure>
+            <Figure label="Remaining">
+              {formatClockDuration(
+                Math.max(0, budget.budgetMs - budget.consumedMs),
+              )}
+            </Figure>
+          </>
+        ) : (
+          <Figure label="Active tasks">{summary.active}</Figure>
+        )}
       </FigureRow>
+      {budget.budgetMs > 0 ? (
+        <BudgetBar
+          ratio={budget.consumedMs / budget.budgetMs}
+          className="project-progress-wide"
+        />
+      ) : null}
 
       {isArchived ? (
         <MessagePanel>
@@ -910,72 +1172,152 @@ function ProjectDetail({
         <MessagePanel tone="warning">{importError}</MessagePanel>
       ) : null}
 
-      <div className="project-task-toolbar">
-        <SectionHeading>Tasks</SectionHeading>
-        <div
-          className="toggle-group project-task-filter-tabs"
-          role="tablist"
-          aria-label="Filter project tasks"
+      <Tabs
+        value={tab}
+        onValueChange={(value) => setTab(value as "tasks" | "entries")}
+        className="project-tabs"
+      >
+        <TabsList
+          variant="line"
+          className="h-auto w-full justify-start gap-4 rounded-none border-b border-border bg-transparent p-0"
         >
-          {taskFilters.map((filter) => {
-            const isActive = taskFilter === filter.value;
-            return (
-              <button
-                key={filter.value}
-                type="button"
-                role="tab"
-                aria-selected={isActive}
-                className={cn("toggle-item", isActive && "toggle-item-active")}
-                onClick={() => setTaskFilter(filter.value)}
-              >
-                <span>{filter.label}</span>
-                <span className="project-task-filter-count">
-                  {filter.count}
-                </span>
-              </button>
-            );
-          })}
-        </div>
-      </div>
+          <TabsTrigger value="tasks" className="flex-none px-0">
+            Tasks <Value tone="muted">{project.tasks.length}</Value>
+          </TabsTrigger>
+          <TabsTrigger value="entries" className="flex-none px-0">
+            Time entries <Value tone="muted">{entries.length}</Value>
+          </TabsTrigger>
+        </TabsList>
 
-      {visibleTasks.length === 0 ? (
-        <Empty align="start" className="project-task-empty">
-          <EmptyHeader>
-            <EmptyTitle>
-              {isArchivedTaskFilter ? "No archived tasks" : "No active tasks"}
-            </EmptyTitle>
-            <EmptyDescription>
-              {isArchivedTaskFilter
-                ? "Archived tasks will appear here."
-                : isArchived
-                  ? "This archived project has no active tasks."
-                  : "Create a task, or import tasks from Excel."}
-            </EmptyDescription>
-          </EmptyHeader>
-          {!isArchived && !isArchivedTaskFilter ? (
-            <EmptyContent>
-              <Button
-                type="button"
-                variant="outline"
-                disabled={isImporting}
-                onClick={openImportPicker}
-              >
-                <Download data-icon="inline-start" />
-                Import tasks…
-              </Button>
-            </EmptyContent>
-          ) : null}
-        </Empty>
-      ) : (
-        <table
-          className={cn(
-            "project-task-table",
-            taskDragState && "is-task-dragging",
+        <TabsContent value="tasks" className="project-tab-panel">
+          <div className="project-task-toolbar">
+            <SectionHeading>Tasks</SectionHeading>
+            <div
+              className="toggle-group project-task-filter-tabs"
+              role="tablist"
+              aria-label="Filter project tasks"
+            >
+              {taskFilters.map((filter) => {
+                const isActive = taskFilter === filter.value;
+                return (
+                  <button
+                    key={filter.value}
+                    type="button"
+                    role="tab"
+                    aria-selected={isActive}
+                    className={cn(
+                      "toggle-item",
+                      isActive && "toggle-item-active",
+                    )}
+                    onClick={() => setTaskFilter(filter.value)}
+                  >
+                    <span>{filter.label}</span>
+                    <span className="project-task-filter-count">
+                      {filter.count}
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {visibleTasks.length === 0 ? (
+            <Empty align="start" className="project-task-empty">
+              <EmptyHeader>
+                <EmptyTitle>
+                  {isArchivedTaskFilter
+                    ? "No archived tasks"
+                    : "No active tasks"}
+                </EmptyTitle>
+                <EmptyDescription>
+                  {isArchivedTaskFilter
+                    ? "Archived tasks will appear here."
+                    : isArchived
+                      ? "This archived project has no active tasks."
+                      : "Create a task, or import tasks from Excel."}
+                </EmptyDescription>
+              </EmptyHeader>
+              {!isArchived && !isArchivedTaskFilter ? (
+                <EmptyContent>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    disabled={isImporting}
+                    onClick={openImportPicker}
+                  >
+                    <Download data-icon="inline-start" />
+                    Import tasks…
+                  </Button>
+                </EmptyContent>
+              ) : null}
+            </Empty>
+          ) : (
+            <table
+              className={cn(
+                "project-task-table",
+                taskDragState && "is-task-dragging",
+              )}
+            >
+              <tbody data-focus-scope>{visibleTasks.map(renderTaskRow)}</tbody>
+            </table>
           )}
-        >
-          <tbody data-focus-scope>{visibleTasks.map(renderTaskRow)}</tbody>
-        </table>
-      )}
+        </TabsContent>
+
+        <TabsContent value="entries" className="project-tab-panel">
+          {entryDays.length === 0 ? (
+            <Empty align="start" className="project-task-empty">
+              <EmptyHeader>
+                <EmptyTitle>No time logged yet</EmptyTitle>
+                <EmptyDescription>
+                  Entries on this project's tasks show here by day.
+                </EmptyDescription>
+              </EmptyHeader>
+            </Empty>
+          ) : (
+            entryDays.map((day) => (
+              <div key={day.localDate}>
+                <SectionHeading
+                  trailing={
+                    <Value>
+                      {formatClockDuration(
+                        day.entries.reduce(
+                          (sum, entry) => sum + entry.durationMs,
+                          0,
+                        ),
+                      )}
+                    </Value>
+                  }
+                >
+                  {formatEntryDay(day.localDate)}
+                </SectionHeading>
+                <div className="project-entry-rows">
+                  {day.entries.map((entry) => {
+                    const task = project.tasks.find(
+                      (candidate) => candidate._id === entry.taskId,
+                    );
+                    return (
+                      <Link
+                        key={entry._id}
+                        to="/time/$date"
+                        params={{ date: entry.localDate }}
+                        className="project-entry-row"
+                      >
+                        <span className="project-entry-task">
+                          {task?.name ?? "No task"}
+                        </span>
+                        <span className="project-entry-note">
+                          {entry.note ?? ""}
+                        </span>
+                        <Value>{formatClockDuration(entry.durationMs)}</Value>
+                      </Link>
+                    );
+                  })}
+                </div>
+              </div>
+            ))
+          )}
+        </TabsContent>
+      </Tabs>
 
       {draggedTask && taskDragState ? (
         <div
@@ -1029,8 +1371,7 @@ export function ProjectsPage() {
   // at /projects, and project pages open without it. Tasks edit in a full-width
   // dialog there instead of the side panel.
   const isNarrowView = useIsNarrowView();
-  const isNarrowProjectList = isNarrowView && pathname === "/projects";
-  const projectRowRefs = useRef(new Map<string, HTMLLIElement>());
+  const projectRowRefs = useRef(new Map<string, HTMLTableRowElement>());
   const projectPointerSessionRef = useRef<SharedTableDragPointerSession | null>(
     null,
   );
@@ -1100,6 +1441,19 @@ export function ProjectsPage() {
 
     return metrics;
   }, [state.projects, state.timesheetEntries]);
+
+  const weekMsByProject = useMemo(() => {
+    const weekStart = startOfWeekIsoDate();
+    const totals = new Map<string, number>();
+    for (const entry of state.timesheetEntries) {
+      if (!entry.projectId || entry.localDate < weekStart) continue;
+      totals.set(
+        entry.projectId,
+        (totals.get(entry.projectId) ?? 0) + entry.durationMs,
+      );
+    }
+    return totals;
+  }, [state.timesheetEntries]);
 
   const isArchivePage = pathname === "/projects/archive";
 
@@ -1226,7 +1580,7 @@ export function ProjectsPage() {
 
   function handleProjectPointerDown(
     projectId: string,
-    event: React.PointerEvent<HTMLLIElement>,
+    event: React.PointerEvent<HTMLTableRowElement>,
   ) {
     if (
       !canReorderProjects ||
@@ -1321,27 +1675,12 @@ export function ProjectsPage() {
     });
   }
 
-  // Auto-select the first available project if the current URL does not
-  // resolve. The narrow view keeps /projects as the project list.
+  // A project id that no longer resolves goes back to the list.
   useEffect(() => {
-    if (pathname === "/projects/archive") return;
-    if (isNarrowProjectList) return;
-    if (pathname !== "/projects" && !pathname.startsWith("/projects/")) return;
-    const firstProject = activeProjects[0] ?? archivedProjects[0];
-    if (!firstProject || selectedProject) return;
-    void navigate({
-      to: "/projects/$projectId",
-      params: { projectId: firstProject._id },
-      replace: true,
-    });
-  }, [
-    activeProjects,
-    archivedProjects,
-    isNarrowProjectList,
-    navigate,
-    pathname,
-    selectedProject,
-  ]);
+    if (selectedProjectId && !selectedProject) {
+      void navigate({ to: "/projects", replace: true });
+    }
+  }, [navigate, selectedProject, selectedProjectId]);
 
   // The command palette sends its project and task commands here while this page
   // is open, so they pass the same guards as the page's own controls: a valid
@@ -1538,7 +1877,6 @@ export function ProjectsPage() {
     return true;
   };
 
-  /** Runs `leaveProject` before a sidebar link changes project, or cancels the link. */
   /** Goes to a project, or to the archive with `null`, after `leaveProject`. */
   const goToProject = (projectId: string | null) => {
     if (projectId === selectedProjectId || !leaveProject()) {
@@ -1571,7 +1909,7 @@ export function ProjectsPage() {
   };
 
   /**
-   * Move up and Move down among the active projects of the sidebar, persisted
+   * Move up and Move down among the active projects of the list, persisted
    * like a drag. Archived projects have no order to change.
    */
   const reorderProject = (projectId: string, step: -1 | 1) => {
@@ -1581,7 +1919,7 @@ export function ProjectsPage() {
     }
   };
 
-  /** Runs the project action set from the sidebar, the archive list and the detail header. */
+  /** Runs the project action set from the list rows and the project's top bar. */
   const runProjectAction = (
     project: LocalProject,
     actionId: ProjectActionId,
@@ -1660,301 +1998,119 @@ export function ProjectsPage() {
       />
     ) : null;
 
+  const selectedEntries = selectedProject
+    ? state.timesheetEntries
+        .filter((entry) => entry.projectId === selectedProject._id)
+        .sort((a, b) => b.localDate.localeCompare(a.localDate))
+    : [];
+  const listProjects = isArchivePage ? archivedProjects : activeProjects;
+
   return (
-    <CustomSidebarLayout
-      className="ajour-project-layout"
-      keyboardShortcut={false}
-    >
-      {!isNarrowView && !selectedProject && !isArchivePage ? (
-        <PageHeader
-          title="Projects"
-          actions={
-            <Button type="button" size="lg" onClick={openCreateProjectModal}>
-              <Plus data-icon="inline-start" />
-              New project
-            </Button>
+    <div className="project-page">
+      {selectedProject ? (
+        <ProjectDetail
+          key={selectedProject._id}
+          project={selectedProject}
+          metrics={
+            metricsByProject.get(selectedProject._id) ?? {
+              durationMs: 0,
+              entryCount: 0,
+            }
+          }
+          taskMetrics={
+            taskMetricsByProject.get(selectedProject._id) ?? new Map()
+          }
+          entries={selectedEntries}
+          weekMs={weekMsByProject.get(selectedProject._id) ?? 0}
+          editingTaskId={visibleTaskEditor?.taskId}
+          onProjectAction={runProjectAction}
+          onOpenTask={(task) => openTaskEditor(selectedProject._id, task)}
+          onNewTask={() => openTaskEditor(selectedProject._id)}
+          onLeave={(event) => handleLeaveProjectClick(event, null)}
+          onAssignShortcut={(task) =>
+            setShortcutRequest({ projectId: selectedProject._id, task })
           }
         />
-      ) : null}
-      {isNarrowView && !isNarrowProjectList ? null : (
-        <CustomSidebar
-          className={cn(
-            "ajour-project-navigation-sidebar",
-            projectDragState && "is-project-dragging",
-          )}
-          role="navigation"
-          aria-label="Projects"
-          collapsible="none"
-        >
-          <SidebarHeader className="ajour-project-sidebar-header">
-            <div className="ajour-project-sidebar-search-row">
-              {/* Search opens the command palette, which also finds tasks
-                  and backlog items. */}
-              <button
-                type="button"
-                className="ajour-project-sidebar-command-trigger"
-                aria-label="Search"
-                aria-keyshortcuts={commandPaletteAriaKeys}
-                onClick={openCommandPalette}
-              >
-                <span>Search</span>
-              </button>
-              <TooltipButton
-                className={cn(
-                  "project-sidebar-add",
-                  projectModalState?.mode === "create" && "is-open",
-                )}
-                label="New project"
-                onClick={openCreateProjectModal}
-              >
-                <Plus className="h-3.5 w-3.5" />
-              </TooltipButton>
-            </div>
-          </SidebarHeader>
-
-          <SidebarContent>
-            <SidebarGroup>
-              <SidebarGroupContent>
-                <SidebarMenu>
-                  {activeProjects.map((project) => {
-                    const isActive = project._id === selectedProjectId;
-                    const projectIndex = activeProjectIds.indexOf(project._id);
-                    const isDraggedProject =
-                      projectDragState?.projectId === project._id;
-                    const rowShift = projectDragState
-                      ? getSharedTableDragRowShift({
-                          itemIndex: projectIndex,
-                          originIndex: projectDragState.originIndex,
-                          targetIndex: projectDragState.targetIndex,
-                          rowHeight: projectDragState.height,
-                        })
-                      : 0;
-                    const projectActions = getProjectActions(project);
-                    return (
-                      <ObjectContextMenu
-                        key={project._id}
-                        actions={projectActions}
-                        onAction={(actionId) =>
-                          runProjectAction(project, actionId)
-                        }
-                        render={
-                          <SidebarMenuItem
-                            ref={(node) => {
-                              if (node) {
-                                projectRowRefs.current.set(project._id, node);
-                                return;
-                              }
-
-                              projectRowRefs.current.delete(project._id);
-                            }}
-                            className={cn(
-                              "ajour-project-sidebar-item",
-                              canReorderProjects && "is-reorderable",
-                              pressedProjectId === project._id && "is-pressing",
-                              rowShift !== 0 && "is-shifting",
-                              isDraggedProject && "is-drag-source",
-                            )}
-                            style={
-                              rowShift !== 0
-                                ? {
-                                    transform: `translate3d(0, ${rowShift}px, 0)`,
-                                  }
-                                : undefined
-                            }
-                            aria-grabbed={isDraggedProject}
-                            {...{ [FOCUS_ATTRIBUTES.project]: project._id }}
-                            onPointerDown={(event) =>
-                              handleProjectPointerDown(project._id, event)
-                            }
-                          />
-                        }
-                      >
-                        <CustomSidebarMenuButton
-                          tooltip={{
-                            children: getProjectDisplayName(project),
-                            side: "right",
-                            // The sidebar never collapses; only the 48px rail hides the name.
-                            hidden: false,
-                            className: RAIL_ONLY_TOOLTIP,
-                          }}
-                          onDragStart={(event) => {
-                            event.preventDefault();
-                          }}
-                          onClick={(event) => {
-                            if (
-                              performance.now() <
-                              suppressProjectClickUntilRef.current
-                            ) {
-                              event.preventDefault();
-                              event.stopPropagation();
-                              return;
-                            }
-                            handleLeaveProjectClick(event, project._id);
-                          }}
-                          render={
-                            <Link
-                              to="/projects/$projectId"
-                              params={{ projectId: project._id }}
-                              aria-label={getProjectDisplayName(project)}
-                              draggable={false}
-                              // Alt+Up and Alt+Down reorder, like a drag. No other item key acts on projects.
-                              onKeyDown={(event) =>
-                                handleItemKeyDown(event, {
-                                  actions: projectActions,
-                                  keys: {},
-                                  onAction: (actionId) =>
-                                    runProjectAction(project, actionId),
-                                  onReorder: (step) =>
-                                    reorderProject(project._id, step),
-                                })
-                              }
-                              onDragStart={(event) => {
-                                event.preventDefault();
-                              }}
-                            />
-                          }
-                          isActive={isActive}
-                        >
-                          <ProjectIcon
-                            icon={project.icon}
-                            color={project.color}
-                            className="ajour-sidebar-icon"
-                          />
-                          <span data-sidebar-collapsed="hide">
-                            {getProjectDisplayName(project)}
-                          </span>
-                          {project.code ? (
-                            <span className="ajour-sidebar-code">
-                              {project.code}
-                            </span>
-                          ) : null}
-                        </CustomSidebarMenuButton>
-                        <ObjectActionsButton
-                          actions={projectActions}
-                          onAction={(actionId) =>
-                            runProjectAction(project, actionId)
-                          }
-                          label={`Actions for ${getProjectDisplayName(project)}`}
-                        />
-                      </ObjectContextMenu>
-                    );
-                  })}
-                </SidebarMenu>
-              </SidebarGroupContent>
-            </SidebarGroup>
-          </SidebarContent>
-
-          <SidebarFooter className="ajour-project-sidebar-footer">
-            <TooltipButton
-              label="Archived projects"
-              side="right"
-              tooltipClassName={RAIL_ONLY_TOOLTIP}
-              render={
-                <Link
-                  to="/projects/archive"
-                  className={`ajour-project-sidebar-archive-trigger ${
-                    isArchivePage ? "is-active" : ""
-                  }`}
-                  onClick={(event) => handleLeaveProjectClick(event, null)}
-                />
+      ) : (
+        <>
+          <PageHeader
+            title={isArchivePage ? "Archive" : "Projects"}
+            meta={listProjects.length}
+            actions={
+              <>
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        aria-label="Projects options"
+                      />
+                    }
+                  >
+                    <More className="size-4" />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    <DropdownMenuItem render={<Link to="/settings/projects" />}>
+                      Import and export…
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
+                <Button
+                  type="button"
+                  size="lg"
+                  onClick={openCreateProjectModal}
+                >
+                  <Plus data-icon="inline-start" />
+                  New project
+                </Button>
+              </>
+            }
+          />
+          <ProjectsList
+            projects={listProjects}
+            archived={isArchivePage}
+            weekMsByProject={weekMsByProject}
+            taskMetricsByProject={taskMetricsByProject}
+            dragState={projectDragState}
+            pressedProjectId={pressedProjectId}
+            canReorder={canReorderProjects}
+            rowRefs={projectRowRefs}
+            onPointerDown={handleProjectPointerDown}
+            onOpen={(projectId) => {
+              if (performance.now() < suppressProjectClickUntilRef.current) {
+                return;
               }
-            >
-              <Archive />
-              <span data-sidebar-collapsed="hide">Archive</span>
-            </TooltipButton>
-            {/* Wide windows keep project import and export as a settings page. */}
-            {isNarrowView ? (
-              <Link
-                to="/settings/projects"
-                className="ajour-project-sidebar-archive-trigger"
-              >
-                <FileTransfer />
-                <span>Import and export</span>
-              </Link>
-            ) : null}
-          </SidebarFooter>
-        </CustomSidebar>
+              goToProject(projectId);
+            }}
+            onProjectAction={runProjectAction}
+            onNewProject={openCreateProjectModal}
+          />
+        </>
       )}
 
       {draggedProject && projectDragState ? (
         <div
-          className="ajour-project-sidebar-drag-preview"
+          className="project-task-drag-preview"
           style={{
             width: projectDragState.width,
             minHeight: projectDragState.height,
             transform: getSharedTableDragOverlayTransform(projectDragState),
           }}
         >
-          <ProjectIcon
-            icon={draggedProject.icon}
-            color={draggedProject.color}
-            className="ajour-sidebar-icon"
-          />
-          <span className="min-w-0 flex-1 truncate">{draggedProject.name}</span>
-          {draggedProject.code ? (
-            <span className="ajour-sidebar-code">{draggedProject.code}</span>
-          ) : null}
+          <div className="project-task-name-cell">
+            <ProjectIcon
+              icon={draggedProject.icon}
+              color={draggedProject.color}
+              className="ajour-sidebar-icon"
+            />
+            <span className="project-task-name">
+              {getProjectDisplayName(draggedProject)}
+            </span>
+            {draggedProject.code ? <Chip>{draggedProject.code}</Chip> : null}
+          </div>
         </div>
       ) : null}
-
-      {isNarrowProjectList ? null : (
-        <div className="project-content">
-          {isArchivePage ? (
-            <ArchivedProjectsView
-              projects={archivedProjects}
-              onProjectAction={runProjectAction}
-            />
-          ) : selectedProject ? (
-            <ProjectDetail
-              project={selectedProject}
-              metrics={
-                metricsByProject.get(selectedProject._id) ?? {
-                  durationMs: 0,
-                  entryCount: 0,
-                }
-              }
-              taskMetrics={
-                taskMetricsByProject.get(selectedProject._id) ?? new Map()
-              }
-              editingTaskId={visibleTaskEditor?.taskId}
-              onProjectAction={runProjectAction}
-              onOpenTask={(task) => openTaskEditor(selectedProject._id, task)}
-              onNewTask={() => openTaskEditor(selectedProject._id)}
-              onLeave={(event) => handleLeaveProjectClick(event, null)}
-              onAssignShortcut={(task) =>
-                setShortcutRequest({ projectId: selectedProject._id, task })
-              }
-            />
-          ) : (
-            <Empty>
-              <EmptyHeader>
-                <EmptyTitle>
-                  {allProjects.length > 0
-                    ? "No project selected"
-                    : "No projects yet"}
-                </EmptyTitle>
-                <EmptyDescription>
-                  {allProjects.length > 0
-                    ? "Choose a project in the list."
-                    : "Create your first project."}
-                </EmptyDescription>
-              </EmptyHeader>
-              {allProjects.length === 0 ? (
-                <EmptyContent>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={openCreateProjectModal}
-                  >
-                    <Plus data-icon="inline-start" />
-                    New project
-                  </Button>
-                </EmptyContent>
-              ) : null}
-            </Empty>
-          )}
-        </div>
-      )}
 
       {taskEditorForm && !isNarrowView ? (
         <SidePanel
@@ -1995,6 +2151,6 @@ export function ProjectsPage() {
           onSubmit={handleProjectSubmit}
         />
       ) : null}
-    </CustomSidebarLayout>
+    </div>
   );
 }

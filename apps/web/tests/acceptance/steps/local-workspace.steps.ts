@@ -675,10 +675,7 @@ When("I open the Projects workspace", async ({ page }) => {
 
 When("I open project {string}", async ({ page }, project: string) => {
   await page.goto("/projects");
-  await page
-    .getByRole("navigation", { name: "Projects" })
-    .getByRole("link", { name: project })
-    .click();
+  await page.getByRole("link", { name: project, exact: true }).click();
   await expect(page.getByRole("heading", { name: project })).toBeVisible();
 });
 
@@ -1516,53 +1513,29 @@ When("I go back to the app from Settings", async ({ page }) => {
   ).toBeVisible();
 });
 
-Then(
-  "the Projects sidebar remains expanded and left-aligned beside primary navigation",
-  async ({ page }) => {
-    await page.setViewportSize({ width: 1800, height: 900 });
-    await expect(
-      page.getByRole("navigation", { name: "Primary navigation" }),
-    ).toBeVisible();
-    const projectsNavigation = page.getByRole("navigation", {
-      name: "Projects",
-    });
-    await expect(projectsNavigation).toBeVisible();
-    await expect(
-      projectsNavigation.getByRole("link", { name: /aaa xyz/ }),
-    ).toBeVisible();
-
-    const [primaryNavigationBox, projectsNavigationBox] = await Promise.all([
-      page
-        .getByRole("navigation", { name: "Primary navigation" })
-        .boundingBox(),
-      projectsNavigation.boundingBox(),
-    ]);
-    expect(primaryNavigationBox).not.toBeNull();
-    expect(projectsNavigationBox).not.toBeNull();
-    expect(projectsNavigationBox?.x).toBe(
-      (primaryNavigationBox?.x ?? 0) + (primaryNavigationBox?.width ?? 0),
-    );
-  },
-);
+Then("the Projects list opens beside primary navigation", async ({ page }) => {
+  await page.setViewportSize({ width: 1800, height: 900 });
+  await expect(
+    page.getByRole("navigation", { name: "Primary navigation" }),
+  ).toBeVisible();
+  await expect(
+    page.getByRole("link", { name: "aaa xyz", exact: true }),
+  ).toBeVisible();
+  // No project column of its own: the list is the page.
+  await expect(page.getByRole("navigation", { name: "Projects" })).toHaveCount(
+    0,
+  );
+});
 
 Then(
-  "the Projects navigation remains available as a compact rail",
+  "the Projects list still opens where the app sidebar is a rail",
   async ({ page }) => {
     await page.setViewportSize({ width: 800, height: 900 });
-    const projectsNavigation = page.getByRole("navigation", {
-      name: "Projects",
-    });
     await expect(
       page.getByRole("navigation", { name: "Primary navigation" }),
     ).toHaveCount(0);
-    await expect(projectsNavigation).toBeVisible();
-    const projectsNavigationBox = await projectsNavigation.boundingBox();
-    expect(projectsNavigationBox?.width).toBe(48);
     await expect(
-      projectsNavigation.getByRole("link", { name: "aaa xyz" }),
-    ).toBeVisible();
-    await expect(
-      projectsNavigation.getByRole("button", { name: "New project" }),
+      page.getByRole("link", { name: "aaa xyz", exact: true }),
     ).toBeVisible();
   },
 );
@@ -2351,28 +2324,22 @@ When("I go back to {string}", async ({ page }, label: string) => {
 
 Then("the Projects list fills the page", async ({ page }) => {
   await expect(page).toHaveURL(/\/projects$/);
-  const projectsList = page.getByRole("navigation", { name: "Projects" });
   await expect(
-    projectsList.getByRole("link", { name: "aaa xyz" }),
+    page.getByRole("link", { name: "aaa xyz", exact: true }),
   ).toBeVisible();
   await expect(
-    projectsList.getByRole("link", { name: "Archived projects" }),
+    page.getByRole("tab", { name: "Archived", exact: true }),
   ).toBeVisible();
-  const listBox = await projectsList.boundingBox();
+  const listBox = await page.locator(".project-list").boundingBox();
   expect(listBox?.width).toBe(page.viewportSize()?.width);
 });
 
 When(
   "I open project {string} from the Projects list",
   async ({ page }, name: string) => {
-    await page
-      .getByRole("navigation", { name: "Projects" })
-      .getByRole("link", { name })
-      .click();
+    await page.getByRole("link", { name, exact: true }).click();
     await expect(page).toHaveURL(/\/projects\/project-/);
-    await expect(
-      page.getByRole("navigation", { name: "Projects" }),
-    ).toHaveCount(0);
+    await expect(page.locator(".project-list")).toHaveCount(0);
   },
 );
 
