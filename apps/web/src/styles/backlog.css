@@ -561,13 +561,6 @@
     box-shadow: var(--shadow-drag);
   }
 
-  .backlog-narrow-add {
-    position: absolute;
-    right: 1rem;
-    bottom: calc(1.25rem + env(safe-area-inset-bottom));
-    z-index: 2;
-  }
-
   /* -- Item page ------------------------------------------------- */
 
   .backlog-item-page {

@@ -138,6 +138,18 @@ Then("the saved board uses a narrow list", async ({ page }) => {
     ),
   ).toBe("board");
 });
+Then(
+  "the narrow Backlog adds items from its group headers only",
+  async ({ page }) => {
+    // The floating New backlog item button is gone; group headers add instead.
+    await expect(
+      page.getByRole("button", { name: "New backlog item", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: /^New item in / }).first(),
+    ).toBeVisible();
+  },
+);
 Given("the other Backlog item has 1.5 hours remaining", async ({ page }) => {
   await page.evaluate(() => {
     const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
