@@ -85,14 +85,23 @@ export function SettingsAgentsPage() {
             description={
               showInstallHint ? (
                 <>
-                  Claude Code is not installed. Install it from{" "}
+                  Install a supported agent such as{" "}
                   <a
                     href="https://claude.com/claude-code"
                     target="_blank"
                     rel="noreferrer"
                     className="underline"
                   >
-                    claude.com/claude-code
+                    Claude Code
+                  </a>
+                  {" or "}
+                  <a
+                    href="https://developers.openai.com/codex/cli/"
+                    target="_blank"
+                    rel="noreferrer"
+                    className="underline"
+                  >
+                    Codex
                   </a>
                   , then reopen this page.
                 </>

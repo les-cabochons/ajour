@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import { AgentSessions } from "../agent-sessions.ts";
 import { claudeCodeAdapter } from "./adapters/claude-code.ts";
+import { codexAdapter } from "./adapters/codex.ts";
+import type { AgentCliId } from "../../../../packages/shared/agent-runs.ts";
 import type { AgentCliAdapter } from "./adapter.ts";
 import { AgentRunner } from "./runner.ts";
 
@@ -55,7 +57,7 @@ function fakeStorage({
   values,
   revoked,
 }: {
-  cli: "claude-code";
+  cli: AgentCliId;
   values: Record<string, string>;
   revoked: string[];
 }) {
@@ -123,7 +125,7 @@ async function setup(
   const events: Record<string, unknown>[] = [];
   const runner = new AgentRunner({
     storage: fakeStorage({
-      cli: "claude-code",
+      cli: options.adapter?.id ?? "claude-code",
       values: options.values ?? { url: "https://wd.example/t" },
       revoked,
     }),
@@ -173,6 +175,45 @@ async function waitForCli(report: string) {
 }
 
 describe("AgentRunner", () => {
+  it("runs a selected Codex adapter and retains its final summary", async () => {
+    const fake = fakeAdapter(
+      [
+        {
+          stdout: JSON.stringify({
+            type: "item.started",
+            item: { type: "mcp_tool_call" },
+          }),
+        },
+        {
+          stdout: JSON.stringify({
+            type: "item.completed",
+            item: { type: "agent_message", text: "Dry run complete." },
+          }),
+        },
+        { stdout: JSON.stringify({ type: "turn.completed" }) },
+      ],
+      "",
+    );
+    const { runner, sessions, events } = await setup([], {
+      adapter: { ...codexAdapter, buildInvocation: fake.buildInvocation },
+    });
+    const overview = await runner.overview();
+    expect(overview.clis.find((cli) => cli.id === "codex")?.supported).toBe(
+      true,
+    );
+    expect(overview.tasks[0]!.blockers).toEqual([]);
+    const run = await runner.start(request);
+    await settled(runner);
+    expect(sessions.get(run.sessionId)!.messages.at(-1)).toMatchObject({
+      kind: "end",
+      summary: "Dry run complete.",
+      outcome: "done",
+    });
+    expect(events.find((event) => event.event === "agent.run")).toMatchObject({
+      cli: "codex",
+      tool_call_count: 1,
+    });
+  });
   it("keeps the agent's own outcome when it ended the session", async () => {
     const { runner, sessions } = await setup([
       { stdout: result("Entered 9 lines.") },

@@ -275,4 +275,13 @@ Claude Code 2.1.293, run by Alex on 2026-10-15 against the installed Ajour (spec
 - Note: Playwright MCP exposes `browser_evaluate` and `browser_run_code_unsafe`, which run JavaScript in the page. Acceptable for now; Playwright MCP's capability flags could narrow this later.
 - Not checked: `ps` during the run. The token is only in the environment by construction.
 
-Codex and OpenCode: not run yet. Workday checks: not run yet.
+Codex 0.161.0, checked on 2026-10-15 with `just agent-codex-smoke`:
+
+- Pass: the installed ChatGPT login works with `--ignore-user-config`, `--ignore-rules`, `--ephemeral` and `--no-daemon`.
+- Pass: the actual adapter authenticates a temporary HTTP MCP client through `AJOUR_MCP_TOKEN`, calls its fixture tool and opens `about:blank` through the bundled Playwright MCP. No Ajour workspace data or Workday page participates in this check.
+- Pass: an `AGENTS.md` planted in the run directory is ignored. The adapter sets `project_doc_max_bytes=0`, disables bundled skill instructions and uses `features.skip_host_skill_discovery`. That last switch is under development in this tested CLI version.
+- Pass: a deliberate `apply_patch` write in the disposable directory is refused by the read-only sandbox. Shell tools are disabled. Codex still exposes some built-in helper tools; it does not offer a complete equivalent to Claude Code's tool allowlist.
+- Required: both servers use `required=true` and `default_tools_approval_mode="approve"`. With `auto`, headless calls fail with "MCP tool call requires approval, but approval policy is never".
+- The task prompt is loaded from `model_instructions_file`. User MCP servers, plugins, hooks and memory are disabled. The session token is not written to a file or an argument.
+
+OpenCode: not run yet. Workday checks: not run yet.
