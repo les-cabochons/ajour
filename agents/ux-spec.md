@@ -547,7 +547,7 @@ Decided after the prototype on branch `prototype/backlog-sidebar`: variant B is 
 - Comfortable rows are 80px and three lines, like T3 Code threads: the project's icon and name ("No project" without one) at 13px with the logged time at the end, such as "4h", "4h30" or "45m", then the title at 14px, then the workflow state's ring and name at 12px in a faint color. The logged time counts saved entries and does not show at zero.
 - Compact rows are 26px and one line: the type icon and the title.
 - In Compact, a subitem shows its parent after the title in muted text, such as "Fix token refresh · Login page". In Comfortable, the parent's title does not show: an arrow at the end of the state line opens the parent, and its tooltip is the parent's title.
-- In Comfortable, hover and keyboard focus replace the end of the project line with Start entry, Snooze… and Settle. In Compact, they swap the type icon for a settle circle and replace the end of the row with Start entry and Snooze…. Nothing floats over the title. Shift-click on Settle or the circle asks first.
+- In Comfortable, hover and keyboard focus show a round Start entry button centered at the row's end, since logging time is the main job, and replace the end of the project line with Snooze… and a Settle check. In Compact, they swap the type icon for a settle circle and replace the end of the row with Start entry and Snooze…. Nothing floats over the title. Shift-click on Settle or the circle asks first.
 - A marker shows on the item with the running entry.
 - A dot shows on a returned item. Opening the item from anywhere, or clicking the dot, clears it.
 - Clicking a row opens the backlog item page.
