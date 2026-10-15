@@ -17,11 +17,17 @@ import {
   type LocalWorkItem,
 } from "@/domain/local-state";
 import {
+  resolvePluginProperties,
+  type ProjectPropertyPlugin,
+} from "@/domain/projects/plugin-properties";
+import { computeWeekPace } from "@/domain/time/week-pace";
+import {
   groupSubmitLines,
   summarizeSubmitSelection,
   type SubmitGroupBy,
 } from "@/domain/time/timesheet-submission";
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
+import { submitLineId } from "@/domain/agents/submit-line-id";
 
 /**
  * What the read tools return to agents: plain ids, names and minutes, shaped
@@ -245,14 +251,29 @@ export function getWorkItemForAgent(
 const toHours = (durationMs: number) =>
   Math.round((durationMs / HOUR) * 100) / 100;
 
-/** The Submit page's lines for a week, in decimal hours as Workday wants them. */
+/**
+ * The Submit page's lines for a week, in decimal hours as Workday wants them,
+ * plus the week's pace check. `today` is passed in because domain code does
+ * not read the clock.
+ */
 export function getSubmitLinesForAgent(
   state: LocalAppState,
   {
     weekDates,
     groupBy,
     onlyUnsubmitted,
-  }: { weekDates: string[]; groupBy: SubmitGroupBy; onlyUnsubmitted: boolean },
+    today,
+    paceTolerancePercent,
+    projectPropertyPlugins,
+  }: {
+    weekDates: string[];
+    groupBy: SubmitGroupBy;
+    onlyUnsubmitted: boolean;
+    today: string;
+    paceTolerancePercent: number;
+    /** Active plugins that add project properties. Passed in to keep domain free of `lib/`. */
+    projectPropertyPlugins: ProjectPropertyPlugin[];
+  },
 ): DataToolOutput<"get_submit_lines"> {
   const weekDateSet = new Set(weekDates);
   const weekEntries = state.timesheetEntries.filter((entry) =>
@@ -275,23 +296,61 @@ export function getSubmitLinesForAgent(
     weekDates,
     weekEntries,
   });
+  const projectsById = new Map(
+    state.projects.map((project) => [project._id, project]),
+  );
+  /** Non-empty values per active plugin, or undefined when there are none. */
+  const pluginValues = (projectId: string | undefined) => {
+    const project = projectId ? projectsById.get(projectId) : undefined;
+    if (!project) return undefined;
+    const byPlugin: Record<string, Record<string, string>> = {};
+    for (const plugin of projectPropertyPlugins) {
+      const fields = Object.fromEntries(
+        resolvePluginProperties(project, plugin)
+          .filter((property) => property.value !== "")
+          .map((property) => [property.field.id, property.value]),
+      );
+      if (Object.keys(fields).length > 0) byPlugin[plugin.pluginId] = fields;
+    }
+    return Object.keys(byPlugin).length > 0 ? byPlugin : undefined;
+  };
 
   return {
     sections: sections.map((section) => ({
       ...(section.localDate ? { date: section.localDate } : {}),
-      lines: section.lines.map((line) => ({
-        ...(line.projectName ? { projectName: line.projectName } : {}),
-        ...(line.taskName ? { taskName: line.taskName } : {}),
-        hours: toHours(line.durationMs),
-        comments: line.comments,
-        entryIds: line.entryIds,
-        unsubmittedEntryIds: line.unsubmittedEntryIds,
-      })),
+      lines: section.lines.map((line) => {
+        const project = line.projectId
+          ? projectsById.get(line.projectId)
+          : undefined;
+        const projectProperties = pluginValues(line.projectId);
+        return {
+          lineId: submitLineId(line.entryIds),
+          ...(line.projectName ? { projectName: line.projectName } : {}),
+          ...(line.projectCode ? { projectCode: line.projectCode } : {}),
+          ...(project ? { projectFullName: project.name } : {}),
+          ...(projectProperties ? { projectProperties } : {}),
+          ...(line.taskName ? { taskName: line.taskName } : {}),
+          hours: toHours(line.durationMs),
+          comments: line.comments,
+          entryIds: line.entryIds,
+          unsubmittedEntryIds: line.unsubmittedEntryIds,
+        };
+      }),
     })),
     summary: {
       totalHours: toHours(summary.totalMs),
       targetHours: toHours(summary.targetMs),
       warnings: summary.warnings,
     },
+    pace: computeWeekPace({
+      weekDates,
+      today,
+      capacityTargets: state.userPreferences.weeklyCapacityTargets,
+      loggedMs: weekEntries.reduce(
+        (total, entry) => total + entry.durationMs,
+        0,
+      ),
+      tolerancePercent: paceTolerancePercent,
+    }),
   };
 }

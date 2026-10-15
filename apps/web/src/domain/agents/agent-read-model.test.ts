@@ -9,9 +9,19 @@ import {
   readRunningTimer,
 } from "@/domain/agents/agent-read-model";
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
+import { submitLineId } from "@/domain/agents/submit-line-id";
 
 const HOUR = 3_600_000;
 const NOW = Date.UTC(2026, 9, 14, 15);
+const WEEK = [
+  "2026-10-12",
+  "2026-10-13",
+  "2026-10-14",
+  "2026-10-15",
+  "2026-10-16",
+  "2026-10-17",
+  "2026-10-18",
+];
 
 function entry(
   overrides: Partial<LocalTimesheetEntry> & { _id: string },
@@ -111,6 +121,17 @@ function createState(): LocalAppState {
   } as unknown as LocalAppState;
 }
 
+/** The default state, with the "Acme" project carrying the code "ACME-1". */
+function stateWithCodedProject(): LocalAppState {
+  const state = createState();
+  return {
+    ...state,
+    projects: state.projects.map((project) =>
+      project._id === "project-1" ? { ...project, code: "ACME-1" } : project,
+    ),
+  };
+}
+
 describe("agent read model", () => {
   it("reads the running entry with its counted minutes", () => {
     expect(readRunningTimer(createState(), NOW)).toEqual({
@@ -188,17 +209,12 @@ describe("agent read model", () => {
 
   it("builds the week's submit lines in decimal hours", () => {
     const result = getSubmitLinesForAgent(createState(), {
-      weekDates: [
-        "2026-10-12",
-        "2026-10-13",
-        "2026-10-14",
-        "2026-10-15",
-        "2026-10-16",
-        "2026-10-17",
-        "2026-10-18",
-      ],
+      weekDates: WEEK,
       groupBy: "day-task",
       onlyUnsubmitted: false,
+      today: "2026-10-14",
+      paceTolerancePercent: 20,
+      projectPropertyPlugins: [],
     });
     expect(result.sections).toEqual([
       {
@@ -214,5 +230,73 @@ describe("agent read model", () => {
       },
     ]);
     expect(result.summary.targetHours).toBe(40);
+    // 2 h logged by Wednesday, when 24 h of the 40 h target is expected.
+    expect(result.pace).toEqual({
+      loggedHours: 2,
+      targetHours: 40,
+      expectedHours: 24,
+      status: "under",
+    });
+  });
+
+  it("gives each submit line a stable ID and its project code", () => {
+    const result = getSubmitLinesForAgent(stateWithCodedProject(), {
+      weekDates: WEEK,
+      groupBy: "day-task",
+      onlyUnsubmitted: true,
+      today: "2026-10-14",
+      paceTolerancePercent: 20,
+      projectPropertyPlugins: [],
+    });
+    const line = result.sections[0]!.lines[0]!;
+    expect(line.lineId).toBe(submitLineId(line.entryIds));
+    expect(line.projectCode).toBe("ACME-1");
+  });
+
+  it("sends the full name and resolved plugin properties of active plugins", () => {
+    const state = stateWithCodedProject();
+    state.projects[0]!.pluginProperties = {
+      "workday-agent": { name: "CA004 Tech & Design" },
+      inactive: { other: "hidden" },
+    };
+    const result = getSubmitLinesForAgent(state, {
+      weekDates: WEEK,
+      groupBy: "day-task",
+      onlyUnsubmitted: true,
+      today: "2026-10-14",
+      paceTolerancePercent: 20,
+      projectPropertyPlugins: [
+        {
+          pluginId: "workday-agent",
+          capability: {
+            section: "Workday",
+            fields: [
+              { id: "name", label: "Workday name", defaultFrom: "fullName" },
+              { id: "code", label: "Workday code", defaultFrom: "code" },
+              { id: "empty", label: "Empty" },
+            ],
+          },
+        },
+      ],
+    });
+    const line = result.sections[0]!.lines[0]!;
+    expect(line.projectFullName).toBe("Acme");
+    expect(line.projectProperties).toEqual({
+      "workday-agent": { name: "CA004 Tech & Design", code: "ACME-1" },
+    });
+  });
+
+  it("sends no plugin properties when no plugin adds any", () => {
+    const result = getSubmitLinesForAgent(stateWithCodedProject(), {
+      weekDates: WEEK,
+      groupBy: "day-task",
+      onlyUnsubmitted: true,
+      today: "2026-10-14",
+      paceTolerancePercent: 20,
+      projectPropertyPlugins: [],
+    });
+    const line = result.sections[0]!.lines[0]!;
+    expect(line.projectFullName).toBe("Acme");
+    expect(line).not.toHaveProperty("projectProperties");
   });
 });

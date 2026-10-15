@@ -18,6 +18,11 @@ export interface LocalProject {
   name: string;
   displayName?: string;
   code?: string;
+  /**
+   * Overrides of plugin project properties, keyed by plugin ID then field
+   * ID. A missing value means the field's default. See plugin-properties.ts.
+   */
+  pluginProperties?: Record<string, Record<string, string>>;
   color: string;
   icon: LocalProjectIcon;
   status: "active" | "archived";
@@ -213,6 +218,8 @@ export interface UserPreferences {
   warnWhenSubmittingUnderCapacity: boolean;
   changesEndSnoozeEarly?: boolean;
   closeParentSubitems: CloseParentSubitems;
+  /** How far the week may run ahead of or behind its targets before an agent asks. Default 20. */
+  paceTolerancePercent?: number;
 }
 
 /** One step of the user's workflow. The workflow's order is the array order. */

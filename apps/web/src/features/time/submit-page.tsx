@@ -43,6 +43,10 @@ import {
   type SubmitWeekStatus,
 } from "@/domain/time/timesheet-submission";
 import type { LocalProjectIcon } from "@/domain/projects/project-icon";
+import {
+  AgentTaskButtons,
+  AgentTaskWeekLinks,
+} from "@/features/agents/agent-task-buttons";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import { useLocalProjects, useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
@@ -254,7 +258,7 @@ function StatusLine({ status }: { status: SubmitWeekStatus }) {
 /**
  * The submit page for the week that holds `date`. The user copies each line
  * into the external timesheet, then marks the selected entries as submitted
- * from the top bar's action.
+ * from the actions below the weekly summary.
  */
 export function SubmitPage({
   date,
@@ -374,16 +378,7 @@ export function SubmitPage({
 
   return (
     <div className="submit-page">
-      <PageHeader
-        title={title}
-        actions={
-          isReadOnly ? null : (
-            <Button disabled={selectedIds.size === 0} onClick={handleMark}>
-              {getSubmitButtonLabel(status, selectedIds)}
-            </Button>
-          )
-        }
-      >
+      <PageHeader title={title}>
         <TooltipButton
           label={`Back to ${returnView === "week" ? "Week" : "Day"}`}
           render={
@@ -433,7 +428,21 @@ export function SubmitPage({
           </ul>
         ) : null}
         <StatusLine status={status} />
+        <AgentTaskWeekLinks weekOf={weekDates[0]!} />
       </section>
+
+      <div
+        role="group"
+        aria-label="Submission actions"
+        className="flex flex-wrap items-center gap-2 empty:hidden"
+      >
+        <AgentTaskButtons weekOf={weekDates[0]!} />
+        {isReadOnly ? null : (
+          <Button disabled={selectedIds.size === 0} onClick={handleMark}>
+            {getSubmitButtonLabel(status, selectedIds)}
+          </Button>
+        )}
+      </div>
 
       {weekEntries.length === 0 ? (
         <Empty align="start" className="px-0">

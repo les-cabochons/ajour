@@ -6,12 +6,13 @@ Plugins connect Ajour to the tools where your work lives. They run on your machi
 
 ## Official plugins
 
-| Plugin                                | Capability | What it does                                                                         |
-| ------------------------------------- | ---------- | ------------------------------------------------------------------------------------ |
-| [Azure DevOps](/plugins/azure-devops) | Connector  | Syncs work items into your backlog. Writes estimates, states and priorities back.    |
-| [Jira](/plugins/jira)                 | Connector  | Syncs Jira issues into your backlog. Writes estimates, statuses and priorities back. |
-| [GitHub](/plugins/github)             | Code host  | Lists the pull requests you wrote or were asked to review.                           |
-| [Workday](/plugins/workday)           | Schema     | Maps projects and tasks to a Workday file layout. Coming soon.                       |
+| Plugin                                    | Capability | What it does                                                                            |
+| ----------------------------------------- | ---------- | --------------------------------------------------------------------------------------- |
+| [Azure DevOps](/plugins/azure-devops)     | Connector  | Syncs work items into your backlog. Writes estimates, states and priorities back.       |
+| [Jira](/plugins/jira)                     | Connector  | Syncs Jira issues into your backlog. Writes estimates, statuses and priorities back.    |
+| [GitHub](/plugins/github)                 | Code host  | Lists the pull requests you wrote or were asked to review.                              |
+| [Workday](/plugins/workday)               | Schema     | Maps projects and tasks to a Workday file layout. Coming soon.                          |
+| [Workday (agent)](/plugins/workday-agent) | Agent task | Has an agent enter your week in the Workday timesheet. Unofficial, install from a file. |
 
 Want to connect another tool? See [Build a plugin](/developers/).
 

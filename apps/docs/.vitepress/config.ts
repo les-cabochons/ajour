@@ -62,6 +62,7 @@ const guideSidebar: DefaultTheme.SidebarItem[] = [
       { text: "Jira", link: "/plugins/jira" },
       { text: "GitHub", link: "/plugins/github" },
       { text: "Workday", link: "/plugins/workday" },
+      { text: "Workday (agent)", link: "/plugins/workday-agent" },
       { text: "Sync review", link: "/plugins/sync-review" },
     ],
   },

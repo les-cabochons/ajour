@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { dataToolOutputSchemas } from "@ajour/shared/agent-tools";
 
 type DataToolName = keyof typeof dataToolOutputSchemas;
@@ -83,6 +83,16 @@ async function setup() {
   };
   return { localStore, call, project, task };
 }
+
+// The first import of these heavy modules is slow and, under full-suite load,
+// used to eat the first test's timeout. Load them once here so the transform
+// cost is paid before any test starts. Each test still gets a fresh copy.
+beforeAll(async () => {
+  installMockWindow();
+  await import("@/lib/local-store");
+  await import("@/features/agents/agent-tool-runner");
+  await import("@/lib/app-api");
+}, 60_000);
 
 beforeEach(() => {
   vi.resetModules();
@@ -372,6 +382,41 @@ describe("agent timer and entry tools", () => {
     expect(offerUndo.mock.calls.at(-1)![1].title).toBe(
       "Claude Code: Duplicated an entry",
     );
+  });
+
+  it("marks entries as not submitted, with Undo", async () => {
+    const { call, localStore, project, task } = await setup();
+    localStore.saveManualTimeEntry({
+      localDate: "2026-10-13",
+      projectId: project._id,
+      taskId: task("Build")._id,
+      durationMs: 30 * 60_000,
+    });
+    const entryId = localStore.snapshot().timesheetEntries[0]!._id;
+    await call("mark_entries_submitted", { entryIds: [entryId] });
+
+    expect(
+      await call("mark_entries_not_submitted", { entryIds: [entryId] }),
+    ).toMatchObject({ ok: true, output: { unmarked: 1 } });
+    expect(
+      localStore.snapshot().timesheetEntries[0]!.submittedAt,
+    ).toBeUndefined();
+    expect(offerUndo.mock.calls.at(-1)![1].title).toBe(
+      "Claude Code: Marked 1 entry as not submitted",
+    );
+  });
+
+  it("refuses to unmark the running entry", async () => {
+    const { call, localStore, project } = await setup();
+    await call("start_timer", { projectId: project._id });
+    await call("stop_timer");
+    const entryId = localStore.snapshot().timesheetEntries[0]!._id;
+    await call("mark_entries_submitted", { entryIds: [entryId] });
+    localStore.continueTimesheetEntry(entryId);
+
+    expect(
+      await call("mark_entries_not_submitted", { entryIds: [entryId] }),
+    ).toMatchObject({ ok: false, error: "Stop the running entry first" });
   });
 });
 

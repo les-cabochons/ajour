@@ -56,6 +56,12 @@ import {
   mcpSettingsSchema,
   type BridgeToolResult,
 } from "@ajour/shared/agent-tools";
+import {
+  agentRunnerOverviewSchema,
+  agentRunSchema,
+  type AgentRunnerSettings,
+  type AgentRunStartRequest,
+} from "@ajour/shared/agent-runs";
 import { localStore } from "@/lib/local-store";
 import {
   codeHostSyncResultSchema,
@@ -765,6 +771,40 @@ export function buildImportHierarchy(items: ConnectorImportCandidate[]) {
   }));
 }
 
+export async function getAgentRunner() {
+  return appApiRequest("/api/agents", undefined, agentRunnerOverviewSchema);
+}
+
+export async function updateAgentRunnerSettings(
+  patch: Partial<AgentRunnerSettings>,
+) {
+  return appApiRequest(
+    "/api/agents/settings",
+    { method: "POST", body: JSON.stringify(patch) },
+    agentRunnerOverviewSchema,
+  );
+}
+
+export async function saveAgentTaskSettings(
+  pluginId: string,
+  taskId: string,
+  values: ConnectorFieldValues,
+) {
+  return appApiRequest(
+    `/api/agents/tasks/${encodeURIComponent(pluginId)}/${encodeURIComponent(taskId)}/settings`,
+    { method: "POST", body: JSON.stringify({ values }) },
+    agentRunnerOverviewSchema,
+  );
+}
+
+export async function startAgentRun(request: AgentRunStartRequest) {
+  return appApiRequest(
+    "/api/agent-runs",
+    { method: "POST", body: JSON.stringify(request) },
+    agentRunSchema,
+  );
+}
+
 export async function getMcpSettings() {
   return appApiRequest("/api/mcp/settings", undefined, mcpSettingsSchema);
 }
@@ -815,6 +855,15 @@ export async function answerAgentQuestion(questionId: string, text: string) {
 export async function dismissAgentSession(sessionId: string) {
   return appApiRequest(
     `/api/mcp/sessions/${encodeURIComponent(sessionId)}/dismiss`,
+    { method: "POST", body: "{}" },
+    agentsSnapshotSchema,
+  );
+}
+
+/** Stops the agent run Ajour started. Returns the new snapshot. */
+export async function stopAgentRun(runId: string) {
+  return appApiRequest(
+    `/api/agent-runs/${encodeURIComponent(runId)}/stop`,
     { method: "POST", body: "{}" },
     agentsSnapshotSchema,
   );

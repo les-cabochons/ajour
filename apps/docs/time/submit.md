@@ -1,6 +1,6 @@
 # Submit your week
 
-Submitting turns a week of entries into timesheet lines you can copy into your company's tool, such as Workday. Ajour does not connect to that tool. It prepares the lines, and remembers which entries you submitted.
+Submitting turns a week of entries into timesheet lines you can copy into your company's tool, such as Workday. Ajour does not connect to that tool. It prepares the lines, and remembers which entries you submitted. A plugin can add a button that has an agent enter the lines for you, see [Enter the week with an agent](#enter-the-week-with-an-agent).
 
 <Shot name="submit-week" alt="The Submit week page" />
 
@@ -39,6 +39,12 @@ Use the day chips to drop or add a whole day, and the checkboxes to leave out a 
 When the lines are in your timesheet tool, press **Mark N entries as submitted**. The entries get a check, and the Week view shows a **Submitted** badge.
 
 If the week is under its target, Ajour asks first. You can turn this question off in **Settings › General › Under-target submit warning**.
+
+## Enter the week with an agent
+
+With a plugin such as [Workday (agent)](/plugins/workday-agent), a button such as **Enter in Workday** sits next to **Mark N entries as submitted**. It starts an agent that enters the lines in your timesheet tool and marks them as submitted as it goes. The button is greyed out while something is missing; hover it to see what, such as `Fill in Workday timesheet URL in Settings › Plugins › Workday (agent)`.
+
+A link such as **Open the week in Workday**, under the week summary, opens the week in your browser.
 
 ## Change a submitted week
 

@@ -51,9 +51,9 @@ For schema plugins, see [Schema API](/developers/schema-api#manifest).
 | `displayName`      | string | 1 to 120 characters.                                                                                                                                                               |
 | `description`      | string | Optional. Up to 500 characters.                                                                                                                                                    |
 | `iconSvg`          | string | Inline SVG markup, up to 20,000 characters.                                                                                                                                        |
-| `entrypoint`       | string | Relative path to a `.js`, `.mjs` or `.cjs` file inside the package. No symlinks.                                                                                                   |
-| `capabilities`     | object | At least one of `connector` and `codeHost`. See below.                                                                                                                             |
-| `connectionFields` | array  | 1 to 50 [connection fields](#connection-fields).                                                                                                                                   |
+| `entrypoint`       | string | Relative path to a `.js`, `.mjs` or `.cjs` file inside the package. No symlinks. Leave it out for a plugin with only `agentTask`.                                                  |
+| `capabilities`     | object | At least one of `connector`, `codeHost`, `agentTask` and `projectProperties`. See below.                                                                                           |
+| `connectionFields` | array  | 1 to 50 [connection fields](#connection-fields). Optional, and empty by default, for a plugin with only `agentTask`.                                                               |
 
 The `id` is permanent. It names the install folder, and it is the `source` of every item your connector syncs. Changing it orphans the user's connections and items.
 
@@ -66,13 +66,97 @@ The `id` is permanent. It names the install folder, and it is the `source` of ev
 }
 ```
 
-| Capability         | Means                                                                                                                                                                       |
-| ------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `connector`        | The plugin exports `syncConnection`. See [Connector API](/developers/connector-api).                                                                                        |
-| `connector.settle` | Optional. `true` if the plugin exports `listSettleStates` and `writeSettle`, and can write states and priorities. Without it, Ajour settles items locally and never writes. |
-| `codeHost`         | The plugin exports `syncPullRequests`. See [Code host API](/developers/code-host-api).                                                                                      |
+| Capability          | Means                                                                                                                                                                       |
+| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `connector`         | The plugin exports `syncConnection`. See [Connector API](/developers/connector-api).                                                                                        |
+| `connector.settle`  | Optional. `true` if the plugin exports `listSettleStates` and `writeSettle`, and can write states and priorities. Without it, Ajour settles items locally and never writes. |
+| `codeHost`          | The plugin exports `syncPullRequests`. See [Code host API](/developers/code-host-api).                                                                                      |
+| `agentTask`         | The plugin declares tasks that a coding agent runs from a prompt. No plugin code runs. See [Agent tasks](#agent-tasks).                                                     |
+| `projectProperties` | Text properties the plugin adds to every project. No plugin code runs. See [Project properties](#project-properties).                                                       |
 
 Ajour only calls the functions your capabilities declare.
+
+## Agent tasks
+
+An agent task is a Markdown prompt that Ajour gives to the user's coding agent, Claude Code or Codex, with the Ajour MCP tools and a Chrome window. Ajour only reads the prompt file. A plugin that declares only `agentTask` runs no code and needs no `entrypoint`.
+
+```json
+"capabilities": {
+  "agentTask": {
+    "tasks": [
+      {
+        "id": "enter-week",
+        "label": "Enter in Workday",
+        "placement": "submit-week",
+        "prompt": "prompts/enter-week.md",
+        "estimateMinutes": 10,
+        "weekLink": "{{settings.timesheetUrl}}",
+        "settings": [
+          { "id": "timesheetUrl", "label": "Workday timesheet URL", "type": "url", "required": true }
+        ]
+      }
+    ]
+  }
+}
+```
+
+| Key               | Type   | Rules                                                                                                                         |
+| ----------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `id`              | string | Unique in the plugin.                                                                                                         |
+| `label`           | string | The button label on the Submit page.                                                                                          |
+| `placement`       | string | `submit-week`, the only value: a button on the Submit page for the week on screen.                                            |
+| `prompt`          | string | Relative path to a Markdown file in the package. A regular file, no symlinks, at most 64 KB.                                  |
+| `estimateMinutes` | number | How long a run usually takes. The agent panel uses it to tell a slow run from a stuck one.                                    |
+| `weekLink`        | string | Optional. A URL template for **Open the week in…**. Shown only when it fills to an `https:` URL.                              |
+| `settings`        | array  | Optional. Fields with the [connection field](#connection-fields) keys. The user fills them on the plugin's page, under Tasks. |
+
+A plugin can declare up to 10 tasks.
+
+### Slots
+
+The prompt and `weekLink` can use these slots. A slot Ajour does not know fails the install.
+
+::: v-pre
+
+| Slot                | Value                                                      |
+| ------------------- | ---------------------------------------------------------- |
+| `{{weekOf}}`        | The ISO date of the week's Monday, such as `2026-10-12`.   |
+| `{{sessionId}}`     | The agent session Ajour opened for the run.                |
+| `{{settings.<id>}}` | The value of the task setting `<id>`, or empty when unset. |
+
+:::
+
+### What the agent gets
+
+Ajour puts its own rules before your prompt. The agent must report in its session, ask the user only when it cannot go on, mark each line as submitted once the external tool saved it, and never type a password or a code. Your prompt describes the steps in the external tool. The agent can use the [MCP tools](/app/agents#what-agents-can-do), including `get_submit_lines`, which gives each line a stable `lineId` and the week's `pace`, and `mark_entries_not_submitted` to undo a mark when a line fails.
+
+## Project properties
+
+A plugin can add text fields to every project. A plugin that declares only `projectProperties` runs no code and needs no `entrypoint`.
+
+```json
+"capabilities": {
+  "projectProperties": {
+    "section": "Workday",
+    "fields": [
+      { "id": "name", "label": "Workday name", "defaultFrom": "fullName" },
+      { "id": "code", "label": "Workday code", "defaultFrom": "code" }
+    ]
+  }
+}
+```
+
+| Key                    | Rules                                                                    |
+| ---------------------- | ------------------------------------------------------------------------ |
+| `section`              | The section title. 1 to 60 characters.                                   |
+| `fields`               | 1 to 10 fields.                                                          |
+| `fields[].id`          | Lowercase letters, digits and `-`, up to 63 characters. Unique.          |
+| `fields[].label`       | The row label. 1 to 60 characters.                                       |
+| `fields[].defaultFrom` | Optional. `fullName` or `code`: the Ajour project value used as default. |
+
+Fields are plain text, up to 240 characters.
+
+Ajour shows the fields in a section of the project's properties card, titled `section`, collapsed until the user opens it. An empty value shows the default in grey: the project's full name for `fullName`, its code for `code`. Agents read the values in `get_submit_lines`, under `projectProperties.<plugin id>.<field id>`, with defaults filled in.
 
 ## Connection fields
 

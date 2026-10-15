@@ -186,6 +186,9 @@ export const writeToolInputSchemas = {
   mark_entries_submitted: z.object({
     entryIds: z.array(z.string()).min(1).max(500),
   }),
+  mark_entries_not_submitted: z.object({
+    entryIds: z.array(z.string()).min(1).max(500),
+  }),
   create_work_item: z.object({
     title: z.string().trim().min(1).max(500),
     note: z.string().max(10_000).optional(),
@@ -328,7 +331,17 @@ export const dataToolOutputSchemas = {
         date: z.string().optional(),
         lines: z.array(
           z.object({
+            /** "ajour:" and 8 hex characters. Stable for the same entries. */
+            lineId: z.string(),
             projectName: z.string().optional(),
+            projectCode: z.string().optional(),
+            /** The project's full name. `projectName` is its short display name. */
+            projectFullName: z.string().optional(),
+            /**
+             * Properties that active plugins add to the project, keyed by
+             * plugin ID then field ID, with defaults filled in.
+             */
+            projectProperties: z.record(z.record(z.string())).optional(),
             taskName: z.string().optional(),
             hours: z.number(),
             comments: z.string(),
@@ -343,6 +356,13 @@ export const dataToolOutputSchemas = {
       targetHours: z.number(),
       warnings: z.array(submitWarningSchema),
     }),
+    /** Ajour's pace check. Ask the user before entering a week that is not on-pace. */
+    pace: z.object({
+      loggedHours: z.number(),
+      targetHours: z.number(),
+      expectedHours: z.number(),
+      status: z.enum(["on-pace", "under", "over"]),
+    }),
   }),
   start_timer: z.object({ running: agentRunningTimerSchema }),
   stop_timer: z.object({
@@ -355,6 +375,7 @@ export const dataToolOutputSchemas = {
   move_entry: agentTimeEntrySchema,
   duplicate_entry: agentTimeEntrySchema,
   mark_entries_submitted: z.object({ marked: z.number() }),
+  mark_entries_not_submitted: z.object({ unmarked: z.number() }),
   create_work_item: agentWorkItemSchema,
   edit_work_item: agentWorkItemSchema,
   move_work_item: agentWorkItemSchema,
@@ -413,6 +434,10 @@ export const agentSessionSchema = z.object({
   pausedRemainingMs: z.number().optional(),
   endedAt: z.number().optional(),
   messages: z.array(agentSessionMessageSchema),
+  /** Set when Ajour's runner started the agent. The panel offers Stop. */
+  runId: z.string().optional(),
+  /** One link the panel shows once the session ends. */
+  link: z.object({ label: z.string(), url: z.string().url() }).optional(),
 });
 export type AgentSession = z.infer<typeof agentSessionSchema>;
 

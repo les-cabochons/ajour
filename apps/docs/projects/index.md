@@ -35,6 +35,8 @@ Click a project to open its page.
 - **Time entries** lists every entry on the project.
 - **The properties card**, at the side, has the full name, code, color, icon and status. Change them in place.
 
+Plugins can add their own section to the properties card, such as **Workday** with the project's Workday name and code. Click the section title to open it. An empty row shows its default in grey.
+
 Click the title to rename the display name.
 
 ## Archive a project

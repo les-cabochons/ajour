@@ -4,6 +4,7 @@ import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
+  connectorFieldValuesSchema,
   normalizeConnectorStatusKey,
   type ConnectorBacklogStatus,
   type ConnectorBacklogStatusInput,
@@ -17,6 +18,10 @@ import {
   type ConnectorSummaryValues,
 } from "../../../packages/shared/connectors.ts";
 import type { McpSettings } from "../../../packages/shared/agent-tools.ts";
+import {
+  agentRunnerSettingsSchema,
+  type AgentRunnerSettings,
+} from "../../../packages/shared/agent-runs.ts";
 
 interface StoredConnection {
   id: string;
@@ -121,6 +126,59 @@ function normalizeMcpState(raw: unknown): StoredMcpState {
   };
 }
 
+interface StoredAgentRunnerState {
+  settings: AgentRunnerSettings;
+  /** Task setting values by plugin ID, then task ID. */
+  taskValues: Record<string, Record<string, ConnectorFieldValues>>;
+}
+
+function defaultAgentRunnerSettings(): AgentRunnerSettings {
+  return { cli: null, browserMode: "ajour-chrome", model: "" };
+}
+
+/** Keys that would reach Object.prototype if a stored name were used as a key. */
+const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
+
+/**
+ * Copies `values` into a map without a prototype and without the unsafe
+ * keys, so a stored key can never write to Object.prototype.
+ */
+function safeValues(values: ConnectorFieldValues): ConnectorFieldValues {
+  const copy: ConnectorFieldValues = Object.create(null);
+  for (const [key, value] of Object.entries(values)) {
+    if (!UNSAFE_KEYS.has(key)) copy[key] = value;
+  }
+  return copy;
+}
+
+function normalizeAgentRunnerState(raw: unknown): StoredAgentRunnerState {
+  const record =
+    typeof raw === "object" && raw !== null
+      ? (raw as Record<string, unknown>)
+      : {};
+  const settings = agentRunnerSettingsSchema.safeParse(record.settings);
+  const taskValues: StoredAgentRunnerState["taskValues"] = Object.create(null);
+  if (typeof record.taskValues === "object" && record.taskValues !== null) {
+    for (const [pluginId, tasks] of Object.entries(record.taskValues)) {
+      if (UNSAFE_KEYS.has(pluginId)) continue;
+      if (typeof tasks !== "object" || tasks === null) continue;
+      for (const [taskId, values] of Object.entries(tasks)) {
+        if (UNSAFE_KEYS.has(taskId)) continue;
+        const parsed = connectorFieldValuesSchema.safeParse(values);
+        if (parsed.success) {
+          (taskValues[pluginId] ??= Object.create(null))[taskId] = safeValues(
+            parsed.data,
+          );
+        }
+      }
+    }
+  }
+  return {
+    settings: settings.success ? settings.data : defaultAgentRunnerSettings(),
+    taskValues,
+  };
+}
+
 interface AppApiStateV7 {
   version: 7;
   connections: StoredConnection[];
@@ -130,6 +188,7 @@ interface AppApiStateV7 {
   disabledPluginIds: string[];
   pluginsEnabled: boolean;
   mcp: StoredMcpState;
+  agentRunner: StoredAgentRunnerState;
 }
 
 type AppApiState = AppApiStateV7;
@@ -172,6 +231,7 @@ function createDefaultState(): AppApiState {
     disabledPluginIds: [],
     pluginsEnabled: true,
     mcp: { enabled: false, clients: [] },
+    agentRunner: { settings: defaultAgentRunnerSettings(), taskValues: {} },
   };
 }
 
@@ -258,7 +318,6 @@ function createMissingPluginManifest(
     unavailableReason:
       "This plugin is not installed. Download it again to use its saved connections.",
     iconSvg: MISSING_PLUGIN_ICON_SVG,
-    entrypoint: "",
     capabilities: { connector: {} },
     connectionFields: [
       {
@@ -476,6 +535,9 @@ function normalizeState(
           ? (raw as Partial<AppApiState>).pluginsEnabled!
           : defaults.pluginsEnabled,
       mcp: normalizeMcpState((raw as Partial<AppApiState>).mcp),
+      agentRunner: normalizeAgentRunnerState(
+        (raw as Partial<AppApiState>).agentRunner,
+      ),
     };
   }
 
@@ -562,6 +624,7 @@ function normalizeState(
       disabledPluginIds: defaults.disabledPluginIds,
       pluginsEnabled: defaults.pluginsEnabled,
       mcp: { enabled: false, clients: [] },
+      agentRunner: { settings: defaultAgentRunnerSettings(), taskValues: {} },
     };
   }
 
@@ -585,9 +648,14 @@ export class AppApiStorage {
         : path.join(os.homedir(), ".ajour", "app-api-state.json");
   }
 
+  /** The folder that holds the state file. Agent browser data lives next to it. */
+  get dataDirectory(): string {
+    return path.dirname(this.statePath);
+  }
+
   /**
    * `unavailable` lists installed packages the host cannot run. They show up
-   * with their own name and version, an empty entrypoint, and the reason.
+   * with their own name and version, and the reason.
    */
   async getConnectorsOverview(
     plugins: ConnectorPluginManifest[],
@@ -604,7 +672,6 @@ export class AppApiStorage {
       if (!pluginMap.has(manifest.id)) {
         pluginMap.set(manifest.id, {
           ...manifest,
-          entrypoint: "",
           unavailableReason: reason,
         });
       }
@@ -626,7 +693,7 @@ export class AppApiStorage {
       plugin,
       enabled:
         state.pluginsEnabled &&
-        plugin.entrypoint.length > 0 &&
+        plugin.unavailableReason === undefined &&
         !state.disabledPluginIds.includes(plugin.id),
       connections: state.connections
         .filter((connection) => connection.pluginId === plugin.id)
@@ -772,6 +839,63 @@ export class AppApiStorage {
     }));
   }
 
+  async getAgentRunnerSettings(): Promise<AgentRunnerSettings> {
+    return (await this.readState()).agentRunner.settings;
+  }
+
+  async updateAgentRunnerSettings(
+    patch: Partial<AgentRunnerSettings>,
+  ): Promise<AgentRunnerSettings> {
+    return await this.mutate((state) => {
+      const settings = agentRunnerSettingsSchema.parse({
+        ...state.agentRunner.settings,
+        ...patch,
+      });
+      return {
+        nextState: {
+          ...state,
+          agentRunner: { ...state.agentRunner, settings },
+        },
+        result: settings,
+      };
+    });
+  }
+
+  /** The values the user filled in for one agent task, or none. */
+  async getAgentTaskValues(
+    pluginId: string,
+    taskId: string,
+  ): Promise<ConnectorFieldValues> {
+    return (
+      (await this.readState()).agentRunner.taskValues[pluginId]?.[taskId] ?? {}
+    );
+  }
+
+  async setAgentTaskValues(
+    pluginId: string,
+    taskId: string,
+    values: ConnectorFieldValues,
+  ): Promise<void> {
+    if (UNSAFE_KEYS.has(pluginId) || UNSAFE_KEYS.has(taskId)) return;
+    await this.mutate((state) => {
+      const taskValues: StoredAgentRunnerState["taskValues"] =
+        Object.create(null);
+      Object.assign(taskValues, state.agentRunner.taskValues);
+      taskValues[pluginId] = Object.assign(
+        Object.create(null),
+        taskValues[pluginId],
+        { [taskId]: safeValues(values) },
+      );
+      return {
+        nextState: {
+          ...state,
+          agentRunner: { ...state.agentRunner, taskValues },
+        },
+        result: undefined,
+      };
+    });
+  }
+
   async setConnectorPluginEnabled(
     pluginId: string,
     enabled: boolean,
@@ -810,6 +934,14 @@ export class AppApiStorage {
         disabledPluginIds: state.disabledPluginIds.filter(
           (candidate) => candidate !== pluginId,
         ),
+        agentRunner: {
+          ...state.agentRunner,
+          taskValues: Object.fromEntries(
+            Object.entries(state.agentRunner.taskValues).filter(
+              ([candidate]) => candidate !== pluginId,
+            ),
+          ),
+        },
       },
       result: undefined,
     }));

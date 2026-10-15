@@ -186,6 +186,11 @@ acceptance-test *args:
     echo >&2 "[1/1] Running web acceptance tests"
     {{PNPM}} --filter @ajour/web acceptance-test {{args}}
 
+[doc("Smoke-tests the Codex agent adapter with temporary MCP data and a blank browser")]
+[group("qa")]
+agent-codex-smoke:
+    node --experimental-strip-types qa/agents/smoke-codex.mjs
+
 [private]
 acceptance-server:
     {{PNPM}} --filter @ajour/web dev --host {{WEB_HOST}} --port {{ACCEPTANCE_WEB_PORT}} --strictPort --mode test

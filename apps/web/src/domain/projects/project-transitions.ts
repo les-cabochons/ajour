@@ -7,6 +7,7 @@ import {
   type PinnedTaskSlot,
 } from "@/domain/local-state";
 import { normalizeProjectIcon } from "@/domain/projects/project-icon";
+import { normalizePluginProperties } from "@/domain/projects/plugin-properties";
 import {
   normalizeProjectTaskAdjustmentMs,
   normalizeProjectTaskBudgetMs,
@@ -80,6 +81,7 @@ export function normalizeProject(
     name,
     displayName,
     icon: normalizeProjectIcon(project.icon),
+    pluginProperties: normalizePluginProperties(project.pluginProperties),
     status:
       project.status === "archived" || project.status === "active"
         ? project.status

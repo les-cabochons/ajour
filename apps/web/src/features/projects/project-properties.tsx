@@ -1,6 +1,8 @@
-import { useRef, useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import type { ProjectPropertyField } from "@ajour/shared";
 import {
   RiArchiveLine as ArchiveIcon,
+  RiArrowRightSLine as ChevronIcon,
   RiDownloadLine as Download,
   RiInboxUnarchiveLine as RestoreIcon,
 } from "@remixicon/react";
@@ -22,6 +24,12 @@ import {
   getLocalProjectDisplayName,
   type LocalProject,
 } from "@/domain/local-state";
+import {
+  PLUGIN_PROPERTY_MAX_LENGTH,
+  resolvePluginProperties,
+  setPluginProperty,
+  type ProjectPropertyPlugin,
+} from "@/domain/projects/plugin-properties";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import {
   getProjectPatch,
@@ -30,6 +38,7 @@ import {
 } from "@/features/projects/project-form";
 import { ProjectIconField } from "@/features/projects/project-icon-field";
 import { localStore } from "@/lib/local-store";
+import { listProjectPropertyPlugins } from "@/lib/plugin-project-properties";
 import { PROJECT_ICON_PRESETS, ProjectIcon } from "@/lib/project-icons";
 import { cn } from "@/lib/utils";
 
@@ -61,18 +70,24 @@ function patchProject(
 /**
  * A line of text that turns into a field on click. Enter or blur saves,
  * Escape cancels. `renderValue` draws the resting text, such as the title.
+ * While `value` is empty, a non-empty `defaultValue` shows muted in its
+ * place, as the value the field falls back to.
  */
 function InlineText({
   value,
+  defaultValue,
   label,
   placeholder,
   readOnly,
   className,
   inputClassName,
+  maxLength,
   onSave,
   renderValue,
 }: {
   value: string;
+  /** Shown muted while `value` is empty, such as a plugin property's default. */
+  defaultValue?: string;
   /** The field's accessible name, such as "Code". */
   label: string;
   /** Shown muted while the value is empty. */
@@ -80,6 +95,8 @@ function InlineText({
   readOnly: boolean;
   className?: string;
   inputClassName?: string;
+  /** Longest text the field accepts while editing. */
+  maxLength?: number;
   onSave: (value: string) => void;
   renderValue?: (props: {
     className: string;
@@ -108,10 +125,15 @@ function InlineText({
     if (renderValue) {
       return renderValue({ className: targetClassName, onClick: open });
     }
+    const showsDefault = !value && Boolean(defaultValue);
     return (
       <button
         type="button"
-        aria-label={`Edit ${label.toLowerCase()}, ${value || "empty"}`}
+        aria-label={
+          showsDefault
+            ? `Edit ${label.toLowerCase()}, default ${defaultValue}`
+            : `Edit ${label.toLowerCase()}, ${value || "empty"}`
+        }
         disabled={readOnly}
         className={cn(
           "-mx-1 min-w-0 truncate px-1 text-left disabled:cursor-default",
@@ -120,7 +142,7 @@ function InlineText({
         )}
         onClick={open}
       >
-        {value || placeholder}
+        {value || defaultValue || placeholder}
       </button>
     );
   }
@@ -130,7 +152,8 @@ function InlineText({
       autoFocus
       aria-label={label}
       defaultValue={value}
-      placeholder={placeholder}
+      maxLength={maxLength}
+      placeholder={defaultValue || placeholder}
       className={cn("-mx-1 h-7 px-1", inputClassName)}
       onFocus={(event) => event.currentTarget.select()}
       onBlur={(event) => close(true, event.currentTarget.value)}
@@ -191,10 +214,88 @@ export function ProjectTitle({
   );
 }
 
+/** Saves one plugin property with Undo. Unchanged values save nothing. */
+function patchPluginProperty(
+  project: LocalProject,
+  plugin: ProjectPropertyPlugin,
+  field: ProjectPropertyField,
+  value: string,
+) {
+  const current = resolvePluginProperties(project, plugin).find(
+    (property) => property.field.id === field.id,
+  );
+  if (value.trim() === (current && !current.isDefault ? current.value : ""))
+    return;
+  const pluginProperties = setPluginProperty(
+    project,
+    plugin.pluginId,
+    field.id,
+    value,
+  );
+  offerUndo(
+    localStore.updateProjectWithUndo(project._id, { pluginProperties }),
+    { title: `${field.label} changed`, subject: "project" },
+  );
+}
+
+/**
+ * The properties one plugin adds, under its section title. Collapsed on
+ * each visit; the title toggles it.
+ */
+function PluginPropertySection({
+  project,
+  plugin,
+  readOnly,
+}: {
+  project: LocalProject;
+  plugin: ProjectPropertyPlugin;
+  readOnly: boolean;
+}) {
+  const [open, setOpen] = useState(false);
+  const contentId = `${project._id}-${plugin.pluginId}-properties`;
+  return (
+    <div className="flex flex-col gap-2.5 border-t pt-3">
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={contentId}
+        className="flex items-center gap-1 text-left text-xs font-medium text-muted-foreground hover:text-foreground"
+        onClick={() => setOpen(!open)}
+      >
+        <ChevronIcon
+          aria-hidden="true"
+          className={cn("size-4", open && "rotate-90")}
+        />
+        {plugin.capability.section}
+      </button>
+      {open ? (
+        <PropertyList id={contentId}>
+          {resolvePluginProperties(project, plugin).map((property) => (
+            <PropertyRow key={property.field.id} label={property.field.label}>
+              <InlineText
+                value={property.isDefault ? "" : property.value}
+                defaultValue={property.defaultValue}
+                label={property.field.label}
+                placeholder="None"
+                readOnly={readOnly}
+                maxLength={PLUGIN_PROPERTY_MAX_LENGTH}
+                onSave={(value) =>
+                  patchPluginProperty(project, plugin, property.field, value)
+                }
+              />
+            </PropertyRow>
+          ))}
+        </PropertyList>
+      ) : null}
+    </div>
+  );
+}
+
 /**
  * The project page's Properties card: full name, code, color and icon change
- * in place. Import tasks… and Archive or Restore sit at its bottom, in place
- * of the "…" menu the page had.
+ * in place. Each active plugin that adds project properties gets a collapsed
+ * section below them. Import tasks… and Archive or Restore sit at its
+ * bottom, in place of the "…" menu the page had.
  */
 export function ProjectPropertiesCard({
   project,
@@ -211,6 +312,19 @@ export function ProjectPropertiesCard({
   onRestore: () => void;
 }) {
   const isArchived = project.status === "archived";
+  const [plugins, setPlugins] = useState<ProjectPropertyPlugin[]>([]);
+  useEffect(() => {
+    let active = true;
+    // A failed overview shows no plugin sections; the rest of the card works.
+    void listProjectPropertyPlugins()
+      .then((next) => active && setPlugins(next))
+      .catch((error: unknown) => {
+        console.warn("Plugin project properties unavailable.", error);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
   const iconLabel =
     project.icon.kind === "upload"
       ? "Uploaded favicon"
@@ -319,6 +433,14 @@ export function ProjectPropertiesCard({
           {isArchived ? "Archived" : "Active"}
         </PropertyRow>
       </PropertyList>
+      {plugins.map((plugin) => (
+        <PluginPropertySection
+          key={plugin.pluginId}
+          project={project}
+          plugin={plugin}
+          readOnly={isArchived}
+        />
+      ))}
       <PropertyActions>
         <PropertyAction
           disabled={isArchived || isImporting}

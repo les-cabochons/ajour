@@ -49,6 +49,7 @@ apps/macos-agent/.build/
 
 # UI capture output (screenshots belong in pull requests)
 qa/ui/out/
+qa/agents/*.out.jsonl
 
 # Claude Code agent worktrees (nested git checkouts, never part of the repo)
 .claude/worktrees/

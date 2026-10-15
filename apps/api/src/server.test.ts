@@ -316,7 +316,6 @@ describe("connector plugin installation boundary", () => {
             plugin: {
               id: "jira",
               version: "1.0.0",
-              entrypoint: "",
               unavailableReason: expect.stringContaining(
                 "Update the plugin to use it again.",
               ),
@@ -960,5 +959,106 @@ describe("code host routes", () => {
         }),
       }),
     ).resolves.toEqual({ status: 502, body: { error: "Bad credentials." } });
+  });
+});
+
+describe("agent task settings route", () => {
+  const tempDirs: string[] = [];
+  const servers: Server[] = [];
+
+  afterEach(async () => {
+    for (const server of servers.splice(0)) {
+      server.emit("close");
+    }
+    await Promise.all(
+      tempDirs
+        .splice(0)
+        .map((directory) => rm(directory, { recursive: true, force: true })),
+    );
+  });
+
+  async function createServer() {
+    const root = await mkdtemp(path.join(os.tmpdir(), "ajour-agent-task-"));
+    tempDirs.push(root);
+    const pluginDirectory = await createPlugin(
+      path.join(root, "source"),
+      "export async function validateConnection(config) {\n  return { normalizedConfig: config, connectionSummary: {} };\n}",
+      "plugin.mjs",
+      {
+        capabilities: {
+          agentTask: {
+            tasks: [
+              {
+                id: "enter-week",
+                label: "Enter",
+                placement: "submit-week",
+                prompt: "prompts/enter-week.md",
+                estimateMinutes: 5,
+                settings: [
+                  { id: "url", label: "Timesheet URL", type: "url" },
+                  { id: "note", label: "Note", type: "text" },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    );
+    await mkdir(path.join(pluginDirectory, "prompts"));
+    await writeFile(
+      path.join(pluginDirectory, "prompts", "enter-week.md"),
+      "Enter week {{weekOf}} in {{settings.url}}.",
+      "utf8",
+    );
+    const server = createAppApiServer({
+      statePath: path.join(root, "state.json"),
+      installedPluginDirectory: path.join(root, "installed"),
+      developmentPluginDirectories: [pluginDirectory],
+      allowDevelopmentPlugins: true,
+    });
+    servers.push(server);
+    return server;
+  }
+
+  const save = (server: Server, route: string, values: object) =>
+    dispatchJsonRequest(server, {
+      method: "POST",
+      path: `/api/agents/tasks/${route}/settings`,
+      body: JSON.stringify({ values }),
+    });
+
+  it("answers 404 for a plugin or task the plugins do not declare", async () => {
+    const server = await createServer();
+    await expect(save(server, "nope/enter-week", {})).resolves.toMatchObject({
+      status: 404,
+      body: { error: expect.any(String) },
+    });
+    await expect(save(server, "jira/nope", {})).resolves.toMatchObject({
+      status: 404,
+      body: { error: expect.any(String) },
+    });
+  });
+
+  it("keeps only declared settings and refuses a bad URL", async () => {
+    const server = await createServer();
+    const saved = await save(server, "jira/enter-week", {
+      url: "https://wd.example/t",
+      note: "hi",
+      stray: "dropped",
+    });
+    expect(saved.status).toBe(200);
+    const [task] = (saved.body as { tasks: { values: object }[] }).tasks;
+    expect(task!.values).toEqual({ url: "https://wd.example/t", note: "hi" });
+
+    await expect(
+      save(server, "jira/enter-week", { url: "javascript:alert(1)" }),
+    ).resolves.toMatchObject({ status: 400 });
+    await expect(
+      save(server, "jira/enter-week", { url: "not a url" }),
+    ).resolves.toMatchObject({ status: 400 });
+    // An empty value is allowed: the runner blocks the run until it is filled.
+    await expect(
+      save(server, "jira/enter-week", { url: "" }),
+    ).resolves.toMatchObject({ status: 200 });
   });
 });

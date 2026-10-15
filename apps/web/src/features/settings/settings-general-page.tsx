@@ -28,6 +28,7 @@ import {
   formatDurationHoursInput,
   parseHoursInput,
 } from "@/domain/time/duration";
+import { getPaceTolerancePercent } from "@/domain/time/week-pace";
 import type { DesktopUpdateCheckResult } from "@/lib/desktop-bridge";
 import { cn } from "@/lib/utils";
 import { useUserPreferences } from "@/lib/local-hooks";
@@ -374,6 +375,32 @@ export function SettingsGeneralPage() {
                   warnWhenSubmittingUnderCapacity: checked,
                 })
               }
+            />
+          </SettingRow>
+          <SettingRow
+            label="Agent pace tolerance"
+            labelFor="pace-tolerance"
+            description="How far, in percent, the week may run ahead of or behind its targets before an agent asks you. Going over the week's target always asks."
+          >
+            <Input
+              id="pace-tolerance"
+              type="number"
+              min={0}
+              max={100}
+              step={5}
+              className="w-20"
+              value={getPaceTolerancePercent(preferences)}
+              onChange={(event) => {
+                const value = Number(event.target.value);
+                if (Number.isFinite(value)) {
+                  localStore.setUserPreferences({
+                    paceTolerancePercent: Math.min(
+                      100,
+                      Math.max(0, Math.round(value)),
+                    ),
+                  });
+                }
+              }}
             />
           </SettingRow>
         </AppPanel>
