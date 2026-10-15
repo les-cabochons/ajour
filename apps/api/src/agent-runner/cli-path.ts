@@ -2,29 +2,62 @@ import { execFile } from "node:child_process";
 import { access, constants } from "node:fs/promises";
 import path from "node:path";
 
+const PATH_MARKER = "__AJOUR_PATH__";
+
 /**
  * An app started from the Dock gets a short PATH without ~/.local/bin or
  * Homebrew. Read the login shell's PATH once, so Ajour finds the agent CLIs
  * the user installed. Windows keeps the process PATH.
+ *
+ * Only a successful read is cached. A slow or failing shell falls back to
+ * the process PATH for that call and is tried again on the next one.
  */
 let cachedPath: Promise<string> | undefined;
 
 export function resolveLoginShellPath(): Promise<string> {
-  cachedPath ??= readLoginShellPath();
-  return cachedPath;
+  const fallback = process.env.PATH ?? "";
+  if (process.platform === "win32") return Promise.resolve(fallback);
+  if (cachedPath) return cachedPath;
+  const attempt = readLoginShellPath({
+    shell: process.env.SHELL || "/bin/zsh",
+    fallback,
+    timeoutMs: 5000,
+  }).then((result) => {
+    if (!result.fromShell && cachedPath === attempt) cachedPath = undefined;
+    return result.path;
+  });
+  cachedPath = attempt;
+  return attempt;
 }
 
-async function readLoginShellPath(): Promise<string> {
-  const fallback = process.env.PATH ?? "";
-  if (process.platform === "win32") return fallback;
-  const shell = process.env.SHELL || "/bin/zsh";
+/**
+ * Ask an interactive login shell for its PATH. The value is printed between
+ * markers because an rc file may print its own output (a banner, an nvm or
+ * conda notice) before or after it. `fromShell` is false when the shell
+ * failed, timed out or printed no markers, and `path` is then `fallback`.
+ */
+export async function readLoginShellPath({
+  shell,
+  fallback,
+  timeoutMs,
+}: {
+  shell: string;
+  fallback: string;
+  timeoutMs: number;
+}): Promise<{ path: string; fromShell: boolean }> {
   return await new Promise((resolve) => {
     execFile(
       shell,
-      ["-ilc", 'printf %s "$PATH"'],
-      { timeout: 5000, encoding: "utf8" },
-      (error, stdout) =>
-        resolve(error || !stdout.trim() ? fallback : stdout.trim()),
+      ["-ilc", `printf '${PATH_MARKER}%s${PATH_MARKER}' "$PATH"`],
+      { timeout: timeoutMs, encoding: "utf8" },
+      (error, stdout) => {
+        const value = error ? undefined : stdout.split(PATH_MARKER)[1]?.trim();
+        resolve(
+          value
+            ? { path: value, fromShell: true }
+            : { path: fallback, fromShell: false },
+        );
+      },
     );
   });
 }
@@ -48,9 +81,4 @@ export async function findExecutable(
     }
   }
   return null;
-}
-
-/** Test seam: forget the cached PATH. */
-export function resetLoginShellPathForTests() {
-  cachedPath = undefined;
 }

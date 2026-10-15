@@ -76,11 +76,16 @@ export const claudeCodeAdapter: AgentCliAdapter = {
       return null;
     }
     if (event.type === "system" && event.subtype === "init") {
-      const servers = (event.mcp_servers ?? []) as {
-        name: string;
-        status: string;
-      }[];
-      const failed = servers.find((server) => server.status !== "connected");
+      const servers = Array.isArray(event.mcp_servers)
+        ? (event.mcp_servers as unknown[])
+        : [];
+      const failed = servers.find(
+        (server): server is { name: string; status: string } =>
+          typeof server === "object" &&
+          server !== null &&
+          typeof (server as { name?: unknown }).name === "string" &&
+          (server as { status?: unknown }).status !== "connected",
+      );
       return failed ? { kind: "mcp-failed", server: failed.name } : null;
     }
     if (event.type === "assistant") {

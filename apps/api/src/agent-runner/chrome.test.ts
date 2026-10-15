@@ -15,6 +15,20 @@ describe("isChromeInstalled", () => {
     expect(seen[0]).toContain("Google Chrome.app");
   });
 
+  it("also looks in the user's Applications folder on macOS", async () => {
+    const seen: string[] = [];
+    const installed = await isChromeInstalled({
+      platform: "darwin",
+      env: { HOME: "/Users/a" },
+      exists: async (candidate) => {
+        seen.push(candidate);
+        return candidate.startsWith("/Users/a/Applications/");
+      },
+    });
+    expect(installed).toBe(true);
+    expect(seen).toHaveLength(2);
+  });
+
   it("is false when Chrome is nowhere", async () => {
     expect(
       await isChromeInstalled({

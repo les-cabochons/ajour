@@ -115,6 +115,16 @@ describe("Claude Code adapter", () => {
     expect(claudeCodeAdapter.parseEvent("not json")).toBeNull();
   });
 
+  it("ignores a malformed MCP server list", () => {
+    const init = (mcp_servers: unknown) =>
+      claudeCodeAdapter.parseEvent(
+        JSON.stringify({ type: "system", subtype: "init", mcp_servers }),
+      );
+    expect(init({})).toBeNull();
+    expect(init([null])).toBeNull();
+    expect(init(undefined)).toBeNull();
+  });
+
   it("reads the version", () => {
     expect(claudeCodeAdapter.parseVersion("2.1.293 (Claude Code)\n")).toBe(
       "2.1.293",

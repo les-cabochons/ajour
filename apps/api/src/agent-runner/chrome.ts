@@ -5,7 +5,12 @@ import { findExecutable } from "./cli-path.ts";
 /** Where Google Chrome installs, per platform. */
 function chromeLocations(platform: NodeJS.Platform, env: NodeJS.ProcessEnv) {
   if (platform === "darwin") {
-    return ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"];
+    const binary = "Google Chrome.app/Contents/MacOS/Google Chrome";
+    return [
+      path.join("/Applications", binary),
+      // Chrome installed for one user only.
+      ...(env.HOME ? [path.join(env.HOME, "Applications", binary)] : []),
+    ];
   }
   if (platform === "win32") {
     return [env.PROGRAMFILES, env["PROGRAMFILES(X86)"], env.LOCALAPPDATA]
