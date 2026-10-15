@@ -141,8 +141,9 @@ function useBacklogItemRow(state: LocalAppState, now: number) {
 type RowApi = ReturnType<typeof useBacklogItemRow>;
 type RowActionList = ReturnType<RowApi["actionsFor"]>;
 
+/** Row icon buttons: hover only darkens the icon, with no background. */
 const iconButton =
-  "flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:bg-foreground/10 hover:text-foreground";
+  "flex size-6 shrink-0 items-center justify-center rounded-sm text-muted-foreground hover:text-foreground";
 
 /**
  * Hover and focus swap the type icon for the settle circle, which mounts only
@@ -263,7 +264,7 @@ function RowActions({
         <TooltipButton
           label="Settle"
           shortcut="item.settle"
-          className="flex h-5 shrink-0 items-center gap-1 rounded-sm px-1 text-xs text-muted-foreground hover:bg-foreground/10 hover:text-foreground"
+          className="flex h-5 shrink-0 items-center gap-1 rounded-sm px-1 text-xs text-muted-foreground hover:text-foreground"
           onClick={(event) =>
             rows.run(workItem, "settle", { askToSettle: event.shiftKey })
           }
@@ -421,7 +422,7 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
           aria-current={isActive ? "page" : undefined}
           {...reveal.props}
           className={cn(
-            "group flex h-20 shrink-0 cursor-pointer items-center gap-2 rounded-md px-2.5 outline-none hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring",
+            "group relative flex h-20 shrink-0 cursor-pointer items-center rounded-md px-2.5 outline-none hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring",
             isActive && "bg-foreground/[0.07]",
           )}
           onClick={onClick}
@@ -465,9 +466,10 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
             />
           ) : null}
         </span>
+        {/* Clears Start entry, which sits over the end of this line on hover. */}
         <span
           className={cn(
-            "truncate text-base leading-5",
+            "truncate text-base leading-5 group-focus-within:pr-7 group-hover:pr-7",
             props.isReturned && "font-semibold",
           )}
         >
@@ -489,10 +491,14 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
           ) : null}
         </span>
       </span>
-      {/* Logging time is the main job, so Start gets its own place. */}
+      {/*
+        Logging time is the main job, so Start gets its own place: centered at
+        the row's end, level with the title, so the project line's Snooze and
+        Settle still reach the edge.
+      */}
       {reveal.active ? (
         <span
-          className="hidden group-focus-within:flex group-hover:flex"
+          className="absolute top-1/2 right-2.5 hidden -translate-y-1/2 group-focus-within:flex group-hover:flex"
           onClick={(event) => event.stopPropagation()}
         >
           <StartButton workItem={workItem} actions={actions} rows={rows} />
