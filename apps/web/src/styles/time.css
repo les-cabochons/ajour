@@ -840,6 +840,27 @@
     border-left-color: var(--success);
   }
 
+  /* The drop line of a same-day reorder, centered in the gap between cards.
+     It is a pseudo-element so cards keep their place under the pointer. */
+  .weekly-entry-card.is-drop-before::before,
+  .weekly-entry-card.is-drop-after::after {
+    position: absolute;
+    right: -1px;
+    left: calc(-1 * var(--weekly-project-rail));
+    height: 2px;
+    background: var(--primary);
+    content: "";
+    pointer-events: none;
+  }
+
+  .weekly-entry-card.is-drop-before::before {
+    top: calc(-0.1875rem - 2px);
+  }
+
+  .weekly-entry-card.is-drop-after::after {
+    bottom: calc(-0.1875rem - 2px);
+  }
+
   .weekly-entry-card-project {
     display: flex;
     align-items: center;

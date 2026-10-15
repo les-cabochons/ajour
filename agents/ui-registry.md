@@ -186,8 +186,10 @@ and never edits in place. "+ Add row" adds an empty row for the week, never
 saved on its own. Days use seven 40px column headers and flat 6px entry cards
 with the project's color as a rail; the running card wears a success-tone
 chip. Cards drag between days with thresholded pointer dragging, explicit
-weekday drop targets, and Escape/pointer-cancel cleanup. A click or Enter on a
-card opens it in the side panel. Normal headers show logged totals only;
+weekday drop targets, and Escape/pointer-cancel cleanup. Dropping a card on
+its own day reorders the day, with a 2px primary line where it will land, and
+commits through the same `reorderTimesheetEntries` as Alt+Up and Alt+Down. A
+click or Enter on a card opens it in the side panel. Normal headers show logged totals only;
 capacity target and utilization live in hover cards, with an optional compact
 over-target warning.
 
