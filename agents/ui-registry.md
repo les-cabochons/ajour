@@ -145,8 +145,11 @@ status-driven primary action, status badges, any notices (`MessagePanel`),
 and the capability band. Features, Information, Configuration and Uninstall
 plugin follow as `settings-section`s. Features and Information are spaced
 lists with no dividers. Configuration lists connections as plain rows (name,
-sync-mode badge, tenant, status line, meta lines, then Edit, Sync and Remove
-trailing on desktop and below on narrow widths); the connection form renders
+connection status chip, sync-mode badge, tenant, then Edit, Sync and Remove
+trailing on desktop and below on narrow widths). The status chip shows Connected,
+Paused, Error or Unavailable. Error details and manual-sync staged counts remain
+visible; configuration summaries, sync timestamps and readiness copy are omitted.
+The connection form renders
 unframed above them, and empty lists show plain text. Cached catalog artwork
 is optional: the identity mark supplies a consistent generated default
 thumbnail, and the hero image keeps rounded corners with no border. Without a

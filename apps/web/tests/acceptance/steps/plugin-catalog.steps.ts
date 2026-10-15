@@ -143,7 +143,7 @@ const savedJiraConnection = {
   connectedAt: 1,
   pendingImportCount: 0,
   selectedImportCount: 0,
-  configSummary: {},
+  configSummary: { organizationUrl: "https://example.invalid" },
   editableValues: {},
 };
 const oldJiraOverview: ConnectorsOverview = {
@@ -243,7 +243,9 @@ Then("Jira explains the plugin API mismatch", async ({ page }) => {
   await expect(
     page.getByText(oldJira.unavailableReason, { exact: true }).first(),
   ).toBeVisible();
-  await expect(page.getByText("Unavailable", { exact: true })).toBeVisible();
+  await expect(
+    page.getByText("Unavailable", { exact: true }).first(),
+  ).toBeVisible();
   const update = page.getByRole("button", { name: "Update Jira", exact: true });
   await expect(update).toBeEnabled();
   await update.scrollIntoViewIfNeeded();
@@ -265,6 +267,9 @@ Then("Jira is available with its saved connection", async ({ page }) => {
   }
   await expect(page.getByText("Unavailable", { exact: true })).toHaveCount(0);
   await expect(page.getByText("My Jira", { exact: true })).toBeVisible();
+  await expect(page.getByText("Connected", { exact: true })).toBeVisible();
+  await expect(page.getByText(/Organization Url:|Last sync:/)).toHaveCount(0);
+  await expect(page.getByText(/Connection ready to/)).toHaveCount(0);
   await expect(
     page.getByRole("switch", { name: "Deactivate Jira", exact: true }),
   ).toBeChecked();
