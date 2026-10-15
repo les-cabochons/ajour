@@ -21,7 +21,7 @@ function pluginManifest(id: string, overrides: Record<string, unknown> = {}) {
   return {
     id,
     version: "1.0.0",
-    apiVersion: 2,
+    apiVersion: 3,
     displayName: id === "jira" ? "Jira" : id,
     description: "Test connector plugin.",
     iconSvg: ICON,
@@ -148,7 +148,7 @@ describe("ConnectorPluginManager", () => {
       expect.objectContaining({
         id: "jira",
         version: "1.0.0",
-        apiVersion: 2,
+        apiVersion: 3,
       }),
     ]);
     await expect(
@@ -466,7 +466,7 @@ describe("ConnectorPluginManager", () => {
       root,
       "jira",
       "export async function validateConnection() {}",
-      { apiVersion: 3 },
+      { apiVersion: 99 },
     );
     const pluginManager = manager({
       installedPluginDirectory: path.join(root, "installed"),

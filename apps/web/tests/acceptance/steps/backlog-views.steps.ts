@@ -1158,7 +1158,7 @@ Given(
     const plugin = {
       id: "azure_devops",
       version: "1.0.0",
-      apiVersion: 2,
+      apiVersion: 3,
       displayName: "Fixture source",
       description: "Acceptance fixture. All source requests are intercepted.",
       iconSvg:

@@ -15,7 +15,7 @@ Given("I have a writable synced parent Settle fixture", async ({ page }) => {
   const plugin = {
     id: "example",
     version: "1.0.0",
-    apiVersion: 2,
+    apiVersion: 3,
     displayName: "Fixture source",
     iconSvg:
       '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/></svg>',
