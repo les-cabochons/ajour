@@ -54,7 +54,6 @@ The first run always asks you to sign in. Ajour's Chrome window keeps its own pr
 ## What it asks you
 
 - An updated or deleted change has no Workday entry with its ID, and no single entry on that day and time type has its hours: **Skip** or **Stop**.
-- An added change is on a day and time type that already has an entry with another Ajour ID (older plugin versions wrote those): **Replace it**, **Add mine** or **Skip**.
 - A re-add failed after the old entry was deleted, for an updated change that moved day or time type: **Retry** or **Stop**. **Stop** ends the session as cancelled.
 - Workday has several close matches for a task: pick one, or **Skip**.
 
