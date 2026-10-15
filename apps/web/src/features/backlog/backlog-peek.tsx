@@ -35,6 +35,7 @@ import {
   ESTIMATE_FIGURES,
   formatHours,
 } from "@/features/backlog/backlog-estimates";
+import { getBacklogItemNotice } from "@/features/backlog/backlog-item-notice";
 import {
   WorkItemIcon,
   resolveWorkItemIcon,
@@ -88,6 +89,7 @@ export function BacklogPeek({
   const startAction = actions.find((action) => action.id === "start-entry");
   const children = getDirectChildWorkItems(item, state.workItems);
   const reference = parseWorkItemReference(item.sourceId) ?? item.sourceId;
+  const notice = getBacklogItemNotice(item, now);
   const progress =
     item.originalEstimateHours && item.completedEstimateHours !== undefined
       ? Math.min(1, item.completedEstimateHours / item.originalEstimateHours)
@@ -147,6 +149,9 @@ export function BacklogPeek({
           </div>
         </div>
       </header>
+      {notice ? (
+        <p className="text-xs text-muted-foreground">{notice}</p>
+      ) : null}
       <div className="flex flex-wrap gap-2">
         {item.status !== "archived" && (
           <TooltipButton
@@ -219,12 +224,7 @@ export function BacklogPeek({
             <BacklogPriorityPicker item={item} full />
           </PropertyRow>
           <PropertyRow label="Lifecycle">
-            <span className="capitalize">
-              {item.status}
-              {item.status === "settled" && item.settledAt
-                ? ` · ${new Date(item.settledAt).toLocaleDateString()}`
-                : ""}
-            </span>
+            <span className="capitalize">{item.status}</span>
           </PropertyRow>
           <PropertyRow label="Project">
             <SearchableSelect

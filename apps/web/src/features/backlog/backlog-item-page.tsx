@@ -28,7 +28,6 @@ import {
   type BacklogItemActionId,
 } from "@/domain/actions/object-actions";
 import {
-  isBacklogItemReturned,
   isBacklogItemSnoozed,
 } from "@/domain/backlog/backlog-item-lifecycle";
 import {
@@ -56,7 +55,7 @@ import {
   ESTIMATE_FIGURES,
   formatHours,
 } from "@/features/backlog/backlog-estimates";
-import { formatSnoozeTime } from "@/features/backlog/snooze-presets";
+import { getBacklogItemNotice } from "@/features/backlog/backlog-item-notice";
 import {
   WorkItemIcon,
   resolveWorkItemIcon,
@@ -73,33 +72,6 @@ import { cn } from "@/lib/utils";
 import { getPriorityLevelName } from "@/domain/backlog/priority";
 import { PriorityIcon } from "@/features/backlog/priority-icon";
 import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
-
-/** The notice under the header when the item is off the list or came back. */
-function stateNotice(workItem: LocalWorkItem, now: number) {
-  if (isBacklogItemSnoozed(workItem, now)) {
-    return `Snoozed until ${formatSnoozeTime(workItem.snoozedUntil!, now)}`;
-  }
-  if (workItem.status === "settled") {
-    const settled = workItem.settledAt
-      ? `Settled ${formatSnoozeTime(workItem.settledAt, now).replace(
-          /^(Today|Tomorrow)/,
-          (word) => word.toLowerCase(),
-        )}`
-      : "Settled";
-    return workItem.sourceStatusLabel
-      ? `${settled} · waiting in "${workItem.sourceStatusLabel}"`
-      : settled;
-  }
-  if (workItem.status === "archived") {
-    return "Archived";
-  }
-  if (isBacklogItemReturned(workItem, now)) {
-    return workItem.returnedAt
-      ? "Changed in the source since you settled it"
-      : "Back from snooze";
-  }
-  return null;
-}
 
 /**
  * The backlog item page at /backlog/$itemId, from "Backlog item page" in
@@ -212,7 +184,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
     item.originalEstimateHours && item.completedEstimateHours !== undefined
       ? Math.min(1, item.completedEstimateHours / item.originalEstimateHours)
       : 0;
-  const notice = stateNotice(item, now);
+  const notice = getBacklogItemNotice(item, now);
 
   function runAction(
     actionId: BacklogItemActionId,
@@ -577,6 +549,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
       {editorTarget && !isNarrowLayout ? (
         <SidePanel
           contentKey={`${editor}-${item._id}`}
+          widthKey="backlog-item"
           className="backlog-side-panel"
           aria-label="Backlog item editor"
         >
