@@ -229,7 +229,7 @@
 
   * {
     @apply border-border outline-ring/50;
-    /* Thin, faint native scrollbars with no track, like T3 Code. */
+    /* Thin, faint native scrollbars with no track. */
     scrollbar-width: thin;
     scrollbar-color: var(--scrollbar-thumb) transparent;
   }
