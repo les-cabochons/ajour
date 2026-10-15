@@ -384,7 +384,7 @@ export function SettingsGeneralPage() {
         <p className="settings-section-desc">
           {automaticUpdatesEnabled
             ? "Choose which GitHub release track Ajour follows. Updates download in the background, and Ajour asks before restarting to install them."
-            : "Choose which GitHub release track Ajour checks. Automatic installation is currently available on packaged Windows builds; use the release link to update this platform manually."}
+            : "Choose which GitHub release track Ajour checks."}
         </p>
 
         <AppPanel>
