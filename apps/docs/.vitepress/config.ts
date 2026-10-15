@@ -18,7 +18,7 @@ const guideSidebar: DefaultTheme.SidebarItem[] = [
       { text: "Week view", link: "/time/week-view" },
       { text: "Running entries", link: "/time/running-entries" },
       { text: "Time entries", link: "/time/entries" },
-      { text: "Submit your week", link: "/time/submit" },
+      { text: "Commit your week", link: "/time/commit" },
     ],
   },
   {

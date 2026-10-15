@@ -19,7 +19,7 @@ Press **New project**.
 | Field            | What it is for                                                                                                                                                      |
 | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | **Full name**    | The project's official name.                                                                                                                                        |
-| **Display name** | The name Ajour shows, and the one the Submit page copies. Make it match your timesheet tool. Without one, Ajour uses the full name.                                 |
+| **Display name** | The name Ajour shows, and the one the Commit page copies. Make it match your timesheet tool. Without one, Ajour uses the full name.                                 |
 | **Code**         | A few letters, such as `ATL`. The running entry shows it.                                                                                                           |
 | **Color**        | Pick a preset or type a hex color.                                                                                                                                  |
 | **Project icon** | One of 67 presets, or upload a favicon (`.png`, `.svg` or `.ico`). Turn on **Keep native colors** to show an upload in its own colors instead of the project color. |

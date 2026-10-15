@@ -32,6 +32,7 @@ import {
 } from "@/features/time/use-entry-selection";
 import type { TimeEntryActionId } from "@/domain/actions/object-actions";
 import { formatClockDuration } from "@/domain/time/duration";
+import { isTimesheetEntryCommitted } from "@/domain/time/timesheet-commit";
 import {
   getLocalProjectDisplayName,
   type LocalTimesheetEntry,
@@ -490,7 +491,8 @@ export function TimerPanel({
                     rowHeight: entryDragState.height,
                   })
                 : 0;
-            const isSubmitted = "submittedAt" in entry && entry.submittedAt;
+            const isCommitted =
+              !isRunningEntry(entry) && isTimesheetEntryCommitted(entry);
 
             return (
               <React.Fragment key={entry._id}>
@@ -605,10 +607,10 @@ export function TimerPanel({
                         className="time-entry-more"
                       />
                     </span>
-                    {isSubmitted ? (
+                    {isCommitted ? (
                       <Check
-                        className="time-entry-submitted"
-                        aria-label="Submitted"
+                        className="time-entry-committed"
+                        aria-label="Committed"
                         role="img"
                       />
                     ) : null}

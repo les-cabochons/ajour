@@ -27,12 +27,12 @@ Create one client per agent, so you can revoke one without the others. **Revoke*
 
 ## What agents can do
 
-| Kind         | Tools                                                                                                               |
-| ------------ | ------------------------------------------------------------------------------------------------------------------- |
-| Read         | The running entry, time entries, projects, backlog items, and the week's submit lines.                              |
-| Time         | Start, stop and edit the running entry. Create, edit, move and duplicate entries. Mark entries as submitted or not. |
-| Backlog      | Create, edit and move items. Settle, snooze, archive and restore them.                                              |
-| Conversation | Report what they are doing, and ask you a question.                                                                 |
+| Kind         | Tools                                                                                                        |
+| ------------ | ------------------------------------------------------------------------------------------------------------ |
+| Read         | The running entry, time entries, projects, backlog items, and the week's changes since its last commit.      |
+| Time         | Start, stop and edit the running entry. Create, edit, move and duplicate entries. Mark changes as committed. |
+| Backlog      | Create, edit and move items. Settle, snooze, archive and restore them.                                       |
+| Conversation | Report what they are doing, and ask you a question.                                                          |
 
 Agents cannot delete anything. Their changes go through the same actions as yours, with the same Undo toast.
 

@@ -3,6 +3,12 @@ import type {
   LocalProject,
   LocalTimesheetEntry,
 } from "@/domain/local-state";
+import {
+  getChangedCommitFields,
+  getTimesheetEntryChange,
+  normalizeTimesheetEntryCommit,
+  toCommittedCopy,
+} from "@/domain/time/timesheet-commit";
 import { applyLoggedTimeToWorkItems } from "@/domain/backlog/work-item-estimates";
 
 export interface TimesheetEntryFactories {
@@ -47,61 +53,44 @@ function resolveTaskLabel(
   return task?.name ?? "";
 }
 
-export function createTimesheetEntrySubmissionFingerprint(
-  entry: Pick<
-    LocalTimesheetEntry,
-    | "localDate"
-    | "workItemId"
-    | "projectId"
-    | "taskId"
-    | "note"
-    | "durationMs"
-    | "sourceBlockIds"
-  >,
-) {
-  return JSON.stringify([
-    entry.localDate,
-    entry.workItemId ?? "",
-    entry.projectId ?? "",
-    entry.taskId ?? "",
-    entry.note?.trim() ?? "",
-    entry.durationMs,
-    [...(entry.sourceBlockIds ?? [])].sort(),
-  ]);
-}
+/** A stored entry, which may still carry the submission fields Ajour used before committed copies. */
+export type PersistedTimesheetEntry = Omit<LocalTimesheetEntry, "commit"> & {
+  commit?: unknown;
+  submittedAt?: unknown;
+  submittedFingerprint?: unknown;
+  previousSubmittedAt?: unknown;
+};
 
+/**
+ * Reads a stored entry. An entry stored as submitted gets a committed copy of
+ * its current values: an edit used to clear `submittedAt`, so they are the
+ * submitted values. One submitted only before an edit (`previousSubmittedAt`)
+ * gets none and shows as added; its external entry has an old ID that Reset
+ * sync matches later.
+ */
 export function normalizeTimesheetEntry(
-  entry: LocalTimesheetEntry,
+  stored: PersistedTimesheetEntry,
 ): LocalTimesheetEntry {
-  const submittedAt =
-    typeof entry.submittedAt === "number" && Number.isFinite(entry.submittedAt)
-      ? entry.submittedAt
-      : undefined;
-  const previousSubmittedAt =
-    submittedAt === undefined &&
-    typeof entry.previousSubmittedAt === "number" &&
-    Number.isFinite(entry.previousSubmittedAt)
-      ? entry.previousSubmittedAt
-      : undefined;
-  const normalizedEntry = {
+  const {
+    commit: storedCommit,
+    submittedAt,
+    submittedFingerprint: _submittedFingerprint,
+    previousSubmittedAt: _previousSubmittedAt,
+    ...entry
+  } = stored;
+  const normalized: LocalTimesheetEntry = {
     ...entry,
-    taskId: entry.taskId,
-    note: entry.note,
     sourceBlockIds: Array.isArray(entry.sourceBlockIds)
       ? entry.sourceBlockIds
       : [],
-    submittedAt,
-    previousSubmittedAt,
   };
+  const commit =
+    normalizeTimesheetEntryCommit(storedCommit) ??
+    (typeof submittedAt === "number" && Number.isFinite(submittedAt)
+      ? toCommittedCopy(normalized, submittedAt)
+      : undefined);
 
-  return {
-    ...normalizedEntry,
-    submittedFingerprint:
-      submittedAt !== undefined
-        ? (normalizedEntry.submittedFingerprint ??
-          createTimesheetEntrySubmissionFingerprint(normalizedEntry))
-        : undefined,
-  };
+  return commit ? { ...normalized, commit } : normalized;
 }
 
 export function createTimesheetEntry(
@@ -120,48 +109,6 @@ export function createTimesheetEntry(
     durationMs: values.durationMs,
     sourceBlockIds: values.sourceBlockIds,
     committedAt: factories.now(),
-    submittedAt: undefined,
-    submittedFingerprint: undefined,
-  };
-}
-
-/**
- * Carries the submission state of an entry across an edit. An unchanged
- * submitted entry stays submitted. A changed one returns to saved and keeps
- * its old submission time in `previousSubmittedAt`.
- */
-export function preserveTimesheetEntrySubmissionState(
-  existingEntry: LocalTimesheetEntry | undefined,
-  nextEntry: LocalTimesheetEntry,
-): LocalTimesheetEntry {
-  if (existingEntry?.submittedAt === undefined) {
-    return existingEntry?.previousSubmittedAt === undefined
-      ? nextEntry
-      : {
-          ...nextEntry,
-          previousSubmittedAt: existingEntry.previousSubmittedAt,
-        };
-  }
-
-  const previousFingerprint =
-    existingEntry.submittedFingerprint ??
-    createTimesheetEntrySubmissionFingerprint(existingEntry);
-  const nextFingerprint = createTimesheetEntrySubmissionFingerprint(nextEntry);
-
-  if (previousFingerprint !== nextFingerprint) {
-    return {
-      ...nextEntry,
-      submittedAt: undefined,
-      submittedFingerprint: undefined,
-      previousSubmittedAt: existingEntry.submittedAt,
-    };
-  }
-
-  return {
-    ...nextEntry,
-    submittedAt: existingEntry.submittedAt,
-    submittedFingerprint: previousFingerprint,
-    previousSubmittedAt: undefined,
   };
 }
 
@@ -220,7 +167,7 @@ export function updateTimesheetEntry(
     factories,
   );
   nextEntry.committedAt = entry.committedAt;
-  const persistedEntry = preserveTimesheetEntrySubmissionState(
+  const persistedEntry = keepTimesheetEntryCommit(
     entry,
     nextEntry.taskId
       ? nextEntry
@@ -277,6 +224,13 @@ export function deleteTimesheetEntry(
     timesheetEntries: state.timesheetEntries.filter(
       (item) => item._id !== entryId,
     ),
+    // A committed entry leaves a tombstone, so its deletion can be committed.
+    timesheetTombstones: entry.commit
+      ? [
+          ...state.timesheetTombstones,
+          { entryId: entry._id, commit: entry.commit },
+        ]
+      : state.timesheetTombstones,
     workItems: applyLoggedTimeToWorkItems(state.workItems, {
       workItemId: entry.workItemId,
       projectId: entry.projectId,
@@ -359,16 +313,15 @@ export function moveTimesheetEntry(
     return state;
   }
 
-  const movedEntry = preserveTimesheetEntrySubmissionState(entry, {
+  const movedEntry = {
     ...updatedEntry,
     localDate: values.localDate,
     committedAt: factories.now(),
-  });
-
+  };
+  // Moving an entry to its own day without other changes keeps its place.
   if (
     movedEntry.localDate === entry.localDate &&
-    createTimesheetEntrySubmissionFingerprint(movedEntry) ===
-      createTimesheetEntrySubmissionFingerprint(entry)
+    getChangedCommitFields(entry, movedEntry).length === 0
   ) {
     return updated;
   }
@@ -426,67 +379,51 @@ export function pasteTimesheetEntries(
   }, state);
 }
 
-export function markTimesheetEntriesSubmitted(
-  state: LocalAppState,
-  entryIds: string[],
-  now: () => number,
-): LocalAppState {
-  const selectedIds = new Set(entryIds);
-  let changed = false;
-  const submittedAt = now();
-  const timesheetEntries = state.timesheetEntries.map((entry) => {
-    if (!selectedIds.has(entry._id)) {
-      return entry;
-    }
-
-    changed = true;
-    return {
-      ...entry,
-      submittedAt,
-      submittedFingerprint: createTimesheetEntrySubmissionFingerprint(entry),
-      previousSubmittedAt: undefined,
-    };
-  });
-
-  return changed
-    ? {
-        ...state,
-        timesheetEntries,
-      }
-    : state;
+/**
+ * Carries the committed copy across a rebuild of the entry, such as an edit
+ * or a running entry saved again. Edits never change the copy: the change
+ * shows on the Commit page until it is committed.
+ */
+export function keepTimesheetEntryCommit(
+  existing: LocalTimesheetEntry | undefined,
+  next: LocalTimesheetEntry,
+): LocalTimesheetEntry {
+  return existing?.commit ? { ...next, commit: existing.commit } : next;
 }
 
 /**
- * Returns submitted entries to saved, for example when an agent could not
- * enter them in the external timesheet. Keeps the old submission time in
- * `previousSubmittedAt`, as an edit does. Saved entries are left alone.
+ * Commits the changes of `entryIds`: an added or updated entry gets a copy of
+ * its current values, and a deleted entry's tombstone goes. Ids without a
+ * change are left alone, so a partial commit leaves every other change as it
+ * is. Returns the same state when nothing changed.
  */
-export function markTimesheetEntriesNotSubmitted(
+export function markTimesheetEntriesCommitted(
   state: LocalAppState,
-  entryIds: string[],
+  entryIds: readonly string[],
+  now: () => number,
 ): LocalAppState {
   const selectedIds = new Set(entryIds);
+  const at = now();
   let changed = false;
   const timesheetEntries = state.timesheetEntries.map((entry) => {
-    if (!selectedIds.has(entry._id) || entry.submittedAt === undefined) {
+    if (!selectedIds.has(entry._id) || !getTimesheetEntryChange(entry)) {
       return entry;
     }
 
     changed = true;
-    return {
-      ...entry,
-      submittedAt: undefined,
-      submittedFingerprint: undefined,
-      previousSubmittedAt: entry.submittedAt,
-    };
+    return { ...entry, commit: toCommittedCopy(entry, at) };
   });
+  const timesheetTombstones = state.timesheetTombstones.filter(
+    (tombstone) => !selectedIds.has(tombstone.entryId),
+  );
+  if (
+    !changed &&
+    timesheetTombstones.length === state.timesheetTombstones.length
+  ) {
+    return state;
+  }
 
-  return changed
-    ? {
-        ...state,
-        timesheetEntries,
-      }
-    : state;
+  return { ...state, timesheetEntries, timesheetTombstones };
 }
 
 /**

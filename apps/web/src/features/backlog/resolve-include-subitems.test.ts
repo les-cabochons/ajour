@@ -34,6 +34,7 @@ const defaults: LocalAppState = {
   timers: [],
   timesheetEntries: [],
   timesheetImportDrafts: [],
+  timesheetTombstones: [],
   workItems: [],
   workflowStates: [],
   workflowStateMappings: [],

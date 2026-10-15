@@ -16,7 +16,7 @@ Give every UI change a before and after: screenshots of each product surface on 
 ## Procedure
 
 1. On the base branch, run `just ui-capture` and `just ui-perf`. Keep the printed numbers and copy `qa/ui/out` aside.
-   - Expected: `qa/ui/out` holds light, dark, hidden-sidebar, 1000px and 420px captures of Time, Backlog, Projects, Settings, Submit, the entry editor, the palette and the menus.
+   - Expected: `qa/ui/out` holds light, dark, hidden-sidebar, 1000px and 420px captures of Time, Backlog, Projects, Settings, Commit, the entry editor, the palette and the menus.
 2. On the change, run both again.
 3. Put the before and after screenshots of each changed surface in the pull request, and the two sets of numbers.
    - Expected: none of the four measurements is more than 10% worse than the base branch. The dev server serves unbundled modules and React's development build, so the numbers sit well above the production figures in the progress tracker (cold load about 150ms, Start click about 40ms, store write about 75ms, 4ms per second with a timer running); only the comparison between the two runs counts.

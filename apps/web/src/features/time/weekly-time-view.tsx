@@ -32,6 +32,7 @@ import type {
   WeeklyTimeViewStyle,
 } from "@/domain/local-state";
 import { formatClockDuration } from "@/domain/time/duration";
+import { isTimesheetEntryCommitted } from "@/domain/time/timesheet-commit";
 import {
   getWeeklyGridAddedRowKey,
   projectWeeklyTime,
@@ -779,7 +780,9 @@ export function WeeklyTimeView({
                         ) : null}
                         <footer className="weekly-entry-card-footer">
                           <span className="weekly-entry-card-status">
-                            {entry.submittedAt ? "submitted" : "saved"}
+                            {isTimesheetEntryCommitted(entry)
+                              ? "committed"
+                              : "saved"}
                           </span>
                           <ObjectActionsButton
                             actions={actions}

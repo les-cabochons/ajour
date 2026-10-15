@@ -17,9 +17,9 @@ const TimePage = lazy(async () => {
   const module = await import("@/features/time/time-page");
   return { default: module.TimePage };
 });
-const SubmitPage = lazy(async () => {
-  const module = await import("@/features/time/submit-page");
-  return { default: module.SubmitPage };
+const CommitPage = lazy(async () => {
+  const module = await import("@/features/time/commit-page");
+  return { default: module.CommitPage };
 });
 const BacklogPage = lazy(async () => {
   const module = await import("@/features/backlog/backlog-page");
@@ -152,15 +152,15 @@ const timeRoute = createRoute({
   },
 });
 
-const submitRoute = createRoute({
+const commitRoute = createRoute({
   getParentRoute: () => appRoute,
-  path: "/time/$date/submit",
+  path: "/time/$date/commit",
   component: () => {
-    const params = submitRoute.useParams();
-    const search = submitRoute.useSearch() as { view?: string };
+    const params = commitRoute.useParams();
+    const search = commitRoute.useSearch() as { view?: string };
     return (
       <RouteSuspense>
-        <SubmitPage
+        <CommitPage
           date={params.date === "today" ? todayIsoDate() : params.date}
           returnView={search.view === "week" ? "week" : undefined}
         />
@@ -383,7 +383,7 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   appRoute.addChildren([
     timeRoute,
-    submitRoute,
+    commitRoute,
     backlogRoute,
     backlogItemRoute,
     pullRequestsRoute,

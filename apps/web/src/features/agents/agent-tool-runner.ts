@@ -7,7 +7,7 @@ import {
   type ReadToolName,
 } from "@ajour/shared/agent-tools";
 import {
-  getSubmitLinesForAgent,
+  getWeekChangesForAgent,
   getWorkItemForAgent,
   listProjectsForAgent,
   listTimeEntriesForAgent,
@@ -29,9 +29,9 @@ import {
 import { listProjectPropertyPlugins } from "@/lib/plugin-project-properties";
 import { sendPendingSourceWrites } from "@/features/backlog/backlog-source-writes";
 import { offerUndo } from "@/features/feedback/undo-toast";
+import { getUncheckedChangeIds } from "@/lib/commit-selection";
 import { localStore } from "@/lib/local-store";
-import { getPaceTolerancePercent } from "@/domain/time/week-pace";
-import { getIsoWeekDates, todayIsoDate } from "@/lib/utils";
+import { getIsoWeekDates } from "@/lib/utils";
 
 /**
  * Runs the data tools an agent calls through the local API's bridge. Inputs
@@ -82,25 +82,23 @@ const readTools: {
       readToolInputSchemas.get_work_item.parse(rawInput).workItemId,
       Date.now(),
     ),
-  get_submit_lines: async (rawInput) => {
-    const input = readToolInputSchemas.get_submit_lines.parse(rawInput);
-    // Project properties are optional context; without them the lines still go out.
+  get_week_changes: async (rawInput) => {
+    const input = readToolInputSchemas.get_week_changes.parse(rawInput);
+    // Project properties are optional context; without them the changes still go out.
     const projectPropertyPlugins = await listProjectPropertyPlugins().catch(
       (error: unknown) => {
         console.warn(
-          "Plugin project properties unavailable for get_submit_lines.",
+          "Plugin project properties unavailable for get_week_changes.",
           error,
         );
         return [];
       },
     );
-    const state = localStore.snapshot();
-    return getSubmitLinesForAgent(state, {
-      weekDates: getIsoWeekDates(input.weekOf),
-      groupBy: input.groupBy,
-      onlyUnsubmitted: input.onlyUnsubmitted,
-      today: todayIsoDate(),
-      paceTolerancePercent: getPaceTolerancePercent(state.userPreferences),
+    const weekDates = getIsoWeekDates(input.weekOf);
+    return getWeekChangesForAgent(localStore.snapshot(), {
+      weekDates,
+      onlyChecked: input.onlyChecked,
+      uncheckedIds: getUncheckedChangeIds(weekDates[0]!),
       projectPropertyPlugins,
     });
   },

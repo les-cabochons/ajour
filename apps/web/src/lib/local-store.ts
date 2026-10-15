@@ -81,8 +81,7 @@ import {
   deleteTimesheetEntries as applyDeleteTimesheetEntries,
   deleteTimesheetEntry as applyDeleteTimesheetEntry,
   duplicateTimesheetEntry as applyDuplicateTimesheetEntry,
-  markTimesheetEntriesNotSubmitted as applyMarkTimesheetEntriesNotSubmitted,
-  markTimesheetEntriesSubmitted as applyMarkTimesheetEntriesSubmitted,
+  markTimesheetEntriesCommitted as applyMarkTimesheetEntriesCommitted,
   moveTimesheetEntry as applyMoveTimesheetEntry,
   normalizeTimesheetEntry,
   pasteTimesheetEntries as applyPasteTimesheetEntries,
@@ -91,6 +90,7 @@ import {
   saveManualTimesheetEntry,
   updateTimesheetEntry as applyUpdateTimesheetEntry,
 } from "@/domain/time/timesheet-entry";
+import { normalizeTimesheetTombstones } from "@/domain/time/timesheet-commit";
 import {
   captureUndo,
   completeSourceWriteInUndo,
@@ -292,6 +292,7 @@ function createDefaultState(): LocalAppState {
     importedBrowserDrafts: [],
     timers: [],
     timesheetEntries: [],
+    timesheetTombstones: [],
     timesheetImportDrafts: [],
     workItems: [],
     pullRequests: [],
@@ -413,6 +414,9 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
         persistedState.timesheetEntries,
         defaults.timesheetEntries,
       ).map((entry) => normalizeTimesheetEntry(entry)),
+      timesheetTombstones: normalizeTimesheetTombstones(
+        persistedState.timesheetTombstones,
+      ),
       timesheetImportDrafts: arrayOrDefault(
         persistedState.timesheetImportDrafts,
         defaults.timesheetImportDrafts,
@@ -1707,7 +1711,7 @@ export const localStore = {
   },
   /**
    * Undoes the action that returned `token`, if it is still the last one.
-   * Restored records keep their ids, values, submission state and order.
+   * Restored records keep their ids, values, committed copies and order.
    */
   undo(token: string): UndoResult {
     if (lastUndo?.token !== token) {
@@ -1755,23 +1759,13 @@ export const localStore = {
       applySaveTimer(state, timerId, { createId, now: Date.now }),
     );
   },
-  markTimesheetEntriesSubmitted(entryIds: string[]) {
-    if (entryIds.length === 0) {
-      return;
-    }
-
-    updateState((state) =>
-      applyMarkTimesheetEntriesSubmitted(state, entryIds, Date.now),
-    );
-  },
-  /** Returns entries to saved. See `markTimesheetEntriesNotSubmitted`. */
-  markTimesheetEntriesNotSubmitted(entryIds: string[]) {
-    if (entryIds.length === 0) {
-      return;
-    }
-
-    updateState((state) =>
-      applyMarkTimesheetEntriesNotSubmitted(state, entryIds),
+  /**
+   * Commits the changes of `entryIds`. See `markTimesheetEntriesCommitted`.
+   * Returns an undo token, or null when nothing changed.
+   */
+  markTimesheetEntriesCommitted(entryIds: readonly string[]) {
+    return updateStateWithUndo((state) =>
+      applyMarkTimesheetEntriesCommitted(state, entryIds, Date.now),
     );
   },
   continueTimesheetEntry(entryId: string) {

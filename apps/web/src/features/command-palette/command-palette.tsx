@@ -35,7 +35,7 @@ import { SHORTCUTS, getShortcutPlatform } from "@/lib/shortcuts";
 import { getSharedTableStepOrder } from "@/lib/table-drag";
 import { selectSortableDayEntryIds } from "@/domain/time/timesheet-entry";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
-import { cn, todayIsoDate } from "@/lib/utils";
+import { cn } from "@/lib/utils";
 
 const platform = getShortcutPlatform();
 const ROOT_VIEW: PaletteView = { kind: "root" };
@@ -346,7 +346,6 @@ export function CommandPalette() {
         workItems: state.workItems,
         timesheetEntries: state.timesheetEntries,
         timer,
-        today: todayIsoDate(),
         shortcuts: SHORTCUTS.filter((shortcut) =>
           shortcutRunner.isAvailable(shortcut.id),
         ),

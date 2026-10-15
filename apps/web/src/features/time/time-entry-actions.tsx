@@ -18,9 +18,8 @@ import {
 } from "@/components/ui/dialog";
 import { offerUndo, skipUndo } from "@/features/feedback/undo-toast";
 import { localStore } from "@/lib/local-store";
-import { todayIsoDate } from "@/lib/utils";
 
-/** The object a time entry action applies to: a saved or submitted entry, or the running entry. */
+/** The object a time entry action applies to: a saved entry, or the running entry. */
 export type TimeEntryActionTarget =
   | { kind: "entry"; entry: LocalTimesheetEntry }
   | { kind: "running"; timerId: string };
@@ -107,15 +106,11 @@ export function useTimeEntryActions({
 
   function getActions(
     target: TimeEntryActionTarget,
-    options: Omit<TimeEntryActionOptions, "isToday"> = {},
+    options: TimeEntryActionOptions = {},
   ): ObjectAction<TimeEntryActionId>[] {
-    if (target.kind === "running") {
-      return getTimeEntryActions("running", options);
-    }
-
     return getTimeEntryActions(
-      target.entry.submittedAt ? "submitted" : "saved",
-      { ...options, isToday: target.entry.localDate === todayIsoDate() },
+      target.kind === "running" ? "running" : "saved",
+      options,
     );
   }
 

@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
   bridgeToolResultSchema,
+  dataToolOutputSchemas,
   isoDateSchema,
   readToolInputSchemas,
+  writeToolInputSchemas,
 } from "../agent-tools";
 
 describe("agent tool contracts", () => {
@@ -52,5 +54,34 @@ describe("agent tool contracts", () => {
     expect(isoDateSchema.safeParse("2026-13-45").success).toBe(false);
     expect(isoDateSchema.safeParse("2028-02-29").success).toBe(true);
     expect(isoDateSchema.safeParse("2026-10-14").success).toBe(true);
+  });
+
+  it("reads only the checked changes unless asked otherwise", () => {
+    expect(
+      readToolInputSchemas.get_week_changes.parse({ weekOf: "2026-10-14" }),
+    ).toEqual({ weekOf: "2026-10-14", onlyChecked: true });
+  });
+
+  it("needs at least one entry id to mark as committed", () => {
+    expect(
+      writeToolInputSchemas.mark_entries_committed.safeParse({ entryIds: [] })
+        .success,
+    ).toBe(false);
+  });
+
+  it("accepts a deleted change with committed values only", () => {
+    expect(
+      dataToolOutputSchemas.get_week_changes.parse({
+        changes: [
+          {
+            change: "deleted",
+            entryId: "e1",
+            externalId: "ajour:00000000",
+            checked: true,
+            committed: { date: "2026-10-13", hours: 1 },
+          },
+        ],
+      }).changes,
+    ).toHaveLength(1);
   });
 });

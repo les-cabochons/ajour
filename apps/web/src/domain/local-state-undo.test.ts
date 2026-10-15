@@ -22,6 +22,7 @@ import {
 import {
   deleteTimesheetEntry,
   duplicateTimesheetEntry,
+  markTimesheetEntriesCommitted,
   moveTimesheetEntry,
   updateTimesheetEntry,
 } from "@/domain/time/timesheet-entry";
@@ -49,7 +50,7 @@ function entry(
   };
 }
 
-/** Three entries on one day: the middle one is submitted, with an unrounded duration. */
+/** Three entries on one day: the middle one is committed, with an unrounded duration. */
 function createState(): LocalAppState {
   return {
     projects: [
@@ -73,11 +74,17 @@ function createState(): LocalAppState {
       entry({ _id: "entry-a", note: "First", committedAt: 30 }),
       entry({
         _id: "entry-b",
-        note: "Submitted work",
+        note: "Committed work",
         durationMs: 75_123,
         committedAt: 20,
-        submittedAt: 50,
-        submittedFingerprint: "fingerprint-b",
+        commit: {
+          at: 50,
+          localDate: "2026-10-07",
+          projectId: "project-1",
+          taskId: "task-1",
+          note: "Committed work",
+          durationMs: 75_123,
+        },
       }),
       entry({ _id: "entry-c", note: "Last", committedAt: 10 }),
     ],
@@ -96,6 +103,7 @@ function createState(): LocalAppState {
       },
     ],
     timesheetImportDrafts: [],
+    timesheetTombstones: [],
     workflowStates: [],
     workflowStateMappings: [],
     workflowStateWriteRules: [],
@@ -126,6 +134,107 @@ function undoAction(
 }
 
 describe("time entry undo", () => {
+  /** The fixture with "entry-b" committed as it is. */
+  function withCommittedEntryB(): LocalAppState {
+    const state = createState();
+    return {
+      ...state,
+      timesheetEntries: state.timesheetEntries.map((item) =>
+        item._id === "entry-b"
+          ? {
+              ...item,
+              commit: {
+                at: 50,
+                localDate: item.localDate,
+                projectId: item.projectId,
+                taskId: item.taskId,
+                note: item.note,
+                durationMs: item.durationMs,
+              },
+            }
+          : item,
+      ),
+    };
+  }
+
+  it("takes the tombstone back when a committed entry's delete is undone", () => {
+    const before = withCommittedEntryB();
+    const { after, undo } = undoAction(before, (state) =>
+      deleteTimesheetEntry(state, "entry-b"),
+    );
+    expect(after.timesheetTombstones).toEqual([
+      expect.objectContaining({ entryId: "entry-b" }),
+    ]);
+
+    const restored = restoreUndo(after, undo);
+
+    expect(restored.result).toBe("restored");
+    expect(restored.state.timesheetTombstones).toEqual([]);
+    expect(restored.state.timesheetEntries).toEqual(before.timesheetEntries);
+  });
+
+  it("undoes Mark as committed: previous copies return and the tombstone comes back", () => {
+    const base = createState();
+    const olderCommit = {
+      at: 5,
+      localDate: "2026-10-07",
+      projectId: "project-1",
+      taskId: "task-1",
+      note: "Before the edit",
+      durationMs: HOUR,
+    };
+    const before: LocalAppState = {
+      ...base,
+      timesheetEntries: [
+        // Added: never committed.
+        entry({ _id: "entry-a", note: "First" }),
+        // Updated: its older copy has another note.
+        entry({ _id: "entry-b", note: "After the edit", commit: olderCommit }),
+      ],
+      // Deleted: its committed copy is on a tombstone.
+      timesheetTombstones: [
+        {
+          entryId: "entry-d",
+          commit: { ...olderCommit, note: "Removed work" },
+        },
+      ],
+    };
+    const { after, undo } = undoAction(before, (state) =>
+      markTimesheetEntriesCommitted(
+        state,
+        ["entry-a", "entry-b", "entry-d"],
+        () => 900,
+      ),
+    );
+    expect(after.timesheetTombstones).toEqual([]);
+    expect(after.timesheetEntries.map((item) => item.commit?.at)).toEqual([
+      900, 900,
+    ]);
+
+    const restored = restoreUndo(after, undo);
+
+    expect(restored.result).toBe("restored");
+    expect(restored.state.timesheetEntries).toEqual(before.timesheetEntries);
+    expect(restored.state.timesheetEntries[0]!.commit).toBeUndefined();
+    expect(restored.state.timesheetEntries[1]!.commit).toEqual(olderCommit);
+    expect(restored.state.timesheetTombstones).toEqual(
+      before.timesheetTombstones,
+    );
+  });
+
+  it("refuses to undo a delete whose deletion was committed since", () => {
+    const { after, undo } = undoAction(withCommittedEntryB(), (state) =>
+      deleteTimesheetEntry(state, "entry-b"),
+    );
+    // Committing the deleted change clears its tombstone.
+    const deletionCommitted = { ...after, timesheetTombstones: [] };
+
+    expect(restoreUndo(deletionCommitted, undo)).toEqual({
+      state: deletionCommitted,
+      result: "stale",
+    });
+  });
+
   it("restores a deleted entry exactly, in its old position, with its logged time", () => {
     const before = createState();
     const { after, undo } = undoAction(before, (state) =>
@@ -180,7 +289,7 @@ describe("time entry undo", () => {
     expect(restored.state.timesheetEntries).toEqual(before.timesheetEntries);
   });
 
-  it("moves a submitted entry back to its day with its submission and order", () => {
+  it("moves a committed entry back to its day with its copy and order", () => {
     const before = createState();
     const { after, undo } = undoAction(before, (state) =>
       moveTimesheetEntry(
@@ -190,7 +299,7 @@ describe("time entry undo", () => {
           localDate: "2026-10-08",
           projectId: "project-1",
           taskId: "task-1",
-          note: "Submitted work",
+          note: "Committed work",
           durationMs: 75_123,
         },
         factories,

@@ -21,6 +21,7 @@ import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
 import { isBacklogItemSnoozed } from "@/domain/backlog/backlog-item-lifecycle";
 import { isSubtaskWorkItem } from "@/domain/backlog/work-item-hierarchy";
 import { findWorkItemTimer } from "@/domain/time/running-entry";
+import { getTimesheetEntryChange } from "@/domain/time/timesheet-commit";
 import {
   getLocalProjectDisplayName,
   type LocalAppState,
@@ -149,10 +150,7 @@ export function requireEntry(state: LocalAppState, entryId: string) {
 
 function entryActions(state: LocalAppState, entry: LocalTimesheetEntry) {
   return getTimeEntryActions(
-    getTimeEntryActionState({
-      submittedAt: entry.submittedAt,
-      isRunning: isEntryRunning(state, entry),
-    }),
+    getTimeEntryActionState({ isRunning: isEntryRunning(state, entry) }),
   );
 }
 
@@ -186,8 +184,7 @@ export const ENTRY_WRITE_TOOLS = [
   "edit_entry",
   "move_entry",
   "duplicate_entry",
-  "mark_entries_submitted",
-  "mark_entries_not_submitted",
+  "mark_entries_committed",
 ] as const satisfies readonly WriteToolName[];
 export type EntryWriteTool = (typeof ENTRY_WRITE_TOOLS)[number];
 
@@ -414,48 +411,36 @@ export function runEntryWriteTool(
       };
     }
 
-    case "mark_entries_submitted": {
+    case "mark_entries_committed": {
       const input =
-        writeToolInputSchemas.mark_entries_submitted.parse(rawInput);
-      for (const entryId of input.entryIds) {
-        const entry = requireEntry(state, entryId);
-        if (isEntryRunning(state, entry)) {
-          throw new AgentToolRefusal("Stop the running entry first");
-        }
-      }
-      const { undoToken } = localStore.runWithUndo(() =>
-        localStore.markTimesheetEntriesSubmitted(input.entryIds),
+        writeToolInputSchemas.mark_entries_committed.parse(rawInput);
+      const entryIds = [...new Set(input.entryIds)];
+      const tombstoneIds = new Set(
+        state.timesheetTombstones.map((tombstone) => tombstone.entryId),
       );
-      const count = input.entryIds.length;
-      return {
-        output: { marked: count },
-        undoToken,
-        action: `Marked ${count} ${count === 1 ? "entry" : "entries"} as submitted`,
-        objectId: input.entryIds[0]!,
-        objectTitle: `${count} ${count === 1 ? "entry" : "entries"}`,
-        undoSubject: "entry",
-      };
-    }
-
-    case "mark_entries_not_submitted": {
-      const input =
-        writeToolInputSchemas.mark_entries_not_submitted.parse(rawInput);
-      for (const entryId of input.entryIds) {
-        const entry = requireEntry(state, entryId);
-        if (isEntryRunning(state, entry)) {
-          throw new AgentToolRefusal("Stop the running entry first");
+      let count = 0;
+      for (const entryId of entryIds) {
+        if (tombstoneIds.has(entryId)) {
+          count += 1;
+          continue;
         }
+        const entry = state.timesheetEntries.find(
+          (candidate) => candidate._id === entryId,
+        );
+        if (!entry) {
+          throw new AgentToolRefusal(
+            `No entry or deleted entry has the id ${entryId}. Call get_week_changes.`,
+          );
+        }
+        if (getTimesheetEntryChange(entry)) count += 1;
       }
-      const { undoToken } = localStore.runWithUndo(() =>
-        localStore.markTimesheetEntriesNotSubmitted(input.entryIds),
-      );
-      const count = input.entryIds.length;
-      const noun = count === 1 ? "entry" : "entries";
+      const undoToken = localStore.markTimesheetEntriesCommitted(entryIds);
+      const noun = count === 1 ? "change" : "changes";
       return {
-        output: { unmarked: count },
+        output: { committed: count },
         undoToken,
-        action: `Marked ${count} ${noun} as not submitted`,
-        objectId: input.entryIds[0]!,
+        action: `Marked ${count} ${noun} as committed`,
+        objectId: entryIds[0]!,
         objectTitle: `${count} ${noun}`,
         undoSubject: "entry",
       };

@@ -270,17 +270,17 @@ export function TimePage({ date }: { date: string }) {
     return true;
   }
 
-  function openSubmitPage() {
+  function openCommitPage() {
     if (!leaveEditorDraft()) return;
     void navigate({
-      to: "/time/$date/submit",
+      to: "/time/$date/commit",
       params: { date },
       search: { view: isWeekView ? "week" : undefined } as never,
     });
   }
 
   useActionRequest(({ action }) => {
-    if (action === "submit-week") openSubmitPage();
+    if (action === "commit-week") openCommitPage();
   });
 
   // These win over the app shell's handlers while the Time page is open.
