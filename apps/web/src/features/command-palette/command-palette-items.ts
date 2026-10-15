@@ -485,9 +485,7 @@ function focusedSection(input: PaletteInput): PaletteSection | null {
           heading: describeEntry(entry, projects),
           items: toItems(
             prefix,
-            getTimeEntryActions("saved", {
-              isToday: entry.localDate === input.today,
-            }),
+            getTimeEntryActions("saved"),
             (actionId) => ({
               kind: "time-entry",
               entryId: entry._id,

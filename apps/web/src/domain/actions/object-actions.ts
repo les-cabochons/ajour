@@ -29,8 +29,6 @@ export type TimeEntryActionId =
 export type TimeEntryActionState = "saved" | "running";
 
 export interface TimeEntryActionOptions {
-  /** Whether the entry is on today's date. Continue resumes only today's entries. */
-  isToday?: boolean;
   /** Set inside an editor, where Edit is the current mode. */
   isEditing?: boolean;
   /** Set inside an editor whose draft cannot be saved yet. */

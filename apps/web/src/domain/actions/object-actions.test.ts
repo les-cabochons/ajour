@@ -63,7 +63,7 @@ describe("time entry actions", () => {
   });
 
   it("gives a saved entry every action, without hints", () => {
-    const actions = getTimeEntryActions("saved", { isToday: true });
+    const actions = getTimeEntryActions("saved");
 
     expect(actions.every((action) => !action.disabledReason)).toBe(true);
     expect(actions.filter((action) => action.hint)).toEqual([]);
