@@ -158,6 +158,19 @@ Feature: Open the local time workspace
     And I save the new entry with note "Wrap-up" and hours "0:30"
     Then Monday's cards read "Login form", "API", "Code review", "Wrap-up"
 
+  Scenario: Go back to the Day view after switching to Week
+    Given I have a week of saved entries
+    When I open Monday in the Day view
+    And I switch the Time page to Week
+    And I go back in the browser
+    Then the Day view is visible
+
+  Scenario: Double-clicking the capacity card does not add an entry
+    Given I have a week of saved entries
+    When I open the Week Days view
+    And I double-click the text of Monday's capacity card
+    Then no entry editor is open
+
   Scenario: Reopen Time in the view I used last
     Given I have a week of saved entries
     When I open the Week Days view

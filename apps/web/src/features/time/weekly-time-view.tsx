@@ -372,11 +372,16 @@ export function WeeklyTimeView({
     };
   }
 
-  /** True when a pointer event lands on a day column's empty space, not on a card or button. */
+  /**
+   * True when a pointer event lands on a day column's own empty space: not on a
+   * card or button, and not in a portal such as the capacity hover card, whose
+   * React events still bubble to the column.
+   */
   function isColumnEmptySpace(event: ReactMouseEvent<HTMLElement>) {
-    return !(
+    return (
       event.target instanceof Element &&
-      event.target.closest(".weekly-entry-card, button")
+      event.currentTarget.contains(event.target) &&
+      !event.target.closest(".weekly-entry-card, button")
     );
   }
 

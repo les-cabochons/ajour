@@ -2159,7 +2159,8 @@ Then("the submit page includes the saved entry draft", async ({ page }) => {
 Then(
   "the invalid entry draft stays open instead of submitting",
   async ({ page }) => {
-    await expect(page).toHaveURL(/\/time\/2026-10-05\?entry=mon-dev-1$/);
+    // Still the day with the entry open, not the submit page.
+    await expect(page).toHaveURL(/\/time\/2026-10-05\?[^/]*entry=mon-dev-1/);
     await expect(
       page.getByRole("textbox", { name: "Hours", exact: true }),
     ).toHaveValue("invalid");
@@ -2793,6 +2794,37 @@ Then("the Week Days view is visible", async ({ page }) => {
 When("I switch the Time page to Day", async ({ page }) => {
   await page.getByRole("button", { name: "Day", exact: true }).click();
   await expect(page.getByRole("region", { name: "Week" })).toHaveCount(0);
+});
+
+When("I open Monday in the Day view", async ({ page }) => {
+  await page.goto("/time/2026-10-05");
+  await expect(page.locator(".day-strip")).toBeVisible();
+});
+
+When("I switch the Time page to Week", async ({ page }) => {
+  await page.getByRole("button", { name: "Week", exact: true }).click();
+  await expect(page.getByRole("region", { name: "Week" })).toBeVisible();
+});
+
+When("I go back in the browser", async ({ page }) => {
+  await page.goBack();
+});
+
+When(
+  "I double-click the text of {word}'s capacity card",
+  async ({ page }, day: string) => {
+    await daysColumn(page, day).locator(".weekly-capacity-trigger").hover();
+    const card = page.locator('[data-slot="hover-card-content"]');
+    await expect(card).toBeVisible();
+    await card.locator("span").first().dblclick();
+  },
+);
+
+Then("no entry editor is open", async ({ page }) => {
+  await expect(
+    page.getByRole("complementary", { name: "Time entry editor" }),
+  ).toHaveCount(0);
+  await expect(page).not.toHaveURL(/entry=new/);
 });
 
 Then("the Day view is visible", async ({ page }) => {

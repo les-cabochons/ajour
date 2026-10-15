@@ -182,7 +182,8 @@ Day is the default, timer-first time surface. The top bar's Day | Week
 control switches views at desktop widths of 768px and above. The view shown
 at those widths is remembered (`timeView` in the user preferences), and a Time
 link without `view`, such as the sidebar's, opens it; `?view=day` and
-`?view=week` pick one. The narrow view
+`?view=week` pick one. At those widths the page then names the view in the URL
+in place, so Back returns to the view each history entry showed. The narrow view
 has no switcher. A Week link there (`?view=week`) shows Day with a note that
 Week needs a wider window, and keeps `view=week`, so widening the window shows
 Week. The week's range is the top bar's title in Week, with a Today chip while

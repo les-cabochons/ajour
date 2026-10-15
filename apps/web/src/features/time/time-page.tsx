@@ -78,6 +78,10 @@ export function TimePage({ date }: { date: string }) {
     (search.view !== "day" && preferences.timeView === "week");
   const isWeekView = wantsWeek && weekAvailable;
   const showsWeekUnavailableNote = search.view === "week" && !weekAvailable;
+  // The `view` this page writes into its links. On a desktop width every Time
+  // URL names its view, so Back returns to the view it showed even after the
+  // remembered view changed. The narrow view only shows Day and leaves it out.
+  const viewParam = isWeekView ? "week" : weekAvailable ? "day" : undefined;
   const editorFormRef = useRef<TimeEntryEditorFormHandle>(null);
   // The unsaved draft of the open entry, kept above the side panel and the dialog so
   // crossing the dialog breakpoint mid-edit hands the draft to the other host.
@@ -146,6 +150,20 @@ export function TimePage({ date }: { date: string }) {
     }
   }, [weekAvailable, shownView, preferences.timeView]);
 
+  // A link without `view` resolved to the remembered view; name it in the URL
+  // in place, so this history entry keeps its view.
+  useEffect(() => {
+    if (search.view !== undefined || !weekAvailable) return;
+    void navigate({
+      to: ".",
+      search: (previous: Record<string, unknown>) => ({
+        ...previous,
+        view: shownView,
+      }),
+      replace: true,
+    } as never);
+  }, [navigate, search.view, shownView, weekAvailable]);
+
   // Once the URL opens an editor, the listed cell is done, so Back past the editor
   // closes the panel. It clears after the editor shows, so the panel never empties
   // between the click and the navigation.
@@ -174,7 +192,7 @@ export function TimePage({ date }: { date: string }) {
       params: { date: nextDate },
       search: isWeekView
         ? ({ view: "week" } as never)
-        : ({ view: undefined, entry: undefined, timer: undefined } as never),
+        : ({ view: viewParam, entry: undefined, timer: undefined } as never),
     });
   }
 
@@ -196,13 +214,11 @@ export function TimePage({ date }: { date: string }) {
   function returnToDayView() {
     if (!leaveEditorDraft()) return;
     clearGridCells();
-    // Written before the navigation: a link without `view` follows it.
-    localStore.setUserPreferences({ timeView: "day" });
     void navigate({
       to: "/time/$date",
       params: { date },
       search: {
-        view: undefined,
+        view: weekAvailable ? "day" : undefined,
         entry: undefined,
         timer: undefined,
       } as never,
@@ -215,9 +231,11 @@ export function TimePage({ date }: { date: string }) {
     void navigate({
       to: "/time/$date",
       params: { date },
-      search: isWeekView
-        ? ({ view: "week", entry: undefined, timer: undefined } as never)
-        : ({ view: undefined, entry: undefined, timer: undefined } as never),
+      search: {
+        view: viewParam,
+        entry: undefined,
+        timer: undefined,
+      } as never,
       replace: true,
     });
   }
@@ -257,7 +275,7 @@ export function TimePage({ date }: { date: string }) {
         timer: request.timerId,
         project: task?.projectId,
         task: task?.taskId,
-        view: isWeekView ? "week" : undefined,
+        view: viewParam,
       } as never,
       // Switching entries in the panel should not stack history entries.
       replace: editorTarget !== null || showsCellEntries,
