@@ -242,6 +242,7 @@ const defaultUserPreferences: UserPreferences = {
   updateTrack: "stable",
   projectDataShapeId: BUILT_IN_PROJECT_DATA_SHAPE_ID,
   weeklyTimeViewStyle: "grid",
+  hideNonWorkingDays: false,
   weeklyCapacityTargets: {
     monday: 8 * 60 * 60 * 1000,
     tuesday: 8 * 60 * 60 * 1000,
@@ -454,6 +455,8 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
         ...persistedState.userPreferences,
         changesEndSnoozeEarly:
           persistedState.userPreferences?.changesEndSnoozeEarly === true,
+        hideNonWorkingDays:
+          persistedState.userPreferences?.hideNonWorkingDays === true,
         updateTrack:
           persistedState.userPreferences?.updateTrack === "nightly"
             ? "nightly"

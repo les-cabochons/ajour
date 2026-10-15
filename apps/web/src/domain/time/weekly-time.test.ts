@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DEFAULT_PROJECT_ICON } from "@/domain/projects/project-icon";
 import {
+  getVisibleWeekDates,
   projectWeeklyTime,
   selectWeeklyGridCell,
 } from "@/domain/time/weekly-time";
@@ -44,6 +45,71 @@ const projects = [
 ];
 
 describe("weekly time projection", () => {
+  it("hides zero-capacity weekdays and keeps working weekends aligned with their cells", () => {
+    const targets = { ...capacityTargets, wednesday: 0, saturday: 4 };
+    const entries = weekDates.map((localDate, index) => ({
+      _id: `entry-${index}`,
+      localDate,
+      projectId: "project-1",
+      taskId: "task-1",
+      label: "Build",
+      durationMs: index + 1,
+      sourceBlockIds: [],
+      committedAt: 1,
+    }));
+    const input = {
+      capacityTargets: targets,
+      entries,
+      projects,
+      weekDates,
+      runningTime: {
+        localDate: weekDates[2]!,
+        durationMs: 2,
+        projectId: "project-1",
+        taskId: "task-1",
+      },
+    };
+    const full = projectWeeklyTime(input);
+    const hidden = projectWeeklyTime({ ...input, hideNonWorkingDays: true });
+    const visibleDates = weekDates.filter(
+      (_, index) => index !== 2 && index !== 6,
+    );
+
+    expect(getVisibleWeekDates(weekDates, targets)).toEqual(weekDates);
+    expect(getVisibleWeekDates(weekDates, targets, true)).toEqual(visibleDates);
+    expect(hidden.days.map((day) => day.localDate)).toEqual(visibleDates);
+    expect(hidden.gridRows[0]!.dayTotalsMs).toEqual([1, 2, 4, 5, 6]);
+    expect(
+      hidden.gridRows[0]!.dayEntries.map((day) => day[0]!.localDate),
+    ).toEqual(visibleDates);
+    expect(hidden.totalMs).toBe(30);
+    expect(hidden.totalMs).toBe(full.totalMs);
+    expect(hidden.capacityMs).toBe(full.capacityMs);
+    expect(hidden.gridRows[0]!.totalMs).toBe(full.gridRows[0]!.totalMs);
+    expect(hidden.gridRows[0]!.entryIds).toEqual(full.gridRows[0]!.entryIds);
+  });
+
+  it("returns no visible columns when every day has zero capacity", () => {
+    const projection = projectWeeklyTime({
+      capacityTargets: {
+        monday: 0,
+        tuesday: 0,
+        wednesday: 0,
+        thursday: 0,
+        friday: 0,
+        saturday: 0,
+        sunday: 0,
+      },
+      hideNonWorkingDays: true,
+      entries: [],
+      projects,
+      weekDates,
+    });
+    expect(projection.days).toEqual([]);
+    expect(projection.totalMs).toBe(0);
+    expect(projection.capacityMs).toBe(0);
+  });
+
   it("groups entries and includes running time once", () => {
     const projection = projectWeeklyTime({
       capacityTargets,

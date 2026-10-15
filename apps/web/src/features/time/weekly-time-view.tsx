@@ -9,6 +9,7 @@ import {
 } from "react";
 import { RiAddLine as Plus } from "@remixicon/react";
 import { Button } from "@/components/ui/button";
+import { MessagePanel } from "@/components/app-surface";
 import { Chip } from "@/components/ui/chip";
 import {
   ObjectActionsButton,
@@ -166,12 +167,14 @@ export function WeeklyTimeView({
         addedRows: weekAddedRows,
         capacityTargets: preferences.weeklyCapacityTargets,
         entries: state.timesheetEntries,
+        hideNonWorkingDays: preferences.hideNonWorkingDays,
         projects,
         runningTime,
         weekDates,
       }),
     [
       preferences.weeklyCapacityTargets,
+      preferences.hideNonWorkingDays,
       projects,
       runningTime,
       state.timesheetEntries,
@@ -401,7 +404,12 @@ export function WeeklyTimeView({
         />
       </div>
 
-      {preferences.weeklyTimeViewStyle === "grid" ? (
+      {projection.days.length === 0 ? (
+        <MessagePanel>
+          All days have 0 hours of capacity. Set a capacity target or turn off
+          Hide non-working days in Settings to show them.
+        </MessagePanel>
+      ) : preferences.weeklyTimeViewStyle === "grid" ? (
         <WeekGrid
           activeCell={activeCell}
           activeEntryId={activeEntryId}
@@ -416,10 +424,16 @@ export function WeeklyTimeView({
           runningTimerId={currentTimer?._id}
           showCapacityWarning={preferences.warnWhenOverCapacity}
           today={today}
-          weekDates={weekDates}
+          weekDates={projection.days.map((day) => day.localDate)}
         />
       ) : (
-        <div className="weekly-days-grid" data-focus-scope>
+        <div
+          className="weekly-days-grid"
+          style={{
+            gridTemplateColumns: `repeat(${projection.days.length}, minmax(0, 1fr))`,
+          }}
+          data-focus-scope
+        >
           {projection.days.map((day, index) => {
             const visibleEntries = currentTimer?.entryId
               ? day.entries.filter(
@@ -445,7 +459,7 @@ export function WeeklyTimeView({
                 ref={(node) => registerDayTarget(day.localDate, node)}
                 className={cn(
                   "weekly-days-column",
-                  index >= 5 && "is-weekend",
+                  weekDates.indexOf(day.localDate) >= 5 && "is-weekend",
                   isToday && "is-today",
                   dragState?.targetDate === day.localDate &&
                     !isOriginDay &&

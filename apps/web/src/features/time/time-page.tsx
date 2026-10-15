@@ -6,6 +6,7 @@ import { SidePanel } from "@/components/side-panel";
 import { Button } from "@/components/ui/button";
 import { findPinnedTask } from "@/domain/projects/project-transitions";
 import { formatClockDuration } from "@/domain/time/duration";
+import { getVisibleWeekDates } from "@/domain/time/weekly-time";
 import {
   TimeEntryEditorForm,
   type TimeEntryEditorFormHandle,
@@ -483,7 +484,11 @@ function DayTotalsStrip({
     <DayStrip
       date={date}
       today={today}
-      weekDates={weekDates}
+      weekDates={getVisibleWeekDates(
+        weekDates,
+        state.userPreferences.weeklyCapacityTargets,
+        state.userPreferences.hideNonWorkingDays,
+      )}
       totalLabel="Week"
       totalValue={formatClockDuration(weekTotalMs)}
       getDayValue={(day) => formatClockDuration(totalsByDate.get(day) ?? 0)}
