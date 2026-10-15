@@ -14,7 +14,6 @@ import { PropertyRow } from "@/components/property-list";
 import { SectionHeading } from "@/components/section-heading";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
-import { Switch } from "@/components/ui/switch";
 import {
   Empty,
   EmptyDescription,
@@ -44,7 +43,6 @@ import {
   NoteSection,
 } from "@/features/backlog/backlog-item-inline-edit";
 import { BacklogItemProperties } from "@/features/backlog/backlog-item-properties";
-import { patchBacklogItemWithUndo } from "@/features/backlog/backlog-item-surface";
 import {
   ESTIMATE_FIGURES,
   formatHours,
@@ -531,25 +529,6 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                       "–")}
                 </PropertyRow>
               </BacklogItemProperties>
-              {item.source !== "manual" ? (
-                <label className="flex items-center gap-2.5 border-t pt-3 text-sm">
-                  <Switch
-                    size="sm"
-                    checked={item.keepWhenMissingFromSync ?? false}
-                    disabled={readOnly}
-                    onCheckedChange={(keepWhenMissingFromSync) =>
-                      patchBacklogItemWithUndo(
-                        item,
-                        { keepWhenMissingFromSync },
-                        keepWhenMissingFromSync
-                          ? "Kept when missing from sync"
-                          : "Archived when missing from sync",
-                      )
-                    }
-                  />
-                  Keep when missing from sync
-                </label>
-              ) : null}
             </section>
           </div>
         </div>
