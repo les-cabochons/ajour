@@ -281,6 +281,37 @@ describe("timer and timesheet entry lifecycle", () => {
     });
   });
 
+  it("keeps the resumed entry's committed copy, so the added time shows as a change", () => {
+    const commit = {
+      at: 650,
+      localDate: "2026-07-30",
+      projectId: "project-1",
+      taskId: "task-1",
+      note: "Existing work",
+      durationMs: 500,
+    };
+    const originalEntry = createEntry({ commit });
+    const state = createState({
+      timesheetEntries: [originalEntry],
+      timers: [
+        {
+          _id: "timer-1",
+          startedAt: 900,
+          localDate: originalEntry.localDate,
+          projectId: originalEntry.projectId,
+          taskId: originalEntry.taskId,
+          note: originalEntry.note,
+          accumulatedDurationMs: originalEntry.durationMs,
+          entryId: originalEntry._id,
+        },
+      ],
+    });
+
+    const saved = saveTimer(state, "timer-1", createFactories());
+
+    expect(saved.timesheetEntries[0]).toMatchObject({ durationMs: 600, commit });
+  });
+
   it("replaces a restarted entry and clears stale submission state", () => {
     const originalEntry = createEntry({
       submittedAt: 650,

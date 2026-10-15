@@ -2705,6 +2705,28 @@ describe("localStore workflow state sync", () => {
     });
   });
 
+  it("marks changes as committed, and Undo takes the commit back", async () => {
+    const { localStore } = await import("./local-store");
+    const projectId = localStore.snapshot().projects[0]!._id;
+    localStore.saveManualTimeEntry({
+      localDate: "2026-04-21",
+      projectId,
+      note: "Weekly sync",
+      durationMs: 60 * 60 * 1000,
+    });
+    const entryId = localStore.snapshot().timesheetEntries[0]!._id;
+
+    const token = localStore.markTimesheetEntriesCommitted([entryId]);
+
+    expect(token).not.toBeNull();
+    expect(localStore.snapshot().timesheetEntries[0]!.commit).toMatchObject({
+      localDate: "2026-04-21",
+      note: "Weekly sync",
+    });
+    expect(localStore.undo(token!)).toBe("restored");
+    expect(localStore.snapshot().timesheetEntries[0]!.commit).toBeUndefined();
+  });
+
   it("keeps submitted state when a timesheet entry is saved without changes", async () => {
     const { localStore } = await import("./local-store");
 

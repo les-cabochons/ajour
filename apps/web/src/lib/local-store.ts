@@ -81,6 +81,7 @@ import {
   deleteTimesheetEntries as applyDeleteTimesheetEntries,
   deleteTimesheetEntry as applyDeleteTimesheetEntry,
   duplicateTimesheetEntry as applyDuplicateTimesheetEntry,
+  markTimesheetEntriesCommitted as applyMarkTimesheetEntriesCommitted,
   markTimesheetEntriesNotSubmitted as applyMarkTimesheetEntriesNotSubmitted,
   markTimesheetEntriesSubmitted as applyMarkTimesheetEntriesSubmitted,
   moveTimesheetEntry as applyMoveTimesheetEntry,
@@ -1750,6 +1751,15 @@ export const localStore = {
 
     updateState((state) =>
       applyMarkTimesheetEntriesSubmitted(state, entryIds, Date.now),
+    );
+  },
+  /**
+   * Commits the changes of `entryIds`. See `markTimesheetEntriesCommitted`.
+   * Returns an undo token, or null when nothing changed.
+   */
+  markTimesheetEntriesCommitted(entryIds: readonly string[]) {
+    return updateStateWithUndo((state) =>
+      applyMarkTimesheetEntriesCommitted(state, entryIds, Date.now),
     );
   },
   /** Returns entries to saved. See `markTimesheetEntriesNotSubmitted`. */

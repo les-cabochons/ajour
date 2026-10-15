@@ -6,6 +6,7 @@ import {
   deleteTimesheetEntries,
   deleteTimesheetEntry,
   duplicateTimesheetEntry,
+  markTimesheetEntriesCommitted,
   markTimesheetEntriesNotSubmitted,
   markTimesheetEntriesSubmitted,
   moveTimesheetEntry,
@@ -16,6 +17,7 @@ import {
   selectSortableDayEntryIds,
   updateTimesheetEntry,
 } from "@/domain/time/timesheet-entry";
+import { getTimesheetEntryChange } from "@/domain/time/timesheet-commit";
 import { getSharedTableStepOrder } from "@/lib/table-drag";
 
 function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
@@ -851,5 +853,126 @@ describe("tombstones", () => {
 
     expect(next.timesheetEntries).toEqual([]);
     expect(next.timesheetTombstones).toEqual([]);
+  });
+});
+
+describe("committed copies", () => {
+  const HOUR = 60 * 60 * 1000;
+  const values = {
+    localDate: "2026-07-30",
+    projectId: "project-1",
+    taskId: "task-1",
+    note: "API",
+    durationMs: HOUR,
+  };
+
+  /** Two saved entries, "a" and "b", never committed. */
+  function savedEntries(): LocalAppState {
+    const withA = saveManualTimesheetEntry(createState(), values, {
+      createId: () => "a",
+      now: () => 100,
+    });
+    return saveManualTimesheetEntry(withA, values, {
+      createId: () => "b",
+      now: () => 100,
+    });
+  }
+
+  function find(state: LocalAppState, entryId: string) {
+    return state.timesheetEntries.find((item) => item._id === entryId)!;
+  }
+
+  function changeOf(state: LocalAppState, entryId: string) {
+    return getTimesheetEntryChange(find(state, entryId))?.kind;
+  }
+
+  it("commits only the listed changes", () => {
+    const next = markTimesheetEntriesCommitted(savedEntries(), ["a"], () => 500);
+
+    expect(find(next, "a").commit).toEqual({ at: 500, ...values });
+    expect(changeOf(next, "a")).toBeUndefined();
+    expect(changeOf(next, "b")).toBe("added");
+  });
+
+  it("clears a listed tombstone and keeps the unlisted ones", () => {
+    const commit = { at: 50, ...values };
+    const state = createState({
+      timesheetTombstones: [
+        { entryId: "gone-1", commit },
+        { entryId: "gone-2", commit },
+      ],
+    });
+
+    expect(
+      markTimesheetEntriesCommitted(state, ["gone-1"], () => 500)
+        .timesheetTombstones,
+    ).toEqual([{ entryId: "gone-2", commit }]);
+  });
+
+  it("returns the same state when no listed id has a change", () => {
+    const committed = markTimesheetEntriesCommitted(
+      savedEntries(),
+      ["a"],
+      () => 500,
+    );
+
+    expect(
+      markTimesheetEntriesCommitted(committed, ["a", "unknown"], () => 600),
+    ).toBe(committed);
+  });
+
+  it("keeps the copy across an edit, and an edit back shows no change", () => {
+    const committed = markTimesheetEntriesCommitted(
+      savedEntries(),
+      ["a"],
+      () => 500,
+    );
+    const edit = (state: LocalAppState, durationMs: number, note: string) =>
+      updateTimesheetEntry(
+        state,
+        "a",
+        { projectId: "project-1", taskId: "task-1", note, durationMs },
+        factories,
+      );
+
+    const edited = edit(committed, 2 * HOUR, "API v2");
+    expect(find(edited, "a").commit).toEqual({ at: 500, ...values });
+    expect(changeOf(edited, "a")).toBe("updated");
+
+    expect(changeOf(edit(edited, HOUR, "API"), "a")).toBeUndefined();
+  });
+
+  it("keeps the copy when the entry moves to another week", () => {
+    const committed = markTimesheetEntriesCommitted(
+      savedEntries(),
+      ["a"],
+      () => 500,
+    );
+    const moved = moveTimesheetEntry(
+      committed,
+      "a",
+      { ...values, localDate: "2026-08-04" },
+      factories,
+    );
+
+    expect(find(moved, "a")).toMatchObject({
+      localDate: "2026-08-04",
+      commit: { localDate: "2026-07-30" },
+    });
+    expect(changeOf(moved, "a")).toBe("updated");
+  });
+
+  it("gives a duplicate no copy, so it shows as added", () => {
+    const committed = markTimesheetEntriesCommitted(
+      savedEntries(),
+      ["a"],
+      () => 500,
+    );
+    const duplicated = duplicateTimesheetEntry(committed, "a", values, {
+      createId: () => "copy",
+      now: () => 600,
+    });
+
+    expect(changeOf(duplicated, "copy")).toBe("added");
   });
 });

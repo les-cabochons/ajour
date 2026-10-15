@@ -3,6 +3,10 @@ import type {
   LocalProject,
   LocalTimesheetEntry,
 } from "@/domain/local-state";
+import {
+  getTimesheetEntryChange,
+  toCommittedCopy,
+} from "@/domain/time/timesheet-commit";
 import { applyLoggedTimeToWorkItems } from "@/domain/backlog/work-item-estimates";
 
 export interface TimesheetEntryFactories {
@@ -220,14 +224,17 @@ export function updateTimesheetEntry(
     factories,
   );
   nextEntry.committedAt = entry.committedAt;
-  const persistedEntry = preserveTimesheetEntrySubmissionState(
+  const persistedEntry = keepTimesheetEntryCommit(
     entry,
-    nextEntry.taskId
-      ? nextEntry
-      : {
-          ...nextEntry,
-          label: entry.taskId ? "" : entry.label,
-        },
+    preserveTimesheetEntrySubmissionState(
+      entry,
+      nextEntry.taskId
+        ? nextEntry
+        : {
+            ...nextEntry,
+            label: entry.taskId ? "" : entry.label,
+          },
+    ),
   );
   const revertedWorkItems = applyLoggedTimeToWorkItems(state.workItems, {
     workItemId: entry.workItemId,
@@ -416,6 +423,53 @@ export function markTimesheetEntriesSubmitted(
         timesheetEntries,
       }
     : state;
+}
+
+/**
+ * Carries the committed copy across a rebuild of the entry, such as an edit
+ * or a running entry saved again. Edits never change the copy: the change
+ * shows on the Commit page until it is committed.
+ */
+export function keepTimesheetEntryCommit(
+  existing: LocalTimesheetEntry | undefined,
+  next: LocalTimesheetEntry,
+): LocalTimesheetEntry {
+  return existing?.commit ? { ...next, commit: existing.commit } : next;
+}
+
+/**
+ * Commits the changes of `entryIds`: an added or updated entry gets a copy of
+ * its current values, and a deleted entry's tombstone goes. Ids without a
+ * change are left alone, so a partial commit leaves every other change as it
+ * is. Returns the same state when nothing changed.
+ */
+export function markTimesheetEntriesCommitted(
+  state: LocalAppState,
+  entryIds: readonly string[],
+  now: () => number,
+): LocalAppState {
+  const selectedIds = new Set(entryIds);
+  const at = now();
+  let changed = false;
+  const timesheetEntries = state.timesheetEntries.map((entry) => {
+    if (!selectedIds.has(entry._id) || !getTimesheetEntryChange(entry)) {
+      return entry;
+    }
+
+    changed = true;
+    return { ...entry, commit: toCommittedCopy(entry, at) };
+  });
+  const timesheetTombstones = state.timesheetTombstones.filter(
+    (tombstone) => !selectedIds.has(tombstone.entryId),
+  );
+  if (
+    !changed &&
+    timesheetTombstones.length === state.timesheetTombstones.length
+  ) {
+    return state;
+  }
+
+  return { ...state, timesheetEntries, timesheetTombstones };
 }
 
 /**
