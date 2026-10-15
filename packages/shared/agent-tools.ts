@@ -349,6 +349,13 @@ export const dataToolOutputSchemas = {
       targetHours: z.number(),
       warnings: z.array(submitWarningSchema),
     }),
+    /** Ajour's pace check. Ask the user before entering a week that is not on-pace. */
+    pace: z.object({
+      loggedHours: z.number(),
+      targetHours: z.number(),
+      expectedHours: z.number(),
+      status: z.enum(["on-pace", "under", "over"]),
+    }),
   }),
   start_timer: z.object({ running: agentRunningTimerSchema }),
   stop_timer: z.object({

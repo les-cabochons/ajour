@@ -212,6 +212,8 @@ describe("agent read model", () => {
       weekDates: WEEK,
       groupBy: "day-task",
       onlyUnsubmitted: false,
+      today: "2026-10-14",
+      paceTolerancePercent: 20,
     });
     expect(result.sections).toEqual([
       {
@@ -227,6 +229,13 @@ describe("agent read model", () => {
       },
     ]);
     expect(result.summary.targetHours).toBe(40);
+    // 2 h logged by Wednesday, when 24 h of the 40 h target is expected.
+    expect(result.pace).toEqual({
+      loggedHours: 2,
+      targetHours: 40,
+      expectedHours: 24,
+      status: "under",
+    });
   });
 
   it("gives each submit line a stable ID and its project code", () => {
@@ -234,6 +243,8 @@ describe("agent read model", () => {
       weekDates: WEEK,
       groupBy: "day-task",
       onlyUnsubmitted: true,
+      today: "2026-10-14",
+      paceTolerancePercent: 20,
     });
     const line = result.sections[0]!.lines[0]!;
     expect(line.lineId).toBe(submitLineId(line.entryIds));

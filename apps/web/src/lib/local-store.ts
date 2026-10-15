@@ -511,6 +511,20 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
           persistedState.userPreferences?.closeParentSubitems === "leave"
             ? persistedState.userPreferences.closeParentSubitems
             : "ask",
+        paceTolerancePercent:
+          typeof persistedState.userPreferences?.paceTolerancePercent ===
+            "number" &&
+          Number.isFinite(persistedState.userPreferences.paceTolerancePercent)
+            ? Math.min(
+                100,
+                Math.max(
+                  0,
+                  Math.round(
+                    persistedState.userPreferences.paceTolerancePercent,
+                  ),
+                ),
+              )
+            : undefined,
       },
     }),
   );

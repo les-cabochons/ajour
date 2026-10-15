@@ -16,6 +16,7 @@ import {
   type LocalTimesheetEntry,
   type LocalWorkItem,
 } from "@/domain/local-state";
+import { computeWeekPace } from "@/domain/time/week-pace";
 import {
   groupSubmitLines,
   summarizeSubmitSelection,
@@ -246,14 +247,26 @@ export function getWorkItemForAgent(
 const toHours = (durationMs: number) =>
   Math.round((durationMs / HOUR) * 100) / 100;
 
-/** The Submit page's lines for a week, in decimal hours as Workday wants them. */
+/**
+ * The Submit page's lines for a week, in decimal hours as Workday wants them,
+ * plus the week's pace check. `today` is passed in because domain code does
+ * not read the clock.
+ */
 export function getSubmitLinesForAgent(
   state: LocalAppState,
   {
     weekDates,
     groupBy,
     onlyUnsubmitted,
-  }: { weekDates: string[]; groupBy: SubmitGroupBy; onlyUnsubmitted: boolean },
+    today,
+    paceTolerancePercent,
+  }: {
+    weekDates: string[];
+    groupBy: SubmitGroupBy;
+    onlyUnsubmitted: boolean;
+    today: string;
+    paceTolerancePercent: number;
+  },
 ): DataToolOutput<"get_submit_lines"> {
   const weekDateSet = new Set(weekDates);
   const weekEntries = state.timesheetEntries.filter((entry) =>
@@ -296,5 +309,15 @@ export function getSubmitLinesForAgent(
       targetHours: toHours(summary.targetMs),
       warnings: summary.warnings,
     },
+    pace: computeWeekPace({
+      weekDates,
+      today,
+      capacityTargets: state.userPreferences.weeklyCapacityTargets,
+      loggedMs: weekEntries.reduce(
+        (total, entry) => total + entry.durationMs,
+        0,
+      ),
+      tolerancePercent: paceTolerancePercent,
+    }),
   };
 }

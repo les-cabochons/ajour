@@ -29,7 +29,8 @@ import {
 import { sendPendingSourceWrites } from "@/features/backlog/backlog-source-writes";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { localStore } from "@/lib/local-store";
-import { getIsoWeekDates } from "@/lib/utils";
+import { getPaceTolerancePercent } from "@/domain/time/week-pace";
+import { getIsoWeekDates, todayIsoDate } from "@/lib/utils";
 
 /**
  * Runs the data tools an agent calls through the local API's bridge. Inputs
@@ -80,10 +81,13 @@ const readTools: {
     ),
   get_submit_lines: (rawInput) => {
     const input = readToolInputSchemas.get_submit_lines.parse(rawInput);
-    return getSubmitLinesForAgent(localStore.snapshot(), {
+    const state = localStore.snapshot();
+    return getSubmitLinesForAgent(state, {
       weekDates: getIsoWeekDates(input.weekOf),
       groupBy: input.groupBy,
       onlyUnsubmitted: input.onlyUnsubmitted,
+      today: todayIsoDate(),
+      paceTolerancePercent: getPaceTolerancePercent(state.userPreferences),
     });
   },
 };
