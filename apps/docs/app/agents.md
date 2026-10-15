@@ -27,14 +27,26 @@ Create one client per agent, so you can revoke one without the others. **Revoke*
 
 ## What agents can do
 
-| Kind         | Tools                                                                                                        |
-| ------------ | ------------------------------------------------------------------------------------------------------------ |
-| Read         | The running entry, time entries, projects, backlog items, and the week's submit lines.                       |
-| Time         | Start, stop and edit the running entry. Create, edit, move and duplicate entries. Mark entries as submitted. |
-| Backlog      | Create, edit and move items. Settle, snooze, archive and restore them.                                       |
-| Conversation | Report what they are doing, and ask you a question.                                                          |
+| Kind         | Tools                                                                                                               |
+| ------------ | ------------------------------------------------------------------------------------------------------------------- |
+| Read         | The running entry, time entries, projects, backlog items, and the week's submit lines.                              |
+| Time         | Start, stop and edit the running entry. Create, edit, move and duplicate entries. Mark entries as submitted or not. |
+| Backlog      | Create, edit and move items. Settle, snooze, archive and restore them.                                              |
+| Conversation | Report what they are doing, and ask you a question.                                                                 |
 
 Agents cannot delete anything. Their changes go through the same actions as yours, with the same Undo toast.
+
+## Agent tasks
+
+A plugin can also ask Ajour to start an agent for a task, such as [Workday (agent)](/plugins/workday-agent), which enters your week in Workday. Ajour runs the agent with its own instructions only: your own skills, settings, plugins and MCP servers stay out. The agent gets your Ajour data and a Chrome window, and nothing else: no shell and no files.
+
+In **Settings › Agents**, pick:
+
+- **Agent**: Claude Code or Codex. Ajour lists the ones installed on this computer, with their version.
+- **Browser**: **Ajour's Chrome window** opens Chrome with a profile only Ajour uses. **My Chrome** uses your own Chrome profile through Playwright's Chrome extension, with every site you are signed in to.
+- **Model**: leave it empty for the agent's default model.
+
+Each task's own settings are on its plugin's page in **Settings › Plugins**. One task runs at a time. Its session shows in the agent panel with **Stop**.
 
 ## Watch your agents
 
