@@ -1,26 +1,27 @@
 import { useEffect, type MouseEventHandler, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import { Link } from "@tanstack/react-router";
+import { RiArrowLeftLine as ArrowLeft } from "@remixicon/react";
 import { registerPageHeader, usePageHeaderSlot } from "@/lib/page-header";
 import { cn } from "@/lib/utils";
 
 /**
- * A page's title or breadcrumb and its actions, shown in the top bar. List
- * pages give a `title`; detail pages give a `breadcrumb` and keep the object's
+ * A page's title or back link and its actions, shown in the top bar. List
+ * pages give a `title`; detail pages give a `backLink` and keep the object's
  * title in the content. `actions` sit after the title, before the global
  * entry controls. Renders through a portal into the shell's slot.
  */
 export function PageHeader({
   title,
   meta,
-  breadcrumb,
+  backLink,
   actions,
   children,
 }: {
   title?: ReactNode;
   /** A muted count after the title, such as the number of listed items. */
   meta?: ReactNode;
-  breadcrumb?: PageBreadcrumbItem[];
+  backLink?: PageBackLink;
   actions?: ReactNode;
   /** Controls that belong with the title, such as a date switcher. */
   children?: ReactNode;
@@ -31,8 +32,16 @@ export function PageHeader({
   const content = (
     <>
       <div className="ajour-page-header-title">
-        {breadcrumb ? (
-          <PageBreadcrumb items={breadcrumb} />
+        {backLink ? (
+          <Link
+            to={backLink.to}
+            onClick={backLink.onClick}
+            aria-label={`Back to ${backLink.label}`}
+            className="inline-flex h-7 items-center gap-1.5 rounded-sm text-xs text-muted-foreground hover:text-foreground focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+          >
+            <ArrowLeft aria-hidden="true" className="size-3.5" />
+            {backLink.label}
+          </Link>
         ) : title !== undefined ? (
           <PageTitle meta={meta}>{title}</PageTitle>
         ) : null}
@@ -81,53 +90,9 @@ export function PageTitle({
   );
 }
 
-export interface PageBreadcrumbItem {
-  label: ReactNode;
-  /** The route the crumb opens. The last crumb has none: it is the current page. */
-  to?: string;
-  /** Set on the object's own id or key, shown in the mono value style. */
-  mono?: boolean;
-  /** Runs before the crumb's navigation; call `preventDefault` to stay. */
+export interface PageBackLink {
+  label: string;
+  to: string;
+  /** Runs before navigation; call `preventDefault` to stay. */
   onClick?: MouseEventHandler<HTMLAnchorElement>;
-}
-
-/** "Backlog / #48190": every crumb but the last links back. */
-export function PageBreadcrumb({ items }: { items: PageBreadcrumbItem[] }) {
-  return (
-    <nav aria-label="Breadcrumb" className="ajour-page-breadcrumb">
-      <ol>
-        {items.map((item, index) => {
-          const isLast = index === items.length - 1;
-          const label = (
-            <span className={cn(item.mono && "font-mono")}>{item.label}</span>
-          );
-          return (
-            <li key={index}>
-              {index > 0 ? (
-                <span aria-hidden="true" className="ajour-page-breadcrumb-sep">
-                  /
-                </span>
-              ) : null}
-              {item.to && !isLast ? (
-                <Link
-                  to={item.to}
-                  className="ajour-page-breadcrumb-link"
-                  onClick={item.onClick}
-                >
-                  {label}
-                </Link>
-              ) : (
-                <span
-                  aria-current={isLast ? "page" : undefined}
-                  className={cn(isLast && "ajour-page-breadcrumb-current")}
-                >
-                  {label}
-                </span>
-              )}
-            </li>
-          );
-        })}
-      </ol>
-    </nav>
-  );
 }

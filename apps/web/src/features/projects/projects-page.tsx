@@ -610,11 +610,12 @@ function ProjectDetail({
   onOpenTask: (task: LocalProjectTask) => void;
   /** Opens a blank task in the task editor. */
   onNewTask: () => void;
-  /** Guards the breadcrumb and the entry links out of the project. */
+  /** Guards the back link and the entry links out of the project. */
   onLeave: (event: React.MouseEvent<HTMLAnchorElement>) => void;
   /** Opens the slot picker for a task, like the palette's Assign shortcut…. */
   onAssignShortcut: (task: LocalProjectTask) => void;
 }) {
+  const isNarrowView = useIsNarrowView();
   const importInputRef = useRef<HTMLInputElement | null>(null);
   const taskRowRefs = useRef(new Map<string, HTMLTableRowElement>());
   const taskPointerSessionRef = useRef<SharedTableDragPointerSession | null>(
@@ -1106,10 +1107,11 @@ function ProjectDetail({
       />
 
       <PageHeader
-        breadcrumb={[
-          { label: "Projects", to: "/projects", onClick: onLeave },
-          { label: displayName },
-        ]}
+        backLink={
+          isNarrowView
+            ? undefined
+            : { label: "Projects", to: "/projects", onClick: onLeave }
+        }
         actions={
           <>
             <ObjectActionsButton
