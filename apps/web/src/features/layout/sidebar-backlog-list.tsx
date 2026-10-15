@@ -342,8 +342,6 @@ interface ItemRowProps {
   subitemCount: number;
   project?: LocalProject;
   workflowState?: LocalWorkflowState;
-  /** The saved entries' time on the item. The running entry is not counted. */
-  loggedMs: number;
   isActive: boolean;
   isRunning: boolean;
   isReturned: boolean;
@@ -415,8 +413,8 @@ function ParentLink({
 
 /**
  * The Comfortable row, laid out like a T3 Code thread: the project's icon and
- * name over the title, with the markers and the logged time at the end of the
- * project line, then the workflow state on a faint third line, which ends with
+ * name over the item's icon and title, with the markers and the remaining estimate at the end
+ * of the project line, then the workflow state on a faint third line, which ends with
  * an arrow to the parent on a subitem. Hover and focus replace the end of the
  * project line with Snooze… and Settle, and show a round Start entry button
  * centered at the row's end. Like the compact row, it re-renders for its own
@@ -425,8 +423,9 @@ function ParentLink({
 const ComfortableItemRow = memo(function ComfortableItemRow(
   props: ItemRowProps,
 ) {
-  const { workItem, parent, project, workflowState, loggedMs, isActive, rows } =
+  const { workItem, parent, project, workflowState, isActive, iconData, rows } =
     props;
+  const remainingHours = workItem.remainingEstimateHours;
   const { actions, onClick, onKeyDown } = useItemRowHandlers(props);
   const reveal = useHoverOrFocusWithin();
 
@@ -470,8 +469,10 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
               isRunning={props.isRunning}
               isReturned={props.isReturned}
             />
-            {loggedMs > 0 ? (
-              <Value tone="muted">{formatCompactDuration(loggedMs)}</Value>
+            {remainingHours !== undefined ? (
+              <Value tone="muted">
+                {formatCompactDuration(remainingHours * 3_600_000)}
+              </Value>
             ) : null}
           </span>
           {reveal.active ? (
@@ -486,13 +487,16 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
             />
           ) : null}
         </span>
-        <span
-          className={cn(
-            "truncate text-base leading-5",
-            props.isReturned && "font-semibold",
-          )}
-        >
-          {workItem.title}
+        <span className="flex h-5 min-w-0 items-center gap-2">
+          <WorkItemIcon icon={resolveWorkItemIcon(workItem, iconData)} />
+          <span
+            className={cn(
+              "min-w-0 truncate text-base leading-5",
+              props.isReturned && "font-semibold",
+            )}
+          >
+            {workItem.title}
+          </span>
         </span>
         {/* Kept empty without a state, so every row is the same height. */}
         <span className="flex h-4 items-center gap-1.5 text-xs text-muted-foreground/70">
@@ -744,7 +748,7 @@ export function SidebarBacklogList({
     };
   }, [state, now]);
 
-  // Apart from the list above so the clock does not recount them every minute.
+  // Apart from the list above so the clock does not rebuild them every minute.
   const projectById = useMemo(
     () => new Map(state.projects.map((project) => [project._id, project])),
     [state.projects],
@@ -753,17 +757,6 @@ export function SidebarBacklogList({
     () => new Map(state.workflowStates.map((status) => [status._id, status])),
     [state.workflowStates],
   );
-  const loggedMsByItemId = useMemo(() => {
-    const totals = new Map<string, number>();
-    for (const entry of state.timesheetEntries) {
-      if (!entry.workItemId) continue;
-      totals.set(
-        entry.workItemId,
-        (totals.get(entry.workItemId) ?? 0) + entry.durationMs,
-      );
-    }
-    return totals;
-  }, [state.timesheetEntries]);
 
   const parentOf = (workItem: LocalWorkItem) => {
     const key = getWorkItemParentKey(workItem);
@@ -779,7 +772,6 @@ export function SidebarBacklogList({
     workflowState: workItem.workflowStateId
       ? workflowStateById.get(workItem.workflowStateId)
       : undefined,
-    loggedMs: loggedMsByItemId.get(workItem._id) ?? 0,
     isActive: activeItemId === workItem._id,
     isRunning: runningWorkItemId === workItem._id,
     isReturned: isBacklogItemReturned(workItem, now),

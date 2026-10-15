@@ -12,9 +12,14 @@ const apiUrl = "http://127.0.0.1:8787";
 Then(
   "the sidebar shows backlog controls and pull requests together",
   async ({ page }) => {
+    const section = page.getByRole("region", {
+      name: "Pull requests on your plate",
+    });
+    await expect(section).toBeVisible();
+    // Sidebar rows open their actions with right-click, not a "…" button.
     await expect(
-      page.getByRole("region", { name: "Pull requests on your plate" }),
-    ).toBeVisible();
+      section.getByRole("button", { name: /^Actions for/ }),
+    ).toHaveCount(0);
     // Nothing is snoozed or settled, so those sections are not shown.
     await expect(page.getByRole("button", { name: /^Snoozed/ })).toHaveCount(0);
     await expect(
