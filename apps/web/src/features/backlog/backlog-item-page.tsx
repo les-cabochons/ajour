@@ -75,8 +75,8 @@ import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
 
 /**
  * The backlog item page at /backlog/$itemId, from "Backlog item page" in
- * agents/ux-spec.md. The top bar holds the breadcrumb and the item's actions;
- * the page holds the title, the estimate figures and progress, then the note,
+ * agents/ux-spec.md. The top bar holds the item's actions;
+ * the page holds the back link, title, estimate figures and progress, then the note,
  * subitems and time entries beside the properties. Edit opens the backlog
  * item editor in a side panel over the page.
  *
@@ -137,7 +137,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
   if (!workItem) {
     return (
       <div className="backlog-item-page">
-        <PageHeader breadcrumb={[{ label: "Backlog", to: "/backlog" }]} />
+        <PageHeader backLink={{ label: "Backlog", to: "/backlog" }} />
         <Empty align="start" className="px-0">
           <EmptyHeader>
             <EmptyTitle>This backlog item no longer exists</EmptyTitle>
@@ -293,12 +293,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
           }
         >
           <PageHeader
-            breadcrumb={[
-              { label: "Backlog", to: "/backlog" },
-              reference
-                ? { label: `#${reference}`, mono: true }
-                : { label: "Item" },
-            ]}
+            backLink={{ label: "Backlog", to: "/backlog" }}
             actions={
               <>
                 {headerButtons}

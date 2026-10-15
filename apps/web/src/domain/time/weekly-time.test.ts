@@ -343,6 +343,9 @@ describe("weekly time projection", () => {
     expect(oldRow.runningLocalDate).toBeUndefined();
     expect(newRow.dayEntries[0]).toEqual([]);
     expect(newRow.runningLocalDate).toBe("2026-08-10");
+    // Both rows hold the running entry: the old one its saved part, the new one its time.
+    expect(oldRow.holdsRunningEntry).toBe(true);
+    expect(newRow.holdsRunningEntry).toBe(true);
 
     expect(
       selectWeeklyGridCell({
@@ -450,6 +453,10 @@ describe("weekly time projection", () => {
       ["project-1::", "No task", 0],
     ]);
     expect(projection.gridRows[1]?.dayEntries).toEqual(weekDates.map(() => []));
+    expect(projection.gridRows.map((row) => row.holdsRunningEntry)).toEqual([
+      false,
+      false,
+    ]);
   });
 
   it("keeps typed time out of rows grouped by a legacy label", () => {

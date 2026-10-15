@@ -3,9 +3,28 @@ import {
   useRef,
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
+  type MouseEvent as ReactMouseEvent,
 } from "react";
 import { RiAddLine as Plus } from "@remixicon/react";
-import { ObjectContextMenu } from "@/components/object-actions-menu";
+import {
+  ObjectActionItems,
+  ObjectContextMenu,
+} from "@/components/object-actions-menu";
+import {
+  ContextMenu,
+  ContextMenuContent,
+  ContextMenuTrigger,
+} from "@/components/ui/context-menu";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import {
   Table,
@@ -27,7 +46,7 @@ import {
   formatWeekGridCellText,
 } from "@/domain/time/week-grid-cell";
 import {
-  getWeeklyGridRowKey,
+  getWeeklyGridAddedRowKey,
   type WeeklyGridAddedRow,
   type WeeklyGridRow,
   type WeeklyTimeProjection,
@@ -84,7 +103,8 @@ export function formatAddAnotherEntryLabel(cell: WeekGridCell) {
   return `Add another entry for ${formatWeekDay(cell.localDate, { weekday: "long" })}`;
 }
 
-type WeekGridCellActionId = "add-entry" | "open-entries" | TimeEntryActionId;
+type WeekGridCellActionId =
+  "add-entry" | "open-entries" | "delete-row" | TimeEntryActionId;
 
 /** How long a click waits for a second click before it opens the side panel. */
 const DOUBLE_CLICK_DELAY_MS = 250;
@@ -98,10 +118,47 @@ const OPEN_ENTRIES_ACTION: ObjectAction<WeekGridCellActionId> = {
   label: "Open entries",
 };
 
+/**
+ * Delete row, the row's only action. It ends every cell's menu too, so the
+ * focused cell's Shift+Backspace has a menu item that shows the key. A row that
+ * holds the running entry keeps it, because the running entry can't be deleted.
+ */
+function getDeleteRowAction(row: WeeklyGridRow): ObjectAction<"delete-row"> {
+  return {
+    id: "delete-row",
+    label: "Delete row",
+    destructive: true,
+    disabledReason: row.holdsRunningEntry
+      ? "Stop the running entry first"
+      : undefined,
+  };
+}
+
+/** "Internal · Admin", the row's name in its tooltip and the delete row dialog. */
+function formatRowName(row: WeeklyGridRow) {
+  return `${row.projectName} · ${row.taskName}`;
+}
+
+/**
+ * A Delete row waiting for the row's entries to be counted. `dayIndex` is the
+ * day of the cell that asked, so focus stays in that column after the delete.
+ */
+interface RowDeleteRequest {
+  rowKey: string;
+  dayIndex: number;
+}
+
+/** "3 entries (1:30)" for the delete row dialog. */
+function describeRowEntries(row: WeeklyGridRow) {
+  const count = row.entryIds.length;
+  return `${count} ${count === 1 ? "entry" : "entries"} (${formatClockDuration(row.totalMs)})`;
+}
+
 /** A cell's keys: its entry's keys, and E or Enter lists a cell's several entries. */
 const CELL_ACTION_KEYS: ActionKeys<WeekGridCellActionId> = {
   ...TIME_ENTRY_ACTION_KEYS,
   "open-entries": "item.edit",
+  "delete-row": "item.delete-row",
 };
 
 /**
@@ -225,6 +282,10 @@ function WeekGridCellInput({
  * Right-click lists Add entry, then the cell's entry actions or Open entries.
  * Arrows move between cells, and the entry keys of `lib/item-keys.ts` act on a
  * focused cell; Enter keeps editing in place where it can.
+ *
+ * Delete row ends the right-click menu of the row name and of every cell, and
+ * Shift+Backspace runs it on a focused cell. An empty row goes at once. A row
+ * with time asks first, then deletes its entries for the week with an Undo toast.
  */
 export function WeekGrid({
   activeCell,
@@ -233,6 +294,7 @@ export function WeekGrid({
   onClosePanel,
   onOpen,
   onOpenCellEntries,
+  onRemoveRow,
   projection,
   projects,
   projectsById,
@@ -250,6 +312,8 @@ export function WeekGrid({
   onClosePanel: () => boolean;
   onOpen: (request: WeekGridOpenRequest) => void;
   onOpenCellEntries: (cell: WeekGridCell) => void;
+  /** Forgets a row added with "+ Add row", so it stops showing while empty. */
+  onRemoveRow: (rowKey: string) => void;
   projection: WeeklyTimeProjection;
   projects: LocalProject[];
   projectsById: Map<string, LocalProject>;
@@ -263,6 +327,22 @@ export function WeekGrid({
     initialText?: string;
   } | null>(null);
   const [isAddingRow, setIsAddingRow] = useState(false);
+  const [nameMenuRowKey, setNameMenuRowKey] = useState<string | null>(null);
+  const nameMenuTriggerRef = useRef<HTMLDivElement>(null);
+  const nameMenuRow = projection.gridRows.find(
+    (row) => row.rowKey === nameMenuRowKey,
+  );
+  const [deleteRequest, setDeleteRequest] = useState<RowDeleteRequest | null>(
+    null,
+  );
+  // Read from this render's projection, so the count includes what the side
+  // panel saved as it closed.
+  const rowToDelete = deleteRequest
+    ? projection.gridRows.find((row) => row.rowKey === deleteRequest.rowKey)
+    : undefined;
+  const isConfirmingDelete = Boolean(rowToDelete?.entryIds.length);
+  // The cell the delete row dialog gives focus to once a confirmed delete closes it.
+  const focusAfterDeleteRef = useRef<string | null>(null);
   const cellButtonsRef = useRef(new Map<string, HTMLButtonElement>());
   const addRowPickerRef = useRef<HTMLDivElement>(null);
   // The cell to focus once the next render shows it, such as after an in-place edit.
@@ -282,6 +362,18 @@ export function WeekGrid({
     if (!cellId) return;
     pendingFocusRef.current = null;
     cellButtonsRef.current.get(cellId)?.focus();
+  });
+
+  // An empty row goes without asking. This runs once the request's render has
+  // counted the row's entries.
+  useEffect(() => {
+    if (!deleteRequest || isConfirmingDelete) return;
+    pendingFocusRef.current = getNeighborCellId(
+      deleteRequest.rowKey,
+      deleteRequest.dayIndex,
+    );
+    setDeleteRequest(null);
+    onRemoveRow(deleteRequest.rowKey);
   });
 
   useEffect(() => {
@@ -420,9 +512,15 @@ export function WeekGrid({
     pendingFocusRef.current = model.cellId;
   }
 
-  function runCellAction(model: CellModel, actionId: WeekGridCellActionId) {
+  function runCellAction(
+    row: WeeklyGridRow,
+    model: CellModel,
+    actionId: WeekGridCellActionId,
+  ) {
     const target = getActionTarget(model);
-    if (actionId === "add-entry") {
+    if (actionId === "delete-row") {
+      requestDeleteRow(row, model.dayIndex);
+    } else if (actionId === "add-entry") {
       onOpen({ cell: model.cell });
     } else if (actionId === "open-entries" || actionId === "edit") {
       openCell(model);
@@ -431,12 +529,18 @@ export function WeekGrid({
     }
   }
 
-  function getCellActions(model: CellModel) {
-    if (model.count > 1) return [ADD_ENTRY_ACTION, OPEN_ENTRIES_ACTION];
+  function getCellActions(
+    row: WeeklyGridRow,
+    model: CellModel,
+  ): ObjectAction<WeekGridCellActionId>[] {
     const target = getActionTarget(model);
-    return target
-      ? [ADD_ENTRY_ACTION, ...entryActions.getActions(target)]
-      : [ADD_ENTRY_ACTION];
+    const cellActions: ObjectAction<WeekGridCellActionId>[] =
+      model.count > 1
+        ? [ADD_ENTRY_ACTION, OPEN_ENTRIES_ACTION]
+        : target
+          ? [ADD_ENTRY_ACTION, ...entryActions.getActions(target)]
+          : [ADD_ENTRY_ACTION];
+    return [...cellActions, getDeleteRowAction(row)];
   }
 
   function handleCellKeyDown(
@@ -468,8 +572,58 @@ export function WeekGrid({
     onAddRow(row);
     setIsAddingRow(false);
     pendingFocusRef.current = getCellId(
-      getWeeklyGridRowKey({ label: "", ...row }),
+      getWeeklyGridAddedRowKey(row),
       weekDates[0]!,
+    );
+  }
+
+  /** The same day's cell in the next row, or the previous row when it was last. */
+  function getNeighborCellId(rowKey: string, dayIndex: number) {
+    const rows = projection.gridRows;
+    const index = rows.findIndex((candidate) => candidate.rowKey === rowKey);
+    const neighbor = rows[index + 1] ?? rows[index - 1];
+    return neighbor ? getCellId(neighbor.rowKey, weekDates[dayIndex]!) : null;
+  }
+
+  /**
+   * Asks to delete the row. The side panel closes first when it shows the row:
+   * closing saves its draft, which can add an entry to the row or move one out,
+   * so the entries are counted on the next render. An invalid draft keeps the
+   * panel open and cancels the delete.
+   */
+  function requestDeleteRow(row: WeeklyGridRow, dayIndex = 0) {
+    if (row.holdsRunningEntry) return;
+    const panelShowsRow =
+      activeCell?.rowKey === row.rowKey ||
+      (activeEntryId !== undefined && row.entryIds.includes(activeEntryId));
+    if (panelShowsRow && !onClosePanel()) return;
+    focusAfterDeleteRef.current = null;
+    setDeleteRequest({ rowKey: row.rowKey, dayIndex });
+  }
+
+  function confirmDeleteRow(row: WeeklyGridRow, dayIndex: number) {
+    if (row.holdsRunningEntry) return;
+    setDeleteRequest(null);
+    focusAfterDeleteRef.current = getNeighborCellId(row.rowKey, dayIndex);
+    offerTimeEntryUndo(
+      localStore.deleteTimesheetEntries(row.entryIds),
+      "Row deleted",
+    );
+    onRemoveRow(row.rowKey);
+  }
+
+  /** Routes row-name right-clicks to one menu, outside the cells' menu trees. */
+  function openRowNameMenu(rowKey: string, event: ReactMouseEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+    setNameMenuRowKey(rowKey);
+    nameMenuTriggerRef.current?.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: event.clientX,
+        clientY: event.clientY,
+      }),
     );
   }
 
@@ -507,9 +661,9 @@ export function WeekGrid({
           />
         ) : (
           <ObjectContextMenu
-            actions={getCellActions(model)}
+            actions={getCellActions(row, model)}
             keys={CELL_ACTION_KEYS}
-            onAction={(actionId) => runCellAction(model, actionId)}
+            onAction={(actionId) => runCellAction(row, model, actionId)}
             render={
               <button
                 type="button"
@@ -536,9 +690,9 @@ export function WeekGrid({
                 onKeyDown={(event) => {
                   handleCellKeyDown(model, event);
                   handleItemKeyDown(event, {
-                    actions: getCellActions(model),
+                    actions: getCellActions(row, model),
                     keys: CELL_ACTION_KEYS,
-                    onAction: (actionId) => runCellAction(model, actionId),
+                    onAction: (actionId) => runCellAction(row, model, actionId),
                   });
                 }}
               />
@@ -563,7 +717,7 @@ export function WeekGrid({
   return (
     <div className="weekly-grid-stack">
       <div className="weekly-grid-table-scroll">
-        <Table>
+        <Table className="weekly-grid-table">
           <TableHeader>
             <TableRow>
               <TableHead className="weekly-grid-task-column">
@@ -579,16 +733,20 @@ export function WeekGrid({
                   )}
                 >
                   <div className="weekly-grid-day-heading">
-                    <span className="weekly-grid-weekday">
-                      {formatWeekDay(day.localDate, { weekday: "short" })}
-                    </span>
-                    <span className="weekly-grid-day-number">
-                      {formatWeekDay(day.localDate, { day: "numeric" })}
+                    <span>
+                      <span className="weekly-grid-weekday">
+                        {formatWeekDay(day.localDate, { weekday: "short" })}
+                      </span>
+                      <span className="weekly-grid-day-number">
+                        {formatWeekDay(day.localDate, { day: "numeric" })}
+                      </span>
                     </span>
                     <CapacityValue
                       capacityMs={day.capacityMs}
                       totalMs={day.totalMs}
-                      label={formatWeekDay(day.localDate, { weekday: "long" })}
+                      label={formatWeekDay(day.localDate, {
+                        weekday: "long",
+                      })}
                       overCapacity={day.overCapacity}
                       showWarning={showCapacityWarning}
                     />
@@ -605,14 +763,23 @@ export function WeekGrid({
                 : undefined;
               return (
                 <TableRow key={row.rowKey}>
-                  <TableCell className="weekly-grid-task-cell">
+                  {/* No keys: the row name can't take focus, so Shift+Backspace works on cells. */}
+                  <TableCell
+                    className="weekly-grid-task-cell"
+                    onContextMenu={(event) =>
+                      openRowNameMenu(row.rowKey, event)
+                    }
+                  >
                     <ProjectIcon
                       icon={project?.icon}
                       color={project?.color ?? "#3b82f6"}
                       className="weekly-project-mark"
                       fallback="dot"
                     />
-                    <div>
+                    <div
+                      className="weekly-grid-task-name"
+                      title={formatRowName(row)}
+                    >
                       <span>{row.projectName}</span>
                       <strong>{row.taskName}</strong>
                     </div>
@@ -691,7 +858,56 @@ export function WeekGrid({
           </TableFooter>
         </Table>
       </div>
+      {/* Keep this root outside the table so cell menus are not nested under it. */}
+      <ContextMenu>
+        <ContextMenuTrigger render={<div hidden ref={nameMenuTriggerRef} />} />
+        <ContextMenuContent>
+          <ObjectActionItems
+            actions={nameMenuRow ? [getDeleteRowAction(nameMenuRow)] : []}
+            onAction={() => {
+              if (nameMenuRow) requestDeleteRow(nameMenuRow);
+            }}
+          />
+        </ContextMenuContent>
+      </ContextMenu>
       {entryActions.dialogs}
+      <AlertDialog
+        open={isConfirmingDelete}
+        onOpenChange={(open) => {
+          if (!open) setDeleteRequest(null);
+        }}
+      >
+        <AlertDialogContent
+          // Cancel returns focus to the cell that asked; a delete moves it to a neighbor.
+          finalFocus={() => {
+            const cellId = focusAfterDeleteRef.current;
+            return (cellId && cellButtonsRef.current.get(cellId)) || true;
+          }}
+        >
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete this row?</AlertDialogTitle>
+            <AlertDialogDescription>
+              {rowToDelete
+                ? `Deleting ${formatRowName(rowToDelete)} also deletes its ${describeRowEntries(rowToDelete)} this week.`
+                : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              variant="destructive"
+              disabled={rowToDelete?.holdsRunningEntry}
+              onClick={() => {
+                if (rowToDelete && deleteRequest) {
+                  confirmDeleteRow(rowToDelete, deleteRequest.dayIndex);
+                }
+              }}
+            >
+              Delete row
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

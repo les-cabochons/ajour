@@ -69,3 +69,8 @@ The chrome is solid: `--nav-bg` and `--app-sidebar-bg` are opaque, with no blur.
 - `--app-sidebar-width` (272px comfortable, 200px compact, user-resizable), `--app-workspace-max-width: 1440px`.
 - `--side-panel-width` (340px default, user-resizable from 300px to 720px and at most half the page, saved per page). `SidePanel` sets it on its parent element.
 - The top bar is 48px. Sidebar backlog rows are 80px in Comfortable and 26px in Compact. Other sidebar rows are 28px. Day-view rows are 40px. Backlog rows are 36px.
+
+## Week Grid
+
+- `--weekly-grid-day-width: 84px`, `--weekly-grid-total-width: 72px`, and `--weekly-grid-task-min-width: 160px` set the 820px minimum table width. The project/task column takes any remaining width.
+- `--weekly-grid-heading-line-height: 1.2` keeps the date and logged total on two compact lines.

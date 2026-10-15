@@ -12,7 +12,7 @@ Decided in [Action model for entries, timers, projects, tasks and work items](ht
 
 1. Each object kind has one action set. The same items appear in the same order on every surface:
    - the right-click menu on any row, card or cell that shows the object,
-   - the "…" button on the row or card, shown on hover and keyboard focus, and always shown in the narrow view,
+   - the "…" button on the row or card, shown on hover and keyboard focus, and always shown in the narrow view, except Grid rows as described in rule 8,
    - keyboard shortcuts on the focused object,
    - the command palette (Cmd+K), acting on the focused object,
    - the Electron menu bar.
@@ -20,8 +20,10 @@ Decided in [Action model for entries, timers, projects, tasks and work items](ht
 3. Some actions swap with a state counterpart in the same slot: Continue and Stop, Delete and Discard, Archive and Restore.
 4. Delete, Discard and Archive come last and use the destructive style.
 5. Every action has a shortcut slot. The keyboard section assigns the keys.
-6. Selection is single. Focus and selection are the same thing, and actions apply to the focused object. Multi-select and bulk actions are out of scope.
+6. Selection is single. Focus and selection are the same thing, and actions apply to the focused object. Multi-select and bulk actions are out of scope, except Delete row in the Week Grid, which removes the entries of one project/task row for that week.
 7. Exception to rule 1: Move up and Move down (Alt+Up and Alt+Down) reorder sortable objects. They exist as keyboard shortcuts and palette commands only, not in the right-click or "…" menus. Sortable objects are time entries within a day, projects, tasks and top-level backlog items.
+
+8. Grid rows have no "…" button. Delete row appears in the right-click menu on the row name and its cells. Shift+Backspace works on focused cells only, so only the cell menu shows the shortcut.
 
 ### Time entry
 
@@ -126,14 +128,13 @@ Decided in [App shell and collapsible sidebar](https://github.com/les-cabochons/
 - The state is saved per device. Below 1100px the sidebar hides on its own, without changing the saved preference. Show sidebar and Cmd+B then open it over the page, and opening a page from it, Escape or a click outside closes it.
 - Settings opens inside the shell, in place of the app sidebar: the left column lists the settings pages under their App, Work and Data groups, at the app sidebar's width and at every desktop width. "Back to app" at its top returns to the last page outside Settings. While Settings is open the timer dock floats, fitted to the bottom of that column, and the titlebar shows no Show sidebar button.
 - Projects keeps its own list of projects next to the app sidebar, with no collapse control of its own.
-- The titlebar keeps the totals pill. New entry (+) lives in the timer dock and Start (▶) beside Search. The date picker only shows in the narrow view. The running entry lives in the timer dock, not the titlebar.
+- The titlebar keeps the totals pill. New entry (+) and Start (▶) live in the timer dock. The date picker only shows in the narrow view. The running entry lives in the timer dock, not the titlebar.
 
 ### Timer dock
 
 - While an entry runs, the dock shows it: a running dot, its title (the backlog item's, else the note, the task or the project), the time counted with seconds, New entry (+) and Stop. With a remaining estimate, a bar shows how much of it the running time uses, with "1.1h left" or "0.4h over", next to the project code and task.
 - Clicking the dock opens the running entry's editor in a popover. New entry (+) opens a blank entry editor in a popover anchored to it.
-- With nothing running, the dock shows "Nothing running", today's total, New entry (+) and a one-click start for the first item of the list that is not pinned, marked Up next.
-- With nothing running, a small Start (▶) beside Search, above the dock, starts an empty entry and opens its editor. It hides while an entry runs.
+- With nothing running, the dock shows New entry (+), Start (▶) and today's total on one line. Start begins an empty entry and opens its editor; the dock does not suggest a backlog item.
 - N opens the new entry editor from anywhere, anchored to the titlebar's totals off the Time pages. S starts an empty entry.
 - While the sidebar is not on screen, the dock floats at the bottom left on one line: dot, title, time counted and Stop. While nothing runs it holds New entry (+) and Start (▶), the only buttons that start an entry there.
 - The window title shows the running entry, such as "● 1:24 · Fix export rounding — Ajour", so it shows on the taskbar or Dock. It changes once a minute and goes back to "Ajour" when nothing runs.
@@ -251,6 +252,7 @@ Decided in [Adding and changing time in the week view](https://github.com/les-ca
 - A cell with several entries shows its total and a count, such as "3:30 ×2", and never edits in place.
 - The side panel's cell list replaces the old tray in the bottom-left corner.
 - "+ Add row" picks a project or task and shows an empty row. The row disappears when the user leaves the week unless it gets hours. Rows are never saved on their own.
+- Right-click on a row's name or any of its cells offers Delete row, last in the menu. Shift+Backspace on a focused cell runs it. The row has no "…" button. An empty row goes at once. A row with time opens a dialog showing the project/task name, entry count and total duration, then deletes those entries with the Undo toast. If its side panel is open, deletion saves and closes that draft before counting entries; an invalid draft keeps the panel open and blocks deletion. A row containing a running entry or its saved part can't be deleted until it stops.
 - Right-click on a cell starts with Add entry. On a one-entry cell, that entry's action set follows. On a cell with several entries, Open entries follows.
 
 ### Days
@@ -350,7 +352,7 @@ Frequent in-app actions use single keys. They only work when focus is not in a t
 
 - Day rows become focusable, like Week cards.
 - ↑ and ↓ move focus between rows or cards. ← and → move between days in Days and between cells in the Grid.
-- Enter goes one level deeper. On a time entry, task or project it opens Edit. On a backlog item row it opens the backlog item page, and on that page it opens Edit. E no longer opens Edit. Delete or Backspace deletes, with the Undo toast.
+- Enter goes one level deeper. On a time entry, task or project it opens Edit. On a backlog item row it opens the backlog item page, and on that page it opens Edit. E no longer opens Edit. Delete or Backspace deletes, with the Undo toast. On a focused Grid cell, Shift+Backspace deletes the whole row.
 - On a focused backlog item, or on its page, S starts an entry on it (Stop when its entry runs), E settles and B snoozes, as in Gmail. Shift+E opens the settle dialog even when a settle rule applies a fixed change. Cmd+D duplicates. M opens Move to…. Alt+↑ and Alt+↓ reorder.
 - The context menu key, Shift+F10 or "." opens the "…" menu. Escape closes whatever is open.
 - Every item in the "…" and right-click menus shows its key, so the menus teach the shortcuts.
@@ -525,7 +527,7 @@ The sidebar works like the T3 Code and Linear sidebars: the view switcher, the t
 - The list holds top-level items and subitems that have their own priority. A subitem without a priority follows its parent and does not show.
 - With priority order, a subitem with its own priority mixes with top-level items by priority. With custom order, it sits right below its parent. If its parent is snoozed or settled, it takes the parent's place.
 - Snoozed, settled and archived items leave the list.
-- Pin puts an item at the top of the list with a pin icon. Pinned items keep the list's order among themselves. A pinned item never becomes the timer dock's Up next: Up next is the first item that is not pinned. Pin is local, a sync keeps it, and the item stays pinned through a snooze or a settle. Pull requests cannot be pinned.
+- Pin puts an item at the top of the list with a pin icon. Pinned items keep the list's order among themselves. Pinning does not select an item for the timer dock's Start action. Pin is local, a sync keeps it, and the item stays pinned through a snooze or a settle. Pull requests cannot be pinned.
 - The narrow view has no item list. The Backlog page is the way in.
 
 ### Search and project filter
@@ -535,11 +537,11 @@ The sidebar works like the T3 Code and Linear sidebars: the view switcher, the t
 - Escape clears the box and closes it. Leaving the box empty closes it too. A typed query stays while the user opens the rows it found, including when the sidebar hides in between, as the overlay does after a row opens. It is not saved across launches.
 - The filter button, like T3 Code's, opens a menu with its own search, "All projects", then the active projects. Picking a project keeps only its items. Pull requests have no project, so they hide while a project is picked. The pick is saved per device. The button stays highlighted while a project is picked.
 - Every section keeps only the matching rows, and its count follows. A section left with no rows is not shown. While the list is narrowed, Settled shows its count and an empty backlog list says "No matching items."
-- The view switcher's counts, the timer dock's Up next and the Backlog page ignore the sidebar's search and filter.
+- The view switcher's counts and the Backlog page ignore the sidebar's search and filter.
 
 ### Layout options
 
-Decided after the prototype on branch `prototype/backlog-sidebar`: variant B is the default and variant A is the compact layout. Variant C's Up next card became the timer dock's start row.
+Decided after the prototype on branch `prototype/backlog-sidebar`: variant B is the default and variant A is the compact layout. Variant C's Up next card was removed; the idle timer dock starts an empty entry.
 
 - Density has two values. Comfortable is the default. Compact fits more items.
 - Density lives in a "Sidebar" group in Settings > General and as a View menu entry next to Show or Hide sidebar. It is saved per device.

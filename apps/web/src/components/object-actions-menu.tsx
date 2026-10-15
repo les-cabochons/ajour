@@ -38,7 +38,7 @@ interface ObjectActionsProps<Id extends string> {
 const platform = getShortcutPlatform();
 
 /** Renders one action set as menu items. Shared by the "…" menu and the right-click menu. */
-function ObjectActionItems<Id extends string>({
+export function ObjectActionItems<Id extends string>({
   actions,
   onAction,
   keys,

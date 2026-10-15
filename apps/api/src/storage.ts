@@ -12,6 +12,7 @@ import {
   type ConnectorImportCandidate,
   type ConnectorImportCandidateInput,
   type ConnectorPluginManifest,
+  type ConnectorOverviewPlugin,
   type ConnectorsOverview,
   type ConnectorSummaryValues,
 } from "../../../packages/shared/connectors.ts";
@@ -247,13 +248,15 @@ function compactFieldValues(
 
 function createMissingPluginManifest(
   pluginId: string,
-): ConnectorPluginManifest {
+): ConnectorOverviewPlugin {
   return {
     id: pluginId,
     version: "0.0.0",
     apiVersion: 1,
     displayName: pluginId,
     description: "Plugin unavailable.",
+    unavailableReason:
+      "This plugin is not installed. Download it again to use its saved connections.",
     iconSvg: MISSING_PLUGIN_ICON_SVG,
     entrypoint: "",
     capabilities: { connector: {} },
@@ -582,13 +585,30 @@ export class AppApiStorage {
         : path.join(os.homedir(), ".ajour", "app-api-state.json");
   }
 
+  /**
+   * `unavailable` lists installed packages the host cannot run. They show up
+   * with their own name and version, an empty entrypoint, and the reason.
+   */
   async getConnectorsOverview(
     plugins: ConnectorPluginManifest[],
+    unavailable: Array<{
+      manifest: ConnectorPluginManifest;
+      reason: string;
+    }> = [],
   ): Promise<ConnectorsOverview> {
     const state = await this.readState();
-    const pluginMap = new Map(
+    const pluginMap = new Map<string, ConnectorOverviewPlugin>(
       plugins.map((plugin) => [plugin.id, plugin] as const),
     );
+    for (const { manifest, reason } of unavailable) {
+      if (!pluginMap.has(manifest.id)) {
+        pluginMap.set(manifest.id, {
+          ...manifest,
+          entrypoint: "",
+          unavailableReason: reason,
+        });
+      }
+    }
 
     for (const connection of state.connections) {
       if (!pluginMap.has(connection.pluginId)) {

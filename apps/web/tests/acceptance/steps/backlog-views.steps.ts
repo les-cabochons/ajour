@@ -267,25 +267,19 @@ Then("the other item is pinned at the top of the sidebar", async ({ page }) => {
     .getByRole("navigation", { name: "Primary navigation" })
     .locator("[data-backlog-item-id]");
   await expect(rows.first()).toHaveAttribute("data-backlog-item-id", "other");
-  // The row's markers, the pin among them, give way to its actions on hover
-  // and focus, and the menu gives focus back to the row when it closes.
-  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+  // Wait for the menu to restore focus, then move it outside the row so
+  // its markers show instead of the hover and focus actions.
+  await expect(page.getByRole("menu")).toHaveCount(0);
+  const search = page
+    .getByRole("navigation", { name: "Primary navigation" })
+    .getByRole("button", { name: "Search", exact: true });
+  await search.focus();
+  await expect(search).toBeFocused();
   await page.getByRole("main").hover();
   await expect(
     otherSidebarRow(page).getByRole("img", { name: "Pinned" }),
   ).toBeVisible();
 });
-Then(
-  "the timer dock still offers the Backlog parent as Up next",
-  async ({ page }) => {
-    await expect(
-      page.getByRole("button", {
-        name: "Start entry on Backlog parent",
-        exact: true,
-      }),
-    ).toBeVisible();
-  },
-);
 Then("the other item is not pinned", async ({ page }) => {
   await expect(
     otherSidebarRow(page).getByRole("img", { name: "Pinned" }),

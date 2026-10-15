@@ -40,6 +40,11 @@ export interface WeeklyGridRow {
   dayEntries: LocalTimesheetEntry[][];
   dayTotalsMs: number[];
   entryIds: string[];
+  /**
+   * True when the running entry shows in this row or its saved part is listed
+   * here. A running entry whose task changed does both, in two rows.
+   */
+  holdsRunningEntry: boolean;
   projectId?: string;
   projectName: string;
   rowKey: string;
@@ -53,6 +58,11 @@ export interface WeeklyGridRow {
 export interface WeeklyGridAddedRow {
   projectId?: string;
   taskId?: string;
+}
+
+/** Names the Grid row of a row added with "+ Add row", which has no label. */
+export function getWeeklyGridAddedRowKey(row: WeeklyGridAddedRow) {
+  return getWeeklyGridRowKey({ label: "", ...row });
 }
 
 /**
@@ -191,7 +201,7 @@ export function projectWeeklyTime({
     projectId?: string,
     taskId?: string,
   ) {
-    return rowKey === getWeeklyGridRowKey({ label: "", projectId, taskId });
+    return rowKey === getWeeklyGridAddedRowKey({ projectId, taskId });
   }
 
   const gridGroups = new Map<string, LocalTimesheetEntry[]>();
@@ -243,6 +253,9 @@ export function projectWeeklyTime({
         ),
         dayTotalsMs,
         entryIds: group.map((entry) => entry._id),
+        holdsRunningEntry:
+          rowKey === runningRowKey ||
+          group.some((entry) => entry._id === runningTime?.entryId),
         projectId: first.projectId,
         projectName,
         rowKey,
@@ -254,7 +267,7 @@ export function projectWeeklyTime({
   );
 
   for (const added of addedRows) {
-    const rowKey = getWeeklyGridRowKey({ label: "", ...added });
+    const rowKey = getWeeklyGridAddedRowKey(added);
     if (gridRows.some((row) => row.rowKey === rowKey)) {
       continue;
     }
@@ -268,6 +281,7 @@ export function projectWeeklyTime({
       dayEntries: weekDates.map(() => []),
       dayTotalsMs: weekDates.map(() => 0),
       entryIds: [],
+      holdsRunningEntry: false,
       projectId: added.projectId,
       projectName,
       rowKey,
@@ -307,6 +321,7 @@ export function projectWeeklyTime({
         runningTime.durationMs;
       existingRow.totalMs += runningTime.durationMs;
       existingRow.runningLocalDate = runningTime.localDate;
+      existingRow.holdsRunningEntry = true;
     } else if (runningTime.durationMs > 0) {
       const dayTotalsMs = weekDates.map((_, index) =>
         index === runningDayIndex ? runningTime.durationMs : 0,
@@ -320,6 +335,7 @@ export function projectWeeklyTime({
         dayEntries: weekDates.map(() => []),
         dayTotalsMs,
         entryIds: runningTime.entryId ? [runningTime.entryId] : [],
+        holdsRunningEntry: true,
         projectId: runningTime.projectId,
         projectName,
         rowKey: runningRowKey,

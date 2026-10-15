@@ -37,6 +37,7 @@ import {
   uninstallConnectorPluginPackage,
   type InstalledConnectorPlugin,
   type ResolvedConnectorPlugin,
+  type UnavailableConnectorPlugin,
 } from "./plugin-package.ts";
 
 interface PluginHostOptions {
@@ -120,11 +121,22 @@ export class ConnectorPluginManager {
   }
 
   async listPlugins(): Promise<ConnectorPluginManifest[]> {
+    return (await this.inspectPlugins()).plugins;
+  }
+
+  /** Runnable plugins, plus installed packages built for another plugin API. */
+  async inspectPlugins(): Promise<{
+    plugins: ConnectorPluginManifest[];
+    unavailable: UnavailableConnectorPlugin[];
+  }> {
     this.assertRunning();
-    const plugins = await this.discoverPlugins();
-    return Array.from(plugins.values())
-      .map((plugin) => plugin.manifest)
-      .sort(comparePlugins);
+    const { plugins, unavailable } = await this.discoverPlugins();
+    return {
+      plugins: Array.from(plugins.values())
+        .map((plugin) => plugin.manifest)
+        .sort(comparePlugins),
+      unavailable: Array.from(unavailable.values()),
+    };
   }
 
   async installPluginArchive(
@@ -212,7 +224,7 @@ export class ConnectorPluginManager {
   /** Whether the plugin declares the settle capability. */
   async supportsSettle(pluginId: string): Promise<boolean> {
     this.assertRunning();
-    const plugin = (await this.discoverPlugins()).get(pluginId);
+    const plugin = (await this.discoverPlugins()).plugins.get(pluginId);
     return plugin?.manifest.capabilities.connector?.settle ?? false;
   }
 
@@ -222,7 +234,7 @@ export class ConnectorPluginManager {
     capability: "connector" | "codeHost",
   ): Promise<boolean> {
     this.assertRunning();
-    const plugin = (await this.discoverPlugins()).get(pluginId);
+    const plugin = (await this.discoverPlugins()).plugins.get(pluginId);
     return plugin?.manifest.capabilities[capability] !== undefined;
   }
 
@@ -355,26 +367,35 @@ export class ConnectorPluginManager {
   }
 
   private async getPlugin(pluginId: string): Promise<ResolvedConnectorPlugin> {
-    const plugins = await this.discoverPlugins();
+    const { plugins, unavailable } = await this.discoverPlugins();
     const plugin = plugins.get(pluginId);
     if (!plugin) {
-      throw new Error(`Connector plugin "${pluginId}" is not installed.`);
+      throw new Error(
+        unavailable.get(pluginId)?.reason ??
+          `Connector plugin "${pluginId}" is not installed.`,
+      );
     }
 
     return plugin;
   }
 
-  private async discoverPlugins(): Promise<
-    Map<string, ResolvedConnectorPlugin>
-  > {
+  private async discoverPlugins(): Promise<{
+    plugins: Map<string, ResolvedConnectorPlugin>;
+    unavailable: Map<string, UnavailableConnectorPlugin>;
+  }> {
     await this.ensureInitialized();
     return await this.runPackageRead(async () => {
       const plugins = new Map<string, ResolvedConnectorPlugin>();
-
-      for (const plugin of await discoverInstalledConnectorPlugins(
+      const unavailable = new Map<string, UnavailableConnectorPlugin>();
+      const installed = await discoverInstalledConnectorPlugins(
         this.installedPluginDirectory,
-      )) {
+      );
+
+      for (const plugin of installed.plugins) {
         plugins.set(plugin.manifest.id, plugin);
+      }
+      for (const plugin of installed.unavailable) {
+        unavailable.set(plugin.manifest.id, plugin);
       }
 
       if (this.allowDevelopmentPlugins) {
@@ -382,6 +403,7 @@ export class ConnectorPluginManager {
           try {
             const plugin = await readConnectorPlugin(directory, "development");
             plugins.set(plugin.manifest.id, plugin);
+            unavailable.delete(plugin.manifest.id);
           } catch (error) {
             console.error(
               `Skipping invalid development connector plugin "${directory}".`,
@@ -391,7 +413,7 @@ export class ConnectorPluginManager {
         }
       }
 
-      return plugins;
+      return { plugins, unavailable };
     });
   }
 

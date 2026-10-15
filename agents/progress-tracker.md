@@ -4,6 +4,19 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Current Baseline
 
+- [x] Compact Week Grid and row deletion (2026-10-15): seven 84px day columns
+      and a 72px total column fit above an 820px content width. Delete row uses
+      right-click or Shift+Backspace without an action icon. It saves a valid
+      side-panel draft before counting entries, blocks invalid drafts, protects
+      both rows of a running entry whose task changed, and offers one Undo.
+      Row names share one context-menu root outside the cell menus. Paired
+      large-workspace timer samples measured 49.3 ms/s on the base and 50.7 ms/s
+      after the change, a 3% increase within the 10% budget. Domain tests cover the running-entry
+      guard; six Chromium scenarios cover hours editing, confirmation, Undo,
+      empty rows, saved drafts and invalid drafts. All 1,069 workspace tests,
+      type checks, package boundaries and builds passed. The full formatting
+      check still flags two unchanged files, `backlog-item-page.tsx` and
+      `sidebar-backlog-list.tsx`.
 - [x] UI foundation (2026-10-14): Geist Sans and Mono replace Raleway and
       Noto Serif; one type scale (11 to 28px), 28px and 32px controls, 4/6/8px
       radii and an indigo accent are tokens in `styles.css`; the top bar is the
@@ -710,3 +723,10 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Application production builds passed with `just --set PNPM 'corepack pnpm --recursive --filter !@ajour/docs' build`. The full `just build` remains blocked locally because the docs workspace has no installed VitePress dependency.
 - [x] Browser inspection confirmed the tertiary state color, stable title geometry, transparent hover icons, and highlighted rows in Comfortable and Compact.
 - [x] `just ui-perf`, identical script on main and this branch, five-run medians on the 600-item/1,800-entry fixture. Times in milliseconds, main / branch: cold load 1283.0 / 1272.6; Start click 89.5 / 86.0; Backlog store write 45.3 / 44.3; timer renderer work per second 28.6 / 31.0. The largest increase was 8.4%, below the 10% limit. Other local performance jobs overlapped parts of the measurements, so these are comparative development measurements, not production timings.
+
+## Sidebar merge resolution, 2026-10-15
+
+- [x] Merged main at `0594f4f` into the sidebar branch after the pinning PR was merged into it. Preserved the Comfortable/Compact row tokens, focused-item S shortcut, pin ordering, and main's Week Grid rules.
+- [x] Kept main's idle timer dock with New entry, blank-entry Start, and today's total. Updated the sidebar specification and pinning acceptance scenario for that behavior.
+- [x] The pin-icon assertion now waits for the menu to close and moves focus to Search before checking markers, avoiding the menu's focus-restoration race.
+- [x] Verification passed: 1,090 unit tests, all 152 Chromium acceptance scenarios, workspace typecheck and package boundaries. Application production builds passed with the docs workspace excluded because VitePress is not installed locally. Browser inspection confirmed the pinned item first, 80px Comfortable rows, and the new idle dock.

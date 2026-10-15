@@ -262,6 +262,61 @@ describe("ConnectorPluginManager", () => {
     expect(replacement.replaced).toBe(true);
   });
 
+  it("explains an installed package built for an older plugin API and replaces it on update", async () => {
+    const root = await tempDir();
+    const installedRoot = path.join(root, "installed");
+    const source = "export async function validateConnection() {}";
+    await createPluginDirectory(installedRoot, "jira", source, {
+      apiVersion: 2,
+    });
+    const pluginManager = manager({ installedPluginDirectory: installedRoot });
+    const reason =
+      "Jira 1.0.0 uses plugin API 2, but this version of Ajour needs plugin API 3. Update the plugin to use it again.";
+
+    await expect(pluginManager.inspectPlugins()).resolves.toMatchObject({
+      plugins: [],
+      unavailable: [{ manifest: { id: "jira", apiVersion: 2 }, reason }],
+    });
+    await expect(pluginManager.validateConnection("jira", {})).rejects.toThrow(
+      reason,
+    );
+
+    const pluginDirectory = await createPluginDirectory(
+      path.join(root, "source"),
+      "jira",
+      source,
+    );
+    const archivePath = path.join(root, "jira-1.0.0.ajour-connector");
+    await packagePlugin(pluginDirectory, archivePath);
+    const update = await pluginManager.installPluginArchive(
+      await readFile(archivePath),
+      path.basename(archivePath),
+    );
+
+    expect(update.replaced).toBe(true);
+    await expect(pluginManager.inspectPlugins()).resolves.toMatchObject({
+      plugins: [{ id: "jira", apiVersion: 3 }],
+      unavailable: [],
+    });
+  });
+
+  it("uninstalls a package built for another plugin API", async () => {
+    const root = await tempDir();
+    const installedRoot = path.join(root, "installed");
+    await createPluginDirectory(
+      installedRoot,
+      "jira",
+      "export async function validateConnection() {}",
+      { apiVersion: 2 },
+    );
+    const pluginManager = manager({ installedPluginDirectory: installedRoot });
+
+    await expect(pluginManager.uninstallPlugin("jira")).resolves.toMatchObject({
+      id: "jira",
+    });
+    await expect(access(path.join(installedRoot, "jira"))).rejects.toThrow();
+  });
+
   it("serializes plugin discovery behind package installation", async () => {
     const root = await tempDir();
     const pluginDirectory = await createPluginDirectory(

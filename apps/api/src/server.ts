@@ -352,9 +352,9 @@ async function getOverview(
   storage: AppApiStorage,
   pluginManager: ConnectorPluginManager,
 ) {
-  const plugins = await pluginManager.listPlugins();
+  const { plugins, unavailable } = await pluginManager.inspectPlugins();
   return connectorsOverviewSchema.parse(
-    await storage.getConnectorsOverview(plugins),
+    await storage.getConnectorsOverview(plugins, unavailable),
   );
 }
 
@@ -1384,7 +1384,12 @@ export async function installConnectorPluginForServer(
     archiveBytes,
     archiveFilename,
   );
-  if (installedPlugin.installed && options.enableAfterInstall === false) {
+  // An update keeps the activation the user chose for the previous version.
+  if (
+    installedPlugin.installed &&
+    !installedPlugin.replaced &&
+    options.enableAfterInstall === false
+  ) {
     await runtime.storage.setConnectorPluginEnabled(
       installedPlugin.manifest.id,
       false,

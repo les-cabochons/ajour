@@ -75,6 +75,7 @@ export type ShortcutActionId =
   | "item.duplicate"
   | "item.move-to"
   | "item.delete"
+  | "item.delete-row"
   | "item.move-up"
   | "item.move-down"
   | "item.open-menu"
@@ -258,6 +259,13 @@ export const SHORTCUTS: readonly ShortcutDefinition[] = [
     scope: "item",
     keys: [{ key: "Backspace" }],
     alternateKeys: [{ key: "Delete" }],
+  },
+  // A Grid cell's Backspace deletes its entry, so the whole row takes Shift.
+  {
+    id: "item.delete-row",
+    label: "Delete the Week Grid row",
+    scope: "item",
+    keys: [{ key: "Backspace", shift: true }],
   },
   {
     id: "item.move-up",

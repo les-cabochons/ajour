@@ -59,7 +59,9 @@ Feature: Backlog list and board views
   Scenario: Pin a backlog item to the top of the sidebar
     When I "Pin" the other Backlog item from its sidebar menu
     Then the other item is pinned at the top of the sidebar
-    And the timer dock still offers the Backlog parent as Up next
+    When I start an empty entry from the sidebar
+    Then the timer dock opens the running entry
+    When I stop the Backlog running entry from the timer dock
     When I "Unpin" the other Backlog item from its sidebar menu
     Then the other item is not pinned
 

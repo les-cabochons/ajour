@@ -3,6 +3,7 @@ import type { LocalAppState } from "@/domain/local-state";
 import { DEFAULT_PROJECT_ICON } from "@/domain/projects/project-icon";
 import {
   createTimesheetEntrySubmissionFingerprint,
+  deleteTimesheetEntries,
   deleteTimesheetEntry,
   duplicateTimesheetEntry,
   markTimesheetEntriesSubmitted,
@@ -347,6 +348,40 @@ describe("timesheet entry lifecycle", () => {
     });
   });
 
+  it("deletes several entries at once and reverses their logged estimates", () => {
+    const halfHour = 30 * 60 * 1000;
+    const withFirst = saveManualTimesheetEntry(
+      createState(),
+      {
+        localDate: "2026-07-30",
+        projectId: "project-1",
+        taskId: "task-1",
+        durationMs: halfHour,
+      },
+      { ...factories, createId: () => "timesheet-1" },
+    );
+    const withBoth = saveManualTimesheetEntry(
+      withFirst,
+      {
+        localDate: "2026-07-31",
+        projectId: "project-1",
+        taskId: "task-1",
+        durationMs: halfHour,
+      },
+      { ...factories, createId: () => "timesheet-2" },
+    );
+    const deleted = deleteTimesheetEntries(withBoth, [
+      "timesheet-1",
+      "timesheet-2",
+    ]);
+
+    expect(deleted.timesheetEntries).toEqual([]);
+    expect(deleted.workItems[0]).toMatchObject({
+      remainingEstimateHours: 2,
+      completedEstimateHours: 0,
+    });
+  });
+
   it("rejects delete, duplicate, and move while an entry is linked to a running timer", () => {
     const saved = saveManualTimesheetEntry(
       createState(),
@@ -380,6 +415,9 @@ describe("timesheet entry lifecycle", () => {
     };
 
     expect(deleteTimesheetEntry(runningState, "timesheet-1")).toBe(
+      runningState,
+    );
+    expect(deleteTimesheetEntries(runningState, ["timesheet-1"])).toBe(
       runningState,
     );
     expect(
