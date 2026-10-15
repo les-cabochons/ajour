@@ -523,21 +523,30 @@
     height: 40px;
   }
 
-  .weekly-grid-task-cell > div {
+  .weekly-grid-task-line {
     display: flex;
+    align-items: center;
+    gap: 0.25rem;
+    min-width: 0;
+    padding-right: 0.25rem;
+  }
+
+  .weekly-grid-task-name {
+    display: flex;
+    flex: 1 1 auto;
     align-items: baseline;
     gap: 0.5rem;
     min-width: 0;
     white-space: nowrap;
   }
 
-  .weekly-grid-task-cell > div > span {
+  .weekly-grid-task-name > span {
     color: var(--text-secondary);
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  .weekly-grid-task-cell > div > span::after {
+  .weekly-grid-task-name > span::after {
     content: "·";
     margin-left: 0.5rem;
     color: var(--text-tertiary);
@@ -545,13 +554,27 @@
 
   /* The task name keeps its full width up to 70% of the cell, so a long
      project name truncates first but never disappears. */
-  .weekly-grid-task-cell > div > strong {
+  .weekly-grid-task-name > strong {
     flex-shrink: 0;
     max-width: 70%;
     color: var(--text);
     font-weight: 500;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  /* Row actions show on hover and focus. Opacity keeps the button reachable by Tab. */
+  .weekly-grid-task-line .object-actions-button {
+    flex-shrink: 0;
+    width: 24px;
+    height: 24px;
+    opacity: 0;
+  }
+
+  .weekly-grid-task-cell:hover .object-actions-button,
+  .weekly-grid-task-cell:focus-within .object-actions-button,
+  .weekly-grid-task-cell:has([data-popup-open]) .object-actions-button {
+    opacity: 1;
   }
 
   /* The row's project color lives in the name; the mark would be a third glyph. */

@@ -21,6 +21,7 @@ import type {
 } from "@/domain/local-state";
 import { formatClockDuration } from "@/domain/time/duration";
 import {
+  getWeeklyGridRowKey,
   projectWeeklyTime,
   type WeeklyGridAddedRow,
 } from "@/domain/time/weekly-time";
@@ -323,6 +324,15 @@ export function WeeklyTimeView({
     setAddedRows({ weekStart: weekDates[0], rows: [...weekAddedRows, row] });
   }
 
+  function removeGridRow(rowKey: string) {
+    setAddedRows({
+      weekStart: weekDates[0],
+      rows: weekAddedRows.filter(
+        (row) => getWeeklyGridRowKey({ label: "", ...row }) !== rowKey,
+      ),
+    });
+  }
+
   return (
     <section className="weekly-time-view" aria-label="Week">
       <div className="weekly-toolbar">
@@ -350,6 +360,7 @@ export function WeeklyTimeView({
           activeCell={activeCell}
           activeEntryId={activeEntryId}
           onAddRow={addGridRow}
+          onRemoveRow={removeGridRow}
           onClosePanel={onClosePanel}
           onOpen={onOpenEntry}
           onOpenCellEntries={onOpenCellEntries}

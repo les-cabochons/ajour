@@ -251,6 +251,7 @@ Decided in [Adding and changing time in the week view](https://github.com/les-ca
 - A cell with several entries shows its total and a count, such as "3:30 ×2", and never edits in place.
 - The side panel's cell list replaces the old tray in the bottom-left corner.
 - "+ Add row" picks a project or task and shows an empty row. The row disappears when the user leaves the week unless it gets hours. Rows are never saved on their own.
+- A row's "…" button and right-click on its name offer Delete row. An empty row goes at once. A row with time opens a dialog that names the entries it will delete, then deletes them with the Undo toast. A row with the running entry can't be deleted until it stops.
 - Right-click on a cell starts with Add entry. On a one-entry cell, that entry's action set follows. On a cell with several entries, Open entries follows.
 
 ### Days

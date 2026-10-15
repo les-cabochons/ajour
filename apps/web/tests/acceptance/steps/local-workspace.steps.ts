@@ -2534,6 +2534,44 @@ Then(
   },
 );
 
+/** A Week Grid row, found by its task name. */
+function weekGridRow(page: Page, task: string) {
+  return page
+    .getByRole("region", { name: "Week" })
+    .getByRole("row")
+    .filter({ has: page.getByText(task, { exact: true }) });
+}
+
+When(
+  "I choose {string} for the {string} row",
+  async ({ page }, action: string, task: string) => {
+    const row = weekGridRow(page, task);
+    await row.hover();
+    await row.getByRole("button", { name: "Row actions" }).click();
+    await page.getByRole("menuitem", { name: action }).click();
+  },
+);
+
+Then(
+  "a dialog warns that deleting the {string} row deletes its entries",
+  async ({ page }, task: string) => {
+    const dialog = page.getByRole("alertdialog");
+    await expect(dialog).toContainText("Delete this row?");
+    await expect(dialog).toContainText(`${task} also deletes its`);
+  },
+);
+
+When("I confirm deleting the row", async ({ page }) => {
+  await page
+    .getByRole("alertdialog")
+    .getByRole("button", { name: "Delete row" })
+    .click();
+});
+
+Then("the Week Grid has no {string} row", async ({ page }, task: string) => {
+  await expect(weekGridRow(page, task)).toHaveCount(0);
+});
+
 When("I open the Backlog settings", async ({ page }) => {
   await page.goto("/settings/backlog");
 });

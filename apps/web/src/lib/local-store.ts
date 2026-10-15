@@ -76,6 +76,7 @@ import {
 } from "@/domain/backlog/work-item-connector";
 import { type ProjectTaskImportResult } from "@/domain/projects/task-import";
 import {
+  deleteTimesheetEntries as applyDeleteTimesheetEntries,
   deleteTimesheetEntry as applyDeleteTimesheetEntry,
   duplicateTimesheetEntry as applyDuplicateTimesheetEntry,
   markTimesheetEntriesSubmitted as applyMarkTimesheetEntriesSubmitted,
@@ -1603,6 +1604,12 @@ export const localStore = {
   deleteTimesheetEntry(entryId: string) {
     return updateStateWithUndo((state) =>
       applyDeleteTimesheetEntry(state, entryId),
+    );
+  },
+  /** Deletes several entries with one undo token, or null when nothing changed. */
+  deleteTimesheetEntries(entryIds: readonly string[]) {
+    return updateStateWithUndo((state) =>
+      applyDeleteTimesheetEntries(state, entryIds),
     );
   },
   /** Copies an entry to a day. Returns an undo token that removes the copy. */

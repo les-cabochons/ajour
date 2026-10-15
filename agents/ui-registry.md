@@ -174,8 +174,11 @@ Week needs a wider window, and keeps `view=week`, so widening the window shows
 Week. The week's range is the top bar's title in Week, with a Today chip while
 the week holds today and the Submitted chip once every entry is submitted.
 Under the bar a 44px toolbar holds Grid | Days (persisted locally as `grid` or
-`days`) and the week total. Grid rows are 40px with the project and task on
-one line, day headings read "Mon 12 7:30", today's column is tinted, weekends
+`days`) and the week total. The Grid table uses a fixed layout: 84px day
+columns, a 72px total column, and the project and task column takes the rest,
+ellipsizing the project name first. It scrolls sideways only below 820px.
+Grid rows are 40px with the project and task on one line, day headings show
+"Mon 12" over the logged time, today's column is tinted, weekends
 are muted, and a "Totals" footer closes the table. A click on a Grid cell
 opens it in the side panel: a new entry for an empty cell, the entry of a
 one-entry cell with "Add another entry for <day>", or the list of a cell with
@@ -183,7 +186,9 @@ several entries (`week-grid-cell-panel.tsx`). Double-click, Enter or a digit
 edits an empty or one-entry cell in place; the typed-cell rules live in
 `domain/time/week-grid-cell.ts`. A cell with several entries shows "3:30 ×2"
 and never edits in place. "+ Add row" adds an empty row for the week, never
-saved on its own. Days use seven 40px column headers and flat 6px entry cards
+saved on its own. The row name's "…" button and right-click offer Delete row;
+a row with time confirms in an AlertDialog first, then deletes its week's
+entries with one Undo toast. Days use seven 40px column headers and flat 6px entry cards
 with the project's color as a rail; the running card wears a success-tone
 chip. Cards drag between days with thresholded pointer dragging, explicit
 weekday drop targets, and Escape/pointer-cancel cleanup. A click or Enter on a

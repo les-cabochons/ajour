@@ -142,6 +142,16 @@ Feature: Open the local time workspace
     When I undo with the toast button
     Then the "Code review" cell on Monday shows "1:00"
 
+  Scenario: Delete a Week Grid row that has time
+    Given I have a week of saved entries
+    When I open the Week Grid
+    And I choose "Delete row" for the "Code review" row
+    Then a dialog warns that deleting the "Code review" row deletes its entries
+    When I confirm deleting the row
+    Then the Week Grid has no "Code review" row
+    When I undo with the toast button
+    Then the "Code review" cell on Monday shows "1:00"
+
   Scenario: Open Settings in place of the app sidebar
     Given I have no saved Ajour workspace
     When I open today's new-entry workspace
