@@ -510,8 +510,8 @@ export function BacklogPage() {
     >
       <div className="backlog-page-main backlog-workspace-main">
         <PageHeader
-          title={archive ? "Archive" : "Backlog"}
-          meta={items.length}
+          title={archive ? "Archive" : undefined}
+          meta={archive ? items.length : undefined}
           actions={
             <>
               {!archive && !narrow && <BacklogLayoutToggle view={view} />}

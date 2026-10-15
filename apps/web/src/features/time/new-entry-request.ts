@@ -98,7 +98,7 @@ export function openNewEntryEditor(
   requestListener?.({ values, anchor });
 }
 
-/** The timer dock's "+": a blank new entry, anchored to the button. */
+/** A blank new entry, anchored to the button that requested it. */
 export function openBlankEntryEditor(anchor: HTMLElement) {
   requestListener?.({ anchor });
 }
