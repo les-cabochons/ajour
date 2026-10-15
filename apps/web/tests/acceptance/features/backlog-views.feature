@@ -271,6 +271,11 @@ Feature: Backlog list and board views
     And I add a Backlog item in In progress
     Then the new Backlog item is in In progress
 
+  Scenario: Create an item in an ungrouped list
+    When I group the Backlog by "none"
+    And I add a Backlog item from the end of the list
+    Then the new Backlog item is in the list
+
   Scenario: Show and collapse project swimlanes
     When I choose the Backlog board
     And I enable project swimlanes

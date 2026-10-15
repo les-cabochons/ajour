@@ -547,12 +547,6 @@ export function BacklogPage() {
                   </DropdownMenuItem>
                 </DropdownMenuContent>
               </DropdownMenu>
-              {!archive && (
-                <Button onClick={() => add()} className="narrow:hidden">
-                  <RiAddLine data-icon="inline-start" />
-                  New backlog item
-                </Button>
-              )}
             </>
           }
         >
@@ -769,6 +763,21 @@ export function BacklogPage() {
                             <p className="backlog-column-empty">No items</p>
                           )}
                         </div>
+                        {/* Grouped views add from each group header. An
+                            ungrouped view has no header, so it ends with a
+                            row that adds instead. */}
+                        {group.kind === "all" &&
+                          canUseProjectGroup(lane, state) &&
+                          !archive && (
+                            <button
+                              type="button"
+                              className="backlog-add-row"
+                              onClick={() => add(group, lane)}
+                            >
+                              <RiAddLine aria-hidden />
+                              New backlog item
+                            </button>
+                          )}
                       </section>
                     );
                   })}

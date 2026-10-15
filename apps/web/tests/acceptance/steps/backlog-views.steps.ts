@@ -1566,6 +1566,27 @@ Then("the new Backlog item is in In progress", async ({ page }) => {
     page.locator('.backlog-board-column[aria-label="In progress"]'),
   ).toContainText("New grouped item");
 });
+When("I add a Backlog item from the end of the list", async ({ page }) => {
+  await expect(page.getByRole("button", { name: /^New item in / })).toHaveCount(
+    0,
+  );
+  await page
+    .locator(".backlog-workspace-scroll")
+    .getByRole("button", { name: "New backlog item", exact: true })
+    .click();
+  const editor = page.getByRole("complementary", {
+    name: "Backlog item editor",
+  });
+  await editor
+    .getByRole("textbox", { name: "Item", exact: true })
+    .fill("New ungrouped item");
+  await editor.getByRole("button", { name: "Save", exact: true }).click();
+});
+Then("the new Backlog item is in the list", async ({ page }) => {
+  await expect(
+    page.getByRole("region", { name: "All items", exact: true }),
+  ).toContainText("New ungrouped item");
+});
 When("I enable project swimlanes", async ({ page }) => {
   await page.getByRole("button", { name: "Display", exact: true }).click();
   await chooseSelectOption(page, "Swimlanes", "project");

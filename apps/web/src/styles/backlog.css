@@ -441,6 +441,38 @@
     text-align: center;
   }
 
+  /* Ends an ungrouped list or board column, which has no group header to
+     hold the add button. */
+  .backlog-add-row {
+    display: flex;
+    align-items: center;
+    gap: 0.625rem;
+    width: 100%;
+    height: 36px;
+    padding: 0 1rem;
+    border: 0;
+    background: transparent;
+    color: var(--text-tertiary);
+    font-size: var(--text-sm);
+    cursor: pointer;
+    outline: none;
+  }
+
+  .backlog-add-row:hover {
+    background: var(--highlight-bg);
+    color: var(--text-secondary);
+  }
+
+  .backlog-add-row:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--focus-ring);
+  }
+
+  .backlog-board-column .backlog-add-row {
+    margin-top: 0.5rem;
+    padding: 0 0.75rem;
+    border-radius: var(--radius-md);
+  }
+
   /* -- Swimlanes ------------------------------------------------- */
 
   .backlog-swimlane-header {
@@ -693,7 +725,8 @@
     pointer-events: auto;
   }
 
-  .backlog-group-header {
+  .backlog-group-header,
+  .backlog-add-row {
     padding: 0 0.75rem;
   }
 
@@ -722,6 +755,7 @@
   .backlog-workspace-filterbar,
   .backlog-list-row,
   .backlog-list-group .backlog-group-header,
+  .backlog-list-group .backlog-add-row,
   .backlog-swimlane-header {
     padding-inline: calc(1rem + var(--app-workspace-content-gutter, 0px));
   }
