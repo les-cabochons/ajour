@@ -167,7 +167,7 @@ export function SettingsNavigation({
         <Button
           variant="ghost"
 
-          className="-ml-2 text-muted-foreground hover:text-foreground"
+          className="text-muted-foreground hover:text-foreground"
           onClick={onBack}
         >
           <ArrowLeft />

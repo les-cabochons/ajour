@@ -1743,7 +1743,9 @@
   padding: 0 0.5rem;
 }
 
-.desktop-shell-macos .ajour-app-sidebar-header {
+/* Only the app sidebar's header shares the traffic lights' row. Settings
+   keeps a drag strip above its header, so Back to app needs no inset. */
+.desktop-shell-macos .ajour-app-navigation-sidebar .ajour-app-sidebar-header {
   padding-left: 5rem;
 }
 
