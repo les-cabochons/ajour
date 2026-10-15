@@ -98,7 +98,12 @@ function fakePlugins(prompt: string) {
 
 async function setup(
   script: unknown[],
-  options: { chrome?: boolean; sessions?: AgentSessions } = {},
+  options: {
+    chrome?: boolean;
+    sessions?: AgentSessions;
+    adapter?: AgentCliAdapter;
+    killGraceMs?: number;
+  } = {},
 ) {
   const work = await mkdtemp(path.join(tmpdir(), "ajour-runner-test-"));
   const report = path.join(work, "report.jsonl");
@@ -113,7 +118,7 @@ async function setup(
     }),
     sessions,
     plugins: fakePlugins("Enter week {{weekOf}} in {{settings.url}}."),
-    adapters: [fakeAdapter(script, report)],
+    adapters: [options.adapter ?? fakeAdapter(script, report)],
     findExecutable: async () => "/fake/claude",
     readVersion: async () => "1.0.0",
     loginShellPath: async () => process.env.PATH ?? "",
@@ -123,6 +128,9 @@ async function setup(
     tempRoot: work,
     ajourMcpUrl: "http://127.0.0.1:8787/mcp/ajour",
     logEvent: (event) => events.push(event),
+    ...(options.killGraceMs === undefined
+      ? {}
+      : { killGraceMs: options.killGraceMs }),
   });
   return { runner, sessions, revoked, events, work, report };
 }
@@ -137,6 +145,15 @@ const request = {
 async function settled(runner: AgentRunner) {
   await vi.waitFor(
     async () => expect((await runner.overview()).currentRun).toBeNull(),
+    { timeout: 5000 },
+  );
+}
+
+/** Waits until the fake CLI has started and written its report line. */
+async function waitForCli(report: string) {
+  await vi.waitFor(
+    async () =>
+      expect((await readFile(report, "utf8")).length).toBeGreaterThan(0),
     { timeout: 5000 },
   );
 }
@@ -273,5 +290,90 @@ describe("AgentRunner", () => {
     await runner.shutdown();
     expect(revoked).toHaveLength(1);
     expect((await runner.overview()).currentRun).toBeNull();
+  });
+
+  it("starts once when two starts arrive together", async () => {
+    const { runner, revoked } = await setup([{ hang: true }]);
+    const results = await Promise.allSettled([
+      runner.start(request),
+      runner.start(request),
+    ]);
+    expect(results.map((r) => r.status).sort()).toEqual([
+      "fulfilled",
+      "rejected",
+    ]);
+    const rejected = results.find((r) => r.status === "rejected")!;
+    expect((rejected as PromiseRejectedResult).reason).toMatchObject({
+      status: 409,
+    });
+    const fulfilled = results.find(
+      (
+        r,
+      ): r is PromiseFulfilledResult<
+        Awaited<ReturnType<typeof runner.start>>
+      > => r.status === "fulfilled",
+    )!;
+    expect(runner.stop(fulfilled.value.id)).toBe(true);
+    await settled(runner);
+    expect(revoked).toHaveLength(1);
+  });
+
+  it("shutdown waits for a start in progress and stops its run", async () => {
+    const { runner, sessions, revoked } = await setup([{ hang: true }]);
+    const started = runner.start(request);
+    await runner.shutdown();
+    const run = await started;
+    expect(revoked).toHaveLength(1);
+    expect(runner.currentRun()).toBeNull();
+    const session = sessions.get(run.sessionId)!;
+    expect(session.state).toBe("cancelled");
+    expect(session.messages.at(-1)).toMatchObject({
+      kind: "end",
+      summary: "Ajour quit during the run.",
+    });
+  });
+
+  it("kills a CLI that ignores SIGTERM after the grace period", async () => {
+    const { runner, sessions, report } = await setup(
+      [{ ignoreTerm: true }, { hang: true }],
+      { killGraceMs: 50 },
+    );
+    const run = await runner.start(request);
+    await waitForCli(report);
+    expect(runner.stop(run.id)).toBe(true);
+    await settled(runner);
+    expect(sessions.get(run.sessionId)!.state).toBe("cancelled");
+  });
+
+  it("shutdown resolves when the CLI ignores SIGTERM", async () => {
+    const { runner, revoked, report } = await setup(
+      [{ ignoreTerm: true }, { hang: true }],
+      { killGraceMs: 50 },
+    );
+    await runner.start(request);
+    await waitForCli(report);
+    await runner.shutdown();
+    expect(revoked).toHaveLength(1);
+    expect(runner.currentRun()).toBeNull();
+  });
+
+  it("cleans up when the invocation cannot be built", async () => {
+    const adapter: AgentCliAdapter = {
+      ...claudeCodeAdapter,
+      executableName: "node",
+      buildInvocation: () => {
+        throw new Error("no invocation");
+      },
+    };
+    const { runner, sessions, revoked, work } = await setup([], { adapter });
+    await expect(runner.start(request)).rejects.toThrow("no invocation");
+    expect(revoked).toHaveLength(1);
+    const left = (await readdir(work)).filter((name) =>
+      name.startsWith("run-"),
+    );
+    expect(left).toEqual([]);
+    expect(runner.currentRun()).toBeNull();
+    const [session] = sessions.snapshot().sessions;
+    expect(session!.state).toBe("failed");
   });
 });

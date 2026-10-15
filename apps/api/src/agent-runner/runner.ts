@@ -6,6 +6,7 @@ import { createInterface } from "node:readline";
 import { randomUUID } from "node:crypto";
 import type {
   AgentClientRef,
+  AgentSession,
   AgentSessionOutcome,
   McpClientCreateResponse,
 } from "../../../../packages/shared/agent-tools.ts";
@@ -37,6 +38,8 @@ import { buildPrompt } from "./prompts.ts";
  */
 
 const STALL_LIMIT_MS = 10 * 60_000;
+/** How long a CLI gets to exit after SIGTERM before it is killed. */
+const DEFAULT_KILL_GRACE_MS = 5000;
 const ERROR_LINES = 20;
 const ALL_CLIS: {
   id: AgentCliStatus["id"];
@@ -87,7 +90,11 @@ export interface AgentRunnerOptions {
   plugins: RunnerPlugins;
   adapters: AgentCliAdapter[];
   findExecutable: (name: string, pathValue: string) => Promise<string | null>;
-  readVersion?: (executable: string) => Promise<string | undefined>;
+  /** Runs `<cli> --version` with the login shell PATH. */
+  readVersion?: (
+    executable: string,
+    pathValue: string,
+  ) => Promise<string | undefined>;
   loginShellPath: () => Promise<string>;
   chromeInstalled: () => Promise<boolean>;
   playwright: (input: {
@@ -99,6 +106,8 @@ export interface AgentRunnerOptions {
   ajourMcpUrl: string;
   logEvent: (event: Record<string, unknown>) => void;
   now?: () => number;
+  /** Time between SIGTERM and SIGKILL. Tests shorten it. Defaults to 5 seconds. */
+  killGraceMs?: number;
 }
 
 interface ActiveRun {
@@ -110,6 +119,8 @@ interface ActiveRun {
   version: string | undefined;
   browserMode: AgentRunnerSettings["browserMode"];
   stopReason?: "user" | "stalled" | "mcp" | "shutdown";
+  /** Sends SIGKILL if the CLI ignores SIGTERM. Cleared when it exits. */
+  killTimer?: NodeJS.Timeout;
   mcpFailure?: string;
   finalSummary?: string;
   failure?: string;
@@ -119,12 +130,16 @@ interface ActiveRun {
   exited: Promise<void>;
 }
 
-function defaultReadVersion(executable: string) {
+function defaultReadVersion(executable: string, pathValue: string) {
   return new Promise<string | undefined>((resolve) => {
     execFile(
       executable,
       ["--version"],
-      { timeout: 5000, encoding: "utf8" },
+      {
+        timeout: 5000,
+        encoding: "utf8",
+        env: { ...process.env, PATH: pathValue },
+      },
       (error, stdout) => resolve(error ? undefined : stdout),
     );
   });
@@ -133,6 +148,12 @@ function defaultReadVersion(executable: string) {
 export class AgentRunner {
   private readonly options: AgentRunnerOptions;
   private active: ActiveRun | null = null;
+  /**
+   * Set synchronously when a start begins and cleared when it settles, so two
+   * quick starts cannot both pass the one-run check before the first has a
+   * process.
+   */
+  private starting: Promise<AgentRun> | null = null;
 
   constructor(options: AgentRunnerOptions) {
     this.options = options;
@@ -140,6 +161,11 @@ export class AgentRunner {
 
   private now() {
     return this.options.now?.() ?? Date.now();
+  }
+
+  /** The run that is going, or null. Cheap: no CLI detection. */
+  currentRun(): AgentRun | null {
+    return this.active?.run ?? null;
   }
 
   /** Settings > Agents and the Submit page read this. */
@@ -166,7 +192,9 @@ export class AgentRunner {
           cli.executableName,
           pathValue,
         );
-        const output = executable ? await readVersion(executable) : undefined;
+        const output = executable
+          ? await readVersion(executable, pathValue)
+          : undefined;
         const version = output
           ? (adapter?.parseVersion(output) ?? output.trim())
           : undefined;
@@ -226,12 +254,23 @@ export class AgentRunner {
   }
 
   async start(request: AgentRunStartRequest): Promise<AgentRun> {
-    if (this.active) {
+    if (this.active || this.starting) {
       throw new AgentRunError(
         "An agent task is already running. Stop it first.",
         409,
       );
     }
+    // No await before this line: the slot is taken in the same tick as the check.
+    const attempt = this.launch(request);
+    this.starting = attempt;
+    try {
+      return await attempt;
+    } finally {
+      if (this.starting === attempt) this.starting = null;
+    }
+  }
+
+  private async launch(request: AgentRunStartRequest): Promise<AgentRun> {
     const settings = await this.options.storage.getAgentRunnerSettings();
     const clis = await this.detectClis();
     const task = (await this.listTasks(settings, clis)).find(
@@ -286,28 +325,29 @@ export class AgentRunner {
     );
     const client = { id: created.client.id, name: created.client.name };
     const runId = randomUUID();
-    const session = this.options.sessions.begin(
-      client,
-      {
-        title: `${task.label}, week of ${request.weekOf}`,
-        estimateMinutes: task.estimateMinutes,
-      },
-      {
-        runId,
-        ...(weekLink
-          ? {
-              link: {
-                label: `Open the week in ${task.pluginName}`,
-                url: weekLink,
-              },
-            }
-          : {}),
-      },
-    );
-    const workDirectory = await mkdtemp(
-      path.join(this.options.tempRoot, "run-"),
-    );
+    let session: AgentSession | undefined;
+    let workDirectory: string | undefined;
+    let child: ChildProcess | undefined;
     try {
+      session = this.options.sessions.begin(
+        client,
+        {
+          title: `${task.label}, week of ${request.weekOf}`,
+          estimateMinutes: task.estimateMinutes,
+        },
+        {
+          runId,
+          ...(weekLink
+            ? {
+                link: {
+                  label: `Open the week in ${task.pluginName}`,
+                  url: weekLink,
+                },
+              }
+            : {}),
+        },
+      );
+      workDirectory = await mkdtemp(path.join(this.options.tempRoot, "run-"));
       const invocation = adapter.buildInvocation({
         executable,
         workDirectory,
@@ -333,7 +373,7 @@ export class AgentRunner {
           mode: 0o600,
         });
       }
-      const child = spawn(invocation.command, invocation.args, {
+      child = spawn(invocation.command, invocation.args, {
         cwd: workDirectory,
         env: invocation.env,
         stdio: ["ignore", "pipe", "pipe"],
@@ -362,12 +402,15 @@ export class AgentRunner {
       this.active = active;
       return run;
     } catch (error) {
+      child?.kill("SIGKILL");
       await this.cleanUp(client, workDirectory);
-      this.options.sessions.end(client, {
-        sessionId: session.id,
-        outcome: "failed",
-        summary: "Ajour could not start the agent.",
-      });
+      if (session) {
+        this.options.sessions.end(client, {
+          sessionId: session.id,
+          outcome: "failed",
+          summary: "Ajour could not start the agent.",
+        });
+      }
       throw error;
     }
   }
@@ -387,7 +430,15 @@ export class AgentRunner {
         active.failure = error.message;
       });
       child.on("close", (code) => {
-        void this.finish(active, code).finally(resolve);
+        void this.finish(active, code)
+          .catch((error: unknown) =>
+            this.options.logEvent({
+              event: "agent.run_cleanup_failed",
+              run_id: active.run.id,
+              error: error instanceof Error ? error.message : String(error),
+            }),
+          )
+          .finally(resolve);
       });
     });
   }
@@ -406,57 +457,77 @@ export class AgentRunner {
       case "mcp-failed":
         active.mcpFailure = event.server;
         active.stopReason = "mcp";
-        active.child.kill("SIGTERM");
+        this.terminate(active);
         return;
     }
   }
 
   private async finish(active: ActiveRun, code: number | null) {
     const { sessions } = this.options;
-    const session = sessions.get(active.run.sessionId);
-    const open =
-      session && (session.state === "active" || session.state === "stalled");
-    let outcome: AgentSessionOutcome | undefined =
-      session && !open ? (session.state as AgentSessionOutcome) : undefined;
-    if (open) {
-      const ending = describeEnding(active, code);
-      outcome = ending.outcome;
-      if (ending.error) sessions.recordError(ending.error, active.client);
-      sessions.end(active.client, {
-        sessionId: active.run.sessionId,
-        outcome: ending.outcome,
-        summary: ending.summary,
+    clearTimeout(active.killTimer);
+    let outcome: AgentSessionOutcome | undefined;
+    try {
+      const session = sessions.get(active.run.sessionId);
+      const open =
+        session && (session.state === "active" || session.state === "stalled");
+      outcome =
+        session && !open ? (session.state as AgentSessionOutcome) : undefined;
+      if (open) {
+        const ending = describeEnding(active, code);
+        outcome = ending.outcome;
+        if (ending.error) sessions.recordError(ending.error, active.client);
+        sessions.end(active.client, {
+          sessionId: active.run.sessionId,
+          outcome: ending.outcome,
+          summary: ending.summary,
+        });
+      }
+    } finally {
+      // Whatever went wrong above, the client and the folder go away and the
+      // runner accepts a new run.
+      await this.cleanUp(active.client, active.workDirectory);
+      if (this.active === active) this.active = null;
+      this.options.logEvent({
+        event: "agent.run",
+        plugin_id: active.run.pluginId,
+        task_id: active.run.taskId,
+        cli: active.cli,
+        cli_version: active.version,
+        browser_mode: active.browserMode,
+        duration_ms: this.now() - active.run.startedAt,
+        outcome,
+        exit_code: code,
+        stop_reason: active.stopReason,
+        tool_call_count: active.toolCalls,
       });
     }
-    await this.cleanUp(active.client, active.workDirectory);
-    this.options.logEvent({
-      event: "agent.run",
-      plugin_id: active.run.pluginId,
-      task_id: active.run.taskId,
-      cli: active.cli,
-      cli_version: active.version,
-      browser_mode: active.browserMode,
-      duration_ms: this.now() - active.run.startedAt,
-      outcome,
-      exit_code: code,
-      stop_reason: active.stopReason,
-      tool_call_count: active.toolCalls,
-    });
-    if (this.active === active) this.active = null;
   }
 
-  private async cleanUp(client: AgentClientRef, workDirectory: string) {
+  private async cleanUp(client: AgentClientRef, workDirectory?: string) {
     await this.options.storage.revokeMcpClient(client.id).catch(() => false);
-    await rm(workDirectory, { recursive: true, force: true }).catch(
-      () => undefined,
+    if (workDirectory) {
+      await rm(workDirectory, { recursive: true, force: true }).catch(
+        () => undefined,
+      );
+    }
+  }
+
+  /** SIGTERM now, SIGKILL after the grace period if the CLI is still running. */
+  private terminate(active: ActiveRun) {
+    active.child.kill("SIGTERM");
+    if (active.killTimer) return;
+    active.killTimer = setTimeout(
+      () => active.child.kill("SIGKILL"),
+      this.options.killGraceMs ?? DEFAULT_KILL_GRACE_MS,
     );
+    active.killTimer.unref();
   }
 
   /** The user pressed Stop. False when that run is not going. */
   stop(runId: string): boolean {
     if (!this.active || this.active.run.id !== runId) return false;
-    this.active.stopReason = "user";
-    this.active.child.kill("SIGTERM");
+    this.active.stopReason ??= "user";
+    this.terminate(this.active);
     return true;
   }
 
@@ -475,17 +546,35 @@ export class AgentRunner {
       !active.stopReason
     ) {
       active.stopReason = "stalled";
-      active.child.kill("SIGTERM");
+      this.terminate(active);
     }
   }
 
-  /** Ajour is quitting: kill the CLI and wait for its cleanup. */
+  /**
+   * Ajour is quitting: wait for a start in progress, stop its run and wait for
+   * the cleanup. If the CLI still has not closed after the kill grace period
+   * plus a second, revoke the client and remove the folder directly so Ajour
+   * can quit.
+   */
   async shutdown() {
+    if (this.starting) await this.starting.catch(() => undefined);
     const active = this.active;
     if (!active) return;
     active.stopReason ??= "shutdown";
-    active.child.kill("SIGTERM");
-    await active.exited;
+    this.terminate(active);
+    let giveUp: NodeJS.Timeout | undefined;
+    const gaveUp = new Promise<"timeout">((resolve) => {
+      giveUp = setTimeout(
+        () => resolve("timeout"),
+        (this.options.killGraceMs ?? DEFAULT_KILL_GRACE_MS) + 1000,
+      );
+    });
+    const outcome = await Promise.race([active.exited, gaveUp]);
+    clearTimeout(giveUp);
+    if (outcome === "timeout") {
+      await this.cleanUp(active.client, active.workDirectory);
+      if (this.active === active) this.active = null;
+    }
   }
 }
 
@@ -496,8 +585,9 @@ function describeEnding(
   const errorOutput = active.errorLines.join("\n");
   switch (active.stopReason) {
     case "user":
-    case "shutdown":
       return { outcome: "cancelled", summary: "Stopped by the user." };
+    case "shutdown":
+      return { outcome: "cancelled", summary: "Ajour quit during the run." };
     case "stalled":
       return { outcome: "failed", summary: "The agent stopped answering." };
     case "mcp":

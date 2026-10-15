@@ -718,6 +718,23 @@ describe("agent sessions over MCP", () => {
 });
 
 describe("agent runner routes", () => {
+  it("answers 404 to a run for an unknown task", async () => {
+    const { baseUrl } = await startTestApi();
+    const response = await fetch(`${baseUrl}/api/agent-runs`, {
+      method: "POST",
+      headers: { Origin: TEST_ORIGIN, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        pluginId: "nope",
+        taskId: "nothing",
+        weekOf: "2026-10-12",
+      }),
+    });
+    expect(response.status).toBe(404);
+    expect(await response.json()).toEqual({
+      error: "This agent task is not available.",
+    });
+  });
+
   it("answers 404 to Stop for a run that is not going", async () => {
     const { baseUrl } = await startTestApi();
     const response = await fetch(`${baseUrl}/api/agent-runs/nope/stop`, {

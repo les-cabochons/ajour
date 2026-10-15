@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // Test stand-in for an agent CLI. Reads FAKE_CLI_SCRIPT, a JSON array of
 // steps: { "stdout": "<line>" }, { "stderr": "<line>" }, { "wait": ms },
-// { "exit": code }, { "hang": true }. Also appends its argv, its working
+// { "exit": code }, { "hang": true }, { "ignoreTerm": true } (keeps running
+// after SIGTERM, only SIGKILL stops it). Also appends its argv, its working
 // folder, whether AJOUR_MCP_TOKEN is set and the names of any other AJOUR_
 // variables to FAKE_CLI_REPORT when set.
 import { appendFileSync } from "node:fs";
@@ -21,10 +22,12 @@ if (process.env.FAKE_CLI_REPORT) {
 }
 const steps = JSON.parse(process.env.FAKE_CLI_SCRIPT ?? "[]");
 for (const step of steps) {
+  if (step.ignoreTerm) process.on("SIGTERM", () => {});
   if (step.stdout) process.stdout.write(step.stdout + "\n");
   if (step.stderr) process.stderr.write(step.stderr + "\n");
   if (step.wait) await new Promise((resolve) => setTimeout(resolve, step.wait));
-  if (step.hang) await new Promise(() => {});
+  // A bare pending promise lets Node exit, so keep a timer running.
+  if (step.hang) await new Promise(() => setInterval(() => {}, 1000));
   if (step.exit !== undefined) process.exit(step.exit);
 }
 process.exit(0);

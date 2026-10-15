@@ -669,9 +669,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         request.method === "GET" &&
         requestUrl.pathname === "/api/agent-runs/current"
       ) {
-        writeJson(response, 200, {
-          run: (await agentRunner.overview()).currentRun,
-        });
+        writeJson(response, 200, { run: agentRunner.currentRun() });
         return;
       }
 
