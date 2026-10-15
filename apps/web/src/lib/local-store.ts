@@ -1693,6 +1693,23 @@ export const localStore = {
       lastUndo = undefined;
     }
   },
+  /**
+   * Runs store commands as one undoable action, for callers such as agent
+   * tools whose commands keep no undo of their own. The undo covers every
+   * record the commands changed. Replaces the last undo, like any action.
+   */
+  runWithUndo<T>(run: () => T): { result: T; undoToken: string | null } {
+    const before = readState();
+    const result = run();
+    const after = readState();
+    if (after === before) return { result, undoToken: null };
+
+    const undo = captureUndo(before, after);
+    if (!undo) return { result, undoToken: null };
+    const token = createId("undo");
+    lastUndo = { token, undo };
+    return { result, undoToken: token };
+  },
   saveTimer(timerId: string) {
     updateState((state) =>
       applySaveTimer(state, timerId, { createId, now: Date.now }),

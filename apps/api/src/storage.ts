@@ -15,6 +15,7 @@ import {
   type ConnectorsOverview,
   type ConnectorSummaryValues,
 } from "../../../packages/shared/connectors.ts";
+import type { McpSettings } from "../../../packages/shared/agent-tools.ts";
 
 interface StoredConnection {
   id: string;
@@ -84,6 +85,41 @@ interface AppApiStateV2 {
   seenImportKeys?: string[];
 }
 
+/**
+ * An agent client. Ajour keeps only the SHA-256 hash of its token. A revoked
+ * client stays in the file so a rejected request can name it.
+ */
+export interface StoredMcpClient {
+  id: string;
+  name: string;
+  tokenHash: string;
+  createdAt: number;
+  lastUsedAt?: number;
+  revokedAt?: number;
+}
+
+interface StoredMcpState {
+  enabled: boolean;
+  clients: StoredMcpClient[];
+}
+
+/** Skips writing `lastUsedAt` more than once a minute per client. */
+const MCP_LAST_USED_RESOLUTION_MS = 60_000;
+
+function normalizeMcpState(raw: unknown): StoredMcpState {
+  const value = (raw ?? {}) as Partial<StoredMcpState>;
+  return {
+    enabled: value.enabled === true,
+    clients: (Array.isArray(value.clients) ? value.clients : []).filter(
+      (client): client is StoredMcpClient =>
+        typeof client?.id === "string" &&
+        typeof client.name === "string" &&
+        typeof client.tokenHash === "string" &&
+        typeof client.createdAt === "number",
+    ),
+  };
+}
+
 interface AppApiStateV7 {
   version: 7;
   connections: StoredConnection[];
@@ -92,6 +128,7 @@ interface AppApiStateV7 {
   connectorBacklogStatuses: ConnectorBacklogStatus[];
   disabledPluginIds: string[];
   pluginsEnabled: boolean;
+  mcp: StoredMcpState;
 }
 
 type AppApiState = AppApiStateV7;
@@ -133,6 +170,7 @@ function createDefaultState(): AppApiState {
     connectorBacklogStatuses: [],
     disabledPluginIds: [],
     pluginsEnabled: true,
+    mcp: { enabled: false, clients: [] },
   };
 }
 
@@ -434,6 +472,7 @@ function normalizeState(
         typeof (raw as Partial<AppApiState>).pluginsEnabled === "boolean"
           ? (raw as Partial<AppApiState>).pluginsEnabled!
           : defaults.pluginsEnabled,
+      mcp: normalizeMcpState((raw as Partial<AppApiState>).mcp),
     };
   }
 
@@ -519,6 +558,7 @@ function normalizeState(
         .sort(compareBacklogStatuses),
       disabledPluginIds: defaults.disabledPluginIds,
       pluginsEnabled: defaults.pluginsEnabled,
+      mcp: { enabled: false, clients: [] },
     };
   }
 
@@ -617,6 +657,97 @@ export class AppApiStorage {
   async setPluginSystemEnabled(enabled: boolean): Promise<void> {
     await this.mutate(async (state) => ({
       nextState: { ...state, pluginsEnabled: enabled },
+      result: undefined,
+    }));
+  }
+
+  /** MCP settings for the Settings page. Revoked clients and token hashes stay out. */
+  async getMcpSettings(): Promise<McpSettings> {
+    const { mcp } = await this.readState();
+    return {
+      enabled: mcp.enabled,
+      clients: mcp.clients
+        .filter((client) => client.revokedAt === undefined)
+        .map(({ id, name, createdAt, lastUsedAt }) => ({
+          id,
+          name,
+          createdAt,
+          ...(lastUsedAt === undefined ? {} : { lastUsedAt }),
+        })),
+    };
+  }
+
+  async setMcpEnabled(enabled: boolean): Promise<void> {
+    await this.mutate((state) => ({
+      nextState: { ...state, mcp: { ...state.mcp, enabled } },
+      result: undefined,
+    }));
+  }
+
+  async addMcpClient(client: StoredMcpClient): Promise<void> {
+    await this.mutate((state) => ({
+      nextState: {
+        ...state,
+        mcp: { ...state.mcp, clients: [...state.mcp.clients, client] },
+      },
+      result: undefined,
+    }));
+  }
+
+  /** Revokes a client. False when no active client has the id. */
+  async revokeMcpClient(clientId: string, at: number): Promise<boolean> {
+    return this.mutate((state) => {
+      const target = state.mcp.clients.find(
+        (client) => client.id === clientId && client.revokedAt === undefined,
+      );
+      if (!target) return { nextState: state, result: false };
+      return {
+        nextState: {
+          ...state,
+          mcp: {
+            ...state.mcp,
+            clients: state.mcp.clients.map((client) =>
+              client === target ? { ...client, revokedAt: at } : client,
+            ),
+          },
+        },
+        result: true,
+      };
+    });
+  }
+
+  /** Finds a client by token hash, revoked or not. */
+  async findMcpClientByTokenHash(
+    tokenHash: string,
+  ): Promise<StoredMcpClient | undefined> {
+    return (await this.readState()).mcp.clients.find(
+      (client) => client.tokenHash === tokenHash,
+    );
+  }
+
+  async touchMcpClient(clientId: string, at: number): Promise<void> {
+    const client = (await this.readState()).mcp.clients.find(
+      (candidate) => candidate.id === clientId,
+    );
+    if (
+      !client ||
+      (client.lastUsedAt !== undefined &&
+        at - client.lastUsedAt < MCP_LAST_USED_RESOLUTION_MS)
+    ) {
+      return;
+    }
+    await this.mutate((state) => ({
+      nextState: {
+        ...state,
+        mcp: {
+          ...state.mcp,
+          clients: state.mcp.clients.map((candidate) =>
+            candidate.id === clientId
+              ? { ...candidate, lastUsedAt: at }
+              : candidate,
+          ),
+        },
+      },
       result: undefined,
     }));
   }

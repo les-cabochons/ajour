@@ -8,6 +8,7 @@ Ajour is a local-first time-tracking workspace built as a pnpm monorepo. Keep ar
 - `apps/desktop`: Electron shell that wraps the web renderer and provides desktop packaging/runtime bootstrap.
 - `apps/api`: Optional local API for connector configuration, connector sync, plugin workers, and local import flows.
 - `packages/shared`: Cross-runtime domain types, validation schemas, normalization, aggregation, rule evaluation, and connector contracts.
+- MCP: the local API serves an MCP endpoint at `/mcp/ajour` for agents such as Claude Code and Codex. It is off by default, and each agent client has its own token (ADR 0004). The API forwards every data tool to the renderer over `/api/mcp/bridge`, and `features/agents/agent-tool-runner.ts` runs it through the object action sets with Undo. Sessions, questions and the activity list live in API memory (`apps/api/src/agent-sessions.ts`).
 
 ## Product Boundary
 
@@ -17,6 +18,7 @@ The default workflow is local-first:
 - automatic activity capture is not part of the supported baseline workflow
 - any future sync or external sink must be explicit, opt-in, and privacy-scoped
 - never upload tracking data, private notes, raw URLs, query strings, hashes, meeting subjects, organizers, locations, or full window titles by default
+- MCP is an explicit external sink: turning it on and creating a client send local data to that client's model provider (ADR 0004).
 
 ## Data Flow
 
