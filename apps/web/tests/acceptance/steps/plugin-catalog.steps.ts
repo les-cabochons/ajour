@@ -1,7 +1,11 @@
 import { createRequire } from "node:module";
 import { expect } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
-import type { PluginCatalogEntry } from "@ajour/shared";
+import {
+  CONNECTOR_PLUGIN_API_VERSION,
+  type PluginCatalogEntry,
+  type ConnectorsOverview,
+} from "@ajour/shared";
 
 const { Given, When, Then } = createBdd();
 const { BUILT_IN_PLUGIN_CATALOG_ENTRIES: builtInEntries } = createRequire(
@@ -106,4 +110,199 @@ Then("the Workday schema is the only catalog entry", async ({ page }) => {
   await expect(page.getByRole("link", { name: /^View / })).toHaveText(
     /Workday schema/,
   );
+});
+
+const oldJira = {
+  id: "jira",
+  displayName: "Jira",
+  version: "1.0.0",
+  apiVersion: CONNECTOR_PLUGIN_API_VERSION - 1,
+  description: "Test connector",
+  iconSvg:
+    "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M2 2h12v12H2z'/></svg>",
+  entrypoint: "",
+  capabilities: { connector: {} },
+  connectionFields: [
+    {
+      id: "token",
+      label: "Token",
+      type: "password" as const,
+      required: true,
+      secret: true,
+    },
+  ],
+  unavailableReason: `Jira 1.0.0 uses plugin API ${CONNECTOR_PLUGIN_API_VERSION - 1}, but this version of Ajour needs plugin API ${CONNECTOR_PLUGIN_API_VERSION}. Update the plugin to use it again.`,
+};
+const savedJiraConnection = {
+  id: "saved-jira",
+  pluginId: "jira",
+  label: "My Jira",
+  tenantLabel: "My workspace",
+  autoSync: false,
+  autoSyncIntervalMinutes: 15,
+  connectedAt: 1,
+  pendingImportCount: 0,
+  selectedImportCount: 0,
+  configSummary: {},
+  editableValues: {},
+};
+const oldJiraOverview: ConnectorsOverview = {
+  pluginsEnabled: true,
+  plugins: [oldJira],
+  connectionGroups: [
+    { plugin: oldJira, enabled: false, connections: [savedJiraConnection] },
+  ],
+  totalPendingImportCount: 0,
+  totalSelectedImportCount: 0,
+};
+const { unavailableReason: _reason, ...jiraIdentity } = oldJira;
+const updatedJira = {
+  ...jiraIdentity,
+  apiVersion: CONNECTOR_PLUGIN_API_VERSION,
+  version: "1.1.0",
+  entrypoint: "plugin.mjs",
+};
+const updatedJiraOverview: ConnectorsOverview = {
+  ...oldJiraOverview,
+  plugins: [updatedJira],
+  connectionGroups: [
+    {
+      ...oldJiraOverview.connectionGroups[0]!,
+      plugin: updatedJira,
+      enabled: true,
+    },
+  ],
+};
+
+Given("an installed Jira plugin uses an older plugin API", async ({ page }) => {
+  await page.route("**/api/connectors", async (route) => {
+    const updated = await page.evaluate(
+      () => sessionStorage.getItem("jira-updated") === "true",
+    );
+    await route.fulfill({
+      json: updated ? updatedJiraOverview : oldJiraOverview,
+      headers: { "access-control-allow-origin": "*" },
+    });
+  });
+  await page.route("**/api/project-data-shapes", (route) =>
+    route.fulfill({
+      json: { plugins: [] },
+      headers: { "access-control-allow-origin": "*" },
+    }),
+  );
+  await page.addInitScript(
+    ({ plugin, overview }) => {
+      const result = { plugin, replaced: true, overview };
+      const update = async () => {
+        if (sessionStorage.getItem("jira-fail-next") === "true") {
+          sessionStorage.removeItem("jira-fail-next");
+          throw new Error("Plugin download failed. Try again.");
+        }
+        sessionStorage.setItem("jira-updated", "true");
+        return result;
+      };
+      Object.assign(window.ajourDesktop!, {
+        downloadCatalogPlugin: async (id: string) => {
+          if (id !== "jira") throw new Error("Unexpected plugin download");
+          return { type: "connector", result: await update() };
+        },
+        installConnectorPlugin: update,
+      });
+    },
+    { plugin: updatedJira, overview: updatedJiraOverview },
+  );
+});
+
+Given("the next Jira update download fails", async ({ page }) => {
+  await page.addInitScript(() =>
+    sessionStorage.setItem("jira-fail-next", "true"),
+  );
+});
+
+Given("Jira has no catalog download", async ({ page }) => {
+  await page.addInitScript(() => {
+    window.ajourDesktop!.getPluginCatalog = async () => ({
+      entries: [],
+      source: "cache",
+      checkedAt: "2026-10-15T00:00:00Z",
+    });
+  });
+});
+
+When(
+  "I open the {word} for Jira at {int} pixels wide",
+  async ({ page }, view: string, width: number) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto(
+      view === "catalog" ? "/settings/plugins" : "/settings/plugins/jira",
+    );
+  },
+);
+
+Then("Jira explains the plugin API mismatch", async ({ page }) => {
+  await expect(
+    page.getByText(oldJira.unavailableReason, { exact: true }).first(),
+  ).toBeVisible();
+  await expect(page.getByText("Unavailable", { exact: true })).toBeVisible();
+  const update = page.getByRole("button", { name: "Update Jira", exact: true });
+  await expect(update).toBeEnabled();
+  await update.scrollIntoViewIfNeeded();
+  const box = await update.boundingBox();
+  expect(box!.x + box!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+  await page.screenshot({
+    path: `test-results/plugin-update-${page.viewportSize()!.width}.png`,
+  });
+});
+
+When("I update Jira", async ({ page }) => {
+  await page.getByRole("button", { name: "Update Jira", exact: true }).click();
+});
+
+Then("Jira is available with its saved connection", async ({ page }) => {
+  // Catalog updates are verified on the detail page as well.
+  if (!page.url().endsWith("/jira")) {
+    await page.getByRole("link", { name: "View Jira", exact: true }).click();
+  }
+  await expect(page.getByText("Unavailable", { exact: true })).toHaveCount(0);
+  await expect(page.getByText("My Jira", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("switch", { name: "Deactivate Jira", exact: true }),
+  ).toBeChecked();
+  await expect(
+    page.getByRole("button", { name: "Update Jira", exact: true }),
+  ).toHaveCount(0);
+});
+
+Then(
+  "the update error is shown and Jira can be updated again",
+  async ({ page }) => {
+    await expect(
+      page.getByText("Plugin download failed. Try again.", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByText("My Jira", { exact: true })).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "Update Jira", exact: true }),
+    ).toBeEnabled();
+    await expect(
+      page.getByRole("button", { name: "Add a connection", exact: true }),
+    ).toBeDisabled();
+  },
+);
+
+Then(
+  "Jira offers an update from file instead of a catalog update",
+  async ({ page }) => {
+    await expect(
+      page.getByRole("button", { name: "Update Jira", exact: true }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Update from file", exact: true }),
+    ).toBeEnabled();
+  },
+);
+
+When("I update Jira from a file", async ({ page }) => {
+  await page
+    .getByRole("button", { name: "Update from file", exact: true })
+    .click();
 });

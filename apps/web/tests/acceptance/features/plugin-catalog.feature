@@ -23,3 +23,32 @@ Feature: Browse plugin capabilities
     And the GitHub catalog entry offers a download
     When I select the "Schemas" plugin filter
     Then the Workday schema is the only catalog entry
+
+  Scenario Outline: Update an incompatible installed plugin without removing its connections
+    Given an installed Jira plugin uses an older plugin API
+    When I open the <view> for Jira at <width> pixels wide
+    Then Jira explains the plugin API mismatch
+    When I update Jira
+    Then Jira is available with its saved connection
+
+    Examples:
+      | view    | width |
+      | catalog | 390   |
+      | details | 1280  |
+
+  Scenario: Keep an incompatible plugin and its connections after a download failure
+    Given an installed Jira plugin uses an older plugin API
+    And the next Jira update download fails
+    When I open the details for Jira at 1280 pixels wide
+    And I update Jira
+    Then the update error is shown and Jira can be updated again
+    When I update Jira
+    Then Jira is available with its saved connection
+
+  Scenario: Update a local-only incompatible plugin from a file
+    Given an installed Jira plugin uses an older plugin API
+    And Jira has no catalog download
+    When I open the details for Jira at 390 pixels wide
+    Then Jira offers an update from file instead of a catalog update
+    When I update Jira from a file
+    Then Jira is available with its saved connection

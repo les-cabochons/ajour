@@ -5,9 +5,10 @@ import {
 } from "@remixicon/react";
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
-import type {
-  PluginCatalogCapability,
-  PluginCatalogEntry,
+import {
+  CONNECTOR_PLUGIN_API_VERSION,
+  type PluginCatalogCapability,
+  type PluginCatalogEntry,
 } from "@ajour/shared";
 
 const featureDescriptions: Record<string, string> = {
@@ -36,6 +37,20 @@ export function canInstallCatalogPlugin(entry: PluginCatalogEntry) {
   return (
     entry.capabilities.includes("connector") ||
     entry.capabilities.includes("codeHost")
+  );
+}
+
+/**
+ * Whether downloading the catalog package again would replace an installed
+ * package this Ajour version cannot run. A catalog entry built for another
+ * plugin API would install the same problem, so it does not count.
+ */
+export function canUpdateFromCatalog(entry: PluginCatalogEntry) {
+  return (
+    entry.status === "available" &&
+    entry.install !== undefined &&
+    canInstallCatalogPlugin(entry) &&
+    entry.compatibility.pluginApiVersion === CONNECTOR_PLUGIN_API_VERSION
   );
 }
 

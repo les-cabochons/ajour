@@ -57,6 +57,7 @@ import {
 import { ConnectorFieldInput } from "./connector-settings-ui";
 import {
   canInstallCatalogPlugin,
+  canUpdateFromCatalog,
   PluginCapabilityBand,
   PluginCapabilityList,
   PluginIdentityMark,
@@ -108,9 +109,45 @@ function EmptyListText({
 }
 
 /**
+ * Downloads the catalog package again over an installed package Ajour cannot
+ * run. Replacing a package keeps its connections and activation state.
+ */
+function UpdatePluginButton({
+  title,
+  canDownload,
+  isMutating,
+  onUpdate,
+}: {
+  title: string;
+  canDownload: boolean;
+  isMutating: boolean;
+  onUpdate: () => void;
+}) {
+  return (
+    <Button
+      className="shrink-0"
+      variant="outline"
+      disabled={!canDownload || isMutating}
+      title={
+        canDownload
+          ? undefined
+          : "Updates are available in the production desktop app."
+      }
+      aria-label={`Update ${title}`}
+      onClick={onUpdate}
+    >
+      <RefreshCw data-icon="inline-start" />
+      Update
+    </Button>
+  );
+}
+
+/**
  * One catalog entry as a plain row: identity mark, name and status, the
  * description, a line of metadata, and the trailing action. Spacing between
- * rows separates entries; only hover paints a background.
+ * rows separates entries; only hover paints a background. An installed plugin
+ * Ajour cannot run shows why in place of the description, with Update as the
+ * action when the catalog has a compatible package.
  */
 function PluginCatalogRow({
   entry,
@@ -129,14 +166,17 @@ function PluginCatalogRow({
 }) {
   const { catalog, connectorGroup, dataShapePlugin } = entry;
   const installed = Boolean(connectorGroup || dataShapePlugin);
+  const unavailableReason = connectorGroup?.plugin.unavailableReason;
   const version = connectorGroup?.plugin.version ?? dataShapePlugin?.version;
-  const statusLabel = installed
-    ? "Installed"
-    : catalog.status === "coming-soon"
-      ? "Coming soon"
-      : catalog.status === "deprecated"
-        ? "Deprecated"
-        : "Available";
+  const statusLabel = unavailableReason
+    ? "Unavailable"
+    : installed
+      ? "Installed"
+      : catalog.status === "coming-soon"
+        ? "Coming soon"
+        : catalog.status === "deprecated"
+          ? "Deprecated"
+          : "Available";
 
   return (
     <div className="-mx-2 flex items-center gap-3 rounded-lg px-2 py-2.5 transition-colors hover:bg-[var(--hover-bg)]">
@@ -161,7 +201,7 @@ function PluginCatalogRow({
             </Badge>
           </span>
           <span className="line-clamp-2 text-[13px] leading-5 text-muted-foreground">
-            {catalog.description}
+            {unavailableReason ?? catalog.description}
           </span>
           <span className="text-xs text-[var(--text-tertiary)]">
             {pluginCapabilitiesLabel(catalog)}
@@ -169,7 +209,14 @@ function PluginCatalogRow({
           </span>
         </span>
       </Link>
-      {connectorGroup ? (
+      {unavailableReason && canUpdateFromCatalog(catalog) ? (
+        <UpdatePluginButton
+          title={catalog.title}
+          canDownload={canDownload}
+          isMutating={isMutating}
+          onUpdate={onDownload}
+        />
+      ) : connectorGroup ? (
         <Switch
           className="shrink-0"
           checked={connectorGroup.enabled}
@@ -544,6 +591,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
   ) => {
     const groupFormState =
       formState?.pluginId === group.plugin.id ? formState : null;
+    const { unavailableReason } = group.plugin;
 
     return (
       <>
@@ -551,27 +599,49 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
           entry={entry}
           iconSvg={group.plugin.iconSvg}
           action={
-            <div className="flex w-full items-center justify-between gap-3 desktop:w-auto desktop:justify-end">
-              <span className="text-sm text-muted-foreground">
-                {group.enabled ? "Active" : "Inactive"}
-              </span>
-              <Switch
-                checked={group.enabled}
-                disabled={
-                  isMutatingConnector ||
-                  connectors?.pluginsEnabled === false ||
-                  group.plugin.entrypoint.length === 0
-                }
-                aria-label={`${group.enabled ? "Deactivate" : "Activate"} ${entry.title}`}
-                onCheckedChange={(enabled) =>
-                  void handlePluginActivation(group, enabled)
-                }
+            unavailableReason &&
+            canUpdateFromCatalog(entry) &&
+            canDownloadCatalogPlugins ? (
+              <UpdatePluginButton
+                title={entry.title}
+                canDownload={canDownloadCatalogPlugins}
+                isMutating={isMutatingConnector}
+                onUpdate={() => void handleDownloadPlugin(entry)}
               />
-            </div>
+            ) : unavailableReason && canInstallConnectorPlugins ? (
+              <Button
+                variant="outline"
+                disabled={isMutatingConnector}
+                onClick={() => void workflow.execute({ type: "install" })}
+              >
+                <Upload data-icon="inline-start" />
+                Update from file
+              </Button>
+            ) : (
+              <div className="flex w-full items-center justify-between gap-3 desktop:w-auto desktop:justify-end">
+                <span className="text-sm text-muted-foreground">
+                  {group.enabled ? "Active" : "Inactive"}
+                </span>
+                <Switch
+                  checked={group.enabled}
+                  disabled={
+                    isMutatingConnector ||
+                    connectors?.pluginsEnabled === false ||
+                    group.plugin.entrypoint.length === 0
+                  }
+                  aria-label={`${group.enabled ? "Deactivate" : "Activate"} ${entry.title}`}
+                  onCheckedChange={(enabled) =>
+                    void handlePluginActivation(group, enabled)
+                  }
+                />
+              </div>
+            )
           }
           badges={
             <>
-              <Badge variant="secondary">Installed</Badge>
+              <Badge variant="secondary">
+                {unavailableReason ? "Unavailable" : "Installed"}
+              </Badge>
               <Badge variant={group.enabled ? "secondary" : "outline"}>
                 {group.enabled ? "Active" : "Inactive"}
               </Badge>
@@ -586,6 +656,14 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
             </>
           }
         >
+          {unavailableReason ? (
+            <MessagePanel tone="warning">
+              <p>{unavailableReason}</p>
+              <p>
+                Updating keeps your saved connections and activation settings.
+              </p>
+            </MessagePanel>
+          ) : null}
           {renderMessages()}
           <PluginCapabilityBand entry={entry} />
         </PluginDetailHeader>
@@ -605,7 +683,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
             The plugin system is deactivated. All plugin execution and sync are
             paused until you enable it from the Plugins catalog.
           </MessagePanel>
-        ) : !group.enabled ? (
+        ) : !group.enabled && !unavailableReason ? (
           <MessagePanel>
             This plugin is inactive. Its saved connections and imported data are
             preserved, but sync is paused until you reactivate it.
@@ -622,7 +700,9 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
             </div>
             <Button
               disabled={
-                isMutatingConnector || connectors?.pluginsEnabled === false
+                isMutatingConnector ||
+                connectors?.pluginsEnabled === false ||
+                Boolean(unavailableReason)
               }
               onClick={() => handleCreate(group.plugin)}
             >
@@ -773,7 +853,8 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                         connection.lastError && "text-destructive",
                       )}
                     >
-                      {connection.lastError ??
+                      {unavailableReason ??
+                        connection.lastError ??
                         (!group.enabled
                           ? "Plugin inactive; this connection will not sync."
                           : !pluginHasConnector(group.plugin)
@@ -786,7 +867,9 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                   <div className="flex shrink-0 flex-wrap gap-2">
                     <Button
                       variant="outline"
-                      disabled={isMutatingConnector}
+                      disabled={
+                        isMutatingConnector || Boolean(unavailableReason)
+                      }
                       onClick={() => handleEdit(group.plugin, connection)}
                     >
                       <Pencil data-icon="inline-start" />

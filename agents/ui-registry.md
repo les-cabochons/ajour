@@ -132,6 +132,13 @@ under each tab. The filter tabs use compact spacing below 768px so all four
 fit at 320px. Only an installed plugin can be activated. Manual file
 installation remains a separate action.
 
+An unavailable installed plugin shows its reason in the catalog row and a
+notice on its detail page. Update downloads a compatible catalog package over
+the installed package. If no compatible catalog download exists, the desktop
+detail page offers Update from file. Both paths preserve saved connections and
+activation settings. Connection creation and editing stay disabled until the
+plugin is available again.
+
 Opening an entry moves to a dedicated detail route, a cardless page of
 sections. Its first section holds the back link, identity-first header,
 status-driven primary action, status badges, any notices (`MessagePanel`),

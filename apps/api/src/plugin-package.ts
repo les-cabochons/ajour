@@ -36,6 +36,33 @@ export interface ResolvedConnectorPlugin {
   source: "development" | "installed";
 }
 
+/**
+ * An installed package Ajour read but cannot run. Discovery keeps it, with a
+ * reason written for the user, so the settings page can explain the problem
+ * and offer an update instead of showing an unnamed placeholder.
+ */
+export interface UnavailableConnectorPlugin {
+  manifest: ConnectorPluginManifest;
+  directory: string;
+  reason: string;
+}
+
+/** Thrown when a valid manifest targets a plugin API this app does not run. */
+export class IncompatibleConnectorPluginError extends Error {
+  readonly manifest: ConnectorPluginManifest;
+
+  constructor(manifest: ConnectorPluginManifest) {
+    const pluginName = `${manifest.displayName} ${manifest.version}`;
+    super(
+      manifest.apiVersion < CONNECTOR_PLUGIN_API_VERSION
+        ? `${pluginName} uses plugin API ${manifest.apiVersion}, but this version of Ajour needs plugin API ${CONNECTOR_PLUGIN_API_VERSION}. Update the plugin to use it again.`
+        : `${pluginName} uses plugin API ${manifest.apiVersion}, but this version of Ajour supports plugin API ${CONNECTOR_PLUGIN_API_VERSION}. Update Ajour to use this plugin.`,
+    );
+    this.name = "IncompatibleConnectorPluginError";
+    this.manifest = manifest;
+  }
+}
+
 export interface InstalledConnectorPlugin {
   manifest: ConnectorPluginManifest;
   directory: string;
@@ -197,9 +224,7 @@ export async function readConnectorPlugin(
   const manifest = connectorPluginManifestSchema.parse(JSON.parse(rawManifest));
 
   if (manifest.apiVersion !== CONNECTOR_PLUGIN_API_VERSION) {
-    throw new Error(
-      `Connector plugin "${manifest.id}" requires API version ${manifest.apiVersion}; this app supports version ${CONNECTOR_PLUGIN_API_VERSION}.`,
-    );
+    throw new IncompatibleConnectorPluginError(manifest);
   }
 
   const entrypointPath = resolveConnectorPluginEntrypoint(
@@ -221,17 +246,25 @@ export async function readConnectorPlugin(
   };
 }
 
+/**
+ * Reads every installed package. Packages built for another plugin API come
+ * back in `unavailable`; other invalid directories are logged and skipped.
+ */
 export async function discoverInstalledConnectorPlugins(
   pluginRoot: string,
-): Promise<ResolvedConnectorPlugin[]> {
+): Promise<{
+  plugins: ResolvedConnectorPlugin[];
+  unavailable: UnavailableConnectorPlugin[];
+}> {
   let entries;
   try {
     entries = await readdir(pluginRoot, { withFileTypes: true });
   } catch {
-    return [];
+    return { plugins: [], unavailable: [] };
   }
 
   const plugins: ResolvedConnectorPlugin[] = [];
+  const unavailable: UnavailableConnectorPlugin[] = [];
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name.startsWith(".")) {
       continue;
@@ -245,6 +278,14 @@ export async function discoverInstalledConnectorPlugins(
         ),
       );
     } catch (error) {
+      if (error instanceof IncompatibleConnectorPluginError) {
+        unavailable.push({
+          manifest: error.manifest,
+          directory: path.join(pluginRoot, entry.name),
+          reason: error.message,
+        });
+        continue;
+      }
       console.error(
         `Skipping invalid connector plugin directory "${entry.name}".`,
         error,
@@ -252,7 +293,7 @@ export async function discoverInstalledConnectorPlugins(
     }
   }
 
-  return plugins;
+  return { plugins, unavailable };
 }
 
 export async function reconcileConnectorPluginInstallRoot(pluginRoot: string) {
@@ -401,11 +442,13 @@ export async function installConnectorPluginArchive(options: {
 export async function uninstallConnectorPluginPackage(options: {
   installRoot: string;
   pluginId: string;
-}): Promise<ResolvedConnectorPlugin | null> {
+}): Promise<Pick<ResolvedConnectorPlugin, "manifest" | "directory"> | null> {
   const pluginId = connectorPluginIdSchema.parse(options.pluginId);
   const installRoot = path.resolve(options.installRoot);
-  const installedPlugins = await discoverInstalledConnectorPlugins(installRoot);
-  const plugin = installedPlugins.find(
+  const { plugins, unavailable } =
+    await discoverInstalledConnectorPlugins(installRoot);
+  // A package built for another plugin API can still be removed.
+  const plugin = [...plugins, ...unavailable].find(
     (candidate) => candidate.manifest.id === pluginId,
   );
   if (!plugin) {
