@@ -288,11 +288,21 @@ Then("the other item is not pinned", async ({ page }) => {
     otherSidebarRow(page).getByRole("img", { name: "Pinned" }),
   ).toHaveCount(0);
 });
+/**
+ * Toggles one value in the open Filter popover, which stays open. A previous
+ * pick leaves the popover on its field's values, so this goes back first.
+ */
+async function pickBacklogFilter(page: Page, field: string, value: string) {
+  const filters = page.getByRole("dialog", { name: "Add backlog filter" });
+  const back = filters.getByRole("button");
+  if (await back.isVisible()) await back.click();
+  await filters.getByRole("option", { name: field, exact: true }).click();
+  await filters.getByRole("option", { name: value, exact: true }).click();
+}
 When("I filter the Backlog to Urgent", async ({ page }) => {
   await page.getByRole("button", { name: "Filter", exact: true }).click();
-  await chooseSelectOption(page, "Filter property", "priority");
-  await page.getByRole("combobox", { name: "Filter value" }).click();
-  await page.getByRole("option", { name: "Urgent", exact: true }).click();
+  await pickBacklogFilter(page, "Priority", "Urgent");
+  await page.keyboard.press("Escape");
 });
 Then("only urgent items appear on the Backlog page", async ({ page }) => {
   await expect(
@@ -305,10 +315,43 @@ Then("the sidebar still contains the other Backlog items", async ({ page }) => {
     page.getByRole("navigation", { name: "Primary navigation" }),
   ).toContainText("Other backlog item");
 });
+When(
+  "I filter the Backlog by {string} {string}",
+  async ({ page }, field: string, value: string) => {
+    await page.getByRole("button", { name: "Filter", exact: true }).click();
+    await pickBacklogFilter(page, field, value);
+    await page.keyboard.press("Escape");
+  },
+);
+Then("the filter row has one chip per field", async ({ page }) => {
+  await page.keyboard.press("Escape");
+  const state = page.getByRole("button", { name: "Edit State filter" });
+  await expect(state).toHaveCount(1);
+  await expect(state).toHaveText("StateTo do, No state");
+  await expect(
+    page.getByRole("button", { name: "Edit Project filter" }),
+  ).toHaveCount(1);
+});
+When("I open the Backlog filters", async ({ page }) => {
+  await page.getByRole("button", { name: "Filter", exact: true }).click();
+});
+When(
+  "I pick the {string} filter {string}",
+  async ({ page }, field: string, value: string) => {
+    await pickBacklogFilter(page, field, value);
+  },
+);
+Then(
+  "only the Backlog parent and its subitem appear on the Backlog page",
+  async ({ page }) => {
+    const rows = page.locator(".backlog-workspace [data-work-item-id]");
+    await expect(rows).toHaveCount(2);
+    await expect(page.locator('[data-work-item-id="parent"]')).toBeVisible();
+    await expect(page.locator('[data-work-item-id="child"]')).toBeVisible();
+  },
+);
 When("I remove the Urgent filter", async ({ page }) => {
-  await page
-    .getByRole("button", { name: "Remove filter Priority: Urgent" })
-    .click();
+  await page.getByRole("button", { name: "Remove Priority filter" }).click();
 });
 Then("all open Backlog items return", async ({ page }) => {
   await expect(
@@ -1566,6 +1609,27 @@ Then("the new Backlog item is in In progress", async ({ page }) => {
     page.locator('.backlog-board-column[aria-label="In progress"]'),
   ).toContainText("New grouped item");
 });
+When("I add a Backlog item from the end of the list", async ({ page }) => {
+  await expect(page.getByRole("button", { name: /^New item in / })).toHaveCount(
+    0,
+  );
+  await page
+    .locator(".backlog-workspace-scroll")
+    .getByRole("button", { name: "New backlog item", exact: true })
+    .click();
+  const editor = page.getByRole("complementary", {
+    name: "Backlog item editor",
+  });
+  await editor
+    .getByRole("textbox", { name: "Item", exact: true })
+    .fill("New ungrouped item");
+  await editor.getByRole("button", { name: "Save", exact: true }).click();
+});
+Then("the new Backlog item is in the list", async ({ page }) => {
+  await expect(
+    page.getByRole("region", { name: "All items", exact: true }),
+  ).toContainText("New ungrouped item");
+});
 When("I enable project swimlanes", async ({ page }) => {
   await page.getByRole("button", { name: "Display", exact: true }).click();
   await chooseSelectOption(page, "Swimlanes", "project");
@@ -1585,18 +1649,9 @@ Then(
     await expect(page.locator('[data-work-item-id="parent"]')).toBeVisible();
   },
 );
-When("I open the Backlog Archive", async ({ page }) => {
-  await page
-    .getByRole("button", { name: "Backlog options", exact: true })
-    .click();
-  await page.getByRole("menuitem", { name: "Archive", exact: true }).click();
-});
 Then(
-  "Archive contains the old done and missing sync items",
+  "the Backlog shows the old done and missing sync items",
   async ({ page }) => {
-    await expect(
-      page.getByRole("heading", { name: "Archive", exact: true }),
-    ).toBeVisible();
     await expect(page.locator('[data-work-item-id="old"]')).toBeVisible();
     await expect(page.locator('[data-work-item-id="missing"]')).toBeVisible();
   },
@@ -1620,7 +1675,7 @@ Then("the old done item is active in To do", async ({ page }) => {
       ),
     )
     .toBe("active");
-  await page.getByRole("button", { name: "Back to backlog" }).click();
+  await page.getByRole("button", { name: "Remove State filter" }).click();
   await expect(
     page
       .getByRole("region", { name: "To do", exact: true })

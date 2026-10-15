@@ -2,12 +2,20 @@ import {
   RiListCheck,
   RiLayoutColumnLine,
   RiEqualizerLine,
-  RiFilterLine,
+  RiFilter3Line,
   RiCloseLine,
+  RiArrowLeftLine,
 } from "@remixicon/react";
 import { useState, type ReactNode } from "react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
+import {
+  Command,
+  CommandEmpty,
+  CommandInput,
+  CommandItem,
+  CommandList,
+} from "@/components/ui/command";
 import {
   Popover,
   PopoverContent,
@@ -21,9 +29,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { OptionSelect } from "@/components/ui/option-select";
-import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
+  ARCHIVED_STATE_FILTER,
   BACKLOG_ORDERINGS,
   type BacklogFilterField,
   type BacklogProperty,
@@ -237,6 +245,7 @@ export function getBacklogFilterOptions(
       return [
         { value: "", label: "No state" },
         ...state.workflowStates.map((s) => ({ value: s._id, label: s.name })),
+        { value: ARCHIVED_STATE_FILTER, label: "Archived" },
       ];
     case "priority":
       return [
@@ -298,6 +307,66 @@ export function getBacklogFilterOptions(
       ];
   }
 }
+/** Checkable values of one field. Picking one toggles its filter. */
+function FilterValueList({
+  state,
+  view,
+  field,
+}: {
+  state: LocalAppState;
+  view: BacklogViewPreferences;
+  field: BacklogFilterField;
+}) {
+  return (
+    <Command
+      className="rounded-none bg-transparent p-0"
+      filter={(_value, search, keywords = []) =>
+        keywords.join(" ").toLowerCase().includes(search.toLowerCase()) ? 1 : 0
+      }
+    >
+      <CommandInput
+        autoFocus
+        aria-label={`${FIELDS[field]} values`}
+        placeholder={`Search ${FIELDS[field].toLowerCase()}...`}
+      />
+      <CommandList className="max-h-[min(18rem,45vh)] p-1">
+        <CommandEmpty>No values</CommandEmpty>
+        {getBacklogFilterOptions(state, field).map((option) => {
+          const active = view.filters.some(
+            (f) => f.field === field && f.value === option.value,
+          );
+          return (
+            <CommandItem
+              key={option.value}
+              // cmdk needs a non-empty value; "" means "No state" and such.
+              value={JSON.stringify(option.value)}
+              keywords={[option.label]}
+              data-checked={active ? "true" : undefined}
+              onSelect={() =>
+                updateBacklogView({
+                  filters: active
+                    ? view.filters.filter(
+                        (f) => f.field !== field || f.value !== option.value,
+                      )
+                    : [...view.filters, { field, value: option.value }],
+                })
+              }
+            >
+              {option.label}
+            </CommandItem>
+          );
+        })}
+      </CommandList>
+    </Command>
+  );
+}
+
+/**
+ * The filter row: a Filter button that lists the fields, then one chip per
+ * filtered field. A chip names its values, opens them for editing, and its ×
+ * removes every value of the field. Values stay open while the user picks, so
+ * several values and fields add up in one visit.
+ */
 export function BacklogFilters({
   state,
   view,
@@ -305,80 +374,103 @@ export function BacklogFilters({
   state: LocalAppState;
   view: BacklogViewPreferences;
 }) {
-  const [field, setField] = useState<BacklogFilterField>("state");
-  const [open, setOpen] = useState(false);
-  const options = getBacklogFilterOptions(state, field);
+  const [field, setField] = useState<BacklogFilterField | null>(null);
+  const fields = [...new Set(view.filters.map((filter) => filter.field))];
   return (
     <div className="flex flex-wrap items-center gap-1.5">
-      <Popover open={open} onOpenChange={setOpen}>
+      <Popover onOpenChange={(open) => !open && setField(null)}>
         <PopoverTrigger render={<Button variant="ghost" />}>
-          <RiFilterLine className="size-4" />
+          <RiFilter3Line className="size-4" />
           Filter
         </PopoverTrigger>
         <PopoverContent
           align="start"
-          className="gap-3 rounded-lg"
+          className="w-64 gap-0 overflow-hidden p-0"
           aria-label="Add backlog filter"
         >
-          <OptionSelect<BacklogFilterField>
-            label="Filter property"
-            value={field}
-            onChange={setField}
-            options={(
-              Object.entries(FIELDS) as [BacklogFilterField, string][]
-            ).map(([value, label]) => ({ value, label }))}
-          />
-          <SearchableSelect
-            value=""
-            options={options.map((option) => ({
-              ...option,
-              value: JSON.stringify(option.value),
-            }))}
-            ariaLabel="Filter value"
-            placeholder="Choose a value"
-            emptyMessage="No values"
-            onChange={(encoded) => {
-              const value = JSON.parse(encoded) as string;
-              if (
-                !view.filters.some(
-                  (f) => f.field === field && f.value === value,
-                )
-              )
-                updateBacklogView({
-                  filters: [...view.filters, { field, value }],
-                });
-              setOpen(false);
-            }}
-          />
+          {field ? (
+            <>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="m-1 self-start text-muted-foreground"
+                onClick={() => setField(null)}
+              >
+                <RiArrowLeftLine data-icon="inline-start" />
+                {FIELDS[field]}
+              </Button>
+              <FilterValueList state={state} view={view} field={field} />
+            </>
+          ) : (
+            <Command className="rounded-none bg-transparent p-0">
+              <CommandInput autoFocus placeholder="Filter by..." />
+              <CommandList className="max-h-[min(18rem,45vh)] p-1">
+                <CommandEmpty>No fields</CommandEmpty>
+                {(Object.entries(FIELDS) as [BacklogFilterField, string][]).map(
+                  ([value, label]) => (
+                    <CommandItem
+                      key={value}
+                      value={value}
+                      keywords={[label]}
+                      onSelect={() => setField(value)}
+                    >
+                      {label}
+                    </CommandItem>
+                  ),
+                )}
+              </CommandList>
+            </Command>
+          )}
         </PopoverContent>
       </Popover>
-      {view.filters.map((filter, index) => {
-        const label =
-          getBacklogFilterOptions(state, filter.field).find(
-            (o) => o.value === filter.value,
-          )?.label ?? filter.value;
+      {fields.map((chipField) => {
+        const options = getBacklogFilterOptions(state, chipField);
+        const values = view.filters
+          .filter((filter) => filter.field === chipField)
+          .map(
+            (filter) =>
+              options.find((o) => o.value === filter.value)?.label ??
+              filter.value,
+          )
+          .join(", ");
         return (
-          <Button
-            key={`${filter.field}:${filter.value}`}
-            variant="outline"
-
-            size="sm"
-            onClick={() =>
-              updateBacklogView({
-                filters: view.filters.filter((_, i) => i !== index),
-              })
-            }
-            aria-label={`Remove filter ${FIELDS[filter.field]}: ${label}`}
-          >
-            {FIELDS[filter.field]} · {label}
-            <RiCloseLine className="size-3" />
-          </Button>
+          <span key={chipField} className="backlog-filter-chip">
+            <Popover>
+              <PopoverTrigger
+                render={<Button variant="ghost" size="sm" />}
+                aria-label={`Edit ${FIELDS[chipField]} filter`}
+              >
+                <span className="text-muted-foreground">
+                  {FIELDS[chipField]}
+                </span>
+                <span className="max-w-60 truncate">{values}</span>
+              </PopoverTrigger>
+              <PopoverContent
+                align="start"
+                className="w-64 gap-0 overflow-hidden p-0"
+                aria-label={`${FIELDS[chipField]} filter`}
+              >
+                <FilterValueList state={state} view={view} field={chipField} />
+              </PopoverContent>
+            </Popover>
+            <Button
+              variant="ghost"
+              size="icon-sm"
+              aria-label={`Remove ${FIELDS[chipField]} filter`}
+              onClick={() =>
+                updateBacklogView({
+                  filters: view.filters.filter((f) => f.field !== chipField),
+                })
+              }
+            >
+              <RiCloseLine />
+            </Button>
+          </span>
         );
       })}
-      {view.filters.length > 1 && (
+      {fields.length > 1 && (
         <Button
           variant="ghost"
-
           onClick={() => updateBacklogView({ filters: [] })}
         >
           Clear filters
