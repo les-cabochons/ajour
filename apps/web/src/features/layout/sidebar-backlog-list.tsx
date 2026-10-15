@@ -40,7 +40,7 @@ import {
   type LocalProject,
   type LocalWorkItem,
 } from "@/domain/local-state";
-import { formatClockDuration } from "@/domain/time/duration";
+import { formatCompactDuration } from "@/domain/time/duration";
 import { settleOpensDialog } from "@/features/backlog/settle-dialog";
 import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
 import { formatSnoozeTime } from "@/features/backlog/snooze-presets";
@@ -435,7 +435,7 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
             isReturned={props.isReturned}
           />
           {loggedMs > 0 ? (
-            <Value tone="muted">{formatClockDuration(loggedMs)}</Value>
+            <Value tone="muted">{formatCompactDuration(loggedMs)}</Value>
           ) : null}
         </span>
         {reveal.active ? (
