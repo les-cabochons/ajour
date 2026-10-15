@@ -220,16 +220,7 @@ export function ProjectPropertiesCard({
         })?.label ?? "Preset");
 
   return (
-    <section
-      className="project-properties-card"
-      aria-labelledby={`${project._id}-properties`}
-    >
-      <h2
-        id={`${project._id}-properties`}
-        className="text-xs font-medium text-muted-foreground"
-      >
-        Properties
-      </h2>
+    <section className="project-properties-card" aria-label="Properties">
       <PropertyList>
         <PropertyRow label="Full name">
           <InlineText

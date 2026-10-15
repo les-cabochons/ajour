@@ -105,9 +105,7 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: true,
   appearance: true,
-  head: [
-    ["link", { rel: "icon", type: "image/png", href: "/favicon.png" }],
-  ],
+  head: [["link", { rel: "icon", type: "image/png", href: "/favicon.png" }]],
   themeConfig: {
     logo: "/logo-mark.png",
     siteTitle: "Ajour docs",

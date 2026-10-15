@@ -519,14 +519,8 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
             </div>
             <section
               className="backlog-item-properties-card"
-              aria-labelledby={`${item._id}-properties`}
+              aria-label="Properties"
             >
-              <h2
-                id={`${item._id}-properties`}
-                className="text-xs font-medium text-muted-foreground"
-              >
-                Properties
-              </h2>
               <BacklogItemProperties item={item} state={state}>
                 <PropertyRow label="Source">
                   {item.source === "manual"
