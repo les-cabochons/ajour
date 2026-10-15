@@ -2043,3 +2043,46 @@ Then(
     ).toHaveCount(0);
   },
 );
+When(
+  "I type in the title, the remaining estimate and the note and press Escape each time",
+  async ({ page }) => {
+    await page
+      .getByRole("heading", { name: "Backlog parent", level: 1 })
+      .click();
+    await page
+      .getByRole("textbox", { name: "Title", exact: true })
+      .fill("Cancelled title");
+    await page.keyboard.press("Escape");
+
+    await page
+      .getByRole("button", { name: /^Edit remaining estimate/ })
+      .click();
+    await page
+      .getByRole("textbox", { name: "Remaining estimate in hours" })
+      .fill("9");
+    await page.keyboard.press("Escape");
+
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    await page
+      .getByRole("textbox", { name: "Note", exact: true })
+      .fill("Cancelled note");
+    await page.keyboard.press("Escape");
+    await expect(
+      page.getByRole("heading", { name: "Backlog parent", level: 1 }),
+    ).toBeVisible();
+  },
+);
+Then(
+  "the Backlog parent keeps its saved title, estimate and note",
+  async ({ page }) => {
+    const { workItems } = await readBacklogState(page);
+    const parent = workItems.find(
+      (item: { _id: string }) => item._id === "parent",
+    );
+    expect(parent).toMatchObject({
+      title: "Backlog parent",
+      remainingEstimateHours: 3,
+    });
+    expect(parent.note).toBeUndefined();
+  },
+);

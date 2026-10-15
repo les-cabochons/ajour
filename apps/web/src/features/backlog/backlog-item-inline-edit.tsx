@@ -125,21 +125,37 @@ export function EstimateFigure({
   readOnly: boolean;
 }) {
   const [draft, setDraft] = useState<string | null>(null);
+  // Set once the field closes, so the blur of the unmounting input after
+  // Enter or Escape does not save again.
+  const closedRef = useRef(false);
   const invalid = draft !== null && parseEstimateInput(draft) === null;
 
+  function open() {
+    closedRef.current = false;
+    setDraft(formatEstimateInput(item[field]));
+  }
+
+  function close() {
+    closedRef.current = true;
+    setDraft(null);
+  }
+
   function save() {
-    if (draft === null) return;
+    if (draft === null || closedRef.current) return;
+    // Untouched text saves nothing, so a precise synced value is not rounded.
+    if (draft === formatEstimateInput(item[field])) {
+      close();
+      return;
+    }
     const hours = parseEstimateInput(draft);
     // Invalid hours keep the field open with its error.
     if (hours === null) return;
-    if (hours !== item[field]) {
-      patchBacklogItemWithUndo(
-        item,
-        { [field]: hours },
-        `${label} estimate changed`,
-      );
-    }
-    setDraft(null);
+    patchBacklogItemWithUndo(
+      item,
+      { [field]: hours },
+      `${label} estimate changed`,
+    );
+    close();
   }
 
   return (
@@ -150,7 +166,7 @@ export function EstimateFigure({
           className="backlog-item-inline-target -mx-1 px-1 disabled:cursor-default"
           aria-label={`Edit ${label.toLowerCase()} estimate, ${formatHours(item[field])}`}
           disabled={readOnly}
-          onClick={() => setDraft(formatEstimateInput(item[field]))}
+          onClick={open}
         >
           {formatHours(item[field])}
         </button>
@@ -173,7 +189,7 @@ export function EstimateFigure({
               save();
             } else if (event.key === "Escape") {
               event.preventDefault();
-              setDraft(null);
+              close();
             }
           }}
         />
@@ -228,36 +244,31 @@ export function NoteSection({
         Note
       </SectionHeading>
       {editing ? (
-        <div className="flex flex-col gap-1">
-          <Textarea
-            autoFocus
-            aria-label="Note"
-            defaultValue={item.note ?? ""}
-            placeholder="Description, markdown supported"
-            rows={Math.max(4, (item.note ?? "").split("\n").length + 1)}
-            className="font-mono text-xs"
-            onBlur={(event) => {
+        <Textarea
+          autoFocus
+          aria-label="Note"
+          defaultValue={item.note ?? ""}
+          placeholder="Description, markdown supported"
+          rows={Math.max(4, (item.note ?? "").split("\n").length + 1)}
+          className="font-mono text-xs"
+          onBlur={(event) => {
+            const { value } = event.currentTarget;
+            closer.close(() => save(value));
+          }}
+          onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              closer.close();
+            } else if (
+              event.key === "Enter" &&
+              (event.metaKey || event.ctrlKey)
+            ) {
+              event.preventDefault();
               const { value } = event.currentTarget;
               closer.close(() => save(value));
-            }}
-            onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
-              if (event.key === "Escape") {
-                event.preventDefault();
-                closer.close();
-              } else if (
-                event.key === "Enter" &&
-                (event.metaKey || event.ctrlKey)
-              ) {
-                event.preventDefault();
-                const { value } = event.currentTarget;
-                closer.close(() => save(value));
-              }
-            }}
-          />
-          <p className="text-xs text-muted-foreground">
-            Saves when you click away or press Cmd+Enter. Esc cancels.
-          </p>
-        </div>
+            }
+          }}
+        />
       ) : item.note ? (
         <Markdown>{item.note}</Markdown>
       ) : (

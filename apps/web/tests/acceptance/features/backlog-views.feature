@@ -409,3 +409,8 @@ Feature: Backlog list and board views
     And I add the subitem "Inline subitem" on its page
     Then the Backlog parent keeps the inline edits
     And the item page has no actions menu and no editor panel
+
+  Scenario: Escape cancels an inline edit on the item page
+    When I open the Backlog parent page
+    And I type in the title, the remaining estimate and the note and press Escape each time
+    Then the Backlog parent keeps its saved title, estimate and note
