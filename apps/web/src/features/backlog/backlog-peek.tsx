@@ -1,17 +1,19 @@
 import {
   RiCloseLine,
+  RiExpandDiagonalLine,
   RiExternalLinkLine,
   RiPencilLine,
   RiPlayLine,
 } from "@remixicon/react";
 import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
 import { TooltipButton } from "@/components/tooltip-button";
-import { ObjectActionsButton } from "@/components/object-actions-menu";
 import { Markdown } from "@/components/markdown";
 import { PropertyList, PropertyRow } from "@/components/property-list";
 import { SectionHeading } from "@/components/section-heading";
 import { SearchableSelect } from "@/components/ui/searchable-select";
+import { Figure, FigureRow, Value } from "@/components/ui/value";
 import { getDirectChildWorkItems } from "@/domain/backlog/work-item-hierarchy";
 import {
   getLocalProjectDisplayName,
@@ -29,8 +31,25 @@ import {
   changeSourceStateWithUndo,
   getOtherSourceStates,
 } from "@/features/backlog/backlog-item-moves";
+import {
+  ESTIMATE_FIGURES,
+  formatHours,
+} from "@/features/backlog/backlog-estimates";
+import { getBacklogItemNotice } from "@/features/backlog/backlog-item-notice";
+import {
+  WorkItemIcon,
+  resolveWorkItemIcon,
+  useWorkItemIconData,
+} from "@/features/backlog/work-item-icons";
 import { parseWorkItemReference } from "@/features/backlog/work-item-timer-comment";
+import { cn } from "@/lib/utils";
 
+/**
+ * The peek on the right of the backlog page: a smaller item page. It keeps the
+ * page's header, estimate figures, properties, note and subitems, and lets
+ * state, priority, project and task change in place. The row's context menu
+ * and the item page carry the other actions. See "Peek" in agents/ux-spec.md.
+ */
 export function BacklogPeek({
   item,
   state,
@@ -64,24 +83,33 @@ export function BacklogPeek({
     window.addEventListener("keydown", close);
     return () => window.removeEventListener("keydown", close);
   }, [onClose]);
+  const iconData = useWorkItemIconData(state.projects);
   const project = state.projects.find((p) => p._id === item.projectId);
   const actions = getBacklogSurfaceActions(item, state, now);
   const startAction = actions.find((action) => action.id === "start-entry");
   const children = getDirectChildWorkItems(item, state.workItems);
   const reference = parseWorkItemReference(item.sourceId) ?? item.sourceId;
+  const notice = getBacklogItemNotice(item, now);
+  const progress =
+    item.originalEstimateHours && item.completedEstimateHours !== undefined
+      ? Math.min(1, item.completedEstimateHours / item.originalEstimateHours)
+      : 0;
   return (
     <div className="backlog-peek" aria-label={`Peek ${item.title}`}>
-      <div className="flex h-11 items-center justify-between gap-2 border-b px-4">
-        <span className="truncate text-xs text-muted-foreground">
-          {[item.sourceWorkItemType, reference].filter(Boolean).join(" · ") ||
-            "Backlog item"}
-        </span>
-        <div className="flex items-center gap-1">
-          <ObjectActionsButton
-            label={`Actions for ${item.title}`}
-            actions={actions}
-            onAction={onAction}
-          />
+      <div className="flex h-7 items-center justify-between gap-2">
+        {reference ? (
+          <Value tone="muted">#{reference}</Value>
+        ) : (
+          <span className="text-xs text-muted-foreground">Manual item</span>
+        )}
+        <div className="flex items-center">
+          <TooltipButton
+            label="Open page"
+            render={<Button variant="ghost" size="icon" />}
+            onClick={onOpen}
+          >
+            <RiExpandDiagonalLine className="size-4" />
+          </TooltipButton>
           <TooltipButton
             label="Close peek"
             render={<Button variant="ghost" size="icon" />}
@@ -91,42 +119,91 @@ export function BacklogPeek({
           </TooltipButton>
         </div>
       </div>
-      <div className="space-y-5 p-4">
-        <h2 className="text-lg leading-6 font-semibold">{item.title}</h2>
-        <div className="flex flex-wrap gap-2">
-          {item.status !== "archived" && (
-            <TooltipButton
-              label={
-                startAction?.disabledReason
-                  ? `Start entry. ${startAction.disabledReason}`
-                  : "Start entry"
-              }
-              aria-label="Start entry"
-              aria-description={startAction?.disabledReason}
-              aria-disabled={Boolean(startAction?.disabledReason)}
-              render={<Button className="aria-disabled:opacity-50" />}
-              onClick={() => {
-                if (!startAction?.disabledReason) onAction("start-entry");
-              }}
-            >
-              <RiPlayLine className="size-4" />
-              Start entry
-            </TooltipButton>
-          )}
-          <Button variant="outline" onClick={onOpen}>
-            <RiExternalLinkLine className="size-4" />
-            Open page
-          </Button>
-          <Button
-            variant="ghost"
-
-            disabled={item.status === "archived"}
-            onClick={() => onAction("edit")}
-          >
-            <RiPencilLine className="size-4" />
-            Edit
-          </Button>
+      <header className="flex min-w-0 items-start gap-2.5">
+        <WorkItemIcon
+          icon={resolveWorkItemIcon(item, iconData)}
+          className="mt-1"
+        />
+        <div className="min-w-0">
+          <h2 className="text-lg leading-6 font-semibold">{item.title}</h2>
+          <div className="backlog-item-page-meta">
+            {item.sourceWorkItemType ? (
+              <Chip>{item.sourceWorkItemType}</Chip>
+            ) : null}
+            {project ? (
+              <Chip color={project.color}>
+                {getLocalProjectDisplayName(project)}
+              </Chip>
+            ) : null}
+            {item.sourceUrl ? (
+              <a
+                href={item.sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1"
+              >
+                Open in source
+                <RiExternalLinkLine className="size-3" />
+              </a>
+            ) : null}
+          </div>
         </div>
+      </header>
+      {notice ? (
+        <p className="text-xs text-muted-foreground">{notice}</p>
+      ) : null}
+      <div className="flex flex-wrap gap-2">
+        {item.status !== "archived" && (
+          <TooltipButton
+            label={
+              startAction?.disabledReason
+                ? `Start entry. ${startAction.disabledReason}`
+                : "Start entry"
+            }
+            aria-label="Start entry"
+            aria-description={startAction?.disabledReason}
+            aria-disabled={Boolean(startAction?.disabledReason)}
+            render={
+              <Button variant="outline" className="aria-disabled:opacity-50" />
+            }
+            onClick={() => {
+              if (!startAction?.disabledReason) onAction("start-entry");
+            }}
+          >
+            <RiPlayLine data-icon="inline-start" />
+            Start entry
+          </TooltipButton>
+        )}
+        <Button
+          variant="ghost"
+          disabled={item.status === "archived"}
+          onClick={() => onAction("edit")}
+        >
+          <RiPencilLine data-icon="inline-start" />
+          Edit
+        </Button>
+      </div>
+      <div className="flex flex-col gap-2.5">
+        <FigureRow className="gap-x-6">
+          {ESTIMATE_FIGURES.map((figure) => (
+            <Figure key={figure.key} label={figure.label}>
+              {formatHours(item[figure.key])}
+            </Figure>
+          ))}
+        </FigureRow>
+        <div
+          className="backlog-item-progress"
+          role="progressbar"
+          aria-label="Completed over original estimate"
+          aria-valuenow={Math.round(progress * 100)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+        >
+          <div style={{ width: `${progress * 100}%` }} />
+        </div>
+      </div>
+      <section>
+        <SectionHeading>Properties</SectionHeading>
         <PropertyList>
           <PropertyRow label="State">
             <BacklogStatePicker item={item} state={state} full />
@@ -147,12 +224,7 @@ export function BacklogPeek({
             <BacklogPriorityPicker item={item} full />
           </PropertyRow>
           <PropertyRow label="Lifecycle">
-            <span className="capitalize">
-              {item.status}
-              {item.status === "settled" && item.settledAt
-                ? ` · ${new Date(item.settledAt).toLocaleDateString()}`
-                : ""}
-            </span>
+            <span className="capitalize">{item.status}</span>
           </PropertyRow>
           <PropertyRow label="Project">
             <SearchableSelect
@@ -199,51 +271,46 @@ export function BacklogPeek({
               }
             />
           </PropertyRow>
-          {(
-            [
-              ["Original estimate", item.originalEstimateHours],
-              ["Remaining estimate", item.remainingEstimateHours],
-              ["Completed estimate", item.completedEstimateHours],
-            ] as const
-          ).map(([label, value]) => (
-            <PropertyRow key={label} label={label}>
-              <span
-                className={
-                  value === undefined
-                    ? "text-muted-foreground"
-                    : "font-mono text-xs"
-                }
-              >
-                {value === undefined ? "No estimate" : `${value}h`}
-              </span>
-            </PropertyRow>
-          ))}
         </PropertyList>
-        {item.note && (
-          <Markdown className="text-muted-foreground">{item.note}</Markdown>
-        )}
-        {children.length > 0 && (
-          <section>
-            <SectionHeading
-              trailing={`${children.filter((i) => i.status === "archived").length}/${children.length}`}
-            >
-              Subitems
-            </SectionHeading>
-            <div className="backlog-item-rows">
-              {children.map((child) => (
-                <button
-                  key={child._id}
-                  type="button"
-                  className="backlog-item-row text-left"
-                  onClick={() => onSelect(child)}
+      </section>
+      {item.note ? (
+        <section>
+          <SectionHeading>Note</SectionHeading>
+          <Markdown>{item.note}</Markdown>
+        </section>
+      ) : null}
+      {children.length > 0 ? (
+        <section>
+          <SectionHeading
+            trailing={`${children.filter((i) => i.status === "archived").length} of ${children.length} done`}
+          >
+            Subitems
+          </SectionHeading>
+          <div className="backlog-item-rows">
+            {children.map((child) => (
+              <button
+                key={child._id}
+                type="button"
+                className="backlog-item-row text-left"
+                onClick={() => onSelect(child)}
+              >
+                <WorkItemIcon icon={resolveWorkItemIcon(child, iconData)} />
+                <span
+                  className={cn(
+                    "backlog-item-row-title",
+                    child.status === "archived" && "text-muted-foreground",
+                  )}
                 >
-                  <span className="backlog-item-row-title">{child.title}</span>
-                </button>
-              ))}
-            </div>
-          </section>
-        )}
-      </div>
+                  {child.title}
+                </span>
+                <Value tone="muted" className="w-10 text-right">
+                  {formatHours(child.remainingEstimateHours)}
+                </Value>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
     </div>
   );
 }

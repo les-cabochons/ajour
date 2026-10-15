@@ -256,17 +256,6 @@ Then("the parent peek cannot restart its running entry", async ({ page }) => {
   await page.keyboard.press("Enter");
   await page.keyboard.press("Space");
   await page.keyboard.press("Tab");
-  await peek
-    .getByRole("button", { name: "Actions for Backlog parent", exact: true })
-    .click();
-  await expect(
-    page.getByRole("menuitem", { name: /^Start entry/ }),
-  ).toBeDisabled();
-  await expect(
-    page.getByRole("menuitem", { name: /^Start entry/ }),
-  ).toContainText("Already running");
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("menu")).toHaveCount(0);
   // The row's actions take pointer events only once the row is hovered.
   const parentRow = page.locator('[data-work-item-id="parent"]');
   await parentRow.hover();
@@ -302,18 +291,6 @@ Then("the other peek can start an entry", async ({ page }) => {
       .getByRole("complementary", { name: "Backlog item peek" })
       .getByRole("button", { name: "Start entry", exact: true }),
   ).toHaveAccessibleDescription("");
-  await page
-    .getByRole("complementary", { name: "Backlog item peek" })
-    .getByRole("button", {
-      name: "Actions for Other backlog item",
-      exact: true,
-    })
-    .click();
-  await expect(
-    page.getByRole("menuitem", { name: "Start entry", exact: true }),
-  ).toBeEnabled();
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("menu")).toHaveCount(0);
 });
 When(
   "I stop the Backlog running entry from the timer dock",
@@ -340,15 +317,6 @@ Then("the parent peek can start a new entry after Stop", async ({ page }) => {
   await expect(
     page.locator('[data-slot="tooltip-content"][data-open]'),
   ).toHaveText("Start entry");
-  await page
-    .getByRole("complementary", { name: "Backlog item peek" })
-    .getByRole("button", { name: "Actions for Backlog parent", exact: true })
-    .click();
-  await expect(
-    page.getByRole("menuitem", { name: "Start entry", exact: true }),
-  ).toBeEnabled();
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("menu")).toHaveCount(0);
   await start.click();
   await expect(start).toBeDisabled();
   const snapshot = await page.evaluate(() => ({
