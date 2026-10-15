@@ -2359,7 +2359,7 @@ Then("the narrow view shows no sidebars", async ({ page }) => {
 });
 
 Then(
-  "the titlebar holds the entry buttons and the bottom bar the navigation",
+  "the titlebar holds the entry buttons and the navigation toggle floats at the bottom left",
   async ({ page }) => {
     const titlebar = page.locator(".ajour-nav");
     await expect(
@@ -2369,33 +2369,28 @@ Then(
       titlebar.getByRole("button", { name: "Start", exact: true }),
     ).toBeVisible();
 
-    const bottomBar = page.locator(".ajour-narrow-bottom-bar");
+    const navigation = narrowPrimaryNavigation(page);
     await expect(
-      bottomBar.getByRole("navigation", { name: "Primary navigation" }),
+      navigation.getByRole("link", { name: "Settings", exact: true }),
     ).toBeVisible();
-    await expect(
-      bottomBar.getByRole("link", { name: "Settings", exact: true }),
-    ).toBeVisible();
-
-    // The bar ends the window, so the page scrolls above it, not under it.
-    const [barBox, mainBox] = await Promise.all([
-      bottomBar.boundingBox(),
-      page.locator("main.app-content-shell").boundingBox(),
-    ]);
+    // It floats over the page: no bar spans the window under it.
+    await expect(navigation).toHaveCSS("position", "fixed");
+    const box = (await navigation.boundingBox())!;
     const viewport = page.viewportSize()!;
-    expect(barBox!.y + barBox!.height).toBeCloseTo(viewport.height, 0);
-    expect(mainBox!.y + mainBox!.height).toBeLessThanOrEqual(barBox!.y + 0.5);
+    expect(box.x).toBeLessThan(viewport.width / 4);
+    expect(box.y + box.height).toBeGreaterThan(viewport.height - 40);
+    expect(box.width).toBeLessThan(viewport.width / 2);
   },
 );
 
-When("I switch to Backlog from the bottom bar", async ({ page }) => {
+When("I switch to Backlog from the navigation toggle", async ({ page }) => {
   await narrowPrimaryNavigation(page)
     .getByRole("link", { name: "Backlog" })
     .click();
 });
 
 Then(
-  "Backlog is the active section of the bottom bar switcher",
+  "Backlog is the active section of the navigation toggle",
   async ({ page }) => {
     await expect(page).toHaveURL(/\/backlog$/);
     const navigation = narrowPrimaryNavigation(page);
@@ -2407,9 +2402,24 @@ Then(
   },
 );
 
-When("I open Settings from the bottom bar cog", async ({ page }) => {
-  await page.getByRole("link", { name: "Settings", exact: true }).click();
+When("I open Settings from the navigation toggle", async ({ page }) => {
+  await narrowPrimaryNavigation(page)
+    .getByRole("link", { name: "Settings", exact: true })
+    .click();
 });
+
+Then(
+  "Settings is the active section of the navigation toggle",
+  async ({ page }) => {
+    const navigation = narrowPrimaryNavigation(page);
+    await expect(
+      navigation.getByRole("link", { name: "Settings", exact: true }),
+    ).toHaveAttribute("aria-current", "page");
+    await expect(
+      navigation.getByRole("link", { name: "Settings", exact: true }),
+    ).toHaveText("Settings");
+  },
+);
 
 Then("Settings opens on its list of pages", async ({ page }) => {
   await expect(page).toHaveURL(/\/settings$/);

@@ -1813,6 +1813,12 @@
   }
   .ajour-titlebar-date-trigger {
     display: inline-flex;
+    white-space: nowrap;
+  }
+
+  /* The date keeps its width; the running entry's title gives way first. */
+  .ajour-nav-main {
+    flex: 0 0 auto;
   }
 
   .ajour-nav-return-today {
@@ -1887,35 +1893,43 @@
   .profile-bar-stats {
     width: 100%;
   }
+  /* Grows to hold the running entry, which truncates its title first. */
   .global-timer {
     margin-left: auto;
-    flex: 0 0 auto;
+    flex: 1 1 auto;
     min-width: 0;
     max-width: none;
     gap: 0.5rem;
     justify-content: flex-end;
   }
 
-  /* Fixed elements at the bottom, the toasts and the agent indicator, sit
-     above the bottom bar. */
+  /* The floating navigation toggle at the bottom left. The page reserves
+     space under its content for it, and the toasts and the agent indicator
+     sit above it. */
   :root {
-    --narrow-bottom-bar-clearance: calc(
-      3rem + 0.75rem + env(safe-area-inset-bottom, 0px)
+    --narrow-nav-clearance: calc(
+      2.5rem + 1.75rem + env(safe-area-inset-bottom, 0px)
     );
   }
 
-  /* The bottom bar: the Time and Backlog switcher and the cog at the left,
-     the running entry at the right. */
-  .ajour-narrow-bottom-bar {
-    display: flex;
-    flex: 0 0 auto;
-    align-items: center;
-    gap: 0.5rem;
-    height: calc(3rem + env(safe-area-inset-bottom, 0px));
-    padding: 0 max(1rem, env(safe-area-inset-right, 0px))
-      env(safe-area-inset-bottom, 0px) max(1rem, env(safe-area-inset-left, 0px));
-    border-top: 1px solid var(--border);
-    background: var(--nav-bg);
+  .ajour-narrow-switcher {
+    position: fixed;
+    left: max(1rem, env(safe-area-inset-left, 0px));
+    bottom: calc(1rem + env(safe-area-inset-bottom, 0px));
+    z-index: 40;
+    height: 2.5rem;
+    padding: 4px;
+    background: var(--popover);
+    box-shadow: var(--shadow-popup);
+  }
+
+  .ajour-narrow-switcher-item {
+    height: 30px;
+    min-width: 32px;
+  }
+
+  .app-content-scroll-area [data-slot="scroll-area-viewport"] > div {
+    padding-bottom: var(--narrow-nav-clearance);
   }
 }
 

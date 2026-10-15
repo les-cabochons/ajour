@@ -737,9 +737,9 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] The pin-icon assertion now waits for the menu to close and moves focus to Search before checking markers, avoiding the menu's focus-restoration race.
 - [x] Verification passed: 1,090 unit tests, all 152 Chromium acceptance scenarios, workspace typecheck and package boundaries. Application production builds passed with the docs workspace excluded because VitePress is not installed locally. Browser inspection confirmed the pinned item first, 80px Comfortable rows, and the new idle dock.
 
-## Narrow view bottom bar, 2026-10-15
+## Narrow view floating navigation, 2026-10-15
 
-- [x] The narrow view's Time and Backlog switcher and Settings cog move from the titlebar to a bottom bar. The running entry's dock sits at the bar's right. New entry and Start move from the floating bottom-right group to the titlebar, after today's total.
-- [x] The bottom bar is part of the page layout, so the scroll area no longer reserves bottom space. Toasts and the agent indicator clear it through `--narrow-bottom-bar-clearance`.
-- [x] The TanStack Router devtools no longer load in the acceptance run's `--mode test`: their corner button covered the bottom bar.
-- [x] Verification: 872 web unit tests, `just typecheck`, and the 10 narrow Chromium scenarios passed. Browser screenshots at 390px checked the idle and running layouts. `just ui-perf` was not run: it measures at 1440px, where this change renders nothing new.
+- [x] The narrow view's titlebar holds the date, the running entry, today's total, New entry and Start. The running entry and the entry buttons left the floating bottom-right group.
+- [x] Settings joins Time and Backlog in the segmented toggle, which floats at the bottom left. The separate cog is gone. Settings stays active on Projects pages.
+- [x] The TanStack Router devtools no longer load in the acceptance run's `--mode test`: their corner button covered the toggle.
+- [x] Verification: web unit tests, `just typecheck`, the narrow Chromium scenarios and the full acceptance suite passed. Browser screenshots at 390px and 600px checked the idle, running and Settings layouts. `just ui-perf` was not run: it measures at 1440px, where this change renders nothing new.

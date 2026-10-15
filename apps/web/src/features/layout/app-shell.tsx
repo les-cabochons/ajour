@@ -49,7 +49,7 @@ import { ShortcutOverlay } from "@/features/layout/shortcut-overlay";
 import { useGlobalShortcuts } from "@/features/layout/use-global-shortcuts";
 import {
   NarrowBackBar,
-  NarrowBottomBar,
+  NarrowSectionSwitcher,
 } from "@/features/layout/narrow-titlebar";
 import { TimeDatePicker } from "@/features/time/time-date-picker";
 import { TimeEntryEditorPopover } from "@/features/time/time-entry-editor-popover";
@@ -449,8 +449,8 @@ type TitlebarEditor = "new" | null;
  * "+" sits beside Search and the project filter, and Start in the timer dock.
  * While the sidebar is off screen (`showsFloatingDock`), the running entry floats at the bottom left
  * instead, or "+" and Start while nothing runs. In the narrow view, New entry
- * (+) and Start (▶) sit in the titlebar after the totals and open the dialog;
- * the running entry is in `NarrowBottomBar`. Elsewhere the editor opens in a popover anchored
+ * (+) and Start (▶) sit in the titlebar after the totals and open the dialog,
+ * and the running entry sits before the totals. Elsewhere the editor opens in a popover anchored
  * to where it was asked for: the "+" button, or the task or backlog row of New
  * entry… (`openNewEntryEditor`). N and requests whose row is off screen anchor
  * it to the titlebar's totals. New entries default to today; Start starts one
@@ -579,9 +579,16 @@ function GlobalTimerBar({
             document.body,
           )
         : null}
+      {/* The narrow view has no sidebar, so the running entry and the entry
+          buttons share the titlebar with the totals. Start hides while an
+          entry runs: the running entry has its Stop. */}
+      {isNarrowView ? (
+        <FloatingTimerDock
+          onEdit={() => setRunningEntryEditorOpen(true)}
+          className="h-8 min-w-0 flex-1 shadow-none"
+        />
+      ) : null}
       <DayTotalsPill date={date} onSubmit={onSubmit} />
-      {/* The narrow view has no sidebar, so its entry buttons follow the totals.
-          Start hides while an entry runs: the bottom bar has its Stop. */}
       {isNarrowView ? (
         <div className="quick-timer-button-group">
           <TooltipButton
@@ -934,8 +941,9 @@ export function AppShell() {
             <AgentPanelHost />
           </div>
 
+          {/* Floats at the bottom left, over the page. */}
           {isNarrowView ? (
-            <NarrowBottomBar
+            <NarrowSectionSwitcher
               pathname={pathname}
               selectedTimeDate={selectedTimeDate}
             />
