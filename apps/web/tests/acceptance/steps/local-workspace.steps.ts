@@ -2543,12 +2543,10 @@ function weekGridRow(page: Page, task: string) {
 }
 
 When(
-  "I choose {string} for the {string} row",
-  async ({ page }, action: string, task: string) => {
-    const row = weekGridRow(page, task);
-    await row.hover();
-    await row.getByRole("button", { name: "Row actions" }).click();
-    await page.getByRole("menuitem", { name: action }).click();
+  "I press Shift+Backspace on the {string} cell on {word}",
+  async ({ page }, task: string, day: string) => {
+    await weekGridCell(page, task, day).focus();
+    await page.keyboard.press("Shift+Backspace");
   },
 );
 

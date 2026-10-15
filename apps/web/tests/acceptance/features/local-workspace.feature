@@ -145,7 +145,7 @@ Feature: Open the local time workspace
   Scenario: Delete a Week Grid row that has time
     Given I have a week of saved entries
     When I open the Week Grid
-    And I choose "Delete row" for the "Code review" row
+    And I press Shift+Backspace on the "Code review" cell on Monday
     Then a dialog warns that deleting the "Code review" row deletes its entries
     When I confirm deleting the row
     Then the Week Grid has no "Code review" row

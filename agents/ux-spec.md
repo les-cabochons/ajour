@@ -251,7 +251,7 @@ Decided in [Adding and changing time in the week view](https://github.com/les-ca
 - A cell with several entries shows its total and a count, such as "3:30 ×2", and never edits in place.
 - The side panel's cell list replaces the old tray in the bottom-left corner.
 - "+ Add row" picks a project or task and shows an empty row. The row disappears when the user leaves the week unless it gets hours. Rows are never saved on their own.
-- A row's "…" button and right-click on its name offer Delete row. An empty row goes at once. A row with time opens a dialog that names the entries it will delete, then deletes them with the Undo toast. A row with the running entry can't be deleted until it stops.
+- Right-click on a row's name or any of its cells offers Delete row, last in the menu. Shift+Backspace on a focused cell runs it. The row has no "…" button. An empty row goes at once. A row with time opens a dialog that names the entries it will delete, then deletes them with the Undo toast. A row with the running entry can't be deleted until it stops.
 - Right-click on a cell starts with Add entry. On a one-entry cell, that entry's action set follows. On a cell with several entries, Open entries follows.
 
 ### Days
@@ -351,7 +351,7 @@ Frequent in-app actions use single keys. They only work when focus is not in a t
 
 - Day rows become focusable, like Week cards.
 - ↑ and ↓ move focus between rows or cards. ← and → move between days in Days and between cells in the Grid.
-- Enter goes one level deeper. On a time entry, task or project it opens Edit. On a backlog item row it opens the backlog item page, and on that page it opens Edit. E no longer opens Edit. Delete or Backspace deletes, with the Undo toast.
+- Enter goes one level deeper. On a time entry, task or project it opens Edit. On a backlog item row it opens the backlog item page, and on that page it opens Edit. E no longer opens Edit. Delete or Backspace deletes, with the Undo toast. On a focused Grid cell, Shift+Backspace deletes the whole row.
 - On a focused backlog item, or on its page, E settles and B snoozes, as in Gmail. Shift+E opens the settle dialog even when a settle rule applies a fixed change. Cmd+D duplicates. M opens Move to…. Alt+↑ and Alt+↓ reorder.
 - The context menu key, Shift+F10 or "." opens the "…" menu. Escape closes whatever is open.
 - Every item in the "…" and right-click menus shows its key, so the menus teach the shortcuts.

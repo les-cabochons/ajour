@@ -523,17 +523,8 @@
     height: 40px;
   }
 
-  .weekly-grid-task-line {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    min-width: 0;
-    padding-right: 0.25rem;
-  }
-
   .weekly-grid-task-name {
     display: flex;
-    flex: 1 1 auto;
     align-items: baseline;
     gap: 0.5rem;
     min-width: 0;
@@ -561,20 +552,6 @@
     font-weight: 500;
     overflow: hidden;
     text-overflow: ellipsis;
-  }
-
-  /* Row actions show on hover and focus. Opacity keeps the button reachable by Tab. */
-  .weekly-grid-task-line .object-actions-button {
-    flex-shrink: 0;
-    width: 24px;
-    height: 24px;
-    opacity: 0;
-  }
-
-  .weekly-grid-task-cell:hover .object-actions-button,
-  .weekly-grid-task-cell:focus-within .object-actions-button,
-  .weekly-grid-task-cell:has([data-popup-open]) .object-actions-button {
-    opacity: 1;
   }
 
   /* The row's project color lives in the name; the mark would be a third glyph. */
