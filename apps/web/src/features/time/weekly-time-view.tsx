@@ -226,15 +226,6 @@ export function WeeklyTimeView({
     offerTimeEntryUndo(token, `Moved to ${formatToastDay(localDate)}`);
   }
 
-  /**
-   * Saves a day's cards in the order they show, top first. Days shows a day
-   * oldest first, the reverse of the stored order (newest first, as in the
-   * Day list), so the order flips before it is saved.
-   */
-  function saveDayOrder(localDate: string, shownOrder: string[]) {
-    localStore.reorderTimesheetEntries(localDate, [...shownOrder].reverse());
-  }
-
   /** Move up and Move down within a day's cards, persisted like the Day list's drag reorder. */
   function reorderEntry(
     localDate: string,
@@ -248,7 +239,7 @@ export function WeeklyTimeView({
       step,
     );
     if (next) {
-      saveDayOrder(localDate, next.order);
+      localStore.reorderTimesheetEntries(localDate, next.order);
     }
   }
 
@@ -348,7 +339,7 @@ export function WeeklyTimeView({
             originIndex,
             dragStateRef.current?.targetIndex ?? originIndex,
           );
-          if (order) saveDayOrder(entry.localDate, order);
+          if (order) localStore.reorderTimesheetEntries(entry.localDate, order);
         } else if (commit && targetDate) {
           moveEntry(entry, targetDate);
         }
@@ -471,11 +462,11 @@ export function WeeklyTimeView({
           data-focus-scope
         >
           {projection.days.map((day, index) => {
-            // Oldest first, so a day reads top to bottom in the order the
-            // work happened and a new entry lands at the end.
-            const visibleEntries = day.entries
-              .filter((entry) => entry._id !== currentTimer?.entryId)
-              .reverse();
+            const visibleEntries = currentTimer?.entryId
+              ? day.entries.filter(
+                  (entry) => entry._id !== currentTimer.entryId,
+                )
+              : day.entries;
             const runningHere = runningTime?.localDate === day.localDate;
             const isToday = day.localDate === today;
             const isOriginDay = draggedEntry?.localDate === day.localDate;

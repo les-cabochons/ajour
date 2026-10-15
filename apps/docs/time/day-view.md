@@ -59,4 +59,4 @@ Hover a row and press **…**, or right-click it, for the actions on that entry.
 
 ## Reorder entries
 
-Drag a row, or press <kbd>Alt</kbd> <kbd>↑</kbd> and <kbd>Alt</kbd> <kbd>↓</kbd>. The running entry always stays first.
+The day lists entries oldest first, so a new entry lands at the bottom. Drag a row, or press <kbd>Alt</kbd> <kbd>↑</kbd> and <kbd>Alt</kbd> <kbd>↓</kbd>. The running entry always stays last.

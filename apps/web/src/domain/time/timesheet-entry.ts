@@ -445,11 +445,11 @@ export function markTimesheetEntriesNotSubmitted(
 }
 
 /**
- * The ids of a day's saved entries in the order the Day list shows them, top
- * first: the highest `committedAt` first. The Week's Days cards show the
- * reverse, oldest first.
+ * The ids of a day's saved entries in the order the Day list and the Week's
+ * Days cards show them, top first: the lowest `committedAt` first, so a day
+ * reads in the order the work happened and a new entry lands at the end.
  * `excludeEntryId` leaves out the entry the running entry resumed, which stays
- * on top and is not sortable. Move up and Move down step through this order.
+ * last and is not sortable. Move up and Move down step through this order.
  */
 export function selectSortableDayEntryIds(
   entries: readonly LocalTimesheetEntry[],
@@ -460,7 +460,7 @@ export function selectSortableDayEntryIds(
     .filter(
       (entry) => entry.localDate === localDate && entry._id !== excludeEntryId,
     )
-    .sort((left, right) => right.committedAt - left.committedAt)
+    .sort((left, right) => left.committedAt - right.committedAt)
     .map((entry) => entry._id);
 }
 
@@ -480,7 +480,7 @@ export function reorderTimesheetEntries(
     )
     .sort(
       (left, right) =>
-        right.committedAt - left.committedAt ||
+        left.committedAt - right.committedAt ||
         state.timesheetEntries.indexOf(left) -
           state.timesheetEntries.indexOf(right),
     );
@@ -525,9 +525,9 @@ export function reorderTimesheetEntries(
 }
 
 /**
- * The entry C continues when no entry has focus: the top entry of the latest
- * day up to `today`. Within a day the top entry has the highest `committedAt`,
- * the same order the Day view shows. `excludeEntryId` skips the entry that is
+ * The entry C continues when no entry has focus: the last entry of the latest
+ * day up to `today`. Within a day the last entry has the highest `committedAt`,
+ * the bottom row of the Day view. `excludeEntryId` skips the entry that is
  * already running.
  */
 export function selectMostRecentTimesheetEntry(

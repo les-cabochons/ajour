@@ -185,7 +185,7 @@ export function TimerPanel({
     () =>
       state.timesheetEntries
         .filter((entry) => entry.localDate === date)
-        .sort((left, right) => right.committedAt - left.committedAt),
+        .sort((left, right) => left.committedAt - right.committedAt),
     [date, state.timesheetEntries],
   );
   const visibleEntries = useMemo(() => {
@@ -194,7 +194,8 @@ export function TimerPanel({
         ? recentEntries.filter((entry) => entry._id !== currentTimer.entryId)
         : recentEntries;
 
-    return runningEntry ? [runningEntry, ...filteredEntries] : filteredEntries;
+    // Oldest first, so the running entry, the latest work, comes last.
+    return runningEntry ? [...filteredEntries, runningEntry] : filteredEntries;
   }, [currentTimer?.entryId, recentEntries, runningEntry]);
   const draggableEntryIds = useMemo(
     () =>
@@ -505,7 +506,7 @@ export function TimerPanel({
                           keys: TIME_ENTRY_ACTION_KEYS,
                           onAction: (actionId) =>
                             entryActions.runAction(rowTarget, actionId),
-                          // The running entry stays on top.
+                          // The running entry stays last.
                           onReorder: isRunning
                             ? undefined
                             : (step) => reorderEntry(entry._id, step),

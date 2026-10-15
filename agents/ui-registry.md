@@ -211,9 +211,8 @@ Rows containing a running entry or its saved part cannot be deleted.
 
 Days use up to seven 40px column headers and flat 6px entry cards
 with the project's color as a rail; the running card wears a success-tone
-chip. Each day reads oldest first, so a new entry lands at the end and the
-running card is last; the Day list keeps newest first, and Days flips the
-order before saving a reorder. Cards drag between days with thresholded pointer dragging, explicit
+chip. Each day reads oldest first, like the Day list, so a new entry lands at
+the end and the running card is last. Cards drag between days with thresholded pointer dragging, explicit
 weekday drop targets, and Escape/pointer-cancel cleanup. Dropping a card on
 its own day reorders the day, with a 2px primary line where it will land, and
 commits through the same `reorderTimesheetEntries` as Alt+Up and Alt+Down. A

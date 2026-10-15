@@ -601,9 +601,11 @@ describe("timesheet entry lifecycle", () => {
       ],
     });
 
+    // The day shows entry-2 (200) then entry-1 (300); putting entry-1 first
+    // gives it the earlier timestamp.
     const reordered = reorderTimesheetEntries(state, "2026-07-30", [
-      "entry-2",
       "entry-1",
+      "entry-2",
     ]);
 
     expect(
@@ -612,9 +614,9 @@ describe("timesheet entry lifecycle", () => {
         committedAt,
       })),
     ).toEqual([
-      { _id: "entry-2", committedAt: 300 },
-      { _id: "other-day", committedAt: 250 },
       { _id: "entry-1", committedAt: 200 },
+      { _id: "other-day", committedAt: 250 },
+      { _id: "entry-2", committedAt: 300 },
     ]);
   });
 
@@ -684,24 +686,24 @@ describe("Move up and Move down on time entries", () => {
   }
 
   const entries = [
-    savedEntry("middle", "2026-07-30", 200),
-    savedEntry("top", "2026-07-30", 300),
+    savedEntry("second", "2026-07-30", 200),
+    savedEntry("third", "2026-07-30", 300),
     savedEntry("other-day", "2026-07-29", 900),
-    savedEntry("bottom", "2026-07-30", 100),
+    savedEntry("first", "2026-07-30", 100),
   ];
 
-  it("steps through the day's order as the Day list shows it", () => {
+  it("steps through the day's order as the Day list shows it, oldest first", () => {
     expect(selectSortableDayEntryIds(entries, "2026-07-30")).toEqual([
-      "top",
-      "middle",
-      "bottom",
+      "first",
+      "second",
+      "third",
     ]);
   });
 
   it("leaves out the entry the running entry resumed", () => {
-    expect(selectSortableDayEntryIds(entries, "2026-07-30", "top")).toEqual([
-      "middle",
-      "bottom",
+    expect(selectSortableDayEntryIds(entries, "2026-07-30", "third")).toEqual([
+      "first",
+      "second",
     ]);
   });
 
@@ -709,7 +711,7 @@ describe("Move up and Move down on time entries", () => {
     const state = createState({ timesheetEntries: entries });
     const next = getSharedTableStepOrder(
       selectSortableDayEntryIds(state.timesheetEntries, "2026-07-30"),
-      "top",
+      "first",
       1,
     );
 
@@ -717,7 +719,7 @@ describe("Move up and Move down on time entries", () => {
 
     expect(
       selectSortableDayEntryIds(reordered.timesheetEntries, "2026-07-30"),
-    ).toEqual(["middle", "top", "bottom"]);
+    ).toEqual(["second", "first", "third"]);
   });
 });
 

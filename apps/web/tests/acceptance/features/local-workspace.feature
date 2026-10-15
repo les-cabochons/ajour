@@ -112,7 +112,7 @@ Feature: Open the local time workspace
     Then Monday's "API" entry has keyboard focus
     When I press the "Backspace" key
     Then the entry is gone and a toast offers Undo
-    And Monday's "Login form" entry has keyboard focus
+    And Monday's "Code review" entry has keyboard focus
     When I press the "ControlOrMeta+z" key
     Then the "API" entry is back exactly as it was
 

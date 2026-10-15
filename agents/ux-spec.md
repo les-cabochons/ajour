@@ -38,7 +38,7 @@ Decided in [Action model for entries, timers, projects, tasks and work items](ht
 
 - Continue on today's entry resumes that entry. Continue on another day's entry starts a new running entry today with the same task and note. Today the code adds the new time to the original entry, even on a past day. That changes.
 - Discard throws away the time counted since the entry last started. A running entry that started from nothing disappears.
-- Move up and Move down apply to saved and submitted entries. The running entry stays first in its day, so Move up and Move down are disabled on it: "The running entry stays on top".
+- Move up and Move down apply to saved and submitted entries. Each day lists its entries oldest first, so a new entry lands at the end. The running entry stays last in its day, so Move up and Move down are disabled on it: "The running entry stays last".
 
 ### Project
 
