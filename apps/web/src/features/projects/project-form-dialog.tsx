@@ -1,9 +1,8 @@
-import { useRef, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import {
   RiFolderAddLine as FolderPlus,
   RiSaveLine as Save,
 } from "@remixicon/react";
-import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { ColorField } from "@/components/ui/color-field";
 import {
@@ -17,7 +16,6 @@ import {
 import { Field, FieldGroup, FieldLabel } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import type { LocalProject } from "@/domain/local-state";
-import type { ProjectIconName } from "@/domain/projects/project-icon";
 import {
   createProjectFormFields,
   getProjectFormValues,
@@ -25,12 +23,7 @@ import {
   type ProjectFormFields,
   type ProjectFormValues,
 } from "@/features/projects/project-form";
-import {
-  PROJECT_ICON_PRESETS,
-  prepareUploadedProjectIcon,
-  ProjectIcon,
-} from "@/lib/project-icons";
-import { cn } from "@/lib/utils";
+import { ProjectIconField } from "@/features/projects/project-icon-field";
 
 /**
  * The project form, opened by "New project" and by Edit in the project's action set.
@@ -109,7 +102,11 @@ export function ProjectFormDialog({
                 }
               />
             </Field>
-            <ProjectIconField fields={fields} onChange={setFields} />
+            <ProjectIconField
+              icon={fields.icon}
+              color={fields.color}
+              onChange={(icon) => update({ icon })}
+            />
             <div className="grid gap-3 desktop:grid-cols-[1fr_110px]">
               <Field>
                 <FieldLabel htmlFor="project-form-code">Code</FieldLabel>
@@ -149,189 +146,5 @@ export function ProjectFormDialog({
         </form>
       </DialogContent>
     </Dialog>
-  );
-}
-
-/** Icon presets, a favicon upload, and whether an upload keeps its own colors. */
-function ProjectIconField({
-  fields,
-  onChange,
-}: {
-  fields: ProjectFormFields;
-  onChange: React.Dispatch<React.SetStateAction<ProjectFormFields>>;
-}) {
-  const uploadInputRef = useRef<HTMLInputElement | null>(null);
-  const [iconError, setIconError] = useState<string | null>(null);
-  const [isProcessingUpload, setIsProcessingUpload] = useState(false);
-
-  const handlePresetSelect = (name: ProjectIconName) => {
-    setIconError(null);
-    onChange((current) => ({ ...current, icon: { kind: "preset", name } }));
-  };
-
-  const handleUploadChange = async (
-    event: React.ChangeEvent<HTMLInputElement>,
-  ) => {
-    const file = event.target.files?.[0];
-    event.target.value = "";
-
-    if (!file) {
-      return;
-    }
-
-    setIsProcessingUpload(true);
-    setIconError(null);
-
-    try {
-      const nextIconSrc = await prepareUploadedProjectIcon(file);
-      onChange((current) => ({
-        ...current,
-        icon: {
-          kind: "upload",
-          src: nextIconSrc.src,
-          maskSrc: nextIconSrc.maskSrc,
-          colorMode:
-            current.icon.kind === "upload" &&
-            current.icon.colorMode === "native"
-              ? "native"
-              : "tinted",
-        },
-      }));
-    } catch (error) {
-      setIconError(
-        error instanceof Error
-          ? error.message
-          : "The favicon could not be used.",
-      );
-    } finally {
-      setIsProcessingUpload(false);
-    }
-  };
-
-  const handleUploadPickerOpen = () => {
-    const input = uploadInputRef.current;
-    if (!input) {
-      return;
-    }
-
-    input.value = "";
-
-    const pickerInput = input as HTMLInputElement & {
-      showPicker?: () => void;
-    };
-
-    if (typeof pickerInput.showPicker === "function") {
-      try {
-        pickerInput.showPicker();
-        return;
-      } catch {
-        // Fall back to click() for environments that expose showPicker
-        // but still reject it for this interaction path.
-      }
-    }
-
-    input.click();
-  };
-
-  return (
-    <div className="project-icon-field">
-      <div className="project-icon-field-copy">
-        <span className="project-icon-field-label">Project icon</span>
-        <p className="project-icon-field-hint">
-          Pick a preset or upload a favicon-sized icon. Uploaded icons can use
-          the project color or keep their native colors.
-        </p>
-      </div>
-
-      <div className="project-icon-field-toolbar">
-        <div className="project-icon-preview">
-          <ProjectIcon
-            icon={fields.icon}
-            color={fields.color}
-            className="size-5"
-          />
-          <span className="project-icon-preview-label">
-            {fields.icon.kind === "upload" ? "Uploaded favicon" : "Preset"}
-          </span>
-        </div>
-
-        <input
-          id="project-form-icon-upload"
-          ref={uploadInputRef}
-          type="file"
-          accept=".png,.svg,.ico,image/png,image/svg+xml,image/x-icon,image/vnd.microsoft.icon"
-          className="sr-only"
-          onChange={(event) => {
-            void handleUploadChange(event);
-          }}
-        />
-        <Button
-          type="button"
-          variant={fields.icon.kind === "upload" ? "default" : "outline"}
-
-          disabled={isProcessingUpload}
-          onClick={handleUploadPickerOpen}
-        >
-          {isProcessingUpload ? "Preparing icon" : "Upload favicon"}
-        </Button>
-        <Button
-          type="button"
-          variant={
-            fields.icon.kind === "upload" && fields.icon.colorMode === "native"
-              ? "default"
-              : "outline"
-          }
-
-          disabled={fields.icon.kind !== "upload"}
-          onClick={() =>
-            onChange((current) => {
-              if (current.icon.kind !== "upload") {
-                return current;
-              }
-
-              return {
-                ...current,
-                icon: {
-                  ...current.icon,
-                  colorMode:
-                    current.icon.colorMode === "native" ? "tinted" : "native",
-                },
-              };
-            })
-          }
-        >
-          Keep native colors
-        </Button>
-      </div>
-
-      <div className="project-icon-preset-grid" role="list">
-        {PROJECT_ICON_PRESETS.map((preset) => {
-          const isSelected =
-            fields.icon.kind === "preset" && fields.icon.name === preset.name;
-
-          return (
-            <TooltipButton
-              key={preset.name}
-              role="listitem"
-              className={cn(
-                "project-icon-preset-button",
-                isSelected && "is-selected",
-              )}
-              label={preset.label}
-              aria-label={`Use ${preset.label} icon`}
-              onClick={() => handlePresetSelect(preset.name)}
-            >
-              <ProjectIcon
-                icon={{ kind: "preset", name: preset.name }}
-                color={fields.color}
-                className="size-4"
-              />
-            </TooltipButton>
-          );
-        })}
-      </div>
-
-      {iconError ? <span className="field-error">{iconError}</span> : null}
-    </div>
   );
 }
