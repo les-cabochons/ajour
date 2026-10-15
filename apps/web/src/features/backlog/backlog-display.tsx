@@ -2,7 +2,7 @@ import {
   RiListCheck,
   RiLayoutColumnLine,
   RiEqualizerLine,
-  RiFilterLine,
+  RiFilter3Line,
   RiCloseLine,
 } from "@remixicon/react";
 import { useState, type ReactNode } from "react";
@@ -24,6 +24,7 @@ import { OptionSelect } from "@/components/ui/option-select";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
+  ARCHIVED_STATE_FILTER,
   BACKLOG_ORDERINGS,
   type BacklogFilterField,
   type BacklogProperty,
@@ -237,6 +238,7 @@ export function getBacklogFilterOptions(
       return [
         { value: "", label: "No state" },
         ...state.workflowStates.map((s) => ({ value: s._id, label: s.name })),
+        { value: ARCHIVED_STATE_FILTER, label: "Archived" },
       ];
     case "priority":
       return [
@@ -312,7 +314,7 @@ export function BacklogFilters({
     <div className="flex flex-wrap items-center gap-1.5">
       <Popover open={open} onOpenChange={setOpen}>
         <PopoverTrigger render={<Button variant="ghost" />}>
-          <RiFilterLine className="size-4" />
+          <RiFilter3Line className="size-4" />
           Filter
         </PopoverTrigger>
         <PopoverContent

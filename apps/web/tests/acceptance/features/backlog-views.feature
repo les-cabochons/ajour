@@ -23,6 +23,11 @@ Feature: Backlog list and board views
     When I remove the Urgent filter
     Then all open Backlog items return
 
+  Scenario: Combine filters to see one project's to do items
+    When I filter the Backlog by "State" "To do"
+    And I filter the Backlog by "Project" "Example project"
+    Then only the Backlog parent and its subitem appear on the Backlog page
+
   Scenario: Show the project and remaining estimate on comfortable sidebar rows
     Given the other Backlog item has 1.5 hours remaining
     Then the other item's sidebar row shows "Example project" and "1h30"
@@ -281,10 +286,9 @@ Feature: Backlog list and board views
     And I enable project swimlanes
     Then the Backlog has a collapsible Example project swimlane
 
-  Scenario: Restore items from Archive including missing sync items
-    When I open the Backlog Archive
-    Then Archive contains the old done and missing sync items
-    And the Backlog items allow native touch scrolling
+  Scenario: Restore items from the Archived filter including missing sync items
+    When I filter the Backlog by "State" "Archived"
+    Then the Backlog shows the old done and missing sync items
     When I restore the old done item
     Then the old done item is active in To do
 

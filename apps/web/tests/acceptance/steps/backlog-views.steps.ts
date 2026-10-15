@@ -305,6 +305,24 @@ Then("the sidebar still contains the other Backlog items", async ({ page }) => {
     page.getByRole("navigation", { name: "Primary navigation" }),
   ).toContainText("Other backlog item");
 });
+When(
+  "I filter the Backlog by {string} {string}",
+  async ({ page }, field: string, value: string) => {
+    await page.getByRole("button", { name: "Filter", exact: true }).click();
+    await chooseSelectOption(page, "Filter property", field);
+    await page.getByRole("combobox", { name: "Filter value" }).click();
+    await page.getByRole("option", { name: value, exact: true }).click();
+  },
+);
+Then(
+  "only the Backlog parent and its subitem appear on the Backlog page",
+  async ({ page }) => {
+    const rows = page.locator(".backlog-workspace [data-work-item-id]");
+    await expect(rows).toHaveCount(2);
+    await expect(page.locator('[data-work-item-id="parent"]')).toBeVisible();
+    await expect(page.locator('[data-work-item-id="child"]')).toBeVisible();
+  },
+);
 When("I remove the Urgent filter", async ({ page }) => {
   await page
     .getByRole("button", { name: "Remove filter Priority: Urgent" })
@@ -1606,18 +1624,9 @@ Then(
     await expect(page.locator('[data-work-item-id="parent"]')).toBeVisible();
   },
 );
-When("I open the Backlog Archive", async ({ page }) => {
-  await page
-    .getByRole("button", { name: "Backlog options", exact: true })
-    .click();
-  await page.getByRole("menuitem", { name: "Archive", exact: true }).click();
-});
 Then(
-  "Archive contains the old done and missing sync items",
+  "the Backlog shows the old done and missing sync items",
   async ({ page }) => {
-    await expect(
-      page.getByRole("heading", { name: "Archive", exact: true }),
-    ).toBeVisible();
     await expect(page.locator('[data-work-item-id="old"]')).toBeVisible();
     await expect(page.locator('[data-work-item-id="missing"]')).toBeVisible();
   },
@@ -1641,7 +1650,9 @@ Then("the old done item is active in To do", async ({ page }) => {
       ),
     )
     .toBe("active");
-  await page.getByRole("button", { name: "Back to backlog" }).click();
+  await page
+    .getByRole("button", { name: "Remove filter State: Archived" })
+    .click();
   await expect(
     page
       .getByRole("region", { name: "To do", exact: true })

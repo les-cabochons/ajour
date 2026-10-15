@@ -79,6 +79,13 @@ export interface BacklogFilter {
   value: string;
 }
 
+/**
+ * The State filter value that selects archived items, whatever their workflow
+ * state, the done window or the reason they were archived. The colon keeps it
+ * apart from workflow state ids.
+ */
+export const ARCHIVED_STATE_FILTER = ":archived";
+
 const WEEK_MS = 7 * 24 * 60 * 60 * 1000;
 
 export interface BacklogViewContext {
@@ -104,6 +111,8 @@ function matchesFilter(
 ) {
   switch (filter.field) {
     case "state":
+      if (filter.value === ARCHIVED_STATE_FILTER)
+        return workItem.status === "archived";
       return (
         (workItem.workflowStateId &&
         workflowStateIds.has(workItem.workflowStateId)
@@ -144,7 +153,8 @@ function matchesFilter(
 
 /**
  * The items the page shows. Archived items show only in a done state and
- * within the done window; items archived for leaving the sync live in Archive.
+ * within the done window, unless the Archived state filter asks for all of
+ * them; items archived for leaving the sync show only under that filter.
  * Filters of different fields must all match; filters of one field match any.
  */
 export function selectBacklogViewItems(
@@ -170,8 +180,12 @@ export function selectBacklogViewItems(
     ]);
   }
 
+  const showsArchive = filtersByField
+    .get("state")
+    ?.some((filter) => filter.value === ARCHIVED_STATE_FILTER);
+
   return state.workItems.filter((workItem) => {
-    if (workItem.status === "archived") {
+    if (workItem.status === "archived" && !showsArchive) {
       if (
         settings.doneWindow === "none" ||
         workItem.archivedByMissingSync ||

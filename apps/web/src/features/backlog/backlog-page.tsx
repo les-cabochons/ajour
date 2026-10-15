@@ -1,9 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   RiAddLine,
-  RiArrowLeftLine,
   RiErrorWarningLine,
-  RiMoreLine,
   RiArrowDownSLine,
   RiArrowRightSLine,
 } from "@remixicon/react";
@@ -18,12 +16,6 @@ import {
   EmptyTitle,
 } from "@/components/ui/empty";
 import { Dialog, DialogContent, DialogTitle } from "@/components/ui/dialog";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
 import { SidePanel } from "@/components/side-panel";
 import { TooltipButton } from "@/components/tooltip-button";
 import {
@@ -110,7 +102,6 @@ export function BacklogPage() {
   const narrow = useIsNarrowView();
   const navigate = useNavigate();
   const icons = useWorkItemIconData(state.projects);
-  const [archive, setArchive] = useState(false);
   const [peekId, setPeekId] = useState<string | null>(null);
   const [editor, setEditor] = useState<EditorRequest | null>(null);
   const [editorSerial, setEditorSerial] = useState(0);
@@ -119,21 +110,19 @@ export function BacklogPage() {
   );
   const editorRef = useRef<BacklogItemEditorFormHandle>(null);
   const draft = useRef<BacklogTaskEditorFields | null>(null);
-  const board = !narrow && !archive && view.layout === "board";
+  const board = !narrow && view.layout === "board";
   const grouping = board && view.grouping === "none" ? "state" : view.grouping;
   const items = useMemo(
     () =>
       orderBacklogItems(
-        archive
-          ? state.workItems.filter((i) => i.status === "archived")
-          : selectBacklogViewItems(state, view, view.filters, {
-              now,
-              runningWorkItemId: state.timers[0]?.workItemId,
-            }),
+        selectBacklogViewItems(state, view, view.filters, {
+          now,
+          runningWorkItemId: state.timers[0]?.workItemId,
+        }),
         state.workItems,
         state.backlogSortMode,
       ),
-    [state, view, archive, now],
+    [state, view, now],
   );
   const lanes = useMemo(
     () =>
@@ -144,7 +133,7 @@ export function BacklogPage() {
   );
   const groupsByLane = lanes.map((lane) => ({
     lane,
-    groups: groupBacklogItems(state, lane.items, archive ? "none" : grouping, {
+    groups: groupBacklogItems(state, lane.items, grouping, {
       keepEmpty: board,
     }),
   }));
@@ -256,7 +245,7 @@ export function BacklogPage() {
     [state.backlogSortMode, state.workItems],
   );
   function reorder(itemId: string, group: BacklogGroup, step: -1 | 1) {
-    if (!canReorderItem(itemId) || archive) return;
+    if (!canReorderItem(itemId)) return;
     const next = getSharedTableStepOrder(
       group.items.filter((item) => !isSubtaskWorkItem(item)).map((i) => i._id),
       itemId,
@@ -347,7 +336,7 @@ export function BacklogPage() {
   const drag = useBacklogDrag({
     targets,
     canReorder: canReorderItem,
-    disabled: archive || narrow,
+    disabled: narrow,
     onDrop: (...args) => void drop(...args),
   });
   async function add(group?: BacklogGroup, lane?: BacklogGroup) {
@@ -428,7 +417,6 @@ export function BacklogPage() {
       }
       if (id === "item.state-previous" || id === "item.state-next") {
         e.preventDefault();
-        if (archive) return;
         if (!(await leaveDraft())) return;
         closeEditor();
         const current = localStore.snapshot();
@@ -453,10 +441,9 @@ export function BacklogPage() {
         id === "open"
           ? openPage(item)
           : action(item, id, { askToSettle: shortcutId === "item.settle-ask" }),
-      onReorder:
-        !archive && canReorderItem(item._id)
-          ? (step) => reorder(item._id, group, step)
-          : undefined,
+      onReorder: canReorderItem(item._id)
+        ? (step) => reorder(item._id, group, step)
+        : undefined,
     });
   }
   function editorForm(titleAs?: typeof DialogTitle) {
@@ -510,90 +497,43 @@ export function BacklogPage() {
     >
       <div className="backlog-page-main backlog-workspace-main">
         <PageHeader
-          title={archive ? "Archive" : undefined}
-          meta={archive ? items.length : undefined}
           actions={
             <>
-              {!archive && !narrow && <BacklogLayoutToggle view={view} />}
-              {!archive && (
-                <BacklogDisplay
-                  view={view}
-                  ordering={state.backlogSortMode}
-                  narrow={narrow}
-                />
-              )}
-              <DropdownMenu>
-                <DropdownMenuTrigger
-                  render={
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      aria-label="Backlog options"
-                    />
-                  }
-                >
-                  <RiMoreLine className="size-4" />
-                </DropdownMenuTrigger>
-                <DropdownMenuContent align="end">
-                  <DropdownMenuItem
-                    onClick={async () => {
-                      if (!(await leaveDraft())) return;
-                      closeEditor();
-                      closePeek();
-                      setArchive(true);
-                    }}
-                  >
-                    Archive
-                  </DropdownMenuItem>
-                </DropdownMenuContent>
-              </DropdownMenu>
+              {!narrow && <BacklogLayoutToggle view={view} />}
+              <BacklogDisplay
+                view={view}
+                ordering={state.backlogSortMode}
+                narrow={narrow}
+              />
             </>
           }
-        >
-          {archive && (
-            <TooltipButton
-              label="Back to backlog"
-              render={
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="order-first -ml-1 text-muted-foreground"
-                />
-              }
-              onClick={() => setArchive(false)}
+        />
+        <div className="backlog-workspace-filterbar">
+          <BacklogFilters state={state} view={view} />
+          {unmapped > 0 && (
+            <Link
+              to="/settings/workflow"
+              className="backlog-unmapped"
+              onClick={async (event) => {
+                if (
+                  event.defaultPrevented ||
+                  event.button !== 0 ||
+                  event.ctrlKey ||
+                  event.metaKey ||
+                  event.shiftKey ||
+                  event.altKey
+                )
+                  return;
+                event.preventDefault();
+                if (await leaveDraft())
+                  void navigate({ to: "/settings/workflow" });
+              }}
             >
-              <RiArrowLeftLine />
-            </TooltipButton>
+              <RiErrorWarningLine aria-hidden />
+              {unmapped} unmapped source {unmapped === 1 ? "state" : "states"}
+            </Link>
           )}
-        </PageHeader>
-        {!archive && (
-          <div className="backlog-workspace-filterbar">
-            <BacklogFilters state={state} view={view} />
-            {unmapped > 0 && (
-              <Link
-                to="/settings/workflow"
-                className="backlog-unmapped"
-                onClick={async (event) => {
-                  if (
-                    event.defaultPrevented ||
-                    event.button !== 0 ||
-                    event.ctrlKey ||
-                    event.metaKey ||
-                    event.shiftKey ||
-                    event.altKey
-                  )
-                    return;
-                  event.preventDefault();
-                  if (await leaveDraft())
-                    void navigate({ to: "/settings/workflow" });
-                }}
-              >
-                <RiErrorWarningLine aria-hidden />
-                {unmapped} unmapped source {unmapped === 1 ? "state" : "states"}
-              </Link>
-            )}
-          </div>
-        )}
+        </div>
         <div
           className={cn("backlog-workspace-scroll", board && "is-board")}
           data-focus-scope
@@ -602,21 +542,17 @@ export function BacklogPage() {
             <Empty align="start">
               <EmptyHeader>
                 <EmptyTitle>
-                  {archive
-                    ? "No archived items"
-                    : view.filters.length
-                      ? "No matching items"
-                      : "Your backlog is empty"}
+                  {view.filters.length
+                    ? "No matching items"
+                    : "Your backlog is empty"}
                 </EmptyTitle>
                 <EmptyDescription>
-                  {archive
-                    ? "Archived items will appear here."
-                    : view.filters.length
-                      ? "Change the filters to see more items."
-                      : "Create a backlog item or import items from a connector."}
+                  {view.filters.length
+                    ? "Change the filters to see more items."
+                    : "Create a backlog item or import items from a connector."}
                 </EmptyDescription>
               </EmptyHeader>
-              {!archive && !view.filters.length && (
+              {!view.filters.length && (
                 <EmptyContent>
                   <Button variant="outline" onClick={() => add()}>
                     New backlog item
@@ -698,8 +634,7 @@ export function BacklogPage() {
                             </span>
                             {!(group.kind === "state" && group.done) &&
                               canUseProjectGroup(group, state) &&
-                              canUseProjectGroup(lane, state) &&
-                              !archive && (
+                              canUseProjectGroup(lane, state) && (
                                 <TooltipButton
                                   label={`New item in ${group.label}`}
                                   render={
@@ -767,8 +702,7 @@ export function BacklogPage() {
                             ungrouped view has no header, so it ends with a
                             row that adds instead. */}
                         {group.kind === "all" &&
-                          canUseProjectGroup(lane, state) &&
-                          !archive && (
+                          canUseProjectGroup(lane, state) && (
                             <button
                               type="button"
                               className="backlog-add-row"
@@ -786,7 +720,7 @@ export function BacklogPage() {
             </section>
           ))}
         </div>
-        {narrow && !archive && (
+        {narrow && (
           <TooltipButton
             label="New backlog item"
             render={<Button className="backlog-narrow-add" size="icon" />}

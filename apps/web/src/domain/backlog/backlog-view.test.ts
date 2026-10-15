@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  ARCHIVED_STATE_FILTER,
   DEFAULT_BACKLOG_VIEW_SETTINGS as defaults,
   groupBacklogItems,
   orderBacklogItems,
@@ -58,7 +59,7 @@ describe("backlog view selection", () => {
       selectBacklogViewItems(state, defaults, [], { now }).map((i) => i._id),
     ).toEqual(["active", "settled", "recent", "child"]);
   });
-  it("supports all and none done windows while missing-sync archives stay in Archive", () => {
+  it("supports all and none done windows while missing-sync archives need the Archived filter", () => {
     expect(
       selectBacklogViewItems(state, { ...defaults, doneWindow: "all" }, [], {
         now,
@@ -77,6 +78,25 @@ describe("backlog view selection", () => {
         { now },
       ).map((i) => i._id),
     ).toEqual(["active"]);
+  });
+  it("shows every archived item under the Archived state filter", () => {
+    const archived = { field: "state" as const, value: ARCHIVED_STATE_FILTER };
+    expect(
+      selectBacklogViewItems(
+        state,
+        { ...defaults, doneWindow: "none" },
+        [archived],
+        { now },
+      ).map((i) => i._id),
+    ).toEqual(["recent", "old", "missing"]);
+    expect(
+      selectBacklogViewItems(
+        state,
+        defaults,
+        [archived, { field: "state", value: "todo" }],
+        { now },
+      ).map((i) => i._id),
+    ).toEqual(["recent", "old", "missing", "child"]);
   });
   it("uses OR within a property and AND between properties", () => {
     const state = {
