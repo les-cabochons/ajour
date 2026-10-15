@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { LocalAppState } from "@/domain/local-state";
+import type { LocalAppState, LocalTimesheetEntry } from "@/domain/local-state";
 import { DEFAULT_PROJECT_ICON } from "@/domain/projects/project-icon";
 import {
   createTimesheetEntrySubmissionFingerprint,
@@ -51,6 +51,7 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
     timers: [],
     timesheetEntries: [],
     timesheetImportDrafts: [],
+    timesheetTombstones: [],
     workItems: [
       {
         _id: "work-item-1",
@@ -801,5 +802,54 @@ describe("markTimesheetEntriesNotSubmitted", () => {
   it("returns the same state when nothing was submitted", () => {
     const state = savedEntries();
     expect(markTimesheetEntriesNotSubmitted(state, ["b"])).toBe(state);
+  });
+});
+
+describe("tombstones", () => {
+  const HOUR = 60 * 60 * 1000;
+  const committedEntry: LocalTimesheetEntry = {
+    _id: "entry-1",
+    localDate: "2026-07-30",
+    projectId: "project-1",
+    taskId: "task-1",
+    label: "Feature work",
+    note: "Shipped",
+    durationMs: HOUR,
+    sourceBlockIds: [],
+    committedAt: 10,
+    commit: {
+      at: 50,
+      localDate: "2026-07-30",
+      projectId: "project-1",
+      taskId: "task-1",
+      note: "Shipped",
+      durationMs: HOUR,
+    },
+  };
+
+  it("leaves a tombstone with the committed copy when a committed entry is deleted", () => {
+    const next = deleteTimesheetEntry(
+      createState({ timesheetEntries: [committedEntry] }),
+      "entry-1",
+    );
+
+    expect(next.timesheetEntries).toEqual([]);
+    expect(next.timesheetTombstones).toEqual([
+      { entryId: "entry-1", commit: committedEntry.commit },
+    ]);
+  });
+
+  it("leaves no tombstone for an entry never committed", () => {
+    const neverCommitted: LocalTimesheetEntry = {
+      ...committedEntry,
+      commit: undefined,
+    };
+    const next = deleteTimesheetEntry(
+      createState({ timesheetEntries: [neverCommitted] }),
+      "entry-1",
+    );
+
+    expect(next.timesheetEntries).toEqual([]);
+    expect(next.timesheetTombstones).toEqual([]);
   });
 });

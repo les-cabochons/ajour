@@ -277,6 +277,13 @@ export function deleteTimesheetEntry(
     timesheetEntries: state.timesheetEntries.filter(
       (item) => item._id !== entryId,
     ),
+    // A committed entry leaves a tombstone, so its deletion can be committed.
+    timesheetTombstones: entry.commit
+      ? [
+          ...state.timesheetTombstones,
+          { entryId: entry._id, commit: entry.commit },
+        ]
+      : state.timesheetTombstones,
     workItems: applyLoggedTimeToWorkItems(state.workItems, {
       workItemId: entry.workItemId,
       projectId: entry.projectId,

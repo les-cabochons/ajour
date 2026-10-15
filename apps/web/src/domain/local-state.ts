@@ -533,6 +533,8 @@ export interface LocalAppState {
   importedBrowserDrafts: ImportedBrowserDraft[];
   timers: LocalTimer[];
   timesheetEntries: LocalTimesheetEntry[];
+  /** Committed entries deleted since. See `LocalTimesheetTombstone`. */
+  timesheetTombstones: LocalTimesheetTombstone[];
   timesheetImportDrafts: LocalTimesheetImportDraft[];
   workItems: LocalWorkItem[];
   pullRequests?: LocalPullRequest[];

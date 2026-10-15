@@ -35,6 +35,7 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
     timers: [],
     timesheetEntries: [],
     timesheetImportDrafts: [],
+    timesheetTombstones: [],
     workItems: [],
     workflowStates: [],
     workflowStateMappings: [],

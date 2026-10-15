@@ -89,6 +89,7 @@ import {
   saveManualTimesheetEntry,
   updateTimesheetEntry as applyUpdateTimesheetEntry,
 } from "@/domain/time/timesheet-entry";
+import { normalizeTimesheetTombstones } from "@/domain/time/timesheet-commit";
 import {
   captureUndo,
   completeSourceWriteInUndo,
@@ -290,6 +291,7 @@ function createDefaultState(): LocalAppState {
     importedBrowserDrafts: [],
     timers: [],
     timesheetEntries: [],
+    timesheetTombstones: [],
     timesheetImportDrafts: [],
     workItems: [],
     pullRequests: [],
@@ -411,6 +413,9 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
         persistedState.timesheetEntries,
         defaults.timesheetEntries,
       ).map((entry) => normalizeTimesheetEntry(entry)),
+      timesheetTombstones: normalizeTimesheetTombstones(
+        persistedState.timesheetTombstones,
+      ),
       timesheetImportDrafts: arrayOrDefault(
         persistedState.timesheetImportDrafts,
         defaults.timesheetImportDrafts,

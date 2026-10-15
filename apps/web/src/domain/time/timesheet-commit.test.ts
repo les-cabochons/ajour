@@ -10,6 +10,7 @@ import {
   getTimesheetEntryChange,
   isTimesheetEntryCommitted,
   listWeekChanges,
+  normalizeTimesheetTombstones,
   toCommittedCopy,
 } from "@/domain/time/timesheet-commit";
 
@@ -229,5 +230,25 @@ describe("describing committed values", () => {
         taskId: "task-1",
       }),
     ).toEqual({});
+  });
+});
+
+describe("stored tombstones", () => {
+  it("keeps valid tombstones and drops malformed ones and repeats", () => {
+    const valid = tombstone("a", "2026-10-05");
+
+    expect(
+      normalizeTimesheetTombstones([
+        valid,
+        { entryId: "b", commit: { at: "soon", localDate: "2026-10-05" } },
+        { commit: valid.commit },
+        { ...valid, commit: { ...valid.commit, at: 60 } },
+        null,
+      ]),
+    ).toEqual([valid]);
+  });
+
+  it("reads a missing list as empty", () => {
+    expect(normalizeTimesheetTombstones(undefined)).toEqual([]);
   });
 });

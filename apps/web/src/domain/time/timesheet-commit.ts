@@ -193,3 +193,56 @@ export function describeTimesheetCommitValues(
     ...(task ? { taskName: task.name } : {}),
   };
 }
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === "number" && Number.isFinite(value);
+}
+
+function optionalString(value: unknown) {
+  return typeof value === "string" ? value : undefined;
+}
+
+/** Reads a stored committed copy. Anything malformed reads as no copy. */
+export function normalizeTimesheetEntryCommit(
+  value: unknown,
+): LocalTimesheetEntryCommit | undefined {
+  if (typeof value !== "object" || value === null) return undefined;
+  const record = value as Record<string, unknown>;
+  if (
+    !isFiniteNumber(record.at) ||
+    typeof record.localDate !== "string" ||
+    !isFiniteNumber(record.durationMs)
+  ) {
+    return undefined;
+  }
+  return {
+    at: record.at,
+    localDate: record.localDate,
+    projectId: optionalString(record.projectId),
+    taskId: optionalString(record.taskId),
+    note: optionalString(record.note),
+    durationMs: record.durationMs,
+  };
+}
+
+/** Reads stored tombstones. Drops malformed ones and repeats of an entry. */
+export function normalizeTimesheetTombstones(
+  value: unknown,
+): LocalTimesheetTombstone[] {
+  if (!Array.isArray(value)) return [];
+  const seen = new Set<string>();
+  return value.flatMap((item: unknown) => {
+    if (typeof item !== "object" || item === null) return [];
+    const record = item as Record<string, unknown>;
+    const commit = normalizeTimesheetEntryCommit(record.commit);
+    if (
+      typeof record.entryId !== "string" ||
+      !commit ||
+      seen.has(record.entryId)
+    ) {
+      return [];
+    }
+    seen.add(record.entryId);
+    return [{ entryId: record.entryId, commit }];
+  });
+}

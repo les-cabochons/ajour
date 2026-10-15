@@ -58,6 +58,7 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
     projects: [createProject()],
     timesheetEntries: [],
     timesheetImportDrafts: [],
+    timesheetTombstones: [],
     workItems: [],
     ...overrides,
   } as LocalAppState;

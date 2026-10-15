@@ -96,6 +96,7 @@ function createState(): LocalAppState {
       },
     ],
     timesheetImportDrafts: [],
+    timesheetTombstones: [],
     workflowStates: [],
     workflowStateMappings: [],
     workflowStateWriteRules: [],
@@ -126,6 +127,58 @@ function undoAction(
 }
 
 describe("time entry undo", () => {
+  /** The fixture with "entry-b" committed as it is. */
+  function withCommittedEntryB(): LocalAppState {
+    const state = createState();
+    return {
+      ...state,
+      timesheetEntries: state.timesheetEntries.map((item) =>
+        item._id === "entry-b"
+          ? {
+              ...item,
+              commit: {
+                at: 50,
+                localDate: item.localDate,
+                projectId: item.projectId,
+                taskId: item.taskId,
+                note: item.note,
+                durationMs: item.durationMs,
+              },
+            }
+          : item,
+      ),
+    };
+  }
+
+  it("takes the tombstone back when a committed entry's delete is undone", () => {
+    const before = withCommittedEntryB();
+    const { after, undo } = undoAction(before, (state) =>
+      deleteTimesheetEntry(state, "entry-b"),
+    );
+    expect(after.timesheetTombstones).toEqual([
+      expect.objectContaining({ entryId: "entry-b" }),
+    ]);
+
+    const restored = restoreUndo(after, undo);
+
+    expect(restored.result).toBe("restored");
+    expect(restored.state.timesheetTombstones).toEqual([]);
+    expect(restored.state.timesheetEntries).toEqual(before.timesheetEntries);
+  });
+
+  it("refuses to undo a delete whose deletion was committed since", () => {
+    const { after, undo } = undoAction(withCommittedEntryB(), (state) =>
+      deleteTimesheetEntry(state, "entry-b"),
+    );
+    // Committing the deleted change clears its tombstone.
+    const deletionCommitted = { ...after, timesheetTombstones: [] };
+
+    expect(restoreUndo(deletionCommitted, undo)).toEqual({
+      state: deletionCommitted,
+      result: "stale",
+    });
+  });
+
   it("restores a deleted entry exactly, in its old position, with its logged time", () => {
     const before = createState();
     const { after, undo } = undoAction(before, (state) =>

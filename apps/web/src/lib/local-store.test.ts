@@ -2670,6 +2670,16 @@ describe("localStore workflow state sync", () => {
     });
   });
 
+  it("loads a workspace saved before tombstones with none", async () => {
+    window.localStorage.setItem(
+      "ajour.local-state.v2",
+      JSON.stringify({ timesheetEntries: [] }),
+    );
+    const { localStore } = await import("./local-store");
+
+    expect(localStore.snapshot().timesheetTombstones).toEqual([]);
+  });
+
   it("marks selected timesheet entries as submitted", async () => {
     const { localStore } = await import("./local-store");
 
