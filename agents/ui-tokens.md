@@ -48,6 +48,7 @@ Semantic variables, light and dark under `:root` and `:root.dark`:
 - `--success`: the running indicator and the dock's remaining-estimate bar. Nothing else.
 - `--warning`: amber, with an icon, for days under target, over capacity and unmapped source states.
 - `--destructive`: destructive actions and failures only.
+- `--scrollbar-thumb`: the thin scrollbar thumb on every native scroller. The track is transparent. Sidebar lists show the thumb only on hover.
 - Workflow states and projects carry their own colors.
 
 App-level aliases: `--surface-lowest`, `--surface-low` (the sidebar), `--surface`, `--surface-high`, `--surface-highest`, `--text`, `--text-secondary`, `--text-tertiary`, `--hover-bg`, `--highlight-bg`, `--field-bg`, `--field-border`, `--success-bg`, `--warning-bg`, `--danger-muted`, `--indigo-muted`.

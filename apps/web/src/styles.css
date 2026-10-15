@@ -11,6 +11,16 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/* The scrollbar stays hidden until the pointer is over the scroller or focus is inside it. */
+@utility scrollbar-on-hover {
+  scrollbar-color: transparent transparent;
+
+  &:hover,
+  &:focus-within {
+    scrollbar-color: var(--scrollbar-thumb) transparent;
+  }
+}
+
 /* The system face stands in for Geist with matched metrics, so nothing moves
    when the font file arrives in the web build. Electron loads it from disk. */
 @font-face {
@@ -50,6 +60,7 @@
     --border: oklch(0.915 0.004 285);
     --input: var(--border);
     --ring: oklch(0.62 0.17 285);
+    --scrollbar-thumb: oklch(0 0 0 / 15%);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -183,6 +194,7 @@
     --border: oklch(1 0 0 / 9%);
     --input: var(--surface-lowest);
     --ring: oklch(0.64 0.17 285);
+    --scrollbar-thumb: oklch(1 0 0 / 12%);
     --chart-1: oklch(0.87 0 0);
     --chart-2: oklch(0.556 0 0);
     --chart-3: oklch(0.439 0 0);
@@ -217,6 +229,9 @@
 
   * {
     @apply border-border outline-ring/50;
+    /* Thin, faint native scrollbars with no track, like T3 Code. */
+    scrollbar-width: thin;
+    scrollbar-color: var(--scrollbar-thumb) transparent;
   }
 
   body {
