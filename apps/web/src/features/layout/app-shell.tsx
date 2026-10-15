@@ -166,10 +166,11 @@ function PageHeaderSlot({
   onSelectDate: (date: string) => void;
 }) {
   const hasPageHeader = useHasPageHeader();
+  // The header stays a drag region: the title fills most of the bar, and the
+  // page's controls opt out of dragging individually (see `.desktop-shell-nav`
+  // in styles.css).
   return (
-    <div
-      className={cn("ajour-page-header", isDesktopShell && "desktop-no-drag")}
-    >
+    <div className="ajour-page-header">
       <div ref={setPageHeaderSlot} className="ajour-page-header-slot" />
       {hasPageHeader ? null : (
         <DefaultPageHeader

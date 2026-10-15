@@ -368,12 +368,26 @@
     -webkit-app-region: no-drag;
   }
 
+  /* The bar drags the window. Its text is not selectable, and only its
+     controls opt out of dragging, so the title and the gaps stay draggable. */
+  .desktop-shell-nav {
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .desktop-shell-nav a,
   .desktop-shell-nav button,
+  .desktop-shell-nav input,
+  .desktop-shell-nav select,
+  .desktop-shell-nav textarea,
   .desktop-shell-nav [role="button"],
+  .desktop-shell-nav [role="combobox"],
+  .desktop-shell-nav [role="textbox"],
   .desktop-shell-nav [data-slot="toggle-group"],
   .desktop-shell-nav [data-slot="toggle-group-item"],
   .desktop-shell-nav [data-slot="popover-trigger"],
-  .desktop-shell-nav [data-slot="dropdown-menu-trigger"] {
+  .desktop-shell-nav [data-slot="dropdown-menu-trigger"],
+  .desktop-shell-nav .ajour-page-header-actions {
     -webkit-app-region: no-drag;
   }
 
