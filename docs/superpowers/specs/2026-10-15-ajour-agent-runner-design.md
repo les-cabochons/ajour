@@ -260,4 +260,16 @@ One `agent.run` wide event per run: plugin ID, task ID, CLI, CLI version, browse
 
 ## Smoke test results
 
-Not run yet. See `qa/agents/README.md`.
+Claude Code 2.1.293, run by Alex on 2026-10-15 against the installed Ajour (spec A build):
+
+- Pass: `${AJOUR_MCP_TOKEN}` in the `--mcp-config` file expands from the environment. The `ajour` server connected and `get_running_timer` answered. No `headersHelper` fallback is needed.
+- Pass: Chrome opened with the dedicated profile and the agent read "Example Domain". Chrome shows a banner about an unsupported command-line flag that Playwright passes; it is cosmetic.
+- Pass: the tool list holds only `mcp__ajour__*` and `mcp__playwright__*` tools. No built-in tool (shell, files, search) is exposed with `--tools ""`.
+- Pass: `skills` and `slash_commands` are empty. Only Claude Code's own built-in plugins load.
+- Pass: `apiKeySource` is `none`: the run used the subscription login.
+- Pass: the run ended with a `result` event, subtype `success`.
+- Note: Playwright MCP writes page snapshots to `.playwright-mcp/` in the working folder, which the runner deletes after the run.
+- Note: Playwright MCP exposes `browser_evaluate` and `browser_run_code_unsafe`, which run JavaScript in the page. Acceptable for now; Playwright MCP's capability flags could narrow this later.
+- Not checked: `ps` during the run. The token is only in the environment by construction.
+
+Codex and OpenCode: not run yet. Workday checks: not run yet.
