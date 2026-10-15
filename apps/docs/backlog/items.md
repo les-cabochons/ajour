@@ -20,7 +20,7 @@ Click an item in the sidebar to open its page. On the Backlog page, a click open
 - **Note**, in Markdown. Press **Edit** to change it.
 - **Subitems**. Press **Add subitem**, type a name and press <kbd>Enter</kbd>.
 - **Time entries** logged on the item, with **Add time entry**.
-- **Properties**: state, source state, priority, lifecycle, project, task and source.
+- **The properties card**, at the side: state, source state, priority, lifecycle, project, task and source.
 
 Changes on the page save when you press <kbd>Enter</kbd> or leave the field, with an Undo toast.
 
