@@ -42,6 +42,12 @@ interface SearchableSelectProps {
   ariaLabel?: string;
   className?: string;
   inputClassName?: string;
+  /**
+   * The list's minimum width in pixels, for long option names in a narrow
+   * field. The list is never wider than the viewport. Defaults to the field's
+   * width.
+   */
+  popoverMinWidth?: number;
 }
 
 type PopoverSide = "top" | "bottom";
@@ -85,6 +91,7 @@ export function SearchableSelect({
   ariaLabel,
   className,
   inputClassName,
+  popoverMinWidth,
 }: SearchableSelectProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
@@ -218,7 +225,7 @@ export function SearchableSelect({
       const viewportOffsetTop = viewport?.offsetTop ?? 0;
 
       const width = Math.min(
-        rect.width,
+        Math.max(rect.width, popoverMinWidth ?? 0),
         Math.max(0, viewportWidth - POPOVER_MARGIN_PX * 2),
       );
       const left = Math.min(
@@ -284,7 +291,7 @@ export function SearchableSelect({
       viewport?.removeEventListener("resize", updatePopoverLayout);
       viewport?.removeEventListener("scroll", updatePopoverLayout);
     };
-  }, [inputValue, isOpen, visibleOptions.length]);
+  }, [inputValue, isOpen, popoverMinWidth, visibleOptions.length]);
 
   function closeMenu() {
     setIsOpen(false);

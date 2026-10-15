@@ -18,6 +18,9 @@ import {
   getOtherSourceStates,
 } from "@/features/backlog/backlog-item-moves";
 
+/** Project and task lists outgrow their narrow fields, so names fit. */
+const LONG_NAME_LIST_WIDTH = 320;
+
 /**
  * A backlog item's properties, each changed in place with Undo: state, source
  * state, priority, project and task, then the "Keep when missing from sync"
@@ -71,6 +74,7 @@ export function BacklogItemProperties({
             emptyMessage="No projects"
             ariaLabel="Project"
             clearLabel="No project"
+            popoverMinWidth={LONG_NAME_LIST_WIDTH}
             onChange={(value) => {
               if (value === (item.projectId ?? "")) return;
               patchBacklogItemWithUndo(
@@ -91,6 +95,7 @@ export function BacklogItemProperties({
             emptyMessage="No tasks"
             ariaLabel="Task"
             clearLabel="No task"
+            popoverMinWidth={LONG_NAME_LIST_WIDTH}
             disabled={!project}
             onChange={(value) =>
               patchBacklogItemWithUndo(
