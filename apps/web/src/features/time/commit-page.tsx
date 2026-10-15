@@ -360,7 +360,10 @@ export function CommitPage({
         ) : null}
       </div>
 
-      <section aria-labelledby="commit-lines-heading">
+      <section
+        aria-labelledby="commit-lines-heading"
+        className="flex flex-col gap-3"
+      >
         <SectionHeading id="commit-lines-heading">Lines</SectionHeading>
         {weekEntries.length === 0 ? (
           <Empty align="start" className="px-0">
