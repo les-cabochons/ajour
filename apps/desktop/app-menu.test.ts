@@ -116,7 +116,6 @@ describe("desktop app menu model", () => {
         "-",
         "Show or hide sidebar",
         "Compact or comfortable sidebar",
-        "Show or hide Up next",
         "-",
         "Today",
         "Previous",

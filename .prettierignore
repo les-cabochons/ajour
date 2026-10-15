@@ -1,6 +1,7 @@
 # Generated, vendored, or lock files
 pnpm-lock.yaml
 **/dist/
+**/.vitepress/cache/
 **/dist-desktop/
 **/out/
 **/out-embedded/

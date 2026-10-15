@@ -7,7 +7,7 @@ import {
 } from "@remixicon/react";
 import { buttonVariants } from "@/components/ui/button";
 import { TooltipButton } from "@/components/tooltip-button";
-import { isAppNavigationItemActive } from "@/features/layout/app-navigation-sidebar";
+import { getAppSection } from "@/features/layout/app-section";
 import {
   getNarrowBackLink,
   isNarrowSettingsSection,
@@ -16,8 +16,20 @@ import { isDesktopShell } from "@/lib/runtime";
 import { cn } from "@/lib/utils";
 
 const sections = [
-  { to: "/time/$date", label: "Time", icon: Timer, shortcut: "go.time" },
-  { to: "/backlog", label: "Backlog", icon: ListTodo, shortcut: "go.backlog" },
+  {
+    view: "time",
+    to: "/time/$date",
+    label: "Time",
+    icon: Timer,
+    shortcut: "go.time",
+  },
+  {
+    view: "backlog",
+    to: "/backlog",
+    label: "Backlog",
+    icon: ListTodo,
+    shortcut: "go.backlog",
+  },
 ] as const;
 
 /**
@@ -42,7 +54,7 @@ export function NarrowSectionSwitcher({
     >
       {sections.map((section) => {
         const Icon = section.icon;
-        const isActive = isAppNavigationItemActive(pathname, section.to);
+        const isActive = getAppSection(pathname) === section.view;
         const linkProps = {
           to: section.to,
           params:

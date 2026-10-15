@@ -59,7 +59,7 @@ export function openCommandPalette() {
  *
  * Start entry and New entry… run here, so they work from any page. New entry…
  * opens the titlebar's entry editor popover, anchored to the object's row when
- * that row is still on screen, otherwise to the titlebar "+". Actions that
+ * that row is still on screen, otherwise to the titlebar's totals. Actions that
  * need a page's editor, confirmation or navigation guard go to that page as an
  * action request (`lib/action-request.ts`). While the Projects page is open,
  * every project and task command goes to it, so its task draft is saved first

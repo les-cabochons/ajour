@@ -1,19 +1,10 @@
-import {
-  useMemo,
-  useRef,
-  type KeyboardEvent,
-  type PointerEvent,
-  type ReactNode,
-} from "react";
+import { useMemo, useRef, type KeyboardEvent, type PointerEvent } from "react";
 import { Link } from "@tanstack/react-router";
 import {
-  RiFolderChartLine as FolderKanban,
-  RiListCheck3 as ListTodo,
+  RiPlayLine as PlayIcon,
   RiSearchLine as SearchIcon,
   RiSettings3Line as Settings,
   RiSideBarLine as SidebarIcon,
-  RiTimerLine as Timer,
-  RiGitPullRequestLine as PullRequestIcon,
 } from "@remixicon/react";
 import { BrandLogo } from "@/components/brand-logo";
 import { Button } from "@/components/ui/button";
@@ -21,8 +12,6 @@ import {
   Sidebar,
   SidebarContent,
   SidebarFooter,
-  SidebarGroup,
-  SidebarGroupContent,
   SidebarHeader,
   SidebarMenu,
   SidebarMenuButton,
@@ -37,15 +26,25 @@ import {
   selectUpNextBacklogItem,
 } from "@/domain/backlog/backlog-item-lifecycle";
 import { isPullRequestReturned } from "@/domain/pull-requests/pull-request-lifecycle";
+import { getAppSection } from "@/features/layout/app-section";
 import { openCommandPalette } from "@/features/command-palette/command-palette";
 import { SidebarBacklogList } from "@/features/layout/sidebar-backlog-list";
 import {
   SidebarPullRequests,
   useSidebarPullRequests,
 } from "@/features/layout/sidebar-pull-requests";
-import { TimerDock, TodayTotal } from "@/features/layout/timer-dock";
+import {
+  SidebarViewSwitcher,
+  type SidebarViewOption,
+} from "@/features/layout/sidebar-view-switcher";
+import {
+  startBlankEntry,
+  TimerDock,
+  TodayTotal,
+} from "@/features/layout/timer-dock";
 import type { AppSidebarState } from "@/lib/app-sidebar";
 import { useLocalState } from "@/lib/local-hooks";
+import { isDesktopShell } from "@/lib/runtime";
 import {
   SIDEBAR_MIN_WIDTH,
   clampSidebarWidth,
@@ -128,42 +127,24 @@ function SidebarResizeHandle({
   );
 }
 
-export function isAppNavigationItemActive(
-  pathname: string,
-  to: "/time/$date" | "/backlog" | "/projects" | "/settings" | "/pull-requests",
-) {
-  if (to === "/time/$date") {
-    return pathname.startsWith("/time/");
-  }
-
-  if (to === "/projects") {
-    return pathname === "/projects" || pathname.startsWith("/projects/");
-  }
-
-  if (to === "/settings") {
-    return pathname.startsWith("/settings");
-  }
-  if (to === "/pull-requests")
-    return pathname === to || pathname.startsWith(`${to}/`);
-
-  return pathname === to;
-}
-
 /** The sidebar toggle, beside the logo and in the titlebar while the sidebar is hidden. */
 export function SidebarToggleButton({
   label,
   onToggle,
+  side = "bottom",
   className,
 }: {
   label: string;
   onToggle: () => void;
+  /** Where the tooltip shows. */
+  side?: "bottom" | "right";
   className?: string;
 }) {
   return (
     <TooltipButton
       label={label}
       shortcut="app.toggle-sidebar"
-      side="bottom"
+      side={side}
       render={
         <Button
           variant="ghost"
@@ -178,32 +159,11 @@ export function SidebarToggleButton({
   );
 }
 
-/** The live value at the end of a navigation row. */
-function NavigationCount({
-  value,
-  highlighted = false,
-}: {
-  value?: ReactNode;
-  highlighted?: boolean;
-}) {
-  if (value === undefined) return null;
-  return (
-    <span
-      className={cn(
-        "ml-auto shrink-0 font-mono text-xs font-normal tabular-nums",
-        highlighted
-          ? "flex h-[18px] min-w-[18px] items-center justify-center rounded-[var(--radius-sm)] bg-primary px-1.5 font-medium text-primary-foreground"
-          : "text-muted-foreground",
-      )}
-    >
-      {value}
-    </span>
-  );
-}
-
 /**
- * The app sidebar on desktop widths: the timer dock, navigation with live
- * counts, then the work list. It shows beside the page, or over it in narrow
+ * The app sidebar on desktop widths, from the top: the sidebar toggle and the
+ * logo beside the macOS traffic lights (in the corner elsewhere), the view
+ * switcher with Start (while nothing runs) and Search, the timer dock, then
+ * the work list. It shows beside the page, or over it in narrow
  * desktop windows (`overlay`), where it cannot be resized. `useAppSidebar`
  * owns whether it shows.
  */
@@ -222,7 +182,7 @@ export function AppNavigationSidebar({
 }) {
   const state = useLocalState();
   const now = useNow();
-  const isSettingsActive = isAppNavigationItemActive(pathname, "/settings");
+  const isSettingsActive = getAppSection(pathname) === "settings";
   const pullRequests = useSidebarPullRequests();
   const listed = useMemo(
     () => selectSidebarBacklogItems(state, now),
@@ -232,41 +192,20 @@ export function AppNavigationSidebar({
     isPullRequestReturned(item, pullRequests.now),
   ).length;
 
-  const items = [
-    {
-      to: "/time/$date",
-      label: "Time",
-      icon: Timer,
-      shortcut: "go.time",
-      count: <TodayTotal />,
-    },
-    {
-      to: "/backlog",
-      label: "Backlog",
-      icon: ListTodo,
-      shortcut: "go.backlog",
-      count: listed.length,
-    },
+  const views: SidebarViewOption[] = [
+    { view: "time", count: <TodayTotal /> },
+    { view: "backlog", count: listed.length },
     ...(pullRequests.enabled
       ? [
           {
-            to: "/pull-requests",
-            label: "Pull requests",
-            icon: PullRequestIcon,
-            shortcut: undefined,
+            view: "pull-requests",
             count: pullRequests.items.length,
             highlighted: returnedPullRequests > 0,
           } as const,
         ]
       : []),
-    {
-      to: "/projects",
-      label: "Projects",
-      icon: FolderKanban,
-      shortcut: "go.projects",
-      count: undefined,
-    },
-  ] as const;
+    { view: "projects" },
+  ];
 
   return (
     <Sidebar
@@ -279,13 +218,48 @@ export function AppNavigationSidebar({
       role="navigation"
       aria-label="Primary navigation"
     >
-      <div
-        className="ajour-sidebar-window-drag-region desktop-drag-region"
-        aria-hidden="true"
-      />
-      <SidebarHeader className="ajour-app-sidebar-header">
-        <BrandLogo linked />
+      <SidebarHeader
+        className={cn(
+          "ajour-app-sidebar-header",
+          isDesktopShell && "desktop-drag-region",
+        )}
+      >
+        {/* The toggle opens under the pointer that showed the sidebar. Its
+            tooltip shows on the right, so it does not cover the switcher. */}
+        <SidebarToggleButton
+          label="Hide sidebar"
+          onToggle={onToggle}
+          side="right"
+          className={cn(isDesktopShell && "desktop-no-drag")}
+        />
+        <BrandLogo linked className={cn(isDesktopShell && "desktop-no-drag")} />
+      </SidebarHeader>
+
+      <div className="flex shrink-0 items-center justify-between gap-1 px-2 pb-1">
+        <SidebarViewSwitcher
+          pathname={pathname}
+          selectedTimeDate={selectedTimeDate}
+          options={views}
+        />
         <span className="ml-auto flex items-center gap-0.5">
+          {/* An empty entry, unlike the dock's start for the Up next item. */}
+          {state.timers.length === 0 ? (
+            <TooltipButton
+              label="Start"
+              shortcut="entry.stop-or-start"
+              side="bottom"
+              render={
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="ajour-app-sidebar-toggle"
+                  onClick={startBlankEntry}
+                />
+              }
+            >
+              <PlayIcon />
+            </TooltipButton>
+          ) : null}
           <TooltipButton
             label="Search"
             shortcut="app.command-palette"
@@ -301,60 +275,12 @@ export function AppNavigationSidebar({
           >
             <SearchIcon />
           </TooltipButton>
-          <SidebarToggleButton label="Hide sidebar" onToggle={onToggle} />
         </span>
-      </SidebarHeader>
+      </div>
 
       <TimerDock upNext={selectUpNextBacklogItem(listed)} />
 
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {items.map((item) => {
-                const Icon = item.icon;
-                const isActive = isAppNavigationItemActive(pathname, item.to);
-                return (
-                  <SidebarMenuItem key={item.to}>
-                    <SidebarMenuButton
-                      className="ajour-app-sidebar-button"
-                      tooltip={{
-                        children: (
-                          <ShortcutTooltipLabel
-                            label={item.label}
-                            shortcut={item.shortcut}
-                          />
-                        ),
-                      }}
-                      render={
-                        <Link
-                          to={item.to}
-                          params={
-                            item.to === "/time/$date"
-                              ? { date: selectedTimeDate }
-                              : undefined
-                          }
-                          aria-label={item.label}
-                          aria-current={isActive ? "page" : undefined}
-                        />
-                      }
-                      isActive={isActive}
-                    >
-                      <Icon />
-                      <span>{item.label}</span>
-                      <NavigationCount
-                        value={item.count}
-                        highlighted={
-                          "highlighted" in item ? item.highlighted : false
-                        }
-                      />
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                );
-              })}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
         <SidebarBacklogList pathname={pathname}>
           <SidebarPullRequests pathname={pathname} />
         </SidebarBacklogList>

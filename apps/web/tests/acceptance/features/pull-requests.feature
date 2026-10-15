@@ -61,6 +61,7 @@ Feature: Pull requests on your plate
     When I open the pull request list
     And a sync reports the requested pull request merged
     Then the requested pull request is absent from the sidebar
+    And the sidebar has no Pull requests section
     And the requested pull request appears under Recently closed
 
   Scenario: List pull requests and backlog items in one sidebar

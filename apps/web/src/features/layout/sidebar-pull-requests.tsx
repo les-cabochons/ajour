@@ -31,8 +31,9 @@ export function useSidebarPullRequests() {
 }
 
 /**
- * The collapsible Pull requests section of the sidebar work list, shown while a
- * code host plugin is enabled and a pull request needs the user.
+ * The collapsible Pull requests section of the sidebar work list, shown while
+ * pull requests need the user. The view switcher lists the Pull requests page
+ * as soon as a code host plugin is enabled.
  */
 export function SidebarPullRequests({ pathname }: { pathname: string }) {
   const layout = useSidebarLayout();

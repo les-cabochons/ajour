@@ -237,11 +237,17 @@ Then("the other item is pinned at the top of the sidebar", async ({ page }) => {
     otherSidebarRow(page).getByRole("img", { name: "Pinned" }),
   ).toBeVisible();
 });
-Then("Up next is still the Backlog parent", async ({ page }) => {
-  await expect(
-    page.getByRole("link", { name: "Up next: Backlog parent", exact: true }),
-  ).toBeVisible();
-});
+Then(
+  "the timer dock still offers the Backlog parent as Up next",
+  async ({ page }) => {
+    await expect(
+      page.getByRole("button", {
+        name: "Start entry on Backlog parent",
+        exact: true,
+      }),
+    ).toBeVisible();
+  },
+);
 Then("the other item is not pinned", async ({ page }) => {
   await expect(
     otherSidebarRow(page).getByRole("img", { name: "Pinned" }),
@@ -687,6 +693,8 @@ async function inspectBacklogStart(
       const row = page
         .getByRole("navigation", { name: "Primary navigation" })
         .locator('[data-backlog-item-id="parent"]');
+      // Rows show Start entry while the pointer is over them.
+      await row.hover();
       const start = row.getByRole("button", {
         name: "Start entry",
         exact: true,
