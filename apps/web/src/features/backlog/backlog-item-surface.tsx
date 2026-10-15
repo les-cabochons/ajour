@@ -438,15 +438,17 @@ export function BacklogItemSurface({
                 : undefined
             }
           >
-            {view.properties.project && project && (
+            {view.properties.project && (
               <>
-                <ProjectIcon
-                  icon={project.icon}
-                  color={project.color}
-                  className="size-3.5"
-                />
+                {project && (
+                  <ProjectIcon
+                    icon={project.icon}
+                    color={project.color}
+                    className="size-3.5"
+                  />
+                )}
                 <span className="backlog-item-id">
-                  {getLocalProjectDisplayName(project)}
+                  {project ? getLocalProjectDisplayName(project) : "No project"}
                 </span>
               </>
             )}
