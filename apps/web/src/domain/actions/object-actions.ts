@@ -26,7 +26,7 @@ export type TimeEntryActionId =
   | "delete"
   | "discard";
 
-export type TimeEntryActionState = "saved" | "submitted" | "running";
+export type TimeEntryActionState = "saved" | "running";
 
 export interface TimeEntryActionOptions {
   /** Whether the entry is on today's date. Continue resumes only today's entries. */
@@ -38,7 +38,6 @@ export interface TimeEntryActionOptions {
 }
 
 const STOP_RUNNING_FIRST = "Stop the running entry first";
-const MARKS_NOT_SUBMITTED = "Marks it as not submitted";
 
 /** Lists a time entry's actions: Edit · Continue/Stop · Duplicate · Duplicate to… · Move to… · Delete/Discard. */
 export function getTimeEntryActions(
@@ -46,7 +45,6 @@ export function getTimeEntryActions(
   options: TimeEntryActionOptions = {},
 ): ObjectAction<TimeEntryActionId>[] {
   const isRunning = state === "running";
-  const isSubmitted = state === "submitted";
   const relocationReason = isRunning
     ? STOP_RUNNING_FIRST
     : options.invalidDraftReason;
@@ -64,9 +62,6 @@ export function getTimeEntryActions(
           label: "Continue",
           // Editors save the draft before continuing, so an invalid draft blocks it.
           disabledReason: options.invalidDraftReason,
-          // Continuing today's entry adds time to it; another day's entry starts a new one.
-          hint:
-            isSubmitted && options.isToday ? MARKS_NOT_SUBMITTED : undefined,
         },
     { id: "duplicate", label: "Duplicate", disabledReason: relocationReason },
     {
@@ -78,7 +73,6 @@ export function getTimeEntryActions(
       id: "move-to",
       label: "Move to…",
       disabledReason: relocationReason,
-      hint: isSubmitted ? MARKS_NOT_SUBMITTED : undefined,
     },
     isRunning
       ? { id: "discard", label: "Discard", destructive: true }
@@ -88,14 +82,9 @@ export function getTimeEntryActions(
 
 /** Returns the action state shown for a time entry. */
 export function getTimeEntryActionState(entry: {
-  submittedAt?: number;
   isRunning?: boolean;
 }): TimeEntryActionState {
-  if (entry.isRunning) {
-    return "running";
-  }
-
-  return entry.submittedAt ? "submitted" : "saved";
+  return entry.isRunning ? "running" : "saved";
 }
 
 type ArchiveStatus = "active" | "archived";

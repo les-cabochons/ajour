@@ -150,10 +150,7 @@ export function requireEntry(state: LocalAppState, entryId: string) {
 
 function entryActions(state: LocalAppState, entry: LocalTimesheetEntry) {
   return getTimeEntryActions(
-    getTimeEntryActionState({
-      submittedAt: entry.submittedAt,
-      isRunning: isEntryRunning(state, entry),
-    }),
+    getTimeEntryActionState({ isRunning: isEntryRunning(state, entry) }),
   );
 }
 

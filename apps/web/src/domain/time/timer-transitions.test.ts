@@ -13,7 +13,6 @@ import {
   startTimer,
   type TimerFactories,
 } from "@/domain/time/timer-transitions";
-import { createTimesheetEntrySubmissionFingerprint } from "@/domain/time/timesheet-entry";
 
 const TODAY = "2026-07-30";
 
@@ -315,13 +314,8 @@ describe("timer and timesheet entry lifecycle", () => {
     });
   });
 
-  it("replaces a restarted entry and clears stale submission state", () => {
-    const originalEntry = createEntry({
-      submittedAt: 650,
-      sourceBlockIds: ["browser:1"],
-    });
-    originalEntry.submittedFingerprint =
-      createTimesheetEntrySubmissionFingerprint(originalEntry);
+  it("replaces a restarted entry and keeps its source blocks", () => {
+    const originalEntry = createEntry({ sourceBlockIds: ["browser:1"] });
     const state = createState({
       timesheetEntries: [originalEntry],
       timers: [
@@ -344,8 +338,6 @@ describe("timer and timesheet entry lifecycle", () => {
     expect(saved.timesheetEntries[0]).toMatchObject({
       _id: originalEntry._id,
       durationMs: 600,
-      submittedAt: undefined,
-      submittedFingerprint: undefined,
       sourceBlockIds: ["browser:1"],
     });
   });

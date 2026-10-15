@@ -49,7 +49,7 @@ function entry(
   };
 }
 
-/** Three entries on one day: the middle one is submitted, with an unrounded duration. */
+/** Three entries on one day: the middle one is committed, with an unrounded duration. */
 function createState(): LocalAppState {
   return {
     projects: [
@@ -73,11 +73,17 @@ function createState(): LocalAppState {
       entry({ _id: "entry-a", note: "First", committedAt: 30 }),
       entry({
         _id: "entry-b",
-        note: "Submitted work",
+        note: "Committed work",
         durationMs: 75_123,
         committedAt: 20,
-        submittedAt: 50,
-        submittedFingerprint: "fingerprint-b",
+        commit: {
+          at: 50,
+          localDate: "2026-10-07",
+          projectId: "project-1",
+          taskId: "task-1",
+          note: "Committed work",
+          durationMs: 75_123,
+        },
       }),
       entry({ _id: "entry-c", note: "Last", committedAt: 10 }),
     ],
@@ -233,7 +239,7 @@ describe("time entry undo", () => {
     expect(restored.state.timesheetEntries).toEqual(before.timesheetEntries);
   });
 
-  it("moves a submitted entry back to its day with its submission and order", () => {
+  it("moves a committed entry back to its day with its copy and order", () => {
     const before = createState();
     const { after, undo } = undoAction(before, (state) =>
       moveTimesheetEntry(
@@ -243,7 +249,7 @@ describe("time entry undo", () => {
           localDate: "2026-10-08",
           projectId: "project-1",
           taskId: "task-1",
-          note: "Submitted work",
+          note: "Committed work",
           durationMs: 75_123,
         },
         factories,

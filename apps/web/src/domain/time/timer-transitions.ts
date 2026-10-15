@@ -7,7 +7,6 @@ import type {
 import {
   createTimesheetEntry,
   keepTimesheetEntryCommit,
-  preserveTimesheetEntrySubmissionState,
   type TimesheetEntryFactories,
 } from "@/domain/time/timesheet-entry";
 import { formatLocalDateFromTimestamp } from "@/domain/time/duration";
@@ -182,22 +181,19 @@ export function saveTimer(
     Math.max(0, factories.now() - timer.startedAt);
   const entry = keepTimesheetEntryCommit(
     existingEntry,
-    preserveTimesheetEntrySubmissionState(
-      existingEntry,
-      createTimesheetEntry(
-        state.projects,
-        {
-          localDate: timer.localDate,
-          workItemId: timer.workItemId,
-          projectId: timer.projectId,
-          taskId: timer.taskId,
-          note: timer.note,
-          durationMs,
-          sourceBlockIds: existingEntry?.sourceBlockIds ?? [],
-          entryId: timer.entryId,
-        },
-        factories,
-      ),
+    createTimesheetEntry(
+      state.projects,
+      {
+        localDate: timer.localDate,
+        workItemId: timer.workItemId,
+        projectId: timer.projectId,
+        taskId: timer.taskId,
+        note: timer.note,
+        durationMs,
+        sourceBlockIds: existingEntry?.sourceBlockIds ?? [],
+        entryId: timer.entryId,
+      },
+      factories,
     ),
   );
   if (existingEntry) {

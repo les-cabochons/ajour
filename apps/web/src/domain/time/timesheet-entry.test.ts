@@ -2,13 +2,10 @@ import { describe, expect, it } from "vitest";
 import type { LocalAppState, LocalTimesheetEntry } from "@/domain/local-state";
 import { DEFAULT_PROJECT_ICON } from "@/domain/projects/project-icon";
 import {
-  createTimesheetEntrySubmissionFingerprint,
   deleteTimesheetEntries,
   deleteTimesheetEntry,
   duplicateTimesheetEntry,
   markTimesheetEntriesCommitted,
-  markTimesheetEntriesNotSubmitted,
-  markTimesheetEntriesSubmitted,
   moveTimesheetEntry,
   normalizeTimesheetEntry,
   reorderTimesheetEntries,
@@ -131,8 +128,6 @@ describe("timesheet entry lifecycle", () => {
       durationMs: 60 * 60 * 1000,
       sourceBlockIds: [],
       committedAt: 100,
-      submittedAt: undefined,
-      submittedFingerprint: undefined,
     });
     expect(state.workItems[0]).toMatchObject({
       remainingEstimateHours: 1,
@@ -140,122 +135,74 @@ describe("timesheet entry lifecycle", () => {
     });
   });
 
-  it("preserves submission for an unchanged edit and clears it after a change", () => {
-    const saved = saveManualTimesheetEntry(
-      createState(),
-      {
+  it("gives an entry stored as submitted a committed copy of its values", () => {
+    const entry = normalizeTimesheetEntry({
+      _id: "entry-1",
+      localDate: "2026-07-30",
+      projectId: "project-1",
+      taskId: "task-1",
+      label: "Legacy",
+      note: "Shipped",
+      durationMs: 100,
+      committedAt: 1,
+      submittedAt: 0,
+      submittedFingerprint: "old",
+    } as never);
+
+    expect(entry).toEqual({
+      _id: "entry-1",
+      localDate: "2026-07-30",
+      projectId: "project-1",
+      taskId: "task-1",
+      label: "Legacy",
+      note: "Shipped",
+      durationMs: 100,
+      committedAt: 1,
+      sourceBlockIds: [],
+      commit: {
+        at: 0,
         localDate: "2026-07-30",
         projectId: "project-1",
         taskId: "task-1",
-        note: "Implementation",
-        durationMs: 60 * 60 * 1000,
+        note: "Shipped",
+        durationMs: 100,
       },
-      factories,
-    );
-    const submitted = markTimesheetEntriesSubmitted(
-      saved,
-      ["timesheet-1"],
-      () => 200,
-    );
-    const unchanged = updateTimesheetEntry(
-      submitted,
-      "timesheet-1",
-      {
-        projectId: "project-1",
-        taskId: "task-1",
-        note: "Implementation",
-        durationMs: 60 * 60 * 1000,
-      },
-      { ...factories, now: () => 300 },
-    );
-    const changed = updateTimesheetEntry(
-      unchanged,
-      "timesheet-1",
-      {
-        projectId: "project-1",
-        taskId: "task-1",
-        note: "Changed",
-        durationMs: 60 * 60 * 1000,
-      },
-      { ...factories, now: () => 400 },
-    );
-
-    expect(unchanged.timesheetEntries[0]).toMatchObject({
-      submittedAt: 200,
-      submittedFingerprint: createTimesheetEntrySubmissionFingerprint(
-        submitted.timesheetEntries[0]!,
-      ),
     });
-    expect(changed.timesheetEntries[0]).toMatchObject({
-      submittedAt: undefined,
-      submittedFingerprint: undefined,
-    });
-    expect(unchanged.timesheetEntries[0]?.committedAt).toBe(100);
+    expect(entry).not.toHaveProperty("submittedAt");
+    expect(entry).not.toHaveProperty("submittedFingerprint");
   });
 
-  it("remembers the submission time of an edited entry until it is marked again", () => {
-    const saved = saveManualTimesheetEntry(
-      createState(),
-      {
-        localDate: "2026-07-30",
-        projectId: "project-1",
-        taskId: "task-1",
-        note: "Implementation",
-        durationMs: 60 * 60 * 1000,
-      },
-      factories,
-    );
-    const submitted = markTimesheetEntriesSubmitted(
-      saved,
-      ["timesheet-1"],
-      () => 200,
-    );
-    const edit = (state: LocalAppState, note: string) =>
-      updateTimesheetEntry(
-        state,
-        "timesheet-1",
-        {
-          projectId: "project-1",
-          taskId: "task-1",
-          note,
-          durationMs: 60 * 60 * 1000,
-        },
-        factories,
-      );
-    const changed = edit(submitted, "Changed");
-    const changedTwice = edit(changed, "Changed again");
-    const resubmitted = markTimesheetEntriesSubmitted(
-      changedTwice,
-      ["timesheet-1"],
-      () => 500,
-    );
-
-    expect(changed.timesheetEntries[0]).toMatchObject({
-      submittedAt: undefined,
-      previousSubmittedAt: 200,
-    });
-    expect(changedTwice.timesheetEntries[0]?.previousSubmittedAt).toBe(200);
-    expect(resubmitted.timesheetEntries[0]).toMatchObject({
-      submittedAt: 500,
-      previousSubmittedAt: undefined,
-    });
-  });
-
-  it("hydrates legacy source IDs and preserves a zero submission timestamp", () => {
+  it("gives an entry edited since its submission no copy, so it shows as added", () => {
     const entry = normalizeTimesheetEntry({
       _id: "entry-1",
       localDate: "2026-07-30",
       label: "Legacy",
       durationMs: 100,
       committedAt: 1,
-      submittedAt: 0,
+      previousSubmittedAt: 5,
     } as never);
 
-    expect(entry).toMatchObject({
+    expect(entry.commit).toBeUndefined();
+    expect(entry).not.toHaveProperty("previousSubmittedAt");
+  });
+
+  it("keeps a stored copy and drops a malformed one", () => {
+    const commit = { at: 9, localDate: "2026-07-30", durationMs: 100 };
+    const stored = {
+      _id: "entry-1",
+      localDate: "2026-07-30",
+      label: "Stored",
+      durationMs: 100,
       sourceBlockIds: [],
-      submittedAt: 0,
-      submittedFingerprint: expect.any(String),
-    });
+      committedAt: 1,
+    };
+
+    expect(
+      normalizeTimesheetEntry({ ...stored, commit } as never).commit,
+    ).toEqual(commit);
+    expect(
+      normalizeTimesheetEntry({ ...stored, commit: { at: "x" } } as never),
+    ).not.toHaveProperty("commit");
   });
 
   it("clears a derived task label when the task is removed", () => {
@@ -442,7 +389,7 @@ describe("timesheet entry lifecycle", () => {
     ).toBe(runningState);
   });
 
-  it("duplicates visible values without copying submission or source provenance", () => {
+  it("duplicates visible values without copying the committed copy or source provenance", () => {
     const state = createState({
       timesheetEntries: [
         {
@@ -456,8 +403,14 @@ describe("timesheet entry lifecycle", () => {
           durationMs: 60 * 60 * 1000,
           sourceBlockIds: ["block-1"],
           committedAt: 10,
-          submittedAt: 20,
-          submittedFingerprint: "submitted",
+          commit: {
+            at: 20,
+            localDate: "2026-07-30",
+            projectId: "project-1",
+            taskId: "task-1",
+            note: "Original",
+            durationMs: 60 * 60 * 1000,
+          },
         },
       ],
     });
@@ -482,9 +435,8 @@ describe("timesheet entry lifecycle", () => {
       note: "Visible edit",
       durationMs: 30 * 60 * 1000,
       sourceBlockIds: [],
-      submittedAt: undefined,
-      submittedFingerprint: undefined,
     });
+    expect(duplicated.timesheetEntries[1]).not.toHaveProperty("commit");
     expect(duplicated.workItems[0]).toMatchObject({
       remainingEstimateHours: 1.5,
       completedEstimateHours: 0.5,
@@ -524,7 +476,7 @@ describe("timesheet entry lifecycle", () => {
     });
   });
 
-  it("moves an entry without changing logged estimates and clears submission", () => {
+  it("moves an entry without changing logged estimates and keeps its committed copy", () => {
     const entry = {
       _id: "entry-1",
       localDate: "2026-07-30",
@@ -535,11 +487,15 @@ describe("timesheet entry lifecycle", () => {
       durationMs: 60 * 60 * 1000,
       sourceBlockIds: ["block-1"],
       committedAt: 10,
-      submittedAt: 20,
-      submittedFingerprint: "",
+      commit: {
+        at: 20,
+        localDate: "2026-07-30",
+        projectId: "project-1",
+        taskId: "task-1",
+        note: "Original",
+        durationMs: 60 * 60 * 1000,
+      },
     };
-    entry.submittedFingerprint =
-      createTimesheetEntrySubmissionFingerprint(entry);
     const baseline = createState();
     const state = createState({
       timesheetEntries: [entry],
@@ -568,8 +524,7 @@ describe("timesheet entry lifecycle", () => {
       localDate: "2026-07-31",
       sourceBlockIds: ["block-1"],
       committedAt: 300,
-      submittedAt: undefined,
-      submittedFingerprint: undefined,
+      commit: { localDate: "2026-07-30" },
     });
     expect(moved.workItems).toEqual(state.workItems);
   });
@@ -759,51 +714,6 @@ describe("selectMostRecentTimesheetEntry", () => {
       selectMostRecentTimesheetEntry(entries, "2026-10-11", "running")?._id,
     ).toBe("older");
     expect(selectMostRecentTimesheetEntry([], "2026-10-11")).toBeUndefined();
-  });
-});
-
-describe("markTimesheetEntriesNotSubmitted", () => {
-  /** Two saved entries, "a" and "b", both on 2026-07-30 for one hour. */
-  function savedEntries(): LocalAppState {
-    const values = {
-      localDate: "2026-07-30",
-      projectId: "project-1",
-      taskId: "task-1",
-      durationMs: 60 * 60 * 1000,
-    };
-    const withA = saveManualTimesheetEntry(createState(), values, {
-      createId: () => "a",
-      now: () => 100,
-    });
-    return saveManualTimesheetEntry(withA, values, {
-      createId: () => "b",
-      now: () => 100,
-    });
-  }
-
-  it("returns submitted entries to saved and keeps their old submission time", () => {
-    const state = markTimesheetEntriesSubmitted(
-      savedEntries(),
-      ["a"],
-      () => 200,
-    );
-    const next = markTimesheetEntriesNotSubmitted(state, ["a", "b"]);
-
-    expect(
-      next.timesheetEntries.find((item) => item._id === "a"),
-    ).toMatchObject({
-      submittedAt: undefined,
-      submittedFingerprint: undefined,
-      previousSubmittedAt: 200,
-    });
-    expect(next.timesheetEntries.find((item) => item._id === "b")).toEqual(
-      state.timesheetEntries.find((item) => item._id === "b"),
-    );
-  });
-
-  it("returns the same state when nothing was submitted", () => {
-    const state = savedEntries();
-    expect(markTimesheetEntriesNotSubmitted(state, ["b"])).toBe(state);
   });
 });
 

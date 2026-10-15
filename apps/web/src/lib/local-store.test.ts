@@ -2680,29 +2680,43 @@ describe("localStore workflow state sync", () => {
     expect(localStore.snapshot().timesheetTombstones).toEqual([]);
   });
 
-  it("marks selected timesheet entries as submitted", async () => {
+  it("migrates entries stored as submitted to committed copies on load", async () => {
+    window.localStorage.setItem(
+      "ajour.local-state.v2",
+      JSON.stringify({
+        timesheetEntries: [
+          {
+            _id: "submitted",
+            localDate: "2026-04-21",
+            label: "",
+            note: "Weekly sync",
+            durationMs: 3_600_000,
+            sourceBlockIds: [],
+            committedAt: 1,
+            submittedAt: 7,
+            submittedFingerprint: "old",
+          },
+          {
+            _id: "edited",
+            localDate: "2026-04-21",
+            label: "",
+            durationMs: 1_800_000,
+            sourceBlockIds: [],
+            committedAt: 2,
+            previousSubmittedAt: 7,
+          },
+        ],
+      }),
+    );
     const { localStore } = await import("./local-store");
+    const [submitted, edited] = localStore.snapshot().timesheetEntries;
 
-    const projectId = localStore.snapshot().projects[0]!._id;
-    localStore.addProjectTask(projectId, { name: "Submitted work" });
-    const taskId = localStore.snapshot().projects[0]!.tasks.at(-1)!._id;
-
-    localStore.saveManualTimeEntry({
-      localDate: "2026-04-21",
-      projectId,
-      taskId,
-      note: "Weekly sync",
-      durationMs: 60 * 60 * 1000,
+    expect(submitted).toMatchObject({
+      commit: { at: 7, localDate: "2026-04-21", note: "Weekly sync" },
     });
-
-    const entryId = localStore.snapshot().timesheetEntries[0]!._id;
-    localStore.markTimesheetEntriesSubmitted([entryId]);
-
-    expect(localStore.snapshot().timesheetEntries[0]).toMatchObject({
-      _id: entryId,
-      submittedAt: expect.any(Number),
-      submittedFingerprint: expect.any(String),
-    });
+    expect(submitted).not.toHaveProperty("submittedAt");
+    expect(edited!.commit).toBeUndefined();
+    expect(edited).not.toHaveProperty("previousSubmittedAt");
   });
 
   it("marks changes as committed, and Undo takes the commit back", async () => {
@@ -2725,70 +2739,6 @@ describe("localStore workflow state sync", () => {
     });
     expect(localStore.undo(token!)).toBe("restored");
     expect(localStore.snapshot().timesheetEntries[0]!.commit).toBeUndefined();
-  });
-
-  it("keeps submitted state when a timesheet entry is saved without changes", async () => {
-    const { localStore } = await import("./local-store");
-
-    const projectId = localStore.snapshot().projects[0]!._id;
-    localStore.addProjectTask(projectId, { name: "Stable work" });
-    const taskId = localStore.snapshot().projects[0]!.tasks.at(-1)!._id;
-
-    localStore.saveManualTimeEntry({
-      localDate: "2026-04-21",
-      projectId,
-      taskId,
-      note: "Keep submitted",
-      durationMs: 90 * 60 * 1000,
-    });
-
-    const entry = localStore.snapshot().timesheetEntries[0]!;
-    localStore.markTimesheetEntriesSubmitted([entry._id]);
-
-    const submittedEntry = localStore.snapshot().timesheetEntries[0]!;
-    localStore.updateTimesheetEntry(entry._id, {
-      projectId,
-      taskId,
-      note: "Keep submitted",
-      durationMs: 90 * 60 * 1000,
-    });
-
-    expect(localStore.snapshot().timesheetEntries[0]).toMatchObject({
-      _id: entry._id,
-      submittedAt: submittedEntry.submittedAt,
-      submittedFingerprint: submittedEntry.submittedFingerprint,
-    });
-  });
-
-  it("clears submitted state when a saved timesheet entry changes", async () => {
-    const { localStore } = await import("./local-store");
-
-    const projectId = localStore.snapshot().projects[0]!._id;
-    localStore.addProjectTask(projectId, { name: "Changed work" });
-    const taskId = localStore.snapshot().projects[0]!.tasks.at(-1)!._id;
-
-    localStore.saveManualTimeEntry({
-      localDate: "2026-04-21",
-      projectId,
-      taskId,
-      note: "Before change",
-      durationMs: 2 * 60 * 60 * 1000,
-    });
-
-    const entryId = localStore.snapshot().timesheetEntries[0]!._id;
-    localStore.markTimesheetEntriesSubmitted([entryId]);
-    localStore.updateTimesheetEntry(entryId, {
-      projectId,
-      taskId,
-      note: "After change",
-      durationMs: 2 * 60 * 60 * 1000,
-    });
-
-    expect(localStore.snapshot().timesheetEntries[0]).toMatchObject({
-      _id: entryId,
-      submittedAt: undefined,
-      submittedFingerprint: undefined,
-    });
   });
 
   it("recovers from malformed persisted JSON without overwriting it", async () => {

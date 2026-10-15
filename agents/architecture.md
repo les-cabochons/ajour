@@ -46,7 +46,7 @@ Current deep domain modules demonstrate this boundary:
 - `domain/pull-requests/pull-request-lifecycle.ts` owns provider-neutral pull request reconciliation, local settle and snooze choices, Returned, enabled-connection visibility and closed-item retention. Sync facts exclude bodies and diffs.
 - `domain/backlog/work-item-connector.ts` owns connector import, merge, disappearance, reactivation, and estimate-sync transitions.
 - `domain/projects/project-transitions.ts` owns project and task creation, legacy hydration, ordering, edits, and archive state.
-- `domain/time/timesheet-entry.ts` owns manual entry creation, edits, deletion, ordering, submission state, and the corresponding work-item estimate adjustments.
+- `domain/time/timesheet-entry.ts` owns manual entry creation, edits, deletion with its tombstone, ordering, marking as committed, the migration of stored submission fields, and the corresponding work-item estimate adjustments.
 - `domain/time/timesheet-import.ts` owns import normalization, conflict detection, draft review, project/task recovery, and single or batch commit.
 - `domain/time/timer-transitions.ts` owns timer hydration, start/edit/cancel/save/continue behavior, elapsed-time calculation, and replacement of continued entries. A running entry always starts on today, and a counted time correction restarts its count from the corrected value.
 - `domain/time/timeline-transitions.ts` owns imported browser review preservation, timeline materialization, dismissal, idempotent commits, and rule creation.

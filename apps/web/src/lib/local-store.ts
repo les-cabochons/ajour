@@ -82,8 +82,6 @@ import {
   deleteTimesheetEntry as applyDeleteTimesheetEntry,
   duplicateTimesheetEntry as applyDuplicateTimesheetEntry,
   markTimesheetEntriesCommitted as applyMarkTimesheetEntriesCommitted,
-  markTimesheetEntriesNotSubmitted as applyMarkTimesheetEntriesNotSubmitted,
-  markTimesheetEntriesSubmitted as applyMarkTimesheetEntriesSubmitted,
   moveTimesheetEntry as applyMoveTimesheetEntry,
   normalizeTimesheetEntry,
   reorderTimesheetEntries as applyReorderTimesheetEntries,
@@ -1696,7 +1694,7 @@ export const localStore = {
   },
   /**
    * Undoes the action that returned `token`, if it is still the last one.
-   * Restored records keep their ids, values, submission state and order.
+   * Restored records keep their ids, values, committed copies and order.
    */
   undo(token: string): UndoResult {
     if (lastUndo?.token !== token) {
@@ -1744,15 +1742,6 @@ export const localStore = {
       applySaveTimer(state, timerId, { createId, now: Date.now }),
     );
   },
-  markTimesheetEntriesSubmitted(entryIds: string[]) {
-    if (entryIds.length === 0) {
-      return;
-    }
-
-    updateState((state) =>
-      applyMarkTimesheetEntriesSubmitted(state, entryIds, Date.now),
-    );
-  },
   /**
    * Commits the changes of `entryIds`. See `markTimesheetEntriesCommitted`.
    * Returns an undo token, or null when nothing changed.
@@ -1760,16 +1749,6 @@ export const localStore = {
   markTimesheetEntriesCommitted(entryIds: readonly string[]) {
     return updateStateWithUndo((state) =>
       applyMarkTimesheetEntriesCommitted(state, entryIds, Date.now),
-    );
-  },
-  /** Returns entries to saved. See `markTimesheetEntriesNotSubmitted`. */
-  markTimesheetEntriesNotSubmitted(entryIds: string[]) {
-    if (entryIds.length === 0) {
-      return;
-    }
-
-    updateState((state) =>
-      applyMarkTimesheetEntriesNotSubmitted(state, entryIds),
     );
   },
   continueTimesheetEntry(entryId: string) {

@@ -21,7 +21,7 @@ Press **Save**, <kbd>Enter</kbd> or <kbd>⌘</kbd> <kbd>Enter</kbd>. To start th
 
 Click the entry's row in the [Day view](/time/day-view), or its cell or card in the [Week view](/time/week-view). The editor opens in the side panel.
 
-If the entry was submitted, editing it marks it as not submitted, so you remember to submit the change. See [Submit your week](/time/commit).
+If the entry was committed, the change shows on the Commit page until you commit it again. See [Commit your week](/time/commit).
 
 ## Copy and move entries
 

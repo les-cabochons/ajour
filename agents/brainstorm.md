@@ -28,9 +28,9 @@ only the generic contract and runtime surface.
   web-domain transitions continue to own project and task merging.
 - Timesheet import/export has a separate generic Excel workbook shape and a
   staged local review workflow.
-- Timesheet submission currently performs no external operation. It marks
-  selected local entries as submitted and clears that state if the submitted
-  data later changes.
+- Committing a week performs no external operation. It marks selected local
+  changes as committed by copying the entry values, and an edit shows as a
+  change until it is committed again.
 - The Plugins UI is generically named, but the only installable plugin contract
   is connector-specific: `.ajour-connector` packaging, connection fields,
   configuration validation, synchronization operations, API-side storage, and

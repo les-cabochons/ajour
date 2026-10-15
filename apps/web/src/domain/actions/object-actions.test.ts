@@ -62,21 +62,11 @@ describe("time entry actions", () => {
     expect(disabled[0]?.disabledReason).toBe("Stop the running entry first");
   });
 
-  it("keeps every action on a submitted entry and flags the ones that unsubmit it", () => {
-    const actions = getTimeEntryActions("submitted", { isToday: true });
+  it("gives a saved entry every action, without hints", () => {
+    const actions = getTimeEntryActions("saved", { isToday: true });
 
     expect(actions.every((action) => !action.disabledReason)).toBe(true);
-    expect(
-      actions.filter((action) => action.hint).map((action) => action.id),
-    ).toEqual(["continue", "move-to"]);
-  });
-
-  it("does not flag Continue on a submitted entry from another day", () => {
-    const continueAction = getTimeEntryActions("submitted", {
-      isToday: false,
-    }).find((action) => action.id === "continue");
-
-    expect(continueAction?.hint).toBeUndefined();
+    expect(actions.filter((action) => action.hint)).toEqual([]);
   });
 
   it("disables Edit, Continue and relocation inside an editor with an invalid draft", () => {
@@ -100,11 +90,8 @@ describe("time entry actions", () => {
     ).toBeUndefined();
   });
 
-  it("derives the action state from running and submitted flags", () => {
-    expect(getTimeEntryActionState({ isRunning: true, submittedAt: 1 })).toBe(
-      "running",
-    );
-    expect(getTimeEntryActionState({ submittedAt: 1 })).toBe("submitted");
+  it("derives the action state from the running flag", () => {
+    expect(getTimeEntryActionState({ isRunning: true })).toBe("running");
     expect(getTimeEntryActionState({})).toBe("saved");
   });
 });

@@ -9,7 +9,6 @@ import {
   getBacklogItemActions,
   getProjectActions,
   getTaskActions,
-  getTimeEntryActionState,
   getTimeEntryActions,
   type BacklogItemActionId,
   type ObjectAction,
@@ -486,7 +485,7 @@ function focusedSection(input: PaletteInput): PaletteSection | null {
           heading: describeEntry(entry, projects),
           items: toItems(
             prefix,
-            getTimeEntryActions(getTimeEntryActionState(entry), {
+            getTimeEntryActions("saved", {
               isToday: entry.localDate === input.today,
             }),
             (actionId) => ({

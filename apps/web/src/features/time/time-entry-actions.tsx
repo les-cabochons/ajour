@@ -20,7 +20,7 @@ import { offerUndo, skipUndo } from "@/features/feedback/undo-toast";
 import { localStore } from "@/lib/local-store";
 import { todayIsoDate } from "@/lib/utils";
 
-/** The object a time entry action applies to: a saved or submitted entry, or the running entry. */
+/** The object a time entry action applies to: a saved entry, or the running entry. */
 export type TimeEntryActionTarget =
   | { kind: "entry"; entry: LocalTimesheetEntry }
   | { kind: "running"; timerId: string };
@@ -113,10 +113,10 @@ export function useTimeEntryActions({
       return getTimeEntryActions("running", options);
     }
 
-    return getTimeEntryActions(
-      target.entry.submittedAt ? "submitted" : "saved",
-      { ...options, isToday: target.entry.localDate === todayIsoDate() },
-    );
+    return getTimeEntryActions("saved", {
+      ...options,
+      isToday: target.entry.localDate === todayIsoDate(),
+    });
   }
 
   function relocate(
