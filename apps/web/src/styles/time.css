@@ -758,7 +758,7 @@
 
   .weekly-days-column-header {
     display: flex;
-    align-items: baseline;
+    align-items: center;
     justify-content: space-between;
     gap: 0.5rem;
     height: 40px;
@@ -814,7 +814,7 @@
       var(--project-color, var(--border));
     border-radius: var(--radius-md);
     background: var(--background);
-    box-shadow: none;
+    font-size: var(--text-sm);
     cursor: pointer;
     outline: none;
   }
