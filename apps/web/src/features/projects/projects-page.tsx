@@ -2038,88 +2038,92 @@ export function ProjectsPage() {
 
   return (
     <div className="project-page">
-      {selectedProject ? (
-        <ProjectDetail
-          key={selectedProject._id}
-          project={selectedProject}
-          metrics={
-            metricsByProject.get(selectedProject._id) ?? {
-              durationMs: 0,
-              entryCount: 0,
-            }
-          }
-          taskMetrics={
-            taskMetricsByProject.get(selectedProject._id) ?? new Map()
-          }
-          entries={selectedEntries}
-          weekMs={weekMsByProject.get(selectedProject._id) ?? 0}
-          editingTaskId={visibleTaskEditor?.taskId}
-          onProjectAction={runProjectAction}
-          onOpenTask={(task) => openTaskEditor(selectedProject._id, task)}
-          onNewTask={() => openTaskEditor(selectedProject._id)}
-          onLeave={(event) => handleLeaveProjectClick(event, null)}
-          onAssignShortcut={(task) =>
-            setShortcutRequest({ projectId: selectedProject._id, task })
-          }
-        />
-      ) : (
-        <>
-          <PageHeader
-            title={isArchivePage ? "Archive" : "Projects"}
-            meta={listProjects.length}
-            actions={
-              <>
-                <DropdownMenu>
-                  <DropdownMenuTrigger
-                    render={
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        aria-label="Projects options"
-                      />
-                    }
-                  >
-                    <More className="size-4" />
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuItem render={<Link to="/settings/projects" />}>
-                      Import and export…
-                    </DropdownMenuItem>
-                  </DropdownMenuContent>
-                </DropdownMenu>
-                <Button
-                  type="button"
-                  size="lg"
-                  onClick={openCreateProjectModal}
-                >
-                  <Plus data-icon="inline-start" />
-                  New project
-                </Button>
-              </>
-            }
-          />
-          <ProjectsList
-            projects={listProjects}
-            archived={isArchivePage}
-            weekMsByProject={weekMsByProject}
-            taskMetricsByProject={taskMetricsByProject}
-            dragState={projectDragState}
-            pressedProjectId={pressedProjectId}
-            canReorder={canReorderProjects}
-            rowRefs={projectRowRefs}
-            onPointerDown={handleProjectPointerDown}
-            onOpen={(projectId) => {
-              if (performance.now() < suppressProjectClickUntilRef.current) {
-                return;
+      <div className="project-page-main">
+        {selectedProject ? (
+          <ProjectDetail
+            key={selectedProject._id}
+            project={selectedProject}
+            metrics={
+              metricsByProject.get(selectedProject._id) ?? {
+                durationMs: 0,
+                entryCount: 0,
               }
-              goToProject(projectId);
-            }}
+            }
+            taskMetrics={
+              taskMetricsByProject.get(selectedProject._id) ?? new Map()
+            }
+            entries={selectedEntries}
+            weekMs={weekMsByProject.get(selectedProject._id) ?? 0}
+            editingTaskId={visibleTaskEditor?.taskId}
             onProjectAction={runProjectAction}
-            onReorder={reorderProject}
-            onNewProject={openCreateProjectModal}
+            onOpenTask={(task) => openTaskEditor(selectedProject._id, task)}
+            onNewTask={() => openTaskEditor(selectedProject._id)}
+            onLeave={(event) => handleLeaveProjectClick(event, null)}
+            onAssignShortcut={(task) =>
+              setShortcutRequest({ projectId: selectedProject._id, task })
+            }
           />
-        </>
-      )}
+        ) : (
+          <>
+            <PageHeader
+              title={isArchivePage ? "Archive" : "Projects"}
+              meta={listProjects.length}
+              actions={
+                <>
+                  <DropdownMenu>
+                    <DropdownMenuTrigger
+                      render={
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          aria-label="Projects options"
+                        />
+                      }
+                    >
+                      <More className="size-4" />
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="end">
+                      <DropdownMenuItem
+                        render={<Link to="/settings/projects" />}
+                      >
+                        Import and export…
+                      </DropdownMenuItem>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                  <Button
+                    type="button"
+                    size="lg"
+                    onClick={openCreateProjectModal}
+                  >
+                    <Plus data-icon="inline-start" />
+                    New project
+                  </Button>
+                </>
+              }
+            />
+            <ProjectsList
+              projects={listProjects}
+              archived={isArchivePage}
+              weekMsByProject={weekMsByProject}
+              taskMetricsByProject={taskMetricsByProject}
+              dragState={projectDragState}
+              pressedProjectId={pressedProjectId}
+              canReorder={canReorderProjects}
+              rowRefs={projectRowRefs}
+              onPointerDown={handleProjectPointerDown}
+              onOpen={(projectId) => {
+                if (performance.now() < suppressProjectClickUntilRef.current) {
+                  return;
+                }
+                goToProject(projectId);
+              }}
+              onProjectAction={runProjectAction}
+              onReorder={reorderProject}
+              onNewProject={openCreateProjectModal}
+            />
+          </>
+        )}
+      </div>
 
       {draggedProject && projectDragState ? (
         <div
