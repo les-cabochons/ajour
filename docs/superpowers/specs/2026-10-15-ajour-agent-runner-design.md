@@ -257,3 +257,7 @@ One `agent.run` wide event per run: plugin ID, task ID, CLI, CLI version, browse
 2. Ajour: agent tasks in manifests, task settings, the runner with the Claude Code adapter, Settings > Agents, the Submit page button and week link, `mark_entries_not_submitted`, line IDs and pace.
 3. The Codex and OpenCode adapters, each after its smoke test passes.
 4. `les-cabochons/ajp-workday`: the manifest, the prompt and its release archive.
+
+## Smoke test results
+
+Not run yet. See `qa/agents/README.md`.
