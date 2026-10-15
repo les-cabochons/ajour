@@ -3459,6 +3459,72 @@ git commit -m "feat(plugins): rename the agent task placement to commit-week" -m
 
 ---
 
+### Task 8: Workday (agent) 0.4.0 commit prompt
+
+**Repo:** `/Users/a.trepanier/Repos/Personnal/ajp-workday-agent` (GitHub `les-cabochons/ajp-workday-agent`), new branch `feat/commit-week` from `main`.
+
+**Files:**
+- Create: `prompts/commit-week.md`
+- Delete: `prompts/enter-week.md`
+- Modify: `plugin.json`, `package.json`, `tests/manifest.test.mjs`, `README.md`
+
+**Interfaces:**
+- Consumes: Ajour MCP tools `get_week_changes { weekOf, onlyChecked }` and `mark_entries_committed { entryIds }` (Task 4), placement `commit-week` (Task 7). Each change has `change` (`added`, `updated`, `deleted`), `entryId`, `externalId`, current values and, for updated and deleted, committed values, each with `date`, `projectName`, `projectCode`, `projectFullName`, `projectProperties`, `taskName`, `hours`, `note`.
+
+- [ ] **Step 1: Manifest.** In `plugin.json` and `package.json`, set `version` to `0.4.0`. Replace the `enter-week` task with:
+
+```json
+{
+  "id": "commit-week",
+  "label": "Commit to Workday",
+  "placement": "commit-week",
+  "prompt": "prompts/commit-week.md",
+  "estimateMinutes": 10,
+  "weekLink": "{{settings.timesheetUrl}}",
+  "settings": [ <the two existing settings, unchanged> ]
+}
+```
+
+Keep `projectProperties` as is. Update `tests/manifest.test.mjs` so its placement assertion expects `commit-week`.
+
+- [ ] **Step 2: Prompt.** Create `prompts/commit-week.md` from `prompts/enter-week.md` (then `git rm` the old file). Keep, word for word, the sign-in steps, the decimal comma rule, the project matching rule (Workday code, then Workday name, then projectFullName, then projectCode when neither exists; never projectName), the "click the day" rule for opening the entry dialog, and the "never touch entries without one of your IDs" rule. Replace the reading, pace, entering and review sections with:
+
+```markdown
+## 1. Read the changes
+
+1. Send update_session: "Reading the changes for the week of {{weekOf}}."
+2. Call get_week_changes with weekOf {{weekOf}}. Each change is added, updated or deleted, with an entryId and an externalId. Updated and deleted changes also have the committed values: the day, project, task, hours and note Workday should have now.
+3. No change: end the session as done with "Nothing to commit." and stop.
+
+There is no pace check when committing.
+
+## 2. Apply each change
+
+Work day by day, Monday first. Send update_session when you start each day, for example "Tuesday: 2 changes."
+
+The comment of every entry you write is the note, then " · ", then the externalId. With no note, the comment is the externalId alone.
+
+- **Added**: look first for an entry on that day and time type whose comment ends with the externalId. Found with the same hours: it is already there. Otherwise add it as a new entry.
+- **Updated**: find the Workday entry whose comment ends with the externalId, on the committed day. When the day or the time type changed, delete it and add the entry on the new day with the new time type. Otherwise edit its hours and comment.
+- **Deleted**: find the Workday entry whose comment ends with the externalId, on the committed day, and delete it. Not found: it is already gone.
+
+After Workday saved a change, call mark_entries_committed with its entryId. Never mark a change you did not apply.
+
+An updated or deleted change whose entry you cannot find by its externalId: look on that day and time type for an entry with the committed hours. Exactly one: treat it as that entry. Otherwise ask, with the choices "Skip" and "Stop".
+
+## 3. Summary
+
+End the session with the number of entries added, updated and deleted, and each skipped change with its day, project, task and reason. For example: "Added 3, updated 1, deleted 1. Skipped 1: Wed, Acme · Support, not found in Workday."
+```
+
+- [ ] **Step 3: README.** Describe Commit to Workday instead of Enter in Workday: the agent adds, updates and deletes one Workday entry per Ajour entry, from the Commit page. State that 0.4.0 needs an Ajour with the Commit page.
+
+- [ ] **Step 4: Verify.** `corepack pnpm verify`. Then install the archive with Ajour's installer from this branch, with a throwaway script outside both repos, run from `apps/api` with `node --experimental-strip-types`: `installConnectorPluginArchive` must return version 0.4.0 with the `commit-week` task.
+
+- [ ] **Step 5: Commit, push, PR.** Conventional commit with the trailer, push `feat/commit-week`, open a PR against `main` titled `feat: commit changes to Workday`, naming the Ajour PR it depends on. Copy the archive to `~/Downloads/`.
+
+---
+
 ## Self-review
 
 **Spec coverage (slice 1):**
