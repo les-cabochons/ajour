@@ -357,6 +357,16 @@ Frequent in-app actions use single keys. They only work when focus is not in a t
 - The context menu key, Shift+F10 or "." opens the "…" menu. Escape closes whatever is open.
 - Every item in the "…" and right-click menus shows its key, so the menus teach the shortcuts.
 
+### Selecting, copying and pasting entries
+
+- The Day list and the Week Days cards select like a file explorer. A click selects one entry and focuses it, Cmd or Ctrl+click adds or removes one, and Shift+click selects the range from the last plain or Cmd click. Week ranges follow reading order: Monday's cards top to bottom, then Tuesday's. Keyboard focus moves a single selection with it.
+- A double click or Enter opens the editor, and Space does on Week cards. A single click no longer does. A tap on a touch screen still opens it. Week Grid cells keep their click.
+- Escape, a click on empty space, or showing another day or week clears the selection.
+- Cmd+C, Cmd+X and Delete act on every selected entry, with one Undo for Delete. The other item keys act on the focused entry. Copy and cut skip the running entry.
+- Ajour listens to the browser's copy, cut and paste events, so the desktop Edit menu works too, and text fields keep their own clipboard. The entries stay in memory, and their text summary goes on the system clipboard. Cmd+V pastes entries only while the system clipboard still holds that summary.
+- Cut entries stay dimmed until the paste moves them, like Move to…. Copies are new, unsubmitted entries. Pasted entries go to the top of their day in reading order.
+- Cmd+V on the Day view pastes on the shown day. On the Week view each entry keeps its weekday in the shown week. A right-click on a Days column's empty space offers Paste here and Paste on same weekdays.
+
 ### Command palette
 
 Cmd+K opens one palette with navigation, global actions, the focused item's actions, and search across projects, tasks and backlog items, so "Start Development" works from anywhere. The narrow view's future search button opens it. It replaces the Projects command dialog. Searching time entry notes is left for later.

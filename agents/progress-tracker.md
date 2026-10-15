@@ -4,6 +4,15 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Current Baseline
 
+- [x] Entry selection, copy, cut and paste (2026-10-15): a click selects a Day
+      row or Week Days card, a double click opens it, and Cmd/Ctrl+click and
+      Shift+click build multiple selections. Copy, cut and Delete act on every
+      selected entry; paste lands on the shown day or the same weekdays, and a
+      Days column's right-click menu offers both. Rules live in
+      `domain/time/entry-selection.ts` and `pasteTimesheetEntries`; the
+      clipboard in `lib/entry-clipboard.ts`; the shared hook in
+      `features/time/use-entry-selection.ts`. Five Chromium scenarios cover it.
+      Paired large-workspace samples stayed within the 10% budget.
 - [x] Compact Week Grid and row deletion (2026-10-15): seven 84px day columns
       and a 72px total column fit above an 820px content width. Delete row uses
       right-click or Shift+Backspace without an action icon. It saves a valid
