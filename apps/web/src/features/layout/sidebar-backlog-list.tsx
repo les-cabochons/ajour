@@ -427,15 +427,25 @@ function ParentLink({
  * The Comfortable row, laid out like a T3 Code thread: the project's icon and
  * name over the title, with the markers and the logged time at the end of the
  * project line, then the workflow state on a faint third line, which ends with
- * an arrow to the parent on a subitem. Hover and focus replace that end with Start entry, Snooze… and
- * Settle. Like the compact row, it re-renders for its own props only and
- * mounts its hover controls while hovered or focused.
+ * an arrow to the parent on a subitem. Hover and focus replace the end of the
+ * project line with Start entry, Snooze… and Settle. As the Up next row
+ * (`upNext`), it is highlighted and keeps a round Start entry button visible
+ * at its end instead. Like the compact row, it re-renders for its own props
+ * only and mounts its hover controls while hovered or focused.
  */
 const ComfortableItemRow = memo(function ComfortableItemRow(
-  props: ItemRowProps,
+  props: ItemRowProps & { upNext?: boolean },
 ) {
-  const { workItem, parent, project, workflowState, loggedMs, isActive, rows } =
-    props;
+  const {
+    workItem,
+    parent,
+    project,
+    workflowState,
+    loggedMs,
+    isActive,
+    rows,
+    upNext,
+  } = props;
   const { actions, onClick, onKeyDown } = useItemRowHandlers(props);
   const reveal = useHoverOrFocusWithin();
 
@@ -451,71 +461,88 @@ const ComfortableItemRow = memo(function ComfortableItemRow(
           data-focus-column="0"
           data-backlog-item-id={workItem._id}
           aria-current={isActive ? "page" : undefined}
+          aria-label={upNext ? `Up next: ${workItem.title}` : undefined}
           {...reveal.props}
           className={cn(
-            "group flex h-20 shrink-0 cursor-pointer flex-col justify-center gap-1 rounded-md px-2.5 outline-none hover:bg-foreground/5 focus-visible:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring",
-            isActive && "bg-foreground/[0.07]",
+            "group flex h-20 shrink-0 cursor-pointer items-center gap-2 rounded-md px-2.5 outline-none focus-visible:ring-1 focus-visible:ring-ring",
+            upNext
+              ? "bg-foreground/5 hover:bg-foreground/[0.08]"
+              : "hover:bg-foreground/5 focus-visible:bg-foreground/5",
+            isActive && (upNext ? "bg-foreground/10" : "bg-foreground/[0.07]"),
           )}
           onClick={onClick}
           onKeyDown={onKeyDown}
         />
       }
     >
-      <span className="flex h-5 items-center gap-1.5 text-sm text-muted-foreground">
-        {project ? (
-          <ProjectIcon
-            icon={project.icon}
-            color={project.color}
-            className="ajour-sidebar-icon shrink-0"
-          />
-        ) : null}
-        <span className="min-w-0 flex-1 truncate">
-          {project ? getLocalProjectDisplayName(project) : "No project"}
-        </span>
-        <span className="flex shrink-0 items-center gap-1.5 group-focus-within:hidden group-hover:hidden">
-          <Markers
-            workItem={workItem}
-            isRunning={props.isRunning}
-            isReturned={props.isReturned}
-          />
-          {loggedMs > 0 ? (
-            <Value tone="muted">{formatCompactDuration(loggedMs)}</Value>
+      <span className="flex min-w-0 flex-1 flex-col gap-1">
+        <span className="flex h-5 items-center gap-1.5 text-sm text-muted-foreground">
+          {project ? (
+            <ProjectIcon
+              icon={project.icon}
+              color={project.color}
+              className="ajour-sidebar-icon shrink-0"
+            />
+          ) : null}
+          <span className="min-w-0 flex-1 truncate">
+            {project ? getLocalProjectDisplayName(project) : "No project"}
+          </span>
+          <span className="flex shrink-0 items-center gap-1.5 group-focus-within:hidden group-hover:hidden">
+            <Markers
+              workItem={workItem}
+              isRunning={props.isRunning}
+              isReturned={props.isReturned}
+            />
+            {loggedMs > 0 ? (
+              <Value tone="muted">{formatCompactDuration(loggedMs)}</Value>
+            ) : null}
+          </span>
+          {reveal.active ? (
+            <RowActions
+              workItem={workItem}
+              actions={actions}
+              rows={rows}
+              showStart={!upNext}
+              showSettle
+              buttonClassName="size-5"
+              className="hidden group-focus-within:flex group-hover:flex"
+            />
           ) : null}
         </span>
-        {reveal.active ? (
-          <RowActions
+        <span
+          className={cn(
+            "truncate text-base leading-5",
+            props.isReturned && "font-semibold",
+          )}
+        >
+          {workItem.title}
+        </span>
+        {/* Kept empty without a state, so every row is the same height. */}
+        <span className="flex h-4 items-center gap-1.5 text-xs text-muted-foreground/70">
+          {workflowState ? (
+            <>
+              <span
+                className="backlog-state-dot size-2.5 opacity-70"
+                style={{ color: workflowState.color }}
+              />
+              <span className="min-w-0 truncate">{workflowState.name}</span>
+            </>
+          ) : null}
+          {parent ? (
+            <ParentLink parent={parent} rows={rows} revealed={reveal.active} />
+          ) : null}
+        </span>
+      </span>
+      {upNext ? (
+        <span onClick={(event) => event.stopPropagation()}>
+          <StartButton
             workItem={workItem}
             actions={actions}
             rows={rows}
-            showSettle
-            buttonClassName="size-5"
-            className="hidden group-focus-within:flex group-hover:flex"
+            variant="round"
           />
-        ) : null}
-      </span>
-      <span
-        className={cn(
-          "truncate text-base leading-5",
-          props.isReturned && "font-semibold",
-        )}
-      >
-        {workItem.title}
-      </span>
-      {/* Kept empty without a state, so every row is the same height. */}
-      <span className="flex h-4 items-center gap-1.5 text-xs text-muted-foreground/70">
-        {workflowState ? (
-          <>
-            <span
-              className="backlog-state-dot size-2.5 opacity-70"
-              style={{ color: workflowState.color }}
-            />
-            <span className="min-w-0 truncate">{workflowState.name}</span>
-          </>
-        ) : null}
-        {parent ? (
-          <ParentLink parent={parent} rows={rows} revealed={reveal.active} />
-        ) : null}
-      </span>
+        </span>
+      ) : null}
     </ObjectContextMenu>
   );
 });
@@ -595,8 +622,9 @@ const BacklogItemRow = memo(function BacklogItemRow(props: ItemRowProps) {
 });
 
 /**
- * The first item, highlighted above the list with its meta line and a Start
- * entry button that is always visible.
+ * The Compact Up next row: the first item, highlighted above the list with its
+ * meta line and a Start entry button that is always visible. Comfortable uses
+ * `ComfortableItemRow` with `upNext`.
  */
 const UpNextRow = memo(function UpNextRow(props: ItemRowProps) {
   const { workItem, parent, isActive, iconData, rows } = props;
@@ -900,7 +928,11 @@ export function SidebarBacklogList({
           <div className="px-2 pt-3 pb-1 text-xs font-medium text-muted-foreground">
             Up next
           </div>
-          <UpNextRow {...rowProps(upNext)} />
+          {layout.density === "comfortable" ? (
+            <ComfortableItemRow {...rowProps(upNext)} upNext />
+          ) : (
+            <UpNextRow {...rowProps(upNext)} />
+          )}
         </>
       ) : null}
 

@@ -549,7 +549,7 @@ Decided after the prototype on branch `prototype/backlog-sidebar`: variant B is 
 - A marker shows on the item with the running entry.
 - A dot shows on a returned item. Opening the item from anywhere, or clicking the dot, clears it.
 - Clicking a row opens the backlog item page.
-- With Show Up next on, the first item of the list shows above the Backlog section as a highlighted row: type icon, title, a meta line with the external id ("Local" for a manual item), the source state and the remaining estimate, such as "#48213 · Active · 2.5h left", and a Start entry button that is always visible. The Backlog section starts at the second item.
+- With Show Up next on, the first item of the list shows above the Backlog section as a highlighted row with a Start entry button that is always visible. The Backlog section starts at the second item. In Comfortable, the row has the same three lines as the other rows, and its hover actions are Snooze… and Settle. In Compact, it shows the type icon, the title and a meta line with the external id ("Local" for a manual item), the source state and the remaining estimate, such as "#48213 · Active · 2.5h left".
 - Right-click opens the full action set, as do ".", Shift+F10 and the context menu key. Sidebar backlog rows have no "…" button.
 - Pull request rows are one line too: the pull request icon, the title (bold when returned), and its reason and age, such as "Review · 2h". Hover and focus show "…".
 
