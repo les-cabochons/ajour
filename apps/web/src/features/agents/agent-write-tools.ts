@@ -45,6 +45,8 @@ export interface AgentWriteOutcome {
   objectTitle: string;
   /** For "Can't undo. The <subject> changed after that action." */
   undoSubject: string;
+  /** Synced items whose source write goes when the Undo window closes. */
+  sourceWriteIds?: string[];
 }
 
 /** Throws the action's disabled reason, or a refusal when the set lacks it. */

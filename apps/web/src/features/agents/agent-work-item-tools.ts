@@ -11,22 +11,32 @@ import {
   toAgentWorkItem,
 } from "@/domain/agents/agent-read-model";
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
-import { getOpenSubitems } from "@/domain/backlog/backlog-item-lifecycle";
+import type { BacklogSettleChange } from "@/domain/backlog/backlog-item-lifecycle";
 import type { WorkItemPatch } from "@/domain/backlog/work-item-transitions";
 import type { LocalAppState, LocalWorkItem } from "@/domain/local-state";
-import { canWriteToSource } from "@/features/backlog/backlog-source-writes";
+import {
+  moveBacklogItem,
+  resolveIncludeSubitems,
+  SourceStatesLoadError,
+  type SourceStateRequest,
+} from "@/features/backlog/backlog-item-moves";
+import type { CloseSubitemsVerb } from "@/features/backlog/close-subitems-dialog";
+import { getSettleBehavior } from "@/features/backlog/settle-dialog";
+import { findSettleState } from "@/features/backlog/settle-draft";
 import {
   assertAllowed,
   backlogActionOptions,
   requireProjectTask,
   type AgentWriteOutcome,
 } from "@/features/agents/agent-write-tools";
+import { listConnectorSettleStates } from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
 
 /**
- * Backlog item tools. Like the UI, they check the item's action set. In v1
- * they leave synced items that write their state to the source to the user,
- * because those moves can open a source state dialog.
+ * Backlog item tools. Like the UI, they check the item's action set, and
+ * moves and settles go through the UI's own move and settle rules. Where the
+ * UI opens a dialog, the agent's input answers it, or the tool refuses with
+ * the options so the agent can call again.
  */
 
 export const WORK_ITEM_WRITE_TOOLS = [
@@ -42,14 +52,6 @@ export const WORK_ITEM_WRITE_TOOLS = [
 ] as const satisfies readonly WriteToolName[];
 export type WorkItemWriteTool = (typeof WORK_ITEM_WRITE_TOOLS)[number];
 
-function refuseSourceWrites(item: LocalWorkItem) {
-  if (canWriteToSource(item)) {
-    throw new AgentToolRefusal(
-      "This item writes its state to its source, which can need a choice in Ajour. Ask the user to do it.",
-    );
-  }
-}
-
 function requireWorkflowState(state: LocalAppState, workflowStateId: string) {
   const workflowState = state.workflowStates.find(
     (candidate) => candidate._id === workflowStateId,
@@ -64,39 +66,88 @@ function requireWorkflowState(state: LocalAppState, workflowStateId: string) {
 
 /**
  * Whether a close or settle takes the item's open subitems along: the
- * agent's answer, else the user's setting. Refuses when the setting says Ask,
- * and when a carried subitem writes its state to its source.
+ * agent's answer, else the user's setting. Refuses when the setting says Ask.
  */
-function resolveIncludeSubitems(
-  state: LocalAppState,
+async function resolveAgentIncludeSubitems(
   item: LocalWorkItem,
-  verb: "settle" | "close",
+  verb: CloseSubitemsVerb,
   requested: boolean | undefined,
 ) {
-  const open = getOpenSubitems(state, item._id, verb);
-  if (open.length === 0) return false;
-  const include = requested ?? defaultIncludeSubitems(state, open.length);
-  // The UI writes each carried subitem's state to its source too.
-  if (include && open.some(canWriteToSource)) {
-    throw new AgentToolRefusal(
-      "A subitem writes its state to its source, which can need a choice in Ajour. Ask the user to do it.",
-    );
-  }
-  return include;
+  if (requested !== undefined) return requested;
+  const include = await resolveIncludeSubitems(
+    item,
+    verb,
+    async (_, subitems) => {
+      const count = subitems.length;
+      throw new AgentToolRefusal(
+        `This item has ${count} open ${count === 1 ? "subitem" : "subitems"}. Call again with includeSubitems true or false.`,
+      );
+    },
+  );
+  // Only a cancelled dialog answers null, and this ask has no dialog.
+  return include === true;
 }
 
-/** The user's setting for open subitems. Refuses when it says Ask. */
-function defaultIncludeSubitems(state: LocalAppState, openCount: number) {
-  switch (state.userPreferences.closeParentSubitems) {
-    case "include":
-      return true;
-    case "leave":
-      return false;
-    default:
-      throw new AgentToolRefusal(
-        `This item has ${openCount} open ${openCount === 1 ? "subitem" : "subitems"}. Call again with includeSubitems true or false.`,
-      );
+function refuseWithSourceStates(why: string, options: string[]): never {
+  throw new AgentToolRefusal(
+    `${why} Call again with sourceState, one of: ${options.join(", ")}.`,
+  );
+}
+
+/** Answers a move's source state question with the agent's sourceState. */
+const chooseMoveSourceState =
+  (requested: string | undefined) =>
+  async ({ workflowStateName, sourceStatusLabels }: SourceStateRequest) => {
+    const key = requested?.trim().toLowerCase();
+    return (
+      sourceStatusLabels.find((label) => label.trim().toLowerCase() === key) ??
+      refuseWithSourceStates(
+        `${workflowStateName} stands for more than one state in the item's source.`,
+        sourceStatusLabels,
+      )
+    );
+  };
+
+/**
+ * The settle's change to the source, as Settle in the UI decides it: none
+ * for an item that settles locally, the source project's settle rule, or the
+ * agent's sourceState where the UI would open the settle dialog. A
+ * sourceState also replaces the rule's state.
+ */
+async function resolveSettleChange(
+  item: LocalWorkItem,
+  requested: string | undefined,
+): Promise<BacklogSettleChange | undefined> {
+  const behavior = getSettleBehavior(item);
+  if (behavior.kind === "local") return undefined;
+  if (behavior.kind === "apply" && requested === undefined) {
+    return behavior.change;
   }
+  let states;
+  try {
+    ({ states } = await listConnectorSettleStates(
+      item.source,
+      item.sourceConnectionId!,
+      item.sourceId!,
+    ));
+  } catch (error) {
+    throw new AgentToolRefusal(
+      `Ajour couldn't load the item's source states: ${error instanceof Error ? error.message : "Unknown error"}`,
+    );
+  }
+  const found = findSettleState(states, requested);
+  if (!found) {
+    refuseWithSourceStates(
+      requested === undefined
+        ? "This item's source asks which state it settles in."
+        : `${requested} is not a state of this item's source.`,
+      states.map((state) => state.name),
+    );
+  }
+  return {
+    ...(behavior.kind === "apply" ? behavior.change : {}),
+    state: { name: found.name, done: found.done },
+  };
 }
 
 /** Reads the item back after the write, so the agent sees its new state. */
@@ -104,6 +155,7 @@ function outcome(
   workItemId: string,
   undoToken: string | null,
   action: string,
+  sourceWriteIds: string[] = [],
 ): AgentWriteOutcome {
   const after = localStore.snapshot();
   const item = findWorkItemOrRefuse(after, workItemId);
@@ -114,13 +166,14 @@ function outcome(
     objectId: item._id,
     objectTitle: item.title,
     undoSubject: "backlog item",
+    sourceWriteIds,
   };
 }
 
-export function runWorkItemWriteTool(
+export async function runWorkItemWriteTool(
   tool: WorkItemWriteTool,
   rawInput: unknown,
-): AgentWriteOutcome {
+): Promise<AgentWriteOutcome> {
   const state = localStore.snapshot();
   const now = Date.now();
   const actionsFor = (item: LocalWorkItem) =>
@@ -215,43 +268,66 @@ export function runWorkItemWriteTool(
       const input = writeToolInputSchemas.move_work_item.parse(rawInput);
       const item = findWorkItemOrRefuse(state, input.workItemId);
       const destination = requireWorkflowState(state, input.workflowStateId);
-      refuseSourceWrites(item);
-      const closes = destination.done === true && item.status !== "archived";
-      const includeSubitems = closes
-        ? resolveIncludeSubitems(state, item, "close", input.includeSubitems)
-        : false;
-      const undoToken = localStore.moveWorkItemToState(
-        item._id,
-        destination._id,
-        { includeSubitems },
-      );
-      const reopens = !destination.done && item.status === "archived";
-      return outcome(
-        item._id,
-        undoToken,
-        closes
-          ? `Closed in ${destination.name}`
-          : reopens
-            ? `Reopened in ${destination.name}`
-            : `Moved to ${destination.name}`,
-      );
+      let result;
+      try {
+        result = await moveBacklogItem(item, destination._id, {
+          includeSubitems: (target) =>
+            resolveAgentIncludeSubitems(target, "close", input.includeSubitems),
+          chooseSourceState: chooseMoveSourceState(input.sourceState),
+        });
+      } catch (error) {
+        if (!(error instanceof SourceStatesLoadError)) throw error;
+        throw new AgentToolRefusal(
+          `Ajour couldn't load the item's source states: ${error.message}`,
+        );
+      }
+      switch (result.kind) {
+        case "unchanged":
+          throw new AgentToolRefusal(
+            `The item is already in ${destination.name}.`,
+          );
+        case "cancelled":
+          throw new AgentToolRefusal(
+            "The item changed while Ajour prepared the move. Read it again with get_work_item.",
+          );
+        case "moved":
+          return outcome(
+            item._id,
+            result.undoToken,
+            result.title,
+            result.sourceWriteIds,
+          );
+      }
     }
 
     case "settle_work_item": {
       const input = writeToolInputSchemas.settle_work_item.parse(rawInput);
       const item = findWorkItemOrRefuse(state, input.workItemId);
       assertAllowed(actionsFor(item), "settle");
-      refuseSourceWrites(item);
-      const includeSubitems = resolveIncludeSubitems(
-        state,
+      const change = await resolveSettleChange(item, input.sourceState);
+      const includeSubitems = await resolveAgentIncludeSubitems(
         item,
         "settle",
         input.includeSubitems,
       );
-      const undoToken = localStore.settleWorkItem(item._id, undefined, {
+      const undoToken = localStore.settleWorkItem(item._id, change, {
         includeSubitems,
       });
-      return outcome(item._id, undoToken, "Settled a backlog item");
+      if (!undoToken) {
+        throw new AgentToolRefusal(
+          "The item changed while Ajour prepared the settle. Read it again with get_work_item.",
+        );
+      }
+      const settled = findWorkItemOrRefuse(localStore.snapshot(), item._id);
+      return outcome(
+        item._id,
+        undoToken,
+        settled.status === "archived"
+          ? "Archived a backlog item"
+          : "Settled a backlog item",
+        // Like the UI, the settle's source write goes when the Undo toast closes.
+        settled.pendingSourceWrite ? [item._id] : [],
+      );
     }
 
     case "snooze_work_item": {

@@ -140,6 +140,8 @@ const priorityInputSchema = z
   .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)])
   .nullable();
 const workItemIdInput = z.object({ workItemId: z.string() });
+/** A state name in the item's source, such as "In QA". */
+const sourceStateInputSchema = z.string().trim().min(1).max(120);
 
 /** Input schemas of the write tools, by MCP tool name. */
 export const writeToolInputSchemas = {
@@ -207,10 +209,14 @@ export const writeToolInputSchemas = {
     workItemId: z.string(),
     workflowStateId: z.string(),
     includeSubitems: z.boolean().optional(),
+    /** Read only when Ajour must pick among the item's source states. */
+    sourceState: sourceStateInputSchema.optional(),
   }),
   settle_work_item: z.object({
     workItemId: z.string(),
     includeSubitems: z.boolean().optional(),
+    /** For a synced item: the source state it settles in. */
+    sourceState: sourceStateInputSchema.optional(),
   }),
   unsettle_work_item: workItemIdInput,
   snooze_work_item: z.object({

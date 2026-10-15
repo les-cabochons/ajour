@@ -105,7 +105,7 @@ Each write checks the object's action set before it runs.
 - Entries: `create_entry`, `edit_entry`, `move_entry`, `duplicate_entry`, `mark_entries_submitted`. Editing a submitted entry marks it as not submitted, as in the UI.
 - Work items: `create_work_item`, `edit_work_item` (title, note, priority, estimate, project and task), `move_work_item` (workflow state), `settle_work_item`, `unsettle_work_item`, `snooze_work_item`, `unsnooze_work_item`, `archive_work_item`, `restore_work_item`.
 
-A settle or a move on a synced item writes to its source after the Undo window, as ADR 0001 says. Agent writes follow the same rule.
+A settle or a move on a synced item writes to its source after the Undo window, as ADR 0001 says. Agent writes follow the same rule. Where the UI opens the settle dialog or the source state dialog, the tool reads a `sourceState` input instead, and refuses with the list of source states when it is missing.
 
 ### Session
 

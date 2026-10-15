@@ -25,6 +25,7 @@ import {
   runWorkItemWriteTool,
   type WorkItemWriteTool,
 } from "@/features/agents/agent-work-item-tools";
+import { sendPendingSourceWrites } from "@/features/backlog/backlog-source-writes";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { localStore } from "@/lib/local-store";
 import { getIsoWeekDates } from "@/lib/utils";
@@ -100,9 +101,14 @@ function finishWrite(
   call: BridgeToolCall,
   outcome: AgentWriteOutcome,
 ): BridgeToolResult {
+  const sourceWriteIds = outcome.sourceWriteIds ?? [];
   offerUndo(outcome.undoToken, {
     title: `${call.client.name}: ${outcome.action}`,
     subject: outcome.undoSubject,
+    onWindowClosed:
+      sourceWriteIds.length > 0
+        ? () => void sendPendingSourceWrites(sourceWriteIds)
+        : undefined,
   });
   return {
     requestId: call.requestId,
@@ -116,7 +122,9 @@ function finishWrite(
   };
 }
 
-export function runAgentToolCall(call: BridgeToolCall): BridgeToolResult {
+export async function runAgentToolCall(
+  call: BridgeToolCall,
+): Promise<BridgeToolResult> {
   const refuse = (error: string): BridgeToolResult => ({
     requestId: call.requestId,
     ok: false,
@@ -135,7 +143,10 @@ export function runAgentToolCall(call: BridgeToolCall): BridgeToolResult {
       return finishWrite(call, runEntryWriteTool(call.tool, call.input));
     }
     if (isWorkItemWriteTool(call.tool)) {
-      return finishWrite(call, runWorkItemWriteTool(call.tool, call.input));
+      return finishWrite(
+        call,
+        await runWorkItemWriteTool(call.tool, call.input),
+      );
     }
     return refuse(`Ajour has no tool named ${call.tool}.`);
   } catch (error) {

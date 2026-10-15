@@ -1,13 +1,26 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-const { offerUndo, canWriteToSource } = vi.hoisted(() => ({
+const {
+  offerUndo,
+  canWriteToSource,
+  sendPendingSourceWrites,
+  listConnectorSettleStates,
+} = vi.hoisted(() => ({
   offerUndo: vi.fn(),
   canWriteToSource: vi.fn((_item: { title: string }) => false),
+  sendPendingSourceWrites: vi.fn(),
+  listConnectorSettleStates: vi.fn(),
 }));
 vi.mock("@/features/feedback/undo-toast", () => ({ offerUndo }));
 vi.mock("@/features/backlog/backlog-source-writes", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   canWriteToSource,
+  canWriteSettle: canWriteToSource,
+  sendPendingSourceWrites,
+}));
+vi.mock("@/lib/app-api", async (importOriginal) => ({
+  ...(await importOriginal<object>()),
+  listConnectorSettleStates,
 }));
 
 const client = { id: "c1", name: "Claude Code" };
@@ -61,13 +74,58 @@ beforeEach(() => {
   vi.resetModules();
   installMockWindow();
   offerUndo.mockClear();
+  sendPendingSourceWrites.mockClear();
   canWriteToSource.mockReturnValue(false);
+  listConnectorSettleStates.mockResolvedValue({
+    states: [
+      { name: "Active", category: "In progress", done: false },
+      { name: "Resolved", category: "Resolved", done: false },
+      { name: "In QA", category: "Resolved", done: false },
+      { name: "Closed", category: "Done", done: true },
+    ],
+  });
 });
+
+/** Imports one synced Azure DevOps item, in source state Active. */
+function importSyncedItem(
+  localStore: Awaited<ReturnType<typeof setup>>["localStore"],
+) {
+  localStore.importConnectorWorkItems([
+    {
+      id: "connector-1",
+      source: "azure_devops",
+      connectionId: "ado-1",
+      connectionLabel: "Main connection",
+      tenantLabel: "Contoso",
+      sourceId: "101",
+      externalId: "101",
+      sourceUrl: "https://dev.azure.com/contoso/project/_workitems/edit/101",
+      title: "Synced",
+      projectName: "Mercury",
+      workItemType: "Task",
+      state: "Active",
+      depth: 0,
+      selectable: true,
+      selected: true,
+      childCount: 0,
+      pushedAt: 1,
+    },
+  ]);
+  canWriteToSource.mockReturnValue(true);
+  return localStore
+    .snapshot()
+    .workItems.find((item) => item.title === "Synced")!._id;
+}
+
+/** Runs the Undo toast's window-closed callback of the last write. */
+function closeUndoWindow() {
+  offerUndo.mock.calls.at(-1)![1].onWindowClosed?.();
+}
 
 describe("agent read tools", () => {
   it("lists projects through the runner", async () => {
     const { call } = await setup();
-    const result = call("list_projects");
+    const result = await call("list_projects");
     expect(result.ok).toBe(true);
     expect(result.ok && result.output).toEqual(
       expect.arrayContaining([
@@ -81,7 +139,7 @@ describe("agent read tools", () => {
 
   it("refuses invalid input with the field and reason", async () => {
     const { call } = await setup();
-    const result = call("list_time_entries", {
+    const result = await call("list_time_entries", {
       from: "yesterday",
       to: "2026-10-14",
     });
@@ -94,7 +152,7 @@ describe("agent read tools", () => {
 
   it("refuses a tool Ajour does not have", async () => {
     const { call } = await setup();
-    expect(call("delete_everything")).toMatchObject({
+    expect(await call("delete_everything")).toMatchObject({
       ok: false,
       error: "Ajour has no tool named delete_everything.",
     });
@@ -105,7 +163,7 @@ describe("agent timer and entry tools", () => {
   it("starts an entry on a task, labels the Undo toast and can be undone", async () => {
     const { call, localStore, project, task } = await setup();
 
-    const result = call("start_timer", {
+    const result = await call("start_timer", {
       projectId: project._id,
       taskId: task("Build")._id,
       note: "Pairing",
@@ -125,7 +183,10 @@ describe("agent timer and entry tools", () => {
   it("refuses to start an entry on an archived task", async () => {
     const { call, project, task } = await setup();
     expect(
-      call("start_timer", { projectId: project._id, taskId: task("Old")._id }),
+      await call("start_timer", {
+        projectId: project._id,
+        taskId: task("Old")._id,
+      }),
     ).toMatchObject({ ok: false, error: "Restore the task first" });
   });
 
@@ -142,7 +203,7 @@ describe("agent timer and entry tools", () => {
     localStore.continueTimesheetEntry(entry._id);
 
     expect(
-      call("move_entry", { entryId: entry._id, date: "2026-01-05" }),
+      await call("move_entry", { entryId: entry._id, date: "2026-01-05" }),
     ).toMatchObject({ ok: false, error: "Stop the running entry first" });
   });
 
@@ -157,7 +218,7 @@ describe("agent timer and entry tools", () => {
     const entry = localStore.snapshot().timesheetEntries[0]!;
 
     expect(
-      call("edit_entry", {
+      await call("edit_entry", {
         entryId: entry._id,
         projectId: project._id,
         note: "Renamed",
@@ -184,7 +245,7 @@ describe("agent timer and entry tools", () => {
     const entry = localStore.snapshot().timesheetEntries[0]!;
 
     expect(
-      call("edit_entry", { entryId: entry._id, projectId: other._id }),
+      await call("edit_entry", { entryId: entry._id, projectId: other._id }),
     ).toMatchObject({ ok: true });
     expect(localStore.snapshot().timesheetEntries[0]).toMatchObject({
       projectId: other._id,
@@ -194,13 +255,16 @@ describe("agent timer and entry tools", () => {
 
   it("keeps the task when edit_running_entry repeats the current project", async () => {
     const { call, localStore, project, task } = await setup();
-    call("start_timer", {
+    await call("start_timer", {
       projectId: project._id,
       taskId: task("Build")._id,
     });
 
     expect(
-      call("edit_running_entry", { projectId: project._id, note: "Renamed" }),
+      await call("edit_running_entry", {
+        projectId: project._id,
+        note: "Renamed",
+      }),
     ).toMatchObject({ ok: true });
     expect(localStore.snapshot().timers[0]).toMatchObject({
       taskId: task("Build")._id,
@@ -210,7 +274,7 @@ describe("agent timer and entry tools", () => {
 
   it("creates an entry and marks it submitted", async () => {
     const { call, localStore, project, task } = await setup();
-    const created = call("create_entry", {
+    const created = await call("create_entry", {
       date: "2026-10-13",
       projectId: project._id,
       taskId: task("Build")._id,
@@ -224,7 +288,7 @@ describe("agent timer and entry tools", () => {
 
     const entryId = (created as { output: { entryId: string } }).output.entryId;
     expect(
-      call("mark_entries_submitted", { entryIds: [entryId] }),
+      await call("mark_entries_submitted", { entryIds: [entryId] }),
     ).toMatchObject({ ok: true });
     expect(
       localStore
@@ -247,10 +311,10 @@ describe("agent timer and entry tools", () => {
     };
 
     expect(
-      call("create_entry", { ...entry, workItemId: workItem._id }),
+      await call("create_entry", { ...entry, workItemId: workItem._id }),
     ).toMatchObject({ ok: false, error: "Restore the item first" });
     expect(
-      call("create_entry", { ...entry, workItemId: "missing" }),
+      await call("create_entry", { ...entry, workItemId: "missing" }),
     ).toMatchObject({
       ok: false,
       error: "No backlog item has the id missing. Call list_work_items.",
@@ -260,10 +324,10 @@ describe("agent timer and entry tools", () => {
 
   it("stops the running entry", async () => {
     const { call, localStore, project } = await setup();
-    call("start_timer", { projectId: project._id });
-    expect(call("stop_timer")).toMatchObject({ ok: true });
+    await call("start_timer", { projectId: project._id });
+    expect(await call("stop_timer")).toMatchObject({ ok: true });
     expect(localStore.snapshot().timers).toHaveLength(0);
-    expect(call("stop_timer")).toMatchObject({
+    expect(await call("stop_timer")).toMatchObject({
       ok: false,
       error: "No entry is running.",
     });
@@ -277,10 +341,10 @@ describe("agent work item tools", () => {
       .snapshot()
       .workflowStates.find((state) => state.done)!;
 
-    const created = call("create_work_item", { title: "Write the spec" });
+    const created = await call("create_work_item", { title: "Write the spec" });
     const workItemId = (created as { output: { workItemId: string } }).output
       .workItemId;
-    const moved = call("move_work_item", {
+    const moved = await call("move_work_item", {
       workItemId,
       workflowStateId: done._id,
     });
@@ -297,13 +361,18 @@ describe("agent work item tools", () => {
     const parentId = localStore.addWorkItem({ title: "Parent" });
     localStore.addWorkItem({ title: "Child", parentWorkItemId: parentId });
 
-    expect(call("settle_work_item", { workItemId: parentId })).toMatchObject({
+    expect(
+      await call("settle_work_item", { workItemId: parentId }),
+    ).toMatchObject({
       ok: false,
       error:
         "This item has 1 open subitem. Call again with includeSubitems true or false.",
     });
     expect(
-      call("settle_work_item", { workItemId: parentId, includeSubitems: true }),
+      await call("settle_work_item", {
+        workItemId: parentId,
+        includeSubitems: true,
+      }),
     ).toMatchObject({ ok: true });
     expect(
       localStore
@@ -316,34 +385,87 @@ describe("agent work item tools", () => {
     const { call, localStore } = await setup();
     const workItemId = localStore.addWorkItem({ title: "Later" });
     expect(
-      call("snooze_work_item", { workItemId, until: "2020-01-01T09:00:00Z" }),
+      await call("snooze_work_item", {
+        workItemId,
+        until: "2020-01-01T09:00:00Z",
+      }),
     ).toMatchObject({ ok: false, error: "Pick a time in the future." });
   });
 
-  it("leaves synced items that write to their source to the user", async () => {
+  it("settles a synced item in the source state the agent picks, and writes it after the Undo window", async () => {
     const { call, localStore } = await setup();
-    const workItemId = localStore.addWorkItem({ title: "Synced" });
-    canWriteToSource.mockReturnValue(true);
-    const target = localStore.snapshot().workflowStates[0]!;
+    const workItemId = importSyncedItem(localStore);
+
+    expect(await call("settle_work_item", { workItemId })).toMatchObject({
+      ok: false,
+      error:
+        "This item's source asks which state it settles in. Call again with sourceState, one of: Active, Resolved, In QA, Closed.",
+    });
+    expect(
+      await call("settle_work_item", { workItemId, sourceState: "in qa" }),
+    ).toMatchObject({ ok: true, output: { status: "settled" } });
+    const item = localStore
+      .snapshot()
+      .workItems.find((candidate) => candidate._id === workItemId)!;
+    expect(item.pendingSourceWrite).toMatchObject({ state: "In QA" });
+    expect(sendPendingSourceWrites).not.toHaveBeenCalled();
+    closeUndoWindow();
+    expect(sendPendingSourceWrites).toHaveBeenCalledWith([workItemId]);
+  });
+
+  it("moves a synced item in the source state the agent picks when its workflow state stands for several", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = importSyncedItem(localStore);
+    const review = localStore.addWorkflowState("Review", "#2563eb");
+    for (const sourceStatusLabel of ["Resolved", "In QA"]) {
+      localStore.setWorkflowStateMapping({
+        source: "azure_devops",
+        connectionId: "ado-1",
+        sourceStatusKey: sourceStatusLabel.toLowerCase(),
+        sourceStatusLabel,
+        workflowStateId: review,
+      });
+    }
+    localStore.setWorkflowStateWriteRule({
+      source: "azure_devops",
+      connectionId: "ado-1",
+      workflowStateId: review,
+      write: { kind: "ask" },
+    });
 
     expect(
-      call("move_work_item", { workItemId, workflowStateId: target._id }),
+      await call("move_work_item", { workItemId, workflowStateId: review }),
     ).toMatchObject({
       ok: false,
-      error: expect.stringContaining("writes its state to its source"),
+      error: expect.stringContaining("Call again with sourceState, one of:"),
     });
+    expect(
+      await call("move_work_item", {
+        workItemId,
+        workflowStateId: review,
+        sourceState: "In QA",
+      }),
+    ).toMatchObject({ ok: true, output: { workflowState: "Review" } });
+    const item = localStore
+      .snapshot()
+      .workItems.find((candidate) => candidate._id === workItemId)!;
+    expect(item.pendingSourceWrite).toMatchObject({ state: "In QA" });
+    closeUndoWindow();
+    expect(sendPendingSourceWrites).toHaveBeenCalledWith([workItemId]);
   });
 
   it("gives the action set's reason when the item is archived", async () => {
     const { call, localStore } = await setup();
     const workItemId = localStore.addWorkItem({ title: "Old" });
-    call("settle_work_item", { workItemId });
+    await call("settle_work_item", { workItemId });
 
-    expect(call("edit_work_item", { workItemId, title: "New" })).toMatchObject({
+    expect(
+      await call("edit_work_item", { workItemId, title: "New" }),
+    ).toMatchObject({
       ok: false,
       error: "Restore the item first",
     });
-    expect(call("restore_work_item", { workItemId })).toMatchObject({
+    expect(await call("restore_work_item", { workItemId })).toMatchObject({
       ok: true,
       output: { status: "active" },
     });
@@ -365,7 +487,7 @@ describe("agent work item tools", () => {
     });
 
     expect(
-      call("edit_work_item", { workItemId, projectId: other._id }),
+      await call("edit_work_item", { workItemId, projectId: other._id }),
     ).toMatchObject({ ok: true });
     const item = localStore
       .snapshot()
@@ -383,7 +505,7 @@ describe("agent work item tools", () => {
     });
 
     expect(
-      call("edit_work_item", {
+      await call("edit_work_item", {
         workItemId,
         projectId: project._id,
         title: "Renamed",
@@ -407,46 +529,19 @@ describe("agent work item tools", () => {
       .workflowStates.find((state) => state.done)!;
 
     expect(
-      call("create_work_item", { title: "Deep", parentWorkItemId: childId }),
+      await call("create_work_item", {
+        title: "Deep",
+        parentWorkItemId: childId,
+      }),
     ).toMatchObject({ ok: false, error: "Subitems can't have subitems" });
     expect(
-      call("create_work_item", { title: "Done", workflowStateId: done._id }),
+      await call("create_work_item", {
+        title: "Done",
+        workflowStateId: done._id,
+      }),
     ).toMatchObject({
       ok: false,
       error: expect.stringContaining("done state"),
     });
-  });
-
-  it("refuses to close a parent whose carried subitem writes to its source", async () => {
-    const { call, localStore } = await setup();
-    const parentId = localStore.addWorkItem({ title: "Parent" });
-    localStore.addWorkItem({
-      title: "Synced child",
-      parentWorkItemId: parentId,
-    });
-    canWriteToSource.mockImplementation(
-      (item: { title: string }) => item.title === "Synced child",
-    );
-    const done = localStore
-      .snapshot()
-      .workflowStates.find((state) => state.done)!;
-    const before = localStore.snapshot().workItems;
-
-    expect(
-      call("move_work_item", {
-        workItemId: parentId,
-        workflowStateId: done._id,
-        includeSubitems: true,
-      }),
-    ).toMatchObject({
-      ok: false,
-      error: expect.stringContaining(
-        "A subitem writes its state to its source",
-      ),
-    });
-    expect(
-      call("settle_work_item", { workItemId: parentId, includeSubitems: true }),
-    ).toMatchObject({ ok: false });
-    expect(localStore.snapshot().workItems).toEqual(before);
   });
 });
