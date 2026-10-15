@@ -118,7 +118,7 @@ The runner sends two layers, in this order:
 1. The runner prompt, owned by Ajour:
    - Use session `{{sessionId}}`. Send `update_session` at least every few minutes, and end it with a summary.
    - Ask only when you cannot go on. Offer choices.
-   - Never type a password, a code or any credential. When a sign-in page shows, ask the user to sign in in the Chrome window, with the choices Done and Stop.
+   - Never type a password, a one-time code or any other secret, and never approve a sign-in. A task may give sign-in steps that pick an account or type a username, so SSO can finish without the user when the browser profile still has a session. When the page asks for a password, a code or an approval, ask the user to sign in in the Chrome window, with the choices Done and Stop.
    - Mark each line's entries as submitted right after the external tool saved it. When a line fails, mark the entries you marked for it as not submitted.
 2. The task prompt from the plugin, with its slots filled.
 
@@ -171,7 +171,7 @@ The plugin prompt drives these steps. Ajour's tools make the steps that need ari
 
 1. Read `get_submit_lines` for the week, grouped by day and task, unsubmitted only. Nothing to enter: end the session as done, "Nothing to enter".
 2. Check `pace`. On pace: say nothing. Off pace: ask before entering, for example "You have 41.5 h this week, 4 over 37.5. Enter anyway?", with the choices Enter and Stop.
-3. Open `timesheetUrl` and go to the week. A sign-in page: ask, as the runner prompt says.
+3. Open `timesheetUrl` and go to the week. A sign-in page: pick the account or type the optional `username` setting, then ask as the runner prompt says if a password, code or approval is needed.
 4. For each line:
    - Find the project by name or code, and the task by name.
    - Look for an entry on that day and task whose comment ends with the line's ID. Found: it is already entered, so mark it and go on.
