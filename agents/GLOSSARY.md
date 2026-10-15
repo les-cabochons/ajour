@@ -147,8 +147,8 @@ A program driven by an LLM that uses Ajour through MCP, such as Claude Code or C
 One configured connection for an agent, with its own name and token, such as "Claude Code on this Mac".
 
 **Agent session**:
-A stretch of work an agent announces, with a title, a deadline it extends, progress updates and an outcome.
-_Avoid_: Transaction, run, job
+A stretch of work an agent announces, with a title, a deadline it extends, progress updates and an outcome. A runner-started session belongs to one Agent run.
+_Avoid_: Transaction, job
 
 **Question**:
 Something an agent asks the user during an agent session. It waits until the user answers.

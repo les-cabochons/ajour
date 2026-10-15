@@ -65,7 +65,10 @@ Code layout:
 - `apps/api/src/agent-runner/adapters/{claude-code,codex,opencode}.ts`: detect, build the command, read events.
 - `apps/api/src/agent-runner/cli-path.ts`: the login shell's PATH.
 - `apps/api/src/agent-runner/prompts.ts`: the runner prompt and slot filling.
-- `apps/api/src/agent-tasks.ts`: reads `agentTask` from installed plugin manifests, and stores task settings.
+- `apps/api/src/plugin-package.ts`: reads and validates `agentTask` prompts when a plugin loads.
+- `apps/api/src/plugin-host.ts`: `readAgentTaskPrompt` returns a task's prompt file.
+- `apps/api/src/agent-runner/runner.ts`: lists the tasks of enabled plugins, with their blockers.
+- `apps/api/src/storage.ts`: keeps the task setting values.
 - `packages/shared/agent-runs.ts`: the run, settings and route contracts.
 
 ## Agent tasks in plugins
