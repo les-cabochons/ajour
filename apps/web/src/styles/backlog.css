@@ -18,11 +18,15 @@
     overflow: hidden;
   }
 
-  /* The side panel takes 340px, so the centered columns use half of it less gutter. */
+  /* The centered columns give up half the side panel's width in gutter. The
+     backlog page sets --backlog-side-panel-width when its panel is resized. */
   .backlog-page-stack.has-side-panel {
     --app-workspace-content-gutter: max(
       0px,
-      calc(50vw - var(--app-centered-workspace-right-offset) - 170px)
+      calc(
+        50vw - var(--app-centered-workspace-right-offset) -
+          var(--backlog-side-panel-width, 340px) / 2
+      )
     );
   }
 
@@ -577,9 +581,30 @@
 
   /* -- Peek ------------------------------------------------------ */
 
+  /* The peek is a smaller item page: the same header, figures and sections,
+     stacked in one column. */
   .backlog-peek {
-    height: 100%;
-    overflow: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .backlog-peek .backlog-item-page-meta {
+    margin-top: 0.25rem;
+  }
+
+  /* Project and task read as values, like the state and priority pickers
+     beside them, and show their field only on hover and focus. */
+  .backlog-peek .searchable-select-input-group {
+    height: 1.75rem;
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .backlog-peek .searchable-select-input-group:hover,
+  .backlog-peek .searchable-select-input-group:focus-within {
+    border-color: var(--field-border);
+    background: var(--field-bg);
   }
 
   /* -- Carried from the editor and the icons --------------------- */

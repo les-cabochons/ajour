@@ -1,4 +1,11 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import {
   RiAddLine,
   RiArrowLeftLine,
@@ -72,6 +79,7 @@ import {
   handleItemKeyDown,
   OPEN_BACKLOG_ITEM_ACTION,
 } from "@/lib/item-keys";
+import { useSidePanelWidth } from "@/lib/side-panel-width";
 import { getSharedTableStepOrder } from "@/lib/table-drag";
 import {
   ITEM_SHORTCUTS,
@@ -501,12 +509,18 @@ export function BacklogPage() {
       ),
   ).size;
   const dragged = state.workItems.find((i) => i._id === drag.drag?.itemId);
+  const sidePanelWidth = useSidePanelWidth();
   return (
     <div
       className={cn(
         "backlog-page-stack backlog-workspace",
         (target || (!narrow && peek)) && !narrow && "has-side-panel",
       )}
+      style={
+        {
+          "--backlog-side-panel-width": `${sidePanelWidth}px`,
+        } as CSSProperties
+      }
     >
       <div className="backlog-page-main backlog-workspace-main">
         <PageHeader
@@ -790,6 +804,7 @@ export function BacklogPage() {
       {!narrow && (target || peek) && (
         <SidePanel
           contentKey={target ? `editor:${editorSerial}` : `peek:${peekId}`}
+          resizable
           className="backlog-side-panel"
           aria-label={target ? "Backlog item editor" : "Backlog item peek"}
         >

@@ -40,7 +40,6 @@ import {
 import {
   getLocalProjectDisplayName,
   type LocalWorkItem,
-  type LocalWorkItemEstimateFieldKey,
 } from "@/domain/local-state";
 import { formatClockDuration } from "@/domain/time/duration";
 import { settleOpensDialog } from "@/features/backlog/settle-dialog";
@@ -53,6 +52,10 @@ import {
   type BacklogItemEditorFormHandle,
 } from "@/features/backlog/backlog-item-editor-form";
 import type { BacklogTaskEditorTarget } from "@/features/backlog/backlog-task-editor";
+import {
+  ESTIMATE_FIGURES,
+  formatHours,
+} from "@/features/backlog/backlog-estimates";
 import { formatSnoozeTime } from "@/features/backlog/snooze-presets";
 import {
   WorkItemIcon,
@@ -70,20 +73,6 @@ import { cn } from "@/lib/utils";
 import { getPriorityLevelName } from "@/domain/backlog/priority";
 import { PriorityIcon } from "@/features/backlog/priority-icon";
 import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
-
-const ESTIMATE_FIGURES: {
-  key: LocalWorkItemEstimateFieldKey;
-  label: string;
-}[] = [
-  { key: "originalEstimateHours", label: "Original" },
-  { key: "remainingEstimateHours", label: "Remaining" },
-  { key: "completedEstimateHours", label: "Completed" },
-];
-
-function formatHours(hours?: number) {
-  if (hours === undefined) return "–";
-  return `${Number.isInteger(hours) ? hours : hours.toFixed(1)}h`;
-}
 
 /** The notice under the header when the item is off the list or came back. */
 function stateNotice(workItem: LocalWorkItem, now: number) {

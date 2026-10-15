@@ -940,6 +940,34 @@
     background: var(--surface-low);
     padding: 1rem;
   }
+  /* A resizable panel keeps its handle still and scrolls its content instead. */
+  .side-panel[data-resizable] {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    padding: 0;
+  }
+  .side-panel-scroll {
+    flex: 1 1 auto;
+    min-height: 0;
+    overflow-y: auto;
+    padding: 1rem;
+  }
+  .side-panel-resize-handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 0;
+    z-index: 20;
+    width: 6px;
+    cursor: col-resize;
+    touch-action: none;
+  }
+  .side-panel-resize-handle:hover,
+  .side-panel-resize-handle:focus-visible {
+    outline: none;
+    background: var(--focus-ring);
+  }
   .desktop-shell-app {
     --desktop-shell-chrome-height: 52px;
     height: 100dvh;
