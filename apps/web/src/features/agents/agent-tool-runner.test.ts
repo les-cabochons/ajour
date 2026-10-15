@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { dataToolOutputSchemas } from "@ajour/shared/agent-tools";
 
 type DataToolName = keyof typeof dataToolOutputSchemas;
@@ -83,6 +83,16 @@ async function setup() {
   };
   return { localStore, call, project, task };
 }
+
+// The first import of these heavy modules is slow and, under full-suite load,
+// used to eat the first test's timeout. Load them once here so the transform
+// cost is paid before any test starts. Each test still gets a fresh copy.
+beforeAll(async () => {
+  installMockWindow();
+  await import("@/lib/local-store");
+  await import("@/features/agents/agent-tool-runner");
+  await import("@/lib/app-api");
+}, 60_000);
 
 beforeEach(() => {
   vi.resetModules();
