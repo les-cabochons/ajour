@@ -51,7 +51,8 @@ Ajour is an operational desktop/web app. Build interfaces for scanning, repeated
 - Use semantic CSS variables from `agents/ui-tokens.md`.
 - The accent (`--primary`) marks primary buttons, focus, links and selected options. The active navigation row is a neutral tint.
 - Green means running. Red means destructive or failed. Amber with an icon means warning. Success results are plain text with a check icon, never a green box.
-- Workflow states and projects use their own colors as dots; nothing else is colored.
+- Change symbols on the Commit page carry their kind's color: Added green, Updated amber, Deleted red. Each kind also has its own icon shape.
+- Workflow states and projects use their own colors as dots. Apart from them and the change symbols, nothing else is colored.
 
 ## Interaction
 
