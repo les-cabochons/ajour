@@ -68,8 +68,6 @@ export class AgentSessions {
   private errors: AgentError[] = [];
   private seenAt = 0;
 
-  // No parameter property: Node runs the API with type stripping, which
-  // rejects that syntax.
   constructor(options: AgentSessionsOptions = {}) {
     this.options = options;
   }
@@ -252,21 +250,26 @@ export class AgentSessions {
     if (changed) this.changed();
   }
 
+  /** The client's newest open session, which its writes are filed under. */
+  currentSessionId(client: AgentClientRef): string | undefined {
+    return [...this.sessions.values()]
+      .reverse()
+      .find(
+        (candidate) => candidate.client.id === client.id && isOpen(candidate),
+      )?.id;
+  }
+
   /** Files an agent write under the client's newest open session, if any. */
   recordActivity(
     client: AgentClientRef,
     entry: Pick<AgentActivity, "tool" | "action" | "objectId" | "objectTitle">,
   ) {
-    const session = [...this.sessions.values()]
-      .reverse()
-      .find(
-        (candidate) => candidate.client.id === client.id && isOpen(candidate),
-      );
+    const sessionId = this.currentSessionId(client);
     this.activity = [
       {
         at: this.now(),
         client,
-        ...(session ? { sessionId: session.id } : {}),
+        ...(sessionId ? { sessionId } : {}),
         ...entry,
       },
       ...this.activity,

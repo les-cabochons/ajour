@@ -1,4 +1,10 @@
-import type { ReadToolInput } from "@ajour/shared/agent-tools";
+import type {
+  AgentRunningTimer,
+  AgentTimeEntry,
+  AgentWorkItem,
+  DataToolOutput,
+  ReadToolInput,
+} from "@ajour/shared/agent-tools";
 import { getTimeEntryActionState } from "@/domain/actions/object-actions";
 import {
   isBacklogItemSnoozed,
@@ -27,45 +33,10 @@ const HOUR = 3_600_000;
 const DAY = 86_400_000;
 const MAX_RANGE_DAYS = 62;
 
-interface AgentProjectRef {
-  projectId?: string;
-  projectName?: string;
-  taskId?: string;
-  taskName?: string;
-}
-
-export interface AgentRunningTimer extends AgentProjectRef {
-  timerId: string;
-  date: string;
-  countedMinutes: number;
-  note?: string;
-  workItemId?: string;
-  workItemTitle?: string;
-}
-
-export interface AgentTimeEntry extends AgentProjectRef {
-  entryId: string;
-  date: string;
-  state: "saved" | "submitted";
-  minutes: number;
-  note?: string;
-  workItemId?: string;
-}
-
-export interface AgentWorkItem extends AgentProjectRef {
-  workItemId: string;
-  title: string;
-  status: LocalWorkItem["status"];
-  workflowState?: string;
-  workflowStateId?: string;
-  /** 1 Urgent to 4 Low. Null is No priority. */
-  priority: number | null;
-  remainingEstimateHours?: number;
-  parentWorkItemId?: string;
-  source: string;
-  sourceProjectName?: string;
-  snoozedUntil?: string;
-}
+type AgentProjectRef = Pick<
+  AgentTimeEntry,
+  "projectId" | "projectName" | "taskId" | "taskName"
+>;
 
 function describeProjectTask(
   state: LocalAppState,
@@ -113,8 +84,11 @@ export function toAgentEntry(
   return {
     entryId: entry._id,
     date: entry.localDate,
-    state:
-      getTimeEntryActionState(entry) === "submitted" ? "submitted" : "saved",
+    state: state.timers.some((timer) => timer.entryId === entry._id)
+      ? "running"
+      : getTimeEntryActionState(entry) === "submitted"
+        ? "submitted"
+        : "saved",
     minutes: Math.round(entry.durationMs / MINUTE),
     ...(entry.note ? { note: entry.note } : {}),
     ...(entry.workItemId ? { workItemId: entry.workItemId } : {}),
@@ -131,7 +105,7 @@ export function listTimeEntriesForAgent(
   state: LocalAppState,
   { from, to }: ReadToolInput<"list_time_entries">,
   now: number,
-) {
+): DataToolOutput<"list_time_entries"> {
   const span = dayNumber(to) - dayNumber(from);
   if (span < 0) {
     throw new AgentToolRefusal("`from` must be on or before `to`.");
@@ -157,17 +131,21 @@ export function listTimeEntriesForAgent(
   };
 }
 
-export function listProjectsForAgent(state: LocalAppState) {
-  return state.projects
-    .filter((project) => project.status === "active")
-    .map((project) => ({
-      projectId: project._id,
-      name: getLocalProjectDisplayName(project),
-      ...(project.code ? { code: project.code } : {}),
-      tasks: project.tasks
-        .filter((task) => task.status === "active")
-        .map((task) => ({ taskId: task._id, name: task.name })),
-    }));
+export function listProjectsForAgent(
+  state: LocalAppState,
+): DataToolOutput<"list_projects"> {
+  return {
+    projects: state.projects
+      .filter((project) => project.status === "active")
+      .map((project) => ({
+        projectId: project._id,
+        name: getLocalProjectDisplayName(project),
+        ...(project.code ? { code: project.code } : {}),
+        tasks: project.tasks
+          .filter((task) => task.status === "active")
+          .map((task) => ({ taskId: task._id, name: task.name })),
+      })),
+  };
 }
 
 export function toAgentWorkItem(
@@ -210,7 +188,7 @@ export function listWorkItemsForAgent(
   state: LocalAppState,
   input: ReadToolInput<"list_work_items">,
   now: number,
-): AgentWorkItem[] {
+): DataToolOutput<"list_work_items"> {
   const base =
     input.filter === "sidebar"
       ? selectSidebarBacklogItems(state, now)
@@ -219,7 +197,7 @@ export function listWorkItemsForAgent(
         : state.workItems.filter((item) => item.status === input.filter);
   const text = input.text?.trim().toLowerCase();
 
-  return base
+  const workItems = base
     .filter(
       (item) =>
         (input.workflowStateId === undefined ||
@@ -229,6 +207,7 @@ export function listWorkItemsForAgent(
     )
     .slice(0, input.limit)
     .map((item) => toAgentWorkItem(state, item, now));
+  return { workItems };
 }
 
 export function findWorkItemOrRefuse(state: LocalAppState, workItemId: string) {
@@ -247,7 +226,7 @@ export function getWorkItemForAgent(
   state: LocalAppState,
   workItemId: string,
   now: number,
-) {
+): DataToolOutput<"get_work_item"> {
   const item = findWorkItemOrRefuse(state, workItemId);
   return {
     ...toAgentWorkItem(state, item, now),
@@ -274,7 +253,7 @@ export function getSubmitLinesForAgent(
     groupBy,
     onlyUnsubmitted,
   }: { weekDates: string[]; groupBy: SubmitGroupBy; onlyUnsubmitted: boolean },
-) {
+): DataToolOutput<"get_submit_lines"> {
   const weekDateSet = new Set(weekDates);
   const weekEntries = state.timesheetEntries.filter((entry) =>
     weekDateSet.has(entry.localDate),

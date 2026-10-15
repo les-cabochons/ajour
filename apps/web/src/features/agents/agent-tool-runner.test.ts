@@ -1,4 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { dataToolOutputSchemas } from "@ajour/shared/agent-tools";
+
+type DataToolName = keyof typeof dataToolOutputSchemas;
 
 const {
   offerUndo,
@@ -65,8 +68,19 @@ async function setup() {
   const task = (name: string) =>
     project.tasks.find((candidate) => candidate.name === name)!;
   let next = 0;
-  const call = (tool: string, input: unknown = {}) =>
-    runAgentToolCall({ requestId: `r${(next += 1)}`, tool, input, client });
+  // Every successful output must pass the schema the API checks it against.
+  const call = async (tool: string, input: unknown = {}) => {
+    const result = await runAgentToolCall({
+      requestId: `r${(next += 1)}`,
+      tool,
+      input,
+      client,
+    });
+    if (result.ok) {
+      dataToolOutputSchemas[tool as DataToolName].parse(result.output);
+    }
+    return result;
+  };
   return { localStore, call, project, task };
 }
 
@@ -127,14 +141,14 @@ describe("agent read tools", () => {
     const { call } = await setup();
     const result = await call("list_projects");
     expect(result.ok).toBe(true);
-    expect(result.ok && result.output).toEqual(
-      expect.arrayContaining([
+    expect(result.ok && result.output).toEqual({
+      projects: expect.arrayContaining([
         expect.objectContaining({
           name: "Acme",
           tasks: [expect.objectContaining({ name: "Build" })],
         }),
       ]),
-    );
+    });
   });
 
   it("refuses invalid input with the field and reason", async () => {
@@ -332,6 +346,33 @@ describe("agent timer and entry tools", () => {
       error: "No entry is running.",
     });
   });
+
+  it("duplicates an entry to another day and keeps the original", async () => {
+    const { call, localStore, project, task } = await setup();
+    localStore.saveManualTimeEntry({
+      localDate: "2026-10-13",
+      projectId: project._id,
+      taskId: task("Build")._id,
+      durationMs: 30 * 60_000,
+    });
+    const entry = localStore.snapshot().timesheetEntries[0]!;
+
+    expect(
+      await call("duplicate_entry", { entryId: entry._id, date: "2026-10-14" }),
+    ).toMatchObject({
+      ok: true,
+      output: { date: "2026-10-14", minutes: 30, state: "saved" },
+    });
+    expect(
+      localStore
+        .snapshot()
+        .timesheetEntries.map((candidate) => candidate.localDate)
+        .sort(),
+    ).toEqual(["2026-10-13", "2026-10-14"]);
+    expect(offerUndo.mock.calls.at(-1)![1].title).toBe(
+      "Claude Code: Duplicated an entry",
+    );
+  });
 });
 
 describe("agent work item tools", () => {
@@ -452,6 +493,52 @@ describe("agent work item tools", () => {
     expect(item.pendingSourceWrite).toMatchObject({ state: "In QA" });
     closeUndoWindow();
     expect(sendPendingSourceWrites).toHaveBeenCalledWith([workItemId]);
+  });
+
+  it("settles a synced item locally, then unsettles it", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = importSyncedItem(localStore);
+    // Its connector can't write, so Settle stays in Ajour.
+    canWriteToSource.mockReturnValue(false);
+
+    expect(await call("settle_work_item", { workItemId })).toMatchObject({
+      ok: true,
+      output: { status: "settled" },
+    });
+    expect(await call("unsettle_work_item", { workItemId })).toMatchObject({
+      ok: true,
+      output: { status: "active" },
+    });
+    expect(offerUndo.mock.calls.at(-1)![1].title).toBe(
+      "Claude Code: Unsettled a backlog item",
+    );
+  });
+
+  it("ends a snooze early", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = localStore.addWorkItem({ title: "Later" });
+    const until = new Date(Date.now() + 86_400_000).toISOString();
+
+    expect(await call("snooze_work_item", { workItemId, until })).toMatchObject(
+      { ok: true, output: { snoozedUntil: until } },
+    );
+    const unsnoozed = await call("unsnooze_work_item", { workItemId });
+    expect(unsnoozed).toMatchObject({ ok: true });
+    expect(unsnoozed.ok && unsnoozed.output).not.toHaveProperty("snoozedUntil");
+  });
+
+  it("archives a synced item and refuses Archive on a manual one", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = importSyncedItem(localStore);
+    const manualId = localStore.addWorkItem({ title: "Manual" });
+
+    expect(await call("archive_work_item", { workItemId })).toMatchObject({
+      ok: true,
+      output: { status: "archived" },
+    });
+    expect(
+      await call("archive_work_item", { workItemId: manualId }),
+    ).toMatchObject({ ok: false });
   });
 
   it("gives the action set's reason when the item is archived", async () => {

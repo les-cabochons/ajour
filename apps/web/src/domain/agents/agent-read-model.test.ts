@@ -149,13 +149,15 @@ describe("agent read model", () => {
   });
 
   it("lists only active projects and tasks", () => {
-    expect(listProjectsForAgent(createState())).toEqual([
-      {
-        projectId: "project-1",
-        name: "Acme",
-        tasks: [{ taskId: "task-1", name: "Build" }],
-      },
-    ]);
+    expect(listProjectsForAgent(createState())).toEqual({
+      projects: [
+        {
+          projectId: "project-1",
+          name: "Acme",
+          tasks: [{ taskId: "task-1", name: "Build" }],
+        },
+      ],
+    });
   });
 
   it("returns the sidebar work list by default, without snoozed items", () => {
@@ -163,7 +165,7 @@ describe("agent read model", () => {
       createState(),
       { filter: "sidebar", limit: 50 },
       NOW,
-    );
+    ).workItems;
     expect(items.map((item) => item.workItemId)).toEqual(["w1"]);
     expect(items[0]).toMatchObject({ workflowState: "To do", priority: 2 });
   });
@@ -174,7 +176,7 @@ describe("agent read model", () => {
         createState(),
         { filter: "all", text: "REVIEW", limit: 50 },
         NOW,
-      ).map((item) => item.workItemId),
+      ).workItems.map((item) => item.workItemId),
     ).toEqual(["w3"]);
   });
 

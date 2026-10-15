@@ -176,6 +176,10 @@ function resultText(result: Awaited<ReturnType<Client["callTool"]>>) {
   return first?.text ?? "";
 }
 
+const acmeProjects = {
+  projects: [{ projectId: "p1", name: "Acme", tasks: [] }],
+};
+
 describe("MCP settings routes", () => {
   it("keeps MCP off by default and turns it on", async () => {
     const { baseUrl } = await startTestApi();
@@ -285,7 +289,7 @@ describe("MCP endpoint", () => {
       return {
         requestId: call.requestId,
         ok: true,
-        output: { projects: ["Acme"] },
+        output: acmeProjects,
       };
     });
     const agent = await connectAgent(baseUrl, token);
@@ -295,7 +299,8 @@ describe("MCP endpoint", () => {
       arguments: {},
     });
 
-    expect(JSON.parse(resultText(result))).toEqual({ projects: ["Acme"] });
+    expect(result.structuredContent).toEqual(acmeProjects);
+    expect(JSON.parse(resultText(result))).toEqual(acmeProjects);
     expect(calls[0]).toMatchObject({
       tool: "list_projects",
       client: { name: "Claude Code" },
@@ -308,6 +313,35 @@ describe("MCP endpoint", () => {
       }),
     );
     expect(logged.every((event) => !("input" in event))).toBe(true);
+  });
+
+  it("reports renderer output that breaks the tool's output schema as an error", async () => {
+    const { baseUrl, logged } = await startTestApi();
+    const { token } = await enableMcpWithClient(baseUrl, "Claude Code");
+    const renderer = await openFakeRenderer(baseUrl, (call) => ({
+      requestId: call.requestId,
+      ok: true,
+      output: { projects: ["Acme"] },
+    }));
+    const agent = await connectAgent(baseUrl, token);
+
+    const result = await agent.callTool({
+      name: "list_projects",
+      arguments: {},
+    });
+
+    expect(result.isError).toBe(true);
+    expect(resultText(result)).toBe(
+      "Ajour returned list_projects output that does not match its schema.",
+    );
+    expect(logged).toContainEqual(
+      expect.objectContaining({
+        tool: "list_projects",
+        outcome: "error",
+        error_kind: "output_mismatch",
+      }),
+    );
+    await renderer.waitFor("agents", (data) => data.errors.length > 0);
   });
 
   it("lists the read and write tools and forwards a write with its input", async () => {
@@ -445,6 +479,13 @@ describe("agent sessions over MCP", () => {
     expect(published.data).toMatchObject({
       sessions: [{ title: "Fill Workday", state: "active" }],
     });
+    expect(logged).toContainEqual(
+      expect.objectContaining({
+        event: "mcp.request",
+        tool: "begin_session",
+        session_id: begun.sessionId,
+      }),
+    );
 
     await agent.callTool({
       name: "end_session",
@@ -598,7 +639,9 @@ describe("agent sessions over MCP", () => {
     const renderer = await openFakeRenderer(baseUrl, (call) => ({
       requestId: call.requestId,
       ok: true,
-      output: {},
+      output: {
+        running: { timerId: "t1", date: "2026-10-14", countedMinutes: 0 },
+      },
       activity: {
         action: "Started an entry",
         objectId: "t1",

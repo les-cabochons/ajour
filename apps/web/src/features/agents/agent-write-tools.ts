@@ -1,5 +1,6 @@
 import {
   writeToolInputSchemas,
+  type DataToolOutput,
   type WriteToolName,
 } from "@ajour/shared/agent-tools";
 import {
@@ -37,7 +38,8 @@ import { localStore } from "@/lib/local-store";
 const MINUTE = 60_000;
 
 export interface AgentWriteOutcome {
-  output: unknown;
+  /** The API checks it against the tool's output schema. */
+  output: DataToolOutput<WriteToolName>;
   undoToken: string | null;
   /** Past tense, shown in the Undo toast and the activity list. */
   action: string;
@@ -141,11 +143,19 @@ function entryActions(state: LocalAppState, entry: LocalTimesheetEntry) {
 }
 
 function entryTitle(state: LocalAppState, entry: LocalTimesheetEntry) {
-  const agentEntry = toAgentEntry(state, entry);
-  return (
-    [agentEntry.projectName, agentEntry.taskName].filter(Boolean).join(" · ") ||
-    entry.label
-  );
+  return projectTaskTitle(toAgentEntry(state, entry)) || entry.label;
+}
+
+/** "Acme · Build", as the Undo toast and the activity list name an entry. */
+function projectTaskTitle(value: { projectName?: string; taskName?: string }) {
+  return [value.projectName, value.taskName].filter(Boolean).join(" · ");
+}
+
+/** The running entry after a write that leaves one running. */
+function requireRunningTimer() {
+  const running = readRunningTimer(localStore.snapshot(), Date.now());
+  if (!running) throw new Error("No entry runs after the write.");
+  return running;
 }
 
 /** The entry `after` has and `before` lacks, for tools that create one. */
@@ -214,12 +224,12 @@ export function runEntryWriteTool(
       const { undoToken } = localStore.runWithUndo(() =>
         localStore.startTimer(draft),
       );
-      const running = readRunningTimer(localStore.snapshot(), Date.now());
+      const running = requireRunningTimer();
       return {
-        output: running,
+        output: { running },
         undoToken,
         action: "Started an entry",
-        objectId: running?.timerId ?? "",
+        objectId: running.timerId,
         objectTitle: title,
         undoSubject: "entry",
       };
@@ -238,9 +248,7 @@ export function runEntryWriteTool(
         undoToken,
         action: "Stopped the entry",
         objectId: timer._id,
-        objectTitle:
-          [running.projectName, running.taskName].filter(Boolean).join(" · ") ||
-          "Running entry",
+        objectTitle: projectTaskTitle(running) || "Running entry",
         undoSubject: "entry",
       };
     }
@@ -266,16 +274,13 @@ export function runEntryWriteTool(
             : {}),
         }),
       );
-      const running = readRunningTimer(localStore.snapshot(), Date.now());
+      const running = requireRunningTimer();
       return {
-        output: running,
+        output: { running },
         undoToken,
         action: "Edited the running entry",
         objectId: timer._id,
-        objectTitle:
-          [running?.projectName, running?.taskName]
-            .filter(Boolean)
-            .join(" · ") || "Running entry",
+        objectTitle: projectTaskTitle(running) || "Running entry",
         undoSubject: "entry",
       };
     }
@@ -386,12 +391,13 @@ export function runEntryWriteTool(
               (candidate) => candidate._id === entry._id,
             )
           : addedEntry(state, after);
+      if (!result) throw new Error("The entry is missing after the write.");
       return {
-        output: result ? toAgentEntry(after, result) : null,
+        output: toAgentEntry(after, result),
         undoToken,
         action:
           tool === "move_entry" ? "Moved an entry" : "Duplicated an entry",
-        objectId: result?._id ?? entry._id,
+        objectId: result._id,
         objectTitle: entryTitle(state, entry),
         undoSubject: "entry",
       };

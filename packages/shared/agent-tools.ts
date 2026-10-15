@@ -232,6 +232,143 @@ export type WriteToolInput<Name extends WriteToolName> = z.infer<
   (typeof writeToolInputSchemas)[Name]
 >;
 
+/** The project and task an entry or item is on, with their names. */
+const agentProjectRefShape = {
+  projectId: z.string().optional(),
+  projectName: z.string().optional(),
+  taskId: z.string().optional(),
+  taskName: z.string().optional(),
+};
+
+export const agentRunningTimerSchema = z.object({
+  ...agentProjectRefShape,
+  timerId: z.string(),
+  date: z.string(),
+  countedMinutes: z.number(),
+  note: z.string().optional(),
+  workItemId: z.string().optional(),
+  workItemTitle: z.string().optional(),
+});
+export type AgentRunningTimer = z.infer<typeof agentRunningTimerSchema>;
+
+export const agentTimeEntrySchema = z.object({
+  ...agentProjectRefShape,
+  entryId: z.string(),
+  date: z.string(),
+  /** Running when the running entry continues this saved entry. */
+  state: z.enum(["saved", "submitted", "running"]),
+  minutes: z.number(),
+  note: z.string().optional(),
+  workItemId: z.string().optional(),
+});
+export type AgentTimeEntry = z.infer<typeof agentTimeEntrySchema>;
+
+export const agentWorkItemSchema = z.object({
+  ...agentProjectRefShape,
+  workItemId: z.string(),
+  title: z.string(),
+  status: z.enum(["active", "settled", "archived"]),
+  workflowState: z.string().optional(),
+  workflowStateId: z.string().optional(),
+  /** 1 Urgent to 4 Low. Null is No priority. */
+  priority: z.number().nullable(),
+  remainingEstimateHours: z.number().optional(),
+  parentWorkItemId: z.string().optional(),
+  source: z.string(),
+  sourceProjectName: z.string().optional(),
+  snoozedUntil: z.string().optional(),
+});
+export type AgentWorkItem = z.infer<typeof agentWorkItemSchema>;
+
+const submitWarningSchema = z.discriminatedUnion("kind", [
+  z.object({
+    kind: z.literal("day-under-target"),
+    localDate: z.string(),
+    loggedMs: z.number(),
+    targetMs: z.number(),
+  }),
+  z.object({ kind: z.literal("missing-task"), entryCount: z.number() }),
+]);
+
+/**
+ * Output schemas of the read and write tools, by MCP tool name. The API
+ * checks each renderer result against its schema before the agent sees it.
+ */
+export const dataToolOutputSchemas = {
+  get_running_timer: z.object({ running: agentRunningTimerSchema.nullable() }),
+  list_time_entries: z.object({
+    entries: z.array(agentTimeEntrySchema),
+    running: agentRunningTimerSchema.nullable(),
+  }),
+  list_projects: z.object({
+    projects: z.array(
+      z.object({
+        projectId: z.string(),
+        name: z.string(),
+        code: z.string().optional(),
+        tasks: z.array(z.object({ taskId: z.string(), name: z.string() })),
+      }),
+    ),
+  }),
+  list_work_items: z.object({ workItems: z.array(agentWorkItemSchema) }),
+  get_work_item: agentWorkItemSchema.extend({
+    note: z.string().optional(),
+    sourceUrl: z.string().optional(),
+    subitems: z.array(
+      z.object({
+        workItemId: z.string(),
+        title: z.string(),
+        status: agentWorkItemSchema.shape.status,
+      }),
+    ),
+  }),
+  get_submit_lines: z.object({
+    sections: z.array(
+      z.object({
+        date: z.string().optional(),
+        lines: z.array(
+          z.object({
+            projectName: z.string().optional(),
+            taskName: z.string().optional(),
+            hours: z.number(),
+            comments: z.string(),
+            entryIds: z.array(z.string()),
+            unsubmittedEntryIds: z.array(z.string()),
+          }),
+        ),
+      }),
+    ),
+    summary: z.object({
+      totalHours: z.number(),
+      targetHours: z.number(),
+      warnings: z.array(submitWarningSchema),
+    }),
+  }),
+  start_timer: z.object({ running: agentRunningTimerSchema }),
+  stop_timer: z.object({
+    stopped: z.literal(true),
+    countedMinutes: z.number(),
+  }),
+  edit_running_entry: z.object({ running: agentRunningTimerSchema }),
+  create_entry: agentTimeEntrySchema,
+  edit_entry: agentTimeEntrySchema,
+  move_entry: agentTimeEntrySchema,
+  duplicate_entry: agentTimeEntrySchema,
+  mark_entries_submitted: z.object({ marked: z.number() }),
+  create_work_item: agentWorkItemSchema,
+  edit_work_item: agentWorkItemSchema,
+  move_work_item: agentWorkItemSchema,
+  settle_work_item: agentWorkItemSchema,
+  unsettle_work_item: agentWorkItemSchema,
+  snooze_work_item: agentWorkItemSchema,
+  unsnooze_work_item: agentWorkItemSchema,
+  archive_work_item: agentWorkItemSchema,
+  restore_work_item: agentWorkItemSchema,
+} as const satisfies Record<ReadToolName | WriteToolName, z.AnyZodObject>;
+export type DataToolOutput<Name extends ReadToolName | WriteToolName> = z.infer<
+  (typeof dataToolOutputSchemas)[Name]
+>;
+
 export const agentSessionMessageSchema = z.discriminatedUnion("kind", [
   z.object({ kind: z.literal("update"), at: z.number(), text: z.string() }),
   z.object({
@@ -350,6 +487,26 @@ export const sessionToolInputSchemas = {
   wait_for_answer: z.object({ questionId: z.string() }),
 } as const;
 export type SessionToolName = keyof typeof sessionToolInputSchemas;
+
+/** Output schemas of the session tools, which run in the API. */
+export const sessionToolOutputSchemas = {
+  begin_session: z.object({ sessionId: z.string(), deadline: z.string() }),
+  update_session: z.object({
+    state: agentSessionSchema.shape.state,
+    deadline: z.string().nullable(),
+  }),
+  end_session: z.object({ ended: z.literal(true) }),
+  ask: z.object({ questionId: z.string() }),
+  /** MCP output schemas are objects, so this is not a union. */
+  wait_for_answer: z.object({
+    status: z.enum(["answered", "waiting", "withdrawn"]),
+    /** Set when the status is answered. */
+    answer: z.string().optional(),
+  }),
+} as const satisfies Record<SessionToolName, z.AnyZodObject>;
+export type SessionToolOutput<Name extends SessionToolName> = z.infer<
+  (typeof sessionToolOutputSchemas)[Name]
+>;
 
 export const agentAnswerRequestSchema = z.object({
   text: z.string().trim().min(1).max(4000),

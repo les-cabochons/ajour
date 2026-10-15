@@ -3,12 +3,15 @@ import type { z } from "zod";
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
+  dataToolOutputSchemas,
   readToolInputSchemas,
   sessionToolInputSchemas,
+  sessionToolOutputSchemas,
   writeToolInputSchemas,
   type AgentClientRef,
   type ReadToolName,
   type SessionToolName,
+  type SessionToolOutput,
   type WriteToolName,
 } from "../../../packages/shared/agent-tools.ts";
 import { AgentSessionError, type AgentSessions } from "./agent-sessions.ts";
@@ -39,11 +42,26 @@ type SessionInput<Name extends SessionToolName> = z.infer<
   (typeof sessionToolInputSchemas)[Name]
 >;
 
-export interface ToolResult {
+interface ToolResult {
   [key: string]: unknown;
   content: { type: "text"; text: string }[];
+  structuredContent?: Record<string, unknown>;
   isError?: boolean;
 }
+
+/** The wide event each MCP call logs. Never a tool input or output. */
+type McpRequestEvent = {
+  event: "mcp.request";
+  client_id: string;
+  /** The client's newest open session when the call ended. */
+  session_id?: string;
+  tool: string;
+  outcome?: "ok" | "refused" | "error" | BridgeCallError["reason"];
+  /** Why an `error` outcome happened, when Ajour knows. */
+  error_kind?: "output_mismatch";
+  bridge_ms?: number;
+  duration_ms?: number;
+};
 
 /** What every agent reads first. Spec B's plugins add their own. */
 const AJOUR_INSTRUCTIONS = [
@@ -53,14 +71,14 @@ const AJOUR_INSTRUCTIONS = [
 ].join("\n");
 
 /** Tool descriptions, by tool name. */
-export const TOOL_DESCRIPTIONS: Record<
+const TOOL_DESCRIPTIONS: Record<
   ReadToolName | WriteToolName | SessionToolName,
   string
 > = {
   get_running_timer:
-    "The running entry, with its project, task, note and counted minutes. Null when nothing runs.",
+    "The running entry, with its project, task, note and counted minutes. `running` is null when nothing runs.",
   list_time_entries:
-    "Time entries between two dates (inclusive, at most 62 days), each with its state: saved or submitted. The running entry is returned separately.",
+    "Time entries between two dates (inclusive, at most 62 days), each with its state: saved, submitted, or running when the running entry continues it. The running entry itself is in `running`.",
   list_projects: "Active projects and their active tasks, with their ids.",
   list_work_items:
     "Backlog items. The default `sidebar` filter returns the user's current work list in their order. Filter by workflow state, project or text.",
@@ -105,30 +123,65 @@ export const TOOL_DESCRIPTIONS: Record<
     "Waits up to 50 seconds for the answer. Returns `waiting` if there is none yet: call it again. Returns `withdrawn` if the session ended.",
 };
 
-export function textResult(value: unknown): ToolResult {
-  return { content: [{ type: "text", text: JSON.stringify(value, null, 2) }] };
+/** The text copy of `value` is for clients that ignore structured content. */
+function structuredResult(value: Record<string, unknown>): ToolResult {
+  return {
+    content: [{ type: "text", text: JSON.stringify(value, null, 2) }],
+    structuredContent: value,
+  };
 }
 
-export function errorResult(message: string): ToolResult {
+function errorResult(message: string): ToolResult {
   return { content: [{ type: "text", text: message }], isError: true };
 }
 
-/** Sends a data tool to the renderer and logs one `mcp.request` event. */
-export async function forwardToRenderer(
+/** Runs one tool call and logs its `mcp.request` event when it ends. */
+async function withRequestEvent(
   tool: string,
-  input: unknown,
   client: AgentClientRef,
   context: McpRequestContext,
+  run: (event: McpRequestEvent) => Promise<ToolResult>,
 ): Promise<ToolResult> {
   const startedAt = Date.now();
-  // Wide event: one per call. It names the tool but never carries the input.
-  const event: Record<string, unknown> = {
+  const event: McpRequestEvent = {
     event: "mcp.request",
     client_id: client.id,
     tool,
   };
   try {
-    const result = await context.bridge.call(tool, input, client);
+    return await run(event);
+  } catch (error) {
+    event.outcome = "error";
+    throw error;
+  } finally {
+    const sessionId = context.sessions.currentSessionId(client);
+    if (sessionId) event.session_id = sessionId;
+    event.duration_ms = Date.now() - startedAt;
+    context.logEvent(event);
+  }
+}
+
+/**
+ * Sends a data tool to the renderer. Its output must match the tool's output
+ * schema. A mismatch is a bug in Ajour, so the indicator shows it.
+ */
+function forwardToRenderer(
+  tool: ReadToolName | WriteToolName,
+  input: unknown,
+  client: AgentClientRef,
+  context: McpRequestContext,
+): Promise<ToolResult> {
+  return withRequestEvent(tool, client, context, async (event) => {
+    const startedAt = Date.now();
+    let result;
+    try {
+      result = await context.bridge.call(tool, input, client);
+    } catch (error) {
+      if (!(error instanceof BridgeCallError)) throw error;
+      event.outcome = error.reason;
+      context.sessions.recordError(error.message, client);
+      return errorResult(error.message);
+    }
     event.bridge_ms = Date.now() - startedAt;
     if (!result.ok) {
       // A refusal is the tool working as designed. A failure is an exception
@@ -137,57 +190,44 @@ export async function forwardToRenderer(
       if (result.failed) context.sessions.recordError(result.error, client);
       return errorResult(result.error);
     }
+    const output = dataToolOutputSchemas[tool].safeParse(result.output);
+    if (!output.success) {
+      event.outcome = "error";
+      event.error_kind = "output_mismatch";
+      const message = `Ajour returned ${tool} output that does not match its schema.`;
+      context.sessions.recordError(message, client);
+      return errorResult(message);
+    }
     event.outcome = "ok";
     if (result.activity) {
       context.sessions.recordActivity(client, { tool, ...result.activity });
     }
-    return textResult(result.output);
-  } catch (error) {
-    if (error instanceof BridgeCallError) {
-      event.outcome = error.reason;
-      context.sessions.recordError(error.message, client);
-      return errorResult(error.message);
-    }
-    event.outcome = "error";
-    throw error;
-  } finally {
-    event.duration_ms = Date.now() - startedAt;
-    context.logEvent(event);
-  }
+    return structuredResult(output.data);
+  });
 }
 
-/** Runs a session tool in the API and logs one `mcp.request` event. */
-async function runSessionTool(
-  tool: SessionToolName,
+/** Runs a session tool in the API. */
+function runSessionTool<Name extends SessionToolName>(
+  tool: Name,
   client: AgentClientRef,
   context: McpRequestContext,
-  run: () => unknown | Promise<unknown>,
+  run: () => SessionToolOutput<Name> | Promise<SessionToolOutput<Name>>,
 ): Promise<ToolResult> {
-  const startedAt = Date.now();
-  const event: Record<string, unknown> = {
-    event: "mcp.request",
-    client_id: client.id,
-    tool,
-  };
-  try {
-    const output = await run();
-    event.outcome = "ok";
-    return textResult(output);
-  } catch (error) {
-    if (error instanceof AgentSessionError) {
+  return withRequestEvent(tool, client, context, async (event) => {
+    try {
+      const output = await run();
+      event.outcome = "ok";
+      return structuredResult(output);
+    } catch (error) {
+      if (!(error instanceof AgentSessionError)) throw error;
       event.outcome = "refused";
       return errorResult(error.message);
     }
-    event.outcome = "error";
-    throw error;
-  } finally {
-    event.duration_ms = Date.now() - startedAt;
-    context.logEvent(event);
-  }
+  });
 }
 
 /** Registers every tool for one request, bound to its client. */
-export function registerTools(
+function registerTools(
   server: McpServer,
   client: AgentClientRef,
   context: McpRequestContext,
@@ -198,6 +238,7 @@ export function registerTools(
       {
         description: TOOL_DESCRIPTIONS[name],
         inputSchema: readToolInputSchemas[name].shape,
+        outputSchema: dataToolOutputSchemas[name].shape,
       },
       // The SDK has already parsed `input` against this tool's schema. The
       // bridge only forwards it, so `unknown` is enough (and the union of
@@ -211,6 +252,7 @@ export function registerTools(
       {
         description: TOOL_DESCRIPTIONS[name],
         inputSchema: writeToolInputSchemas[name].shape,
+        outputSchema: dataToolOutputSchemas[name].shape,
       },
       async (input: unknown) => forwardToRenderer(name, input, client, context),
     );
@@ -223,6 +265,7 @@ export function registerTools(
   const sessionToolConfig = (name: SessionToolName) => ({
     description: TOOL_DESCRIPTIONS[name],
     inputSchema: sessionToolInputSchemas[name].shape,
+    outputSchema: sessionToolOutputSchemas[name].shape,
   });
   server.registerTool(
     "begin_session",
@@ -256,7 +299,7 @@ export function registerTools(
     async (input: SessionInput<"end_session">) =>
       runSessionTool("end_session", client, context, () => {
         sessions.end(client, input);
-        return { ended: true };
+        return { ended: true as const };
       }),
   );
   server.registerTool(

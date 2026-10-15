@@ -3,6 +3,7 @@ import {
   readToolInputSchemas,
   type BridgeToolCall,
   type BridgeToolResult,
+  type DataToolOutput,
   type ReadToolName,
 } from "@ajour/shared/agent-tools";
 import {
@@ -51,42 +52,41 @@ function formatZodError(error: ZodError) {
     .join(" ");
 }
 
-function runReadTool(tool: ReadToolName, rawInput: unknown): unknown {
-  const state = localStore.snapshot();
-  const now = Date.now();
-  switch (tool) {
-    case "get_running_timer":
-      return readRunningTimer(state, now);
-    case "list_time_entries":
-      return listTimeEntriesForAgent(
-        state,
-        readToolInputSchemas.list_time_entries.parse(rawInput),
-        now,
-      );
-    case "list_projects":
-      return listProjectsForAgent(state);
-    case "list_work_items":
-      return listWorkItemsForAgent(
-        state,
-        readToolInputSchemas.list_work_items.parse(rawInput),
-        now,
-      );
-    case "get_work_item":
-      return getWorkItemForAgent(
-        state,
-        readToolInputSchemas.get_work_item.parse(rawInput).workItemId,
-        now,
-      );
-    case "get_submit_lines": {
-      const input = readToolInputSchemas.get_submit_lines.parse(rawInput);
-      return getSubmitLinesForAgent(state, {
-        weekDates: getIsoWeekDates(input.weekOf),
-        groupBy: input.groupBy,
-        onlyUnsubmitted: input.onlyUnsubmitted,
-      });
-    }
-  }
-}
+/** Each read tool, typed against its output schema. */
+const readTools: {
+  [Name in ReadToolName]: (rawInput: unknown) => DataToolOutput<Name>;
+} = {
+  get_running_timer: () => ({
+    running: readRunningTimer(localStore.snapshot(), Date.now()),
+  }),
+  list_time_entries: (rawInput) =>
+    listTimeEntriesForAgent(
+      localStore.snapshot(),
+      readToolInputSchemas.list_time_entries.parse(rawInput),
+      Date.now(),
+    ),
+  list_projects: () => listProjectsForAgent(localStore.snapshot()),
+  list_work_items: (rawInput) =>
+    listWorkItemsForAgent(
+      localStore.snapshot(),
+      readToolInputSchemas.list_work_items.parse(rawInput),
+      Date.now(),
+    ),
+  get_work_item: (rawInput) =>
+    getWorkItemForAgent(
+      localStore.snapshot(),
+      readToolInputSchemas.get_work_item.parse(rawInput).workItemId,
+      Date.now(),
+    ),
+  get_submit_lines: (rawInput) => {
+    const input = readToolInputSchemas.get_submit_lines.parse(rawInput);
+    return getSubmitLinesForAgent(localStore.snapshot(), {
+      weekDates: getIsoWeekDates(input.weekOf),
+      groupBy: input.groupBy,
+      onlyUnsubmitted: input.onlyUnsubmitted,
+    });
+  },
+};
 
 function isEntryWriteTool(tool: string): tool is EntryWriteTool {
   return (ENTRY_WRITE_TOOLS as readonly string[]).includes(tool);
@@ -136,7 +136,7 @@ export async function runAgentToolCall(
       return {
         requestId: call.requestId,
         ok: true,
-        output: runReadTool(call.tool, call.input),
+        output: readTools[call.tool](call.input),
       };
     }
     if (isEntryWriteTool(call.tool)) {
