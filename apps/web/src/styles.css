@@ -674,8 +674,8 @@
     background: var(--popover);
   }
 
-  /* Narrow view titlebar: the Time and Backlog switcher. The active
-     section shows its label, the other only its icon. */
+  /* Narrow view navigation: the Time, Backlog and Settings toggle. The
+     active section shows its label, the others only their icon. */
   .ajour-narrow-switcher {
     display: inline-flex;
     flex-shrink: 0;
@@ -1838,11 +1838,6 @@
     white-space: nowrap;
   }
 
-  /* The date keeps its width; the running entry's title gives way first. */
-  .ajour-nav-main {
-    flex: 0 0 auto;
-  }
-
   .ajour-nav-return-today {
     display: inline-flex;
   }
@@ -1915,10 +1910,9 @@
   .profile-bar-stats {
     width: 100%;
   }
-  /* Grows to hold the running entry, which truncates its title first. */
   .global-timer {
     margin-left: auto;
-    flex: 1 1 auto;
+    flex: 0 0 auto;
     min-width: 0;
     max-width: none;
     gap: 0.5rem;
