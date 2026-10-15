@@ -10,8 +10,11 @@ export type NewEntryObjectRef =
 /** A New entry… request for the titlebar's entry editor host. */
 export interface NewEntryRequest {
   /** Project, task, note and backlog item link the form starts with. */
-  values: NewTimeEntryValues;
-  /** The row the popover anchors to. Null anchors it to the titlebar "+". */
+  values?: NewTimeEntryValues;
+  /**
+   * The row or button the popover anchors to. Null anchors it to the
+   * titlebar's totals.
+   */
   anchor: HTMLElement | null;
 }
 
@@ -26,7 +29,7 @@ export type ClipRect = Pick<DOMRect, "top" | "right" | "bottom" | "left">;
 /**
  * The row to anchor the popover to, when any of it shows inside every clip
  * rect (the viewport and each scroll container around the row). Otherwise
- * null, and the popover falls back to the titlebar "+". A row can be missing
+ * null, and the popover falls back to the titlebar's totals. A row can be missing
  * or scrolled away when the request comes from the command palette.
  */
 export function pickOnScreenAnchor<T extends AnchorCandidate>(
@@ -83,7 +86,7 @@ let requestListener: ((request: NewEntryRequest) => void) | null = null;
 /**
  * New entry… on a task or a backlog item. Opens the entry editor in the titlebar's
  * popover, anchored to the object's row while that row shows on screen, otherwise
- * to the titlebar "+". The narrow view opens the full-width dialog instead. Does
+ * to the titlebar's totals. The narrow view opens the full-width dialog instead. Does
  * nothing until the titlebar has mounted.
  */
 export function openNewEntryEditor(
@@ -93,6 +96,11 @@ export function openNewEntryEditor(
   const row = findObjectRow(object);
   const anchor = row ? pickOnScreenAnchor(row, getClipRects(row)) : null;
   requestListener?.({ values, anchor });
+}
+
+/** The timer dock's "+": a blank new entry, anchored to the button. */
+export function openBlankEntryEditor(anchor: HTMLElement) {
+  requestListener?.({ anchor });
 }
 
 /** Receives New entry… requests. Only the titlebar, which hosts the editor, listens. */

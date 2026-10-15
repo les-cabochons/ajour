@@ -5,6 +5,7 @@ import {
   type CSSProperties,
 } from "react";
 import {
+  RiAddLine as PlusIcon,
   RiPlayFill as PlayIcon,
   RiStopFill as StopIcon,
 } from "@remixicon/react";
@@ -19,6 +20,7 @@ import {
 import type { LocalWorkItem } from "@/domain/local-state";
 import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
 import type { TimeEntryEditorFields } from "@/features/time/time-entry-editor";
+import { openBlankEntryEditor } from "@/features/time/new-entry-request";
 import { TimeEntryEditorPopover } from "@/features/time/time-entry-editor-popover";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
@@ -37,8 +39,8 @@ const runningEntryEditorListeners = new Set<() => void>();
 
 /**
  * Opens or closes the running entry's editor on whichever host shows: the
- * sidebar's dock, the floating dock, or the narrow view's dialog. The
- * titlebar's Start opens it after starting an empty entry. Closing drops the
+ * sidebar's dock, the floating dock, or the narrow view's dialog. Start
+ * (`startBlankEntry`) opens it after starting an empty entry. Closing drops the
  * draft.
  */
 export function setRunningEntryEditorOpen(open: boolean) {
@@ -46,6 +48,15 @@ export function setRunningEntryEditorOpen(open: boolean) {
   if (runningEntryEditorOpen === open) return;
   runningEntryEditorOpen = open;
   runningEntryEditorListeners.forEach((listener) => listener());
+}
+
+/**
+ * Starts an empty running entry today, then opens it so the user can fill it
+ * in: on the sidebar's dock, or in the dialog in the narrow view.
+ */
+export function startBlankEntry() {
+  localStore.startTimer({});
+  setRunningEntryEditorOpen(true);
 }
 
 /**
@@ -122,6 +133,17 @@ export function useRunningEntry() {
   return { timer, summary, runningDurationMs, todayTotalMs };
 }
 
+const startRowClassName =
+  "flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md border pr-2 pl-1 text-left text-sm outline-none hover:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring";
+
+function StartIcon() {
+  return (
+    <span className="flex size-5 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-foreground text-background">
+      <PlayIcon className="size-3" />
+    </span>
+  );
+}
+
 function StopButton({
   timerId,
   className,
@@ -144,11 +166,29 @@ function StopButton({
   );
 }
 
+/** The dock's "+". It opens the new entry editor in a popover anchored to it. */
+function NewEntryButton({ className }: { className?: string }) {
+  return (
+    <TooltipButton
+      label="Create time entry"
+      shortcut="entry.new"
+      className={cn(
+        "flex size-7 shrink-0 items-center justify-center rounded-md border text-muted-foreground outline-none hover:bg-foreground/5 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring",
+        className,
+      )}
+      onClick={(event) => openBlankEntryEditor(event.currentTarget)}
+    >
+      <PlusIcon className="size-4" />
+    </TooltipButton>
+  );
+}
+
 /**
- * The top of the expanded sidebar. While an entry runs: its title, the time
- * counted, Stop, and how much of the item's remaining estimate it uses.
- * Clicking it opens the running entry's editor. Otherwise: today's total and a
- * one-click start for `upNext`.
+ * The timer box in the expanded sidebar. While an entry runs: its title, the
+ * time counted, "+", Stop, and how much of the item's remaining estimate it
+ * uses. Clicking it opens the running entry's editor. Otherwise: today's total,
+ * "+" and a one-click start for `upNext`, or for an empty entry when the
+ * backlog is empty.
  */
 export function TimerDock({ upNext }: { upNext?: LocalWorkItem }) {
   const { timer, summary, runningDurationMs, todayTotalMs } = useRunningEntry();
@@ -166,26 +206,39 @@ export function TimerDock({ upNext }: { upNext?: LocalWorkItem }) {
             Today {formatClockDuration(todayTotalMs)}
           </span>
         </div>
-        {upNext ? (
-          <button
-            type="button"
-            className="mt-2 flex h-7 w-full items-center gap-2 rounded-md border pr-2 pl-1 text-left text-sm outline-none hover:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring"
-            aria-label={`Start entry on ${upNext.title}`}
-            onClick={() =>
-              runBacklogItemAction(upNext, "start-entry", () => undefined)
-            }
-          >
-            <span className="flex size-5 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-foreground text-background">
-              <PlayIcon className="size-3" />
-            </span>
-            <span className="min-w-0 flex-1 truncate font-medium">
-              {upNext.title}
-            </span>
-            <span className="shrink-0 text-xs text-muted-foreground">
-              Up next
-            </span>
-          </button>
-        ) : null}
+        <div className="mt-2 flex gap-1.5">
+          <NewEntryButton />
+          {upNext ? (
+            <button
+              type="button"
+              className={startRowClassName}
+              aria-label={`Start entry on ${upNext.title}`}
+              onClick={() =>
+                runBacklogItemAction(upNext, "start-entry", () => undefined)
+              }
+            >
+              <StartIcon />
+              <span className="min-w-0 flex-1 truncate font-medium">
+                {upNext.title}
+              </span>
+              <span className="shrink-0 text-xs text-muted-foreground">
+                Up next
+              </span>
+            </button>
+          ) : (
+            <button
+              type="button"
+              className={startRowClassName}
+              aria-label="Start"
+              onClick={startBlankEntry}
+            >
+              <StartIcon />
+              <span className="min-w-0 flex-1 truncate text-muted-foreground">
+                Start an entry
+              </span>
+            </button>
+          )}
+        </div>
       </section>
     );
   }
@@ -203,7 +256,7 @@ export function TimerDock({ upNext }: { upNext?: LocalWorkItem }) {
         triggerLabel="Edit the running entry"
         triggerClassName="block w-full rounded-md p-2.5 text-left outline-none hover:bg-foreground/[0.03] focus-visible:ring-1 focus-visible:ring-ring"
       >
-        <span className="flex min-w-0 items-center gap-2 pr-8">
+        <span className="flex min-w-0 items-center gap-2 pr-16">
           <RunningDot />
           <span className="min-w-0 flex-1 truncate text-sm font-medium">
             {summary.title}
@@ -236,7 +289,10 @@ export function TimerDock({ upNext }: { upNext?: LocalWorkItem }) {
           </span>
         ) : null}
       </TimeEntryEditorPopover>
-      <StopButton timerId={timer._id} className="absolute top-2 right-2" />
+      <span className="absolute top-2 right-2 flex gap-1">
+        <NewEntryButton />
+        <StopButton timerId={timer._id} />
+      </span>
     </section>
   );
 }

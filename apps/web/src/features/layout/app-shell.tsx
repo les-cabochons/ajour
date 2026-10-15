@@ -36,6 +36,7 @@ import {
   RunningEntryWindowTitle,
   runningEntryDraftProps,
   setRunningEntryEditorOpen,
+  startBlankEntry,
   useRunningEntryEditor,
 } from "@/features/layout/timer-dock";
 import { AppMenuBar } from "@/features/layout/app-menu-bar";
@@ -435,20 +436,21 @@ function DayTotalsPill({
 /* ── Global Timer Bar ──────────────────────────────────────────────── */
 
 /**
- * Whether the titlebar has the "+" new entry editor open. The running entry's
- * editor state lives with the timer dock (`setRunningEntryEditorOpen`).
+ * Whether the new entry editor is open. The running entry's editor state lives
+ * with the timer dock (`setRunningEntryEditorOpen`).
  */
 type TitlebarEditor = "new" | null;
 
 /**
- * New entry (+), Start (▶) and the titlebar totals. The running entry lives in
- * the sidebar's timer dock; while the sidebar is off screen
- * (`showsFloatingDock`), the dock floats at the bottom left instead. Entry
- * controls float at the bottom right in the narrow view, with the floating
- * dock beside them. "+" and the dock open the entry editor in a popover
- * anchored to them, or in the dialog in the narrow view. New entry… on a task
- * or backlog item (`openNewEntryEditor`) opens the same popover, anchored to
- * its row. New entries default to today; the Start button starts one at once.
+ * The titlebar totals and the host of the new entry editor. The timer dock in
+ * the sidebar has the "+" and the start buttons; while the sidebar is off
+ * screen (`showsFloatingDock`), the running entry floats at the bottom left
+ * instead. In the narrow view, New entry (+) and Start (▶) float at the bottom
+ * right, with the floating dock beside them, and open the dialog. Elsewhere the
+ * editor opens in a popover anchored to where it was asked for: the dock's
+ * "+", or the task or backlog row of New entry… (`openNewEntryEditor`). N and
+ * requests whose row is off screen anchor it to the titlebar's totals. New
+ * entries default to today; Start starts one at once.
  */
 function GlobalTimerBar({
   date,
@@ -468,8 +470,11 @@ function GlobalTimerBar({
   const [editor, setEditor] = useState<TitlebarEditor>(null);
   /** The project and task a new entry starts with, such as a pinned task. */
   const [newEntryValues, setNewEntryValues] = useState<NewTimeEntryValues>();
-  /** The task or backlog row New entry… came from. Null anchors the popover to "+". */
+  /** The row or "+" the editor was asked from. Null anchors it to the totals. */
   const [newEntryAnchor, setNewEntryAnchor] = useState<HTMLElement | null>(
+    null,
+  );
+  const [totalsElement, setTotalsElement] = useState<HTMLElement | null>(
     null,
   );
 
@@ -528,15 +533,6 @@ function GlobalTimerBar({
     if (runningEditorOpen) setEditor(null);
   }, [runningEditorOpen]);
 
-  /**
-   * Starts an empty running entry today, then opens it so the user can fill it
-   * in: in the dialog in the narrow view, else on the timer dock.
-   */
-  function handleStartClick() {
-    localStore.startTimer({});
-    setRunningEntryEditorOpen(true);
-  }
-
   const handleEditorClose = useCallback(() => {
     setEditor(null);
   }, []);
@@ -545,51 +541,32 @@ function GlobalTimerBar({
     [],
   );
 
-  const controls = (
+  // The narrow view has no sidebar, so its entry buttons float on the page.
+  const narrowControls = (
     <div className="global-timer-controls">
-      <div
-        className={cn(
-          "quick-timer-button-group",
-          isDesktopShell && "desktop-no-drag",
-        )}
-      >
-        {isNarrowView ? (
-          <TooltipButton
-            className="quick-timer-group-button"
-            onClick={() => openNewEntry()}
-            label="Create time entry"
-            shortcut="entry.new"
-            side="top"
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </TooltipButton>
-        ) : (
-          <TimeEntryEditorPopover
-            target={newEntryTarget}
-            open={editor === "new"}
-            onOpenChange={(open) => (open ? openNewEntry() : setEditor(null))}
-            triggerLabel="Create time entry"
-            triggerClassName="quick-timer-group-button"
-            iconTrigger
-            triggerShortcut="entry.new"
-            anchor={newEntryAnchor}
-          >
-            <Plus className="h-3.5 w-3.5" />
-          </TimeEntryEditorPopover>
-        )}
+      <div className="quick-timer-button-group">
+        <TooltipButton
+          className="quick-timer-group-button"
+          onClick={() => openNewEntry()}
+          label="Create time entry"
+          shortcut="entry.new"
+          side="top"
+        >
+          <Plus className="h-3.5 w-3.5" />
+        </TooltipButton>
         {currentTimer ? null : (
           <TooltipButton
             className="quick-timer-group-button quick-timer-group-button-play"
-            onClick={handleStartClick}
+            onClick={startBlankEntry}
             label="Start"
             shortcut="entry.stop-or-start"
-            side={isNarrowView ? "top" : "bottom"}
+            side="top"
           >
             <Play className="h-3.5 w-3.5" />
           </TooltipButton>
         )}
       </div>
-      {currentTimer && isNarrowView ? (
+      {currentTimer ? (
         <div className="quick-timer-popup-anchor">
           <FloatingTimerDock
             onEdit={() => setRunningEntryEditorOpen(true)}
@@ -601,9 +578,20 @@ function GlobalTimerBar({
   );
 
   return (
-    <div className="global-timer">
+    <div className="global-timer" ref={setTotalsElement}>
       {/* The titlebar's backdrop filter would contain fixed-position children. */}
-      {isNarrowView ? createPortal(controls, document.body) : controls}
+      {isNarrowView ? createPortal(narrowControls, document.body) : null}
+      {isNarrowView ? null : (
+        <TimeEntryEditorPopover
+          target={newEntryTarget}
+          open={editor === "new"}
+          onOpenChange={(open) => {
+            if (!open) setEditor(null);
+          }}
+          triggerLabel="Create time entry"
+          anchor={newEntryAnchor ?? totalsElement}
+        />
+      )}
       {currentTimer && showsFloatingDock && !isNarrowView
         ? createPortal(
             <FloatingTimerDock

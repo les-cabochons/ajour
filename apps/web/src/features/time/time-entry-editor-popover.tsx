@@ -14,9 +14,10 @@ import type { TimeEntryEditorFields } from "@/features/time/time-entry-editor";
 import type { ShortcutActionId } from "@/lib/shortcuts";
 
 /**
- * Popover host for the entry editor, anchored to its trigger: the titlebar "+" and
- * the Running pill. New entry… on a task or backlog item passes `anchor`, its row,
- * instead. Like every host, it only supplies the container. Clicking outside does
+ * Popover host for the entry editor, anchored to its trigger, such as the timer
+ * dock. Without `children` it renders no trigger and shows at `anchor`: the
+ * titlebar's new entry host anchors to the row New entry… came from, the dock's
+ * "+" or the titlebar's totals. Like every host, it only supplies the container. Clicking outside does
  * nothing; Escape, ×, Cancel or the trigger close it and drop the draft. The form
  * mounts each time the popover opens, so every opening starts fresh.
  */
@@ -46,14 +47,15 @@ export function TimeEntryEditorPopover({
   triggerShortcut?: ShortcutActionId;
   /**
    * Where the popover shows instead of the trigger, such as the task or backlog
-   * row that New entry… came from. Closing gives focus back to it.
+   * row that New entry… came from. Closing gives focus back to it when it can
+   * take focus.
    */
   anchor?: HTMLElement | null;
   /** An unsaved draft carried over from another host, such as the dialog. */
   initialFields?: TimeEntryEditorFields;
   onFieldsChange?: (fields: TimeEntryEditorFields) => void;
-  /** The trigger button's content. */
-  children: ReactNode;
+  /** The trigger button's content. Leave it out to show the popover at `anchor` only. */
+  children?: ReactNode;
 }) {
   return (
     <Popover
@@ -68,7 +70,7 @@ export function TimeEntryEditorPopover({
         onOpenChange(nextOpen);
       }}
     >
-      {iconTrigger ? (
+      {children === undefined ? null : iconTrigger ? (
         <TooltipButton
           label={triggerLabel}
           shortcut={triggerShortcut}
@@ -86,8 +88,8 @@ export function TimeEntryEditorPopover({
         align="end"
         sideOffset={8}
         anchor={anchor ?? undefined}
-        // Without an anchor, Base UI gives focus back to the trigger.
-        finalFocus={anchor ? () => anchor : undefined}
+        // Otherwise Base UI gives focus back to the trigger, or to where it was.
+        finalFocus={anchor && canTakeFocus(anchor) ? () => anchor : undefined}
       >
         {target ? (
           <TimeEntryEditorForm
@@ -110,4 +112,9 @@ export function TimeEntryEditorPopover({
       </PopoverContent>
     </Popover>
   );
+}
+
+/** Buttons, links and rows with a tabindex, unlike the titlebar's totals area. */
+function canTakeFocus(element: HTMLElement) {
+  return element.tabIndex >= 0 || element.hasAttribute("tabindex");
 }
