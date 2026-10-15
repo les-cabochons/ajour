@@ -745,6 +745,12 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] The pin-icon assertion now waits for the menu to close and moves focus to Search before checking markers, avoiding the menu's focus-restoration race.
 - [x] Verification passed: 1,090 unit tests, all 152 Chromium acceptance scenarios, workspace typecheck and package boundaries. Application production builds passed with the docs workspace excluded because VitePress is not installed locally. Browser inspection confirmed the pinned item first, 80px Comfortable rows, and the new idle dock.
 
+## Hide non-working days, 2026-10-15
+
+- [x] Added General Settings > Time capacity > Hide non-working days, off by default and saved locally. Zero-capacity weekdays and weekends leave the Day strip and both Week layouts. Working weekends remain visible.
+- [x] Preserved weekly and row totals, including logged and running time on hidden days. Grid cell arrays stay aligned with visible dates. A week with no capacity shows an explanation.
+- [x] Verification passed: 910 web unit tests, 13 related Chromium acceptance scenarios, workspace typecheck and package boundaries, web production build, and formatting checks for changed files. Inspected Settings, both Week layouts, and the Day strip at 390px in a browser.
+
 ## Narrow view floating navigation, 2026-10-15
 
 - [x] The narrow view's titlebar holds the date, New entry, Start, then the totals pill. Start turns into Stop while an entry runs. The entry buttons left the floating bottom-right group.

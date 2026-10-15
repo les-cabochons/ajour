@@ -18,7 +18,7 @@ function formatDayNumber(localDate: string) {
 }
 
 /**
- * The Day view's week strip: one tab per day with its total, and the week's
+ * The Day view's week strip: one tab per visible day with its total, and the week's
  * total at the end. The selected day is underlined; today's number is bold.
  * The date itself and the arrows live in the top bar.
  */
@@ -40,7 +40,16 @@ export function DayStrip({
   onSelectDate: (localDate: string) => void;
 }) {
   return (
-    <div className="day-strip" role="tablist" aria-label="Days of the week">
+    <div
+      className="day-strip"
+      style={{
+        gridTemplateColumns: weekDates.length
+          ? `repeat(${weekDates.length}, minmax(0, 1fr)) auto`
+          : "auto",
+      }}
+      role="tablist"
+      aria-label="Days of the week"
+    >
       {weekDates.map((day) => {
         const isSelected = day === date;
         const isToday = day === today;

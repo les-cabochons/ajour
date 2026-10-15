@@ -207,6 +207,8 @@ export interface UserPreferences {
   projectDataShapeId: string;
   weeklyTimeViewStyle: WeeklyTimeViewStyle;
   weeklyCapacityTargets: WeeklyCapacityTargets;
+  /** Hide zero-capacity days in the Time page's day strip and Week layouts. */
+  hideNonWorkingDays?: boolean;
   warnWhenOverCapacity: boolean;
   warnWhenSubmittingUnderCapacity: boolean;
   changesEndSnoozeEarly?: boolean;

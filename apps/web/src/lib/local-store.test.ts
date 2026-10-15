@@ -1406,6 +1406,30 @@ describe("localStore workflow state sync", () => {
     });
   });
 
+  it.each([undefined, false, "true", 1])(
+    "defaults hideNonWorkingDays to false for a missing or invalid value %s",
+    async (hideNonWorkingDays) => {
+      window.localStorage.setItem(
+        "ajour.local-state.v2",
+        JSON.stringify({ userPreferences: { hideNonWorkingDays } }),
+      );
+      const { localStore } = await import("./local-store");
+      expect(localStore.snapshot().userPreferences.hideNonWorkingDays).toBe(
+        false,
+      );
+    },
+  );
+
+  it("preserves the hide non-working days preference after reloading storage", async () => {
+    const { localStore } = await import("./local-store");
+    localStore.setUserPreferences({ hideNonWorkingDays: true });
+    vi.resetModules();
+    const { localStore: reloadedStore } = await import("./local-store");
+    expect(reloadedStore.snapshot().userPreferences.hideNonWorkingDays).toBe(
+      true,
+    );
+  });
+
   it("persists the selected project data shape", async () => {
     const { localStore } = await import("./local-store");
 

@@ -14,6 +14,18 @@ const CAPACITY_KEYS = [
   "sunday",
 ] as const;
 
+/** Filters a Monday-to-Sunday week for display without changing its totals. */
+export function getVisibleWeekDates(
+  weekDates: string[],
+  capacityTargets: WeeklyCapacityTargets,
+  hideNonWorkingDays = false,
+) {
+  return weekDates.filter(
+    (_, index) =>
+      !hideNonWorkingDays || capacityTargets[CAPACITY_KEYS[index]!] > 0,
+  );
+}
+
 export interface WeeklyRunningTime {
   entryId?: string;
   localDate: string;
@@ -34,7 +46,7 @@ export interface WeeklyGridRow {
   /** True when a new entry with this row's project and task lands in this row. Rows grouped by a legacy label get false. */
   acceptsNewEntries: boolean;
   /**
-   * Saved entries per day, in `weekDates` order. The running entry's saved part is
+   * Saved entries per visible day, in projection day order. The running entry's saved part is
    * left out: `runningLocalDate` marks its cell and `dayTotalsMs` includes its time.
    */
   dayEntries: LocalTimesheetEntry[][];
@@ -143,12 +155,14 @@ export interface WeeklyTimeProjection {
 /**
  * Projects a week for the Week view: day columns with their entries and capacity,
  * and Grid rows grouping entries by project and task. `addedRows` are rows the user
- * added with "+ Add row"; they show empty until they get time.
+ * added with "+ Add row"; they show empty until they get time. Hidden days leave
+ * the day columns and cell arrays, but their time remains in week and row totals.
  */
 export function projectWeeklyTime({
   addedRows = [],
   capacityTargets,
   entries,
+  hideNonWorkingDays = false,
   projects,
   runningTime,
   weekDates,
@@ -156,6 +170,7 @@ export function projectWeeklyTime({
   addedRows?: WeeklyGridAddedRow[];
   capacityTargets: WeeklyCapacityTargets;
   entries: LocalTimesheetEntry[];
+  hideNonWorkingDays?: boolean;
   projects: LocalProject[];
   runningTime?: WeeklyRunningTime | null;
   weekDates: string[];
@@ -349,11 +364,22 @@ export function projectWeeklyTime({
 
   const totalMs = days.reduce((total, day) => total + day.totalMs, 0);
   const capacityMs = days.reduce((total, day) => total + day.capacityMs, 0);
+  const visibleDates = new Set(
+    getVisibleWeekDates(weekDates, capacityTargets, hideNonWorkingDays),
+  );
 
   return {
     capacityMs,
-    days,
-    gridRows,
+    days: days.filter((day) => visibleDates.has(day.localDate)),
+    gridRows: gridRows.map((row) => ({
+      ...row,
+      dayEntries: row.dayEntries.filter((_, index) =>
+        visibleDates.has(weekDates[index]!),
+      ),
+      dayTotalsMs: row.dayTotalsMs.filter((_, index) =>
+        visibleDates.has(weekDates[index]!),
+      ),
+    })),
     overCapacity: capacityMs > 0 && totalMs > capacityMs,
     totalMs,
   };

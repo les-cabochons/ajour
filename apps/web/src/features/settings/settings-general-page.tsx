@@ -350,6 +350,19 @@ export function SettingsGeneralPage() {
             />
           </SettingRow>
           <SettingRow
+            label="Hide non-working days"
+            labelFor="hide-non-working-days"
+            description="Hide days with 0 hours of capacity in the Time day strip and Week layouts. Logged time still counts in weekly totals."
+          >
+            <Switch
+              id="hide-non-working-days"
+              checked={preferences.hideNonWorkingDays === true}
+              onCheckedChange={(checked) =>
+                localStore.setUserPreferences({ hideNonWorkingDays: checked })
+              }
+            />
+          </SettingRow>
+          <SettingRow
             label="Under-target submit warning"
             labelFor="warn-under-capacity"
             description="Ask for confirmation when submitted time is below the week target."
