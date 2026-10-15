@@ -251,14 +251,16 @@ Feature: Open the local time workspace
     Then the Projects list opens beside primary navigation
     And the Projects list still opens where the app sidebar is a rail
 
-  Scenario: Move around the narrow view from its titlebar
+  Scenario: Move around the narrow view from its navigation toggle
     Given I have projects with searchable tasks
     When I open today's time workspace in a narrow window
     Then the narrow view shows no sidebars
-    When I switch to Backlog from the titlebar
-    Then Backlog is the active section of the titlebar switcher
-    When I open Settings from the titlebar cog
+    And the titlebar holds the entry buttons and the navigation toggle floats at the bottom left
+    When I switch to Backlog from the navigation toggle
+    Then Backlog is the active section of the navigation toggle
+    When I open Settings from the navigation toggle
     Then Settings opens on its list of pages
+    And Settings is the active section of the navigation toggle
     When I open "Plugins" from the Settings list
     And I go back to "Settings"
     And I open "Projects" from the Settings list
@@ -267,6 +269,21 @@ Feature: Open the local time workspace
     And I go back to "Projects"
     And I open project import and export from the Projects list
     Then the project import and export page leads back to Projects
+
+  Scenario: Follow the running entry from the narrow titlebar
+    Given I have no saved Ajour workspace
+    When I open today's time workspace in a narrow window
+    And I press Start in the narrow titlebar
+    Then the running entry's dialog is open
+    When I type "Standup notes" in the running entry's note
+    And I click outside the running entry's dialog
+    Then no entry dialog is open
+    And the totals pill shows the running time instead of Today
+    When I open the current timer from the totals popover
+    Then the running entry's dialog still has "Standup notes"
+    When I close the running entry's dialog with Escape
+    And I press Stop in the narrow titlebar
+    Then the totals pill shows Today again
 
   Scenario: Start a task from the command palette
     Given I have projects with searchable tasks

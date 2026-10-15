@@ -62,7 +62,7 @@ export function AgentIndicator() {
       onClick={panelOpen ? closeAgentPanel : openAgentPanel}
       className={cn(
         "fixed right-4 bottom-4 z-50 flex h-[var(--control-height)] items-center gap-2 rounded-[var(--radius-md)] border border-border bg-popover px-3 text-xs text-popover-foreground shadow-[var(--shadow-popup)]",
-        "narrow:bottom-[var(--narrow-timer-clearance)]",
+        "narrow:bottom-[var(--narrow-nav-clearance)]",
         indicator.state === "needs-input" && "border-warning",
       )}
     >

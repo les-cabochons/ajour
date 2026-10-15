@@ -289,36 +289,20 @@ export function FloatingStartDock({
 
 /**
  * The dock on one line, shown while an entry runs and the sidebar is not on
- * screen: floating at the bottom left on desktop, and with the narrow view's
- * entry buttons. Desktop opens the editor in a popover; the narrow view passes
- * `onEdit` to open its dialog.
+ * screen on desktop, floating at the bottom left. It opens the editor in a
+ * popover. The narrow view shows the running time on the titlebar's totals
+ * pill instead.
  */
 export function FloatingTimerDock({
-  onEdit,
   className,
   style,
 }: {
-  onEdit?: () => void;
   className?: string;
   style?: CSSProperties;
 }) {
   const { timer, summary, runningDurationMs } = useRunningEntry();
   const editorOpen = useRunningEntryEditor(Boolean(timer));
   if (!timer || !summary) return null;
-
-  const content = (
-    <>
-      <RunningDot />
-      <span className="min-w-0 flex-1 truncate text-sm font-medium">
-        {summary.title}
-      </span>
-      <span className="shrink-0 font-mono text-xs font-medium tabular-nums">
-        {formatElapsedDuration(runningDurationMs)}
-      </span>
-    </>
-  );
-  const triggerClassName =
-    "flex h-full min-w-0 flex-1 items-center gap-2 rounded-lg pl-3 text-left outline-none focus-visible:ring-1 focus-visible:ring-ring";
 
   return (
     <div
@@ -328,27 +312,22 @@ export function FloatingTimerDock({
       )}
       style={style}
     >
-      {onEdit ? (
-        <button
-          type="button"
-          className={triggerClassName}
-          aria-label="Edit the running entry"
-          onClick={onEdit}
-        >
-          {content}
-        </button>
-      ) : (
-        <TimeEntryEditorPopover
-          target={{ kind: "running", timer }}
-          open={editorOpen}
-          onOpenChange={setRunningEntryEditorOpen}
-          {...runningEntryDraftProps(timer._id)}
-          triggerLabel="Edit the running entry"
-          triggerClassName={triggerClassName}
-        >
-          {content}
-        </TimeEntryEditorPopover>
-      )}
+      <TimeEntryEditorPopover
+        target={{ kind: "running", timer }}
+        open={editorOpen}
+        onOpenChange={setRunningEntryEditorOpen}
+        {...runningEntryDraftProps(timer._id)}
+        triggerLabel="Edit the running entry"
+        triggerClassName="flex h-full min-w-0 flex-1 items-center gap-2 rounded-lg pl-3 text-left outline-none focus-visible:ring-1 focus-visible:ring-ring"
+      >
+        <RunningDot />
+        <span className="min-w-0 flex-1 truncate text-sm font-medium">
+          {summary.title}
+        </span>
+        <span className="shrink-0 font-mono text-xs font-medium tabular-nums">
+          {formatElapsedDuration(runningDurationMs)}
+        </span>
+      </TimeEntryEditorPopover>
       <StopButton timerId={timer._id} />
     </div>
   );

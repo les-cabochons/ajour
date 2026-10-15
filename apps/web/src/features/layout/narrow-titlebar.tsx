@@ -12,30 +12,37 @@ import {
   getNarrowBackLink,
   isNarrowSettingsSection,
 } from "@/features/layout/narrow-navigation";
-import { isDesktopShell } from "@/lib/runtime";
 import { cn } from "@/lib/utils";
 
 const sections = [
   {
-    view: "time",
     to: "/time/$date",
     label: "Time",
     icon: Timer,
     shortcut: "go.time",
+    isActive: (pathname: string) => getAppSection(pathname) === "time",
   },
   {
-    view: "backlog",
     to: "/backlog",
     label: "Backlog",
     icon: ListTodo,
     shortcut: "go.backlog",
+    isActive: (pathname: string) => getAppSection(pathname) === "backlog",
+  },
+  {
+    to: "/settings",
+    label: "Settings",
+    icon: Settings,
+    shortcut: "app.settings",
+    // Projects lives inside Settings in the narrow view.
+    isActive: isNarrowSettingsSection,
   },
 ] as const;
 
 /**
- * The narrow view's primary navigation: a segmented switcher in the titlebar.
- * The active section shows its label, the other only its icon. Projects and
- * Settings are reached from the cog.
+ * The narrow view's primary navigation: a segmented toggle for Time, Backlog
+ * and Settings that floats at the bottom left. The active section shows its
+ * label, the others only their icon.
  */
 export function NarrowSectionSwitcher({
   pathname,
@@ -45,16 +52,10 @@ export function NarrowSectionSwitcher({
   selectedTimeDate: string;
 }) {
   return (
-    <nav
-      className={cn(
-        "ajour-narrow-switcher",
-        isDesktopShell && "desktop-no-drag",
-      )}
-      aria-label="Primary navigation"
-    >
+    <nav className="ajour-narrow-switcher" aria-label="Primary navigation">
       {sections.map((section) => {
         const Icon = section.icon;
-        const isActive = getAppSection(pathname) === section.view;
+        const isActive = section.isActive(pathname);
         const linkProps = {
           to: section.to,
           params:
@@ -79,6 +80,7 @@ export function NarrowSectionSwitcher({
             key={section.to}
             label={section.label}
             shortcut={section.shortcut}
+            side="top"
             render={<Link {...linkProps} />}
           >
             <Icon />
@@ -86,31 +88,6 @@ export function NarrowSectionSwitcher({
         );
       })}
     </nav>
-  );
-}
-
-/** The cog at the trailing edge of the narrow titlebar. Projects lives inside Settings there. */
-export function NarrowSettingsButton({ pathname }: { pathname: string }) {
-  const isActive = isNarrowSettingsSection(pathname);
-  return (
-    <TooltipButton
-      label="Settings"
-      shortcut="app.settings"
-      render={
-        <Link
-          to="/settings"
-          aria-current={isActive ? "page" : undefined}
-          className={cn(
-            buttonVariants({ variant: "ghost", size: "icon" }),
-            "shrink-0 text-muted-foreground",
-            isActive && "bg-muted text-foreground",
-            isDesktopShell && "desktop-no-drag",
-          )}
-        />
-      }
-    >
-      <Settings className="size-4" />
-    </TooltipButton>
   );
 }
 

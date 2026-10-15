@@ -87,12 +87,15 @@ const SettingsDebugPage = import.meta.env.DEV
     })
   : null;
 
-const RouterDevtools = import.meta.env.DEV
-  ? lazy(async () => {
-      const module = await import("@tanstack/router-devtools");
-      return { default: module.TanStackRouterDevtools };
-    })
-  : null;
+// Not in the acceptance run (`--mode test`): its corner button sits over the
+// narrow view's navigation toggle and takes the clicks meant for it.
+const RouterDevtools =
+  import.meta.env.DEV && import.meta.env.MODE !== "test"
+    ? lazy(async () => {
+        const module = await import("@tanstack/router-devtools");
+        return { default: module.TanStackRouterDevtools };
+      })
+    : null;
 
 function RootComponent() {
   return (

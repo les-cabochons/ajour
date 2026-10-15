@@ -2339,6 +2339,65 @@ Then("the submit page shows the week as partly submitted", async ({ page }) => {
   ).toBeDisabled();
 });
 
+function narrowTotalsPill(page: Page) {
+  return page.getByRole("button", { name: "Show day and week totals" });
+}
+
+When("I press Start in the narrow titlebar", async ({ page }) => {
+  await page
+    .locator(".ajour-nav")
+    .getByRole("button", { name: "Start", exact: true })
+    .click();
+});
+
+When("I press Stop in the narrow titlebar", async ({ page }) => {
+  await page
+    .locator(".ajour-nav")
+    .getByRole("button", { name: "Stop", exact: true })
+    .click();
+});
+
+Then("the running entry's dialog is open", async ({ page }) => {
+  const dialog = page.getByRole("dialog");
+  await expect(dialog).toHaveCount(1);
+  await expect(
+    dialog.getByRole("button", { name: "Stop", exact: true }),
+  ).toBeVisible();
+});
+
+When("I click outside the running entry's dialog", async ({ page }) => {
+  // The backdrop covers the page around the dialog, which spans the width.
+  const viewport = page.viewportSize()!;
+  await page.mouse.click(viewport.width / 2, viewport.height - 4);
+});
+
+When("I close the running entry's dialog with Escape", async ({ page }) => {
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+Then("no entry dialog is open", async ({ page }) => {
+  await expect(page.getByRole("dialog")).toHaveCount(0);
+});
+
+Then(
+  "the totals pill shows the running time instead of Today",
+  async ({ page }) => {
+    const pill = narrowTotalsPill(page);
+    await expect(pill).not.toContainText("Today");
+    await expect(pill).toContainText(/\d+:\d{2}:\d{2}/);
+  },
+);
+
+When("I open the current timer from the totals popover", async ({ page }) => {
+  await narrowTotalsPill(page).click();
+  await page.getByRole("button", { name: "Edit the current timer" }).click();
+});
+
+Then("the totals pill shows Today again", async ({ page }) => {
+  await expect(narrowTotalsPill(page)).toContainText("Today");
+});
+
 function narrowPrimaryNavigation(page: Page) {
   return page.getByRole("navigation", { name: "Primary navigation" });
 }
@@ -2358,14 +2417,48 @@ Then("the narrow view shows no sidebars", async ({ page }) => {
   await expect(timeLink).toContainText("Time");
 });
 
-When("I switch to Backlog from the titlebar", async ({ page }) => {
+Then(
+  "the titlebar holds the entry buttons and the navigation toggle floats at the bottom left",
+  async ({ page }) => {
+    const titlebar = page.locator(".ajour-nav");
+    await expect(
+      titlebar.getByRole("button", { name: "Create time entry" }),
+    ).toBeVisible();
+    await expect(
+      titlebar.getByRole("button", { name: "Start", exact: true }),
+    ).toBeVisible();
+
+    // The entry buttons come before the totals pill.
+    const [startBox, totalsBox] = await Promise.all([
+      titlebar
+        .getByRole("button", { name: "Start", exact: true })
+        .boundingBox(),
+      narrowTotalsPill(page).boundingBox(),
+    ]);
+    expect(startBox!.x).toBeLessThan(totalsBox!.x);
+
+    const navigation = narrowPrimaryNavigation(page);
+    await expect(
+      navigation.getByRole("link", { name: "Settings", exact: true }),
+    ).toBeVisible();
+    // It floats over the page: no bar spans the window under it.
+    await expect(navigation).toHaveCSS("position", "fixed");
+    const box = (await navigation.boundingBox())!;
+    const viewport = page.viewportSize()!;
+    expect(box.x).toBeLessThan(viewport.width / 4);
+    expect(box.y + box.height).toBeGreaterThan(viewport.height - 40);
+    expect(box.width).toBeLessThan(viewport.width / 2);
+  },
+);
+
+When("I switch to Backlog from the navigation toggle", async ({ page }) => {
   await narrowPrimaryNavigation(page)
     .getByRole("link", { name: "Backlog" })
     .click();
 });
 
 Then(
-  "Backlog is the active section of the titlebar switcher",
+  "Backlog is the active section of the navigation toggle",
   async ({ page }) => {
     await expect(page).toHaveURL(/\/backlog$/);
     const navigation = narrowPrimaryNavigation(page);
@@ -2377,9 +2470,24 @@ Then(
   },
 );
 
-When("I open Settings from the titlebar cog", async ({ page }) => {
-  await page.getByRole("link", { name: "Settings", exact: true }).click();
+When("I open Settings from the navigation toggle", async ({ page }) => {
+  await narrowPrimaryNavigation(page)
+    .getByRole("link", { name: "Settings", exact: true })
+    .click();
 });
+
+Then(
+  "Settings is the active section of the navigation toggle",
+  async ({ page }) => {
+    const navigation = narrowPrimaryNavigation(page);
+    await expect(
+      navigation.getByRole("link", { name: "Settings", exact: true }),
+    ).toHaveAttribute("aria-current", "page");
+    await expect(
+      navigation.getByRole("link", { name: "Settings", exact: true }),
+    ).toHaveText("Settings");
+  },
+);
 
 Then("Settings opens on its list of pages", async ({ page }) => {
   await expect(page).toHaveURL(/\/settings$/);
