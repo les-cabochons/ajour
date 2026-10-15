@@ -54,6 +54,8 @@ Feature: Confirm a parent Settle without losing its draft
     And I include the Settle subitems
     Then Settle submits the unchanged unlisted state locally
 
-  Scenario: A long item title does not widen the Settle dialog
+  Scenario: A long item title does not widen the Settle or Snooze dialog
     When I reopen Settle after the parent gets a long title
-    Then the Settle dialog fits its width without a horizontal scroll
+    Then the "Settle" dialog fits its width without a horizontal scroll
+    When I open Snooze on the parent instead
+    Then the "Snooze until" dialog fits its width without a horizontal scroll
