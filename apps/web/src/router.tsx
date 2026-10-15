@@ -57,6 +57,10 @@ const SettingsMcpPage = lazy(async () => {
   const module = await import("@/features/settings/settings-mcp-page");
   return { default: module.SettingsMcpPage };
 });
+const SettingsAgentsPage = lazy(async () => {
+  const module = await import("@/features/settings/settings-agents-page");
+  return { default: module.SettingsAgentsPage };
+});
 
 const SettingsBacklogPage = lazy(async () => {
   const module = await import("@/features/settings/settings-backlog-page");
@@ -298,6 +302,16 @@ const settingsMcpRoute = createRoute({
   ),
 });
 
+const settingsAgentsRoute = createRoute({
+  getParentRoute: () => settingsRoute,
+  path: "/agents",
+  component: () => (
+    <RouteSuspense>
+      <SettingsAgentsPage />
+    </RouteSuspense>
+  ),
+});
+
 const settingsBacklogRoute = createRoute({
   getParentRoute: () => settingsRoute,
   path: "/backlog",
@@ -380,6 +394,7 @@ const routeTree = rootRoute.addChildren([
       settingsPluginsRoute,
       settingsPluginDetailRoute,
       settingsMcpRoute,
+      settingsAgentsRoute,
       settingsBacklogRoute,
       settingsWorkflowRoute,
       settingsProjectsRoute,

@@ -39,4 +39,10 @@ describe("getSettingsGroups", () => {
     expect(work("narrow")).toContain("Pull requests");
     expect(work("wide")).not.toContain("Pull requests");
   });
+
+  it("lists Agents after MCP in the App group", () => {
+    const app = getSettingsGroups("wide")[0]!;
+    const labels = app.pages.map((page) => page.label);
+    expect(labels.indexOf("Agents")).toBe(labels.indexOf("MCP") + 1);
+  });
 });

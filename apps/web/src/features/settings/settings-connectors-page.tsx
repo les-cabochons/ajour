@@ -931,11 +931,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
             <p className="settings-section-desc">
               An agent runs these tasks from a prompt. Pick the agent and fill
               in each task's settings in{" "}
-              <Link
-                // Route added with Settings > Agents.
-                to={"/settings/agents" as never}
-                className="underline"
-              >
+              <Link to="/settings/agents" className="underline">
                 Settings &gt; Agents
               </Link>
               .

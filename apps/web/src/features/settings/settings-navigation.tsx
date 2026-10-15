@@ -10,6 +10,7 @@ import {
   RiPuzzle2Line as Puzzle,
   RiRobot2Line as Agents,
   RiSettings3Line as Settings,
+  RiTerminalBoxLine as Terminal,
   RiGitPullRequestLine as PullRequestIcon,
   RiFlowChart as Workflow,
 } from "@remixicon/react";
@@ -51,6 +52,7 @@ export function getSettingsGroups(
         { to: "/settings/general", label: "General", icon: Settings },
         { to: "/settings/plugins", label: "Plugins", icon: Puzzle },
         { to: "/settings/mcp", label: "MCP", icon: Agents },
+        { to: "/settings/agents", label: "Agents", icon: Terminal },
         // Debug exists only in development builds.
         ...(import.meta.env.DEV
           ? [{ to: "/settings/debug", label: "Debug", icon: Bug } as const]
