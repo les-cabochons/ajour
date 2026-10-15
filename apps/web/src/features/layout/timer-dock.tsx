@@ -17,8 +17,6 @@ import {
   formatRemainingEstimate,
   summarizeRunningEntry,
 } from "@/domain/time/running-entry";
-import type { LocalWorkItem } from "@/domain/local-state";
-import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
 import type { TimeEntryEditorFields } from "@/features/time/time-entry-editor";
 import { openBlankEntryEditor } from "@/features/time/new-entry-request";
 import { TimeEntryEditorPopover } from "@/features/time/time-entry-editor-popover";
@@ -169,14 +167,27 @@ function NewEntryButton() {
   );
 }
 
+/** Starts an empty entry and opens its editor. */
+function StartButton() {
+  return (
+    <TooltipButton
+      label="Start"
+      shortcut="entry.stop-or-start"
+      className="flex size-7 shrink-0 items-center justify-center rounded-md bg-foreground text-background hover:bg-foreground/85"
+      onClick={startBlankEntry}
+    >
+      <PlayIcon className="size-3.5" />
+    </TooltipButton>
+  );
+}
+
 /**
  * The timer box in the expanded sidebar. While an entry runs: its title, the
  * time counted, "+", Stop, and how much of the item's remaining estimate it
- * uses. Clicking it opens the running entry's editor. Otherwise: today's total,
- * "+" and a one-click start for `upNext`. Start for an empty entry sits above
- * it, beside Search.
+ * uses. Clicking it opens the running entry's editor. Otherwise, one row holds
+ * "+", Start for an empty entry, and today's total.
  */
-export function TimerDock({ upNext }: { upNext?: LocalWorkItem }) {
+export function TimerDock() {
   const { timer, summary, runningDurationMs, todayTotalMs } = useRunningEntry();
   const editorOpen = useRunningEntryEditor(Boolean(timer));
 
@@ -184,37 +195,13 @@ export function TimerDock({ upNext }: { upNext?: LocalWorkItem }) {
     return (
       <section
         aria-label="Timer"
-        className="mx-2 mt-1 mb-2 rounded-md border bg-background p-2.5 text-xs"
+        className="mx-2 mt-1 mb-2 flex items-center gap-1.5 rounded-md border bg-background p-2.5 text-xs"
       >
-        <div className="flex items-center justify-between text-muted-foreground">
-          <span>Nothing running</span>
-          <span className="tabular-nums">
-            Today {formatClockDuration(todayTotalMs)}
-          </span>
-        </div>
-        <div className="mt-2 flex gap-1.5">
-          <NewEntryButton />
-          {upNext ? (
-            <button
-              type="button"
-              className="flex h-7 min-w-0 flex-1 items-center gap-2 rounded-md border pr-2 pl-1 text-left text-sm outline-none hover:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring"
-              aria-label={`Start entry on ${upNext.title}`}
-              onClick={() =>
-                runBacklogItemAction(upNext, "start-entry", () => undefined)
-              }
-            >
-              <span className="flex size-5 shrink-0 items-center justify-center rounded-[var(--radius-sm)] bg-foreground text-background">
-                <PlayIcon className="size-3" />
-              </span>
-              <span className="min-w-0 flex-1 truncate font-medium">
-                {upNext.title}
-              </span>
-              <span className="shrink-0 text-xs text-muted-foreground">
-                Up next
-              </span>
-            </button>
-          ) : null}
-        </div>
+        <NewEntryButton />
+        <StartButton />
+        <span className="ml-auto shrink-0 whitespace-nowrap text-muted-foreground tabular-nums">
+          Today {formatClockDuration(todayTotalMs)}
+        </span>
       </section>
     );
   }
@@ -294,14 +281,7 @@ export function FloatingStartDock({
       )}
     >
       <NewEntryButton />
-      <TooltipButton
-        label="Start"
-        shortcut="entry.stop-or-start"
-        className="flex size-7 shrink-0 items-center justify-center rounded-md bg-foreground text-background hover:bg-foreground/85"
-        onClick={startBlankEntry}
-      >
-        <PlayIcon className="size-3.5" />
-      </TooltipButton>
+      <StartButton />
     </div>
   );
 }
