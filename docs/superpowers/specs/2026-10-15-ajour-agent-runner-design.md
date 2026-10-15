@@ -12,7 +12,7 @@ Spec A gave agents the MCP endpoint, the data tools, sessions, questions, the in
 
 - the agent runner in the local API, with one adapter per CLI;
 - the `agentTask` plugin capability: a prompt and settings, with no plugin code;
-- the Workday plugin, `les-cabochons/ajp-workday`;
+- the Workday plugin, `les-cabochons/ajp-workday-agent`. The name says "agent" because a Workday plugin that uses the Workday API may come later. `les-cabochons/ajp-workday` stays the project data shape plugin;
 - three Ajour data changes for the task: `mark_entries_not_submitted`, a stable line ID, and a pace check.
 
 ## Goals
@@ -259,7 +259,7 @@ One `agent.run` wide event per run: plugin ID, task ID, CLI, CLI version, browse
 1. Smoke tests, and this spec updated with what they found.
 2. Ajour: agent tasks in manifests, task settings, the runner with the Claude Code adapter, Settings > Agents, the Submit page button and week link, `mark_entries_not_submitted`, line IDs and pace.
 3. The Codex and OpenCode adapters, each after its smoke test passes.
-4. `les-cabochons/ajp-workday`: the manifest, the prompt and its release archive.
+4. `les-cabochons/ajp-workday-agent`: the manifest, the prompt and its release archive. Done 2026-10-15; a real Workday run is still pending.
 
 ## Smoke test results
 
