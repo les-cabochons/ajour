@@ -8,8 +8,8 @@ The Day view lists the entries of one day. Ajour opens on today, in the view you
 
 - **The header** has the previous and next day buttons, the date, and **Day** and **Week**. Click the date to pick another day from a calendar.
 - **The week strip** shows the seven days of the week with their totals, and the week total on the right. Click a day to open it.
-- **The rows** are the day's entries. Each row shows the project, the task, the note and the duration. The running entry shows a green dot and counts up. A check marks a submitted entry.
-- **The totals** at the top right show the total of the day you are on. Click them for the day and week totals, and **Submit week**.
+- **The rows** are the day's entries. Each row shows the project, the task, the note and the duration. The running entry shows a green dot and counts up. A check marks an entry your timesheet tool has as it is.
+- **The totals** at the top right show the total of the day you are on. Click them for the day and week totals, and **Commit week**.
 
 ## Move between days
 
@@ -30,7 +30,7 @@ To log time while you work instead, start a [running entry](/time/running-entrie
 
 ## Edit an entry
 
-Click a row to open it in the side panel. The panel shows the task, its project and the date at the top, with **Continue** to start the entry again. Change the task, the hours, the date or the note, then press **Save** or <kbd>⌘</kbd> <kbd>Enter</kbd>.
+Double-click a row, or press <kbd>Enter</kbd> on it, to open it in the side panel. A single click selects the row, so you can [copy and paste](/time/entries#select-copy-and-paste-entries) it. The panel shows the task, its project and the date at the top, with **Continue** to start the entry again. Change the task, the hours, the date or the note, then press **Save** or <kbd>⌘</kbd> <kbd>Enter</kbd>.
 
 <Shot name="time-entry-editor" alt="An entry open in the side panel next to the day" />
 

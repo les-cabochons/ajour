@@ -32,4 +32,4 @@ Once installed, pick **Workday** under **Schema** in **Settings › Projects**, 
 
 ## And the timesheet?
 
-To report your hours in Workday, use [Submit your week](/time/submit). It prepares lines with the project, task, hours and comments that you copy into Workday. To have an agent enter them for you, see [Workday (agent)](/plugins/workday-agent).
+To report your hours in Workday, use [Commit your week](/time/commit). It lists your changes and prepares lines with the project, task, hours and comments that you copy into Workday. To have an agent enter them for you, see [Workday (agent)](/plugins/workday-agent).

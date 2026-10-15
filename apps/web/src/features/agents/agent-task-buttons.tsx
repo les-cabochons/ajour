@@ -35,7 +35,7 @@ export function weekLinkFor(task: AgentTaskStatus, weekOf: string) {
 }
 
 /**
- * The Submit page's plugin agent tasks for the week on screen: one button
+ * The Commit page's plugin agent tasks for the week on screen: one button
  * each, disabled with the reason while the task cannot run or a run is
  * going or a start is in flight. The week links sit in the week summary,
  * see `AgentTaskWeekLinks`.
@@ -55,7 +55,7 @@ export function AgentTaskButtons({ weekOf }: { weekOf: string }) {
 
   if (state.kind !== "ready") return null;
   const tasks = state.overview.tasks.filter(
-    (task) => task.placement === "submit-week",
+    (task) => task.placement === "commit-week",
   );
   if (tasks.length === 0) return null;
   // The API's current run covers a CLI that outlives its ended session.
@@ -131,7 +131,7 @@ export function AgentTaskButtons({ weekOf }: { weekOf: string }) {
 }
 
 /**
- * Muted links to the week in each task's external tool, for the Submit
+ * Muted links to the week in each task's external tool, for the Commit
  * page's week summary. A task whose link does not fill to https shows none.
  */
 export function AgentTaskWeekLinks({ weekOf }: { weekOf: string }) {
@@ -139,7 +139,7 @@ export function AgentTaskWeekLinks({ weekOf }: { weekOf: string }) {
   if (state.kind !== "ready") return null;
   const links = state.overview.tasks.flatMap((task) => {
     const url =
-      task.placement === "submit-week" ? weekLinkFor(task, weekOf) : undefined;
+      task.placement === "commit-week" ? weekLinkFor(task, weekOf) : undefined;
     return url ? [{ key: `${task.pluginId}/${task.taskId}`, url, task }] : [];
   });
   if (links.length === 0) return null;

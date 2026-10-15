@@ -14,6 +14,35 @@ export function formatClockDuration(durationMs: number): string {
   return `${hours}:${String(minutes).padStart(2, "0")}`;
 }
 
+/** "h:mm:ss", rounded to the second. */
+function formatClockDurationWithSeconds(durationMs: number): string {
+  const totalSeconds = Math.max(0, Math.round(durationMs / 1000));
+  const hours = Math.floor(totalSeconds / 3600);
+  const minutes = Math.floor((totalSeconds % 3600) / 60);
+  const seconds = totalSeconds % 60;
+  return `${hours}:${String(minutes).padStart(2, "0")}:${String(seconds).padStart(2, "0")}`;
+}
+
+/**
+ * Formats the two sides of a changed duration. They show as "h:mm". When two
+ * different durations round to the same "h:mm", both show seconds, so a change
+ * of a few seconds is still visible.
+ */
+export function formatChangedClockDurations(
+  beforeMs: number,
+  afterMs: number,
+): { before: string; after: string } {
+  const before = formatClockDuration(beforeMs);
+  const after = formatClockDuration(afterMs);
+  if (before === after && beforeMs !== afterMs) {
+    return {
+      before: formatClockDurationWithSeconds(beforeMs),
+      after: formatClockDurationWithSeconds(afterMs),
+    };
+  }
+  return { before, after };
+}
+
 /**
  * Formats a duration in short form for tight spaces: "4h", "4h30", "4h05" or
  * "45m". Rounds to the minute like `formatClockDuration`.

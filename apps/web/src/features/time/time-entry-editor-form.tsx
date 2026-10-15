@@ -23,6 +23,7 @@ import {
   type LocalTimer,
   type LocalTimesheetEntry,
 } from "@/domain/local-state";
+import { isTimesheetEntryCommitted } from "@/domain/time/timesheet-commit";
 import { syncBacklogWorkItemToSource } from "@/features/backlog/work-item-source-sync";
 import {
   commitTimeEntryDraft,
@@ -406,8 +407,8 @@ export function TimeEntryEditorForm({
         <div className="time-entry-editor-meta">
           {runningTimer ? (
             <Chip tone="success">Running</Chip>
-          ) : entry?.submittedAt ? (
-            <Chip>Submitted</Chip>
+          ) : entry && isTimesheetEntryCommitted(entry) ? (
+            <Chip>Committed</Chip>
           ) : null}
           {selectedProject ? (
             <Chip color={selectedProject.color}>

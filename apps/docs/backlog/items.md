@@ -26,7 +26,7 @@ Changes on the page save when you press <kbd>Enter</kbd> or leave the field, wit
 
 ## Map an item to a task
 
-Set the item's **Project** and **Task** so the time you log on it lands on the right task. Synced items cannot know your tasks, so map them once after they arrive. Starting an item with no task starts an entry with no task, which the Submit page then flags.
+Set the item's **Project** and **Task** so the time you log on it lands on the right task. Synced items cannot know your tasks, so map them once after they arrive. Starting an item with no task starts an entry with no task, which the Commit page then flags.
 
 ## Estimates
 

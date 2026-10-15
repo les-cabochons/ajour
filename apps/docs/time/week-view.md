@@ -39,7 +39,8 @@ The Days layout has one column per day, with a card per entry. Use it to see the
 <Shot name="time-week-days" alt="The Week view as days: one column per day with a card per entry" />
 
 - Drag a card to another day to move the entry there. Drag it within a day to reorder it.
-- Click a card, or press <kbd>Space</kbd> on it, to open it in the side panel.
+- Double-click a card, or press <kbd>Space</kbd> on it, to open it in the side panel. A single click selects it, so you can [copy and paste](/time/entries#select-copy-and-paste-entries) it.
+- Right-click a column's empty space to paste copied entries there.
 - Press **+ Add** at the bottom of a column, or double-click the day's header or the empty space in its column, for a new entry on that day. It lands at the end of the day.
 
 ::: info Narrow windows

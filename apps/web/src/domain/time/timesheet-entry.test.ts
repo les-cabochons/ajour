@@ -1,21 +1,21 @@
 import { describe, expect, it } from "vitest";
-import type { LocalAppState } from "@/domain/local-state";
+import type { LocalAppState, LocalTimesheetEntry } from "@/domain/local-state";
 import { DEFAULT_PROJECT_ICON } from "@/domain/projects/project-icon";
 import {
-  createTimesheetEntrySubmissionFingerprint,
   deleteTimesheetEntries,
   deleteTimesheetEntry,
   duplicateTimesheetEntry,
-  markTimesheetEntriesNotSubmitted,
-  markTimesheetEntriesSubmitted,
+  markTimesheetEntriesCommitted,
   moveTimesheetEntry,
   normalizeTimesheetEntry,
+  pasteTimesheetEntries,
   reorderTimesheetEntries,
   saveManualTimesheetEntry,
   selectMostRecentTimesheetEntry,
   selectSortableDayEntryIds,
   updateTimesheetEntry,
 } from "@/domain/time/timesheet-entry";
+import { getTimesheetEntryChange } from "@/domain/time/timesheet-commit";
 import { getSharedTableStepOrder } from "@/lib/table-drag";
 
 function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
@@ -51,6 +51,7 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
     timers: [],
     timesheetEntries: [],
     timesheetImportDrafts: [],
+    timesheetTombstones: [],
     workItems: [
       {
         _id: "work-item-1",
@@ -128,8 +129,6 @@ describe("timesheet entry lifecycle", () => {
       durationMs: 60 * 60 * 1000,
       sourceBlockIds: [],
       committedAt: 100,
-      submittedAt: undefined,
-      submittedFingerprint: undefined,
     });
     expect(state.workItems[0]).toMatchObject({
       remainingEstimateHours: 1,
@@ -137,122 +136,74 @@ describe("timesheet entry lifecycle", () => {
     });
   });
 
-  it("preserves submission for an unchanged edit and clears it after a change", () => {
-    const saved = saveManualTimesheetEntry(
-      createState(),
-      {
+  it("gives an entry stored as submitted a committed copy of its values", () => {
+    const entry = normalizeTimesheetEntry({
+      _id: "entry-1",
+      localDate: "2026-07-30",
+      projectId: "project-1",
+      taskId: "task-1",
+      label: "Legacy",
+      note: "Shipped",
+      durationMs: 100,
+      committedAt: 1,
+      submittedAt: 0,
+      submittedFingerprint: "old",
+    } as never);
+
+    expect(entry).toEqual({
+      _id: "entry-1",
+      localDate: "2026-07-30",
+      projectId: "project-1",
+      taskId: "task-1",
+      label: "Legacy",
+      note: "Shipped",
+      durationMs: 100,
+      committedAt: 1,
+      sourceBlockIds: [],
+      commit: {
+        at: 0,
         localDate: "2026-07-30",
         projectId: "project-1",
         taskId: "task-1",
-        note: "Implementation",
-        durationMs: 60 * 60 * 1000,
+        note: "Shipped",
+        durationMs: 100,
       },
-      factories,
-    );
-    const submitted = markTimesheetEntriesSubmitted(
-      saved,
-      ["timesheet-1"],
-      () => 200,
-    );
-    const unchanged = updateTimesheetEntry(
-      submitted,
-      "timesheet-1",
-      {
-        projectId: "project-1",
-        taskId: "task-1",
-        note: "Implementation",
-        durationMs: 60 * 60 * 1000,
-      },
-      { ...factories, now: () => 300 },
-    );
-    const changed = updateTimesheetEntry(
-      unchanged,
-      "timesheet-1",
-      {
-        projectId: "project-1",
-        taskId: "task-1",
-        note: "Changed",
-        durationMs: 60 * 60 * 1000,
-      },
-      { ...factories, now: () => 400 },
-    );
-
-    expect(unchanged.timesheetEntries[0]).toMatchObject({
-      submittedAt: 200,
-      submittedFingerprint: createTimesheetEntrySubmissionFingerprint(
-        submitted.timesheetEntries[0]!,
-      ),
     });
-    expect(changed.timesheetEntries[0]).toMatchObject({
-      submittedAt: undefined,
-      submittedFingerprint: undefined,
-    });
-    expect(unchanged.timesheetEntries[0]?.committedAt).toBe(100);
+    expect(entry).not.toHaveProperty("submittedAt");
+    expect(entry).not.toHaveProperty("submittedFingerprint");
   });
 
-  it("remembers the submission time of an edited entry until it is marked again", () => {
-    const saved = saveManualTimesheetEntry(
-      createState(),
-      {
-        localDate: "2026-07-30",
-        projectId: "project-1",
-        taskId: "task-1",
-        note: "Implementation",
-        durationMs: 60 * 60 * 1000,
-      },
-      factories,
-    );
-    const submitted = markTimesheetEntriesSubmitted(
-      saved,
-      ["timesheet-1"],
-      () => 200,
-    );
-    const edit = (state: LocalAppState, note: string) =>
-      updateTimesheetEntry(
-        state,
-        "timesheet-1",
-        {
-          projectId: "project-1",
-          taskId: "task-1",
-          note,
-          durationMs: 60 * 60 * 1000,
-        },
-        factories,
-      );
-    const changed = edit(submitted, "Changed");
-    const changedTwice = edit(changed, "Changed again");
-    const resubmitted = markTimesheetEntriesSubmitted(
-      changedTwice,
-      ["timesheet-1"],
-      () => 500,
-    );
-
-    expect(changed.timesheetEntries[0]).toMatchObject({
-      submittedAt: undefined,
-      previousSubmittedAt: 200,
-    });
-    expect(changedTwice.timesheetEntries[0]?.previousSubmittedAt).toBe(200);
-    expect(resubmitted.timesheetEntries[0]).toMatchObject({
-      submittedAt: 500,
-      previousSubmittedAt: undefined,
-    });
-  });
-
-  it("hydrates legacy source IDs and preserves a zero submission timestamp", () => {
+  it("gives an entry edited since its submission no copy, so it shows as added", () => {
     const entry = normalizeTimesheetEntry({
       _id: "entry-1",
       localDate: "2026-07-30",
       label: "Legacy",
       durationMs: 100,
       committedAt: 1,
-      submittedAt: 0,
+      previousSubmittedAt: 5,
     } as never);
 
-    expect(entry).toMatchObject({
+    expect(entry.commit).toBeUndefined();
+    expect(entry).not.toHaveProperty("previousSubmittedAt");
+  });
+
+  it("keeps a stored copy and drops a malformed one", () => {
+    const commit = { at: 9, localDate: "2026-07-30", durationMs: 100 };
+    const stored = {
+      _id: "entry-1",
+      localDate: "2026-07-30",
+      label: "Stored",
+      durationMs: 100,
       sourceBlockIds: [],
-      submittedAt: 0,
-      submittedFingerprint: expect.any(String),
-    });
+      committedAt: 1,
+    };
+
+    expect(
+      normalizeTimesheetEntry({ ...stored, commit } as never).commit,
+    ).toEqual(commit);
+    expect(
+      normalizeTimesheetEntry({ ...stored, commit: { at: "x" } } as never),
+    ).not.toHaveProperty("commit");
   });
 
   it("clears a derived task label when the task is removed", () => {
@@ -439,7 +390,7 @@ describe("timesheet entry lifecycle", () => {
     ).toBe(runningState);
   });
 
-  it("duplicates visible values without copying submission or source provenance", () => {
+  it("duplicates visible values without copying the committed copy or source provenance", () => {
     const state = createState({
       timesheetEntries: [
         {
@@ -453,8 +404,14 @@ describe("timesheet entry lifecycle", () => {
           durationMs: 60 * 60 * 1000,
           sourceBlockIds: ["block-1"],
           committedAt: 10,
-          submittedAt: 20,
-          submittedFingerprint: "submitted",
+          commit: {
+            at: 20,
+            localDate: "2026-07-30",
+            projectId: "project-1",
+            taskId: "task-1",
+            note: "Original",
+            durationMs: 60 * 60 * 1000,
+          },
         },
       ],
     });
@@ -479,9 +436,8 @@ describe("timesheet entry lifecycle", () => {
       note: "Visible edit",
       durationMs: 30 * 60 * 1000,
       sourceBlockIds: [],
-      submittedAt: undefined,
-      submittedFingerprint: undefined,
     });
+    expect(duplicated.timesheetEntries[1]).not.toHaveProperty("commit");
     expect(duplicated.workItems[0]).toMatchObject({
       remainingEstimateHours: 1.5,
       completedEstimateHours: 0.5,
@@ -521,7 +477,7 @@ describe("timesheet entry lifecycle", () => {
     });
   });
 
-  it("moves an entry without changing logged estimates and clears submission", () => {
+  it("moves an entry without changing logged estimates and keeps its committed copy", () => {
     const entry = {
       _id: "entry-1",
       localDate: "2026-07-30",
@@ -532,11 +488,15 @@ describe("timesheet entry lifecycle", () => {
       durationMs: 60 * 60 * 1000,
       sourceBlockIds: ["block-1"],
       committedAt: 10,
-      submittedAt: 20,
-      submittedFingerprint: "",
+      commit: {
+        at: 20,
+        localDate: "2026-07-30",
+        projectId: "project-1",
+        taskId: "task-1",
+        note: "Original",
+        durationMs: 60 * 60 * 1000,
+      },
     };
-    entry.submittedFingerprint =
-      createTimesheetEntrySubmissionFingerprint(entry);
     const baseline = createState();
     const state = createState({
       timesheetEntries: [entry],
@@ -565,8 +525,7 @@ describe("timesheet entry lifecycle", () => {
       localDate: "2026-07-31",
       sourceBlockIds: ["block-1"],
       committedAt: 300,
-      submittedAt: undefined,
-      submittedFingerprint: undefined,
+      commit: { localDate: "2026-07-30" },
     });
     expect(moved.workItems).toEqual(state.workItems);
   });
@@ -775,15 +734,67 @@ describe("selectMostRecentTimesheetEntry", () => {
   });
 });
 
-describe("markTimesheetEntriesNotSubmitted", () => {
-  /** Two saved entries, "a" and "b", both on 2026-07-30 for one hour. */
-  function savedEntries(): LocalAppState {
-    const values = {
+describe("tombstones", () => {
+  const HOUR = 60 * 60 * 1000;
+  const committedEntry: LocalTimesheetEntry = {
+    _id: "entry-1",
+    localDate: "2026-07-30",
+    projectId: "project-1",
+    taskId: "task-1",
+    label: "Feature work",
+    note: "Shipped",
+    durationMs: HOUR,
+    sourceBlockIds: [],
+    committedAt: 10,
+    commit: {
+      at: 50,
       localDate: "2026-07-30",
       projectId: "project-1",
       taskId: "task-1",
-      durationMs: 60 * 60 * 1000,
+      note: "Shipped",
+      durationMs: HOUR,
+    },
+  };
+
+  it("leaves a tombstone with the committed copy when a committed entry is deleted", () => {
+    const next = deleteTimesheetEntry(
+      createState({ timesheetEntries: [committedEntry] }),
+      "entry-1",
+    );
+
+    expect(next.timesheetEntries).toEqual([]);
+    expect(next.timesheetTombstones).toEqual([
+      { entryId: "entry-1", commit: committedEntry.commit },
+    ]);
+  });
+
+  it("leaves no tombstone for an entry never committed", () => {
+    const neverCommitted: LocalTimesheetEntry = {
+      ...committedEntry,
+      commit: undefined,
     };
+    const next = deleteTimesheetEntry(
+      createState({ timesheetEntries: [neverCommitted] }),
+      "entry-1",
+    );
+
+    expect(next.timesheetEntries).toEqual([]);
+    expect(next.timesheetTombstones).toEqual([]);
+  });
+});
+
+describe("committed copies", () => {
+  const HOUR = 60 * 60 * 1000;
+  const values = {
+    localDate: "2026-07-30",
+    projectId: "project-1",
+    taskId: "task-1",
+    note: "API",
+    durationMs: HOUR,
+  };
+
+  /** Two saved entries, "a" and "b", never committed. */
+  function savedEntries(): LocalAppState {
     const withA = saveManualTimesheetEntry(createState(), values, {
       createId: () => "a",
       now: () => 100,
@@ -794,28 +805,216 @@ describe("markTimesheetEntriesNotSubmitted", () => {
     });
   }
 
-  it("returns submitted entries to saved and keeps their old submission time", () => {
-    const state = markTimesheetEntriesSubmitted(
+  function find(state: LocalAppState, entryId: string) {
+    return state.timesheetEntries.find((item) => item._id === entryId)!;
+  }
+
+  function changeOf(state: LocalAppState, entryId: string) {
+    return getTimesheetEntryChange(find(state, entryId))?.kind;
+  }
+
+  it("commits only the listed changes", () => {
+    const next = markTimesheetEntriesCommitted(
       savedEntries(),
       ["a"],
-      () => 200,
+      () => 500,
     );
-    const next = markTimesheetEntriesNotSubmitted(state, ["a", "b"]);
 
-    expect(
-      next.timesheetEntries.find((item) => item._id === "a"),
-    ).toMatchObject({
-      submittedAt: undefined,
-      submittedFingerprint: undefined,
-      previousSubmittedAt: 200,
-    });
-    expect(next.timesheetEntries.find((item) => item._id === "b")).toEqual(
-      state.timesheetEntries.find((item) => item._id === "b"),
-    );
+    expect(find(next, "a").commit).toEqual({ at: 500, ...values });
+    expect(changeOf(next, "a")).toBeUndefined();
+    expect(changeOf(next, "b")).toBe("added");
   });
 
-  it("returns the same state when nothing was submitted", () => {
-    const state = savedEntries();
-    expect(markTimesheetEntriesNotSubmitted(state, ["b"])).toBe(state);
+  it("clears a listed tombstone and keeps the unlisted ones", () => {
+    const commit = { at: 50, ...values };
+    const state = createState({
+      timesheetTombstones: [
+        { entryId: "gone-1", commit },
+        { entryId: "gone-2", commit },
+      ],
+    });
+
+    expect(
+      markTimesheetEntriesCommitted(state, ["gone-1"], () => 500)
+        .timesheetTombstones,
+    ).toEqual([{ entryId: "gone-2", commit }]);
+  });
+
+  it("returns the same state when no listed id has a change", () => {
+    const committed = markTimesheetEntriesCommitted(
+      savedEntries(),
+      ["a"],
+      () => 500,
+    );
+
+    expect(
+      markTimesheetEntriesCommitted(committed, ["a", "unknown"], () => 600),
+    ).toBe(committed);
+  });
+
+  it("keeps the copy across an edit, and an edit back shows no change", () => {
+    const committed = markTimesheetEntriesCommitted(
+      savedEntries(),
+      ["a"],
+      () => 500,
+    );
+    const edit = (state: LocalAppState, durationMs: number, note: string) =>
+      updateTimesheetEntry(
+        state,
+        "a",
+        { projectId: "project-1", taskId: "task-1", note, durationMs },
+        factories,
+      );
+
+    const edited = edit(committed, 2 * HOUR, "API v2");
+    expect(find(edited, "a").commit).toEqual({ at: 500, ...values });
+    expect(changeOf(edited, "a")).toBe("updated");
+
+    expect(changeOf(edit(edited, HOUR, "API"), "a")).toBeUndefined();
+  });
+
+  it("keeps the copy when the entry moves to another week", () => {
+    const committed = markTimesheetEntriesCommitted(
+      savedEntries(),
+      ["a"],
+      () => 500,
+    );
+    const moved = moveTimesheetEntry(
+      committed,
+      "a",
+      { ...values, localDate: "2026-08-04" },
+      factories,
+    );
+
+    expect(find(moved, "a")).toMatchObject({
+      localDate: "2026-08-04",
+      commit: { localDate: "2026-07-30" },
+    });
+    expect(changeOf(moved, "a")).toBe("updated");
+  });
+
+  it("gives a duplicate no copy, so it shows as added", () => {
+    const committed = markTimesheetEntriesCommitted(
+      savedEntries(),
+      ["a"],
+      () => 500,
+    );
+    const duplicated = duplicateTimesheetEntry(committed, "a", values, {
+      createId: () => "copy",
+      now: () => 600,
+    });
+
+    expect(changeOf(duplicated, "copy")).toBe("added");
+  });
+});
+
+describe("pasteTimesheetEntries", () => {
+  const HOUR = 60 * 60 * 1000;
+  function entry(id: string, localDate: string, committedAt: number) {
+    return {
+      _id: id,
+      localDate,
+      workItemId: "work-item-1",
+      projectId: "project-1",
+      taskId: "task-1",
+      label: "Feature work",
+      note: id,
+      durationMs: HOUR,
+      sourceBlockIds: [],
+      committedAt,
+    };
+  }
+  let nextId = 0;
+  const pasteFactories = {
+    createId: () => `copy-${++nextId}`,
+    now: () => 500,
+  };
+
+  it("copies several entries to their days in one change", () => {
+    nextId = 0;
+    const state = createState({
+      timesheetEntries: [
+        entry("monday", "2026-10-05", 10),
+        entry("tuesday", "2026-10-06", 20),
+      ],
+    });
+
+    const pasted = pasteTimesheetEntries(
+      state,
+      [
+        { entryId: "monday", localDate: "2026-10-12" },
+        { entryId: "tuesday", localDate: "2026-10-13" },
+      ],
+      "copy",
+      pasteFactories,
+    );
+
+    expect(pasted.timesheetEntries.slice(2)).toMatchObject([
+      { _id: "copy-1", localDate: "2026-10-12", note: "monday" },
+      { _id: "copy-2", localDate: "2026-10-13", note: "tuesday" },
+    ]);
+    // The originals stay, and each copy logs its hour on the work item.
+    expect(pasted.timesheetEntries.slice(0, 2)).toEqual(state.timesheetEntries);
+    expect(pasted.workItems[0]).toMatchObject({ completedEstimateHours: 2 });
+  });
+
+  it("moves cut entries and keeps their pasted order oldest first", () => {
+    const state = createState({
+      timesheetEntries: [
+        entry("first", "2026-10-05", 10),
+        entry("second", "2026-10-05", 20),
+      ],
+      // The two hours the entries already logged.
+      workItems: createState().workItems.map((workItem) => ({
+        ...workItem,
+        completedEstimateHours: 2,
+      })),
+    });
+
+    // Pasted in reading order: "first" was shown above "second".
+    const pasted = pasteTimesheetEntries(
+      state,
+      [
+        { entryId: "first", localDate: "2026-10-07" },
+        { entryId: "second", localDate: "2026-10-07" },
+      ],
+      "cut",
+      { createId: () => "unused", now: () => 500 },
+    );
+
+    expect(pasted.timesheetEntries).toMatchObject([
+      { _id: "first", localDate: "2026-10-07", committedAt: 500 },
+      { _id: "second", localDate: "2026-10-07", committedAt: 501 },
+    ]);
+    expect(pasted.workItems).toEqual(state.workItems);
+  });
+
+  it("skips entries that are gone or linked to the running timer", () => {
+    const state = createState({
+      timesheetEntries: [entry("running", "2026-10-05", 10)],
+      timers: [
+        {
+          _id: "timer-1",
+          startedAt: 1,
+          localDate: "2026-10-05",
+          projectId: "project-1",
+          taskId: "task-1",
+          accumulatedDurationMs: HOUR,
+          entryId: "running",
+        },
+      ],
+    });
+
+    const pasted = pasteTimesheetEntries(
+      state,
+      [
+        { entryId: "running", localDate: "2026-10-06" },
+        { entryId: "deleted", localDate: "2026-10-06" },
+      ],
+      "cut",
+      pasteFactories,
+    );
+
+    expect(pasted).toBe(state);
   });
 });

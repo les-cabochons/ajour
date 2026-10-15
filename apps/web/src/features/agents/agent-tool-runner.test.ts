@@ -25,6 +25,9 @@ vi.mock("@/lib/app-api", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   listConnectorSettleStates,
 }));
+vi.mock("@/lib/plugin-project-properties", () => ({
+  listProjectPropertyPlugins: async () => [],
+}));
 
 const client = { id: "c1", name: "Claude Code" };
 
@@ -296,8 +299,8 @@ describe("agent timer and entry tools", () => {
     });
   });
 
-  it("creates an entry and marks it submitted", async () => {
-    const { call, localStore, project, task } = await setup();
+  it("lists a new entry as added, commits it, then lists no change", async () => {
+    const { call, project, task } = await setup();
     const created = await call("create_entry", {
       date: "2026-10-13",
       projectId: project._id,
@@ -305,20 +308,107 @@ describe("agent timer and entry tools", () => {
       minutes: 90,
       note: "Workshop",
     });
-    expect(created).toMatchObject({
-      ok: true,
-      output: { date: "2026-10-13", minutes: 90, state: "saved" },
-    });
-
     const entryId = (created as { output: { entryId: string } }).output.entryId;
+
     expect(
-      await call("mark_entries_submitted", { entryIds: [entryId] }),
-    ).toMatchObject({ ok: true });
+      await call("get_week_changes", { weekOf: "2026-10-14" }),
+    ).toMatchObject({
+      ok: true,
+      output: {
+        changes: [
+          {
+            change: "added",
+            entryId,
+            externalId: expect.stringMatching(/^ajour:[0-9a-f]{8}$/),
+            current: { date: "2026-10-13", hours: 1.5, note: "Workshop" },
+          },
+        ],
+      },
+    });
     expect(
-      localStore
-        .snapshot()
-        .timesheetEntries.find((entry) => entry._id === entryId)?.submittedAt,
-    ).toBeDefined();
+      await call("mark_entries_committed", { entryIds: [entryId] }),
+    ).toMatchObject({ ok: true, output: { committed: 1 } });
+    expect(offerUndo.mock.calls.at(-1)![1].title).toBe(
+      "Claude Code: Marked 1 change as committed",
+    );
+    expect(
+      await call("get_week_changes", { weekOf: "2026-10-14" }),
+    ).toMatchObject({
+      ok: true,
+      output: { changes: [] },
+    });
+    expect(
+      await call("list_time_entries", { from: "2026-10-12", to: "2026-10-18" }),
+    ).toMatchObject({
+      ok: true,
+      output: { entries: [{ entryId, state: "committed" }] },
+    });
+  });
+
+  it("commits a deleted entry by clearing its tombstone", async () => {
+    const { call, localStore, project, task } = await setup();
+    localStore.saveManualTimeEntry({
+      localDate: "2026-10-13",
+      projectId: project._id,
+      taskId: task("Build")._id,
+      durationMs: 30 * 60_000,
+    });
+    const entryId = localStore.snapshot().timesheetEntries[0]!._id;
+    await call("mark_entries_committed", { entryIds: [entryId] });
+    localStore.deleteTimesheetEntry(entryId);
+
+    expect(
+      await call("get_week_changes", { weekOf: "2026-10-13" }),
+    ).toMatchObject({
+      ok: true,
+      output: {
+        changes: [{ change: "deleted", entryId, committed: { hours: 0.5 } }],
+      },
+    });
+    expect(
+      await call("mark_entries_committed", { entryIds: [entryId] }),
+    ).toMatchObject({ ok: true, output: { committed: 1 } });
+    expect(localStore.snapshot().timesheetTombstones).toEqual([]);
+  });
+
+  it("refuses an id that is neither an entry nor a deleted entry", async () => {
+    const { call } = await setup();
+
+    expect(
+      await call("mark_entries_committed", { entryIds: ["nope"] }),
+    ).toMatchObject({
+      ok: false,
+      error:
+        "No entry or deleted entry has the id nope. Call get_week_changes.",
+    });
+  });
+
+  it("leaves out the changes the user unchecked on the Commit page", async () => {
+    const { call, localStore, project } = await setup();
+    const { setChangesChecked } = await import("@/lib/commit-selection");
+    localStore.saveManualTimeEntry({
+      localDate: "2026-10-13",
+      projectId: project._id,
+      durationMs: 30 * 60_000,
+    });
+    const entryId = localStore.snapshot().timesheetEntries[0]!._id;
+    setChangesChecked("2026-10-12", [entryId], false);
+
+    expect(
+      await call("get_week_changes", { weekOf: "2026-10-13" }),
+    ).toMatchObject({
+      ok: true,
+      output: { changes: [] },
+    });
+    expect(
+      await call("get_week_changes", {
+        weekOf: "2026-10-13",
+        onlyChecked: false,
+      }),
+    ).toMatchObject({
+      ok: true,
+      output: { changes: [{ entryId, checked: false }] },
+    });
   });
 
   it("refuses to create an entry on an archived or unknown backlog item", async () => {
@@ -382,41 +472,6 @@ describe("agent timer and entry tools", () => {
     expect(offerUndo.mock.calls.at(-1)![1].title).toBe(
       "Claude Code: Duplicated an entry",
     );
-  });
-
-  it("marks entries as not submitted, with Undo", async () => {
-    const { call, localStore, project, task } = await setup();
-    localStore.saveManualTimeEntry({
-      localDate: "2026-10-13",
-      projectId: project._id,
-      taskId: task("Build")._id,
-      durationMs: 30 * 60_000,
-    });
-    const entryId = localStore.snapshot().timesheetEntries[0]!._id;
-    await call("mark_entries_submitted", { entryIds: [entryId] });
-
-    expect(
-      await call("mark_entries_not_submitted", { entryIds: [entryId] }),
-    ).toMatchObject({ ok: true, output: { unmarked: 1 } });
-    expect(
-      localStore.snapshot().timesheetEntries[0]!.submittedAt,
-    ).toBeUndefined();
-    expect(offerUndo.mock.calls.at(-1)![1].title).toBe(
-      "Claude Code: Marked 1 entry as not submitted",
-    );
-  });
-
-  it("refuses to unmark the running entry", async () => {
-    const { call, localStore, project } = await setup();
-    await call("start_timer", { projectId: project._id });
-    await call("stop_timer");
-    const entryId = localStore.snapshot().timesheetEntries[0]!._id;
-    await call("mark_entries_submitted", { entryIds: [entryId] });
-    localStore.continueTimesheetEntry(entryId);
-
-    expect(
-      await call("mark_entries_not_submitted", { entryIds: [entryId] }),
-    ).toMatchObject({ ok: false, error: "Stop the running entry first" });
   });
 });
 

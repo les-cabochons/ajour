@@ -17,6 +17,18 @@ describe("buildPrompt", () => {
     expect(prompt).toContain("Never type a password");
   });
 
+  it("tells the agent to mark each applied change as committed", () => {
+    const prompt = buildPrompt({
+      taskPrompt: "Commit the week.",
+      values: { sessionId: "s-1" },
+    });
+
+    expect(prompt).toContain(
+      "After the external tool saved a change, call mark_entries_committed with its entry ID. Never mark a change you did not apply.",
+    );
+    expect(prompt).not.toContain("mark_entries_submitted");
+  });
+
   it("refuses a slot without a value", () => {
     expect(() =>
       buildPrompt({ taskPrompt: "{{settings.x}}", values: { sessionId: "s" } }),

@@ -7,13 +7,13 @@ import type {
 } from "@/domain/local-state";
 import {
   normalizeTimer,
+  cancelTimer,
   continueTimesheetEntry,
   editRunningEntry,
   saveTimer,
   startTimer,
   type TimerFactories,
 } from "@/domain/time/timer-transitions";
-import { createTimesheetEntrySubmissionFingerprint } from "@/domain/time/timesheet-entry";
 
 const TODAY = "2026-07-30";
 
@@ -281,13 +281,73 @@ describe("timer and timesheet entry lifecycle", () => {
     });
   });
 
-  it("replaces a restarted entry and clears stale submission state", () => {
-    const originalEntry = createEntry({
-      submittedAt: 650,
-      sourceBlockIds: ["browser:1"],
+  it("keeps a committed entry when its resumed timer is cancelled at zero", () => {
+    const commit = {
+      at: 650,
+      localDate: "2026-07-30",
+      projectId: "project-1",
+      taskId: "task-1",
+      note: "Existing work",
+      durationMs: 0,
+    };
+    const committedEntry = createEntry({ durationMs: 0, commit });
+    const state = createState({
+      timesheetEntries: [committedEntry],
+      timers: [createRunningTimer({ entryId: committedEntry._id })],
     });
-    originalEntry.submittedFingerprint =
-      createTimesheetEntrySubmissionFingerprint(originalEntry);
+
+    const cancelled = cancelTimer(state, "timer-1");
+
+    expect(cancelled.timers).toEqual([]);
+    expect(cancelled.timesheetEntries).toEqual([committedEntry]);
+  });
+
+  it("removes an uncommitted provisional entry when its timer is cancelled", () => {
+    const provisional = createEntry({ durationMs: 0 });
+    const state = createState({
+      timesheetEntries: [provisional],
+      timers: [createRunningTimer({ entryId: provisional._id })],
+    });
+
+    expect(cancelTimer(state, "timer-1").timesheetEntries).toEqual([]);
+  });
+
+  it("keeps the resumed entry's committed copy, so the added time shows as a change", () => {
+    const commit = {
+      at: 650,
+      localDate: "2026-07-30",
+      projectId: "project-1",
+      taskId: "task-1",
+      note: "Existing work",
+      durationMs: 500,
+    };
+    const originalEntry = createEntry({ commit });
+    const state = createState({
+      timesheetEntries: [originalEntry],
+      timers: [
+        {
+          _id: "timer-1",
+          startedAt: 900,
+          localDate: originalEntry.localDate,
+          projectId: originalEntry.projectId,
+          taskId: originalEntry.taskId,
+          note: originalEntry.note,
+          accumulatedDurationMs: originalEntry.durationMs,
+          entryId: originalEntry._id,
+        },
+      ],
+    });
+
+    const saved = saveTimer(state, "timer-1", createFactories());
+
+    expect(saved.timesheetEntries[0]).toMatchObject({
+      durationMs: 600,
+      commit,
+    });
+  });
+
+  it("replaces a restarted entry and keeps its source blocks", () => {
+    const originalEntry = createEntry({ sourceBlockIds: ["browser:1"] });
     const state = createState({
       timesheetEntries: [originalEntry],
       timers: [
@@ -310,8 +370,6 @@ describe("timer and timesheet entry lifecycle", () => {
     expect(saved.timesheetEntries[0]).toMatchObject({
       _id: originalEntry._id,
       durationMs: 600,
-      submittedAt: undefined,
-      submittedFingerprint: undefined,
       sourceBlockIds: ["browser:1"],
     });
   });

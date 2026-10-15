@@ -19,9 +19,9 @@ Press **Save**, <kbd>Enter</kbd> or <kbd>⌘</kbd> <kbd>Enter</kbd>. To start th
 
 ## Edit an entry
 
-Click the entry's row in the [Day view](/time/day-view), or its cell or card in the [Week view](/time/week-view). The editor opens in the side panel.
+Double-click the entry's row in the [Day view](/time/day-view) or its card in the [Week view](/time/week-view), or click its Week Grid cell. The editor opens in the side panel. On a touch screen, tap the row.
 
-If the entry was submitted, editing it marks it as not submitted, so you remember to submit the change. See [Submit your week](/time/submit).
+If the entry was committed, the change shows on the Commit page until you commit it again. See [Commit your week](/time/commit).
 
 ## Copy and move entries
 
@@ -32,6 +32,25 @@ If the entry was submitted, editing it marks it as not submitted, so you remembe
 | **Move to…**      | <kbd>M</kbd>              | Moves the entry to a day you pick.  |
 
 Stop a running entry before you copy or move it.
+
+## Select, copy and paste entries
+
+The Day list and the Week Days cards select entries like a file explorer:
+
+- Click an entry to select it. Keys such as <kbd>Enter</kbd>, <kbd>C</kbd> and <kbd>⌘</kbd> <kbd>D</kbd> act on it.
+- <kbd>⌘</kbd>-click, or <kbd>Ctrl</kbd>-click on Windows, adds an entry to the selection or removes it.
+- <kbd>Shift</kbd>-click selects every entry between the last one you clicked and this one. In the Week view the range runs from Monday's cards to Sunday's.
+- <kbd>Esc</kbd>, or a click on empty space, clears the selection.
+
+<kbd>⌘</kbd> <kbd>C</kbd> copies the selected entries and <kbd>⌘</kbd> <kbd>X</kbd> cuts them. <kbd>Backspace</kbd> deletes them all, with one Undo. The running entry can be selected, but copy, cut and deleting several entries skip it.
+
+<kbd>⌘</kbd> <kbd>V</kbd> pastes:
+
+- In the Day view, every entry lands on the day you are looking at.
+- In the Week view, each entry keeps its weekday. An entry copied from a Monday lands on the Monday of the week you are looking at.
+- In the Week Days view, right-click a column's empty space for **Paste here**, which puts every entry in that column, or **Paste on same weekdays**.
+
+A paste of copied entries adds new entries and keeps the originals. Cut entries stay dimmed where they are until you paste them, then they move. An Undo toast follows each paste. The copied entries also reach the system clipboard as lines of text, so you can paste them into a chat.
 
 ## Delete an entry
 

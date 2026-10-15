@@ -83,7 +83,7 @@ describe("Claude Code adapter", () => {
           type: "assistant",
           message: {
             content: [
-              { type: "tool_use", name: "mcp__ajour__get_submit_lines" },
+              { type: "tool_use", name: "mcp__ajour__get_week_changes" },
             ],
           },
         }),

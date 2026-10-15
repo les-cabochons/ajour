@@ -1,11 +1,11 @@
 import type {
+  AgentChangeValues,
   AgentRunningTimer,
   AgentTimeEntry,
   AgentWorkItem,
   DataToolOutput,
   ReadToolInput,
 } from "@ajour/shared/agent-tools";
-import { getTimeEntryActionState } from "@/domain/actions/object-actions";
 import {
   isBacklogItemSnoozed,
   selectSidebarBacklogItems,
@@ -20,14 +20,14 @@ import {
   resolvePluginProperties,
   type ProjectPropertyPlugin,
 } from "@/domain/projects/plugin-properties";
-import { computeWeekPace } from "@/domain/time/week-pace";
 import {
-  groupSubmitLines,
-  summarizeSubmitSelection,
-  type SubmitGroupBy,
-} from "@/domain/time/timesheet-submission";
+  describeTimesheetCommitValues,
+  isTimesheetEntryCommitted,
+  listWeekChanges,
+  type TimesheetCommitValues,
+} from "@/domain/time/timesheet-commit";
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
-import { submitLineId } from "@/domain/agents/submit-line-id";
+import { externalEntryId } from "@/domain/agents/external-id";
 
 /**
  * What the read tools return to agents: plain ids, names and minutes, shaped
@@ -92,8 +92,8 @@ export function toAgentEntry(
     date: entry.localDate,
     state: state.timers.some((timer) => timer.entryId === entry._id)
       ? "running"
-      : getTimeEntryActionState(entry) === "submitted"
-        ? "submitted"
+      : isTimesheetEntryCommitted(entry)
+        ? "committed"
         : "saved",
     minutes: Math.round(entry.durationMs / MINUTE),
     ...(entry.note ? { note: entry.note } : {}),
@@ -251,106 +251,87 @@ export function getWorkItemForAgent(
 const toHours = (durationMs: number) =>
   Math.round((durationMs / HOUR) * 100) / 100;
 
+/** Non-empty plugin property values of the project, or undefined when there are none. */
+function resolveProjectProperties(
+  state: LocalAppState,
+  projectId: string | undefined,
+  plugins: ProjectPropertyPlugin[],
+) {
+  const project = state.projects.find((item) => item._id === projectId);
+  if (!project) return undefined;
+  const byPlugin: Record<string, Record<string, string>> = {};
+  for (const plugin of plugins) {
+    const fields = Object.fromEntries(
+      resolvePluginProperties(project, plugin)
+        .filter((property) => property.value !== "")
+        .map((property) => [property.field.id, property.value]),
+    );
+    if (Object.keys(fields).length > 0) byPlugin[plugin.pluginId] = fields;
+  }
+  return Object.keys(byPlugin).length > 0 ? byPlugin : undefined;
+}
+
+function toAgentChangeValues(
+  state: LocalAppState,
+  values: TimesheetCommitValues,
+  plugins: ProjectPropertyPlugin[],
+): AgentChangeValues {
+  const projectProperties = resolveProjectProperties(
+    state,
+    values.projectId,
+    plugins,
+  );
+  const note = values.note?.trim();
+  return {
+    date: values.localDate,
+    ...describeTimesheetCommitValues(state.projects, values),
+    ...(projectProperties ? { projectProperties } : {}),
+    hours: toHours(values.durationMs),
+    ...(note ? { note } : {}),
+  };
+}
+
 /**
- * The Submit page's lines for a week, in decimal hours as Workday wants them,
- * plus the week's pace check. `today` is passed in because domain code does
- * not read the clock.
+ * The week's changes since its last commit, as the Commit page lists them,
+ * in decimal hours as Workday wants them. Each one has the entry's external
+ * ID. With `onlyChecked`, the changes the user unchecked stay out.
  */
-export function getSubmitLinesForAgent(
+export function getWeekChangesForAgent(
   state: LocalAppState,
   {
     weekDates,
-    groupBy,
-    onlyUnsubmitted,
-    today,
-    paceTolerancePercent,
+    onlyChecked,
+    uncheckedIds,
     projectPropertyPlugins,
   }: {
     weekDates: string[];
-    groupBy: SubmitGroupBy;
-    onlyUnsubmitted: boolean;
-    today: string;
-    paceTolerancePercent: number;
+    onlyChecked: boolean;
+    /** Unchecked on the Commit page. Passed in to keep domain free of `lib/`. */
+    uncheckedIds: ReadonlySet<string>;
     /** Active plugins that add project properties. Passed in to keep domain free of `lib/`. */
     projectPropertyPlugins: ProjectPropertyPlugin[];
   },
-): DataToolOutput<"get_submit_lines"> {
-  const weekDateSet = new Set(weekDates);
-  const weekEntries = state.timesheetEntries.filter((entry) =>
-    weekDateSet.has(entry.localDate),
-  );
-  const sections = groupSubmitLines({
-    entries: weekEntries,
-    groupBy,
-    onlyUnsubmitted,
-    projects: state.projects,
-    weekDates,
-  });
-  const summary = summarizeSubmitSelection({
-    capacityTargets: state.userPreferences.weeklyCapacityTargets,
-    selectedIds: new Set(
-      weekEntries
-        .filter((entry) => entry.submittedAt === undefined)
-        .map((entry) => entry._id),
-    ),
-    weekDates,
-    weekEntries,
-  });
-  const projectsById = new Map(
-    state.projects.map((project) => [project._id, project]),
-  );
-  /** Non-empty values per active plugin, or undefined when there are none. */
-  const pluginValues = (projectId: string | undefined) => {
-    const project = projectId ? projectsById.get(projectId) : undefined;
-    if (!project) return undefined;
-    const byPlugin: Record<string, Record<string, string>> = {};
-    for (const plugin of projectPropertyPlugins) {
-      const fields = Object.fromEntries(
-        resolvePluginProperties(project, plugin)
-          .filter((property) => property.value !== "")
-          .map((property) => [property.field.id, property.value]),
-      );
-      if (Object.keys(fields).length > 0) byPlugin[plugin.pluginId] = fields;
-    }
-    return Object.keys(byPlugin).length > 0 ? byPlugin : undefined;
-  };
-
+): DataToolOutput<"get_week_changes"> {
+  const describe = (values: TimesheetCommitValues) =>
+    toAgentChangeValues(state, values, projectPropertyPlugins);
   return {
-    sections: sections.map((section) => ({
-      ...(section.localDate ? { date: section.localDate } : {}),
-      lines: section.lines.map((line) => {
-        const project = line.projectId
-          ? projectsById.get(line.projectId)
-          : undefined;
-        const projectProperties = pluginValues(line.projectId);
-        return {
-          lineId: submitLineId(line.entryIds),
-          ...(line.projectName ? { projectName: line.projectName } : {}),
-          ...(line.projectCode ? { projectCode: line.projectCode } : {}),
-          ...(project ? { projectFullName: project.name } : {}),
-          ...(projectProperties ? { projectProperties } : {}),
-          ...(line.taskName ? { taskName: line.taskName } : {}),
-          hours: toHours(line.durationMs),
-          comments: line.comments,
-          entryIds: line.entryIds,
-          unsubmittedEntryIds: line.unsubmittedEntryIds,
-        };
-      }),
-    })),
-    summary: {
-      totalHours: toHours(summary.totalMs),
-      targetHours: toHours(summary.targetMs),
-      warnings: summary.warnings,
-    },
-    pace: computeWeekPace({
+    changes: listWeekChanges({
+      entries: state.timesheetEntries,
+      tombstones: state.timesheetTombstones,
       weekDates,
-      today,
-      capacityTargets: state.userPreferences.weeklyCapacityTargets,
-      loggedMs: weekEntries.reduce(
-        (total, entry) => total + entry.durationMs,
-        0,
-      ),
-      tolerancePercent: paceTolerancePercent,
-    }),
+    })
+      .filter((change) => !onlyChecked || !uncheckedIds.has(change.entryId))
+      .map((change) => ({
+        change: change.kind,
+        entryId: change.entryId,
+        externalId: externalEntryId(change.entryId),
+        checked: !uncheckedIds.has(change.entryId),
+        ...(change.kind === "deleted"
+          ? {}
+          : { current: describe(change.current) }),
+        ...(change.kind === "added"
+          ? {}
+          : { committed: describe(change.committed) }),
+      })),
   };
 }

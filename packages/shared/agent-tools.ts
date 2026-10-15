@@ -117,10 +117,9 @@ export const readToolInputSchemas = {
     limit: z.number().int().min(1).max(200).default(50),
   }),
   get_work_item: z.object({ workItemId: z.string().min(1) }),
-  get_submit_lines: z.object({
+  get_week_changes: z.object({
     weekOf: isoDateSchema,
-    groupBy: z.enum(["day-task", "day", "task"]).default("day-task"),
-    onlyUnsubmitted: z.boolean().default(true),
+    onlyChecked: z.boolean().default(true),
   }),
 } as const;
 export type ReadToolName = keyof typeof readToolInputSchemas;
@@ -183,10 +182,7 @@ export const writeToolInputSchemas = {
     entryId: z.string(),
     date: isoDateSchema.optional(),
   }),
-  mark_entries_submitted: z.object({
-    entryIds: z.array(z.string()).min(1).max(500),
-  }),
-  mark_entries_not_submitted: z.object({
+  mark_entries_committed: z.object({
     entryIds: z.array(z.string()).min(1).max(500),
   }),
   create_work_item: z.object({
@@ -258,8 +254,11 @@ export const agentTimeEntrySchema = z.object({
   ...agentProjectRefShape,
   entryId: z.string(),
   date: z.string(),
-  /** Running when the running entry continues this saved entry. */
-  state: z.enum(["saved", "submitted", "running"]),
+  /**
+   * Committed when the external timesheet holds the entry as it is now.
+   * Running when the running entry continues this saved entry.
+   */
+  state: z.enum(["saved", "committed", "running"]),
   minutes: z.number(),
   note: z.string().optional(),
   workItemId: z.string().optional(),
@@ -283,15 +282,24 @@ export const agentWorkItemSchema = z.object({
 });
 export type AgentWorkItem = z.infer<typeof agentWorkItemSchema>;
 
-const submitWarningSchema = z.discriminatedUnion("kind", [
-  z.object({
-    kind: z.literal("day-under-target"),
-    localDate: z.string(),
-    loggedMs: z.number(),
-    targetMs: z.number(),
-  }),
-  z.object({ kind: z.literal("missing-task"), entryCount: z.number() }),
-]);
+/** One side of a change: the entry as it is now, or as it was committed. */
+export const agentChangeValuesSchema = z.object({
+  date: z.string(),
+  /** The project's short display name. */
+  projectName: z.string().optional(),
+  projectCode: z.string().optional(),
+  /** The project's full name. */
+  projectFullName: z.string().optional(),
+  /**
+   * Properties that active plugins add to the project, keyed by plugin ID
+   * then field ID, with defaults filled in.
+   */
+  projectProperties: z.record(z.record(z.string())).optional(),
+  taskName: z.string().optional(),
+  hours: z.number(),
+  note: z.string().optional(),
+});
+export type AgentChangeValues = z.infer<typeof agentChangeValuesSchema>;
 
 /**
  * Output schemas of the read and write tools, by MCP tool name. The API
@@ -325,44 +333,21 @@ export const dataToolOutputSchemas = {
       }),
     ),
   }),
-  get_submit_lines: z.object({
-    sections: z.array(
+  get_week_changes: z.object({
+    changes: z.array(
       z.object({
-        date: z.string().optional(),
-        lines: z.array(
-          z.object({
-            /** "ajour:" and 8 hex characters. Stable for the same entries. */
-            lineId: z.string(),
-            projectName: z.string().optional(),
-            projectCode: z.string().optional(),
-            /** The project's full name. `projectName` is its short display name. */
-            projectFullName: z.string().optional(),
-            /**
-             * Properties that active plugins add to the project, keyed by
-             * plugin ID then field ID, with defaults filled in.
-             */
-            projectProperties: z.record(z.record(z.string())).optional(),
-            taskName: z.string().optional(),
-            hours: z.number(),
-            comments: z.string(),
-            entryIds: z.array(z.string()),
-            unsubmittedEntryIds: z.array(z.string()),
-          }),
-        ),
+        change: z.enum(["added", "updated", "deleted"]),
+        entryId: z.string(),
+        /** "ajour:" and 8 hex characters. Never changes for the entry. */
+        externalId: z.string(),
+        /** False when the user unchecked it on the Commit page. */
+        checked: z.boolean(),
+        /** Missing for a deleted entry. */
+        current: agentChangeValuesSchema.optional(),
+        /** For updated and deleted entries: what the external timesheet holds. */
+        committed: agentChangeValuesSchema.optional(),
       }),
     ),
-    summary: z.object({
-      totalHours: z.number(),
-      targetHours: z.number(),
-      warnings: z.array(submitWarningSchema),
-    }),
-    /** Ajour's pace check. Ask the user before entering a week that is not on-pace. */
-    pace: z.object({
-      loggedHours: z.number(),
-      targetHours: z.number(),
-      expectedHours: z.number(),
-      status: z.enum(["on-pace", "under", "over"]),
-    }),
   }),
   start_timer: z.object({ running: agentRunningTimerSchema }),
   stop_timer: z.object({
@@ -374,8 +359,7 @@ export const dataToolOutputSchemas = {
   edit_entry: agentTimeEntrySchema,
   move_entry: agentTimeEntrySchema,
   duplicate_entry: agentTimeEntrySchema,
-  mark_entries_submitted: z.object({ marked: z.number() }),
-  mark_entries_not_submitted: z.object({ unmarked: z.number() }),
+  mark_entries_committed: z.object({ committed: z.number() }),
   create_work_item: agentWorkItemSchema,
   edit_work_item: agentWorkItemSchema,
   move_work_item: agentWorkItemSchema,

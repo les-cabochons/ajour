@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { LocalAppState, LocalTimesheetEntry } from "@/domain/local-state";
 import {
-  getSubmitLinesForAgent,
+  getWeekChangesForAgent,
   getWorkItemForAgent,
   listProjectsForAgent,
   listTimeEntriesForAgent,
@@ -9,7 +9,7 @@ import {
   readRunningTimer,
 } from "@/domain/agents/agent-read-model";
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
-import { submitLineId } from "@/domain/agents/submit-line-id";
+import { externalEntryId } from "@/domain/agents/external-id";
 
 const HOUR = 3_600_000;
 const NOW = Date.UTC(2026, 9, 14, 15);
@@ -54,6 +54,7 @@ function createState(): LocalAppState {
       {
         _id: "project-2",
         name: "Gone",
+        code: "GONE-1",
         color: "#654321",
         status: "archived",
         tasks: [],
@@ -71,10 +72,23 @@ function createState(): LocalAppState {
       },
     ],
     timesheetEntries: [
-      entry({ _id: "e1", note: "Afternoon", committedAt: 20 }),
-      entry({ _id: "e2", note: "Morning", committedAt: 10, submittedAt: 5 }),
+      entry({ _id: "e1", note: "Morning", committedAt: 20 }),
+      entry({
+        _id: "e2",
+        note: "Afternoon",
+        committedAt: 10,
+        commit: {
+          at: 5,
+          localDate: "2026-10-13",
+          projectId: "project-1",
+          taskId: "task-1",
+          note: "Afternoon",
+          durationMs: HOUR,
+        },
+      }),
       entry({ _id: "e3", localDate: "2026-10-20" }),
     ],
+    timesheetTombstones: [],
     workItems: [
       {
         _id: "w1",
@@ -153,7 +167,7 @@ describe("agent read model", () => {
       NOW,
     );
     expect(result.entries.map((item) => [item.entryId, item.state])).toEqual([
-      ["e2", "submitted"],
+      ["e2", "committed"],
       ["e1", "saved"],
     ]);
     expect(result.running?.timerId).toBe("timer-1");
@@ -207,64 +221,132 @@ describe("agent read model", () => {
     );
   });
 
-  it("builds the week's submit lines in decimal hours", () => {
-    const result = getSubmitLinesForAgent(createState(), {
-      weekDates: WEEK,
-      groupBy: "day-task",
-      onlyUnsubmitted: false,
-      today: "2026-10-14",
-      paceTolerancePercent: 20,
-      projectPropertyPlugins: [],
-    });
-    expect(result.sections).toEqual([
+  const NEXT_WEEK = [
+    "2026-10-19",
+    "2026-10-20",
+    "2026-10-21",
+    "2026-10-22",
+    "2026-10-23",
+    "2026-10-24",
+    "2026-10-25",
+  ];
+
+  /** e1 added, e2 updated from 1 h to 2 h, and a deleted entry on the archived project. */
+  function changesState(): LocalAppState {
+    const state = createState();
+    return {
+      ...state,
+      timesheetEntries: state.timesheetEntries.map((item) =>
+        item._id === "e2" ? { ...item, durationMs: 2 * HOUR } : item,
+      ),
+      timesheetTombstones: [
+        {
+          entryId: "gone",
+          commit: {
+            at: 5,
+            localDate: "2026-10-14",
+            projectId: "project-2",
+            note: "Old work",
+            durationMs: HOUR,
+          },
+        },
+      ],
+    };
+  }
+
+  const allChecked = {
+    weekDates: WEEK,
+    onlyChecked: true,
+    uncheckedIds: new Set<string>(),
+    projectPropertyPlugins: [],
+  };
+
+  it("lists the week's changes with external ids, in decimal hours", () => {
+    const acme = {
+      projectName: "Acme",
+      projectFullName: "Acme",
+      taskName: "Build",
+    };
+
+    expect(getWeekChangesForAgent(changesState(), allChecked).changes).toEqual([
       {
-        date: "2026-10-13",
-        lines: [
-          expect.objectContaining({
-            projectName: "Acme",
-            taskName: "Build",
-            hours: 2,
-            comments: "Morning | Afternoon",
-          }),
-        ],
+        change: "added",
+        entryId: "e1",
+        externalId: externalEntryId("e1"),
+        checked: true,
+        current: { date: "2026-10-13", ...acme, hours: 1, note: "Morning" },
+      },
+      {
+        change: "updated",
+        entryId: "e2",
+        externalId: externalEntryId("e2"),
+        checked: true,
+        current: { date: "2026-10-13", ...acme, hours: 2, note: "Afternoon" },
+        committed: { date: "2026-10-13", ...acme, hours: 1, note: "Afternoon" },
+      },
+      {
+        change: "deleted",
+        entryId: "gone",
+        externalId: externalEntryId("gone"),
+        checked: true,
+        // The project is archived since, and still named.
+        committed: {
+          date: "2026-10-14",
+          projectName: "Gone",
+          projectFullName: "Gone",
+          projectCode: "GONE-1",
+          hours: 1,
+          note: "Old work",
+        },
       },
     ]);
-    expect(result.summary.targetHours).toBe(40);
-    // 2 h logged by Wednesday, when 24 h of the 40 h target is expected.
-    expect(result.pace).toEqual({
-      loggedHours: 2,
-      targetHours: 40,
-      expectedHours: 24,
-      status: "under",
-    });
   });
 
-  it("gives each submit line a stable ID and its project code", () => {
-    const result = getSubmitLinesForAgent(stateWithCodedProject(), {
-      weekDates: WEEK,
-      groupBy: "day-task",
-      onlyUnsubmitted: true,
-      today: "2026-10-14",
-      paceTolerancePercent: 20,
-      projectPropertyPlugins: [],
-    });
-    const line = result.sections[0]!.lines[0]!;
-    expect(line.lineId).toBe(submitLineId(line.entryIds));
-    expect(line.projectCode).toBe("ACME-1");
+  it("leaves out unchecked changes unless asked for every change", () => {
+    const input = { ...allChecked, uncheckedIds: new Set(["e1"]) };
+
+    expect(
+      getWeekChangesForAgent(changesState(), input).changes.map(
+        (change) => change.entryId,
+      ),
+    ).toEqual(["e2", "gone"]);
+    expect(
+      getWeekChangesForAgent(changesState(), {
+        ...input,
+        onlyChecked: false,
+      }).changes.find((change) => change.entryId === "e1"),
+    ).toMatchObject({ checked: false });
   });
 
-  it("sends the full name and resolved plugin properties of active plugins", () => {
+  it("shows an entry moved to the next week in both weeks, with one external id", () => {
+    const state = createState();
+    state.timesheetEntries = state.timesheetEntries.map((item) =>
+      item._id === "e2" ? { ...item, localDate: "2026-10-20" } : item,
+    );
+
+    for (const weekDates of [WEEK, NEXT_WEEK]) {
+      expect(
+        getWeekChangesForAgent(state, {
+          ...allChecked,
+          weekDates,
+        }).changes.find((change) => change.entryId === "e2"),
+      ).toMatchObject({
+        change: "updated",
+        externalId: externalEntryId("e2"),
+        current: { date: "2026-10-20" },
+        committed: { date: "2026-10-13" },
+      });
+    }
+  });
+
+  it("sends the resolved plugin properties of active plugins", () => {
     const state = stateWithCodedProject();
     state.projects[0]!.pluginProperties = {
       "workday-agent": { name: "CA004 Tech & Design" },
       inactive: { other: "hidden" },
     };
-    const result = getSubmitLinesForAgent(state, {
-      weekDates: WEEK,
-      groupBy: "day-task",
-      onlyUnsubmitted: true,
-      today: "2026-10-14",
-      paceTolerancePercent: 20,
+    const change = getWeekChangesForAgent(state, {
+      ...allChecked,
       projectPropertyPlugins: [
         {
           pluginId: "workday-agent",
@@ -278,25 +360,21 @@ describe("agent read model", () => {
           },
         },
       ],
-    });
-    const line = result.sections[0]!.lines[0]!;
-    expect(line.projectFullName).toBe("Acme");
-    expect(line.projectProperties).toEqual({
-      "workday-agent": { name: "CA004 Tech & Design", code: "ACME-1" },
+    }).changes.find((item) => item.entryId === "e1")!;
+
+    expect(change.current).toMatchObject({
+      projectFullName: "Acme",
+      projectCode: "ACME-1",
+      projectProperties: {
+        "workday-agent": { name: "CA004 Tech & Design", code: "ACME-1" },
+      },
     });
   });
 
   it("sends no plugin properties when no plugin adds any", () => {
-    const result = getSubmitLinesForAgent(stateWithCodedProject(), {
-      weekDates: WEEK,
-      groupBy: "day-task",
-      onlyUnsubmitted: true,
-      today: "2026-10-14",
-      paceTolerancePercent: 20,
-      projectPropertyPlugins: [],
-    });
-    const line = result.sections[0]!.lines[0]!;
-    expect(line.projectFullName).toBe("Acme");
-    expect(line).not.toHaveProperty("projectProperties");
+    const change = getWeekChangesForAgent(stateWithCodedProject(), allChecked)
+      .changes[0]!;
+
+    expect(change.current).not.toHaveProperty("projectProperties");
   });
 });

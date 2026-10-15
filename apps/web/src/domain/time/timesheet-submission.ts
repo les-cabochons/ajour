@@ -6,10 +6,9 @@ import {
 } from "@/domain/local-state";
 
 /**
- * Rules for the submit page: how the week's entries become copyable lines,
- * what is selected, what the summary shows, and the week's submission status.
- * Submitting means copying the week into an external timesheet by hand, then
- * marking the entries as submitted in Ajour.
+ * Rules for the Commit page's lines: how the week's entries become copyable
+ * lines and what the week summary shows. The user copies lines into an
+ * external timesheet by hand; committing is in `timesheet-commit.ts`.
  */
 
 const CAPACITY_KEYS = [
@@ -27,15 +26,10 @@ export const SUBMIT_COMMENT_SEPARATOR = " | ";
 
 export type SubmitGroupBy = "day-task" | "day" | "task";
 
-/**
- * One copyable line. Its hours and comments cover every entry in `entryIds`,
- * submitted or not, so the line matches what the external timesheet holds.
- */
+/** One copyable line. Its hours and comments cover every entry in `entryIds`. */
 export interface SubmitLine {
   key: string;
   entryIds: string[];
-  /** The line's entries that are not submitted. Its checkbox covers these. */
-  unsubmittedEntryIds: string[];
   projectId?: string;
   /** Undefined when the entries have no project. */
   projectName?: string;
@@ -115,9 +109,6 @@ function toLine(key: string, group: DescribedEntry[]): SubmitLine {
   return {
     key,
     entryIds: group.map((item) => item.entry._id),
-    unsubmittedEntryIds: group
-      .filter((item) => item.entry.submittedAt === undefined)
-      .map((item) => item.entry._id),
     projectId: first.entry.projectId,
     projectName: first.projectName,
     projectCode: first.projectCode,
@@ -145,32 +136,26 @@ function compareLines(left: SubmitLine, right: SubmitLine) {
 }
 
 /**
- * Builds the submit page lines.
+ * Builds the Commit page lines.
  *
  * - "day-task": a section per day, a line per task in that day.
  * - "day": a section per day, a line per entry.
  * - "task": one section, a line per task for the whole week.
  *
  * Days keep the week order and skip days without entries. Within a day,
- * entries keep the Day view order (oldest committed first). With
- * `onlyUnsubmitted`, lines whose entries are all submitted are left out, but a
- * line that remains still adds up its submitted entries.
+ * entries keep the Day view order (oldest committed first).
  */
 export function groupSubmitLines({
   entries,
   groupBy,
-  onlyUnsubmitted = false,
   projects,
   weekDates,
 }: {
   entries: LocalTimesheetEntry[];
   groupBy: SubmitGroupBy;
-  onlyUnsubmitted?: boolean;
   projects: LocalProject[];
   weekDates: string[];
 }): SubmitSection[] {
-  const keep = (line: SubmitLine) =>
-    !onlyUnsubmitted || line.unsubmittedEntryIds.length > 0;
   const weekDateSet = new Set(weekDates);
   const described = describeEntries(
     entries
@@ -182,7 +167,6 @@ export function groupSubmitLines({
   if (groupBy === "task") {
     const lines = [...groupByTask(described)]
       .map(([taskKey, group]) => toLine(taskKey, group))
-      .filter(keep)
       .sort(compareLines);
     return lines.length > 0 ? [{ key: "week", lines }] : [];
   }
@@ -191,127 +175,14 @@ export function groupSubmitLines({
     const dayEntries = described.filter(
       (item) => item.entry.localDate === localDate,
     );
-    const lines = (
+    const lines =
       groupBy === "day"
         ? dayEntries.map((item) => toLine(item.entry._id, [item]))
         : [...groupByTask(dayEntries)].map(([taskKey, group]) =>
             toLine(`${localDate}::${taskKey}`, group),
-          )
-    ).filter(keep);
+          );
     return lines.length > 0 ? [{ key: localDate, localDate, lines }] : [];
   });
-}
-
-export type SubmitSelectionState = "all" | "some" | "none";
-
-/** How much of a line or a day the selection covers, for its checkbox. */
-export function getSubmitSelectionState(
-  selectedIds: ReadonlySet<string>,
-  entryIds: string[],
-): SubmitSelectionState {
-  const selectedCount = entryIds.filter((id) => selectedIds.has(id)).length;
-  if (selectedCount === 0) {
-    return "none";
-  }
-  return selectedCount === entryIds.length ? "all" : "some";
-}
-
-/** Adds or drops every entry behind a line or a day chip. */
-export function setSubmitSelection(
-  selectedIds: ReadonlySet<string>,
-  entryIds: string[],
-  include: boolean,
-): Set<string> {
-  const next = new Set(selectedIds);
-  for (const id of entryIds) {
-    if (include) {
-      next.add(id);
-    } else {
-      next.delete(id);
-    }
-  }
-  return next;
-}
-
-/**
- * Keeps the selection in step with the entries the page can submit. Entries
- * that left the list are dropped. Entries that joined it, such as one edited
- * after the page opened, start selected, like every unsubmitted entry does.
- */
-export function reconcileSubmitSelection(
-  selectedIds: ReadonlySet<string>,
-  previousSelectableIds: ReadonlySet<string>,
-  selectableIds: string[],
-): Set<string> {
-  return new Set(
-    selectableIds.filter(
-      (id) => selectedIds.has(id) || !previousSelectableIds.has(id),
-    ),
-  );
-}
-
-export type SubmitWeekStatus =
-  /** No entry of the week is submitted. */
-  | { kind: "not-submitted" }
-  /** Every entry of the week is submitted. */
-  | {
-      kind: "submitted";
-      submittedAt: number;
-      entryCount: number;
-      totalMs: number;
-    }
-  /** Some entries are submitted and the others were never submitted. */
-  | {
-      kind: "partly-submitted";
-      submittedAt: number;
-      entryCount: number;
-      totalMs: number;
-    }
-  /** Some entries were edited after they were submitted. */
-  | { kind: "changed"; submittedAt: number; changedEntryIds: string[] };
-
-/**
- * Status of one week's timesheet. `submittedAt` is the latest submission time
- * among the week's entries, including entries that were edited since.
- */
-export function getSubmitWeekStatus(
-  weekEntries: LocalTimesheetEntry[],
-): SubmitWeekStatus {
-  const submitted = weekEntries.filter(
-    (entry) => entry.submittedAt !== undefined,
-  );
-  const changedEntryIds = weekEntries
-    .filter(
-      (entry) =>
-        entry.submittedAt === undefined &&
-        entry.previousSubmittedAt !== undefined,
-    )
-    .map((entry) => entry._id);
-  const submittedAt = Math.max(
-    ...weekEntries.map(
-      (entry) =>
-        entry.submittedAt ??
-        entry.previousSubmittedAt ??
-        Number.NEGATIVE_INFINITY,
-    ),
-  );
-
-  if (!Number.isFinite(submittedAt)) {
-    return { kind: "not-submitted" };
-  }
-  if (changedEntryIds.length > 0) {
-    return { kind: "changed", submittedAt, changedEntryIds };
-  }
-
-  return {
-    kind:
-      submitted.length === weekEntries.length
-        ? "submitted"
-        : "partly-submitted",
-    submittedAt,
-    entryCount: submitted.length,
-    totalMs: submitted.reduce((sum, entry) => sum + entry.durationMs, 0),
-  };
 }
 
 export type SubmitWarning =
@@ -324,47 +195,36 @@ export type SubmitWarning =
   | { kind: "missing-task"; entryCount: number };
 
 export interface SubmitSummary {
-  /** Entries already submitted plus the selected entries. */
+  /** Every entry of the week. */
   totalMs: number;
   targetMs: number;
   isUnderTarget: boolean;
   warnings: SubmitWarning[];
 }
 
-/**
- * Summarizes the week as it will stand once the selected entries are marked:
- * entries already submitted plus the selection. Counting submitted entries
- * keeps "Mark changes as submitted" from reading as a nearly empty week.
- */
-export function summarizeSubmitSelection({
+/** The week's total against its capacity targets, with its warnings. */
+export function summarizeWeek({
   capacityTargets,
-  selectedIds,
   weekDates,
   weekEntries,
 }: {
   capacityTargets: WeeklyCapacityTargets;
-  selectedIds: ReadonlySet<string>;
   weekDates: string[];
   weekEntries: LocalTimesheetEntry[];
 }): SubmitSummary {
-  const counted = weekEntries.filter(
-    (entry) => entry.submittedAt !== undefined || selectedIds.has(entry._id),
-  );
   const days = weekDates.map((localDate, index) => {
     const key = CAPACITY_KEYS[index];
     return {
       localDate,
       targetMs: key ? capacityTargets[key] : 0,
-      loggedMs: counted
+      loggedMs: weekEntries
         .filter((entry) => entry.localDate === localDate)
         .reduce((sum, entry) => sum + entry.durationMs, 0),
     };
   });
   const totalMs = days.reduce((sum, day) => sum + day.loggedMs, 0);
   const targetMs = days.reduce((sum, day) => sum + day.targetMs, 0);
-  const missingTaskCount = weekEntries.filter(
-    (entry) => selectedIds.has(entry._id) && !entry.taskId,
-  ).length;
+  const missingTaskCount = weekEntries.filter((entry) => !entry.taskId).length;
 
   const warnings: SubmitWarning[] = days
     .filter((day) => day.targetMs > 0 && day.loggedMs < day.targetMs)
@@ -379,24 +239,4 @@ export function summarizeSubmitSelection({
     isUnderTarget: targetMs > 0 && totalMs < targetMs,
     warnings,
   };
-}
-
-/**
- * Label of the mark button. Reads "Mark changes as submitted" when the
- * selection holds only entries edited since the last submission.
- */
-export function getSubmitButtonLabel(
-  status: SubmitWeekStatus,
-  selectedIds: ReadonlySet<string>,
-): string {
-  if (
-    status.kind === "changed" &&
-    selectedIds.size > 0 &&
-    [...selectedIds].every((id) => status.changedEntryIds.includes(id))
-  ) {
-    return "Mark changes as submitted";
-  }
-
-  const count = selectedIds.size;
-  return `Mark ${count} ${count === 1 ? "entry" : "entries"} as submitted`;
 }

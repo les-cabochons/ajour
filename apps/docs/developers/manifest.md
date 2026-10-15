@@ -85,10 +85,10 @@ An agent task is a Markdown prompt that Ajour gives to the user's coding agent, 
   "agentTask": {
     "tasks": [
       {
-        "id": "enter-week",
-        "label": "Enter in Workday",
-        "placement": "submit-week",
-        "prompt": "prompts/enter-week.md",
+        "id": "commit-week",
+        "label": "Commit to Workday",
+        "placement": "commit-week",
+        "prompt": "prompts/commit-week.md",
         "estimateMinutes": 10,
         "weekLink": "{{settings.timesheetUrl}}",
         "settings": [
@@ -103,8 +103,8 @@ An agent task is a Markdown prompt that Ajour gives to the user's coding agent, 
 | Key               | Type   | Rules                                                                                                                         |
 | ----------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------- |
 | `id`              | string | Unique in the plugin.                                                                                                         |
-| `label`           | string | The button label on the Submit page.                                                                                          |
-| `placement`       | string | `submit-week`, the only value: a button on the Submit page for the week on screen.                                            |
+| `label`           | string | The button label on the Commit page.                                                                                          |
+| `placement`       | string | `commit-week`, the only value: a button next to **Mark as committed** on the Commit page, for the week on screen.             |
 | `prompt`          | string | Relative path to a Markdown file in the package. A regular file, no symlinks, at most 64 KB.                                  |
 | `estimateMinutes` | number | How long a run usually takes. The agent panel uses it to tell a slow run from a stuck one.                                    |
 | `weekLink`        | string | Optional. A URL template for **Open the week in…**. Shown only when it fills to an `https:` URL.                              |
@@ -128,7 +128,7 @@ The prompt and `weekLink` can use these slots. A slot Ajour does not know fails 
 
 ### What the agent gets
 
-Ajour puts its own rules before your prompt. The agent must report in its session, ask the user only when it cannot go on, mark each line as submitted once the external tool saved it, and never type a password or a code. Your prompt describes the steps in the external tool. The agent can use the [MCP tools](/app/agents#what-agents-can-do), including `get_submit_lines`, which gives each line a stable `lineId` and the week's `pace`, and `mark_entries_not_submitted` to undo a mark when a line fails.
+Ajour puts its own rules before your prompt. The agent must report in its session, ask the user only when it cannot go on, mark each change as committed once the external tool saved it, and never type a password or a code. Your prompt describes the steps in the external tool. The agent can use the [MCP tools](/app/agents#what-agents-can-do), including `get_week_changes`, which lists the week's added, updated and deleted entries, each with a stable `externalId`, and `mark_entries_committed`.
 
 ## Project properties
 
@@ -156,7 +156,7 @@ A plugin can add text fields to every project. A plugin that declares only `proj
 
 Fields are plain text, up to 240 characters.
 
-Ajour shows the fields in a section of the project's properties card, titled `section`, collapsed until the user opens it. An empty value shows the default in grey: the project's full name for `fullName`, its code for `code`. Agents read the values in `get_submit_lines`, under `projectProperties.<plugin id>.<field id>`, with defaults filled in.
+Ajour shows the fields in a section of the project's properties card, titled `section`, collapsed until the user opens it. An empty value shows the default in grey: the project's full name for `fullName`, its code for `code`. Agents read the values in `get_week_changes`, under `projectProperties.<plugin id>.<field id>`, with defaults filled in.
 
 ## Connection fields
 

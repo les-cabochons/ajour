@@ -172,11 +172,13 @@
     table-layout: fixed;
   }
 
+  /* No text selection, so Shift+click selects a range of rows instead. */
   .time-entry-row {
     height: 40px;
     border-bottom: 1px solid var(--border);
     cursor: pointer;
     outline: none;
+    user-select: none;
   }
 
   .time-entry-row:hover,
@@ -190,6 +192,15 @@
 
   .time-entry-row.is-editing {
     background: var(--hover-bg);
+  }
+
+  /* Selected for copy, cut and paste. */
+  .time-entry-row.is-selected {
+    background: var(--indigo-muted);
+  }
+
+  .time-entry-row.is-cut {
+    opacity: 0.5;
   }
 
   .time-entry-row.is-reorderable {
@@ -284,7 +295,7 @@
 
   /* Tailwind's preflight makes every svg a block, which would push the
      duration onto its own line. */
-  .time-entry-submitted {
+  .time-entry-committed {
     display: inline-block;
     width: 14px;
     height: 14px;
@@ -872,6 +883,7 @@
     font-size: var(--text-sm);
     cursor: pointer;
     outline: none;
+    user-select: none;
   }
 
   .weekly-entry-card:hover {
@@ -882,9 +894,18 @@
     box-shadow: 0 0 0 2px var(--focus-ring);
   }
 
-  .weekly-entry-card.is-selected {
+  .weekly-entry-card.is-editing {
     border-color: var(--ring);
     box-shadow: 0 0 0 1px var(--ring);
+  }
+
+  /* Selected for copy, cut and paste. The rail keeps the project color. */
+  .weekly-entry-card.is-selected {
+    background: var(--indigo-muted);
+  }
+
+  .weekly-entry-card.is-cut {
+    opacity: 0.5;
   }
 
   .weekly-entry-card.is-dragging {
@@ -1018,9 +1039,9 @@
     font-weight: 500;
   }
 
-  /* -- Submit ----------------------------------------------------- */
+  /* -- Commit ----------------------------------------------------- */
 
-  .submit-page {
+  .commit-page {
     display: flex;
     width: 100%;
     max-width: 960px;
@@ -1102,15 +1123,11 @@
 
   .submit-line {
     display: grid;
-    grid-template-columns: 1rem minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: start;
     gap: 0 0.5rem;
     padding: 0.5rem 0.25rem;
     border-bottom: 1px solid var(--border);
-  }
-
-  .submit-line.is-excluded {
-    opacity: 0.55;
   }
 
   .submit-line-dot {
@@ -1132,7 +1149,7 @@
   }
 
   .submit-line-comments {
-    grid-column: 2 / 4;
+    grid-column: 1 / 3;
     justify-self: start;
     color: var(--text-secondary);
     font-size: var(--text-xs);
@@ -1181,6 +1198,73 @@
     font-weight: 500;
     font-variant-numeric: tabular-nums;
   }
+
+  .commit-changes {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+  }
+
+  .commit-change {
+    display: grid;
+    grid-template-columns: 1rem 14px max-content minmax(0, 1fr) auto;
+    align-items: start;
+    gap: 0.25rem 0.5rem;
+    padding: 0.5rem 0.25rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .commit-change.is-excluded {
+    opacity: 0.55;
+  }
+
+  /* Tailwind's preflight makes every svg a block. */
+  .commit-change-symbol {
+    display: inline-block;
+    width: 14px;
+    height: 14px;
+    margin-top: 2px;
+  }
+
+  .commit-change.is-added .commit-change-symbol {
+    color: var(--success);
+  }
+
+  .commit-change.is-updated .commit-change-symbol {
+    color: var(--warning);
+  }
+
+  .commit-change.is-deleted .commit-change-symbol {
+    color: var(--destructive);
+  }
+
+  .commit-change.is-deleted .commit-change-work,
+  .commit-change.is-deleted .commit-change-hours {
+    color: var(--text-secondary);
+    text-decoration: line-through;
+  }
+
+  .commit-change-work {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 0.25rem;
+    min-width: 0;
+  }
+
+  .commit-change-sep {
+    color: var(--text-tertiary);
+  }
+
+  .commit-change-note {
+    grid-column: 3 / 6;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+  }
+
+  .commit-change-old {
+    color: var(--text-tertiary);
+    text-decoration: line-through;
+  }
 }
 
 /* The narrow view: DESKTOP_MIN_WIDTH in lib/breakpoints.ts. Page files are
@@ -1218,7 +1302,7 @@
     display: none;
   }
 
-  .submit-page {
+  .commit-page {
     padding: 0.25rem 0.75rem 6rem;
   }
 }

@@ -147,6 +147,29 @@ export interface LocalTimerDraft {
   entryId?: string;
 }
 
+/**
+ * An entry as it was last committed: the copy the external timesheet holds.
+ * See docs/superpowers/specs/2026-10-15-commit-week-design.md.
+ */
+export interface LocalTimesheetEntryCommit {
+  /** When the copy was saved. */
+  at: number;
+  localDate: string;
+  projectId?: string;
+  taskId?: string;
+  note?: string;
+  durationMs: number;
+}
+
+/**
+ * A committed entry the user deleted since. It stays until the deletion is
+ * committed, so the external timesheet can delete its copy too.
+ */
+export interface LocalTimesheetTombstone {
+  entryId: string;
+  commit: LocalTimesheetEntryCommit;
+}
+
 export interface LocalTimesheetEntry {
   _id: string;
   localDate: string;
@@ -157,15 +180,13 @@ export interface LocalTimesheetEntry {
   note?: string;
   durationMs: number;
   sourceBlockIds: string[];
-  committedAt: number;
-  submittedAt?: number;
-  submittedFingerprint?: string;
   /**
-   * When an edit returns a submitted entry to saved, this keeps the time it
-   * was submitted, so the submit page can count entries changed since then.
-   * Cleared when the entry is marked as submitted again.
+   * When the entry was saved, such as from a running entry. The Day view
+   * orders entries by it. Unrelated to `commit`.
    */
-  previousSubmittedAt?: number;
+  committedAt: number;
+  /** The entry as it was last committed. Undefined until its first commit. */
+  commit?: LocalTimesheetEntryCommit;
 }
 
 export interface LocalTimesheetImportDraft {
@@ -508,6 +529,8 @@ export interface LocalAppState {
   importedBrowserDrafts: ImportedBrowserDraft[];
   timers: LocalTimer[];
   timesheetEntries: LocalTimesheetEntry[];
+  /** Committed entries deleted since. See `LocalTimesheetTombstone`. */
+  timesheetTombstones: LocalTimesheetTombstone[];
   timesheetImportDrafts: LocalTimesheetImportDraft[];
   workItems: LocalWorkItem[];
   pullRequests?: LocalPullRequest[];

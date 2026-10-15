@@ -6,7 +6,7 @@ import type {
 } from "@/domain/local-state";
 import {
   createTimesheetEntry,
-  preserveTimesheetEntrySubmissionState,
+  keepTimesheetEntryCommit,
   type TimesheetEntryFactories,
 } from "@/domain/time/timesheet-entry";
 import { formatLocalDateFromTimestamp } from "@/domain/time/duration";
@@ -149,7 +149,12 @@ export function cancelTimer(
   const timer = state.timers.find((item) => item._id === timerId);
   const provisionalEntry = timer?.entryId
     ? state.timesheetEntries.find(
-        (entry) => entry._id === timer.entryId && entry.durationMs === 0,
+        (entry) =>
+          entry._id === timer.entryId &&
+          entry.durationMs === 0 &&
+          // A committed entry stays: removing it silently would hide a
+          // deletion the user never asked for from the Commit page.
+          !entry.commit,
       )
     : undefined;
   return {
@@ -179,7 +184,7 @@ export function saveTimer(
   const durationMs =
     timer.accumulatedDurationMs +
     Math.max(0, factories.now() - timer.startedAt);
-  const entry = preserveTimesheetEntrySubmissionState(
+  const entry = keepTimesheetEntryCommit(
     existingEntry,
     createTimesheetEntry(
       state.projects,
