@@ -15,6 +15,7 @@ const catalogSlugSchema = z.string().regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/);
 export const pluginCatalogCapabilitySchema = z.enum([
   "connector",
   "codeHost",
+  "agentTask",
   "schema",
 ]);
 export type PluginCatalogCapability = z.infer<

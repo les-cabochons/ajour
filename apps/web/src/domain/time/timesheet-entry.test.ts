@@ -6,6 +6,7 @@ import {
   deleteTimesheetEntries,
   deleteTimesheetEntry,
   duplicateTimesheetEntry,
+  markTimesheetEntriesNotSubmitted,
   markTimesheetEntriesSubmitted,
   moveTimesheetEntry,
   normalizeTimesheetEntry,
@@ -755,5 +756,50 @@ describe("selectMostRecentTimesheetEntry", () => {
       selectMostRecentTimesheetEntry(entries, "2026-10-11", "running")?._id,
     ).toBe("older");
     expect(selectMostRecentTimesheetEntry([], "2026-10-11")).toBeUndefined();
+  });
+});
+
+describe("markTimesheetEntriesNotSubmitted", () => {
+  /** Two saved entries, "a" and "b", both on 2026-07-30 for one hour. */
+  function savedEntries(): LocalAppState {
+    const values = {
+      localDate: "2026-07-30",
+      projectId: "project-1",
+      taskId: "task-1",
+      durationMs: 60 * 60 * 1000,
+    };
+    const withA = saveManualTimesheetEntry(createState(), values, {
+      createId: () => "a",
+      now: () => 100,
+    });
+    return saveManualTimesheetEntry(withA, values, {
+      createId: () => "b",
+      now: () => 100,
+    });
+  }
+
+  it("returns submitted entries to saved and keeps their old submission time", () => {
+    const state = markTimesheetEntriesSubmitted(
+      savedEntries(),
+      ["a"],
+      () => 200,
+    );
+    const next = markTimesheetEntriesNotSubmitted(state, ["a", "b"]);
+
+    expect(
+      next.timesheetEntries.find((item) => item._id === "a"),
+    ).toMatchObject({
+      submittedAt: undefined,
+      submittedFingerprint: undefined,
+      previousSubmittedAt: 200,
+    });
+    expect(next.timesheetEntries.find((item) => item._id === "b")).toEqual(
+      state.timesheetEntries.find((item) => item._id === "b"),
+    );
+  });
+
+  it("returns the same state when nothing was submitted", () => {
+    const state = savedEntries();
+    expect(markTimesheetEntriesNotSubmitted(state, ["b"])).toBe(state);
   });
 });

@@ -213,6 +213,8 @@ export interface UserPreferences {
   warnWhenSubmittingUnderCapacity: boolean;
   changesEndSnoozeEarly?: boolean;
   closeParentSubitems: CloseParentSubitems;
+  /** How far the week may run ahead of or behind its targets before an agent asks. Default 20. */
+  paceTolerancePercent?: number;
 }
 
 /** One step of the user's workflow. The workflow's order is the array order. */

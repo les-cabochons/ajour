@@ -147,11 +147,17 @@ A program driven by an LLM that uses Ajour through MCP, such as Claude Code or C
 One configured connection for an agent, with its own name and token, such as "Claude Code on this Mac".
 
 **Agent session**:
-A stretch of work an agent announces, with a title, a deadline it extends, progress updates and an outcome.
-_Avoid_: Transaction, run, job
+A stretch of work an agent announces, with a title, a deadline it extends, progress updates and an outcome. A runner-started session belongs to one Agent run.
+_Avoid_: Transaction, job
 
 **Question**:
 Something an agent asks the user during an agent session. It waits until the user answers.
+
+**Agent task**:
+A task a plugin declares for an agent, such as "Enter in Workday": a prompt, its settings and where its button shows. No plugin code runs.
+
+**Agent run**:
+One agent task Ajour started: a coding agent CLI with Ajour's and the task's prompts, its own agent client and agent session. Ajour ends the session and revokes the client when the CLI exits.
 
 **Agent indicator**:
 The corner control that shows whether agents are idle, active, waiting for the user, failed or in error.

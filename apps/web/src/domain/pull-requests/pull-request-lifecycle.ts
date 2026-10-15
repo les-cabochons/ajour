@@ -52,7 +52,7 @@ export function enabledCodeHostGroups(overview: ConnectorsOverview | null) {
         (group) =>
           group.enabled &&
           pluginHasCodeHost(group.plugin) &&
-          group.plugin.entrypoint.length > 0,
+          group.plugin.unavailableReason === undefined,
       );
 }
 

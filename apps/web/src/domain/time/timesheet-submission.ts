@@ -39,6 +39,8 @@ export interface SubmitLine {
   projectId?: string;
   /** Undefined when the entries have no project. */
   projectName?: string;
+  /** The project's code. Undefined when the project has no code. */
+  projectCode?: string;
   /** Undefined when the entries have no task. */
   taskName?: string;
   durationMs: number;
@@ -58,6 +60,7 @@ interface DescribedEntry {
   entry: LocalTimesheetEntry;
   taskKey: string;
   projectName?: string;
+  projectCode?: string;
   taskName?: string;
 }
 
@@ -91,6 +94,7 @@ function describeEntries(
     const projectName = project
       ? getLocalProjectDisplayName(project)
       : undefined;
+    const projectCode = project?.code?.trim() || undefined;
     // Imported entries without a task keep their source label as the task.
     const legacyLabel =
       entry.label.trim() && entry.label !== projectName
@@ -100,6 +104,7 @@ function describeEntries(
       entry,
       taskKey: `${entry.projectId ?? "none"}::${entry.taskId ?? entry.label}`,
       projectName,
+      projectCode,
       taskName: task?.name ?? legacyLabel,
     };
   });
@@ -115,6 +120,7 @@ function toLine(key: string, group: DescribedEntry[]): SubmitLine {
       .map((item) => item.entry._id),
     projectId: first.entry.projectId,
     projectName: first.projectName,
+    projectCode: first.projectCode,
     taskName: first.taskName,
     durationMs: group.reduce((sum, item) => sum + item.entry.durationMs, 0),
     comments: mergeSubmitComments(group.map((item) => item.entry.note)),

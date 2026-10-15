@@ -10,7 +10,7 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { create } from "tar";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { codeHostOperations } from "../../../packages/shared/code-host.ts";
 import { ConnectorPluginManager } from "./plugin-host.ts";
 import { readConnectorPlugin } from "./plugin-package.ts";
@@ -80,6 +80,47 @@ async function packagePlugin(pluginDirectory: string, archivePath: string) {
   );
 }
 
+const AGENT_TASK_PROMPT =
+  "Enter week {{weekOf}} at {{settings.url}} in session {{sessionId}}.";
+
+/** Everything a console.error spy received, as one string. */
+function logged(spy: { mock: { calls: unknown[][] } }) {
+  return spy.mock.calls
+    .flat()
+    .map((value) => (value instanceof Error ? value.message : String(value)))
+    .join("\n");
+}
+
+/** Files of a plugin that only declares an agent task: no entrypoint. */
+function agentTaskPluginFiles(overrides: { prompt?: string } = {}) {
+  return {
+    "plugin.json": JSON.stringify({
+      id: "ajp-test",
+      version: "1.0.0",
+      apiVersion: 3,
+      displayName: "Test tasks",
+      iconSvg: "<svg/>",
+      capabilities: {
+        agentTask: {
+          tasks: [
+            {
+              id: "enter-week",
+              label: "Enter",
+              placement: "submit-week",
+              prompt: "prompts/enter-week.md",
+              estimateMinutes: 5,
+              settings: [
+                { id: "url", label: "URL", type: "url", required: true },
+              ],
+            },
+          ],
+        },
+      },
+    }),
+    "prompts/enter-week.md": overrides.prompt ?? AGENT_TASK_PROMPT,
+  };
+}
+
 describe("ConnectorPluginManager", () => {
   const tempDirs: string[] = [];
   const managers: ConnectorPluginManager[] = [];
@@ -96,6 +137,24 @@ describe("ConnectorPluginManager", () => {
     const pluginManager = new ConnectorPluginManager(options);
     managers.push(pluginManager);
     return pluginManager;
+  }
+
+  /** A manager whose only development plugin is written from `files`. */
+  async function createManagerWithDevelopmentPlugin(
+    files: Record<string, string>,
+  ) {
+    const root = await tempDir();
+    const pluginDirectory = path.join(root, "dev-plugin");
+    for (const [relativePath, content] of Object.entries(files)) {
+      const filePath = path.join(pluginDirectory, relativePath);
+      await mkdir(path.dirname(filePath), { recursive: true });
+      await writeFile(filePath, content, "utf8");
+    }
+    return manager({
+      installedPluginDirectory: path.join(root, "installed"),
+      developmentPluginDirectories: [pluginDirectory],
+      allowDevelopmentPlugins: true,
+    });
   }
 
   afterEach(async () => {
@@ -605,5 +664,61 @@ describe("ConnectorPluginManager", () => {
     for (const operation of Object.keys(codeHostOperations)) {
       expect(worker).toContain(`"${operation}"`);
     }
+  });
+
+  it("loads a plugin that only declares agent tasks and reads its prompt", async () => {
+    const pluginManager = await createManagerWithDevelopmentPlugin(
+      agentTaskPluginFiles(),
+    );
+    const plugins = await pluginManager.listPlugins();
+    expect(plugins.map((plugin) => plugin.id)).toContain("ajp-test");
+    await expect(
+      pluginManager.readAgentTaskPrompt("ajp-test", "enter-week"),
+    ).resolves.toBe(AGENT_TASK_PROMPT);
+    await expect(
+      pluginManager.readAgentTaskPrompt("ajp-test", "other"),
+    ).rejects.toThrow('has no agent task "other"');
+  });
+
+  // Invalid development plugins are skipped and logged, not listed as unavailable.
+  it("skips an agent task plugin whose prompt uses an unknown slot", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    try {
+      const pluginManager = await createManagerWithDevelopmentPlugin(
+        agentTaskPluginFiles({ prompt: "Hi {{settings.nope}}" }),
+      );
+      const { plugins } = await pluginManager.inspectPlugins();
+      expect(plugins.map((plugin) => plugin.id)).not.toContain("ajp-test");
+      expect(logged(consoleError)).toContain("settings.nope");
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it("skips an agent task plugin whose prompt is over 64 KB", async () => {
+    const consoleError = vi
+      .spyOn(console, "error")
+      .mockImplementation(() => undefined);
+    try {
+      const pluginManager = await createManagerWithDevelopmentPlugin(
+        agentTaskPluginFiles({ prompt: "x".repeat(65_537) }),
+      );
+      const { plugins } = await pluginManager.inspectPlugins();
+      expect(plugins.map((plugin) => plugin.id)).not.toContain("ajp-test");
+      expect(logged(consoleError)).toContain("64 KB");
+    } finally {
+      consoleError.mockRestore();
+    }
+  });
+
+  it("refuses to run code for a plugin without an entrypoint", async () => {
+    const pluginManager = await createManagerWithDevelopmentPlugin(
+      agentTaskPluginFiles(),
+    );
+    await expect(
+      pluginManager.validateConnection("ajp-test", {}),
+    ).rejects.toThrow(/runs no code/);
   });
 });

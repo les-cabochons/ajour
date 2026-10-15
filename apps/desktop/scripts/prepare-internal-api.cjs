@@ -50,6 +50,11 @@ copyRuntimePackage("tar", [path.resolve(repoRoot, "apps/api")]);
 copyRuntimePackage("@modelcontextprotocol/sdk", [
   path.resolve(repoRoot, "apps/api"),
 ]);
+// The agent runner starts Playwright MCP through the app's own Node. The runtime
+// folder is flat, and the root playwright is an older version used by the
+// acceptance tests. findPackageJson looks inside the package's own folder first,
+// so its pinned playwright and playwright-core are the ones copied.
+copyRuntimePackage("@playwright/mcp", [path.resolve(repoRoot, "apps/api")]);
 
 /**
  * Finds a package's own package.json from `searchPaths`, walking up the

@@ -81,6 +81,7 @@ import {
   deleteTimesheetEntries as applyDeleteTimesheetEntries,
   deleteTimesheetEntry as applyDeleteTimesheetEntry,
   duplicateTimesheetEntry as applyDuplicateTimesheetEntry,
+  markTimesheetEntriesNotSubmitted as applyMarkTimesheetEntriesNotSubmitted,
   markTimesheetEntriesSubmitted as applyMarkTimesheetEntriesSubmitted,
   moveTimesheetEntry as applyMoveTimesheetEntry,
   normalizeTimesheetEntry,
@@ -513,6 +514,20 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
           persistedState.userPreferences?.closeParentSubitems === "leave"
             ? persistedState.userPreferences.closeParentSubitems
             : "ask",
+        paceTolerancePercent:
+          typeof persistedState.userPreferences?.paceTolerancePercent ===
+            "number" &&
+          Number.isFinite(persistedState.userPreferences.paceTolerancePercent)
+            ? Math.min(
+                100,
+                Math.max(
+                  0,
+                  Math.round(
+                    persistedState.userPreferences.paceTolerancePercent,
+                  ),
+                ),
+              )
+            : undefined,
       },
     }),
   );
@@ -1730,6 +1745,16 @@ export const localStore = {
 
     updateState((state) =>
       applyMarkTimesheetEntriesSubmitted(state, entryIds, Date.now),
+    );
+  },
+  /** Returns entries to saved. See `markTimesheetEntriesNotSubmitted`. */
+  markTimesheetEntriesNotSubmitted(entryIds: string[]) {
+    if (entryIds.length === 0) {
+      return;
+    }
+
+    updateState((state) =>
+      applyMarkTimesheetEntriesNotSubmitted(state, entryIds),
     );
   },
   continueTimesheetEntry(entryId: string) {

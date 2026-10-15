@@ -1,8 +1,10 @@
 import { spawnSync } from "node:child_process";
 import { createRequire } from "node:module";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { afterEach, expect, it } from "vitest";
 
 const require = createRequire(import.meta.url);
@@ -13,6 +15,9 @@ const { getFileMatchers, copyFiles } = builderRequire(
   "app-builder-lib/out/fileMatcher.js",
 );
 const temporaryDirectories: string[] = [];
+const desktopRoot = path.dirname(fileURLToPath(import.meta.url));
+const repoRoot = path.resolve(desktopRoot, "../..");
+const runtimeRoot = path.join(desktopRoot, "build/internal-app-runtime");
 
 afterEach(async () => {
   for (const directory of temporaryDirectories.splice(0)) {
@@ -109,3 +114,34 @@ it("copies API dependencies into resources so the packaged runtime can load", as
     ).name,
   ).toBe("zod");
 });
+
+it("ships the pinned Playwright MCP with the internal API", () => {
+  // Runs the real packaging step. The output folder is a git-ignored build artifact.
+  const prepared = spawnSync(
+    process.execPath,
+    [path.join(desktopRoot, "scripts/prepare-internal-api.cjs")],
+    { encoding: "utf8" },
+  );
+  expect(prepared.status, prepared.stderr).toBe(0);
+
+  const readPackage = (...segments: string[]) =>
+    JSON.parse(
+      readFileSync(path.join(runtimeRoot, ...segments, "package.json"), "utf8"),
+    );
+  const mcpPackage = readPackage("node_modules/@playwright/mcp");
+  const apiPackage = JSON.parse(
+    readFileSync(path.join(repoRoot, "apps/api/package.json"), "utf8"),
+  );
+  expect(mcpPackage.version).toBe(apiPackage.dependencies["@playwright/mcp"]);
+  expect(
+    existsSync(path.join(runtimeRoot, "node_modules/@playwright/mcp/cli.js")),
+  ).toBe(true);
+
+  // The runtime is flat, so both packages must be the versions MCP pins, not
+  // the older playwright the acceptance tests use at the repo root.
+  for (const name of ["playwright", "playwright-core"]) {
+    expect(readPackage("node_modules", name).version).toBe(
+      mcpPackage.dependencies[name],
+    );
+  }
+}, 120_000);

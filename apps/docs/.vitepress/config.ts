@@ -62,6 +62,7 @@ const guideSidebar: DefaultTheme.SidebarItem[] = [
       { text: "Jira", link: "/plugins/jira" },
       { text: "GitHub", link: "/plugins/github" },
       { text: "Workday", link: "/plugins/workday" },
+      { text: "Workday (agent)", link: "/plugins/workday-agent" },
       { text: "Sync review", link: "/plugins/sync-review" },
     ],
   },
@@ -105,9 +106,7 @@ export default defineConfig({
   cleanUrls: true,
   lastUpdated: true,
   appearance: true,
-  head: [
-    ["link", { rel: "icon", type: "image/png", href: "/favicon.png" }],
-  ],
+  head: [["link", { rel: "icon", type: "image/png", href: "/favicon.png" }]],
   themeConfig: {
     logo: "/logo-mark.png",
     siteTitle: "Ajour docs",

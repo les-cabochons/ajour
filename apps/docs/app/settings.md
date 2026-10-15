@@ -27,6 +27,10 @@ Install, activate and connect plugins. See [Plugins](/plugins/).
 
 Let AI agents such as Claude Code or Codex use your Ajour data. See [Agents and MCP](/app/agents).
 
+## Agents
+
+Pick the coding agent, the browser and the model Ajour uses for plugin tasks, such as entering your week in Workday. See [Agent tasks](/app/agents#agent-tasks).
+
 ## Backlog
 
 - **Subitems**: when you close a parent with open subitems, **Ask** (default), **Include them** or **Leave them**.

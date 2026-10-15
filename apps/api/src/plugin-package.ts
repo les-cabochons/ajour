@@ -11,6 +11,7 @@ import {
   realpath,
   rename,
   rm,
+  stat,
   writeFile,
 } from "node:fs/promises";
 import { extract, list } from "tar";
@@ -19,8 +20,13 @@ import {
   CONNECTOR_PLUGIN_ARCHIVE_EXTENSION,
   connectorPluginManifestSchema,
   connectorPluginIdSchema,
+  type AgentTask,
   type ConnectorPluginManifest,
 } from "../../../packages/shared/connectors.ts";
+import {
+  allowedTaskSlots,
+  listTemplateSlots,
+} from "../../../packages/shared/agent-task-templates.ts";
 
 export const MAX_CONNECTOR_PLUGIN_ARCHIVE_BYTES = 25 * 1024 * 1024;
 const MAX_CONNECTOR_PLUGIN_FILES = 2_000;
@@ -32,7 +38,8 @@ const ALLOWED_ENTRYPOINT_EXTENSIONS = new Set([".cjs", ".js", ".mjs"]);
 export interface ResolvedConnectorPlugin {
   manifest: ConnectorPluginManifest;
   directory: string;
-  entrypointPath: string;
+  /** Absent for a plugin that runs no code. */
+  entrypointPath?: string;
   source: "development" | "installed";
 }
 
@@ -112,6 +119,50 @@ async function assertRegularPluginFile(
   }
 }
 
+/** The largest agent task prompt Ajour reads, in bytes. */
+export const MAX_AGENT_TASK_PROMPT_BYTES = 64 * 1024;
+
+/**
+ * Resolves an agent task's prompt file like an entrypoint: relative, inside
+ * the plugin folder, a regular file, no symbolic links, and at most 64 KB.
+ * Every slot in the prompt must be one Ajour fills.
+ */
+export async function readAgentTaskPromptFile(
+  directory: string,
+  canonicalDirectory: string,
+  manifest: ConnectorPluginManifest,
+  task: AgentTask,
+): Promise<string> {
+  const description = `Plugin "${manifest.id}" task "${task.id}" prompt`;
+  if (path.isAbsolute(task.prompt)) {
+    throw new Error(`${description} must be relative.`);
+  }
+  const promptPath = path.resolve(directory, task.prompt);
+  if (!isPathInside(directory, promptPath)) {
+    throw new Error(`${description} leaves its plugin directory.`);
+  }
+  await assertRegularPluginFile(
+    directory,
+    canonicalDirectory,
+    promptPath,
+    description,
+  );
+  const { size } = await stat(promptPath);
+  if (size > MAX_AGENT_TASK_PROMPT_BYTES) {
+    throw new Error(`${description} is over 64 KB.`);
+  }
+  const prompt = await readFile(promptPath, "utf8");
+  const allowed = allowedTaskSlots(task.settings.map((field) => field.id));
+  for (const slot of listTemplateSlots(prompt)) {
+    if (!allowed.has(slot)) {
+      throw new Error(
+        `${description} uses {{${slot}}}, which Ajour does not fill.`,
+      );
+    }
+  }
+  return prompt;
+}
+
 function validateArchiveEntryPath(entryPath: string) {
   const normalized = entryPath.replaceAll("\\", "/");
   if (
@@ -181,6 +232,9 @@ export function resolveConnectorPluginEntrypoint(
   directory: string,
   manifest: ConnectorPluginManifest,
 ) {
+  if (!manifest.entrypoint) {
+    throw new Error(`Plugin "${manifest.id}" runs no code.`);
+  }
   if (path.isAbsolute(manifest.entrypoint)) {
     throw new Error(
       `Connector plugin "${manifest.id}" entrypoint must be relative.`,
@@ -227,16 +281,28 @@ export async function readConnectorPlugin(
     throw new IncompatibleConnectorPluginError(manifest);
   }
 
-  const entrypointPath = resolveConnectorPluginEntrypoint(
-    pluginDirectory,
-    manifest,
-  );
-  await assertRegularPluginFile(
-    pluginDirectory,
-    canonicalPluginDirectory,
-    entrypointPath,
-    `Connector plugin "${manifest.id}" entrypoint`,
-  );
+  let entrypointPath: string | undefined;
+  if (manifest.entrypoint) {
+    entrypointPath = resolveConnectorPluginEntrypoint(
+      pluginDirectory,
+      manifest,
+    );
+    await assertRegularPluginFile(
+      pluginDirectory,
+      canonicalPluginDirectory,
+      entrypointPath,
+      `Connector plugin "${manifest.id}" entrypoint`,
+    );
+  }
+  // Read every prompt once so a bad one fails the install, not the first run.
+  for (const task of manifest.capabilities.agentTask?.tasks ?? []) {
+    await readAgentTaskPromptFile(
+      pluginDirectory,
+      canonicalPluginDirectory,
+      manifest,
+      task,
+    );
+  }
 
   return {
     manifest,
