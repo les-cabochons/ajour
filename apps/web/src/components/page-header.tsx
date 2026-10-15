@@ -43,13 +43,16 @@ export function PageHeader({
 
   // The narrow view's titlebar holds the section switcher, not a slot: the
   // header renders where the page put it instead, as the page's first row.
+  // A header with only a back link, like the project page's, adds no row.
+  const hasContent =
+    title !== undefined || children !== undefined || actions !== undefined;
   return (
     <>
       {slot ? (
         createPortal(content, slot)
-      ) : (
+      ) : hasContent ? (
         <div className="ajour-page-header-inline">{content}</div>
-      )}
+      ) : null}
       {backLink ? (
         <Link
           to={backLink.to}

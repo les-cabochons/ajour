@@ -36,7 +36,6 @@ import { formatClockDuration } from "@/domain/time/duration";
 import {
   getProjectActions,
   getTaskActions,
-  type ObjectAction,
   type ProjectActionId,
   type TaskActionId,
 } from "@/domain/actions/object-actions";
@@ -61,6 +60,10 @@ import {
   PinnedSlotDialog,
 } from "@/features/projects/pinned-slot";
 import { ProjectFormDialog } from "@/features/projects/project-form-dialog";
+import {
+  ProjectPropertiesCard,
+  ProjectTitle,
+} from "@/features/projects/project-properties";
 import type { ProjectFormValues } from "@/features/projects/project-form";
 import {
   commitProjectTaskDraft,
@@ -124,9 +127,6 @@ type ShortcutRequest = { projectId: string; task: LocalProjectTask };
 
 type ProjectTaskFilter = "active" | "archived";
 
-/** The project header's "…" menu adds Import tasks… to the project's action set. */
-type ProjectHeaderActionId = ProjectActionId | "import-tasks";
-
 const projectTaskToneClassName: Record<ProjectTaskConsumedTone, string> = {
   default: "",
   success: "is-success",
@@ -137,10 +137,6 @@ const projectTaskToneClassName: Record<ProjectTaskConsumedTone, string> = {
 
 function getProjectDisplayName(project: LocalProject) {
   return getLocalProjectDisplayName(project);
-}
-
-function shouldShowProjectFullName(project: LocalProject) {
-  return getProjectDisplayName(project) !== project.name;
 }
 
 type TaskDragState = {
@@ -293,37 +289,6 @@ function isProjectDragBlockedTarget(target: EventTarget | null) {
 }
 
 /* ── Project detail content ───────────────────────────────────────── */
-
-/**
- * The project header's "…" menu: the project's action set with Import tasks… before
- * Archive, because destructive actions come last. Right-click menus keep the plain set.
- */
-function getProjectHeaderActions(
-  project: LocalProject,
-  isImporting: boolean,
-): ObjectAction<ProjectHeaderActionId>[] {
-  const actions: ObjectAction<ProjectHeaderActionId>[] =
-    getProjectActions(project);
-  const importAction: ObjectAction<ProjectHeaderActionId> = {
-    id: "import-tasks",
-    label: "Import tasks…",
-    disabledReason:
-      project.status === "archived"
-        ? "Restore the project first"
-        : isImporting
-          ? "Importing tasks"
-          : undefined,
-    hint: "Task names from column C of an Excel file",
-  };
-  const destructiveIndex = actions.findIndex((action) => action.destructive);
-  const insertAt = destructiveIndex === -1 ? actions.length : destructiveIndex;
-
-  return [
-    ...actions.slice(0, insertAt),
-    importAction,
-    ...actions.slice(insertAt),
-  ];
-}
 
 /**
  * The Projects page: a row per project with its code, task count, this week's
@@ -633,7 +598,6 @@ function ProjectDetail({
   );
   const isArchived = project.status === "archived";
   const projectActions = getProjectActions(project);
-  const headerActions = getProjectHeaderActions(project, isImporting);
 
   const summary = taskSummary(project);
   const activeTasks = project.tasks.filter((task) => task.status === "active");
@@ -790,15 +754,6 @@ function ProjectDetail({
 
   function openImportPicker() {
     importInputRef.current?.click();
-  }
-
-  function runHeaderAction(actionId: ProjectHeaderActionId) {
-    if (actionId === "import-tasks") {
-      openImportPicker();
-      return;
-    }
-
-    onProjectAction(project, actionId);
   }
 
   function handleTaskClick(task: LocalProjectTask) {
@@ -982,7 +937,6 @@ function ProjectDetail({
   }
 
   const visibleTasks = isArchivedTaskFilter ? archivedTasks : activeTasks;
-  const displayName = getProjectDisplayName(project);
 
   function renderTaskRow(task: LocalProjectTask, index: number) {
     const taskActions = getTaskActions(project, task);
@@ -1112,21 +1066,6 @@ function ProjectDetail({
             ? undefined
             : { label: "Projects", to: "/projects", onClick: onLeave }
         }
-        actions={
-          <>
-            <ObjectActionsButton
-              actions={headerActions}
-              onAction={runHeaderAction}
-              label={`Actions for ${displayName}`}
-            />
-            {!isArchived ? (
-              <Button type="button" size="lg" onClick={onNewTask}>
-                <Plus data-icon="inline-start" />
-                New task
-              </Button>
-            ) : null}
-          </>
-        }
       />
 
       <ObjectContextMenu
@@ -1139,13 +1078,10 @@ function ProjectDetail({
           color={project.color}
           className="project-header-icon"
         />
-        <h1 className="project-detail-title">{displayName}</h1>
+        <ProjectTitle project={project} readOnly={isArchived} />
         {project.code ? <Chip>{project.code}</Chip> : null}
         {isArchived ? <Chip>Archived</Chip> : null}
       </ObjectContextMenu>
-      {shouldShowProjectFullName(project) ? (
-        <p className="project-full-name">{project.name}</p>
-      ) : null}
 
       <FigureRow>
         <Figure label="This week">{formatClockDuration(weekMs)}</Figure>
@@ -1196,153 +1132,176 @@ function ProjectDetail({
         <MessagePanel tone="warning">{importError}</MessagePanel>
       ) : null}
 
-      <Tabs
-        value={tab}
-        onValueChange={(value) => setTab(value as "tasks" | "entries")}
-        className="project-tabs"
-      >
-        <TabsList
-          variant="line"
-          className="h-auto w-full justify-start gap-4 rounded-none border-b border-border bg-transparent p-0"
+      <div className="project-detail-columns">
+        <Tabs
+          value={tab}
+          onValueChange={(value) => setTab(value as "tasks" | "entries")}
+          className="project-tabs"
         >
-          <TabsTrigger value="tasks" className="flex-none px-0">
-            Tasks <Value tone="muted">{project.tasks.length}</Value>
-          </TabsTrigger>
-          <TabsTrigger value="entries" className="flex-none px-0">
-            Time entries <Value tone="muted">{entries.length}</Value>
-          </TabsTrigger>
-        </TabsList>
+          <TabsList
+            variant="line"
+            className="h-auto w-full justify-start gap-4 rounded-none border-b border-border bg-transparent p-0"
+          >
+            <TabsTrigger value="tasks" className="flex-none px-0">
+              Tasks <Value tone="muted">{project.tasks.length}</Value>
+            </TabsTrigger>
+            <TabsTrigger value="entries" className="flex-none px-0">
+              Time entries <Value tone="muted">{entries.length}</Value>
+            </TabsTrigger>
+          </TabsList>
 
-        <TabsContent value="tasks" className="project-tab-panel">
-          <div className="project-task-toolbar">
-            <SectionHeading>Tasks</SectionHeading>
-            <div
-              className="toggle-group project-task-filter-tabs"
-              role="tablist"
-              aria-label="Filter project tasks"
-            >
-              {taskFilters.map((filter) => {
-                const isActive = taskFilter === filter.value;
-                return (
-                  <button
-                    key={filter.value}
-                    type="button"
-                    role="tab"
-                    aria-selected={isActive}
-                    className={cn(
-                      "toggle-item",
-                      isActive && "toggle-item-active",
-                    )}
-                    onClick={() => setTaskFilter(filter.value)}
-                  >
-                    <span>{filter.label}</span>
-                    <span className="project-task-filter-count">
-                      {filter.count}
-                    </span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {visibleTasks.length === 0 ? (
-            <Empty align="start" className="project-task-empty">
-              <EmptyHeader>
-                <EmptyTitle>
-                  {isArchivedTaskFilter
-                    ? "No archived tasks"
-                    : "No active tasks"}
-                </EmptyTitle>
-                <EmptyDescription>
-                  {isArchivedTaskFilter
-                    ? "Archived tasks will appear here."
-                    : isArchived
-                      ? "This archived project has no active tasks."
-                      : "Create a task, or import tasks from Excel."}
-                </EmptyDescription>
-              </EmptyHeader>
-              {!isArchived && !isArchivedTaskFilter ? (
-                <EmptyContent>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    disabled={isImporting}
-                    onClick={openImportPicker}
-                  >
-                    <Download data-icon="inline-start" />
-                    Import tasks…
-                  </Button>
-                </EmptyContent>
-              ) : null}
-            </Empty>
-          ) : (
-            <table
-              className={cn(
-                "project-task-table",
-                taskDragState && "is-task-dragging",
-              )}
-            >
-              <tbody data-focus-scope>{visibleTasks.map(renderTaskRow)}</tbody>
-            </table>
-          )}
-        </TabsContent>
-
-        <TabsContent value="entries" className="project-tab-panel">
-          {entryDays.length === 0 ? (
-            <Empty align="start" className="project-task-empty">
-              <EmptyHeader>
-                <EmptyTitle>No time logged yet</EmptyTitle>
-                <EmptyDescription>
-                  Entries on this project's tasks show here by day.
-                </EmptyDescription>
-              </EmptyHeader>
-            </Empty>
-          ) : (
-            entryDays.map((day) => (
-              <div key={day.localDate}>
-                <SectionHeading
-                  trailing={
-                    <Value>
-                      {formatClockDuration(
-                        day.entries.reduce(
-                          (sum, entry) => sum + entry.durationMs,
-                          0,
-                        ),
+          <TabsContent value="tasks" className="project-tab-panel">
+            <div className="project-task-toolbar">
+              <SectionHeading>Tasks</SectionHeading>
+              <div
+                className="toggle-group project-task-filter-tabs"
+                role="tablist"
+                aria-label="Filter project tasks"
+              >
+                {taskFilters.map((filter) => {
+                  const isActive = taskFilter === filter.value;
+                  return (
+                    <button
+                      key={filter.value}
+                      type="button"
+                      role="tab"
+                      aria-selected={isActive}
+                      className={cn(
+                        "toggle-item",
+                        isActive && "toggle-item-active",
                       )}
-                    </Value>
-                  }
-                >
-                  {formatEntryDay(day.localDate)}
-                </SectionHeading>
-                <div className="project-entry-rows">
-                  {day.entries.map((entry) => {
-                    const task = project.tasks.find(
-                      (candidate) => candidate._id === entry.taskId,
-                    );
-                    return (
-                      <Link
-                        key={entry._id}
-                        to="/time/$date"
-                        params={{ date: entry.localDate }}
-                        className="project-entry-row"
-                        onClick={onLeave}
-                      >
-                        <span className="project-entry-task">
-                          {task?.name ?? "No task"}
-                        </span>
-                        <span className="project-entry-note">
-                          {entry.note ?? ""}
-                        </span>
-                        <Value>{formatClockDuration(entry.durationMs)}</Value>
-                      </Link>
-                    );
-                  })}
-                </div>
+                      onClick={() => setTaskFilter(filter.value)}
+                    >
+                      <span>{filter.label}</span>
+                      <span className="project-task-filter-count">
+                        {filter.count}
+                      </span>
+                    </button>
+                  );
+                })}
               </div>
-            ))
-          )}
-        </TabsContent>
-      </Tabs>
+            </div>
+
+            {visibleTasks.length === 0 ? (
+              <Empty align="start" className="project-task-empty">
+                <EmptyHeader>
+                  <EmptyTitle>
+                    {isArchivedTaskFilter
+                      ? "No archived tasks"
+                      : "No active tasks"}
+                  </EmptyTitle>
+                  <EmptyDescription>
+                    {isArchivedTaskFilter
+                      ? "Archived tasks will appear here."
+                      : isArchived
+                        ? "This archived project has no active tasks."
+                        : "Create a task, or import tasks from Excel."}
+                  </EmptyDescription>
+                </EmptyHeader>
+                {!isArchived && !isArchivedTaskFilter ? (
+                  <EmptyContent>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      disabled={isImporting}
+                      onClick={openImportPicker}
+                    >
+                      <Download data-icon="inline-start" />
+                      Import tasks…
+                    </Button>
+                  </EmptyContent>
+                ) : null}
+              </Empty>
+            ) : (
+              <table
+                className={cn(
+                  "project-task-table",
+                  taskDragState && "is-task-dragging",
+                )}
+              >
+                <tbody data-focus-scope>
+                  {visibleTasks.map(renderTaskRow)}
+                </tbody>
+              </table>
+            )}
+            {!isArchived && !isArchivedTaskFilter ? (
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                className="mt-1 w-fit text-muted-foreground"
+                onClick={onNewTask}
+              >
+                <Plus data-icon="inline-start" />
+                New task
+              </Button>
+            ) : null}
+          </TabsContent>
+
+          <TabsContent value="entries" className="project-tab-panel">
+            {entryDays.length === 0 ? (
+              <Empty align="start" className="project-task-empty">
+                <EmptyHeader>
+                  <EmptyTitle>No time logged yet</EmptyTitle>
+                  <EmptyDescription>
+                    Entries on this project's tasks show here by day.
+                  </EmptyDescription>
+                </EmptyHeader>
+              </Empty>
+            ) : (
+              entryDays.map((day) => (
+                <div key={day.localDate}>
+                  <SectionHeading
+                    trailing={
+                      <Value>
+                        {formatClockDuration(
+                          day.entries.reduce(
+                            (sum, entry) => sum + entry.durationMs,
+                            0,
+                          ),
+                        )}
+                      </Value>
+                    }
+                  >
+                    {formatEntryDay(day.localDate)}
+                  </SectionHeading>
+                  <div className="project-entry-rows">
+                    {day.entries.map((entry) => {
+                      const task = project.tasks.find(
+                        (candidate) => candidate._id === entry.taskId,
+                      );
+                      return (
+                        <Link
+                          key={entry._id}
+                          to="/time/$date"
+                          params={{ date: entry.localDate }}
+                          className="project-entry-row"
+                          onClick={onLeave}
+                        >
+                          <span className="project-entry-task">
+                            {task?.name ?? "No task"}
+                          </span>
+                          <span className="project-entry-note">
+                            {entry.note ?? ""}
+                          </span>
+                          <Value>{formatClockDuration(entry.durationMs)}</Value>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))
+            )}
+          </TabsContent>
+        </Tabs>
+        <ProjectPropertiesCard
+          project={project}
+          isImporting={isImporting}
+          onImport={openImportPicker}
+          onArchive={() => onProjectAction(project, "archive")}
+          onRestore={() => onProjectAction(project, "restore")}
+        />
+      </div>
 
       {draggedTask && taskDragState ? (
         <div
@@ -1952,7 +1911,7 @@ export function ProjectsPage() {
     }
   };
 
-  /** Runs the project action set from the list rows and the project's top bar. */
+  /** Runs the project action set from the list rows, right-click menus and the Properties card. */
   const runProjectAction = (
     project: LocalProject,
     actionId: ProjectActionId,

@@ -182,7 +182,7 @@
     flex-direction: column;
     gap: 1rem;
     width: 100%;
-    max-width: 960px;
+    max-width: 1100px;
     padding: 1.25rem 1.5rem 2rem;
   }
 
@@ -212,10 +212,37 @@
     white-space: nowrap;
   }
 
-  .project-full-name {
-    margin: -0.625rem 0 0;
+  /* Tasks and time entries, with the Properties card on the right. */
+  .project-detail-columns {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 17rem;
+    gap: 2.5rem;
+  }
+
+  /* The page's one card, like the backlog item page's Properties. */
+  .project-properties-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.875rem;
+    align-self: start;
+    padding: 0.875rem 1rem 1rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+  }
+
+  .project-properties-action {
+    margin-inline-start: -0.5rem;
     color: var(--text-secondary);
-    font-size: var(--text-sm);
+  }
+
+  /* Text that turns into a field on click: the title and the card's names. */
+  .project-inline-target {
+    border-radius: 4px;
+    cursor: text;
+  }
+
+  .project-inline-target:not(:disabled):hover {
+    background: var(--highlight-bg);
   }
 
   .project-tab-panel {
@@ -455,6 +482,11 @@
 
   .project-detail {
     padding: 1rem;
+  }
+
+  .project-detail-columns {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.5rem;
   }
 
   .project-list-col-week,

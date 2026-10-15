@@ -639,9 +639,10 @@ Syncs move synced items between states:
 Decided in [Projects pages under the new conventions](https://github.com/les-cabochons/ajour/issues/26).
 
 - The project list keeps its search field and an "Archived" entry at the bottom. Wide windows show it next to the app sidebar. The narrow view shows it inside Settings.
-- "New project" in the list header and Edit from the project's action set open the project form as a standard dialog: name, display name, code, icon and color.
+- "New project" in the list header and Edit from the project's action set open the project form as a standard dialog: name, display name, code, icon and color. On the project page, these fields change in place instead.
 - Editing a task uses the side panel, with the same Save and Escape rules as entries. It holds name, billable, budget and adjustment, and the pinned slot. The inline task editor that saved on outside click goes away.
-- "New task" in the project header opens a blank task panel. "Import tasks…" moves into the project header's "…" menu.
+- The project page has no "…" menu and no top bar actions. Like the backlog item page, it edits in place: click the title to rename the display name, and the Properties card on the right changes full name, code, color and icon. Each edit saves on Enter, blur or pick, with Undo; Escape cancels. "Import tasks…" and Archive (Restore when archived) sit at the bottom of the card. An archived project's fields are read-only.
+- "New task" under the task list opens a blank task panel.
 - A task row shows its pinned slot, such as "3", next to its name.
 - The old Projects command dialog is removed. Cmd+K offers "Create project" and "Create task in…".
 
