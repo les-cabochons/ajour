@@ -1420,9 +1420,7 @@ When("I move the parent to Done and include its subitems", async ({ page }) => {
   await card.hover();
   await card
     .locator("[data-state-picker]")
-    .and(
-      page.getByRole("button", { name: "Change state of Backlog parent" }),
-    )
+    .and(page.getByRole("button", { name: "Change state of Backlog parent" }))
     .click();
   await page.getByRole("menuitem", { name: "Done", exact: true }).click();
   await page
