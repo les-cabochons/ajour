@@ -43,6 +43,7 @@
 The adapter flags in Task 8 come from documentation and must be confirmed against the real CLIs before the runner is built on them. This task writes the scripts. Alex runs them. Their results go into the spec.
 
 **Files:**
+
 - Create: `qa/agents/README.md`
 - Create: `qa/agents/smoke-claude-code.sh`
 - Create: `qa/agents/smoke-codex.sh`
@@ -50,6 +51,7 @@ The adapter flags in Task 8 come from documentation and must be confirmed agains
 - Create: `qa/agents/smoke-prompt.md`
 
 **Interfaces:**
+
 - Consumes: a running Ajour (spec A) with MCP on, and a token from Settings > MCP in `AJOUR_MCP_TOKEN`.
 - Produces: a "Smoke test results" section in the spec that Task 8 reads.
 
@@ -272,6 +274,7 @@ Stop and ask Alex to run `qa/agents/README.md` with Claude Code at least, and to
 ### Task 2: `agentTask` in plugin manifests (shared and API)
 
 **Files:**
+
 - Modify: `packages/shared/connectors.ts:127-171` (capabilities and manifest schemas), `:196-206` (overview plugin schema)
 - Modify: `packages/shared/plugin-catalog.ts:15` (catalog capability enum)
 - Create: `packages/shared/agent-task-templates.ts`
@@ -283,6 +286,7 @@ Stop and ask Alex to run `qa/agents/README.md` with Claude Code at least, and to
 - Test: `packages/shared/tests/agent-task-templates.test.ts`, `packages/shared/tests/connectors.test.ts` (create if absent), `apps/api/src/plugin-host.test.ts`
 
 **Interfaces:**
+
 - Produces:
   - `agentTaskSchema`, `type AgentTask` and `pluginHasAgentTasks(manifest): boolean` from `@ajour/shared` (connectors.ts).
   - `AGENT_TASK_SLOTS`, `listTemplateSlots(template: string): string[]`, `fillTemplate(template: string, values: Record<string, string>): string`, `class UnknownSlotError extends Error` from `packages/shared/agent-task-templates.ts`.
@@ -413,7 +417,12 @@ const task = {
   estimateMinutes: 10,
   weekLink: "{{settings.timesheetUrl}}?date={{weekOf}}",
   settings: [
-    { id: "timesheetUrl", label: "Workday timesheet URL", type: "url", required: true },
+    {
+      id: "timesheetUrl",
+      label: "Workday timesheet URL",
+      type: "url",
+      required: true,
+    },
   ],
 };
 
@@ -549,7 +558,10 @@ Change the manifest schema's two fields and add the rule:
 export const connectorPluginManifestSchema = z
   .object({
     id: connectorPluginIdSchema,
-    version: z.string().trim().regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/),
+    version: z
+      .string()
+      .trim()
+      .regex(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/),
     apiVersion: z.number().int().positive(),
     displayName: z.string().trim().min(1).max(120),
     description: z.string().trim().max(500).optional(),
@@ -583,7 +595,7 @@ export const connectorPluginManifestSchema = z
 `connectorPluginManifestSchema` is now a `ZodEffects`, so `.extend` no longer exists on it. Change the overview schema at `:204` to build from the inner object. Extract the object first:
 
 ```ts
-const connectorPluginManifestObjectSchema = z.object({ /* the fields above */ });
+const connectorPluginManifestObjectSchema = z.object({/* the fields above */});
 export const connectorPluginManifestSchema =
   connectorPluginManifestObjectSchema.superRefine(/* the rule above */);
 ```
@@ -626,7 +638,9 @@ it("loads a plugin that only declares agent tasks and reads its prompt", async (
   const manager = createManagerWithDevelopmentPlugin(agentTaskPluginFiles());
   const plugins = await manager.listPlugins();
   expect(plugins.map((plugin) => plugin.id)).toContain("ajp-test");
-  await expect(manager.readAgentTaskPrompt("ajp-test", "enter-week")).resolves.toBe(
+  await expect(
+    manager.readAgentTaskPrompt("ajp-test", "enter-week"),
+  ).resolves.toBe(
     "Enter week {{weekOf}} at {{settings.url}} in session {{sessionId}}.",
   );
 });
@@ -685,11 +699,15 @@ export async function readAgentTaskPromptFile(
   task: AgentTask,
 ): Promise<string> {
   if (path.isAbsolute(task.prompt)) {
-    throw new Error(`Plugin "${manifest.id}" task "${task.id}" prompt must be relative.`);
+    throw new Error(
+      `Plugin "${manifest.id}" task "${task.id}" prompt must be relative.`,
+    );
   }
   const promptPath = path.resolve(directory, task.prompt);
   if (!isPathInside(directory, promptPath)) {
-    throw new Error(`Plugin "${manifest.id}" task "${task.id}" prompt leaves its plugin directory.`);
+    throw new Error(
+      `Plugin "${manifest.id}" task "${task.id}" prompt leaves its plugin directory.`,
+    );
   }
   await assertRegularPluginFile(
     directory,
@@ -699,7 +717,9 @@ export async function readAgentTaskPromptFile(
   );
   const { size } = await stat(promptPath);
   if (size > MAX_AGENT_TASK_PROMPT_BYTES) {
-    throw new Error(`Plugin "${manifest.id}" task "${task.id}" prompt is over 64 KB.`);
+    throw new Error(
+      `Plugin "${manifest.id}" task "${task.id}" prompt is over 64 KB.`,
+    );
   }
   const prompt = await readFile(promptPath, "utf8");
   const allowed = allowedTaskSlots(task.settings.map((field) => field.id));
@@ -730,7 +750,12 @@ if (manifest.entrypoint) {
   );
 }
 for (const task of manifest.capabilities.agentTask?.tasks ?? []) {
-  await readAgentTaskPromptFile(directory, canonicalPluginDirectory, manifest, task);
+  await readAgentTaskPromptFile(
+    directory,
+    canonicalPluginDirectory,
+    manifest,
+    task,
+  );
 }
 ```
 
@@ -804,6 +829,7 @@ git commit -m "feat(plugins): declare agent tasks in plugin manifests"
 ### Task 3: Agent-task plugins in the web app
 
 **Files:**
+
 - Modify: `apps/web/src/features/settings/settings-connectors-page.tsx:215,619,681-924`
 - Modify: `apps/web/src/domain/pull-requests/pull-request-lifecycle.ts:51-55`
 - Modify: `apps/web/src/features/settings/plugin-settings-workflow.ts:92-120`
@@ -811,6 +837,7 @@ git commit -m "feat(plugins): declare agent tasks in plugin manifests"
 - Test: `apps/web/src/features/settings/plugin-settings-workflow.test.ts` (existing; add cases)
 
 **Interfaces:**
+
 - Consumes: `pluginRunsCode`, `pluginHasAgentTasks`, optional `entrypoint`, `unavailableReason` from Task 2.
 - Produces: an agent-task plugin listed on Settings > Plugins with its activation toggle and a "Tasks" section, without a connection form.
 
@@ -937,6 +964,7 @@ git commit -m "feat(plugins): show agent task plugins without a connection form"
 ### Task 4: `mark_entries_not_submitted`
 
 **Files:**
+
 - Modify: `apps/web/src/domain/time/timesheet-entry.ts` (after `markTimesheetEntriesSubmitted`, about `:384`)
 - Modify: `apps/web/src/lib/local-store.ts:84,1710`
 - Modify: `packages/shared/agent-tools.ts` (write input and output schemas)
@@ -945,6 +973,7 @@ git commit -m "feat(plugins): show agent task plugins without a connection form"
 - Test: `apps/web/src/domain/time/timesheet-entry.test.ts`, `apps/web/src/features/agents/agent-tool-runner.test.ts`
 
 **Interfaces:**
+
 - Produces: `markTimesheetEntriesNotSubmitted(state, entryIds): LocalAppState` (domain), `localStore.markTimesheetEntriesNotSubmitted(entryIds: string[])`, MCP tool `mark_entries_not_submitted` with input `{ entryIds: string[] }` (1 to 500) and output `{ unmarked: number }`.
 
 - [ ] **Step 1: Write the domain test**
@@ -959,7 +988,9 @@ describe("markTimesheetEntriesNotSubmitted", () => {
       entry({ _id: "b" }),
     ]);
     const next = markTimesheetEntriesNotSubmitted(state, ["a", "b"]);
-    expect(next.timesheetEntries.find((item) => item._id === "a")).toMatchObject({
+    expect(
+      next.timesheetEntries.find((item) => item._id === "a"),
+    ).toMatchObject({
       submittedAt: undefined,
       submittedFingerprint: undefined,
       previousSubmittedAt: 100,
@@ -1072,7 +1103,9 @@ it("marks entries as not submitted, with Undo", async () => {
   expect(
     await call("mark_entries_not_submitted", { entryIds: [entryId] }),
   ).toMatchObject({ ok: true, output: { unmarked: 1 } });
-  expect(localStore.snapshot().timesheetEntries[0]!.submittedAt).toBeUndefined();
+  expect(
+    localStore.snapshot().timesheetEntries[0]!.submittedAt,
+  ).toBeUndefined();
   expect(offerUndo.mock.calls.at(-1)![1].title).toBe(
     "Claude Code: Marked 1 entry as not submitted",
   );
@@ -1148,6 +1181,7 @@ git commit -m "feat(mcp): let agents mark entries as not submitted"
 ### Task 5: Line IDs and project codes in `get_submit_lines`
 
 **Files:**
+
 - Create: `apps/web/src/domain/agents/submit-line-id.ts`
 - Modify: `apps/web/src/domain/agents/agent-read-model.ts:249-297` (`getSubmitLinesForAgent`)
 - Modify: `apps/web/src/domain/time/timesheet-submission.ts:34` (add `projectCode` to `SubmitLine` where the line is built from its project)
@@ -1155,6 +1189,7 @@ git commit -m "feat(mcp): let agents mark entries as not submitted"
 - Test: `apps/web/src/domain/agents/submit-line-id.test.ts`, `apps/web/src/domain/agents/agent-read-model.test.ts`
 
 **Interfaces:**
+
 - Produces: `submitLineId(entryIds: readonly string[]): string` returning `ajour:` plus 8 hex characters; lines in `get_submit_lines` gain `lineId: string` and `projectCode?: string`.
 
 - [ ] **Step 1: Write the ID tests**
@@ -1290,6 +1325,7 @@ git commit -m "feat(mcp): give submit lines a stable ID and their project code"
 ### Task 6: Pace check and its tolerance setting
 
 **Files:**
+
 - Create: `apps/web/src/domain/time/week-pace.ts`
 - Modify: `apps/web/src/domain/local-state.ts:204` (`UserPreferences`)
 - Modify: `apps/web/src/lib/local-store.ts:452-514` (normalize)
@@ -1301,6 +1337,7 @@ git commit -m "feat(mcp): give submit lines a stable ID and their project code"
 - Test: `apps/web/src/domain/time/week-pace.test.ts`
 
 **Interfaces:**
+
 - Produces:
   - `type WeekPaceStatus = "on-pace" | "under" | "over"`
   - `computeWeekPace(input: { weekDates: string[]; today: string; capacityTargets: WeeklyCapacityTargets; loggedMs: number; tolerancePercent: number }): { loggedHours: number; targetHours: number; expectedHours: number; status: WeekPaceStatus }`
@@ -1318,23 +1355,39 @@ import type { WeeklyCapacityTargets } from "@/domain/local-state";
 
 const HOUR = 3_600_000;
 const WEEK = [
-  "2026-10-12", "2026-10-13", "2026-10-14", "2026-10-15",
-  "2026-10-16", "2026-10-17", "2026-10-18",
+  "2026-10-12",
+  "2026-10-13",
+  "2026-10-14",
+  "2026-10-15",
+  "2026-10-16",
+  "2026-10-17",
+  "2026-10-18",
 ];
 const TARGETS: WeeklyCapacityTargets = {
-  monday: 7.5 * HOUR, tuesday: 7.5 * HOUR, wednesday: 7.5 * HOUR,
-  thursday: 7.5 * HOUR, friday: 7.5 * HOUR, saturday: 0, sunday: 0,
+  monday: 7.5 * HOUR,
+  tuesday: 7.5 * HOUR,
+  wednesday: 7.5 * HOUR,
+  thursday: 7.5 * HOUR,
+  friday: 7.5 * HOUR,
+  saturday: 0,
+  sunday: 0,
 };
 const pace = (today: string, loggedHours: number, tolerancePercent = 20) =>
   computeWeekPace({
-    weekDates: WEEK, today, capacityTargets: TARGETS,
-    loggedMs: loggedHours * HOUR, tolerancePercent,
+    weekDates: WEEK,
+    today,
+    capacityTargets: TARGETS,
+    loggedMs: loggedHours * HOUR,
+    tolerancePercent,
   });
 
 describe("computeWeekPace", () => {
   it("is on pace at the end of a full week on target", () => {
     expect(pace("2026-10-16", 37.5)).toEqual({
-      loggedHours: 37.5, targetHours: 37.5, expectedHours: 37.5, status: "on-pace",
+      loggedHours: 37.5,
+      targetHours: 37.5,
+      expectedHours: 37.5,
+      status: "on-pace",
     });
   });
 
@@ -1365,15 +1418,31 @@ describe("computeWeekPace", () => {
 
   it("is on pace for a week with no targets", () => {
     const result = computeWeekPace({
-      weekDates: WEEK, today: "2026-10-14",
-      capacityTargets: { ...TARGETS, monday: 0, tuesday: 0, wednesday: 0, thursday: 0, friday: 0 },
-      loggedMs: 0, tolerancePercent: 20,
+      weekDates: WEEK,
+      today: "2026-10-14",
+      capacityTargets: {
+        ...TARGETS,
+        monday: 0,
+        tuesday: 0,
+        wednesday: 0,
+        thursday: 0,
+        friday: 0,
+      },
+      loggedMs: 0,
+      tolerancePercent: 20,
     });
-    expect(result).toMatchObject({ targetHours: 0, expectedHours: 0, status: "on-pace" });
+    expect(result).toMatchObject({
+      targetHours: 0,
+      expectedHours: 0,
+      status: "on-pace",
+    });
   });
 
   it("expects nothing before the week starts", () => {
-    expect(pace("2026-10-11", 0)).toMatchObject({ expectedHours: 0, status: "on-pace" });
+    expect(pace("2026-10-11", 0)).toMatchObject({
+      expectedHours: 0,
+      status: "on-pace",
+    });
   });
 });
 ```
@@ -1405,7 +1474,13 @@ export const DEFAULT_PACE_TOLERANCE_PERCENT = 20;
 
 const HOUR = 3_600_000;
 const DAY_KEYS = [
-  "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+  "monday",
+  "tuesday",
+  "wednesday",
+  "thursday",
+  "friday",
+  "saturday",
+  "sunday",
 ] as const satisfies readonly (keyof WeeklyCapacityTargets)[];
 
 export function getPaceTolerancePercent(preferences: UserPreferences) {
@@ -1575,6 +1650,7 @@ git commit -m "feat(mcp): add a pace check to get_submit_lines"
 ### Task 7: Runner sessions carry a run ID and a link
 
 **Files:**
+
 - Modify: `packages/shared/agent-tools.ts:405` (`agentSessionSchema`)
 - Modify: `apps/api/src/agent-sessions.ts:86-102` (`begin`), add `get`
 - Modify: `apps/web/src/features/agents/agent-panel.tsx:36,119-200`
@@ -1583,6 +1659,7 @@ git commit -m "feat(mcp): add a pace check to get_submit_lines"
 - Test: `apps/api/src/agent-sessions.test.ts`, `apps/web/src/features/agents/agent-panel.test.tsx` (create if absent, else add)
 
 **Interfaces:**
+
 - Produces:
   - `AgentSession.runId?: string`, `AgentSession.link?: { label: string; url: string }`
   - `AgentSessions.begin(client, input, extra?: { runId?: string; link?: { label: string; url: string } })`
@@ -1743,21 +1820,25 @@ const runId = session.runId;
 const dismissable =
   !runId && (session.state === "stalled" || questions.length > 0);
 // ...
-{runId && open ? (
-  <EndSessionButton label="Stop" onEnd={() => onStop(runId)} />
-) : dismissable ? (
-  <EndSessionButton label="Dismiss" onEnd={() => onDismiss(session.id)} />
-) : null}
-{!open && session.link ? (
-  <a
-    href={session.link.url}
-    target="_blank"
-    rel="noreferrer"
-    className="self-start text-sm underline"
-  >
-    {session.link.label}
-  </a>
-) : null}
+{
+  runId && open ? (
+    <EndSessionButton label="Stop" onEnd={() => onStop(runId)} />
+  ) : dismissable ? (
+    <EndSessionButton label="Dismiss" onEnd={() => onDismiss(session.id)} />
+  ) : null;
+}
+{
+  !open && session.link ? (
+    <a
+      href={session.link.url}
+      target="_blank"
+      rel="noreferrer"
+      className="self-start text-sm underline"
+    >
+      {session.link.label}
+    </a>
+  ) : null;
+}
 ```
 
 Update the `SessionChat` doc comment: "A runner session shows Stop while open and its link once ended. Other stalled sessions, or ones with an open question, can be dismissed."
@@ -1805,6 +1886,7 @@ git commit -m "feat(agents): show Stop and a link on runner sessions"
 Read the spec's "Smoke test results" before this task. Where the Claude Code results differ from the flags below, use what the smoke test found and note it in the commit message.
 
 **Files:**
+
 - Create: `packages/shared/agent-runs.ts`
 - Create: `apps/api/src/agent-runner/adapter.ts` (types)
 - Create: `apps/api/src/agent-runner/adapters/claude-code.ts`
@@ -1816,6 +1898,7 @@ Read the spec's "Smoke test results" before this task. Where the Claude Code res
 - Test: `apps/api/src/agent-runner/adapters/claude-code.test.ts`, `apps/api/src/agent-runner/cli-path.test.ts`, `apps/api/src/agent-runner/chrome.test.ts`, `apps/api/src/agent-runner/prompts.test.ts`
 
 **Interfaces:**
+
 - Produces:
   - In `packages/shared/agent-runs.ts`: `agentCliIdSchema` (`"claude-code" | "codex" | "opencode"`), `agentBrowserModeSchema` (`"ajour-chrome" | "my-chrome"`), `agentRunnerSettingsSchema`, `agentRunnerSettingsUpdateSchema`, `agentTaskSettingsUpdateSchema`, `agentCliStatusSchema`, `agentTaskStatusSchema`, `agentRunSchema`, `agentRunnerOverviewSchema`, `agentRunStartRequestSchema`, and their `z.infer` types.
   - `AgentCliAdapter` interface (below), `claudeCodeAdapter: AgentCliAdapter`.
@@ -1830,7 +1913,10 @@ Read the spec's "Smoke test results" before this task. Where the Claude Code res
 
 ```ts
 import { z } from "zod";
-import { connectorFieldSchema, connectorFieldValuesSchema } from "./connectors.ts";
+import {
+  connectorFieldSchema,
+  connectorFieldValuesSchema,
+} from "./connectors.ts";
 import { isoDateSchema } from "./agent-tools.ts";
 
 /**
@@ -1994,7 +2080,11 @@ const input = {
   workDirectory: "/tmp/run-1",
   prompt: "Do the week.",
   ajourMcpUrl: "http://127.0.0.1:8787/mcp/ajour",
-  playwright: { command: "/app/node", args: ["/app/pw/cli.js", "--browser", "chrome"], env: { ELECTRON_RUN_AS_NODE: "1" } },
+  playwright: {
+    command: "/app/node",
+    args: ["/app/pw/cli.js", "--browser", "chrome"],
+    env: { ELECTRON_RUN_AS_NODE: "1" },
+  },
   model: "",
   baseEnv: { PATH: "/usr/bin", HOME: "/Users/a" },
   token: TOKEN,
@@ -2017,7 +2107,11 @@ describe("Claude Code adapter", () => {
       "Bearer ${AJOUR_MCP_TOKEN}",
     );
     expect(args).toEqual(
-      expect.arrayContaining(["--allowedTools", "mcp__ajour", "mcp__playwright"]),
+      expect.arrayContaining([
+        "--allowedTools",
+        "mcp__ajour",
+        "mcp__playwright",
+      ]),
     );
     expect(args).not.toContain("--bare");
   });
@@ -2027,12 +2121,17 @@ describe("Claude Code adapter", () => {
     expect(env.CLAUDE_CODE_DISABLE_CLAUDE_MDS).toBe("1");
     expect(files["prompt.md"]).toBe("Do the week.");
     expect(args).toEqual(
-      expect.arrayContaining(["--append-system-prompt-file", "/tmp/run-1/prompt.md"]),
+      expect.arrayContaining([
+        "--append-system-prompt-file",
+        "/tmp/run-1/prompt.md",
+      ]),
     );
   });
 
   it("passes a model only when one is set", () => {
-    expect(claudeCodeAdapter.buildInvocation(input).args).not.toContain("--model");
+    expect(claudeCodeAdapter.buildInvocation(input).args).not.toContain(
+      "--model",
+    );
     expect(
       claudeCodeAdapter.buildInvocation({ ...input, model: "sonnet" }).args,
     ).toEqual(expect.arrayContaining(["--model", "sonnet"]));
@@ -2041,29 +2140,58 @@ describe("Claude Code adapter", () => {
   it("reads a failed MCP server, tool calls and the result", () => {
     expect(
       claudeCodeAdapter.parseEvent(
-        JSON.stringify({ type: "system", subtype: "init", mcp_servers: [{ name: "ajour", status: "connected" }, { name: "playwright", status: "failed" }] }),
+        JSON.stringify({
+          type: "system",
+          subtype: "init",
+          mcp_servers: [
+            { name: "ajour", status: "connected" },
+            { name: "playwright", status: "failed" },
+          ],
+        }),
       ),
     ).toEqual({ kind: "mcp-failed", server: "playwright" });
     expect(
       claudeCodeAdapter.parseEvent(
-        JSON.stringify({ type: "assistant", message: { content: [{ type: "tool_use", name: "mcp__ajour__get_submit_lines" }] } }),
+        JSON.stringify({
+          type: "assistant",
+          message: {
+            content: [
+              { type: "tool_use", name: "mcp__ajour__get_submit_lines" },
+            ],
+          },
+        }),
       ),
     ).toEqual({ kind: "tool-call" });
     expect(
       claudeCodeAdapter.parseEvent(
-        JSON.stringify({ type: "result", subtype: "success", is_error: false, result: "Entered 9 lines." }),
+        JSON.stringify({
+          type: "result",
+          subtype: "success",
+          is_error: false,
+          result: "Entered 9 lines.",
+        }),
       ),
     ).toEqual({ kind: "finished", summary: "Entered 9 lines." });
     expect(
       claudeCodeAdapter.parseEvent(
-        JSON.stringify({ type: "result", subtype: "error_max_turns", is_error: true, result: "" }),
+        JSON.stringify({
+          type: "result",
+          subtype: "error_max_turns",
+          is_error: true,
+          result: "",
+        }),
       ),
-    ).toEqual({ kind: "failed", message: "Claude Code stopped: error_max_turns." });
+    ).toEqual({
+      kind: "failed",
+      message: "Claude Code stopped: error_max_turns.",
+    });
     expect(claudeCodeAdapter.parseEvent("not json")).toBeNull();
   });
 
   it("reads the version", () => {
-    expect(claudeCodeAdapter.parseVersion("2.1.293 (Claude Code)\n")).toBe("2.1.293");
+    expect(claudeCodeAdapter.parseVersion("2.1.293 (Claude Code)\n")).toBe(
+      "2.1.293",
+    );
   });
 });
 ```
@@ -2156,17 +2284,26 @@ export const claudeCodeAdapter: AgentCliAdapter = {
       return null;
     }
     if (event.type === "system" && event.subtype === "init") {
-      const servers = (event.mcp_servers ?? []) as { name: string; status: string }[];
+      const servers = (event.mcp_servers ?? []) as {
+        name: string;
+        status: string;
+      }[];
       const failed = servers.find((server) => server.status !== "connected");
       return failed ? { kind: "mcp-failed", server: failed.name } : null;
     }
     if (event.type === "assistant") {
-      const content = ((event.message as { content?: unknown[] })?.content ?? []) as { type?: string }[];
-      return content.some((item) => item.type === "tool_use") ? { kind: "tool-call" } : null;
+      const content = ((event.message as { content?: unknown[] })?.content ??
+        []) as { type?: string }[];
+      return content.some((item) => item.type === "tool_use")
+        ? { kind: "tool-call" }
+        : null;
     }
     if (event.type === "result") {
       return event.is_error
-        ? { kind: "failed", message: `Claude Code stopped: ${String(event.subtype)}.` }
+        ? {
+            kind: "failed",
+            message: `Claude Code stopped: ${String(event.subtype)}.`,
+          }
         : { kind: "finished", summary: String(event.result ?? "") };
     }
     return null;
@@ -2204,7 +2341,8 @@ async function readLoginShellPath(): Promise<string> {
       shell,
       ["-ilc", 'printf %s "$PATH"'],
       { timeout: 5000, encoding: "utf8" },
-      (error, stdout) => resolve(error || !stdout.trim() ? fallback : stdout.trim()),
+      (error, stdout) =>
+        resolve(error || !stdout.trim() ? fallback : stdout.trim()),
     );
   });
 }
@@ -2251,7 +2389,9 @@ function chromeLocations(platform: NodeJS.Platform, env: NodeJS.ProcessEnv) {
   if (platform === "win32") {
     return [env.PROGRAMFILES, env["PROGRAMFILES(X86)"], env.LOCALAPPDATA]
       .filter((root): root is string => Boolean(root))
-      .map((root) => path.join(root, "Google", "Chrome", "Application", "chrome.exe"));
+      .map((root) =>
+        path.join(root, "Google", "Chrome", "Application", "chrome.exe"),
+      );
   }
   return [];
 }
@@ -2262,7 +2402,10 @@ export async function isChromeInstalled({
   env = process.env,
   pathValue = env.PATH ?? "",
   exists = async (candidate: string) =>
-    access(candidate).then(() => true, () => false),
+    access(candidate).then(
+      () => true,
+      () => false,
+    ),
 }: {
   platform?: NodeJS.Platform;
   env?: NodeJS.ProcessEnv;
@@ -2273,7 +2416,9 @@ export async function isChromeInstalled({
     if (await exists(candidate)) return true;
   }
   if (platform === "linux") {
-    return (await findExecutable("google-chrome", pathValue, platform)) !== null;
+    return (
+      (await findExecutable("google-chrome", pathValue, platform)) !== null
+    );
   }
   return false;
 }
@@ -2299,7 +2444,10 @@ function playwrightMcpCli(): string {
     const { bin } = JSON.parse(readFileSync(packageJsonPath, "utf8")) as {
       bin: Record<string, string>;
     };
-    return path.join(path.dirname(packageJsonPath), bin["mcp-server-playwright"]!);
+    return path.join(
+      path.dirname(packageJsonPath),
+      bin["mcp-server-playwright"]!,
+    );
   }
 }
 
@@ -2375,7 +2523,11 @@ describe("findExecutable", () => {
     await writeFile(path.join(bin, "claude"), "#!/bin/sh\n");
     await chmod(path.join(bin, "claude"), 0o755);
     expect(
-      await findExecutable("claude", [empty, bin].join(path.delimiter), "darwin"),
+      await findExecutable(
+        "claude",
+        [empty, bin].join(path.delimiter),
+        "darwin",
+      ),
     ).toBe(path.join(bin, "claude"));
     expect(await findExecutable("codex", bin, "darwin")).toBeNull();
   });
@@ -2424,7 +2576,11 @@ describe("buildPrompt", () => {
   it("puts the runner rules first and fills the task's slots", () => {
     const prompt = buildPrompt({
       taskPrompt: "Enter week {{weekOf}} at {{settings.url}}.",
-      values: { weekOf: "2026-10-12", sessionId: "s-1", "settings.url": "https://wd.example" },
+      values: {
+        weekOf: "2026-10-12",
+        sessionId: "s-1",
+        "settings.url": "https://wd.example",
+      },
     });
     expect(prompt.indexOf("Use the Ajour session s-1")).toBeLessThan(
       prompt.indexOf("Enter week 2026-10-12 at https://wd.example."),
@@ -2433,7 +2589,9 @@ describe("buildPrompt", () => {
   });
 
   it("refuses a slot without a value", () => {
-    expect(() => buildPrompt({ taskPrompt: "{{settings.x}}", values: { sessionId: "s" } })).toThrow();
+    expect(() =>
+      buildPrompt({ taskPrompt: "{{settings.x}}", values: { sessionId: "s" } }),
+    ).toThrow();
   });
 });
 ```
@@ -2455,6 +2613,7 @@ git commit -m "feat(agents): add the Claude Code adapter and runner building blo
 ### Task 9: The runner, its settings and routes
 
 **Files:**
+
 - Create: `apps/api/src/agent-runner/runner.ts`
 - Create: `apps/api/src/agent-runner/fake-cli.mjs` (test fixture: a script that prints JSON lines and exits as told)
 - Modify: `apps/api/src/storage.ts` (`agentRunner` block, methods)
@@ -2462,6 +2621,7 @@ git commit -m "feat(agents): add the Claude Code adapter and runner building blo
 - Test: `apps/api/src/agent-runner/runner.test.ts`, `apps/api/src/storage.test.ts`, `apps/api/src/server.test.ts`
 
 **Interfaces:**
+
 - Consumes: Tasks 2, 7 and 8 (`readAgentTaskPrompt`, `begin(..., extra)`, `get`, adapters, `playwrightMcpServer`, `isChromeInstalled`, `buildPrompt`, shared run contracts).
 - Produces:
   - `class AgentRunner` with `overview(): Promise<AgentRunnerOverview>`, `start(request: AgentRunStartRequest): Promise<AgentRun>`, `stop(runId: string): boolean`, `tick(): void`, `shutdown(): Promise<void>`.
@@ -2487,7 +2647,9 @@ it("keeps the agent runner settings and task values", async () => {
   });
   const reloaded = new AppApiStorage(storage.statePathForTests);
   expect((await reloaded.getAgentRunnerSettings()).cli).toBe("claude-code");
-  expect(await reloaded.getAgentTaskValues("ajp-workday", "enter-week")).toEqual({
+  expect(
+    await reloaded.getAgentTaskValues("ajp-workday", "enter-week"),
+  ).toEqual({
     timesheetUrl: "https://wd.example/t",
   });
 });
@@ -2524,7 +2686,10 @@ agentRunner: {
 
 ```ts
 function normalizeAgentRunnerState(raw: unknown): StoredAgentRunnerState {
-  const record = typeof raw === "object" && raw !== null ? (raw as Record<string, unknown>) : {};
+  const record =
+    typeof raw === "object" && raw !== null
+      ? (raw as Record<string, unknown>)
+      : {};
   const settings = agentRunnerSettingsSchema.safeParse(record.settings);
   const taskValues: StoredAgentRunnerState["taskValues"] = {};
   if (typeof record.taskValues === "object" && record.taskValues !== null) {
@@ -2616,7 +2781,11 @@ import { appendFileSync } from "node:fs";
 if (process.env.FAKE_CLI_REPORT) {
   appendFileSync(
     process.env.FAKE_CLI_REPORT,
-    JSON.stringify({ argv: process.argv.slice(2), hasToken: Boolean(process.env.AJOUR_MCP_TOKEN), cwd: process.cwd() }) + "\n",
+    JSON.stringify({
+      argv: process.argv.slice(2),
+      hasToken: Boolean(process.env.AJOUR_MCP_TOKEN),
+      cwd: process.cwd(),
+    }) + "\n",
   );
 }
 const steps = JSON.parse(process.env.FAKE_CLI_SCRIPT ?? "[]");
@@ -2647,7 +2816,12 @@ import { AgentRunner, AgentRunError } from "./runner.ts";
 
 const FAKE_CLI = fileURLToPath(new URL("./fake-cli.mjs", import.meta.url));
 const result = (text: string) =>
-  JSON.stringify({ type: "result", subtype: "success", is_error: false, result: text });
+  JSON.stringify({
+    type: "result",
+    subtype: "success",
+    is_error: false,
+    result: text,
+  });
 
 const fakeAdapter = (script: unknown[], report: string): AgentCliAdapter => ({
   ...claudeCodeAdapter,
@@ -2672,7 +2846,11 @@ async function setup(script: unknown[], options: { chrome?: boolean } = {}) {
   const revoked: string[] = [];
   const events: Record<string, unknown>[] = [];
   const runner = new AgentRunner({
-    storage: fakeStorage({ cli: "claude-code", values: { url: "https://wd.example/t" }, revoked }),
+    storage: fakeStorage({
+      cli: "claude-code",
+      values: { url: "https://wd.example/t" },
+      revoked,
+    }),
     sessions,
     plugins: fakePlugins("Enter week {{weekOf}} in {{settings.url}}."),
     adapters: [fakeAdapter(script, report)],
@@ -2689,16 +2867,25 @@ async function setup(script: unknown[], options: { chrome?: boolean } = {}) {
   return { runner, sessions, revoked, events, work, report };
 }
 
-const request = { pluginId: "ajp-test", taskId: "enter-week", weekOf: "2026-10-12" };
+const request = {
+  pluginId: "ajp-test",
+  taskId: "enter-week",
+  weekOf: "2026-10-12",
+};
 
 /** Waits until the run is gone from the runner. */
 async function settled(runner: AgentRunner) {
-  await vi.waitFor(async () => expect((await runner.overview()).currentRun).toBeNull(), { timeout: 5000 });
+  await vi.waitFor(
+    async () => expect((await runner.overview()).currentRun).toBeNull(),
+    { timeout: 5000 },
+  );
 }
 
 describe("AgentRunner", () => {
   it("keeps the agent's own outcome when it ended the session", async () => {
-    const { runner, sessions } = await setup([{ stdout: result("Entered 9 lines.") }]);
+    const { runner, sessions } = await setup([
+      { stdout: result("Entered 9 lines.") },
+    ]);
     const run = await runner.start(request);
     sessions.end(sessions.get(run.sessionId)!.client, {
       sessionId: run.sessionId,
@@ -2710,12 +2897,17 @@ describe("AgentRunner", () => {
   });
 
   it("ends the session as done when the agent exits 0 without ending it", async () => {
-    const { runner, sessions } = await setup([{ stdout: result("Entered 9 lines.") }]);
+    const { runner, sessions } = await setup([
+      { stdout: result("Entered 9 lines.") },
+    ]);
     const run = await runner.start(request);
     await settled(runner);
     const session = sessions.get(run.sessionId)!;
     expect(session.state).toBe("done");
-    expect(session.messages.at(-1)).toMatchObject({ kind: "end", summary: "Entered 9 lines." });
+    expect(session.messages.at(-1)).toMatchObject({
+      kind: "end",
+      summary: "Entered 9 lines.",
+    });
   });
 
   it("fails with the error output on a non-zero exit", async () => {
@@ -2761,7 +2953,9 @@ describe("AgentRunner", () => {
 
   it("refuses to start without Chrome in the default browser mode", async () => {
     const { runner } = await setup([], { chrome: false });
-    await expect(runner.start(request)).rejects.toThrow("Install Google Chrome to run agent tasks.");
+    await expect(runner.start(request)).rejects.toThrow(
+      "Install Google Chrome to run agent tasks.",
+    );
   });
 
   it("revokes the client and removes the folder on every exit", async () => {
@@ -2769,7 +2963,9 @@ describe("AgentRunner", () => {
     await runner.start(request);
     await settled(runner);
     expect(revoked).toHaveLength(1);
-    const left = (await readdir(work)).filter((name) => name.startsWith("run-"));
+    const left = (await readdir(work)).filter((name) =>
+      name.startsWith("run-"),
+    );
     expect(left).toEqual([]);
     const line = JSON.parse((await readFile(report, "utf8")).trim());
     expect(line.hasToken).toBe(true);
@@ -2777,11 +2973,20 @@ describe("AgentRunner", () => {
   });
 
   it("logs one agent.run event without prompt or output", async () => {
-    const { runner, events } = await setup([{ stderr: "secret week data" }, { exit: 1 }]);
+    const { runner, events } = await setup([
+      { stderr: "secret week data" },
+      { exit: 1 },
+    ]);
     await runner.start(request);
     await settled(runner);
     const event = events.find((candidate) => candidate.event === "agent.run")!;
-    expect(event).toMatchObject({ plugin_id: "ajp-test", task_id: "enter-week", cli: "claude-code", outcome: "failed", exit_code: 1 });
+    expect(event).toMatchObject({
+      plugin_id: "ajp-test",
+      task_id: "enter-week",
+      cli: "claude-code",
+      outcome: "failed",
+      exit_code: 1,
+    });
     expect(JSON.stringify(events)).not.toContain("secret week data");
     expect(JSON.stringify(events)).not.toContain("Enter week");
   });
@@ -2799,12 +3004,27 @@ describe("AgentRunner", () => {
 Write `fakeStorage` and `fakePlugins` in the same file:
 
 ```ts
-function fakeStorage({ cli, values, revoked }: { cli: "claude-code"; values: Record<string, string>; revoked: string[] }) {
+function fakeStorage({
+  cli,
+  values,
+  revoked,
+}: {
+  cli: "claude-code";
+  values: Record<string, string>;
+  revoked: string[];
+}) {
   return {
     getMcpSettings: async () => ({ enabled: true, clients: [] }),
-    getAgentRunnerSettings: async () => ({ cli, browserMode: "ajour-chrome" as const, model: "" }),
+    getAgentRunnerSettings: async () => ({
+      cli,
+      browserMode: "ajour-chrome" as const,
+      model: "",
+    }),
     getAgentTaskValues: async () => values,
-    createMcpClient: async (name: string) => ({ client: { id: `c-${name}`, name, createdAt: 1 }, token: "ajour_test-token" }),
+    createMcpClient: async (name: string) => ({
+      client: { id: `c-${name}`, name, createdAt: 1 },
+      token: "ajour_test-token",
+    }),
     revokeMcpClient: async (clientId: string) => {
       revoked.push(clientId);
       return true;
@@ -2818,12 +3038,25 @@ function fakePlugins(prompt: string) {
     displayName: "Workday",
     capabilities: {
       agentTask: {
-        tasks: [{
-          id: "enter-week", label: "Enter in Workday", placement: "submit-week" as const,
-          prompt: "p.md", estimateMinutes: 10,
-          weekLink: "{{settings.url}}?date={{weekOf}}",
-          settings: [{ id: "url", label: "URL", type: "url" as const, required: true, secret: false }],
-        }],
+        tasks: [
+          {
+            id: "enter-week",
+            label: "Enter in Workday",
+            placement: "submit-week" as const,
+            prompt: "p.md",
+            estimateMinutes: 10,
+            weekLink: "{{settings.url}}?date={{weekOf}}",
+            settings: [
+              {
+                id: "url",
+                label: "URL",
+                type: "url" as const,
+                required: true,
+                secret: false,
+              },
+            ],
+          },
+        ],
       },
     },
   };
@@ -2870,7 +3103,11 @@ import type {
 } from "../../../../packages/shared/index.ts";
 import { fillTemplate } from "../../../../packages/shared/agent-task-templates.ts";
 import type { AgentSessions } from "../agent-sessions.ts";
-import type { AgentCliAdapter, RunnerEvent, StdioServerSpec } from "./adapter.ts";
+import type {
+  AgentCliAdapter,
+  RunnerEvent,
+  StdioServerSpec,
+} from "./adapter.ts";
 import { buildPrompt } from "./prompts.ts";
 
 /**
@@ -2881,7 +3118,11 @@ import { buildPrompt } from "./prompts.ts";
 
 const STALL_LIMIT_MS = 10 * 60_000;
 const ERROR_LINES = 20;
-const ALL_CLIS: { id: AgentCliStatus["id"]; label: string; executableName: string }[] = [
+const ALL_CLIS: {
+  id: AgentCliStatus["id"];
+  label: string;
+  executableName: string;
+}[] = [
   { id: "claude-code", label: "Claude Code", executableName: "claude" },
   { id: "codex", label: "Codex", executableName: "codex" },
   { id: "opencode", label: "OpenCode", executableName: "opencode" },
@@ -2900,14 +3141,21 @@ export class AgentRunError extends Error {
 interface RunnerStorage {
   getMcpSettings(): Promise<{ enabled: boolean }>;
   getAgentRunnerSettings(): Promise<AgentRunnerSettings>;
-  getAgentTaskValues(pluginId: string, taskId: string): Promise<ConnectorFieldValues>;
+  getAgentTaskValues(
+    pluginId: string,
+    taskId: string,
+  ): Promise<ConnectorFieldValues>;
   createMcpClient(name: string): Promise<McpClientCreateResponse>;
   revokeMcpClient(clientId: string): Promise<boolean>;
 }
 
 interface RunnerPlugins {
   listPlugins(): Promise<
-    { id: string; displayName: string; capabilities: { agentTask?: { tasks: AgentTask[] } } }[]
+    {
+      id: string;
+      displayName: string;
+      capabilities: { agentTask?: { tasks: AgentTask[] } };
+    }[]
   >;
   isPluginEnabled(pluginId: string): Promise<boolean>;
   readAgentTaskPrompt(pluginId: string, taskId: string): Promise<string>;
@@ -2922,7 +3170,10 @@ export interface AgentRunnerOptions {
   readVersion?: (executable: string) => Promise<string | undefined>;
   loginShellPath: () => Promise<string>;
   chromeInstalled: () => Promise<boolean>;
-  playwright: (input: { browserMode: AgentRunnerSettings["browserMode"]; profileDirectory: string }) => StdioServerSpec;
+  playwright: (input: {
+    browserMode: AgentRunnerSettings["browserMode"];
+    profileDirectory: string;
+  }) => StdioServerSpec;
   profileDirectory: string;
   tempRoot: string;
   ajourMcpUrl: string;
@@ -2950,8 +3201,11 @@ interface ActiveRun {
 
 function defaultReadVersion(executable: string) {
   return new Promise<string | undefined>((resolve) => {
-    execFile(executable, ["--version"], { timeout: 5000, encoding: "utf8" }, (error, stdout) =>
-      resolve(error ? undefined : stdout),
+    execFile(
+      executable,
+      ["--version"],
+      { timeout: 5000, encoding: "utf8" },
+      (error, stdout) => resolve(error ? undefined : stdout),
     );
   });
 }
@@ -2985,10 +3239,17 @@ export class AgentRunner {
     const readVersion = this.options.readVersion ?? defaultReadVersion;
     return await Promise.all(
       ALL_CLIS.map(async (cli) => {
-        const adapter = this.options.adapters.find((candidate) => candidate.id === cli.id);
-        const executable = await this.options.findExecutable(cli.executableName, pathValue);
+        const adapter = this.options.adapters.find(
+          (candidate) => candidate.id === cli.id,
+        );
+        const executable = await this.options.findExecutable(
+          cli.executableName,
+          pathValue,
+        );
         const output = executable ? await readVersion(executable) : undefined;
-        const version = output ? (adapter?.parseVersion(output) ?? output.trim()) : undefined;
+        const version = output
+          ? (adapter?.parseVersion(output) ?? output.trim())
+          : undefined;
         return {
           id: cli.id,
           label: cli.label,
@@ -3010,12 +3271,21 @@ export class AgentRunner {
     for (const plugin of await this.options.plugins.listPlugins()) {
       if (!(await this.options.plugins.isPluginEnabled(plugin.id))) continue;
       for (const task of plugin.capabilities.agentTask?.tasks ?? []) {
-        const values = await this.options.storage.getAgentTaskValues(plugin.id, task.id);
+        const values = await this.options.storage.getAgentTaskValues(
+          plugin.id,
+          task.id,
+        );
         const blockers = [
           ...(mcpEnabled ? [] : ["Turn on MCP in Settings > MCP"]),
-          ...(cli?.supported && cli.installed ? [] : ["Pick an installed agent in Settings > Agents"]),
+          ...(cli?.supported && cli.installed
+            ? []
+            : ["Pick an installed agent in Settings > Agents"]),
           ...task.settings
-            .filter((field) => field.required && (values[field.id] === undefined || values[field.id] === ""))
+            .filter(
+              (field) =>
+                field.required &&
+                (values[field.id] === undefined || values[field.id] === ""),
+            )
             .map((field) => `Fill in ${field.label} in Settings > Agents`),
         ];
         tasks.push({
@@ -3037,51 +3307,97 @@ export class AgentRunner {
 
   async start(request: AgentRunStartRequest): Promise<AgentRun> {
     if (this.active) {
-      throw new AgentRunError("An agent task is already running. Stop it first.", 409);
+      throw new AgentRunError(
+        "An agent task is already running. Stop it first.",
+        409,
+      );
     }
     const settings = await this.options.storage.getAgentRunnerSettings();
     const clis = await this.detectClis();
     const task = (await this.listTasks(settings, clis)).find(
-      (candidate) => candidate.pluginId === request.pluginId && candidate.taskId === request.taskId,
+      (candidate) =>
+        candidate.pluginId === request.pluginId &&
+        candidate.taskId === request.taskId,
     );
-    if (!task) throw new AgentRunError("This agent task is not available.", 404);
-    if (task.blockers.length > 0) throw new AgentRunError(`${task.blockers[0]}.`, 400);
-    if (settings.browserMode === "ajour-chrome" && !(await this.options.chromeInstalled())) {
+    if (!task)
+      throw new AgentRunError("This agent task is not available.", 404);
+    if (task.blockers.length > 0)
+      throw new AgentRunError(`${task.blockers[0]}.`, 400);
+    if (
+      settings.browserMode === "ajour-chrome" &&
+      !(await this.options.chromeInstalled())
+    ) {
       throw new AgentRunError("Install Google Chrome to run agent tasks.", 400);
     }
-    const adapter = this.options.adapters.find((candidate) => candidate.id === settings.cli)!;
+    const adapter = this.options.adapters.find(
+      (candidate) => candidate.id === settings.cli,
+    )!;
     const cliStatus = clis.find((candidate) => candidate.id === settings.cli)!;
     const pathValue = await this.options.loginShellPath();
-    const executable = await this.options.findExecutable(adapter.executableName, pathValue);
-    if (!executable) throw new AgentRunError(`${adapter.label} is not installed.`, 400);
+    const executable = await this.options.findExecutable(
+      adapter.executableName,
+      pathValue,
+    );
+    if (!executable)
+      throw new AgentRunError(`${adapter.label} is not installed.`, 400);
 
-    const taskPrompt = await this.options.plugins.readAgentTaskPrompt(request.pluginId, request.taskId);
+    const taskPrompt = await this.options.plugins.readAgentTaskPrompt(
+      request.pluginId,
+      request.taskId,
+    );
     const settingValues = Object.fromEntries(
-      Object.entries(task.values).map(([id, value]) => [`settings.${id}`, String(value)]),
+      Object.entries(task.values).map(([id, value]) => [
+        `settings.${id}`,
+        String(value),
+      ]),
     );
     const weekLink = task.weekLink
-      ? safeHttpsUrl(fillTemplate(task.weekLink, { ...settingValues, weekOf: request.weekOf, sessionId: "" }))
+      ? safeHttpsUrl(
+          fillTemplate(task.weekLink, {
+            ...settingValues,
+            weekOf: request.weekOf,
+            sessionId: "",
+          }),
+        )
       : undefined;
 
-    const created = await this.options.storage.createMcpClient(`${task.label} run`);
+    const created = await this.options.storage.createMcpClient(
+      `${task.label} run`,
+    );
     const client = { id: created.client.id, name: created.client.name };
     const runId = randomUUID();
     const session = this.options.sessions.begin(
       client,
-      { title: `${task.label}, week of ${request.weekOf}`, estimateMinutes: task.estimateMinutes },
+      {
+        title: `${task.label}, week of ${request.weekOf}`,
+        estimateMinutes: task.estimateMinutes,
+      },
       {
         runId,
-        ...(weekLink ? { link: { label: `Open the week in ${task.pluginName}`, url: weekLink } } : {}),
+        ...(weekLink
+          ? {
+              link: {
+                label: `Open the week in ${task.pluginName}`,
+                url: weekLink,
+              },
+            }
+          : {}),
       },
     );
-    const workDirectory = await mkdtemp(path.join(this.options.tempRoot, "run-"));
+    const workDirectory = await mkdtemp(
+      path.join(this.options.tempRoot, "run-"),
+    );
     try {
       const invocation = adapter.buildInvocation({
         executable,
         workDirectory,
         prompt: buildPrompt({
           taskPrompt,
-          values: { ...settingValues, weekOf: request.weekOf, sessionId: session.id },
+          values: {
+            ...settingValues,
+            weekOf: request.weekOf,
+            sessionId: session.id,
+          },
         }),
         ajourMcpUrl: this.options.ajourMcpUrl,
         playwright: this.options.playwright({
@@ -3093,7 +3409,9 @@ export class AgentRunner {
         token: created.token,
       });
       for (const [name, content] of Object.entries(invocation.files)) {
-        await writeFile(path.join(workDirectory, name), content, { mode: 0o600 });
+        await writeFile(path.join(workDirectory, name), content, {
+          mode: 0o600,
+        });
       }
       const child = spawn(invocation.command, invocation.args, {
         cwd: workDirectory,
@@ -3125,7 +3443,11 @@ export class AgentRunner {
       return run;
     } catch (error) {
       await this.cleanUp(client, workDirectory);
-      this.options.sessions.end(client, { sessionId: session.id, outcome: "failed", summary: "Ajour could not start the agent." });
+      this.options.sessions.end(client, {
+        sessionId: session.id,
+        outcome: "failed",
+        summary: "Ajour could not start the agent.",
+      });
       throw error;
     }
   }
@@ -3172,13 +3494,19 @@ export class AgentRunner {
   private async finish(active: ActiveRun, code: number | null) {
     const { sessions } = this.options;
     const session = sessions.get(active.run.sessionId);
-    const open = session && (session.state === "active" || session.state === "stalled");
-    let outcome: AgentSessionOutcome | undefined = session && !open ? (session.state as AgentSessionOutcome) : undefined;
+    const open =
+      session && (session.state === "active" || session.state === "stalled");
+    let outcome: AgentSessionOutcome | undefined =
+      session && !open ? (session.state as AgentSessionOutcome) : undefined;
     if (open) {
       const ending = describeEnding(active, code);
       outcome = ending.outcome;
       if (ending.error) sessions.recordError(ending.error, active.client);
-      sessions.end(active.client, { sessionId: active.run.sessionId, outcome: ending.outcome, summary: ending.summary });
+      sessions.end(active.client, {
+        sessionId: active.run.sessionId,
+        outcome: ending.outcome,
+        summary: ending.summary,
+      });
     }
     await this.cleanUp(active.client, active.workDirectory);
     this.options.logEvent({
@@ -3199,7 +3527,9 @@ export class AgentRunner {
 
   private async cleanUp(client: AgentClientRef, workDirectory: string) {
     await this.options.storage.revokeMcpClient(client.id).catch(() => false);
-    await rm(workDirectory, { recursive: true, force: true }).catch(() => undefined);
+    await rm(workDirectory, { recursive: true, force: true }).catch(
+      () => undefined,
+    );
   }
 
   /** The user pressed Stop. False when that run is not going. */
@@ -3220,7 +3550,10 @@ export class AgentRunner {
       return;
     }
     active.stalledSince ??= this.now();
-    if (this.now() - active.stalledSince >= STALL_LIMIT_MS && !active.stopReason) {
+    if (
+      this.now() - active.stalledSince >= STALL_LIMIT_MS &&
+      !active.stopReason
+    ) {
       active.stopReason = "stalled";
       active.child.kill("SIGTERM");
     }
@@ -3255,10 +3588,18 @@ function describeEnding(
       };
   }
   if (code === 0 && !active.failure) {
-    return { outcome: "done", summary: active.finalSummary || "The agent finished." };
+    return {
+      outcome: "done",
+      summary: active.finalSummary || "The agent finished.",
+    };
   }
-  const summary = active.failure ?? `The agent exited with code ${code ?? "unknown"}.`;
-  return { outcome: "failed", summary, error: errorOutput ? `${summary}\n${errorOutput}` : summary };
+  const summary =
+    active.failure ?? `The agent exited with code ${code ?? "unknown"}.`;
+  return {
+    outcome: "failed",
+    summary,
+    error: errorOutput ? `${summary}\n${errorOutput}` : summary,
+  };
 }
 
 function safeHttpsUrl(value: string): string | undefined {
@@ -3272,7 +3613,9 @@ function safeHttpsUrl(value: string): string | undefined {
 
 function stringEnv(env: NodeJS.ProcessEnv): Record<string, string> {
   return Object.fromEntries(
-    Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined),
+    Object.entries(env).filter(
+      (entry): entry is [string, string] => entry[1] !== undefined,
+    ),
   );
 }
 ```
@@ -3294,9 +3637,11 @@ const agentRunner = new AgentRunner({
   storage: {
     getMcpSettings: () => storage.getMcpSettings(),
     getAgentRunnerSettings: () => storage.getAgentRunnerSettings(),
-    getAgentTaskValues: (pluginId, taskId) => storage.getAgentTaskValues(pluginId, taskId),
+    getAgentTaskValues: (pluginId, taskId) =>
+      storage.getAgentTaskValues(pluginId, taskId),
     createMcpClient: (name) => createMcpClient(storage, name),
-    revokeMcpClient: (clientId) => storage.revokeMcpClient(clientId, Date.now()),
+    revokeMcpClient: (clientId) =>
+      storage.revokeMcpClient(clientId, Date.now()),
   },
   sessions: agentSessions,
   plugins: {
@@ -3340,8 +3685,13 @@ if (request.method === "GET" && requestUrl.pathname === "/api/agents") {
   return;
 }
 
-if (request.method === "POST" && requestUrl.pathname === "/api/agents/settings") {
-  const payload = agentRunnerSettingsUpdateSchema.parse(await readJsonBody(request));
+if (
+  request.method === "POST" &&
+  requestUrl.pathname === "/api/agents/settings"
+) {
+  const payload = agentRunnerSettingsUpdateSchema.parse(
+    await readJsonBody(request),
+  );
   await storage.updateAgentRunnerSettings(payload);
   writeJson(response, 200, await agentRunner.overview());
   return;
@@ -3351,7 +3701,9 @@ const agentTaskSettingsRoute = requestUrl.pathname.match(
   /^\/api\/agents\/tasks\/([^/]+)\/([^/]+)\/settings$/,
 );
 if (request.method === "POST" && agentTaskSettingsRoute) {
-  const payload = agentTaskSettingsUpdateSchema.parse(await readJsonBody(request));
+  const payload = agentTaskSettingsUpdateSchema.parse(
+    await readJsonBody(request),
+  );
   await storage.setAgentTaskValues(
     decodeURIComponent(agentTaskSettingsRoute[1] ?? ""),
     decodeURIComponent(agentTaskSettingsRoute[2] ?? ""),
@@ -3372,12 +3724,17 @@ if (request.method === "POST" && requestUrl.pathname === "/api/agent-runs") {
   return;
 }
 
-if (request.method === "GET" && requestUrl.pathname === "/api/agent-runs/current") {
+if (
+  request.method === "GET" &&
+  requestUrl.pathname === "/api/agent-runs/current"
+) {
   writeJson(response, 200, { run: (await agentRunner.overview()).currentRun });
   return;
 }
 
-const agentRunStopRoute = requestUrl.pathname.match(/^\/api\/agent-runs\/([^/]+)\/stop$/);
+const agentRunStopRoute = requestUrl.pathname.match(
+  /^\/api\/agent-runs\/([^/]+)\/stop$/,
+);
 if (request.method === "POST" && agentRunStopRoute) {
   if (!agentRunner.stop(decodeURIComponent(agentRunStopRoute[1] ?? ""))) {
     writeJson(response, 404, { error: "That agent task is not running." });
@@ -3438,10 +3795,12 @@ git commit -m "feat(agents): run plugin agent tasks from the local API"
 ### Task 10: Ship Playwright MCP in the desktop build
 
 **Files:**
+
 - Modify: `apps/desktop/scripts/prepare-internal-api.cjs` (runtime packages)
 - Modify: `apps/desktop/internal-api-package.test.ts:42-110`
 
 **Interfaces:**
+
 - Produces: `build/internal-app-runtime/node_modules/@playwright/mcp` and its dependencies in the packaged app.
 
 - [ ] **Step 1: Write the failing test**
@@ -3451,13 +3810,20 @@ In `internal-api-package.test.ts`, next to the zod and tar checks:
 ```ts
 it("ships the pinned Playwright MCP with the internal API", () => {
   const packageJson = JSON.parse(
-    readFileSync(path.join(runtimeRoot, "node_modules/@playwright/mcp/package.json"), "utf8"),
+    readFileSync(
+      path.join(runtimeRoot, "node_modules/@playwright/mcp/package.json"),
+      "utf8",
+    ),
   );
   const apiPackage = JSON.parse(
     readFileSync(path.join(repoRoot, "apps/api/package.json"), "utf8"),
   );
   expect(packageJson.version).toBe(apiPackage.dependencies["@playwright/mcp"]);
-  expect(existsSync(path.join(runtimeRoot, "node_modules/playwright-core/package.json"))).toBe(true);
+  expect(
+    existsSync(
+      path.join(runtimeRoot, "node_modules/playwright-core/package.json"),
+    ),
+  ).toBe(true);
 });
 ```
 
@@ -3502,6 +3868,7 @@ git commit -m "build(desktop): ship Playwright MCP with the internal API"
 ### Task 11: Settings > Agents
 
 **Files:**
+
 - Create: `apps/web/src/lib/agent-runner.ts` (overview store)
 - Modify: `apps/web/src/lib/app-api.ts` (requests)
 - Create: `apps/web/src/features/settings/settings-agents-page.tsx`
@@ -3511,6 +3878,7 @@ git commit -m "build(desktop): ship Playwright MCP with the internal API"
 - Test: `apps/web/src/features/settings/settings-navigation.test.ts`
 
 **Interfaces:**
+
 - Consumes: routes and contracts from Tasks 8 and 9.
 - Produces:
   - `getAgentRunner(): Promise<AgentRunnerOverview>`, `updateAgentRunnerSettings(patch)`, `saveAgentTaskSettings(pluginId, taskId, values)`, `startAgentRun(request): Promise<AgentRun>` in `app-api.ts`.
@@ -3525,7 +3893,9 @@ export async function getAgentRunner() {
   return appApiRequest("/api/agents", undefined, agentRunnerOverviewSchema);
 }
 
-export async function updateAgentRunnerSettings(patch: Partial<AgentRunnerSettings>) {
+export async function updateAgentRunnerSettings(
+  patch: Partial<AgentRunnerSettings>,
+) {
   return appApiRequest(
     "/api/agents/settings",
     { method: "POST", body: JSON.stringify(patch) },
@@ -3594,7 +3964,10 @@ export async function refreshAgentRunner() {
     publish(
       isConnectorApiMissing(error)
         ? { kind: "unavailable" }
-        : { kind: "error", message: error instanceof Error ? error.message : "Unknown error" },
+        : {
+            kind: "error",
+            message: error instanceof Error ? error.message : "Unknown error",
+          },
     );
   }
 }
@@ -3649,7 +4022,10 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
 import { ConnectorFieldInput } from "@/features/settings/connector-settings-ui";
-import { saveAgentTaskSettings, updateAgentRunnerSettings } from "@/lib/app-api";
+import {
+  saveAgentTaskSettings,
+  updateAgentRunnerSettings,
+} from "@/lib/app-api";
 import { setAgentRunner, useAgentRunner } from "@/lib/agent-runner";
 
 /**
@@ -3707,7 +4083,9 @@ export function SettingsAgentsPage() {
               options={[{ value: "", label: "None" }, ...cliOptions]}
               onChange={(cli) =>
                 void run(async () =>
-                  setAgentRunner(await updateAgentRunnerSettings({ cli: cli || null })),
+                  setAgentRunner(
+                    await updateAgentRunnerSettings({ cli: cli || null }),
+                  ),
                 )
               }
             />
@@ -3731,7 +4109,9 @@ export function SettingsAgentsPage() {
               ]}
               onChange={(browserMode) =>
                 void run(async () =>
-                  setAgentRunner(await updateAgentRunnerSettings({ browserMode })),
+                  setAgentRunner(
+                    await updateAgentRunnerSettings({ browserMode }),
+                  ),
                 )
               }
             />
@@ -3764,7 +4144,9 @@ export function SettingsAgentsPage() {
           task={task}
           onSave={(values) =>
             run(async () =>
-              setAgentRunner(await saveAgentTaskSettings(task.pluginId, task.taskId, values)),
+              setAgentRunner(
+                await saveAgentTaskSettings(task.pluginId, task.taskId, values),
+              ),
             )
           }
         />
@@ -3786,7 +4168,9 @@ function TaskSettings({
   return (
     <section className="settings-section">
       <h2 className="settings-section-title">{task.label}</h2>
-      <p className="settings-section-desc">From the {task.pluginName} plugin.</p>
+      <p className="settings-section-desc">
+        From the {task.pluginName} plugin.
+      </p>
       <AppPanel>
         <form
           className="flex flex-col gap-3 p-3"
@@ -3834,6 +4218,7 @@ git commit -m "feat(agents): add Settings > Agents"
 ### Task 12: Submit page button, week link, acceptance and docs
 
 **Files:**
+
 - Create: `apps/web/src/features/agents/agent-task-buttons.tsx`
 - Modify: `apps/web/src/features/time/submit-page.tsx:377-388` (header actions)
 - Create: `apps/web/tests/acceptance/features/agent-runner.feature`
@@ -3841,6 +4226,7 @@ git commit -m "feat(agents): add Settings > Agents"
 - Modify: `agents/architecture.md`, `agents/GLOSSARY.md`, `agents/ui-registry.md`, `agents/library-docs.md`, `agents/progress-tracker.md`, `docs/superpowers/specs/2026-10-15-ajour-agent-runner-design.md` (status)
 
 **Interfaces:**
+
 - Consumes: `useAgentRunner`, `startAgentRun`, `fillTemplate`, `useAgentBridgeState` (for open runner sessions).
 - Produces: `AgentTaskButtons({ weekOf }: { weekOf: string })`, rendered in the Submit page header for `submit-week` tasks.
 
@@ -3881,7 +4267,13 @@ Overview fixture:
 const readyOverview = {
   settings: { cli: "claude-code", browserMode: "ajour-chrome", model: "" },
   clis: [
-    { id: "claude-code", label: "Claude Code", supported: true, installed: true, version: "2.1.0" },
+    {
+      id: "claude-code",
+      label: "Claude Code",
+      supported: true,
+      installed: true,
+      version: "2.1.0",
+    },
     { id: "codex", label: "Codex", supported: false, installed: false },
     { id: "opencode", label: "OpenCode", supported: false, installed: false },
   ],
@@ -3893,7 +4285,15 @@ const readyOverview = {
       label: "Enter in Workday",
       placement: "submit-week",
       estimateMinutes: 10,
-      settings: [{ id: "timesheetUrl", label: "Workday timesheet URL", type: "url", required: true, secret: false }],
+      settings: [
+        {
+          id: "timesheetUrl",
+          label: "Workday timesheet URL",
+          type: "url",
+          required: true,
+          secret: false,
+        },
+      ],
       values: { timesheetUrl: "https://wd.example/t" },
       weekLink: "{{settings.timesheetUrl}}?date={{weekOf}}",
       blockers: [],
@@ -3930,8 +4330,15 @@ import { useState } from "react";
 import { fillTemplate } from "@ajour/shared/agent-task-templates";
 import type { AgentTaskStatus } from "@ajour/shared/agent-runs";
 import { Button } from "@/components/ui/button";
-import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { openAgentPanel, useAgentBridgeState } from "@/features/agents/agent-bridge-state";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
+  openAgentPanel,
+  useAgentBridgeState,
+} from "@/features/agents/agent-bridge-state";
 import { refreshAgentRunner, useAgentRunner } from "@/lib/agent-runner";
 import { startAgentRun } from "@/lib/app-api";
 
@@ -3940,9 +4347,14 @@ export function weekLinkFor(task: AgentTaskStatus, weekOf: string) {
   if (!task.weekLink) return undefined;
   try {
     const values = Object.fromEntries(
-      Object.entries(task.values).map(([id, value]) => [`settings.${id}`, String(value)]),
+      Object.entries(task.values).map(([id, value]) => [
+        `settings.${id}`,
+        String(value),
+      ]),
     );
-    const url = new URL(fillTemplate(task.weekLink, { ...values, weekOf, sessionId: "" }));
+    const url = new URL(
+      fillTemplate(task.weekLink, { ...values, weekOf, sessionId: "" }),
+    );
     return url.protocol === "https:" ? url.toString() : undefined;
   } catch {
     return undefined;
@@ -3959,16 +4371,24 @@ export function AgentTaskButtons({ weekOf }: { weekOf: string }) {
   const { snapshot } = useAgentBridgeState();
   const [error, setError] = useState<string | null>(null);
   if (state.kind !== "ready") return null;
-  const tasks = state.overview.tasks.filter((task) => task.placement === "submit-week");
+  const tasks = state.overview.tasks.filter(
+    (task) => task.placement === "submit-week",
+  );
   if (tasks.length === 0) return null;
   const running = (snapshot?.sessions ?? []).some(
-    (session) => session.runId && (session.state === "active" || session.state === "stalled"),
+    (session) =>
+      session.runId &&
+      (session.state === "active" || session.state === "stalled"),
   );
 
   const start = async (task: AgentTaskStatus) => {
     setError(null);
     try {
-      await startAgentRun({ pluginId: task.pluginId, taskId: task.taskId, weekOf });
+      await startAgentRun({
+        pluginId: task.pluginId,
+        taskId: task.taskId,
+        weekOf,
+      });
       openAgentPanel();
       await refreshAgentRunner();
     } catch (cause) {
@@ -3979,18 +4399,34 @@ export function AgentTaskButtons({ weekOf }: { weekOf: string }) {
   return (
     <div className="flex flex-wrap items-center gap-2">
       {tasks.map((task) => {
-        const reason = running ? "An agent task is already running." : task.blockers[0];
+        const reason = running
+          ? "An agent task is already running."
+          : task.blockers[0];
         const link = weekLinkFor(task, weekOf);
         const button = (
-          <Button variant="outline" disabled={Boolean(reason)} onClick={() => void start(task)}>
+          <Button
+            variant="outline"
+            disabled={Boolean(reason)}
+            onClick={() => void start(task)}
+          >
             {task.label}
           </Button>
         );
         return (
-          <div key={`${task.pluginId}/${task.taskId}`} className="flex items-center gap-2">
+          <div
+            key={`${task.pluginId}/${task.taskId}`}
+            className="flex items-center gap-2"
+          >
             {reason ? (
               <Tooltip>
-                <TooltipTrigger render={<span tabIndex={0} aria-label={`${task.label}: ${reason}`} />}>
+                <TooltipTrigger
+                  render={
+                    <span
+                      tabIndex={0}
+                      aria-label={`${task.label}: ${reason}`}
+                    />
+                  }
+                >
                   {button}
                 </TooltipTrigger>
                 <TooltipContent>{reason}</TooltipContent>
@@ -3999,7 +4435,12 @@ export function AgentTaskButtons({ weekOf }: { weekOf: string }) {
               button
             )}
             {link ? (
-              <a href={link} target="_blank" rel="noreferrer" className="text-sm underline">
+              <a
+                href={link}
+                target="_blank"
+                rel="noreferrer"
+                className="text-sm underline"
+              >
                 Open the week in {task.pluginName}
               </a>
             ) : null}

@@ -32,16 +32,16 @@ Spec A gave agents the MCP endpoint, the data tools, sessions, questions, the in
 
 ## Decisions
 
-| Question | Decision |
-|---|---|
-| Browser | Default: Playwright drives the installed Google Chrome with a dedicated profile Ajour owns. The user signs in to Workday there once, and again when the company's SSO session expires. Setting: "My Chrome" through Playwright's extension mode. No Chromium fallback: a missing Chrome stops the run with "Install Google Chrome". |
-| Browser lifetime | Each CLI starts Playwright MCP itself, so Chrome closes when the agent finishes. Workday keeps entered hours; there is no Submit step for the user. |
-| Agents | Claude Code, Codex and OpenCode, picked in Settings. |
-| Runner location | The local API. It already owns MCP clients, tokens and sessions. |
-| Plugin shape | A prompt-only `agentTask` capability. No plugin code runs. |
-| Matching | By project name or project code, and task name. |
-| Marking | The agent marks each line's entries submitted right after entering it, and unmarks them when a line fails. Ajour's "submitted" means "in the external timesheet". |
-| Pace | Ajour computes it. The agent asks only when the week is off pace. |
+| Question         | Decision                                                                                                                                                                                                                                                                                                                            |
+| ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Browser          | Default: Playwright drives the installed Google Chrome with a dedicated profile Ajour owns. The user signs in to Workday there once, and again when the company's SSO session expires. Setting: "My Chrome" through Playwright's extension mode. No Chromium fallback: a missing Chrome stops the run with "Install Google Chrome". |
+| Browser lifetime | Each CLI starts Playwright MCP itself, so Chrome closes when the agent finishes. Workday keeps entered hours; there is no Submit step for the user.                                                                                                                                                                                 |
+| Agents           | Claude Code, Codex and OpenCode, picked in Settings.                                                                                                                                                                                                                                                                                |
+| Runner location  | The local API. It already owns MCP clients, tokens and sessions.                                                                                                                                                                                                                                                                    |
+| Plugin shape     | A prompt-only `agentTask` capability. No plugin code runs.                                                                                                                                                                                                                                                                          |
+| Matching         | By project name or project code, and task name.                                                                                                                                                                                                                                                                                     |
+| Marking          | The agent marks each line's entries submitted right after entering it, and unmarks them when a line fails. Ajour's "submitted" means "in the external timesheet".                                                                                                                                                                   |
+| Pace             | Ajour computes it. The agent asks only when the week is off pace.                                                                                                                                                                                                                                                                   |
 
 ## Architecture
 
@@ -151,14 +151,14 @@ An adapter ships only after its smoke test passes. A CLI whose smoke test fails 
 
 ### How a run ends
 
-| Event | Session outcome | Process |
-|---|---|---|
-| The agent ends its session | The agent's outcome | Exits by itself |
-| Exit 0 without `end_session` | Done, with the CLI's final message as the summary | Exited |
-| Non-zero exit, or the CLI reports a failed MCP server | Failed, with the last 20 lines of the CLI's error output as an error in the panel | Exited |
-| The user presses Stop | Cancelled | Killed |
-| The session stays stalled for 10 minutes | Failed: "The agent stopped answering" | Killed |
-| Ajour quits | No outcome: sessions live in memory | Killed |
+| Event                                                 | Session outcome                                                                   | Process         |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------- | --------------- |
+| The agent ends its session                            | The agent's outcome                                                               | Exits by itself |
+| Exit 0 without `end_session`                          | Done, with the CLI's final message as the summary                                 | Exited          |
+| Non-zero exit, or the CLI reports a failed MCP server | Failed, with the last 20 lines of the CLI's error output as an error in the panel | Exited          |
+| The user presses Stop                                 | Cancelled                                                                         | Killed          |
+| The session stays stalled for 10 minutes              | Failed: "The agent stopped answering"                                             | Killed          |
+| Ajour quits                                           | No outcome: sessions live in memory                                               | Killed          |
 
 In every case the runner revokes the MCP client and deletes the folder. The error output lines stay in memory and are never logged.
 

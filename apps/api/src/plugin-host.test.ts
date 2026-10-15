@@ -691,9 +691,7 @@ describe("ConnectorPluginManager", () => {
       );
       const { plugins } = await pluginManager.inspectPlugins();
       expect(plugins.map((plugin) => plugin.id)).not.toContain("ajp-test");
-      expect(logged(consoleError)).toContain(
-        "settings.nope",
-      );
+      expect(logged(consoleError)).toContain("settings.nope");
     } finally {
       consoleError.mockRestore();
     }

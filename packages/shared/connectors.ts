@@ -1,8 +1,5 @@
 import { z } from "zod";
-import {
-  allowedTaskSlots,
-  listTemplateSlots,
-} from "./agent-task-templates.ts";
+import { allowedTaskSlots, listTemplateSlots } from "./agent-task-templates.ts";
 
 export const CONNECTOR_PLUGIN_API_VERSION = 3;
 export const CONNECTOR_PLUGIN_ARCHIVE_EXTENSION = ".ajour-connector";

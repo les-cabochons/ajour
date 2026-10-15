@@ -146,7 +146,9 @@ describe("plugin manifest capabilities", () => {
       connectorPluginManifestSchema.parse({
         ...agentTaskBase,
         capabilities: {
-          agentTask: { tasks: [{ ...agentTask, weekLink: "{{settings.nope}}" }] },
+          agentTask: {
+            tasks: [{ ...agentTask, weekLink: "{{settings.nope}}" }],
+          },
         },
       }),
     ).toThrow(/settings.nope/);
