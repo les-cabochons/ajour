@@ -188,3 +188,24 @@ describe("ownership and activity", () => {
     });
   });
 });
+
+describe("runner sessions", () => {
+  it("keeps a run ID and a link on a session the runner begins", () => {
+    const { sessions } = createSessions();
+    const session = sessions.begin(
+      claude,
+      { title: "Enter in Workday, week of Oct 12", estimateMinutes: 10 },
+      {
+        runId: "run-1",
+        link: {
+          label: "Open the week in Workday",
+          url: "https://wd.example/t",
+        },
+      },
+    );
+    expect(sessions.get(session.id)).toMatchObject({
+      runId: "run-1",
+      link: { url: "https://wd.example/t" },
+    });
+  });
+});

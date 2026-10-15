@@ -86,6 +86,7 @@ export class AgentSessions {
   begin(
     client: AgentClientRef,
     input: { title: string; estimateMinutes: number },
+    extra: Pick<AgentSession, "runId" | "link"> = {},
   ): AgentSession {
     const now = this.now();
     const session: AgentSession = {
@@ -96,11 +97,18 @@ export class AgentSessions {
       startedAt: now,
       deadlineAt: now + sessionWindowMs(input.estimateMinutes),
       messages: [],
+      ...(extra.runId ? { runId: extra.runId } : {}),
+      ...(extra.link ? { link: extra.link } : {}),
     };
     this.sessions.set(session.id, session);
     this.pruneSessions();
     this.changed();
     return session;
+  }
+
+  /** A session by ID, open or ended, while Ajour still keeps it. */
+  get(sessionId: string): AgentSession | undefined {
+    return this.sessions.get(sessionId);
   }
 
   update(

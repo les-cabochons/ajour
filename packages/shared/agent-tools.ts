@@ -427,6 +427,10 @@ export const agentSessionSchema = z.object({
   pausedRemainingMs: z.number().optional(),
   endedAt: z.number().optional(),
   messages: z.array(agentSessionMessageSchema),
+  /** Set when Ajour's runner started the agent. The panel offers Stop. */
+  runId: z.string().optional(),
+  /** One link the panel shows once the session ends. */
+  link: z.object({ label: z.string(), url: z.string().url() }).optional(),
 });
 export type AgentSession = z.infer<typeof agentSessionSchema>;
 

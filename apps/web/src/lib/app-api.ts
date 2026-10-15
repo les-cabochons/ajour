@@ -820,6 +820,15 @@ export async function dismissAgentSession(sessionId: string) {
   );
 }
 
+/** Stops the agent run Ajour started. Returns the new snapshot. */
+export async function stopAgentRun(runId: string) {
+  return appApiRequest(
+    `/api/agent-runs/${encodeURIComponent(runId)}/stop`,
+    { method: "POST", body: "{}" },
+    agentsSnapshotSchema,
+  );
+}
+
 /** Marks past agent errors and failures as seen. Returns the new snapshot. */
 export async function markAgentsSeen() {
   return appApiRequest(

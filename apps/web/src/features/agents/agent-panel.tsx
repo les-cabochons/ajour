@@ -41,6 +41,8 @@ export interface AgentPanelProps {
   onAnswer(questionId: string, text: string): Promise<void>;
   /** Ends a session the agent left behind. A rejection shows its message. */
   onDismiss(sessionId: string): Promise<void>;
+  /** Stops a run Ajour started. A rejection shows its message. */
+  onStop(runId: string): Promise<void>;
   /** Runs each time the panel opens, to mark past errors and failures seen. */
   onSeen(): void;
 }
@@ -115,19 +117,19 @@ function QuestionForm({
   );
 }
 
-/** Clears a session whose agent is gone, and withdraws its open questions. */
-function DismissButton({
-  sessionId,
-  onDismiss,
+/** Ends a session from the panel: Dismiss for a lost agent, Stop for a run. */
+function EndSessionButton({
+  label,
+  onEnd,
 }: {
-  sessionId: string;
-  onDismiss: AgentPanelProps["onDismiss"];
+  label: "Dismiss" | "Stop";
+  onEnd: () => Promise<void>;
 }) {
   const [error, setError] = useState<string | null>(null);
-  const dismiss = async () => {
+  const end = async () => {
     setError(null);
     try {
-      await onDismiss(sessionId);
+      await onEnd();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Unknown error");
     }
@@ -138,9 +140,9 @@ function DismissButton({
         variant="outline"
         size="sm"
         className="self-start"
-        onClick={() => void dismiss()}
+        onClick={() => void end()}
       >
-        Dismiss
+        {label}
       </Button>
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>
@@ -149,21 +151,27 @@ function DismissButton({
 
 /**
  * A session's updates and answers. An open question shows as a form instead.
- * A stalled session, or one with an open question, can be dismissed.
+ * A runner session shows Stop while open and its link once ended. Other
+ * stalled sessions, or ones with an open question, can be dismissed.
  */
 function SessionChat({
   session,
   questions,
   onAnswer,
   onDismiss,
+  onStop,
 }: {
   session: AgentSession;
   questions: AgentQuestion[];
   onAnswer: AgentPanelProps["onAnswer"];
   onDismiss: AgentPanelProps["onDismiss"];
+  onStop: AgentPanelProps["onStop"];
 }) {
   const openIds = new Set(questions.map((question) => question.id));
-  const dismissable = session.state === "stalled" || questions.length > 0;
+  const open = session.state === "active" || session.state === "stalled";
+  const runId = session.runId;
+  const dismissable =
+    !runId && (session.state === "stalled" || questions.length > 0);
   return (
     <div className="flex flex-col gap-2" aria-label={`${session.title} chat`}>
       <ol className="flex flex-col gap-1 text-sm">
@@ -192,8 +200,20 @@ function SessionChat({
           onAnswer={onAnswer}
         />
       ))}
-      {dismissable ? (
-        <DismissButton sessionId={session.id} onDismiss={onDismiss} />
+      {runId && open ? (
+        <EndSessionButton label="Stop" onEnd={() => onStop(runId)} />
+      ) : dismissable ? (
+        <EndSessionButton label="Dismiss" onEnd={() => onDismiss(session.id)} />
+      ) : null}
+      {!open && session.link ? (
+        <a
+          href={session.link.url}
+          target="_blank"
+          rel="noreferrer"
+          className="self-start text-sm underline"
+        >
+          {session.link.label}
+        </a>
       ) : null}
     </div>
   );
@@ -235,7 +255,8 @@ function AgentPanelTabs({
   snapshot,
   onAnswer,
   onDismiss,
-}: Pick<AgentPanelProps, "snapshot" | "onAnswer" | "onDismiss">) {
+  onStop,
+}: Pick<AgentPanelProps, "snapshot" | "onAnswer" | "onDismiss" | "onStop">) {
   const now = useNow();
   const [chosenId, setChosenId] = useState<string>();
   const sessions = snapshot?.sessions ?? [];
@@ -294,6 +315,7 @@ function AgentPanelTabs({
             )}
             onAnswer={onAnswer}
             onDismiss={onDismiss}
+            onStop={onStop}
           />
         ) : null}
       </TabsContent>
@@ -335,6 +357,7 @@ export function AgentPanel({
   onOpenChange,
   onAnswer,
   onDismiss,
+  onStop,
   onSeen,
 }: AgentPanelProps) {
   const narrow = useIsNarrowView();
@@ -348,6 +371,7 @@ export function AgentPanel({
       snapshot={snapshot}
       onAnswer={onAnswer}
       onDismiss={onDismiss}
+      onStop={onStop}
     />
   );
 
