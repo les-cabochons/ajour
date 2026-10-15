@@ -63,6 +63,12 @@ export function runBacklogItemAction(
     case "unsnooze":
       localStore.unsnoozeWorkItem(workItem._id);
       return;
+    case "pin":
+      localStore.pinWorkItem(workItem._id);
+      return;
+    case "unpin":
+      localStore.unpinWorkItem(workItem._id);
+      return;
     case "settle":
       settleBacklogItem(workItem, { ask: askToSettle });
       return;

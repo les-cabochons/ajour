@@ -57,7 +57,7 @@ Start entry · New entry… · Edit · Assign shortcut… · Archive (Restore wh
 
 ### Backlog item
 
-Start entry (Stop while its entry runs) · New entry… · Edit · Add subitem · Snooze… (Unsnooze when snoozed) · Settle… (Unsettle when settled, Restore when archived) · Open in source · Archive · Delete
+Start entry (Stop while its entry runs) · New entry… · Edit · Add subitem · Snooze… (Unsnooze when snoozed) · Pin (Unpin when pinned) · Settle… (Unsettle when settled, Restore when archived) · Open in source · Archive · Delete
 
 Changed in [#69](https://github.com/les-cabochons/ajour/issues/69). See the Backlog sidebar section for what Snooze and Settle do.
 
@@ -65,8 +65,8 @@ Changed in [#69](https://github.com/les-cabochons/ajour/issues/69). See the Back
 - Archive is listed only for synced items. It archives the item in Ajour and leaves the source tool as it is. On a manual item, Settle already archives. An archived item disables Archive: "The item is archived".
 - Settle shows as "Settle…" when it opens the settle dialog, and as "Settle" when a settle rule applies a fixed change.
 - New entry… replaces the inline "Log time" field as the action for logging time.
-- An archived item disables Start entry, New entry…, Edit, Add subitem and Snooze…: "Restore the item first".
-- A settled item disables Snooze…: "Unsettle the item first".
+- An archived item disables Start entry, New entry…, Edit, Add subitem, Snooze… and Pin: "Restore the item first".
+- A settled item disables Snooze… and Pin: "Unsettle the item first".
 - A subitem disables Add subitem: "Subitems can't have subitems".
 - Delete removes the item's subitems too, and its label states the count, for example "Delete (and 2 subitems)".
 
@@ -132,7 +132,7 @@ Decided in [App shell and collapsible sidebar](https://github.com/les-cabochons/
 
 - While an entry runs, the dock shows it: a running dot, its title (the backlog item's, else the note, the task or the project), the time counted with seconds, New entry (+) and Stop. With a remaining estimate, a bar shows how much of it the running time uses, with "1.1h left" or "0.4h over", next to the project code and task.
 - Clicking the dock opens the running entry's editor in a popover. New entry (+) opens a blank entry editor in a popover anchored to it.
-- With nothing running, the dock shows "Nothing running", today's total, New entry (+) and a one-click start for the first item of the list, marked Up next.
+- With nothing running, the dock shows "Nothing running", today's total, New entry (+) and a one-click start for the first item of the list that is not pinned, marked Up next.
 - With nothing running, a small Start (▶) beside Search, above the dock, starts an empty entry and opens its editor. It hides while an entry runs.
 - N opens the new entry editor from anywhere, anchored to the titlebar's totals off the Time pages. S starts an empty entry.
 - While the sidebar is not on screen, the dock floats at the bottom left on one line: dot, title, time counted and Stop. While nothing runs it holds New entry (+) and Start (▶), the only buttons that start an entry there.
@@ -521,10 +521,11 @@ The sidebar works like the T3 Code and Linear sidebars: the view switcher, the t
 ### List
 
 - Below the timer dock, the sidebar lists active backlog items in the Backlog page's current order, custom or priority. There is one ordering.
-- The work list is one scroll: the backlog items with no header and no collapse, like T3 Code's thread list, then collapsible sections for Pull requests (only while pull requests need the user), Snoozed and Settled. A section with nothing in it is not shown. Pull requests starts open, and every section's state is saved per device. The Backlog and Pull requests tabs are gone.
+- The work list is one scroll: the backlog items, pinned ones first, with no header and no collapse, like T3 Code's thread list, then collapsible sections for Pull requests (only while pull requests need the user), Snoozed and Settled. A section with nothing in it is not shown. Pull requests starts open, and every section's state is saved per device. The Backlog and Pull requests tabs are gone.
 - The list holds top-level items and subitems that have their own priority. A subitem without a priority follows its parent and does not show.
 - With priority order, a subitem with its own priority mixes with top-level items by priority. With custom order, it sits right below its parent. If its parent is snoozed or settled, it takes the parent's place.
 - Snoozed, settled and archived items leave the list.
+- Pin puts an item at the top of the list with a pin icon. Pinned items keep the list's order among themselves. A pinned item never becomes the timer dock's Up next: Up next is the first item that is not pinned. Pin is local, a sync keeps it, and the item stays pinned through a snooze or a settle. Pull requests cannot be pinned.
 - The narrow view has no item list. The Backlog page is the way in.
 
 ### Search and project filter

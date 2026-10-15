@@ -15,6 +15,7 @@ import {
   RiCheckLine as SettleIcon,
   RiCornerLeftUpLine as ParentIcon,
   RiPlayLine as PlayIcon,
+  RiPushpinLine as PinIcon,
   RiStopLine as StopIcon,
   RiTimeLine as SnoozeIcon,
 } from "@remixicon/react";
@@ -336,6 +337,13 @@ function Markers({
 }) {
   return (
     <>
+      {workItem.pinnedAt !== undefined ? (
+        <PinIcon
+          className="size-3.5 shrink-0 text-muted-foreground"
+          role="img"
+          aria-label="Pinned"
+        />
+      ) : null}
       {isRunning ? (
         <span
           className="relative flex size-2 shrink-0"
@@ -736,9 +744,9 @@ const OffListRow = memo(function OffListRow({
 /**
  * The work list in the expanded app sidebar, from "Backlog sidebar" in
  * agents/ux-spec.md: the active items in the Backlog page's order with no
- * header, `children` (the Pull requests section), then the collapsible
- * Snoozed and Settled sections. Every section keeps only the rows `matcher`
- * accepts, and its count follows. Empty sections are not shown.
+ * header, pinned items first, `children` (the Pull requests section), then
+ * the collapsible Snoozed and Settled sections. Every section keeps only the
+ * rows `matcher` accepts, and its count follows. Empty sections are not shown.
  */
 export function SidebarBacklogList({
   pathname,

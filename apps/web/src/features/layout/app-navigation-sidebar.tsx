@@ -20,7 +20,10 @@ import {
   ShortcutTooltipLabel,
   TooltipButton,
 } from "@/components/tooltip-button";
-import { selectSidebarBacklogItems } from "@/domain/backlog/backlog-item-lifecycle";
+import {
+  selectSidebarBacklogItems,
+  selectUpNextBacklogItem,
+} from "@/domain/backlog/backlog-item-lifecycle";
 import { createSidebarMatcher } from "@/domain/backlog/sidebar-filter";
 import { isPullRequestReturned } from "@/domain/pull-requests/pull-request-lifecycle";
 import { getAppSection } from "@/features/layout/app-section";
@@ -288,7 +291,7 @@ export function AppNavigationSidebar({
         </span>
       </div>
 
-      <TimerDock upNext={listed[0]} />
+      <TimerDock upNext={selectUpNextBacklogItem(listed)} />
 
       <SidebarContent>
         <SidebarBacklogList pathname={pathname} matcher={matcher}>

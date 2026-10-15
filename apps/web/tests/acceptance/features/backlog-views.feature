@@ -56,6 +56,13 @@ Feature: Backlog list and board views
     When I open the parent from the subitem's sidebar arrow
     Then the Backlog parent page is open
 
+  Scenario: Pin a backlog item to the top of the sidebar
+    When I "Pin" the other Backlog item from its sidebar menu
+    Then the other item is pinned at the top of the sidebar
+    And the timer dock still offers the Backlog parent as Up next
+    When I "Unpin" the other Backlog item from its sidebar menu
+    Then the other item is not pinned
+
   Scenario: Peek and edit in the same side panel
     When I peek at the Backlog parent
     Then the peek shows the parent and its subitem

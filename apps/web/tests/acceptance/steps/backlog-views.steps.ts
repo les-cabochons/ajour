@@ -255,6 +255,42 @@ When("I open the parent from the subitem's sidebar arrow", async ({ page }) => {
 Then("the Backlog parent page is open", async ({ page }) => {
   await expect(page).toHaveURL(/\/backlog\/parent$/);
 });
+When(
+  "I {string} the other Backlog item from its sidebar menu",
+  async ({ page }, action: string) => {
+    await otherSidebarRow(page).click({ button: "right" });
+    await page.getByRole("menuitem", { name: action, exact: true }).click();
+  },
+);
+Then("the other item is pinned at the top of the sidebar", async ({ page }) => {
+  const rows = page
+    .getByRole("navigation", { name: "Primary navigation" })
+    .locator("[data-backlog-item-id]");
+  await expect(rows.first()).toHaveAttribute("data-backlog-item-id", "other");
+  // The row's markers, the pin among them, give way to its actions on hover
+  // and focus, and the menu gives focus back to the row when it closes.
+  await page.evaluate(() => (document.activeElement as HTMLElement)?.blur());
+  await page.getByRole("main").hover();
+  await expect(
+    otherSidebarRow(page).getByRole("img", { name: "Pinned" }),
+  ).toBeVisible();
+});
+Then(
+  "the timer dock still offers the Backlog parent as Up next",
+  async ({ page }) => {
+    await expect(
+      page.getByRole("button", {
+        name: "Start entry on Backlog parent",
+        exact: true,
+      }),
+    ).toBeVisible();
+  },
+);
+Then("the other item is not pinned", async ({ page }) => {
+  await expect(
+    otherSidebarRow(page).getByRole("img", { name: "Pinned" }),
+  ).toHaveCount(0);
+});
 When("I filter the Backlog to Urgent", async ({ page }) => {
   await page.getByRole("button", { name: "Filter", exact: true }).click();
   await chooseSelectOption(page, "Filter property", "priority");
