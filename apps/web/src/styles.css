@@ -689,6 +689,16 @@
     box-shadow: inset 0 1px 0 color-mix(in srgb, white 4%, transparent);
   }
 
+  /* The agent indicator shares the toggle's row, at the bottom right,
+     centered on the toggle's 2.5rem height. */
+  .ajour-agent-indicator {
+    right: max(1rem, env(safe-area-inset-right, 0px));
+    bottom: calc(
+      1rem + env(safe-area-inset-bottom, 0px) +
+        (2.5rem - var(--control-height)) / 2
+    );
+  }
+
   .ajour-narrow-switcher-item {
     display: inline-flex;
     align-items: center;
@@ -1920,8 +1930,7 @@
   }
 
   /* The floating navigation toggle at the bottom left. The page reserves
-     space under its content for it, and the toasts and the agent indicator
-     sit above it. */
+     space under its content for it, and the toasts sit above it. */
   :root {
     --narrow-nav-clearance: calc(
       2.5rem + 1.75rem + env(safe-area-inset-bottom, 0px)
@@ -1937,6 +1946,16 @@
     padding: 4px;
     background: var(--popover);
     box-shadow: var(--shadow-popup);
+  }
+
+  /* The agent indicator shares the toggle's row, at the bottom right,
+     centered on the toggle's 2.5rem height. */
+  .ajour-agent-indicator {
+    right: max(1rem, env(safe-area-inset-right, 0px));
+    bottom: calc(
+      1rem + env(safe-area-inset-bottom, 0px) +
+        (2.5rem - var(--control-height)) / 2
+    );
   }
 
   .ajour-narrow-switcher-item {

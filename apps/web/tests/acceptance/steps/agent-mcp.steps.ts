@@ -447,6 +447,24 @@ When("I open the app on a narrow screen", async ({ page }) => {
   await page.goto("/");
 });
 
+Then(
+  "the agent indicator sits on the navigation toggle's row",
+  async ({ page }) => {
+    const indicator = await page
+      .getByRole("button", { name: /^Agents:/ })
+      .boundingBox();
+    const toggle = await page
+      .getByRole("navigation", { name: "Primary navigation" })
+      .boundingBox();
+    // Same vertical center, so neither floats above the other.
+    expect(
+      Math.abs(
+        indicator!.y + indicator!.height / 2 - (toggle!.y + toggle!.height / 2),
+      ),
+    ).toBeLessThanOrEqual(1);
+  },
+);
+
 const agentPanel = (page: Page) =>
   page.getByRole("complementary", { name: "Agents" });
 
