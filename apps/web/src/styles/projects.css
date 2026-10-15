@@ -344,6 +344,14 @@
     min-height: 36px;
   }
 
+  /* The cell is a flex box, so the table sizes its column from the name's
+     full nowrap width and spills past its container, over the Properties
+     card on the project page. Without an intrinsic width the cell takes the
+     room the other cells leave and the name ellipsizes instead. */
+  td.project-task-name-cell {
+    contain: inline-size;
+  }
+
   .project-task-name {
     min-width: 0;
     overflow: hidden;
