@@ -22,6 +22,7 @@ import {
   type SubmitGroupBy,
 } from "@/domain/time/timesheet-submission";
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
+import { submitLineId } from "@/domain/agents/submit-line-id";
 
 /**
  * What the read tools return to agents: plain ids, names and minutes, shaped
@@ -280,7 +281,9 @@ export function getSubmitLinesForAgent(
     sections: sections.map((section) => ({
       ...(section.localDate ? { date: section.localDate } : {}),
       lines: section.lines.map((line) => ({
+        lineId: submitLineId(line.entryIds),
         ...(line.projectName ? { projectName: line.projectName } : {}),
+        ...(line.projectCode ? { projectCode: line.projectCode } : {}),
         ...(line.taskName ? { taskName: line.taskName } : {}),
         hours: toHours(line.durationMs),
         comments: line.comments,

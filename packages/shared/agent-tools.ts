@@ -331,7 +331,10 @@ export const dataToolOutputSchemas = {
         date: z.string().optional(),
         lines: z.array(
           z.object({
+            /** "ajour:" and 8 hex characters. Stable for the same entries. */
+            lineId: z.string(),
             projectName: z.string().optional(),
+            projectCode: z.string().optional(),
             taskName: z.string().optional(),
             hours: z.number(),
             comments: z.string(),
