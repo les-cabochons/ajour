@@ -125,6 +125,22 @@ describe("project creation and hydration", () => {
     expect(normalized.tasks[0]?.archivedAt).toBeUndefined();
   });
 
+  it("keeps plugin property overrides and drops broken ones", () => {
+    const normalized = normalizeProject(
+      {
+        ...createFixtureProject("project-1"),
+        pluginProperties: {
+          "workday-agent": { name: "Tech", code: 7 },
+        } as never,
+      },
+      () => 1,
+    );
+
+    expect(normalized.pluginProperties).toEqual({
+      "workday-agent": { name: "Tech" },
+    });
+  });
+
   it("returns the created project ID with the updated collection", () => {
     const operation = addProject(
       [],

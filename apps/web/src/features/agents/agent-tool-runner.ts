@@ -26,6 +26,7 @@ import {
   runWorkItemWriteTool,
   type WorkItemWriteTool,
 } from "@/features/agents/agent-work-item-tools";
+import { listProjectPropertyPlugins } from "@/lib/plugin-project-properties";
 import { sendPendingSourceWrites } from "@/features/backlog/backlog-source-writes";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { localStore } from "@/lib/local-store";
@@ -55,7 +56,9 @@ function formatZodError(error: ZodError) {
 
 /** Each read tool, typed against its output schema. */
 const readTools: {
-  [Name in ReadToolName]: (rawInput: unknown) => DataToolOutput<Name>;
+  [Name in ReadToolName]: (
+    rawInput: unknown,
+  ) => DataToolOutput<Name> | Promise<DataToolOutput<Name>>;
 } = {
   get_running_timer: () => ({
     running: readRunningTimer(localStore.snapshot(), Date.now()),
@@ -79,8 +82,18 @@ const readTools: {
       readToolInputSchemas.get_work_item.parse(rawInput).workItemId,
       Date.now(),
     ),
-  get_submit_lines: (rawInput) => {
+  get_submit_lines: async (rawInput) => {
     const input = readToolInputSchemas.get_submit_lines.parse(rawInput);
+    // Project properties are optional context; without them the lines still go out.
+    const projectPropertyPlugins = await listProjectPropertyPlugins().catch(
+      (error: unknown) => {
+        console.warn(
+          "Plugin project properties unavailable for get_submit_lines.",
+          error,
+        );
+        return [];
+      },
+    );
     const state = localStore.snapshot();
     return getSubmitLinesForAgent(state, {
       weekDates: getIsoWeekDates(input.weekOf),
@@ -88,6 +101,7 @@ const readTools: {
       onlyUnsubmitted: input.onlyUnsubmitted,
       today: todayIsoDate(),
       paceTolerancePercent: getPaceTolerancePercent(state.userPreferences),
+      projectPropertyPlugins,
     });
   },
 };
@@ -140,7 +154,7 @@ export async function runAgentToolCall(
       return {
         requestId: call.requestId,
         ok: true,
-        output: readTools[call.tool](call.input),
+        output: await readTools[call.tool](call.input),
       };
     }
     if (isEntryWriteTool(call.tool)) {

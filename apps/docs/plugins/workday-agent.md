@@ -16,12 +16,16 @@ It is a different plugin from [Workday](/plugins/workday), the schema for import
 
 ## Set it up
 
-1. Install the plugin from its `.ajour-connector` file in **Settings › Plugins**.
+1. Install the plugin from its `.ajour-connector` file in **Settings › Plugins**. It needs version 0.3.0 or later.
 2. In **Settings › Agents**, pick the agent. Leave **Browser** on **Ajour's Chrome window** unless you want the agent to use your own Chrome profile.
 3. Open **Settings › Plugins › Workday (agent)**. Under **Tasks**, fill in:
    - **Workday timesheet URL**: open Enter Time in Workday and copy the address.
    - **Sign-in username**, optional: your work email. See [Sign-in](#sign-in).
 4. Press **Save**. The task says **Ready to run from the Submit page.**
+
+## Match your projects
+
+The agent finds each project in Workday by its Workday code, then its Workday name. Both default to the project's code and full name in Ajour. When Workday uses other ones, open the project, open the **Workday** section of its properties and type them.
 
 ## Enter a week
 

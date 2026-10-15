@@ -5,6 +5,7 @@ import {
   connectorSettleWriteRequestSchema,
   connectorSettleWriteResultSchema,
   pluginHasAgentTasks,
+  pluginHasProjectProperties,
   pluginHasCodeHost,
   pluginHasConnector,
 } from "../connectors";
@@ -159,6 +160,53 @@ describe("plugin manifest capabilities", () => {
       connectorPluginManifestSchema.parse({
         ...agentTaskBase,
         capabilities: {},
+      }),
+    ).toThrow();
+  });
+
+  const projectProperties = {
+    section: "Workday",
+    fields: [
+      { id: "name", label: "Workday name", defaultFrom: "fullName" },
+      { id: "code", label: "Workday code", defaultFrom: "code" },
+    ],
+  };
+
+  it("accepts a plugin with only project properties", () => {
+    const manifest = connectorPluginManifestSchema.parse({
+      ...agentTaskBase,
+      capabilities: { projectProperties },
+    });
+    expect(pluginHasProjectProperties(manifest)).toBe(true);
+    expect(manifest.entrypoint).toBeUndefined();
+  });
+
+  it("refuses two project property fields with the same id", () => {
+    expect(() =>
+      connectorPluginManifestSchema.parse({
+        ...agentTaskBase,
+        capabilities: {
+          projectProperties: {
+            ...projectProperties,
+            fields: [projectProperties.fields[0], projectProperties.fields[0]],
+          },
+        },
+      }),
+    ).toThrow(/name/);
+  });
+
+  it("refuses a default from an unknown project value", () => {
+    expect(() =>
+      connectorPluginManifestSchema.parse({
+        ...agentTaskBase,
+        capabilities: {
+          projectProperties: {
+            ...projectProperties,
+            fields: [
+              { id: "name", label: "Workday name", defaultFrom: "color" },
+            ],
+          },
+        },
       }),
     ).toThrow();
   });

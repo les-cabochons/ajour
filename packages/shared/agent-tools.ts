@@ -335,6 +335,13 @@ export const dataToolOutputSchemas = {
             lineId: z.string(),
             projectName: z.string().optional(),
             projectCode: z.string().optional(),
+            /** The project's full name. `projectName` is its short display name. */
+            projectFullName: z.string().optional(),
+            /**
+             * Properties that active plugins add to the project, keyed by
+             * plugin ID then field ID, with defaults filled in.
+             */
+            projectProperties: z.record(z.record(z.string())).optional(),
             taskName: z.string().optional(),
             hours: z.number(),
             comments: z.string(),
