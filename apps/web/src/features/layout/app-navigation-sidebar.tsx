@@ -143,17 +143,20 @@ export function isAppNavigationItemActive(
 export function SidebarToggleButton({
   label,
   onToggle,
+  side = "bottom",
   className,
 }: {
   label: string;
   onToggle: () => void;
+  /** Where the tooltip shows. */
+  side?: "bottom" | "right";
   className?: string;
 }) {
   return (
     <TooltipButton
       label={label}
       shortcut="app.toggle-sidebar"
-      side="bottom"
+      side={side}
       render={
         <Button
           variant="ghost"
@@ -232,15 +235,15 @@ export function AppNavigationSidebar({
           isDesktopShell && "desktop-drag-region",
         )}
       >
+        {/* The toggle opens under the pointer that showed the sidebar. Its
+            tooltip shows on the right, so it does not cover the switcher. */}
         <SidebarToggleButton
           label="Hide sidebar"
           onToggle={onToggle}
+          side="right"
           className={cn(isDesktopShell && "desktop-no-drag")}
         />
-        <BrandLogo
-          linked
-          className={cn(isDesktopShell && "desktop-no-drag")}
-        />
+        <BrandLogo linked className={cn(isDesktopShell && "desktop-no-drag")} />
       </SidebarHeader>
 
       <div className="flex shrink-0 items-center justify-between gap-1 px-2 pb-1">

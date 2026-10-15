@@ -474,9 +474,7 @@ function GlobalTimerBar({
   const [newEntryAnchor, setNewEntryAnchor] = useState<HTMLElement | null>(
     null,
   );
-  const [totalsElement, setTotalsElement] = useState<HTMLElement | null>(
-    null,
-  );
+  const [totalsElement, setTotalsElement] = useState<HTMLElement | null>(null);
 
   const currentTimer = state.timers[0] ?? null;
   const today = todayIsoDate();

@@ -91,23 +91,26 @@ function DropdownMenuItem({
       data-slot="dropdown-menu-item"
       data-inset={inset}
       data-variant={variant}
-      className={cn(
-        dropdownMenuItemClassName,
-        className,
-      )}
+      className={cn(dropdownMenuItemClassName, className)}
       {...props}
     />
   );
 }
 
-/** A menu item that is a link, such as a page to open. Pass `render={<Link />}`. */
+/**
+ * A menu item that is a link, such as a page to open. Pass `render={<Link />}`.
+ * Unlike Base UI's default, choosing it closes the menu, since the app
+ * navigates in place.
+ */
 function DropdownMenuLinkItem({
   className,
+  closeOnClick = true,
   ...props
 }: MenuPrimitive.LinkItem.Props) {
   return (
     <MenuPrimitive.LinkItem
       data-slot="dropdown-menu-item"
+      closeOnClick={closeOnClick}
       className={cn(dropdownMenuItemClassName, className)}
       {...props}
     />

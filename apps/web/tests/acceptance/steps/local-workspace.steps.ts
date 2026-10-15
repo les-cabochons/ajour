@@ -1,5 +1,6 @@
 import { expect, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
+import { viewSwitcher } from "../../fixtures/sidebar";
 
 const { Given, When, Then } = createBdd();
 
@@ -558,9 +559,10 @@ When("I show the app sidebar from the titlebar", async ({ page }) => {
   await page.getByRole("button", { name: "Show sidebar" }).click();
 });
 
-When("I start an empty entry from the titlebar", async ({ page }) => {
+When("I start an empty entry from the timer dock", async ({ page }) => {
   await page
-    .locator(".ajour-nav")
+    .getByRole("navigation", { name: "Primary navigation" })
+    .getByRole("region", { name: "Timer" })
     .getByRole("button", { name: "Start", exact: true })
     .click();
 });
@@ -641,11 +643,9 @@ When(
 );
 
 When("I open Time from the app sidebar", async ({ page }) => {
-  const timeLink = page
-    .getByRole("navigation", { name: "Primary navigation" })
-    .getByRole("link", { name: "Time" });
-  await timeLink.focus();
-  await timeLink.press("Enter");
+  // The keyboard path: Enter opens the view switcher, then chooses Time.
+  await viewSwitcher(page).press("Enter");
+  await page.getByRole("menuitem", { name: /^Time/ }).press("Enter");
 });
 
 When("I open Settings directly", async ({ page }) => {
@@ -1226,9 +1226,10 @@ Then("the Time workspace is visible", async ({ page }) => {
     name: "Primary navigation",
   });
   await expect(primaryNavigation).toBeVisible();
+  // The view switcher names the open view.
   await expect(
-    primaryNavigation.getByRole("link", { name: "Time" }),
-  ).toHaveAttribute("aria-current", "page");
+    primaryNavigation.getByRole("button", { name: "Time", exact: true }),
+  ).toHaveAttribute("aria-haspopup", "menu");
   // The Time page itself has rendered, so its own shortcuts (such as N opening
   // the side panel instead of the titlebar popover) are registered.
   await expect(page.locator(".time-page-stack")).toBeVisible({
@@ -1373,11 +1374,7 @@ async function expectAppSidebarWidth(page: Page, width: number) {
 Then("the app sidebar is expanded", async ({ page }) => {
   // The Comfortable density's default width. See "Width" in agents/ux-spec.md.
   await expectAppSidebarWidth(page, 272);
-  await expect(
-    page
-      .getByRole("navigation", { name: "Primary navigation" })
-      .getByText("Time", { exact: true }),
-  ).toBeVisible();
+  await expect(viewSwitcher(page)).toBeVisible();
 });
 
 Then("the app sidebar is hidden", async ({ page }) => {
@@ -1395,12 +1392,14 @@ Then("the app sidebar opens over the page", async ({ page }) => {
     overlay.getByRole("navigation", { name: "Primary navigation" }),
   ).toBeVisible();
   // Opening a page from it closes it.
-  await overlay.getByRole("link", { name: "Backlog" }).click();
+  await viewSwitcher(page).click();
+  await page.getByRole("menuitem", { name: /^Backlog/ }).click();
   await expect(page).toHaveURL(/\/backlog$/);
   await expect(overlay).toHaveCount(0);
   // So does choosing the page already open, which leaves the route alone.
   await page.getByRole("button", { name: "Show sidebar" }).click();
-  await overlay.getByRole("link", { name: "Backlog" }).click();
+  await viewSwitcher(page).click();
+  await page.getByRole("menuitem", { name: /^Backlog/ }).click();
   await expect(overlay).toHaveCount(0);
 });
 

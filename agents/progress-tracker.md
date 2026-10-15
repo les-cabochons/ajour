@@ -679,3 +679,11 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] Preserved main's capability validation and tests alongside the priority-range tests.
 - [x] Verification passed: all 725 unit tests and all 57 Chromium acceptance scenarios, workspace typecheck, production build and formatting.
 - [ ] Complete Codex review on the rebased heads. The integration thread owns merging.
+
+## Sidebar view switcher, 2026-10-14
+
+- [x] Hide sidebar and the logo sit on the titlebar's row, right of the macOS traffic lights and in the top left corner elsewhere, as in T3 Code.
+- [x] A ChatGPT-style view switcher replaces the Time, Backlog, Pull requests and Projects rows. Search sits beside it.
+- [x] New entry (+) moves from the titlebar to the timer dock. Start (▶) leaves the titlebar: the dock starts the Up next item, or an empty entry when the list is empty. The narrow view keeps its floating buttons.
+- [x] The work list's Up next section, its setting and its View menu entry are gone. The dock already offers the first item.
+- [x] Verification passed: unit tests, typecheck and the acceptance scenarios, except five that also fail on main at `7ed5ab4` (board close with subitems, Ctrl-click workflow settings link, packaged connector install, settle rules section, pull request Ctrl-click).

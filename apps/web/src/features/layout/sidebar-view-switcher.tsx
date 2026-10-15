@@ -104,10 +104,7 @@ export function SidebarViewSwitcher({
 
   return (
     <DropdownMenu>
-      <DropdownMenuTrigger
-        aria-label={`Switch view, ${current ? VIEW_DETAILS[current].label : "none"} open`}
-        className="flex h-8 min-w-0 items-center gap-1 rounded-md px-2 text-base font-semibold outline-none hover:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring data-[popup-open]:bg-foreground/5"
-      >
+      <DropdownMenuTrigger className="flex h-8 min-w-0 items-center gap-1 rounded-md px-2 text-base font-semibold outline-none hover:bg-foreground/5 focus-visible:ring-1 focus-visible:ring-ring data-[popup-open]:bg-foreground/5">
         <span className="truncate">
           {current ? VIEW_DETAILS[current].label : "Views"}
         </span>
@@ -125,7 +122,10 @@ export function SidebarViewSwitcher({
             >
               <Icon className="text-muted-foreground" />
               <span>{label}</span>
-              <ViewCount value={option.count} highlighted={option.highlighted} />
+              <ViewCount
+                value={option.count}
+                highlighted={option.highlighted}
+              />
               <CheckIcon
                 className={cn("text-foreground", !isCurrent && "invisible")}
               />

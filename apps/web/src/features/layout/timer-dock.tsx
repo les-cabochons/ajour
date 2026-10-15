@@ -167,15 +167,12 @@ function StopButton({
 }
 
 /** The dock's "+". It opens the new entry editor in a popover anchored to it. */
-function NewEntryButton({ className }: { className?: string }) {
+function NewEntryButton() {
   return (
     <TooltipButton
       label="Create time entry"
       shortcut="entry.new"
-      className={cn(
-        "flex size-7 shrink-0 items-center justify-center rounded-md border text-muted-foreground outline-none hover:bg-foreground/5 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring",
-        className,
-      )}
+      className="flex size-7 shrink-0 items-center justify-center rounded-md border text-muted-foreground outline-none hover:bg-foreground/5 hover:text-foreground focus-visible:ring-1 focus-visible:ring-ring"
       onClick={(event) => openBlankEntryEditor(event.currentTarget)}
     >
       <PlusIcon className="size-4" />
