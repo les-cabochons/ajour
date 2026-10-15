@@ -93,20 +93,20 @@ const developerSidebar: DefaultTheme.SidebarItem[] = [
 
 /**
  * The docs site for Ajour, published to GitHub Pages at
- * https://les-cabochons.github.io/ajour/. `base` must match the repository
- * name, or every asset link breaks once deployed.
+ * https://docs.ajour.day/. The custom domain serves the site from the root, so
+ * `base` stays "/". A subpath here breaks every asset link once deployed.
  */
 export default defineConfig({
   title: "Ajour",
   titleTemplate: ":title · Ajour docs",
   description: "How to track your work time with Ajour.",
   lang: "en",
-  base: "/ajour/",
+  base: "/",
   cleanUrls: true,
   lastUpdated: true,
   appearance: true,
   head: [
-    ["link", { rel: "icon", type: "image/png", href: "/ajour/favicon.png" }],
+    ["link", { rel: "icon", type: "image/png", href: "/favicon.png" }],
   ],
   themeConfig: {
     logo: "/logo-mark.png",

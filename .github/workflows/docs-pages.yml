@@ -2,7 +2,7 @@ name: Docs
 
 # Builds the VitePress site in apps/docs. Pull requests only build it, so a
 # broken page or dead link fails the check. Pushes to main also publish it to
-# GitHub Pages at https://les-cabochons.github.io/ajour/.
+# GitHub Pages at https://docs.ajour.day/.
 on:
   push:
     branches:

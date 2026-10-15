@@ -190,10 +190,10 @@ acceptance-test *args:
 acceptance-server:
     {{PNPM}} --filter @ajour/web dev --host {{WEB_HOST}} --port {{ACCEPTANCE_WEB_PORT}} --strictPort --mode test
 
-[doc("Starts the docs site locally on http://127.0.0.1:5174/ajour/")]
+[doc("Starts the docs site locally on http://127.0.0.1:5174/")]
 [group("docs")]
 docs-start:
-    echo >&2 "[1/1] Starting the docs site on http://{{WEB_HOST}}:5174/ajour/"
+    echo >&2 "[1/1] Starting the docs site on http://{{WEB_HOST}}:5174/"
     {{PNPM}} --filter @ajour/docs dev --host {{WEB_HOST}} --port 5174
 
 [doc("Builds the docs site into apps/docs/.vitepress/dist")]
