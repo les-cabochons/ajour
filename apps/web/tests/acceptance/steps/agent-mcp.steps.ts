@@ -1,4 +1,5 @@
 import { expect, type Page } from "@playwright/test";
+import { viewSwitcher } from "../../fixtures/sidebar";
 import { createBdd } from "playwright-bdd";
 
 const { Given, When, Then } = createBdd();
@@ -509,10 +510,8 @@ Then(
 );
 
 Then("the page stays usable beside the panel", async ({ page }) => {
-  await page
-    .getByRole("link", { name: /^Backlog/ })
-    .first()
-    .click();
+  await viewSwitcher(page).click();
+  await page.getByRole("menuitem", { name: /^Backlog/ }).click();
   await expect(page).toHaveURL(/\/backlog/);
   await expect(agentPanel(page)).toBeVisible();
 });
