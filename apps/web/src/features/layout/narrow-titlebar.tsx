@@ -9,10 +9,13 @@ import { buttonVariants } from "@/components/ui/button";
 import { TooltipButton } from "@/components/tooltip-button";
 import { getAppSection } from "@/features/layout/app-section";
 import {
+  FloatingTimerDock,
+  setRunningEntryEditorOpen,
+} from "@/features/layout/timer-dock";
+import {
   getNarrowBackLink,
   isNarrowSettingsSection,
 } from "@/features/layout/narrow-navigation";
-import { isDesktopShell } from "@/lib/runtime";
 import { cn } from "@/lib/utils";
 
 const sections = [
@@ -33,9 +36,9 @@ const sections = [
 ] as const;
 
 /**
- * The narrow view's primary navigation: a segmented switcher in the titlebar.
- * The active section shows its label, the other only its icon. Projects and
- * Settings are reached from the cog.
+ * The narrow view's primary navigation: a segmented switcher in the bottom
+ * bar. The active section shows its label, the other only its icon. Projects
+ * and Settings are reached from the cog.
  */
 export function NarrowSectionSwitcher({
   pathname,
@@ -45,13 +48,7 @@ export function NarrowSectionSwitcher({
   selectedTimeDate: string;
 }) {
   return (
-    <nav
-      className={cn(
-        "ajour-narrow-switcher",
-        isDesktopShell && "desktop-no-drag",
-      )}
-      aria-label="Primary navigation"
-    >
+    <nav className="ajour-narrow-switcher" aria-label="Primary navigation">
       {sections.map((section) => {
         const Icon = section.icon;
         const isActive = getAppSection(pathname) === section.view;
@@ -89,7 +86,7 @@ export function NarrowSectionSwitcher({
   );
 }
 
-/** The cog at the trailing edge of the narrow titlebar. Projects lives inside Settings there. */
+/** The cog beside the switcher in the bottom bar. Projects lives inside Settings there. */
 export function NarrowSettingsButton({ pathname }: { pathname: string }) {
   const isActive = isNarrowSettingsSection(pathname);
   return (
@@ -104,13 +101,39 @@ export function NarrowSettingsButton({ pathname }: { pathname: string }) {
             buttonVariants({ variant: "ghost", size: "icon" }),
             "shrink-0 text-muted-foreground",
             isActive && "bg-muted text-foreground",
-            isDesktopShell && "desktop-no-drag",
           )}
         />
       }
     >
       <Settings className="size-4" />
     </TooltipButton>
+  );
+}
+
+/**
+ * The narrow view's bottom bar: the switcher and the cog at the left, and the
+ * running entry at the right while one runs. Clicking the entry opens it in
+ * the full-width dialog that `GlobalTimerBar` hosts.
+ */
+export function NarrowBottomBar({
+  pathname,
+  selectedTimeDate,
+}: {
+  pathname: string;
+  selectedTimeDate: string;
+}) {
+  return (
+    <div className="ajour-narrow-bottom-bar">
+      <NarrowSectionSwitcher
+        pathname={pathname}
+        selectedTimeDate={selectedTimeDate}
+      />
+      <NarrowSettingsButton pathname={pathname} />
+      <FloatingTimerDock
+        onEdit={() => setRunningEntryEditorOpen(true)}
+        className="ml-auto h-9 min-w-0 flex-1 shadow-none"
+      />
+    </div>
   );
 }
 

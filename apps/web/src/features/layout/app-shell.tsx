@@ -49,8 +49,7 @@ import { ShortcutOverlay } from "@/features/layout/shortcut-overlay";
 import { useGlobalShortcuts } from "@/features/layout/use-global-shortcuts";
 import {
   NarrowBackBar,
-  NarrowSectionSwitcher,
-  NarrowSettingsButton,
+  NarrowBottomBar,
 } from "@/features/layout/narrow-titlebar";
 import { TimeDatePicker } from "@/features/time/time-date-picker";
 import { TimeEntryEditorPopover } from "@/features/time/time-entry-editor-popover";
@@ -450,8 +449,8 @@ type TitlebarEditor = "new" | null;
  * "+" sits beside Search and the project filter, and Start in the timer dock.
  * While the sidebar is off screen (`showsFloatingDock`), the running entry floats at the bottom left
  * instead, or "+" and Start while nothing runs. In the narrow view, New entry
- * (+) and Start (▶) float at the bottom right, with the floating dock beside
- * them, and open the dialog. Elsewhere the editor opens in a popover anchored
+ * (+) and Start (▶) sit in the titlebar after the totals and open the dialog;
+ * the running entry is in `NarrowBottomBar`. Elsewhere the editor opens in a popover anchored
  * to where it was asked for: the "+" button, or the task or backlog row of New
  * entry… (`openNewEntryEditor`). N and requests whose row is off screen anchor
  * it to the titlebar's totals. New entries default to today; Start starts one
@@ -544,46 +543,8 @@ function GlobalTimerBar({
     [],
   );
 
-  // The narrow view has no sidebar, so its entry buttons float on the page.
-  const narrowControls = (
-    <div className="global-timer-controls">
-      <div className="quick-timer-button-group">
-        <TooltipButton
-          className="quick-timer-group-button"
-          onClick={() => openNewEntry()}
-          label="Create time entry"
-          shortcut="entry.new"
-          side="top"
-        >
-          <Plus className="h-3.5 w-3.5" />
-        </TooltipButton>
-        {currentTimer ? null : (
-          <TooltipButton
-            className="quick-timer-group-button quick-timer-group-button-play"
-            onClick={startBlankEntry}
-            label="Start"
-            shortcut="entry.stop-or-start"
-            side="top"
-          >
-            <Play className="h-3.5 w-3.5" />
-          </TooltipButton>
-        )}
-      </div>
-      {currentTimer ? (
-        <div className="quick-timer-popup-anchor">
-          <FloatingTimerDock
-            onEdit={() => setRunningEntryEditorOpen(true)}
-            className="h-11"
-          />
-        </div>
-      ) : null}
-    </div>
-  );
-
   return (
     <div className="global-timer" ref={setTotalsElement}>
-      {/* The titlebar's backdrop filter would contain fixed-position children. */}
-      {isNarrowView ? createPortal(narrowControls, document.body) : null}
       {isNarrowView ? null : (
         <TimeEntryEditorPopover
           target={newEntryTarget}
@@ -619,6 +580,30 @@ function GlobalTimerBar({
           )
         : null}
       <DayTotalsPill date={date} onSubmit={onSubmit} />
+      {/* The narrow view has no sidebar, so its entry buttons follow the totals.
+          Start hides while an entry runs: the bottom bar has its Stop. */}
+      {isNarrowView ? (
+        <div className="quick-timer-button-group">
+          <TooltipButton
+            className="quick-timer-group-button"
+            onClick={() => openNewEntry()}
+            label="Create time entry"
+            shortcut="entry.new"
+          >
+            <Plus className="h-3.5 w-3.5" />
+          </TooltipButton>
+          {currentTimer ? null : (
+            <TooltipButton
+              className="quick-timer-group-button quick-timer-group-button-play"
+              onClick={startBlankEntry}
+              label="Start"
+              shortcut="entry.stop-or-start"
+            >
+              <Play className="h-3.5 w-3.5" />
+            </TooltipButton>
+          )}
+        </div>
+      ) : null}
       {isNarrowView && editor === "new" ? (
         <TimeEntryModal
           date={today}
@@ -849,12 +834,6 @@ export function AppShell() {
                   />
                 )}
                 <AppMenuBar />
-                {isNarrowView ? (
-                  <NarrowSectionSwitcher
-                    pathname={pathname}
-                    selectedTimeDate={selectedTimeDate}
-                  />
-                ) : null}
                 <TimeDatePicker
                   date={selectedTimeDate}
                   onSelectDate={(nextDate) => {
@@ -926,9 +905,6 @@ export function AppShell() {
                   }
                 }}
               />
-              {isNarrowView ? (
-                <NarrowSettingsButton pathname={pathname} />
-              ) : null}
             </div>
           </nav>
 
@@ -957,6 +933,13 @@ export function AppShell() {
             </main>
             <AgentPanelHost />
           </div>
+
+          {isNarrowView ? (
+            <NarrowBottomBar
+              pathname={pathname}
+              selectedTimeDate={selectedTimeDate}
+            />
+          ) : null}
         </div>
       </SidebarProvider>
     </div>

@@ -2358,14 +2358,44 @@ Then("the narrow view shows no sidebars", async ({ page }) => {
   await expect(timeLink).toContainText("Time");
 });
 
-When("I switch to Backlog from the titlebar", async ({ page }) => {
+Then(
+  "the titlebar holds the entry buttons and the bottom bar the navigation",
+  async ({ page }) => {
+    const titlebar = page.locator(".ajour-nav");
+    await expect(
+      titlebar.getByRole("button", { name: "Create time entry" }),
+    ).toBeVisible();
+    await expect(
+      titlebar.getByRole("button", { name: "Start", exact: true }),
+    ).toBeVisible();
+
+    const bottomBar = page.locator(".ajour-narrow-bottom-bar");
+    await expect(
+      bottomBar.getByRole("navigation", { name: "Primary navigation" }),
+    ).toBeVisible();
+    await expect(
+      bottomBar.getByRole("link", { name: "Settings", exact: true }),
+    ).toBeVisible();
+
+    // The bar ends the window, so the page scrolls above it, not under it.
+    const [barBox, mainBox] = await Promise.all([
+      bottomBar.boundingBox(),
+      page.locator("main.app-content-shell").boundingBox(),
+    ]);
+    const viewport = page.viewportSize()!;
+    expect(barBox!.y + barBox!.height).toBeCloseTo(viewport.height, 0);
+    expect(mainBox!.y + mainBox!.height).toBeLessThanOrEqual(barBox!.y + 0.5);
+  },
+);
+
+When("I switch to Backlog from the bottom bar", async ({ page }) => {
   await narrowPrimaryNavigation(page)
     .getByRole("link", { name: "Backlog" })
     .click();
 });
 
 Then(
-  "Backlog is the active section of the titlebar switcher",
+  "Backlog is the active section of the bottom bar switcher",
   async ({ page }) => {
     await expect(page).toHaveURL(/\/backlog$/);
     const navigation = narrowPrimaryNavigation(page);
@@ -2377,7 +2407,7 @@ Then(
   },
 );
 
-When("I open Settings from the titlebar cog", async ({ page }) => {
+When("I open Settings from the bottom bar cog", async ({ page }) => {
   await page.getByRole("link", { name: "Settings", exact: true }).click();
 });
 

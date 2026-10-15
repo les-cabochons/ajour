@@ -251,13 +251,14 @@ Feature: Open the local time workspace
     Then the Projects list opens beside primary navigation
     And the Projects list still opens where the app sidebar is a rail
 
-  Scenario: Move around the narrow view from its titlebar
+  Scenario: Move around the narrow view from its bottom bar
     Given I have projects with searchable tasks
     When I open today's time workspace in a narrow window
     Then the narrow view shows no sidebars
-    When I switch to Backlog from the titlebar
-    Then Backlog is the active section of the titlebar switcher
-    When I open Settings from the titlebar cog
+    And the titlebar holds the entry buttons and the bottom bar the navigation
+    When I switch to Backlog from the bottom bar
+    Then Backlog is the active section of the bottom bar switcher
+    When I open Settings from the bottom bar cog
     Then Settings opens on its list of pages
     When I open "Plugins" from the Settings list
     And I go back to "Settings"
