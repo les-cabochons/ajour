@@ -147,6 +147,29 @@ export interface LocalTimerDraft {
   entryId?: string;
 }
 
+/**
+ * An entry as it was last committed: the copy the external timesheet holds.
+ * See docs/superpowers/specs/2026-10-15-commit-week-design.md.
+ */
+export interface LocalTimesheetEntryCommit {
+  /** When the copy was saved. */
+  at: number;
+  localDate: string;
+  projectId?: string;
+  taskId?: string;
+  note?: string;
+  durationMs: number;
+}
+
+/**
+ * A committed entry the user deleted since. It stays until the deletion is
+ * committed, so the external timesheet can delete its copy too.
+ */
+export interface LocalTimesheetTombstone {
+  entryId: string;
+  commit: LocalTimesheetEntryCommit;
+}
+
 export interface LocalTimesheetEntry {
   _id: string;
   localDate: string;
@@ -157,7 +180,13 @@ export interface LocalTimesheetEntry {
   note?: string;
   durationMs: number;
   sourceBlockIds: string[];
+  /**
+   * When the entry was saved, such as from a running entry. The Day view
+   * orders entries by it. Unrelated to `commit`.
+   */
   committedAt: number;
+  /** The entry as it was last committed. Undefined until its first commit. */
+  commit?: LocalTimesheetEntryCommit;
   submittedAt?: number;
   submittedFingerprint?: string;
   /**
