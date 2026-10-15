@@ -23,6 +23,7 @@ import {
 } from "@/components/ui/alert-dialog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Chip } from "@/components/ui/chip";
 import {
   Empty,
   EmptyDescription,
@@ -37,7 +38,6 @@ import { getAppApiBaseUrl, getAppApiDescription } from "@/lib/app-api";
 import { usePluginSettingsWorkflow } from "./use-plugin-settings-workflow";
 import type { PluginDisplayEntry } from "./plugin-settings-workflow";
 import { useLocalState } from "@/lib/local-hooks";
-import { cn } from "@/lib/utils";
 import type {
   ConnectorConnectionSummary,
   ConnectorFieldValues,
@@ -76,17 +76,6 @@ type PluginCatalogFilter = "all" | PluginCatalogCapability;
 
 /** The one notice Plugins shows when the web build runs without the connector API. */
 const CONNECTORS_NEED_DESKTOP_APP = "Connectors need the desktop app.";
-
-function formatConnectorTimestamp(timestamp?: number) {
-  return timestamp ? new Date(timestamp).toLocaleString() : "Never";
-}
-
-function prettifySummaryKey(key: string) {
-  return key
-    .replace(/([a-z0-9])([A-Z])/g, "$1 $2")
-    .replace(/[_-]+/g, " ")
-    .replace(/\b\w/g, (match) => match.toUpperCase());
-}
 
 /** An empty list as plain text in the list's place, with no frame. */
 function EmptyListText({
@@ -804,11 +793,17 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                       <h3 className="min-w-0 text-sm font-medium break-words text-foreground">
                         {connection.label}
                       </h3>
-                      <Badge
-                        variant={
-                          connection.lastError ? "destructive" : "outline"
-                        }
-                      >
+                      <Chip tone={connection.lastError ? "danger" : "neutral"}>
+                        {unavailableReason
+                          ? "Unavailable"
+                          : connectors?.pluginsEnabled === false ||
+                              !group.enabled
+                            ? "Paused"
+                            : connection.lastError
+                              ? "Error"
+                              : "Connected"}
+                      </Chip>
+                      <Badge variant="outline">
                         {connection.autoSync
                           ? `Auto every ${connection.autoSyncIntervalMinutes} min`
                           : pluginHasConnector(group.plugin)
@@ -819,50 +814,18 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                     <p className="text-[13px] break-words text-muted-foreground">
                       {connection.tenantLabel}
                     </p>
-                    <div className="flex flex-col gap-0.5 text-xs break-words text-[var(--text-tertiary)]">
-                      {Object.entries(connection.configSummary).map(
-                        ([key, value]) => (
-                          <span key={key}>
-                            {prettifySummaryKey(key)}: {String(value)}
-                          </span>
-                        ),
-                      )}
-                      <span>
-                        Last sync:{" "}
-                        {formatConnectorTimestamp(connection.lastSyncAt)}
-                      </span>
-                      {connection.lastError ? (
-                        <span className="text-destructive">
-                          Last sync failed
-                          {connection.lastErrorAt
-                            ? `: ${formatConnectorTimestamp(connection.lastErrorAt)}`
-                            : null}
-                        </span>
-                      ) : null}
-                      {!connection.autoSync &&
-                      pluginHasConnector(group.plugin) ? (
-                        <span>
-                          {connection.pendingImportCount} staged ·{" "}
-                          {connection.selectedImportCount} selected
-                        </span>
-                      ) : null}
-                    </div>
-                    <p
-                      className={cn(
-                        "mt-1 text-[13px] text-muted-foreground",
-                        connection.lastError && "text-destructive",
-                      )}
-                    >
-                      {unavailableReason ??
-                        connection.lastError ??
-                        (!group.enabled
-                          ? "Plugin inactive; this connection will not sync."
-                          : !pluginHasConnector(group.plugin)
-                            ? "Connection ready to sync pull requests."
-                            : connection.autoSync
-                              ? "Connection ready to sync directly into backlog."
-                              : "Connection ready to stage imports.")}
-                    </p>
+                    {!connection.autoSync &&
+                    pluginHasConnector(group.plugin) ? (
+                      <p className="text-xs text-[var(--text-tertiary)]">
+                        {connection.pendingImportCount} staged ·{" "}
+                        {connection.selectedImportCount} selected
+                      </p>
+                    ) : null}
+                    {connection.lastError ? (
+                      <p className="text-sm break-words text-destructive">
+                        {connection.lastError}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="flex shrink-0 flex-wrap gap-2">
                     <Button
