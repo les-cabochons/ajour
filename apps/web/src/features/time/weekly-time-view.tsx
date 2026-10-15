@@ -51,7 +51,10 @@ import {
   offerTimeEntryUndo,
   useTimeEntryActions,
 } from "@/features/time/time-entry-actions";
-import { useEntrySelection } from "@/features/time/use-entry-selection";
+import {
+  isSelectionDelete,
+  useEntrySelection,
+} from "@/features/time/use-entry-selection";
 import { handleItemKeyDown, TIME_ENTRY_ACTION_KEYS } from "@/lib/item-keys";
 import { localStore } from "@/lib/local-store";
 import {
@@ -218,7 +221,7 @@ export function WeeklyTimeView({
     [weekDates],
   );
   const selection = useEntrySelection({
-    resetKey: weekDates[0] ?? "",
+    resetKey: `${weekDates[0]}:${preferences.weeklyTimeViewStyle}`,
     orderedIds:
       preferences.weeklyTimeViewStyle === "days" ? orderedCardIds : [],
     runningEntryId,
@@ -424,13 +427,22 @@ export function WeeklyTimeView({
     }
   }
 
-  /** Delete on a card that is part of a multiple selection deletes them all. */
+  /**
+   * Runs a card's action. Delete can act on the whole selection instead; `key` is
+   * set when a key ran the action, not a menu.
+   */
   function runCardAction(
     target: Parameters<typeof entryActions.runAction>[0],
     entryId: string,
     actionId: TimeEntryActionId,
+    key?: object,
   ) {
-    if (actionId === "delete" && selection.deleteSelection(entryId)) return;
+    if (
+      isSelectionDelete(actionId, key) &&
+      selection.deleteSelection(entryId, { fromKey: Boolean(key) })
+    ) {
+      return;
+    }
     entryActions.runAction(target, actionId);
   }
 
@@ -623,7 +635,9 @@ export function WeeklyTimeView({
                         <div
                           tabIndex={0}
                           aria-label={`Running entry, ${formatClockDuration(runningTime.displayDurationMs)}`}
-                          aria-selected={selection.selectedIds.has(
+                          // Cards are buttons, so their selection is a pressed state.
+                          role="button"
+                          aria-pressed={selection.selectedIds.has(
                             runningEntryId,
                           )}
                           className={cn(
@@ -646,8 +660,13 @@ export function WeeklyTimeView({
                             handleItemKeyDown(event, {
                               actions: entryActions.getActions(runningTarget),
                               keys: TIME_ENTRY_ACTION_KEYS,
-                              onAction: (actionId) =>
-                                entryActions.runAction(runningTarget, actionId),
+                              onAction: (actionId, key) =>
+                                runCardAction(
+                                  runningTarget,
+                                  runningEntryId,
+                                  actionId,
+                                  key,
+                                ),
                             })
                           }
                         />
@@ -673,8 +692,10 @@ export function WeeklyTimeView({
                     const summary = renderEntrySummary(entry);
                     const target = { kind: "entry" as const, entry };
                     const actions = entryActions.getActions(target);
-                    const runAction = (actionId: TimeEntryActionId) =>
-                      runCardAction(target, entry._id, actionId);
+                    const runAction = (
+                      actionId: TimeEntryActionId,
+                      key?: object,
+                    ) => runCardAction(target, entry._id, actionId, key);
                     return (
                       <ObjectContextMenu
                         key={entry._id}
@@ -687,7 +708,7 @@ export function WeeklyTimeView({
                             role="button"
                             data-entry-id={entry._id}
                             data-focus-column={index}
-                            aria-selected={selection.selectedIds.has(entry._id)}
+                            aria-pressed={selection.selectedIds.has(entry._id)}
                             aria-label={`${summary.projectName}, ${summary.taskName}, ${formatClockDuration(entry.durationMs)}`}
                             style={
                               {

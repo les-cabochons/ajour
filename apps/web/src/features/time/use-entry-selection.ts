@@ -8,6 +8,7 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
+import type { TimeEntryActionId } from "@/domain/actions/object-actions";
 import {
   getLocalProjectDisplayName,
   type LocalTimesheetEntry,
@@ -15,6 +16,7 @@ import {
 import { formatClockDuration } from "@/domain/time/duration";
 import {
   EMPTY_ENTRY_SELECTION,
+  getBatchDeleteIds,
   getPasteDate,
   keepShownEntries,
   selectEntryOnClick,
@@ -41,6 +43,15 @@ function countEntries(count: number) {
 }
 
 /**
+ * Whether an entry action is a Delete that may apply to the selection: Delete from
+ * a key or a menu, or the Delete key on the running entry, whose action is Discard.
+ * Discard chosen from the running entry's menu stays its own.
+ */
+export function isSelectionDelete(actionId: TimeEntryActionId, key?: object) {
+  return actionId === "delete" || (actionId === "discard" && key !== undefined);
+}
+
+/**
  * Selection, copy, cut and paste of entries on the Day list and the Week Days
  * cards. See "Selecting, copying and pasting entries" in agents/ux-spec.md.
  *
@@ -56,7 +67,10 @@ export function useEntrySelection({
   pasteTarget,
   onOpen,
 }: {
-  /** The shown day or week. Showing another one clears the selection. */
+  /**
+   * The shown day or week, and the layout when it can change. Showing another one
+   * clears the selection, so coming back does not bring it back.
+   */
   resetKey: string;
   /** The shown entries in reading order, the running entry included. */
   orderedIds: readonly string[];
@@ -73,6 +87,9 @@ export function useEntrySelection({
     resetKey: string;
     selection: EntrySelection;
   }>({ resetKey, selection: EMPTY_ENTRY_SELECTION });
+  if (stored.resetKey !== resetKey) {
+    setStored({ resetKey, selection: EMPTY_ENTRY_SELECTION });
+  }
   const shownIds = useMemo(() => new Set(orderedIds), [orderedIds]);
   const selection =
     stored.resetKey === resetKey
@@ -258,18 +275,21 @@ export function useEntrySelection({
   }
 
   /**
-   * Delete on a selected entry deletes every selected entry, with one Undo.
-   * Returns false when the entry is not part of a multiple selection, so the
-   * caller deletes it alone.
+   * Deletes the selected saved entries with one Undo when Delete on `entryId`
+   * applies to the selection (see `getBatchDeleteIds`). The running entry stays,
+   * as copy and cut skip it. Returns false when the caller should run the
+   * entry's own Delete or Discard instead.
    */
-  function deleteSelection(entryId: string) {
-    if (selection.ids.length < 2 || !selectedIds.has(entryId)) return false;
+  function deleteSelection(entryId: string, { fromKey }: { fromKey: boolean }) {
+    if (!getBatchDeleteIds(selection, entryId, { fromKey })) return false;
 
     const ids = getSelectedEntries().map((entry) => entry._id);
-    offerTimeEntryUndo(
-      localStore.deleteTimesheetEntries(ids),
-      `${countEntries(ids.length)} deleted`,
-    );
+    if (ids.length > 0) {
+      offerTimeEntryUndo(
+        localStore.deleteTimesheetEntries(ids),
+        `${countEntries(ids.length)} deleted`,
+      );
+    }
     return true;
   }
 

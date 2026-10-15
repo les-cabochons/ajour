@@ -88,6 +88,29 @@ export function keepShownEntries(
 }
 
 /**
+ * The entries Delete removes when pressed on `entryId`, or chosen from its menu,
+ * or null when Delete acts on that entry alone.
+ *
+ * - On an entry that is part of a multiple selection, Delete removes the selection.
+ * - The key on an entry outside the selection, such as one Cmd+click just toggled
+ *   off while it kept focus, removes the selection: the key always follows it.
+ * - The menu of an entry outside the selection acts on that entry, which the user
+ *   pointed at.
+ */
+export function getBatchDeleteIds(
+  selection: EntrySelection,
+  entryId: string,
+  { fromKey }: { fromKey: boolean },
+): readonly string[] | null {
+  const isSelected = selection.ids.includes(entryId);
+  if (isSelected) {
+    return selection.ids.length >= 2 ? selection.ids : null;
+  }
+
+  return fromKey && selection.ids.length > 0 ? selection.ids : null;
+}
+
+/**
  * Where a paste puts entries:
  * - `day` puts every entry on `localDate`, as in the Day view or "Paste here".
  * - `same-weekday` keeps each entry's weekday within `weekDates`, Monday first,

@@ -34,6 +34,23 @@ Feature: Select, copy, cut and paste time entries
     Then the Day list reads "Login form"
     And a toast says "2 entries deleted"
 
+  Scenario: Delete the selection, not the entry Cmd-click just deselected
+    Given I have a week of saved entries
+    When I open Monday's Day list
+    And I click the "Code review" entry
+    And I Cmd-click the "API" entry
+    And I Cmd-click the "API" entry
+    And I press the "Backspace" key
+    Then the Day list reads "API", "Login form"
+
+  Scenario: Leaving a day clears its selection
+    Given I have a week of saved entries
+    When I open Monday's Day list
+    And I click the "API" entry
+    And I go to Tuesday in the day strip
+    And I go to Monday in the day strip
+    Then no entry is selected
+
   Scenario: Cut a range of cards and paste them on the same weekdays of the next week
     Given I have a week of saved entries
     When I open the Week Days view

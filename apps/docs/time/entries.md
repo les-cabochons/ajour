@@ -42,7 +42,7 @@ The Day list and the Week Days cards select entries like a file explorer:
 - <kbd>Shift</kbd>-click selects every entry between the last one you clicked and this one. In the Week view the range runs from Monday's cards to Sunday's.
 - <kbd>Esc</kbd>, or a click on empty space, clears the selection.
 
-<kbd>⌘</kbd> <kbd>C</kbd> copies the selected entries and <kbd>⌘</kbd> <kbd>X</kbd> cuts them. <kbd>Backspace</kbd> deletes them all, with one Undo. The running entry can be selected, but copy and cut skip it.
+<kbd>⌘</kbd> <kbd>C</kbd> copies the selected entries and <kbd>⌘</kbd> <kbd>X</kbd> cuts them. <kbd>Backspace</kbd> deletes them all, with one Undo. The running entry can be selected, but copy, cut and deleting several entries skip it.
 
 <kbd>⌘</kbd> <kbd>V</kbd> pastes:
 

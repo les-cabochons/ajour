@@ -26,7 +26,10 @@ import {
   ObjectContextMenu,
 } from "@/components/object-actions-menu";
 import { useTimeEntryActions } from "@/features/time/time-entry-actions";
-import { useEntrySelection } from "@/features/time/use-entry-selection";
+import {
+  isSelectionDelete,
+  useEntrySelection,
+} from "@/features/time/use-entry-selection";
 import type { TimeEntryActionId } from "@/domain/actions/object-actions";
 import { formatClockDuration } from "@/domain/time/duration";
 import {
@@ -463,10 +466,14 @@ export function TimerPanel({
               ? { kind: "running" as const, timerId: entry.timerId }
               : { kind: "entry" as const, entry };
             const rowActions = entryActions.getActions(rowTarget);
-            const runRowAction = (actionId: TimeEntryActionId) => {
+            // `key` is set when a key ran the action, not a menu.
+            const runRowAction = (
+              actionId: TimeEntryActionId,
+              key?: object,
+            ) => {
               if (
-                actionId === "delete" &&
-                selection.deleteSelection(entry._id)
+                isSelectionDelete(actionId, key) &&
+                selection.deleteSelection(entry._id, { fromKey: Boolean(key) })
               ) {
                 return;
               }

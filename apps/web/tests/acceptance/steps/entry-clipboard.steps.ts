@@ -59,6 +59,13 @@ Then("only the {string} entry is selected", async ({ page }, text: string) => {
   ).toHaveCount(1);
 });
 
+Then("no entry is selected", async ({ page }) => {
+  await expect(dayRow(page, "API")).toBeVisible();
+  await expect(
+    page.locator(".time-entry-row[aria-selected='true']"),
+  ).toHaveCount(0);
+});
+
 Then("no entry editor is open", async ({ page }) => {
   await expect(
     page.getByRole("complementary", { name: "Time entry editor" }),

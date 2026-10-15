@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   EMPTY_ENTRY_SELECTION,
+  getBatchDeleteIds,
   getPasteDate,
   keepShownEntries,
   selectEntryOnClick,
@@ -108,5 +109,36 @@ describe("getPasteDate", () => {
     expect(getPasteDate("2026-10-04", target)).toBe("2026-10-18");
     // Thursday, October 22, a later week.
     expect(getPasteDate("2026-10-22", target)).toBe("2026-10-15");
+  });
+});
+
+describe("getBatchDeleteIds", () => {
+  const pair = { ids: ["a", "b"], anchorId: "b" };
+
+  it("deletes the whole selection from a selected entry", () => {
+    expect(getBatchDeleteIds(pair, "a", { fromKey: true })).toEqual(["a", "b"]);
+    expect(getBatchDeleteIds(pair, "b", { fromKey: false })).toEqual([
+      "a",
+      "b",
+    ]);
+  });
+
+  it("deletes the selection, not the focused entry, when the key comes from an unselected entry", () => {
+    // Cmd+click toggled "b" off, and "b" kept focus.
+    const toggledOff = { ids: ["a"], anchorId: "b" };
+
+    expect(getBatchDeleteIds(toggledOff, "b", { fromKey: true })).toEqual([
+      "a",
+    ]);
+  });
+
+  it("leaves a single entry, or a menu on an unselected entry, to the entry itself", () => {
+    expect(
+      getBatchDeleteIds({ ids: ["a"], anchorId: "a" }, "a", { fromKey: true }),
+    ).toBeNull();
+    expect(getBatchDeleteIds(pair, "c", { fromKey: false })).toBeNull();
+    expect(
+      getBatchDeleteIds(EMPTY_ENTRY_SELECTION, "a", { fromKey: true }),
+    ).toBeNull();
   });
 });
