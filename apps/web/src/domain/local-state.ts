@@ -159,6 +159,12 @@ export interface LocalTimesheetEntryCommit {
   taskId?: string;
   note?: string;
   durationMs: number;
+  /**
+   * Set when the user marked the entry as not committed because the external
+   * timesheet changed since. The copy still finds the external entry, but the
+   * entry shows as updated until the next commit saves a fresh copy.
+   */
+  stale?: true;
 }
 
 /**

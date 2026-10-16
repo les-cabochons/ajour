@@ -23,4 +23,6 @@ Feature: Commit the week
     Given I have a committed week of entries
     When I mark Monday's "API" entry as not committed
     And I open the Commit page for the week of 2026-10-05
-    Then the Commit page lists only an "Added" change for "API"
+    Then the Commit page lists only an "Updated" change for "API"
+    When I press "Mark as committed"
+    Then the Commit page says everything is committed

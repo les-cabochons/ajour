@@ -8,8 +8,8 @@ import {
 
 /**
  * Committed copies: what changed in a week since its last commit. An entry
- * with no committed copy is added, one whose copy differs is updated, and a
- * tombstone is a deleted entry. Agents and the Commit page read the same
+ * with no committed copy is added, one whose copy differs or is stale is
+ * updated, and a tombstone is a deleted entry. Agents and the Commit page read the same
  * list. See docs/superpowers/specs/2026-10-15-commit-week-design.md.
  */
 
@@ -36,7 +36,10 @@ export type TimesheetChange =
       entryId: string;
       current: TimesheetCommitValues;
       committed: LocalTimesheetEntryCommit;
-      /** The fields that differ, in `TIMESHEET_COMMIT_FIELDS` order. */
+      /**
+       * The fields that differ, in `TIMESHEET_COMMIT_FIELDS` order. Empty when
+       * only the copy is stale: the external entry may differ in any field.
+       */
       changedFields: TimesheetCommitField[];
     }
   | { kind: "deleted"; entryId: string; committed: LocalTimesheetEntryCommit };
@@ -76,7 +79,10 @@ export function getChangedCommitFields(
   );
 }
 
-/** The entry's change since its last commit, or undefined when its copy matches. */
+/**
+ * The entry's change since its last commit, or undefined when its copy matches
+ * and is not stale.
+ */
 export function getTimesheetEntryChange(
   entry: LocalTimesheetEntry,
 ): TimesheetChange | undefined {
@@ -86,7 +92,7 @@ export function getTimesheetEntryChange(
   }
 
   const changedFields = getChangedCommitFields(entry.commit, current);
-  return changedFields.length === 0
+  return changedFields.length === 0 && !entry.commit.stale
     ? undefined
     : {
         kind: "updated",
@@ -222,6 +228,7 @@ export function normalizeTimesheetEntryCommit(
     taskId: optionalString(record.taskId),
     note: optionalString(record.note),
     durationMs: record.durationMs,
+    ...(record.stale === true ? { stale: true as const } : {}),
   };
 }
 

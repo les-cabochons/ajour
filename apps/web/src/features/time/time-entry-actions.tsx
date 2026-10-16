@@ -101,7 +101,10 @@ export function useTimeEntryActions({
   onAfterAction,
 }: {
   onEdit: (target: TimeEntryActionTarget) => void;
-  /** Called after an action changes or removes the entry, so editors can close. */
+  /**
+   * Called after every action except Edit and Mark as not committed, so editors
+   * can close. Mark as not committed keeps the entry as it is on screen.
+   */
   onAfterAction?: () => void;
 }) {
   const [dateAction, setDateAction] = useState<PendingDateAction | null>(null);

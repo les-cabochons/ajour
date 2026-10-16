@@ -185,7 +185,7 @@ When(
 );
 
 Then(
-  "the Commit page lists only an {string} change for {string}",
+  "the Commit page lists only an/a {string} change for {string}",
   async ({ page }, kind: string, note: string) => {
     await expect(changeList(page).getByRole("listitem")).toHaveCount(1, {
       timeout: 15_000,

@@ -908,7 +908,7 @@ describe("committed copies", () => {
     expect(changeOf(duplicated, "copy")).toBe("added");
   });
 
-  it("marks a committed entry as not committed, so it shows as added", () => {
+  it("marks a committed entry as not committed, so it shows as updated", () => {
     const committed = markTimesheetEntriesCommitted(
       savedEntries(),
       ["a", "b"],
@@ -917,9 +917,33 @@ describe("committed copies", () => {
 
     const next = markTimesheetEntryNotCommitted(committed, "a");
 
-    expect(find(next, "a").commit).toBeUndefined();
-    expect(changeOf(next, "a")).toBe("added");
+    expect(find(next, "a").commit).toEqual({ at: 500, ...values, stale: true });
+    expect(changeOf(next, "a")).toBe("updated");
     expect(changeOf(next, "b")).toBeUndefined();
+  });
+
+  it("keeps the copy of an entry marked as not committed for a delete and a new commit", () => {
+    const committed = markTimesheetEntriesCommitted(
+      savedEntries(),
+      ["a", "b"],
+      () => 500,
+    );
+    const notCommitted = markTimesheetEntryNotCommitted(
+      markTimesheetEntryNotCommitted(committed, "a"),
+      "b",
+    );
+
+    // A delete still leaves a tombstone, so the external entry goes too.
+    expect(deleteTimesheetEntry(notCommitted, "a").timesheetTombstones).toEqual(
+      [{ entryId: "a", commit: { at: 500, ...values, stale: true } }],
+    );
+    // Committing again saves a fresh copy without the flag.
+    const recommitted = markTimesheetEntriesCommitted(
+      notCommitted,
+      ["b"],
+      () => 600,
+    );
+    expect(find(recommitted, "b").commit).toEqual({ at: 600, ...values });
   });
 
   it("leaves an entry with a change to commit as it is", () => {
