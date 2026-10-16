@@ -76,7 +76,12 @@ function assertHttpsUrl(value, label) {
 }
 
 const CATALOG_SCHEMA_VERSION = 2;
-const PLUGIN_CAPABILITIES = new Set(["connector", "codeHost", "schema"]);
+const PLUGIN_CAPABILITIES = new Set([
+  "connector",
+  "codeHost",
+  "calendar",
+  "schema",
+]);
 
 function assertCapabilityList(value, id) {
   if (!Array.isArray(value) || value.length < 1 || value.length > 3) {
@@ -685,7 +690,8 @@ function createPluginCatalogService(options) {
     }
     if (
       !entry.capabilities.includes("connector") &&
-      !entry.capabilities.includes("codeHost")
+      !entry.capabilities.includes("codeHost") &&
+      !entry.capabilities.includes("calendar")
     ) {
       throw new Error(
         "This Ajour version cannot install packaged schema plugins yet.",

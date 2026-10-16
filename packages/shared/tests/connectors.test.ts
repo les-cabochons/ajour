@@ -9,8 +9,10 @@ import {
   pluginHasSwitchableCapabilities,
   syncsPullRequestsAutomatically,
   pluginHasProjectProperties,
+  pluginHasCalendar,
   pluginHasCodeHost,
   pluginHasConnector,
+  pluginRunsCode,
 } from "../connectors";
 
 const validManifest = {
@@ -94,6 +96,19 @@ describe("connector plugin manifest", () => {
     expect(pluginHasSwitchableCapabilities(manifest)).toBe(true);
   });
 
+  it("gives a plugin with backlog items and a calendar a switch for each", () => {
+    const both = connectorPluginManifestSchema.parse({
+      ...validManifest,
+      capabilities: { connector: {}, calendar: {} },
+    });
+    const calendarOnly = connectorPluginManifestSchema.parse({
+      ...validManifest,
+      capabilities: { calendar: {} },
+    });
+    expect(pluginHasSwitchableCapabilities(both)).toBe(true);
+    expect(pluginHasSwitchableCapabilities(calendarOnly)).toBe(false);
+  });
+
   it("reads a capability as active only while the plugin is on and the capability is not off", () => {
     const plugin = connectorPluginManifestSchema.parse({
       ...validManifest,
@@ -152,6 +167,33 @@ describe("connector plugin manifest", () => {
     });
     expect(pluginHasConnector(manifest)).toBe(false);
     expect(pluginHasCodeHost(manifest)).toBe(true);
+  });
+
+  it("accepts a calendar without the connector capability", () => {
+    const manifest = connectorPluginManifestSchema.parse({
+      ...validManifest,
+      capabilities: { calendar: {} },
+    });
+    expect(pluginHasConnector(manifest)).toBe(false);
+    expect(pluginHasCalendar(manifest)).toBe(true);
+    expect(pluginRunsCode(manifest)).toBe(true);
+  });
+
+  it("requires an entrypoint and connection fields for a calendar", () => {
+    expect(() =>
+      connectorPluginManifestSchema.parse({
+        ...validManifest,
+        entrypoint: undefined,
+        capabilities: { calendar: {} },
+      }),
+    ).toThrow(/entrypoint/);
+    expect(() =>
+      connectorPluginManifestSchema.parse({
+        ...validManifest,
+        connectionFields: [],
+        capabilities: { calendar: {} },
+      }),
+    ).toThrow(/connection fields/);
   });
 
   it("carries priority as an Ajour level, never a source value", () => {

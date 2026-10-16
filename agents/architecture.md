@@ -73,11 +73,16 @@ The local API is a boundary for connector-driven work. Connector behavior should
 
 ## Connector Plugins
 
-Connectors and code hosts are capabilities of installable plugins. A plugin
-declares one or both in its manifest, and its connections serve all of them.
-A connection field may name the capability it configures, so the connection
+Connectors, code hosts and calendars are capabilities of installable plugins.
+A plugin declares one or more in its manifest, and its connections serve all of
+them. A connection field may name the capability it configures, so the connection
 form hides it while that capability is off. `validateConnection` receives the
 capabilities that are on as its second argument and checks only their access.
+A calendar is read-only: `listCalendarEvents` returns event facts for a date
+range through `POST /api/calendars/:pluginId/connections/:connectionId/:operation`,
+and Ajour never stores the events (ADR 0005). The route replaces secret
+connection values in plugin error messages and logs one `calendar.operation`
+wide event with ids, range, count and outcome, never a title.
 The rules in this section apply to every such plugin, which must remain
 physically and logically separate from the application. A plugin owns its external-system
 authentication, transport, field discovery, and remote read/write behavior. It

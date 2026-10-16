@@ -375,6 +375,9 @@ function PluginsHeader({
           <TabsTrigger value="codeHost" className="px-1.5 desktop:px-3">
             Code hosts
           </TabsTrigger>
+          <TabsTrigger value="calendar" className="px-1.5 desktop:px-3">
+            Calendars
+          </TabsTrigger>
           <TabsTrigger value="schema" className="px-1.5 desktop:px-3">
             Schemas
           </TabsTrigger>
