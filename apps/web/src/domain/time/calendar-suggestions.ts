@@ -272,6 +272,26 @@ export function groupCalendarSuggestionsByDay(
   return days;
 }
 
+/**
+ * What the Calendar panel adds: every visible suggestion with a project that
+ * the user did not uncheck, and their total time.
+ */
+export function selectCheckedSuggestions(
+  suggestions: readonly CalendarSuggestion[],
+  uncheckedKeys: ReadonlySet<string>,
+) {
+  const checked = suggestions.filter(
+    (suggestion) =>
+      !suggestion.hiddenBy &&
+      suggestion.projectId !== undefined &&
+      !uncheckedKeys.has(suggestion.key),
+  );
+  return {
+    checked,
+    totalMs: checked.reduce((total, item) => total + item.durationMs, 0),
+  };
+}
+
 function upsertDecision(
   decisions: readonly LocalCalendarDecision[],
   suggestion: CalendarSuggestion,

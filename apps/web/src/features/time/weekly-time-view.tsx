@@ -117,6 +117,7 @@ export function WeeklyTimeView({
   onNewEntry,
   onOpenCellEntries,
   onOpenEntry,
+  onOpenCalendar,
   weekDates,
 }: {
   /** The Grid cell shown in the side panel, highlighted in the Grid. */
@@ -134,6 +135,8 @@ export function WeeklyTimeView({
     timerId?: string;
     cell?: WeekGridCell;
   }) => void;
+  /** Opens the Calendar side panel on a day. */
+  onOpenCalendar: (localDate: string) => void;
   weekDates: string[];
 }) {
   const state = useLocalState();
@@ -148,6 +151,16 @@ export function WeeklyTimeView({
     [calendar.suggestions],
   );
   const suggestionActions = useCalendarSuggestionActions();
+  const suggestionCounts = useMemo(
+    () =>
+      new Map(
+        [...suggestionsByDay].map(([localDate, day]) => [
+          localDate,
+          day.visible.length,
+        ]),
+      ),
+    [suggestionsByDay],
+  );
   // Rows added with "+ Add row" are dropped when the user leaves the week. A row
   // that got hours stays, because its entries show it.
   const [addedRows, setAddedRows] = useState<{
@@ -587,6 +600,8 @@ export function WeeklyTimeView({
           onClosePanel={onClosePanel}
           onOpen={onOpenEntry}
           onOpenCellEntries={onOpenCellEntries}
+          onOpenSuggestions={onOpenCalendar}
+          suggestionCounts={suggestionCounts}
           projection={projection}
           projects={projects}
           projectsById={projectsById}

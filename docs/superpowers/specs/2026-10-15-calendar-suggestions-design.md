@@ -1,7 +1,7 @@
 # Calendar suggestions through a calendar plugin
 
 - Date: 2026-10-15
-- Status: Slices 1 to 4 implemented (#179 to #182). Tracking issue #178.
+- Status: Implemented, slices 1 to 5 (#179 to #183). Tracking issue #178. Open: a real private feed from each provider.
 - Scope: the `calendar` plugin capability, the calendar contract, suggestions in the Time view, remembered meetings, the ICS plugin
 - Decisions: [ADR 0005](../../../agents/adr/0005-calendar-events-are-fetched-per-week-and-never-stored.md)
 - Terms: `agents/GLOSSARY.md`, sections "Time entries" and "Extensions"
@@ -118,11 +118,11 @@ A "From your calendar" section under the day's rows, with a count and Refresh. E
 
 ### Side panel
 
-A **Calendar** button in the top bar of the Time view, with the count of open suggestions for the week, opens the side panel. The panel lists the week's suggestions grouped by day, each with a checkbox, the time span, the title, the project and task or "No project yet", and the duration. Events with a project start checked. The footer's primary button reads "Add 4 entries · 2:30" and adds every checked suggestion in one action with one Undo toast. An unchecked event without a project is left alone. A row's "…" menu offers Choose project, Dismiss, and Hide this meeting.
+A **Calendar** button in the top bar of the Time view, with the count of open suggestions for the week, opens the side panel. The panel lists the week's suggestions grouped by day, each with a checkbox, the time span, the title, the project and task or "No project yet", and the duration. Events with a project start checked. The footer's primary button reads "Add 4 entries · 2:30" and adds every checked suggestion in one action with one Undo toast. An unchecked event without a project is left alone. A suggestion without a project gets the same picker as in the Day view. A row's "…" menu has the full action set, and Dismiss in the footer dismisses every checked suggestion.
 
 ### Week Grid
 
-The Grid shows no suggestion rows. A day header with open suggestions carries a count chip; clicking it opens the side panel scrolled to that day.
+The Grid shows no suggestion rows. A day header with open suggestions carries a calendar chip with the count, beside the day total so the header keeps its height; clicking it opens the side panel scrolled to that day.
 
 ### Actions and copy
 

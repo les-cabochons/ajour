@@ -18,6 +18,7 @@ import {
   normalizeCalendarSuggestionSettings,
   pruneCalendarDecisions,
   removeCalendarConnectionData,
+  selectCheckedSuggestions,
   type CalendarSuggestion,
   type FetchedCalendarEvents,
 } from "@/domain/time/calendar-suggestions";
@@ -384,6 +385,45 @@ describe("building suggestions", () => {
       "Personal",
       "Work",
     ]);
+  });
+});
+
+describe("the Calendar panel's selection", () => {
+  it("checks visible suggestions with a project unless unchecked, and totals them", () => {
+    const suggestions = suggestionsFor(
+      createState({ calendarEventRules: [standupRule] }),
+      [
+        event(),
+        event({ startsAt: at(15, 9), endsAt: at(15, 9, 15) }),
+        event({
+          eventId: "kickoff",
+          seriesId: undefined,
+          startsAt: at(14, 11),
+          endsAt: at(14, 12),
+        }),
+        event({
+          eventId: "free",
+          seriesId: "standup",
+          busy: false,
+          startsAt: at(16, 9),
+          endsAt: at(16, 10),
+        }),
+      ],
+    );
+    const tomorrow = suggestions.find(
+      (item) => item.localDate === "2026-10-15",
+    )!;
+
+    const all = selectCheckedSuggestions(suggestions, new Set());
+    expect(all.checked.map((item) => item.localDate)).toEqual([
+      "2026-10-14",
+      "2026-10-15",
+    ]);
+    expect(all.totalMs).toBe(30 * 60_000);
+
+    const one = selectCheckedSuggestions(suggestions, new Set([tomorrow.key]));
+    expect(one.checked).toHaveLength(1);
+    expect(one.totalMs).toBe(15 * 60_000);
   });
 });
 
