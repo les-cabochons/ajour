@@ -2874,3 +2874,127 @@ describe("runWithUndo", () => {
     expect(localStore.runWithUndo(() => undefined).undoToken).toBeNull();
   });
 });
+
+describe("calendar suggestions in the store", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubGlobal("crypto", {
+      randomUUID: vi.fn(() => `uuid-${Math.random().toString(16).slice(2)}`),
+    });
+    installMockWindow();
+  });
+
+  const today = new Date();
+  const localDate = (daysAgo: number) => {
+    const date = new Date(
+      today.getFullYear(),
+      today.getMonth(),
+      today.getDate() - daysAgo,
+    );
+    return [
+      date.getFullYear(),
+      String(date.getMonth() + 1).padStart(2, "0"),
+      String(date.getDate()).padStart(2, "0"),
+    ].join("-");
+  };
+
+  it("loads valid decisions within 90 days and valid rules, with default settings", async () => {
+    const decision = {
+      _id: "kept",
+      pluginId: "ics",
+      connectionId: "work",
+      occurrenceKey: "standup",
+      localDate: localDate(90),
+      decision: "dismissed",
+      decidedAt: 1,
+    };
+    window.localStorage.setItem(
+      "ajour.local-state.v2",
+      JSON.stringify({
+        calendarDecisions: [
+          decision,
+          { ...decision, _id: "expired", localDate: localDate(91) },
+          { ...decision, _id: "invalid", decision: "maybe" },
+        ],
+        calendarEventRules: [
+          {
+            _id: "assign",
+            pluginId: "ics",
+            connectionId: "work",
+            seriesId: "standup",
+            label: "Daily standup",
+            action: "assign",
+            projectId: "internal",
+            createdAt: 1,
+          },
+          {
+            _id: "no-project",
+            pluginId: "ics",
+            connectionId: "work",
+            seriesId: "sync",
+            label: "Sync",
+            action: "assign",
+            createdAt: 1,
+          },
+        ],
+      }),
+    );
+
+    const { localStore } = await import("./local-store");
+    const state = localStore.snapshot();
+    expect(state.calendarDecisions?.map((item) => item._id)).toEqual(["kept"]);
+    expect(state.calendarEventRules?.map((item) => item._id)).toEqual([
+      "assign",
+    ]);
+    expect(state.userPreferences.calendarSuggestions).toEqual({
+      hideAllDay: true,
+      hideDeclined: true,
+      hideFree: true,
+      hideUnanswered: false,
+      minimumMinutes: 0,
+      refreshMinutes: 10,
+    });
+  });
+
+  it("adds a suggestion with one undo, and removes a connection's calendar data", async () => {
+    const { localStore } = await import("./local-store");
+    const projectId = localStore.addProject({
+      name: "Internal",
+      color: "#123456",
+    });
+    const suggestion = {
+      key: "k",
+      pluginId: "ics",
+      connectionId: "work",
+      connectionLabel: "Work",
+      occurrenceKey: JSON.stringify(["standup", 1]),
+      seriesId: "standup",
+      localDate: localDate(0),
+      startsAt: 1,
+      endsAt: 900_001,
+      durationMs: 900_000,
+      title: "Daily standup",
+      untitled: false,
+      allDay: false,
+    };
+
+    const added = localStore.acceptCalendarSuggestions([
+      { suggestion, projectId, remember: true },
+    ]);
+    expect(added.entryIds).toHaveLength(1);
+    expect(localStore.snapshot().calendarEventRules).toHaveLength(1);
+
+    expect(localStore.undo(added.undoToken!)).toBe("restored");
+    expect(localStore.snapshot().timesheetEntries).toEqual([]);
+    expect(localStore.snapshot().calendarDecisions).toEqual([]);
+    expect(localStore.snapshot().calendarEventRules).toEqual([]);
+
+    localStore.acceptCalendarSuggestions([
+      { suggestion, projectId, remember: true },
+    ]);
+    localStore.removeConnectionCalendarData("ics", "work");
+    expect(localStore.snapshot().calendarDecisions).toEqual([]);
+    expect(localStore.snapshot().calendarEventRules).toEqual([]);
+    expect(localStore.snapshot().timesheetEntries).toHaveLength(1);
+  });
+});

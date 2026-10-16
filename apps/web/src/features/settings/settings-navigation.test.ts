@@ -40,6 +40,15 @@ describe("getSettingsGroups", () => {
     expect(work("wide")).not.toContain("Pull requests");
   });
 
+  it("lists Calendar under Work only while a calendar plugin is on", () => {
+    const work = (hasCalendar: boolean) =>
+      getSettingsGroups("wide", false, hasCalendar)
+        .find((group) => group.label === "Work")!
+        .pages.map((page) => page.to);
+    expect(work(true)).toContain("/settings/calendar");
+    expect(work(false)).not.toContain("/settings/calendar");
+  });
+
   it("lists Agents after MCP in the App group", () => {
     const app = getSettingsGroups("wide")[0]!;
     const labels = app.pages.map((page) => page.label);

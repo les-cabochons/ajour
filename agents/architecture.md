@@ -50,7 +50,8 @@ Current deep domain modules demonstrate this boundary:
 - `domain/time/timesheet-import.ts` owns import normalization, conflict detection, draft review, project/task recovery, and single or batch commit.
 - `domain/time/timer-transitions.ts` owns timer hydration, start/edit/cancel/save/continue behavior, elapsed-time calculation, and replacement of continued entries. A running entry always starts on today, and a counted time correction restarts its count from the corrected value.
 - `domain/time/timeline-transitions.ts` owns imported browser review preservation, timeline materialization, dismissal, idempotent commits, and rule creation.
-- `domain/local-state-undo.ts` records which records an action changed (projects, time entries, timers, import drafts, work items, workflow states and source state mappings) and restores them for Undo. It refuses a restore when any of those records changed again since. After a time entry action, a work item changed again since gets the inverse logged time instead of its old values. `local-store.ts` keeps only the last action's undo, in memory, behind a token, and `features/feedback/undo-toast.ts` shows its toast. Sync review dismissals live in the local API, so `AppApiStorage` keeps the last one in memory the same way.
+- `domain/time/calendar-suggestions.ts` owns calendar suggestions (ADR 0005): turning fetched calendar events into suggestions per local day, the Settings filters, decisions per occurrence (added while its entry exists, or dismissed, kept 90 days), event rules per recurring meeting (remembered project and task, or hidden), adding several suggestions as entries in one change, and removing a connection's calendar data. `lib/calendar-suggestions.ts` fetches each enabled calendar connection's range into an in-memory cache and refreshes it on its interval while the window is visible.
+- `domain/local-state-undo.ts` records which records an action changed (projects, time entries, timers, import drafts, work items, workflow states, source state mappings, calendar decisions and event rules) and restores them for Undo. It refuses a restore when any of those records changed again since. After a time entry action, a work item changed again since gets the inverse logged time instead of its old values. `local-store.ts` keeps only the last action's undo, in memory, behind a token, and `features/feedback/undo-toast.ts` shows its toast. Sync review dismissals live in the local API, so `AppApiStorage` keeps the last one in memory the same way.
 
 These modules are the Interface between workflow orchestration and persistence. Keep their behavior deterministic and free of browser APIs. A domain module should be deep enough that removing it would force meaningful rules back into several callers; avoid shallow one-function wrappers that only rename an operation.
 
@@ -73,12 +74,16 @@ The local API is a boundary for connector-driven work. Connector behavior should
 
 ## Connector Plugins
 
-Connectors, code hosts and teams are capabilities of installable plugins. A
-plugin declares one or more in its manifest, and its connections serve all of
-them.
-A connection field may name the capability it configures, so the connection
+Connectors, code hosts, calendars and teams are capabilities of installable
+plugins. A plugin declares one or more in its manifest, and its connections
+serve all of them. A connection field may name the capability it configures, so the connection
 form hides it while that capability is off. `validateConnection` receives the
 capabilities that are on as its second argument and checks only their access.
+A calendar is read-only: `listCalendarEvents` returns event facts for a date
+range through `POST /api/calendars/:pluginId/connections/:connectionId/:operation`,
+and Ajour never stores the events (ADR 0005). The route replaces secret
+connection values in plugin error messages and logs one `calendar.operation`
+wide event with ids, range, count and outcome, never a title.
 The rules in this section apply to every such plugin, which must remain
 physically and logically separate from the application. A plugin owns its external-system
 authentication, transport, field discovery, and remote read/write behavior. It
@@ -139,8 +144,8 @@ items intact, but blocks manual sync and excludes its connections from the web
 auto-sync scheduler. Reactivation restores those sync paths without requiring
 the connector to be configured again.
 
-A plugin that declares more than one of connector, code host and team also
-gets one switch per capability, stored as a per-plugin deny-list next to the
+A plugin that declares more than one of connector, code host, calendar and
+team also gets one switch per capability, stored as a per-plugin deny-list next to the
 plugin's own activation. Turning a capability off blocks only its routes and
 scheduler work and cancels only its running operations; the plugin switch still
 gates all of them.

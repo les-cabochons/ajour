@@ -36,7 +36,10 @@ import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { getAppApiBaseUrl, getAppApiDescription } from "@/lib/app-api";
 import { usePluginSettingsWorkflow } from "./use-plugin-settings-workflow";
-import type { PluginDisplayEntry } from "./plugin-settings-workflow";
+import {
+  describeConnectionRemoval,
+  type PluginDisplayEntry,
+} from "./plugin-settings-workflow";
 import { useLocalState } from "@/lib/local-hooks";
 import type {
   ConnectorConnectionSummary,
@@ -374,6 +377,9 @@ function PluginsHeader({
           </TabsTrigger>
           <TabsTrigger value="codeHost" className="px-1.5 desktop:px-3">
             Code hosts
+          </TabsTrigger>
+          <TabsTrigger value="calendar" className="px-1.5 desktop:px-3">
+            Calendars
           </TabsTrigger>
           <TabsTrigger value="schema" className="px-1.5 desktop:px-3">
             Schemas
@@ -914,7 +920,8 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                           Sync
                         </Button>
                       ) : null}
-                      {group.plugin.capabilities.codeHost ? (
+                      {group.plugin.capabilities.codeHost ||
+                      group.plugin.capabilities.calendar ? (
                         <AlertDialog>
                           <AlertDialogTrigger
                             render={
@@ -933,15 +940,11 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                                 Remove {connection.label}?
                               </AlertDialogTitle>
                               <AlertDialogDescription>
-                                This removes the connection and its{" "}
-                                {
-                                  (state.pullRequests ?? []).filter(
-                                    (item) =>
-                                      item.pluginId === group.plugin.id &&
-                                      item.connectionId === connection.id,
-                                  ).length
-                                }{" "}
-                                saved pull requests from this device.
+                                {describeConnectionRemoval(
+                                  group.plugin,
+                                  connection.id,
+                                  state,
+                                )}
                               </AlertDialogDescription>
                             </AlertDialogHeader>
                             <AlertDialogFooter>

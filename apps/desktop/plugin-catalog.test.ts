@@ -210,7 +210,7 @@ describe("desktop plugin catalog", () => {
     ]);
   });
 
-  it.each(["connector", "codeHost"])(
+  it.each(["connector", "codeHost", "calendar"])(
     "selects and bounds the newest matching GitHub release asset for %s",
     async (capability) => {
       const cacheDirectory = await tempDirectory();

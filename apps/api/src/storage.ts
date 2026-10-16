@@ -1015,19 +1015,21 @@ export class AppApiStorage {
    * capability; once it has both, auto sync imports backlog items. Adding
    * backlog items moves that choice to pull requests and lets backlog items
    * stage for review. Adding pull requests starts their own sync at
-   * `pullRequestAutoSyncDefault`, the default of a new connection. Adding a
-   * team changes nothing: a team always syncs on the interval.
+   * `pullRequestAutoSyncDefault`, the default of a new connection.
    */
   async adoptAddedCapability(
     pluginId: string,
     added: SwitchableCapability,
     pullRequestAutoSyncDefault: boolean,
   ): Promise<void> {
+    // A calendar has no automatic sync of its own to keep, and a team always
+    // syncs on the interval.
+    if (added === "calendar" || added === "team") return;
     await this.mutate(async (state) => ({
       nextState: {
         ...state,
         connections: state.connections.map((connection) =>
-          connection.pluginId !== pluginId || added === "team"
+          connection.pluginId !== pluginId
             ? connection
             : added === "connector"
               ? {

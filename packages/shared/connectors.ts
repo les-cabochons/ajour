@@ -92,12 +92,13 @@ export type ConnectorFieldOption = z.infer<typeof connectorFieldOptionSchema>;
 
 /**
  * The capabilities a user turns on and off separately when a plugin declares
- * more than one of them. Agent tasks and project properties follow the
- * plugin's own switch.
+ * more than one. Agent tasks and project properties follow the plugin's own
+ * switch.
  */
 export const switchableCapabilitySchema = z.enum([
   "connector",
   "codeHost",
+  "calendar",
   "team",
 ]);
 export type SwitchableCapability = z.infer<typeof switchableCapabilitySchema>;
@@ -107,6 +108,7 @@ export const switchableCapabilityLabels: Record<SwitchableCapability, string> =
   {
     connector: "Backlog items",
     codeHost: "Pull requests",
+    calendar: "Calendar events",
     team: "Projects",
   };
 
@@ -217,7 +219,8 @@ export type ProjectPropertiesCapability = z.infer<
 /**
  * What a plugin provides. A plugin declares at least one capability, and its
  * connections serve all of them. A connector without `settle` keeps working:
- * Ajour settles its items locally, with no write. See ADR 0001 and ADR 0003.
+ * Ajour settles its items locally, with no write. See ADR 0001, ADR 0003 and,
+ * for `calendar`, ADR 0005.
  */
 export const connectorPluginCapabilitiesSchema = z
   .object({
@@ -227,6 +230,7 @@ export const connectorPluginCapabilitiesSchema = z
       })
       .optional(),
     codeHost: z.object({}).optional(),
+    calendar: z.object({}).optional(),
     /** Keeps a team's shared projects in step. See ADR 0005. */
     team: teamCapabilitySchema.optional(),
     agentTask: z
@@ -238,10 +242,11 @@ export const connectorPluginCapabilitiesSchema = z
     (capabilities) =>
       capabilities.connector !== undefined ||
       capabilities.codeHost !== undefined ||
+      capabilities.calendar !== undefined ||
       capabilities.team !== undefined ||
       capabilities.agentTask !== undefined ||
       capabilities.projectProperties !== undefined,
-    "A plugin must declare at least one capability: connector, codeHost, team, agentTask or projectProperties.",
+    "A plugin must declare at least one capability: connector, codeHost, calendar, team, agentTask or projectProperties.",
   );
 export type ConnectorPluginCapabilities = z.infer<
   typeof connectorPluginCapabilitiesSchema
@@ -257,6 +262,12 @@ export function pluginHasCodeHost(manifest: {
   capabilities: ConnectorPluginCapabilities;
 }) {
   return manifest.capabilities.codeHost !== undefined;
+}
+
+export function pluginHasCalendar(manifest: {
+  capabilities: ConnectorPluginCapabilities;
+}) {
+  return manifest.capabilities.calendar !== undefined;
 }
 
 export function pluginHasTeam(manifest: {
@@ -281,14 +292,7 @@ export function pluginHasCapability(
   manifest: { capabilities: ConnectorPluginCapabilities },
   capability: SwitchableCapability,
 ) {
-  switch (capability) {
-    case "connector":
-      return pluginHasConnector(manifest);
-    case "codeHost":
-      return pluginHasCodeHost(manifest);
-    case "team":
-      return pluginHasTeam(manifest);
-  }
+  return manifest.capabilities[capability] !== undefined;
 }
 
 /** The switchable capabilities the plugin declares, in switch order. */
@@ -308,8 +312,8 @@ export function pluginHasSwitchableCapabilities(manifest: {
 }
 
 /**
- * Whether the plugin runs code: it syncs items, serves pull requests or
- * syncs a team's projects.
+ * Whether the plugin runs code: it syncs items, serves pull requests, reads
+ * a calendar or syncs a team's projects.
  */
 export function pluginRunsCode(manifest: {
   capabilities: ConnectorPluginCapabilities;
@@ -341,7 +345,8 @@ export const connectorPluginManifestSchema =
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["entrypoint"],
-        message: "A connector, code host or team plugin needs an entrypoint.",
+        message:
+          "A connector, code host, calendar or team plugin needs an entrypoint.",
       });
     }
     if (manifest.connectionFields.length === 0) {
@@ -349,7 +354,7 @@ export const connectorPluginManifestSchema =
         code: z.ZodIssueCode.custom,
         path: ["connectionFields"],
         message:
-          "A connector, code host or team plugin needs connection fields.",
+          "A connector, code host, calendar or team plugin needs connection fields.",
       });
     }
   });
