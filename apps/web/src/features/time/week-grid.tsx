@@ -5,7 +5,10 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent as ReactMouseEvent,
 } from "react";
-import { RiAddLine as Plus } from "@remixicon/react";
+import {
+  RiAddLine as Plus,
+  RiCalendarLine as CalendarIcon,
+} from "@remixicon/react";
 import {
   ObjectActionItems,
   ObjectContextMenu,
@@ -295,11 +298,13 @@ export function WeekGrid({
   onOpen,
   onOpenCellEntries,
   onRemoveRow,
+  onOpenSuggestions,
   projection,
   projects,
   projectsById,
   runningTimerId,
   showCapacityWarning,
+  suggestionCounts,
   today,
   weekDates,
 }: {
@@ -314,11 +319,15 @@ export function WeekGrid({
   onOpenCellEntries: (cell: WeekGridCell) => void;
   /** Forgets a row added with "+ Add row", so it stops showing while empty. */
   onRemoveRow: (rowKey: string) => void;
+  /** Opens the Calendar side panel on a day. */
+  onOpenSuggestions?: (localDate: string) => void;
   projection: WeeklyTimeProjection;
   projects: LocalProject[];
   projectsById: Map<string, LocalProject>;
   runningTimerId?: string;
   showCapacityWarning: boolean;
+  /** Open calendar suggestions per day. The Grid shows only their count. */
+  suggestionCounts?: ReadonlyMap<string, number>;
   today: string;
   weekDates: string[];
 }) {
@@ -748,15 +757,30 @@ export function WeekGrid({
                         {formatWeekDay(day.localDate, { day: "numeric" })}
                       </span>
                     </span>
-                    <CapacityValue
-                      capacityMs={day.capacityMs}
-                      totalMs={day.totalMs}
-                      label={formatWeekDay(day.localDate, {
-                        weekday: "long",
-                      })}
-                      overCapacity={day.overCapacity}
-                      showWarning={showCapacityWarning}
-                    />
+                    <span className="weekly-grid-day-total">
+                      {suggestionCounts?.get(day.localDate) &&
+                      onOpenSuggestions ? (
+                        <button
+                          type="button"
+                          className="weekly-grid-suggestion-chip"
+                          aria-label={`${suggestionCounts.get(day.localDate)} suggested meetings on ${formatWeekDay(day.localDate, { weekday: "long" })}`}
+                          title="Suggested meetings"
+                          onClick={() => onOpenSuggestions(day.localDate)}
+                        >
+                          <CalendarIcon aria-hidden="true" />
+                          {suggestionCounts.get(day.localDate)}
+                        </button>
+                      ) : null}
+                      <CapacityValue
+                        capacityMs={day.capacityMs}
+                        totalMs={day.totalMs}
+                        label={formatWeekDay(day.localDate, {
+                          weekday: "long",
+                        })}
+                        overCapacity={day.overCapacity}
+                        showWarning={showCapacityWarning}
+                      />
+                    </span>
                   </div>
                 </TableHead>
               ))}

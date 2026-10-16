@@ -31,6 +31,12 @@ import {
   type CodeHostOperationRequest,
   type CodeHostOperationResult,
 } from "../../../packages/shared/code-host.ts";
+import {
+  calendarOperations,
+  type CalendarOperation,
+  type CalendarOperationRequest,
+  type CalendarOperationResult,
+} from "../../../packages/shared/calendar.ts";
 import { z } from "zod";
 import {
   discoverInstalledConnectorPlugins,
@@ -81,7 +87,14 @@ export type PluginMethod =
   | "syncConnection"
   | "listSettleStates"
   | "writeSettle"
-  | CodeHostOperation;
+  | CodeHostOperation
+  | CalendarOperation;
+const missingCapabilityMessages: Record<SwitchableCapability, string> = {
+  connector: "does not sync backlog items",
+  codeHost: "does not provide pull requests",
+  calendar: "does not provide calendar events",
+  team: "does not sync a team's projects",
+};
 /** The switchable capability a plugin method serves. Validation serves none. */
 export function capabilityOfMethod(
   method: PluginMethod,
@@ -93,7 +106,8 @@ export function capabilityOfMethod(
   ) {
     return "connector";
   }
-  return method === "validateConnection" ? undefined : "codeHost";
+  if (method === "validateConnection") return undefined;
+  return method in calendarOperations ? "calendar" : "codeHost";
 }
 
 function comparePlugins(
@@ -286,7 +300,7 @@ export class ConnectorPluginManager {
   /** Whether the plugin declares the given capability. */
   async hasCapability(
     pluginId: string,
-    capability: "connector" | "codeHost",
+    capability: SwitchableCapability,
   ): Promise<boolean> {
     this.assertRunning();
     const plugin = (await this.discoverPlugins()).plugins.get(pluginId);
@@ -322,6 +336,29 @@ export class ConnectorPluginManager {
     const contract = codeHostOperations[operation];
     const resultSchema = contract.result as {
       parse: (value: unknown) => CodeHostOperationResult<Operation>;
+    };
+    return await this.invokePlugin(
+      pluginId,
+      operation,
+      {
+        connection: pluginInvocationConnectionSchema.parse(connection),
+        request: contract.request.parse(request),
+      },
+      resultSchema,
+    );
+  }
+
+  /** Runs one calendar operation. See `calendarOperations`. */
+  async runCalendarOperation<Operation extends CalendarOperation>(
+    pluginId: string,
+    operation: Operation,
+    connection: PluginInvocationConnection,
+    request: CalendarOperationRequest<Operation>,
+  ): Promise<CalendarOperationResult<Operation>> {
+    await this.assertCapability(pluginId, "calendar");
+    const contract = calendarOperations[operation];
+    const resultSchema = contract.result as {
+      parse: (value: unknown) => CalendarOperationResult<Operation>;
     };
     return await this.invokePlugin(
       pluginId,
@@ -415,14 +452,12 @@ export class ConnectorPluginManager {
 
   private async assertCapability(
     pluginId: string,
-    capability: "connector" | "codeHost",
+    capability: SwitchableCapability,
   ) {
     const plugin = await this.getPlugin(pluginId);
     if (plugin.manifest.capabilities[capability] === undefined) {
       throw new Error(
-        capability === "connector"
-          ? `Plugin "${pluginId}" does not sync backlog items.`
-          : `Plugin "${pluginId}" does not provide pull requests.`,
+        `Plugin "${pluginId}" ${missingCapabilityMessages[capability]}.`,
       );
     }
   }

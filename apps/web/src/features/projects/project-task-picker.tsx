@@ -49,6 +49,9 @@ interface ProjectTaskPickerProps {
   ariaLabel?: string;
   allowNoProject?: boolean;
   className?: string;
+  /** Opens the list from outside, such as a menu's "Choose project…". */
+  open?: boolean;
+  onOpenChange?: (open: boolean) => void;
 }
 
 type PickerView = { kind: "projects" } | { kind: "tasks"; projectId: string };
@@ -69,8 +72,15 @@ export function ProjectTaskPicker({
   ariaLabel = "Project or task",
   allowNoProject = true,
   className,
+  open,
+  onOpenChange,
 }: ProjectTaskPickerProps) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpenState, setIsOpenState] = useState(false);
+  const isOpen = open ?? isOpenState;
+  const setIsOpen = (next: boolean) => {
+    setIsOpenState(next);
+    onOpenChange?.(next);
+  };
   const [view, setView] = useState<PickerView>(projectsView);
   const [query, setQuery] = useState("");
   const activeProjects = useMemo(

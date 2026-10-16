@@ -31,7 +31,7 @@ import {
 import { normalizeTaskImportName } from "@/domain/projects/task-import";
 
 /*
- * The sync rules for shared projects. See ADR 0005 and
+ * The sync rules for shared projects. See ADR 0006 and
  * docs/superpowers/specs/2026-10-16-team-project-sync-design.md.
  *
  * A shared project's `team.synced` holds its team-owned fields as last synced.

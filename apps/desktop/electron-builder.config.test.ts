@@ -33,6 +33,12 @@ describe("desktop electron-builder config", () => {
     expect(JSON.stringify(config)).not.toMatch(/squirrel|nupkg/i);
   });
 
+  it("overrides the packaged package name, which names the Windows install folder", () => {
+    const config = loadBuilderConfig();
+
+    expect(config.extraMetadata.name).toBe("ajour");
+  });
+
   it("keeps local builds on the configured release core", () => {
     // Release builds rewrite package.json from the tag, but local builds ship
     // this version as-is. A higher core than VERSION would look newer than

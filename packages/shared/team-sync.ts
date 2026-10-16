@@ -4,7 +4,7 @@ import { z } from "zod";
  * The team capability: a plugin keeps the shared projects of a team in step
  * between the workspaces of its members. Each sync sends the team-owned fields
  * that changed since the last sync, then receives the team's changes since a
- * cursor, so the later write to a field wins. See ADR 0005 and
+ * cursor, so the later write to a field wins. See ADR 0006 and
  * docs/superpowers/specs/2026-10-16-team-project-sync-design.md.
  *
  * Only team-owned fields cross this boundary. Time entries, tracked totals,

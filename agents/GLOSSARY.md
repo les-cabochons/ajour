@@ -130,6 +130,18 @@ _Avoid_: Diff, delta, dirty entry
 One person's time entries for one week, committed to an external timesheet tool.
 _Avoid_: Time report, time card
 
+**Calendar event**:
+One occurrence of an event in the user's calendar, as a calendar plugin reports it: when it starts and ends, its title and the user's reply. Ajour fetches events per week and never stores them (ADR 0005).
+_Avoid_: Meeting (in code; the UI may say meeting), appointment
+
+**Suggestion**:
+A calendar event shown on its day in the Time view for the user to add as a time entry or dismiss. Nothing becomes an entry until the user adds it.
+_Avoid_: Proposed entry, draft entry, pending entry
+
+**Event rule**:
+What Ajour remembers about one recurring calendar event: the project and task to fill in for every occurrence, or that every occurrence is hidden. The same thing as a repository rule, for a meeting series.
+_Avoid_: Rule, series, occurrence (in user-facing text; say "remembered meeting" and "hidden meeting")
+
 ### Time entry actions
 
 **Continue**:
@@ -143,7 +155,7 @@ _Avoid_: Cancel, delete (for a running entry)
 ### Extensions
 
 **Plugin**:
-An installable extension of Ajour that provides one or more capabilities: connector, schema, code host or team. When a plugin provides more than one of connector, code host and team, the user turns each on and off separately, as Backlog items, Pull requests and Projects.
+An installable extension of Ajour that provides one or more capabilities: connector, schema, code host, calendar or team. When a plugin provides more than one of connector, code host, calendar and team, the user turns each on and off separately, as Backlog items, Pull requests, Calendar events and Projects.
 _Avoid_: Extension, add-on, integration
 
 **Team**:
@@ -161,6 +173,10 @@ A plugin capability that defines how projects and tasks map to an external file 
 A plugin capability that provides the user's pull requests from a tool such as GitHub or Azure DevOps, and carries out the user's reviews, comments and merges there.
 _Avoid_: Git provider, PR plugin, forge
 _Avoid_: Data shape, project data shape (in user-facing text)
+
+**Calendar**:
+A plugin capability that provides the user's calendar events for a date range, from a tool such as Google Calendar, Outlook or Exchange. Read-only.
+_Avoid_: Calendar sync, calendar integration
 
 ### Agents
 

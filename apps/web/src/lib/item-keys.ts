@@ -1,6 +1,7 @@
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import type {
   BacklogItemActionId,
+  CalendarSuggestionActionId,
   ObjectAction,
   TaskActionId,
   TimeEntryActionId,
@@ -44,6 +45,13 @@ export const TIME_ENTRY_ACTION_KEYS: ActionKeys<TimeEntryActionId> = {
   delete: "item.delete",
   discard: "item.delete",
 };
+
+/** Enter adds a calendar suggestion, and Delete dismisses it. */
+export const CALENDAR_SUGGESTION_ACTION_KEYS: ActionKeys<CalendarSuggestionActionId> =
+  {
+    add: "item.edit",
+    dismiss: "item.delete",
+  };
 
 /**
  * Backlog items have Delete, so Archive has no key. Enter opens the backlog

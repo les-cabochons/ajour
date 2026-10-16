@@ -14,6 +14,13 @@ if (updateChannel !== "latest" && updateChannel !== "nightly") {
 module.exports = {
   appId: "com.lescabochons.ajour",
   productName: "Ajour",
+  // A per-user one-click NSIS install names its folder after the package
+  // name, not productName. Without this, "@ajour/desktop" installs into
+  // %LOCALAPPDATA%\Programs\@ajourdesktop. Existing installs keep their
+  // folder because the installer reuses the InstallLocation registry value.
+  extraMetadata: {
+    name: "ajour",
+  },
   electronVersion,
   asar: true,
   directories: {
