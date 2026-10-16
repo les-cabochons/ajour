@@ -1022,6 +1022,8 @@ export class AppApiStorage {
     added: SwitchableCapability,
     pullRequestAutoSyncDefault: boolean,
   ): Promise<void> {
+    // A calendar has no automatic sync of its own to keep.
+    if (added === "calendar") return;
     await this.mutate(async (state) => ({
       nextState: {
         ...state,

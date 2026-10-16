@@ -53,7 +53,7 @@ tags:
 | `repository`                     | `provider: github`, `slug` such as `owner/repo`, and `url`, which must be `https://github.com/<slug>`.      |
 | `status`                         | `available`, `coming-soon` or `deprecated`.                                                                 |
 | `compatibility.pluginApiVersion` | The plugin API version of your latest release.                                                              |
-| `capabilities`                   | 1 to 3 of `connector`, `codeHost` and `schema`.                                                             |
+| `capabilities`                   | 1 to 3 of `connector`, `codeHost`, `calendar` and `schema`.                                                 |
 | `features`                       | 1 to 12 slugs, such as `work-item-sync`.                                                                    |
 | `tags`                           | 1 to 12 slugs.                                                                                              |
 | `install`                        | Required when `status` is `available`, refused for `coming-soon`. See below.                                |

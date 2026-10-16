@@ -1,5 +1,6 @@
 import {
   isCapabilitySwitchedOn,
+  pluginHasCapability,
   pluginHasSwitchableCapabilities,
   switchableCapabilityLabels,
   switchableCapabilitySchema,
@@ -12,11 +13,13 @@ import { Switch } from "@/components/ui/switch";
 const capabilityDescriptions: Record<SwitchableCapability, string> = {
   connector: "Sync items into your backlog and write settles back.",
   codeHost: "List the pull requests you wrote or were asked to review.",
+  calendar: "Suggest your calendar's meetings as time entries.",
 };
 
 /**
- * The Capabilities section of a plugin that declares both a connector and a
- * code host: one switch each, under the plugin's own switch. Turning one off
+ * The Capabilities section of a plugin that declares more than one of a
+ * connector, a code host and a calendar: one switch each, under the plugin's
+ * own switch. Turning one off
  * pauses it and keeps its connections and data.
  */
 export function PluginCapabilitySwitches({
@@ -42,24 +45,26 @@ export function PluginCapabilitySwitches({
           Turn each part on or off. Its connections and imported data stay.
         </p>
       </div>
-      {switchableCapabilitySchema.options.map((capability) => {
-        const on = isCapabilitySwitchedOn(group, capability);
-        const label = switchableCapabilityLabels[capability];
-        return (
-          <SettingRow
-            key={capability}
-            label={label}
-            description={capabilityDescriptions[capability]}
-          >
-            <Switch
-              checked={on}
-              disabled={disabled || !group.enabled}
-              aria-label={`${on ? "Deactivate" : "Activate"} ${label.toLowerCase()} for ${title}`}
-              onCheckedChange={(enabled) => onChange(capability, enabled)}
-            />
-          </SettingRow>
-        );
-      })}
+      {switchableCapabilitySchema.options
+        .filter((capability) => pluginHasCapability(group.plugin, capability))
+        .map((capability) => {
+          const on = isCapabilitySwitchedOn(group, capability);
+          const label = switchableCapabilityLabels[capability];
+          return (
+            <SettingRow
+              key={capability}
+              label={label}
+              description={capabilityDescriptions[capability]}
+            >
+              <Switch
+                checked={on}
+                disabled={disabled || !group.enabled}
+                aria-label={`${on ? "Deactivate" : "Activate"} ${label.toLowerCase()} for ${title}`}
+                onCheckedChange={(enabled) => onChange(capability, enabled)}
+              />
+            </SettingRow>
+          );
+        })}
     </section>
   );
 }

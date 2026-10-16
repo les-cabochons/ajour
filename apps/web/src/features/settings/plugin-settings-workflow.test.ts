@@ -6,6 +6,7 @@ import type {
 } from "@ajour/shared";
 import {
   createPluginSettingsWorkflow,
+  describeConnectionRemoval,
   type PluginSettingsDependencies,
 } from "./plugin-settings-workflow";
 
@@ -323,5 +324,34 @@ describe("plugin settings workflow", () => {
     const disconnect = workflow.connect();
     expect(deps.getConnectorsOverview).not.toHaveBeenCalled();
     disconnect();
+  });
+});
+
+describe("describeConnectionRemoval", () => {
+  const ofWork = { pluginId: "ms", connectionId: "work" };
+  const state = {
+    pullRequests: [ofWork, { ...ofWork, connectionId: "other" }],
+    calendarEventRules: [ofWork, ofWork],
+  } as unknown as Parameters<typeof describeConnectionRemoval>[2];
+
+  it("names what a code host, a calendar or both lose", () => {
+    expect(
+      describeConnectionRemoval(
+        { id: "ms", capabilities: { codeHost: {} } },
+        "work",
+        state,
+      ),
+    ).toBe(
+      "This removes the connection and its 1 saved pull request from this device.",
+    );
+    expect(
+      describeConnectionRemoval(
+        { id: "ms", capabilities: { codeHost: {}, calendar: {} } },
+        "work",
+        state,
+      ),
+    ).toBe(
+      "This removes the connection and its 1 saved pull request and 2 remembered meetings from this device.",
+    );
   });
 });

@@ -159,6 +159,12 @@ export interface LocalTimesheetEntryCommit {
   taskId?: string;
   note?: string;
   durationMs: number;
+  /**
+   * Set when the user marked the entry as not committed because the external
+   * timesheet changed since. The copy still finds the external entry, but the
+   * entry shows as updated until the next commit saves a fresh copy.
+   */
+  stale?: true;
 }
 
 /**
@@ -199,6 +205,55 @@ export interface LocalTimesheetImportDraft {
   potentialConflict: boolean;
   conflictEntryIds: string[];
   importedAt: number;
+}
+
+/**
+ * What the user decided about one calendar event occurrence (ADR 0005). Ajour
+ * keeps no title or time span here: the occurrence key and its day are enough
+ * to hide it on the next fetch.
+ */
+export interface LocalCalendarDecision {
+  _id: string;
+  pluginId: string;
+  connectionId: string;
+  /** `calendarOccurrenceKey` of the event: its id and start. */
+  occurrenceKey: string;
+  /** The occurrence's day, which retention counts from. */
+  localDate: string;
+  decision: "added" | "dismissed";
+  /** The entry an added occurrence became. Deleting it suggests the event again. */
+  entryId?: string;
+  decidedAt: number;
+}
+
+/**
+ * An event rule: what Ajour remembers about one recurring calendar event. The
+ * UI says "remembered meeting" and "hidden meeting", never rule.
+ */
+export interface LocalCalendarEventRule {
+  _id: string;
+  pluginId: string;
+  connectionId: string;
+  seriesId: string;
+  /** The event's title when the rule was made, so Settings can name it. */
+  label: string;
+  action: "assign" | "hide";
+  projectId?: string;
+  taskId?: string;
+  createdAt: number;
+}
+
+/** Which calendar events the Time view suggests, and how often it refreshes. */
+export interface CalendarSuggestionSettings {
+  hideAllDay: boolean;
+  hideDeclined: boolean;
+  /** Events marked free, such as reminders. */
+  hideFree: boolean;
+  /** Events the user has not answered. Unknown replies are not hidden. */
+  hideUnanswered: boolean;
+  /** Shorter events are hidden. 0 hides none. */
+  minimumMinutes: number;
+  refreshMinutes: number;
 }
 
 /** The Backlog page's ordering, which the sidebar shares. */
@@ -245,6 +300,7 @@ export interface UserPreferences {
   closeParentSubitems: CloseParentSubitems;
   /** How far the week may run ahead of or behind its targets before an agent asks. Default 20. */
   paceTolerancePercent?: number;
+  calendarSuggestions?: CalendarSuggestionSettings;
 }
 
 /** One step of the user's workflow. The workflow's order is the array order. */
@@ -534,6 +590,10 @@ export interface LocalAppState {
   timesheetImportDrafts: LocalTimesheetImportDraft[];
   workItems: LocalWorkItem[];
   pullRequests?: LocalPullRequest[];
+  /** Decisions about calendar event occurrences. See ADR 0005. */
+  calendarDecisions?: LocalCalendarDecision[];
+  /** Remembered and hidden meetings. */
+  calendarEventRules?: LocalCalendarEventRule[];
   workflowStates: LocalWorkflowState[];
   workflowStateMappings: LocalWorkflowStateMapping[];
   workflowStateWriteRules: LocalWorkflowStateWriteRule[];

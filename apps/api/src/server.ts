@@ -21,6 +21,7 @@ import {
   connectorPluginIdSchema,
   pluginHasCapability,
   pluginHasCodeHost,
+  pluginHasCalendar,
   pluginHasSwitchableCapabilities,
   switchableCapabilityLabels,
   switchableCapabilitySchema,
@@ -54,6 +55,10 @@ import {
   codeHostOperationSchema,
   codeHostOperations,
 } from "../../../packages/shared/code-host.ts";
+import {
+  calendarOperationSchema,
+  calendarOperations,
+} from "../../../packages/shared/calendar.ts";
 import {
   projectDataShapeExportRequestSchema,
   projectDataShapeExportResponseSchema,
@@ -105,7 +110,7 @@ interface AppApiServerOptions {
   allowedOrigins?: string[];
   /** How long a data tool waits for the renderer. Tests shorten it. */
   mcpBridgeTimeoutMs?: number;
-  /** Receives MCP wide events. Defaults to one JSON line on stdout. */
+  /** Receives wide events: MCP, agent runs and calendar calls. Defaults to one JSON line on stdout. */
   mcpLogEvent?: (event: Record<string, unknown>) => void;
   /** How long one wait_for_answer call holds. Tests shorten it. */
   mcpWaitForAnswerMs?: number;
@@ -299,6 +304,34 @@ function matchCodeHostRoute(pathname: string) {
   return pathname.match(
     /^\/api\/code-hosts\/([^/]+)\/connections\/([^/]+)\/([A-Za-z]+)$/,
   );
+}
+
+function matchCalendarRoute(pathname: string) {
+  return pathname.match(
+    /^\/api\/calendars\/([^/]+)\/connections\/([^/]+)\/([A-Za-z]+)$/,
+  );
+}
+
+/**
+ * Replaces the connection's secret values in a plugin's error message. A
+ * calendar address is a bearer secret, and a plugin may echo it in an error.
+ */
+function redactSecretValues(
+  message: string,
+  plugin: { connectionFields: { id: string; secret: boolean }[] },
+  config: Record<string, unknown>,
+) {
+  return plugin.connectionFields
+    .filter((field) => field.secret)
+    .map((field) => config[field.id])
+    .filter(
+      (value): value is string =>
+        typeof value === "string" && value.length >= 8,
+    )
+    .reduce(
+      (redacted, secret) => redacted.split(secret).join("[secret]"),
+      message,
+    );
 }
 
 function matchConnectorPluginActivationRoute(pathname: string) {
@@ -1506,6 +1539,106 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
               message,
             );
           }
+          writeJson(response, 502, { error: message });
+        }
+        return;
+      }
+
+      const calendarRoute = matchCalendarRoute(requestUrl.pathname);
+      if (calendarRoute && request.method === "POST") {
+        const [, rawPluginId, rawConnectionId, rawOperation] = calendarRoute;
+        const pluginId = connectorPluginIdSchema.parse(
+          decodeURIComponent(rawPluginId ?? ""),
+        );
+        const connectionId = decodeURIComponent(rawConnectionId ?? "");
+        const operation = calendarOperationSchema.safeParse(rawOperation);
+        if (!operation.success) {
+          writeJson(response, 404, { error: "Unknown calendar operation." });
+          return;
+        }
+        const plugins = await pluginManager.listPlugins();
+        const plugin = plugins.find((candidate) => candidate.id === pluginId);
+        if (!plugin || !pluginHasCalendar(plugin)) {
+          writeJson(response, 404, {
+            error: "This plugin does not provide calendar events.",
+          });
+          return;
+        }
+        const inactive = await inactiveCapabilityError(
+          storage,
+          pluginId,
+          "calendar",
+          new Set(plugins.map((candidate) => candidate.id)),
+          "using its calendar",
+        );
+        if (inactive) {
+          writeJson(response, 409, { error: inactive });
+          return;
+        }
+        const connection = await storage.getConnection(pluginId, connectionId);
+        if (!connection) {
+          writeJson(response, 404, { error: "Connection not found." });
+          return;
+        }
+
+        // A malformed body fails here, outside the try, as a 400.
+        const calendarRequest = calendarOperations[
+          operation.data
+        ].request.parse(await readJsonBody(request));
+        const startedAt = Date.now();
+        // Ids, range, counts and duration only. Titles and the calendar
+        // address stay out of the log (ADR 0005).
+        const logCalendarEvent = (
+          outcome: "ok" | "error",
+          eventCount?: number,
+        ) =>
+          logMcpEvent({
+            event: "calendar.operation",
+            operation: operation.data,
+            plugin_id: pluginId,
+            connection_id: connectionId,
+            range_days:
+              (Date.parse(`${calendarRequest.to}T00:00:00Z`) -
+                Date.parse(`${calendarRequest.from}T00:00:00Z`)) /
+                86_400_000 +
+              1,
+            event_count: eventCount,
+            outcome,
+            duration_ms: Date.now() - startedAt,
+          });
+        try {
+          const result = await pluginManager.runCalendarOperation(
+            pluginId,
+            operation.data,
+            {
+              id: connection.id,
+              pluginId: connection.pluginId,
+              label: connection.label,
+              tenantLabel: connection.tenantLabel,
+              autoSync: connection.autoSync,
+              autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
+              connectedAt: connection.connectedAt,
+              lastSyncAt: connection.lastSyncAt,
+              lastError: connection.lastError,
+              config: connection.config,
+            },
+            calendarRequest,
+          );
+          await storage.recordConnectionSyncSuccess(
+            pluginId,
+            connectionId,
+            Date.now(),
+          );
+          logCalendarEvent("ok", result.events.length);
+          writeJson(response, 200, result);
+        } catch (error) {
+          const message = redactSecretValues(
+            errorMessage(error),
+            plugin,
+            connection.config,
+          );
+          await storage.recordConnectionError(pluginId, connectionId, message);
+          logCalendarEvent("error");
           writeJson(response, 502, { error: message });
         }
         return;

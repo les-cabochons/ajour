@@ -82,6 +82,7 @@ import {
   deleteTimesheetEntry as applyDeleteTimesheetEntry,
   duplicateTimesheetEntry as applyDuplicateTimesheetEntry,
   markTimesheetEntriesCommitted as applyMarkTimesheetEntriesCommitted,
+  markTimesheetEntryNotCommitted as applyMarkTimesheetEntryNotCommitted,
   moveTimesheetEntry as applyMoveTimesheetEntry,
   normalizeTimesheetEntry,
   pasteTimesheetEntries as applyPasteTimesheetEntries,
@@ -106,6 +107,18 @@ import {
   stageTimesheetImportRows as applyStageTimesheetImportRows,
   type TimesheetImportRow,
 } from "@/domain/time/timesheet-import";
+import {
+  acceptCalendarSuggestions as applyAcceptCalendarSuggestions,
+  dismissCalendarSuggestions as applyDismissCalendarSuggestions,
+  forgetCalendarEventRule as applyForgetCalendarEventRule,
+  hideCalendarMeeting as applyHideCalendarMeeting,
+  normalizeCalendarSuggestionSettings,
+  pruneCalendarDecisions,
+  removeCalendarConnectionData,
+  type CalendarAcceptance,
+  type CalendarSuggestion,
+} from "@/domain/time/calendar-suggestions";
+import { formatLocalDateFromTimestamp } from "@/domain/time/duration";
 import {
   cancelTimer as applyCancelTimer,
   editRunningEntry as applyEditRunningEntry,
@@ -259,6 +272,7 @@ const defaultUserPreferences: UserPreferences = {
   warnWhenSubmittingUnderCapacity: true,
   changesEndSnoozeEarly: false,
   closeParentSubitems: "ask",
+  calendarSuggestions: normalizeCalendarSuggestionSettings(undefined),
 };
 
 function normalizeCapacityTarget(value: unknown, fallback: number) {
@@ -296,6 +310,8 @@ function createDefaultState(): LocalAppState {
     timesheetImportDrafts: [],
     workItems: [],
     pullRequests: [],
+    calendarDecisions: [],
+    calendarEventRules: [],
     workflowStates: [],
     workflowStateMappings: [],
     workflowStateWriteRules: [],
@@ -423,6 +439,36 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
       ),
       workItems,
       pullRequests: normalizePullRequests(persistedState.pullRequests),
+      calendarDecisions: pruneCalendarDecisions(
+        arrayOrDefault(
+          persistedState.calendarDecisions,
+          defaults.calendarDecisions ?? [],
+        ).filter((decision) =>
+          Boolean(
+            decision?._id &&
+            decision.pluginId &&
+            decision.connectionId &&
+            decision.occurrenceKey &&
+            typeof decision.localDate === "string" &&
+            (decision.decision === "added" ||
+              decision.decision === "dismissed"),
+          ),
+        ),
+        formatLocalDateFromTimestamp(Date.now()),
+      ),
+      calendarEventRules: arrayOrDefault(
+        persistedState.calendarEventRules,
+        defaults.calendarEventRules ?? [],
+      ).filter((rule) =>
+        Boolean(
+          rule?._id &&
+          rule.pluginId &&
+          rule.connectionId &&
+          rule.seriesId &&
+          (rule.action === "hide" ||
+            (rule.action === "assign" && rule.projectId)),
+        ),
+      ),
       workflowStates,
       workflowStateMappings,
       settleRules: normalizeSettleRules(persistedState.settleRules),
@@ -536,6 +582,9 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
                 ),
               )
             : undefined,
+        calendarSuggestions: normalizeCalendarSuggestionSettings(
+          persistedState.userPreferences?.calendarSuggestions,
+        ),
       },
     }),
   );
@@ -952,6 +1001,55 @@ export const localStore = {
         item._id === id ? changePullRequest(item, command, Date.now()) : item,
       ),
     }));
+  },
+  /**
+   * Adds calendar suggestions as time entries in one action. Returns the new
+   * entry ids, the number left alone, and an undo token, null when nothing
+   * was added.
+   */
+  acceptCalendarSuggestions(acceptances: readonly CalendarAcceptance[]) {
+    let result: ReturnType<typeof applyAcceptCalendarSuggestions>["result"] = {
+      entryIds: [],
+      skipped: acceptances.length,
+    };
+    const undoToken = updateStateWithUndo((state) => {
+      const operation = applyAcceptCalendarSuggestions(state, acceptances, {
+        createId,
+        now: Date.now,
+      });
+      result = operation.result;
+      return operation.state;
+    });
+    return { ...result, undoToken };
+  },
+  /** Hides these occurrences. Returns an undo token. */
+  dismissCalendarSuggestions(suggestions: readonly CalendarSuggestion[]) {
+    return updateStateWithUndo((state) =>
+      applyDismissCalendarSuggestions(state, suggestions, {
+        createId,
+        now: Date.now,
+      }),
+    );
+  },
+  /** Hides every occurrence of the suggestion's meeting. Returns an undo token. */
+  hideCalendarMeeting(suggestion: CalendarSuggestion) {
+    return updateStateWithUndo((state) =>
+      applyHideCalendarMeeting(state, suggestion, {
+        createId,
+        now: Date.now,
+      }),
+    );
+  },
+  /** Removes a remembered or hidden meeting. Returns an undo token. */
+  forgetCalendarEventRule(ruleId: string) {
+    return updateStateWithUndo((state) =>
+      applyForgetCalendarEventRule(state, ruleId),
+    );
+  },
+  removeConnectionCalendarData(pluginId: string, connectionId: string) {
+    return updateState((state) =>
+      removeCalendarConnectionData(state, { pluginId, connectionId }),
+    );
   },
   removeConnectionPullRequests(pluginId: string, connectionId: string) {
     return updateState((state) => ({
@@ -1768,6 +1866,15 @@ export const localStore = {
   markTimesheetEntriesCommitted(entryIds: readonly string[]) {
     return updateStateWithUndo((state) =>
       applyMarkTimesheetEntriesCommitted(state, entryIds, Date.now),
+    );
+  },
+  /**
+   * Drops a committed entry's committed copy. See `markTimesheetEntryNotCommitted`.
+   * Returns an undo token, or null when nothing changed.
+   */
+  markTimesheetEntryNotCommitted(entryId: string) {
+    return updateStateWithUndo((state) =>
+      applyMarkTimesheetEntryNotCommitted(state, entryId),
     );
   },
   continueTimesheetEntry(entryId: string) {
