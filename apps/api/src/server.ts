@@ -99,7 +99,7 @@ import { playwrightMcpServer } from "./agent-runner/playwright-mcp.ts";
 import { AgentRunError, AgentRunner } from "./agent-runner/runner.ts";
 import { capabilityOfMethod, ConnectorPluginManager } from "./plugin-host.ts";
 import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";
-import { AppApiStorage } from "./storage.ts";
+import { AppApiStorage, boundConnectionError } from "./storage.ts";
 
 interface AppApiServerOptions {
   host?: string;
@@ -318,7 +318,9 @@ function matchCalendarRoute(pathname: string) {
 
 /**
  * Replaces the connection's secret values in a plugin's error message. A
- * calendar address is a bearer secret, and a plugin may echo it in an error.
+ * calendar address is a bearer secret, a team secret joins a team, and a
+ * plugin may echo either in an error. Every value is replaced, however short,
+ * the longest first so one secret inside another goes whole.
  */
 function redactSecretValues(
   message: string,
@@ -329,9 +331,9 @@ function redactSecretValues(
     .filter((field) => field.secret)
     .map((field) => config[field.id])
     .filter(
-      (value): value is string =>
-        typeof value === "string" && value.length >= 8,
+      (value): value is string => typeof value === "string" && value.length > 0,
     )
+    .sort((left, right) => right.length - left.length)
     .reduce(
       (redacted, secret) => redacted.split(secret).join("[secret]"),
       message,
@@ -1641,10 +1643,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           logCalendarEvent("ok", result.events.length);
           writeJson(response, 200, result);
         } catch (error) {
-          const message = redactSecretValues(
-            errorMessage(error),
-            plugin,
-            connection.config,
+          const message = boundConnectionError(
+            redactSecretValues(errorMessage(error), plugin, connection.config),
           );
           await storage.recordConnectionError(pluginId, connectionId, message);
           logCalendarEvent("error");
@@ -1696,10 +1696,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             );
           } catch (error) {
             writeJson(response, 502, {
-              error: redactSecretValues(
-                errorMessage(error),
-                plugin,
-                payload.values,
+              error: boundConnectionError(
+                redactSecretValues(errorMessage(error), plugin, payload.values),
               ),
             });
           }
@@ -1739,10 +1737,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           );
           writeJson(response, 200, result);
         } catch (error) {
-          const message = redactSecretValues(
-            errorMessage(error),
-            plugin,
-            connection.config,
+          const message = boundConnectionError(
+            redactSecretValues(errorMessage(error), plugin, connection.config),
           );
           await storage.recordConnectionError(pluginId, connectionId, message);
           writeJson(response, 502, { error: message });
