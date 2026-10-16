@@ -6,6 +6,7 @@ import {
   DEFAULT_PROJECT_ICON,
   type LocalProjectIcon,
 } from "@/domain/projects/project-icon";
+import { DEFAULT_PROJECT_COLOR } from "@/domain/projects/project-transitions";
 
 /** The project form's draft: what the user typed, before trimming. */
 export interface ProjectFormFields {
@@ -24,8 +25,6 @@ export interface ProjectFormValues {
   color: string;
   icon: LocalProjectIcon;
 }
-
-const DEFAULT_PROJECT_COLOR = "#1f7667";
 
 /** Seeds the form from a saved project, or with defaults for a new one. */
 export function createProjectFormFields(

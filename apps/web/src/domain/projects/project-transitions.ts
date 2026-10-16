@@ -9,9 +9,16 @@ import {
 import { normalizeProjectIcon } from "@/domain/projects/project-icon";
 import { normalizePluginProperties } from "@/domain/projects/plugin-properties";
 import {
+  normalizeProjectTeamLink,
+  normalizeTaskTeamLink,
+} from "@/domain/projects/team-link";
+import {
   normalizeProjectTaskAdjustmentMs,
   normalizeProjectTaskBudgetMs,
 } from "@/domain/projects/task-budget";
+
+/** The color a new project starts with. */
+export const DEFAULT_PROJECT_COLOR = "#1f7667";
 
 export interface ProjectFactories {
   createId: (prefix: string) => string;
@@ -75,6 +82,7 @@ export function normalizeProject(
   const displayName = project.displayName?.trim() || name;
   let hydrationTimestamp: number | undefined;
   const getHydrationTimestamp = () => (hydrationTimestamp ??= now());
+  const team = normalizeProjectTeamLink(project.team);
 
   return {
     ...project,
@@ -82,6 +90,7 @@ export function normalizeProject(
     displayName,
     icon: normalizeProjectIcon(project.icon),
     pluginProperties: normalizePluginProperties(project.pluginProperties),
+    team,
     status:
       project.status === "archived" || project.status === "active"
         ? project.status
@@ -102,6 +111,8 @@ export function normalizeProject(
         pinnedSlot: isPinnedTaskSlot(task.pinnedSlot)
           ? task.pinnedSlot
           : undefined,
+        // Only a project the team knows can have tasks the team knows.
+        team: team?.remoteId ? normalizeTaskTeamLink(task.team) : undefined,
       };
     }),
   };

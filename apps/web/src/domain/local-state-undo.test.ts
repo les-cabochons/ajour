@@ -31,7 +31,11 @@ import {
   clearTimesheetImportDrafts,
   dismissTimesheetImportDraft,
 } from "@/domain/time/timesheet-import";
-import { captureUndo, restoreUndo } from "@/domain/local-state-undo";
+import {
+  captureUndo,
+  getUndoProjectIds,
+  restoreUndo,
+} from "@/domain/local-state-undo";
 
 const HOUR = 60 * 60 * 1000;
 
@@ -644,6 +648,17 @@ describe("backlog and project undo", () => {
       before.workflowStateMappings,
     );
     expect(restored.state.workItems).toEqual(before.workItems);
+  });
+
+  it("lists the projects an undo would restore, so a team sync waits for them", () => {
+    const before = createBacklogState();
+    const { undo } = undoAction(before, (state) => ({
+      ...state,
+      projects: updateProject(state.projects, "project-1", { name: "Renamed" }),
+    }));
+
+    expect([...getUndoProjectIds(undo)]).toEqual(["project-1"]);
+    expect(getUndoProjectIds(undefined).size).toBe(0);
   });
 
   it("restores an archived project", () => {

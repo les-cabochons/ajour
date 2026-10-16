@@ -68,7 +68,8 @@ const teamTaskFields = {
   billable: z.boolean(),
   budgetMs: z.number().int().positive().nullable(),
 };
-export type TeamTaskFields = z.infer<z.ZodObject<typeof teamTaskFields>>;
+export const teamTaskFieldsSchema = z.object(teamTaskFields);
+export type TeamTaskFields = z.infer<typeof teamTaskFieldsSchema>;
 
 /** The team-owned fields of a project. Null clears a value. */
 const teamProjectFields = {
@@ -79,7 +80,8 @@ const teamProjectFields = {
   icon: teamProjectIconSchema,
   status: statusSchema,
 };
-export type TeamProjectFields = z.infer<z.ZodObject<typeof teamProjectFields>>;
+export const teamProjectFieldsSchema = z.object(teamProjectFields);
+export type TeamProjectFields = z.infer<typeof teamProjectFieldsSchema>;
 
 /** Every field a new record must carry, since the team has nothing to merge. */
 function requireAllFieldsWhenNew(fieldNames: readonly string[]) {

@@ -7,7 +7,10 @@ import type {
   ConnectorBacklogSource,
   ImportedDraftStatus,
   RuleRecord,
+  TeamProject,
+  TeamProjectFields,
   TeamSettings,
+  TeamTaskFields,
 } from "@ajour/shared";
 import type { PriorityLevel } from "@/domain/backlog/priority";
 import type { LocalProjectIcon } from "@/domain/projects/project-icon";
@@ -27,6 +30,45 @@ export interface LocalProject {
   icon: LocalProjectIcon;
   status: "active" | "archived";
   tasks: LocalProjectTask[];
+  /** Present on a shared project: the team it belongs to. See team-sync.ts. */
+  team?: LocalProjectTeamLink;
+}
+
+/**
+ * A shared project's link to its team connection. A project the team has not
+ * assigned an ID yet is new to the team; once it has one, `synced` holds its
+ * team-owned fields as last synced, and a field that differs is a local change.
+ */
+export type LocalProjectTeamLink =
+  | { connectionId: string; remoteId?: undefined; synced?: undefined }
+  | { connectionId: string; remoteId: string; synced: TeamProjectFields };
+
+/**
+ * A task of a shared project that the team knows. A task of a shared project
+ * without one is new to the team.
+ */
+export interface LocalTaskTeamLink {
+  remoteId: string;
+  synced: TeamTaskFields;
+}
+
+/** What a team connection keeps between syncs. */
+export interface LocalTeamConnection {
+  /** Where the next sync starts. Absent before the first one. */
+  cursor?: string;
+  /** Team projects the user unshared on this machine. Ajour ignores them. */
+  unsharedRemoteIds: string[];
+  /**
+   * Projects unshared before the team gave them an ID. A round may still be
+   * on its way, so the ID it brings joins `unsharedRemoteIds`.
+   */
+  unsharedLocalIds: string[];
+  /**
+   * Team projects that arrived while a local project has their name. Each
+   * waits for the user to link it to a local project or add it separately,
+   * and later syncs keep it current meanwhile.
+   */
+  heldArrivals: TeamProject[];
 }
 
 export interface LocalProjectTask {
@@ -40,6 +82,7 @@ export interface LocalProjectTask {
   adjustmentMs?: number;
   /** The number key that opens or starts this pinned task. One task holds a slot at most. */
   pinnedSlot?: PinnedTaskSlot;
+  team?: LocalTaskTeamLink;
 }
 
 /** The ten pinned task slots, in keyboard order: 1 to 9, then 0. */
@@ -600,6 +643,8 @@ export interface LocalAppState {
   backlogSortMode: BacklogSortMode;
   /** Apply rules by source project. A source project without one asks. */
   settleRules?: LocalSettleRule[];
+  /** Sync state by team connection ID. */
+  teamConnections?: Record<string, LocalTeamConnection>;
   capture: CaptureSettings;
   lastExtensionImportAt?: number;
   extensionBridgeStatus?: ExtensionBridgeStatus;

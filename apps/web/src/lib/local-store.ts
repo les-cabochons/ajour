@@ -164,6 +164,7 @@ import {
   updateProjectTask as applyUpdateProjectTask,
   type ProjectTaskPatch,
 } from "@/domain/projects/project-transitions";
+import { normalizeTeamConnections } from "@/domain/projects/team-link";
 import type {
   BacklogSortMode,
   ExtensionBridgeStatus,
@@ -472,6 +473,7 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
       workflowStates,
       workflowStateMappings,
       settleRules: normalizeSettleRules(persistedState.settleRules),
+      teamConnections: normalizeTeamConnections(persistedState.teamConnections),
       workflowStateWriteRules: arrayOrDefault(
         persistedState.workflowStateWriteRules,
         defaults.workflowStateWriteRules,
