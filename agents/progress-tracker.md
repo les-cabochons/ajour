@@ -4,6 +4,14 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Current Baseline
 
+- [x] Continue keeps the entry in place (2026-10-16): a running entry that
+      resumed a saved entry takes that entry's place in the Day list, the Days
+      cards and the Grid cell list (`placeRunningRow`), and Move up, Move down
+      and Day drags move it like the saved entry. A new running entry stays
+      last. The running Day row shows Stop where saved rows show Continue, and
+      entry rows and cards lost their "…" button; right-click and the menu keys
+      open the action set. One Chromium scenario covers the order in Day and
+      Days, Stop, and the missing "…".
 - [x] Entry selection, copy, cut and paste (2026-10-15): a click selects a Day
       row or Week Days card, a double click opens it, and Cmd/Ctrl+click and
       Shift+click build multiple selections. Copy, cut and Delete act on every

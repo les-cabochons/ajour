@@ -285,7 +285,6 @@ export function CommandPalette() {
               selectSortableDayEntryIds(
                 snapshot.timesheetEntries,
                 entry.localDate,
-                snapshot.timers[0]?.entryId,
               ),
               entry._id,
               step,

@@ -14,7 +14,6 @@ import { MessagePanel } from "@/components/app-surface";
 import { Chip } from "@/components/ui/chip";
 import {
   ObjectActionItems,
-  ObjectActionsButton,
   ObjectContextMenu,
 } from "@/components/object-actions-menu";
 import {
@@ -33,6 +32,7 @@ import type {
 } from "@/domain/local-state";
 import { formatClockDuration } from "@/domain/time/duration";
 import { isTimesheetEntryCommitted } from "@/domain/time/timesheet-commit";
+import { placeRunningRow } from "@/domain/time/timesheet-entry";
 import {
   getWeeklyGridAddedRowKey,
   projectWeeklyTime,
@@ -58,10 +58,7 @@ import {
 } from "@/features/time/time-entry-actions";
 import { groupCalendarSuggestionsByDay } from "@/domain/time/calendar-suggestions";
 import { useCalendarSuggestions } from "@/lib/calendar-suggestions";
-import {
-  isSelectionDelete,
-  useEntrySelection,
-} from "@/features/time/use-entry-selection";
+import { useEntrySelection } from "@/features/time/use-entry-selection";
 import { handleItemKeyDown, TIME_ENTRY_ACTION_KEYS } from "@/lib/item-keys";
 import { localStore } from "@/lib/local-store";
 import {
@@ -237,14 +234,17 @@ export function WeeklyTimeView({
   // The Days cards in reading order: Monday's from the top, then Tuesday's.
   const orderedCardIds = useMemo(
     () =>
-      projection.days.flatMap((day) => [
-        ...day.entries
-          .filter((entry) => entry._id !== currentTimer?.entryId)
-          .map((entry) => entry._id),
-        ...(runningTime?.localDate === day.localDate && runningEntryId
-          ? [runningEntryId]
-          : []),
-      ]),
+      projection.days.flatMap((day) =>
+        placeRunningRow(
+          day.entries,
+          runningTime?.localDate === day.localDate && runningEntryId
+            ? {
+                row: { _id: runningEntryId },
+                resumedEntryId: currentTimer?.entryId,
+              }
+            : null,
+        ).map((card) => card._id),
+      ),
     [currentTimer?.entryId, projection.days, runningEntryId, runningTime],
   );
   const sameWeekdayTarget = useMemo(
@@ -348,7 +348,8 @@ export function WeeklyTimeView({
 
   /**
    * Starts a card drag. Over another day the drop moves the entry there; over
-   * its own day it reorders `dayEntries`, the day's cards without the running one.
+   * its own day it reorders `dayEntries`, the day's saved entries. A continued
+   * entry counts at its running card's place, which cannot be dragged.
    */
   function handleEntryPointerDown(
     entry: LocalTimesheetEntry,
@@ -459,8 +460,8 @@ export function WeeklyTimeView({
   }
 
   /**
-   * Runs a card's action. Delete can act on the whole selection instead; `key` is
-   * set when a key ran the action, not a menu.
+   * Runs a card's action. Delete and Mark as not committed can act on the whole
+   * selection instead. `key` is set when a key ran the action, not a menu.
    */
   function runCardAction(
     target: Parameters<typeof entryActions.runAction>[0],
@@ -468,10 +469,7 @@ export function WeeklyTimeView({
     actionId: TimeEntryActionId,
     key?: object,
   ) {
-    if (
-      isSelectionDelete(actionId, key) &&
-      selection.deleteSelection(entryId, { fromKey: Boolean(key) })
-    ) {
+    if (selection.runSelectionAction(entryId, actionId, key)) {
       return;
     }
     entryActions.runAction(target, actionId);
@@ -621,12 +619,15 @@ export function WeeklyTimeView({
           onKeyDown={selection.handleScopeKeyDown}
         >
           {projection.days.map((day, index) => {
-            const visibleEntries = currentTimer?.entryId
-              ? day.entries.filter(
-                  (entry) => entry._id !== currentTimer.entryId,
-                )
-              : day.entries;
             const runningHere = runningTime?.localDate === day.localDate;
+            // A continued entry's card turns into the running card in place; a
+            // new running entry's card comes last.
+            const cards = placeRunningRow<LocalTimesheetEntry, "running">(
+              day.entries,
+              runningHere
+                ? { row: "running", resumedEntryId: currentTimer?.entryId }
+                : null,
+            );
             const isToday = day.localDate === today;
             const isOriginDay = draggedEntry?.localDate === day.localDate;
             const dropLine =
@@ -634,7 +635,7 @@ export function WeeklyTimeView({
               dragState?.targetDate === day.localDate &&
               dragState.targetIndex !== null
                 ? getSameDayDropLine(
-                    visibleEntries.map((entry) => entry._id),
+                    day.entries.map((entry) => entry._id),
                     dragState.entryId,
                     dragState.targetIndex,
                   )
@@ -692,7 +693,81 @@ export function WeeklyTimeView({
                   role="group"
                   aria-label={`${formatWeekDay(day.localDate, { weekday: "long" })} entries`}
                 >
-                  {visibleEntries.map((entry) => {
+                  {cards.map((entry) => {
+                    if (entry === "running") {
+                      return runningTarget && runningEntryId && runningTime ? (
+                        <ObjectContextMenu
+                          key={runningEntryId}
+                          actions={entryActions.getActions(runningTarget)}
+                          keys={TIME_ENTRY_ACTION_KEYS}
+                          onAction={(actionId) =>
+                            entryActions.runAction(runningTarget, actionId)
+                          }
+                          render={
+                            <div
+                              tabIndex={0}
+                              aria-label={`Running entry, ${formatClockDuration(runningTime.displayDurationMs)}`}
+                              // Cards are buttons, so their selection is a pressed state.
+                              role="button"
+                              aria-pressed={selection.selectedIds.has(
+                                runningEntryId,
+                              )}
+                              className={cn(
+                                "weekly-entry-card is-running",
+                                selection.selectedIds.has(runningEntryId) &&
+                                  "is-selected",
+                                dropLine?.entryId === runningEntryId &&
+                                  `is-drop-${dropLine.edge}`,
+                              )}
+                              data-running-entry="true"
+                              data-entry-id={currentTimer?.entryId ?? ""}
+                              data-focus-column={index}
+                              onClick={(event) =>
+                                selectCard(runningEntryId, event)
+                              }
+                              onDoubleClick={() =>
+                                onOpenEntry({ timerId: runningTarget.timerId })
+                              }
+                              onFocus={(event) =>
+                                selection.handleFocus(runningEntryId, event)
+                              }
+                              onKeyDown={(event) =>
+                                handleItemKeyDown(event, {
+                                  actions:
+                                    entryActions.getActions(runningTarget),
+                                  keys: TIME_ENTRY_ACTION_KEYS,
+                                  onAction: (actionId, key) =>
+                                    runCardAction(
+                                      runningTarget,
+                                      runningEntryId,
+                                      actionId,
+                                      key,
+                                    ),
+                                  // A continued entry moves like its saved
+                                  // entry; a new running entry stays last.
+                                  onReorder: currentTimer?.entryId
+                                    ? (step) =>
+                                        reorderEntry(
+                                          day.localDate,
+                                          day.entries,
+                                          runningEntryId,
+                                          step,
+                                        )
+                                    : undefined,
+                                })
+                              }
+                            />
+                          }
+                        >
+                          <div className="weekly-entry-card-project">
+                            <Chip tone="success">Running</Chip>
+                          </div>
+                          <strong>
+                            {formatClockDuration(runningTime.displayDurationMs)}
+                          </strong>
+                        </ObjectContextMenu>
+                      ) : null;
+                    }
                     const summary = renderEntrySummary(entry);
                     const target = { kind: "entry" as const, entry };
                     const actions = entryActions.getActions(target);
@@ -751,18 +826,14 @@ export function WeeklyTimeView({
                                 onReorder: (step) =>
                                   reorderEntry(
                                     day.localDate,
-                                    visibleEntries,
+                                    day.entries,
                                     entry._id,
                                     step,
                                   ),
                               });
                             }}
                             onPointerDown={(event) =>
-                              handleEntryPointerDown(
-                                entry,
-                                visibleEntries,
-                                event,
-                              )
+                              handleEntryPointerDown(entry, day.entries, event)
                             }
                           />
                         }
@@ -787,80 +858,10 @@ export function WeeklyTimeView({
                               ? "committed"
                               : "saved"}
                           </span>
-                          <ObjectActionsButton
-                            actions={actions}
-                            keys={TIME_ENTRY_ACTION_KEYS}
-                            onAction={runAction}
-                            label="Entry actions"
-                          />
                         </footer>
                       </ObjectContextMenu>
                     );
                   })}
-                  {runningHere && runningTarget && runningEntryId ? (
-                    <ObjectContextMenu
-                      actions={entryActions.getActions(runningTarget)}
-                      keys={TIME_ENTRY_ACTION_KEYS}
-                      onAction={(actionId) =>
-                        entryActions.runAction(runningTarget, actionId)
-                      }
-                      render={
-                        <div
-                          tabIndex={0}
-                          aria-label={`Running entry, ${formatClockDuration(runningTime.displayDurationMs)}`}
-                          // Cards are buttons, so their selection is a pressed state.
-                          role="button"
-                          aria-pressed={selection.selectedIds.has(
-                            runningEntryId,
-                          )}
-                          className={cn(
-                            "weekly-entry-card is-running",
-                            selection.selectedIds.has(runningEntryId) &&
-                              "is-selected",
-                          )}
-                          data-running-entry="true"
-                          data-entry-id={currentTimer?.entryId ?? ""}
-                          data-focus-column={index}
-                          onClick={(event) => selectCard(runningEntryId, event)}
-                          onDoubleClick={() =>
-                            runningTarget &&
-                            onOpenEntry({ timerId: runningTarget.timerId })
-                          }
-                          onFocus={(event) =>
-                            selection.handleFocus(runningEntryId, event)
-                          }
-                          onKeyDown={(event) =>
-                            handleItemKeyDown(event, {
-                              actions: entryActions.getActions(runningTarget),
-                              keys: TIME_ENTRY_ACTION_KEYS,
-                              onAction: (actionId, key) =>
-                                runCardAction(
-                                  runningTarget,
-                                  runningEntryId,
-                                  actionId,
-                                  key,
-                                ),
-                            })
-                          }
-                        />
-                      }
-                    >
-                      <div className="weekly-entry-card-project">
-                        <Chip tone="success">Running</Chip>
-                        <ObjectActionsButton
-                          actions={entryActions.getActions(runningTarget)}
-                          keys={TIME_ENTRY_ACTION_KEYS}
-                          onAction={(actionId) =>
-                            entryActions.runAction(runningTarget, actionId)
-                          }
-                          label="Entry actions"
-                        />
-                      </div>
-                      <strong>
-                        {formatClockDuration(runningTime.displayDurationMs)}
-                      </strong>
-                    </ObjectContextMenu>
-                  ) : null}
                   <Button
                     variant="ghost"
 

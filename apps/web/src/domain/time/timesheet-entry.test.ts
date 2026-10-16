@@ -6,12 +6,14 @@ import {
   deleteTimesheetEntry,
   duplicateTimesheetEntry,
   markTimesheetEntriesCommitted,
+  markTimesheetEntriesNotCommitted,
   markTimesheetEntryNotCommitted,
   moveTimesheetEntry,
   normalizeTimesheetEntry,
   pasteTimesheetEntries,
   reorderTimesheetEntries,
   saveManualTimesheetEntry,
+  placeRunningRow,
   selectMostRecentTimesheetEntry,
   selectSortableDayEntryIds,
   updateTimesheetEntry,
@@ -660,13 +662,6 @@ describe("Move up and Move down on time entries", () => {
     ]);
   });
 
-  it("leaves out the entry the running entry resumed", () => {
-    expect(selectSortableDayEntryIds(entries, "2026-07-30", "third")).toEqual([
-      "first",
-      "second",
-    ]);
-  });
-
   it("persists Move down like a drag, by trading committed timestamps", () => {
     const state = createState({ timesheetEntries: entries });
     const next = getSharedTableStepOrder(
@@ -680,6 +675,50 @@ describe("Move up and Move down on time entries", () => {
     expect(
       selectSortableDayEntryIds(reordered.timesheetEntries, "2026-07-30"),
     ).toEqual(["second", "first", "third"]);
+  });
+});
+
+describe("placeRunningRow", () => {
+  const entries = [{ _id: "first" }, { _id: "second" }, { _id: "third" }];
+  const ids = (rows: { _id: string }[]) => rows.map((row) => row._id);
+
+  it("puts a resumed entry's running row in that entry's place", () => {
+    expect(
+      ids(
+        placeRunningRow(entries, {
+          row: { _id: "running" },
+          resumedEntryId: "first",
+        }),
+      ),
+    ).toEqual(["running", "second", "third"]);
+  });
+
+  it("puts a new running entry last", () => {
+    expect(ids(placeRunningRow(entries, { row: { _id: "running" } }))).toEqual([
+      "first",
+      "second",
+      "third",
+      "running",
+    ]);
+  });
+
+  it("puts the running row last when its resumed entry is not listed", () => {
+    expect(
+      ids(
+        placeRunningRow(entries, {
+          row: { _id: "running" },
+          resumedEntryId: "on-another-day",
+        }),
+      ),
+    ).toEqual(["first", "second", "third", "running"]);
+  });
+
+  it("lists the entries alone without a running entry", () => {
+    expect(ids(placeRunningRow(entries, null))).toEqual([
+      "first",
+      "second",
+      "third",
+    ]);
   });
 });
 
@@ -928,10 +967,10 @@ describe("committed copies", () => {
       ["a", "b"],
       () => 500,
     );
-    const notCommitted = markTimesheetEntryNotCommitted(
-      markTimesheetEntryNotCommitted(committed, "a"),
+    const notCommitted = markTimesheetEntriesNotCommitted(committed, [
+      "a",
       "b",
-    );
+    ]);
 
     // A delete still leaves a tombstone, so the external entry goes too.
     expect(deleteTimesheetEntry(notCommitted, "a").timesheetTombstones).toEqual(

@@ -472,7 +472,10 @@ function focusedSection(input: PaletteInput): PaletteSection | null {
           },
           focused,
           platform,
-          "The running entry stays last",
+          // A resumed entry sorts like its saved entry; a new one stays last.
+          input.timesheetEntries.some((entry) => entry._id === focused.entryId)
+            ? undefined
+            : "A new running entry stays last",
         );
       }
 

@@ -406,6 +406,15 @@ Feature: Open the local time workspace
     When I continue the second entry
     Then the first timer is saved and the second timer is running
 
+  Scenario: A continued entry keeps its place while it runs
+    Given I have two saved entries with a timer running on the first
+    Then the Day list reads "First task", "Second task"
+    And the running row shows Stop and no row has an actions button
+    When I continue the second entry
+    Then the Day list reads "First task", "Second task"
+    When I open this week's Days view
+    Then today's Days cards read entries "entry-first", "entry-second"
+
   Scenario: Undo deleting a backlog item and its subitem
     Given I have two saved entries with a timer running on the first
     When I delete the Backlog item with its subitem

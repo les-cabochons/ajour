@@ -3,6 +3,7 @@ import type {
   LocalTimesheetEntry,
   WeeklyCapacityTargets,
 } from "@/domain/local-state";
+import { placeRunningRow } from "@/domain/time/timesheet-entry";
 
 const CAPACITY_KEYS = [
   "monday",
@@ -112,9 +113,9 @@ function getWeeklyRunningRowKey(
 }
 
 /**
- * Lists what one Grid cell holds: its saved entries, and whether the running entry
- * is in it. When it is, the saved entry it continues is left out of `entries`, as in
- * `WeeklyGridRow.dayEntries`. A running entry whose project or task changed shows
+ * Lists what one Grid cell holds, top first: its saved entries and, when the running
+ * entry is in it, `"running"`. The running entry takes the place of the saved entry
+ * it continues, or comes last. A running entry whose project or task changed shows
  * in its new row, so its saved entry stays listed in the old one.
  */
 export function selectWeeklyGridCell({
@@ -133,12 +134,14 @@ export function selectWeeklyGridCell({
     running.localDate === localDate &&
     getWeeklyRunningRowKey(running, entries) === rowKey,
   );
+  const cellEntries = entries.filter(
+    (entry) =>
+      entry.localDate === localDate && getWeeklyGridRowKey(entry) === rowKey,
+  );
   return {
-    entries: entries.filter(
-      (entry) =>
-        entry.localDate === localDate &&
-        getWeeklyGridRowKey(entry) === rowKey &&
-        !(hasRunning && entry._id === running?.entryId),
+    rows: placeRunningRow<LocalTimesheetEntry, "running">(
+      cellEntries,
+      hasRunning ? { row: "running", resumedEntryId: running?.entryId } : null,
     ),
     hasRunning,
   };

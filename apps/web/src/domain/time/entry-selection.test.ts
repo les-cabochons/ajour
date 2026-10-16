@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   EMPTY_ENTRY_SELECTION,
-  getBatchDeleteIds,
+  getSelectionActionIds,
   getPasteDate,
   keepShownEntries,
   selectEntryOnClick,
@@ -112,33 +112,38 @@ describe("getPasteDate", () => {
   });
 });
 
-describe("getBatchDeleteIds", () => {
+describe("getSelectionActionIds", () => {
   const pair = { ids: ["a", "b"], anchorId: "b" };
 
-  it("deletes the whole selection from a selected entry", () => {
-    expect(getBatchDeleteIds(pair, "a", { fromKey: true })).toEqual(["a", "b"]);
-    expect(getBatchDeleteIds(pair, "b", { fromKey: false })).toEqual([
+  it("applies to the whole selection from a selected entry", () => {
+    expect(getSelectionActionIds(pair, "a", { fromKey: true })).toEqual([
+      "a",
+      "b",
+    ]);
+    expect(getSelectionActionIds(pair, "b", { fromKey: false })).toEqual([
       "a",
       "b",
     ]);
   });
 
-  it("deletes the selection, not the focused entry, when the key comes from an unselected entry", () => {
+  it("applies to the selection, not the focused entry, when the key comes from an unselected entry", () => {
     // Cmd+click toggled "b" off, and "b" kept focus.
     const toggledOff = { ids: ["a"], anchorId: "b" };
 
-    expect(getBatchDeleteIds(toggledOff, "b", { fromKey: true })).toEqual([
+    expect(getSelectionActionIds(toggledOff, "b", { fromKey: true })).toEqual([
       "a",
     ]);
   });
 
   it("leaves a single entry, or a menu on an unselected entry, to the entry itself", () => {
     expect(
-      getBatchDeleteIds({ ids: ["a"], anchorId: "a" }, "a", { fromKey: true }),
+      getSelectionActionIds({ ids: ["a"], anchorId: "a" }, "a", {
+        fromKey: true,
+      }),
     ).toBeNull();
-    expect(getBatchDeleteIds(pair, "c", { fromKey: false })).toBeNull();
+    expect(getSelectionActionIds(pair, "c", { fromKey: false })).toBeNull();
     expect(
-      getBatchDeleteIds(EMPTY_ENTRY_SELECTION, "a", { fromKey: true }),
+      getSelectionActionIds(EMPTY_ENTRY_SELECTION, "a", { fromKey: true }),
     ).toBeNull();
   });
 });
