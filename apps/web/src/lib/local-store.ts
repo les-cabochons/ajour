@@ -94,6 +94,7 @@ import {
 import { normalizeTimesheetTombstones } from "@/domain/time/timesheet-commit";
 import {
   captureUndo,
+  getUndoProjectIds,
   completeSourceWriteInUndo,
   restoreUndo,
   type LocalStateUndo,
@@ -165,6 +166,19 @@ import {
   type ProjectTaskPatch,
 } from "@/domain/projects/project-transitions";
 import { normalizeTeamConnections } from "@/domain/projects/team-link";
+import {
+  applyTeamSync,
+  disconnectTeam,
+  resolveHeldArrival,
+  shareProject,
+  unshareProject,
+  type HeldArrivalChoice,
+  type TeamResolveResult,
+  type TeamShareResult,
+  type TeamSyncApplyResult,
+  type TeamSyncState,
+} from "@/domain/projects/team-sync";
+import type { TeamProjectChange, TeamSyncResult } from "@ajour/shared";
 import type {
   BacklogSortMode,
   ExtensionBridgeStatus,
@@ -879,6 +893,25 @@ function writeState(state: LocalAppState) {
   window.dispatchEvent(new Event(STATE_CHANGE_EVENT));
 }
 
+/** The part of the state the team sync rules read and write. */
+function teamSyncStateOf(state: LocalAppState): TeamSyncState {
+  return {
+    projects: state.projects,
+    teamConnections: state.teamConnections ?? {},
+  };
+}
+
+function withTeamSyncState(
+  state: LocalAppState,
+  next: TeamSyncState,
+): LocalAppState {
+  return {
+    ...state,
+    projects: next.projects,
+    teamConnections: next.teamConnections,
+  };
+}
+
 function updateState(
   mutator: (state: LocalAppState) => LocalAppState,
 ): LocalAppState {
@@ -1052,6 +1085,100 @@ export const localStore = {
     return updateState((state) =>
       removeCalendarConnectionData(state, { pluginId, connectionId }),
     );
+  },
+  /** The projects the pending Undo would restore. A team sync waits for them. */
+  pendingUndoProjectIds() {
+    return getUndoProjectIds(lastUndo?.undo);
+  },
+  /**
+   * Applies one round of a team sync. It is not undoable: an Undo of an
+   * earlier action that touched the same project is then refused as stale.
+   * A refused result changes nothing.
+   */
+  applyTeamSyncRound(
+    connectionId: string,
+    pushed: readonly TeamProjectChange[],
+    result: TeamSyncResult,
+  ): TeamSyncApplyResult {
+    return updateStateWithResult<TeamSyncApplyResult>((state) => {
+      const next = applyTeamSync(
+        teamSyncStateOf(state),
+        connectionId,
+        pushed,
+        result,
+        { createId, now: Date.now },
+      );
+      return next.result.kind === "rejected"
+        ? { state, result: next.result }
+        : { state: withTeamSyncState(state, next), result: next.result };
+    });
+  },
+  /**
+   * Gives a local project to a team; the next sync sends it. Undo takes it
+   * back, and the sync waits while the Undo window is open.
+   */
+  shareProjectWithTeam(
+    connectionId: string,
+    projectId: string,
+  ): { result: TeamShareResult; undoToken: string | null } {
+    let result: TeamShareResult = { kind: "missing" };
+    const undoToken = updateStateWithUndo((state) => {
+      const next = shareProject(
+        teamSyncStateOf(state),
+        connectionId,
+        projectId,
+      );
+      result = next.result;
+      return next.result.kind === "shared"
+        ? withTeamSyncState(state, next)
+        : state;
+    });
+    return { result, undoToken };
+  },
+  /** Makes a shared project local on this machine only. Returns an undo token. */
+  unshareProjectFromTeam(projectId: string) {
+    return updateStateWithUndo((state) =>
+      withTeamSyncState(
+        state,
+        unshareProject(teamSyncStateOf(state), projectId),
+      ),
+    );
+  },
+  /** The user's answer for a held team project. It shows no Undo. */
+  resolveTeamArrival(
+    connectionId: string,
+    remoteId: string,
+    choice: HeldArrivalChoice,
+  ): TeamResolveResult {
+    return updateStateWithResult<TeamResolveResult>((state) => {
+      const next = resolveHeldArrival(
+        teamSyncStateOf(state),
+        connectionId,
+        remoteId,
+        choice,
+        { createId, now: Date.now },
+      );
+      return next.result.kind === "linked" || next.result.kind === "added"
+        ? { state: withTeamSyncState(state, next), result: next.result }
+        : { state, result: next.result };
+    });
+  },
+  /** A removed team connection: its projects become local, with their entries. */
+  removeConnectionTeamData(connectionId: string) {
+    return updateState((state) => {
+      if (
+        !state.teamConnections?.[connectionId] &&
+        !state.projects.some(
+          (project) => project.team?.connectionId === connectionId,
+        )
+      ) {
+        return state;
+      }
+      return withTeamSyncState(
+        state,
+        disconnectTeam(teamSyncStateOf(state), connectionId),
+      );
+    });
   },
   removeConnectionPullRequests(pluginId: string, connectionId: string) {
     return updateState((state) => ({
