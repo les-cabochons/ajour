@@ -433,6 +433,81 @@ describe("AppApiStorage", () => {
     ).resolves.toBe(false);
   });
 
+  it("turns one capability off without deactivating the plugin", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
+    tempDirs.push(tempDir);
+    const statePath = path.join(tempDir, "app-api-state.json");
+    const storage = new AppApiStorage(statePath);
+    const plugin = {
+      ...buildPlugin("github", "GitHub"),
+      capabilities: { connector: {}, codeHost: {} },
+    };
+    const available = new Set(["github"]);
+
+    await storage.setPluginCapabilityEnabled("github", "codeHost", false);
+
+    const reloaded = new AppApiStorage(statePath);
+    await expect(
+      reloaded.isPluginCapabilityEnabled("github", "codeHost", available),
+    ).resolves.toBe(false);
+    await expect(
+      reloaded.isPluginCapabilityEnabled("github", "connector", available),
+    ).resolves.toBe(true);
+    await expect(
+      reloaded.isConnectorPluginEnabled("github", available),
+    ).resolves.toBe(true);
+    await expect(
+      reloaded.listEnabledCapabilities("github", ["connector", "codeHost"]),
+    ).resolves.toEqual(["connector"]);
+    await expect(
+      reloaded.getConnectorsOverview([plugin]),
+    ).resolves.toMatchObject({
+      connectionGroups: [{ enabled: true, inactiveCapabilities: ["codeHost"] }],
+    });
+
+    await reloaded.setPluginCapabilityEnabled("github", "codeHost", true);
+    await expect(
+      reloaded.getConnectorsOverview([plugin]),
+    ).resolves.toMatchObject({
+      connectionGroups: [{ inactiveCapabilities: [] }],
+    });
+
+    await reloaded.setPluginCapabilityEnabled("github", "connector", false);
+    await reloaded.removeConnectorPluginData("github");
+    await expect(
+      reloaded.isPluginCapabilityEnabled("github", "connector", available),
+    ).resolves.toBe(true);
+  });
+
+  it("drops invalid stored capability choices", async () => {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
+    tempDirs.push(tempDir);
+    const statePath = path.join(tempDir, "app-api-state.json");
+    const storage = new AppApiStorage(statePath);
+    await storage.setPluginSystemEnabled(true);
+    const state = JSON.parse(await readFile(statePath, "utf8"));
+    await writeFile(
+      statePath,
+      JSON.stringify({
+        ...state,
+        disabledCapabilities: {
+          github: ["codeHost", "schema", 3, "codeHost"],
+          jira: "connector",
+          " ": ["connector"],
+        },
+      }),
+    );
+
+    const reloaded = new AppApiStorage(statePath);
+    const available = new Set(["github", "jira"]);
+    await expect(
+      reloaded.isPluginCapabilityEnabled("github", "codeHost", available),
+    ).resolves.toBe(false);
+    await expect(
+      reloaded.isPluginCapabilityEnabled("jira", "connector", available),
+    ).resolves.toBe(true);
+  });
+
   it("deactivates every plugin globally without losing individual choices", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
     tempDirs.push(tempDir);

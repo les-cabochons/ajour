@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { ConnectorBacklogStatus } from "@ajour/shared";
+import { isCapabilityActive, type ConnectorBacklogStatus } from "@ajour/shared";
 import {
   RiArrowRightSLine as ChevronRight,
   RiDownloadLine as LoadIcon,
@@ -139,7 +139,11 @@ function canListStates(source: string) {
   const group = getCachedConnectorsOverview()?.connectionGroups.find(
     (candidate) => candidate.plugin.id === source,
   );
-  return Boolean(group?.enabled && group.plugin.capabilities.connector?.settle);
+  return Boolean(
+    group &&
+    isCapabilityActive(group, "connector") &&
+    group.plugin.capabilities.connector?.settle,
+  );
 }
 
 function SourceProjectMapping({

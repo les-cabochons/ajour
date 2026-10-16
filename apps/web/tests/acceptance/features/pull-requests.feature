@@ -28,6 +28,17 @@ Feature: Pull requests on your plate
     And I go back to the app from Settings
     Then pull request navigation returns with the same local records
 
+  Scenario: Turning pull requests off keeps the plugin's backlog items on
+    Given the code host plugin also syncs backlog items
+    When I open the pull request list
+    And I turn off pull requests for the code host plugin
+    Then the plugin and its backlog items stay active
+    When I go back to the app from Settings
+    Then pull request navigation disappears and local records remain
+    When I turn on pull requests for the code host plugin
+    And I go back to the app from Settings
+    Then pull request navigation returns with the same local records
+
   Scenario: Connection removal asks before deleting its pull requests
     When I open the GitHub connection settings
     And I ask to remove the GitHub connection

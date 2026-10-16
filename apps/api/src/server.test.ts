@@ -355,6 +355,87 @@ describe("connector plugin installation boundary", () => {
     },
   );
 
+  it.each([
+    {
+      added: "connector",
+      before: { codeHost: {} },
+      saved: { autoSync: true },
+      // Auto sync was the pull requests' choice; backlog items stage for review.
+      after: { autoSync: false, pullRequestAutoSync: true },
+    },
+    {
+      added: "codeHost",
+      before: { connector: {} },
+      saved: { autoSync: false },
+      // Auto sync stays the backlog items' choice; pull requests start at the default.
+      after: { autoSync: false, pullRequestAutoSync: true },
+    },
+  ])(
+    "starts the $added capability an update adds turned off and keeps each connection's sync choices",
+    async ({ added, before, saved, after }) => {
+      const root = await tempDir();
+      const installedRoot = path.join(root, "installed");
+      const statePath = path.join(root, "state.json");
+      const source = "export async function validateConnection() {}";
+      await createPlugin(installedRoot, source, "plugin.mjs", {
+        capabilities: before,
+      });
+      await writeFile(
+        statePath,
+        JSON.stringify({
+          version: 7,
+          connections: [
+            {
+              id: "saved-jira",
+              pluginId: "jira",
+              label: "My Jira",
+              tenantLabel: "My workspace",
+              autoSyncIntervalMinutes: 15,
+              connectedAt: 1,
+              config: { baseUrl: "https://jira.example.com" },
+              configSummary: {},
+              ...saved,
+            },
+          ],
+          disabledPluginIds: [],
+          pluginsEnabled: true,
+        }),
+      );
+      const pluginDirectory = await createPlugin(
+        path.join(root, "source"),
+        source,
+        "plugin.mjs",
+        { version: "1.1.0", capabilities: { connector: {}, codeHost: {} } },
+      );
+      const archivePath = path.join(root, "jira-1.1.0.ajour-connector");
+      await create({ cwd: pluginDirectory, file: archivePath, gzip: true }, [
+        "plugin.json",
+        "plugin.mjs",
+      ]);
+      const server = createAppApiServer({
+        statePath,
+        installedPluginDirectory: installedRoot,
+        allowDevelopmentPlugins: false,
+      });
+      servers.push(server);
+
+      const update = await installConnectorPluginForServer(
+        server,
+        await readFile(archivePath),
+        path.basename(archivePath),
+      );
+
+      expect(update.replaced).toBe(true);
+      expect(update.overview.connectionGroups).toEqual([
+        expect.objectContaining({
+          enabled: true,
+          inactiveCapabilities: [added],
+          connections: [expect.objectContaining(after)],
+        }),
+      ]);
+    },
+  );
+
   it("does not expose connector package changes through the loopback HTTP server", async () => {
     const root = await tempDir();
     const server = createAppApiServer({
@@ -844,12 +925,15 @@ describe("code host routes", () => {
     "}",
   ].join("\n");
 
-  async function createServer(capabilities: Record<string, unknown>) {
+  async function createServer(
+    capabilities: Record<string, unknown>,
+    source = codeHostPluginSource,
+  ) {
     const root = await mkdtemp(path.join(os.tmpdir(), "ajour-code-host-api-"));
     tempDirs.push(root);
     const pluginDirectory = await createPlugin(
       path.join(root, "source"),
-      codeHostPluginSource,
+      source,
       "plugin.mjs",
       { capabilities },
     );
@@ -945,6 +1029,158 @@ describe("code host routes", () => {
         body: JSON.stringify({ tracked: "all" }),
       }),
     ).resolves.toMatchObject({ status: 400 });
+  });
+
+  it("turns pull requests off without stopping backlog items", async () => {
+    const { server, connectionId } = await createServer({
+      connector: {},
+      codeHost: {},
+    });
+
+    const activation = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: "/api/connectors/jira/activation",
+      body: JSON.stringify({ enabled: false, capability: "codeHost" }),
+    });
+    expect(activation).toMatchObject({
+      status: 200,
+      body: {
+        connectionGroups: [
+          { enabled: true, inactiveCapabilities: ["codeHost"] },
+        ],
+      },
+    });
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/code-hosts/jira/connections/${connectionId}/syncPullRequests`,
+        body: JSON.stringify({ tracked: [] }),
+      }),
+    ).resolves.toEqual({
+      status: 409,
+      body: {
+        error:
+          "Turn on pull requests for this plugin before using its pull requests.",
+      },
+    });
+
+    await dispatchJsonRequest(server, {
+      method: "POST",
+      path: "/api/connectors/jira/activation",
+      body: JSON.stringify({ enabled: false, capability: "connector" }),
+    });
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/connectors/jira/connections/${connectionId}/sync`,
+        body: JSON.stringify({ trigger: "manual" }),
+      }),
+    ).resolves.toEqual({
+      status: 409,
+      body: { error: "Turn on backlog items for this plugin before syncing." },
+    });
+  });
+
+  it("keeps the pull request sync setting apart from auto sync", async () => {
+    const { server, connectionId } = await createServer({ codeHost: {} });
+    const connection = async () =>
+      (
+        (
+          await dispatchJsonRequest(server, {
+            method: "GET",
+            path: "/api/connectors",
+          })
+        ).body as {
+          connectionGroups: {
+            connections: {
+              autoSync: boolean;
+              pullRequestAutoSync?: boolean;
+              editableValues: Record<string, unknown>;
+            }[];
+          }[];
+        }
+      ).connectionGroups[0]!.connections[0]!;
+    const save = (values: Record<string, unknown>) =>
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: "/api/connectors/jira/connections",
+        body: JSON.stringify({
+          id: connectionId,
+          values: {
+            label: "Work",
+            tenantLabel: "github.com",
+            autoSyncIntervalMinutes: 5,
+            baseUrl: "https://github.com",
+            ...values,
+          },
+        }),
+      });
+
+    // Saved before the setting existed: pull requests follow auto sync.
+    expect(await connection()).toMatchObject({
+      autoSync: true,
+      editableValues: { pullRequestAutoSync: true },
+    });
+    expect((await connection()).pullRequestAutoSync).toBeUndefined();
+
+    await save({ autoSync: true, pullRequestAutoSync: false });
+    expect(await connection()).toMatchObject({
+      autoSync: true,
+      pullRequestAutoSync: false,
+      editableValues: { pullRequestAutoSync: false },
+    });
+
+    await save({ autoSync: false });
+    expect(await connection()).toMatchObject({
+      autoSync: false,
+      pullRequestAutoSync: false,
+    });
+  });
+
+  it("refuses to switch a capability the plugin does not declare", async () => {
+    const { server } = await createServer({ codeHost: {} });
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: "/api/connectors/jira/activation",
+        body: JSON.stringify({ enabled: false, capability: "connector" }),
+      }),
+    ).resolves.toMatchObject({ status: 400 });
+  });
+
+  it("tells the plugin which capabilities are on when it validates a connection", async () => {
+    const { server } = await createServer(
+      { connector: {}, codeHost: {} },
+      [
+        "export async function validateConnection(config, context) {",
+        "  return { normalizedConfig: config, connectionSummary: { capabilities: context.capabilities.join(',') } };",
+        "}",
+      ].join("\n"),
+    );
+    await dispatchJsonRequest(server, {
+      method: "POST",
+      path: "/api/connectors/jira/activation",
+      body: JSON.stringify({ enabled: false, capability: "connector" }),
+    });
+
+    const response = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: "/api/connectors/jira/connections",
+      body: JSON.stringify({
+        values: {
+          label: "Second",
+          tenantLabel: "github.com",
+          autoSync: false,
+          autoSyncIntervalMinutes: 5,
+          baseUrl: "https://github.com",
+        },
+      }),
+    });
+    expect(response).toMatchObject({
+      status: 200,
+      body: { connection: { configSummary: { capabilities: "codeHost" } } },
+    });
   });
 
   it("reports a failed sync as a gateway error and records it", async () => {

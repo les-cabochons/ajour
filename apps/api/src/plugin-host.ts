@@ -12,6 +12,7 @@ import {
   connectorSettleWriteRequestSchema,
   connectorSettleWriteResultSchema,
   connectorSyncWorkItemSchema,
+  connectorValidationContextSchema,
   type ConnectorFieldValues,
   type ConnectorPluginManifest,
   type ConnectorPluginSyncResult,
@@ -21,6 +22,8 @@ import {
   type ConnectorSettleWriteRequest,
   type ConnectorSettleWriteResult,
   type ConnectorSyncWorkItem,
+  type ConnectorValidationContext,
+  type SwitchableCapability,
 } from "../../../packages/shared/connectors.ts";
 import {
   codeHostOperations,
@@ -48,6 +51,13 @@ interface PluginHostOptions {
   allowDevelopmentPlugins?: boolean;
   requestTimeoutMs?: number;
   workerScriptUrl?: URL;
+  /**
+   * Runs once the operation is registered and before its worker starts, and
+   * throws to refuse it. Deactivation saves its state and then cancels the
+   * registered operations, so an operation either sees the new state here or
+   * is cancelled.
+   */
+  operationGate?: (pluginId: string, method: PluginMethod) => Promise<void>;
 }
 
 const pluginInvocationConnectionSchema = z.object({
@@ -66,12 +76,26 @@ const pluginInvocationConnectionSchema = z.object({
 type PluginInvocationConnection = z.infer<
   typeof pluginInvocationConnectionSchema
 >;
-type PluginMethod =
+export type PluginMethod =
   | "validateConnection"
   | "syncConnection"
   | "listSettleStates"
   | "writeSettle"
   | CodeHostOperation;
+/** The switchable capability a plugin method serves. Validation serves none. */
+export function capabilityOfMethod(
+  method: PluginMethod,
+): SwitchableCapability | undefined {
+  if (
+    method === "syncConnection" ||
+    method === "listSettleStates" ||
+    method === "writeSettle"
+  ) {
+    return "connector";
+  }
+  return method === "validateConnection" ? undefined : "codeHost";
+}
+
 function comparePlugins(
   left: ConnectorPluginManifest,
   right: ConnectorPluginManifest,
@@ -87,6 +111,7 @@ export class ConnectorPluginManager {
   private readonly developmentPluginDirectories: string[];
   private readonly bundledPluginArchives: string[];
   private readonly allowDevelopmentPlugins: boolean;
+  private readonly operationGate?: PluginHostOptions["operationGate"];
   private readonly workers: PluginWorkerLifetime<PluginMethod>;
   private activePackageReaders = 0;
   private packageReadersDrainedPromise?: Promise<void>;
@@ -108,6 +133,7 @@ export class ConnectorPluginManager {
       (archive) => path.resolve(archive),
     );
     this.allowDevelopmentPlugins = options.allowDevelopmentPlugins ?? false;
+    this.operationGate = options.operationGate;
     this.workers = new PluginWorkerLifetime({
       name: "Connector",
       requestTimeoutMs: options.requestTimeoutMs ?? 30_000,
@@ -140,9 +166,15 @@ export class ConnectorPluginManager {
     };
   }
 
+  /**
+   * `afterInstall` runs before the package change ends, while operations are
+   * still refused, so activation state it saves applies before anything can
+   * run the new package.
+   */
   async installPluginArchive(
     archiveBytes: Uint8Array,
     archiveFilename: string,
+    afterInstall?: (installed: InstalledConnectorPlugin) => Promise<void>,
   ): Promise<InstalledConnectorPlugin> {
     this.assertRunning();
     return await this.runPackageMutation(async () => {
@@ -153,12 +185,14 @@ export class ConnectorPluginManager {
         );
       }
 
-      return await installConnectorPluginArchive({
+      const installed = await installConnectorPluginArchive({
         archiveBytes,
         archiveFilename,
         installRoot: this.installedPluginDirectory,
         replaceExisting: true,
       });
+      if (installed.installed) await afterInstall?.(installed);
+      return installed;
     });
   }
 
@@ -189,14 +223,34 @@ export class ConnectorPluginManager {
     await this.workers.cancel(error, pluginId);
   }
 
+  /** Cancels the running operations of one capability, such as a pull request sync. */
+  async cancelCapabilityOperations(
+    pluginId: string,
+    capability: SwitchableCapability,
+    error: Error,
+  ): Promise<void> {
+    await this.workers.cancel(
+      error,
+      pluginId,
+      (method) => capabilityOfMethod(method) === capability,
+    );
+  }
+
+  /** `context` names the switchable capabilities that are on. */
   async validateConnection(
     pluginId: string,
     config: ConnectorFieldValues,
+    context?: ConnectorValidationContext,
   ): Promise<ConnectorPluginValidationResult> {
     return await this.invokePlugin(
       pluginId,
       "validateConnection",
-      { config: connectorFieldValuesSchema.parse(config) },
+      {
+        config: connectorFieldValuesSchema.parse(config),
+        ...(context
+          ? { context: connectorValidationContextSchema.parse(context) }
+          : {}),
+      },
       connectorPluginValidationResultSchema,
     );
   }
@@ -346,6 +400,7 @@ export class ConnectorPluginManager {
       if (!plugin.entrypointPath) {
         throw new Error(`Plugin "${pluginId}" runs no code.`);
       }
+      await this.operationGate?.(pluginId, method);
       return {
         workerData: {
           apiVersion: CONNECTOR_PLUGIN_API_VERSION,

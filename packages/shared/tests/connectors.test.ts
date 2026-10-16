@@ -4,7 +4,10 @@ import {
   connectorPluginManifestSchema,
   connectorSettleWriteRequestSchema,
   connectorSettleWriteResultSchema,
+  isCapabilityActive,
   pluginHasAgentTasks,
+  pluginHasSwitchableCapabilities,
+  syncsPullRequestsAutomatically,
   pluginHasProjectProperties,
   pluginHasCodeHost,
   pluginHasConnector,
@@ -71,6 +74,75 @@ describe("connector plugin manifest", () => {
     });
     expect(pluginHasConnector(manifest)).toBe(true);
     expect(pluginHasCodeHost(manifest)).toBe(true);
+  });
+
+  it("keeps the capability a connection field configures", () => {
+    const manifest = connectorPluginManifestSchema.parse({
+      ...validManifest,
+      capabilities: { connector: {}, codeHost: {} },
+      connectionFields: [
+        ...validManifest.connectionFields,
+        {
+          id: "hideDrafts",
+          label: "Hide drafts",
+          type: "checkbox",
+          capability: "codeHost",
+        },
+      ],
+    });
+    expect(manifest.connectionFields.at(-1)?.capability).toBe("codeHost");
+    expect(pluginHasSwitchableCapabilities(manifest)).toBe(true);
+  });
+
+  it("reads a capability as active only while the plugin is on and the capability is not off", () => {
+    const plugin = connectorPluginManifestSchema.parse({
+      ...validManifest,
+      capabilities: { connector: {}, codeHost: {} },
+    });
+    expect(isCapabilityActive({ plugin, enabled: true }, "codeHost")).toBe(
+      true,
+    );
+    expect(
+      isCapabilityActive(
+        { plugin, enabled: true, inactiveCapabilities: ["codeHost"] },
+        "codeHost",
+      ),
+    ).toBe(false);
+    expect(
+      isCapabilityActive(
+        { plugin, enabled: true, inactiveCapabilities: ["codeHost"] },
+        "connector",
+      ),
+    ).toBe(true);
+    expect(isCapabilityActive({ plugin, enabled: false }, "connector")).toBe(
+      false,
+    );
+    expect(
+      isCapabilityActive(
+        {
+          plugin: { ...plugin, capabilities: { codeHost: {} } },
+          enabled: true,
+        },
+        "connector",
+      ),
+    ).toBe(false);
+  });
+
+  it("lets pull requests follow auto sync until the connection saves their own setting", () => {
+    expect(syncsPullRequestsAutomatically({ autoSync: false })).toBe(false);
+    expect(syncsPullRequestsAutomatically({ autoSync: true })).toBe(true);
+    expect(
+      syncsPullRequestsAutomatically({
+        autoSync: true,
+        pullRequestAutoSync: false,
+      }),
+    ).toBe(false);
+    expect(
+      syncsPullRequestsAutomatically({
+        autoSync: false,
+        pullRequestAutoSync: true,
+      }),
+    ).toBe(true);
   });
 
   it("accepts a code host without the connector capability", () => {

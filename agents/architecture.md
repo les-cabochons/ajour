@@ -75,6 +75,9 @@ The local API is a boundary for connector-driven work. Connector behavior should
 
 Connectors and code hosts are capabilities of installable plugins. A plugin
 declares one or both in its manifest, and its connections serve all of them.
+A connection field may name the capability it configures, so the connection
+form hides it while that capability is off. `validateConnection` receives the
+capabilities that are on as its second argument and checks only their access.
 The rules in this section apply to every such plugin, which must remain
 physically and logically separate from the application. A plugin owns its external-system
 authentication, transport, field discovery, and remote read/write behavior. It
@@ -134,6 +137,24 @@ its package, saved connections, staged imports, and already imported backlog
 items intact, but blocks manual sync and excludes its connections from the web
 auto-sync scheduler. Reactivation restores those sync paths without requiring
 the connector to be configured again.
+
+A plugin that declares both a connector and a code host also gets one switch
+per capability, stored as a per-plugin deny-list next to the plugin's own
+activation. Turning a capability off blocks only its routes and scheduler work
+and cancels only its running operations; the plugin switch still gates both.
+An update that adds a capability starts it off, so updating changes nothing
+until the user turns it on. That default is saved before the package change
+ends, while plugin operations still wait, so nothing runs the new capability
+first. Turning a capability off or on waits for the
+check inside the plugin host's operation gate, which runs after an operation
+registers, so an operation started meanwhile either sees the new state or is
+cancelled.
+
+Each capability has its own automatic sync on the connection's interval. Auto
+sync imports backlog items straight to the backlog instead of staging them for
+review; the reserved `pullRequestAutoSync` field syncs pull requests. A
+connection saved before that field existed keeps following auto sync, which is
+what auto sync meant for its pull requests.
 
 The plugin system also has one persisted master activation gate. Turning it off
 stops connector workers, cancels active project-data-shape operations, hides
