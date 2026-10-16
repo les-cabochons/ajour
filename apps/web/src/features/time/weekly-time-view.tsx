@@ -58,10 +58,7 @@ import {
 } from "@/features/time/time-entry-actions";
 import { groupCalendarSuggestionsByDay } from "@/domain/time/calendar-suggestions";
 import { useCalendarSuggestions } from "@/lib/calendar-suggestions";
-import {
-  isSelectionDelete,
-  useEntrySelection,
-} from "@/features/time/use-entry-selection";
+import { useEntrySelection } from "@/features/time/use-entry-selection";
 import { handleItemKeyDown, TIME_ENTRY_ACTION_KEYS } from "@/lib/item-keys";
 import { localStore } from "@/lib/local-store";
 import {
@@ -459,8 +456,8 @@ export function WeeklyTimeView({
   }
 
   /**
-   * Runs a card's action. Delete can act on the whole selection instead; `key` is
-   * set when a key ran the action, not a menu.
+   * Runs a card's action. Delete and Mark as not committed can act on the whole
+   * selection instead. `key` is set when a key ran the action, not a menu.
    */
   function runCardAction(
     target: Parameters<typeof entryActions.runAction>[0],
@@ -468,10 +465,7 @@ export function WeeklyTimeView({
     actionId: TimeEntryActionId,
     key?: object,
   ) {
-    if (
-      isSelectionDelete(actionId, key) &&
-      selection.deleteSelection(entryId, { fromKey: Boolean(key) })
-    ) {
+    if (selection.runSelectionAction(entryId, actionId, key)) {
       return;
     }
     entryActions.runAction(target, actionId);

@@ -88,16 +88,18 @@ export function keepShownEntries(
 }
 
 /**
- * The entries Delete removes when pressed on `entryId`, or chosen from its menu,
- * or null when Delete acts on that entry alone.
+ * The entries an action on `entryId` applies to, or null when the action applies
+ * to that entry alone. Delete uses it from its key or a menu, and Mark as not
+ * committed from a menu.
  *
- * - On an entry that is part of a multiple selection, Delete removes the selection.
+ * - On an entry that is part of a multiple selection, the action applies to the
+ *   selection.
  * - The key on an entry outside the selection, such as one Cmd+click just toggled
- *   off while it kept focus, removes the selection: the key always follows it.
+ *   off while it kept focus, applies to the selection: the key always follows it.
  * - The menu of an entry outside the selection acts on that entry, which the user
  *   pointed at.
  */
-export function getBatchDeleteIds(
+export function getSelectionActionIds(
   selection: EntrySelection,
   entryId: string,
   { fromKey }: { fromKey: boolean },
