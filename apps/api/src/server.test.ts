@@ -1560,10 +1560,13 @@ describe("team routes", () => {
     "}",
     "export async function createTeam(config, request) {",
     "  if (request.name === 'Taken') throw new Error('That team name is taken.');",
+    "  if (request.name === 'Leak') throw new Error(`Bad secret ${config.teamSecret}`);",
     "  return { values: { teamId: `team-${request.name}`, teamSecret: 's3cret' } };",
     "}",
     "export async function syncTeamProjects(connection, request) {",
     "  if (request.cursor === 'broken') throw new Error('The team refused the secret.');",
+    "  if (request.cursor === 'leak') throw new Error(`Invalid team secret ${connection.config.teamSecret}`);",
+    "  if (request.cursor === 'invalid') return { cursor: 'c', projects: Array.from({ length: 25 }, () => ({})) };",
     "  return { cursor: 'c2', projects: [], assigned: [] };",
     "}",
   ].join("\n");
@@ -1575,7 +1578,35 @@ describe("team routes", () => {
       path.join(root, "source"),
       teamPluginSource,
       "plugin.mjs",
-      { capabilities },
+      {
+        capabilities,
+        connectionFields: [
+          {
+            id: "label",
+            label: "Connection label",
+            type: "text",
+            required: true,
+          },
+          {
+            id: "tenantLabel",
+            label: "Workspace",
+            type: "text",
+            required: true,
+          },
+          {
+            id: "baseUrl",
+            label: "Deployment URL",
+            type: "url",
+            required: true,
+          },
+          {
+            id: "teamSecret",
+            label: "Team secret",
+            type: "password",
+            secret: true,
+          },
+        ],
+      },
     );
     const server = createAppApiServer({
       statePath: path.join(root, "state.json"),
@@ -1594,6 +1625,7 @@ describe("team routes", () => {
           autoSync: true,
           autoSyncIntervalMinutes: 15,
           baseUrl: "https://team.example",
+          teamSecret: "s3cret",
         },
       }),
     });
@@ -1675,6 +1707,69 @@ describe("team routes", () => {
     expect((await lastError(server))?.lastError).toBe(
       "The team refused the secret.",
     );
+  });
+
+  it("keeps a short team secret out of both routes' errors", async () => {
+    const { server, connectionId } = await createServer({
+      team: { apiVersion: 1 },
+    });
+
+    const created = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: "/api/teams/jira/create",
+      body: JSON.stringify({
+        values: { teamSecret: "s3cret" },
+        team: { name: "Leak" },
+      }),
+    });
+    expect(created).toEqual({
+      status: 502,
+      body: { error: "Bad secret [secret]" },
+    });
+
+    const synced = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: `/api/teams/jira/connections/${connectionId}/sync`,
+      body: JSON.stringify({ cursor: "leak", changes: [] }),
+    });
+    expect(synced).toEqual({
+      status: 502,
+      body: { error: "Invalid team secret [secret]" },
+    });
+    expect((await lastError(server))?.lastError).toBe(
+      "Invalid team secret [secret]",
+    );
+  });
+
+  it("stores a huge contract error within the overview's limit, and syncs again after it", async () => {
+    const { server, connectionId } = await createServer({
+      team: { apiVersion: 1 },
+    });
+
+    const invalid = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: `/api/teams/jira/connections/${connectionId}/sync`,
+      body: JSON.stringify({ cursor: "invalid", changes: [] }),
+    });
+    expect(invalid.status).toBe(502);
+    expect(
+      (invalid.body as { error: string }).error.length,
+    ).toBeLessThanOrEqual(1_000);
+
+    const overview = await dispatchJsonRequest(server, {
+      method: "GET",
+      path: "/api/connectors",
+    });
+    expect(overview.status).toBe(200);
+    expect((await lastError(server))?.lastError?.length).toBe(1_000);
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/teams/jira/connections/${connectionId}/sync`,
+        body: JSON.stringify({ changes: [] }),
+      }),
+    ).resolves.toMatchObject({ status: 200 });
   });
 
   it("refuses plugins without a team, a turned-off team, and malformed rounds", async () => {
