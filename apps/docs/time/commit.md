@@ -31,7 +31,13 @@ Each change has a checkbox, checked by default. Uncheck a change to leave it out
 
 ## Mark as committed
 
-When the checked changes are in your timesheet tool, press **Mark as committed**. A toast offers **Undo**. The Week view shows a **Committed** chip once the week has no change left.
+When the checked changes are in your timesheet tool, press **Mark as committed**. A toast offers **Undo**. The entry editor shows a **Committed** chip on each committed entry.
+
+## Mark as not committed
+
+If someone changed an entry in your timesheet tool after you committed it, right-click the entry and choose **Mark as not committed**. The entry shows as **Added** on the Commit page, so your next commit writes it again. With the Workday agent, Ajour finds the existing Workday entry by its ID and edits it, so you do not get a second entry.
+
+Only committed entries have this action. An entry you changed since its last commit is already on the Commit page.
 
 ## Copy the lines
 
