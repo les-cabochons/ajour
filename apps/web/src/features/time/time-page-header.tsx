@@ -1,4 +1,5 @@
 import {
+  RiCalendarLine as CalendarIcon,
   RiArrowGoBackLine as ReturnIcon,
   RiArrowLeftSLine as ChevronLeft,
   RiArrowRightSLine as ChevronRight,
@@ -44,6 +45,7 @@ export function TimePageHeader({
   weekAvailable,
   onSelectDate,
   onChangeView,
+  calendar,
 }: {
   date: string;
   today: string;
@@ -53,6 +55,8 @@ export function TimePageHeader({
   weekAvailable: boolean;
   onSelectDate: (date: string) => void;
   onChangeView: (view: TimeView) => void;
+  /** The Calendar button, shown while a calendar plugin is on. */
+  calendar?: { count: number; open: boolean; onToggle: () => void };
 }) {
   const step = view === "week" ? 7 : 1;
   const unit = view === "week" ? "week" : "day";
@@ -62,22 +66,35 @@ export function TimePageHeader({
   return (
     <PageHeader
       actions={
-        weekAvailable ? (
-          <ToggleGroup
-            value={[view]}
-            onValueChange={(values) => {
-              const next = values[0];
-              if ((next === "day" || next === "week") && next !== view) {
-                onChangeView(next);
-              }
-            }}
-            variant="outline"
-            aria-label="Time view"
-          >
-            <ToggleGroupItem value="day">Day</ToggleGroupItem>
-            <ToggleGroupItem value="week">Week</ToggleGroupItem>
-          </ToggleGroup>
-        ) : null
+        <>
+          {calendar ? (
+            <Button
+              variant="outline"
+              aria-pressed={calendar.open}
+              className={calendar.open ? "bg-[var(--hover-bg)]" : undefined}
+              onClick={calendar.onToggle}
+            >
+              <CalendarIcon data-icon="inline-start" />
+              {calendar.count > 0 ? `Calendar · ${calendar.count}` : "Calendar"}
+            </Button>
+          ) : null}
+          {weekAvailable ? (
+            <ToggleGroup
+              value={[view]}
+              onValueChange={(values) => {
+                const next = values[0];
+                if ((next === "day" || next === "week") && next !== view) {
+                  onChangeView(next);
+                }
+              }}
+              variant="outline"
+              aria-label="Time view"
+            >
+              <ToggleGroupItem value="day">Day</ToggleGroupItem>
+              <ToggleGroupItem value="week">Week</ToggleGroupItem>
+            </ToggleGroup>
+          ) : null}
+        </>
       }
     >
       <span className="ajour-page-header-nav">

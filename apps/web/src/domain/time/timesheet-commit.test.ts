@@ -55,7 +55,10 @@ function committed(value: LocalTimesheetEntry): LocalTimesheetEntry {
   return { ...value, commit: toCommittedCopy(value, 50) };
 }
 
-function tombstone(entryId: string, localDate: string): LocalTimesheetTombstone {
+function tombstone(
+  entryId: string,
+  localDate: string,
+): LocalTimesheetTombstone {
   return {
     entryId,
     commit: {
@@ -205,7 +208,9 @@ describe("describing committed values", () => {
       color: "#000",
       icon: DEFAULT_PROJECT_ICON,
       status: "archived",
-      tasks: [{ _id: "task-1", name: "Build", status: "archived", createdAt: 1 }],
+      tasks: [
+        { _id: "task-1", name: "Build", status: "archived", createdAt: 1 },
+      ],
     },
   ];
 

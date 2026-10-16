@@ -15,10 +15,7 @@ import {
   getCalendarSuggestionActions,
   type CalendarSuggestionActionId,
 } from "@/domain/actions/object-actions";
-import {
-  getLocalProjectDisplayName,
-  type LocalProject,
-} from "@/domain/local-state";
+import type { LocalProject } from "@/domain/local-state";
 import { formatClockDuration } from "@/domain/time/duration";
 import {
   groupCalendarSuggestionsByDay,
@@ -26,6 +23,10 @@ import {
   type CalendarSuggestion,
 } from "@/domain/time/calendar-suggestions";
 import { offerUndo } from "@/features/feedback/undo-toast";
+import {
+  formatSuggestionTime,
+  projectTaskLabel,
+} from "@/features/time/calendar-suggestion-format";
 import { ProjectTaskPicker } from "@/features/projects/project-task-picker";
 import {
   useCalendarSuggestions,
@@ -53,36 +54,6 @@ const HIDDEN_REASON_LABELS: Record<CalendarHiddenReason, string> = {
   unanswered: "Not answered",
   short: "Short",
 };
-
-const timeFormat = new Intl.DateTimeFormat(undefined, {
-  hour: "2-digit",
-  minute: "2-digit",
-});
-
-/** "09:00 – 09:15", "09:00–09:15" when `compact`, or "All day". */
-function formatSuggestionTime(
-  suggestion: CalendarSuggestion,
-  { compact = false } = {},
-) {
-  return suggestion.allDay
-    ? "All day"
-    : [
-        timeFormat.format(suggestion.startsAt),
-        timeFormat.format(suggestion.endsAt),
-      ].join(compact ? "–" : " – ");
-}
-
-function projectTaskLabel(
-  projects: readonly LocalProject[],
-  projectId: string | undefined,
-  taskId: string | undefined,
-) {
-  const project = projects.find((item) => item._id === projectId);
-  if (!project) return undefined;
-  const task = project.tasks.find((item) => item._id === taskId);
-  const name = getLocalProjectDisplayName(project);
-  return { name, task: task?.name, color: project.color };
-}
 
 /**
  * Runs suggestion actions for every surface. `openPicker` is which
@@ -155,13 +126,13 @@ export function useCalendarSuggestionActions() {
   return { openPicker, setOpenPicker, add, run };
 }
 
-type SuggestionActions = ReturnType<typeof useCalendarSuggestionActions>;
+export type SuggestionActions = ReturnType<typeof useCalendarSuggestionActions>;
 
 /**
  * The project and task picker of a suggestion. Choosing adds the entry, and
  * remembers the choice for a recurring meeting.
  */
-function SuggestionPicker({
+export function SuggestionPicker({
   suggestion,
   actions,
   projects,

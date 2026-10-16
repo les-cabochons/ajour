@@ -237,7 +237,13 @@ calendar": the compact time span, the title, and the project with an Add hint on
 hover, or the picker. Choosing a project in a picker adds the entry at once and
 remembers the project for a recurring meeting. One action set,
 `getCalendarSuggestionActions`, and `useCalendarSuggestionActions` serve every
-surface. The copy says meeting, never rule, series or occurrence.
+surface. The copy says meeting, never rule, series or occurrence. A
+"Calendar · N" button in the Time top bar opens the week's suggestions in the
+side panel (`features/time/calendar-week-panel.tsx`), grouped by day with a
+checkbox each; those with a project start checked, and "Add N entries · H:MM"
+adds them with one Undo. Grid day headers show a calendar chip with the count
+beside the day total, which opens that panel on the day. An editor or a listed
+Grid cell takes the side panel from the Calendar.
 
 Every time entry surface (Day rows, Days cards, Grid cells, the Grid cell list
 and the entry form) exposes the same action set through a right-click menu

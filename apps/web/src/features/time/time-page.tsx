@@ -14,6 +14,8 @@ import {
 } from "@/features/time/time-entry-editor-form";
 import type { TimeEntryEditorFields } from "@/features/time/time-entry-editor";
 import { CalendarDaySection } from "@/features/time/calendar-suggestions";
+import { CalendarWeekPanel } from "@/features/time/calendar-week-panel";
+import { useCalendarSuggestions } from "@/lib/calendar-suggestions";
 import { DayStrip } from "@/features/time/day-strip";
 import { TimePageHeader } from "@/features/time/time-page-header";
 import {
@@ -101,6 +103,22 @@ export function TimePage({ date }: { date: string }) {
   // `listedCell` is a cell with several entries, listed in the panel.
   const [gridCell, setGridCell] = useState<WeekGridCell | null>(null);
   const [listedCell, setListedCell] = useState<WeekGridCell | null>(null);
+  // The Calendar side panel lives in memory, like a listed Grid cell. It opens
+  // on a day when a Grid chip asked for one.
+  const [calendarPanel, setCalendarPanel] = useState<{
+    focusDate?: string;
+  } | null>(null);
+  const weekRange = useMemo(
+    () => ({
+      from: weekDates[0] ?? date,
+      to: weekDates[weekDates.length - 1] ?? date,
+    }),
+    [weekDates, date],
+  );
+  const weekCalendar = useCalendarSuggestions(weekRange);
+  const openSuggestionCount = weekCalendar.suggestions.filter(
+    (suggestion) => !suggestion.hiddenBy,
+  ).length;
   const showsGrid = isWeekView && preferences.weeklyTimeViewStyle === "grid";
   const inShownWeek = (cell: WeekGridCell | null) =>
     showsGrid && cell && weekDates.includes(cell.localDate) ? cell : null;
@@ -140,6 +158,13 @@ export function TimePage({ date }: { date: string }) {
   const panelListedCell = editorTarget ? null : inShownWeek(listedCell);
   const showsCellEntries = panelListedCell !== null;
   const showsEditor = editorTarget !== null;
+  // An editor or a listed cell takes the side panel from the Calendar.
+  const showsCalendarPanel =
+    calendarPanel !== null &&
+    !showsEditor &&
+    !showsCellEntries &&
+    weekCalendar.hasCalendar &&
+    !editsInDialog;
 
   // The view shown on a desktop width becomes the remembered view, whether it
   // came from the toggle, a shortcut or a link. The narrow view always shows
@@ -169,8 +194,31 @@ export function TimePage({ date }: { date: string }) {
   // closes the panel. It clears after the editor shows, so the panel never empties
   // between the click and the navigation.
   useEffect(() => {
-    if (showsEditor) setListedCell(null);
+    if (showsEditor) {
+      setListedCell(null);
+      setCalendarPanel(null);
+    }
   }, [showsEditor]);
+
+  /** Opens the Calendar in the side panel, after saving the open draft. */
+  function openCalendarPanel(focusDate?: string) {
+    if (!leaveEditorDraft()) return;
+    editorDraftRef.current = null;
+    setListedCell(null);
+    setCalendarPanel({ focusDate });
+    if (search.entry || search.timer) {
+      void navigate({
+        to: "/time/$date",
+        params: { date },
+        search: {
+          view: viewParam,
+          entry: undefined,
+          timer: undefined,
+        } as never,
+        replace: true,
+      });
+    }
+  }
 
   /**
    * Saves a valid draft in the side panel before the page shows something else.
@@ -290,6 +338,7 @@ export function TimePage({ date }: { date: string }) {
 
     editorDraftRef.current = null;
     setListedCell(cell);
+    setCalendarPanel(null);
     if (search.entry || search.timer) {
       void navigate({
         to: "/time/$date",
@@ -369,6 +418,18 @@ export function TimePage({ date }: { date: string }) {
           weekAvailable={weekAvailable}
           onSelectDate={goToDate}
           onChangeView={changeTimeView}
+          calendar={
+            weekCalendar.hasCalendar
+              ? {
+                  count: openSuggestionCount,
+                  open: showsCalendarPanel,
+                  onToggle: () =>
+                    showsCalendarPanel
+                      ? setCalendarPanel(null)
+                      : openCalendarPanel(),
+                }
+              : undefined
+          }
         />
       )}
       <div className="time-page-main">
@@ -381,6 +442,7 @@ export function TimePage({ date }: { date: string }) {
             onNewEntry={(localDate) => openEditor({}, localDate)}
             onOpenCellEntries={openCellEntries}
             onOpenEntry={(request) => openEditor(request)}
+            onOpenCalendar={(localDate) => openCalendarPanel(localDate)}
           />
         ) : (
           <>
@@ -400,13 +462,7 @@ export function TimePage({ date }: { date: string }) {
               activeEntryId={activeEntryId}
               onOpenEntry={openEditor}
             />
-            <CalendarDaySection
-              date={date}
-              range={{
-                from: weekDates[0]!,
-                to: weekDates[weekDates.length - 1]!,
-              }}
-            />
+            <CalendarDaySection date={date} range={weekRange} />
           </>
         )}
       </div>
@@ -439,6 +495,20 @@ export function TimePage({ date }: { date: string }) {
               </Button>
             </div>
           ) : null}
+        </SidePanel>
+      ) : showsCalendarPanel ? (
+        <SidePanel
+          contentKey={`calendar-${weekRange.from}`}
+          widthKey="time"
+          className="time-entry-side-panel"
+          aria-label="Calendar"
+        >
+          <CalendarWeekPanel
+            range={weekRange}
+            today={today}
+            focusDate={calendarPanel?.focusDate}
+            onClose={() => setCalendarPanel(null)}
+          />
         </SidePanel>
       ) : panelListedCell ? (
         <SidePanel
