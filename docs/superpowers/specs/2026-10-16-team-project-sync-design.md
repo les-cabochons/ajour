@@ -56,8 +56,10 @@ A page holds at most 25 projects of at most 500 tasks each, which keeps it under
 
 ## Storage
 
-- `LocalProject` gets `team?: { connectionId: string; remoteId: string; changedAt?: number }`. `LocalProjectTask` gets `team?: { remoteId: string; changedAt?: number }`. A new shared project or task has `remoteId: ""` until the team assigns one.
-- `changedAt` is set by the project transitions whenever a team-owned field changes, and cleared when the sync pushes it. The store keeps only the last action's undo, so "the Undo window is open" for a record means the store's pending undo touches it. `planTeamSync` receives the IDs of those records from `local-store.ts` and skips them; no timer is involved, and the next sync carries the change once the toast has closed.
+- `LocalProject` gets `team?: { connectionId: string; remoteId?: string; synced?: TeamProjectFields }`. `LocalProjectTask` gets `team?: { remoteId?: string; synced?: TeamTaskFields }`. A new shared project or task has neither until the team assigns a remote ID.
+- `synced` is the last-synced copy of the record's team-owned fields. A field whose value differs from its `synced` copy is a local change. The copy is persisted with the record, so a restart loses nothing, and no timestamps are kept. The project transitions do not change: any edit to a team-owned field is a local change by definition.
+- The store keeps only the last action's undo, so "the Undo window is open" for a record means the store's pending undo touches it. `planTeamSync` receives the IDs of those records from `local-store.ts` and skips them; no timer is involved, and the next sync carries the change once the toast has closed.
+- After a round succeeds, each pushed field's `synced` copy becomes the value that was pushed, not the record's current value. An edit made while the round was in flight therefore stays a local change for the next round.
 - Local state gets `teamSyncCursors: Record<connectionId, string>`. It lives with the projects so that the merge is pure and the cursor cannot drift from the projects it describes.
 - Unsharing and connection removal drop `team` from the records. Nothing else changes.
 - `normalizeProject` drops a `team` whose shape is wrong, which turns the project local.
@@ -66,8 +68,8 @@ A page holds at most 25 projects of at most 500 tasks each, which keeps it under
 
 A pure module, `apps/web/src/domain/projects/team-sync.ts`, owns:
 
-- `planTeamSync(state, connectionId, now)`: the `changes` to push and the cursor, honouring the Undo window.
-- `applyTeamSync(state, connectionId, result, factories)`: assigns remote IDs, merges the team's changes per field (the team's value replaces the local one for every team-owned field, except a field with a local change not pushed yet, such as one still in its Undo window: it keeps the local value, and the next push makes it the later write), creates projects and tasks the workspace lacks with new local IDs, archives and restores, and stores the cursor. Local IDs never change, so time entries keep their references.
+- `planTeamSync(state, connectionId, pendingUndoRecordIds)`: the `changes` to push and the cursor. A new record sends every team-owned field; a shared one sends the fields that differ from `synced`. Records in `pendingUndoRecordIds` are skipped.
+- `applyTeamSync(state, connectionId, pushed, result, factories)`: assigns remote IDs and sets `synced` to the pushed values, then merges the team's records per field. For a field with no local change, the team's value replaces both the local value and `synced`. For a field with a local change, such as one still in its Undo window, the local value stays and `synced` takes the team's value, so the next push sends it as the later write. It also creates projects and tasks the workspace lacks with new local IDs, archives and restores, and stores the cursor. Local IDs never change, so time entries keep their references.
 - `shareProject(state, project, teamProjects)`: links by name or marks the project as new, and merges tasks by name.
 - `unshareProject` and `disconnectTeam`.
 

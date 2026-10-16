@@ -10,6 +10,6 @@ A team plugin keeps projects and tasks in step between the members of a team. Un
 
 ## Consequences
 
-- Shared projects need a remote identity and a "changed since last sync" mark on projects and tasks, and a sync cursor per connection, so that pushes stay incremental.
+- Shared projects and tasks need a remote identity and a last-synced copy of their team-owned fields, and each connection needs a sync cursor. A field that differs from its copy is a local change, so a push sends only changed fields and survives a restart.
 - Local projects never leave the machine. Time entries, tracked totals, notes and budget consumption never sync; only the budget figure itself does.
 - The rule is per field, so a rename on one machine and a budget change on another both survive one round.
