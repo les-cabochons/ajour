@@ -33,7 +33,7 @@ describe("desktop electron-builder config", () => {
     expect(JSON.stringify(config)).not.toMatch(/squirrel|nupkg/i);
   });
 
-  it("names the Windows install folder ajour instead of the scoped package name", () => {
+  it("overrides the packaged package name, which names the Windows install folder", () => {
     const config = loadBuilderConfig();
 
     expect(config.extraMetadata.name).toBe("ajour");
