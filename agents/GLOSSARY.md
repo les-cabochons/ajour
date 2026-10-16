@@ -142,6 +142,18 @@ _Avoid_: Proposed entry, draft entry, pending entry
 What Ajour remembers about one recurring calendar event: the project and task to fill in for every occurrence, or that every occurrence is hidden. The same thing as a repository rule, for a meeting series.
 _Avoid_: Rule, series, occurrence (in user-facing text; say "remembered meeting" and "hidden meeting")
 
+**Selection**:
+The time entries, on the Day list or the Week Days cards, that a selection-wide action applies to. At most one of the two views holds a selection at a time.
+_Avoid_: Multi-select, bulk selection, checked entries
+
+**Focused entry**:
+The one time entry that has keyboard focus. Single-subject actions such as Edit, Continue and Stop apply to it, even inside a selection.
+_Avoid_: Active entry, current entry, highlighted entry
+
+**Anchor**:
+The entry a Shift+click or Shift+arrow range starts from: the last entry selected without Shift.
+_Avoid_: Pivot, range start
+
 ### Time entry actions
 
 **Continue**:
