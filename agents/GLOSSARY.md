@@ -18,6 +18,18 @@ _Avoid_: Project task (in user-facing text), activity
 A task the user reaches with a number key from 1 to 0.
 _Avoid_: Favorite, shortcut task
 
+**Shared project**:
+A project that belongs to exactly one team. Its name, code, status, color, icon, tasks and task budgets follow the team; pinned slots, plugin properties, order and the budget adjustment stay personal.
+_Avoid_: Synced project, remote project, team project (in user-facing text)
+
+**Local project**:
+A project that belongs to no team.
+_Avoid_: Private project, unshared project
+
+**Share**:
+To give a local project to a team, linking it to the team project of the same name or creating one. Unsharing makes it local again on this machine only.
+_Avoid_: Publish, upload, sync (for the action)
+
 **Backlog item**:
 A piece of planned work in the user's backlog, optionally mapped to a project and task.
 _Avoid_: Task, work item, issue, to-do
@@ -143,8 +155,12 @@ _Avoid_: Cancel, delete (for a running entry)
 ### Extensions
 
 **Plugin**:
-An installable extension of Ajour that provides one or more capabilities: connector, schema, code host or calendar. When a plugin provides more than one of connector, code host and calendar, the user turns each on and off separately, as Backlog items, Pull requests and Calendar events.
+An installable extension of Ajour that provides one or more capabilities: connector, schema, code host, calendar or team. When a plugin provides more than one of connector, code host, calendar and team, the user turns each on and off separately, as Backlog items, Pull requests, Calendar events and Projects.
 _Avoid_: Extension, add-on, integration
+
+**Team**:
+A group of people who share one set of projects and tasks through a team plugin. A workspace can connect to several teams.
+_Avoid_: Backend, server, workspace, organization
 
 **Connector**:
 A plugin capability that syncs backlog items and estimates with an external tool, such as Azure DevOps, Jira or GitHub issues.
