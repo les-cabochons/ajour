@@ -22,6 +22,7 @@ import {
   pluginHasCapability,
   pluginHasCodeHost,
   pluginHasSwitchableCapabilities,
+  switchableCapabilityLabels,
   switchableCapabilitySchema,
   type SwitchableCapability,
   connectorPluginInstallResponseSchema,
@@ -435,7 +436,7 @@ async function inactiveCapabilityError(
       availablePluginIds,
     ))
   ) {
-    return `Turn on ${capability === "connector" ? "work items" : "pull requests"} for this plugin before ${action}.`;
+    return `Turn on ${switchableCapabilityLabels[capability].toLowerCase()} for this plugin before ${action}.`;
   }
   return undefined;
 }
@@ -1052,7 +1053,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
               pluginId,
               payload.capability,
               new Error(
-                `${payload.capability === "connector" ? "Work items" : "Pull requests"} of plugin "${pluginId}" were turned off.`,
+                `${switchableCapabilityLabels[payload.capability]} of plugin "${pluginId}" were turned off.`,
               ),
             );
           }
@@ -1652,6 +1653,14 @@ async function applyCapabilityDefaults(
       !pluginHasCapability(previous, capability)
     ) {
       await storage.setPluginCapabilityEnabled(manifest.id, capability, false);
+      const pullRequestAutoSync = manifest.connectionFields.find(
+        (field) => field.id === "pullRequestAutoSync",
+      )?.defaultValue;
+      await storage.adoptAddedCapability(
+        manifest.id,
+        capability,
+        typeof pullRequestAutoSync === "boolean" ? pullRequestAutoSync : true,
+      );
     }
   }
 }

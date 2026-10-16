@@ -81,7 +81,7 @@ Pull requests sync on the connection's interval while **Sync pull requests autom
 - Checks come from the branch's build and status policies.
 - Teams count only when they are Azure DevOps teams, not other security groups.
 
-Turn off **Work items** to use only pull requests. The work item fields then hide, and the token needs no work item access.
+Turn off **Backlog items** to use only pull requests. The work item fields then hide, and the token needs no work item access.
 
 ## Source
 

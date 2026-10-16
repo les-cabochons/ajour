@@ -147,7 +147,7 @@ and the capability band. Features, Information, Configuration and Uninstall
 plugin follow as `settings-section`s. A plugin with both a connector and a
 code host adds a Capabilities section before Configuration
 (`features/settings/plugin-capability-switches.tsx`): a `SettingRow` with a
-`Switch` for Work items and for Pull requests, labelled "Deactivate work items
+`Switch` for Backlog items and for Pull requests, labelled "Deactivate backlog items
 for GitHub". The connection form hides the fields of a capability that is off. Features and Information are spaced
 lists with no dividers. Configuration lists connections as plain rows (name,
 connection status chip, sync-mode badge, tenant, then Edit, Sync and Remove

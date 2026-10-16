@@ -1,12 +1,13 @@
 import {
+  isCapabilitySwitchedOn,
   pluginHasSwitchableCapabilities,
+  switchableCapabilityLabels,
   switchableCapabilitySchema,
   type ConnectorOverviewGroup,
   type SwitchableCapability,
 } from "@ajour/shared";
 import { SettingRow } from "@/components/app-surface";
 import { Switch } from "@/components/ui/switch";
-import { capabilityLabels } from "@/features/settings/plugin-settings-workflow";
 
 const capabilityDescriptions: Record<SwitchableCapability, string> = {
   connector: "Sync items into your backlog and write settles back.",
@@ -42,8 +43,8 @@ export function PluginCapabilitySwitches({
         </p>
       </div>
       {switchableCapabilitySchema.options.map((capability) => {
-        const on = !group.inactiveCapabilities?.includes(capability);
-        const label = capabilityLabels[capability];
+        const on = isCapabilitySwitchedOn(group, capability);
+        const label = switchableCapabilityLabels[capability];
         return (
           <SettingRow
             key={capability}

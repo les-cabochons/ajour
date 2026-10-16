@@ -446,7 +446,7 @@ When("I deactivate the code host plugin", async ({ page }) => {
     .getByRole("switch", { name: "Deactivate GitHub", exact: true })
     .click();
 });
-Given("the code host plugin also syncs work items", async ({ page }) => {
+Given("the code host plugin also syncs backlog items", async ({ page }) => {
   await page.goto("/");
   await page.evaluate(() =>
     (
@@ -480,13 +480,13 @@ When("I turn on pull requests for the code host plugin", async ({ page }) => {
     })
     .click();
 });
-Then("the plugin and its work items stay active", async ({ page }) => {
+Then("the plugin and its backlog items stay active", async ({ page }) => {
   await expect(
     page.getByRole("switch", { name: "Deactivate GitHub", exact: true }),
   ).toBeChecked();
   await expect(
     page.getByRole("switch", {
-      name: "Deactivate work items for GitHub",
+      name: "Deactivate backlog items for GitHub",
       exact: true,
     }),
   ).toBeChecked();

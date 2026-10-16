@@ -791,12 +791,11 @@ export class AppApiStorage {
     capability: SwitchableCapability,
     availablePluginIds: ReadonlySet<string>,
   ): Promise<boolean> {
-    const state = await this.readState();
     return (
-      availablePluginIds.has(pluginId) &&
-      state.pluginsEnabled &&
-      !state.disabledPluginIds.includes(pluginId) &&
-      !state.disabledCapabilities[pluginId]?.includes(capability)
+      (await this.isConnectorPluginEnabled(pluginId, availablePluginIds)) &&
+      !(await this.readState()).disabledCapabilities[pluginId]?.includes(
+        capability,
+      )
     );
   }
 
@@ -1008,6 +1007,44 @@ export class AppApiStorage {
         result: undefined,
       };
     });
+  }
+
+  /**
+   * Keeps the plugin's connections meaning what their user chose when an
+   * update adds a capability. Auto sync described the plugin's only
+   * capability; once it has both, auto sync imports backlog items. Adding
+   * backlog items moves that choice to pull requests and lets backlog items
+   * stage for review. Adding pull requests starts their own sync at
+   * `pullRequestAutoSyncDefault`, the default of a new connection.
+   */
+  async adoptAddedCapability(
+    pluginId: string,
+    added: SwitchableCapability,
+    pullRequestAutoSyncDefault: boolean,
+  ): Promise<void> {
+    await this.mutate(async (state) => ({
+      nextState: {
+        ...state,
+        connections: state.connections.map((connection) =>
+          connection.pluginId !== pluginId
+            ? connection
+            : added === "connector"
+              ? {
+                  ...connection,
+                  autoSync: false,
+                  pullRequestAutoSync:
+                    connection.pullRequestAutoSync ?? connection.autoSync,
+                }
+              : {
+                  ...connection,
+                  pullRequestAutoSync:
+                    connection.pullRequestAutoSync ??
+                    pullRequestAutoSyncDefault,
+                },
+        ),
+      },
+      result: undefined,
+    }));
   }
 
   async removeConnectorPluginData(pluginId: string): Promise<void> {

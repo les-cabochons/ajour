@@ -131,7 +131,7 @@ _Avoid_: Cancel, delete (for a running entry)
 ### Extensions
 
 **Plugin**:
-An installable extension of Ajour that provides one or more capabilities: connector, schema or code host. When a plugin provides both a connector and a code host, the user turns each on and off separately, as Work items and Pull requests.
+An installable extension of Ajour that provides one or more capabilities: connector, schema or code host. When a plugin provides both a connector and a code host, the user turns each on and off separately, as Backlog items and Pull requests.
 _Avoid_: Extension, add-on, integration
 
 **Connector**:

@@ -44,7 +44,7 @@ For each pull request, Ajour gets the facts it needs to decide if it needs you: 
 
 ## Issues
 
-Issues start off. Turn on **Work items** under **Capabilities** on the plugin's page. Then press **Sync** on the connection: open issues assigned to you wait in [Sync review](/plugins/sync-review), or go straight to the backlog with **Auto sync to backlog**.
+Issues start off. Turn on **Backlog items** under **Capabilities** on the plugin's page. Then press **Sync** on the connection: open issues assigned to you wait in [Sync review](/plugins/sync-review), or go straight to the backlog with **Auto sync to backlog**.
 
 - Each issue brings its title, repository and description.
 - When an issue closes on GitHub, Ajour archives it.

@@ -96,6 +96,13 @@ export type ConnectorFieldOption = z.infer<typeof connectorFieldOptionSchema>;
 export const switchableCapabilitySchema = z.enum(["connector", "codeHost"]);
 export type SwitchableCapability = z.infer<typeof switchableCapabilitySchema>;
 
+/** How people see each switchable capability, on its switch and in messages. */
+export const switchableCapabilityLabels: Record<SwitchableCapability, string> =
+  {
+    connector: "Backlog items",
+    codeHost: "Pull requests",
+  };
+
 export const connectorFieldSchema = z.object({
   id: z.string().trim().min(1).max(120),
   label: z.string().trim().min(1).max(120),
@@ -368,9 +375,9 @@ export type ConnectorOverviewGroup = z.infer<
 >;
 
 /**
- * Whether the connection syncs pull requests on its interval. For work items,
- * auto sync means importing straight to the backlog, so pull requests have
- * their own setting. A connection saved before it existed keeps following
+ * Whether the connection syncs pull requests on its interval. For backlog
+ * items, auto sync means importing straight to the backlog, so pull requests
+ * have their own setting. A connection saved before it existed keeps following
  * auto sync, which is what auto sync meant for its pull requests then.
  */
 export function syncsPullRequestsAutomatically(
@@ -382,7 +389,21 @@ export function syncsPullRequestsAutomatically(
   return connection.pullRequestAutoSync ?? connection.autoSync;
 }
 
-/** Whether the group's plugin is on, declares the capability, and has it on. */
+/** Whether the plugin declares the capability and the user left it on. */
+export function isCapabilitySwitchedOn(
+  group: {
+    plugin: { capabilities: ConnectorPluginCapabilities };
+    inactiveCapabilities?: readonly SwitchableCapability[];
+  },
+  capability: SwitchableCapability,
+) {
+  return (
+    pluginHasCapability(group.plugin, capability) &&
+    !group.inactiveCapabilities?.includes(capability)
+  );
+}
+
+/** Whether the capability can run: its plugin is on and so is the capability. */
 export function isCapabilityActive(
   group: Pick<
     ConnectorOverviewGroup,
@@ -390,11 +411,7 @@ export function isCapabilityActive(
   >,
   capability: SwitchableCapability,
 ) {
-  return (
-    group.enabled &&
-    pluginHasCapability(group.plugin, capability) &&
-    !group.inactiveCapabilities?.includes(capability)
-  );
+  return group.enabled && isCapabilitySwitchedOn(group, capability);
 }
 
 export const connectorsOverviewSchema = z.object({

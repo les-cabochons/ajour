@@ -355,45 +355,86 @@ describe("connector plugin installation boundary", () => {
     },
   );
 
-  it("starts a capability an update adds turned off", async () => {
-    const root = await tempDir();
-    const installedRoot = path.join(root, "installed");
-    const source = "export async function validateConnection() {}";
-    await createPlugin(installedRoot, source, "plugin.mjs", {
-      capabilities: { codeHost: {} },
-    });
-    const pluginDirectory = await createPlugin(
-      path.join(root, "source"),
-      source,
-      "plugin.mjs",
-      { version: "1.1.0", capabilities: { connector: {}, codeHost: {} } },
-    );
-    const archivePath = path.join(root, "jira-1.1.0.ajour-connector");
-    await create({ cwd: pluginDirectory, file: archivePath, gzip: true }, [
-      "plugin.json",
-      "plugin.mjs",
-    ]);
-    const server = createAppApiServer({
-      statePath: path.join(root, "state.json"),
-      installedPluginDirectory: installedRoot,
-      allowDevelopmentPlugins: false,
-    });
-    servers.push(server);
+  it.each([
+    {
+      added: "connector",
+      before: { codeHost: {} },
+      saved: { autoSync: true },
+      // Auto sync was the pull requests' choice; backlog items stage for review.
+      after: { autoSync: false, pullRequestAutoSync: true },
+    },
+    {
+      added: "codeHost",
+      before: { connector: {} },
+      saved: { autoSync: false },
+      // Auto sync stays the backlog items' choice; pull requests start at the default.
+      after: { autoSync: false, pullRequestAutoSync: true },
+    },
+  ])(
+    "starts the $added capability an update adds turned off and keeps each connection's sync choices",
+    async ({ added, before, saved, after }) => {
+      const root = await tempDir();
+      const installedRoot = path.join(root, "installed");
+      const statePath = path.join(root, "state.json");
+      const source = "export async function validateConnection() {}";
+      await createPlugin(installedRoot, source, "plugin.mjs", {
+        capabilities: before,
+      });
+      await writeFile(
+        statePath,
+        JSON.stringify({
+          version: 7,
+          connections: [
+            {
+              id: "saved-jira",
+              pluginId: "jira",
+              label: "My Jira",
+              tenantLabel: "My workspace",
+              autoSyncIntervalMinutes: 15,
+              connectedAt: 1,
+              config: { baseUrl: "https://jira.example.com" },
+              configSummary: {},
+              ...saved,
+            },
+          ],
+          disabledPluginIds: [],
+          pluginsEnabled: true,
+        }),
+      );
+      const pluginDirectory = await createPlugin(
+        path.join(root, "source"),
+        source,
+        "plugin.mjs",
+        { version: "1.1.0", capabilities: { connector: {}, codeHost: {} } },
+      );
+      const archivePath = path.join(root, "jira-1.1.0.ajour-connector");
+      await create({ cwd: pluginDirectory, file: archivePath, gzip: true }, [
+        "plugin.json",
+        "plugin.mjs",
+      ]);
+      const server = createAppApiServer({
+        statePath,
+        installedPluginDirectory: installedRoot,
+        allowDevelopmentPlugins: false,
+      });
+      servers.push(server);
 
-    const update = await installConnectorPluginForServer(
-      server,
-      await readFile(archivePath),
-      path.basename(archivePath),
-    );
+      const update = await installConnectorPluginForServer(
+        server,
+        await readFile(archivePath),
+        path.basename(archivePath),
+      );
 
-    expect(update.replaced).toBe(true);
-    expect(update.overview.connectionGroups).toEqual([
-      expect.objectContaining({
-        enabled: true,
-        inactiveCapabilities: ["connector"],
-      }),
-    ]);
-  });
+      expect(update.replaced).toBe(true);
+      expect(update.overview.connectionGroups).toEqual([
+        expect.objectContaining({
+          enabled: true,
+          inactiveCapabilities: [added],
+          connections: [expect.objectContaining(after)],
+        }),
+      ]);
+    },
+  );
 
   it("does not expose connector package changes through the loopback HTTP server", async () => {
     const root = await tempDir();
@@ -990,7 +1031,7 @@ describe("code host routes", () => {
     ).resolves.toMatchObject({ status: 400 });
   });
 
-  it("turns pull requests off without stopping work items", async () => {
+  it("turns pull requests off without stopping backlog items", async () => {
     const { server, connectionId } = await createServer({
       connector: {},
       codeHost: {},
@@ -1036,7 +1077,7 @@ describe("code host routes", () => {
       }),
     ).resolves.toEqual({
       status: 409,
-      body: { error: "Turn on work items for this plugin before syncing." },
+      body: { error: "Turn on backlog items for this plugin before syncing." },
     });
   });
 

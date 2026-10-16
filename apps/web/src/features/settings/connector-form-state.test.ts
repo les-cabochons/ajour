@@ -99,7 +99,7 @@ describe("capability fields", () => {
     ).toBe(true);
   });
 
-  it("shows the interval while work items or pull requests sync on it", () => {
+  it("shows the interval while backlog items or pull requests sync on it", () => {
     const interval = field("autoSyncIntervalMinutes");
     const off = { autoSync: false, pullRequestAutoSync: false };
     expect(isConnectorFieldShown(both, interval, off)).toBe(false);

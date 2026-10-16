@@ -50,7 +50,7 @@ import type {
 } from "@ajour/shared";
 import {
   isCapabilityActive,
-  pluginHasCodeHost,
+  isCapabilitySwitchedOn,
   pluginHasConnector,
   pluginRunsCode,
   syncsPullRequestsAutomatically,
@@ -97,22 +97,16 @@ function syncModeLabel(
   connection: ConnectorConnectionSummary,
 ) {
   const interval = `Auto every ${connection.autoSyncIntervalMinutes} min`;
-  const workItems = connection.autoSync ? interval : "Stage for review";
+  const backlogItems = connection.autoSync ? interval : "Stage for review";
   const pullRequests = syncsPullRequestsAutomatically(connection)
     ? interval
     : "Manual sync";
-  const active = {
-    connector:
-      pluginHasConnector(group.plugin) &&
-      !group.inactiveCapabilities?.includes("connector"),
-    codeHost:
-      pluginHasCodeHost(group.plugin) &&
-      !group.inactiveCapabilities?.includes("codeHost"),
-  };
-  if (active.connector && active.codeHost && workItems !== pullRequests) {
-    return `Work items: ${workItems} · Pull requests: ${pullRequests}`;
+  const connector = isCapabilitySwitchedOn(group, "connector");
+  const codeHost = isCapabilitySwitchedOn(group, "codeHost");
+  if (connector && codeHost && backlogItems !== pullRequests) {
+    return `Backlog items: ${backlogItems} · Pull requests: ${pullRequests}`;
   }
-  return active.connector || !active.codeHost ? workItems : pullRequests;
+  return connector || !codeHost ? backlogItems : pullRequests;
 }
 
 /** An empty list as plain text in the list's place, with no frame. */

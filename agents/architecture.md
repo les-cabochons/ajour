@@ -151,7 +151,7 @@ registers, so an operation started meanwhile either sees the new state or is
 cancelled.
 
 Each capability has its own automatic sync on the connection's interval. Auto
-sync imports work items straight to the backlog instead of staging them for
+sync imports backlog items straight to the backlog instead of staging them for
 review; the reserved `pullRequestAutoSync` field syncs pull requests. A
 connection saved before that field existed keeps following auto sync, which is
 what auto sync meant for its pull requests.

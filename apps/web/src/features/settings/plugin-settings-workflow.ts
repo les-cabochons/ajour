@@ -1,5 +1,8 @@
 import type * as appApi from "@/lib/app-api";
-import { pluginCatalogRefreshMinutesSchema } from "@ajour/shared";
+import {
+  pluginCatalogRefreshMinutesSchema,
+  switchableCapabilityLabels,
+} from "@ajour/shared";
 import type {
   ConnectorFieldValues,
   ConnectorOverviewGroup,
@@ -12,12 +15,6 @@ import type {
   ProjectDataShapePluginManifest,
   SwitchableCapability,
 } from "@ajour/shared";
-
-/** How the settings page names each capability a user can switch. */
-export const capabilityLabels: Record<SwitchableCapability, string> = {
-  connector: "Work items",
-  codeHost: "Pull requests",
-};
 
 export type PluginDisplayEntry = {
   catalog: PluginCatalogEntry;
@@ -308,7 +305,7 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
           );
           finish(
             command.capability
-              ? `${capabilityLabels[command.capability]} ${command.enabled ? "turned on" : "turned off"} for ${command.plugin.displayName}.`
+              ? `${switchableCapabilityLabels[command.capability]} ${command.enabled ? "turned on" : "turned off"} for ${command.plugin.displayName}.`
               : `${command.plugin.displayName} ${command.enabled ? "activated" : "deactivated"}.`,
             connectors,
           );

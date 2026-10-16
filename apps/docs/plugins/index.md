@@ -58,7 +58,7 @@ The catalog does not offer newer versions of a plugin that works. To update it, 
 ## Turn plugins off
 
 - **The plugin's switch** pauses one plugin. It stops syncing, but keeps its connections, staged items and imported backlog items.
-- **Work items** and **Pull requests**, under **Capabilities** on the page of a plugin that has both, pause one part. Its connection fields hide, and its data stays. When an update adds a part to a plugin you have, the new part starts off.
+- **Backlog items** and **Pull requests**, under **Capabilities** on the page of a plugin that has both, pause one part. Its connection fields hide, and its data stays. When an update adds a part to a plugin you have, the new part starts off.
 - **Plugin system**, at the top of the page, pauses every plugin at once.
 
 ## Uninstall a plugin

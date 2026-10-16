@@ -1,6 +1,7 @@
 import {
-  pluginHasCapability,
+  isCapabilitySwitchedOn,
   pluginHasConnector,
+  syncsPullRequestsAutomatically,
   type ConnectorField,
   type ConnectorFieldValue,
   type ConnectorFieldValues,
@@ -48,7 +49,7 @@ export function buildConnectorFormValues(
 /**
  * Whether the connection form shows the field. A field of a capability the
  * user turned off is hidden. The interval shows while something syncs on it:
- * work items with auto sync, or pull requests with their own automatic sync.
+ * backlog items with auto sync, or pull requests with their own automatic sync.
  */
 export function isConnectorFieldShown(
   plugin: ConnectorPluginManifest,
@@ -57,8 +58,7 @@ export function isConnectorFieldShown(
   inactiveCapabilities: readonly SwitchableCapability[] = [],
 ) {
   const active = (capability: SwitchableCapability) =>
-    pluginHasCapability(plugin, capability) &&
-    !inactiveCapabilities.includes(capability);
+    isCapabilitySwitchedOn({ plugin, inactiveCapabilities }, capability);
   if (field.capability && !active(field.capability)) {
     return false;
   }
@@ -68,7 +68,12 @@ export function isConnectorFieldShown(
       values.autoSync === true;
     const pullRequests =
       active("codeHost") &&
-      (values.pullRequestAutoSync ?? values.autoSync) === true;
+      syncsPullRequestsAutomatically({
+        autoSync: values.autoSync === true,
+        ...(typeof values.pullRequestAutoSync === "boolean"
+          ? { pullRequestAutoSync: values.pullRequestAutoSync }
+          : {}),
+      });
     return workItems || pullRequests;
   }
   return true;
