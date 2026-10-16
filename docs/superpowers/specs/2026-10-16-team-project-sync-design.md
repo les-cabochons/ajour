@@ -2,7 +2,7 @@
 
 - Status: Approved design, spec waiting for review
 - Date: 2026-10-16
-- Builds on: `2026-10-15-plugin-project-properties-design.md`, the per-capability switches of #177, and [ADR 0005](../../../agents/adr/0005-shared-projects-last-writer-wins.md)
+- Builds on: `2026-10-15-plugin-project-properties-design.md`, the per-capability switches of #177, and [ADR 0006](../../../agents/adr/0006-shared-projects-last-writer-wins.md)
 
 ## Why
 
@@ -75,7 +75,7 @@ A pure module, `apps/web/src/domain/projects/team-sync.ts`, owns:
 - `shareProject(state, project, teamProjects)`: links by name or marks the project as new, and merges tasks by name.
 - `unshareProject` and `disconnectTeam`.
 
-The rules are in [ADR 0005](../../../agents/adr/0005-shared-projects-last-writer-wins.md): last writer wins per field, archive without review, nothing deleted.
+The rules are in [ADR 0006](../../../agents/adr/0006-shared-projects-last-writer-wins.md): last writer wins per field, archive without review, nothing deleted.
 
 ## Code
 

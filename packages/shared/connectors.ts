@@ -231,7 +231,7 @@ export const connectorPluginCapabilitiesSchema = z
       .optional(),
     codeHost: z.object({}).optional(),
     calendar: z.object({}).optional(),
-    /** Keeps a team's shared projects in step. See ADR 0005. */
+    /** Keeps a team's shared projects in step. See ADR 0006. */
     team: teamCapabilitySchema.optional(),
     agentTask: z
       .object({ tasks: z.array(agentTaskSchema).min(1).max(10) })
