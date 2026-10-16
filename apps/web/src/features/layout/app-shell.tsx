@@ -78,6 +78,7 @@ import {
   syncConnectorConnection,
   syncCodeHostConnection,
 } from "@/lib/app-api";
+import { syncTeamConnection } from "@/lib/team-sync";
 import { localStore } from "@/lib/local-store";
 import { setPageHeaderSlot, useHasPageHeader } from "@/lib/page-header";
 import {
@@ -247,7 +248,8 @@ function ConnectorAutoSyncScheduler() {
         const overview = await getConnectorsOverview();
         const now = Date.now();
         // Each capability has its own automatic sync: auto sync imports work
-        // items straight to the backlog, and pull requests have their own.
+        // items straight to the backlog, pull requests have their own, and a
+        // team's projects always sync.
         const autoCapabilities = (
           group: (typeof overview.connectionGroups)[number],
           connection: (typeof group.connections)[number],
@@ -262,6 +264,10 @@ function ConnectorAutoSyncScheduler() {
                 ...(syncsPullRequestsAutomatically(connection) &&
                 isCapabilityActive(group, "codeHost")
                   ? (["codeHost"] as const)
+                  : []),
+                // A team always syncs on the interval: there is no review to skip.
+                ...(isCapabilityActive(group, "team")
+                  ? (["team"] as const)
                   : []),
               ];
         const dueConnections = overview.connectionGroups.flatMap((group) =>
@@ -294,10 +300,15 @@ function ConnectorAutoSyncScheduler() {
                     dueConnection.connection.id,
                     { trigger: "auto" },
                   )
-                : syncCodeHostConnection(
-                    dueConnection.pluginId,
-                    dueConnection.connection.id,
-                  ),
+                : capability === "codeHost"
+                  ? syncCodeHostConnection(
+                      dueConnection.pluginId,
+                      dueConnection.connection.id,
+                    )
+                  : syncTeamConnection(
+                      dueConnection.pluginId,
+                      dueConnection.connection.id,
+                    ),
           }));
           for (const operation of operations) {
             if (loopState.cancelled) break;

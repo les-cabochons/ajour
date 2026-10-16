@@ -66,6 +66,12 @@ import { localStore } from "@/lib/local-store";
 import {
   calendarListEventsResultSchema,
   type CalendarListEventsRequest,
+  teamCreateResultSchema,
+  teamSyncResultSchema,
+  type TeamCreateResult,
+  type TeamCreateRouteRequest,
+  type TeamSyncRequest,
+  type TeamSyncResult,
   type CalendarListEventsResult,
 } from "@ajour/shared";
 import {
@@ -83,6 +89,13 @@ const pullRequestSyncs = new Map<string, Promise<CodeHostSyncResult>>();
 const connectionGenerations = new Map<string, number>();
 const connectionKey = (pluginId: string, connectionId: string) =>
   JSON.stringify([pluginId, connectionId]);
+/** Connections removed in this session. Their IDs are never reused. */
+const removedConnections = new Set<string>();
+
+/** Whether the connection was removed, so a late result must not apply. */
+export function isConnectionRemoved(pluginId: string, connectionId: string) {
+  return removedConnections.has(connectionKey(pluginId, connectionId));
+}
 
 /** Deduplicates manual and scheduled calls, and rejects results from a removed connection. */
 export function syncCodeHostConnection(
@@ -541,6 +554,7 @@ export async function deleteConnectorConnection(
 ): Promise<ConnectorsOverview> {
   const key = connectionKey(pluginId, connectionId);
   connectionGenerations.set(key, (connectionGenerations.get(key) ?? 0) + 1);
+  removedConnections.add(key);
   const overview = cacheConnectorsOverview(
     await appApiRequest(
       `/api/connectors/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}`,
@@ -552,6 +566,7 @@ export async function deleteConnectorConnection(
   );
   localStore.removeConnectionPullRequests(pluginId, connectionId);
   localStore.removeConnectionCalendarData(pluginId, connectionId);
+  localStore.removeConnectionTeamData(connectionId);
   return overview;
 }
 
@@ -565,6 +580,34 @@ export function listCalendarEvents(
     `/api/calendars/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/listCalendarEvents`,
     { method: "POST", body: JSON.stringify(request) },
     calendarListEventsResultSchema,
+  );
+}
+
+/**
+ * Creates a team from the connection form's values, before the connection is
+ * saved. The result holds the values that join it, such as its ID and secret.
+ */
+export function createTeam(
+  pluginId: string,
+  request: TeamCreateRouteRequest,
+): Promise<TeamCreateResult> {
+  return appApiRequest(
+    `/api/teams/${encodeURIComponent(pluginId)}/create`,
+    { method: "POST", body: JSON.stringify(request) },
+    teamCreateResultSchema,
+  );
+}
+
+/** One round of a team sync. `lib/team-sync.ts` runs the rounds. */
+export function runTeamSyncRound(
+  pluginId: string,
+  connectionId: string,
+  request: TeamSyncRequest,
+): Promise<TeamSyncResult> {
+  return appApiRequest(
+    `/api/teams/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/sync`,
+    { method: "POST", body: JSON.stringify(request) },
+    teamSyncResultSchema,
   );
 }
 
