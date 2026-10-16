@@ -661,7 +661,6 @@ describe("Move up and Move down on time entries", () => {
     ]);
   });
 
-
   it("persists Move down like a drag, by trading committed timestamps", () => {
     const state = createState({ timesheetEntries: entries });
     const next = getSharedTableStepOrder(
@@ -694,9 +693,12 @@ describe("placeRunningRow", () => {
   });
 
   it("puts a new running entry last", () => {
-    expect(ids(placeRunningRow(entries, { row: { _id: "running" } }))).toEqual(
-      ["first", "second", "third", "running"],
-    );
+    expect(ids(placeRunningRow(entries, { row: { _id: "running" } }))).toEqual([
+      "first",
+      "second",
+      "third",
+      "running",
+    ]);
   });
 
   it("puts the running row last when its resumed entry is not listed", () => {

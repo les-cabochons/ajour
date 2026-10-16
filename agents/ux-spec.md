@@ -12,7 +12,7 @@ Decided in [Action model for entries, timers, projects, tasks and work items](ht
 
 1. Each object kind has one action set. The same items appear in the same order on every surface:
    - the right-click menu on any row, card or cell that shows the object,
-   - the "…" button on the row or card, shown on hover and keyboard focus, and always shown in the narrow view, except Grid rows as described in rule 8,
+   - the "…" button on the row or card, shown on hover and keyboard focus, and always shown in the narrow view, except Grid rows as described in rule 8 and time entry rows and cards as described in rule 10,
    - keyboard shortcuts on the focused object,
    - the command palette (Cmd+K), acting on the focused object,
    - the Electron menu bar.
@@ -26,6 +26,8 @@ Decided in [Action model for entries, timers, projects, tasks and work items](ht
 8. Grid rows have no "…" button. Delete row appears in the right-click menu on the row name and its cells. Shift+Backspace works on focused cells only, so only the cell menu shows the shortcut.
 
 9. Exception to rule 2: Mark as not committed is listed on committed entries only. Listed and disabled on every other entry, it would add a line to most menus for a rare repair.
+
+10. Time entry rows and cards (Day rows, Days cards and the Grid cell list) have no "…" button. Right-click and the menu keys open their action set. Day rows show Continue at their end, and the running row shows Stop in the same slot.
 
 ### Time entry
 
@@ -41,7 +43,7 @@ Decided in [Action model for entries, timers, projects, tasks and work items](ht
 
 - Continue on today's entry resumes that entry. Continue on another day's entry starts a new running entry today with the same task and note. Today the code adds the new time to the original entry, even on a past day. That changes.
 - Discard throws away the time counted since the entry last started. A running entry that started from nothing disappears.
-- Move up and Move down apply to saved and committed entries. Each day lists its entries oldest first, so a new entry lands at the end. The running entry stays last in its day, so Move up and Move down are disabled on it: "The running entry stays last".
+- Move up and Move down apply to saved and committed entries. Each day lists its entries oldest first, so a new entry lands at the end. Continuing an entry never moves it: the running entry keeps that entry's place in every view and moves like it. A new running entry, with no saved entry yet, stays last in its day, so Move up and Move down are disabled on it: "A new running entry stays last".
 
 ### Project
 
@@ -177,7 +179,7 @@ Today's splits at 640px and 1023px go away.
 
 ### Actions and editing
 
-- Rows always show the "…" button. On touch screens, a long press opens the same menu.
+- Rows always show their "…" button, and Day rows their Continue or Stop. On touch screens, a long press opens the right-click menu.
 - Page actions that floated over the content, such as the Backlog filter and "+", move into the page header.
 - Editing an entry uses the full-width entry dialog. Its behavior comes from [One entry editor for Day and Week](https://github.com/les-cabochons/ajour/issues/14).
 
@@ -261,7 +263,7 @@ Decided in [Adding and changing time in the week view](https://github.com/les-ca
 ### Days
 
 - "+ Add" in each column opens a new entry for that day in the side panel.
-- A click on a card opens it in the side panel. Cards keep "…" and right-click with the time entry action set.
+- A click on a card opens it in the side panel. Right-click on a card opens the time entry action set.
 - Dragging a card to another day moves it. Move to… is the keyboard path. Shortcuts come from [Keyboard model and command palette](https://github.com/les-cabochons/ajour/issues/18), and a move shows the Undo toast.
 
 ## Feedback
@@ -357,7 +359,7 @@ Frequent in-app actions use single keys. They only work when focus is not in a t
 - ↑ and ↓ move focus between rows or cards. ← and → move between days in Days and between cells in the Grid.
 - Enter goes one level deeper. On a time entry, task or project it opens Edit. On a backlog item row it opens the backlog item page, and on that page it opens Edit. E no longer opens Edit. Delete or Backspace deletes, with the Undo toast. On a focused Grid cell, Shift+Backspace deletes the whole row.
 - On a focused backlog item, or on its page, S starts an entry on it (Stop when its entry runs), E settles and B snoozes, as in Gmail. Shift+E opens the settle dialog even when a settle rule applies a fixed change. Cmd+D duplicates. M opens Move to…. Alt+↑ and Alt+↓ reorder.
-- The context menu key, Shift+F10 or "." opens the "…" menu. Escape closes whatever is open.
+- The context menu key, Shift+F10 or "." opens the "…" menu, or the right-click menu on a row without one. Escape closes whatever is open.
 - Every item in the "…" and right-click menus shows its key, so the menus teach the shortcuts.
 - Calendar suggestions are focusable too: Day rows under "From your calendar" and the dashed cards under a Days column. Enter adds the suggestion when it has a project, and opens the project picker when it does not. Space does the same on a card. Delete or Backspace dismisses it, with the Undo toast. Their menus list Add, Choose project…, Dismiss, Hide this meeting and Forget this meeting. Suggestions never join the entry selection.
 

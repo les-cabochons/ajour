@@ -769,9 +769,7 @@ export function WeeklyTimeView({
                             <Chip tone="success">Running</Chip>
                           </div>
                           <strong>
-                            {formatClockDuration(
-                              runningTime.displayDurationMs,
-                            )}
+                            {formatClockDuration(runningTime.displayDurationMs)}
                           </strong>
                         </ObjectContextMenu>
                       ) : null;
@@ -841,11 +839,7 @@ export function WeeklyTimeView({
                               });
                             }}
                             onPointerDown={(event) =>
-                              handleEntryPointerDown(
-                                entry,
-                                day.entries,
-                                event,
-                              )
+                              handleEntryPointerDown(entry, day.entries, event)
                             }
                           />
                         }

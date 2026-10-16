@@ -478,9 +478,9 @@ describe("weekly time projection", () => {
       running,
     });
     // The running entry keeps the place of entry-1, the entry it continues.
-    expect(
-      cell.rows.map((row) => (row === "running" ? row : row._id)),
-    ).toEqual(["running", "entry-2"]);
+    expect(cell.rows.map((row) => (row === "running" ? row : row._id))).toEqual(
+      ["running", "entry-2"],
+    );
     expect(cell.hasRunning).toBe(true);
     expect(
       selectWeeklyGridCell({
