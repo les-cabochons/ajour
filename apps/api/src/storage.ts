@@ -1015,7 +1015,8 @@ export class AppApiStorage {
    * capability; once it has both, auto sync imports backlog items. Adding
    * backlog items moves that choice to pull requests and lets backlog items
    * stage for review. Adding pull requests starts their own sync at
-   * `pullRequestAutoSyncDefault`, the default of a new connection.
+   * `pullRequestAutoSyncDefault`, the default of a new connection. Adding a
+   * team changes nothing: a team always syncs on the interval.
    */
   async adoptAddedCapability(
     pluginId: string,
@@ -1026,7 +1027,7 @@ export class AppApiStorage {
       nextState: {
         ...state,
         connections: state.connections.map((connection) =>
-          connection.pluginId !== pluginId
+          connection.pluginId !== pluginId || added === "team"
             ? connection
             : added === "connector"
               ? {

@@ -73,8 +73,9 @@ The local API is a boundary for connector-driven work. Connector behavior should
 
 ## Connector Plugins
 
-Connectors and code hosts are capabilities of installable plugins. A plugin
-declares one or both in its manifest, and its connections serve all of them.
+Connectors, code hosts and teams are capabilities of installable plugins. A
+plugin declares one or more in its manifest, and its connections serve all of
+them.
 A connection field may name the capability it configures, so the connection
 form hides it while that capability is off. `validateConnection` receives the
 capabilities that are on as its second argument and checks only their access.
@@ -138,10 +139,11 @@ items intact, but blocks manual sync and excludes its connections from the web
 auto-sync scheduler. Reactivation restores those sync paths without requiring
 the connector to be configured again.
 
-A plugin that declares both a connector and a code host also gets one switch
-per capability, stored as a per-plugin deny-list next to the plugin's own
-activation. Turning a capability off blocks only its routes and scheduler work
-and cancels only its running operations; the plugin switch still gates both.
+A plugin that declares more than one of connector, code host and team also
+gets one switch per capability, stored as a per-plugin deny-list next to the
+plugin's own activation. Turning a capability off blocks only its routes and
+scheduler work and cancels only its running operations; the plugin switch still
+gates all of them.
 An update that adds a capability starts it off, so updating changes nothing
 until the user turns it on. That default is saved before the package change
 ends, while plugin operations still wait, so nothing runs the new capability

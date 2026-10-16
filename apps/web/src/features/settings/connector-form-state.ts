@@ -49,7 +49,8 @@ export function buildConnectorFormValues(
 /**
  * Whether the connection form shows the field. A field of a capability the
  * user turned off is hidden. The interval shows while something syncs on it:
- * backlog items with auto sync, or pull requests with their own automatic sync.
+ * backlog items with auto sync, pull requests with their own automatic sync,
+ * or a team, which always syncs on it.
  */
 export function isConnectorFieldShown(
   plugin: ConnectorPluginManifest,
@@ -74,7 +75,7 @@ export function isConnectorFieldShown(
           ? { pullRequestAutoSync: values.pullRequestAutoSync }
           : {}),
       });
-    return workItems || pullRequests;
+    return workItems || pullRequests || active("team");
   }
   return true;
 }
