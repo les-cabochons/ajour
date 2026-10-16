@@ -73,6 +73,19 @@ function sameName(left: string, right: string) {
 }
 
 /**
+ * The local project a held team project would link to: the one with its
+ * name. Undefined when none has it any more.
+ */
+export function findLocalProjectNamed(
+  projects: readonly LocalProject[],
+  name: string,
+): LocalProject | undefined {
+  return projects.find(
+    (project) => !project.team && sameName(project.name, name),
+  );
+}
+
+/**
  * A project's team-owned fields as the team sees them. A color or an icon the
  * contract does not accept, such as an older color format, goes as Ajour's
  * default.

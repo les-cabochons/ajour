@@ -17,6 +17,8 @@ const MAX_ROUNDS = 40;
 
 export interface TeamSyncOutcome {
   rounds: number;
+  /** Shared projects whose changes, or tasks' changes, went to the team. */
+  sentProjectCount: number;
   createdProjectIds: string[];
   updatedProjectIds: string[];
   /** Team projects newly held because a local project has their name. */
@@ -45,6 +47,7 @@ export function syncTeamConnection(
   const run = async (): Promise<TeamSyncOutcome> => {
     const outcome: TeamSyncOutcome = {
       rounds: 0,
+      sentProjectCount: 0,
       createdProjectIds: [],
       updatedProjectIds: [],
       heldArrivals: [],
@@ -85,6 +88,7 @@ export function syncTeamConnection(
       }
 
       outcome.rounds += 1;
+      outcome.sentProjectCount += plan.request.changes.length;
       outcome.createdProjectIds.push(...applied.createdProjectIds);
       outcome.updatedProjectIds.push(
         ...applied.updatedProjectIds.filter(

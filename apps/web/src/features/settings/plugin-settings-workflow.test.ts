@@ -7,6 +7,7 @@ import type {
 import {
   createPluginSettingsWorkflow,
   describeConnectionRemoval,
+  describeTeamSync,
   type PluginSettingsDependencies,
 } from "./plugin-settings-workflow";
 
@@ -79,6 +80,7 @@ function dependencies() {
     saveConnectorConnection: unused,
     deleteConnectorConnection: unused,
     syncConnectorConnection: unused,
+    syncTeamConnection: unused,
     installConnectorPlugin: vi.fn(async () => null),
     setPluginSystemEnabled: vi.fn(async (enabled) => ({
       ...overview,
@@ -353,5 +355,66 @@ describe("describeConnectionRemoval", () => {
     ).toBe(
       "This removes the connection and its 1 saved pull request and 2 remembered meetings from this device.",
     );
+  });
+});
+
+describe("team connections", () => {
+  const shared = (connectionId: string) => ({
+    _id: `p-${connectionId}`,
+    team: { connectionId },
+  });
+
+  it("says shared projects become local when a team connection goes", () => {
+    const state = {
+      pullRequests: [],
+      calendarEventRules: [],
+      projects: [
+        shared("acme"),
+        shared("acme"),
+        shared("other"),
+        { _id: "local" },
+      ],
+    } as unknown as Parameters<typeof describeConnectionRemoval>[2];
+
+    expect(
+      describeConnectionRemoval(
+        { id: "team", capabilities: { team: {} } },
+        "acme",
+        state,
+      ),
+    ).toBe(
+      "This removes the connection from this device. Its 2 shared projects become local here, with their tasks and time entries. The team keeps them.",
+    );
+    expect(
+      describeConnectionRemoval(
+        { id: "team", capabilities: { team: {} } },
+        "none",
+        state,
+      ),
+    ).toBe("This removes the connection from this device.");
+  });
+
+  it("sums up a team sync", () => {
+    const outcome = {
+      rounds: 2,
+      sentProjectCount: 1,
+      createdProjectIds: ["a", "b"],
+      updatedProjectIds: ["c"],
+      heldArrivals: [{ remoteId: "r", localProjectId: "l" }],
+      unsendable: [],
+      incomplete: false,
+    };
+    expect(describeTeamSync("Acme", outcome)).toBe(
+      "Acme · 1 sent · 2 added · 1 updated · 1 waits for you",
+    );
+    expect(
+      describeTeamSync("Acme", {
+        ...outcome,
+        sentProjectCount: 0,
+        createdProjectIds: [],
+        updatedProjectIds: [],
+        heldArrivals: [],
+      }),
+    ).toBe("Acme · up to date");
   });
 });

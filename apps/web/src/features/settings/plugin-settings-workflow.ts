@@ -1,3 +1,4 @@
+import type { syncTeamConnection, TeamSyncOutcome } from "@/lib/team-sync";
 import type * as appApi from "@/lib/app-api";
 import type { LocalAppState } from "@/domain/local-state";
 import {
@@ -42,6 +43,8 @@ export type PluginSettingsDependencies = Pick<
   | "uninstallConnectorPlugin"
   | "isConnectorApiMissing"
 > & {
+  /** From `lib/team-sync.ts`: runs a team connection's rounds. */
+  syncTeamConnection: typeof syncTeamConnection;
   subscribeCatalog(
     listener: (catalog: PluginCatalogResponse) => void,
   ): () => void;
@@ -63,6 +66,7 @@ type PluginSettingsCommand =
     }
   | { type: "delete"; pluginId: string; connectionId: string }
   | { type: "sync"; pluginId: string; connectionId: string }
+  | { type: "teamSync"; pluginId: string; connectionId: string }
   | { type: "install" }
   | { type: "system"; enabled: boolean }
   | { type: "download"; pluginId: string }
@@ -74,6 +78,7 @@ const commandFailureMessages: Record<PluginSettingsCommand["type"], string> = {
   save: "Unable to save the connector connection.",
   delete: "Unable to delete the connector connection.",
   sync: "Unable to sync connector items.",
+  teamSync: "Unable to sync the team's projects.",
   install: "Unable to install the connector plugin.",
   system: "Unable to update the plugin system.",
   download: "Unable to download the plugin.",
@@ -287,6 +292,20 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
     }
   }
 
+  /** The connection's label, for status lines. */
+  function connectionLabel(command: {
+    pluginId: string;
+    connectionId: string;
+  }) {
+    return (
+      snapshot.connectors?.connectionGroups
+        .find((group) => group.plugin.id === command.pluginId)
+        ?.connections.find(
+          (connection) => connection.id === command.connectionId,
+        )?.label ?? "Team"
+    );
+  }
+
   async function refresh() {
     await Promise.all([refreshConnectors(), refreshCatalog(), refreshShapes()]);
   }
@@ -379,6 +398,16 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
                 : []),
             ].join(" · "),
           );
+          break;
+        }
+        case "teamSync": {
+          const outcome = await deps.syncTeamConnection(
+            command.pluginId,
+            command.connectionId,
+          );
+          if (!isCurrent()) return false;
+          await refreshConnectors();
+          finish(describeTeamSync(connectionLabel(command), outcome));
           break;
         }
         case "install": {
@@ -523,10 +552,13 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
 export function describeConnectionRemoval(
   plugin: {
     id: string;
-    capabilities: { codeHost?: object; calendar?: object };
+    capabilities: { codeHost?: object; calendar?: object; team?: object };
   },
   connectionId: string,
-  state: Pick<LocalAppState, "pullRequests" | "calendarEventRules">,
+  state: Pick<
+    LocalAppState,
+    "pullRequests" | "calendarEventRules" | "projects"
+  >,
 ) {
   const ofConnection = (item: { pluginId: string; connectionId: string }) =>
     item.pluginId === plugin.id && item.connectionId === connectionId;
@@ -552,5 +584,36 @@ export function describeConnectionRemoval(
         ]
       : []),
   ];
-  return `This removes the connection and its ${losses.join(" and ")} from this device.`;
+  const removal =
+    losses.length > 0
+      ? `This removes the connection and its ${losses.join(" and ")} from this device.`
+      : "This removes the connection from this device.";
+  if (!plugin.capabilities.team) return removal;
+  const shared = state.projects.filter(
+    (project) => project.team?.connectionId === connectionId,
+  ).length;
+  return shared === 0
+    ? removal
+    : `${removal} Its ${count(shared, "shared project", "shared projects")} become local here, with their tasks and time entries. The team keeps ${shared === 1 ? "it" : "them"}.`;
+}
+
+/** The status line after a team sync, such as "Acme · 2 added · 1 waits for you". */
+export function describeTeamSync(label: string, outcome: TeamSyncOutcome) {
+  const parts = [
+    outcome.sentProjectCount ? `${outcome.sentProjectCount} sent` : null,
+    outcome.createdProjectIds.length
+      ? `${outcome.createdProjectIds.length} added`
+      : null,
+    outcome.updatedProjectIds.length
+      ? `${outcome.updatedProjectIds.length} updated`
+      : null,
+    outcome.heldArrivals.length
+      ? `${outcome.heldArrivals.length} ${outcome.heldArrivals.length === 1 ? "waits" : "wait"} for you`
+      : null,
+    outcome.unsendable.length
+      ? `${outcome.unsendable.length} not sent: too long for the team`
+      : null,
+    outcome.incomplete ? "more at the next sync" : null,
+  ].filter(Boolean);
+  return [label, ...(parts.length ? parts : ["up to date"])].join(" · ");
 }
