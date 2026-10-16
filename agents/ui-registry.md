@@ -191,7 +191,7 @@ in place, so Back returns to the view each history entry showed. The narrow view
 has no switcher. A Week link there (`?view=week`) shows Day with a note that
 Week needs a wider window, and keeps `view=week`, so widening the window shows
 Week. The week's range is the top bar's title in Week, with a Today chip while
-the week holds today and the Committed chip once the week has no change left.
+the week holds today.
 Under the bar a 44px toolbar holds Grid | Days (persisted locally as `grid` or
 `days`) and the week total. The Grid table uses a fixed layout: 84px day
 columns, a 72px total column, and the project and task column takes the rest,
