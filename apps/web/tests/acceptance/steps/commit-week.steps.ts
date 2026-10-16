@@ -173,3 +173,23 @@ Then(
     await expect(changeRow(page, kind).getByRole("checkbox")).not.toBeChecked();
   },
 );
+
+When(
+  "I mark Monday's {string} entry as not committed",
+  async ({ page }, note: string) => {
+    await page.goto("/time/2026-10-05");
+    await page.getByText(note, { exact: true }).click({ button: "right" });
+    await page.getByRole("menuitem", { name: "Mark as not committed" }).click();
+    await expect(page.getByText("Marked as not committed")).toBeVisible();
+  },
+);
+
+Then(
+  "the Commit page lists only an/a {string} change for {string}",
+  async ({ page }, kind: string, note: string) => {
+    await expect(changeList(page).getByRole("listitem")).toHaveCount(1, {
+      timeout: 15_000,
+    });
+    await expect(changeRow(page, kind)).toContainText(note);
+  },
+);

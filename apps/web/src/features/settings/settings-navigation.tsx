@@ -3,6 +3,7 @@ import {
   RiArrowLeftLine as ArrowLeft,
   RiArrowRightSLine as ChevronRight,
   RiBugLine as Bug,
+  RiCalendarLine as CalendarIcon,
   RiDownloadLine as Download,
   RiFolderChartLine as FolderKanban,
   RiInboxLine as Inbox,
@@ -26,6 +27,7 @@ import {
 } from "@/components/custom-sidebar";
 import { Button } from "@/components/ui/button";
 import { Sidebar } from "@/components/ui/sidebar";
+import { useCalendarSources } from "@/lib/calendar-suggestions";
 import { useCodeHostConnections } from "@/lib/code-host-connections";
 
 /**
@@ -44,6 +46,7 @@ export type SettingsNavigationView = "wide" | "narrow";
 export function getSettingsGroups(
   view: SettingsNavigationView,
   hasCodeHost = false,
+  hasCalendar = false,
 ) {
   return [
     {
@@ -76,6 +79,15 @@ export function getSettingsGroups(
         view === "narrow"
           ? { to: "/projects", label: "Projects", icon: FolderKanban }
           : { to: "/settings/projects", label: "Projects", icon: FolderKanban },
+        ...(hasCalendar
+          ? [
+              {
+                to: "/settings/calendar",
+                label: "Calendar",
+                icon: CalendarIcon,
+              } as const,
+            ]
+          : []),
       ],
     },
     {
@@ -92,8 +104,11 @@ export function getSettingsGroups(
 export function getSettingsPages(
   view: SettingsNavigationView,
   hasCodeHost = false,
+  hasCalendar = false,
 ) {
-  return getSettingsGroups(view, hasCodeHost).flatMap((group) => group.pages);
+  return getSettingsGroups(view, hasCodeHost, hasCalendar).flatMap(
+    (group) => group.pages,
+  );
 }
 
 /**
@@ -113,7 +128,12 @@ export function SettingsNavigation({
   onBack?: () => void;
 }) {
   const { groups: codeHosts } = useCodeHostConnections();
-  const groups = getSettingsGroups(view, codeHosts.length > 0);
+  const calendars = useCalendarSources();
+  const groups = getSettingsGroups(
+    view,
+    codeHosts.length > 0,
+    calendars.length > 0,
+  );
 
   if (view === "narrow") {
     return (

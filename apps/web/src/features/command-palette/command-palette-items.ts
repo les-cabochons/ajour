@@ -10,6 +10,7 @@ import {
   getProjectActions,
   getTaskActions,
   getTimeEntryActions,
+  getTimeEntryActionState,
   type BacklogItemActionId,
   type ObjectAction,
   type ProjectActionId,
@@ -20,6 +21,7 @@ import {
   getDirectChildWorkItems,
   isSubtaskWorkItem,
 } from "@/domain/backlog/work-item-hierarchy";
+import { isTimesheetEntryCommitted } from "@/domain/time/timesheet-commit";
 import {
   getLocalProjectDisplayName,
   type LocalProject,
@@ -484,7 +486,11 @@ function focusedSection(input: PaletteInput): PaletteSection | null {
           heading: describeEntry(entry, projects),
           items: toItems(
             prefix,
-            getTimeEntryActions("saved"),
+            getTimeEntryActions(
+              getTimeEntryActionState({
+                isCommitted: isTimesheetEntryCommitted(entry),
+              }),
+            ),
             (actionId) => ({
               kind: "time-entry",
               entryId: entry._id,

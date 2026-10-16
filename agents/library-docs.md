@@ -155,7 +155,7 @@ The backlog editor module is feature-local because its vocabulary and commands b
   `syncTeamProjects(connection, request)`; the API exposes them at
   `POST /api/teams/:pluginId/create` and
   `POST /api/teams/:pluginId/connections/:connectionId/sync`. The sync rules
-  are in `apps/web/src/domain/projects/team-sync.ts`. The first team plugin is maintained separately. See ADR 0005.
+  are in `apps/web/src/domain/projects/team-sync.ts`. The first team plugin is maintained separately. See ADR 0006.
 - Sync reports each item's `stateCategory` and `stateDone`. The plugin decides
   which categories are done, and also reports Ajour's items that reached one,
   so Ajour archives them. The API returns those as `doneItems` and never stages

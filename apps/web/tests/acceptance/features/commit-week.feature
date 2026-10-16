@@ -18,3 +18,11 @@ Feature: Commit the week
     Then the Commit page lists only the "Deleted" change
     When I undo with the toast button
     Then the Commit page lists 3 changes
+
+  Scenario: Mark an entry as not committed after the timesheet changed
+    Given I have a committed week of entries
+    When I mark Monday's "API" entry as not committed
+    And I open the Commit page for the week of 2026-10-05
+    Then the Commit page lists only an "Updated" change for "API"
+    When I press "Mark as committed"
+    Then the Commit page says everything is committed

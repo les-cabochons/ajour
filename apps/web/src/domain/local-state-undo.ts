@@ -21,10 +21,22 @@ const UNDO_COLLECTIONS = [
   "workflowStates",
   "workflowStateMappings",
   "workflowStateWriteRules",
+  "calendarDecisions",
+  "calendarEventRules",
 ] as const satisfies readonly (keyof LocalAppState)[];
 
 type UndoCollection = (typeof UNDO_COLLECTIONS)[number];
-type UndoRecord<K extends UndoCollection> = LocalAppState[K][number];
+type UndoRecord<K extends UndoCollection> = NonNullable<
+  LocalAppState[K]
+>[number];
+
+/** A list older state may lack, such as the calendar lists, reads as empty. */
+function recordsOf<K extends UndoCollection>(
+  state: LocalAppState,
+  collection: K,
+): UndoRecord<K>[] {
+  return (state[collection] ?? []) as UndoRecord<K>[];
+}
 
 /** How each list identifies its records. Status mappings have no `_id`. */
 const recordKeys: {
@@ -41,6 +53,8 @@ const recordKeys: {
     `${mapping.source}:${mapping.connectionId}:${mapping.sourceProjectName ?? ""}:${mapping.sourceStatusKey}`,
   workflowStateWriteRules: (rule) =>
     `${rule.source}:${rule.connectionId}:${rule.sourceProjectName ?? ""}:${rule.workflowStateId}`,
+  calendarDecisions: (decision) => decision._id,
+  calendarEventRules: (rule) => rule._id,
 };
 
 /**
@@ -165,8 +179,8 @@ function diffCollection<K extends UndoCollection>(
   after: LocalAppState,
 ): UndoRecordChange<UndoRecord<K>>[] {
   return diffRecords<UndoRecord<K>>(
-    before[collection] as UndoRecord<K>[],
-    after[collection] as UndoRecord<K>[],
+    recordsOf(before, collection),
+    recordsOf(after, collection),
     recordKeys[collection],
   );
 }
@@ -211,6 +225,8 @@ export function captureUndo(
       before,
       after,
     ),
+    calendarDecisions: diffCollection("calendarDecisions", before, after),
+    calendarEventRules: diffCollection("calendarEventRules", before, after),
   };
 
   const beforeOrder = before.workItems.map((item) => item._id);
@@ -235,7 +251,7 @@ function isUnchangedSinceAction<K extends UndoCollection>(
   changes: LocalStateUndo[K],
 ) {
   const keyOf = recordKeys[collection];
-  const records = state[collection] as UndoRecord<K>[];
+  const records = recordsOf(state, collection);
   return changes.every((change) =>
     recordsEqual(
       records.find((record) => keyOf(record) === change.key),
@@ -283,7 +299,7 @@ function restoreCollection<K extends UndoCollection>(
   undo: LocalStateUndo,
 ): LocalAppState[K] {
   return restoreRecords<UndoRecord<K>>(
-    state[collection] as UndoRecord<K>[],
+    recordsOf(state, collection),
     undo[collection],
     recordKeys[collection],
   ) as LocalAppState[K];
@@ -414,6 +430,8 @@ export function restoreUndo(
         state,
         undo,
       ),
+      calendarDecisions: restoreCollection("calendarDecisions", state, undo),
+      calendarEventRules: restoreCollection("calendarEventRules", state, undo),
     },
     result: "restored",
   };

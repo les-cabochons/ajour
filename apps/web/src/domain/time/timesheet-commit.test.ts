@@ -55,7 +55,10 @@ function committed(value: LocalTimesheetEntry): LocalTimesheetEntry {
   return { ...value, commit: toCommittedCopy(value, 50) };
 }
 
-function tombstone(entryId: string, localDate: string): LocalTimesheetTombstone {
+function tombstone(
+  entryId: string,
+  localDate: string,
+): LocalTimesheetTombstone {
   return {
     entryId,
     commit: {
@@ -124,6 +127,20 @@ describe("timesheet entry change", () => {
     const value = committed(entry({ _id: "a", note: undefined }));
 
     expect(getTimesheetEntryChange({ ...value, note: " " })).toBeUndefined();
+  });
+
+  it("is updated with no changed field while the copy is stale", () => {
+    const value = committed(entry({ _id: "a" }));
+    const stale = {
+      ...value,
+      commit: { ...value.commit!, stale: true as const },
+    };
+
+    expect(getTimesheetEntryChange(stale)).toMatchObject({
+      kind: "updated",
+      changedFields: [],
+    });
+    expect(isTimesheetEntryCommitted(stale)).toBe(false);
   });
 
   it("shows no change once an edit returns every value to the copy", () => {
@@ -205,7 +222,9 @@ describe("describing committed values", () => {
       color: "#000",
       icon: DEFAULT_PROJECT_ICON,
       status: "archived",
-      tasks: [{ _id: "task-1", name: "Build", status: "archived", createdAt: 1 }],
+      tasks: [
+        { _id: "task-1", name: "Build", status: "archived", createdAt: 1 },
+      ],
     },
   ];
 
@@ -246,6 +265,13 @@ describe("stored tombstones", () => {
         null,
       ]),
     ).toEqual([valid]);
+  });
+
+  it("keeps the stale flag of a stored copy", () => {
+    const stale = tombstone("a", "2026-10-05");
+    stale.commit.stale = true;
+
+    expect(normalizeTimesheetTombstones([stale])).toEqual([stale]);
   });
 
   it("reads a missing list as empty", () => {

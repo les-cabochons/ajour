@@ -23,10 +23,52 @@ export type TimeEntryActionId =
   | "duplicate"
   | "duplicate-to"
   | "move-to"
+  | "mark-not-committed"
   | "delete"
   | "discard";
 
-export type TimeEntryActionState = "saved" | "running";
+/** A committed entry is saved and matches its committed copy. */
+export type TimeEntryActionState = "saved" | "committed" | "running";
+
+export type CalendarSuggestionActionId =
+  "add" | "choose-project" | "dismiss" | "hide-meeting" | "forget-meeting";
+
+/**
+ * Lists a calendar suggestion's actions: Add · Choose project… · Dismiss ·
+ * Hide this meeting · Forget this meeting. The copy says meeting, never rule.
+ */
+export function getCalendarSuggestionActions(suggestion: {
+  projectId?: string;
+  seriesId?: string;
+  ruleId?: string;
+}): ObjectAction<CalendarSuggestionActionId>[] {
+  const recurringReason = suggestion.seriesId
+    ? undefined
+    : "Only for recurring meetings";
+  return [
+    {
+      id: "add",
+      label: "Add",
+      disabledReason: suggestion.projectId
+        ? undefined
+        : "Choose a project first",
+    },
+    { id: "choose-project", label: "Choose project…" },
+    { id: "dismiss", label: "Dismiss" },
+    {
+      id: "hide-meeting",
+      label: "Hide this meeting",
+      disabledReason: recurringReason,
+    },
+    {
+      id: "forget-meeting",
+      label: "Forget this meeting",
+      disabledReason:
+        recurringReason ??
+        (suggestion.ruleId ? undefined : "Nothing remembered yet"),
+    },
+  ];
+}
 
 export interface TimeEntryActionOptions {
   /** Set inside an editor, where Edit is the current mode. */
@@ -37,7 +79,11 @@ export interface TimeEntryActionOptions {
 
 const STOP_RUNNING_FIRST = "Stop the running entry first";
 
-/** Lists a time entry's actions: Edit · Continue/Stop · Duplicate · Duplicate to… · Move to… · Delete/Discard. */
+/**
+ * Lists a time entry's actions: Edit · Continue/Stop · Duplicate · Duplicate to… ·
+ * Move to… · Mark as not committed · Delete/Discard. Only committed entries list
+ * Mark as not committed.
+ */
 export function getTimeEntryActions(
   state: TimeEntryActionState,
   options: TimeEntryActionOptions = {},
@@ -72,6 +118,9 @@ export function getTimeEntryActions(
       label: "Move to…",
       disabledReason: relocationReason,
     },
+    ...(state === "committed"
+      ? [{ id: "mark-not-committed" as const, label: "Mark as not committed" }]
+      : []),
     isRunning
       ? { id: "discard", label: "Discard", destructive: true }
       : { id: "delete", label: "Delete", destructive: true },
@@ -81,8 +130,10 @@ export function getTimeEntryActions(
 /** Returns the action state shown for a time entry. */
 export function getTimeEntryActionState(entry: {
   isRunning?: boolean;
+  isCommitted?: boolean;
 }): TimeEntryActionState {
-  return entry.isRunning ? "running" : "saved";
+  if (entry.isRunning) return "running";
+  return entry.isCommitted ? "committed" : "saved";
 }
 
 type ArchiveStatus = "active" | "archived";

@@ -20,6 +20,9 @@ const CODE_HOST_METHODS = new Set([
   "mergePullRequest",
 ]);
 
+// Keep in sync with `calendarOperations` in packages/shared/calendar.ts.
+const CALENDAR_METHODS = new Set(["listCalendarEvents"]);
+
 // Keep in sync with `teamPluginMethods` in packages/shared/team-sync.ts.
 const TEAM_CONNECTION_METHODS = new Set(["syncTeamProjects"]);
 
@@ -53,6 +56,7 @@ async function run() {
     workerData.method === "listSettleStates" ||
     workerData.method === "writeSettle" ||
     CODE_HOST_METHODS.has(workerData.method) ||
+    CALENDAR_METHODS.has(workerData.method) ||
     TEAM_CONNECTION_METHODS.has(workerData.method)
   ) {
     return await handler(

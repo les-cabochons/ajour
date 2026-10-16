@@ -34,6 +34,7 @@ import { useShortcut, useShortcutRunner } from "@/lib/shortcut-handlers";
 import { SHORTCUTS, getShortcutPlatform } from "@/lib/shortcuts";
 import { getSharedTableStepOrder } from "@/lib/table-drag";
 import { selectSortableDayEntryIds } from "@/domain/time/timesheet-entry";
+import { useCalendarSources } from "@/lib/calendar-suggestions";
 import { useIsNarrowView } from "@/lib/use-narrow-view";
 import { cn } from "@/lib/utils";
 
@@ -61,6 +62,7 @@ export function CommandPalette() {
   const router = useRouter();
   const state = useLocalState();
   const isNarrowView = useIsNarrowView();
+  const hasCalendar = useCalendarSources().length > 0;
   const shortcutRunner = useShortcutRunner();
   const [isOpen, setIsOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -352,6 +354,8 @@ export function CommandPalette() {
         // The narrow view's Projects page is the section itself, already listed.
         settingsPages: getSettingsPages(
           isNarrowView ? "narrow" : "wide",
+          false,
+          hasCalendar,
         ).filter((page) => page.to.startsWith("/settings/")),
         platform,
         settleOpensDialog,

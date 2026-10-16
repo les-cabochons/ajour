@@ -1,5 +1,6 @@
 import {
   isCapabilitySwitchedOn,
+  pluginHasCapability,
   pluginHasSwitchableCapabilities,
   pluginSwitchableCapabilities,
   switchableCapabilityLabels,
@@ -12,12 +13,14 @@ import { Switch } from "@/components/ui/switch";
 const capabilityDescriptions: Record<SwitchableCapability, string> = {
   connector: "Sync items into your backlog and write settles back.",
   codeHost: "List the pull requests you wrote or were asked to review.",
+  calendar: "Suggest your calendar's meetings as time entries.",
   team: "Keep shared projects and tasks in step with your team.",
 };
 
 /**
- * The Capabilities section of a plugin that declares more than one of
- * connector, code host and team: one switch each, under the plugin's own switch. Turning one off
+ * The Capabilities section of a plugin that declares more than one of a
+ * connector, a code host, a calendar and a team: one switch each, under the
+ * plugin's own switch. Turning one off
  * pauses it and keeps its connections and data.
  */
 export function PluginCapabilitySwitches({
