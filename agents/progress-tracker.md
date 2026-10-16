@@ -4,6 +4,19 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Current Baseline
 
+- [x] Team project sync (2026-10-16, #185): a plugin can declare the `team`
+      capability, with its own Projects switch, to keep a team's shared
+      projects and tasks in step. The contract is `packages/shared/team-sync.ts`;
+      the per-field merge, held same-name arrivals and result checks are
+      `domain/projects/team-sync.ts`; the API runs `createTeam` and
+      `syncTeamProjects` behind `/api/teams/...`; `lib/team-sync.ts` runs the
+      rounds on the connection's interval with a cross-window Undo hold, a
+      Web Lock and a fresh connection check before each answer. Settings
+      creates and joins teams and shows the picker; the project page shares
+      and stops sharing. ADR 0006 records last writer wins and the one held
+      arrival. The Convex backend and plugin live in a private repository.
+      Five GPT-6.1-Sol review rounds; checked end to end in a browser against
+      a local Convex backend.
 - [x] Continue keeps the entry in place (2026-10-16): a running entry that
       resumed a saved entry takes that entry's place in the Day list, the Days
       cards and the Grid cell list (`placeRunningRow`), and Move up, Move down
