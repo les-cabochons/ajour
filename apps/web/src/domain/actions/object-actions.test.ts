@@ -91,8 +91,21 @@ describe("time entry actions", () => {
     ).toBeUndefined();
   });
 
-  it("derives the action state from the running flag", () => {
+  it("adds Mark as not committed before Delete on a committed entry", () => {
+    expect(ids(getTimeEntryActions("committed"))).toEqual([
+      "edit",
+      "continue",
+      "duplicate",
+      "duplicate-to",
+      "move-to",
+      "mark-not-committed",
+      "delete",
+    ]);
+  });
+
+  it("derives the action state from the running and committed flags", () => {
     expect(getTimeEntryActionState({ isRunning: true })).toBe("running");
+    expect(getTimeEntryActionState({ isCommitted: true })).toBe("committed");
     expect(getTimeEntryActionState({})).toBe("saved");
   });
 });

@@ -82,6 +82,7 @@ import {
   deleteTimesheetEntry as applyDeleteTimesheetEntry,
   duplicateTimesheetEntry as applyDuplicateTimesheetEntry,
   markTimesheetEntriesCommitted as applyMarkTimesheetEntriesCommitted,
+  markTimesheetEntryNotCommitted as applyMarkTimesheetEntryNotCommitted,
   moveTimesheetEntry as applyMoveTimesheetEntry,
   normalizeTimesheetEntry,
   pasteTimesheetEntries as applyPasteTimesheetEntries,
@@ -1865,6 +1866,15 @@ export const localStore = {
   markTimesheetEntriesCommitted(entryIds: readonly string[]) {
     return updateStateWithUndo((state) =>
       applyMarkTimesheetEntriesCommitted(state, entryIds, Date.now),
+    );
+  },
+  /**
+   * Drops a committed entry's committed copy. See `markTimesheetEntryNotCommitted`.
+   * Returns an undo token, or null when nothing changed.
+   */
+  markTimesheetEntryNotCommitted(entryId: string) {
+    return updateStateWithUndo((state) =>
+      applyMarkTimesheetEntryNotCommitted(state, entryId),
     );
   },
   continueTimesheetEntry(entryId: string) {

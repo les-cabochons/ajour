@@ -25,16 +25,19 @@ Decided in [Action model for entries, timers, projects, tasks and work items](ht
 
 8. Grid rows have no "…" button. Delete row appears in the right-click menu on the row name and its cells. Shift+Backspace works on focused cells only, so only the cell menu shows the shortcut.
 
+9. Exception to rule 2: Mark as not committed is listed on committed entries only. Listed and disabled on every other entry, it would add a line to most menus for a rare repair.
+
 ### Time entry
 
-| Slot             | Saved    | Committed                  | Running                                     |
-| ---------------- | -------- | -------------------------- | ------------------------------------------- |
-| Edit             | Enabled  | Enabled                    | Enabled, saved with the form, keeps running |
-| Continue / Stop  | Continue | Continue                   | Stop                                        |
-| Duplicate        | Enabled  | Enabled, the copy is saved | Disabled: "Stop the timer first"            |
-| Duplicate to…    | Enabled  | Enabled, the copy is saved | Disabled: "Stop the timer first"            |
-| Move to…         | Enabled  | Enabled                    | Disabled: "Stop the timer first"            |
-| Delete / Discard | Delete   | Delete                     | Discard                                     |
+| Slot                  | Saved      | Committed                                                       | Running                                     |
+| --------------------- | ---------- | --------------------------------------------------------------- | ------------------------------------------- |
+| Edit                  | Enabled    | Enabled                                                         | Enabled, saved with the form, keeps running |
+| Continue / Stop       | Continue   | Continue                                                        | Stop                                        |
+| Duplicate             | Enabled    | Enabled, the copy is saved                                      | Disabled: "Stop the timer first"            |
+| Duplicate to…         | Enabled    | Enabled, the copy is saved                                      | Disabled: "Stop the timer first"            |
+| Move to…              | Enabled    | Enabled                                                         | Disabled: "Stop the timer first"            |
+| Mark as not committed | Not listed | Enabled, the entry shows as updated on the Commit page (rule 9) | Not listed                                  |
+| Delete / Discard      | Delete     | Delete                                                          | Discard                                     |
 
 - Continue on today's entry resumes that entry. Continue on another day's entry starts a new running entry today with the same task and note. Today the code adds the new time to the original entry, even on a past day. That changes.
 - Discard throws away the time counted since the entry last started. A running entry that started from nothing disappears.

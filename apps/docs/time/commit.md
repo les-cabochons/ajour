@@ -19,11 +19,11 @@ The top of the page shows the week total against your target, with a progress ba
 
 Under **Changes**, each entry that changed since your last commit has a row with a symbol:
 
-| Symbol | Change      | Meaning                                                                                                                         |
-| ------ | ----------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| Plus   | **Added**   | An entry you never committed.                                                                                                   |
-| Pencil | **Updated** | A committed entry whose day, project, task, hours or note changed. The row shows the old and new values, such as `1:00 → 1:30`. |
-| Minus  | **Deleted** | A committed entry you deleted since.                                                                                            |
+| Symbol | Change      | Meaning                                                                                                                                                              |
+| ------ | ----------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Plus   | **Added**   | An entry you never committed.                                                                                                                                        |
+| Pencil | **Updated** | A committed entry whose day, project, task, hours or note changed, or that you marked as not committed. The row shows the old and new values, such as `1:00 → 1:30`. |
+| Minus  | **Deleted** | A committed entry you deleted since.                                                                                                                                 |
 
 An entry you edit back to its committed values has no change. A week with no changes says "Everything is committed."
 
@@ -31,7 +31,13 @@ Each change has a checkbox, checked by default. Uncheck a change to leave it out
 
 ## Mark as committed
 
-When the checked changes are in your timesheet tool, press **Mark as committed**. A toast offers **Undo**. The Week view shows a **Committed** chip once the week has no change left.
+When the checked changes are in your timesheet tool, press **Mark as committed**. A toast offers **Undo**. The entry editor shows a **Committed** chip on each committed entry.
+
+## Mark as not committed
+
+If someone changed an entry in your timesheet tool after you committed it, right-click the entry and choose **Mark as not committed**. A toast offers **Undo**. The entry shows as **Updated** on the Commit page, so your next commit writes Ajour's values over the timesheet tool's. With the Workday agent, the agent finds the Workday entry by the ID in its comment, or by its hours on that day, and edits it. When it cannot tell which entry it is, it asks you.
+
+Only committed entries have this action. An entry you changed since its last commit is already on the Commit page.
 
 ## Copy the lines
 

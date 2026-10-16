@@ -129,6 +129,20 @@ describe("timesheet entry change", () => {
     expect(getTimesheetEntryChange({ ...value, note: " " })).toBeUndefined();
   });
 
+  it("is updated with no changed field while the copy is stale", () => {
+    const value = committed(entry({ _id: "a" }));
+    const stale = {
+      ...value,
+      commit: { ...value.commit!, stale: true as const },
+    };
+
+    expect(getTimesheetEntryChange(stale)).toMatchObject({
+      kind: "updated",
+      changedFields: [],
+    });
+    expect(isTimesheetEntryCommitted(stale)).toBe(false);
+  });
+
   it("shows no change once an edit returns every value to the copy", () => {
     const value = committed(entry({ _id: "a" }));
     const edited = { ...value, durationMs: 2 * HOUR, note: "Other" };
@@ -251,6 +265,13 @@ describe("stored tombstones", () => {
         null,
       ]),
     ).toEqual([valid]);
+  });
+
+  it("keeps the stale flag of a stored copy", () => {
+    const stale = tombstone("a", "2026-10-05");
+    stale.commit.stale = true;
+
+    expect(normalizeTimesheetTombstones([stale])).toEqual([stale]);
   });
 
   it("reads a missing list as empty", () => {
