@@ -1,8 +1,13 @@
 import {
+  isCapabilityActive,
+  type ConnectorConnectionSummary,
+  type ConnectorOverviewGroup,
+} from "@ajour/shared";
+import {
   planTeamSync,
   type UnsendableRecord,
 } from "@/domain/projects/team-sync";
-import { isConnectionRemoved, runTeamSyncRound } from "@/lib/app-api";
+import { getConnectorsOverview, runTeamSyncRound } from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
 
 /*
@@ -14,6 +19,15 @@ import { localStore } from "@/lib/local-store";
 
 /** Rounds in one sync. A larger backlog goes on at the next interval. */
 const MAX_ROUNDS = 40;
+
+/** The connection fields Ajour owns. They do not name the team. */
+const HOST_FIELDS = new Set([
+  "label",
+  "tenantLabel",
+  "autoSync",
+  "autoSyncIntervalMinutes",
+  "pullRequestAutoSync",
+]);
 
 export interface TeamSyncOutcome {
   rounds: number;
@@ -29,12 +43,60 @@ export interface TeamSyncOutcome {
   incomplete: boolean;
 }
 
-const runningSyncs = new Map<string, Promise<TeamSyncOutcome>>();
+/**
+ * Which team a connection names: its plugin and the values of its own
+ * non-secret fields, such as the deployment and the team ID. A new secret
+ * keeps the team; a new team ID or deployment does not.
+ */
+export function teamConnectionIdentity(
+  group: Pick<ConnectorOverviewGroup, "plugin">,
+  connection: Pick<ConnectorConnectionSummary, "editableValues">,
+) {
+  const fieldIds = group.plugin.connectionFields
+    .filter((field) => !field.secret && !HOST_FIELDS.has(field.id))
+    .map((field) => field.id)
+    .sort();
+  return JSON.stringify([
+    group.plugin.id,
+    ...fieldIds.map((id) => [id, connection.editableValues[id] ?? null]),
+  ]);
+}
 
 /**
- * Syncs one team connection. A manual and a scheduled call share one run. A
- * result the workspace refuses throws, with nothing applied; the next sync
- * sends the same round again.
+ * The connection's identity as the local API has it now, or undefined when
+ * it is gone or its team capability is off. Read fresh, so a change in
+ * another window counts too.
+ */
+async function currentIdentity(pluginId: string, connectionId: string) {
+  const overview = await getConnectorsOverview();
+  if (overview.pluginsEnabled === false) return undefined;
+  const group = overview.connectionGroups.find(
+    (entry) => entry.plugin.id === pluginId,
+  );
+  const connection = group?.connections.find(
+    (entry) => entry.id === connectionId,
+  );
+  if (!group || !connection || !isCapabilityActive(group, "team")) {
+    return undefined;
+  }
+  return teamConnectionIdentity(group, connection);
+}
+
+const runningSyncs = new Map<string, Promise<TeamSyncOutcome>>();
+
+/** Runs `operation` while no other window of this app syncs the same connection. */
+function exclusively<T>(name: string, operation: () => Promise<T>): Promise<T> {
+  const locks = typeof navigator === "undefined" ? undefined : navigator.locks;
+  // The lock resolves with what the operation resolves with.
+  return locks
+    ? (locks.request(name, operation) as unknown as Promise<T>)
+    : operation();
+}
+
+/**
+ * Syncs one team connection. A manual and a scheduled call share one run, and
+ * other windows wait for it. A result the workspace refuses throws, with
+ * nothing applied; the next sync sends the same round again.
  */
 export function syncTeamConnection(
   pluginId: string,
@@ -56,6 +118,17 @@ export function syncTeamConnection(
     };
     const unsendable = new Map<string, UnsendableRecord>();
 
+    const identity = await currentIdentity(pluginId, connectionId);
+    if (!identity) {
+      throw new Error("This team connection is gone, or Projects is off.");
+    }
+    // The connection now names another team: its links and cursor belong to
+    // the old one, so its projects turn local and the new team starts fresh.
+    const stored = localStore.snapshot().teamConnections?.[connectionId];
+    if (stored?.identity && stored.identity !== identity) {
+      localStore.removeConnectionTeamData(connectionId);
+    }
+
     while (outcome.rounds < MAX_ROUNDS) {
       const state = localStore.snapshot();
       const plan = planTeamSync(
@@ -75,11 +148,14 @@ export function syncTeamConnection(
         connectionId,
         plan.request,
       );
-      if (isConnectionRemoved(pluginId, connectionId)) break;
+      // Removed, turned off or pointed at another team while the round was
+      // on its way, here or in another window: its answer does not apply.
+      if ((await currentIdentity(pluginId, connectionId)) !== identity) break;
       const applied = localStore.applyTeamSyncRound(
         connectionId,
         plan.request.changes,
         result,
+        identity,
       );
       if (applied.kind === "rejected") {
         throw new Error(
@@ -106,7 +182,7 @@ export function syncTeamConnection(
     return outcome;
   };
 
-  const promise = run().finally(() => {
+  const promise = exclusively(`ajour-team-sync:${key}`, run).finally(() => {
     if (runningSyncs.get(key) === promise) runningSyncs.delete(key);
   });
   runningSyncs.set(key, promise);

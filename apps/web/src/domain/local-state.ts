@@ -56,6 +56,11 @@ export interface LocalTaskTeamLink {
 export interface LocalTeamConnection {
   /** Where the next sync starts. Absent before the first one. */
   cursor?: string;
+  /**
+   * The team the links and cursor belong to, from the connection's settings.
+   * When the connection names another team, they no longer apply.
+   */
+  identity?: string;
   /** Team projects the user unshared on this machine. Ajour ignores them. */
   unsharedRemoteIds: string[];
   /**
@@ -645,6 +650,12 @@ export interface LocalAppState {
   settleRules?: LocalSettleRule[];
   /** Sync state by team connection ID. */
   teamConnections?: Record<string, LocalTeamConnection>;
+  /**
+   * Shared projects the last action changed while its Undo is open, so a team
+   * sync in any window waits for them. The acting window clears it when the
+   * Undo window closes; `until` covers a window that closes first.
+   */
+  teamPushHold?: { projectIds: string[]; until: number };
   capture: CaptureSettings;
   lastExtensionImportAt?: number;
   extensionBridgeStatus?: ExtensionBridgeStatus;
