@@ -14,11 +14,13 @@ import {
   updateProjectTask,
   type ProjectFactories,
 } from "@/domain/projects/project-transitions";
+import { normalizeTeamConnections } from "@/domain/projects/team-link";
 import {
   applyTeamSync,
   disconnectTeam,
   linkProject,
   planTeamSync,
+  resolveHeldArrival,
   shareProject,
   toTeamProjectFields,
   toTeamTaskFields,
@@ -481,7 +483,7 @@ describe("applying a team sync", () => {
     );
   });
 
-  it("keeps a local project of the same name local, and reports the arrival", () => {
+  it("holds a team project whose name a local project has, and adds nothing", () => {
     const mine = localProject("mine", { name: "Beta" });
     const next = applyTeamSync(
       stateOf([mine]),
@@ -491,10 +493,47 @@ describe("applying a team sync", () => {
       createFactories(),
     );
 
-    expect(next.projects[0]).toEqual(mine);
-    expect(next.result.sameNameArrivals).toEqual([
-      { projectId: next.projects[1]!._id, localProjectId: "mine" },
+    expect(next.projects).toEqual([mine]);
+    expect(next.result.heldArrivals).toEqual([
+      { remoteId: "remote-sam", localProjectId: "mine" },
     ]);
+    expect(next.teamConnections[CONNECTION]?.heldArrivals).toMatchObject([
+      { remoteId: "remote-sam", name: "beta" },
+    ]);
+    expect(planTeamSync(next, CONNECTION, NO_SKIPS).request.changes).toEqual(
+      [],
+    );
+  });
+
+  it("keeps a held arrival current while it waits", () => {
+    const held = applyTeamSync(
+      stateOf([localProject("mine", { name: "Beta" })]),
+      CONNECTION,
+      [],
+      syncResult([
+        teamProject(localProject("sam", { name: "Beta" }), [
+          teamTask(localTask("t1", { name: "Development" })),
+        ]),
+      ]),
+      createFactories(),
+    );
+    const next = applyTeamSync(
+      held,
+      CONNECTION,
+      [],
+      syncResult([
+        teamProject(localProject("sam", { name: "Beta", code: "BET" }), [
+          teamTask(localTask("t1", { name: "Dev" })),
+          teamTask(localTask("t2", { name: "QA" })),
+        ]),
+      ]),
+      createFactories(),
+    );
+    const [arrival] = next.teamConnections[CONNECTION]!.heldArrivals;
+
+    expect(next.result.heldArrivals).toEqual([]);
+    expect(arrival?.code).toBe("BET");
+    expect(arrival?.tasks.map((task) => task.name)).toEqual(["Dev", "QA"]);
   });
 
   it("ignores a team project the user unshared here", () => {
@@ -608,6 +647,112 @@ describe("sharing, linking and leaving a team", () => {
     expect(
       planTeamSync(next, CONNECTION, NO_SKIPS).request.changes,
     ).toMatchObject([{ localId: "mine", tasks: [{ localId: "private" }] }]);
+  });
+
+  it("links a held arrival to the local project, which becomes the shared one", () => {
+    const mine = localProject("mine", {
+      name: "Beta",
+      tasks: [localTask("t-mine", { name: "Development" })],
+    });
+    const held = applyTeamSync(
+      stateOf([mine]),
+      CONNECTION,
+      [],
+      syncResult([
+        teamProject(localProject("sam", { name: "Beta" }), [
+          teamTask(localTask("t1", { name: "Development" })),
+        ]),
+      ]),
+      createFactories(),
+    );
+    const next = resolveHeldArrival(
+      held,
+      CONNECTION,
+      "remote-sam",
+      { kind: "link", projectId: "mine" },
+      createFactories(),
+    );
+
+    expect(next.result).toEqual({ kind: "linked" });
+    expect(next.projects).toHaveLength(1);
+    expect(next.projects[0]).toMatchObject({
+      _id: "mine",
+      team: { remoteId: "remote-sam" },
+      tasks: [{ _id: "t-mine", team: { remoteId: "remote-t1" } }],
+    });
+    expect(next.teamConnections[CONNECTION]?.heldArrivals).toEqual([]);
+  });
+
+  it("adds a held arrival as its own project and leaves the local one alone", () => {
+    const mine = localProject("mine", { name: "Beta" });
+    const held = applyTeamSync(
+      stateOf([mine]),
+      CONNECTION,
+      [],
+      syncResult([teamProject(localProject("sam", { name: "Beta" }))]),
+      createFactories(),
+    );
+    const next = resolveHeldArrival(
+      held,
+      CONNECTION,
+      "remote-sam",
+      { kind: "addSeparately" },
+      createFactories(),
+    );
+
+    expect(next.result).toEqual({
+      kind: "added",
+      projectId: next.projects[1]!._id,
+    });
+    expect(next.projects[0]).toEqual(mine);
+    expect(next.projects[1]?.team?.remoteId).toBe("remote-sam");
+    expect(next.teamConnections[CONNECTION]?.heldArrivals).toEqual([]);
+    expect(
+      resolveHeldArrival(
+        next,
+        CONNECTION,
+        "remote-sam",
+        { kind: "addSeparately" },
+        createFactories(),
+      ).result,
+    ).toEqual({ kind: "notHeld" });
+  });
+
+  it("points Share at a held arrival of the same name", () => {
+    const held = applyTeamSync(
+      stateOf([
+        localProject("mine", { name: "Beta" }),
+        localProject("other", { name: "BETA" }),
+      ]),
+      CONNECTION,
+      [],
+      syncResult([teamProject(localProject("sam", { name: "Beta" }))]),
+      createFactories(),
+    );
+
+    expect(shareProject(held, CONNECTION, "other").result).toEqual({
+      kind: "sameNameHeld",
+      remoteId: "remote-sam",
+    });
+  });
+
+  it("reads held arrivals back after a restart and drops malformed ones", () => {
+    const held = applyTeamSync(
+      stateOf([localProject("mine", { name: "Beta" })]),
+      CONNECTION,
+      [],
+      syncResult([teamProject(localProject("sam", { name: "Beta" }))]),
+      createFactories(),
+    );
+    const stored = JSON.parse(JSON.stringify(held.teamConnections)) as Record<
+      string,
+      { heldArrivals: unknown[] }
+    >;
+    stored[CONNECTION]!.heldArrivals.push({ remoteId: "broken" });
+
+    expect(normalizeTeamConnections(stored)[CONNECTION]?.heldArrivals).toEqual(
+      held.teamConnections[CONNECTION]?.heldArrivals,
+    );
   });
 
   it("unshares on this machine only, and disconnecting makes every project local", () => {

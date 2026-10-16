@@ -1,4 +1,9 @@
-import { teamProjectFieldsSchema, teamTaskFieldsSchema } from "@ajour/shared";
+import {
+  teamProjectFieldsSchema,
+  teamProjectSchema,
+  teamTaskFieldsSchema,
+  type TeamProject,
+} from "@ajour/shared";
 import type {
   LocalProjectTeamLink,
   LocalTaskTeamLink,
@@ -58,6 +63,12 @@ export function normalizeTeamConnections(
         : {}),
       unsharedRemoteIds: Array.isArray(connection.unsharedRemoteIds)
         ? connection.unsharedRemoteIds.filter(nonEmptyString)
+        : [],
+      heldArrivals: Array.isArray(connection.heldArrivals)
+        ? connection.heldArrivals.flatMap((arrival): TeamProject[] => {
+            const parsed = teamProjectSchema.safeParse(arrival);
+            return parsed.success ? [parsed.data] : [];
+          })
         : [],
     };
   }

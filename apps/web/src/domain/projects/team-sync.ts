@@ -250,6 +250,7 @@ function connectionOf(
   return (
     state.teamConnections[connectionId] ?? {
       unsharedRemoteIds: [],
+      heldArrivals: [],
     }
   );
 }
@@ -363,10 +364,25 @@ export interface TeamSyncApplyResult {
   /** Shared projects whose fields or tasks the team changed. */
   updatedProjectIds: string[];
   /**
-   * New team projects whose name a local project already has. Both stay: the
-   * local project is not shared without the user asking.
+   * New team projects held because a local project already has their name.
+   * Each waits for `resolveHeldArrival`: the local project is never shared
+   * without the user asking.
    */
-  sameNameArrivals: { projectId: string; localProjectId: string }[];
+  heldArrivals: { remoteId: string; localProjectId: string }[];
+}
+
+/** A held arrival with a later version of it: newer fields, tasks merged. */
+function updateHeldArrival(
+  held: TeamProject,
+  incoming: TeamProject,
+): TeamProject {
+  const tasks = [...held.tasks];
+  for (const task of incoming.tasks) {
+    const index = tasks.findIndex((entry) => entry.remoteId === task.remoteId);
+    if (index === -1) tasks.push(task);
+    else tasks[index] = task;
+  }
+  return { ...incoming, tasks };
 }
 
 /** Gives the records pushed in this round their remote IDs and synced copies. */
@@ -477,7 +493,8 @@ function mergeTeamProject(
  * Applies one round's result: assigns remote IDs to what this round pushed,
  * merges the team's projects into the shared projects linked to them, adds the
  * team projects the workspace does not have, and stores the cursor. A team
- * project the user unshared here is ignored.
+ * project the user unshared here is ignored. A new team project whose name a
+ * local project has is held instead of added, and later rounds keep it current.
  */
 export function applyTeamSync(
   state: TeamSyncState,
@@ -492,10 +509,11 @@ export function applyTeamSync(
   const connection = connectionOf(state, connectionId);
   const unshared = new Set(connection.unsharedRemoteIds);
   const projects = recordPushed(state.projects, connectionId, pushed, assigned);
+  const heldArrivals = [...connection.heldArrivals];
   const outcome: TeamSyncApplyResult = {
     createdProjectIds: [],
     updatedProjectIds: [],
-    sameNameArrivals: [],
+    heldArrivals: [],
   };
 
   for (const teamProject of result.projects) {
@@ -520,25 +538,38 @@ export function applyTeamSync(
     }
     if (unshared.has(teamProject.remoteId)) continue;
 
-    const created = projectFromTeam(teamProject, connectionId, factories);
-    const sameNameLocal = projects.find(
-      (project) => !project.team && sameName(project.name, created.name),
+    const heldIndex = heldArrivals.findIndex(
+      (held) => held.remoteId === teamProject.remoteId,
     );
-    projects.push(created);
-    outcome.createdProjectIds.push(created._id);
+    if (heldIndex !== -1) {
+      heldArrivals[heldIndex] = updateHeldArrival(
+        heldArrivals[heldIndex]!,
+        teamProject,
+      );
+      continue;
+    }
+    const sameNameLocal = projects.find(
+      (project) => !project.team && sameName(project.name, teamProject.name),
+    );
     if (sameNameLocal) {
-      outcome.sameNameArrivals.push({
-        projectId: created._id,
+      heldArrivals.push(teamProject);
+      outcome.heldArrivals.push({
+        remoteId: teamProject.remoteId,
         localProjectId: sameNameLocal._id,
       });
+      continue;
     }
+
+    const created = projectFromTeam(teamProject, connectionId, factories);
+    projects.push(created);
+    outcome.createdProjectIds.push(created._id);
   }
 
   return {
     projects,
     teamConnections: {
       ...state.teamConnections,
-      [connectionId]: { ...connection, cursor: result.cursor },
+      [connectionId]: { ...connection, cursor: result.cursor, heldArrivals },
     },
     result: outcome,
   };
@@ -552,12 +583,14 @@ export type TeamShareResult =
   | { kind: "missing" }
   | { kind: "alreadyShared" }
   /** The team already has a shared project of that name here. */
-  | { kind: "sameNameShared"; sharedProjectId: string };
+  | { kind: "sameNameShared"; sharedProjectId: string }
+  /** A held arrival has that name: link to it with `resolveHeldArrival`. */
+  | { kind: "sameNameHeld"; remoteId: string };
 
 /**
  * Gives a local project to a team. It goes to the team with the next sync,
- * with all its tasks. A team project of the same name that the workspace
- * already has stops it, so the team does not get two.
+ * with all its tasks. A team project of the same name, shared here or held,
+ * stops it, so the team does not get two.
  */
 export function shareProject(
   state: TeamSyncState,
@@ -576,6 +609,15 @@ export function shareProject(
     return {
       ...state,
       result: { kind: "sameNameShared", sharedProjectId: sameNameShared._id },
+    };
+  }
+  const sameNameHeld = connectionOf(state, connectionId).heldArrivals.find(
+    (held) => sameName(held.name, project.name),
+  );
+  if (sameNameHeld) {
+    return {
+      ...state,
+      result: { kind: "sameNameHeld", remoteId: sameNameHeld.remoteId },
     };
   }
 
@@ -670,9 +712,55 @@ export function linkProject(
         unsharedRemoteIds: connection.unsharedRemoteIds.filter(
           (remoteId) => remoteId !== teamProject.remoteId,
         ),
+        heldArrivals: connection.heldArrivals.filter(
+          (held) => held.remoteId !== teamProject.remoteId,
+        ),
       },
     },
     result: { kind: "linked" },
+  };
+}
+
+export type HeldArrivalChoice =
+  { kind: "link"; projectId: string } | { kind: "addSeparately" };
+
+export type TeamResolveResult =
+  TeamLinkResult | { kind: "added"; projectId: string } | { kind: "notHeld" };
+
+/**
+ * The user's answer for a held arrival: link it to a local project, usually
+ * the one with its name, or add it as a project of its own.
+ */
+export function resolveHeldArrival(
+  state: TeamSyncState,
+  connectionId: string,
+  remoteId: string,
+  choice: HeldArrivalChoice,
+  factories: ProjectFactories,
+): TeamSyncState & { result: TeamResolveResult } {
+  const connection = connectionOf(state, connectionId);
+  const held = connection.heldArrivals.find(
+    (arrival) => arrival.remoteId === remoteId,
+  );
+  if (!held) return { ...state, result: { kind: "notHeld" } };
+
+  if (choice.kind === "link") {
+    return linkProject(state, connectionId, choice.projectId, held, factories);
+  }
+
+  const created = projectFromTeam(held, connectionId, factories);
+  return {
+    projects: [...state.projects, created],
+    teamConnections: {
+      ...state.teamConnections,
+      [connectionId]: {
+        ...connection,
+        heldArrivals: connection.heldArrivals.filter(
+          (arrival) => arrival.remoteId !== remoteId,
+        ),
+      },
+    },
+    result: { kind: "added", projectId: created._id },
   };
 }
 
