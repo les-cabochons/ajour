@@ -71,6 +71,7 @@ Ajour checks a plugin's `apiVersion` exactly. A connector or code host for API `
   { icon: 'list', title: 'Manifest', text: 'Every field of plugin.json.', link: '/developers/manifest' },
   { icon: 'code', title: 'Connector API', text: 'Functions, types and sync rules for connectors.', link: '/developers/connector-api' },
   { icon: 'pullRequest', title: 'Code host API', text: 'Pull request facts for code hosts.', link: '/developers/code-host-api' },
+  { icon: 'calendar', title: 'Calendar API', text: 'Calendar events for time suggestions.', link: '/developers/calendar-api' },
   { icon: 'excel', title: 'Schema API', text: 'Map projects and tasks to a file layout.', link: '/developers/schema-api' },
   { icon: 'shield', title: 'Runtime and limits', text: 'Where plugins run and what they may use.', link: '/developers/runtime' },
   { icon: 'test', title: 'Test and debug', text: 'Unit tests, development builds and error messages.', link: '/developers/testing' },

@@ -20,6 +20,9 @@ const CODE_HOST_METHODS = new Set([
   "mergePullRequest",
 ]);
 
+// Keep in sync with `calendarOperations` in packages/shared/calendar.ts.
+const CALENDAR_METHODS = new Set(["listCalendarEvents"]);
+
 if (!parentPort) {
   throw new Error("Connector plugin worker requires a parent port.");
 }
@@ -45,7 +48,8 @@ async function run() {
   if (
     workerData.method === "listSettleStates" ||
     workerData.method === "writeSettle" ||
-    CODE_HOST_METHODS.has(workerData.method)
+    CODE_HOST_METHODS.has(workerData.method) ||
+    CALENDAR_METHODS.has(workerData.method)
   ) {
     return await handler(
       workerData.params.connection,

@@ -6,8 +6,10 @@ import {
   connectorSettleWriteResultSchema,
   pluginHasAgentTasks,
   pluginHasProjectProperties,
+  pluginHasCalendar,
   pluginHasCodeHost,
   pluginHasConnector,
+  pluginRunsCode,
 } from "../connectors";
 
 const validManifest = {
@@ -80,6 +82,33 @@ describe("connector plugin manifest", () => {
     });
     expect(pluginHasConnector(manifest)).toBe(false);
     expect(pluginHasCodeHost(manifest)).toBe(true);
+  });
+
+  it("accepts a calendar without the connector capability", () => {
+    const manifest = connectorPluginManifestSchema.parse({
+      ...validManifest,
+      capabilities: { calendar: {} },
+    });
+    expect(pluginHasConnector(manifest)).toBe(false);
+    expect(pluginHasCalendar(manifest)).toBe(true);
+    expect(pluginRunsCode(manifest)).toBe(true);
+  });
+
+  it("requires an entrypoint and connection fields for a calendar", () => {
+    expect(() =>
+      connectorPluginManifestSchema.parse({
+        ...validManifest,
+        entrypoint: undefined,
+        capabilities: { calendar: {} },
+      }),
+    ).toThrow(/entrypoint/);
+    expect(() =>
+      connectorPluginManifestSchema.parse({
+        ...validManifest,
+        connectionFields: [],
+        capabilities: { calendar: {} },
+      }),
+    ).toThrow(/connection fields/);
   });
 
   it("carries priority as an Ajour level, never a source value", () => {

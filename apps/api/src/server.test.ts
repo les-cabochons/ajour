@@ -962,6 +962,194 @@ describe("code host routes", () => {
   });
 });
 
+describe("calendar routes", () => {
+  const tempDirs: string[] = [];
+  const servers: Server[] = [];
+  const FEED =
+    "https://calendar.google.com/calendar/ical/me%40example.com/private-5f3a9c0d1e2f3a4b5c6d7e8f9a0b1c21e/basic.ics";
+
+  afterEach(async () => {
+    for (const server of servers.splice(0)) {
+      server.emit("close");
+    }
+    await Promise.all(
+      tempDirs
+        .splice(0)
+        .map((directory) => rm(directory, { recursive: true, force: true })),
+    );
+  });
+
+  const calendarPluginSource = [
+    "export async function validateConnection(config) {",
+    "  return { normalizedConfig: config, connectionSummary: {} };",
+    "}",
+    "export async function listCalendarEvents(connection, request) {",
+    "  if (request.from === '2026-01-05') throw new Error('Could not read ' + connection.config.feedUrl + ': 404');",
+    "  return { events: [{ eventId: 'standup', seriesId: 'standup', startsAt: 1, endsAt: 900001, allDay: false, title: 'Secret project sync', status: 'confirmed', response: 'accepted', busy: true }] };",
+    "}",
+  ].join("\n");
+
+  async function createServer(capabilities: Record<string, unknown>) {
+    const root = await mkdtemp(path.join(os.tmpdir(), "ajour-calendar-api-"));
+    tempDirs.push(root);
+    const pluginDirectory = await createPlugin(
+      path.join(root, "source"),
+      calendarPluginSource,
+      "plugin.mjs",
+      {
+        capabilities,
+        connectionFields: [
+          { id: "label", label: "Label", type: "text", required: true },
+          {
+            id: "tenantLabel",
+            label: "Calendar",
+            type: "text",
+            required: true,
+          },
+          {
+            id: "feedUrl",
+            label: "Calendar address",
+            type: "url",
+            required: true,
+            secret: true,
+          },
+        ],
+      },
+    );
+    const events: Record<string, unknown>[] = [];
+    const server = createAppApiServer({
+      statePath: path.join(root, "state.json"),
+      installedPluginDirectory: path.join(root, "installed"),
+      developmentPluginDirectories: [pluginDirectory],
+      allowDevelopmentPlugins: true,
+      mcpLogEvent: (event) => events.push(event),
+    });
+    servers.push(server);
+    const connectionResponse = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: "/api/connectors/jira/connections",
+      body: JSON.stringify({
+        values: {
+          label: "Work",
+          tenantLabel: "Google Calendar",
+          autoSync: false,
+          autoSyncIntervalMinutes: 10,
+          feedUrl: FEED,
+        },
+      }),
+    });
+    const connectionId = (
+      connectionResponse.body as { connection: { id: string } }
+    ).connection.id;
+    return { server, connectionId, events };
+  }
+
+  const week = {
+    from: "2026-10-12",
+    to: "2026-10-18",
+    timeZone: "America/Toronto",
+  };
+
+  it("lists a week's events through a calendar plugin and logs no title", async () => {
+    const { server, connectionId, events } = await createServer({
+      calendar: {},
+    });
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/calendars/jira/connections/${connectionId}/listCalendarEvents`,
+        body: JSON.stringify(week),
+      }),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { events: [{ eventId: "standup", title: "Secret project sync" }] },
+    });
+
+    const logged = events.filter(
+      (event) => event.event === "calendar.operation",
+    );
+    expect(logged).toEqual([
+      expect.objectContaining({
+        operation: "listCalendarEvents",
+        plugin_id: "jira",
+        connection_id: connectionId,
+        range_days: 7,
+        event_count: 1,
+        outcome: "ok",
+      }),
+    ]);
+    expect(JSON.stringify(logged)).not.toContain("Secret project sync");
+  });
+
+  it("rejects unknown operations, plugins without a calendar and malformed requests", async () => {
+    const codeHostOnly = await createServer({ codeHost: {} });
+    await expect(
+      dispatchJsonRequest(codeHostOnly.server, {
+        method: "POST",
+        path: `/api/calendars/jira/connections/${codeHostOnly.connectionId}/listCalendarEvents`,
+        body: JSON.stringify(week),
+      }),
+    ).resolves.toMatchObject({ status: 404 });
+
+    const { server, connectionId } = await createServer({ calendar: {} });
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/calendars/jira/connections/${connectionId}/createEvent`,
+        body: JSON.stringify({}),
+      }),
+    ).resolves.toMatchObject({ status: 404 });
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/calendars/jira/connections/${connectionId}/listCalendarEvents`,
+        body: JSON.stringify({ ...week, to: "2027-10-18" }),
+      }),
+    ).resolves.toMatchObject({ status: 400 });
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: "/api/calendars/jira/connections/missing/listCalendarEvents",
+        body: JSON.stringify(week),
+      }),
+    ).resolves.toMatchObject({ status: 404 });
+  });
+
+  it("keeps the calendar address out of a failed call's error and log", async () => {
+    const { server, connectionId, events } = await createServer({
+      calendar: {},
+    });
+
+    const failed = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: `/api/calendars/jira/connections/${connectionId}/listCalendarEvents`,
+      body: JSON.stringify({
+        from: "2026-01-05",
+        to: "2026-01-11",
+        timeZone: "America/Toronto",
+      }),
+    });
+    expect(failed).toEqual({
+      status: 502,
+      body: { error: "Could not read [secret]: 404" },
+    });
+
+    const overview = await dispatchJsonRequest(server, {
+      method: "GET",
+      path: "/api/connectors",
+    });
+    expect(JSON.stringify(overview.body)).not.toContain(FEED);
+    expect(JSON.stringify(events)).not.toContain(FEED);
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        event: "calendar.operation",
+        outcome: "error",
+      }),
+    );
+  });
+});
+
 describe("agent task settings route", () => {
   const tempDirs: string[] = [];
   const servers: Server[] = [];

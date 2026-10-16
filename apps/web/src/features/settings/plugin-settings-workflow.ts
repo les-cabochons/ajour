@@ -95,6 +95,7 @@ function localCatalogEntry(
       : [
           ...(plugin.capabilities.connector ? (["connector"] as const) : []),
           ...(plugin.capabilities.codeHost ? (["codeHost"] as const) : []),
+          ...(plugin.capabilities.calendar ? (["calendar"] as const) : []),
           ...(plugin.capabilities.agentTask ? (["agentTask"] as const) : []),
         ];
   const features = capabilities.map((capability) =>
@@ -102,9 +103,11 @@ function localCatalogEntry(
       ? "work-item-sync"
       : capability === "codeHost"
         ? "pull-requests"
-        : capability === "agentTask"
-          ? "agent-task"
-          : "project-data-shape",
+        : capability === "calendar"
+          ? "calendar-events"
+          : capability === "agentTask"
+            ? "agent-task"
+            : "project-data-shape",
   );
   return {
     schemaVersion: 2,

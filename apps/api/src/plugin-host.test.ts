@@ -12,6 +12,7 @@ import {
 import { create } from "tar";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { codeHostOperations } from "../../../packages/shared/code-host.ts";
+import { calendarOperations } from "../../../packages/shared/calendar.ts";
 import { ConnectorPluginManager } from "./plugin-host.ts";
 import { readConnectorPlugin } from "./plugin-package.ts";
 
@@ -662,6 +663,94 @@ describe("ConnectorPluginManager", () => {
       "utf8",
     );
     for (const operation of Object.keys(codeHostOperations)) {
+      expect(worker).toContain(`"${operation}"`);
+    }
+  });
+
+  it("runs calendar operations only for plugins that declare the capability", async () => {
+    const root = await tempDir();
+    const source = [
+      "export async function listCalendarEvents(connection, request) {",
+      "  return { events: [{",
+      "    eventId: connection.label + '-' + request.from,",
+      "    startsAt: 1, endsAt: 2, allDay: false, title: 'Standup',",
+      "    status: 'confirmed', response: 'accepted', busy: true,",
+      "    attendees: ['maria@example.com'],",
+      "  }] };",
+      "}",
+    ].join("\n");
+    const calendarDirectory = await createPluginDirectory(
+      root,
+      "outlook",
+      source,
+      { capabilities: { calendar: {} } },
+    );
+    const connectorDirectory = await createPluginDirectory(
+      root,
+      "jira",
+      source,
+    );
+    const pluginManager = manager({
+      installedPluginDirectory: path.join(root, "installed"),
+      developmentPluginDirectories: [calendarDirectory, connectorDirectory],
+      allowDevelopmentPlugins: true,
+    });
+    const connection = {
+      id: "connection-1",
+      pluginId: "outlook",
+      label: "work",
+      tenantLabel: "Outlook",
+      autoSync: false,
+      autoSyncIntervalMinutes: 10,
+      connectedAt: 1,
+      config: {},
+    };
+    const week = {
+      from: "2026-10-12",
+      to: "2026-10-18",
+      timeZone: "America/Toronto",
+    };
+
+    await expect(
+      pluginManager.runCalendarOperation(
+        "outlook",
+        "listCalendarEvents",
+        connection,
+        week,
+      ),
+    ).resolves.toEqual({
+      events: [
+        {
+          eventId: "work-2026-10-12",
+          startsAt: 1,
+          endsAt: 2,
+          allDay: false,
+          title: "Standup",
+          status: "confirmed",
+          response: "accepted",
+          busy: true,
+        },
+      ],
+    });
+    await expect(
+      pluginManager.hasCapability("outlook", "calendar"),
+    ).resolves.toBe(true);
+    await expect(
+      pluginManager.runCalendarOperation(
+        "jira",
+        "listCalendarEvents",
+        connection,
+        week,
+      ),
+    ).rejects.toThrow('Plugin "jira" does not provide calendar events.');
+  });
+
+  it("dispatches every calendar operation in the worker", async () => {
+    const worker = await readFile(
+      new URL("./plugin-worker.mjs", import.meta.url),
+      "utf8",
+    );
+    for (const operation of Object.keys(calendarOperations)) {
       expect(worker).toContain(`"${operation}"`);
     }
   });

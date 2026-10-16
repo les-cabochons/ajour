@@ -204,6 +204,17 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 - [x] `sidebar-ordering.feature` covers drag, keys, the toggle by mouse and Enter, another Backlog ordering, a pinned row and a reorder under search. Domain tests cover `splitSidebarBacklogItems` and `canReorderSidebarItem`, and `use-backlog-drag.test.ts` covers the drop line.
 - [x] `just ui-perf`, 2026-10-15, ports 4188 and 4189, medians of 5 runs, main then this branch, in pairs that ran at the same machine speed: Start click 89 / 90 and 86 / 89 ms, Backlog store write 46 / 50 and 48 / 51 ms, renderer work with a timer running 21 / 21 and 26 / 20 ms per second. All within 10%. A first version wrapped every row in a `div` for drag refs and cost about 16% on Start click; rows now take their drag state as a prop and the drag reads row positions on press.
 
+## Calendar suggestions, 2026-10-15
+
+Spec: `docs/superpowers/specs/2026-10-15-calendar-suggestions-design.md`. Decision: ADR 0005. Tracking issue #178.
+
+- [x] Slice 1 (#179): the `calendar` plugin capability. Contract in `packages/shared/calendar.ts`, manifest and catalog capability, plugin host dispatch, `POST /api/calendars/:pluginId/connections/:connectionId/listCalendarEvents` with secret redaction and a `calendar.operation` wide event, the Calendars filter and labels on Settings > Plugins, the desktop catalog, and the Calendar API developer page. Plugin API stays at 3.
+- [ ] Slice 2 (#180): `les-cabochons/ajc-ics`.
+- [ ] Slice 3 (#181): suggestions domain module, records, fetch and cache, Undo, Settings > Time > Calendar.
+- [ ] Slice 4 (#182): Days cards and the Day view section.
+- [ ] Slice 5 (#183): side panel with bulk add and Grid count chips.
+- [ ] Live check by hand: a development calendar plugin on Settings > Plugins saves a connection and answers through the API. Not done: no UI calls the route until slice 3.
+
 ## Ajour MCP, 2026-10-14
 
 - [x] Spec A: MCP endpoint at `/mcp/ajour` (off by default, per-client tokens, Origin and Host checks), the renderer bridge, data tools for timers, entries, projects and backlog items with Undo, agent sessions and questions, and the agent indicator and panel. Spec: `docs/superpowers/specs/2026-10-14-ajour-mcp-design.md`.

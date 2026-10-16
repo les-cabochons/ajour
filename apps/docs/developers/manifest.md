@@ -52,7 +52,7 @@ For schema plugins, see [Schema API](/developers/schema-api#manifest).
 | `description`      | string | Optional. Up to 500 characters.                                                                                                                                                    |
 | `iconSvg`          | string | Inline SVG markup, up to 20,000 characters.                                                                                                                                        |
 | `entrypoint`       | string | Relative path to a `.js`, `.mjs` or `.cjs` file inside the package. No symlinks. Leave it out for a plugin with only `agentTask`.                                                  |
-| `capabilities`     | object | At least one of `connector`, `codeHost`, `agentTask` and `projectProperties`. See below.                                                                                           |
+| `capabilities`     | object | At least one of `connector`, `codeHost`, `calendar`, `agentTask` and `projectProperties`. See below.                                                                               |
 | `connectionFields` | array  | 1 to 50 [connection fields](#connection-fields). Optional, and empty by default, for a plugin with only `agentTask`.                                                               |
 
 The `id` is permanent. It names the install folder, and it is the `source` of every item your connector syncs. Changing it orphans the user's connections and items.
@@ -71,6 +71,7 @@ The `id` is permanent. It names the install folder, and it is the `source` of ev
 | `connector`         | The plugin exports `syncConnection`. See [Connector API](/developers/connector-api).                                                                                        |
 | `connector.settle`  | Optional. `true` if the plugin exports `listSettleStates` and `writeSettle`, and can write states and priorities. Without it, Ajour settles items locally and never writes. |
 | `codeHost`          | The plugin exports `syncPullRequests`. See [Code host API](/developers/code-host-api).                                                                                      |
+| `calendar`          | The plugin exports `listCalendarEvents`. Read-only. See [Calendar API](/developers/calendar-api).                                                                           |
 | `agentTask`         | The plugin declares tasks that a coding agent runs from a prompt. No plugin code runs. See [Agent tasks](#agent-tasks).                                                     |
 | `projectProperties` | Text properties the plugin adds to every project. No plugin code runs. See [Project properties](#project-properties).                                                       |
 

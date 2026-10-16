@@ -1,7 +1,7 @@
 # Calendar suggestions through a calendar plugin
 
 - Date: 2026-10-15
-- Status: Agreed in a design session, ready for slicing
+- Status: Slice 1 implemented (#179). Tracking issue #178.
 - Scope: the `calendar` plugin capability, the calendar contract, suggestions in the Time view, remembered meetings, the ICS plugin
 - Decisions: [ADR 0005](../../../agents/adr/0005-calendar-events-are-fetched-per-week-and-never-stored.md)
 - Terms: `agents/GLOSSARY.md`, sections "Time entries" and "Extensions"
@@ -31,7 +31,7 @@ A suggestion is not an entry. It becomes one only when the user adds it. Ajour r
 
 ## Decisions
 
-- **A capability, not a connector.** The connector capability syncs backlog items and estimates. A calendar event is a time-bounded fact that suggests a time entry, so it gets its own capability, `calendar`, next to `connector`, `codeHost`, `agentTask` and `projectProperties`. One plugin may declare several. `apiVersion` goes to 4.
+- **A capability, not a connector.** The connector capability syncs backlog items and estimates. A calendar event is a time-bounded fact that suggests a time entry, so it gets its own capability, `calendar`, next to `connector`, `codeHost`, `agentTask` and `projectProperties`. One plugin may declare several. The plugin API stays at 3: like agent tasks and project properties, the capability is additive, and the host requires an exact version match, so a bump would disable every published plugin.
 - **Stateless week fetches.** The plugin answers one question: which events fall in this date range. No incremental sync, no tokens to keep. A week is small enough to fetch whole, as the code host does for pull requests.
 - **Nothing persisted but decisions.** Fetched events live in renderer memory with a short TTL. Local state keeps the user's decisions per event occurrence and the remembered meetings per series (ADR 0005).
 - **"Rule" is a code word.** The domain and the docs say _event rule_. The UI says _remembered meeting_ and _hidden meeting_. It is the same object as a repository rule for pull requests, applied to a meeting series.
@@ -71,7 +71,7 @@ Nothing else. The **occurrence key** is `eventId` plus `startsAt`; it identifies
 
 ### Host
 
-The plugin host gets `runCalendarOperation`, an `assertCapability` for `calendar`, and the API a `POST /api/calendar/:pluginId/:connectionId/:operation` route, mirroring the code host route. Workers stay stateless and terminate after each call. The host logs one wide event per fetch: plugin, connection, range, event count, duration, outcome. Never the address, never a title.
+The plugin host gets `runCalendarOperation`, an `assertCapability` for `calendar`, and the API a `POST /api/calendars/:pluginId/connections/:connectionId/:operation` route, mirroring the code host route. Workers stay stateless and terminate after each call. A call records the connection's last success or error like a sync. The route replaces the connection's secret values in a plugin's error message with `[secret]` before it stores or returns it. It logs one `calendar.operation` wide event per call: operation, plugin, connection, range in days, event count, duration, outcome. Never the address, never a title, never the error text.
 
 ## Suggestions
 
@@ -160,7 +160,7 @@ The plugin's own fields, such as the calendar address, stay on its Settings > Pl
 
 ## The ICS plugin
 
-`les-cabochons/ajc-ics`, outside this repository, imports no Ajour source and targets host protocol 4. Connection fields: Label, Calendar address (secret, required), Your email (optional, used to find the user's own reply in the attendee list). Help text says the address grants read access to the whole calendar and where to reset it: Google "Reset private URLs", Outlook "Unpublish".
+`les-cabochons/ajc-ics`, outside this repository, imports no Ajour source and targets plugin API 3. Connection fields: Label, Calendar address (secret, required), Your email (optional, used to find the user's own reply in the attendee list). Help text says the address grants read access to the whole calendar and where to reset it: Google "Reset private URLs", Outlook "Unpublish".
 
 The plugin fetches the feed, parses it with an iCalendar library, expands recurrences for the requested range with `RRULE`, `EXDATE` and `RECURRENCE-ID` overrides, resolves `VTIMEZONE` and `X-WR-TIMEZONE`, treats floating times in the request's time zone, maps `STATUS`, `TRANSP` and the user's `PARTSTAT`, and returns facts. Its `seriesId` is the UID of a recurring event. Fixtures cover a Google feed, an Outlook feed and an Exchange feed.
 
@@ -178,7 +178,7 @@ Known limits, stated on the plugin page: Google serves the feed from a cache tha
 
 All five ship in the first release.
 
-1. The `calendar` capability: contract, manifest, catalog, host dispatch, API route, protocol 4, plugin page.
+1. The `calendar` capability: contract, manifest, catalog, host dispatch, API route, plugin page, developer reference.
 2. `ajc-ics`, in parallel with slice 1 against the contract.
 3. Suggestions domain module, records, runtime fetch and cache, Undo, and the Settings section.
 4. Days cards and the Day section, with the shared actions.

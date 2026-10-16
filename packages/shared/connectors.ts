@@ -190,7 +190,8 @@ export type ProjectPropertiesCapability = z.infer<
 /**
  * What a plugin provides. A plugin declares at least one capability, and its
  * connections serve all of them. A connector without `settle` keeps working:
- * Ajour settles its items locally, with no write. See ADR 0001 and ADR 0003.
+ * Ajour settles its items locally, with no write. See ADR 0001, ADR 0003 and,
+ * for `calendar`, ADR 0005.
  */
 export const connectorPluginCapabilitiesSchema = z
   .object({
@@ -200,6 +201,7 @@ export const connectorPluginCapabilitiesSchema = z
       })
       .optional(),
     codeHost: z.object({}).optional(),
+    calendar: z.object({}).optional(),
     agentTask: z
       .object({ tasks: z.array(agentTaskSchema).min(1).max(10) })
       .optional(),
@@ -209,9 +211,10 @@ export const connectorPluginCapabilitiesSchema = z
     (capabilities) =>
       capabilities.connector !== undefined ||
       capabilities.codeHost !== undefined ||
+      capabilities.calendar !== undefined ||
       capabilities.agentTask !== undefined ||
       capabilities.projectProperties !== undefined,
-    "A plugin must declare at least one capability: connector, codeHost, agentTask or projectProperties.",
+    "A plugin must declare at least one capability: connector, codeHost, calendar, agentTask or projectProperties.",
   );
 export type ConnectorPluginCapabilities = z.infer<
   typeof connectorPluginCapabilitiesSchema
@@ -229,6 +232,12 @@ export function pluginHasCodeHost(manifest: {
   return manifest.capabilities.codeHost !== undefined;
 }
 
+export function pluginHasCalendar(manifest: {
+  capabilities: ConnectorPluginCapabilities;
+}) {
+  return manifest.capabilities.calendar !== undefined;
+}
+
 export function pluginHasAgentTasks(manifest: {
   capabilities: ConnectorPluginCapabilities;
 }) {
@@ -241,11 +250,15 @@ export function pluginHasProjectProperties(manifest: {
   return manifest.capabilities.projectProperties !== undefined;
 }
 
-/** Whether the plugin runs code: it syncs items or serves pull requests. */
+/** Whether the plugin runs code: it syncs items, serves pull requests or reads a calendar. */
 export function pluginRunsCode(manifest: {
   capabilities: ConnectorPluginCapabilities;
 }) {
-  return pluginHasConnector(manifest) || pluginHasCodeHost(manifest);
+  return (
+    pluginHasConnector(manifest) ||
+    pluginHasCodeHost(manifest) ||
+    pluginHasCalendar(manifest)
+  );
 }
 
 /** The manifest fields, before the cross-field rules. The overview extends it. */
@@ -272,14 +285,16 @@ export const connectorPluginManifestSchema =
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["entrypoint"],
-        message: "A connector or code host plugin needs an entrypoint.",
+        message:
+          "A connector, code host or calendar plugin needs an entrypoint.",
       });
     }
     if (manifest.connectionFields.length === 0) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["connectionFields"],
-        message: "A connector or code host plugin needs connection fields.",
+        message:
+          "A connector, code host or calendar plugin needs connection fields.",
       });
     }
   });
