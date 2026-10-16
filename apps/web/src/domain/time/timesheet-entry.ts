@@ -468,20 +468,39 @@ export function markTimesheetEntriesNotCommitted(
  * The ids of a day's saved entries in the order the Day list and the Week's
  * Days cards show them, top first: the lowest `committedAt` first, so a day
  * reads in the order the work happened and a new entry lands at the end.
- * `excludeEntryId` leaves out the entry the running entry resumed, which stays
- * last and is not sortable. Move up and Move down step through this order.
+ * The entry the running entry resumed keeps its place and sorts like the
+ * others. Move up and Move down step through this order.
  */
 export function selectSortableDayEntryIds(
   entries: readonly LocalTimesheetEntry[],
   localDate: string,
-  excludeEntryId?: string,
 ): string[] {
   return entries
-    .filter(
-      (entry) => entry.localDate === localDate && entry._id !== excludeEntryId,
-    )
+    .filter((entry) => entry.localDate === localDate)
     .sort((left, right) => left.committedAt - right.committedAt)
     .map((entry) => entry._id);
+}
+
+/**
+ * Places the running entry's row among a list of entries, top first. A running
+ * entry that resumed a listed entry takes that entry's place, so continuing an
+ * entry never moves it. A running entry with no listed entry, such as a new
+ * one, comes last.
+ */
+export function placeRunningRow<Entry extends { _id: string }, Running>(
+  entries: readonly Entry[],
+  running: { row: Running; resumedEntryId?: string } | null,
+): (Entry | Running)[] {
+  if (!running) {
+    return [...entries];
+  }
+
+  const slot = entries.findIndex(
+    (entry) => entry._id === running.resumedEntryId,
+  );
+  return slot === -1
+    ? [...entries, running.row]
+    : entries.map((entry, index) => (index === slot ? running.row : entry));
 }
 
 export function reorderTimesheetEntries(

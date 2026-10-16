@@ -1048,6 +1048,53 @@ When("I continue the second entry", async ({ page }) => {
     .click();
 });
 
+/** The quoted ids in a step's list, such as `"entry-first", "entry-second"`. */
+function quotedIds(list: string) {
+  return [...list.matchAll(/"([^"]+)"/g)].map((match) => match[1]);
+}
+
+Then(
+  "the running row shows Stop and no row has an actions button",
+  async ({ page }) => {
+    const runningRow = page.locator(".time-entry-row[data-running-entry]");
+    await runningRow.hover();
+    await expect(
+      runningRow.getByRole("button", { name: "Stop", exact: true }),
+    ).toBeVisible();
+    await expect(
+      runningRow.getByRole("button", { name: /^Continue/ }),
+    ).toHaveCount(0);
+    await expect(
+      page.getByRole("button", { name: "Entry actions" }),
+    ).toHaveCount(0);
+  },
+);
+
+When("I open this week's Days view", async ({ page }) => {
+  await page.goto("/time/today?view=week");
+  await page.getByRole("button", { name: "Days", exact: true }).click();
+});
+
+Then(
+  /^today's Days cards read entries (.+)$/,
+  async ({ page }, list: string) => {
+    // The running card shows no task, so cards are read by the entry id they
+    // carry. A running card carries the id of the entry it continues.
+    await expect
+      .poll(() =>
+        page
+          .locator(".weekly-days-column.is-today .weekly-entry-card")
+          .evaluateAll((cards) =>
+            cards.map((card) => card.getAttribute("data-entry-id")),
+          ),
+      )
+      .toEqual(quotedIds(list));
+    await expect(
+      page.getByRole("button", { name: "Entry actions" }),
+    ).toHaveCount(0);
+  },
+);
+
 When("I start a fresh timer from the Time page", async ({ page }) => {
   await page.goto("/time/today?entry=new");
   const switchTimer = page.getByRole("button", {

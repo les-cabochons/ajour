@@ -33,4 +33,4 @@ To throw away the time counted since the entry last started, choose **Discard** 
 
 ## Continue an entry
 
-**Continue** on one of today's entries starts it again and adds the new time to it. On an entry from another day, it starts a new entry today with the same task and note.
+**Continue** on one of today's entries starts it again and adds the new time to it. The entry keeps its place in the Day and Week views while it runs. On an entry from another day, it starts a new entry today with the same task and note.

@@ -9,6 +9,7 @@ import {
   RiAddLine as Plus,
   RiCheckLine as Check,
   RiPlayLine as Play,
+  RiStopLine as Stop,
 } from "@remixicon/react";
 import {
   Empty,
@@ -21,15 +22,13 @@ import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { Value } from "@/components/ui/value";
 import { RunningDot } from "@/components/running-dot";
-import {
-  ObjectActionsButton,
-  ObjectContextMenu,
-} from "@/components/object-actions-menu";
+import { ObjectContextMenu } from "@/components/object-actions-menu";
 import { useTimeEntryActions } from "@/features/time/time-entry-actions";
 import { useEntrySelection } from "@/features/time/use-entry-selection";
 import type { TimeEntryActionId } from "@/domain/actions/object-actions";
 import { formatClockDuration } from "@/domain/time/duration";
 import { isTimesheetEntryCommitted } from "@/domain/time/timesheet-commit";
+import { placeRunningRow } from "@/domain/time/timesheet-entry";
 import {
   getLocalProjectDisplayName,
   type LocalTimesheetEntry,
@@ -86,6 +85,14 @@ function isRunningEntry(
   return "isRunning" in entry && entry.isRunning;
 }
 
+/**
+ * True when the row stands for a saved entry: any saved row, or the running row of
+ * a resumed entry, which sorts like that entry. A new running entry stays last.
+ */
+function isSortableRow(entry: LocalTimesheetEntry | RunningEntryRow) {
+  return !isRunningEntry(entry) || entry.entryId !== undefined;
+}
+
 function isEntryDragBlockedTarget(target: EventTarget | null) {
   return target instanceof HTMLElement
     ? Boolean(
@@ -126,8 +133,10 @@ function EntryMain({
 }
 
 /**
- * The Day view's entry list: one 40px row per entry, oldest first with the
- * running entry last, then a "New entry" row. A click selects a row for copy,
+ * The Day view's entry list: one 40px row per entry, oldest first, then a
+ * "New entry" row. A continued entry keeps its row while it runs; a new running
+ * entry comes last. Rows show Continue, or Stop on the running row, and keep
+ * their other actions in the right-click menu. A click selects a row for copy,
  * cut and paste; a double click, Enter and "New entry" ask the page to open the
  * entry editor through `onOpenEntry`. An empty target means a new entry on
  * `date`.
@@ -192,20 +201,19 @@ export function TimerPanel({
         .sort((left, right) => left.committedAt - right.committedAt),
     [date, state.timesheetEntries],
   );
-  const visibleEntries = useMemo(() => {
-    const filteredEntries =
-      runningEntry?.isRunning && currentTimer?.entryId
-        ? recentEntries.filter((entry) => entry._id !== currentTimer.entryId)
-        : recentEntries;
-
-    // Oldest first, so the running entry, the latest work, comes last.
-    return runningEntry ? [...filteredEntries, runningEntry] : filteredEntries;
-  }, [currentTimer?.entryId, recentEntries, runningEntry]);
-  const draggableEntryIds = useMemo(
+  const visibleEntries = useMemo(
     () =>
-      visibleEntries
-        .filter((entry) => !isRunningEntry(entry))
-        .map((entry) => entry._id),
+      placeRunningRow<LocalTimesheetEntry, RunningEntryRow>(
+        recentEntries,
+        runningEntry && {
+          row: runningEntry,
+          resumedEntryId: runningEntry.entryId,
+        },
+      ),
+    [recentEntries, runningEntry],
+  );
+  const draggableEntryIds = useMemo(
+    () => visibleEntries.filter(isSortableRow).map((entry) => entry._id),
     [visibleEntries],
   );
   const draggedEntry = useMemo(
@@ -320,7 +328,7 @@ export function TimerPanel({
     event: React.PointerEvent<HTMLTableRowElement>,
   ) {
     if (
-      isRunningEntry(entry) ||
+      !isSortableRow(entry) ||
       !canReorderEntries ||
       event.button !== 0 ||
       isEntryDragBlockedTarget(event.target)
@@ -479,7 +487,7 @@ export function TimerPanel({
             const draggableIndex = draggableEntryIds.indexOf(entry._id);
             const isDraggedEntry = entryDragState?.entryId === entry._id;
             const rowShift =
-              !isRunning && entryDragState && draggableIndex !== -1
+              entryDragState && draggableIndex !== -1
                 ? getSharedTableDragRowShift({
                     itemIndex: draggableIndex,
                     originIndex: entryDragState.originIndex,
@@ -499,7 +507,7 @@ export function TimerPanel({
                   render={
                     <tr
                       ref={(node) => {
-                        if (isRunning) {
+                        if (draggableIndex === -1) {
                           return;
                         }
 
@@ -517,7 +525,6 @@ export function TimerPanel({
                         selection.selectedIds.has(entry._id) && "is-selected",
                         selection.cutIds.has(entry._id) && "is-cut",
                         canReorderEntries &&
-                          !isRunning &&
                           draggableIndex !== -1 &&
                           "is-reorderable",
                         pressedEntryId === entry._id && "is-pressing",
@@ -554,10 +561,11 @@ export function TimerPanel({
                           actions: rowActions,
                           keys: TIME_ENTRY_ACTION_KEYS,
                           onAction: runRowAction,
-                          // The running entry stays last.
-                          onReorder: isRunning
-                            ? undefined
-                            : (step) => reorderEntry(entry._id, step),
+                          // A new running entry stays last.
+                          onReorder:
+                            draggableIndex === -1
+                              ? undefined
+                              : (step) => reorderEntry(entry._id, step),
                         })
                       }
                       onPointerDown={(event) =>
@@ -571,7 +579,26 @@ export function TimerPanel({
                   </td>
                   <td className="time-entry-trailing">
                     <span className="time-entry-actions">
-                      {isRunning ? null : (
+                      {isRunning ? (
+                        <TooltipButton
+                          label="Stop"
+                          shortcut="entry.stop-or-start"
+                          data-no-entry-drag="true"
+                          render={
+                            <Button
+                              variant="ghost"
+                              size="icon-sm"
+                              className="text-muted-foreground"
+                              onClick={(event) => {
+                                event.stopPropagation();
+                                entryActions.runAction(rowTarget, "stop");
+                              }}
+                            />
+                          }
+                        >
+                          <Stop />
+                        </TooltipButton>
+                      ) : (
                         <TooltipButton
                           label={
                             currentTimer
@@ -595,13 +622,6 @@ export function TimerPanel({
                           <Play />
                         </TooltipButton>
                       )}
-                      <ObjectActionsButton
-                        actions={rowActions}
-                        keys={TIME_ENTRY_ACTION_KEYS}
-                        onAction={runRowAction}
-                        label="Entry actions"
-                        className="time-entry-more"
-                      />
                     </span>
                     {isCommitted ? (
                       <Check

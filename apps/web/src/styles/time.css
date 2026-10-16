@@ -287,12 +287,6 @@
     pointer-events: auto;
   }
 
-  .time-entry-more {
-    width: 24px;
-    height: 24px;
-    color: var(--text-secondary);
-  }
-
   /* Tailwind's preflight makes every svg a block, which would push the
      duration onto its own line. */
   .time-entry-committed {
@@ -777,18 +771,6 @@
     color: var(--success);
   }
 
-  .weekly-grid-cell-entry-row .object-actions-button {
-    width: 24px;
-    height: 24px;
-    visibility: hidden;
-  }
-
-  .weekly-grid-cell-entry-row:hover .object-actions-button,
-  .weekly-grid-cell-entry-row:focus-within .object-actions-button,
-  .weekly-grid-cell-entry-row:has([data-popup-open]) .object-actions-button {
-    visibility: visible;
-  }
-
   .weekly-grid-add-another {
     margin-top: 1rem;
   }
@@ -996,18 +978,6 @@
   .weekly-entry-card-status {
     color: var(--text-tertiary);
     font-size: var(--text-2xs);
-  }
-
-  .weekly-entry-card .object-actions-button {
-    width: 20px;
-    height: 20px;
-    visibility: hidden;
-  }
-
-  .weekly-entry-card:hover .object-actions-button,
-  .weekly-entry-card:focus-within .object-actions-button,
-  .weekly-entry-card:has([data-popup-open]) .object-actions-button {
-    visibility: visible;
   }
 
   .weekly-days-column-add {
@@ -1292,14 +1262,10 @@
     padding-right: 0.75rem;
   }
 
-  /* Rows always show their "…" in the narrow view. */
+  /* Rows always show Continue or Stop in the narrow view. */
   .time-entry-actions {
     opacity: 1;
     pointer-events: auto;
-  }
-
-  .time-entry-actions > :not(.time-entry-more) {
-    display: none;
   }
 
   .commit-page {

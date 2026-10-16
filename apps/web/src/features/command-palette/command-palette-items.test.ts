@@ -364,7 +364,7 @@ describe("buildPaletteSections", () => {
     expect(running.heading).toBe("Running · Time entry");
     expect(
       running.items.find((item) => item.label === "Move up")?.disabledReason,
-    ).toBe("The running entry stays last");
+    ).toBe("A new running entry stays last");
     expect(
       running.items.find((item) => item.label === "Duplicate"),
     ).toMatchObject({
@@ -373,6 +373,41 @@ describe("buildPaletteSections", () => {
         kind: "running-entry",
         timerId: "timer-1",
         actionId: "duplicate",
+      },
+    });
+  });
+
+  it("moves a resumed running entry like its saved entry", () => {
+    const entry = {
+      _id: "entry-1",
+      localDate: "2026-10-11",
+      label: "",
+      durationMs: 3_600_000,
+      sourceBlockIds: [],
+      committedAt: 1,
+    } as LocalTimesheetEntry;
+    const running = buildPaletteSections(
+      input({
+        focused: { kind: "time-entry", entryId: "entry-1", isRunning: true },
+        timesheetEntries: [entry],
+        timer: {
+          _id: "timer-1",
+          startedAt: 1,
+          localDate: "2026-10-11",
+          accumulatedDurationMs: 3_600_000,
+          entryId: "entry-1",
+        },
+      }),
+    )[0]!;
+
+    expect(
+      running.items.find((item) => item.label === "Move up"),
+    ).toMatchObject({
+      disabledReason: undefined,
+      command: {
+        kind: "reorder",
+        target: { kind: "time-entry", entryId: "entry-1", isRunning: true },
+        step: -1,
       },
     });
   });
