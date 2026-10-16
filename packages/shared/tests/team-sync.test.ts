@@ -17,6 +17,7 @@ import {
   TEAM_SYNC_MAX_TASKS,
   teamProjectChangeSchema,
   teamProjectSchema,
+  teamStoredProjectSchema,
   teamSyncRequestSchema,
   teamSyncResultSchema,
 } from "../team-sync";
@@ -361,6 +362,78 @@ describe("team sync result", () => {
             remoteId: `remote-${i}`,
           }),
         ),
+      }),
+    ).toThrow();
+  });
+});
+
+describe("team record identity", () => {
+  const task = (remoteId: string) => ({
+    remoteId,
+    name: `Task ${remoteId}`,
+    status: "active",
+    billable: true,
+    budgetMs: null,
+  });
+
+  it("refuses a project that lists one task twice", () => {
+    expect(() =>
+      teamProjectSchema.parse({
+        ...teamProject,
+        tasks: [task("t1"), task("t1")],
+      }),
+    ).toThrow(/Task t1 appears twice/);
+  });
+
+  it("refuses a page with one project twice, or one task under two projects", () => {
+    expect(() =>
+      teamSyncResultSchema.parse({
+        cursor: "c1",
+        projects: [teamProject, teamProject],
+      }),
+    ).toThrow(/Project remote-project-1 appears twice/);
+    expect(() =>
+      teamSyncResultSchema.parse({
+        cursor: "c1",
+        projects: [
+          { ...teamProject, tasks: [task("t1")] },
+          { ...teamProject, remoteId: "remote-project-2", tasks: [task("t1")] },
+        ],
+      }),
+    ).toThrow(/Task t1 appears twice/);
+  });
+
+  it("refuses two assignments for one local record", () => {
+    expect(() =>
+      teamSyncResultSchema.parse({
+        cursor: "c1",
+        projects: [],
+        assigned: [
+          { localId: "project-1", remoteId: "r1" },
+          { localId: "project-1", remoteId: "r2" },
+        ],
+      }),
+    ).toThrow(/Assigned local ID project-1 appears twice/);
+  });
+
+  it("refuses a request that sends one local record twice", () => {
+    expect(() =>
+      teamSyncRequestSchema.parse({ changes: [newProject, newProject] }),
+    ).toThrow(/Local ID project-1 appears twice/);
+  });
+
+  it("keeps a stored project of any size, with each task once", () => {
+    const tasks = Array.from({ length: TEAM_SYNC_MAX_TASKS + 1 }, (_, i) =>
+      task(`t${i}`),
+    );
+    expect(
+      teamStoredProjectSchema.parse({ ...teamProject, tasks }).tasks,
+    ).toHaveLength(TEAM_SYNC_MAX_TASKS + 1);
+    expect(() => teamProjectSchema.parse({ ...teamProject, tasks })).toThrow();
+    expect(() =>
+      teamStoredProjectSchema.parse({
+        ...teamProject,
+        tasks: [task("t1"), task("t1")],
       }),
     ).toThrow();
   });
