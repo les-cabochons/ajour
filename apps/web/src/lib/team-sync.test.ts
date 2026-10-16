@@ -5,13 +5,71 @@ const PLUGIN = "team";
 const CONNECTION = "acme";
 const SYNC_URL = `/api/teams/${PLUGIN}/connections/${CONNECTION}/sync`;
 
-const overview: ConnectorsOverview = {
-  pluginsEnabled: true,
-  plugins: [],
-  connectionGroups: [],
-  totalPendingImportCount: 0,
-  totalSelectedImportCount: 0,
-};
+/** The local API's view: the team plugin with one connection to `teamId`. */
+function overviewWith(teamId: string | null): ConnectorsOverview {
+  const plugin = {
+    id: PLUGIN,
+    version: "0.1.0",
+    apiVersion: 3,
+    displayName: "Team sync",
+    iconSvg: "<svg />",
+    entrypoint: "dist/plugin.mjs",
+    capabilities: { team: { apiVersion: 1 as const } },
+    connectionFields: [
+      {
+        id: "label",
+        label: "Label",
+        type: "text" as const,
+        required: true,
+        secret: false,
+      },
+      {
+        id: "teamId",
+        label: "Team ID",
+        type: "text" as const,
+        required: true,
+        secret: false,
+      },
+      {
+        id: "teamSecret",
+        label: "Secret",
+        type: "password" as const,
+        required: true,
+        secret: true,
+      },
+    ],
+  };
+  return {
+    pluginsEnabled: true,
+    plugins: [plugin],
+    connectionGroups: [
+      {
+        plugin,
+        enabled: true,
+        connections:
+          teamId === null
+            ? []
+            : [
+                {
+                  id: CONNECTION,
+                  pluginId: PLUGIN,
+                  label: "Acme",
+                  tenantLabel: "Acme",
+                  connectedAt: 1,
+                  autoSync: false,
+                  autoSyncIntervalMinutes: 15,
+                  pendingImportCount: 0,
+                  selectedImportCount: 0,
+                  configSummary: {},
+                  editableValues: { label: "Acme", teamId },
+                },
+              ],
+      },
+    ],
+    totalPendingImportCount: 0,
+    totalSelectedImportCount: 0,
+  };
+}
 
 const teamProject = (remoteId: string, name: string) => ({
   remoteId,
@@ -24,24 +82,39 @@ const teamProject = (remoteId: string, name: string) => ({
   tasks: [],
 });
 
-/** Answers each sync round with the next response, and records the requests. */
-function stubTeam(
+/**
+ * Answers each sync round with the next response, records the requests, and
+ * serves `api.overview` as the local API's connections, which a test changes.
+ */
+function stubApi(
   respond: (
     request: TeamSyncRequest,
     round: number,
   ) => unknown | Promise<unknown>,
 ) {
-  const requests: TeamSyncRequest[] = [];
-  const fetch = vi.fn(async (url: string, init?: RequestInit) => {
-    if (url.endsWith(SYNC_URL)) {
-      const request = JSON.parse(String(init?.body)) as TeamSyncRequest;
-      requests.push(request);
-      return Response.json(await respond(request, requests.length));
-    }
-    return Response.json(overview);
-  });
-  vi.stubGlobal("fetch", fetch);
-  return requests;
+  const api = {
+    overview: overviewWith("team-1"),
+    requests: [] as TeamSyncRequest[],
+    failDelete: false,
+  };
+  vi.stubGlobal(
+    "fetch",
+    vi.fn(async (url: string, init?: RequestInit) => {
+      if (url.endsWith(SYNC_URL)) {
+        const request = JSON.parse(String(init?.body)) as TeamSyncRequest;
+        api.requests.push(request);
+        return Response.json(await respond(request, api.requests.length));
+      }
+      if (init?.method === "DELETE") {
+        if (api.failDelete) {
+          return Response.json({ error: "Storage is busy." }, { status: 500 });
+        }
+        api.overview = overviewWith(null);
+      }
+      return Response.json(api.overview);
+    }),
+  );
+  return api;
 }
 
 /** Gives every new record in the round an ID, as a team would. */
@@ -98,36 +171,57 @@ describe("team sync service", () => {
     return { projectId, undoToken: shared.undoToken };
   }
 
+  const answer = (request: TeamSyncRequest) => ({
+    cursor: "c1",
+    projects: [],
+    assigned: assignAll(request),
+  });
+
   it("sends a shared project once its Undo window closes, then sends nothing", async () => {
     const { localStore, syncTeamConnection } = await load();
     const { projectId, undoToken } = addSharedProject(localStore, "Beta");
-    const requests = stubTeam((request) => ({
-      cursor: `c${requests.length}`,
-      projects: [],
-      assigned: assignAll(request),
-    }));
+    const api = stubApi(answer);
 
     await syncTeamConnection(PLUGIN, CONNECTION);
-    expect(requests[0]?.changes).toEqual([]);
+    expect(api.requests[0]?.changes).toEqual([]);
 
     localStore.forgetUndo(undoToken!);
     const outcome = await syncTeamConnection(PLUGIN, CONNECTION);
-    expect(requests[1]).toMatchObject({
+    expect(api.requests[1]).toMatchObject({
       cursor: "c1",
       changes: [{ localId: projectId, name: "Beta" }],
     });
-    expect(outcome).toMatchObject({ rounds: 1, incomplete: false });
+    expect(outcome).toMatchObject({
+      rounds: 1,
+      sentProjectCount: 1,
+      incomplete: false,
+    });
     expect(
       localStore.snapshot().projects.find((p) => p._id === projectId)?.team,
     ).toMatchObject({ remoteId: `r-${projectId}` });
 
     await syncTeamConnection(PLUGIN, CONNECTION);
-    expect(requests[2]?.changes).toEqual([]);
+    expect(api.requests[2]?.changes).toEqual([]);
+  });
+
+  it("keeps another window from sending a project whose Undo is open here", async () => {
+    const here = await load();
+    const { projectId } = addSharedProject(here.localStore, "Beta");
+
+    // Another window: the same saved state, without this window's memory.
+    vi.resetModules();
+    const elsewhere = await load();
+    const api = stubApi(answer);
+    expect(elsewhere.localStore.pendingUndoProjectIds().has(projectId)).toBe(
+      true,
+    );
+    await elsewhere.syncTeamConnection(PLUGIN, CONNECTION);
+    expect(api.requests[0]?.changes).toEqual([]);
   });
 
   it("goes on while the team has more pages, from each page's cursor", async () => {
     const { localStore, syncTeamConnection } = await load();
-    const requests = stubTeam((_, round) =>
+    const api = stubApi((_, round) =>
       round === 1
         ? {
             cursor: "page-1",
@@ -139,7 +233,7 @@ describe("team sync service", () => {
 
     const outcome = await syncTeamConnection(PLUGIN, CONNECTION);
 
-    expect(requests.map((request) => request.cursor)).toEqual([
+    expect(api.requests.map((request) => request.cursor)).toEqual([
       undefined,
       "page-1",
     ]);
@@ -154,7 +248,7 @@ describe("team sync service", () => {
     const { localStore, syncTeamConnection } = await load();
     const { projectId, undoToken } = addSharedProject(localStore, "Beta");
     localStore.forgetUndo(undoToken!);
-    stubTeam(() => ({ cursor: "c1", projects: [], assigned: [] }));
+    stubApi(() => ({ cursor: "c1", projects: [], assigned: [] }));
     const before = localStore.snapshot();
 
     await expect(syncTeamConnection(PLUGIN, CONNECTION)).rejects.toThrow(
@@ -172,13 +266,13 @@ describe("team sync service", () => {
     const { localStore, syncTeamConnection, api } = await load();
     const { projectId, undoToken } = addSharedProject(localStore, "Beta");
     localStore.forgetUndo(undoToken!);
-    let answer!: (value: unknown) => void;
-    stubTeam(() => new Promise((resolve) => (answer = resolve)));
+    let deliver!: (value: unknown) => void;
+    stubApi(() => new Promise((resolve) => (deliver = resolve)));
 
     const sync = syncTeamConnection(PLUGIN, CONNECTION);
-    await vi.waitFor(() => expect(answer).toBeTypeOf("function"));
+    await vi.waitFor(() => expect(deliver).toBeTypeOf("function"));
     await api.deleteConnectorConnection(PLUGIN, CONNECTION);
-    answer({
+    deliver({
       cursor: "c1",
       projects: [teamProject("r-other", "Gamma")],
       assigned: [{ localId: projectId, remoteId: `r-${projectId}` }],
@@ -193,5 +287,78 @@ describe("team sync service", () => {
       state.projects.find((p) => p._id === projectId)?.team,
     ).toBeUndefined();
     expect(state.teamConnections?.[CONNECTION]).toBeUndefined();
+  });
+
+  it("drops an answer for a connection pointed at another team meanwhile", async () => {
+    const { localStore, syncTeamConnection } = await load();
+    let deliver!: (value: unknown) => void;
+    const api = stubApi(() => new Promise((resolve) => (deliver = resolve)));
+
+    const sync = syncTeamConnection(PLUGIN, CONNECTION);
+    await vi.waitFor(() => expect(deliver).toBeTypeOf("function"));
+    api.overview = overviewWith("team-2");
+    deliver({ cursor: "c9", projects: [teamProject("r-old", "Old team")] });
+    await sync;
+
+    const state = localStore.snapshot();
+    expect(state.projects.some((project) => project.name === "Old team")).toBe(
+      false,
+    );
+    expect(state.teamConnections?.[CONNECTION]).toBeUndefined();
+  });
+
+  it("turns the old team's projects local when the connection names a new team", async () => {
+    const { localStore, syncTeamConnection } = await load();
+    const api = stubApi(() => ({
+      cursor: "c1",
+      projects: [teamProject("r1", "Alpha")],
+    }));
+    await syncTeamConnection(PLUGIN, CONNECTION);
+    const alpha = localStore
+      .snapshot()
+      .projects.find((project) => project.name === "Alpha")!;
+    expect(alpha.team?.remoteId).toBe("r1");
+
+    api.overview = overviewWith("team-2");
+    await syncTeamConnection(PLUGIN, CONNECTION);
+
+    const after = localStore.snapshot();
+    expect(
+      after.projects.find((p) => p._id === alpha._id)?.team,
+    ).toBeUndefined();
+    expect(api.requests[1]?.cursor).toBeUndefined();
+  });
+
+  it("keeps syncing after a removal that failed", async () => {
+    const { localStore, syncTeamConnection, api } = await load();
+    const stub = stubApi(() => ({
+      cursor: "c1",
+      projects: [teamProject("r1", "Alpha")],
+    }));
+    stub.failDelete = true;
+
+    await expect(
+      api.deleteConnectorConnection(PLUGIN, CONNECTION),
+    ).rejects.toThrow(/Storage is busy/);
+    const outcome = await syncTeamConnection(PLUGIN, CONNECTION);
+
+    expect(outcome.rounds).toBe(1);
+    expect(
+      localStore
+        .snapshot()
+        .projects.some((project) => project.name === "Alpha"),
+    ).toBe(true);
+  });
+
+  it("unshares without an Undo", async () => {
+    const { localStore } = await load();
+    const { projectId, undoToken } = addSharedProject(localStore, "Beta");
+    localStore.forgetUndo(undoToken!);
+
+    expect(localStore.unshareProjectFromTeam(projectId)).toBeUndefined();
+    expect(localStore.pendingUndoProjectIds().has(projectId)).toBe(false);
+    expect(
+      localStore.snapshot().projects.find((p) => p._id === projectId)?.team,
+    ).toBeUndefined();
   });
 });

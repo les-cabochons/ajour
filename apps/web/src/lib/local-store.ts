@@ -165,7 +165,10 @@ import {
   updateProjectTask as applyUpdateProjectTask,
   type ProjectTaskPatch,
 } from "@/domain/projects/project-transitions";
-import { normalizeTeamConnections } from "@/domain/projects/team-link";
+import {
+  normalizeTeamConnections,
+  normalizeTeamPushHold,
+} from "@/domain/projects/team-link";
 import {
   applyTeamSync,
   disconnectTeam,
@@ -488,6 +491,10 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
       workflowStateMappings,
       settleRules: normalizeSettleRules(persistedState.settleRules),
       teamConnections: normalizeTeamConnections(persistedState.teamConnections),
+      teamPushHold: normalizeTeamPushHold(
+        persistedState.teamPushHold,
+        Date.now(),
+      ),
       workflowStateWriteRules: arrayOrDefault(
         persistedState.workflowStateWriteRules,
         defaults.workflowStateWriteRules,
@@ -963,8 +970,47 @@ function updateStateWithUndo(
   }
 
   const token = createId("undo");
-  lastUndo = { token, undo };
+  rememberUndo(token, undo);
   return token;
+}
+
+/** How long a team sync in another window waits for an open Undo, at most. */
+const TEAM_PUSH_HOLD_MS = 60_000;
+
+/**
+ * Keeps the undo for `token`, and holds the shared projects it would restore
+ * from team syncs in every window until its Undo window closes.
+ */
+function rememberUndo(token: string, undo: LocalStateUndo) {
+  lastUndo = { token, undo };
+  const state = readState();
+  const shared = new Set(
+    state.projects
+      .filter((project) => project.team)
+      .map((project) => project._id),
+  );
+  const held = undo.projects
+    .filter(
+      (change) =>
+        shared.has(change.key) ||
+        change.before?.team !== undefined ||
+        change.after?.team !== undefined,
+    )
+    .map((change) => change.key);
+  if (held.length > 0) {
+    writeState({
+      ...state,
+      teamPushHold: { projectIds: held, until: Date.now() + TEAM_PUSH_HOLD_MS },
+    });
+  } else if (state.teamPushHold) {
+    writeState({ ...state, teamPushHold: undefined });
+  }
+}
+
+/** The Undo window closed: team syncs no longer wait for its projects. */
+function releaseTeamPushHold() {
+  const state = readState();
+  if (state.teamPushHold) writeState({ ...state, teamPushHold: undefined });
 }
 
 /** `expired` means a later action replaced this one, or its toast already closed. */
@@ -1086,9 +1132,17 @@ export const localStore = {
       removeCalendarConnectionData(state, { pluginId, connectionId }),
     );
   },
-  /** The projects the pending Undo would restore. A team sync waits for them. */
+  /**
+   * The projects a pending Undo would restore, here or in another window. A
+   * team sync waits for them.
+   */
   pendingUndoProjectIds() {
-    return getUndoProjectIds(lastUndo?.undo);
+    const ids = getUndoProjectIds(lastUndo?.undo);
+    const hold = readState().teamPushHold;
+    if (hold && hold.until > Date.now()) {
+      for (const projectId of hold.projectIds) ids.add(projectId);
+    }
+    return ids;
   },
   /**
    * Applies one round of a team sync. It is not undoable: an Undo of an
@@ -1099,6 +1153,7 @@ export const localStore = {
     connectionId: string,
     pushed: readonly TeamProjectChange[],
     result: TeamSyncResult,
+    identity: string,
   ): TeamSyncApplyResult {
     return updateStateWithResult<TeamSyncApplyResult>((state) => {
       const next = applyTeamSync(
@@ -1108,9 +1163,22 @@ export const localStore = {
         result,
         { createId, now: Date.now },
       );
-      return next.result.kind === "rejected"
-        ? { state, result: next.result }
-        : { state: withTeamSyncState(state, next), result: next.result };
+      if (next.result.kind === "rejected") {
+        return { state, result: next.result };
+      }
+      const connection = next.teamConnections[connectionId];
+      return {
+        state: withTeamSyncState(state, {
+          ...next,
+          teamConnections: connection
+            ? {
+                ...next.teamConnections,
+                [connectionId]: { ...connection, identity },
+              }
+            : next.teamConnections,
+        }),
+        result: next.result,
+      };
     });
   },
   /**
@@ -1135,9 +1203,13 @@ export const localStore = {
     });
     return { result, undoToken };
   },
-  /** Makes a shared project local on this machine only. Returns an undo token. */
+  /**
+   * Makes a shared project local on this machine only. The UI asks first and
+   * offers no Undo: a sync meanwhile would skip the team's changes to it, and
+   * restoring the link afterwards could not bring them back.
+   */
   unshareProjectFromTeam(projectId: string) {
-    return updateStateWithUndo((state) =>
+    updateState((state) =>
       withTeamSyncState(
         state,
         unshareProject(teamSyncStateOf(state), projectId),
@@ -1949,6 +2021,7 @@ export const localStore = {
 
     const { undo } = lastUndo;
     lastUndo = undefined;
+    releaseTeamPushHold();
     return updateStateWithResult((state) => {
       const restored = restoreUndo(state, undo);
       return {
@@ -1964,6 +2037,7 @@ export const localStore = {
   forgetUndo(token: string) {
     if (lastUndo?.token === token) {
       lastUndo = undefined;
+      releaseTeamPushHold();
     }
   },
   /**
@@ -1980,7 +2054,7 @@ export const localStore = {
     const undo = captureUndo(before, after);
     if (!undo) return { result, undoToken: null };
     const token = createId("undo");
-    lastUndo = { token, undo };
+    rememberUndo(token, undo);
     return { result, undoToken: token };
   },
   saveTimer(timerId: string) {
