@@ -89,13 +89,6 @@ const pullRequestSyncs = new Map<string, Promise<CodeHostSyncResult>>();
 const connectionGenerations = new Map<string, number>();
 const connectionKey = (pluginId: string, connectionId: string) =>
   JSON.stringify([pluginId, connectionId]);
-/** Connections removed in this session. Their IDs are never reused. */
-const removedConnections = new Set<string>();
-
-/** Whether the connection was removed, so a late result must not apply. */
-export function isConnectionRemoved(pluginId: string, connectionId: string) {
-  return removedConnections.has(connectionKey(pluginId, connectionId));
-}
 
 /** Deduplicates manual and scheduled calls, and rejects results from a removed connection. */
 export function syncCodeHostConnection(
@@ -554,7 +547,6 @@ export async function deleteConnectorConnection(
 ): Promise<ConnectorsOverview> {
   const key = connectionKey(pluginId, connectionId);
   connectionGenerations.set(key, (connectionGenerations.get(key) ?? 0) + 1);
-  removedConnections.add(key);
   const overview = cacheConnectorsOverview(
     await appApiRequest(
       `/api/connectors/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}`,

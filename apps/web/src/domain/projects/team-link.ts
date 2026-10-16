@@ -48,6 +48,19 @@ export function normalizeTaskTeamLink(
   return { remoteId: link.remoteId, synced: synced.data };
 }
 
+/** A hold that has run out, or is malformed, is dropped. */
+export function normalizeTeamPushHold(
+  value: unknown,
+  now: number,
+): { projectIds: string[]; until: number } | undefined {
+  if (!value || typeof value !== "object") return undefined;
+  const hold = value as Record<string, unknown>;
+  if (typeof hold.until !== "number" || hold.until <= now) return undefined;
+  if (!Array.isArray(hold.projectIds)) return undefined;
+  const projectIds = hold.projectIds.filter(nonEmptyString);
+  return projectIds.length > 0 ? { projectIds, until: hold.until } : undefined;
+}
+
 export function normalizeTeamConnections(
   value: unknown,
 ): Record<string, LocalTeamConnection> {
@@ -60,6 +73,9 @@ export function normalizeTeamConnections(
     connections[connectionId] = {
       ...(nonEmptyString(connection.cursor)
         ? { cursor: connection.cursor }
+        : {}),
+      ...(nonEmptyString(connection.identity)
+        ? { identity: connection.identity }
         : {}),
       unsharedRemoteIds: Array.isArray(connection.unsharedRemoteIds)
         ? connection.unsharedRemoteIds.filter(nonEmptyString)
