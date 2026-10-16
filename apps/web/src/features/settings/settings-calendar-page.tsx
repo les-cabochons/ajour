@@ -188,8 +188,8 @@ export function SettingsCalendarPage() {
         <AppPanel>
           {rules.length === 0 ? (
             <MessagePanel>
-              No remembered meetings yet. Add a recurring meeting with Remember
-              this meeting checked, and it shows here.
+              No remembered meetings yet. Choose a project for a recurring
+              meeting in the Time view, and it shows here.
             </MessagePanel>
           ) : (
             rules.map((rule) => (

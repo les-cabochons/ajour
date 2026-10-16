@@ -1368,3 +1368,227 @@
     pointer-events: auto;
   }
 }
+
+/* -- Calendar suggestions ------------------------------------------
+   Meetings from a calendar plugin, shown for the user to add as entries
+   (features/time/calendar-suggestions.tsx). Dashed, so they never read as
+   saved time. */
+@layer components {
+  .calendar-day-section {
+    margin-top: 1.5rem;
+  }
+
+  .calendar-day-section-header {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    height: 36px;
+    padding: 0 0.5rem 0 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .calendar-day-section-header h2 {
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+    font-weight: 500;
+  }
+
+  .calendar-day-section-refresh {
+    margin-left: auto;
+  }
+
+  .calendar-day-section-error {
+    padding: 0.5rem 1rem;
+    color: var(--destructive);
+    font-size: var(--text-xs);
+  }
+
+  .calendar-suggestion-row {
+    display: grid;
+    grid-template-columns:
+      7.5rem minmax(0, 1fr) minmax(10rem, 15rem)
+      3.5rem auto auto auto;
+    align-items: center;
+    gap: 0.5rem;
+    height: 40px;
+    padding: 0 0.5rem 0 1rem;
+    border-bottom: 1px dashed var(--border);
+    outline: none;
+  }
+
+  .calendar-suggestion-row:hover,
+  .calendar-suggestion-row:focus-within {
+    background: var(--highlight-bg);
+  }
+
+  .calendar-suggestion-row:focus-visible {
+    box-shadow: inset 0 0 0 2px var(--focus-ring);
+  }
+
+  .calendar-suggestion-row.is-filtered {
+    color: var(--text-tertiary);
+  }
+
+  .calendar-suggestion-time {
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .calendar-suggestion-title {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-width: 0;
+    overflow: hidden;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .calendar-suggestion-reason {
+    flex-shrink: 0;
+  }
+
+  .calendar-suggestion-duration {
+    text-align: right;
+  }
+
+  .calendar-suggestion-row .object-actions-button {
+    width: 24px;
+    height: 24px;
+    color: var(--text-secondary);
+  }
+
+  .calendar-day-section-footer {
+    padding: 0.5rem 1rem;
+    color: var(--text-tertiary);
+    font-size: var(--text-xs);
+  }
+
+  .calendar-day-section-toggle {
+    color: var(--primary);
+    cursor: pointer;
+  }
+
+  .calendar-day-section-toggle:hover {
+    text-decoration: underline;
+  }
+
+  .calendar-day-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .calendar-day-cards-label {
+    padding: 0.25rem 0.125rem 0;
+    color: var(--text-tertiary);
+    font-size: var(--text-2xs);
+    font-weight: 500;
+    text-transform: uppercase;
+  }
+
+  .calendar-suggestion-card {
+    display: flex;
+    flex-direction: column;
+    gap: 0.125rem;
+    padding: 0.375rem 0.625rem;
+    border: 1px dashed var(--border-hover);
+    border-radius: var(--radius-md);
+    font-size: var(--text-sm);
+    cursor: pointer;
+    outline: none;
+    user-select: none;
+  }
+
+  .calendar-suggestion-card:hover,
+  .calendar-suggestion-card:focus-within {
+    border-style: solid;
+    background: var(--highlight-bg);
+  }
+
+  .calendar-suggestion-card:focus-visible {
+    box-shadow: 0 0 0 2px var(--focus-ring);
+  }
+
+  .calendar-suggestion-card-time {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    min-height: 20px;
+    color: var(--text-secondary);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    font-variant-numeric: tabular-nums;
+  }
+
+  .calendar-suggestion-card-time > span {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .calendar-suggestion-card .object-actions-button {
+    width: 20px;
+    height: 20px;
+    visibility: hidden;
+  }
+
+  .calendar-suggestion-card:hover .object-actions-button,
+  .calendar-suggestion-card:focus-within .object-actions-button,
+  .calendar-suggestion-card:has([data-popup-open]) .object-actions-button {
+    visibility: visible;
+  }
+
+  .calendar-suggestion-card-title {
+    overflow: hidden;
+    font-weight: 500;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .calendar-suggestion-card-project {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    min-width: 0;
+    color: var(--text-secondary);
+    font-size: var(--text-xs);
+  }
+
+  .calendar-suggestion-card-project > span:first-child {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .calendar-suggestion-card-project > span:first-child::before {
+    width: 8px;
+    height: 8px;
+    flex-shrink: 0;
+    border-radius: 2px;
+    background: var(--project-color, var(--border));
+    content: "";
+  }
+
+  .calendar-suggestion-card-add {
+    flex-shrink: 0;
+    color: var(--primary);
+    font-weight: 500;
+    visibility: hidden;
+  }
+
+  .calendar-suggestion-card:hover .calendar-suggestion-card-add,
+  .calendar-suggestion-card:focus-visible .calendar-suggestion-card-add {
+    visibility: visible;
+  }
+}

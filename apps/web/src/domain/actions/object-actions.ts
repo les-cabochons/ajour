@@ -28,6 +28,46 @@ export type TimeEntryActionId =
 
 export type TimeEntryActionState = "saved" | "running";
 
+export type CalendarSuggestionActionId =
+  "add" | "choose-project" | "dismiss" | "hide-meeting" | "forget-meeting";
+
+/**
+ * Lists a calendar suggestion's actions: Add · Choose project… · Dismiss ·
+ * Hide this meeting · Forget this meeting. The copy says meeting, never rule.
+ */
+export function getCalendarSuggestionActions(suggestion: {
+  projectId?: string;
+  seriesId?: string;
+  ruleId?: string;
+}): ObjectAction<CalendarSuggestionActionId>[] {
+  const recurringReason = suggestion.seriesId
+    ? undefined
+    : "Only for recurring meetings";
+  return [
+    {
+      id: "add",
+      label: "Add",
+      disabledReason: suggestion.projectId
+        ? undefined
+        : "Choose a project first",
+    },
+    { id: "choose-project", label: "Choose project…" },
+    { id: "dismiss", label: "Dismiss" },
+    {
+      id: "hide-meeting",
+      label: "Hide this meeting",
+      disabledReason: recurringReason,
+    },
+    {
+      id: "forget-meeting",
+      label: "Forget this meeting",
+      disabledReason:
+        recurringReason ??
+        (suggestion.ruleId ? undefined : "Nothing remembered yet"),
+    },
+  ];
+}
+
 export interface TimeEntryActionOptions {
   /** Set inside an editor, where Edit is the current mode. */
   isEditing?: boolean;

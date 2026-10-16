@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
+  getCalendarSuggestionActions,
   getBacklogItemActions,
   getProjectActions,
   getTaskActions,
@@ -377,5 +378,55 @@ describe("backlog item actions", () => {
     });
 
     expect(disabledReasons(actions)).toEqual({ edit: "Already editing" });
+  });
+});
+
+describe("calendar suggestion actions", () => {
+  const byId = (
+    suggestion: Parameters<typeof getCalendarSuggestionActions>[0],
+  ) =>
+    Object.fromEntries(
+      getCalendarSuggestionActions(suggestion).map((action) => [
+        action.id,
+        action.disabledReason ?? "enabled",
+      ]),
+    );
+
+  it("lists Add · Choose project… · Dismiss · Hide · Forget, in that order", () => {
+    expect(
+      getCalendarSuggestionActions({}).map((action) => action.label),
+    ).toEqual([
+      "Add",
+      "Choose project…",
+      "Dismiss",
+      "Hide this meeting",
+      "Forget this meeting",
+    ]);
+  });
+
+  it("asks for a project before Add and keeps meeting actions to recurring meetings", () => {
+    expect(byId({})).toEqual({
+      add: "Choose a project first",
+      "choose-project": "enabled",
+      dismiss: "enabled",
+      "hide-meeting": "Only for recurring meetings",
+      "forget-meeting": "Only for recurring meetings",
+    });
+    expect(byId({ projectId: "p", seriesId: "s" })).toMatchObject({
+      add: "enabled",
+      "hide-meeting": "enabled",
+      "forget-meeting": "Nothing remembered yet",
+    });
+    expect(
+      byId({ projectId: "p", seriesId: "s", ruleId: "r" })["forget-meeting"],
+    ).toBe("enabled");
+  });
+
+  it("never says rule in its labels", () => {
+    expect(
+      getCalendarSuggestionActions({ seriesId: "s", ruleId: "r" })
+        .flatMap((action) => [action.label, action.disabledReason ?? ""])
+        .join(" "),
+    ).not.toMatch(/rule|series|occurrence/i);
   });
 });

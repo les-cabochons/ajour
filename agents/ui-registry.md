@@ -227,6 +227,18 @@ new entry for that day, like its Add button. Normal headers show logged totals o
 capacity target and utilization live in hover cards, with an optional compact
 over-target warning.
 
+Calendar suggestions (`features/time/calendar-suggestions.tsx`) show while a
+calendar plugin is on. The Day view adds a "From your calendar" section under
+its rows: 40px dashed rows with the time span, the title, a `ProjectTaskPicker`
+seeded from the remembered meeting, the duration, Add, a dismiss button and the
+"…" menu, then a line counting what the Settings filters hide, with Show hidden.
+Each Days column lists dashed cards under its Add button, headed "From
+calendar": the compact time span, the title, and the project with an Add hint on
+hover, or the picker. Choosing a project in a picker adds the entry at once and
+remembers the project for a recurring meeting. One action set,
+`getCalendarSuggestionActions`, and `useCalendarSuggestionActions` serve every
+surface. The copy says meeting, never rule, series or occurrence.
+
 Every time entry surface (Day rows, Days cards, Grid cells, the Grid cell list
 and the entry form) exposes the same action set through a right-click menu
 and a "…" button, which the narrow view always shows. Duplicate to and Move to

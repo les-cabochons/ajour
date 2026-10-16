@@ -13,6 +13,7 @@ import {
   type TimeEntryEditorTarget,
 } from "@/features/time/time-entry-editor-form";
 import type { TimeEntryEditorFields } from "@/features/time/time-entry-editor";
+import { CalendarDaySection } from "@/features/time/calendar-suggestions";
 import { DayStrip } from "@/features/time/day-strip";
 import { TimePageHeader } from "@/features/time/time-page-header";
 import {
@@ -398,6 +399,13 @@ export function TimePage({ date }: { date: string }) {
               date={date}
               activeEntryId={activeEntryId}
               onOpenEntry={openEditor}
+            />
+            <CalendarDaySection
+              date={date}
+              range={{
+                from: weekDates[0]!,
+                to: weekDates[weekDates.length - 1]!,
+              }}
             />
           </>
         )}
