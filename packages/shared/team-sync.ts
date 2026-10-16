@@ -167,17 +167,64 @@ export const teamTaskSchema = z.object({
 });
 export type TeamTask = z.infer<typeof teamTaskSchema>;
 
+/** Reports each value that appears twice, at its path. */
+function refuseRepeats(
+  values: readonly { value: string; path: (string | number)[] }[],
+  what: string,
+  context: z.RefinementCtx,
+) {
+  const seen = new Set<string>();
+  for (const { value, path } of values) {
+    if (seen.has(value)) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path,
+        message: `${what} ${value} appears twice.`,
+      });
+    }
+    seen.add(value);
+  }
+}
+
+const teamProjectShape = {
+  remoteId: remoteIdSchema,
+  ...teamProjectFields,
+};
+
+function refuseRepeatedTasks(
+  project: { tasks: readonly { remoteId: string }[] },
+  context: z.RefinementCtx,
+) {
+  refuseRepeats(
+    project.tasks.map((task, index) => ({
+      value: task.remoteId,
+      path: ["tasks", index, "remoteId"],
+    })),
+    "Task",
+    context,
+  );
+}
+
 /**
  * A team project as the team has it now, with its tasks changed since the
  * cursor, or all of them without one. Tasks are never deleted, so a task that
  * is absent is unchanged, and a project with many changed tasks can span pages.
  */
-export const teamProjectSchema = z.object({
-  remoteId: remoteIdSchema,
-  ...teamProjectFields,
-  tasks: z.array(teamTaskSchema).max(TEAM_SYNC_MAX_TASKS),
-});
+export const teamProjectSchema = z
+  .object({
+    ...teamProjectShape,
+    tasks: z.array(teamTaskSchema).max(TEAM_SYNC_MAX_TASKS),
+  })
+  .superRefine(refuseRepeatedTasks);
 export type TeamProject = z.infer<typeof teamProjectSchema>;
+
+/**
+ * A team project Ajour keeps locally, such as one held for the user, after
+ * several pages added to it. It has no page bound on its tasks.
+ */
+export const teamStoredProjectSchema = z
+  .object({ ...teamProjectShape, tasks: z.array(teamTaskSchema) })
+  .superRefine(refuseRepeatedTasks);
 
 /**
  * One sync round. Without a cursor the result starts from the whole team,
@@ -189,6 +236,19 @@ export const teamSyncRequestSchema = z.object({
     .array(teamProjectChangeSchema)
     .max(TEAM_SYNC_MAX_PROJECTS)
     .superRefine(limitTotalTasks)
+    .superRefine((changes, context) =>
+      refuseRepeats(
+        changes.flatMap((change, index) => [
+          { value: change.localId, path: [index, "localId"] },
+          ...change.tasks.map((task, taskIndex) => ({
+            value: task.localId,
+            path: [index, "tasks", taskIndex, "localId"],
+          })),
+        ]),
+        "Local ID",
+        context,
+      ),
+    )
     .default([]),
 });
 export type TeamSyncRequest = z.infer<typeof teamSyncRequestSchema>;
@@ -206,18 +266,48 @@ export type TeamRemoteIdAssignment = z.infer<
  * wins inside one round. `assigned` gives the remote ID of each new project
  * and task. With `hasMore`, Ajour syncs again from `cursor` with no changes.
  */
-export const teamSyncResultSchema = z.object({
-  cursor: cursorSchema,
-  projects: z
-    .array(teamProjectSchema)
-    .max(TEAM_SYNC_MAX_PROJECTS)
-    .superRefine(limitTotalTasks),
-  assigned: z
-    .array(teamRemoteIdAssignmentSchema)
-    .max(TEAM_SYNC_MAX_PROJECTS + TEAM_SYNC_MAX_TASKS)
-    .default([]),
-  hasMore: z.boolean().default(false),
-});
+export const teamSyncResultSchema = z
+  .object({
+    cursor: cursorSchema,
+    projects: z
+      .array(teamProjectSchema)
+      .max(TEAM_SYNC_MAX_PROJECTS)
+      .superRefine(limitTotalTasks),
+    assigned: z
+      .array(teamRemoteIdAssignmentSchema)
+      .max(TEAM_SYNC_MAX_PROJECTS + TEAM_SYNC_MAX_TASKS)
+      .default([]),
+    hasMore: z.boolean().default(false),
+  })
+  .superRefine((result, context) => {
+    // A project appears once per page, and a task belongs to one project.
+    refuseRepeats(
+      result.projects.map((project, index) => ({
+        value: project.remoteId,
+        path: ["projects", index, "remoteId"],
+      })),
+      "Project",
+      context,
+    );
+    refuseRepeats(
+      result.projects.flatMap((project, index) =>
+        project.tasks.map((task, taskIndex) => ({
+          value: task.remoteId,
+          path: ["projects", index, "tasks", taskIndex, "remoteId"],
+        })),
+      ),
+      "Task",
+      context,
+    );
+    refuseRepeats(
+      result.assigned.map((entry, index) => ({
+        value: entry.localId,
+        path: ["assigned", index, "localId"],
+      })),
+      "Assigned local ID",
+      context,
+    );
+  });
 export type TeamSyncResult = z.infer<typeof teamSyncResultSchema>;
 
 /** Creating a team. The plugin returns the values that join it. */
