@@ -420,7 +420,7 @@ describe("weekly time projection", () => {
         rowKey: "project-1::task-1",
         running,
       }),
-    ).toEqual({ entries: [resumed], hasRunning: false });
+    ).toEqual({ rows: [resumed], hasRunning: false });
     expect(
       selectWeeklyGridCell({
         entries: [resumed],
@@ -428,7 +428,7 @@ describe("weekly time projection", () => {
         rowKey: "project-1::task-2",
         running,
       }),
-    ).toEqual({ entries: [], hasRunning: true });
+    ).toEqual({ rows: ["running"], hasRunning: true });
   });
 
   it("selects one cell the same way the Grid rows group it", () => {
@@ -465,7 +465,7 @@ describe("weekly time projection", () => {
       },
     ];
     const running = {
-      entryId: "entry-2",
+      entryId: "entry-1",
       localDate: "2026-08-10",
       projectId: "project-1",
       taskId: "task-1",
@@ -477,7 +477,10 @@ describe("weekly time projection", () => {
       rowKey: "project-1::task-1",
       running,
     });
-    expect(cell.entries.map((entry) => entry._id)).toEqual(["entry-1"]);
+    // The running entry keeps the place of entry-1, the entry it continues.
+    expect(
+      cell.rows.map((row) => (row === "running" ? row : row._id)),
+    ).toEqual(["running", "entry-2"]);
     expect(cell.hasRunning).toBe(true);
     expect(
       selectWeeklyGridCell({

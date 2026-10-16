@@ -4,10 +4,7 @@ import {
   RiCloseLine as X,
   RiLockLine as Lock,
 } from "@remixicon/react";
-import {
-  ObjectActionsButton,
-  ObjectContextMenu,
-} from "@/components/object-actions-menu";
+import { ObjectContextMenu } from "@/components/object-actions-menu";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import { formatClockDuration } from "@/domain/time/duration";
@@ -25,7 +22,7 @@ import { useRunningClock } from "@/lib/use-now";
 /**
  * The side panel content for a Grid cell with several entries: the cell's entries,
  * the running entry when it is in the cell, and "Add another entry". A click on an
- * entry opens it in the panel's editor. Each entry keeps its action set.
+ * entry opens it in the panel's editor; a right-click opens its action set.
  */
 export function WeekGridCellPanel({
   cell,
@@ -39,7 +36,7 @@ export function WeekGridCellPanel({
   const state = useLocalState();
   const currentTimer = state.timers[0] ?? null;
   const rootRef = useRef<HTMLDivElement>(null);
-  const { entries, hasRunning } = selectWeeklyGridCell({
+  const { rows, hasRunning } = selectWeeklyGridCell({
     entries: state.timesheetEntries,
     localDate: cell.localDate,
     rowKey: cell.rowKey,
@@ -104,46 +101,43 @@ export function WeekGridCellPanel({
         role="group"
         aria-label="Time entries"
       >
-        {runningTarget && currentTimer ? (
-          <div className="weekly-grid-cell-entry-row">
-            <ObjectContextMenu
-              actions={entryActions.getActions(runningTarget)}
-              onAction={(actionId) =>
-                entryActions.runAction(runningTarget, actionId)
-              }
-              render={
-                <button
-                  type="button"
-                  data-cell-entry=""
-                  className="weekly-grid-cell-entry is-running"
-                  onClick={() => onOpen({ timerId: currentTimer._id, cell })}
-                />
-              }
-            >
-              <Lock />
-              <span>Running</span>
-              <strong>
-                {formatClockDuration(
-                  getTimerDurationsMs(currentTimer, now).runningDurationMs,
-                )}
-              </strong>
-            </ObjectContextMenu>
-            <ObjectActionsButton
-              actions={entryActions.getActions(runningTarget)}
-              onAction={(actionId) =>
-                entryActions.runAction(runningTarget, actionId)
-              }
-              label="Entry actions"
-            />
-          </div>
-        ) : null}
-        {entries.map((entry) => {
-          const target = { kind: "entry" as const, entry };
-          const actions = entryActions.getActions(target);
+        {rows.map((row) => {
+          if (row === "running") {
+            return runningTarget && currentTimer ? (
+              <div key="running" className="weekly-grid-cell-entry-row">
+                <ObjectContextMenu
+                  actions={entryActions.getActions(runningTarget)}
+                  onAction={(actionId) =>
+                    entryActions.runAction(runningTarget, actionId)
+                  }
+                  render={
+                    <button
+                      type="button"
+                      data-cell-entry=""
+                      className="weekly-grid-cell-entry is-running"
+                      onClick={() =>
+                        onOpen({ timerId: currentTimer._id, cell })
+                      }
+                    />
+                  }
+                >
+                  <Lock />
+                  <span>Running</span>
+                  <strong>
+                    {formatClockDuration(
+                      getTimerDurationsMs(currentTimer, now).runningDurationMs,
+                    )}
+                  </strong>
+                </ObjectContextMenu>
+              </div>
+            ) : null;
+          }
+
+          const target = { kind: "entry" as const, entry: row };
           return (
-            <div key={entry._id} className="weekly-grid-cell-entry-row">
+            <div key={row._id} className="weekly-grid-cell-entry-row">
               <ObjectContextMenu
-                actions={actions}
+                actions={entryActions.getActions(target)}
                 onAction={(actionId) =>
                   entryActions.runAction(target, actionId)
                 }
@@ -151,24 +145,17 @@ export function WeekGridCellPanel({
                   <button
                     type="button"
                     data-cell-entry=""
-                    data-entry-id={entry._id}
+                    data-entry-id={row._id}
                     className="weekly-grid-cell-entry"
-                    onClick={() => onOpen({ entryId: entry._id, cell })}
+                    onClick={() => onOpen({ entryId: row._id, cell })}
                   />
                 }
               >
-                <span className={entry.note ? undefined : "is-placeholder"}>
-                  {entry.note || "No note"}
+                <span className={row.note ? undefined : "is-placeholder"}>
+                  {row.note || "No note"}
                 </span>
-                <strong>{formatClockDuration(entry.durationMs)}</strong>
+                <strong>{formatClockDuration(row.durationMs)}</strong>
               </ObjectContextMenu>
-              <ObjectActionsButton
-                actions={actions}
-                onAction={(actionId) =>
-                  entryActions.runAction(target, actionId)
-                }
-                label="Entry actions"
-              />
             </div>
           );
         })}
