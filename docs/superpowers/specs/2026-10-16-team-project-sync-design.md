@@ -15,7 +15,8 @@ The first plugin is Convex-backed and maintained in a separate, private reposito
 - A **team** plugin adds a **Projects** switch next to Backlog items and Pull requests when the plugin declares more than one switchable capability. The plugin's page lists its connections like a connector's, with last sync, last error, auto sync and interval.
 - A **connection** is one team. The form has the deployment URL, then either **Create a team**, which returns a team ID and secret to pass to colleagues, or **Join a team**, which takes them. A workspace can connect to several teams.
 - Saving a connection opens a one-time **picker**. It lists the team's projects with any local project of the same name pre-checked as **Link**, and the remaining local projects unchecked as **Share**. Team projects that match nothing arrive on their own. The user can skip the picker and share later.
-- On a project's page, **Share with team** turns a local project into a shared project. When the team already has a project of that name, Ajour links the two and merges tasks by name, as the Excel import does. The properties card shows **Shared with <team>** and an **Unshare** action. The Projects list shows a small shared mark.
+- On a project's page, **Share with team** turns a local project into a shared project. When the team already has a project of that name, Ajour links the two and merges tasks by name, as the Excel import does. Linking never asks which tasks to merge: same name, same task. The properties card shows **Shared with <team>** and an **Unshare** action. The Projects list shows a small shared mark.
+- A failed sync sets the connection's last error on the plugin's page, like a connector's. A failed **Sync now** also shows an error toast. Projects carry no error state of their own.
 - A shared project's name, code, status, color, icon, task names, task status, billable flag and budget follow the team. Pinned slots, plugin properties, the order of projects and tasks, and the budget adjustment stay personal.
 - A project a colleague shares appears at the next sync, active, at the end of the project list, with no acceptance step.
 - Archiving a shared project or task archives it for the whole team at the next sync; restoring it restores it everywhere. There is no way to remove a project from the team.
@@ -53,7 +54,7 @@ Payloads stay bounded like every worker result. A project's budget is a duration
 ## Storage
 
 - `LocalProject` gets `team?: { connectionId: string; remoteId: string; changedAt?: number }`. `LocalProjectTask` gets `team?: { remoteId: string; changedAt?: number }`. A new shared project or task has `remoteId: ""` until the team assigns one.
-- `changedAt` is set by the project transitions whenever a team-owned field changes, and cleared when the sync pushes it. The sync skips a record whose `changedAt` is younger than the Undo toast's lifetime, so Undo stays honest; the next sync carries it.
+- `changedAt` is set by the project transitions whenever a team-owned field changes, and cleared when the sync pushes it. The store keeps only the last action's undo, so "the Undo window is open" for a record means the store's pending undo touches it. `planTeamSync` receives the IDs of those records from `local-store.ts` and skips them; no timer is involved, and the next sync carries the change once the toast has closed.
 - Local state gets `teamSyncCursors: Record<connectionId, string>`. It lives with the projects so that the merge is pure and the cursor cannot drift from the projects it describes.
 - Unsharing and connection removal drop `team` from the records. Nothing else changes.
 - `normalizeProject` drops a `team` whose shape is wrong, which turns the project local.
