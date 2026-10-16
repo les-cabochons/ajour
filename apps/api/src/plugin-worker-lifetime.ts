@@ -11,6 +11,7 @@ interface WorkerInvocation<T> {
 
 interface Operation {
   pluginId: string;
+  method: string;
   cancelled?: Error;
   cancelWorker?: (error: Error) => Promise<void>;
   done: Promise<void>;
@@ -61,6 +62,7 @@ export class PluginWorkerLifetime<TMethod extends string> {
     let release!: () => void;
     const operation: Operation = {
       pluginId,
+      method,
       done: new Promise<void>((resolve) => {
         release = resolve;
       }),
@@ -77,9 +79,16 @@ export class PluginWorkerLifetime<TMethod extends string> {
     }
   }
 
-  async cancel(error: Error, pluginId?: string): Promise<void> {
+  /** Cancels the plugin's operations, or only those whose method `methods` keeps. */
+  async cancel(
+    error: Error,
+    pluginId?: string,
+    methods?: (method: TMethod) => boolean,
+  ): Promise<void> {
     const matchingOperations = Array.from(this.operations).filter(
-      (operation) => pluginId === undefined || operation.pluginId === pluginId,
+      (operation) =>
+        (pluginId === undefined || operation.pluginId === pluginId) &&
+        (methods === undefined || methods(operation.method as TMethod)),
     );
     await Promise.allSettled(
       matchingOperations.map((operation) => {

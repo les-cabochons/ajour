@@ -6,6 +6,9 @@ import path from "node:path";
 import {
   connectorFieldValuesSchema,
   normalizeConnectorStatusKey,
+  pluginHasCapability,
+  switchableCapabilitySchema,
+  syncsPullRequestsAutomatically,
   type ConnectorBacklogStatus,
   type ConnectorBacklogStatusInput,
   type ConnectorConnectionSummary,
@@ -16,6 +19,7 @@ import {
   type ConnectorOverviewPlugin,
   type ConnectorsOverview,
   type ConnectorSummaryValues,
+  type SwitchableCapability,
 } from "../../../packages/shared/connectors.ts";
 import type { McpSettings } from "../../../packages/shared/agent-tools.ts";
 import {
@@ -30,6 +34,8 @@ interface StoredConnection {
   tenantLabel: string;
   autoSync: boolean;
   autoSyncIntervalMinutes: number;
+  /** Absent until saved; see `syncsPullRequestsAutomatically`. */
+  pullRequestAutoSync?: boolean;
   config: ConnectorFieldValues;
   configSummary: ConnectorSummaryValues;
   connectedAt: number;
@@ -186,6 +192,8 @@ interface AppApiStateV7 {
   dismissedImportKeys: string[];
   connectorBacklogStatuses: ConnectorBacklogStatus[];
   disabledPluginIds: string[];
+  /** Per plugin, the switchable capabilities the user turned off. */
+  disabledCapabilities: Record<string, SwitchableCapability[]>;
   pluginsEnabled: boolean;
   mcp: StoredMcpState;
   agentRunner: StoredAgentRunnerState;
@@ -221,6 +229,27 @@ function importKey(
   return `${item.source}:${item.connectionId}:${item.sourceId}`;
 }
 
+function normalizeDisabledCapabilities(
+  raw: unknown,
+): Record<string, SwitchableCapability[]> {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return {};
+  return Object.fromEntries(
+    Object.entries(raw).flatMap(([pluginId, capabilities]) => {
+      const valid = Array.isArray(capabilities)
+        ? Array.from(
+            new Set(
+              capabilities.filter(
+                (capability): capability is SwitchableCapability =>
+                  switchableCapabilitySchema.safeParse(capability).success,
+              ),
+            ),
+          ).sort()
+        : [];
+      return pluginId.trim() && valid.length ? [[pluginId.trim(), valid]] : [];
+    }),
+  );
+}
+
 function createDefaultState(): AppApiState {
   return {
     version: 7,
@@ -229,6 +258,7 @@ function createDefaultState(): AppApiState {
     dismissedImportKeys: [],
     connectorBacklogStatuses: [],
     disabledPluginIds: [],
+    disabledCapabilities: {},
     pluginsEnabled: true,
     mcp: { enabled: false, clients: [] },
     agentRunner: { settings: defaultAgentRunnerSettings(), taskValues: {} },
@@ -347,6 +377,7 @@ function toEditableValues(
     tenantLabel: connection.tenantLabel,
     autoSync: connection.autoSync,
     autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
+    pullRequestAutoSync: syncsPullRequestsAutomatically(connection),
   };
 
   for (const field of plugin.connectionFields) {
@@ -379,6 +410,9 @@ function buildConnectionSummary(
     tenantLabel: connection.tenantLabel,
     autoSync: connection.autoSync,
     autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
+    ...(connection.pullRequestAutoSync !== undefined
+      ? { pullRequestAutoSync: connection.pullRequestAutoSync }
+      : {}),
     connectedAt: connection.connectedAt,
     lastSyncAt: connection.lastSyncAt,
     lastError: connection.lastError,
@@ -479,6 +513,12 @@ function normalizeState(
             connection.connectedAt,
           ),
         )
+        .map(({ pullRequestAutoSync, ...connection }) => ({
+          ...connection,
+          ...(typeof pullRequestAutoSync === "boolean"
+            ? { pullRequestAutoSync }
+            : {}),
+        }))
         .sort(compareConnections),
       stagedImports: (raw.stagedImports ?? defaults.stagedImports)
         .filter((item): item is ConnectorImportCandidate =>
@@ -530,6 +570,9 @@ function normalizeState(
             .map((pluginId) => pluginId.trim()),
         ),
       ).sort(),
+      disabledCapabilities: normalizeDisabledCapabilities(
+        (raw as Partial<AppApiState>).disabledCapabilities,
+      ),
       pluginsEnabled:
         typeof (raw as Partial<AppApiState>).pluginsEnabled === "boolean"
           ? (raw as Partial<AppApiState>).pluginsEnabled!
@@ -622,6 +665,7 @@ function normalizeState(
         )
         .sort(compareBacklogStatuses),
       disabledPluginIds: defaults.disabledPluginIds,
+      disabledCapabilities: defaults.disabledCapabilities,
       pluginsEnabled: defaults.pluginsEnabled,
       mcp: { enabled: false, clients: [] },
       agentRunner: { settings: defaultAgentRunnerSettings(), taskValues: {} },
@@ -635,6 +679,7 @@ export class AppApiStorage {
   private readonly statePath: string;
   private cache?: AppApiState;
   private mutationQueue: Promise<unknown> = Promise.resolve();
+  private loading?: Promise<AppApiState>;
   /**
    * The last Sync review dismissal, for Undo. Only the last one can be undone,
    * and it lives in memory, so it does not survive a restart.
@@ -695,6 +740,9 @@ export class AppApiStorage {
         state.pluginsEnabled &&
         plugin.unavailableReason === undefined &&
         !state.disabledPluginIds.includes(plugin.id),
+      inactiveCapabilities: (
+        state.disabledCapabilities[plugin.id] ?? []
+      ).filter((capability) => pluginHasCapability(plugin, capability)),
       connections: state.connections
         .filter((connection) => connection.pluginId === plugin.id)
         .map((connection) => buildConnectionSummary(state, connection, plugin)),
@@ -735,6 +783,29 @@ export class AppApiStorage {
       state.pluginsEnabled &&
       !state.disabledPluginIds.includes(pluginId)
     );
+  }
+
+  /** Whether the plugin is enabled and the capability is not turned off. */
+  async isPluginCapabilityEnabled(
+    pluginId: string,
+    capability: SwitchableCapability,
+    availablePluginIds: ReadonlySet<string>,
+  ): Promise<boolean> {
+    return (
+      (await this.isConnectorPluginEnabled(pluginId, availablePluginIds)) &&
+      !(await this.readState()).disabledCapabilities[pluginId]?.includes(
+        capability,
+      )
+    );
+  }
+
+  /** The switchable capabilities that are on, among those the plugin declares. */
+  async listEnabledCapabilities(
+    pluginId: string,
+    declared: readonly SwitchableCapability[],
+  ): Promise<SwitchableCapability[]> {
+    const disabled = (await this.readState()).disabledCapabilities[pluginId];
+    return declared.filter((capability) => !disabled?.includes(capability));
   }
 
   async getPluginSystemEnabled(): Promise<boolean> {
@@ -915,6 +986,69 @@ export class AppApiStorage {
     });
   }
 
+  async setPluginCapabilityEnabled(
+    pluginId: string,
+    capability: SwitchableCapability,
+    enabled: boolean,
+  ): Promise<void> {
+    await this.mutate(async (state) => {
+      const current = state.disabledCapabilities[pluginId] ?? [];
+      const next = enabled
+        ? current.filter((candidate) => candidate !== capability)
+        : Array.from(new Set([...current, capability])).sort();
+      const { [pluginId]: _previous, ...others } = state.disabledCapabilities;
+      return {
+        nextState: {
+          ...state,
+          disabledCapabilities: next.length
+            ? { ...others, [pluginId]: next }
+            : others,
+        },
+        result: undefined,
+      };
+    });
+  }
+
+  /**
+   * Keeps the plugin's connections meaning what their user chose when an
+   * update adds a capability. Auto sync described the plugin's only
+   * capability; once it has both, auto sync imports backlog items. Adding
+   * backlog items moves that choice to pull requests and lets backlog items
+   * stage for review. Adding pull requests starts their own sync at
+   * `pullRequestAutoSyncDefault`, the default of a new connection.
+   */
+  async adoptAddedCapability(
+    pluginId: string,
+    added: SwitchableCapability,
+    pullRequestAutoSyncDefault: boolean,
+  ): Promise<void> {
+    // A calendar has no automatic sync of its own to keep.
+    if (added === "calendar") return;
+    await this.mutate(async (state) => ({
+      nextState: {
+        ...state,
+        connections: state.connections.map((connection) =>
+          connection.pluginId !== pluginId
+            ? connection
+            : added === "connector"
+              ? {
+                  ...connection,
+                  autoSync: false,
+                  pullRequestAutoSync:
+                    connection.pullRequestAutoSync ?? connection.autoSync,
+                }
+              : {
+                  ...connection,
+                  pullRequestAutoSync:
+                    connection.pullRequestAutoSync ??
+                    pullRequestAutoSyncDefault,
+                },
+        ),
+      },
+      result: undefined,
+    }));
+  }
+
   async removeConnectorPluginData(pluginId: string): Promise<void> {
     await this.mutate(async (state) => ({
       nextState: {
@@ -933,6 +1067,11 @@ export class AppApiStorage {
         ),
         disabledPluginIds: state.disabledPluginIds.filter(
           (candidate) => candidate !== pluginId,
+        ),
+        disabledCapabilities: Object.fromEntries(
+          Object.entries(state.disabledCapabilities).filter(
+            ([candidate]) => candidate !== pluginId,
+          ),
         ),
         agentRunner: {
           ...state.agentRunner,
@@ -984,6 +1123,8 @@ export class AppApiStorage {
       tenantLabel: string;
       autoSync: boolean;
       autoSyncIntervalMinutes: number;
+      /** Undefined keeps the saved value. */
+      pullRequestAutoSync?: boolean;
       config: ConnectorFieldValues;
       configSummary: ConnectorSummaryValues;
     },
@@ -1002,6 +1143,13 @@ export class AppApiStorage {
         tenantLabel: input.tenantLabel,
         autoSync: input.autoSync,
         autoSyncIntervalMinutes: input.autoSyncIntervalMinutes,
+        ...((input.pullRequestAutoSync ?? existing?.pullRequestAutoSync) !==
+        undefined
+          ? {
+              pullRequestAutoSync:
+                input.pullRequestAutoSync ?? existing?.pullRequestAutoSync,
+            }
+          : {}),
         config: input.config,
         configSummary: input.configSummary,
         connectedAt: existing?.connectedAt ?? Date.now(),
@@ -1536,15 +1684,24 @@ export class AppApiStorage {
       return this.cache;
     }
 
-    if (!existsSync(this.statePath)) {
-      this.cache = createDefaultState();
-      return this.cache;
-    }
+    // Every first reader shares one load, so a load that finishes late can
+    // never replace state a mutation saved meanwhile.
+    this.loading ??= this.loadState().finally(() => {
+      this.loading = undefined;
+    });
+    const loaded = await this.loading;
+    return this.cache ?? loaded;
+  }
 
-    const raw = await readFile(this.statePath, "utf8");
-    this.cache = normalizeState(
-      JSON.parse(raw) as Partial<AppApiState | AppApiStateV1 | AppApiStateV2>,
-    );
+  private async loadState(): Promise<AppApiState> {
+    const state = existsSync(this.statePath)
+      ? normalizeState(
+          JSON.parse(await readFile(this.statePath, "utf8")) as Partial<
+            AppApiState | AppApiStateV1 | AppApiStateV2
+          >,
+        )
+      : createDefaultState();
+    this.cache ??= state;
     return this.cache;
   }
 

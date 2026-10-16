@@ -39,7 +39,7 @@ A suggestion is not an entry. It becomes one only when the user adds it. Ajour r
 
 ## Plugin capability
 
-The manifest declares `capabilities.calendar: {}`. A plugin with it runs code, so `pluginRunsCode` includes it, and it needs an entrypoint and connection fields like a connector or a code host. The catalog capability enum gains `calendar`, and the desktop plugin index validates it.
+The manifest declares `capabilities.calendar: {}`. A plugin with it runs code, so `pluginRunsCode` includes it, and it needs an entrypoint and connection fields like a connector or a code host. The catalog capability enum gains `calendar`, and the desktop plugin index validates it. Calendar is a switchable capability: a plugin that also declares a connector or a code host shows a **Calendar events** switch on its page, and turning it off refuses calendar calls and cancels running ones.
 
 Settings > Plugins shows a calendar plugin and its connections through the existing connection form, rendered from the declared fields. A user can have several connections, for example work Outlook and personal Google, and each suggestion carries its connection label when there is more than one.
 

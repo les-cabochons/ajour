@@ -1,5 +1,8 @@
 import type * as appApi from "@/lib/app-api";
-import { pluginCatalogRefreshMinutesSchema } from "@ajour/shared";
+import {
+  pluginCatalogRefreshMinutesSchema,
+  switchableCapabilityLabels,
+} from "@ajour/shared";
 import type {
   ConnectorFieldValues,
   ConnectorOverviewGroup,
@@ -10,6 +13,7 @@ import type {
   PluginCatalogResponse,
   PluginCatalogSettings,
   ProjectDataShapePluginManifest,
+  SwitchableCapability,
 } from "@ajour/shared";
 
 export type PluginDisplayEntry = {
@@ -43,7 +47,13 @@ export type PluginSettingsDependencies = Pick<
 };
 
 type PluginSettingsCommand =
-  | { type: "activate"; plugin: ConnectorPluginManifest; enabled: boolean }
+  | {
+      type: "activate";
+      plugin: ConnectorPluginManifest;
+      enabled: boolean;
+      /** Only this capability, for a plugin that declares both. */
+      capability?: SwitchableCapability;
+    }
   | {
       type: "save";
       pluginId: string;
@@ -139,9 +149,11 @@ function localCatalogEntry(
         ? "connector"
         : capability === "codeHost"
           ? "code-host"
-          : capability === "agentTask"
-            ? "agent-task"
-            : "data-shape",
+          : capability === "calendar"
+            ? "calendar"
+            : capability === "agentTask"
+              ? "agent-task"
+              : "data-shape",
     ),
   };
 }
@@ -294,9 +306,12 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
           const connectors = await deps.setConnectorPluginEnabled(
             command.plugin.id,
             command.enabled,
+            command.capability,
           );
           finish(
-            `${command.plugin.displayName} ${command.enabled ? "activated" : "deactivated"}.`,
+            command.capability
+              ? `${switchableCapabilityLabels[command.capability]} ${command.enabled ? "turned on" : "turned off"} for ${command.plugin.displayName}.`
+              : `${command.plugin.displayName} ${command.enabled ? "activated" : "deactivated"}.`,
             connectors,
           );
           break;

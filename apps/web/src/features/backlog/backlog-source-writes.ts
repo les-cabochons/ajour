@@ -1,4 +1,5 @@
 import { showErrorToast } from "@/components/ui/toast";
+import { isCapabilityActive } from "@ajour/shared";
 import type { LocalWorkItem } from "@/domain/local-state";
 import { hasSameSourceWriteRequest } from "@/domain/backlog/backlog-item-lifecycle";
 import { connectorPriorityFromLevel } from "@/domain/backlog/priority";
@@ -28,7 +29,11 @@ export function canWriteToSource(workItem: LocalWorkItem) {
   const group = getCachedConnectorsOverview()?.connectionGroups.find(
     (candidate) => candidate.plugin.id === workItem.source,
   );
-  return Boolean(group?.enabled && group.plugin.capabilities.connector?.settle);
+  return Boolean(
+    group &&
+    isCapabilityActive(group, "connector") &&
+    group.plugin.capabilities.connector?.settle,
+  );
 }
 
 /** Whether Settle on this item opens the settle dialog. */

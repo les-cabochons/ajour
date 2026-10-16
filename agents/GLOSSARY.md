@@ -143,18 +143,18 @@ _Avoid_: Cancel, delete (for a running entry)
 ### Extensions
 
 **Plugin**:
-An installable extension of Ajour that provides one or more capabilities: connector, schema, code host or calendar.
+An installable extension of Ajour that provides one or more capabilities: connector, schema, code host or calendar. When a plugin provides more than one of connector, code host and calendar, the user turns each on and off separately, as Backlog items, Pull requests and Calendar events.
 _Avoid_: Extension, add-on, integration
 
 **Connector**:
-A plugin capability that syncs backlog items and estimates with an external tool, such as Azure DevOps or Jira.
+A plugin capability that syncs backlog items and estimates with an external tool, such as Azure DevOps, Jira or GitHub issues.
 _Avoid_: Integration, sync plugin
 
 **Schema**:
 A plugin capability that defines how projects and tasks map to an external file layout, such as Workday.
 
 **Code host**:
-A plugin capability that provides the user's pull requests from a tool such as GitHub, and carries out the user's reviews, comments and merges there.
+A plugin capability that provides the user's pull requests from a tool such as GitHub or Azure DevOps, and carries out the user's reviews, comments and merges there.
 _Avoid_: Git provider, PR plugin, forge
 _Avoid_: Data shape, project data shape (in user-facing text)
 

@@ -146,4 +146,20 @@ describe("plugin worker lifetime", () => {
     await host.shutdown();
     await expect(kept).rejects.toThrow("the app is shutting down");
   });
+
+  it("cancels only the plugin's operations whose method matches", async () => {
+    const host = await lifetime("setInterval(()=>{},1000);", 5_000);
+    const pullRequests = host.run("github", "syncPullRequests", passThrough);
+    const workItems = host.run("github", "syncConnection", passThrough);
+    await waitForWorkerStart();
+    await host.cancel(
+      new Error("Pull requests turned off"),
+      "github",
+      (method) => method === "syncPullRequests",
+    );
+    await expect(pullRequests).rejects.toThrow("Pull requests turned off");
+    expect(host.activeOperationCount).toBe(1);
+    await host.shutdown();
+    await expect(workItems).rejects.toThrow("the app is shutting down");
+  });
 });

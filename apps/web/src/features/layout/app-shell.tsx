@@ -7,7 +7,10 @@ import {
   type CSSProperties,
 } from "react";
 import { createPortal } from "react-dom";
-import { pluginHasConnector, pluginHasCodeHost } from "@ajour/shared";
+import {
+  isCapabilityActive,
+  syncsPullRequestsAutomatically,
+} from "@ajour/shared";
 import { Outlet, useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   RiAddLine as Plus,
@@ -241,32 +244,38 @@ function ConnectorAutoSyncScheduler() {
       try {
         const overview = await getConnectorsOverview();
         const now = Date.now();
-        const dueConnections = overview.connectionGroups.flatMap((group) =>
-          overview.pluginsEnabled === false ||
-          !group.enabled ||
-          (!pluginHasConnector(group.plugin) &&
-            !pluginHasCodeHost(group.plugin))
+        // Each capability has its own automatic sync: auto sync imports work
+        // items straight to the backlog, and pull requests have their own.
+        const autoCapabilities = (
+          group: (typeof overview.connectionGroups)[number],
+          connection: (typeof group.connections)[number],
+        ) =>
+          overview.pluginsEnabled === false
             ? []
-            : group.connections
-                .filter((connection) => {
-                  if (!connection.autoSync) {
-                    return false;
-                  }
-
-                  if (!connection.lastSyncAt) {
-                    return true;
-                  }
-
-                  return (
-                    now - connection.lastSyncAt >=
-                    connection.autoSyncIntervalMinutes * 60_000
-                  );
-                })
-                .map((connection) => ({
-                  pluginId: group.plugin.id,
-                  plugin: group.plugin,
-                  connection,
-                })),
+            : [
+                ...(connection.autoSync &&
+                isCapabilityActive(group, "connector")
+                  ? (["connector"] as const)
+                  : []),
+                ...(syncsPullRequestsAutomatically(connection) &&
+                isCapabilityActive(group, "codeHost")
+                  ? (["codeHost"] as const)
+                  : []),
+              ];
+        const dueConnections = overview.connectionGroups.flatMap((group) =>
+          group.connections
+            .filter(
+              (connection) =>
+                !connection.lastSyncAt ||
+                now - connection.lastSyncAt >=
+                  connection.autoSyncIntervalMinutes * 60_000,
+            )
+            .map((connection) => ({
+              pluginId: group.plugin.id,
+              connection,
+              capabilities: autoCapabilities(group, connection),
+            }))
+            .filter((due) => due.capabilities.length > 0),
         );
 
         for (const dueConnection of dueConnections) {
@@ -274,33 +283,20 @@ function ConnectorAutoSyncScheduler() {
             break;
           }
 
-          const operations = [
-            ...(pluginHasConnector(dueConnection.plugin)
-              ? [
-                  {
-                    capability: "connector",
-                    run: () =>
-                      syncConnectorConnection(
-                        dueConnection.pluginId,
-                        dueConnection.connection.id,
-                        { trigger: "auto" },
-                      ),
-                  },
-                ]
-              : []),
-            ...(pluginHasCodeHost(dueConnection.plugin)
-              ? [
-                  {
-                    capability: "codeHost",
-                    run: () =>
-                      syncCodeHostConnection(
-                        dueConnection.pluginId,
-                        dueConnection.connection.id,
-                      ),
-                  },
-                ]
-              : []),
-          ];
+          const operations = dueConnection.capabilities.map((capability) => ({
+            capability,
+            run: () =>
+              capability === "connector"
+                ? syncConnectorConnection(
+                    dueConnection.pluginId,
+                    dueConnection.connection.id,
+                    { trigger: "auto" },
+                  )
+                : syncCodeHostConnection(
+                    dueConnection.pluginId,
+                    dueConnection.connection.id,
+                  ),
+          }));
           for (const operation of operations) {
             if (loopState.cancelled) break;
             const failureKey = `${dueConnection.pluginId}:${dueConnection.connection.id}:${operation.capability}`;

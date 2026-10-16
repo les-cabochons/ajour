@@ -13,7 +13,7 @@ import { create } from "tar";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { codeHostOperations } from "../../../packages/shared/code-host.ts";
 import { calendarOperations } from "../../../packages/shared/calendar.ts";
-import { ConnectorPluginManager } from "./plugin-host.ts";
+import { capabilityOfMethod, ConnectorPluginManager } from "./plugin-host.ts";
 import { readConnectorPlugin } from "./plugin-package.ts";
 
 const ICON = "<svg viewBox='0 0 16 16'><path d='M0 0h16v16H0z' /></svg>";
@@ -320,6 +320,55 @@ describe("ConnectorPluginManager", () => {
       path.basename(archivePath),
     );
     expect(replacement.replaced).toBe(true);
+  });
+
+  it("runs the after-install step while plugin operations are still refused", async () => {
+    const root = await tempDir();
+    const pluginDirectory = await createPluginDirectory(
+      path.join(root, "source"),
+      "jira",
+      "export async function syncConnection() { return { items: [], workItemUpdates: [] }; }",
+    );
+    const archivePath = path.join(root, "jira-1.0.0.ajour-connector");
+    await packagePlugin(pluginDirectory, archivePath);
+    const pluginManager = manager({
+      installedPluginDirectory: path.join(root, "installed"),
+    });
+    const connection = {
+      id: "connection-1",
+      pluginId: "jira",
+      label: "Jira",
+      tenantLabel: "Acme",
+      autoSync: false,
+      autoSyncIntervalMinutes: 15,
+      connectedAt: 1,
+      config: {},
+    };
+    const events: string[] = [];
+    let duringInstall: Promise<unknown> | undefined;
+
+    await pluginManager.installPluginArchive(
+      await readFile(archivePath),
+      path.basename(archivePath),
+      async (installed) => {
+        expect(installed.manifest.id).toBe("jira");
+        duringInstall = pluginManager
+          .syncConnection("jira", connection)
+          .then((result) => {
+            events.push("operation ran");
+            return result;
+          });
+        // The operation waits for the package change instead of running now.
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        events.push("after-install finished");
+      },
+    );
+
+    await expect(duringInstall).resolves.toEqual({
+      items: [],
+      workItemUpdates: [],
+    });
+    expect(events).toEqual(["after-install finished", "operation ran"]);
   });
 
   it("explains an installed package built for an older plugin API and replaces it on update", async () => {
@@ -657,6 +706,87 @@ describe("ConnectorPluginManager", () => {
     ).rejects.toThrow('Plugin "jira" does not provide pull requests.');
   });
 
+  it("cancels an operation that a turned-off capability catches at its gate", async () => {
+    const root = await tempDir();
+    const pluginDirectory = await createPluginDirectory(
+      root,
+      "github",
+      [
+        "export async function syncPullRequests() {",
+        "  return { viewer: { login: 'octocat', isBot: false }, pullRequests: [] };",
+        "}",
+        "export async function syncConnection() {",
+        "  return { items: [], workItemUpdates: [] };",
+        "}",
+      ].join("\n"),
+      { capabilities: { connector: {}, codeHost: {} } },
+    );
+    let releaseGate!: () => void;
+    const gate = new Promise<void>((release) => {
+      releaseGate = release;
+    });
+    let reachGate!: () => void;
+    const gateReached = new Promise<void>((reached) => {
+      reachGate = reached;
+    });
+    let gateWait = async () => {
+      reachGate();
+      await gate;
+    };
+    let pullRequestsOn = true;
+    const pluginManager = manager({
+      installedPluginDirectory: path.join(root, "installed"),
+      developmentPluginDirectories: [pluginDirectory],
+      allowDevelopmentPlugins: true,
+      operationGate: async (_pluginId, method) => {
+        if (method !== "syncPullRequests") return;
+        await gateWait();
+        if (!pullRequestsOn) throw new Error("Pull requests are off.");
+      },
+    });
+    const connection = {
+      id: "connection-1",
+      pluginId: "github",
+      label: "octocat",
+      tenantLabel: "github.com",
+      autoSync: true,
+      autoSyncIntervalMinutes: 5,
+      connectedAt: 1,
+      config: {},
+    };
+
+    // Registered and waiting at the gate when the capability turns off.
+    const pending = pluginManager.runCodeHostOperation(
+      "github",
+      "syncPullRequests",
+      connection,
+      { tracked: [] },
+    );
+    await gateReached;
+    await pluginManager.cancelCapabilityOperations(
+      "github",
+      "codeHost",
+      new Error("Pull requests were turned off."),
+    );
+    releaseGate();
+    await expect(pending).rejects.toThrow("Pull requests were turned off.");
+
+    // Started after the change, it sees the new state at the gate.
+    pullRequestsOn = false;
+    gateWait = async () => {};
+    await expect(
+      pluginManager.runCodeHostOperation(
+        "github",
+        "syncPullRequests",
+        connection,
+        { tracked: [] },
+      ),
+    ).rejects.toThrow("Pull requests are off.");
+    await expect(
+      pluginManager.syncConnection("github", connection),
+    ).resolves.toEqual({ items: [], workItemUpdates: [] });
+  });
+
   it("dispatches every code host operation in the worker", async () => {
     const worker = await readFile(
       new URL("./plugin-worker.mjs", import.meta.url),
@@ -743,6 +873,13 @@ describe("ConnectorPluginManager", () => {
         week,
       ),
     ).rejects.toThrow('Plugin "jira" does not provide calendar events.');
+  });
+
+  it("gates calendar operations on the calendar switch", () => {
+    expect(capabilityOfMethod("listCalendarEvents")).toBe("calendar");
+    expect(capabilityOfMethod("syncPullRequests")).toBe("codeHost");
+    expect(capabilityOfMethod("syncConnection")).toBe("connector");
+    expect(capabilityOfMethod("validateConnection")).toBeUndefined();
   });
 
   it("dispatches every calendar operation in the worker", async () => {
