@@ -16,8 +16,12 @@ export const TEAM_CAPABILITY_API_VERSION = 1;
 
 /** Projects in one sync request or one page of a result. */
 export const TEAM_SYNC_MAX_PROJECTS = 25;
-/** Tasks of one project. Keeps a page under the worker's result limit. */
-export const TEAM_SYNC_MAX_TASKS_PER_PROJECT = 500;
+/**
+ * Tasks in one sync request or one page of a result, across all its projects.
+ * With the field bounds below, a worst-case page stays under half the
+ * worker's 8 MiB result limit. A project with more tasks spans several pages.
+ */
+export const TEAM_SYNC_MAX_TASKS = 2_000;
 
 export const teamCapabilitySchema = z.object({
   apiVersion: z.literal(TEAM_CAPABILITY_API_VERSION),
@@ -27,11 +31,20 @@ export type TeamCapability = z.infer<typeof teamCapabilitySchema>;
 /** A local project or task ID. It never changes, so time entries keep it. */
 const localIdSchema = z.string().trim().min(1).max(200);
 /** The ID the team gave a shared project or task. */
-const remoteIdSchema = z.string().trim().min(1).max(200);
+const remoteIdSchema = z.string().trim().min(1).max(100);
 const cursorSchema = z.string().min(1).max(2_000);
 const statusSchema = z.enum(["active", "archived"]);
-/** Uploaded icons are 32 pixel PNG images, a few KB each. */
-const iconImageSchema = z.string().startsWith("data:image/").max(16_384);
+/** What Ajour's color field produces. */
+const colorSchema = z.string().regex(/^#[0-9a-f]{6}$/i);
+/**
+ * Uploaded icons are 32 pixel PNG images, a few KB each. Ajour renders them
+ * inside a CSS `url("...")`, so only a complete base64 PNG data URL passes:
+ * no quote, parenthesis or second URL can follow it.
+ */
+const iconImageSchema = z
+  .string()
+  .max(16_384)
+  .regex(/^data:image\/png;base64,[A-Za-z0-9+/]+={0,2}$/);
 
 export const teamProjectIconSchema = z.discriminatedUnion("kind", [
   z.object({
@@ -55,16 +68,18 @@ const teamTaskFields = {
   billable: z.boolean(),
   budgetMs: z.number().int().positive().nullable(),
 };
+export type TeamTaskFields = z.infer<z.ZodObject<typeof teamTaskFields>>;
 
 /** The team-owned fields of a project. Null clears a value. */
 const teamProjectFields = {
   name: z.string().trim().min(1).max(240),
   displayName: z.string().trim().min(1).max(240),
   code: z.string().trim().min(1).max(120).nullable(),
-  color: z.string().trim().min(1).max(60),
+  color: colorSchema,
   icon: teamProjectIconSchema,
   status: statusSchema,
 };
+export type TeamProjectFields = z.infer<z.ZodObject<typeof teamProjectFields>>;
 
 /** Every field a new record must carry, since the team has nothing to merge. */
 function requireAllFieldsWhenNew(fieldNames: readonly string[]) {
@@ -85,10 +100,32 @@ function requireAllFieldsWhenNew(fieldNames: readonly string[]) {
   };
 }
 
+/** Keeps a request or a page within `TEAM_SYNC_MAX_TASKS` in total. */
+function limitTotalTasks(
+  projects: readonly { tasks: readonly unknown[] }[],
+  context: z.RefinementCtx,
+) {
+  const total = projects.reduce(
+    (count, project) => count + project.tasks.length,
+    0,
+  );
+  if (total > TEAM_SYNC_MAX_TASKS) {
+    context.addIssue({
+      code: z.ZodIssueCode.custom,
+      message: `A team sync page holds at most ${TEAM_SYNC_MAX_TASKS} tasks, not ${total}.`,
+    });
+  }
+}
+
 /**
  * A task change to push. Without `remoteId` the task is new and carries every
  * field. With it, only the fields changed since the last sync, so a field a
  * teammate changed meanwhile keeps their value.
+ *
+ * The team treats the `localId` of a new record as an idempotency key: a new
+ * record whose local ID it has assigned before gets the same remote ID again
+ * and creates nothing. A round that failed after the team applied it, such as
+ * on a timeout, is then safe to send again.
  */
 export const teamTaskChangeSchema = z
   .object({
@@ -103,8 +140,9 @@ export const teamTaskChangeSchema = z
 export type TeamTaskChange = z.infer<typeof teamTaskChangeSchema>;
 
 /**
- * A project change to push, with the same rule as a task. A change to an
- * existing project may carry only task changes.
+ * A project change to push, with the same rules as a task. A change to an
+ * existing project may carry only task changes, and a project with many
+ * changed tasks spans several rounds.
  */
 export const teamProjectChangeSchema = z
   .object({
@@ -116,10 +154,7 @@ export const teamProjectChangeSchema = z
     color: teamProjectFields.color.optional(),
     icon: teamProjectFields.icon.optional(),
     status: teamProjectFields.status.optional(),
-    tasks: z
-      .array(teamTaskChangeSchema)
-      .max(TEAM_SYNC_MAX_TASKS_PER_PROJECT)
-      .default([]),
+    tasks: z.array(teamTaskChangeSchema).max(TEAM_SYNC_MAX_TASKS).default([]),
   })
   .superRefine(requireAllFieldsWhenNew(Object.keys(teamProjectFields)));
 export type TeamProjectChange = z.infer<typeof teamProjectChangeSchema>;
@@ -130,11 +165,15 @@ export const teamTaskSchema = z.object({
 });
 export type TeamTask = z.infer<typeof teamTaskSchema>;
 
-/** A team project as the team has it now, with all its tasks. */
+/**
+ * A team project as the team has it now, with its tasks changed since the
+ * cursor, or all of them without one. Tasks are never deleted, so a task that
+ * is absent is unchanged, and a project with many changed tasks can span pages.
+ */
 export const teamProjectSchema = z.object({
   remoteId: remoteIdSchema,
   ...teamProjectFields,
-  tasks: z.array(teamTaskSchema).max(TEAM_SYNC_MAX_TASKS_PER_PROJECT),
+  tasks: z.array(teamTaskSchema).max(TEAM_SYNC_MAX_TASKS),
 });
 export type TeamProject = z.infer<typeof teamProjectSchema>;
 
@@ -147,6 +186,7 @@ export const teamSyncRequestSchema = z.object({
   changes: z
     .array(teamProjectChangeSchema)
     .max(TEAM_SYNC_MAX_PROJECTS)
+    .superRefine(limitTotalTasks)
     .default([]),
 });
 export type TeamSyncRequest = z.infer<typeof teamSyncRequestSchema>;
@@ -166,10 +206,13 @@ export type TeamRemoteIdAssignment = z.infer<
  */
 export const teamSyncResultSchema = z.object({
   cursor: cursorSchema,
-  projects: z.array(teamProjectSchema).max(TEAM_SYNC_MAX_PROJECTS),
+  projects: z
+    .array(teamProjectSchema)
+    .max(TEAM_SYNC_MAX_PROJECTS)
+    .superRefine(limitTotalTasks),
   assigned: z
     .array(teamRemoteIdAssignmentSchema)
-    .max(TEAM_SYNC_MAX_PROJECTS * (1 + TEAM_SYNC_MAX_TASKS_PER_PROJECT))
+    .max(TEAM_SYNC_MAX_PROJECTS + TEAM_SYNC_MAX_TASKS)
     .default([]),
   hasMore: z.boolean().default(false),
 });

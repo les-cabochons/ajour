@@ -44,15 +44,17 @@ The schemas live in `packages/shared/team-sync.ts`. Three operations, each run i
 - `validateConnection(values, capabilities)` already exists and checks that the team accepts the credentials.
 - `syncTeamProjects(connectionValues, { cursor, changes })` → `{ cursor, projects, assigned, hasMore }`.
   - `changes` carries the shared projects changed since the last sync. A project or task without a remote ID is new and carries every team-owned field. One with a remote ID carries only the fields changed since the last sync, so a field a teammate changed meanwhile keeps their value. A change to a project may carry only task changes. `null` clears the code or a budget.
-  - `projects` carries the team projects changed since `cursor`, each with all its tasks and remote IDs.
-  - `assigned` maps the local IDs of new projects and tasks to the remote IDs the team gave them.
+  - `projects` carries the team projects changed since `cursor`, each with its team-owned fields and the tasks changed since `cursor`. Without a cursor it carries every task. Tasks are never deleted, so a task that is absent is unchanged, and a project with many changed tasks spans several pages.
+  - `assigned` maps the local IDs of new projects and tasks to the remote IDs the team gave them. The team treats the local ID of a new record as an idempotency key: a new record whose local ID it assigned before gets the same remote ID again and creates nothing. A round that failed after the team applied it, such as on a timeout or a lost response, is then safe to send again.
   - The backend applies `changes` before computing `projects`, so the last writer wins inside one round.
   - With `hasMore`, Ajour syncs again from the new cursor with no changes until the team has nothing left.
   - The picker is a sync with no `cursor` and no `changes`: it returns the whole team, page by page, and nothing is applied until the user confirms.
 
-Team-owned project fields are the full name, display name, code, color, icon and status. Team-owned task fields are the name, status, billable flag and budget, a duration in milliseconds as stored. An uploaded icon travels as its 32 pixel image data; an icon that points to a URL is refused, so a teammate cannot make Ajour fetch from a remote address. Fields outside this list are stripped at the boundary, so no time data can leave through the payload.
+Team-owned project fields are the full name, display name, code, color, icon and status. Team-owned task fields are the name, status, billable flag and budget, a duration in milliseconds as stored. Fields outside this list are stripped at the boundary, so no time data can leave through the payload.
 
-A page holds at most 25 projects of at most 500 tasks each, which keeps it under the worker's 8 MB result limit. Ajour pushes more than 25 changed projects over several rounds.
+Icons and colors reach CSS, so the contract accepts only what Ajour itself produces. An uploaded icon travels as its 32 pixel image, a complete base64 PNG data URL; anything else is refused, including a URL or a data URL followed by a quote, so a teammate cannot make Ajour fetch from a remote address. A color is a six-digit hex value, as the color field gives. A local project whose color is in another format sends Ajour's default color when shared.
+
+A request or a page holds at most 25 projects and 2,000 tasks in total. With the field bounds, a worst-case page serializes to under half the worker's 8 MiB result limit, which a test checks. Ajour pushes more changes over several rounds, and a project of any size can be shared.
 
 ## Storage
 

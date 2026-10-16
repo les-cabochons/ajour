@@ -22,6 +22,7 @@ import {
   pluginHasCapability,
   pluginHasCodeHost,
   pluginHasSwitchableCapabilities,
+  pluginSwitchableCapabilities,
   switchableCapabilityLabels,
   switchableCapabilitySchema,
   type SwitchableCapability,
@@ -1134,9 +1135,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
               capabilities: plugin
                 ? await storage.listEnabledCapabilities(
                     pluginId,
-                    switchableCapabilitySchema.options.filter((capability) =>
-                      pluginHasCapability(plugin, capability),
-                    ),
+                    pluginSwitchableCapabilities(plugin),
                   )
                 : [],
             },

@@ -1,8 +1,8 @@
 import {
   isCapabilitySwitchedOn,
   pluginHasSwitchableCapabilities,
+  pluginSwitchableCapabilities,
   switchableCapabilityLabels,
-  switchableCapabilitySchema,
   type ConnectorOverviewGroup,
   type SwitchableCapability,
 } from "@ajour/shared";
@@ -43,7 +43,7 @@ export function PluginCapabilitySwitches({
           Turn each part on or off. Its connections and imported data stay.
         </p>
       </div>
-      {switchableCapabilitySchema.options.map((capability) => {
+      {pluginSwitchableCapabilities(group.plugin).map((capability) => {
         const on = isCapabilitySwitchedOn(group, capability);
         const label = switchableCapabilityLabels[capability];
         return (

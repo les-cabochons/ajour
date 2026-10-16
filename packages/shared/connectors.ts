@@ -291,15 +291,20 @@ export function pluginHasCapability(
   }
 }
 
+/** The switchable capabilities the plugin declares, in switch order. */
+export function pluginSwitchableCapabilities(manifest: {
+  capabilities: ConnectorPluginCapabilities;
+}): SwitchableCapability[] {
+  return switchableCapabilitySchema.options.filter((capability) =>
+    pluginHasCapability(manifest, capability),
+  );
+}
+
 /** The plugin declares more than one, so each gets its own switch. */
 export function pluginHasSwitchableCapabilities(manifest: {
   capabilities: ConnectorPluginCapabilities;
 }) {
-  return (
-    switchableCapabilitySchema.options.filter((capability) =>
-      pluginHasCapability(manifest, capability),
-    ).length > 1
-  );
+  return pluginSwitchableCapabilities(manifest).length > 1;
 }
 
 /**
@@ -309,9 +314,7 @@ export function pluginHasSwitchableCapabilities(manifest: {
 export function pluginRunsCode(manifest: {
   capabilities: ConnectorPluginCapabilities;
 }) {
-  return switchableCapabilitySchema.options.some((capability) =>
-    pluginHasCapability(manifest, capability),
-  );
+  return pluginSwitchableCapabilities(manifest).length > 0;
 }
 
 /** The manifest fields, before the cross-field rules. The overview extends it. */
