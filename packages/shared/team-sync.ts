@@ -14,6 +14,15 @@ import { z } from "zod";
 
 export const TEAM_CAPABILITY_API_VERSION = 1;
 
+/**
+ * What a team plugin exports. `createTeam(config, request)` gets the connection
+ * form's values before the connection is saved; `syncTeamProjects(connection,
+ * request)` gets a saved connection. Keep in sync with
+ * apps/api/src/plugin-worker.mjs.
+ */
+export const teamPluginMethods = ["createTeam", "syncTeamProjects"] as const;
+export type TeamPluginMethod = (typeof teamPluginMethods)[number];
+
 /** Projects in one sync request or one page of a result. */
 export const TEAM_SYNC_MAX_PROJECTS = 25;
 /**

@@ -21,6 +21,7 @@ import {
   connectorPluginIdSchema,
   pluginHasCapability,
   pluginHasCodeHost,
+  pluginHasTeam,
   pluginHasSwitchableCapabilities,
   pluginSwitchableCapabilities,
   switchableCapabilityLabels,
@@ -50,7 +51,9 @@ import {
   connectorImportSelectionResponseSchema,
   connectorImportSelectionUpdateSchema,
   connectorsOverviewSchema,
+  teamCreateRouteRequestSchema,
 } from "../../../packages/shared/connectors.ts";
+import { teamSyncRequestSchema } from "../../../packages/shared/team-sync.ts";
 import {
   codeHostOperationSchema,
   codeHostOperations,
@@ -299,6 +302,13 @@ function matchConnectorRoute(pathname: string) {
 function matchCodeHostRoute(pathname: string) {
   return pathname.match(
     /^\/api\/code-hosts\/([^/]+)\/connections\/([^/]+)\/([A-Za-z]+)$/,
+  );
+}
+
+/** `/api/teams/:pluginId/create` or `/api/teams/:pluginId/connections/:id/sync`. */
+function matchTeamRoute(pathname: string) {
+  return pathname.match(
+    /^\/api\/teams\/([^/]+)\/(?:(create)|connections\/([^/]+)\/(sync))$/,
   );
 }
 
@@ -1505,6 +1515,93 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
               message,
             );
           }
+          writeJson(response, 502, { error: message });
+        }
+        return;
+      }
+
+      const teamRoute = matchTeamRoute(requestUrl.pathname);
+      if (teamRoute && request.method === "POST") {
+        const [, rawPluginId, create, rawConnectionId] = teamRoute;
+        const pluginId = connectorPluginIdSchema.parse(
+          decodeURIComponent(rawPluginId ?? ""),
+        );
+        const plugins = await pluginManager.listPlugins();
+        const plugin = plugins.find((candidate) => candidate.id === pluginId);
+        if (!plugin || !pluginHasTeam(plugin)) {
+          writeJson(response, 404, {
+            error: "This plugin does not sync a team's projects.",
+          });
+          return;
+        }
+        const inactive = await inactiveCapabilityError(
+          storage,
+          pluginId,
+          "team",
+          new Set(plugins.map((candidate) => candidate.id)),
+          create ? "creating a team" : "syncing its projects",
+        );
+        if (inactive) {
+          writeJson(response, 409, { error: inactive });
+          return;
+        }
+
+        if (create) {
+          // A malformed body fails here, outside the try, as a 400.
+          const payload = teamCreateRouteRequestSchema.parse(
+            await readJsonBody(request),
+          );
+          try {
+            writeJson(
+              response,
+              200,
+              await pluginManager.createTeam(
+                pluginId,
+                payload.values,
+                payload.team,
+              ),
+            );
+          } catch (error) {
+            writeJson(response, 502, { error: errorMessage(error) });
+          }
+          return;
+        }
+
+        const connectionId = decodeURIComponent(rawConnectionId ?? "");
+        const connection = await storage.getConnection(pluginId, connectionId);
+        if (!connection) {
+          writeJson(response, 404, { error: "Connection not found." });
+          return;
+        }
+        const syncRequest = teamSyncRequestSchema.parse(
+          await readJsonBody(request),
+        );
+        try {
+          const result = await pluginManager.syncTeamProjects(
+            pluginId,
+            {
+              id: connection.id,
+              pluginId: connection.pluginId,
+              label: connection.label,
+              tenantLabel: connection.tenantLabel,
+              autoSync: connection.autoSync,
+              autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
+              connectedAt: connection.connectedAt,
+              lastSyncAt: connection.lastSyncAt,
+              lastError: connection.lastError,
+              config: connection.config,
+            },
+            syncRequest,
+          );
+          await storage.recordConnectionSyncSuccess(
+            pluginId,
+            connectionId,
+            Date.now(),
+          );
+          writeJson(response, 200, result);
+        } catch (error) {
+          const message = errorMessage(error);
+          await storage.recordConnectionError(pluginId, connectionId, message);
           writeJson(response, 502, { error: message });
         }
         return;

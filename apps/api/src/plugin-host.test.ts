@@ -12,6 +12,7 @@ import {
 import { create } from "tar";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { codeHostOperations } from "../../../packages/shared/code-host.ts";
+import type { TeamProjectChange } from "../../../packages/shared/team-sync.ts";
 import { ConnectorPluginManager } from "./plugin-host.ts";
 import { readConnectorPlugin } from "./plugin-package.ts";
 
@@ -703,6 +704,123 @@ describe("ConnectorPluginManager", () => {
         },
       ),
     ).rejects.toThrow('Plugin "jira" does not provide pull requests.');
+  });
+
+  it("runs team operations only for plugins that declare a team", async () => {
+    const root = await tempDir();
+    const source = [
+      "export async function createTeam(config, request) {",
+      "  return { values: { teamId: `${config.baseUrl}#${request.name}`, teamSecret: 's3cret' } };",
+      "}",
+      "export async function syncTeamProjects(connection, request) {",
+      "  return {",
+      "    cursor: `after-${request.changes.length}`,",
+      "    projects: [],",
+      "    assigned: request.changes.map((change) => ({ localId: change.localId, remoteId: `r-${change.localId}` })),",
+      "    note: connection.label,",
+      "  };",
+      "}",
+    ].join("\n");
+    const teamDirectory = await createPluginDirectory(root, "team", source, {
+      capabilities: { team: { apiVersion: 1 } },
+    });
+    const connectorDirectory = await createPluginDirectory(
+      root,
+      "jira",
+      source,
+    );
+    const pluginManager = manager({
+      installedPluginDirectory: path.join(root, "installed"),
+      developmentPluginDirectories: [teamDirectory, connectorDirectory],
+      allowDevelopmentPlugins: true,
+    });
+    const connection = {
+      id: "connection-1",
+      pluginId: "team",
+      label: "Acme team",
+      tenantLabel: "acme",
+      autoSync: true,
+      autoSyncIntervalMinutes: 15,
+      connectedAt: 1,
+      config: {},
+    };
+    const newProject: TeamProjectChange = {
+      localId: "project-1",
+      name: "Beta",
+      displayName: "Beta",
+      code: null,
+      color: "#4f46e5",
+      icon: { kind: "preset", name: "dot" },
+      status: "active",
+      tasks: [],
+    };
+
+    await expect(
+      pluginManager.createTeam(
+        "team",
+        { baseUrl: "https://team.example" },
+        { name: "Acme" },
+      ),
+    ).resolves.toEqual({
+      values: { teamId: "https://team.example#Acme", teamSecret: "s3cret" },
+    });
+    await expect(
+      pluginManager.syncTeamProjects("team", connection, {
+        changes: [newProject],
+      }),
+    ).resolves.toEqual({
+      cursor: "after-1",
+      projects: [],
+      assigned: [{ localId: "project-1", remoteId: "r-project-1" }],
+      hasMore: false,
+    });
+    await expect(pluginManager.hasCapability("team", "team")).resolves.toBe(
+      true,
+    );
+    await expect(
+      pluginManager.syncTeamProjects("jira", connection, { changes: [] }),
+    ).rejects.toThrow('Plugin "jira" does not sync a team\'s projects.');
+    await expect(
+      pluginManager.createTeam("jira", {}, { name: "Acme" }),
+    ).rejects.toThrow('Plugin "jira" does not sync a team\'s projects.');
+  });
+
+  it("refuses a team result that breaks the contract, such as an icon URL", async () => {
+    const root = await tempDir();
+    const pluginDirectory = await createPluginDirectory(
+      root,
+      "team",
+      [
+        "export async function syncTeamProjects() {",
+        "  return { cursor: 'c', projects: [{ remoteId: 'r1', name: 'Beta', displayName: 'Beta', code: null,",
+        "    color: '#4f46e5', status: 'active', tasks: [],",
+        "    icon: { kind: 'upload', src: 'https://tracker.example/pixel.png' } }] };",
+        "}",
+      ].join("\n"),
+      { capabilities: { team: { apiVersion: 1 } } },
+    );
+    const pluginManager = manager({
+      installedPluginDirectory: path.join(root, "installed"),
+      developmentPluginDirectories: [pluginDirectory],
+      allowDevelopmentPlugins: true,
+    });
+
+    await expect(
+      pluginManager.syncTeamProjects(
+        "team",
+        {
+          id: "connection-1",
+          pluginId: "team",
+          label: "Acme team",
+          tenantLabel: "acme",
+          autoSync: true,
+          autoSyncIntervalMinutes: 15,
+          connectedAt: 1,
+          config: {},
+        },
+        { changes: [] },
+      ),
+    ).rejects.toThrow();
   });
 
   it("cancels an operation that a turned-off capability catches at its gate", async () => {

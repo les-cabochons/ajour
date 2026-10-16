@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { allowedTaskSlots, listTemplateSlots } from "./agent-task-templates.ts";
-import { teamCapabilitySchema } from "./team-sync.ts";
+import { teamCapabilitySchema, teamCreateRequestSchema } from "./team-sync.ts";
 
 export const CONNECTOR_PLUGIN_API_VERSION = 3;
 export const CONNECTOR_PLUGIN_ARCHIVE_EXTENSION = ".ajour-connector";
@@ -614,6 +614,18 @@ export const teamCreateResultSchema = z.object({
   values: connectorFieldValuesSchema,
 });
 export type TeamCreateResult = z.infer<typeof teamCreateResultSchema>;
+
+/**
+ * The body of `POST /api/teams/:pluginId/create`: what the connection form
+ * holds so far, such as the deployment URL, and the new team's name.
+ */
+export const teamCreateRouteRequestSchema = z.object({
+  values: connectorFieldValuesSchema,
+  team: teamCreateRequestSchema,
+});
+export type TeamCreateRouteRequest = z.infer<
+  typeof teamCreateRouteRequestSchema
+>;
 
 export const connectorImportCandidateInputSchema = z.object({
   source: connectorSourceSchema,

@@ -24,7 +24,18 @@ import {
   type ConnectorSyncWorkItem,
   type ConnectorValidationContext,
   type SwitchableCapability,
+  teamCreateResultSchema,
+  type TeamCreateResult,
 } from "../../../packages/shared/connectors.ts";
+import {
+  teamCreateRequestSchema,
+  teamSyncRequestSchema,
+  teamSyncResultSchema,
+  type TeamCreateRequest,
+  type TeamPluginMethod,
+  type TeamSyncRequest,
+  type TeamSyncResult,
+} from "../../../packages/shared/team-sync.ts";
 import {
   codeHostOperations,
   type CodeHostOperation,
@@ -81,7 +92,8 @@ export type PluginMethod =
   | "syncConnection"
   | "listSettleStates"
   | "writeSettle"
-  | CodeHostOperation;
+  | CodeHostOperation
+  | TeamPluginMethod;
 /** The switchable capability a plugin method serves. Validation serves none. */
 export function capabilityOfMethod(
   method: PluginMethod,
@@ -93,8 +105,17 @@ export function capabilityOfMethod(
   ) {
     return "connector";
   }
+  if (method === "createTeam" || method === "syncTeamProjects") {
+    return "team";
+  }
   return method === "validateConnection" ? undefined : "codeHost";
 }
+
+const missingCapabilityMessages: Record<SwitchableCapability, string> = {
+  connector: "does not sync backlog items",
+  codeHost: "does not provide pull requests",
+  team: "does not sync a team's projects",
+};
 
 function comparePlugins(
   left: ConnectorPluginManifest,
@@ -286,7 +307,7 @@ export class ConnectorPluginManager {
   /** Whether the plugin declares the given capability. */
   async hasCapability(
     pluginId: string,
-    capability: "connector" | "codeHost",
+    capability: SwitchableCapability,
   ): Promise<boolean> {
     this.assertRunning();
     const plugin = (await this.discoverPlugins()).plugins.get(pluginId);
@@ -331,6 +352,45 @@ export class ConnectorPluginManager {
         request: contract.request.parse(request),
       },
       resultSchema,
+    );
+  }
+
+  /**
+   * Creates a team from the connection form's values, before the connection
+   * is saved. The result fills in the values that join it.
+   */
+  async createTeam(
+    pluginId: string,
+    config: ConnectorFieldValues,
+    request: TeamCreateRequest,
+  ): Promise<TeamCreateResult> {
+    await this.assertCapability(pluginId, "team");
+    return await this.invokePlugin(
+      pluginId,
+      "createTeam",
+      {
+        config: connectorFieldValuesSchema.parse(config),
+        request: teamCreateRequestSchema.parse(request),
+      },
+      teamCreateResultSchema,
+    );
+  }
+
+  /** Runs one round of a team sync. See packages/shared/team-sync.ts. */
+  async syncTeamProjects(
+    pluginId: string,
+    connection: PluginInvocationConnection,
+    request: TeamSyncRequest,
+  ): Promise<TeamSyncResult> {
+    await this.assertCapability(pluginId, "team");
+    return await this.invokePlugin(
+      pluginId,
+      "syncTeamProjects",
+      {
+        connection: pluginInvocationConnectionSchema.parse(connection),
+        request: teamSyncRequestSchema.parse(request),
+      },
+      teamSyncResultSchema,
     );
   }
 
@@ -415,14 +475,12 @@ export class ConnectorPluginManager {
 
   private async assertCapability(
     pluginId: string,
-    capability: "connector" | "codeHost",
+    capability: SwitchableCapability,
   ) {
     const plugin = await this.getPlugin(pluginId);
     if (plugin.manifest.capabilities[capability] === undefined) {
       throw new Error(
-        capability === "connector"
-          ? `Plugin "${pluginId}" does not sync backlog items.`
-          : `Plugin "${pluginId}" does not provide pull requests.`,
+        `Plugin "${pluginId}" ${missingCapabilityMessages[capability]}.`,
       );
     }
   }

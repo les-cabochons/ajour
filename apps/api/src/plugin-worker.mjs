@@ -20,6 +20,9 @@ const CODE_HOST_METHODS = new Set([
   "mergePullRequest",
 ]);
 
+// Keep in sync with `teamPluginMethods` in packages/shared/team-sync.ts.
+const TEAM_CONNECTION_METHODS = new Set(["syncTeamProjects"]);
+
 if (!parentPort) {
   throw new Error("Connector plugin worker requires a parent port.");
 }
@@ -35,6 +38,10 @@ async function run() {
     return await handler(workerData.params.config, workerData.params.context);
   }
 
+  if (workerData.method === "createTeam") {
+    return await handler(workerData.params.config, workerData.params.request);
+  }
+
   if (workerData.method === "syncConnection") {
     return await handler(
       workerData.params.connection,
@@ -45,7 +52,8 @@ async function run() {
   if (
     workerData.method === "listSettleStates" ||
     workerData.method === "writeSettle" ||
-    CODE_HOST_METHODS.has(workerData.method)
+    CODE_HOST_METHODS.has(workerData.method) ||
+    TEAM_CONNECTION_METHODS.has(workerData.method)
   ) {
     return await handler(
       workerData.params.connection,

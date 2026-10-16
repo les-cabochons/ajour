@@ -1298,3 +1298,186 @@ describe("agent task settings route", () => {
     ).resolves.toMatchObject({ status: 200 });
   });
 });
+
+describe("team routes", () => {
+  const tempDirs: string[] = [];
+  const servers: Server[] = [];
+
+  afterEach(async () => {
+    for (const server of servers.splice(0)) {
+      server.emit("close");
+    }
+    await Promise.all(
+      tempDirs
+        .splice(0)
+        .map((directory) => rm(directory, { recursive: true, force: true })),
+    );
+  });
+
+  const teamPluginSource = [
+    "export async function validateConnection(config) {",
+    "  return { normalizedConfig: config, connectionSummary: {} };",
+    "}",
+    "export async function createTeam(config, request) {",
+    "  if (request.name === 'Taken') throw new Error('That team name is taken.');",
+    "  return { values: { teamId: `team-${request.name}`, teamSecret: 's3cret' } };",
+    "}",
+    "export async function syncTeamProjects(connection, request) {",
+    "  if (request.cursor === 'broken') throw new Error('The team refused the secret.');",
+    "  return { cursor: 'c2', projects: [], assigned: [] };",
+    "}",
+  ].join("\n");
+
+  async function createServer(capabilities: Record<string, unknown>) {
+    const root = await mkdtemp(path.join(os.tmpdir(), "ajour-team-api-"));
+    tempDirs.push(root);
+    const pluginDirectory = await createPlugin(
+      path.join(root, "source"),
+      teamPluginSource,
+      "plugin.mjs",
+      { capabilities },
+    );
+    const server = createAppApiServer({
+      statePath: path.join(root, "state.json"),
+      installedPluginDirectory: path.join(root, "installed"),
+      developmentPluginDirectories: [pluginDirectory],
+      allowDevelopmentPlugins: true,
+    });
+    servers.push(server);
+    const connectionResponse = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: "/api/connectors/jira/connections",
+      body: JSON.stringify({
+        values: {
+          label: "Acme team",
+          tenantLabel: "acme",
+          autoSync: true,
+          autoSyncIntervalMinutes: 15,
+          baseUrl: "https://team.example",
+        },
+      }),
+    });
+    const connectionId = (
+      connectionResponse.body as { connection: { id: string } }
+    ).connection.id;
+    return { server, connectionId };
+  }
+
+  async function lastError(server: Server) {
+    const overview = await dispatchJsonRequest(server, {
+      method: "GET",
+      path: "/api/connectors",
+    });
+    return (
+      overview.body as {
+        connectionGroups: {
+          connections: { lastError?: string; lastSyncAt?: number }[];
+        }[];
+      }
+    ).connectionGroups[0]?.connections[0];
+  }
+
+  it("creates a team from the form's values before a connection exists", async () => {
+    const { server } = await createServer({ team: { apiVersion: 1 } });
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: "/api/teams/jira/create",
+        body: JSON.stringify({
+          values: { baseUrl: "https://team.example" },
+          team: { name: "Acme" },
+        }),
+      }),
+    ).resolves.toEqual({
+      status: 200,
+      body: { values: { teamId: "team-Acme", teamSecret: "s3cret" } },
+    });
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: "/api/teams/jira/create",
+        body: JSON.stringify({ values: {}, team: { name: "Taken" } }),
+      }),
+    ).resolves.toEqual({
+      status: 502,
+      body: { error: "That team name is taken." },
+    });
+  });
+
+  it("runs a sync round and records the sync, or the error on the connection", async () => {
+    const { server, connectionId } = await createServer({
+      team: { apiVersion: 1 },
+    });
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/teams/jira/connections/${connectionId}/sync`,
+        body: JSON.stringify({ changes: [] }),
+      }),
+    ).resolves.toEqual({
+      status: 200,
+      body: { cursor: "c2", projects: [], assigned: [], hasMore: false },
+    });
+    expect((await lastError(server))?.lastSyncAt).toEqual(expect.any(Number));
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/teams/jira/connections/${connectionId}/sync`,
+        body: JSON.stringify({ cursor: "broken", changes: [] }),
+      }),
+    ).resolves.toEqual({
+      status: 502,
+      body: { error: "The team refused the secret." },
+    });
+    expect((await lastError(server))?.lastError).toBe(
+      "The team refused the secret.",
+    );
+  });
+
+  it("refuses plugins without a team, a turned-off team, and malformed rounds", async () => {
+    const connectorOnly = await createServer({ connector: {} });
+    await expect(
+      dispatchJsonRequest(connectorOnly.server, {
+        method: "POST",
+        path: `/api/teams/jira/connections/${connectorOnly.connectionId}/sync`,
+        body: JSON.stringify({ changes: [] }),
+      }),
+    ).resolves.toEqual({
+      status: 404,
+      body: { error: "This plugin does not sync a team's projects." },
+    });
+
+    const { server, connectionId } = await createServer({
+      connector: {},
+      team: { apiVersion: 1 },
+    });
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/teams/jira/connections/${connectionId}/sync`,
+        body: JSON.stringify({ changes: [{ localId: "p1" }] }),
+      }),
+    ).resolves.toMatchObject({ status: 400 });
+
+    await dispatchJsonRequest(server, {
+      method: "POST",
+      path: "/api/connectors/jira/activation",
+      body: JSON.stringify({ enabled: false, capability: "team" }),
+    });
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `/api/teams/jira/connections/${connectionId}/sync`,
+        body: JSON.stringify({ changes: [] }),
+      }),
+    ).resolves.toEqual({
+      status: 409,
+      body: {
+        error: "Turn on projects for this plugin before syncing its projects.",
+      },
+    });
+  });
+});
