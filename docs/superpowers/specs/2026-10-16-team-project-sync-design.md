@@ -58,22 +58,26 @@ A request or a page holds at most 25 projects and 2,000 tasks in total. With the
 
 ## Storage
 
-- `LocalProject` gets `team?: { connectionId: string; remoteId?: string; synced?: TeamProjectFields }`. `LocalProjectTask` gets `team?: { remoteId?: string; synced?: TeamTaskFields }`. A new shared project or task has neither until the team assigns a remote ID.
+- `LocalProject` gets `team?: LocalProjectTeamLink`: `{ connectionId }` for a project new to the team, or `{ connectionId, remoteId, synced }` once the team assigned an ID. `LocalProjectTask` gets `team?: { remoteId, synced }`. A task of a shared project without it is new to the team.
 - `synced` is the last-synced copy of the record's team-owned fields. A field whose value differs from its `synced` copy is a local change. The copy is persisted with the record, so a restart loses nothing, and no timestamps are kept. The project transitions do not change: any edit to a team-owned field is a local change by definition.
-- The store keeps only the last action's undo, so "the Undo window is open" for a record means the store's pending undo touches it. `planTeamSync` receives the IDs of those records from `local-store.ts` and skips them; no timer is involved, and the next sync carries the change once the toast has closed.
+- The store keeps only the last action's undo, so "the Undo window is open" for a record means the store's pending undo touches it. Undo records hold whole projects, tasks included, so `getUndoProjectIds` in `local-state-undo.ts` gives the projects to skip, and `planTeamSync` skips them; no timer is involved, and the next sync carries the change once the toast has closed.
 - After a round succeeds, each pushed field's `synced` copy becomes the value that was pushed, not the record's current value. An edit made while the round was in flight therefore stays a local change for the next round.
-- Local state gets `teamSyncCursors: Record<connectionId, string>`. It lives with the projects so that the merge is pure and the cursor cannot drift from the projects it describes.
-- Unsharing and connection removal drop `team` from the records. Nothing else changes.
+- Local state gets `teamConnections: Record<connectionId, { cursor?, unsharedRemoteIds }>`. It lives with the projects so that the merge is pure and the cursor cannot drift from the projects it describes.
+- Unsharing drops `team` from the project and its tasks, and adds the project's remote ID to `unsharedRemoteIds`, so the team's later changes to it do not bring it back as a second project. Removing the connection drops `team` from all its projects and forgets the connection. Nothing else changes.
 - `normalizeProject` drops a `team` whose shape is wrong, which turns the project local.
 
 ## Sync rules
 
 A pure module, `apps/web/src/domain/projects/team-sync.ts`, owns:
 
-- `planTeamSync(state, connectionId, pendingUndoRecordIds)`: the `changes` to push and the cursor. A new record sends every team-owned field; a shared one sends the fields that differ from `synced`. Records in `pendingUndoRecordIds` are skipped.
-- `applyTeamSync(state, connectionId, pushed, result, factories)`: assigns remote IDs and sets `synced` to the pushed values, then merges the team's records per field. For a field with no local change, the team's value replaces both the local value and `synced`. For a field with a local change, such as one still in its Undo window, the local value stays and `synced` takes the team's value, so the next push sends it as the later write. It also creates projects and tasks the workspace lacks with new local IDs, archives and restores, and stores the cursor. Local IDs never change, so time entries keep their references.
-- `shareProject(state, project, teamProjects)`: links by name or marks the project as new, and merges tasks by name.
+- `planTeamSync(state, connectionId, skipProjectIds)`: one round of `changes` and the cursor, within the page bounds, with `hasMoreChanges` when the bounds left some for the next round. A new record sends every team-owned field; a shared one sends the fields that differ from `synced`. Projects in `skipProjectIds` wait. A record the contract refuses as it is, such as a 300 character name, is reported in `unsendable` and the rest still go. A color or icon the contract refuses goes as Ajour's default.
+- `applyTeamSync(state, connectionId, pushed, result, factories)`: assigns remote IDs and sets `synced` to the pushed values, then merges the team's records per field. For a field with no local change, the team's value replaces both the local value and `synced`. For a field with a local change, such as one still in its Undo window, the local value stays and `synced` takes the team's value, so the next push sends it as the later write. It also creates projects and tasks the workspace lacks with new local IDs, archives and restores, and stores the cursor. A task added here and on the team under the same name before either synced becomes one task. A team project the user unshared here is ignored. Local IDs never change, so time entries keep their references.
+- A new team project whose name a local project already has arrives as its own shared project, and the local one stays local: it is never shared without the user asking. `applyTeamSync` reports these in `sameNameArrivals`. How the user then joins the two is open in #185.
+- `shareProject(state, connectionId, projectId)`: marks a local project new to the team, so the next sync sends it with all its tasks. It refuses when the workspace already has a shared project of that name for the team, so the team does not get two.
+- `linkProject(state, connectionId, projectId, teamProject, factories)`: what the picker does on Link. The local project takes the team project's identity and values. Tasks match by name; a team task without a match is added, and a local task without one goes to the team with the next sync.
 - `unshareProject` and `disconnectTeam`.
+
+Stored links are read back by `domain/projects/team-link.ts`, which `normalizeProject` uses, so project normalization does not depend on the sync rules.
 
 The rules are in [ADR 0005](../../../agents/adr/0005-shared-projects-last-writer-wins.md): last writer wins per field, archive without review, nothing deleted.
 

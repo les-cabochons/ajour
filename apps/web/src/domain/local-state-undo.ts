@@ -175,6 +175,16 @@ function diffCollection<K extends UndoCollection>(
  * Records what an action changed by comparing the local state before and after
  * it. Returns null when the action changed no record.
  */
+/**
+ * The projects an undo would restore. A team sync does not push them while
+ * their Undo window is open, so Undo never has to reach the team.
+ */
+export function getUndoProjectIds(
+  undo: LocalStateUndo | undefined,
+): Set<string> {
+  return new Set(undo?.projects.map((change) => change.key) ?? []);
+}
+
 export function captureUndo(
   before: LocalAppState,
   after: LocalAppState,
