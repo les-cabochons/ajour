@@ -147,7 +147,9 @@ function DefaultPageHeader({
     );
   }
   const settingsPage = pathname.startsWith("/settings")
-    ? getSettingsPages("wide").find((page) => pathname.startsWith(page.to))
+    ? getSettingsPages("wide", false, true).find((page) =>
+        pathname.startsWith(page.to),
+      )
     : undefined;
   const title = settingsPage
     ? settingsPage.label
