@@ -23,10 +23,12 @@ export type TimeEntryActionId =
   | "duplicate"
   | "duplicate-to"
   | "move-to"
+  | "mark-not-committed"
   | "delete"
   | "discard";
 
-export type TimeEntryActionState = "saved" | "running";
+/** A committed entry is saved and matches its committed copy. */
+export type TimeEntryActionState = "saved" | "committed" | "running";
 
 export type CalendarSuggestionActionId =
   "add" | "choose-project" | "dismiss" | "hide-meeting" | "forget-meeting";
@@ -77,7 +79,11 @@ export interface TimeEntryActionOptions {
 
 const STOP_RUNNING_FIRST = "Stop the running entry first";
 
-/** Lists a time entry's actions: Edit · Continue/Stop · Duplicate · Duplicate to… · Move to… · Delete/Discard. */
+/**
+ * Lists a time entry's actions: Edit · Continue/Stop · Duplicate · Duplicate to… ·
+ * Move to… · Mark as not committed · Delete/Discard. Only committed entries list
+ * Mark as not committed.
+ */
 export function getTimeEntryActions(
   state: TimeEntryActionState,
   options: TimeEntryActionOptions = {},
@@ -112,6 +118,9 @@ export function getTimeEntryActions(
       label: "Move to…",
       disabledReason: relocationReason,
     },
+    ...(state === "committed"
+      ? [{ id: "mark-not-committed" as const, label: "Mark as not committed" }]
+      : []),
     isRunning
       ? { id: "discard", label: "Discard", destructive: true }
       : { id: "delete", label: "Delete", destructive: true },
@@ -121,8 +130,10 @@ export function getTimeEntryActions(
 /** Returns the action state shown for a time entry. */
 export function getTimeEntryActionState(entry: {
   isRunning?: boolean;
+  isCommitted?: boolean;
 }): TimeEntryActionState {
-  return entry.isRunning ? "running" : "saved";
+  if (entry.isRunning) return "running";
+  return entry.isCommitted ? "committed" : "saved";
 }
 
 type ArchiveStatus = "active" | "archived";

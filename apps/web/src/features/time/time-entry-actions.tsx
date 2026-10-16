@@ -1,11 +1,13 @@
 import { useState } from "react";
 import {
   getTimeEntryActions,
+  getTimeEntryActionState,
   type ObjectAction,
   type TimeEntryActionId,
   type TimeEntryActionOptions,
 } from "@/domain/actions/object-actions";
 import type { LocalTimesheetEntry } from "@/domain/local-state";
+import { isTimesheetEntryCommitted } from "@/domain/time/timesheet-commit";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
 import {
@@ -90,8 +92,9 @@ function savedValues(
 /**
  * Runs the time entry action set from any surface: Day rows, Week cards, Grid cells
  * and the entry editors. Each surface renders `dialogs` once and supplies how Edit
- * opens the entry there. Delete, Discard, Move to… and Duplicate to… another day
- * happen at once and show an Undo toast instead of asking first.
+ * opens the entry there. Delete, Discard, Move to…, Duplicate to… another day and
+ * Mark as not committed happen at once and show an Undo toast instead of asking
+ * first.
  */
 export function useTimeEntryActions({
   onEdit,
@@ -109,7 +112,11 @@ export function useTimeEntryActions({
     options: TimeEntryActionOptions = {},
   ): ObjectAction<TimeEntryActionId>[] {
     return getTimeEntryActions(
-      target.kind === "running" ? "running" : "saved",
+      getTimeEntryActionState({
+        isRunning: target.kind === "running",
+        isCommitted:
+          target.kind === "entry" && isTimesheetEntryCommitted(target.entry),
+      }),
       options,
     );
   }
@@ -185,6 +192,13 @@ export function useTimeEntryActions({
           entry,
           resolveValues: options.resolveValues,
         });
+        return;
+      case "mark-not-committed":
+        // The editor stays open: the entry is still there, only its chip goes.
+        offerTimeEntryUndo(
+          localStore.markTimesheetEntryNotCommitted(entry._id),
+          "Marked as not committed",
+        );
         return;
       case "delete":
         offerTimeEntryUndo(

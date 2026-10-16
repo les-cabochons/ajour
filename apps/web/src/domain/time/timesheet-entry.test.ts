@@ -6,6 +6,7 @@ import {
   deleteTimesheetEntry,
   duplicateTimesheetEntry,
   markTimesheetEntriesCommitted,
+  markTimesheetEntryNotCommitted,
   moveTimesheetEntry,
   normalizeTimesheetEntry,
   pasteTimesheetEntries,
@@ -905,6 +906,39 @@ describe("committed copies", () => {
     });
 
     expect(changeOf(duplicated, "copy")).toBe("added");
+  });
+
+  it("marks a committed entry as not committed, so it shows as added", () => {
+    const committed = markTimesheetEntriesCommitted(
+      savedEntries(),
+      ["a", "b"],
+      () => 500,
+    );
+
+    const next = markTimesheetEntryNotCommitted(committed, "a");
+
+    expect(find(next, "a").commit).toBeUndefined();
+    expect(changeOf(next, "a")).toBe("added");
+    expect(changeOf(next, "b")).toBeUndefined();
+  });
+
+  it("leaves an entry with a change to commit as it is", () => {
+    const committed = markTimesheetEntriesCommitted(
+      savedEntries(),
+      ["a"],
+      () => 500,
+    );
+    // Its committed day finds the external entry, so the copy stays.
+    const moved = moveTimesheetEntry(
+      committed,
+      "a",
+      { ...values, localDate: "2026-08-04" },
+      factories,
+    );
+
+    expect(markTimesheetEntryNotCommitted(moved, "a")).toBe(moved);
+    expect(markTimesheetEntryNotCommitted(moved, "b")).toBe(moved);
+    expect(markTimesheetEntryNotCommitted(moved, "unknown")).toBe(moved);
   });
 });
 

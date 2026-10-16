@@ -6,6 +6,7 @@ import type {
 import {
   getChangedCommitFields,
   getTimesheetEntryChange,
+  isTimesheetEntryCommitted,
   normalizeTimesheetEntryCommit,
   toCommittedCopy,
 } from "@/domain/time/timesheet-commit";
@@ -424,6 +425,30 @@ export function markTimesheetEntriesCommitted(
   }
 
   return { ...state, timesheetEntries, timesheetTombstones };
+}
+
+/**
+ * Drops the committed copy of a committed entry, so the Commit page lists it
+ * as added again. For when the external timesheet changed since the commit.
+ * The Workday agent finds an added entry by its external id, so it edits the
+ * existing external entry instead of adding a second one. An entry with a
+ * change to commit keeps its copy: the copy's day is where the agent looks.
+ * Returns the same state when nothing changed.
+ */
+export function markTimesheetEntryNotCommitted(
+  state: LocalAppState,
+  entryId: string,
+): LocalAppState {
+  const entry = state.timesheetEntries.find((item) => item._id === entryId);
+  if (!entry || !isTimesheetEntryCommitted(entry)) return state;
+
+  const { commit: _commit, ...uncommitted } = entry;
+  return {
+    ...state,
+    timesheetEntries: state.timesheetEntries.map((item) =>
+      item === entry ? uncommitted : item,
+    ),
+  };
 }
 
 /**
