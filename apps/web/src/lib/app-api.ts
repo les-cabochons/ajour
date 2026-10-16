@@ -64,6 +64,11 @@ import {
 } from "@ajour/shared/agent-runs";
 import { localStore } from "@/lib/local-store";
 import {
+  calendarListEventsResultSchema,
+  type CalendarListEventsRequest,
+  type CalendarListEventsResult,
+} from "@ajour/shared";
+import {
   codeHostSyncResultSchema,
   isCapabilityActive,
   type CodeHostSyncResult,
@@ -546,7 +551,21 @@ export async function deleteConnectorConnection(
     ),
   );
   localStore.removeConnectionPullRequests(pluginId, connectionId);
+  localStore.removeConnectionCalendarData(pluginId, connectionId);
   return overview;
+}
+
+/** One connection's calendar events for a range of days (ADR 0005). */
+export function listCalendarEvents(
+  pluginId: string,
+  connectionId: string,
+  request: CalendarListEventsRequest,
+): Promise<CalendarListEventsResult> {
+  return appApiRequest(
+    `/api/calendars/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/listCalendarEvents`,
+    { method: "POST", body: JSON.stringify(request) },
+    calendarListEventsResultSchema,
+  );
 }
 
 export function syncConnectorConnection(

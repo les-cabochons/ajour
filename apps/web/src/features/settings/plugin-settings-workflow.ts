@@ -1,4 +1,5 @@
 import type * as appApi from "@/lib/app-api";
+import type { LocalAppState } from "@/domain/local-state";
 import {
   pluginCatalogRefreshMinutesSchema,
   switchableCapabilityLabels,
@@ -507,4 +508,44 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
       };
     },
   };
+}
+
+/**
+ * What removing a connection deletes from this device, for its confirmation:
+ * the saved pull requests of a code host and the remembered meetings of a
+ * calendar. Imported backlog items and time entries stay.
+ */
+export function describeConnectionRemoval(
+  plugin: {
+    id: string;
+    capabilities: { codeHost?: object; calendar?: object };
+  },
+  connectionId: string,
+  state: Pick<LocalAppState, "pullRequests" | "calendarEventRules">,
+) {
+  const ofConnection = (item: { pluginId: string; connectionId: string }) =>
+    item.pluginId === plugin.id && item.connectionId === connectionId;
+  const count = (value: number, one: string, many: string) =>
+    `${value} ${value === 1 ? one : many}`;
+  const losses = [
+    ...(plugin.capabilities.codeHost
+      ? [
+          count(
+            (state.pullRequests ?? []).filter(ofConnection).length,
+            "saved pull request",
+            "saved pull requests",
+          ),
+        ]
+      : []),
+    ...(plugin.capabilities.calendar
+      ? [
+          count(
+            (state.calendarEventRules ?? []).filter(ofConnection).length,
+            "remembered meeting",
+            "remembered meetings",
+          ),
+        ]
+      : []),
+  ];
+  return `This removes the connection and its ${losses.join(" and ")} from this device.`;
 }

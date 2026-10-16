@@ -1,7 +1,7 @@
 # Calendar suggestions through a calendar plugin
 
 - Date: 2026-10-15
-- Status: Slice 1 implemented (#179). Tracking issue #178.
+- Status: Slices 1 to 3 implemented (#179, #180, #181). Tracking issue #178.
 - Scope: the `calendar` plugin capability, the calendar contract, suggestions in the Time view, remembered meetings, the ICS plugin
 - Decisions: [ADR 0005](../../../agents/adr/0005-calendar-events-are-fetched-per-week-and-never-stored.md)
 - Terms: `agents/GLOSSARY.md`, sections "Time entries" and "Extensions"
@@ -136,7 +136,7 @@ The words _rule_, _series_ and _occurrence_ never appear in the UI.
 
 ### Settings
 
-Settings > Time gains a **Calendar** section:
+A **Calendar** page joins the Work group of Settings while a calendar plugin is on (`/settings/calendar`). Ajour has no Time settings page, and capacity targets stay in General.
 
 - Filters: Hide all-day events (on), Hide declined events (on), Hide events marked free (on), Hide events I have not answered (off), Minimum length (0 minutes).
 - Refresh every N minutes (10).
@@ -146,7 +146,7 @@ The plugin's own fields, such as the calendar address, stay on its Settings > Pl
 
 ## Disabling and removing
 
-- Disabling or uninstalling the plugin hides the Calendar button, the cards, the Day section and the Settings section at once. Decisions and remembered meetings stay, so enabling it again restores everything.
+- Disabling or uninstalling the plugin hides the Calendar button, the cards, the Day section and the Settings page at once. Decisions and remembered meetings stay, so enabling it again restores everything.
 - Entries keep their note and link to nothing. They never change when the calendar does.
 - Removing a connection deletes its decisions and remembered meetings after a confirmation that says how many remembered meetings will be lost.
 
