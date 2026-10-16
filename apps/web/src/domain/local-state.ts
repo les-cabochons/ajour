@@ -59,6 +59,11 @@ export interface LocalTeamConnection {
   /** Team projects the user unshared on this machine. Ajour ignores them. */
   unsharedRemoteIds: string[];
   /**
+   * Projects unshared before the team gave them an ID. A round may still be
+   * on its way, so the ID it brings joins `unsharedRemoteIds`.
+   */
+  unsharedLocalIds: string[];
+  /**
    * Team projects that arrived while a local project has their name. Each
    * waits for the user to link it to a local project or add it separately,
    * and later syncs keep it current meanwhile.

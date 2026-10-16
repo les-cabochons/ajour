@@ -250,6 +250,7 @@ function connectionOf(
   return (
     state.teamConnections[connectionId] ?? {
       unsharedRemoteIds: [],
+      unsharedLocalIds: [],
       heldArrivals: [],
     }
   );
@@ -358,17 +359,115 @@ export function planTeamSync(
 // ---------------------------------------------------------------------------
 // Apply
 
-export interface TeamSyncApplyResult {
-  /** Team projects the workspace did not have, now local shared projects. */
-  createdProjectIds: string[];
-  /** Shared projects whose fields or tasks the team changed. */
-  updatedProjectIds: string[];
+export type TeamSyncApplyResult =
+  | {
+      kind: "applied";
+      /** Team projects the workspace did not have, now local shared projects. */
+      createdProjectIds: string[];
+      /** Shared projects whose fields or tasks the team changed. */
+      updatedProjectIds: string[];
+      /**
+       * New team projects held because a local project already has their name.
+       * Each waits for `resolveHeldArrival`: the local project is never shared
+       * without the user asking.
+       */
+      heldArrivals: { remoteId: string; localProjectId: string }[];
+    }
   /**
-   * New team projects held because a local project already has their name.
-   * Each waits for `resolveHeldArrival`: the local project is never shared
-   * without the user asking.
+   * The result contradicts what Ajour sent or knows, so none of it applies
+   * and the cursor stays. New records keep their local IDs, so the next round
+   * can send them again safely.
    */
-  heldArrivals: { remoteId: string; localProjectId: string }[];
+  | { kind: "rejected"; reason: string };
+
+/**
+ * Why a round's result cannot apply, or undefined when it can. Every new
+ * record sent must get an ID, and only those; an ID names one project or one
+ * task, of one project, here or held; and a task stays in its project.
+ */
+function findResultProblem(
+  projects: readonly LocalProject[],
+  connection: LocalTeamConnection,
+  connectionId: string,
+  pushed: readonly TeamProjectChange[],
+  result: TeamSyncResult,
+): string | undefined {
+  const assigned = new Map(
+    result.assigned.map((entry) => [entry.localId, entry.remoteId]),
+  );
+  // Remote ID to the local record that holds it, and a task's project.
+  const projectOwners = new Map<string, string>();
+  const taskOwners = new Map<string, { taskId: string; projectId: string }>();
+  for (const project of projects) {
+    const link = project.team;
+    if (link?.connectionId !== connectionId || !link.remoteId) continue;
+    projectOwners.set(link.remoteId, project._id);
+    for (const task of project.tasks) {
+      if (task.team) {
+        taskOwners.set(task.team.remoteId, {
+          taskId: task._id,
+          projectId: link.remoteId,
+        });
+      }
+    }
+  }
+  for (const held of connection.heldArrivals) {
+    projectOwners.set(held.remoteId, `held:${held.remoteId}`);
+    for (const task of held.tasks) {
+      taskOwners.set(task.remoteId, {
+        taskId: `held:${task.remoteId}`,
+        projectId: held.remoteId,
+      });
+    }
+  }
+
+  const sentNew = new Set<string>();
+  for (const change of pushed) {
+    let projectRemoteId = change.remoteId;
+    if (!change.remoteId) {
+      sentNew.add(change.localId);
+      projectRemoteId = assigned.get(change.localId);
+      if (!projectRemoteId) {
+        return "The team's answer left out the ID of a new project.";
+      }
+      const owner = projectOwners.get(projectRemoteId);
+      if (owner !== undefined && owner !== change.localId) {
+        return "The team's answer gave one ID to two projects.";
+      }
+      projectOwners.set(projectRemoteId, change.localId);
+    }
+    for (const task of change.tasks) {
+      if (task.remoteId) continue;
+      sentNew.add(task.localId);
+      const taskRemoteId = assigned.get(task.localId);
+      if (!taskRemoteId) {
+        return "The team's answer left out the ID of a new task.";
+      }
+      const owner = taskOwners.get(taskRemoteId);
+      if (owner !== undefined && owner.taskId !== task.localId) {
+        return "The team's answer gave one ID to two tasks.";
+      }
+      taskOwners.set(taskRemoteId, {
+        taskId: task.localId,
+        projectId: projectRemoteId!,
+      });
+    }
+  }
+  for (const localId of assigned.keys()) {
+    if (!sentNew.has(localId)) {
+      return "The team's answer gave an ID to a record Ajour did not send.";
+    }
+  }
+
+  for (const teamProject of result.projects) {
+    for (const task of teamProject.tasks) {
+      const owner = taskOwners.get(task.remoteId);
+      if (owner !== undefined && owner.projectId !== teamProject.remoteId) {
+        return "The team's answer moved a task to another project.";
+      }
+    }
+  }
+  return undefined;
 }
 
 /** A held arrival with a later version of it: newer fields, tasks merged. */
@@ -398,7 +497,16 @@ function recordPushed(
   return projects.map((project) => {
     const change = changesByProject.get(project._id);
     const link = project.team;
-    if (!change || link?.connectionId !== connectionId) return project;
+    // An answer only reaches the link it was sent for. A project unshared, or
+    // linked to another team project, while the round was on its way keeps
+    // its new link.
+    if (
+      !change ||
+      link?.connectionId !== connectionId ||
+      link.remoteId !== change.remoteId
+    ) {
+      return project;
+    }
 
     const remoteId = change.remoteId ?? assigned.get(change.localId);
     if (!remoteId) return project;
@@ -415,7 +523,9 @@ function recordPushed(
     );
     const tasks = project.tasks.map((task) => {
       const taskChange = taskChanges.get(task._id);
-      if (!taskChange) return task;
+      if (!taskChange || task.team?.remoteId !== taskChange.remoteId) {
+        return task;
+      }
       const taskRemoteId =
         taskChange.remoteId ?? assigned.get(taskChange.localId);
       if (!taskRemoteId) return task;
@@ -495,6 +605,7 @@ function mergeTeamProject(
  * team projects the workspace does not have, and stores the cursor. A team
  * project the user unshared here is ignored. A new team project whose name a
  * local project has is held instead of added, and later rounds keep it current.
+ * A result that contradicts what Ajour sent or knows changes nothing.
  */
 export function applyTeamSync(
   state: TeamSyncState,
@@ -503,17 +614,33 @@ export function applyTeamSync(
   result: TeamSyncResult,
   factories: ProjectFactories,
 ): TeamSyncState & { result: TeamSyncApplyResult } {
+  const connection = connectionOf(state, connectionId);
+  const problem = findResultProblem(
+    state.projects,
+    connection,
+    connectionId,
+    pushed,
+    result,
+  );
+  if (problem)
+    return { ...state, result: { kind: "rejected", reason: problem } };
+
   const assigned = new Map(
     result.assigned.map((entry) => [entry.localId, entry.remoteId]),
   );
-  const connection = connectionOf(state, connectionId);
+  // A project unshared before its ID came: the team's project stays ignored.
+  const unsharedLocalIds = new Set(connection.unsharedLocalIds);
   const unshared = new Set(connection.unsharedRemoteIds);
+  for (const entry of result.assigned) {
+    if (unsharedLocalIds.delete(entry.localId)) unshared.add(entry.remoteId);
+  }
   const projects = recordPushed(state.projects, connectionId, pushed, assigned);
   const heldArrivals = [...connection.heldArrivals];
-  const outcome: TeamSyncApplyResult = {
-    createdProjectIds: [],
-    updatedProjectIds: [],
-    heldArrivals: [],
+  const outcome = {
+    kind: "applied" as const,
+    createdProjectIds: [] as string[],
+    updatedProjectIds: [] as string[],
+    heldArrivals: [] as { remoteId: string; localProjectId: string }[],
   };
 
   for (const teamProject of result.projects) {
@@ -569,7 +696,13 @@ export function applyTeamSync(
     projects,
     teamConnections: {
       ...state.teamConnections,
-      [connectionId]: { ...connection, cursor: result.cursor, heldArrivals },
+      [connectionId]: {
+        ...connection,
+        cursor: result.cursor,
+        heldArrivals,
+        unsharedRemoteIds: [...unshared],
+        unsharedLocalIds: [...unsharedLocalIds],
+      },
     },
     result: outcome,
   };
@@ -621,8 +754,8 @@ export function shareProject(
     };
   }
 
+  const connection = connectionOf(state, connectionId);
   return {
-    ...state,
     projects: state.projects.map((entry) =>
       entry._id === projectId
         ? {
@@ -632,6 +765,17 @@ export function shareProject(
           }
         : entry,
     ),
+    // Sharing again sends the same local ID, so the team answers with the
+    // project an earlier share made, and it links instead of being ignored.
+    teamConnections: {
+      ...state.teamConnections,
+      [connectionId]: {
+        ...connection,
+        unsharedLocalIds: connection.unsharedLocalIds.filter(
+          (localId) => localId !== projectId,
+        ),
+      },
+    },
     result: { kind: "shared" },
   };
 }
@@ -715,6 +859,9 @@ export function linkProject(
         heldArrivals: connection.heldArrivals.filter(
           (held) => held.remoteId !== teamProject.remoteId,
         ),
+        unsharedLocalIds: connection.unsharedLocalIds.filter(
+          (localId) => localId !== projectId,
+        ),
       },
     },
     result: { kind: "linked" },
@@ -789,10 +936,10 @@ export function unshareProject(
     projects: state.projects.map((entry) =>
       entry._id === projectId ? withoutTeam(entry) : entry,
     ),
-    teamConnections: link.remoteId
-      ? {
-          ...state.teamConnections,
-          [link.connectionId]: {
+    teamConnections: {
+      ...state.teamConnections,
+      [link.connectionId]: link.remoteId
+        ? {
             ...connection,
             unsharedRemoteIds: [
               ...connection.unsharedRemoteIds.filter(
@@ -800,9 +947,18 @@ export function unshareProject(
               ),
               link.remoteId,
             ],
+          }
+        : {
+            // A round may already have sent it: its ID is ignored on arrival.
+            ...connection,
+            unsharedLocalIds: [
+              ...connection.unsharedLocalIds.filter(
+                (localId) => localId !== projectId,
+              ),
+              projectId,
+            ],
           },
-        }
-      : state.teamConnections,
+    },
   };
 }
 
