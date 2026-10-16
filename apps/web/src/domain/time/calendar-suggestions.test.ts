@@ -292,7 +292,11 @@ describe("building suggestions", () => {
           event(),
         ]),
       ),
-    ).toMatchObject({ projectId: "internal", taskId: "meetings" });
+    ).toMatchObject({
+      projectId: "internal",
+      taskId: "meetings",
+      ruleId: "rule-1",
+    });
 
     for (const rule of [
       { ...standupRule, taskId: "old" },

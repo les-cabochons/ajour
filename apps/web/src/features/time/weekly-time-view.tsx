@@ -48,10 +48,16 @@ import {
   useUserPreferences,
 } from "@/lib/local-hooks";
 import {
+  CalendarDayCards,
+  useCalendarSuggestionActions,
+} from "@/features/time/calendar-suggestions";
+import {
   formatToastDay,
   offerTimeEntryUndo,
   useTimeEntryActions,
 } from "@/features/time/time-entry-actions";
+import { groupCalendarSuggestionsByDay } from "@/domain/time/calendar-suggestions";
+import { useCalendarSuggestions } from "@/lib/calendar-suggestions";
 import {
   isSelectionDelete,
   useEntrySelection,
@@ -133,6 +139,15 @@ export function WeeklyTimeView({
   const state = useLocalState();
   const projects = useLocalProjects();
   const preferences = useUserPreferences();
+  const calendar = useCalendarSuggestions({
+    from: weekDates[0] ?? "",
+    to: weekDates[weekDates.length - 1] ?? "",
+  });
+  const suggestionsByDay = useMemo(
+    () => groupCalendarSuggestionsByDay(calendar.suggestions),
+    [calendar.suggestions],
+  );
+  const suggestionActions = useCalendarSuggestionActions();
   // Rows added with "+ Add row" are dropped when the user leaves the week. A row
   // that got hours stays, because its entries show it.
   const [addedRows, setAddedRows] = useState<{
@@ -501,7 +516,9 @@ export function WeeklyTimeView({
     return (
       event.target instanceof Element &&
       event.currentTarget.contains(event.target) &&
-      !event.target.closest(".weekly-entry-card, button")
+      !event.target.closest(
+        ".weekly-entry-card, .calendar-suggestion-card, button",
+      )
     );
   }
 
@@ -837,6 +854,13 @@ export function WeeklyTimeView({
                   >
                     <Plus data-icon="inline-start" /> Add
                   </Button>
+                  <CalendarDayCards
+                    suggestions={
+                      suggestionsByDay.get(day.localDate)?.visible ?? []
+                    }
+                    focusColumn={index}
+                    actions={suggestionActions}
+                  />
                 </div>
               </section>
             );

@@ -107,6 +107,8 @@ export interface CalendarSuggestion extends CalendarSource {
   /** Filled from the remembered meeting, when it still points at an active project. */
   projectId?: string;
   taskId?: string;
+  /** The remembered meeting's event rule, which Forget removes. */
+  ruleId?: string;
   /** A filter hides it. The Time view counts these and shows them on request. */
   hiddenBy?: CalendarHiddenReason;
 }
@@ -240,6 +242,7 @@ export function buildCalendarSuggestions(
         untitled: !title,
         allDay,
         ...assignment,
+        ...(rule?.action === "assign" ? { ruleId: rule._id } : {}),
         ...(reason ? { hiddenBy: reason } : {}),
       });
     }

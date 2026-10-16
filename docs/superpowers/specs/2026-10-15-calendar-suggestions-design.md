@@ -1,7 +1,7 @@
 # Calendar suggestions through a calendar plugin
 
 - Date: 2026-10-15
-- Status: Slices 1 to 3 implemented (#179, #180, #181). Tracking issue #178.
+- Status: Slices 1 to 4 implemented (#179 to #182). Tracking issue #178.
 - Scope: the `calendar` plugin capability, the calendar contract, suggestions in the Time view, remembered meetings, the ICS plugin
 - Decisions: [ADR 0005](../../../agents/adr/0005-calendar-events-are-fetched-per-week-and-never-stored.md)
 - Terms: `agents/GLOSSARY.md`, sections "Time entries" and "Extensions"
@@ -108,11 +108,13 @@ Everything below exists only while a calendar plugin is installed, enabled and h
 
 ### Days layout
 
-Under each day's entry cards, a "From calendar" label and one dashed card per suggestion: the time span, the title, and the project and task when remembered, or "Choose project…". Hover or focus shows Add. A card with a project adds on click and on Enter. A card without one opens the side panel with a new entry: date, duration and note filled, project empty, and a **Remember this meeting** checkbox, checked by default, shown only for a recurring event. Saving the entry records the decision and, when checked, the rule.
+Under each day's Add button, a "From calendar" label and one dashed card per suggestion: the time span, the title, and the project and task when remembered, or a "Choose project…" picker. Hover or focus shows an Add hint. A card with a project adds on click, Enter and Space. On a card without one, those open the picker.
+
+Choosing a project in a picker adds the entry at once. For a recurring meeting it also remembers the project and task. The first version of this spec opened the side panel with a **Remember this meeting** checkbox instead; the inline picker does the same in one step, and Forget this meeting, Settings > Calendar and the Undo toast take a remembered meeting back.
 
 ### Day view
 
-A "From your calendar" section under the day's rows, with a count. Each 40px row: time span, title, an inline project and task picker seeded from the remembered meeting, duration, Add, and a dismiss control. Row keys follow the Time view's key model: Enter adds, Delete dismisses, with the keys recorded in `agents/ux-spec.md`. A footer line says how many events the filters hid, with "Show hidden" for that day.
+A "From your calendar" section under the day's rows, with a count and Refresh. Each 40px dashed row: time span, title, an inline project and task picker seeded from the remembered meeting, duration, Add, a dismiss button and the "…" menu. Enter adds, Delete dismisses (`agents/ux-spec.md`). A footer line says how many events the filters hid, with "Show hidden" for that day. A failed fetch shows its message, and the last events stay.
 
 ### Side panel
 
@@ -127,7 +129,7 @@ The Grid shows no suggestion rows. A day header with open suggestions carries a 
 Every surface exposes the same actions through a right-click menu and a "…" button, from one feature module like `time-entry-actions.tsx`:
 
 - **Add**: makes the entry.
-- **Choose project…**: opens the side panel with the entry form.
+- **Choose project…**: opens the suggestion's project picker.
 - **Dismiss**: hides this occurrence. Undo toast.
 - **Hide this meeting**: hides every occurrence of the series. Undo toast. Only for recurring events.
 - **Forget this meeting**: removes the remembered project and task. Only when one exists.
