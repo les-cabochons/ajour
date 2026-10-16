@@ -208,8 +208,9 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 Spec: `docs/superpowers/specs/2026-10-15-calendar-suggestions-design.md`. Decision: ADR 0005. Tracking issue #178.
 
-- [x] Slice 1 (#179): the `calendar` plugin capability. Contract in `packages/shared/calendar.ts`, manifest and catalog capability, plugin host dispatch, `POST /api/calendars/:pluginId/connections/:connectionId/listCalendarEvents` with secret redaction and a `calendar.operation` wide event, the Calendars filter and labels on Settings > Plugins, the desktop catalog, and the Calendar API developer page. Plugin API stays at 3.
-- [ ] Slice 2 (#180): `les-cabochons/ajc-ics`.
+- [x] Slice 1 (#179): the `calendar` plugin capability. Contract in `packages/shared/calendar.ts`, manifest and catalog capability, plugin host dispatch, `POST /api/calendars/:pluginId/connections/:connectionId/listCalendarEvents` with secret redaction and a `calendar.operation` wide event, the Calendars filter and labels on Settings > Plugins, the desktop catalog, and the Calendar API developer page. Plugin API stays at 3. After merging #177, calendar is a switchable capability with a Calendar events switch.
+- [x] Slice 2 (#180): `les-cabochons/ajc-ics`, 2026-10-16. Prerelease `v0.1.0-main.1.77f45ba` from CI. 37 tests on Google-, Outlook- and Exchange-shaped fixtures. End to end through the calendar route against the real public Google "Holidays in Canada" feed.
+- [ ] A real private feed from each of Google, Outlook and Exchange, by hand.
 - [ ] Slice 3 (#181): suggestions domain module, records, fetch and cache, Undo, Settings > Time > Calendar.
 - [ ] Slice 4 (#182): Days cards and the Day view section.
 - [ ] Slice 5 (#183): side panel with bulk add and Grid count chips.
