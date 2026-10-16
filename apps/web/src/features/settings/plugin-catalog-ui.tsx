@@ -15,6 +15,7 @@ const featureDescriptions: Record<string, string> = {
   "estimate-update": "Update remote estimates from decisions made in Ajour.",
   "project-data-shape":
     "Apply a project and task schema while Ajour keeps ownership of the file format.",
+  "project-sync": "Keep shared projects and tasks in step with your team.",
   "pull-requests": "Sync pull requests you authored or were asked to review.",
   "calendar-events":
     "Suggest your calendar's meetings as time entries. Read-only.",
@@ -25,6 +26,7 @@ const capabilityLabels: Record<PluginCatalogCapability, string> = {
   connector: "Connector",
   codeHost: "Code host",
   calendar: "Calendar",
+  team: "Team",
   agentTask: "Agent tasks",
   schema: "Schema",
 };
@@ -41,7 +43,8 @@ export function canInstallCatalogPlugin(entry: PluginCatalogEntry) {
   return (
     entry.capabilities.includes("connector") ||
     entry.capabilities.includes("codeHost") ||
-    entry.capabilities.includes("calendar")
+    entry.capabilities.includes("calendar") ||
+    entry.capabilities.includes("team")
   );
 }
 
@@ -66,6 +69,7 @@ const capabilityFlows: Record<
   connector: { start: "External service", end: "Local backlog" },
   codeHost: { start: "Code host", end: "Pull requests" },
   calendar: { start: "Calendar", end: "Time suggestions" },
+  team: { start: "Ajour projects", end: "Team" },
   agentTask: { start: "Task prompt", end: "Coding agent" },
   schema: { start: "Ajour projects", end: "Excel files" },
 };

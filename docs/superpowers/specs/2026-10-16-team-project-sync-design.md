@@ -2,7 +2,7 @@
 
 - Status: Approved design, spec waiting for review
 - Date: 2026-10-16
-- Builds on: `2026-10-15-plugin-project-properties-design.md`, the per-capability switches of #177, and [ADR 0005](../../../agents/adr/0005-shared-projects-last-writer-wins.md)
+- Builds on: `2026-10-15-plugin-project-properties-design.md`, the per-capability switches of #177, and [ADR 0006](../../../agents/adr/0006-shared-projects-last-writer-wins.md)
 
 ## Why
 
@@ -17,7 +17,7 @@ The first plugin is Convex-backed and maintained in a separate, private reposito
 - Saving a connection opens a one-time **picker**. It lists the team's projects with any local project of the same name pre-checked as **Link**, and the remaining local projects unchecked as **Share**. Team projects that match nothing arrive on their own. The user can skip the picker and share later.
 - On a project's page, **Share with team** turns a local project into a shared project. When the team already has a project of that name, Ajour links the two and merges tasks by name, as the Excel import does. Linking never asks which tasks to merge: same name, same task. The properties card shows **Shared with <team>** and an **Unshare** action. The Projects list shows a small shared mark.
 - A failed sync sets the connection's last error on the plugin's page, like a connector's. A failed **Sync now** also shows an error toast. Projects carry no error state of their own.
-- A shared project's name, code, status, color, icon, task names, task status, billable flag and budget follow the team. Pinned slots, plugin properties, the order of projects and tasks, and the budget adjustment stay personal.
+- A shared project's full name, display name, code, status, color, icon, task names, task status, billable flag and budget follow the team. Pinned slots, plugin properties, the order of projects and tasks, and the budget adjustment stay personal.
 - A project a colleague shares appears at the next sync, active, at the end of the project list, with no acceptance step.
 - Archiving a shared project or task archives it for the whole team at the next sync; restoring it restores it everywhere. There is no way to remove a project from the team.
 - Unsharing makes the project local on this machine only. Removing a connection makes all its shared projects local, and keeps tasks and time entries as they are.
@@ -38,18 +38,23 @@ Connection fields declare the deployment URL and the team credentials with the e
 
 ## Host protocol
 
-Three operations, each run in a fresh worker like every plugin operation:
+The schemas live in `packages/shared/team-sync.ts`. Three operations, each run in a fresh worker like every plugin operation:
 
-- `createTeam(connectionValues)` → `{ teamId, secret }`. The form fills the credential fields with the result.
+- `createTeam(connectionValues, { name })` → `{ values }`. `values` are the connection field values that join the new team, such as its ID and secret, and the form fills them in. The plugin names its own fields.
 - `validateConnection(values, capabilities)` already exists and checks that the team accepts the credentials.
-- `syncTeamProjects({ connectionValues, cursor, changes })` → `{ cursor, projects, assigned }`.
-  - `changes` carries the shared projects changed since the last sync: for a project, its remote ID when it has one, its team-owned fields, and its changed tasks with the same shape. A new project or task has no remote ID.
-  - `projects` carries the team projects changed since `cursor`, with their tasks and remote IDs.
-  - `assigned` maps the local IDs of new projects and tasks to the remote IDs the team gave them.
+- `syncTeamProjects(connectionValues, { cursor, changes })` → `{ cursor, projects, assigned, hasMore }`.
+  - `changes` carries the shared projects changed since the last sync. A project or task without a remote ID is new and carries every team-owned field. One with a remote ID carries only the fields changed since the last sync, so a field a teammate changed meanwhile keeps their value. A change to a project may carry only task changes. `null` clears the code or a budget.
+  - `projects` carries the team projects changed since `cursor`, each with its team-owned fields and the tasks changed since `cursor`. Without a cursor it carries every task. Tasks are never deleted, so a task that is absent is unchanged, and a project with many changed tasks spans several pages.
+  - `assigned` maps the local IDs of new projects and tasks to the remote IDs the team gave them. The team treats the local ID of a new record as an idempotency key: a new record whose local ID it assigned before gets the same remote ID again and creates nothing. A round that failed after the team applied it, such as on a timeout or a lost response, is then safe to send again.
   - The backend applies `changes` before computing `projects`, so the last writer wins inside one round.
-  - The picker is a sync with no `cursor` and no `changes`: it returns the whole team, and nothing is applied until the user confirms.
+  - With `hasMore`, Ajour syncs again from the new cursor with no changes until the team has nothing left.
+  - The picker is a sync with no `cursor` and no `changes`: it returns the whole team, page by page, and nothing is applied until the user confirms.
 
-Payloads stay bounded like every worker result. A project's budget is a duration in milliseconds, as stored.
+Team-owned project fields are the full name, display name, code, color, icon and status. Team-owned task fields are the name, status, billable flag and budget, a duration in milliseconds as stored. Fields outside this list are stripped at the boundary, so no time data can leave through the payload.
+
+Icons and colors reach CSS, so the contract accepts only what Ajour itself produces. An uploaded icon travels as its 32 pixel image, a complete base64 PNG data URL; anything else is refused, including a URL or a data URL followed by a quote, so a teammate cannot make Ajour fetch from a remote address. A color is a six-digit hex value, as the color field gives. A local project whose color is in another format sends Ajour's default color when shared.
+
+A request or a page holds at most 25 projects and 2,000 tasks in total. With the field bounds, a worst-case page serializes to under half the worker's 8 MiB result limit, which a test checks. Ajour pushes more changes over several rounds, and a project of any size can be shared.
 
 ## Storage
 
@@ -70,11 +75,11 @@ A pure module, `apps/web/src/domain/projects/team-sync.ts`, owns:
 - `shareProject(state, project, teamProjects)`: links by name or marks the project as new, and merges tasks by name.
 - `unshareProject` and `disconnectTeam`.
 
-The rules are in [ADR 0005](../../../agents/adr/0005-shared-projects-last-writer-wins.md): last writer wins per field, archive without review, nothing deleted.
+The rules are in [ADR 0006](../../../agents/adr/0006-shared-projects-last-writer-wins.md): last writer wins per field, archive without review, nothing deleted.
 
 ## Code
 
-- `packages/shared/connectors.ts`: the `team` capability, `pluginHasTeam`, the third switchable capability and its label, and the sync request and result schemas.
+- `packages/shared/team-sync.ts`: the capability schema, the change, project and result schemas, and the page bounds. `packages/shared/connectors.ts`: the `team` capability in the manifest, `pluginHasTeam`, the third switchable capability and its label, and the `createTeam` result. `packages/shared/plugin-catalog.ts`: `team` as a catalog capability.
 - `apps/api/src/plugin-host.ts`: the three operations, gated by the plugin's switch and the capability deny-list like the others.
 - `apps/api/src/server.ts`: `POST /api/connectors/:id/team/create` and `POST /api/connectors/:id/team/sync`. The route validates and forwards; it never touches projects.
 - `apps/web/src/lib/team-sync.ts`: the application service that plans, calls the API, applies, and persists through `local-store.ts`; the scheduler entry that runs it on the connection's interval, next to the backlog and pull request auto syncs.

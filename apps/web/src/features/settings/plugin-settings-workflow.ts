@@ -107,6 +107,7 @@ function localCatalogEntry(
           ...(plugin.capabilities.connector ? (["connector"] as const) : []),
           ...(plugin.capabilities.codeHost ? (["codeHost"] as const) : []),
           ...(plugin.capabilities.calendar ? (["calendar"] as const) : []),
+          ...(plugin.capabilities.team ? (["team"] as const) : []),
           ...(plugin.capabilities.agentTask ? (["agentTask"] as const) : []),
         ];
   const features = capabilities.map((capability) =>
@@ -116,9 +117,11 @@ function localCatalogEntry(
         ? "pull-requests"
         : capability === "calendar"
           ? "calendar-events"
-          : capability === "agentTask"
-            ? "agent-task"
-            : "project-data-shape",
+          : capability === "team"
+            ? "project-sync"
+            : capability === "agentTask"
+              ? "agent-task"
+              : "project-data-shape",
   );
   return {
     schemaVersion: 2,
@@ -152,9 +155,11 @@ function localCatalogEntry(
           ? "code-host"
           : capability === "calendar"
             ? "calendar"
-            : capability === "agentTask"
-              ? "agent-task"
-              : "data-shape",
+            : capability === "team"
+              ? "team"
+              : capability === "agentTask"
+                ? "agent-task"
+                : "data-shape",
     ),
   };
 }

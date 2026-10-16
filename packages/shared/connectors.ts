@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { allowedTaskSlots, listTemplateSlots } from "./agent-task-templates.ts";
+import { teamCapabilitySchema } from "./team-sync.ts";
 
 export const CONNECTOR_PLUGIN_API_VERSION = 3;
 export const CONNECTOR_PLUGIN_ARCHIVE_EXTENSION = ".ajour-connector";
@@ -98,6 +99,7 @@ export const switchableCapabilitySchema = z.enum([
   "connector",
   "codeHost",
   "calendar",
+  "team",
 ]);
 export type SwitchableCapability = z.infer<typeof switchableCapabilitySchema>;
 
@@ -107,6 +109,7 @@ export const switchableCapabilityLabels: Record<SwitchableCapability, string> =
     connector: "Backlog items",
     codeHost: "Pull requests",
     calendar: "Calendar events",
+    team: "Projects",
   };
 
 export const connectorFieldSchema = z.object({
@@ -228,6 +231,8 @@ export const connectorPluginCapabilitiesSchema = z
       .optional(),
     codeHost: z.object({}).optional(),
     calendar: z.object({}).optional(),
+    /** Keeps a team's shared projects in step. See ADR 0006. */
+    team: teamCapabilitySchema.optional(),
     agentTask: z
       .object({ tasks: z.array(agentTaskSchema).min(1).max(10) })
       .optional(),
@@ -238,9 +243,10 @@ export const connectorPluginCapabilitiesSchema = z
       capabilities.connector !== undefined ||
       capabilities.codeHost !== undefined ||
       capabilities.calendar !== undefined ||
+      capabilities.team !== undefined ||
       capabilities.agentTask !== undefined ||
       capabilities.projectProperties !== undefined,
-    "A plugin must declare at least one capability: connector, codeHost, calendar, agentTask or projectProperties.",
+    "A plugin must declare at least one capability: connector, codeHost, calendar, team, agentTask or projectProperties.",
   );
 export type ConnectorPluginCapabilities = z.infer<
   typeof connectorPluginCapabilitiesSchema
@@ -264,6 +270,12 @@ export function pluginHasCalendar(manifest: {
   return manifest.capabilities.calendar !== undefined;
 }
 
+export function pluginHasTeam(manifest: {
+  capabilities: ConnectorPluginCapabilities;
+}) {
+  return manifest.capabilities.team !== undefined;
+}
+
 export function pluginHasAgentTasks(manifest: {
   capabilities: ConnectorPluginCapabilities;
 }) {
@@ -283,26 +295,30 @@ export function pluginHasCapability(
   return manifest.capabilities[capability] !== undefined;
 }
 
+/** The switchable capabilities the plugin declares, in switch order. */
+export function pluginSwitchableCapabilities(manifest: {
+  capabilities: ConnectorPluginCapabilities;
+}): SwitchableCapability[] {
+  return switchableCapabilitySchema.options.filter((capability) =>
+    pluginHasCapability(manifest, capability),
+  );
+}
+
 /** The plugin declares more than one, so each gets its own switch. */
 export function pluginHasSwitchableCapabilities(manifest: {
   capabilities: ConnectorPluginCapabilities;
 }) {
-  return (
-    switchableCapabilitySchema.options.filter((capability) =>
-      pluginHasCapability(manifest, capability),
-    ).length > 1
-  );
+  return pluginSwitchableCapabilities(manifest).length > 1;
 }
 
-/** Whether the plugin runs code: it syncs items, serves pull requests or reads a calendar. */
+/**
+ * Whether the plugin runs code: it syncs items, serves pull requests, reads
+ * a calendar or syncs a team's projects.
+ */
 export function pluginRunsCode(manifest: {
   capabilities: ConnectorPluginCapabilities;
 }) {
-  return (
-    pluginHasConnector(manifest) ||
-    pluginHasCodeHost(manifest) ||
-    pluginHasCalendar(manifest)
-  );
+  return pluginSwitchableCapabilities(manifest).length > 0;
 }
 
 /** The manifest fields, before the cross-field rules. The overview extends it. */
@@ -330,7 +346,7 @@ export const connectorPluginManifestSchema =
         code: z.ZodIssueCode.custom,
         path: ["entrypoint"],
         message:
-          "A connector, code host or calendar plugin needs an entrypoint.",
+          "A connector, code host, calendar or team plugin needs an entrypoint.",
       });
     }
     if (manifest.connectionFields.length === 0) {
@@ -338,7 +354,7 @@ export const connectorPluginManifestSchema =
         code: z.ZodIssueCode.custom,
         path: ["connectionFields"],
         message:
-          "A connector, code host or calendar plugin needs connection fields.",
+          "A connector, code host, calendar or team plugin needs connection fields.",
       });
     }
   });
@@ -594,6 +610,15 @@ export const connectorValidationContextSchema = z.object({
 export type ConnectorValidationContext = z.infer<
   typeof connectorValidationContextSchema
 >;
+
+/**
+ * What a team plugin's `createTeam` returns: the connection field values that
+ * join the new team, such as its ID and secret, for the form to fill in.
+ */
+export const teamCreateResultSchema = z.object({
+  values: connectorFieldValuesSchema,
+});
+export type TeamCreateResult = z.infer<typeof teamCreateResultSchema>;
 
 export const connectorImportCandidateInputSchema = z.object({
   source: connectorSourceSchema,

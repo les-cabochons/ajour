@@ -93,6 +93,7 @@ const missingCapabilityMessages: Record<SwitchableCapability, string> = {
   connector: "does not sync backlog items",
   codeHost: "does not provide pull requests",
   calendar: "does not provide calendar events",
+  team: "does not sync a team's projects",
 };
 /** The switchable capability a plugin method serves. Validation serves none. */
 export function capabilityOfMethod(

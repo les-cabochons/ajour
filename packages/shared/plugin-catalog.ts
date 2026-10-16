@@ -16,6 +16,7 @@ export const pluginCatalogCapabilitySchema = z.enum([
   "connector",
   "codeHost",
   "calendar",
+  "team",
   "agentTask",
   "schema",
 ]);
@@ -50,7 +51,7 @@ export const pluginCatalogEntrySchema = z.object({
   capabilities: z
     .array(pluginCatalogCapabilitySchema)
     .min(1)
-    .max(3)
+    .max(pluginCatalogCapabilitySchema.options.length)
     .refine(
       (capabilities) => new Set(capabilities).size === capabilities.length,
       "Catalog capabilities must not repeat.",
