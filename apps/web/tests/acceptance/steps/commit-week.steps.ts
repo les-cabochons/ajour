@@ -193,3 +193,11 @@ Then(
     await expect(changeRow(page, kind)).toContainText(note);
   },
 );
+
+When(
+  "I choose {string} from the {string} entry's menu",
+  async ({ page }, item: string, note: string) => {
+    await page.getByText(note, { exact: true }).click({ button: "right" });
+    await page.getByRole("menuitem", { name: item }).click();
+  },
+);

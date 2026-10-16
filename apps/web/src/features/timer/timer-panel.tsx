@@ -26,10 +26,7 @@ import {
   ObjectContextMenu,
 } from "@/components/object-actions-menu";
 import { useTimeEntryActions } from "@/features/time/time-entry-actions";
-import {
-  isSelectionDelete,
-  useEntrySelection,
-} from "@/features/time/use-entry-selection";
+import { useEntrySelection } from "@/features/time/use-entry-selection";
 import type { TimeEntryActionId } from "@/domain/actions/object-actions";
 import { formatClockDuration } from "@/domain/time/duration";
 import { isTimesheetEntryCommitted } from "@/domain/time/timesheet-commit";
@@ -474,10 +471,7 @@ export function TimerPanel({
               actionId: TimeEntryActionId,
               key?: object,
             ) => {
-              if (
-                isSelectionDelete(actionId, key) &&
-                selection.deleteSelection(entry._id, { fromKey: Boolean(key) })
-              ) {
+              if (selection.runSelectionAction(entry._id, actionId, key)) {
                 return;
               }
               entryActions.runAction(rowTarget, actionId);

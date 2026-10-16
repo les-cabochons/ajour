@@ -6,6 +6,7 @@ import {
   deleteTimesheetEntry,
   duplicateTimesheetEntry,
   markTimesheetEntriesCommitted,
+  markTimesheetEntriesNotCommitted,
   markTimesheetEntryNotCommitted,
   moveTimesheetEntry,
   normalizeTimesheetEntry,
@@ -928,10 +929,10 @@ describe("committed copies", () => {
       ["a", "b"],
       () => 500,
     );
-    const notCommitted = markTimesheetEntryNotCommitted(
-      markTimesheetEntryNotCommitted(committed, "a"),
+    const notCommitted = markTimesheetEntriesNotCommitted(committed, [
+      "a",
       "b",
-    );
+    ]);
 
     // A delete still leaves a tombstone, so the external entry goes too.
     expect(deleteTimesheetEntry(notCommitted, "a").timesheetTombstones).toEqual(

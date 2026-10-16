@@ -453,6 +453,18 @@ export function markTimesheetEntryNotCommitted(
 }
 
 /**
+ * Marks several entries as not committed in one change, such as a selection.
+ * Entries without a committed copy, or with a change to commit, are left alone,
+ * as in `markTimesheetEntryNotCommitted`.
+ */
+export function markTimesheetEntriesNotCommitted(
+  state: LocalAppState,
+  entryIds: readonly string[],
+): LocalAppState {
+  return entryIds.reduce(markTimesheetEntryNotCommitted, state);
+}
+
+/**
  * The ids of a day's saved entries in the order the Day list and the Week's
  * Days cards show them, top first: the lowest `committedAt` first, so a day
  * reads in the order the work happened and a new entry lands at the end.

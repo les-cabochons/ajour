@@ -199,7 +199,7 @@ export function useTimeEntryActions({
       case "mark-not-committed":
         // The editor stays open: the entry is still there, only its chip goes.
         offerTimeEntryUndo(
-          localStore.markTimesheetEntryNotCommitted(entry._id),
+          localStore.markTimesheetEntriesNotCommitted([entry._id]),
           "Marked as not committed",
         );
         return;

@@ -39,6 +39,8 @@ If someone changed an entry in your timesheet tool after you committed it, right
 
 Only committed entries have this action. An entry you changed since its last commit is already on the Commit page.
 
+To mark several entries at once, [select them](./entries.md#select-copy-and-paste-entries) on the Day list or the Week Days cards, then right-click one of them. Ajour marks every committed entry in the selection, with one Undo.
+
 ## Copy the lines
 
 Under **Lines**, the whole week is grouped into lines with the project, the task, the hours and the comments. Click a value to copy it, then paste it in your timesheet tool.

@@ -16,13 +16,14 @@ import {
 import { formatClockDuration } from "@/domain/time/duration";
 import {
   EMPTY_ENTRY_SELECTION,
-  getBatchDeleteIds,
   getPasteDate,
+  getSelectionActionIds,
   keepShownEntries,
   selectEntryOnClick,
   type EntryPasteTarget,
   type EntrySelection,
 } from "@/domain/time/entry-selection";
+import { isTimesheetEntryCommitted } from "@/domain/time/timesheet-commit";
 import {
   formatToastDay,
   offerTimeEntryUndo,
@@ -47,7 +48,7 @@ function countEntries(count: number) {
  * a key or a menu, or the Delete key on the running entry, whose action is Discard.
  * Discard chosen from the running entry's menu stays its own.
  */
-export function isSelectionDelete(actionId: TimeEntryActionId, key?: object) {
+function isSelectionDelete(actionId: TimeEntryActionId, key?: object) {
   return actionId === "delete" || (actionId === "discard" && key !== undefined);
 }
 
@@ -275,22 +276,53 @@ export function useEntrySelection({
   }
 
   /**
-   * Deletes the selected saved entries with one Undo when Delete on `entryId`
-   * applies to the selection (see `getBatchDeleteIds`). The running entry stays,
-   * as copy and cut skip it. Returns false when the caller should run the
-   * entry's own Delete or Discard instead.
+   * Runs an action on `entryId` on the whole selection when it applies to it (see
+   * `getSelectionActionIds`), with one Undo. `key` is set when a key ran the
+   * action, not a menu. Returns false when the caller should run the entry's own
+   * action instead.
+   *
+   * - Delete removes the selected saved entries. The running entry stays, as copy
+   *   and cut skip it.
+   * - Mark as not committed, from a menu, marks the selected committed entries.
    */
-  function deleteSelection(entryId: string, { fromKey }: { fromKey: boolean }) {
-    if (!getBatchDeleteIds(selection, entryId, { fromKey })) return false;
+  function runSelectionAction(
+    entryId: string,
+    actionId: TimeEntryActionId,
+    key?: object,
+  ) {
+    if (isSelectionDelete(actionId, key)) {
+      if (
+        !getSelectionActionIds(selection, entryId, { fromKey: Boolean(key) })
+      ) {
+        return false;
+      }
 
-    const ids = getSelectedEntries().map((entry) => entry._id);
-    if (ids.length > 0) {
-      offerTimeEntryUndo(
-        localStore.deleteTimesheetEntries(ids),
-        `${countEntries(ids.length)} deleted`,
-      );
+      const ids = getSelectedEntries().map((entry) => entry._id);
+      if (ids.length > 0) {
+        offerTimeEntryUndo(
+          localStore.deleteTimesheetEntries(ids),
+          `${countEntries(ids.length)} deleted`,
+        );
+      }
+      return true;
     }
-    return true;
+
+    if (actionId === "mark-not-committed") {
+      if (!getSelectionActionIds(selection, entryId, { fromKey: false })) {
+        return false;
+      }
+
+      const ids = getSelectedEntries()
+        .filter(isTimesheetEntryCommitted)
+        .map((entry) => entry._id);
+      offerTimeEntryUndo(
+        localStore.markTimesheetEntriesNotCommitted(ids),
+        `Marked ${countEntries(ids.length)} as not committed`,
+      );
+      return true;
+    }
+
+    return false;
   }
 
   return {
@@ -302,6 +334,6 @@ export function useEntrySelection({
     handleFocus,
     handleScopePointerDown,
     handleScopeKeyDown,
-    deleteSelection,
+    runSelectionAction,
   };
 }
