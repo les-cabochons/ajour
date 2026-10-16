@@ -42,7 +42,7 @@ Press <kbd>Esc</kbd> to close the editor without saving. Clicking outside the pa
 
 ## Entry actions
 
-Hover a row and press **…**, or right-click it, for the actions on that entry.
+Right-click a row for the actions on that entry. Hovering a row also shows **Continue**, or **Stop** on the running entry.
 
 <Shot name="time-entry-menu" alt="The actions menu of an entry" />
 
@@ -59,4 +59,4 @@ Hover a row and press **…**, or right-click it, for the actions on that entry.
 
 ## Reorder entries
 
-The day lists entries oldest first, so a new entry lands at the bottom. Drag a row, or press <kbd>Alt</kbd> <kbd>↑</kbd> and <kbd>Alt</kbd> <kbd>↓</kbd>. The running entry always stays last.
+The day lists entries oldest first, so a new entry lands at the bottom. Drag a row, or press <kbd>Alt</kbd> <kbd>↑</kbd> and <kbd>Alt</kbd> <kbd>↓</kbd>. A continued entry keeps its place while it runs and moves like the others. A new running entry stays last.

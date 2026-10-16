@@ -34,7 +34,7 @@ To delete a row, right-click its name and choose **Delete row**, or press <kbd>S
 
 ## Days
 
-The Days layout has one column per day, with a card per entry. Use it to see the order of your day and your notes. Each day reads from top to bottom in the order you worked: the oldest entry first, the running entry last.
+The Days layout has one column per day, with a card per entry. Use it to see the order of your day and your notes. Each day reads from top to bottom in the order you worked: the oldest entry first. A continued entry keeps its place while it runs, and a new running entry comes last. Right-click a card for its actions.
 
 <Shot name="time-week-days" alt="The Week view as days: one column per day with a card per entry" />
 
