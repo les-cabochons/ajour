@@ -362,7 +362,10 @@ describe("applying a team sync", () => {
       name: "Development (Sam)",
       budgetMs: 7_200_000,
     });
-    expect(next.result.updatedProjectIds).toEqual(["p1"]);
+    expect(next.result).toMatchObject({
+      kind: "applied",
+      updatedProjectIds: ["p1"],
+    });
     expect(planTeamSync(next, CONNECTION, NO_SKIPS).request.changes).toEqual([
       {
         localId: "p1",
@@ -477,7 +480,10 @@ describe("applying a team sync", () => {
       budgetMs: 3_600_000,
       team: { remoteId: "remote-t1" },
     });
-    expect(next.result.createdProjectIds).toEqual([created._id]);
+    expect(next.result).toMatchObject({
+      kind: "applied",
+      createdProjectIds: [created._id],
+    });
     expect(planTeamSync(next, CONNECTION, NO_SKIPS).request.changes).toEqual(
       [],
     );
@@ -494,9 +500,10 @@ describe("applying a team sync", () => {
     );
 
     expect(next.projects).toEqual([mine]);
-    expect(next.result.heldArrivals).toEqual([
-      { remoteId: "remote-sam", localProjectId: "mine" },
-    ]);
+    expect(next.result).toMatchObject({
+      kind: "applied",
+      heldArrivals: [{ remoteId: "remote-sam", localProjectId: "mine" }],
+    });
     expect(next.teamConnections[CONNECTION]?.heldArrivals).toMatchObject([
       { remoteId: "remote-sam", name: "beta" },
     ]);
@@ -531,7 +538,7 @@ describe("applying a team sync", () => {
     );
     const [arrival] = next.teamConnections[CONNECTION]!.heldArrivals;
 
-    expect(next.result.heldArrivals).toEqual([]);
+    expect(next.result).toMatchObject({ kind: "applied", heldArrivals: [] });
     expect(arrival?.code).toBe("BET");
     expect(arrival?.tasks.map((task) => task.name)).toEqual(["Dev", "QA"]);
   });
@@ -570,6 +577,190 @@ describe("applying a team sync", () => {
     } as unknown as LocalProject;
 
     expect(normalizeProject(broken, () => 1).team).toBeUndefined();
+  });
+});
+
+describe("refusing an answer that contradicts the workspace", () => {
+  function sharedNew(id: string, overrides: Partial<LocalProject> = {}) {
+    return {
+      ...localProject(id, overrides),
+      team: { connectionId: CONNECTION },
+    };
+  }
+
+  function expectRejected(
+    before: TeamSyncState,
+    after: ReturnType<typeof applyTeamSync>,
+    reason: RegExp,
+  ) {
+    expect(after.result).toMatchObject({ kind: "rejected" });
+    expect(after.result.kind === "rejected" && after.result.reason).toMatch(
+      reason,
+    );
+    expect(after.projects).toEqual(before.projects);
+    expect(after.teamConnections).toEqual(before.teamConnections);
+  }
+
+  it("refuses an ID that another shared project already has", () => {
+    const state = stateOf([syncedProject("a"), sharedNew("b")]);
+    const plan = planTeamSync(state, CONNECTION, NO_SKIPS);
+    const next = applyTeamSync(
+      state,
+      CONNECTION,
+      plan.request.changes,
+      syncResult(
+        [teamProject(localProject("b"), [], "remote-a")],
+        [{ localId: "b", remoteId: "remote-a" }],
+      ),
+      createFactories(),
+    );
+
+    expectRejected(state, next, /one ID to two projects/);
+  });
+
+  it("refuses an answer that leaves out a new project's ID, or names one it was not sent", () => {
+    const state = stateOf([sharedNew("p1")]);
+    const plan = planTeamSync(state, CONNECTION, NO_SKIPS);
+
+    expectRejected(
+      state,
+      applyTeamSync(
+        state,
+        CONNECTION,
+        plan.request.changes,
+        syncResult([teamProject(localProject("p1"), [], "remote-p1")]),
+        createFactories(),
+      ),
+      /left out the ID of a new project/,
+    );
+    expectRejected(
+      state,
+      applyTeamSync(
+        state,
+        CONNECTION,
+        plan.request.changes,
+        syncResult(
+          [],
+          [
+            { localId: "p1", remoteId: "remote-p1" },
+            { localId: "ghost", remoteId: "remote-ghost" },
+          ],
+        ),
+        createFactories(),
+      ),
+      /did not send/,
+    );
+  });
+
+  it("refuses an answer that moves a task to another project", () => {
+    const task = localTask("t1");
+    const state = stateOf([
+      syncedProject("p1", { tasks: [task] }),
+      syncedProject("p2"),
+    ]);
+    const next = applyTeamSync(
+      state,
+      CONNECTION,
+      [],
+      syncResult([teamProject(localProject("p2"), [teamTask(task)])]),
+      createFactories(),
+    );
+
+    expectRejected(state, next, /moved a task/);
+  });
+});
+
+describe("answers that arrive after the user changed the project", () => {
+  it("leaves a link made while the round was on its way", () => {
+    const state = stateOf(
+      updateProject([syncedProject("p1")], "p1", { code: "OLD" }),
+    );
+    const plan = planTeamSync(state, CONNECTION, NO_SKIPS);
+    const relinked = linkProject(
+      unshareProject(state, "p1"),
+      CONNECTION,
+      "p1",
+      teamProject(localProject("other", { name: "Gamma" }), [], "remote-b"),
+      createFactories(),
+    );
+
+    const next = applyTeamSync(
+      relinked,
+      CONNECTION,
+      plan.request.changes,
+      syncResult([teamProject(localProject("p1", { code: "OLD" }))]),
+      createFactories(),
+    );
+
+    expect(next.projects).toHaveLength(1);
+    expect(next.projects[0]?.team).toEqual(relinked.projects[0]?.team);
+    expect(next.projects[0]?.name).toBe("Gamma");
+  });
+
+  it("ignores the team's project for a share undone before its first answer", () => {
+    const state = stateOf([
+      { ...localProject("p1"), team: { connectionId: CONNECTION } },
+    ]);
+    const plan = planTeamSync(state, CONNECTION, NO_SKIPS);
+    const undone = unshareProject(
+      {
+        ...state,
+        projects: updateProject(state.projects, "p1", { name: "Renamed" }),
+      },
+      "p1",
+    );
+    expect(undone.teamConnections[CONNECTION]?.unsharedLocalIds).toEqual([
+      "p1",
+    ]);
+
+    const next = applyTeamSync(
+      undone,
+      CONNECTION,
+      plan.request.changes,
+      syncResult(
+        [teamProject(localProject("p1"), [], "remote-p1")],
+        [{ localId: "p1", remoteId: "remote-p1" }],
+      ),
+      createFactories(),
+    );
+
+    expect(next.result).toMatchObject({
+      kind: "applied",
+      createdProjectIds: [],
+      heldArrivals: [],
+    });
+    expect(next.projects).toEqual(undone.projects);
+    expect(next.teamConnections[CONNECTION]).toMatchObject({
+      unsharedRemoteIds: ["remote-p1"],
+      unsharedLocalIds: [],
+    });
+  });
+
+  it("links the team's project when the user shared it again before the answer", () => {
+    const state = stateOf([
+      { ...localProject("p1"), team: { connectionId: CONNECTION } },
+    ]);
+    const plan = planTeamSync(state, CONNECTION, NO_SKIPS);
+    const sharedAgain = shareProject(
+      unshareProject(state, "p1"),
+      CONNECTION,
+      "p1",
+    );
+
+    const next = applyTeamSync(
+      sharedAgain,
+      CONNECTION,
+      plan.request.changes,
+      syncResult(
+        [teamProject(localProject("p1"), [], "remote-p1")],
+        [{ localId: "p1", remoteId: "remote-p1" }],
+      ),
+      createFactories(),
+    );
+
+    expect(next.projects).toHaveLength(1);
+    expect(next.projects[0]?.team?.remoteId).toBe("remote-p1");
+    expect(next.teamConnections[CONNECTION]?.unsharedRemoteIds).toEqual([]);
   });
 });
 
@@ -734,6 +925,36 @@ describe("sharing, linking and leaving a team", () => {
       kind: "sameNameHeld",
       remoteId: "remote-sam",
     });
+  });
+
+  it("keeps a held project with more tasks than a page holds across a restart", () => {
+    const pageTasks = (from: number, count: number) =>
+      Array.from({ length: count }, (_, i) =>
+        teamTask(localTask(`t${from + i}`)),
+      );
+    const mine = stateOf([localProject("mine", { name: "Beta" })]);
+    const sams = localProject("sam", { name: "Beta" });
+    const firstPage = applyTeamSync(
+      mine,
+      CONNECTION,
+      [],
+      syncResult([teamProject(sams, pageTasks(0, TEAM_SYNC_MAX_TASKS))]),
+      createFactories(),
+    );
+    const secondPage = applyTeamSync(
+      firstPage,
+      CONNECTION,
+      [],
+      syncResult([teamProject(sams, pageTasks(TEAM_SYNC_MAX_TASKS, 1))]),
+      createFactories(),
+    );
+    const reloaded = normalizeTeamConnections(
+      JSON.parse(JSON.stringify(secondPage.teamConnections)),
+    );
+
+    expect(reloaded[CONNECTION]?.heldArrivals[0]?.tasks).toHaveLength(
+      TEAM_SYNC_MAX_TASKS + 1,
+    );
   });
 
   it("reads held arrivals back after a restart and drops malformed ones", () => {

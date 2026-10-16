@@ -1,6 +1,6 @@
 import {
   teamProjectFieldsSchema,
-  teamProjectSchema,
+  teamStoredProjectSchema,
   teamTaskFieldsSchema,
   type TeamProject,
 } from "@ajour/shared";
@@ -64,9 +64,13 @@ export function normalizeTeamConnections(
       unsharedRemoteIds: Array.isArray(connection.unsharedRemoteIds)
         ? connection.unsharedRemoteIds.filter(nonEmptyString)
         : [],
+      unsharedLocalIds: Array.isArray(connection.unsharedLocalIds)
+        ? connection.unsharedLocalIds.filter(nonEmptyString)
+        : [],
       heldArrivals: Array.isArray(connection.heldArrivals)
         ? connection.heldArrivals.flatMap((arrival): TeamProject[] => {
-            const parsed = teamProjectSchema.safeParse(arrival);
+            // Held projects grow across pages, so no page bound applies.
+            const parsed = teamStoredProjectSchema.safeParse(arrival);
             return parsed.success ? [parsed.data] : [];
           })
         : [],
