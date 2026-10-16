@@ -32,7 +32,7 @@ async function run() {
   }
 
   if (workerData.method === "validateConnection") {
-    return await handler(workerData.params.config);
+    return await handler(workerData.params.config, workerData.params.context);
   }
 
   if (workerData.method === "syncConnection") {

@@ -19,7 +19,11 @@ import {
   connectorPluginActivationUpdateSchema,
   pluginSystemActivationUpdateSchema,
   connectorPluginIdSchema,
+  pluginHasCapability,
   pluginHasCodeHost,
+  pluginHasSwitchableCapabilities,
+  switchableCapabilitySchema,
+  type SwitchableCapability,
   connectorPluginInstallResponseSchema,
   connectorPluginUninstallResponseSchema,
   connectorSettleStatesRequestSchema,
@@ -30,6 +34,7 @@ import {
   connectorSyncResultSchema,
   type ConnectorField,
   type ConnectorFieldValues,
+  type ConnectorPluginManifest,
   type ConnectorImportCandidate,
   type ConnectorImportCandidateInput,
   connectorImportCommitResponseSchema,
@@ -82,7 +87,7 @@ import {
 } from "./agent-runner/cli-path.ts";
 import { playwrightMcpServer } from "./agent-runner/playwright-mcp.ts";
 import { AgentRunError, AgentRunner } from "./agent-runner/runner.ts";
-import { ConnectorPluginManager } from "./plugin-host.ts";
+import { capabilityOfMethod, ConnectorPluginManager } from "./plugin-host.ts";
 import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";
 import { AppApiStorage } from "./storage.ts";
 
@@ -121,6 +126,7 @@ const RESERVED_CONNECTION_FIELDS = new Set([
   "tenantLabel",
   "autoSync",
   "autoSyncIntervalMinutes",
+  "pullRequestAutoSync",
 ]);
 
 function materializeAutoSyncCandidates(
@@ -349,6 +355,13 @@ function parseConnectionValues(values: ConnectorFieldValues) {
   const autoSyncIntervalMinutes = parseAutoSyncIntervalValue(
     parsedValues.autoSyncIntervalMinutes ?? 15,
   );
+  const pullRequestAutoSync =
+    parsedValues.pullRequestAutoSync === undefined
+      ? undefined
+      : parseBooleanValue(
+          parsedValues.pullRequestAutoSync,
+          "pullRequestAutoSync",
+        );
 
   const config = Object.fromEntries(
     Object.entries(parsedValues).filter(
@@ -361,6 +374,7 @@ function parseConnectionValues(values: ConnectorFieldValues) {
     tenantLabel,
     autoSync,
     autoSyncIntervalMinutes,
+    pullRequestAutoSync,
     config,
   };
 }
@@ -396,6 +410,34 @@ function parseAgentTaskValues(
     kept[field.id] = value;
   }
   return { values: kept };
+}
+
+/**
+ * Why a capability cannot run now: the plugin is off, or the user turned the
+ * capability off. Undefined when it can run.
+ */
+async function inactiveCapabilityError(
+  storage: AppApiStorage,
+  pluginId: string,
+  capability: SwitchableCapability,
+  availablePluginIds: ReadonlySet<string>,
+  action: string,
+) {
+  if (!(await storage.isConnectorPluginEnabled(pluginId, availablePluginIds))) {
+    return capability === "connector"
+      ? `Activate this connector plugin before ${action}.`
+      : `Activate this plugin before ${action}.`;
+  }
+  if (
+    !(await storage.isPluginCapabilityEnabled(
+      pluginId,
+      capability,
+      availablePluginIds,
+    ))
+  ) {
+    return `Turn on ${capability === "connector" ? "work items" : "pull requests"} for this plugin before ${action}.`;
+  }
+  return undefined;
 }
 
 async function getOverview(
@@ -502,6 +544,21 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     bundledPluginArchives: options.bundledPluginArchives,
     allowDevelopmentPlugins,
     requestTimeoutMs: options.pluginRequestTimeoutMs,
+    // The routes check activation before reading the request. This repeats
+    // the check once the operation can be cancelled, so a capability turned
+    // off meanwhile never runs.
+    operationGate: async (pluginId, method) => {
+      const capability = capabilityOfMethod(method);
+      if (!capability) return;
+      const inactive = await inactiveCapabilityError(
+        storage,
+        pluginId,
+        capability,
+        new Set([pluginId]),
+        "running it",
+      );
+      if (inactive) throw new Error(inactive);
+    },
   });
   const projectDataShapePluginManager = new ProjectDataShapePluginManager({
     pluginDirectories:
@@ -978,6 +1035,30 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         const payload = connectorPluginActivationUpdateSchema.parse(
           await readJsonBody(request),
         );
+        if (payload.capability) {
+          if (!pluginHasCapability(plugin, payload.capability)) {
+            writeJson(response, 400, {
+              error: "This plugin does not declare that capability.",
+            });
+            return;
+          }
+          await storage.setPluginCapabilityEnabled(
+            pluginId,
+            payload.capability,
+            payload.enabled,
+          );
+          if (!payload.enabled) {
+            await pluginManager.cancelCapabilityOperations(
+              pluginId,
+              payload.capability,
+              new Error(
+                `${payload.capability === "connector" ? "Work items" : "Pull requests"} of plugin "${pluginId}" were turned off.`,
+              ),
+            );
+          }
+          writeJson(response, 200, await getOverview(storage, pluginManager));
+          return;
+        }
         await storage.setConnectorPluginEnabled(pluginId, payload.enabled);
         if (!payload.enabled) {
           await pluginManager.cancelPluginOperations(
@@ -1048,6 +1129,16 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           const validation = await pluginManager.validateConnection(
             pluginId,
             configForSave,
+            {
+              capabilities: plugin
+                ? await storage.listEnabledCapabilities(
+                    pluginId,
+                    switchableCapabilitySchema.options.filter((capability) =>
+                      pluginHasCapability(plugin, capability),
+                    ),
+                  )
+                : [],
+            },
           );
           const storedConnection = await storage.upsertConnection(pluginId, {
             id: payload.id,
@@ -1055,6 +1146,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             tenantLabel: parsedValues.tenantLabel,
             autoSync: parsedValues.autoSync,
             autoSyncIntervalMinutes: parsedValues.autoSyncIntervalMinutes,
+            pullRequestAutoSync: parsedValues.pullRequestAutoSync,
             config: validation.normalizedConfig,
             configSummary: validation.connectionSummary,
           });
@@ -1114,17 +1206,17 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             });
             return;
           }
-          if (
-            !(await storage.isConnectorPluginEnabled(
-              pluginId,
-              new Set(
-                (await pluginManager.listPlugins()).map((plugin) => plugin.id),
-              ),
-            ))
-          ) {
-            writeJson(response, 409, {
-              error: "Activate this connector plugin before settling.",
-            });
+          const inactive = await inactiveCapabilityError(
+            storage,
+            pluginId,
+            "connector",
+            new Set(
+              (await pluginManager.listPlugins()).map((plugin) => plugin.id),
+            ),
+            "settling",
+          );
+          if (inactive) {
+            writeJson(response, 409, { error: inactive });
             return;
           }
           if (!(await pluginManager.supportsSettle(pluginId))) {
@@ -1198,15 +1290,15 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             });
             return;
           }
-          if (
-            !(await storage.isConnectorPluginEnabled(
-              pluginId,
-              availablePluginIds,
-            ))
-          ) {
-            writeJson(response, 409, {
-              error: "Activate this connector plugin before syncing.",
-            });
+          const inactive = await inactiveCapabilityError(
+            storage,
+            pluginId,
+            "connector",
+            availablePluginIds,
+            "syncing",
+          );
+          if (inactive) {
+            writeJson(response, 409, { error: inactive });
             return;
           }
 
@@ -1247,8 +1339,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             );
             const { openItems, doneItems } = splitDoneItems(fetched.items);
             if (
-              !(await storage.isConnectorPluginEnabled(
+              !(await storage.isPluginCapabilityEnabled(
                 pluginId,
+                "connector",
                 availablePluginIds,
               ))
             ) {
@@ -1356,15 +1449,15 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           });
           return;
         }
-        if (
-          !(await storage.isConnectorPluginEnabled(
-            pluginId,
-            new Set(plugins.map((candidate) => candidate.id)),
-          ))
-        ) {
-          writeJson(response, 409, {
-            error: "Activate this plugin before using its pull requests.",
-          });
+        const inactive = await inactiveCapabilityError(
+          storage,
+          pluginId,
+          "codeHost",
+          new Set(plugins.map((candidate) => candidate.id)),
+          "using its pull requests",
+        );
+        if (inactive) {
+          writeJson(response, 409, { error: inactive });
           return;
         }
         const connection = await storage.getConnection(pluginId, connectionId);
@@ -1540,6 +1633,29 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   return server;
 }
 
+/**
+ * A capability an update adds starts off, so the update changes nothing until
+ * the user turns it on. A plugin with one switchable capability follows its
+ * plugin switch alone, so it keeps no capability switch.
+ */
+async function applyCapabilityDefaults(
+  storage: AppApiStorage,
+  manifest: ConnectorPluginManifest,
+  previous: ConnectorPluginManifest | undefined,
+) {
+  for (const capability of switchableCapabilitySchema.options) {
+    if (!pluginHasSwitchableCapabilities(manifest)) {
+      await storage.setPluginCapabilityEnabled(manifest.id, capability, true);
+    } else if (
+      previous &&
+      pluginHasCapability(manifest, capability) &&
+      !pluginHasCapability(previous, capability)
+    ) {
+      await storage.setPluginCapabilityEnabled(manifest.id, capability, false);
+    }
+  }
+}
+
 export async function installConnectorPluginForServer(
   server: Server,
   archiveBytes: Uint8Array,
@@ -1553,21 +1669,31 @@ export async function installConnectorPluginForServer(
     );
   }
 
+  const before = await runtime.pluginManager.inspectPlugins();
   const installedPlugin = await runtime.pluginManager.installPluginArchive(
     archiveBytes,
     archiveFilename,
+    // Saved before the package change ends, so nothing runs the new package
+    // with activation state meant for the old one.
+    async (installed) => {
+      // An update keeps the activation the user chose for the previous version.
+      if (!installed.replaced && options.enableAfterInstall === false) {
+        await runtime.storage.setConnectorPluginEnabled(
+          installed.manifest.id,
+          false,
+        );
+      }
+      const previous = [
+        ...before.plugins,
+        ...before.unavailable.map((plugin) => plugin.manifest),
+      ].find((plugin) => plugin.id === installed.manifest.id);
+      await applyCapabilityDefaults(
+        runtime.storage,
+        installed.manifest,
+        installed.replaced ? previous : undefined,
+      );
+    },
   );
-  // An update keeps the activation the user chose for the previous version.
-  if (
-    installedPlugin.installed &&
-    !installedPlugin.replaced &&
-    options.enableAfterInstall === false
-  ) {
-    await runtime.storage.setConnectorPluginEnabled(
-      installedPlugin.manifest.id,
-      false,
-    );
-  }
   return connectorPluginInstallResponseSchema.parse({
     plugin: installedPlugin.manifest,
     replaced: installedPlugin.replaced,

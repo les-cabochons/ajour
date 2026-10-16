@@ -46,14 +46,23 @@ import type {
   PluginCatalogCapability,
   PluginCatalogEntry,
   PluginCatalogSettings,
+  SwitchableCapability,
 } from "@ajour/shared";
-import { pluginHasConnector, pluginRunsCode } from "@ajour/shared";
+import {
+  isCapabilityActive,
+  pluginHasCodeHost,
+  pluginHasConnector,
+  pluginRunsCode,
+  syncsPullRequestsAutomatically,
+} from "@ajour/shared";
 import {
   areConnectorFormValuesEqual,
   buildConnectorFormValues,
   canSubmitConnectorForm,
+  isConnectorFieldShown,
   normalizeConnectorFormValuesForSave,
 } from "./connector-form-state";
+import { PluginCapabilitySwitches } from "./plugin-capability-switches";
 import { ConnectorFieldInput } from "./connector-settings-ui";
 import { PluginAgentTasks } from "./agent-task-settings";
 import {
@@ -77,6 +86,34 @@ type PluginCatalogFilter = "all" | PluginCatalogCapability;
 
 /** The one notice Plugins shows when the web build runs without the connector API. */
 const CONNECTORS_NEED_DESKTOP_APP = "Connectors need the desktop app.";
+
+/**
+ * How the connection syncs, per capability that is on. Auto sync imports work
+ * items straight to the backlog; without it they stage for review. Pull
+ * requests have their own automatic sync.
+ */
+function syncModeLabel(
+  group: ConnectorOverviewGroup,
+  connection: ConnectorConnectionSummary,
+) {
+  const interval = `Auto every ${connection.autoSyncIntervalMinutes} min`;
+  const workItems = connection.autoSync ? interval : "Stage for review";
+  const pullRequests = syncsPullRequestsAutomatically(connection)
+    ? interval
+    : "Manual sync";
+  const active = {
+    connector:
+      pluginHasConnector(group.plugin) &&
+      !group.inactiveCapabilities?.includes("connector"),
+    codeHost:
+      pluginHasCodeHost(group.plugin) &&
+      !group.inactiveCapabilities?.includes("codeHost"),
+  };
+  if (active.connector && active.codeHost && workItems !== pullRequests) {
+    return `Work items: ${workItems} · Pull requests: ${pullRequests}`;
+  }
+  return active.connector || !active.codeHost ? workItems : pullRequests;
+}
 
 /** An empty list as plain text in the list's place, with no frame. */
 function EmptyListText({
@@ -487,7 +524,14 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
   const handlePluginActivation = (
     group: ConnectorOverviewGroup,
     enabled: boolean,
-  ) => workflow.execute({ type: "activate", plugin: group.plugin, enabled });
+    capability?: SwitchableCapability,
+  ) =>
+    workflow.execute({
+      type: "activate",
+      plugin: group.plugin,
+      enabled,
+      capability,
+    });
 
   const handleCreate = (plugin: ConnectorPluginManifest) => {
     const initialValues = buildConnectorFormValues(plugin);
@@ -680,6 +724,19 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
           </MessagePanel>
         ) : null}
 
+        <PluginCapabilitySwitches
+          group={group}
+          title={entry.title}
+          disabled={
+            isMutatingConnector ||
+            connectors?.pluginsEnabled === false ||
+            Boolean(unavailableReason)
+          }
+          onChange={(capability, enabled) =>
+            void handlePluginActivation(group, enabled, capability)
+          }
+        />
+
         {pluginRunsCode(group.plugin) ? (
           <section className="settings-section">
             <div className="flex flex-wrap items-start justify-between gap-3">
@@ -718,8 +775,12 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                 <FieldGroup className="desktop:grid desktop:grid-cols-2 desktop:gap-x-6 desktop:gap-y-5">
                   {group.plugin.connectionFields.map((field) => {
                     if (
-                      field.id === "autoSyncIntervalMinutes" &&
-                      groupFormState.values.autoSync !== true
+                      !isConnectorFieldShown(
+                        group.plugin,
+                        field,
+                        groupFormState.values,
+                        group.inactiveCapabilities,
+                      )
                     ) {
                       return null;
                     }
@@ -765,6 +826,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                           allowSavedSecrets: Boolean(
                             groupFormState.editingConnectionId,
                           ),
+                          inactiveCapabilities: group.inactiveCapabilities,
                         },
                       )
                     }
@@ -808,11 +870,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                                 : "Connected"}
                         </Chip>
                         <Badge variant="outline">
-                          {connection.autoSync
-                            ? `Auto every ${connection.autoSyncIntervalMinutes} min`
-                            : pluginHasConnector(group.plugin)
-                              ? "Stage for review"
-                              : "Manual sync"}
+                          {syncModeLabel(group, connection)}
                         </Badge>
                       </div>
                       <p className="text-[13px] break-words text-muted-foreground">
@@ -848,7 +906,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                           disabled={
                             isMutatingConnector ||
                             connectors?.pluginsEnabled === false ||
-                            !group.enabled
+                            !isCapabilityActive(group, "connector")
                           }
                           onClick={() =>
                             void workflow.execute({

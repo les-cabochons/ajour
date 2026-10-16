@@ -10,7 +10,14 @@ import type {
   PluginCatalogResponse,
   PluginCatalogSettings,
   ProjectDataShapePluginManifest,
+  SwitchableCapability,
 } from "@ajour/shared";
+
+/** How the settings page names each capability a user can switch. */
+export const capabilityLabels: Record<SwitchableCapability, string> = {
+  connector: "Work items",
+  codeHost: "Pull requests",
+};
 
 export type PluginDisplayEntry = {
   catalog: PluginCatalogEntry;
@@ -43,7 +50,13 @@ export type PluginSettingsDependencies = Pick<
 };
 
 type PluginSettingsCommand =
-  | { type: "activate"; plugin: ConnectorPluginManifest; enabled: boolean }
+  | {
+      type: "activate";
+      plugin: ConnectorPluginManifest;
+      enabled: boolean;
+      /** Only this capability, for a plugin that declares both. */
+      capability?: SwitchableCapability;
+    }
   | {
       type: "save";
       pluginId: string;
@@ -291,9 +304,12 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
           const connectors = await deps.setConnectorPluginEnabled(
             command.plugin.id,
             command.enabled,
+            command.capability,
           );
           finish(
-            `${command.plugin.displayName} ${command.enabled ? "activated" : "deactivated"}.`,
+            command.capability
+              ? `${capabilityLabels[command.capability]} ${command.enabled ? "turned on" : "turned off"} for ${command.plugin.displayName}.`
+              : `${command.plugin.displayName} ${command.enabled ? "activated" : "deactivated"}.`,
             connectors,
           );
           break;

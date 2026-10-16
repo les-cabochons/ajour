@@ -17,7 +17,7 @@ Feature: Browse plugin capabilities
     When I open the plugins catalog
     And I select the "Connectors" plugin filter
     Then the combined plugin appears with its connector and code host badge
-    And the GitHub catalog entry is hidden
+    And the GitHub catalog entry offers a download
     When I select the "Code hosts" plugin filter
     Then the combined plugin appears with its connector and code host badge
     And the GitHub catalog entry offers a download

@@ -6,7 +6,7 @@ const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
     id: "azure_devops",
     title: "Azure DevOps",
     description:
-      "Sync Azure DevOps work items into Ajour's local backlog and update estimates from Ajour.",
+      "Sync Azure DevOps work items into Ajour's local backlog and update estimates from Ajour, and bring in your pull requests.",
     author: {
       name: "Alex Trépanier",
       url: "https://github.com/alextrepa",
@@ -24,8 +24,8 @@ const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
     },
     status: "available",
     compatibility: { pluginApiVersion: 3 },
-    capabilities: ["connector"],
-    features: ["work-item-sync", "estimate-update"],
+    capabilities: ["connector", "codeHost"],
+    features: ["work-item-sync", "estimate-update", "pull-requests"],
     install: {
       method: "github-release",
       allowPrereleases: true,
@@ -38,7 +38,7 @@ const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
     id: "github",
     title: "GitHub",
     description:
-      "Bring your GitHub pull requests into Ajour: the ones you wrote and the ones you were asked to review.",
+      "Bring your GitHub issues into Ajour's backlog, and the pull requests you wrote or were asked to review.",
     author: {
       name: "Alex Trépanier",
       url: "https://github.com/alextrepa",
@@ -56,8 +56,8 @@ const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
     },
     status: "available",
     compatibility: { pluginApiVersion: 3 },
-    capabilities: ["codeHost"],
-    features: ["pull-requests"],
+    capabilities: ["connector", "codeHost"],
+    features: ["work-item-sync", "pull-requests"],
     install: {
       method: "github-release",
       allowPrereleases: true,

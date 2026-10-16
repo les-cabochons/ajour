@@ -4,6 +4,7 @@ import {
   areConnectorFormValuesEqual,
   buildConnectorFormValues,
   canSubmitConnectorForm,
+  isConnectorFieldShown,
   normalizeConnectorFormValuesForSave,
   SAVED_SECRET_MASK,
 } from "./connector-form-state";
@@ -46,6 +47,98 @@ const plugin: ConnectorPluginManifest = {
     },
   ],
 };
+
+const both: ConnectorPluginManifest = {
+  ...plugin,
+  capabilities: { connector: {}, codeHost: {} },
+  connectionFields: [
+    ...plugin.connectionFields,
+    {
+      id: "pullRequestsInclude",
+      label: "Only these repositories",
+      type: "text",
+      required: true,
+      secret: false,
+      capability: "codeHost",
+    },
+    {
+      id: "autoSyncIntervalMinutes",
+      label: "Interval",
+      type: "number",
+      required: true,
+      secret: false,
+    },
+  ],
+};
+const field = (id: string) =>
+  both.connectionFields.find((candidate) => candidate.id === id)!;
+
+describe("capability fields", () => {
+  it("hides and skips the required check of a field whose capability is off", () => {
+    const values = {
+      label: "Work",
+      personalAccessToken: "secret",
+      taskIconDisplayMode: "always",
+      autoSync: false,
+      autoSyncIntervalMinutes: 15,
+    };
+    expect(
+      isConnectorFieldShown(both, field("pullRequestsInclude"), values),
+    ).toBe(true);
+    expect(canSubmitConnectorForm(both, values)).toBe(false);
+
+    expect(
+      isConnectorFieldShown(both, field("pullRequestsInclude"), values, [
+        "codeHost",
+      ]),
+    ).toBe(false);
+    expect(
+      canSubmitConnectorForm(both, values, {
+        inactiveCapabilities: ["codeHost"],
+      }),
+    ).toBe(true);
+  });
+
+  it("shows the interval while work items or pull requests sync on it", () => {
+    const interval = field("autoSyncIntervalMinutes");
+    const off = { autoSync: false, pullRequestAutoSync: false };
+    expect(isConnectorFieldShown(both, interval, off)).toBe(false);
+    expect(
+      isConnectorFieldShown(both, interval, {
+        ...off,
+        pullRequestAutoSync: true,
+      }),
+    ).toBe(true);
+    expect(
+      isConnectorFieldShown(
+        both,
+        interval,
+        { ...off, pullRequestAutoSync: true },
+        ["codeHost"],
+      ),
+    ).toBe(false);
+    expect(
+      isConnectorFieldShown(both, interval, { ...off, autoSync: true }, [
+        "codeHost",
+      ]),
+    ).toBe(true);
+    expect(
+      isConnectorFieldShown(both, interval, { ...off, autoSync: true }, [
+        "connector",
+      ]),
+    ).toBe(false);
+    // Saved before pull requests had their own setting: they follow auto sync.
+    expect(
+      isConnectorFieldShown(
+        { ...both, capabilities: { codeHost: {} } },
+        interval,
+        {
+          autoSync: true,
+        },
+      ),
+    ).toBe(true);
+  });
+});
 
 describe("connector form state", () => {
   it("masks secret fields when building edit values", () => {

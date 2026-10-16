@@ -6,13 +6,13 @@ Plugins connect Ajour to the tools where your work lives. They run on your machi
 
 ## Official plugins
 
-| Plugin                                    | Capability | What it does                                                                            |
-| ----------------------------------------- | ---------- | --------------------------------------------------------------------------------------- |
-| [Azure DevOps](/plugins/azure-devops)     | Connector  | Syncs work items into your backlog. Writes estimates, states and priorities back.       |
-| [Jira](/plugins/jira)                     | Connector  | Syncs Jira issues into your backlog. Writes estimates, statuses and priorities back.    |
-| [GitHub](/plugins/github)                 | Code host  | Lists the pull requests you wrote or were asked to review.                              |
-| [Workday](/plugins/workday)               | Schema     | Maps projects and tasks to a Workday file layout. Coming soon.                          |
-| [Workday (agent)](/plugins/workday-agent) | Agent task | Has an agent enter your week in the Workday timesheet. Unofficial, install from a file. |
+| Plugin                                    | Capability           | What it does                                                                                                |
+| ----------------------------------------- | -------------------- | ----------------------------------------------------------------------------------------------------------- |
+| [Azure DevOps](/plugins/azure-devops)     | Connector, code host | Syncs work items into your backlog. Writes estimates, states and priorities back. Lists your pull requests. |
+| [Jira](/plugins/jira)                     | Connector            | Syncs Jira issues into your backlog. Writes estimates, statuses and priorities back.                        |
+| [GitHub](/plugins/github)                 | Connector, code host | Syncs issues assigned to you into your backlog. Lists the pull requests you wrote or were asked to review.  |
+| [Workday](/plugins/workday)               | Schema               | Maps projects and tasks to a Workday file layout. Coming soon.                                              |
+| [Workday (agent)](/plugins/workday-agent) | Agent task           | Has an agent enter your week in the Workday timesheet. Unofficial, install from a file.                     |
 
 Want to connect another tool? See [Build a plugin](/developers/).
 
@@ -58,6 +58,7 @@ The catalog does not offer newer versions of a plugin that works. To update it, 
 ## Turn plugins off
 
 - **The plugin's switch** pauses one plugin. It stops syncing, but keeps its connections, staged items and imported backlog items.
+- **Work items** and **Pull requests**, under **Capabilities** on the page of a plugin that has both, pause one part. Its connection fields hide, and its data stays. When an update adds a part to a plugin you have, the new part starts off.
 - **Plugin system**, at the top of the page, pauses every plugin at once.
 
 ## Uninstall a plugin

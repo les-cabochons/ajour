@@ -1,6 +1,6 @@
 import {
   codeHostPullRequestFactsSchema,
-  pluginHasCodeHost,
+  isCapabilityActive,
 } from "@ajour/shared";
 import { z } from "zod";
 import type {
@@ -50,8 +50,7 @@ export function enabledCodeHostGroups(overview: ConnectorsOverview | null) {
     ? []
     : (overview?.connectionGroups ?? []).filter(
         (group) =>
-          group.enabled &&
-          pluginHasCodeHost(group.plugin) &&
+          isCapabilityActive(group, "codeHost") &&
           group.plugin.unavailableReason === undefined,
       );
 }

@@ -65,8 +65,9 @@ import {
 import { localStore } from "@/lib/local-store";
 import {
   codeHostSyncResultSchema,
-  pluginHasCodeHost,
+  isCapabilityActive,
   type CodeHostSyncResult,
+  type SwitchableCapability,
 } from "@ajour/shared";
 import {
   findRetainedConnection,
@@ -116,8 +117,8 @@ export function syncCodeHostConnection(
     if (
       (connectionGenerations.get(key) ?? 0) !== generation ||
       overview.pluginsEnabled === false ||
-      !group?.enabled ||
-      !pluginHasCodeHost(group.plugin) ||
+      !group ||
+      !isCapabilityActive(group, "codeHost") ||
       !connection
     ) {
       return result;
@@ -414,11 +415,16 @@ export async function getConnectorsOverview(): Promise<ConnectorsOverview> {
   return cacheConnectorsOverview(overview);
 }
 
+/** Turns the plugin on or off, or only `capability` when given. */
 export async function setConnectorPluginEnabled(
   pluginId: string,
   enabled: boolean,
+  capability?: SwitchableCapability,
 ): Promise<ConnectorsOverview> {
-  const payload = connectorPluginActivationUpdateSchema.parse({ enabled });
+  const payload = connectorPluginActivationUpdateSchema.parse({
+    enabled,
+    ...(capability ? { capability } : {}),
+  });
   return cacheConnectorsOverview(
     await appApiRequest(
       `/api/connectors/${encodeURIComponent(pluginId)}/activation`,

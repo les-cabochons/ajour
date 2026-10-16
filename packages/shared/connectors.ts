@@ -89,6 +89,13 @@ export const connectorFieldOptionSchema = z.object({
 });
 export type ConnectorFieldOption = z.infer<typeof connectorFieldOptionSchema>;
 
+/**
+ * The capabilities a user turns on and off separately when a plugin declares
+ * both. Agent tasks and project properties follow the plugin's own switch.
+ */
+export const switchableCapabilitySchema = z.enum(["connector", "codeHost"]);
+export type SwitchableCapability = z.infer<typeof switchableCapabilitySchema>;
+
 export const connectorFieldSchema = z.object({
   id: z.string().trim().min(1).max(120),
   label: z.string().trim().min(1).max(120),
@@ -102,6 +109,12 @@ export const connectorFieldSchema = z.object({
   min: z.number().finite().optional(),
   max: z.number().finite().optional(),
   step: z.number().finite().optional(),
+  /**
+   * The capability the field configures. The connection form hides it, and
+   * skips its required check, while that capability is off. Absent for a
+   * field every capability uses, such as the token.
+   */
+  capability: switchableCapabilitySchema.optional(),
 });
 export type ConnectorField = z.infer<typeof connectorFieldSchema>;
 
@@ -241,6 +254,22 @@ export function pluginHasProjectProperties(manifest: {
   return manifest.capabilities.projectProperties !== undefined;
 }
 
+export function pluginHasCapability(
+  manifest: { capabilities: ConnectorPluginCapabilities },
+  capability: SwitchableCapability,
+) {
+  return capability === "connector"
+    ? pluginHasConnector(manifest)
+    : pluginHasCodeHost(manifest);
+}
+
+/** The plugin declares both, so each gets its own switch. */
+export function pluginHasSwitchableCapabilities(manifest: {
+  capabilities: ConnectorPluginCapabilities;
+}) {
+  return pluginHasConnector(manifest) && pluginHasCodeHost(manifest);
+}
+
 /** Whether the plugin runs code: it syncs items or serves pull requests. */
 export function pluginRunsCode(manifest: {
   capabilities: ConnectorPluginCapabilities;
@@ -294,6 +323,8 @@ export const connectorConnectionSummarySchema = z.object({
   tenantLabel: z.string().min(1).max(120),
   autoSync: z.boolean(),
   autoSyncIntervalMinutes: z.number().int().min(1).max(1440),
+  /** Pull requests sync on the interval. Absent until the connection saves it. */
+  pullRequestAutoSync: z.boolean().optional(),
   connectedAt: z.number().int().positive(),
   lastSyncAt: z.number().int().positive().optional(),
   lastError: z.string().max(1000).optional(),
@@ -328,11 +359,43 @@ export type ConnectorOverviewPlugin = z.infer<
 export const connectorOverviewGroupSchema = z.object({
   plugin: connectorOverviewPluginSchema,
   enabled: z.boolean(),
+  /** Declared capabilities the user turned off. `enabled` still gates all. */
+  inactiveCapabilities: z.array(switchableCapabilitySchema).optional(),
   connections: z.array(connectorConnectionSummarySchema),
 });
 export type ConnectorOverviewGroup = z.infer<
   typeof connectorOverviewGroupSchema
 >;
+
+/**
+ * Whether the connection syncs pull requests on its interval. For work items,
+ * auto sync means importing straight to the backlog, so pull requests have
+ * their own setting. A connection saved before it existed keeps following
+ * auto sync, which is what auto sync meant for its pull requests then.
+ */
+export function syncsPullRequestsAutomatically(
+  connection: Pick<
+    ConnectorConnectionSummary,
+    "autoSync" | "pullRequestAutoSync"
+  >,
+) {
+  return connection.pullRequestAutoSync ?? connection.autoSync;
+}
+
+/** Whether the group's plugin is on, declares the capability, and has it on. */
+export function isCapabilityActive(
+  group: Pick<
+    ConnectorOverviewGroup,
+    "plugin" | "enabled" | "inactiveCapabilities"
+  >,
+  capability: SwitchableCapability,
+) {
+  return (
+    group.enabled &&
+    pluginHasCapability(group.plugin, capability) &&
+    !group.inactiveCapabilities?.includes(capability)
+  );
+}
 
 export const connectorsOverviewSchema = z.object({
   pluginsEnabled: z.boolean(),
@@ -347,8 +410,10 @@ export const pluginSystemActivationUpdateSchema = z.object({
   enabled: z.boolean(),
 });
 
+/** Turns the plugin on or off, or only one of its capabilities. */
 export const connectorPluginActivationUpdateSchema = z.object({
   enabled: z.boolean(),
+  capability: switchableCapabilitySchema.optional(),
 });
 export type ConnectorPluginActivationUpdate = z.infer<
   typeof connectorPluginActivationUpdateSchema
@@ -476,6 +541,18 @@ export const connectorPluginValidationResultSchema = z.object({
 });
 export type ConnectorPluginValidationResult = z.infer<
   typeof connectorPluginValidationResultSchema
+>;
+
+/**
+ * The second argument of `validateConnection`: the switchable capabilities
+ * that are on, so a plugin checks only the access they need. Plugins written
+ * before it ignore it.
+ */
+export const connectorValidationContextSchema = z.object({
+  capabilities: z.array(switchableCapabilitySchema),
+});
+export type ConnectorValidationContext = z.infer<
+  typeof connectorValidationContextSchema
 >;
 
 export const connectorImportCandidateInputSchema = z.object({

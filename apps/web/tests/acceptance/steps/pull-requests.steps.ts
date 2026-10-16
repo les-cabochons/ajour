@@ -133,6 +133,18 @@ Given("a code host connection with local pull requests", async ({ page }) => {
   await page.exposeFunction("acceptanceEnableCodeHostAutoSync", () => {
     automatic = true;
   });
+  await page.exposeFunction("acceptanceAddWorkItemCapability", () => {
+    overview = {
+      ...overview,
+      connectionGroups: overview.connectionGroups.map((group) => ({
+        ...group,
+        plugin: {
+          ...group.plugin,
+          capabilities: { ...group.plugin.capabilities, connector: {} },
+        },
+      })),
+    };
+  });
   await page.route(`${apiUrl}/api/connectors`, async (route) => {
     await route.fulfill({
       json: {
@@ -171,13 +183,21 @@ Given("a code host connection with local pull requests", async ({ page }) => {
   await page.route(
     `${apiUrl}/api/connectors/github/activation`,
     async (route) => {
-      const { enabled } = route.request().postDataJSON();
+      const { enabled, capability } = route.request().postDataJSON();
       overview = {
         ...overview,
-        connectionGroups: overview.connectionGroups.map((group) => ({
-          ...group,
-          enabled,
-        })),
+        connectionGroups: overview.connectionGroups.map((group) =>
+          capability
+            ? {
+                ...group,
+                inactiveCapabilities: enabled
+                  ? (group.inactiveCapabilities ?? []).filter(
+                      (candidate) => candidate !== capability,
+                    )
+                  : [...(group.inactiveCapabilities ?? []), capability],
+              }
+            : { ...group, enabled },
+        ),
       };
       await route.fulfill({
         json: overview,
@@ -425,6 +445,51 @@ When("I deactivate the code host plugin", async ({ page }) => {
   await page
     .getByRole("switch", { name: "Deactivate GitHub", exact: true })
     .click();
+});
+Given("the code host plugin also syncs work items", async ({ page }) => {
+  await page.goto("/");
+  await page.evaluate(() =>
+    (
+      window as unknown as {
+        acceptanceAddWorkItemCapability: () => Promise<void>;
+      }
+    ).acceptanceAddWorkItemCapability(),
+  );
+});
+When("I turn off pull requests for the code host plugin", async ({ page }) => {
+  await page.goto("/settings/plugins/github");
+  await page
+    .getByRole("switch", {
+      name: "Deactivate pull requests for GitHub",
+      exact: true,
+    })
+    .click();
+  await expect(
+    page.getByRole("switch", {
+      name: "Activate pull requests for GitHub",
+      exact: true,
+    }),
+  ).toBeVisible();
+});
+When("I turn on pull requests for the code host plugin", async ({ page }) => {
+  await page.goto("/settings/plugins/github");
+  await page
+    .getByRole("switch", {
+      name: "Activate pull requests for GitHub",
+      exact: true,
+    })
+    .click();
+});
+Then("the plugin and its work items stay active", async ({ page }) => {
+  await expect(
+    page.getByRole("switch", { name: "Deactivate GitHub", exact: true }),
+  ).toBeChecked();
+  await expect(
+    page.getByRole("switch", {
+      name: "Deactivate work items for GitHub",
+      exact: true,
+    }),
+  ).toBeChecked();
 });
 When("I reactivate the code host plugin", async ({ page }) => {
   await page.goto("/settings/plugins/github");

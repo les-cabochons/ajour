@@ -90,12 +90,6 @@ Then(
   },
 );
 
-Then("the GitHub catalog entry is hidden", async ({ page }) => {
-  await expect(
-    page.getByRole("link", { name: "View GitHub", exact: true }),
-  ).toHaveCount(0);
-});
-
 Then("the GitHub catalog entry offers a download", async ({ page }) => {
   const entry = page.getByRole("link", { name: "View GitHub", exact: true });
   await expect(entry).toBeVisible();
