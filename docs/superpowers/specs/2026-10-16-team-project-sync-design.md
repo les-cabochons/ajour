@@ -89,8 +89,8 @@ The rules are in [ADR 0006](../../../agents/adr/0006-shared-projects-last-writer
 ## Code
 
 - `packages/shared/team-sync.ts`: the capability schema, the change, project and result schemas, and the page bounds. `packages/shared/connectors.ts`: the `team` capability in the manifest, `pluginHasTeam`, the third switchable capability and its label, and the `createTeam` result. `packages/shared/plugin-catalog.ts`: `team` as a catalog capability.
-- `apps/api/src/plugin-host.ts`: the three operations, gated by the plugin's switch and the capability deny-list like the others.
-- `apps/api/src/server.ts`: `POST /api/connectors/:id/team/create` and `POST /api/connectors/:id/team/sync`. The route validates and forwards; it never touches projects.
+- `apps/api/src/plugin-host.ts` and `plugin-worker.mjs`: `createTeam(config, request)` and `syncTeamProjects(connection, request)`, gated by the plugin's switch and the capability deny-list like the others. `capabilityOfMethod` maps both to `team`, so turning Projects off cancels a running round.
+- `apps/api/src/server.ts`: `POST /api/teams/:pluginId/create`, with the connection form's values and the team name, and `POST /api/teams/:pluginId/connections/:connectionId/sync`, with one round. Both refuse a plugin without a team (404) or with the plugin or its Projects switch off (409), and validate the body and the plugin's result against the contract. A sync records the connection's last sync or its last error. The routes never touch projects.
 - `apps/web/src/lib/team-sync.ts`: the application service that plans, calls the API, applies, and persists through `local-store.ts`; the scheduler entry that runs it on the connection's interval, next to the backlog and pull request auto syncs.
 - `apps/web/src/features/settings`: the connection form's Create and Join modes, and the picker.
 - `apps/web/src/features/projects`: Share with team, Shared with, Unshare, and the shared mark.

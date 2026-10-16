@@ -675,6 +675,20 @@ function normalizeState(
   return migrateLegacyState(raw as AppApiStateV1);
 }
 
+/** The longest last error a connection keeps, as its summary schema allows. */
+export const MAX_CONNECTION_ERROR_CHARACTERS = 1_000;
+
+/**
+ * Cuts a connection error to the length its summary allows. A plugin result
+ * that breaks the contract can give a validation error of many kilobytes, and
+ * storing it whole would make the overview fail to load.
+ */
+export function boundConnectionError(message: string) {
+  return message.length <= MAX_CONNECTION_ERROR_CHARACTERS
+    ? message
+    : `${message.slice(0, MAX_CONNECTION_ERROR_CHARACTERS - 1)}…`;
+}
+
 export class AppApiStorage {
   private readonly statePath: string;
   private cache?: AppApiState;
@@ -1351,7 +1365,7 @@ export class AppApiStorage {
 
       const nextConnection = {
         ...connection,
-        lastError: message,
+        lastError: boundConnectionError(message),
         lastErrorAt: Date.now(),
       };
       const nextState = this.replaceConnection(state, nextConnection);

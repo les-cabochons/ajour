@@ -23,6 +23,9 @@ const CODE_HOST_METHODS = new Set([
 // Keep in sync with `calendarOperations` in packages/shared/calendar.ts.
 const CALENDAR_METHODS = new Set(["listCalendarEvents"]);
 
+// Keep in sync with `teamPluginMethods` in packages/shared/team-sync.ts.
+const TEAM_CONNECTION_METHODS = new Set(["syncTeamProjects"]);
+
 if (!parentPort) {
   throw new Error("Connector plugin worker requires a parent port.");
 }
@@ -38,6 +41,10 @@ async function run() {
     return await handler(workerData.params.config, workerData.params.context);
   }
 
+  if (workerData.method === "createTeam") {
+    return await handler(workerData.params.config, workerData.params.request);
+  }
+
   if (workerData.method === "syncConnection") {
     return await handler(
       workerData.params.connection,
@@ -49,7 +56,8 @@ async function run() {
     workerData.method === "listSettleStates" ||
     workerData.method === "writeSettle" ||
     CODE_HOST_METHODS.has(workerData.method) ||
-    CALENDAR_METHODS.has(workerData.method)
+    CALENDAR_METHODS.has(workerData.method) ||
+    TEAM_CONNECTION_METHODS.has(workerData.method)
   ) {
     return await handler(
       workerData.params.connection,

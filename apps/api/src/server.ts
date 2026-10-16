@@ -22,6 +22,7 @@ import {
   pluginHasCapability,
   pluginHasCodeHost,
   pluginHasCalendar,
+  pluginHasTeam,
   pluginHasSwitchableCapabilities,
   pluginSwitchableCapabilities,
   switchableCapabilityLabels,
@@ -51,6 +52,7 @@ import {
   connectorImportSelectionResponseSchema,
   connectorImportSelectionUpdateSchema,
   connectorsOverviewSchema,
+  teamCreateRouteRequestSchema,
 } from "../../../packages/shared/connectors.ts";
 import {
   codeHostOperationSchema,
@@ -60,6 +62,7 @@ import {
   calendarOperationSchema,
   calendarOperations,
 } from "../../../packages/shared/calendar.ts";
+import { teamSyncRequestSchema } from "../../../packages/shared/team-sync.ts";
 import {
   projectDataShapeExportRequestSchema,
   projectDataShapeExportResponseSchema,
@@ -96,7 +99,7 @@ import { playwrightMcpServer } from "./agent-runner/playwright-mcp.ts";
 import { AgentRunError, AgentRunner } from "./agent-runner/runner.ts";
 import { capabilityOfMethod, ConnectorPluginManager } from "./plugin-host.ts";
 import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";
-import { AppApiStorage } from "./storage.ts";
+import { AppApiStorage, boundConnectionError } from "./storage.ts";
 
 interface AppApiServerOptions {
   host?: string;
@@ -315,7 +318,9 @@ function matchCalendarRoute(pathname: string) {
 
 /**
  * Replaces the connection's secret values in a plugin's error message. A
- * calendar address is a bearer secret, and a plugin may echo it in an error.
+ * calendar address is a bearer secret, a team secret joins a team, and a
+ * plugin may echo either in an error. Every value is replaced, however short,
+ * the longest first so one secret inside another goes whole.
  */
 function redactSecretValues(
   message: string,
@@ -326,13 +331,20 @@ function redactSecretValues(
     .filter((field) => field.secret)
     .map((field) => config[field.id])
     .filter(
-      (value): value is string =>
-        typeof value === "string" && value.length >= 8,
+      (value): value is string => typeof value === "string" && value.length > 0,
     )
+    .sort((left, right) => right.length - left.length)
     .reduce(
       (redacted, secret) => redacted.split(secret).join("[secret]"),
       message,
     );
+}
+
+/** `/api/teams/:pluginId/create` or `/api/teams/:pluginId/connections/:id/sync`. */
+function matchTeamRoute(pathname: string) {
+  return pathname.match(
+    /^\/api\/teams\/([^/]+)\/(?:(create)|connections\/([^/]+)\/(sync))$/,
+  );
 }
 
 function matchConnectorPluginActivationRoute(pathname: string) {
@@ -1631,13 +1643,104 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           logCalendarEvent("ok", result.events.length);
           writeJson(response, 200, result);
         } catch (error) {
-          const message = redactSecretValues(
-            errorMessage(error),
-            plugin,
-            connection.config,
+          const message = boundConnectionError(
+            redactSecretValues(errorMessage(error), plugin, connection.config),
           );
           await storage.recordConnectionError(pluginId, connectionId, message);
           logCalendarEvent("error");
+          writeJson(response, 502, { error: message });
+        }
+        return;
+      }
+
+      const teamRoute = matchTeamRoute(requestUrl.pathname);
+      if (teamRoute && request.method === "POST") {
+        const [, rawPluginId, create, rawConnectionId] = teamRoute;
+        const pluginId = connectorPluginIdSchema.parse(
+          decodeURIComponent(rawPluginId ?? ""),
+        );
+        const plugins = await pluginManager.listPlugins();
+        const plugin = plugins.find((candidate) => candidate.id === pluginId);
+        if (!plugin || !pluginHasTeam(plugin)) {
+          writeJson(response, 404, {
+            error: "This plugin does not sync a team's projects.",
+          });
+          return;
+        }
+        const inactive = await inactiveCapabilityError(
+          storage,
+          pluginId,
+          "team",
+          new Set(plugins.map((candidate) => candidate.id)),
+          create ? "creating a team" : "syncing its projects",
+        );
+        if (inactive) {
+          writeJson(response, 409, { error: inactive });
+          return;
+        }
+
+        if (create) {
+          // A malformed body fails here, outside the try, as a 400.
+          const payload = teamCreateRouteRequestSchema.parse(
+            await readJsonBody(request),
+          );
+          try {
+            writeJson(
+              response,
+              200,
+              await pluginManager.createTeam(
+                pluginId,
+                payload.values,
+                payload.team,
+              ),
+            );
+          } catch (error) {
+            writeJson(response, 502, {
+              error: boundConnectionError(
+                redactSecretValues(errorMessage(error), plugin, payload.values),
+              ),
+            });
+          }
+          return;
+        }
+
+        const connectionId = decodeURIComponent(rawConnectionId ?? "");
+        const connection = await storage.getConnection(pluginId, connectionId);
+        if (!connection) {
+          writeJson(response, 404, { error: "Connection not found." });
+          return;
+        }
+        const syncRequest = teamSyncRequestSchema.parse(
+          await readJsonBody(request),
+        );
+        try {
+          const result = await pluginManager.syncTeamProjects(
+            pluginId,
+            {
+              id: connection.id,
+              pluginId: connection.pluginId,
+              label: connection.label,
+              tenantLabel: connection.tenantLabel,
+              autoSync: connection.autoSync,
+              autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
+              connectedAt: connection.connectedAt,
+              lastSyncAt: connection.lastSyncAt,
+              lastError: connection.lastError,
+              config: connection.config,
+            },
+            syncRequest,
+          );
+          await storage.recordConnectionSyncSuccess(
+            pluginId,
+            connectionId,
+            Date.now(),
+          );
+          writeJson(response, 200, result);
+        } catch (error) {
+          const message = boundConnectionError(
+            redactSecretValues(errorMessage(error), plugin, connection.config),
+          );
+          await storage.recordConnectionError(pluginId, connectionId, message);
           writeJson(response, 502, { error: message });
         }
         return;

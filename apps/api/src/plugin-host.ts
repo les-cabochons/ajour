@@ -24,7 +24,18 @@ import {
   type ConnectorSyncWorkItem,
   type ConnectorValidationContext,
   type SwitchableCapability,
+  teamCreateResultSchema,
+  type TeamCreateResult,
 } from "../../../packages/shared/connectors.ts";
+import {
+  teamCreateRequestSchema,
+  teamSyncRequestSchema,
+  teamSyncResultSchema,
+  type TeamCreateRequest,
+  type TeamPluginMethod,
+  type TeamSyncRequest,
+  type TeamSyncResult,
+} from "../../../packages/shared/team-sync.ts";
 import {
   codeHostOperations,
   type CodeHostOperation,
@@ -88,7 +99,8 @@ export type PluginMethod =
   | "listSettleStates"
   | "writeSettle"
   | CodeHostOperation
-  | CalendarOperation;
+  | CalendarOperation
+  | TeamPluginMethod;
 const missingCapabilityMessages: Record<SwitchableCapability, string> = {
   connector: "does not sync backlog items",
   codeHost: "does not provide pull requests",
@@ -105,6 +117,9 @@ export function capabilityOfMethod(
     method === "writeSettle"
   ) {
     return "connector";
+  }
+  if (method === "createTeam" || method === "syncTeamProjects") {
+    return "team";
   }
   if (method === "validateConnection") return undefined;
   return method in calendarOperations ? "calendar" : "codeHost";
@@ -368,6 +383,45 @@ export class ConnectorPluginManager {
         request: contract.request.parse(request),
       },
       resultSchema,
+    );
+  }
+
+  /**
+   * Creates a team from the connection form's values, before the connection
+   * is saved. The result fills in the values that join it.
+   */
+  async createTeam(
+    pluginId: string,
+    config: ConnectorFieldValues,
+    request: TeamCreateRequest,
+  ): Promise<TeamCreateResult> {
+    await this.assertCapability(pluginId, "team");
+    return await this.invokePlugin(
+      pluginId,
+      "createTeam",
+      {
+        config: connectorFieldValuesSchema.parse(config),
+        request: teamCreateRequestSchema.parse(request),
+      },
+      teamCreateResultSchema,
+    );
+  }
+
+  /** Runs one round of a team sync. See packages/shared/team-sync.ts. */
+  async syncTeamProjects(
+    pluginId: string,
+    connection: PluginInvocationConnection,
+    request: TeamSyncRequest,
+  ): Promise<TeamSyncResult> {
+    await this.assertCapability(pluginId, "team");
+    return await this.invokePlugin(
+      pluginId,
+      "syncTeamProjects",
+      {
+        connection: pluginInvocationConnectionSchema.parse(connection),
+        request: teamSyncRequestSchema.parse(request),
+      },
+      teamSyncResultSchema,
     );
   }
 
