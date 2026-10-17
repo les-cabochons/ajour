@@ -137,6 +137,7 @@ Feature: Select time entries like a file explorer
     And I click the "API" entry
     And I press the "ControlOrMeta+d" key
     Then the Day list reads "Login form", "API", "Code review", "API"
+    And a toast says "Entry duplicated"
     And only row 4 of the Day list is selected
 
   Scenario: Duplicate a range of cards to another day from the menu

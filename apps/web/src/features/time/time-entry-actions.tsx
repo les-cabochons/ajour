@@ -169,7 +169,8 @@ export function useTimeEntryActions({
   }
 
   /**
-   * Copies or moves several saved entries in one change with one Undo. Each
+   * Copies or moves saved entries, such as the selection, in one change with
+   * one Undo, even for a single entry. Each
    * copy of Duplicate lands at the end of its own entry's day; Move to… and
    * Duplicate to… put every entry at the end of `localDate`, in the order of
    * `entries`. `onDone` gets the entries that landed.
@@ -187,30 +188,25 @@ export function useTimeEntryActions({
       })),
       kind === "move-to" ? "cut" : "copy",
     );
+    // Every selection action offers one Undo. The toast counts the entries that
+    // landed, and one entry reads like the entry's own action.
+    const one = entryIds.length === 1;
     const count = formatEntryCount(entryIds.length);
     const day = localDate ? formatToastDay(localDate) : "";
-    const only = entries.length === 1 ? entries[0] : undefined;
-    if (only) {
-      // One entry reads like the entry's own action: a copy in place shows
-      // where it happened, and a move or copy to another day offers Undo.
-      if (kind !== "duplicate" && localDate && localDate !== only.localDate) {
-        offerTimeEntryUndo(
-          undoToken,
-          `${kind === "move-to" ? "Moved" : "Duplicated"} to ${day}`,
-        );
-      } else {
-        skipUndo(undoToken);
-      }
-    } else {
-      offerTimeEntryUndo(
-        undoToken,
-        kind === "move-to"
-          ? `Moved ${count} to ${day}`
-          : kind === "duplicate-to"
-            ? `Duplicated ${count} to ${day}`
+    offerTimeEntryUndo(
+      undoToken,
+      kind === "move-to"
+        ? one
+          ? `Moved to ${day}`
+          : `Moved ${count} to ${day}`
+        : kind === "duplicate-to"
+          ? one
+            ? `Duplicated to ${day}`
+            : `Duplicated ${count} to ${day}`
+          : one
+            ? "Entry duplicated"
             : `Duplicated ${count}`,
-      );
-    }
+    );
     onDone?.(entryIds);
     onAfterAction?.();
   }
