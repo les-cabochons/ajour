@@ -2,6 +2,7 @@ import {
   isCapabilityActive,
   type ConnectorConnectionSummary,
   type ConnectorOverviewGroup,
+  type ConnectorsOverview,
 } from "@ajour/shared";
 import {
   planTeamSync,
@@ -187,4 +188,32 @@ export function syncTeamConnection(
   });
   runningSyncs.set(key, promise);
   return promise;
+}
+
+/** A team connection the user can share a project with. */
+export interface TeamConnectionChoice {
+  pluginId: string;
+  connectionId: string;
+  teamName: string;
+}
+
+/** The team connections whose Projects capability is on. */
+export async function listTeamConnections(): Promise<TeamConnectionChoice[]> {
+  return teamConnectionsOf(await getConnectorsOverview());
+}
+
+/** The team connections of an overview whose Projects capability is on. */
+export function teamConnectionsOf(
+  overview: ConnectorsOverview,
+): TeamConnectionChoice[] {
+  if (overview.pluginsEnabled === false) return [];
+  return overview.connectionGroups
+    .filter((group) => isCapabilityActive(group, "team"))
+    .flatMap((group) =>
+      group.connections.map((connection) => ({
+        pluginId: group.plugin.id,
+        connectionId: connection.id,
+        teamName: connection.tenantLabel,
+      })),
+    );
 }

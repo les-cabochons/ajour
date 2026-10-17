@@ -37,6 +37,7 @@ const guideSidebar: DefaultTheme.SidebarItem[] = [
       { text: "Projects", link: "/projects/" },
       { text: "Tasks", link: "/projects/tasks" },
       { text: "Import and export", link: "/projects/import-export" },
+      { text: "Shared projects", link: "/projects/shared-projects" },
     ],
   },
   {
@@ -87,6 +88,7 @@ const developerSidebar: DefaultTheme.SidebarItem[] = [
       { text: "Connector API", link: "/developers/connector-api" },
       { text: "Code host API", link: "/developers/code-host-api" },
       { text: "Calendar API", link: "/developers/calendar-api" },
+      { text: "Team API", link: "/developers/team-api" },
       { text: "Schema API", link: "/developers/schema-api" },
       { text: "Catalog entry", link: "/developers/catalog-entry" },
     ],

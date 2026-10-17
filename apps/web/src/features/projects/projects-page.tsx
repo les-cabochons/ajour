@@ -64,6 +64,7 @@ import {
   ProjectPropertiesCard,
   ProjectTitle,
 } from "@/features/projects/project-properties";
+import { SharedProjectMark } from "@/features/projects/project-team-ui";
 import type { ProjectFormValues } from "@/features/projects/project-form";
 import {
   commitProjectTaskDraft,
@@ -501,6 +502,7 @@ function ProjectsList({
                       {name}
                     </Link>
                     {project.code ? <Chip>{project.code}</Chip> : null}
+                    {project.team ? <SharedProjectMark /> : null}
                   </td>
                   <td className="project-list-col-tasks">
                     <Value tone="muted">{activeTasks}</Value>

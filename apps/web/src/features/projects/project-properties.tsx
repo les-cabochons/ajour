@@ -37,8 +37,18 @@ import {
   type ProjectFormFields,
 } from "@/features/projects/project-form";
 import { ProjectIconField } from "@/features/projects/project-icon-field";
+import {
+  ProjectTeamAction,
+  ProjectTeamRow,
+} from "@/features/projects/project-team-ui";
 import { localStore } from "@/lib/local-store";
 import { listProjectPropertyPlugins } from "@/lib/plugin-project-properties";
+import { subscribeConnectorsOverview } from "@/lib/app-api";
+import {
+  listTeamConnections,
+  teamConnectionsOf,
+  type TeamConnectionChoice,
+} from "@/lib/team-sync";
 import { PROJECT_ICON_PRESETS, ProjectIcon } from "@/lib/project-icons";
 import { cn } from "@/lib/utils";
 
@@ -313,16 +323,26 @@ export function ProjectPropertiesCard({
 }) {
   const isArchived = project.status === "archived";
   const [plugins, setPlugins] = useState<ProjectPropertyPlugin[]>([]);
+  const [teams, setTeams] = useState<TeamConnectionChoice[]>([]);
   useEffect(() => {
     let active = true;
-    // A failed overview shows no plugin sections; the rest of the card works.
+    // A failed overview shows no plugin sections and no team actions; the
+    // rest of the card works.
     void listProjectPropertyPlugins()
       .then((next) => active && setPlugins(next))
       .catch((error: unknown) => {
         console.warn("Plugin project properties unavailable.", error);
       });
+    void listTeamConnections()
+      .then((next) => active && setTeams(next))
+      .catch(() => undefined);
+    // A team connection removed, added or turned off elsewhere shows here.
+    const unsubscribe = subscribeConnectorsOverview((overview) => {
+      if (active) setTeams(teamConnectionsOf(overview));
+    });
     return () => {
       active = false;
+      unsubscribe();
     };
   }, []);
   const iconLabel =
@@ -432,6 +452,7 @@ export function ProjectPropertiesCard({
         <PropertyRow label="Status">
           {isArchived ? "Archived" : "Active"}
         </PropertyRow>
+        <ProjectTeamRow project={project} teams={teams} />
       </PropertyList>
       {plugins.map((plugin) => (
         <PluginPropertySection
@@ -450,6 +471,11 @@ export function ProjectPropertiesCard({
           <Download aria-hidden="true" />
           {isImporting ? "Importing tasks…" : "Import tasks…"}
         </PropertyAction>
+        <ProjectTeamAction
+          project={project}
+          teams={teams}
+          disabled={isArchived && !project.team}
+        />
         {isArchived ? (
           <PropertyAction onClick={onRestore}>
             <RestoreIcon aria-hidden="true" />
