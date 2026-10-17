@@ -603,6 +603,54 @@ describe("submit and reopen", () => {
     expect(restored.state.timesheetTombstones).toEqual([tombstone]);
   });
 
+  describe("the Undo of Reopen", () => {
+    const reopened = () => {
+      const before = createState();
+      const after = reopenWeek(before, LOCKED);
+      return { after, undo: captureUndo(before, after)! };
+    };
+
+    it("relocks the week when nothing changed since", () => {
+      const { after, undo } = reopened();
+
+      const restored = restoreUndo(after, undo);
+
+      expect(restored.result).toBe("restored");
+      expect(restored.state.lockedWeeks).toEqual([
+        { weekOf: LOCKED, lockedAt: 50 },
+      ]);
+    });
+
+    it("is stale once a running entry started in the week", () => {
+      const { after, undo } = reopened();
+      const running = startTimer(
+        after,
+        { projectId: "p1" },
+        "2026-10-07",
+        factories,
+      );
+
+      const restored = restoreUndo(running, undo);
+
+      expect(restored.result).toBe("stale");
+      expect(restored.state).toBe(running);
+    });
+
+    it("is stale once the week has a change that is not committed", () => {
+      const { after, undo } = reopened();
+      const added = saveManualTimesheetEntry(
+        after,
+        { localDate: "2026-10-08", projectId: "p1", durationMs: HOUR },
+        factories,
+      );
+
+      const restored = restoreUndo(added, undo);
+
+      expect(restored.result).toBe("stale");
+      expect(restored.state).toBe(added);
+    });
+  });
+
   it("refuses the Undo of a commit once the week is submitted", () => {
     const added = saveManualTimesheetEntry(
       open(),

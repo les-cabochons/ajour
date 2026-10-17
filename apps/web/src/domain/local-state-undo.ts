@@ -5,6 +5,7 @@ import type {
   LocalTimesheetEntry,
   LocalWorkItem,
 } from "@/domain/local-state";
+import { getSubmitWeekRefusal } from "@/domain/time/locked-weeks";
 
 /**
  * The local state lists that undoable actions change. A project's tasks live
@@ -363,7 +364,8 @@ function restoreLoggedTime(
 /**
  * Undoes one action. Every record it changed returns to its `before` value, and
  * records it created are removed. If any of those records changed again since
- * the action, nothing is restored.
+ * the action, nothing is restored. Nothing is restored either when Undo would
+ * lock again a week that could not be submitted now.
  *
  * Time entry actions are the exception for work items: their work item changes
  * are logged time, so a work item edited since gets the inverse logged time
@@ -406,38 +408,55 @@ export function restoreUndo(
       (left, right) => indexes.get(left._id)! - indexes.get(right._id)!,
     );
   }
-  return {
-    state: {
-      ...state,
-      projects: restoreCollection("projects", state, undo),
-      timesheetEntries: restoreCollection("timesheetEntries", state, undo),
-      timesheetTombstones: restoreCollection(
-        "timesheetTombstones",
-        state,
-        undo,
-      ),
-      lockedWeeks: restoreCollection("lockedWeeks", state, undo),
-      timers,
-      timesheetImportDrafts: restoreCollection(
-        "timesheetImportDrafts",
-        state,
-        undo,
-      ),
-      workItems,
-      workflowStates: restoreCollection("workflowStates", state, undo),
-      workflowStateMappings: restoreCollection(
-        "workflowStateMappings",
-        state,
-        undo,
-      ),
-      workflowStateWriteRules: restoreCollection(
-        "workflowStateWriteRules",
-        state,
-        undo,
-      ),
-      calendarDecisions: restoreCollection("calendarDecisions", state, undo),
-      calendarEventRules: restoreCollection("calendarEventRules", state, undo),
-    },
-    result: "restored",
+  const restored: LocalAppState = {
+    ...state,
+    projects: restoreCollection("projects", state, undo),
+    timesheetEntries: restoreCollection("timesheetEntries", state, undo),
+    timesheetTombstones: restoreCollection("timesheetTombstones", state, undo),
+    lockedWeeks: restoreCollection("lockedWeeks", state, undo),
+    timers,
+    timesheetImportDrafts: restoreCollection(
+      "timesheetImportDrafts",
+      state,
+      undo,
+    ),
+    workItems,
+    workflowStates: restoreCollection("workflowStates", state, undo),
+    workflowStateMappings: restoreCollection(
+      "workflowStateMappings",
+      state,
+      undo,
+    ),
+    workflowStateWriteRules: restoreCollection(
+      "workflowStateWriteRules",
+      state,
+      undo,
+    ),
+    calendarDecisions: restoreCollection("calendarDecisions", state, undo),
+    calendarEventRules: restoreCollection("calendarEventRules", state, undo),
   };
+  if (relocksWeekThatCannotSubmit(state, restored)) {
+    return { state, result: "stale" };
+  }
+  return { state: restored, result: "restored" };
+}
+
+/**
+ * True when Undo would lock a week again (the Undo of Reopen) that could not
+ * be submitted now: a running entry or a change that is not committed is in
+ * it since. Locking it would freeze that change, so the Undo is stale.
+ */
+function relocksWeekThatCannotSubmit(
+  state: LocalAppState,
+  restored: LocalAppState,
+) {
+  const lockedBefore = new Set(state.lockedWeeks.map((week) => week.weekOf));
+  return restored.lockedWeeks.some(
+    (week) =>
+      !lockedBefore.has(week.weekOf) &&
+      getSubmitWeekRefusal(
+        { ...restored, lockedWeeks: state.lockedWeeks },
+        week.weekOf,
+      ) !== undefined,
+  );
 }
