@@ -88,6 +88,7 @@ import {
   pasteTimesheetEntries as applyPasteTimesheetEntries,
   type PastedTimesheetEntry,
   relocateTimesheetEntries as applyRelocateTimesheetEntries,
+  dropTimesheetEntries as applyDropTimesheetEntries,
   reorderTimesheetEntries as applyReorderTimesheetEntries,
   saveManualTimesheetEntry,
   updateTimesheetEntry as applyUpdateTimesheetEntry,
@@ -2045,6 +2046,41 @@ export const localStore = {
       return { state: relocated.state, result: relocated.entryIds };
     });
     return { undoToken, entryIds: result };
+  },
+  /**
+   * Drops dragged entries as one block on a day; see `dropTimesheetEntries`.
+   * A move to another day returns an undo token and the entries that changed
+   * day. A reorder within one day has no undo, like `reorderTimesheetEntries`,
+   * and returns a null token.
+   */
+  dropTimesheetEntries(
+    entryIds: readonly string[],
+    localDate: string,
+    targetIndex: number,
+  ) {
+    const factories = { createId, now: Date.now };
+    const changesDay = entryIds.some((entryId) => {
+      const entry = readState().timesheetEntries.find(
+        (item) => item._id === entryId,
+      );
+      return entry !== undefined && entry.localDate !== localDate;
+    });
+    const drop = (state: LocalAppState) =>
+      applyDropTimesheetEntries(
+        state,
+        { entryIds, localDate, targetIndex },
+        factories,
+      );
+    if (!changesDay) {
+      updateState((state) => drop(state).state);
+      return { undoToken: null, movedIds: [] as string[] };
+    }
+
+    const { undoToken, result } = updateStateWithUndoResult((state) => {
+      const dropped = drop(state);
+      return { state: dropped.state, result: dropped.movedIds };
+    });
+    return { undoToken, movedIds: result };
   },
   /**
    * Undoes the action that returned `token`, if it is still the last one.

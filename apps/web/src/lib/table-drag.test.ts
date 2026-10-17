@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   createSharedTableDragPointerSession,
+  getSharedTableBlockDropIndex,
+  getSharedTableBlockDropOrder,
   getSharedTableDragOverlayTransform,
   getSharedTableDragRowShift,
   getSharedTableDragTargetIndex,
@@ -8,6 +10,55 @@ import {
   getSharedTableStepOrder,
   setSharedTableDragDocumentState,
 } from "@/lib/table-drag";
+
+describe("block drops", () => {
+  // Rows 40px tall from the top: a 0–40, b 40–80, c 80–120, d 120–160.
+  const rows = new Map(
+    ["a", "b", "c", "d"].map((id, index) => [
+      id,
+      { getBoundingClientRect: () => ({ top: index * 40, height: 40 }) },
+    ]),
+  );
+
+  it("counts the staying rows above the pointer", () => {
+    const moved = new Set(["a", "c"]);
+    // Below b's middle (60) and above d's (140): after b, before d.
+    expect(
+      getSharedTableBlockDropIndex(["a", "b", "c", "d"], moved, 100, rows),
+    ).toBe(1);
+    expect(
+      getSharedTableBlockDropIndex(["a", "b", "c", "d"], moved, 10, rows),
+    ).toBe(0);
+    expect(
+      getSharedTableBlockDropIndex(["a", "b", "c", "d"], moved, 150, rows),
+    ).toBe(2);
+  });
+
+  it("puts the block together, in its order, at the index among the staying rows", () => {
+    expect(
+      getSharedTableBlockDropOrder(["a", "b", "c", "d"], ["a", "c"], 2),
+    ).toEqual(["b", "d", "a", "c"]);
+    expect(
+      getSharedTableBlockDropOrder(["a", "b", "c", "d"], ["c", "a"], 0),
+    ).toEqual(["c", "a", "b", "d"]);
+  });
+
+  it("adds a block from elsewhere and clamps the index", () => {
+    expect(getSharedTableBlockDropOrder(["x", "y"], ["a"], 1)).toEqual([
+      "x",
+      "a",
+      "y",
+    ]);
+    expect(getSharedTableBlockDropOrder(["x"], ["a"], 9)).toEqual(["x", "a"]);
+  });
+
+  it("returns null when the drop changes nothing", () => {
+    expect(getSharedTableBlockDropOrder(["a", "b", "c"], ["b"], 1)).toBeNull();
+    expect(
+      getSharedTableBlockDropOrder(["a", "b", "c"], ["b", "c"], 1),
+    ).toBeNull();
+  });
+});
 
 describe("getSharedTableStepOrder", () => {
   const ids = ["a", "b", "c"];

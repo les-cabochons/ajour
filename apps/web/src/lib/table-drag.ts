@@ -416,6 +416,52 @@ export function getSharedTableDropOrder<T>(
 }
 
 /**
+ * Where a dragged block of items would drop: the number of rows that stay, the
+ * ones not in `movedIds`, whose middle is above the pointer. Like
+ * `getSharedTableDragTargetIndex`, it measures rows where the layout puts them,
+ * without their drag shift. `itemIds` lists the target's rows; the block may
+ * come from elsewhere, such as another day.
+ */
+export function getSharedTableBlockDropIndex(
+  itemIds: readonly string[],
+  movedIds: ReadonlySet<string>,
+  pointerY: number,
+  rowRefs: Map<string, SharedTableDragRow>,
+) {
+  return getSharedTableDragTargetIndex(
+    itemIds.filter((itemId) => !movedIds.has(itemId)),
+    "",
+    pointerY,
+    rowRefs,
+  );
+}
+
+/**
+ * The order of a target's rows after a block drop: the rows that stay, with
+ * `movedIds` inserted together, in their order, at `targetIndex` among them.
+ * Moved ids from elsewhere join the target. Returns null when nothing changes,
+ * so the caller commits nothing.
+ */
+export function getSharedTableBlockDropOrder(
+  itemIds: readonly string[],
+  movedIds: readonly string[],
+  targetIndex: number,
+) {
+  const moved = new Set(movedIds);
+  const staying = itemIds.filter((itemId) => !moved.has(itemId));
+  const index = Math.max(0, Math.min(targetIndex, staying.length));
+  const order = [
+    ...staying.slice(0, index),
+    ...movedIds,
+    ...staying.slice(index),
+  ];
+  const unchanged =
+    order.length === itemIds.length &&
+    order.every((itemId, position) => itemId === itemIds[position]);
+  return unchanged ? null : order;
+}
+
+/**
  * Move up and Move down (Alt+Up and Alt+Down): the order after `itemId` moves
  * one place, and its new index. Returns null when the item is not in `itemIds`
  * or already at that edge. Callers commit `order` or `toIndex` with the same

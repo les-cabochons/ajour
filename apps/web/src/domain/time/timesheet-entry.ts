@@ -417,6 +417,54 @@ export function relocateTimesheetEntries(
 }
 
 /**
+ * Drops entries as one block on `localDate`, as a drag of a selection does:
+ * entries from other days move there, then the block takes its place in front
+ * of the day's entry at `targetIndex` among the entries that stay, in the order
+ * of `entryIds`. An index past the last entry puts the block at the end.
+ * `movedIds` lists the entries that changed day. Entries linked to a running
+ * timer keep their day, as Move to… does; on their own day they still take
+ * their place in the block.
+ */
+export function dropTimesheetEntries(
+  state: LocalAppState,
+  {
+    entryIds,
+    localDate,
+    targetIndex,
+  }: { entryIds: readonly string[]; localDate: string; targetIndex: number },
+  factories: TimesheetEntryFactories,
+): { state: LocalAppState; movedIds: string[] } {
+  const fromOtherDays = entryIds.flatMap((entryId) => {
+    const entry = state.timesheetEntries.find((item) => item._id === entryId);
+    return entry && entry.localDate !== localDate
+      ? [{ entryId, localDate }]
+      : [];
+  });
+  const moved = relocateTimesheetEntries(
+    state,
+    fromOtherDays,
+    "cut",
+    factories,
+  );
+
+  const dayIds = selectSortableDayEntryIds(
+    moved.state.timesheetEntries,
+    localDate,
+  );
+  const onDay = new Set(dayIds);
+  const block = entryIds.filter((entryId) => onDay.has(entryId));
+  const inBlock = new Set(block);
+  const staying = dayIds.filter((entryId) => !inBlock.has(entryId));
+  const index = Math.max(0, Math.min(targetIndex, staying.length));
+  const order = [...staying.slice(0, index), ...block, ...staying.slice(index)];
+
+  return {
+    state: reorderTimesheetEntries(moved.state, localDate, order),
+    movedIds: moved.entryIds,
+  };
+}
+
+/**
  * Carries the committed copy across a rebuild of the entry, such as an edit
  * or a running entry saved again. Edits never change the copy: the change
  * shows on the Commit page until it is committed.

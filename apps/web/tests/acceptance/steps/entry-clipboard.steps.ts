@@ -244,3 +244,76 @@ Then(
     );
   },
 );
+
+When(
+  "I Cmd-click {word}'s {string} card",
+  async ({ page }, day: string, text: string) => {
+    await daysCard(page, day, text).click({ modifiers: ["ControlOrMeta"] });
+  },
+);
+
+/** Presses an element and moves the pointer in steps, past the drag threshold. */
+async function pressAndMove(
+  page: Page,
+  from: ReturnType<Page["locator"]>,
+  to: { x: number; y: number },
+) {
+  const box = await from.boundingBox();
+  if (!box) throw new Error("The dragged element is not rendered");
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(to.x, to.y, { steps: 10 });
+}
+
+When(
+  "I start dragging {word}'s {string} card onto {word}",
+  async ({ page }, day: string, text: string, targetDay: string) => {
+    const column = await daysColumn(page, targetDay).boundingBox();
+    if (!column) throw new Error(`The ${targetDay} column is not rendered`);
+    await pressAndMove(page, daysCard(page, day, text), {
+      x: column.x + column.width / 2,
+      y: column.y + 120,
+    });
+  },
+);
+
+Then(
+  "the drag preview counts {int} entries",
+  async ({ page }, count: number) => {
+    await expect(page.locator(".entry-drag-count")).toHaveText(String(count));
+  },
+);
+
+When(
+  "I drag {word}'s {string} card above {word}'s {string} card",
+  async (
+    { page },
+    day: string,
+    text: string,
+    targetDay: string,
+    target: string,
+  ) => {
+    const targetBox = await daysCard(page, targetDay, target).boundingBox();
+    if (!targetBox) throw new Error(`The ${target} card is not rendered`);
+    // Above the target card's middle drops the cards in front of it.
+    await pressAndMove(page, daysCard(page, day, text), {
+      x: targetBox.x + targetBox.width / 2,
+      y: targetBox.y + 4,
+    });
+    await page.mouse.up();
+  },
+);
+
+When(
+  "I drag the {string} entry below the {string} entry",
+  async ({ page }, text: string, target: string) => {
+    const targetBox = await dayRow(page, target).boundingBox();
+    if (!targetBox) throw new Error(`The ${target} entry is not rendered`);
+    // Below the target row's middle drops the rows after it.
+    await pressAndMove(page, dayRow(page, text), {
+      x: targetBox.x + targetBox.width / 3,
+      y: targetBox.y + targetBox.height - 4,
+    });
+    await page.mouse.up();
+  },
+);

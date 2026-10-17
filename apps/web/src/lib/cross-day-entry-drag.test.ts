@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createCrossDayEntryDragPointerSession,
   getCrossDayDragTarget,
-  getSameDayDropLine,
+  getEntryDropLine,
 } from "@/lib/cross-day-entry-drag";
 
 describe("cross-day entry drag geometry", () => {
@@ -98,28 +98,46 @@ describe("cross-day entry drag geometry", () => {
   });
 });
 
-describe("same-day drop line", () => {
+describe("entry drop line", () => {
   const ids = ["a", "b", "c"];
 
   it("shows above the card the dragged card lands in front of", () => {
-    expect(getSameDayDropLine(ids, "c", 0)).toEqual({
+    expect(getEntryDropLine(ids, ["c"], 0)).toEqual({
       entryId: "a",
       edge: "before",
     });
-    expect(getSameDayDropLine(ids, "a", 1)).toEqual({
+    expect(getEntryDropLine(ids, ["a"], 1)).toEqual({
       entryId: "c",
       edge: "before",
     });
   });
 
   it("shows below the last card when the dragged card goes to the end", () => {
-    expect(getSameDayDropLine(ids, "a", 2)).toEqual({
+    expect(getEntryDropLine(ids, ["a"], 2)).toEqual({
       entryId: "c",
       edge: "after",
     });
   });
 
   it("hides when the card would land where it started", () => {
-    expect(getSameDayDropLine(ids, "b", 1)).toBeNull();
+    expect(getEntryDropLine(ids, ["b"], 1)).toBeNull();
+  });
+
+  it("marks where a block of cards lands among the cards that stay", () => {
+    // "a" and "c" are dragged; only "b" stays.
+    expect(getEntryDropLine(ids, ["a", "c"], 1)).toEqual({
+      entryId: "b",
+      edge: "after",
+    });
+    // Already together after "b": nothing changes.
+    expect(getEntryDropLine(["b", "a", "c"], ["a", "c"], 1)).toBeNull();
+  });
+
+  it("marks the place on another day, and nothing on an empty one", () => {
+    expect(getEntryDropLine(["x", "y"], ["a", "b"], 1)).toEqual({
+      entryId: "y",
+      edge: "before",
+    });
+    expect(getEntryDropLine([], ["a", "b"], 0)).toBeNull();
   });
 });

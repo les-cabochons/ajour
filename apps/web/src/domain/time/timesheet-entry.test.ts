@@ -4,6 +4,7 @@ import { DEFAULT_PROJECT_ICON } from "@/domain/projects/project-icon";
 import {
   deleteTimesheetEntries,
   deleteTimesheetEntry,
+  dropTimesheetEntries,
   duplicateTimesheetEntry,
   markTimesheetEntriesCommitted,
   markTimesheetEntriesNotCommitted,
@@ -1114,6 +1115,124 @@ describe("pasteTimesheetEntries", () => {
     );
 
     expect(pasted).toBe(state);
+  });
+});
+
+describe("dropTimesheetEntries", () => {
+  const HOUR = 60 * 60 * 1000;
+  function entry(id: string, localDate: string, committedAt: number) {
+    return {
+      _id: id,
+      localDate,
+      projectId: "project-1",
+      taskId: "task-1",
+      label: "Feature work",
+      note: id,
+      durationMs: HOUR,
+      sourceBlockIds: [],
+      committedAt,
+    };
+  }
+  const factories = { createId: () => "unused", now: () => 1000 };
+  function dayOrder(state: LocalAppState, localDate: string) {
+    return selectSortableDayEntryIds(state.timesheetEntries, localDate);
+  }
+
+  it("reorders a block within its day, keeping the block's order", () => {
+    const state = createState({
+      timesheetEntries: [
+        entry("a", "2026-10-05", 10),
+        entry("b", "2026-10-05", 20),
+        entry("c", "2026-10-05", 30),
+        entry("d", "2026-10-05", 40),
+      ],
+    });
+
+    const dropped = dropTimesheetEntries(
+      state,
+      { entryIds: ["a", "c"], localDate: "2026-10-05", targetIndex: 2 },
+      factories,
+    );
+
+    expect(dayOrder(dropped.state, "2026-10-05")).toEqual(["b", "d", "a", "c"]);
+    expect(dropped.movedIds).toEqual([]);
+  });
+
+  it("moves entries from other days into the block at the drop line", () => {
+    const state = createState({
+      timesheetEntries: [
+        entry("mon", "2026-10-05", 10),
+        entry("tue-1", "2026-10-06", 20),
+        entry("tue-2", "2026-10-06", 30),
+        entry("wed", "2026-10-07", 40),
+      ],
+    });
+
+    // Monday's entry and Tuesday's first, dropped between Tuesday's entries.
+    const dropped = dropTimesheetEntries(
+      state,
+      { entryIds: ["mon", "tue-1"], localDate: "2026-10-06", targetIndex: 1 },
+      factories,
+    );
+
+    expect(dayOrder(dropped.state, "2026-10-05")).toEqual([]);
+    expect(dayOrder(dropped.state, "2026-10-06")).toEqual([
+      "tue-2",
+      "mon",
+      "tue-1",
+    ]);
+    expect(dropped.movedIds).toEqual(["mon"]);
+  });
+
+  it("puts the block at the end of the day when the index is past the last entry", () => {
+    const state = createState({
+      timesheetEntries: [
+        entry("mon", "2026-10-05", 10),
+        entry("wed", "2026-10-07", 40),
+      ],
+    });
+
+    const dropped = dropTimesheetEntries(
+      state,
+      { entryIds: ["mon"], localDate: "2026-10-07", targetIndex: 99 },
+      factories,
+    );
+
+    expect(dayOrder(dropped.state, "2026-10-07")).toEqual(["wed", "mon"]);
+  });
+
+  it("leaves an entry linked to the running timer on its day", () => {
+    const state = createState({
+      timesheetEntries: [
+        entry("running", "2026-10-05", 10),
+        entry("saved", "2026-10-05", 20),
+      ],
+      timers: [
+        {
+          _id: "timer-1",
+          startedAt: 1,
+          localDate: "2026-10-05",
+          projectId: "project-1",
+          taskId: "task-1",
+          accumulatedDurationMs: HOUR,
+          entryId: "running",
+        },
+      ],
+    });
+
+    const dropped = dropTimesheetEntries(
+      state,
+      {
+        entryIds: ["running", "saved"],
+        localDate: "2026-10-06",
+        targetIndex: 0,
+      },
+      factories,
+    );
+
+    expect(dayOrder(dropped.state, "2026-10-05")).toEqual(["running"]);
+    expect(dayOrder(dropped.state, "2026-10-06")).toEqual(["saved"]);
+    expect(dropped.movedIds).toEqual(["saved"]);
   });
 });
 
