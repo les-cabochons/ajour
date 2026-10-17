@@ -36,6 +36,7 @@ import {
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
 import {
   externalEntryId,
+  weekStatusVersion,
   timesheetChangeVersion,
 } from "@/domain/agents/external-id";
 
@@ -401,7 +402,8 @@ export function checkChangeVersionsOrRefuse(
 /**
  * The week's submission status for agents: whether it is submitted, how many
  * changes wait, what the external timesheet holds per day and per entry from
- * the committed copies, and Ajour's pace check, in decimal hours.
+ * the committed copies, and Ajour's pace check, in decimal hours. `version`
+ * covers all of it but the pace; submit_week takes it back.
  */
 export function getWeekStatusForAgent(
   state: LocalAppState,
@@ -432,14 +434,29 @@ export function getWeekStatusForAgent(
     .filter((entry) => week.has(entry.localDate))
     .reduce((total, entry) => total + entry.durationMs, 0);
 
+  const weekOf = weekDates[0]!;
+  const locked = getLockedWeek(state, weekOf) !== undefined;
+  const uncommittedChanges = listWeekChanges({
+    entries: state.timesheetEntries,
+    tombstones: state.timesheetTombstones,
+    weekDates,
+  }).length;
+  const committedEntries = committed.map(({ entryId, commit }) => ({
+    entryId,
+    externalId: externalEntryId(entryId),
+    committed: toAgentChangeValues(state, commit, projectPropertyPlugins),
+  }));
+
   return {
-    weekOf: weekDates[0]!,
-    locked: getLockedWeek(state, weekDates[0]!) !== undefined,
-    uncommittedChanges: listWeekChanges({
-      entries: state.timesheetEntries,
-      tombstones: state.timesheetTombstones,
-      weekDates,
-    }).length,
+    weekOf,
+    version: weekStatusVersion({
+      weekOf,
+      committedEntries,
+      uncommittedChanges,
+      locked,
+    }),
+    locked,
+    uncommittedChanges,
     committedHoursByDay: weekDates.map((date) => ({
       date,
       hours: toHours(
@@ -448,11 +465,7 @@ export function getWeekStatusForAgent(
           .reduce((total, { commit }) => total + commit.durationMs, 0),
       ),
     })),
-    committedEntries: committed.map(({ entryId, commit }) => ({
-      entryId,
-      externalId: externalEntryId(entryId),
-      committed: toAgentChangeValues(state, commit, projectPropertyPlugins),
-    })),
+    committedEntries,
     pace: computeWeekPace({
       weekDates,
       today,
@@ -461,4 +474,33 @@ export function getWeekStatusForAgent(
       tolerancePercent: getPaceTolerancePercent(state.userPreferences),
     }),
   };
+}
+
+/**
+ * Refuses submit_week when the week's status differs from the one the agent
+ * read, so Ajour never locks committed values the agent did not check.
+ */
+export function checkWeekStatusVersionOrRefuse(
+  state: LocalAppState,
+  {
+    weekDates,
+    version,
+    projectPropertyPlugins,
+  }: {
+    weekDates: string[];
+    version: string;
+    projectPropertyPlugins: ProjectPropertyPlugin[];
+  },
+): void {
+  // The version leaves the pace out, so any day reads the same one.
+  const current = getWeekStatusForAgent(state, {
+    weekDates,
+    today: weekDates[0]!,
+    projectPropertyPlugins,
+  }).version;
+  if (current !== version) {
+    throw new AgentToolRefusal(
+      "The week changed since you read it. Call get_week_status again.",
+    );
+  }
 }

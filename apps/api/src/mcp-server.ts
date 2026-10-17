@@ -87,7 +87,7 @@ const TOOL_DESCRIPTIONS: Record<
   get_week_changes:
     "The week's changes since its last commit, one per entry: added, updated or deleted, with the entry's externalId, the change's version, its current values and, for updated and deleted ones, its committed values. `weekOf` is any date in the week. By default only the changes the user left checked on the Commit page. Write the externalId at the end of the external entry's comment, so later runs find the entry. An entry moved to another week shows in both weeks.",
   get_week_status:
-    "The week's submission status: `locked` once it is submitted, the number of changes not committed yet, the hours the external timesheet holds each day and each committed entry with its externalId and committed values, from Ajour's committed copies, and Ajour's pace check. `weekOf` is any date in the week. When `pace.status` is not \"on-pace\", ask the user before submitting.",
+    "The week's submission status: `locked` once it is submitted, the number of changes not committed yet, the hours the external timesheet holds each day and each committed entry with its externalId and committed values, from Ajour's committed copies, and Ajour's pace check. `weekOf` is any date in the week. When `pace.status` is not \"on-pace\", ask the user before submitting. Pass its `version` to submit_week.",
   start_timer:
     "Starts an entry now on a backlog item, or on a project with an optional task. A running entry is saved first, as Switch does in Ajour. Refused when today is in a submitted week.",
   stop_timer: "Stops and saves the running entry.",
@@ -103,7 +103,7 @@ const TOOL_DESCRIPTIONS: Record<
   mark_entries_committed:
     "Marks changes as committed once the external timesheet saved them: saves each entry's committed copy, or forgets a deleted entry. Pass each change's entryId and version from get_week_changes. When any change differs from its version, because the user edited, deleted or restored the entry since, Ajour refuses the whole call: call get_week_changes again and apply the current values. A deleted change's ID is accepted once: after its tombstone is cleared, the ID is unknown and the call refuses. Never mark a change you did not apply. Refused on a submitted week.",
   submit_week:
-    "Submits the week in Ajour: locks it, so its entries are read-only, for agents too, until the user reopens it. Refuses while a change is not committed or the running entry is in the week, with the reason. Call it last, once the external timesheet holds the week. `weekOf` is any date in the week.",
+    "Submits the week in Ajour: locks it, so its entries are read-only, for agents too, until the user reopens it. Refuses while a change is not committed or the running entry is in the week, with the reason. Call it last, once the external timesheet holds the week. `weekOf` is any date in the week. Pass the `version` from your last get_week_status call: when the week changed since, Ajour refuses, and you call get_week_status again.",
   create_work_item:
     "Adds a manual backlog item, or a subitem with parentWorkItemId.",
   edit_work_item:

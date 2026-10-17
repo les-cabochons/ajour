@@ -180,8 +180,10 @@ describe("agent read model", () => {
       projectPropertyPlugins: [],
     };
 
-    expect(getWeekStatusForAgent(state, input)).toEqual({
+    const status = getWeekStatusForAgent(state, input);
+    expect(status).toEqual({
       weekOf: "2026-10-12",
+      version: expect.stringMatching(/^v:[0-9a-f]{8}$/),
       locked: false,
       // e1 was never committed, and "gone" was deleted since its commit.
       uncommittedChanges: 2,
@@ -219,12 +221,37 @@ describe("agent read model", () => {
         status: "under",
       },
     });
+    const locked = getWeekStatusForAgent(
+      { ...state, lockedWeeks: [{ weekOf: "2026-10-12", lockedAt: 1 }] },
+      input,
+    );
+    expect(locked.locked).toBe(true);
+    expect(locked.version).not.toBe(status.version);
+  });
+
+  it("versions the week's status by what submit_week depends on", () => {
+    const input = {
+      weekDates: WEEK,
+      today: "2026-10-14",
+      projectPropertyPlugins: [],
+    };
+    const state = createState();
+    const { version } = getWeekStatusForAgent(state, input);
+
+    // Pace is not part of it: another day reads the same version.
     expect(
-      getWeekStatusForAgent(
-        { ...state, lockedWeeks: [{ weekOf: "2026-10-12", lockedAt: 1 }] },
-        input,
-      ).locked,
-    ).toBe(true);
+      getWeekStatusForAgent(state, { ...input, today: "2026-10-16" }).version,
+    ).toBe(version);
+    // A change to a committed copy is.
+    const edited: LocalAppState = {
+      ...state,
+      timesheetEntries: state.timesheetEntries.map((entry) =>
+        entry.commit
+          ? { ...entry, commit: { ...entry.commit, durationMs: 2 * HOUR } }
+          : entry,
+      ),
+    };
+    expect(getWeekStatusForAgent(edited, input).version).not.toBe(version);
   });
 
   it("reads the running entry with its counted minutes", () => {

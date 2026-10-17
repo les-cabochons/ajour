@@ -619,11 +619,18 @@ describe("agent tools on submitted weeks", () => {
       note: "Workshop",
     });
     const entryId = (created as { output: { entryId: string } }).output.entryId;
-    return { ...context, entryId };
+    /** The version get_week_status returns now, for submit_week. */
+    const readVersion = async (weekOf = "2026-10-12") =>
+      (
+        (await context.call("get_week_status", { weekOf })) as {
+          output: { version: string };
+        }
+      ).output.version;
+    return { ...context, entryId, readVersion };
   }
 
   it("reports the status, and submits the week once every change is committed", async () => {
-    const { call, readChange, entryId } = await committedWeek();
+    const { call, readChange, readVersion, entryId } = await committedWeek();
 
     expect(
       await call("get_week_status", { weekOf: "2026-10-18" }),
@@ -631,7 +638,12 @@ describe("agent tools on submitted weeks", () => {
       ok: true,
       output: { weekOf: "2026-10-12", locked: false, uncommittedChanges: 1 },
     });
-    expect(await call("submit_week", { weekOf: "2026-10-14" })).toMatchObject({
+    expect(
+      await call("submit_week", {
+        weekOf: "2026-10-14",
+        version: await readVersion(),
+      }),
+    ).toMatchObject({
       ok: false,
       error:
         "Commit your changes first. The week of 2026-10-12 has 1 change that is not committed.",
@@ -661,7 +673,12 @@ describe("agent tools on submitted weeks", () => {
       },
     });
     // A Sunday locks its Monday's week.
-    expect(await call("submit_week", { weekOf: "2026-10-18" })).toMatchObject({
+    expect(
+      await call("submit_week", {
+        weekOf: "2026-10-18",
+        version: await readVersion(),
+      }),
+    ).toMatchObject({
       ok: true,
       output: { weekOf: "2026-10-12", locked: true },
     });
@@ -676,13 +693,51 @@ describe("agent tools on submitted weeks", () => {
     });
   });
 
+  it("refuses to submit a week that changed since get_week_status", async () => {
+    const {
+      call,
+      readChange,
+      readVersion,
+      localStore,
+      project,
+      task,
+      entryId,
+    } = await committedWeek();
+    await call("mark_entries_committed", {
+      changes: [await readChange(entryId)],
+    });
+    const version = await readVersion();
+    // The user edits the entry and commits it again: still no change, but the
+    // committed values the agent compared are gone.
+    localStore.updateTimesheetEntry(entryId, {
+      projectId: project._id,
+      taskId: task("Build")._id,
+      note: "Workshop",
+      durationMs: 2 * 60 * 60 * 1000,
+    });
+    await call("mark_entries_committed", {
+      changes: [await readChange(entryId)],
+    });
+
+    expect(
+      await call("submit_week", { weekOf: "2026-10-12", version }),
+    ).toMatchObject({
+      ok: false,
+      error: "The week changed since you read it. Call get_week_status again.",
+    });
+    expect(localStore.snapshot().lockedWeeks).toEqual([]);
+  });
+
   it("refuses every entry write to a submitted week, with the reason", async () => {
-    const { call, readChange, localStore, project, entryId } =
+    const { call, readChange, readVersion, localStore, project, entryId } =
       await committedWeek();
     await call("mark_entries_committed", {
       changes: [await readChange(entryId)],
     });
-    await call("submit_week", { weekOf: "2026-10-12" });
+    await call("submit_week", {
+      weekOf: "2026-10-12",
+      version: await readVersion(),
+    });
     const reason =
       "The week of 2026-10-12 is submitted. Reopen it to change it.";
 

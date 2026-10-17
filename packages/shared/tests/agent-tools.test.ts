@@ -67,9 +67,22 @@ describe("agent tool contracts", () => {
       readToolInputSchemas.get_week_status.parse({ weekOf: "2026-10-18" }),
     ).toEqual({ weekOf: "2026-10-18" });
     expect(
-      writeToolInputSchemas.submit_week.safeParse({ weekOf: "next week" })
+      writeToolInputSchemas.submit_week.safeParse({
+        weekOf: "next week",
+        version: "v:0a1b2c3d",
+      }).success,
+    ).toBe(false);
+    // submit_week takes the version get_week_status returned.
+    expect(
+      writeToolInputSchemas.submit_week.safeParse({ weekOf: "2026-10-12" })
         .success,
     ).toBe(false);
+    expect(
+      writeToolInputSchemas.submit_week.parse({
+        weekOf: "2026-10-12",
+        version: "v:0a1b2c3d",
+      }),
+    ).toEqual({ weekOf: "2026-10-12", version: "v:0a1b2c3d" });
     expect(
       dataToolOutputSchemas.submit_week.parse({
         weekOf: "2026-10-12",
@@ -79,6 +92,7 @@ describe("agent tool contracts", () => {
     expect(
       dataToolOutputSchemas.get_week_status.parse({
         weekOf: "2026-10-12",
+        version: "v:0a1b2c3d",
         locked: false,
         uncommittedChanges: 0,
         committedHoursByDay: [{ date: "2026-10-12", hours: 7.5 }],

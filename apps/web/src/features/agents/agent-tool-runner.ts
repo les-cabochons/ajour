@@ -170,7 +170,14 @@ export async function runAgentToolCall(
       };
     }
     if (isEntryWriteTool(call.tool)) {
-      return finishWrite(call, runEntryWriteTool(call.tool, call.input));
+      const projectPropertyPlugins =
+        call.tool === "submit_week"
+          ? await loadProjectPropertyPlugins(call.tool)
+          : [];
+      return finishWrite(
+        call,
+        runEntryWriteTool(call.tool, call.input, { projectPropertyPlugins }),
+      );
     }
     if (isWorkItemWriteTool(call.tool)) {
       return finishWrite(

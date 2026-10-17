@@ -56,3 +56,26 @@ export function timesheetChangeVersion(change: TimesheetChange): string {
     ]),
   )}`;
 }
+
+/**
+ * The version of a week's status, as get_week_status gives it: "v:" and the
+ * FNV-1a hash of the week's Monday, its committed entries as the tool returns
+ * them, its uncommitted change count and its lock. submit_week recomputes it
+ * and refuses a different one, so Ajour never locks a week the agent did not
+ * check. Pace is left out: it moves with the clock.
+ */
+export function weekStatusVersion(status: {
+  weekOf: string;
+  committedEntries: unknown[];
+  uncommittedChanges: number;
+  locked: boolean;
+}): string {
+  return `v:${fnv1aHex(
+    JSON.stringify([
+      status.weekOf,
+      status.committedEntries,
+      status.uncommittedChanges,
+      status.locked,
+    ]),
+  )}`;
+}

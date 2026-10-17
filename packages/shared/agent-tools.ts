@@ -194,7 +194,8 @@ export const writeToolInputSchemas = {
       .min(1)
       .max(500),
   }),
-  submit_week: z.object({ weekOf: isoDateSchema }),
+  /** `version` is the one get_week_status returned. A different one refuses. */
+  submit_week: z.object({ weekOf: isoDateSchema, version: z.string() }),
   create_work_item: z.object({
     title: z.string().trim().min(1).max(500),
     note: z.string().max(10_000).optional(),
@@ -376,6 +377,8 @@ export const dataToolOutputSchemas = {
   get_week_status: z.object({
     /** The week's Monday. */
     weekOf: z.string(),
+    /** Pass it to submit_week. It changes with the committed entries, the change count or the lock. */
+    version: z.string(),
     /** Submitted: its entries are read-only until the user reopens it. */
     locked: z.boolean(),
     /** Changes not committed yet. submit_week refuses until it is 0. */

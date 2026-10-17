@@ -14,6 +14,7 @@ import {
 } from "@/domain/actions/object-actions";
 import {
   checkChangeVersionsOrRefuse,
+  checkWeekStatusVersionOrRefuse,
   findWorkItemOrRefuse,
   readRunningTimer,
   toAgentEntry,
@@ -21,6 +22,8 @@ import {
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
 import { isBacklogItemSnoozed } from "@/domain/backlog/backlog-item-lifecycle";
 import { isSubtaskWorkItem } from "@/domain/backlog/work-item-hierarchy";
+import type { ProjectPropertyPlugin } from "@/domain/projects/plugin-properties";
+import { getWeekDates } from "@/domain/time/local-date";
 import { getDateLockReason } from "@/domain/time/locked-weeks";
 import { findWorkItemTimer } from "@/domain/time/running-entry";
 import {
@@ -191,9 +194,16 @@ export const ENTRY_WRITE_TOOLS = [
 ] as const satisfies readonly WriteToolName[];
 export type EntryWriteTool = (typeof ENTRY_WRITE_TOOLS)[number];
 
+/** What a write tool needs beyond the store. The runner loads it first. */
+export interface EntryWriteContext {
+  /** Active plugins that add project properties. submit_week's version reads them. */
+  projectPropertyPlugins: ProjectPropertyPlugin[];
+}
+
 export function runEntryWriteTool(
   tool: EntryWriteTool,
   rawInput: unknown,
+  context: EntryWriteContext = { projectPropertyPlugins: [] },
 ): AgentWriteOutcome {
   const state = localStore.snapshot();
   const now = Date.now();
@@ -455,6 +465,11 @@ export function runEntryWriteTool(
     }
     case "submit_week": {
       const input = writeToolInputSchemas.submit_week.parse(rawInput);
+      checkWeekStatusVersionOrRefuse(state, {
+        weekDates: getWeekDates(input.weekOf),
+        version: input.version,
+        projectPropertyPlugins: context.projectPropertyPlugins,
+      });
       const { undoToken, result } = localStore.submitWeek(input.weekOf);
       if (!result.ok) throw new AgentToolRefusal(result.message);
       return {
