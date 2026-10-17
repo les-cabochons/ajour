@@ -674,6 +674,11 @@ export interface LocalAppState {
   extensionBridgeStatus?: ExtensionBridgeStatus;
   userPreferences: UserPreferences;
   desktopBootstrapAppliedAt?: number;
+  /**
+   * Changes with every write. It is saved inside the state, so the state and
+   * its revision always go together; see `writeState` in lib/local-store.ts.
+   */
+  revision?: string;
   updatedAt: number;
 }
 

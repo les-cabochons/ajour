@@ -2865,7 +2865,11 @@ describe("localStore subscriptions", () => {
     const before = localStore.snapshot();
     window.localStorage.setItem(
       "ajour.local-state.v2",
-      JSON.stringify({ ...before, updatedAt: before.updatedAt + 1 }),
+      JSON.stringify({
+        ...before,
+        updatedAt: before.updatedAt + 1,
+        revision: "other-window",
+      }),
     );
     window.localStorage.setItem("ajour.local-state.revision", "other-window");
     const storageListener = vi
@@ -2874,8 +2878,14 @@ describe("localStore subscriptions", () => {
     (storageListener as unknown as (event: { key: string }) => void)({
       key: "ajour.local-state.v2",
     });
-
-    expect(() => localStore.addWorkItem({ title: "Ship it" })).not.toThrow();
+    const parse = vi.spyOn(JSON, "parse");
+    try {
+      expect(() => localStore.addWorkItem({ title: "Ship it" })).not.toThrow();
+      // The reload took the revision from the state itself, so no reload now.
+      expect(parse).not.toHaveBeenCalled();
+    } finally {
+      parse.mockRestore();
+    }
   });
 });
 
@@ -3194,7 +3204,7 @@ describe("submitted weeks in the store", () => {
     ) as Record<string, unknown>;
     window.localStorage.setItem(
       "ajour.local-state.v2",
-      JSON.stringify({ ...stored, ...change }),
+      JSON.stringify({ ...stored, ...change, revision: "other-window" }),
     );
     window.localStorage.setItem("ajour.local-state.revision", "other-window");
   }
@@ -3259,7 +3269,11 @@ describe("submitted weeks in the store", () => {
   it("never reads the stored state back on a write in a single window", async () => {
     seedWeek({ locked: false });
     const { localStore } = await import("./local-store");
-    localStore.snapshot();
+    // The seed has no revision key yet; the first write stores it.
+    localStore.saveManualTimeEntry({
+      localDate: "2026-10-14",
+      durationMs: HOUR,
+    });
     const getItem = vi.mocked(window.localStorage.getItem);
     getItem.mockClear();
     const parse = vi.spyOn(JSON, "parse");
@@ -3276,6 +3290,148 @@ describe("submitted weeks in the store", () => {
       expect(getItem).toHaveBeenCalledWith("ajour.local-state.revision");
     } finally {
       parse.mockRestore();
+    }
+  });
+
+  // Each window loads its own module, so compare refusals by message.
+  const stale = "Ajour changed in another window. Try again.";
+
+  /** Loads the store again as a second window on the same storage. */
+  async function openAnotherWindow() {
+    vi.resetModules();
+    return (await import("./local-store")).localStore;
+  }
+
+  it("leaves no stale write possible when the revision key cannot be written", async () => {
+    seedWeek({ locked: false });
+    const { localStore: first } = await import("./local-store");
+    // Both windows start on the same revision, and the hint holds it.
+    first.saveManualTimeEntry({ localDate: "2026-10-14", durationMs: HOUR });
+    const second = await openAnotherWindow();
+    second.snapshot();
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const setItem = vi.mocked(window.localStorage.setItem);
+    const write = setItem.getMockImplementation()!;
+    setItem.mockImplementation((key, value) => {
+      if (key === "ajour.local-state.revision") {
+        throw new DOMException("Quota exceeded", "QuotaExceededError");
+      }
+      write(key, value);
+    });
+    try {
+      first.submitWeek("2026-10-05");
+      expect(first.snapshot().lockedWeeks).toHaveLength(1);
+    } finally {
+      setItem.mockImplementation(write);
+    }
+
+    expect(warn).toHaveBeenCalledTimes(1);
+    warn.mockRestore();
+    expect(() =>
+      second.saveManualTimeEntry({ localDate: "2026-10-27", durationMs: HOUR }),
+    ).toThrow(stale);
+    expect(storedLocks()).toMatchObject([{ weekOf: "2026-10-05" }]);
+  });
+
+  it("never pairs an old state with a newer revision while loading", async () => {
+    seedWeek({ locked: false });
+    const { localStore: first } = await import("./local-store");
+    first.saveManualTimeEntry({ localDate: "2026-10-14", durationMs: HOUR });
+    const second = await openAnotherWindow();
+    // The first window submits right after the second one read the state.
+    const getItem = vi.mocked(window.localStorage.getItem);
+    const read = getItem.getMockImplementation()!;
+    let interleaved = false;
+    getItem.mockImplementation((key) => {
+      const value = read(key);
+      if (key === "ajour.local-state.v2" && !interleaved) {
+        interleaved = true;
+        first.submitWeek("2026-10-19");
+      }
+      return value;
+    });
+    try {
+      expect(second.snapshot().lockedWeeks).toEqual([]);
+    } finally {
+      getItem.mockImplementation(read);
+    }
+
+    expect(() =>
+      second.saveManualTimeEntry({ localDate: "2026-10-27", durationMs: HOUR }),
+    ).toThrow(stale);
+    expect(storedLocks()).toMatchObject([{ weekOf: "2026-10-19" }]);
+  });
+
+  it("reloads when the revision key is missing, and still writes on a fresh base", async () => {
+    seedWeek({ locked: false });
+    const { localStore } = await import("./local-store");
+    localStore.saveManualTimeEntry({
+      localDate: "2026-10-14",
+      durationMs: HOUR,
+    });
+    window.localStorage.removeItem("ajour.local-state.revision");
+    const parse = vi.spyOn(JSON, "parse");
+    try {
+      expect(() =>
+        localStore.saveManualTimeEntry({
+          localDate: "2026-10-15",
+          durationMs: HOUR,
+        }),
+      ).not.toThrow();
+      expect(parse).toHaveBeenCalled();
+    } finally {
+      parse.mockRestore();
+    }
+    expect(localStore.snapshot().timesheetEntries).toHaveLength(3);
+    expect(window.localStorage.getItem("ajour.local-state.revision")).toBe(
+      localStore.snapshot().revision,
+    );
+  });
+
+  it("keeps the Undo when a stale window refuses it, so a retry works", async () => {
+    seedWeek({ locked: false });
+    const { localStore, StaleWindowError } = await import("./local-store");
+    const { undoToken } = localStore.submitWeek("2026-10-12");
+    // Another window changes something unrelated to the submitted week.
+    writeInAnotherWindow({ dismissedSegmentIds: ["segment-1"] });
+
+    expect(() => localStore.undo(undoToken!)).toThrow(StaleWindowError);
+    expect(localStore.undo(undoToken!)).toBe("restored");
+    expect(localStore.snapshot().lockedWeeks).toEqual([]);
+    expect(localStore.snapshot().dismissedSegmentIds).toEqual(["segment-1"]);
+  });
+
+  it("does not submit a recovered week that holds the store's running entry", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      recoverFromDesktop(
+        {
+          timers: [
+            {
+              _id: "local-running",
+              startedAt: 1,
+              localDate: "2026-10-07",
+              accumulatedDurationMs: 0,
+            },
+          ],
+        },
+        [
+          { weekOf: "2026-10-05", lockedAt: 2 },
+          { weekOf: "2026-10-12", lockedAt: 3 },
+        ],
+      );
+      const { localStore } = await import("./local-store");
+
+      expect(localStore.snapshot().timers).toHaveLength(1);
+      expect(localStore.snapshot().lockedWeeks).toEqual([
+        { weekOf: "2026-10-12", lockedAt: 3 },
+      ]);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(
+        "Desktop recovery did not submit the week of 2026-10-05: the running entry is on it.",
+      );
+    } finally {
+      warn.mockRestore();
     }
   });
 

@@ -800,10 +800,31 @@ function mergeDesktopBootstrapState(
       recovered,
     );
   }
+  // A recovered lock on the week of this store's running entry would strand
+  // it: it could never be saved there. Leave that week open.
+  const runningDays = (nextState.timers ?? []).flatMap((timer) =>
+    timer?._id && typeof timer.startedAt === "number"
+      ? [normalizeTimer(timer).localDate]
+      : [],
+  );
+  const recoveredLocks = normalizeLockedWeeks(
+    bootstrapState.lockedWeeks,
+  ).filter((week) => {
+    if (isDateLocked(currentLocks, week.weekOf)) return true;
+    const strands = runningDays.some((day) =>
+      isDateLocked({ lockedWeeks: [week] }, day),
+    );
+    if (strands) {
+      console.warn(
+        `Desktop recovery did not submit the week of ${week.weekOf}: the running entry is on it.`,
+      );
+    }
+    return !strands;
+  });
   const mergedLocks = {
     lockedWeeks: normalizeLockedWeeks([
       ...currentLocks.lockedWeeks,
-      ...arrayOrDefault(bootstrapState.lockedWeeks, []),
+      ...recoveredLocks,
     ]),
   };
   nextState.lockedWeeks = mergedLocks.lockedWeeks;
@@ -939,18 +960,18 @@ function loadState(): LocalAppState {
       mergeDesktopBootstrapState(parsedState, bootstrapState!),
     );
     try {
-      persistState(JSON.stringify(mergedState));
+      return persistState(mergedState);
     } catch {
       // Keep the complete merged state in memory when persistence is unavailable.
+      return mergedState;
     }
-    return mergedState;
   }
   try {
     const normalizedState = normalizeState(parsedState);
     if (containsRetiredOutlookState(parsedState)) {
       try {
         if (window.localStorage.getItem(STORAGE_KEY) === stored) {
-          persistState(JSON.stringify(normalizedState));
+          return persistState(normalizedState);
         }
       } catch {
         // Keep the sanitized state in memory when persistence is unavailable.
@@ -967,15 +988,19 @@ function readState(): LocalAppState {
   return cachedState!;
 }
 
-/** Reloads the state from storage, with the revision it was read at. */
+/**
+ * Reloads the state from storage. Its revision is the one saved inside it,
+ * never the hint key read apart, so a write from another window between the
+ * two reads cannot pair an old state with a newer revision.
+ */
 function refreshState(): LocalAppState {
   cachedState = loadState();
-  cachedRevision = readRevision();
+  cachedRevision = cachedState.revision ?? null;
   return cachedState;
 }
 
-/** The stored state's revision. A new one is written with every state write. */
-function readRevision(): string | null {
+/** The revision hint key, or null when it is missing or unreadable. */
+function readRevisionHint(): string | null {
   try {
     return window.localStorage.getItem(REVISION_KEY);
   } catch {
@@ -983,30 +1008,55 @@ function readRevision(): string | null {
   }
 }
 
-/** Writes the state's JSON and a new revision next to it. Returns the revision. */
-function persistState(json: string): string {
-  window.localStorage.setItem(STORAGE_KEY, json);
-  const revision = createId("revision");
+/**
+ * Saves `state` with a new revision inside it, in one atomic write, then the
+ * same revision under the hint key. When the hint cannot be written, it is
+ * removed, so other windows reload and compare the revision inside the state
+ * instead of trusting an old hint. Returns the saved state.
+ */
+function persistState<T extends Partial<LocalAppState>>(
+  state: T,
+): T & { revision: string } {
+  const saved = { ...state, revision: createId("revision") };
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
   try {
-    window.localStorage.setItem(REVISION_KEY, revision);
-  } catch {
-    // The state is saved; other windows then see no new revision.
+    window.localStorage.setItem(REVISION_KEY, saved.revision);
+  } catch (error) {
+    try {
+      window.localStorage.removeItem(REVISION_KEY);
+    } catch {
+      // The warning below covers both failures.
+    }
+    console.warn(
+      "Ajour could not save its revision hint; other windows reload before each write.",
+      error,
+    );
   }
-  return revision;
+  return saved;
 }
 
 /**
  * Refuses a write made from a stale cache: another window wrote since this
  * window last read or wrote the state, and this window has not read its
  * storage event yet. Writing would erase that window's write, such as a lock.
- * It reads only the revision key, so a write in a single window never parses
- * the stored state. The refusal reloads the cache, so the next try works on
- * the current state.
+ * It reads only the hint key when it matches, so a write in a single window
+ * never parses the stored state. A missing or different hint reloads the
+ * state and compares the revision inside it: the write goes on when its base
+ * was current, and is refused otherwise. The reload keeps the cache current,
+ * so the next try works.
  */
 function assertFreshCache(cached: LocalAppState, next: LocalAppState) {
-  if (readRevision() === cachedRevision) return;
+  const hint = readRevisionHint();
+  if (hint !== null && hint === cachedRevision) return;
 
+  const baseRevision = cachedRevision;
   const fresh = refreshState();
+  if (cachedRevision === baseRevision) {
+    // The base was current: keep the cached object, so its readers see no change.
+    cachedState = cached;
+    return;
+  }
+
   window.dispatchEvent(new Event(STATE_CHANGE_EVENT));
   // Judge what this write changes against the fresh locks.
   const weekOf = findLockedWeekWrite(
@@ -1024,8 +1074,8 @@ function writeState(state: LocalAppState) {
     assertFreshCache(cachedState, state);
     assertNoLockedWeekWrite(cachedState, state);
   }
-  const nextState = { ...state, updatedAt: Date.now() };
-  cachedRevision = persistState(JSON.stringify(nextState));
+  const nextState = persistState({ ...state, updatedAt: Date.now() });
+  cachedRevision = nextState.revision;
   cachedState = nextState;
   window.dispatchEvent(new Event(STATE_CHANGE_EVENT));
 }
@@ -2223,19 +2273,28 @@ export const localStore = {
       return "expired";
     }
 
-    const { undo } = lastUndo;
+    const kept = lastUndo;
+    const { undo } = kept;
     lastUndo = undefined;
-    releaseTeamPushHold();
-    return updateStateWithResult((state) => {
-      const restored = restoreUndo(state, undo);
-      return {
-        ...restored,
-        state: reconcileSourceWriteMappings(state, restored.state, {
-          createId,
-          now: Date.now,
-        }),
-      };
-    });
+    try {
+      releaseTeamPushHold();
+      return updateStateWithResult((state) => {
+        const restored = restoreUndo(state, undo);
+        return {
+          ...restored,
+          state: reconcileSourceWriteMappings(state, restored.state, {
+            createId,
+            now: Date.now,
+          }),
+        };
+      });
+    } catch (error) {
+      // Another window wrote first. The refusal reloaded this window, so keep
+      // the undo: a retry runs it against the fresh state, which says "stale"
+      // only when the undo itself no longer applies.
+      if (error instanceof StaleWindowError) lastUndo ??= kept;
+      throw error;
+    }
   },
   /** Drops the undo for `token` once its toast closes. A newer undo is kept. */
   forgetUndo(token: string) {
