@@ -45,8 +45,15 @@ export function showUndoToast({
       onUndo: () => {
         if (undone) return;
         undone = true;
-        // Undo before closing: closing runs `onClose`, which may drop the undo.
-        onUndo();
+        try {
+          // Undo before closing: closing runs `onClose`, which may drop the undo.
+          onUndo();
+        } catch (error) {
+          // A refused Undo, such as a stale window's, keeps the toast and lets
+          // the user press Undo again.
+          undone = false;
+          throw error;
+        }
         toastManager.close(id);
       },
     },
