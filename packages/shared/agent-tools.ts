@@ -182,8 +182,16 @@ export const writeToolInputSchemas = {
     entryId: z.string(),
     date: isoDateSchema.optional(),
   }),
+  /**
+   * The changes the external timesheet saved, each with the version
+   * get_week_changes gave. Ajour refuses the whole call when any of them
+   * changed since.
+   */
   mark_entries_committed: z.object({
-    entryIds: z.array(z.string()).min(1).max(500),
+    changes: z
+      .array(z.object({ entryId: z.string(), version: z.string() }))
+      .min(1)
+      .max(500),
   }),
   create_work_item: z.object({
     title: z.string().trim().min(1).max(500),
@@ -340,6 +348,11 @@ export const dataToolOutputSchemas = {
         entryId: z.string(),
         /** "ajour:" and 8 hex characters. Never changes for the entry. */
         externalId: z.string(),
+        /**
+         * "v:" and 8 hex characters. Changes with any compared value of the
+         * entry or its committed copy. Pass it to mark_entries_committed.
+         */
+        version: z.string(),
         /** False when the user unchecked it on the Commit page. */
         checked: z.boolean(),
         /** Missing for a deleted entry. */
@@ -359,6 +372,7 @@ export const dataToolOutputSchemas = {
   edit_entry: agentTimeEntrySchema,
   move_entry: agentTimeEntrySchema,
   duplicate_entry: agentTimeEntrySchema,
+  /** How many of the listed changes Ajour committed. */
   mark_entries_committed: z.object({ committed: z.number() }),
   create_work_item: agentWorkItemSchema,
   edit_work_item: agentWorkItemSchema,

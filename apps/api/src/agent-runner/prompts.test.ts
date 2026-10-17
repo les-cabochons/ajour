@@ -24,7 +24,7 @@ describe("buildPrompt", () => {
     });
 
     expect(prompt).toContain(
-      "After the external tool saved a change, call mark_entries_committed with its entry ID. Never mark a change you did not apply.",
+      "After the external tool saved a change, call mark_entries_committed with its entry ID and the version get_week_changes gave you. Never mark a change you did not apply.",
     );
     expect(prompt).not.toContain("mark_entries_submitted");
   });

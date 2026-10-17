@@ -113,8 +113,8 @@ Removed: `get_submit_lines`, `mark_entries_submitted`, `mark_entries_not_submitt
 
 New:
 
-- `get_week_changes { weekOf, onlyChecked = true }`: the changes, each with `change` (`added`, `updated`, `deleted`), `entryId`, `externalId`, the current values and, for updated and deleted ones, the committed values. Values carry `date`, `projectName`, `projectCode`, `projectFullName`, `projectProperties`, `taskName`, `hours`, `note`.
-- `mark_entries_committed { entryIds }`: saves the committed copy of each entry, or clears its tombstone. Refuses unknown IDs and locked weeks.
+- `get_week_changes { weekOf, onlyChecked = true }`: the changes, each with `change` (`added`, `updated`, `deleted`), `entryId`, `externalId`, `version`, the current values and, for updated and deleted ones, the committed values. Values carry `date`, `projectName`, `projectCode`, `projectFullName`, `projectProperties`, `taskName`, `hours`, `note`.
+- `mark_entries_committed { changes: { entryId, version }[] }`: saves the committed copy of each entry, or clears its tombstone. Refuses unknown IDs and locked weeks. It also refuses the whole call when a change's version differs from Ajour now, or the entry has no change any more: "<id> changed since you read it. Call get_week_changes again and apply its current values." The version is `v:` and the FNV-1a hash of `JSON.stringify([change, current, committed])`, where each side is `[localDate, projectId, taskId, trimmed note, durationMs]` or null. Without it, an edit or a delete made after the agent read the week would commit values the external timesheet never received.
 - `get_week_status { weekOf }`: `locked`, the number of uncommitted changes, the week's committed hours per day, and `pace`.
 - `submit_week { weekOf }`: locks the week. Refuses while a change is not committed, with that reason.
 - `delete_entry { entryId }`: deletes a saved entry with the Undo toast. Refuses running entries and locked weeks.
@@ -129,7 +129,7 @@ New:
 - `submit-week` tasks replace the manual Submit week action when present.
 - `reset-sync` tasks show in the Commit page's "…" menu.
 
-The runner prompt drops its rule about `mark_entries_submitted` and says: "After the external tool saved a change, call mark_entries_committed with its entry ID. Never mark a change you did not apply."
+The runner prompt drops its rule about `mark_entries_submitted` and says: "After the external tool saved a change, call mark_entries_committed with its entry ID and the version get_week_changes gave you. Never mark a change you did not apply."
 
 ### Workday (agent) 0.4.0
 
