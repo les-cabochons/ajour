@@ -1750,7 +1750,10 @@ describe("localStore workflow state sync", () => {
       _id: "committed-meeting",
       sourceBlockIds: ["meeting:event-1"],
     });
-    expect(window.localStorage.setItem).toHaveBeenCalledTimes(1);
+    // The sanitized state once, and its new revision.
+    expect(
+      vi.mocked(window.localStorage.setItem).mock.calls.map(([key]) => key),
+    ).toEqual(["ajour.local-state.v2", "ajour.local-state.revision"]);
   });
 
   it("does not overwrite state changed by another tab during retired state migration", async () => {
@@ -2846,10 +2849,33 @@ describe("localStore subscriptions", () => {
       key: "ajour.local-state.v2",
     });
 
-    expect(window.localStorage.getItem).toHaveBeenCalledTimes(1);
+    expect(
+      vi
+        .mocked(window.localStorage.getItem)
+        .mock.calls.filter(([key]) => key === "ajour.local-state.v2"),
+    ).toHaveLength(1);
     expect(window.dispatchEvent).toHaveBeenCalledTimes(1);
     expect(localStore.snapshot()).not.toBe(before);
     expect(localStore.snapshot().updatedAt).toBe(before.updatedAt + 1);
+  });
+
+  it("takes the other window's revision with its state, so the next write goes through", async () => {
+    const { localStore } = await import("./local-store");
+    localStore.subscribe(vi.fn());
+    const before = localStore.snapshot();
+    window.localStorage.setItem(
+      "ajour.local-state.v2",
+      JSON.stringify({ ...before, updatedAt: before.updatedAt + 1 }),
+    );
+    window.localStorage.setItem("ajour.local-state.revision", "other-window");
+    const storageListener = vi
+      .mocked(window.addEventListener)
+      .mock.calls.find(([type]) => type === "storage")![1];
+    (storageListener as unknown as (event: { key: string }) => void)({
+      key: "ajour.local-state.v2",
+    });
+
+    expect(() => localStore.addWorkItem({ title: "Ship it" })).not.toThrow();
   });
 });
 
@@ -3158,19 +3184,100 @@ describe("submitted weeks in the store", () => {
     expect(localStore.reopenWeek("2026-10-12")).toBeNull();
   });
 
-  /** Another window submitted the week: storage changed, no storage event yet. */
-  function submitInAnotherWindow() {
+  /**
+   * Another window wrote the state and its revision; this window has not read
+   * the storage event yet.
+   */
+  function writeInAnotherWindow(change: Record<string, unknown>) {
     const stored = JSON.parse(
       window.localStorage.getItem("ajour.local-state.v2")!,
     ) as Record<string, unknown>;
     window.localStorage.setItem(
       "ajour.local-state.v2",
-      JSON.stringify({
-        ...stored,
-        lockedWeeks: [{ weekOf: "2026-10-05", lockedAt: 9 }],
-      }),
+      JSON.stringify({ ...stored, ...change }),
     );
+    window.localStorage.setItem("ajour.local-state.revision", "other-window");
   }
+
+  /** Another window submitted the week of October 5. */
+  function submitInAnotherWindow() {
+    writeInAnotherWindow({
+      lockedWeeks: [{ weekOf: "2026-10-05", lockedAt: 9 }],
+    });
+  }
+
+  const storedLocks = () =>
+    (
+      JSON.parse(window.localStorage.getItem("ajour.local-state.v2")!) as {
+        lockedWeeks: unknown[];
+      }
+    ).lockedWeeks;
+
+  it("refuses a stale Submit of another week and keeps the other window's lock", async () => {
+    seedWeek({ locked: false });
+    const { localStore, StaleWindowError } = await import("./local-store");
+    localStore.snapshot();
+    submitInAnotherWindow();
+
+    expect(() => localStore.submitWeek("2026-10-12")).toThrow(StaleWindowError);
+    expect(storedLocks()).toEqual([{ weekOf: "2026-10-05", lockedAt: 9 }]);
+    expect(localStore.snapshot().lockedWeeks).toEqual([
+      { weekOf: "2026-10-05", lockedAt: 9 },
+    ]);
+  });
+
+  it("refuses a stale Reopen", async () => {
+    seedWeek({ locked: true });
+    const { localStore, StaleWindowError } = await import("./local-store");
+    localStore.snapshot();
+    writeInAnotherWindow({
+      lockedWeeks: [
+        { weekOf: "2026-10-05", lockedAt: 2 },
+        { weekOf: "2026-10-12", lockedAt: 9 },
+      ],
+    });
+
+    expect(() => localStore.reopenWeek("2026-10-05")).toThrow(StaleWindowError);
+    expect(storedLocks()).toHaveLength(2);
+  });
+
+  it("refuses a stale Undo", async () => {
+    seedWeek({ locked: false });
+    const { localStore, StaleWindowError } = await import("./local-store");
+    const { undoToken } = localStore.submitWeek("2026-10-12");
+    writeInAnotherWindow({
+      lockedWeeks: [
+        { weekOf: "2026-10-05", lockedAt: 9 },
+        { weekOf: "2026-10-12", lockedAt: 1 },
+      ],
+    });
+
+    expect(() => localStore.undo(undoToken!)).toThrow(StaleWindowError);
+    expect(storedLocks()).toHaveLength(2);
+  });
+
+  it("never reads the stored state back on a write in a single window", async () => {
+    seedWeek({ locked: false });
+    const { localStore } = await import("./local-store");
+    localStore.snapshot();
+    const getItem = vi.mocked(window.localStorage.getItem);
+    getItem.mockClear();
+    const parse = vi.spyOn(JSON, "parse");
+    try {
+      localStore.saveManualTimeEntry({
+        localDate: "2026-10-13",
+        durationMs: HOUR,
+      });
+      const token = localStore.submitWeek("2026-10-12").undoToken;
+      localStore.undo(token!);
+
+      expect(parse).not.toHaveBeenCalled();
+      expect(getItem).not.toHaveBeenCalledWith("ajour.local-state.v2");
+      expect(getItem).toHaveBeenCalledWith("ajour.local-state.revision");
+    } finally {
+      parse.mockRestore();
+    }
+  });
 
   it("refuses a stale window's write to a week another window submitted", async () => {
     seedWeek({ locked: false });

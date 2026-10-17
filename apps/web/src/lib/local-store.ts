@@ -7,7 +7,6 @@ import {
 } from "@ajour/shared";
 import { todayIsoDate } from "@/lib/utils";
 import { StaleWindowError } from "@/lib/stale-window-error";
-import { recordsEqual } from "@/domain/records-equal";
 import {
   changePullRequest,
   normalizePullRequests,
@@ -261,6 +260,11 @@ export type {
 } from "@/domain/local-state";
 
 const STORAGE_KEY = "ajour.local-state.v2";
+/**
+ * Changes with every write of STORAGE_KEY, so a window learns that another
+ * one wrote by reading this short value instead of the whole state.
+ */
+const REVISION_KEY = "ajour.local-state.revision";
 const STATE_CHANGE_EVENT = "ajour-local-state";
 const RETIRED_AUTH_CACHE_PREFIX = "msal.";
 
@@ -314,6 +318,8 @@ function normalizeCapacityTarget(value: unknown, fallback: number) {
 }
 
 let cachedState: LocalAppState | undefined;
+/** The revision of the stored state this window last read or wrote. */
+let cachedRevision: string | null = null;
 
 function arrayOrDefault<T>(value: unknown, fallback: T[]): T[] {
   return Array.isArray(value) ? (value as T[]) : fallback;
@@ -897,7 +903,7 @@ function loadState(): LocalAppState {
       mergeDesktopBootstrapState(parsedState, bootstrapState!),
     );
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedState));
+      persistState(JSON.stringify(mergedState));
     } catch {
       // Keep the complete merged state in memory when persistence is unavailable.
     }
@@ -908,10 +914,7 @@ function loadState(): LocalAppState {
     if (containsRetiredOutlookState(parsedState)) {
       try {
         if (window.localStorage.getItem(STORAGE_KEY) === stored) {
-          window.localStorage.setItem(
-            STORAGE_KEY,
-            JSON.stringify(normalizedState),
-          );
+          persistState(JSON.stringify(normalizedState));
         }
       } catch {
         // Keep the sanitized state in memory when persistence is unavailable.
@@ -924,38 +927,48 @@ function loadState(): LocalAppState {
 }
 
 function readState(): LocalAppState {
-  cachedState ??= loadState();
-  return cachedState;
+  if (!cachedState) refreshState();
+  return cachedState!;
 }
 
+/** Reloads the state from storage, with the revision it was read at. */
 function refreshState(): LocalAppState {
   cachedState = loadState();
+  cachedRevision = readRevision();
   return cachedState;
 }
 
-/** The submitted weeks in storage, or undefined when storage has none to read. */
-function readStoredLockedWeeks() {
+/** The stored state's revision. A new one is written with every state write. */
+function readRevision(): string | null {
   try {
-    const stored = window.localStorage.getItem(STORAGE_KEY);
-    if (!stored) return undefined;
-    const parsed = JSON.parse(stored) as Partial<LocalAppState>;
-    return normalizeLockedWeeks(parsed.lockedWeeks);
+    return window.localStorage.getItem(REVISION_KEY);
   } catch {
-    return undefined;
+    return null;
   }
 }
 
+/** Writes the state's JSON and a new revision next to it. Returns the revision. */
+function persistState(json: string): string {
+  window.localStorage.setItem(STORAGE_KEY, json);
+  const revision = createId("revision");
+  try {
+    window.localStorage.setItem(REVISION_KEY, revision);
+  } catch {
+    // The state is saved; other windows then see no new revision.
+  }
+  return revision;
+}
+
 /**
- * Refuses a write made from a stale cache: another window submitted or
- * reopened a week, and this window has not read its storage event yet.
- * Writing would erase that window's lock. Submit, Reopen and their Undo
- * change the submitted weeks themselves, so they skip this check. The refusal
- * refreshes the cache, so the next try works on the current state.
+ * Refuses a write made from a stale cache: another window wrote since this
+ * window last read or wrote the state, and this window has not read its
+ * storage event yet. Writing would erase that window's write, such as a lock.
+ * It reads only the revision key, so a write in a single window never parses
+ * the stored state. The refusal reloads the cache, so the next try works on
+ * the current state.
  */
-function assertFreshLockedWeeks(cached: LocalAppState, next: LocalAppState) {
-  if (!recordsEqual(cached.lockedWeeks, next.lockedWeeks)) return;
-  const stored = readStoredLockedWeeks();
-  if (!stored || recordsEqual(stored, cached.lockedWeeks)) return;
+function assertFreshCache(cached: LocalAppState, next: LocalAppState) {
+  if (readRevision() === cachedRevision) return;
 
   const fresh = refreshState();
   window.dispatchEvent(new Event(STATE_CHANGE_EVENT));
@@ -968,14 +981,15 @@ function assertFreshLockedWeeks(cached: LocalAppState, next: LocalAppState) {
 }
 
 function writeState(state: LocalAppState) {
-  // Every write passes here, so this one check keeps a submitted week as it
-  // is, whatever command, Undo or agent tool made the write.
+  // Every write passes here, Submit, Reopen and every Undo included, so these
+  // checks keep a submitted week as it is, whatever command, Undo or agent
+  // tool made the write.
   if (cachedState) {
-    assertFreshLockedWeeks(cachedState, state);
+    assertFreshCache(cachedState, state);
     assertNoLockedWeekWrite(cachedState, state);
   }
   const nextState = { ...state, updatedAt: Date.now() };
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
+  cachedRevision = persistState(JSON.stringify(nextState));
   cachedState = nextState;
   window.dispatchEvent(new Event(STATE_CHANGE_EVENT));
 }
