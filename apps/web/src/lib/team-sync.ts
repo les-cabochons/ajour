@@ -2,6 +2,7 @@ import {
   isCapabilityActive,
   type ConnectorConnectionSummary,
   type ConnectorOverviewGroup,
+  type ConnectorsOverview,
 } from "@ajour/shared";
 import {
   planTeamSync,
@@ -198,7 +199,13 @@ export interface TeamConnectionChoice {
 
 /** The team connections whose Projects capability is on. */
 export async function listTeamConnections(): Promise<TeamConnectionChoice[]> {
-  const overview = await getConnectorsOverview();
+  return teamConnectionsOf(await getConnectorsOverview());
+}
+
+/** The team connections of an overview whose Projects capability is on. */
+export function teamConnectionsOf(
+  overview: ConnectorsOverview,
+): TeamConnectionChoice[] {
   if (overview.pluginsEnabled === false) return [];
   return overview.connectionGroups
     .filter((group) => isCapabilityActive(group, "team"))

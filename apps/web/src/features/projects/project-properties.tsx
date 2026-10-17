@@ -43,8 +43,10 @@ import {
 } from "@/features/projects/project-team-ui";
 import { localStore } from "@/lib/local-store";
 import { listProjectPropertyPlugins } from "@/lib/plugin-project-properties";
+import { subscribeConnectorsOverview } from "@/lib/app-api";
 import {
   listTeamConnections,
+  teamConnectionsOf,
   type TeamConnectionChoice,
 } from "@/lib/team-sync";
 import { PROJECT_ICON_PRESETS, ProjectIcon } from "@/lib/project-icons";
@@ -334,8 +336,13 @@ export function ProjectPropertiesCard({
     void listTeamConnections()
       .then((next) => active && setTeams(next))
       .catch(() => undefined);
+    // A team connection removed, added or turned off elsewhere shows here.
+    const unsubscribe = subscribeConnectorsOverview((overview) => {
+      if (active) setTeams(teamConnectionsOf(overview));
+    });
     return () => {
       active = false;
+      unsubscribe();
     };
   }, []);
   const iconLabel =

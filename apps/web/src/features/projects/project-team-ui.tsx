@@ -21,7 +21,11 @@ import { showErrorToast, showToast } from "@/components/ui/toast";
 import type { LocalProject } from "@/domain/local-state";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { localStore } from "@/lib/local-store";
-import { syncTeamConnection, type TeamConnectionChoice } from "@/lib/team-sync";
+import {
+  listTeamConnections,
+  syncTeamConnection,
+  type TeamConnectionChoice,
+} from "@/lib/team-sync";
 
 /*
  * Sharing a project with a team from its page: the Team row of the
@@ -77,7 +81,16 @@ export function ProjectTeamAction({
 }) {
   const [confirmingStop, setConfirmingStop] = useState(false);
 
-  const share = (team: TeamConnectionChoice) => {
+  const share = async (team: TeamConnectionChoice) => {
+    // The page's list can be stale: check the team is still connected and on.
+    const current = await listTeamConnections().catch(() => []);
+    if (!current.some((entry) => entry.connectionId === team.connectionId)) {
+      showErrorToast({
+        title: `Can't share ${project.name}`,
+        description: `${team.teamName} is no longer connected, or its Projects switch is off.`,
+      });
+      return;
+    }
     const { result, undoToken } = localStore.shareProjectWithTeam(
       team.connectionId,
       project._id,
@@ -109,7 +122,9 @@ export function ProjectTeamAction({
       description:
         result.kind === "sameNameShared"
           ? `${team.teamName} already has a project with this name here. Rename this one to share it.`
-          : "Reload the project and try again.",
+          : result.kind === "notSynced"
+            ? `Sync ${team.teamName} once in Settings › Plugins first, so Ajour knows the team's projects.`
+            : "Reload the project and try again.",
     });
   };
 
@@ -156,7 +171,7 @@ export function ProjectTeamAction({
   if (teams.length === 0) return null;
   if (teams.length === 1) {
     return (
-      <PropertyAction disabled={disabled} onClick={() => share(teams[0]!)}>
+      <PropertyAction disabled={disabled} onClick={() => void share(teams[0]!)}>
         <TeamIcon aria-hidden="true" />
         Share with team
       </PropertyAction>
@@ -175,7 +190,10 @@ export function ProjectTeamAction({
       />
       <DropdownMenuContent>
         {teams.map((team) => (
-          <DropdownMenuItem key={team.connectionId} onClick={() => share(team)}>
+          <DropdownMenuItem
+            key={team.connectionId}
+            onClick={() => void share(team)}
+          >
             {team.teamName}
           </DropdownMenuItem>
         ))}

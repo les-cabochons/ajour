@@ -372,3 +372,26 @@ describe("team sync service", () => {
     ).toBeUndefined();
   });
 });
+
+describe("team connections for sharing", () => {
+  it("lists the connections of active team plugins, and none while plugins are off", async () => {
+    const { teamConnectionsOf } = await import("./team-sync");
+    const overview = overviewWith("team-1");
+
+    expect(teamConnectionsOf(overview)).toEqual([
+      { pluginId: PLUGIN, connectionId: CONNECTION, teamName: "Acme" },
+    ]);
+    expect(teamConnectionsOf({ ...overview, pluginsEnabled: false })).toEqual(
+      [],
+    );
+    expect(
+      teamConnectionsOf({
+        ...overview,
+        connectionGroups: overview.connectionGroups.map((group) => ({
+          ...group,
+          inactiveCapabilities: ["team" as const],
+        })),
+      }),
+    ).toEqual([]);
+  });
+});
