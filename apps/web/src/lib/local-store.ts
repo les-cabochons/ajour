@@ -729,6 +729,18 @@ function shouldBootstrapFromDesktopState(
     return false;
   }
 
+  // Submitted weeks alone are worth recovering: they keep the week as sent.
+  const currentWeeks = new Set(
+    normalizeLockedWeeks(currentState?.lockedWeeks).map((week) => week.weekOf),
+  );
+  if (
+    normalizeLockedWeeks(bootstrapState.lockedWeeks).some(
+      (week) => !currentWeeks.has(week.weekOf),
+    )
+  ) {
+    return true;
+  }
+
   const bootstrapTimesheetCount = bootstrapState.timesheetEntries?.length ?? 0;
   const currentTimesheetCount = currentState?.timesheetEntries?.length ?? 0;
   if (currentTimesheetCount === 0 && bootstrapTimesheetCount > 0) {
@@ -745,6 +757,15 @@ function shouldBootstrapFromDesktopState(
   return currentHasDefaultProjects && bootstrapHasCustomProjects;
 }
 
+/** Logs, once, how many recovered records a submitted week kept out. */
+function warnLeftOut(count: number, one: string, many: string) {
+  if (count > 0) {
+    console.warn(
+      `Desktop recovery left out ${count} ${count === 1 ? one : many} in a submitted week.`,
+    );
+  }
+}
+
 function mergeDesktopBootstrapState(
   currentState: Partial<LocalAppState> | undefined,
   bootstrapState: Partial<LocalAppState>,
@@ -753,12 +774,13 @@ function mergeDesktopBootstrapState(
     ...(currentState ?? {}),
   };
 
+  // A recovered entry must not land in a week this store submitted, so the
+  // lock stays as the user left it. Recovered submitted weeks come along,
+  // even with no entry to recover.
+  const currentLocks = {
+    lockedWeeks: normalizeLockedWeeks(nextState.lockedWeeks),
+  };
   if ((bootstrapState.timesheetEntries?.length ?? 0) > 0) {
-    // A recovered entry must not land in a week this store submitted, so the
-    // lock stays as the user left it. Recovered submitted weeks come along.
-    const currentLocks = {
-      lockedWeeks: normalizeLockedWeeks(nextState.lockedWeeks),
-    };
     const currentIds = new Set(
       (nextState.timesheetEntries ?? []).map((entry) => entry?._id),
     );
@@ -768,26 +790,40 @@ function mergeDesktopBootstrapState(
         typeof entry?.localDate !== "string" ||
         !isDateLocked(currentLocks, entry.localDate),
     );
-    const leftOut = bootstrapState.timesheetEntries!.length - recovered.length;
-    if (leftOut > 0) {
-      console.warn(
-        `Desktop recovery left out ${leftOut} ${leftOut === 1 ? "entry" : "entries"} in a submitted week.`,
-      );
-    }
+    warnLeftOut(
+      bootstrapState.timesheetEntries!.length - recovered.length,
+      "entry",
+      "entries",
+    );
     nextState.timesheetEntries = mergeBootstrapTimesheetEntries(
       nextState.timesheetEntries,
       recovered,
     );
-    nextState.lockedWeeks = normalizeLockedWeeks([
+  }
+  const mergedLocks = {
+    lockedWeeks: normalizeLockedWeeks([
       ...currentLocks.lockedWeeks,
       ...arrayOrDefault(bootstrapState.lockedWeeks, []),
-    ]);
-  }
+    ]),
+  };
+  nextState.lockedWeeks = mergedLocks.lockedWeeks;
   if (
     (nextState.timers?.length ?? 0) === 0 &&
     (bootstrapState.timers?.length ?? 0) > 0
   ) {
-    nextState.timers = bootstrapState.timers;
+    // A running entry in a submitted week could never be saved there.
+    const recovered = bootstrapState.timers!.filter(
+      (timer) =>
+        !timer?._id ||
+        typeof timer.startedAt !== "number" ||
+        !isDateLocked(mergedLocks, normalizeTimer(timer).localDate),
+    );
+    warnLeftOut(
+      bootstrapState.timers!.length - recovered.length,
+      "running entry",
+      "running entries",
+    );
+    nextState.timers = recovered;
   }
   if (
     Array.isArray(bootstrapState.projects) &&

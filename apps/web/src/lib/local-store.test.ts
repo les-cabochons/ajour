@@ -3334,6 +3334,7 @@ describe("submitted weeks in the store", () => {
   function recoverFromDesktop(
     current: Record<string, unknown>,
     recoveredLockedWeeks: unknown[],
+    recoveredExtra: Record<string, unknown> = {},
   ) {
     const recovered = (_id: string, localDate: string) => ({
       _id,
@@ -3357,6 +3358,7 @@ describe("submitted weeks in the store", () => {
           ],
           lockedWeeks: recoveredLockedWeeks,
           updatedAt: 5,
+          ...recoveredExtra,
         },
       },
     });
@@ -3400,6 +3402,59 @@ describe("submitted weeks in the store", () => {
     } finally {
       warn.mockRestore();
     }
+  });
+
+  it("leaves out a recovered running entry in a week locked after the merge", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      recoverFromDesktop({}, [{ weekOf: "2026-10-05", lockedAt: 2 }], {
+        timers: [
+          {
+            _id: "running",
+            startedAt: 1,
+            localDate: "2026-10-07",
+            accumulatedDurationMs: 0,
+          },
+        ],
+      });
+      const { localStore } = await import("./local-store");
+
+      expect(localStore.snapshot().timers).toEqual([]);
+      expect(localStore.snapshot().lockedWeeks).toHaveLength(1);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(
+        "Desktop recovery left out 1 running entry in a submitted week.",
+      );
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("recovers submitted weeks alone, with no entry to recover", async () => {
+    recoverFromDesktop(
+      {
+        timesheetEntries: [
+          {
+            _id: "kept",
+            localDate: "2026-04-11",
+            label: "",
+            durationMs: HOUR,
+            sourceBlockIds: [],
+            committedAt: 1,
+          },
+        ],
+      },
+      [{ weekOf: "2026-10-05", lockedAt: 2 }],
+      { timesheetEntries: [] },
+    );
+    const { localStore } = await import("./local-store");
+
+    expect(localStore.snapshot().lockedWeeks).toEqual([
+      { weekOf: "2026-10-05", lockedAt: 2 },
+    ]);
+    expect(
+      localStore.snapshot().timesheetEntries.map((entry) => entry._id),
+    ).toEqual(["kept"]);
   });
 
   it("starts with no submitted week", async () => {
