@@ -10,6 +10,7 @@ import {
 } from "react";
 import { RiAddLine as Plus } from "@remixicon/react";
 import { Button } from "@/components/ui/button";
+import { DisabledReason } from "@/components/disabled-reason";
 import { MessagePanel } from "@/components/app-surface";
 import { Chip } from "@/components/ui/chip";
 import {
@@ -32,6 +33,7 @@ import type {
   WeeklyTimeViewStyle,
 } from "@/domain/local-state";
 import { formatClockDuration } from "@/domain/time/duration";
+import { getLockedWeek, lockedWeekMessage } from "@/domain/time/locked-weeks";
 import { isTimesheetEntryCommitted } from "@/domain/time/timesheet-commit";
 import { placeRunningRow } from "@/domain/time/timesheet-entry";
 import {
@@ -74,6 +76,7 @@ import {
   getTimerDurationsMs,
 } from "@/lib/timer-totals";
 import { WeekGrid, type WeekGridCell } from "@/features/time/week-grid";
+import { WeekLockChip } from "@/features/time/week-lock";
 import {
   CapacityValue,
   formatWeekDay,
@@ -107,7 +110,8 @@ type ColumnPasteActionId = "paste-here" | "paste-same-weekdays";
  * day's header or empty space opens a new entry for that day. Days lists each day
  * oldest first, with the running entry last. Dragging a selected card drags the
  * whole selection, and the cards land together at the drop line, on their own
- * day or another one.
+ * day or another one. A submitted week shows its lock in the toolbar and lists
+ * its entries read-only.
  */
 export function WeeklyTimeView({
   activeCell,
@@ -189,6 +193,9 @@ export function WeeklyTimeView({
     ? { kind: "running" as const, timerId: currentTimer._id }
     : null;
   const today = todayIsoDate();
+  // The Week shows one week, so the whole view is locked or open.
+  const weekLock = getLockedWeek(state, weekDates[0]!);
+  const lockReason = weekLock ? lockedWeekMessage(weekLock.weekOf) : undefined;
   const projectsById = useMemo(
     () => new Map(projects.map((project) => [project._id, project])),
     [projects],
@@ -275,12 +282,12 @@ export function WeeklyTimeView({
     {
       id: "paste-here",
       label: "Paste here",
-      disabledReason: pasteDisabledReason,
+      disabledReason: lockReason ?? pasteDisabledReason,
     },
     {
       id: "paste-same-weekdays",
       label: "Paste on same weekdays",
-      disabledReason: pasteDisabledReason,
+      disabledReason: lockReason ?? pasteDisabledReason,
     },
   ];
   const draggedEntry = dragState
@@ -376,6 +383,7 @@ export function WeeklyTimeView({
     event: ReactPointerEvent<HTMLElement>,
   ) {
     if (
+      lockReason !== undefined ||
       event.button !== 0 ||
       dragSessionRef.current !== null ||
       currentTimer?.entryId === entry._id ||
@@ -566,7 +574,7 @@ export function WeeklyTimeView({
     localDate: string,
     event: ReactMouseEvent<HTMLElement>,
   ) {
-    if (isColumnEmptySpace(event)) onNewEntry(localDate);
+    if (!lockReason && isColumnEmptySpace(event)) onNewEntry(localDate);
   }
 
   /** Keeps the second press of a double-click from selecting nearby text. */
@@ -599,14 +607,17 @@ export function WeeklyTimeView({
           <ToggleGroupItem value="grid">Grid</ToggleGroupItem>
           <ToggleGroupItem value="days">Days</ToggleGroupItem>
         </ToggleGroup>
-        <CapacityValue
-          microLabel="Week total"
-          capacityMs={projection.capacityMs}
-          totalMs={projection.totalMs}
-          label="Week capacity"
-          overCapacity={projection.overCapacity}
-          showWarning={preferences.warnWhenOverCapacity}
-        />
+        <div className="flex items-center gap-3">
+          {weekLock ? <WeekLockChip /> : null}
+          <CapacityValue
+            microLabel="Week total"
+            capacityMs={projection.capacityMs}
+            totalMs={projection.totalMs}
+            label="Week capacity"
+            overCapacity={projection.overCapacity}
+            showWarning={preferences.warnWhenOverCapacity}
+          />
+        </div>
       </div>
 
       {projection.days.length === 0 ? (
@@ -628,6 +639,7 @@ export function WeeklyTimeView({
           projection={projection}
           projects={projects}
           projectsById={projectsById}
+          lockReason={lockReason}
           runningTimerId={currentTimer?._id}
           showCapacityWarning={preferences.warnWhenOverCapacity}
           today={today}
@@ -791,15 +803,16 @@ export function WeeklyTimeView({
                                     ),
                                   // A continued entry moves like its saved
                                   // entry; a new running entry stays last.
-                                  onReorder: currentTimer?.entryId
-                                    ? (step) =>
-                                        reorderEntry(
-                                          day.localDate,
-                                          day.entries,
-                                          runningEntryId,
-                                          step,
-                                        )
-                                    : undefined,
+                                  onReorder:
+                                    currentTimer?.entryId && !lockReason
+                                      ? (step) =>
+                                          reorderEntry(
+                                            day.localDate,
+                                            day.entries,
+                                            runningEntryId,
+                                            step,
+                                          )
+                                      : undefined,
                                 })
                               }
                             />
@@ -873,13 +886,15 @@ export function WeeklyTimeView({
                                 ),
                                 keys: TIME_ENTRY_ACTION_KEYS,
                                 onAction: runAction,
-                                onReorder: (step) =>
-                                  reorderEntry(
-                                    day.localDate,
-                                    day.entries,
-                                    entry._id,
-                                    step,
-                                  ),
+                                onReorder: lockReason
+                                  ? undefined
+                                  : (step) =>
+                                      reorderEntry(
+                                        day.localDate,
+                                        day.entries,
+                                        entry._id,
+                                        step,
+                                      ),
                               });
                             }}
                             onPointerDown={(event) => {
@@ -916,14 +931,20 @@ export function WeeklyTimeView({
                       </ObjectContextMenu>
                     );
                   })}
-                  <Button
-                    variant="ghost"
-
-                    className="weekly-days-column-add"
-                    onClick={() => onNewEntry(day.localDate)}
+                  <DisabledReason
+                    label="Add"
+                    reason={lockReason}
+                    className="flex w-full"
                   >
-                    <Plus data-icon="inline-start" /> Add
-                  </Button>
+                    <Button
+                      variant="ghost"
+                      className="weekly-days-column-add"
+                      disabled={lockReason !== undefined}
+                      onClick={() => onNewEntry(day.localDate)}
+                    >
+                      <Plus data-icon="inline-start" /> Add
+                    </Button>
+                  </DisabledReason>
                   <CalendarDayCards
                     suggestions={
                       suggestionsByDay.get(day.localDate)?.visible ?? []

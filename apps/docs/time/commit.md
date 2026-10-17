@@ -1,6 +1,6 @@
 # Commit your week
 
-Committing copies your week's changes into your company's timesheet tool, such as Workday. Ajour does not connect to that tool. It lists what changed since your last commit, and remembers what you committed. A plugin can add a button that has an agent apply the changes for you, see [Commit with an agent](#commit-with-an-agent).
+Committing copies your week's changes into your company's timesheet tool, such as Workday. Ajour does not connect to that tool. It lists what changed since your last commit, and remembers what you committed. When the whole week is in your timesheet tool, you submit it, and Ajour keeps it as it is. A plugin can add a button that has an agent apply the changes for you, see [Commit with an agent](#commit-with-an-agent).
 
 <Shot name="commit-week" alt="The Commit week page" />
 
@@ -41,6 +41,18 @@ Only committed entries have this action. An entry you changed since its last com
 
 To mark several entries at once, [select them](./entries.md#select-copy-and-paste-entries) on the Day list or the Week Days cards, then right-click one of them. Ajour marks every committed entry in the selection, with one Undo.
 
+## Submit the week
+
+When every change is committed, press **Submit week**. When the week is behind its targets, or over them, Ajour asks first, such as **Submit a week under pace?** with **Review** and **Submit anyway**. **Pace tolerance** in [Settings](/app/settings) sets how far off the week may be, and turning off **Under-target submit warning** skips the question for a week behind its targets. A toast offers **Undo**.
+
+**Submit week** is greyed out with **Commit your changes first** while a change is not committed, and with **Stop the running entry first** while an entry runs in the week.
+
+A submitted week shows **Submitted** with a lock on its Commit page and in the Week view. Its entries stay as they are: you cannot add, edit, move, delete or paste entries on its days, and no entry can start on them. Greyed-out actions say why, such as `The week of Oct 5 is submitted. Reopen it to change it.` Agents get the same answer.
+
+## Reopen a week
+
+Press **Reopen week** on the week's Commit page. A toast offers **Undo**. The entries can change again, and each change shows on the Commit page as usual.
+
 ## Copy the lines
 
 Under **Lines**, the whole week is grouped into lines with the project, the task, the hours and the comments. Click a value to copy it, then paste it in your timesheet tool.
@@ -59,5 +71,7 @@ Under **Lines**, the whole week is grouped into lines with the project, the task
 ## Commit with an agent
 
 With a plugin such as [Workday (agent)](/plugins/workday-agent), a button such as **Commit to Workday** sits next to **Mark as committed**. It starts an agent that applies the checked changes in your timesheet tool, one entry per change, and marks each one as committed as soon as the tool saved it. The button is greyed out while something is missing; hover it to see what, such as `Fill in Workday timesheet URL in Settings › Plugins › Workday (agent)`.
+
+A plugin can also replace **Submit week** with its own button, such as **Check Workday and submit**, which checks the week in the timesheet tool before it submits it in Ajour.
 
 A link such as **Open the week in Workday**, under the week summary, opens the week in your browser.

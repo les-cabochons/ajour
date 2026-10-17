@@ -54,6 +54,13 @@ const readyOverview = {
   currentRun: null,
 };
 
+const submitWeekTask = {
+  ...enterWeek,
+  taskId: "submit-week",
+  label: "Check Workday and submit",
+  placement: "submit-week",
+};
+
 /** What the bridge sends once the run is going: a session the runner owns. */
 const runningSnapshot = () => {
   const now = Date.now();
@@ -272,6 +279,44 @@ Given(
       ...readyOverview,
       tasks: [{ ...enterWeek, values: {}, blockers: [blocker] }],
     });
+  },
+);
+
+Given(
+  "the local API reports a ready {string} submit task",
+  async ({ page }, label: string) => {
+    expect(label).toBe(submitWeekTask.label);
+    runner = await mockRunner(page, {
+      ...readyOverview,
+      tasks: [enterWeek, submitWeekTask],
+    });
+  },
+);
+
+Then(
+  "the Commit page offers {string} instead of Submit week",
+  async ({ page }, label: string) => {
+    await expect(
+      page.getByRole("button", { name: label, exact: true }),
+    ).toBeEnabled();
+    await expect(
+      page.getByRole("button", { name: "Submit week", exact: true }),
+    ).toHaveCount(0);
+  },
+);
+
+Then("{string} is the primary button", async ({ page }, label: string) => {
+  await expect(
+    page.getByRole("button", { name: label, exact: true }),
+  ).toHaveClass(/\bbg-primary\b/);
+});
+
+Then(
+  "the {string} run is requested for the week of {word}",
+  async ({}, taskId: string, weekOf: string) => {
+    await expect
+      .poll(() => runner.runRequests)
+      .toEqual([{ pluginId: "ajp-workday", taskId, weekOf }]);
   },
 );
 

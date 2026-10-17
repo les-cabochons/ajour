@@ -13,6 +13,7 @@ import type {
   LocalProject,
 } from "@/domain/local-state";
 import { formatLocalDateFromTimestamp } from "@/domain/time/duration";
+import { isDateLocked } from "@/domain/time/locked-weeks";
 import {
   createTimesheetEntry,
   type TimesheetEntryFactories,
@@ -186,12 +187,17 @@ function hiddenReason(
 /**
  * The suggestions for fetched events, oldest first. Cancelled occurrences,
  * occurrences the user dismissed or added (while the entry exists) and hidden
- * meetings are left out. Filtered ones are kept with `hiddenBy`.
+ * meetings are left out. Filtered ones are kept with `hiddenBy`. Days of a
+ * submitted week get none.
  */
 export function buildCalendarSuggestions(
   state: Pick<
     LocalAppState,
-    "projects" | "timesheetEntries" | "calendarDecisions" | "calendarEventRules"
+    | "projects"
+    | "timesheetEntries"
+    | "calendarDecisions"
+    | "calendarEventRules"
+    | "lockedWeeks"
   >,
   fetched: readonly FetchedCalendarEvents[],
   settings: CalendarSuggestionSettings = DEFAULT_CALENDAR_SUGGESTION_SETTINGS,
@@ -220,6 +226,9 @@ export function buildCalendarSuggestions(
 
       const rule = findRule(rules, source, event.seriesId);
       if (rule?.action === "hide") continue;
+      const localDate = formatLocalDateFromTimestamp(event.startsAt);
+      // A submitted week takes no new entry, so it has nothing to suggest.
+      if (isDateLocked(state, localDate)) continue;
 
       const spanMs = Math.max(0, event.endsAt - event.startsAt);
       const allDay = event.allDay || spanMs > DAY_MS;
@@ -234,7 +243,7 @@ export function buildCalendarSuggestions(
         connectionLabel: source.connectionLabel,
         occurrenceKey,
         ...(event.seriesId ? { seriesId: event.seriesId } : {}),
-        localDate: formatLocalDateFromTimestamp(event.startsAt),
+        localDate,
         startsAt: event.startsAt,
         endsAt: event.endsAt,
         durationMs,

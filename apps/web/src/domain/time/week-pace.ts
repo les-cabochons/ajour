@@ -4,12 +4,20 @@ import type {
 } from "@/domain/local-state";
 
 /**
- * Whether the week's logged time keeps pace with its capacity targets. The
- * agent asks the user before entering a week that is not on pace, so the
- * arithmetic lives here, in tested code, not in a prompt.
+ * Whether the week's logged time keeps pace with its capacity targets. Submit
+ * week and the agent tasks ask the user before submitting a week that is not
+ * on pace, so the arithmetic lives here, in tested code, not in a prompt.
  */
 
 export type WeekPaceStatus = "on-pace" | "under" | "over";
+
+/** The week's pace, in decimal hours. */
+export interface WeekPace {
+  loggedHours: number;
+  targetHours: number;
+  expectedHours: number;
+  status: WeekPaceStatus;
+}
 
 export const DEFAULT_PACE_TOLERANCE_PERCENT = 20;
 
@@ -50,12 +58,7 @@ export function computeWeekPace({
   capacityTargets: WeeklyCapacityTargets;
   loggedMs: number;
   tolerancePercent: number;
-}): {
-  loggedHours: number;
-  targetHours: number;
-  expectedHours: number;
-  status: WeekPaceStatus;
-} {
+}): WeekPace {
   let targetMs = 0;
   let expectedMs = 0;
   weekDates.forEach((date, index) => {
@@ -80,4 +83,15 @@ export function computeWeekPace({
     expectedHours: toHours(expectedMs),
     status,
   };
+}
+
+/**
+ * Whether Submit week asks before it locks the week. A week over its pace
+ * always asks. A week under it asks while the under-target warning is on.
+ */
+export function needsPaceConfirmation(
+  status: WeekPaceStatus,
+  warnWhenUnder: boolean,
+) {
+  return status === "over" || (status === "under" && warnWhenUnder);
 }

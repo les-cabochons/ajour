@@ -8,6 +8,7 @@ import {
   type TimeEntryActionOptions,
 } from "@/domain/actions/object-actions";
 import type { LocalTimesheetEntry } from "@/domain/local-state";
+import { getDateLockReason, isDateLocked } from "@/domain/time/locked-weeks";
 import { isTimesheetEntryCommitted } from "@/domain/time/timesheet-commit";
 import { Button } from "@/components/ui/button";
 import { Calendar } from "@/components/ui/calendar";
@@ -20,6 +21,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { offerUndo, skipUndo } from "@/features/feedback/undo-toast";
+import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 
 /** The object a time entry action applies to: a saved entry, or the running entry. */
@@ -108,7 +110,8 @@ function savedValues(
  * and the entry editors. Each surface renders `dialogs` once and supplies how Edit
  * opens the entry there. Delete, Discard, Move to…, Duplicate to… another day and
  * Mark as not committed happen at once and show an Undo toast instead of asking
- * first.
+ * first. Entries of a submitted week list their actions disabled with the lock
+ * reason, and the date dialog greys out submitted days.
  */
 export function useTimeEntryActions({
   onEdit,
@@ -121,6 +124,7 @@ export function useTimeEntryActions({
    */
   onAfterAction?: () => void;
 }) {
+  const state = useLocalState();
   const [dateAction, setDateAction] = useState<PendingDateAction | null>(null);
   const [selectedDate, setSelectedDate] = useState(() => new Date());
 
@@ -134,7 +138,14 @@ export function useTimeEntryActions({
         isCommitted:
           target.kind === "entry" && isTimesheetEntryCommitted(target.entry),
       }),
-      options,
+      {
+        ...options,
+        lockedReason:
+          options.lockedReason ??
+          (target.kind === "entry"
+            ? getDateLockReason(state, target.entry.localDate)
+            : undefined),
+      },
     );
   }
 
@@ -341,6 +352,7 @@ export function useTimeEntryActions({
           mode="single"
           selected={selectedDate}
           onSelect={(date) => date && setSelectedDate(date)}
+          disabled={(date: Date) => isDateLocked(state, formatIsoDate(date))}
         />
         <DialogFooter>
           <Button
@@ -351,7 +363,11 @@ export function useTimeEntryActions({
           >
             Cancel
           </Button>
-          <Button type="button" onClick={confirmDateAction}>
+          <Button
+            type="button"
+            onClick={confirmDateAction}
+            disabled={isDateLocked(state, formatIsoDate(selectedDate))}
+          >
             {isMove ? "Move" : "Duplicate"}
           </Button>
         </DialogFooter>

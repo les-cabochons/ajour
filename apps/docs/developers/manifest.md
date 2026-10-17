@@ -102,15 +102,17 @@ An agent task is a Markdown prompt that Ajour gives to the user's coding agent, 
 }
 ```
 
-| Key               | Type   | Rules                                                                                                                         |
-| ----------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------- |
-| `id`              | string | Unique in the plugin.                                                                                                         |
-| `label`           | string | The button label on the Commit page.                                                                                          |
-| `placement`       | string | `commit-week`, the only value: a button next to **Mark as committed** on the Commit page, for the week on screen.             |
-| `prompt`          | string | Relative path to a Markdown file in the package. A regular file, no symlinks, at most 64 KB.                                  |
-| `estimateMinutes` | number | How long a run usually takes. The agent panel uses it to tell a slow run from a stuck one.                                    |
-| `weekLink`        | string | Optional. A URL template for **Open the week in…**. Shown only when it fills to an `https:` URL.                              |
-| `settings`        | array  | Optional. Fields with the [connection field](#connection-fields) keys. The user fills them on the plugin's page, under Tasks. |
+| Key               | Type   | Rules                                                                                                                                                                                                              |
+| ----------------- | ------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `id`              | string | Unique in the plugin.                                                                                                                                                                                              |
+| `label`           | string | The button label on the Commit page.                                                                                                                                                                               |
+| `placement`       | string | `commit-week`: a button next to **Mark as committed** on the Commit page. `submit-week`: a button in place of **Submit week**, greyed out like it until every change is committed. Both act on the week on screen. |
+| `prompt`          | string | Relative path to a Markdown file in the package. A regular file, no symlinks, at most 64 KB.                                                                                                                       |
+| `estimateMinutes` | number | How long a run usually takes. The agent panel uses it to tell a slow run from a stuck one.                                                                                                                         |
+| `weekLink`        | string | Optional. A URL template for **Open the week in…**. Shown only when it fills to an `https:` URL.                                                                                                                   |
+| `settings`        | array  | Optional. Fields with the [connection field](#connection-fields) keys. The user fills them on the plugin's page, under Tasks.                                                                                      |
+
+A `submit-week` task looks the same, such as `"id": "submit-week"`, `"label": "Check Workday and submit"`, `"placement": "submit-week"`, `"prompt": "prompts/submit-week.md"`. Its prompt ends with the `submit_week` tool.
 
 A plugin can declare up to 10 tasks.
 
@@ -130,7 +132,7 @@ The prompt and `weekLink` can use these slots. A slot Ajour does not know fails 
 
 ### What the agent gets
 
-Ajour puts its own rules before your prompt. The agent must report in its session, ask the user only when it cannot go on, mark each change as committed once the external tool saved it, and never type a password or a code. Your prompt describes the steps in the external tool. The agent can use the [MCP tools](/app/agents#what-agents-can-do), including `get_week_changes`, which lists the week's added, updated and deleted entries, each with a stable `externalId` and a `version`, and `mark_entries_committed`, which takes each applied change's `entryId` and `version`. Ajour refuses the call when the user changed an entry since the agent read it.
+Ajour puts its own rules before your prompt. The agent must report in its session, ask the user only when it cannot go on, mark each change as committed once the external tool saved it, and never type a password or a code. Your prompt describes the steps in the external tool. The agent can use the [MCP tools](/app/agents#what-agents-can-do), including `get_week_changes`, which lists the week's added, updated and deleted entries, each with a stable `externalId` and a `version`, and `mark_entries_committed`, which takes each applied change's `entryId` and `version`. Ajour refuses the call when the user changed an entry since the agent read it. `get_week_status` gives a week's lock state, uncommitted change count, committed hours and pace, with a `version`. `submit_week` takes that `version` and locks the week, which a `submit-week` task calls as its last step. Ajour refuses it when the week changed since the agent read its status.
 
 ## Project properties
 

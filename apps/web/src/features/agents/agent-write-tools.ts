@@ -14,6 +14,7 @@ import {
 } from "@/domain/actions/object-actions";
 import {
   checkChangeVersionsOrRefuse,
+  checkWeekStatusVersionOrRefuse,
   findWorkItemOrRefuse,
   readRunningTimer,
   toAgentEntry,
@@ -21,6 +22,9 @@ import {
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
 import { isBacklogItemSnoozed } from "@/domain/backlog/backlog-item-lifecycle";
 import { isSubtaskWorkItem } from "@/domain/backlog/work-item-hierarchy";
+import type { ProjectPropertyPlugin } from "@/domain/projects/plugin-properties";
+import { getWeekDates } from "@/domain/time/local-date";
+import { getDateLockReason } from "@/domain/time/locked-weeks";
 import { findWorkItemTimer } from "@/domain/time/running-entry";
 import {
   getLocalProjectDisplayName,
@@ -151,6 +155,7 @@ export function requireEntry(state: LocalAppState, entryId: string) {
 function entryActions(state: LocalAppState, entry: LocalTimesheetEntry) {
   return getTimeEntryActions(
     getTimeEntryActionState({ isRunning: isEntryRunning(state, entry) }),
+    { lockedReason: getDateLockReason(state, entry.localDate) },
   );
 }
 
@@ -185,12 +190,20 @@ export const ENTRY_WRITE_TOOLS = [
   "move_entry",
   "duplicate_entry",
   "mark_entries_committed",
+  "submit_week",
 ] as const satisfies readonly WriteToolName[];
 export type EntryWriteTool = (typeof ENTRY_WRITE_TOOLS)[number];
+
+/** What a write tool needs beyond the store. The runner loads it first. */
+export interface EntryWriteContext {
+  /** Active plugins that add project properties. submit_week's version reads them. */
+  projectPropertyPlugins: ProjectPropertyPlugin[];
+}
 
 export function runEntryWriteTool(
   tool: EntryWriteTool,
   rawInput: unknown,
+  context: EntryWriteContext = { projectPropertyPlugins: [] },
 ): AgentWriteOutcome {
   const state = localStore.snapshot();
   const now = Date.now();
@@ -414,6 +427,23 @@ export function runEntryWriteTool(
     case "mark_entries_committed": {
       const input =
         writeToolInputSchemas.mark_entries_committed.parse(rawInput);
+      // A change on a submitted week is refused first, before its version.
+      // A deleted entry counts on its committed day.
+      const tombstones = new Map(
+        state.timesheetTombstones.map((tombstone) => [
+          tombstone.entryId,
+          tombstone,
+        ]),
+      );
+      for (const change of input.changes) {
+        const day =
+          tombstones.get(change.entryId)?.commit.localDate ??
+          state.timesheetEntries.find(
+            (candidate) => candidate._id === change.entryId,
+          )?.localDate;
+        const lockReason = day ? getDateLockReason(state, day) : undefined;
+        if (lockReason) throw new AgentToolRefusal(lockReason);
+      }
       // Refuses before any write when a change differs from its version.
       // Every listed pair is checked, so an entry listed twice with an old
       // and a current version is refused too.
@@ -431,6 +461,24 @@ export function runEntryWriteTool(
         objectId: entryIds[0]!,
         objectTitle: `${count} ${noun}`,
         undoSubject: "entry",
+      };
+    }
+    case "submit_week": {
+      const input = writeToolInputSchemas.submit_week.parse(rawInput);
+      checkWeekStatusVersionOrRefuse(state, {
+        weekDates: getWeekDates(input.weekOf),
+        version: input.version,
+        projectPropertyPlugins: context.projectPropertyPlugins,
+      });
+      const { undoToken, result } = localStore.submitWeek(input.weekOf);
+      if (!result.ok) throw new AgentToolRefusal(result.message);
+      return {
+        output: { weekOf: result.weekOf, locked: true },
+        undoToken,
+        action: "Submitted the week",
+        objectId: result.weekOf,
+        objectTitle: `Week of ${result.weekOf}`,
+        undoSubject: "week",
       };
     }
   }

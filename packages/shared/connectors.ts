@@ -150,6 +150,14 @@ export type ConnectorPriorityLevel = z.infer<
 >;
 
 /**
+ * Where Ajour shows an agent task's button on the Commit page, for the week on
+ * screen: `commit-week` next to Mark as committed, `submit-week` in place of
+ * Submit week.
+ */
+export const agentTaskPlacementSchema = z.enum(["commit-week", "submit-week"]);
+export type AgentTaskPlacement = z.infer<typeof agentTaskPlacementSchema>;
+
+/**
  * A task an agent runs for the plugin, from a prompt file. No plugin code
  * runs. See docs/superpowers/specs/2026-10-15-ajour-agent-runner-design.md.
  */
@@ -157,8 +165,7 @@ export const agentTaskSchema = z
   .object({
     id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/),
     label: z.string().trim().min(1).max(60),
-    /** Where Ajour shows the task's button: next to Mark as committed on the Commit page. */
-    placement: z.literal("commit-week"),
+    placement: agentTaskPlacementSchema,
     /** A Markdown file inside the plugin folder, at most 64 KB. */
     prompt: z.string().trim().min(1).max(240),
     estimateMinutes: z.number().int().min(1).max(240),

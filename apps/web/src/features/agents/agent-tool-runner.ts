@@ -8,6 +8,7 @@ import {
 } from "@ajour/shared/agent-tools";
 import {
   getWeekChangesForAgent,
+  getWeekStatusForAgent,
   getWorkItemForAgent,
   listProjectsForAgent,
   listTimeEntriesForAgent,
@@ -15,6 +16,8 @@ import {
   readRunningTimer,
 } from "@/domain/agents/agent-read-model";
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
+import { getWeekDates } from "@/domain/time/local-date";
+import { LockedWeekError } from "@/domain/time/locked-weeks";
 import {
   ENTRY_WRITE_TOOLS,
   runEntryWriteTool,
@@ -31,13 +34,15 @@ import { sendPendingSourceWrites } from "@/features/backlog/backlog-source-write
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { getUncheckedChangeIds } from "@/lib/commit-selection";
 import { localStore } from "@/lib/local-store";
-import { getIsoWeekDates } from "@/lib/utils";
+import { StaleWindowError } from "@/lib/stale-window-error";
+import { getIsoWeekDates, todayIsoDate } from "@/lib/utils";
 
 /**
  * Runs the data tools an agent calls through the local API's bridge. Inputs
  * are validated again here: the renderer does not trust the API's parsing.
- * A refusal returns a sentence the agent can act on. Anything else throws,
- * and the bridge reports it as a failure.
+ * A refusal returns a sentence the agent can act on. A write the local store
+ * refuses because it would change a submitted week, or because another
+ * window changed the submitted weeks, returns its reason the same way. Anything else throws, and the bridge reports it as a failure.
  */
 
 function isReadTool(tool: string): tool is ReadToolName {
@@ -52,6 +57,14 @@ function formatZodError(error: ZodError) {
         : issue.message,
     )
     .join(" ");
+}
+
+/** Project properties are optional context; without them the tool still answers. */
+function loadProjectPropertyPlugins(tool: string) {
+  return listProjectPropertyPlugins().catch((error: unknown) => {
+    console.warn(`Plugin project properties unavailable for ${tool}.`, error);
+    return [];
+  });
 }
 
 /** Each read tool, typed against its output schema. */
@@ -84,22 +97,23 @@ const readTools: {
     ),
   get_week_changes: async (rawInput) => {
     const input = readToolInputSchemas.get_week_changes.parse(rawInput);
-    // Project properties are optional context; without them the changes still go out.
-    const projectPropertyPlugins = await listProjectPropertyPlugins().catch(
-      (error: unknown) => {
-        console.warn(
-          "Plugin project properties unavailable for get_week_changes.",
-          error,
-        );
-        return [];
-      },
-    );
+    const projectPropertyPlugins =
+      await loadProjectPropertyPlugins("get_week_changes");
     const weekDates = getIsoWeekDates(input.weekOf);
     return getWeekChangesForAgent(localStore.snapshot(), {
       weekDates,
       onlyChecked: input.onlyChecked,
       uncheckedIds: getUncheckedChangeIds(weekDates[0]!),
       projectPropertyPlugins,
+    });
+  },
+  get_week_status: async (rawInput) => {
+    const input = readToolInputSchemas.get_week_status.parse(rawInput);
+    return getWeekStatusForAgent(localStore.snapshot(), {
+      weekDates: getWeekDates(input.weekOf),
+      today: todayIsoDate(),
+      projectPropertyPlugins:
+        await loadProjectPropertyPlugins("get_week_status"),
     });
   },
 };
@@ -156,7 +170,14 @@ export async function runAgentToolCall(
       };
     }
     if (isEntryWriteTool(call.tool)) {
-      return finishWrite(call, runEntryWriteTool(call.tool, call.input));
+      const projectPropertyPlugins =
+        call.tool === "submit_week"
+          ? await loadProjectPropertyPlugins(call.tool)
+          : [];
+      return finishWrite(
+        call,
+        runEntryWriteTool(call.tool, call.input, { projectPropertyPlugins }),
+      );
     }
     if (isWorkItemWriteTool(call.tool)) {
       return finishWrite(
@@ -167,6 +188,8 @@ export async function runAgentToolCall(
     return refuse(`Ajour has no tool named ${call.tool}.`);
   } catch (error) {
     if (error instanceof AgentToolRefusal) return refuse(error.message);
+    if (error instanceof LockedWeekError) return refuse(error.message);
+    if (error instanceof StaleWindowError) return refuse(error.message);
     if (error instanceof ZodError) return refuse(formatZodError(error));
     throw error;
   }
