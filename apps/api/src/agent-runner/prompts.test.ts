@@ -17,14 +17,14 @@ describe("buildPrompt", () => {
     expect(prompt).toContain("Never type a password");
   });
 
-  it("tells the agent to mark each applied change as committed", () => {
+  it("tells the agent to mark each applied change from get_week_changes as committed, and no repair", () => {
     const prompt = buildPrompt({
       taskPrompt: "Commit the week.",
       values: { sessionId: "s-1" },
     });
 
     expect(prompt).toContain(
-      "After the external tool saved a change, call mark_entries_committed with its entry ID and the version get_week_changes gave you. Never mark a change you did not apply.",
+      "After the external tool saved a change that get_week_changes returned, call mark_entries_committed with its entry ID and the version get_week_changes gave you. Never mark a change you did not apply. Fixing an external entry back to its committed values, for example when you check a week before submitting it, needs no mark.",
     );
     expect(prompt).not.toContain("mark_entries_submitted");
   });
