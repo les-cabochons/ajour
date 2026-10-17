@@ -94,7 +94,10 @@ import {
   updateTimesheetEntry as applyUpdateTimesheetEntry,
 } from "@/domain/time/timesheet-entry";
 import { normalizeTimesheetTombstones } from "@/domain/time/timesheet-commit";
-import { normalizeLockedWeeks } from "@/domain/time/locked-weeks";
+import {
+  assertNoLockedWeekWrite,
+  normalizeLockedWeeks,
+} from "@/domain/time/locked-weeks";
 import {
   captureUndo,
   getUndoProjectIds,
@@ -899,6 +902,9 @@ function refreshState(): LocalAppState {
 }
 
 function writeState(state: LocalAppState) {
+  // Every write passes here, so this one check keeps a submitted week as it
+  // is, whatever command, Undo or agent tool made the write.
+  if (cachedState) assertNoLockedWeekWrite(cachedState, state);
   const nextState = { ...state, updatedAt: Date.now() };
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
   cachedState = nextState;
@@ -1057,6 +1063,10 @@ function listenForOtherWindowWrites() {
   });
 }
 
+/**
+ * The local store. A command that would change a submitted week throws
+ * `LockedWeekError` and writes nothing.
+ */
 export const localStore = {
   subscribe(callback: () => void) {
     listenForOtherWindowWrites();

@@ -3060,6 +3060,67 @@ describe("submitted weeks in the store", () => {
     installMockWindow();
   });
 
+  const HOUR = 60 * 60 * 1000;
+  const reason = "The week of 2026-10-05 is submitted. Reopen it to change it.";
+
+  /** "API" on Tuesday, October 6, committed; the week is submitted when `locked`. */
+  function seedWeek({ locked }: { locked: boolean }) {
+    window.localStorage.setItem(
+      "ajour.local-state.v2",
+      JSON.stringify({
+        timesheetEntries: [
+          {
+            _id: "api",
+            localDate: "2026-10-06",
+            label: "",
+            note: "API",
+            durationMs: HOUR,
+            sourceBlockIds: [],
+            committedAt: 1,
+            commit: {
+              at: 1,
+              localDate: "2026-10-06",
+              note: "API",
+              durationMs: HOUR,
+            },
+          },
+        ],
+        lockedWeeks: locked ? [{ weekOf: "2026-10-05", lockedAt: 2 }] : [],
+      }),
+    );
+  }
+
+  it("refuses a write to a submitted week and persists nothing", async () => {
+    seedWeek({ locked: true });
+    const { localStore } = await import("./local-store");
+    const before = localStore.snapshot();
+    vi.mocked(window.localStorage.setItem).mockClear();
+
+    expect(() =>
+      localStore.updateTimesheetEntry("api", {
+        note: "Changed",
+        durationMs: HOUR,
+      }),
+    ).toThrow(reason);
+    expect(() => localStore.deleteTimesheetEntry("api")).toThrow(reason);
+    expect(window.localStorage.setItem).not.toHaveBeenCalled();
+    expect(localStore.snapshot()).toBe(before);
+  });
+
+  it("refuses to start a running entry when today is in a submitted week", async () => {
+    seedWeek({ locked: true });
+    vi.useFakeTimers({ toFake: ["Date"] });
+    vi.setSystemTime(new Date(2026, 9, 7, 9));
+    try {
+      const { localStore } = await import("./local-store");
+
+      expect(() => localStore.startTimer({})).toThrow(reason);
+      expect(localStore.snapshot().timers).toEqual([]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("starts with no submitted week", async () => {
     const { localStore } = await import("./local-store");
     expect(localStore.snapshot().lockedWeeks).toEqual([]);
