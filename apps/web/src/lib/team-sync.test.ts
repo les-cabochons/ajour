@@ -161,10 +161,16 @@ describe("team sync service", () => {
     return { localStore, syncTeamConnection, api };
   }
 
-  function addSharedProject(
-    localStore: Awaited<ReturnType<typeof load>>["localStore"],
+  /**
+   * Syncs the connection once, as joining does, so sharing is allowed, then
+   * shares a new project. The test stubs the API again afterwards.
+   */
+  async function addSharedProject(
+    { localStore, syncTeamConnection }: Awaited<ReturnType<typeof load>>,
     name: string,
   ) {
+    stubApi(() => ({ cursor: "c0", projects: [] }));
+    await syncTeamConnection(PLUGIN, CONNECTION);
     const projectId = localStore.addProject({ name, color: "#123456" });
     const shared = localStore.shareProjectWithTeam(CONNECTION, projectId);
     expect(shared.result).toEqual({ kind: "shared" });
@@ -178,8 +184,9 @@ describe("team sync service", () => {
   });
 
   it("sends a shared project once its Undo window closes, then sends nothing", async () => {
-    const { localStore, syncTeamConnection } = await load();
-    const { projectId, undoToken } = addSharedProject(localStore, "Beta");
+    const loaded = await load();
+    const { localStore, syncTeamConnection } = loaded;
+    const { projectId, undoToken } = await addSharedProject(loaded, "Beta");
     const api = stubApi(answer);
 
     await syncTeamConnection(PLUGIN, CONNECTION);
@@ -206,7 +213,7 @@ describe("team sync service", () => {
 
   it("keeps another window from sending a project whose Undo is open here", async () => {
     const here = await load();
-    const { projectId } = addSharedProject(here.localStore, "Beta");
+    const { projectId } = await addSharedProject(here, "Beta");
 
     // Another window: the same saved state, without this window's memory.
     vi.resetModules();
@@ -245,8 +252,9 @@ describe("team sync service", () => {
   });
 
   it("throws on an answer the workspace refuses and applies nothing", async () => {
-    const { localStore, syncTeamConnection } = await load();
-    const { projectId, undoToken } = addSharedProject(localStore, "Beta");
+    const loaded = await load();
+    const { localStore, syncTeamConnection } = loaded;
+    const { projectId, undoToken } = await addSharedProject(loaded, "Beta");
     localStore.forgetUndo(undoToken!);
     stubApi(() => ({ cursor: "c1", projects: [], assigned: [] }));
     const before = localStore.snapshot();
@@ -256,15 +264,16 @@ describe("team sync service", () => {
     );
     const after = localStore.snapshot();
     expect(after.projects).toEqual(before.projects);
-    expect(after.teamConnections?.[CONNECTION]?.cursor).toBeUndefined();
+    expect(after.teamConnections?.[CONNECTION]?.cursor).toBe("c0");
     expect(after.projects.find((p) => p._id === projectId)?.team).toEqual({
       connectionId: CONNECTION,
     });
   });
 
   it("drops an answer for a connection removed while the round was on its way", async () => {
-    const { localStore, syncTeamConnection, api } = await load();
-    const { projectId, undoToken } = addSharedProject(localStore, "Beta");
+    const loaded = await load();
+    const { localStore, syncTeamConnection, api } = loaded;
+    const { projectId, undoToken } = await addSharedProject(loaded, "Beta");
     localStore.forgetUndo(undoToken!);
     let deliver!: (value: unknown) => void;
     stubApi(() => new Promise((resolve) => (deliver = resolve)));
@@ -351,8 +360,9 @@ describe("team sync service", () => {
   });
 
   it("unshares without an Undo", async () => {
-    const { localStore } = await load();
-    const { projectId, undoToken } = addSharedProject(localStore, "Beta");
+    const loaded = await load();
+    const { localStore } = loaded;
+    const { projectId, undoToken } = await addSharedProject(loaded, "Beta");
     localStore.forgetUndo(undoToken!);
 
     expect(localStore.unshareProjectFromTeam(projectId)).toBeUndefined();

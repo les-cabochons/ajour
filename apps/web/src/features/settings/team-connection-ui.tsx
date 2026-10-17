@@ -18,10 +18,17 @@ import {
 } from "@/components/ui/field";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
-import { findLocalProjectNamed } from "@/domain/projects/team-sync";
+import { showToast } from "@/components/ui/toast";
 import { createTeam } from "@/lib/app-api";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
+import {
+  buildPickerModel,
+  describePickerResults,
+  planPickerApply,
+  type ArrivalChoice,
+  type PickerResults,
+} from "./team-picker";
 
 /*
  * The team plugin's parts of Settings > Plugins: creating a team from the
@@ -124,13 +131,11 @@ export function HeldArrivalsLine({ count }: { count: number }) {
   );
 }
 
-type ArrivalChoice = "link" | "separate";
-
 /**
  * The one-time picker after joining, and later for each team project held
  * because a local project has its name. Link makes the local project the
  * shared one, so its time entries stay where they are. Nothing happens until
- * Apply, and it shows no Undo.
+ * Apply, and it shows no Undo. What it offers and does is `team-picker.ts`.
  */
 export function TeamPickerDialog({
   open,
@@ -143,74 +148,66 @@ export function TeamPickerDialog({
   onOpenChange: (open: boolean) => void;
   connectionId: string;
   teamName: string;
-  onApplied: (summary: string) => void;
+  /** Runs after Apply changed something, to send it to the team now. */
+  onApplied: () => void;
 }) {
   const state = useLocalState();
-  const held = useMemo(
-    () => state.teamConnections?.[connectionId]?.heldArrivals ?? [],
-    [state.teamConnections, connectionId],
-  );
-  const localProjects = useMemo(
-    () => state.projects.filter((project) => !project.team),
-    [state.projects],
-  );
   const [choices, setChoices] = useState<Record<string, ArrivalChoice>>({});
-  const [shared, setShared] = useState<Set<string>>(new Set());
-
-  const matchFor = (name: string) => findLocalProjectNamed(localProjects, name);
-  const choiceFor = (remoteId: string, name: string): ArrivalChoice =>
-    choices[remoteId] ?? (matchFor(name) ? "link" : "separate");
-  const linkedLocalIds = new Set(
-    held.flatMap((arrival) =>
-      choiceFor(arrival.remoteId, arrival.name) === "link"
-        ? [matchFor(arrival.name)?._id ?? ""]
-        : [],
-    ),
-  );
-  const shareable = localProjects.filter(
-    (project) =>
-      project.status === "active" && !linkedLocalIds.has(project._id),
+  const [checked, setChecked] = useState<Set<string>>(new Set());
+  const [failed, setFailed] = useState<string[]>([]);
+  const model = useMemo(
+    () => buildPickerModel(state, connectionId, choices),
+    [state, connectionId, choices],
   );
 
   const apply = () => {
-    let linked = 0;
-    let added = 0;
-    for (const arrival of held) {
-      const match = matchFor(arrival.name);
-      const choice = choiceFor(arrival.remoteId, arrival.name);
+    const plan = planPickerApply(model, checked);
+    const results: PickerResults = {
+      linked: 0,
+      added: 0,
+      shared: 0,
+      failed: [],
+    };
+    const nameOf = (projectId: string) =>
+      state.projects.find((project) => project._id === projectId)?.name ??
+      "A project";
+    for (const { remoteId, choice } of plan.resolutions) {
       const result = localStore.resolveTeamArrival(
         connectionId,
-        arrival.remoteId,
-        choice === "link" && match
-          ? { kind: "link", projectId: match._id }
-          : { kind: "addSeparately" },
+        remoteId,
+        choice,
       );
-      if (result.kind === "linked") linked += 1;
-      if (result.kind === "added") added += 1;
+      if (result.kind === "linked") results.linked += 1;
+      else if (result.kind === "added") results.added += 1;
+      else {
+        results.failed.push(
+          model.arrivals.find((entry) => entry.arrival.remoteId === remoteId)
+            ?.arrival.name ?? "A team project",
+        );
+      }
     }
-    let sharedCount = 0;
-    for (const projectId of shared) {
-      if (linkedLocalIds.has(projectId)) continue;
+    for (const projectId of plan.shares) {
       const { result, undoToken } = localStore.shareProjectWithTeam(
         connectionId,
         projectId,
       );
-      // The picker's Apply is the confirmation: no Undo, so the sync sends it now.
+      // Apply is the confirmation: no Undo, so the sync sends it now.
       if (undoToken) localStore.forgetUndo(undoToken);
-      if (result.kind === "shared") sharedCount += 1;
+      if (result.kind === "shared") results.shared += 1;
+      else results.failed.push(nameOf(projectId));
     }
+
     setChoices({});
-    setShared(new Set());
+    setChecked(new Set());
+    if (results.linked + results.added + results.shared > 0) onApplied();
+    if (results.failed.length > 0) {
+      // Keep the picker open on what is left, and say what did not go.
+      setFailed(results.failed);
+      return;
+    }
+    setFailed([]);
     onOpenChange(false);
-    onApplied(
-      [
-        linked ? `${linked} linked` : null,
-        added ? `${added} added` : null,
-        sharedCount ? `${sharedCount} shared` : null,
-      ]
-        .filter(Boolean)
-        .join(" · ") || "Nothing changed",
-    );
+    showToast(`${teamName}: ${describePickerResults(results)}`);
   };
 
   return (
@@ -225,15 +222,27 @@ export function TeamPickerDialog({
           </DialogDescription>
         </DialogHeader>
 
-        <div className="flex max-h-[60vh] flex-col gap-6 overflow-y-auto">
-          {held.length > 0 ? (
-            <section className="flex flex-col gap-2">
-              <h3 className="text-xs font-medium text-muted-foreground">
-                The team already has these
-              </h3>
-              {held.map((arrival) => {
-                const match = matchFor(arrival.name);
-                return (
+        {model.needsSync ? (
+          <p className="text-sm text-muted-foreground">
+            Ajour has not synced with {teamName} yet, so it does not know the
+            team's projects. Press Sync on the connection first: projects the
+            team already has can then be linked instead of shared twice.
+          </p>
+        ) : (
+          <div className="flex max-h-[60vh] flex-col gap-6 overflow-y-auto">
+            {failed.length > 0 ? (
+              <p className="text-sm break-words text-destructive">
+                Not done: {failed.join(", ")}. The project or the team changed
+                meanwhile. Check the lists below and apply again.
+              </p>
+            ) : null}
+
+            {model.arrivals.length > 0 ? (
+              <section className="flex flex-col gap-2">
+                <h3 className="text-xs font-medium text-muted-foreground">
+                  The team already has these
+                </h3>
+                {model.arrivals.map(({ arrival, match, choice }) => (
                   <div
                     key={arrival.remoteId}
                     className="flex min-h-10 items-center justify-between gap-4"
@@ -250,7 +259,7 @@ export function TeamPickerDialog({
                       label={`What to do with ${arrival.name}`}
                       size="sm"
                       className="w-56 shrink-0"
-                      value={choiceFor(arrival.remoteId, arrival.name)}
+                      value={choice}
                       onChange={(value) =>
                         setChoices((current) => ({
                           ...current,
@@ -270,53 +279,60 @@ export function TeamPickerDialog({
                       ]}
                     />
                   </div>
-                );
-              })}
-            </section>
-          ) : null}
+                ))}
+              </section>
+            ) : null}
 
-          <section className="flex flex-col gap-2">
-            <h3 className="text-xs font-medium text-muted-foreground">
-              Share your projects
-            </h3>
-            {shareable.length === 0 ? (
-              <p className="text-sm text-muted-foreground">
-                No local projects to share.
-              </p>
-            ) : (
-              shareable.map((project) => (
-                <label
-                  key={project._id}
-                  className="flex min-h-8 cursor-pointer items-center gap-3 text-sm"
-                >
-                  <Checkbox
-                    checked={shared.has(project._id)}
-                    onCheckedChange={(checked) =>
-                      setShared((current) => {
-                        const next = new Set(current);
-                        if (checked) next.add(project._id);
-                        else next.delete(project._id);
-                        return next;
-                      })
-                    }
-                  />
-                  <span
-                    aria-hidden="true"
-                    className="size-2 shrink-0 rounded-full"
-                    style={{ backgroundColor: project.color }}
-                  />
-                  <span className="truncate">{project.name}</span>
-                </label>
-              ))
-            )}
-          </section>
-        </div>
+            <section className="flex flex-col gap-2">
+              <h3 className="text-xs font-medium text-muted-foreground">
+                Share your projects
+              </h3>
+              {model.shareable.length === 0 ? (
+                <p className="text-sm text-muted-foreground">
+                  No local projects to share.
+                </p>
+              ) : (
+                model.shareable.map((project) => (
+                  <label
+                    key={project._id}
+                    className="flex min-h-8 cursor-pointer items-center gap-3 text-sm"
+                  >
+                    <Checkbox
+                      checked={checked.has(project._id)}
+                      onCheckedChange={(isChecked) =>
+                        setChecked((current) => {
+                          const next = new Set(current);
+                          if (isChecked) next.add(project._id);
+                          else next.delete(project._id);
+                          return next;
+                        })
+                      }
+                    />
+                    <span
+                      aria-hidden="true"
+                      className="size-2 shrink-0 rounded-full"
+                      style={{ backgroundColor: project.color }}
+                    />
+                    <span className="truncate">{project.name}</span>
+                  </label>
+                ))
+              )}
+              {model.blocked.map(({ project, reason }) => (
+                <p key={project._id} className="text-xs text-muted-foreground">
+                  {project.name} can't be shared here: {reason}.
+                </p>
+              ))}
+            </section>
+          </div>
+        )}
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
             Not now
           </Button>
-          <Button onClick={apply}>Apply</Button>
+          <Button disabled={model.needsSync} onClick={apply}>
+            Apply
+          </Button>
         </DialogFooter>
       </DialogContent>
     </Dialog>

@@ -329,6 +329,41 @@ describe("plugin settings workflow", () => {
   });
 });
 
+describe("saving a connection", () => {
+  it("hands the saved connection to the caller, such as a new one's ID", async () => {
+    const { deps } = dependencies();
+    const connection = {
+      id: "new-connection",
+      pluginId: plugin.id,
+      label: "Acme",
+      tenantLabel: "Acme",
+      autoSync: false,
+      autoSyncIntervalMinutes: 15,
+      connectedAt: 1,
+      pendingImportCount: 0,
+      selectedImportCount: 0,
+      configSummary: {},
+      editableValues: {},
+    };
+    deps.saveConnectorConnection = vi.fn(async () => ({
+      overview,
+      connection,
+    }));
+    const workflow = createPluginSettingsWorkflow(deps);
+    const onSaved = vi.fn();
+
+    await expect(
+      workflow.execute({
+        type: "save",
+        pluginId: plugin.id,
+        values: { label: "Acme" },
+        onSaved,
+      }),
+    ).resolves.toBe(true);
+    expect(onSaved).toHaveBeenCalledWith(connection);
+  });
+});
+
 describe("describeConnectionRemoval", () => {
   const ofWork = { pluginId: "ms", connectionId: "work" };
   const state = {

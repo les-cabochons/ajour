@@ -109,8 +109,19 @@ function syncResult(
   return { cursor: "cursor-2", projects, assigned, hasMore: false };
 }
 
+/** A workspace whose team connection has synced once. */
 function stateOf(projects: LocalProject[]): TeamSyncState {
-  return { projects, teamConnections: {} };
+  return {
+    projects,
+    teamConnections: {
+      [CONNECTION]: {
+        cursor: "cursor-1",
+        unsharedRemoteIds: [],
+        unsharedLocalIds: [],
+        heldArrivals: [],
+      },
+    },
+  };
 }
 
 /** Plans a round, has the team accept it as is, and applies the result. */
@@ -773,6 +784,14 @@ describe("sharing, linking and leaving a team", () => {
     expect(
       planTeamSync(next, CONNECTION, NO_SKIPS).request.changes,
     ).toHaveLength(1);
+  });
+
+  it("refuses to share before the connection's first sync", () => {
+    const state = { ...stateOf([localProject("p1")]), teamConnections: {} };
+
+    expect(shareProject(state, CONNECTION, "p1").result).toEqual({
+      kind: "notSynced",
+    });
   });
 
   it("refuses to share a project whose name a shared project of the team has", () => {

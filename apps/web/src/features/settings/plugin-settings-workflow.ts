@@ -6,6 +6,7 @@ import {
   switchableCapabilityLabels,
 } from "@ajour/shared";
 import type {
+  ConnectorConnectionSummary,
   ConnectorFieldValues,
   ConnectorOverviewGroup,
   ConnectorPluginManifest,
@@ -63,6 +64,8 @@ type PluginSettingsCommand =
       pluginId: string;
       values: ConnectorFieldValues;
       connectionId?: string;
+      /** Gets the connection the API saved, such as a new one's ID. */
+      onSaved?: (connection: ConnectorConnectionSummary) => void;
     }
   | { type: "delete"; pluginId: string; connectionId: string }
   | { type: "sync"; pluginId: string; connectionId: string }
@@ -351,6 +354,7 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
             `${result.connection.label} connection ${command.connectionId ? "updated" : "added"}.`,
             result.overview,
           );
+          if (isCurrent()) command.onSaved?.(result.connection);
           break;
         }
         case "delete": {
