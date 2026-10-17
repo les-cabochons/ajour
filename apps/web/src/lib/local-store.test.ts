@@ -3186,9 +3186,7 @@ describe("submitted weeks in the store", () => {
     const stored = JSON.parse(
       window.localStorage.getItem("ajour.local-state.v2")!,
     ) as { lockedWeeks: unknown[]; timesheetEntries: { note: string }[] };
-    expect(stored.lockedWeeks).toEqual([
-      { weekOf: "2026-10-05", lockedAt: 9 },
-    ]);
+    expect(stored.lockedWeeks).toEqual([{ weekOf: "2026-10-05", lockedAt: 9 }]);
     expect(stored.timesheetEntries[0]!.note).toBe("API");
     expect(localStore.snapshot().lockedWeeks).toEqual([
       { weekOf: "2026-10-05", lockedAt: 9 },
@@ -3222,6 +3220,78 @@ describe("submitted weeks in the store", () => {
     expect(() => write()).not.toThrow();
     expect(localStore.snapshot().timesheetEntries).toHaveLength(2);
     expect(localStore.snapshot().lockedWeeks).toHaveLength(1);
+  });
+
+  /** A desktop recovery file with "api" on October 6 and "next" on October 13. */
+  function recoverFromDesktop(
+    current: Record<string, unknown>,
+    recoveredLockedWeeks: unknown[],
+  ) {
+    const recovered = (_id: string, localDate: string) => ({
+      _id,
+      localDate,
+      label: "",
+      note: _id,
+      durationMs: HOUR,
+      sourceBlockIds: [],
+      committedAt: 1,
+    });
+    window.localStorage.setItem(
+      "ajour.local-state.v2",
+      JSON.stringify(current),
+    );
+    Object.assign(window, {
+      ajourDesktop: {
+        bootstrapLocalState: {
+          timesheetEntries: [
+            recovered("api", "2026-10-06"),
+            recovered("next", "2026-10-13"),
+          ],
+          lockedWeeks: recoveredLockedWeeks,
+          updatedAt: 5,
+        },
+      },
+    });
+  }
+
+  it("keeps the submitted weeks of recovered entries", async () => {
+    recoverFromDesktop(
+      { lockedWeeks: [{ weekOf: "2026-10-19", lockedAt: 3 }] },
+      [{ weekOf: "2026-10-07", lockedAt: 2 }],
+    );
+    const { localStore } = await import("./local-store");
+
+    expect(
+      localStore.snapshot().timesheetEntries.map((entry) => entry._id),
+    ).toEqual(["api", "next"]);
+    expect(localStore.snapshot().lockedWeeks).toEqual([
+      { weekOf: "2026-10-05", lockedAt: 2 },
+      { weekOf: "2026-10-19", lockedAt: 3 },
+    ]);
+  });
+
+  it("leaves out recovered entries that land in a week this store submitted", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      recoverFromDesktop(
+        { lockedWeeks: [{ weekOf: "2026-10-05", lockedAt: 3 }] },
+        [],
+      );
+      const { localStore } = await import("./local-store");
+
+      expect(
+        localStore.snapshot().timesheetEntries.map((entry) => entry._id),
+      ).toEqual(["next"]);
+      expect(localStore.snapshot().lockedWeeks).toEqual([
+        { weekOf: "2026-10-05", lockedAt: 3 },
+      ]);
+      expect(warn).toHaveBeenCalledTimes(1);
+      expect(warn).toHaveBeenCalledWith(
+        "Desktop recovery left out 1 entry in a submitted week.",
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 
   it("starts with no submitted week", async () => {

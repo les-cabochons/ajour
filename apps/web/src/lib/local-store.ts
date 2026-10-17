@@ -99,6 +99,7 @@ import {
   assertNoLockedWeekWrite,
   LockedWeekError,
   findLockedWeekWrite,
+  isDateLocked,
   normalizeLockedWeeks,
   reopenWeek as applyReopenWeek,
   submitWeek as applySubmitWeek,
@@ -747,10 +748,34 @@ function mergeDesktopBootstrapState(
   };
 
   if ((bootstrapState.timesheetEntries?.length ?? 0) > 0) {
+    // A recovered entry must not land in a week this store submitted, so the
+    // lock stays as the user left it. Recovered submitted weeks come along.
+    const currentLocks = {
+      lockedWeeks: normalizeLockedWeeks(nextState.lockedWeeks),
+    };
+    const currentIds = new Set(
+      (nextState.timesheetEntries ?? []).map((entry) => entry?._id),
+    );
+    const recovered = bootstrapState.timesheetEntries!.filter(
+      (entry) =>
+        currentIds.has(entry?._id) ||
+        typeof entry?.localDate !== "string" ||
+        !isDateLocked(currentLocks, entry.localDate),
+    );
+    const leftOut = bootstrapState.timesheetEntries!.length - recovered.length;
+    if (leftOut > 0) {
+      console.warn(
+        `Desktop recovery left out ${leftOut} ${leftOut === 1 ? "entry" : "entries"} in a submitted week.`,
+      );
+    }
     nextState.timesheetEntries = mergeBootstrapTimesheetEntries(
       nextState.timesheetEntries,
-      bootstrapState.timesheetEntries,
+      recovered,
     );
+    nextState.lockedWeeks = normalizeLockedWeeks([
+      ...currentLocks.lockedWeeks,
+      ...arrayOrDefault(bootstrapState.lockedWeeks, []),
+    ]);
   }
   if (
     (nextState.timers?.length ?? 0) === 0 &&
