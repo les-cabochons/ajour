@@ -205,7 +205,7 @@ export interface LineNameSource {
 
 /** Ajour, then each active plugin that adds project properties, by section title. */
 export function listLineNameSources(
-  plugins: ProjectPropertyPlugin[],
+  plugins: ProjectPropertyPlugin[] = [],
 ): LineNameSource[] {
   return [
     { id: AJOUR_LINE_NAME_SOURCE, label: "Ajour" },
@@ -216,15 +216,24 @@ export function listLineNameSources(
   ];
 }
 
-/** The saved Names choice, or Ajour when it names no active plugin. */
+/**
+ * The saved Names choice, or Ajour when it names no active plugin. `plugins`
+ * is undefined while they load: a saved plugin choice then resolves to
+ * undefined, so no line shows or copies Ajour's name in the meantime.
+ */
 export function resolveLineNameSource(
   saved: string | undefined,
-  plugins: ProjectPropertyPlugin[],
-): string {
+  plugins: ProjectPropertyPlugin[] | undefined,
+): string | undefined {
+  if (!saved || saved === AJOUR_LINE_NAME_SOURCE) return AJOUR_LINE_NAME_SOURCE;
+  if (!plugins) return undefined;
   return plugins.some((plugin) => plugin.pluginId === saved)
-    ? saved!
+    ? saved
     : AJOUR_LINE_NAME_SOURCE;
 }
+
+/** What a line's project and task button shows and copies, or that it waits. */
+export type LineNames = { shown: string; copied: string } | { pending: true };
 
 /**
  * The project name a plugin gives a project: its first field that defaults
@@ -246,14 +255,17 @@ function pluginProjectName(
  * What a line's project and task button shows ("Project / Task") and copies
  * ("Project Task"), with the project named by `source`. A missing project or
  * task leaves only the other one; undefined when the line has neither.
+ * `{ pending: true }` while `source` is undefined, that is while the saved
+ * plugin choice waits for the plugins to load.
  */
 export function describeLineNames(
   line: SubmitLine,
-  source: string,
+  source: string | undefined,
   projects: LocalProject[],
-  plugins: ProjectPropertyPlugin[],
-): { shown: string; copied: string } | undefined {
-  const plugin = plugins.find((candidate) => candidate.pluginId === source);
+  plugins: ProjectPropertyPlugin[] | undefined,
+): LineNames | undefined {
+  if (source === undefined) return { pending: true };
+  const plugin = plugins?.find((candidate) => candidate.pluginId === source);
   const project =
     plugin && line.projectId
       ? projects.find((candidate) => candidate._id === line.projectId)

@@ -216,6 +216,24 @@ describe("line names", () => {
     expect(resolveLineNameSource(saved, [workday])).toBe(expected);
   });
 
+  it.each([
+    [undefined, "ajour"],
+    ["ajour", "ajour"],
+    ["workday-agent", undefined],
+  ])(
+    "resolves the saved source %s to %s while plugins load",
+    (saved, expected) => {
+      expect(resolveLineNameSource(saved, undefined)).toBe(expected);
+    },
+  );
+
+  it("copies nothing while a saved plugin choice waits for its plugins", () => {
+    const source = resolveLineNameSource("workday-agent", undefined);
+    expect(describeLineNames(line, source, named, undefined)).toEqual({
+      pending: true,
+    });
+  });
+
   it("shows and copies the full name and the task", () => {
     expect(describeLineNames(line, "ajour", named, [workday])).toEqual({
       shown: "Atlas / 07 Run",

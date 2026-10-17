@@ -287,7 +287,8 @@ properties, a Names `ToggleGroup` (Ajour, then each plugin's section title,
 saved as `commitLinesNameSource` in the user preferences), then the copyable
 lines under day `SectionHeading`s. A line's project, its full name or the
 plugin's name field, and its task are one value shown as "Project / Task" and
-copied as "Project Task". Every value copies on click with an always-visible
+copied as "Project Task"; while a saved plugin choice waits for the plugins
+to load, it shows "Loading names…" and copies nothing. Every value copies on click with an always-visible
 icon; hours copy as decimals. Change rules live in
 `domain/time/timesheet-commit.ts`, line grouping and the summary in
 `domain/time/timesheet-submission.ts`, and the unchecked changes in

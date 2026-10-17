@@ -25,6 +25,7 @@ import {
   listLineNameSources,
   resolveLineNameSource,
   summarizeWeek,
+  type LineNames,
   type SubmitGroupBy,
   type SubmitLine,
   type SubmitWarning,
@@ -46,7 +47,7 @@ import {
   setChangesChecked,
   useUncheckedChangeIds,
 } from "@/lib/commit-selection";
-import { useLocalProjects, useLocalState } from "@/lib/local-hooks";
+import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 import { listProjectPropertyPlugins } from "@/lib/plugin-project-properties";
 import { ProjectIcon } from "@/lib/project-icons";
@@ -156,7 +157,7 @@ function SubmitLineRow({
   projectIcon,
 }: {
   line: SubmitLine;
-  names?: { shown: string; copied: string };
+  names?: LineNames;
   projectColor?: string;
   projectIcon?: LocalProjectIcon;
 }) {
@@ -169,12 +170,18 @@ function SubmitLineRow({
           className="submit-line-dot"
           fallback="dot"
         />
-        <CopyValue
-          label="project and task"
-          text={names?.shown}
-          copyValue={names?.copied}
-          placeholder="No project or task"
-        />
+        {names && "pending" in names ? (
+          // The saved plugin names are loading: copy nothing rather than
+          // Ajour's name.
+          <span className="px-1 text-muted-foreground">Loading names…</span>
+        ) : (
+          <CopyValue
+            label="project and task"
+            text={names?.shown}
+            copyValue={names?.copied}
+            placeholder="No project or task"
+          />
+        )}
       </div>
       <CopyValue
         label="hours"
@@ -210,14 +217,17 @@ export function CommitPage({
 }) {
   const navigate = useNavigate();
   const state = useLocalState();
-  const projects = useLocalProjects();
+  // Every project: a line may be on an archived one.
+  const projects = state.projects;
   const weekDates = useMemo(() => getIsoWeekDates(date), [date]);
   // Agents read the unchecked changes under the same Monday key.
   const weekOf = weekDates[0]!;
   const [groupBy, setGroupBy] = useState<SubmitGroupBy>("day-task");
   // Expanded on every visit, on purpose: the choice is not saved.
   const [changesOpen, setChangesOpen] = useState(true);
-  const [plugins, setPlugins] = useState<ProjectPropertyPlugin[]>([]);
+  // Undefined until loaded, so a saved plugin choice waits instead of
+  // showing Ajour's names first.
+  const [plugins, setPlugins] = useState<ProjectPropertyPlugin[]>();
   const nameSources = useMemo(() => listLineNameSources(plugins), [plugins]);
   const nameSource = resolveLineNameSource(
     state.userPreferences.commitLinesNameSource,
@@ -231,6 +241,7 @@ export function CommitPage({
       .then((next) => active && setPlugins(next))
       .catch((error: unknown) => {
         console.warn("Plugin project properties unavailable.", error);
+        if (active) setPlugins([]);
       });
     return () => {
       active = false;
@@ -458,7 +469,7 @@ export function CommitPage({
                     Names
                   </span>
                   <ToggleGroup
-                    value={[nameSource]}
+                    value={nameSource ? [nameSource] : []}
                     onValueChange={(values: unknown[]) => {
                       const next = nameSources.find(
                         (option) => option.id === values[0],
