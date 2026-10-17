@@ -13,6 +13,18 @@ Feature: Submit the week
     When I undo with the toast button
     Then the Commit page shows the week is not submitted
 
+  Scenario: Review closes the over-pace check and leaves the week open
+    Given I have a committed week of entries
+    When I change Monday's "API" entry to "23:00" hours
+    And I change Monday's "Login form" entry to "23:00" hours
+    And I open the Commit page for the week of 2026-10-05
+    And I press "Mark as committed"
+    And I press "Submit week"
+    Then the pace check is titled "Submit a week over pace?"
+    When I press "Review" and watch the pace check close
+    Then the pace check never read "Submit a week under pace?"
+    And the Commit page shows the week is not submitted
+
   Scenario: Submit week waits until every change is committed
     Given I have a committed week of entries
     When I change Monday's "API" entry to "2:30" hours

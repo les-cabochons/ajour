@@ -310,8 +310,10 @@ export function CommitPage({
   const submitReason = lockedWeek
     ? undefined
     : getSubmitButtonReason(getSubmitWeekRefusal(state, weekOf));
-  // The pace the confirmation shows, or null while it is closed.
+  // The pace the confirmation shows. It stays set after the dialog closes, so
+  // the closing dialog keeps its title; `paceCheckOpen` drives the dialog.
   const [paceCheck, setPaceCheck] = useState<WeekPace | null>(null);
+  const [paceCheckOpen, setPaceCheckOpen] = useState(false);
   const progress =
     summary.targetMs > 0
       ? Math.min(100, (summary.totalMs / summary.targetMs) * 100)
@@ -326,7 +328,7 @@ export function CommitPage({
   }
 
   function lockWeek() {
-    setPaceCheck(null);
+    setPaceCheckOpen(false);
     const { undoToken, result } = localStore.submitWeek(weekOf);
     if (!result.ok) {
       showToast(result.message);
@@ -351,6 +353,7 @@ export function CommitPage({
       )
     ) {
       setPaceCheck(pace);
+      setPaceCheckOpen(true);
       return;
     }
     lockWeek();
@@ -580,12 +583,7 @@ export function CommitPage({
         )}
       </section>
 
-      <AlertDialog
-        open={paceCheck !== null}
-        onOpenChange={(open) => {
-          if (!open) setPaceCheck(null);
-        }}
-      >
+      <AlertDialog open={paceCheckOpen} onOpenChange={setPaceCheckOpen}>
         <AlertDialogContent>
           <AlertDialogHeader>
             <AlertDialogTitle>

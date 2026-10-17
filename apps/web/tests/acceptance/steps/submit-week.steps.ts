@@ -1,7 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 
-const { Then } = createBdd();
+const { When, Then } = createBdd();
 
 function weekSummary(page: Page) {
   return page.getByRole("region", { name: "Week summary" });
@@ -81,3 +81,46 @@ Then(
     ).toBe(true);
   },
 );
+
+Then("the pace check is titled {string}", async ({ page }, title: string) => {
+  await expect(
+    page.getByRole("alertdialog").getByRole("heading", { name: title }),
+  ).toBeVisible();
+});
+
+When(
+  "I press {string} and watch the pace check close",
+  async ({ page }, name: string) => {
+    // Record every title the dialog shows until it is gone, closing included.
+    await page.evaluate(() => {
+      const seen: string[] = [];
+      (window as unknown as { paceTitles: string[] }).paceTitles = seen;
+      const record = () => {
+        for (const heading of document.querySelectorAll(
+          "[role=alertdialog] h2",
+        )) {
+          seen.push(heading.textContent ?? "");
+        }
+      };
+      new MutationObserver(record).observe(document.body, {
+        subtree: true,
+        childList: true,
+        characterData: true,
+        attributes: true,
+      });
+    });
+    await page
+      .getByRole("alertdialog")
+      .getByRole("button", { name, exact: true })
+      .click();
+    await expect(page.getByRole("alertdialog")).toHaveCount(0);
+  },
+);
+
+Then("the pace check never read {string}", async ({ page }, title: string) => {
+  const seen = await page.evaluate(
+    () => (window as unknown as { paceTitles: string[] }).paceTitles,
+  );
+  expect(seen.length).toBeGreaterThan(0);
+  expect(seen).not.toContain(title);
+});
