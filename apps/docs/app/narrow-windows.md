@@ -10,7 +10,7 @@ Below 768 pixels wide, Ajour switches to a narrow layout made for a window snapp
 ## What changes
 
 - **The title bar** has the date, **+** for a new entry, **Start**, and the totals. While an entry runs, **Start** becomes **Stop**, and the totals show the running time.
-- **Click the totals** for the day and week totals, **Commit week**, and the running entry. Click outside the running entry's editor to save it and close it.
+- **Click the totals** for the day and week totals, **Commit**, and the running entry. Click outside the running entry's editor to save it and close it.
 - **The toggle** at the bottom left switches between **Time**, **Backlog** and **Settings**.
 - **The sidebar** is gone.
 - **Editors** open full width instead of in a side panel.

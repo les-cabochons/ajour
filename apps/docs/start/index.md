@@ -47,7 +47,7 @@ Double-click any row of the day to open it in the side panel. Change the task, t
 
 ## 5. Commit the week
 
-At the end of the week, click today's total at the top right, then **Commit week**. Ajour lists the entries you added, changed or deleted, and groups the week into lines with the project, the task, the hours and your notes. Copy them into your company's timesheet tool, then press **Mark as committed**.
+At the end of the week, click today's total at the top right, then **Commit**. Ajour lists the entries you added, changed or deleted, and groups the week into lines with the project, the task, the hours and your notes. Copy them into your company's timesheet tool, then press **Mark as committed**.
 
 <Shot name="commit-week" alt="The Commit week page with the changes and the lines to copy" />
 

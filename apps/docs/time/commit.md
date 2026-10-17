@@ -6,7 +6,7 @@ Committing copies your week's changes into your company's timesheet tool, such a
 
 ## Open the page
 
-Click the totals at the top right, such as `Today 3:47`, and press **Commit week**. This works on every page and at every window size.
+Click the totals at the top right, such as `Today 3:47`, and press **Commit**. This works on every page and at every window size.
 
 ## Review the week
 
