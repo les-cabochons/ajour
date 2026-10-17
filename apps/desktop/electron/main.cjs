@@ -777,8 +777,9 @@ if (!hasSingleInstanceLock) {
     }
 
     // Replaces Electron's default menu, which keeps Reload and DevTools in
-    // packaged builds. Windows hides it under the title bar overlay and draws
-    // the same menus in the renderer.
+    // packaged builds. Windows hides it under the title bar overlay. The
+    // renderer can draw the same menus in the title bar, but that is turned
+    // off for now.
     Menu.setApplicationMenu(
       Menu.buildFromTemplate(
         buildAppMenuTemplate(appMenuModel, {

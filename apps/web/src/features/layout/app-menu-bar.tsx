@@ -25,6 +25,10 @@ const isWindowsDesktopShell =
   typeof window !== "undefined" &&
   window.ajourDesktop?.runtime?.platform === "win32";
 
+// The Windows title bar menus are turned off for now. Set this to true to draw
+// them again. Keyboard shortcuts do not depend on them.
+const showWindowsMenuBar = false;
+
 function useAppMenuActionRunner() {
   const navigate = useNavigate();
   const router = useRouter();
@@ -52,9 +56,10 @@ function useAppMenuActionRunner() {
 
 /**
  * The desktop app menu in the renderer. On every desktop platform it runs the
- * actions the native menu sends. On Windows at desktop widths it also draws the
- * menus in the title bar, because the hidden title bar hides the native menu.
- * The narrow view and the web build show no menu bar.
+ * actions the native menu sends. When `showWindowsMenuBar` is on, Windows at
+ * desktop widths also draws the menus in the title bar, because the hidden
+ * title bar hides the native menu. The narrow view and the web build show no
+ * menu bar.
  */
 export function AppMenuBar() {
   const runAction = useAppMenuActionRunner();
@@ -63,7 +68,7 @@ export function AppMenuBar() {
 
   useEffect(() => window.ajourDesktop?.onMenuAction?.(runAction), [runAction]);
 
-  if (!isWindowsDesktopShell || isNarrowView || !menus) {
+  if (!showWindowsMenuBar || !isWindowsDesktopShell || isNarrowView || !menus) {
     return null;
   }
 
