@@ -3053,3 +3053,32 @@ describe("calendar suggestions in the store", () => {
     expect(localStore.snapshot().timesheetEntries).toHaveLength(1);
   });
 });
+
+describe("submitted weeks in the store", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    installMockWindow();
+  });
+
+  it("starts with no submitted week", async () => {
+    const { localStore } = await import("./local-store");
+    expect(localStore.snapshot().lockedWeeks).toEqual([]);
+  });
+
+  it("reads submitted weeks on their Monday and drops malformed ones", async () => {
+    window.localStorage.setItem(
+      "ajour.local-state.v2",
+      JSON.stringify({
+        lockedWeeks: [
+          { weekOf: "2026-10-07", lockedAt: 5 },
+          { weekOf: "soon", lockedAt: 6 },
+        ],
+      }),
+    );
+    const { localStore } = await import("./local-store");
+
+    expect(localStore.snapshot().lockedWeeks).toEqual([
+      { weekOf: "2026-10-05", lockedAt: 5 },
+    ]);
+  });
+});

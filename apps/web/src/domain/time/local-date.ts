@@ -17,3 +17,17 @@ export function isValidLocalDate(value: string) {
     date.getUTCDate() === day
   );
 }
+
+/**
+ * The Monday of the week that holds `localDate`, `YYYY-MM-DD`. Weeks run
+ * Monday to Sunday. The arithmetic is in UTC on the date alone, so the time
+ * zone and daylight saving time never move a day to another week. Pass a
+ * valid date (see `isValidLocalDate`).
+ */
+export function getWeekOf(localDate: string): string {
+  const [year, month, day] = localDate.split("-").map(Number);
+  const date = new Date(Date.UTC(year!, month! - 1, day!));
+  // getUTCDay counts from Sunday, 0. Monday starts the week.
+  date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
+  return date.toISOString().slice(0, 10);
+}

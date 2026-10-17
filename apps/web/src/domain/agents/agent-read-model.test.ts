@@ -93,6 +93,7 @@ function createState(): LocalAppState {
       entry({ _id: "e3", localDate: "2026-10-20" }),
     ],
     timesheetTombstones: [],
+    lockedWeeks: [],
     workItems: [
       {
         _id: "w1",

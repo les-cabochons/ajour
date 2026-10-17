@@ -60,6 +60,7 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
     timesheetEntries: [],
     timesheetImportDrafts: [],
     timesheetTombstones: [],
+    lockedWeeks: [],
     workItems: [
       {
         _id: "meetings-item",

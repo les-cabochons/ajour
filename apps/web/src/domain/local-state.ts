@@ -224,6 +224,17 @@ export interface LocalTimesheetTombstone {
   commit: LocalTimesheetEntryCommit;
 }
 
+/**
+ * A submitted week: its entries are read-only, for agents too, until the user
+ * reopens it. See docs/superpowers/specs/2026-10-15-commit-week-design.md.
+ */
+export interface LocalLockedWeek {
+  /** The week's Monday, `YYYY-MM-DD`. */
+  weekOf: string;
+  /** When the week was submitted. */
+  lockedAt: number;
+}
+
 export interface LocalTimesheetEntry {
   _id: string;
   localDate: string;
@@ -635,6 +646,8 @@ export interface LocalAppState {
   timesheetEntries: LocalTimesheetEntry[];
   /** Committed entries deleted since. See `LocalTimesheetTombstone`. */
   timesheetTombstones: LocalTimesheetTombstone[];
+  /** Submitted weeks, in week order. See `LocalLockedWeek`. */
+  lockedWeeks: LocalLockedWeek[];
   timesheetImportDrafts: LocalTimesheetImportDraft[];
   workItems: LocalWorkItem[];
   pullRequests?: LocalPullRequest[];

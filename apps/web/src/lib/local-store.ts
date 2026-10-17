@@ -94,6 +94,7 @@ import {
   updateTimesheetEntry as applyUpdateTimesheetEntry,
 } from "@/domain/time/timesheet-entry";
 import { normalizeTimesheetTombstones } from "@/domain/time/timesheet-commit";
+import { normalizeLockedWeeks } from "@/domain/time/locked-weeks";
 import {
   captureUndo,
   getUndoProjectIds,
@@ -327,6 +328,7 @@ function createDefaultState(): LocalAppState {
     timers: [],
     timesheetEntries: [],
     timesheetTombstones: [],
+    lockedWeeks: [],
     timesheetImportDrafts: [],
     workItems: [],
     pullRequests: [],
@@ -453,6 +455,7 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
       timesheetTombstones: normalizeTimesheetTombstones(
         persistedState.timesheetTombstones,
       ),
+      lockedWeeks: normalizeLockedWeeks(persistedState.lockedWeeks),
       timesheetImportDrafts: arrayOrDefault(
         persistedState.timesheetImportDrafts,
         defaults.timesheetImportDrafts,

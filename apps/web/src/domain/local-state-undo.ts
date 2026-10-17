@@ -10,11 +10,13 @@ import type {
  * The local state lists that undoable actions change. A project's tasks live
  * inside the project record, so archiving a task changes its project. Deleting
  * a committed entry adds a tombstone, so Undo takes it back with the entry.
+ * Submitting or reopening a week changes `lockedWeeks`.
  */
 const UNDO_COLLECTIONS = [
   "projects",
   "timesheetEntries",
   "timesheetTombstones",
+  "lockedWeeks",
   "timers",
   "timesheetImportDrafts",
   "workItems",
@@ -45,6 +47,7 @@ const recordKeys: {
   projects: (project) => project._id,
   timesheetEntries: (entry) => entry._id,
   timesheetTombstones: (tombstone) => tombstone.entryId,
+  lockedWeeks: (week) => week.weekOf,
   timers: (timer) => timer._id,
   timesheetImportDrafts: (draft) => draft._id,
   workItems: (workItem) => workItem._id,
@@ -120,10 +123,10 @@ export function completeSourceWriteInUndo(
 }
 
 /**
- * Compares two records field by field. A missing field equals `undefined`, so a
+ * Compares two records by value. A missing key equals an `undefined` one, so a
  * record read back from storage matches the one the action wrote.
  */
-function recordsEqual(left: unknown, right: unknown): boolean {
+export function recordsEqual(left: unknown, right: unknown): boolean {
   if (Object.is(left, right)) return true;
   if (
     typeof left !== "object" ||
@@ -209,6 +212,7 @@ export function captureUndo(
     timers: diffCollection("timers", before, after),
     timesheetEntries: diffCollection("timesheetEntries", before, after),
     timesheetTombstones: diffCollection("timesheetTombstones", before, after),
+    lockedWeeks: diffCollection("lockedWeeks", before, after),
     timesheetImportDrafts: diffCollection(
       "timesheetImportDrafts",
       before,
@@ -412,6 +416,7 @@ export function restoreUndo(
         state,
         undo,
       ),
+      lockedWeeks: restoreCollection("lockedWeeks", state, undo),
       timers,
       timesheetImportDrafts: restoreCollection(
         "timesheetImportDrafts",

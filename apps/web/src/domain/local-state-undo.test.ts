@@ -108,6 +108,7 @@ function createState(): LocalAppState {
     ],
     timesheetImportDrafts: [],
     timesheetTombstones: [],
+    lockedWeeks: [],
     workflowStates: [],
     workflowStateMappings: [],
     workflowStateWriteRules: [],
@@ -138,6 +139,21 @@ function undoAction(
 }
 
 describe("time entry undo", () => {
+  it("takes back a change to the submitted weeks", () => {
+    const before = createState();
+    const after = {
+      ...before,
+      lockedWeeks: [{ weekOf: "2026-10-05", lockedAt: 1 }],
+    };
+
+    const undo = captureUndo(before, after)!;
+    const restored = restoreUndo(after, undo);
+
+    expect(undo.lockedWeeks).toHaveLength(1);
+    expect(restored.result).toBe("restored");
+    expect(restored.state.lockedWeeks).toEqual([]);
+  });
+
   /** The fixture with "entry-b" committed as it is. */
   function withCommittedEntryB(): LocalAppState {
     const state = createState();
