@@ -447,23 +447,28 @@ export function getWeekStatusForAgent(
     committed: toAgentChangeValues(state, commit, projectPropertyPlugins),
   }));
 
+  const committedMsByDay = weekDates.map((date) =>
+    committed
+      .filter(({ commit }) => commit.localDate === date)
+      .reduce((total, { commit }) => total + commit.durationMs, 0),
+  );
+
   return {
     weekOf,
     version: weekStatusVersion({
       weekOf,
       committedEntries,
+      // Exact milliseconds: rounded hours hide a change of a few seconds.
+      committedDurationsMs: committed.map(({ commit }) => commit.durationMs),
+      committedMsByDay,
       uncommittedChanges,
       locked,
     }),
     locked,
     uncommittedChanges,
-    committedHoursByDay: weekDates.map((date) => ({
+    committedHoursByDay: weekDates.map((date, index) => ({
       date,
-      hours: toHours(
-        committed
-          .filter(({ commit }) => commit.localDate === date)
-          .reduce((total, { commit }) => total + commit.durationMs, 0),
-      ),
+      hours: toHours(committedMsByDay[index]!),
     })),
     committedEntries,
     pace: computeWeekPace({

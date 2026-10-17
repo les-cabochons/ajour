@@ -254,6 +254,36 @@ describe("agent read model", () => {
     expect(getWeekStatusForAgent(edited, input).version).not.toBe(version);
   });
 
+  it("versions exact committed durations, not the rounded hours", () => {
+    const input = {
+      weekDates: WEEK,
+      today: "2026-10-14",
+      projectPropertyPlugins: [],
+    };
+    const base = createState();
+    const committed = base.timesheetEntries.find((entry) => entry.commit)!;
+    /** Two committed entries on Tuesday, each lasting an hour and `seconds`. */
+    const withDurations = (seconds: number): LocalAppState => {
+      const durationMs = HOUR + seconds * 1000;
+      return {
+        ...base,
+        timesheetEntries: ["c1", "c2"].map((_id) => ({
+          ...committed,
+          _id,
+          durationMs,
+          commit: { ...committed.commit!, durationMs },
+        })),
+      };
+    };
+    const before = getWeekStatusForAgent(withDurations(5), input);
+    const after = getWeekStatusForAgent(withDurations(15), input);
+
+    // Each entry reads the same rounded hours, so only the exact durations
+    // tell them apart.
+    expect(after.committedEntries).toEqual(before.committedEntries);
+    expect(after.version).not.toBe(before.version);
+  });
+
   it("reads the running entry with its counted minutes", () => {
     expect(readRunningTimer(createState(), NOW)).toEqual({
       timerId: "timer-1",

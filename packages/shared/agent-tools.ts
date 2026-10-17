@@ -377,7 +377,7 @@ export const dataToolOutputSchemas = {
   get_week_status: z.object({
     /** The week's Monday. */
     weekOf: z.string(),
-    /** Pass it to submit_week. It changes with the committed entries, the change count or the lock. */
+    /** Pass it to submit_week. It changes with the committed entries and their exact durations, the change count or the lock. */
     version: z.string(),
     /** Submitted: its entries are read-only until the user reopens it. */
     locked: z.boolean(),
