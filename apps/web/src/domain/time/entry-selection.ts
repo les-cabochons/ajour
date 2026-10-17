@@ -70,6 +70,80 @@ export function selectEntryOnClick(
 }
 
 /**
+ * The selection when a press (pointer down) starts on `entryId`, before any drag,
+ * as in Finder. A plain press on an unselected entry selects it alone at once, so
+ * a drag that follows carries that entry only. A press on a selected entry keeps
+ * the selection, so a drag carries all of it, and the click that ends a press
+ * without a drag collapses it. Shift, Cmd and Ctrl presses leave the change to
+ * the click.
+ */
+export function selectEntryOnPress(
+  selection: EntrySelection,
+  entryId: string,
+  modifiers: EntrySelectionModifiers,
+): EntrySelection {
+  if (modifiers.range || modifiers.toggle || selection.ids.includes(entryId)) {
+    return selection;
+  }
+
+  return { ids: [entryId], anchorId: entryId };
+}
+
+/**
+ * The selection when a right-click, the menu key or Shift+F10 opens the menu of
+ * `entryId`: an unselected entry is selected alone first, so the menu always
+ * acts on the selection. A selected entry keeps the selection.
+ */
+export function selectEntryOnMenu(
+  selection: EntrySelection,
+  entryId: string,
+): EntrySelection {
+  return selection.ids.includes(entryId)
+    ? selection
+    : { ids: [entryId], anchorId: entryId };
+}
+
+/** Cmd+A and Select All: every shown entry, anchored on the first one. */
+export function selectAllEntries(
+  orderedIds: readonly string[],
+): EntrySelection {
+  return { ids: [...orderedIds], anchorId: orderedIds[0] ?? null };
+}
+
+/**
+ * Shift+↑ and Shift+↓ from the focused entry `fromId`: the entry focus moves to,
+ * the previous or next one in reading order, and the range from the anchor to it.
+ * With no shown anchor, `fromId` becomes the anchor. Returns null at either end
+ * of the list, or when `fromId` is not shown.
+ */
+export function extendEntrySelection(
+  selection: EntrySelection,
+  orderedIds: readonly string[],
+  fromId: string,
+  step: -1 | 1,
+): { focusId: string; selection: EntrySelection } | null {
+  const fromIndex = orderedIds.indexOf(fromId);
+  const focusId = fromIndex === -1 ? undefined : orderedIds[fromIndex + step];
+  if (!focusId) {
+    return null;
+  }
+
+  const anchorId =
+    selection.anchorId && orderedIds.includes(selection.anchorId)
+      ? selection.anchorId
+      : fromId;
+  return {
+    focusId,
+    selection: selectEntryOnClick(
+      { ids: selection.ids, anchorId },
+      orderedIds,
+      focusId,
+      { range: true, toggle: false },
+    ),
+  };
+}
+
+/**
  * Drops selected entries that are no longer shown, such as a deleted entry.
  * Returns `selection` itself when nothing changed, so React can skip a render.
  */
@@ -89,27 +163,25 @@ export function keepShownEntries(
 
 /**
  * The entries an action on `entryId` applies to, or null when the action applies
- * to that entry alone. Delete uses it from its key or a menu, and Mark as not
- * committed from a menu.
+ * to that entry alone, because it is the whole selection or nothing is selected.
  *
- * - On an entry that is part of a multiple selection, the action applies to the
- *   selection.
- * - The key on an entry outside the selection, such as one Cmd+click just toggled
- *   off while it kept focus, applies to the selection: the key always follows it.
- * - The menu of an entry outside the selection acts on that entry, which the user
- *   pointed at.
+ * Menus always find their entry selected, because opening one selects an
+ * unselected entry first (`selectEntryOnMenu`). Keys can come from an entry
+ * outside the selection, such as one Cmd+click just toggled off while it kept
+ * focus, and they act on the selection: the key always follows it.
  */
 export function getSelectionActionIds(
   selection: EntrySelection,
   entryId: string,
-  { fromKey }: { fromKey: boolean },
 ): readonly string[] | null {
-  const isSelected = selection.ids.includes(entryId);
-  if (isSelected) {
-    return selection.ids.length >= 2 ? selection.ids : null;
+  if (
+    selection.ids.length === 0 ||
+    (selection.ids.length === 1 && selection.ids[0] === entryId)
+  ) {
+    return null;
   }
 
-  return fromKey && selection.ids.length > 0 ? selection.ids : null;
+  return selection.ids;
 }
 
 /**

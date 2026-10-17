@@ -615,6 +615,7 @@ export function WeeklyTimeView({
             gridTemplateColumns: `repeat(${projection.days.length}, minmax(0, 1fr))`,
           }}
           data-focus-scope
+          ref={selection.scopeRef}
           onPointerDown={selection.handleScopePointerDown}
           onKeyDown={selection.handleScopeKeyDown}
         >
@@ -721,7 +722,14 @@ export function WeeklyTimeView({
                               )}
                               data-running-entry="true"
                               data-entry-id={currentTimer?.entryId ?? ""}
+                              data-selection-id={runningEntryId}
                               data-focus-column={index}
+                              onPointerDown={(event) =>
+                                selection.handlePress(runningEntryId, event)
+                              }
+                              onContextMenu={() =>
+                                selection.handleMenu(runningEntryId)
+                              }
                               onClick={(event) =>
                                 selectCard(runningEntryId, event)
                               }
@@ -786,6 +794,7 @@ export function WeeklyTimeView({
                             tabIndex={0}
                             role="button"
                             data-entry-id={entry._id}
+                            data-selection-id={entry._id}
                             data-focus-column={index}
                             aria-pressed={selection.selectedIds.has(entry._id)}
                             aria-label={`${summary.projectName}, ${summary.taskName}, ${formatClockDuration(entry.durationMs)}`}
@@ -832,8 +841,12 @@ export function WeeklyTimeView({
                                   ),
                               });
                             }}
-                            onPointerDown={(event) =>
-                              handleEntryPointerDown(entry, day.entries, event)
+                            onPointerDown={(event) => {
+                              selection.handlePress(entry._id, event);
+                              handleEntryPointerDown(entry, day.entries, event);
+                            }}
+                            onContextMenu={() =>
+                              selection.handleMenu(entry._id)
                             }
                           />
                         }

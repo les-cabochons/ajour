@@ -4,6 +4,14 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Current Baseline
 
+- [x] Entry selection presses and keys (2026-10-16, #199): a press on an
+      unselected Day row or Days card selects it at once, and opening its
+      menu by right-click or the menu keys selects it first, so menus always
+      act on the selection. Cmd/Ctrl+A and the Edit menu's Select All select
+      every shown entry; Select All arrives as the browser's `selectstart`.
+      Shift+Up and Shift+Down extend the range in reading order, and plain
+      arrows collapse it. Rules live in `domain/time/entry-selection.ts`;
+      eight Chromium scenarios in `entry-selection.feature` cover them.
 - [x] Team project sync (2026-10-16, #185): a plugin can declare the `team`
       capability, with its own Projects switch, to keep a team's shared
       projects and tasks in step. The contract is `packages/shared/team-sync.ts`;

@@ -435,6 +435,7 @@ export function TimerPanel({
   return (
     <div
       className="time-entries"
+      ref={selection.scopeRef}
       onPointerDown={selection.handleScopePointerDown}
       onKeyDown={selection.handleScopeKeyDown}
     >
@@ -541,6 +542,7 @@ export function TimerPanel({
                       aria-grabbed={isDraggedEntry}
                       aria-selected={selection.selectedIds.has(entry._id)}
                       data-entry-id={entry._id}
+                      data-selection-id={entry._id}
                       data-running-entry={isRunning ? "true" : undefined}
                       data-focus-column="0"
                       tabIndex={0}
@@ -568,9 +570,11 @@ export function TimerPanel({
                               : (step) => reorderEntry(entry._id, step),
                         })
                       }
-                      onPointerDown={(event) =>
-                        handleEntryPointerDown(entry, event)
-                      }
+                      onPointerDown={(event) => {
+                        selection.handlePress(entry._id, event);
+                        handleEntryPointerDown(entry, event);
+                      }}
+                      onContextMenu={() => selection.handleMenu(entry._id)}
                     />
                   }
                 >

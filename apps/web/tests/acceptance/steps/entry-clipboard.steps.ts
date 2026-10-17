@@ -120,3 +120,56 @@ When(
     await page.getByRole("menuitem", { name: item }).click();
   },
 );
+
+When(
+  "I press the mouse on the {string} entry",
+  async ({ page }, text: string) => {
+    const box = await dayRow(page, text).boundingBox();
+    if (!box) throw new Error(`The ${text} entry is not rendered`);
+    await page.mouse.move(box.x + box.width / 3, box.y + box.height / 2);
+    await page.mouse.down();
+  },
+);
+
+When("I release the mouse", async ({ page }) => {
+  await page.mouse.up();
+});
+
+When(
+  "I right-click the {string} entry and choose {string}",
+  async ({ page }, text: string, item: string) => {
+    await dayRow(page, text).click({ button: "right" });
+    await page.getByRole("menuitem", { name: item }).click();
+  },
+);
+
+When("I choose Select All from the Edit menu", async ({ page }) => {
+  // The desktop Edit menu's Select All runs the browser's select-all command.
+  await page.evaluate(() => document.execCommand("selectAll"));
+});
+
+Then("{int} entries are selected", async ({ page }, count: number) => {
+  await expect(
+    page.locator(".time-entry-row[aria-selected='true']"),
+  ).toHaveCount(count);
+});
+
+Then("the Day list is empty", async ({ page }) => {
+  await expect(page.getByText("No time entries")).toBeVisible();
+});
+
+Then("{int} cards are selected", async ({ page }, count: number) => {
+  await expect(
+    page.locator(".weekly-entry-card[aria-pressed='true']"),
+  ).toHaveCount(count);
+});
+
+Then(
+  "{word}'s {string} card is selected",
+  async ({ page }, day: string, text: string) => {
+    await expect(daysCard(page, day, text)).toHaveAttribute(
+      "aria-pressed",
+      "true",
+    );
+  },
+);
