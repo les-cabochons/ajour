@@ -405,11 +405,14 @@ export function useEntrySelection({
       return;
     }
 
-    // The entry's own handler has already moved focus for a plain arrow.
+    // The entry's own handler has already moved focus for a plain arrow. At
+    // the top or bottom of the list focus stays, and Up or Down still
+    // collapses the selection to the focused entry.
     const focusedId = getSelectionId(document.activeElement);
+    const isVertical = event.key === "ArrowUp" || event.key === "ArrowDown";
     if (
       focusedId !== undefined &&
-      focusedId !== fromId &&
+      (focusedId !== fromId || isVertical) &&
       (selection.ids.length !== 1 || selection.ids[0] !== focusedId)
     ) {
       select({ ids: [focusedId], anchorId: focusedId });

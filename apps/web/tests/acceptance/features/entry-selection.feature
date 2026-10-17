@@ -70,6 +70,18 @@ Feature: Select time entries like a file explorer
     When I press the "ArrowUp" key
     Then only the "Login form" entry is selected
 
+  Scenario: A plain arrow at either end of the list still collapses the selection
+    Given I have a week of saved entries
+    When I open Monday's Day list
+    And I click the "Login form" entry
+    And I press the "ControlOrMeta+a" key
+    And I press the "ArrowUp" key
+    Then only the "Login form" entry is selected
+    When I click the "Code review" entry
+    And I press the "ControlOrMeta+a" key
+    And I press the "ArrowDown" key
+    Then only the "Code review" entry is selected
+
   Scenario: Shift+ArrowDown on the Week cards continues into the next day
     Given I have a week of saved entries
     When I open the Week Days view
