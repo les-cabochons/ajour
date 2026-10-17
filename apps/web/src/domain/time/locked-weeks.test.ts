@@ -64,11 +64,14 @@ describe("isDateLocked", () => {
   });
 
   it("names the week and the way out", () => {
-    expect(lockedWeekMessage("2026-10-05")).toBe(
-      "The week of 2026-10-05 is submitted. Reopen it to change it.",
+    expect(lockedWeekMessage("2026-10-05", 2026)).toBe(
+      "The week of Oct 5 is submitted. Reopen it to change it.",
+    );
+    expect(lockedWeekMessage("2025-12-29", 2026)).toBe(
+      "The week of Dec 29, 2025 is submitted. Reopen it to change it.",
     );
     expect(getDateLockReason(submitted, "2026-10-11")).toBe(
-      "The week of 2026-10-05 is submitted. Reopen it to change it.",
+      lockedWeekMessage("2026-10-05"),
     );
     expect(getDateLockReason(submitted, "2026-10-12")).toBeUndefined();
     expect(getLockedWeek(submitted, "2026-10-09")).toEqual({

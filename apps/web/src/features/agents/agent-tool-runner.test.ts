@@ -738,8 +738,7 @@ describe("agent tools on submitted weeks", () => {
       weekOf: "2026-10-12",
       version: await readVersion(),
     });
-    const reason =
-      "The week of 2026-10-12 is submitted. Reopen it to change it.";
+    const reason = "The week of Oct 12 is submitted. Reopen it to change it.";
 
     for (const [tool, input] of [
       [

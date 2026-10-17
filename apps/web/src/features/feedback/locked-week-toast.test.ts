@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { LockedWeekError } from "@/domain/time/locked-weeks";
+import { LockedWeekError, lockedWeekMessage } from "@/domain/time/locked-weeks";
 import { StaleWindowError } from "@/lib/stale-window-error";
 
 const { showToast } = vi.hoisted(() => ({ showToast: vi.fn() }));
@@ -22,9 +22,7 @@ describe("installLockedWeekToast", () => {
 
     target.dispatchEvent(event);
 
-    expect(showToast).toHaveBeenCalledWith(
-      "The week of 2026-10-05 is submitted. Reopen it to change it.",
-    );
+    expect(showToast).toHaveBeenCalledWith(lockedWeekMessage("2026-10-05"));
     expect(event.defaultPrevented).toBe(true);
   });
 
@@ -36,9 +34,7 @@ describe("installLockedWeekToast", () => {
       errorEvent("unhandledrejection", new LockedWeekError("2026-10-12")),
     );
 
-    expect(showToast).toHaveBeenCalledWith(
-      "The week of 2026-10-12 is submitted. Reopen it to change it.",
-    );
+    expect(showToast).toHaveBeenCalledWith(lockedWeekMessage("2026-10-12"));
   });
 
   it("shows a write refused because another window changed Ajour", () => {

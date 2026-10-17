@@ -1,6 +1,7 @@
 import type { LocalAppState, LocalLockedWeek } from "@/domain/local-state";
 import { recordsEqual } from "@/domain/local-state-undo";
 import {
+  formatShortLocalDate,
   getWeekDates,
   getWeekOf,
   isValidLocalDate,
@@ -16,9 +17,16 @@ import { listWeekChanges } from "@/domain/time/timesheet-commit";
 
 type LockState = Pick<LocalAppState, "lockedWeeks">;
 
-/** The refusal of every write to a submitted week. `weekOf` is its Monday. */
-export function lockedWeekMessage(weekOf: string) {
-  return `The week of ${weekOf} is submitted. Reopen it to change it.`;
+/**
+ * The refusal of every write to a submitted week, for the UI and agents.
+ * `weekOf` is its Monday, shown as "Oct 5", with the year when it is not
+ * `currentYear`.
+ */
+export function lockedWeekMessage(
+  weekOf: string,
+  currentYear = new Date().getFullYear(),
+) {
+  return `The week of ${formatShortLocalDate(weekOf, currentYear)} is submitted. Reopen it to change it.`;
 }
 
 /** The submitted week that holds `localDate`, or undefined. An invalid date is in none. */

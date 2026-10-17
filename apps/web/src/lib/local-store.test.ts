@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { lockedWeekMessage } from "@/domain/time/locked-weeks";
 
 function installMockWindow() {
   const storage = new Map<string, string>();
@@ -3061,7 +3062,7 @@ describe("submitted weeks in the store", () => {
   });
 
   const HOUR = 60 * 60 * 1000;
-  const reason = "The week of 2026-10-05 is submitted. Reopen it to change it.";
+  const reason = lockedWeekMessage("2026-10-05");
 
   /** "API" on Tuesday, October 6, committed; the week is submitted when `locked`. */
   function seedWeek({ locked }: { locked: boolean }) {

@@ -34,8 +34,7 @@ Then("the Commit page shows the week is not submitted", async ({ page }) => {
   ).toHaveCount(0);
 });
 
-const lockReason =
-  "The week of 2026-10-05 is submitted. Reopen it to change it.";
+const lockReason = "The week of Oct 5 is submitted. Reopen it to change it.";
 
 Then("the entry editor is read-only", async ({ page }) => {
   const editor = page.getByRole("complementary", { name: "Time entry editor" });

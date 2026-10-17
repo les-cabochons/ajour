@@ -41,3 +41,28 @@ export function getWeekDates(localDate: string): string[] {
     return day.toISOString().slice(0, 10);
   });
 }
+
+const SHORT_MONTHS = [
+  "Jan",
+  "Feb",
+  "Mar",
+  "Apr",
+  "May",
+  "Jun",
+  "Jul",
+  "Aug",
+  "Sep",
+  "Oct",
+  "Nov",
+  "Dec",
+];
+
+/**
+ * A day in the app's short form, such as "Oct 5", with the year when it is
+ * not `currentYear`, such as "Dec 29, 2025". Pass a valid date.
+ */
+export function formatShortLocalDate(localDate: string, currentYear: number) {
+  const [year, month, day] = localDate.split("-").map(Number);
+  const monthDay = `${SHORT_MONTHS[month! - 1]} ${day}`;
+  return year === currentYear ? monthDay : `${monthDay}, ${year}`;
+}

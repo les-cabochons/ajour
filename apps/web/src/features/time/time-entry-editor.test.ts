@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { lockedWeekMessage } from "@/domain/time/locked-weeks";
 import {
   commitTimeEntryDraft,
   createTimeEntryEditorFields,
@@ -307,8 +308,7 @@ describe("time-entry editor", () => {
     });
   });
   describe("submitted weeks", () => {
-    const reason =
-      "The week of 2026-10-05 is submitted. Reopen it to change it.";
+    const reason = lockedWeekMessage("2026-10-05");
     const lockReasonFor = (localDate: string) =>
       localDate >= "2026-10-05" && localDate <= "2026-10-11"
         ? reason

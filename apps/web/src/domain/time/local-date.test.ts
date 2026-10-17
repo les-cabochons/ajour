@@ -1,5 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { getWeekDates, getWeekOf } from "@/domain/time/local-date";
+import {
+  formatShortLocalDate,
+  getWeekDates,
+  getWeekOf,
+} from "@/domain/time/local-date";
 
 describe("getWeekOf", () => {
   it.each([
@@ -29,5 +33,13 @@ describe("getWeekDates", () => {
       "2026-10-31",
       "2026-11-01",
     ]);
+  });
+});
+
+describe("formatShortLocalDate", () => {
+  it("shows the month and day, and the year only when it is not this year", () => {
+    expect(formatShortLocalDate("2026-10-05", 2026)).toBe("Oct 5");
+    expect(formatShortLocalDate("2026-01-31", 2026)).toBe("Jan 31");
+    expect(formatShortLocalDate("2025-12-29", 2026)).toBe("Dec 29, 2025");
   });
 });

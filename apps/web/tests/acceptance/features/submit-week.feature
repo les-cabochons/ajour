@@ -35,7 +35,7 @@ Feature: Submit the week
     And I double-click the "API" entry
     Then the entry editor is read-only
     When I right-click the "Login form" entry
-    Then "Delete" is disabled in the menu with the reason "The week of 2026-10-05 is submitted. Reopen it to change it."
+    Then "Delete" is disabled in the menu with the reason "The week of Oct 5 is submitted. Reopen it to change it."
     When I open the Week Days view
     Then the Week view shows the week is submitted
     When I open the Commit page for the week of 2026-10-05

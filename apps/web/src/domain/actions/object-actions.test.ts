@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { lockedWeekMessage } from "@/domain/time/locked-weeks";
 import {
   getCalendarSuggestionActions,
   getBacklogItemActions,
@@ -106,8 +107,7 @@ describe("time entry actions", () => {
   });
 
   it("disables what would change an entry of a submitted week, with the reason", () => {
-    const reason =
-      "The week of 2026-10-05 is submitted. Reopen it to change it.";
+    const reason = lockedWeekMessage("2026-10-05");
 
     expect(
       getTimeEntryActions("committed", { lockedReason: reason }).map(
@@ -171,8 +171,7 @@ describe("time entry selection actions", () => {
   });
 
   it("disables the selection's actions on a submitted week, except Duplicate to…", () => {
-    const reason =
-      "The week of 2026-10-05 is submitted. Reopen it to change it.";
+    const reason = lockedWeekMessage("2026-10-05");
 
     expect(
       getTimeEntrySelectionActions({
