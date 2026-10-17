@@ -607,6 +607,14 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
                 ),
               )
             : undefined,
+        commitLinesNameSource:
+          typeof persistedState.userPreferences?.commitLinesNameSource ===
+            "string" &&
+          persistedState.userPreferences.commitLinesNameSource.trim().length > 0
+            ? persistedState.userPreferences.commitLinesNameSource
+                .trim()
+                .slice(0, 120)
+            : undefined,
         calendarSuggestions: normalizeCalendarSuggestionSettings(
           persistedState.userPreferences?.calendarSuggestions,
         ),

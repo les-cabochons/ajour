@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   RiArrowLeftLine as ArrowLeft,
+  RiArrowRightSLine as ChevronIcon,
   RiCheckLine as Check,
   RiErrorWarningLine as Warning,
   RiFileCopyLine as Copy,
@@ -19,12 +20,17 @@ import {
 } from "@/domain/time/duration";
 import { listWeekChanges } from "@/domain/time/timesheet-commit";
 import {
+  describeLineNames,
   groupSubmitLines,
+  listLineNameSources,
+  resolveLineNameSource,
   summarizeWeek,
+  type LineNames,
   type SubmitGroupBy,
   type SubmitLine,
   type SubmitWarning,
 } from "@/domain/time/timesheet-submission";
+import type { ProjectPropertyPlugin } from "@/domain/projects/plugin-properties";
 import type { LocalProjectIcon } from "@/domain/projects/project-icon";
 import {
   AgentTaskButtons,
@@ -41,8 +47,9 @@ import {
   setChangesChecked,
   useUncheckedChangeIds,
 } from "@/lib/commit-selection";
-import { useLocalProjects, useLocalState } from "@/lib/local-hooks";
+import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
+import { listProjectPropertyPlugins } from "@/lib/plugin-project-properties";
 import { ProjectIcon } from "@/lib/project-icons";
 import { cn, getIsoWeekDates } from "@/lib/utils";
 
@@ -138,12 +145,19 @@ function CopyValue({
   );
 }
 
+/**
+ * One line: the project and task as one copy button ("Project / Task", copied
+ * as "Project Task" for the timesheet's search box), then the hours and the
+ * comments. `names` comes from `describeLineNames`.
+ */
 function SubmitLineRow({
   line,
+  names,
   projectColor,
   projectIcon,
 }: {
   line: SubmitLine;
+  names?: LineNames;
   projectColor?: string;
   projectIcon?: LocalProjectIcon;
 }) {
@@ -156,15 +170,18 @@ function SubmitLineRow({
           className="submit-line-dot"
           fallback="dot"
         />
-        <CopyValue
-          label="project"
-          text={line.projectName}
-          placeholder="No project"
-        />
-        <span aria-hidden className="submit-line-sep">
-          /
-        </span>
-        <CopyValue label="task" text={line.taskName} placeholder="No task" />
+        {names && "pending" in names ? (
+          // The saved plugin names are loading: copy nothing rather than
+          // Ajour's name.
+          <span className="px-1 text-muted-foreground">Loading names…</span>
+        ) : (
+          <CopyValue
+            label="project and task"
+            text={names?.shown}
+            copyValue={names?.copied}
+            placeholder="No project or task"
+          />
+        )}
       </div>
       <CopyValue
         label="hours"
@@ -185,8 +202,10 @@ function SubmitLineRow({
 
 /**
  * The Commit page for the week that holds `date`: the changes since the last
- * commit, each with a checkbox, then the week's lines to copy into the
- * external timesheet. Mark as committed saves the checked changes.
+ * commit, each with a checkbox, under a heading that collapses them, then the
+ * week's lines to copy into the external timesheet. The Names switch picks
+ * Ajour's or a plugin's project names for the lines, and is saved in the user
+ * preferences. Mark as committed saves the checked changes.
  */
 export function CommitPage({
   date,
@@ -198,11 +217,36 @@ export function CommitPage({
 }) {
   const navigate = useNavigate();
   const state = useLocalState();
-  const projects = useLocalProjects();
+  // Every project: a line may be on an archived one.
+  const projects = state.projects;
   const weekDates = useMemo(() => getIsoWeekDates(date), [date]);
   // Agents read the unchecked changes under the same Monday key.
   const weekOf = weekDates[0]!;
   const [groupBy, setGroupBy] = useState<SubmitGroupBy>("day-task");
+  // Expanded on every visit, on purpose: the choice is not saved.
+  const [changesOpen, setChangesOpen] = useState(true);
+  // Undefined until loaded, so a saved plugin choice waits instead of
+  // showing Ajour's names first.
+  const [plugins, setPlugins] = useState<ProjectPropertyPlugin[]>();
+  const nameSources = useMemo(() => listLineNameSources(plugins), [plugins]);
+  const nameSource = resolveLineNameSource(
+    state.userPreferences.commitLinesNameSource,
+    plugins,
+  );
+
+  useEffect(() => {
+    let active = true;
+    // A failed overview leaves only Ajour's names; the page works.
+    void listProjectPropertyPlugins()
+      .then((next) => active && setPlugins(next))
+      .catch((error: unknown) => {
+        console.warn("Plugin project properties unavailable.", error);
+        if (active) setPlugins([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Opening a week's page checks every change again.
   useEffect(() => resetCheckedChanges(weekOf), [weekOf]);
@@ -329,22 +373,38 @@ export function CommitPage({
         <SectionHeading
           id="commit-changes-heading"
           trailing={
-            changes.length > 0
+            changesOpen && changes.length > 0
               ? `${checkedIds.length} of ${changes.length} checked`
               : undefined
           }
         >
-          Changes
+          <button
+            type="button"
+            aria-expanded={changesOpen}
+            aria-controls="commit-changes-content"
+            className="-ml-1 flex items-center gap-1 text-left hover:text-foreground"
+            onClick={() => setChangesOpen(!changesOpen)}
+          >
+            <ChevronIcon
+              aria-hidden="true"
+              className={cn("size-4", changesOpen && "rotate-90")}
+            />
+            Changes
+          </button>
         </SectionHeading>
-        <CommitChangeList
-          changes={changes}
-          // Every project: a deleted entry may be on an archived one.
-          projects={state.projects}
-          uncheckedIds={uncheckedIds}
-          onCheckedChange={(entryId, checked) =>
-            setChangesChecked(weekOf, [entryId], checked)
-          }
-        />
+        {changesOpen ? (
+          <div id="commit-changes-content">
+            <CommitChangeList
+              changes={changes}
+              // Every project: a deleted entry may be on an archived one.
+              projects={state.projects}
+              uncheckedIds={uncheckedIds}
+              onCheckedChange={(entryId, checked) =>
+                setChangesChecked(weekOf, [entryId], checked)
+              }
+            />
+          </div>
+        ) : null}
       </section>
 
       <div
@@ -399,6 +459,38 @@ export function CommitPage({
                   ))}
                 </ToggleGroup>
               </div>
+              {/* Only Ajour to choose from without a plugin: no switch. */}
+              {nameSources.length > 1 ? (
+                <div className="flex items-center gap-2">
+                  <span
+                    id="commit-names-label"
+                    className="submit-toolbar-label"
+                  >
+                    Names
+                  </span>
+                  <ToggleGroup
+                    value={nameSource ? [nameSource] : []}
+                    onValueChange={(values: unknown[]) => {
+                      const next = nameSources.find(
+                        (option) => option.id === values[0],
+                      );
+                      if (next) {
+                        localStore.setUserPreferences({
+                          commitLinesNameSource: next.id,
+                        });
+                      }
+                    }}
+                    variant="outline"
+                    aria-labelledby="commit-names-label"
+                  >
+                    {nameSources.map((option) => (
+                      <ToggleGroupItem key={option.id} value={option.id}>
+                        {option.label}
+                      </ToggleGroupItem>
+                    ))}
+                  </ToggleGroup>
+                </div>
+              ) : null}
             </div>
 
             <div>
@@ -425,6 +517,12 @@ export function CommitPage({
                         <SubmitLineRow
                           key={line.key}
                           line={line}
+                          names={describeLineNames(
+                            line,
+                            nameSource,
+                            projects,
+                            plugins,
+                          )}
                           projectColor={project?.color}
                           projectIcon={project?.icon}
                         />

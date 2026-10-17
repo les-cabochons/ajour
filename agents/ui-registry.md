@@ -8,7 +8,7 @@ This registry captures reusable visual patterns already present in Ajour. Update
 
 The redesign direction decided on 2026-10-14: Linear's density and structure, Vercel's restraint in color. These are the shared patterns every page is built from. Pages that still carry their own styles migrate to them one area at a time (Time, Backlog, Projects, Settings).
 
-- **Top bar and page header.** The 48px bar is the page header. `PageHeader` in `components/page-header.tsx` renders a `title` and `actions` into the bar through a portal; an optional muted `backLink` renders in the page content above the object title; `lib/page-header.ts` owns the slot. Until a page mounts one, the shell shows the route's default title, and on Time the selected day as a calendar trigger with a "Today" chip. On Windows the menus sit at the bar's left, then a hairline, then the title. The bar's right end holds the day total as plain text (`.ajour-nav-total`), whose popover still shows the week total and Commit week.
+- **Top bar and page header.** The 48px bar is the page header. `PageHeader` in `components/page-header.tsx` renders a `title` and `actions` into the bar through a portal; an optional muted `backLink` renders in the page content above the object title; `lib/page-header.ts` owns the slot. Until a page mounts one, the shell shows the route's default title, and on Time the selected day as a calendar trigger with a "Today" chip. On Windows the menus sit at the bar's left, then a hairline, then the title. The bar's right end holds the day total as plain text (`.ajour-nav-total`), whose popover still shows the week total and the full-width Commit button (calendar-check icon).
 - **Chip.** `components/ui/chip.tsx`: 20px, 4px corners, 12px medium, neutral by default, with a `color` dot for projects and workflow states. The only metadata treatment.
 - **Value, Figure, FigureRow.** `components/ui/value.tsx`: every duration, total, count and id in mono tabular figures. `Figure` is a 12px label over a 16px value; a `FigureRow` replaces stat cards.
 - **SectionHeading.** `components/section-heading.tsx`: 12px medium muted, with a trailing count or total, heading every cardless section.
@@ -273,15 +273,23 @@ totals popover (`CommitWeekButton`) opens it in both desktop and narrow views.
 Opening it saves valid entry drafts and keeps invalid drafts open through the
 Time page's action request handler. The page leads with the week summary: the
 total as a 28px figure beside the target, a 3px progress bar and amber
-warnings. Under a "Changes" `SectionHeading`, `CommitChangeList` shows one row
+warnings. Under a "Changes" `SectionHeading`, whose title is a disclosure
+button (chevron, `aria-expanded`, no transition) that hides the list and its
+"checked" count and opens expanded on every visit, `CommitChangeList` shows one row
 per change: a `Checkbox`, the kind's symbol (Added, Updated, Deleted; an icon
 with its own color, named for screen readers), the day, the project and task,
 the hours as a `Value` and the note, each as "old → new" when the committed
 copy differs. "Everything is committed." replaces the list when there is none.
 The plugin actions and "Mark as committed" (with the Undo toast) sit in a
-wrapping row below. "Lines" closes the page: the Group by toolbar and the
-copyable lines under day `SectionHeading`s. Every value copies on click with
-an always-visible icon; hours copy as decimals. Change rules live in
+wrapping row below; collapsing Changes leaves them visible. "Lines" closes
+the page: the toolbar with Group by and, when a plugin adds project
+properties, a Names `ToggleGroup` (Ajour, then each plugin's section title,
+saved as `commitLinesNameSource` in the user preferences), then the copyable
+lines under day `SectionHeading`s. A line's project, its full name or the
+plugin's name field, and its task are one value shown as "Project / Task" and
+copied as "Project Task"; while a saved plugin choice waits for the plugins
+to load, it shows "Loading names…" and copies nothing. Every value copies on click with an always-visible
+icon; hours copy as decimals. Change rules live in
 `domain/time/timesheet-commit.ts`, line grouping and the summary in
 `domain/time/timesheet-submission.ts`, and the unchecked changes in
 `lib/commit-selection.ts`, which agents read too.
