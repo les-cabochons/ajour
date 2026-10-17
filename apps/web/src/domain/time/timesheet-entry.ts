@@ -355,29 +355,52 @@ export function pasteTimesheetEntries(
   mode: "copy" | "cut",
   factories: TimesheetEntryFactories,
 ): LocalAppState {
-  const pastedAt = factories.now();
-  const paste = mode === "cut" ? moveTimesheetEntry : duplicateTimesheetEntry;
+  return relocateTimesheetEntries(state, entries, mode, factories).state;
+}
 
-  return entries.reduce((current, { entryId, localDate }, index) => {
+/**
+ * `pasteTimesheetEntries`, which also reports the entries that landed, in the
+ * order of `entries`: the copies for `copy`, the moved entries for `cut`.
+ * Skipped entries are left out. Duplicate, Duplicate to…, Move to… and a paste
+ * of a selection use it, so the entries that landed become the selection.
+ */
+export function relocateTimesheetEntries(
+  state: LocalAppState,
+  entries: readonly PastedTimesheetEntry[],
+  mode: "copy" | "cut",
+  factories: TimesheetEntryFactories,
+): { state: LocalAppState; entryIds: string[] } {
+  const pastedAt = factories.now();
+  const entryIds: string[] = [];
+
+  const next = entries.reduce((current, { entryId, localDate }, index) => {
     const entry = current.timesheetEntries.find((item) => item._id === entryId);
-    if (!entry) {
+    if (!entry || current.timers.some((timer) => timer.entryId === entryId)) {
       return current;
     }
 
-    return paste(
-      current,
-      entryId,
-      {
-        localDate,
-        projectId: entry.projectId,
-        taskId: entry.taskId,
-        note: entry.note,
-        durationMs: entry.durationMs,
-      },
-      // Lists show older entries first, so the first entry gets the earliest time.
-      { ...factories, now: () => pastedAt + index },
-    );
+    const values = {
+      localDate,
+      projectId: entry.projectId,
+      taskId: entry.taskId,
+      note: entry.note,
+      durationMs: entry.durationMs,
+    };
+    // Lists show older entries first, so the first entry gets the earliest time.
+    const stamped = { ...factories, now: () => pastedAt + index };
+    if (mode === "cut") {
+      entryIds.push(entryId);
+      return moveTimesheetEntry(current, entryId, values, stamped);
+    }
+
+    const copied = duplicateTimesheetEntry(current, entryId, values, stamped);
+    // A copy is appended to the entries.
+    const copy = copied.timesheetEntries.at(-1);
+    if (copied !== current && copy) entryIds.push(copy._id);
+    return copied;
   }, state);
+
+  return { state: next, entryIds };
 }
 
 /**

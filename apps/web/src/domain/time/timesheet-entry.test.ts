@@ -11,6 +11,7 @@ import {
   moveTimesheetEntry,
   normalizeTimesheetEntry,
   pasteTimesheetEntries,
+  relocateTimesheetEntries,
   reorderTimesheetEntries,
   saveManualTimesheetEntry,
   placeRunningRow,
@@ -1113,5 +1114,114 @@ describe("pasteTimesheetEntries", () => {
     );
 
     expect(pasted).toBe(state);
+  });
+});
+
+describe("relocateTimesheetEntries", () => {
+  const HOUR = 60 * 60 * 1000;
+  function entry(id: string, localDate: string, committedAt: number) {
+    return {
+      _id: id,
+      localDate,
+      projectId: "project-1",
+      taskId: "task-1",
+      label: "Feature work",
+      note: id,
+      durationMs: HOUR,
+      sourceBlockIds: [],
+      committedAt,
+    };
+  }
+  const runningTimer = {
+    _id: "timer-1",
+    startedAt: 1,
+    localDate: "2026-10-05",
+    projectId: "project-1",
+    taskId: "task-1",
+    accumulatedDurationMs: HOUR,
+    entryId: "running",
+  };
+
+  it("reports the copies, in the order of the entries, skipping the running entry", () => {
+    let nextId = 0;
+    const state = createState({
+      timesheetEntries: [
+        entry("monday", "2026-10-05", 10),
+        entry("running", "2026-10-05", 20),
+        entry("tuesday", "2026-10-06", 30),
+      ],
+      timers: [runningTimer],
+    });
+
+    const { state: next, entryIds } = relocateTimesheetEntries(
+      state,
+      [
+        { entryId: "monday", localDate: "2026-10-05" },
+        { entryId: "running", localDate: "2026-10-05" },
+        { entryId: "tuesday", localDate: "2026-10-06" },
+      ],
+      "copy",
+      { createId: () => `copy-${++nextId}`, now: () => 500 },
+    );
+
+    expect(entryIds).toEqual(["copy-1", "copy-2"]);
+    // Each copy lands at the end of its own day, in the order of the entries.
+    expect(next.timesheetEntries.slice(3)).toMatchObject([
+      {
+        _id: "copy-1",
+        localDate: "2026-10-05",
+        note: "monday",
+        committedAt: 500,
+      },
+      {
+        _id: "copy-2",
+        localDate: "2026-10-06",
+        note: "tuesday",
+        committedAt: 502,
+      },
+    ]);
+  });
+
+  it("reports the moved entries for a cut, and nothing for gone entries", () => {
+    const state = createState({
+      timesheetEntries: [
+        entry("first", "2026-10-05", 10),
+        entry("second", "2026-10-06", 20),
+      ],
+    });
+
+    const { state: next, entryIds } = relocateTimesheetEntries(
+      state,
+      [
+        { entryId: "first", localDate: "2026-10-08" },
+        { entryId: "gone", localDate: "2026-10-08" },
+        { entryId: "second", localDate: "2026-10-08" },
+      ],
+      "cut",
+      { createId: () => "unused", now: () => 500 },
+    );
+
+    expect(entryIds).toEqual(["first", "second"]);
+    expect(next.timesheetEntries).toMatchObject([
+      { _id: "first", localDate: "2026-10-08", committedAt: 500 },
+      { _id: "second", localDate: "2026-10-08", committedAt: 502 },
+    ]);
+  });
+
+  it("returns the same state and no entries when nothing could move", () => {
+    const state = createState({
+      timesheetEntries: [entry("running", "2026-10-05", 10)],
+      timers: [runningTimer],
+    });
+
+    const result = relocateTimesheetEntries(
+      state,
+      [{ entryId: "running", localDate: "2026-10-06" }],
+      "cut",
+      { createId: () => "unused", now: () => 500 },
+    );
+
+    expect(result.state).toBe(state);
+    expect(result.entryIds).toEqual([]);
   });
 });

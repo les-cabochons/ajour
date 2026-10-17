@@ -87,6 +87,7 @@ import {
   normalizeTimesheetEntry,
   pasteTimesheetEntries as applyPasteTimesheetEntries,
   type PastedTimesheetEntry,
+  relocateTimesheetEntries as applyRelocateTimesheetEntries,
   reorderTimesheetEntries as applyReorderTimesheetEntries,
   saveManualTimesheetEntry,
   updateTimesheetEntry as applyUpdateTimesheetEntry,
@@ -1011,6 +1012,22 @@ function rememberUndo(token: string, undo: LocalStateUndo) {
 function releaseTeamPushHold() {
   const state = readState();
   if (state.teamPushHold) writeState({ ...state, teamPushHold: undefined });
+}
+
+/**
+ * `updateStateWithUndo` for an operation that also returns a result. The token
+ * is null when the operation changed nothing.
+ */
+function updateStateWithUndoResult<T>(
+  operation: (state: LocalAppState) => { state: LocalAppState; result: T },
+): { undoToken: string | null; result: T } {
+  let result!: T;
+  const undoToken = updateStateWithUndo((state) => {
+    const applied = operation(state);
+    result = applied.result;
+    return applied.state;
+  });
+  return { undoToken, result };
 }
 
 /** `expired` means a later action replaced this one, or its toast already closed. */
@@ -2009,6 +2026,25 @@ export const localStore = {
         now: Date.now,
       }),
     );
+  },
+  /**
+   * Copies or moves several entries in one change, as `pasteTimesheetEntries`
+   * does, and returns the entries that landed with the undo token: the copies
+   * for `copy`, the moved entries for `cut`. Duplicate, Duplicate to… and
+   * Move to… on a selection use it.
+   */
+  relocateTimesheetEntries(
+    entries: readonly PastedTimesheetEntry[],
+    mode: "copy" | "cut",
+  ) {
+    const { undoToken, result } = updateStateWithUndoResult((state) => {
+      const relocated = applyRelocateTimesheetEntries(state, entries, mode, {
+        createId,
+        now: Date.now,
+      });
+      return { state: relocated.state, result: relocated.entryIds };
+    });
+    return { undoToken, entryIds: result };
   },
   /**
    * Undoes the action that returned `token`, if it is still the last one.

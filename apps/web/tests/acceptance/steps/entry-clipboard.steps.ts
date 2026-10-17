@@ -173,3 +173,61 @@ Then(
     );
   },
 );
+
+When("I right-click the {string} entry", async ({ page }, text: string) => {
+  await dayRow(page, text).click({ button: "right" });
+});
+
+When(
+  "I right-click {word}'s {string} card and choose {string}",
+  async ({ page }, day: string, text: string, item: string) => {
+    await daysCard(page, day, text).click({ button: "right" });
+    await page.getByRole("menuitem", { name: item }).click();
+  },
+);
+
+Then(/^the menu lists (.+)$/, async ({ page }, list: string) => {
+  const expected = quotedList(list);
+  const items = page.getByRole("menu").getByRole("menuitem");
+  await expect(items.first()).toBeVisible();
+  // Each item ends with its key, which differs between platforms.
+  await expect
+    .poll(async () =>
+      (await items.allInnerTexts()).map(
+        (text) =>
+          // The longest label wins, so "Duplicate 2 entries to…" is not read
+          // as "Duplicate 2 entries".
+          expected
+            .filter((label) => text.startsWith(label))
+            .sort((left, right) => right.length - left.length)[0] ?? text,
+      ),
+    )
+    .toEqual(expected);
+});
+
+When(
+  /^I choose October (\d+) in the "([^"]+)" dialog$/,
+  async ({ page }, day: string, title: string) => {
+    const dialog = page.getByRole("dialog", { name: title });
+    await expect(dialog).toBeVisible();
+    await dialog
+      .getByRole("button", {
+        name: new RegExp(`October ${day}(st|nd|rd|th)?,`),
+      })
+      .click();
+    await dialog.getByRole("button", { name: /^(Move|Duplicate)$/ }).click();
+    await expect(dialog).toHaveCount(0);
+  },
+);
+
+Then(
+  "rows {int} and {int} of the Day list are selected",
+  async ({ page }, first: number, second: number) => {
+    const rows = page.locator(".time-entry-row");
+    await expect(
+      page.locator(".time-entry-row[aria-selected='true']"),
+    ).toHaveCount(2);
+    await expect(rows.nth(first - 1)).toHaveAttribute("aria-selected", "true");
+    await expect(rows.nth(second - 1)).toHaveAttribute("aria-selected", "true");
+  },
+);

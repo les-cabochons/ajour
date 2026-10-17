@@ -1,5 +1,6 @@
 import { useState } from "react";
 import {
+  formatEntryCount,
   getTimeEntryActions,
   getTimeEntryActionState,
   type ObjectAction,
@@ -45,11 +46,24 @@ export interface TimeEntryActionRunOptions {
 
 type DateActionKind = "duplicate-to" | "move-to";
 
-interface PendingDateAction {
-  kind: DateActionKind;
-  entry: LocalTimesheetEntry;
-  resolveValues?: TimeEntryActionRunOptions["resolveValues"];
-}
+/** The actions `runOnEntries` runs on several entries, such as a selection. */
+export type TimeEntryManyActionId = "duplicate" | DateActionKind;
+
+/**
+ * Move to… or Duplicate to… waiting for its date: on one entry, or on several,
+ * with `onDone` getting the entries that landed.
+ */
+type PendingDateAction =
+  | {
+      kind: DateActionKind;
+      entry: LocalTimesheetEntry;
+      resolveValues?: TimeEntryActionRunOptions["resolveValues"];
+    }
+  | {
+      kind: DateActionKind;
+      entries: readonly LocalTimesheetEntry[];
+      onDone?: (entryIds: string[]) => void;
+    };
 
 function dateAtNoon(localDate: string) {
   return new Date(`${localDate}T12:00:00`);
@@ -154,6 +168,63 @@ export function useTimeEntryActions({
     onAfterAction?.();
   }
 
+  /**
+   * Copies or moves several saved entries in one change with one Undo. Each
+   * copy of Duplicate lands at the end of its own entry's day; Move to… and
+   * Duplicate to… put every entry at the end of `localDate`, in the order of
+   * `entries`. `onDone` gets the entries that landed.
+   */
+  function relocateMany(
+    kind: TimeEntryManyActionId,
+    entries: readonly LocalTimesheetEntry[],
+    localDate: string | null,
+    onDone?: (entryIds: string[]) => void,
+  ) {
+    const { undoToken, entryIds } = localStore.relocateTimesheetEntries(
+      entries.map((entry) => ({
+        entryId: entry._id,
+        localDate: localDate ?? entry.localDate,
+      })),
+      kind === "move-to" ? "cut" : "copy",
+    );
+    const count = formatEntryCount(entryIds.length);
+    const day = localDate ? formatToastDay(localDate) : "";
+    offerTimeEntryUndo(
+      undoToken,
+      kind === "move-to"
+        ? `Moved ${count} to ${day}`
+        : kind === "duplicate-to"
+          ? `Duplicated ${count} to ${day}`
+          : `Duplicated ${count}`,
+    );
+    onDone?.(entryIds);
+    onAfterAction?.();
+  }
+
+  /**
+   * Runs Duplicate, Duplicate to… or Move to… on several saved entries, such as
+   * the selection. Duplicate happens at once; the other two ask for the day
+   * once, for all of them. `onDone` gets the copies or the moved entries.
+   */
+  function runOnEntries(
+    actionId: TimeEntryManyActionId,
+    entries: readonly LocalTimesheetEntry[],
+    { onDone }: { onDone?: (entryIds: string[]) => void } = {},
+  ) {
+    const first = entries[0];
+    if (!first) {
+      return;
+    }
+
+    if (actionId === "duplicate") {
+      relocateMany("duplicate", entries, null, onDone);
+      return;
+    }
+
+    setSelectedDate(dateAtNoon(first.localDate));
+    setDateAction({ kind: actionId, entries, onDone });
+  }
+
   function runAction(
     target: TimeEntryActionTarget,
     actionId: TimeEntryActionId,
@@ -220,16 +291,30 @@ export function useTimeEntryActions({
       return;
     }
 
-    relocate(
-      dateAction.kind,
-      dateAction.entry,
-      formatIsoDate(selectedDate),
-      dateAction.resolveValues,
-    );
+    const localDate = formatIsoDate(selectedDate);
+    if ("entries" in dateAction) {
+      relocateMany(
+        dateAction.kind,
+        dateAction.entries,
+        localDate,
+        dateAction.onDone,
+      );
+    } else {
+      relocate(
+        dateAction.kind,
+        dateAction.entry,
+        localDate,
+        dateAction.resolveValues,
+      );
+    }
     setDateAction(null);
   }
 
   const isMove = dateAction?.kind === "move-to";
+  const entryCount =
+    dateAction && "entries" in dateAction ? dateAction.entries.length : 1;
+  const dialogSubject =
+    entryCount === 1 ? "time entry" : formatEntryCount(entryCount);
   const dialogs = (
     <Dialog
       open={dateAction !== null}
@@ -238,7 +323,7 @@ export function useTimeEntryActions({
       <DialogContent className="w-auto gap-4">
         <DialogHeader>
           <DialogTitle>
-            {isMove ? "Move time entry" : "Duplicate time entry"}
+            {isMove ? `Move ${dialogSubject}` : `Duplicate ${dialogSubject}`}
           </DialogTitle>
           <DialogDescription>Choose the destination date.</DialogDescription>
         </DialogHeader>
@@ -264,5 +349,5 @@ export function useTimeEntryActions({
     </Dialog>
   );
 
-  return { getActions, runAction, dialogs };
+  return { getActions, runAction, runOnEntries, dialogs };
 }

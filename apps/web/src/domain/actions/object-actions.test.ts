@@ -4,8 +4,10 @@ import {
   getBacklogItemActions,
   getProjectActions,
   getTaskActions,
+  formatEntryCount,
   getTimeEntryActions,
   getTimeEntryActionState,
+  getTimeEntrySelectionActions,
   type ObjectAction,
 } from "@/domain/actions/object-actions";
 
@@ -107,6 +109,51 @@ describe("time entry actions", () => {
     expect(getTimeEntryActionState({ isRunning: true })).toBe("running");
     expect(getTimeEntryActionState({ isCommitted: true })).toBe("committed");
     expect(getTimeEntryActionState({})).toBe("saved");
+  });
+});
+
+describe("time entry selection actions", () => {
+  it("names each selection action with its count and leaves out single-entry actions", () => {
+    const actions = getTimeEntrySelectionActions({ saved: 3, committed: 2 });
+
+    expect(actions.map((action) => action.label)).toEqual([
+      "Duplicate 3 entries",
+      "Duplicate 3 entries to…",
+      "Move 3 entries to…",
+      "Mark 2 entries as not committed",
+      "Delete 3 entries",
+    ]);
+    expect(ids(actions)).not.toContain("edit");
+    expect(ids(actions)).not.toContain("continue");
+    expect(actions.at(-1)?.destructive).toBe(true);
+    expect(disabledReasons(actions)).toEqual({});
+  });
+
+  it("lists Mark as not committed only when a committed entry is selected", () => {
+    expect(
+      ids(getTimeEntrySelectionActions({ saved: 2, committed: 0 })),
+    ).toEqual(["duplicate", "duplicate-to", "move-to", "delete"]);
+    expect(
+      getTimeEntrySelectionActions({ saved: 2, committed: 1 }).find(
+        (action) => action.id === "mark-not-committed",
+      )?.label,
+    ).toBe("Mark 1 entry as not committed");
+  });
+
+  it("disables the actions when only the running entry is selected", () => {
+    expect(
+      disabledReasons(getTimeEntrySelectionActions({ saved: 0, committed: 0 })),
+    ).toEqual({
+      duplicate: "Stop the running entry first",
+      "duplicate-to": "Stop the running entry first",
+      "move-to": "Stop the running entry first",
+      delete: "Stop the running entry first",
+    });
+  });
+
+  it("counts entries in words", () => {
+    expect(formatEntryCount(1)).toBe("1 entry");
+    expect(formatEntryCount(4)).toBe("4 entries");
   });
 });
 
