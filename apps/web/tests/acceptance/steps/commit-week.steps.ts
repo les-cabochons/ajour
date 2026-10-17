@@ -64,6 +64,12 @@ Given("I have a committed week of entries", async ({ page }) => {
           {
             _id: "project-atlas",
             name: "Client Atlas",
+            displayName: "Atlas",
+            code: "ATL",
+            // Read only while the Workday (agent) plugin is mocked as active.
+            pluginProperties: {
+              "workday-agent": { name: "CA004 Tech & Design" },
+            },
             color: "#1f7667",
             icon: { kind: "preset", name: "dot" },
             status: "active",
@@ -201,3 +207,69 @@ When(
     await page.getByRole("menuitem", { name: item }).click();
   },
 );
+
+function changesHeading(page: Page) {
+  return page.getByRole("button", { name: "Changes", exact: true });
+}
+
+When("I collapse the Changes section", async ({ page }) => {
+  await expect(changesHeading(page)).toHaveAttribute("aria-expanded", "true", {
+    timeout: 15_000,
+  });
+  await changesHeading(page).click();
+});
+
+When("I expand the Changes section", async ({ page }) => {
+  await changesHeading(page).click();
+  await expect(changesHeading(page)).toHaveAttribute("aria-expanded", "true");
+});
+
+Then("the Commit page shows no change rows", async ({ page }) => {
+  await expect(changesHeading(page)).toHaveAttribute("aria-expanded", "false");
+  await expect(changeList(page)).toHaveCount(0);
+});
+
+Then("{string} is still on the Commit page", async ({ page }, name: string) => {
+  await expect(page.getByRole("button", { name })).toBeVisible();
+});
+
+function mondayLine(page: Page, task: string) {
+  return page
+    .getByRole("region", { name: "Monday, Oct 5" })
+    .getByRole("listitem")
+    .filter({ hasText: task });
+}
+
+Then(
+  "Monday's {string} line shows {string}",
+  async ({ page }, task: string, text: string) => {
+    await expect(
+      mondayLine(page, task).getByRole("button", {
+        name: /^Copy project and task: /,
+      }),
+    ).toHaveText(text, { timeout: 15_000 });
+  },
+);
+
+When("I show line names from {string}", async ({ page }, source: string) => {
+  await page
+    .getByRole("group", { name: "Names" })
+    .getByRole("button", { name: source, exact: true })
+    .click();
+});
+
+When(
+  "I copy the project and task of Monday's {string} line",
+  async ({ page, context }, task: string) => {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+    await mondayLine(page, task)
+      .getByRole("button", { name: /^Copy project and task: / })
+      .click();
+  },
+);
+
+Then("the clipboard holds {string}", async ({ page }, text: string) => {
+  await expect
+    .poll(() => page.evaluate(() => navigator.clipboard.readText()))
+    .toBe(text);
+});

@@ -1432,6 +1432,26 @@ describe("localStore workflow state sync", () => {
     );
   });
 
+  it.each([
+    [" workday-agent ", "workday-agent"],
+    ["ajour", "ajour"],
+    ["", undefined],
+    [42, undefined],
+    [undefined, undefined],
+  ])(
+    "normalizes the Commit lines name source %j to %j",
+    async (commitLinesNameSource, expected) => {
+      window.localStorage.setItem(
+        "ajour.local-state.v2",
+        JSON.stringify({ userPreferences: { commitLinesNameSource } }),
+      );
+      const { localStore } = await import("./local-store");
+      expect(localStore.snapshot().userPreferences.commitLinesNameSource).toBe(
+        expected,
+      );
+    },
+  );
+
   it("persists the selected project data shape", async () => {
     const { localStore } = await import("./local-store");
 

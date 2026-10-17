@@ -273,15 +273,22 @@ totals popover (`CommitWeekButton`) opens it in both desktop and narrow views.
 Opening it saves valid entry drafts and keeps invalid drafts open through the
 Time page's action request handler. The page leads with the week summary: the
 total as a 28px figure beside the target, a 3px progress bar and amber
-warnings. Under a "Changes" `SectionHeading`, `CommitChangeList` shows one row
+warnings. Under a "Changes" `SectionHeading`, whose title is a disclosure
+button (chevron, `aria-expanded`, no transition) that hides the list and its
+"checked" count and opens expanded on every visit, `CommitChangeList` shows one row
 per change: a `Checkbox`, the kind's symbol (Added, Updated, Deleted; an icon
 with its own color, named for screen readers), the day, the project and task,
 the hours as a `Value` and the note, each as "old → new" when the committed
 copy differs. "Everything is committed." replaces the list when there is none.
 The plugin actions and "Mark as committed" (with the Undo toast) sit in a
-wrapping row below. "Lines" closes the page: the Group by toolbar and the
-copyable lines under day `SectionHeading`s. Every value copies on click with
-an always-visible icon; hours copy as decimals. Change rules live in
+wrapping row below; collapsing Changes leaves them visible. "Lines" closes
+the page: the toolbar with Group by and, when a plugin adds project
+properties, a Names `ToggleGroup` (Ajour, then each plugin's section title,
+saved as `commitLinesNameSource` in the user preferences), then the copyable
+lines under day `SectionHeading`s. A line's project, its full name or the
+plugin's name field, and its task are one value shown as "Project / Task" and
+copied as "Project Task". Every value copies on click with an always-visible
+icon; hours copy as decimals. Change rules live in
 `domain/time/timesheet-commit.ts`, line grouping and the summary in
 `domain/time/timesheet-submission.ts`, and the unchecked changes in
 `lib/commit-selection.ts`, which agents read too.
