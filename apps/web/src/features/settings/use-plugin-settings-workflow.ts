@@ -1,3 +1,4 @@
+import { syncTeamConnection } from "@/lib/team-sync";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import * as appApi from "@/lib/app-api";
 import { useRetryWhileConnectorApiMissing } from "@/lib/use-connector-api-retry";
@@ -8,6 +9,7 @@ export function usePluginSettingsWorkflow() {
   const [workflow] = useState(() =>
     createPluginSettingsWorkflow({
       ...appApi,
+      syncTeamConnection,
       subscribeCatalog: (listener) =>
         window.ajourDesktop?.onPluginCatalogUpdated?.(listener) ?? (() => {}),
     }),

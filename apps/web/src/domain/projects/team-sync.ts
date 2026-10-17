@@ -73,6 +73,19 @@ function sameName(left: string, right: string) {
 }
 
 /**
+ * The local project a held team project would link to: the one with its
+ * name. Undefined when none has it any more.
+ */
+export function findLocalProjectNamed(
+  projects: readonly LocalProject[],
+  name: string,
+): LocalProject | undefined {
+  return projects.find(
+    (project) => !project.team && sameName(project.name, name),
+  );
+}
+
+/**
  * A project's team-owned fields as the team sees them. A color or an icon the
  * contract does not accept, such as an older color format, goes as Ajour's
  * default.
@@ -718,7 +731,12 @@ export type TeamShareResult =
   /** The team already has a shared project of that name here. */
   | { kind: "sameNameShared"; sharedProjectId: string }
   /** A held arrival has that name: link to it with `resolveHeldArrival`. */
-  | { kind: "sameNameHeld"; remoteId: string };
+  | { kind: "sameNameHeld"; remoteId: string }
+  /**
+   * The connection has not synced yet, so Ajour cannot tell whether the team
+   * already has this project. Sharing it now could make a second one.
+   */
+  | { kind: "notSynced" };
 
 /**
  * Gives a local project to a team. It goes to the team with the next sync,
@@ -733,6 +751,9 @@ export function shareProject(
   const project = state.projects.find((entry) => entry._id === projectId);
   if (!project) return { ...state, result: { kind: "missing" } };
   if (project.team) return { ...state, result: { kind: "alreadyShared" } };
+  if (!state.teamConnections[connectionId]?.cursor) {
+    return { ...state, result: { kind: "notSynced" } };
+  }
   const sameNameShared = state.projects.find(
     (entry) =>
       entry.team?.connectionId === connectionId &&

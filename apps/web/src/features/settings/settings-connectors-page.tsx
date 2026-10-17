@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   RiArrowLeftLine as ArrowLeft,
@@ -55,6 +55,7 @@ import {
   isCapabilityActive,
   isCapabilitySwitchedOn,
   pluginHasConnector,
+  pluginHasTeam,
   pluginRunsCode,
   syncsPullRequestsAutomatically,
 } from "@ajour/shared";
@@ -67,6 +68,11 @@ import {
 } from "./connector-form-state";
 import { PluginCapabilitySwitches } from "./plugin-capability-switches";
 import { ConnectorFieldInput } from "./connector-settings-ui";
+import {
+  HeldArrivalsLine,
+  TeamCreateField,
+  TeamPickerDialog,
+} from "./team-connection-ui";
 import { PluginAgentTasks } from "./agent-task-settings";
 import {
   canInstallCatalogPlugin,
@@ -79,6 +85,8 @@ import {
 } from "./plugin-catalog-ui";
 
 type ConnectorFormState = {
+  /** Which opening of the form this is, so a late result finds its own. */
+  instance: number;
   pluginId: string;
   editingConnectionId: string | null;
   initialValues: ConnectorFieldValues;
@@ -106,6 +114,9 @@ function syncModeLabel(
     : "Manual sync";
   const connector = isCapabilitySwitchedOn(group, "connector");
   const codeHost = isCapabilitySwitchedOn(group, "codeHost");
+  if (!connector && !codeHost && isCapabilitySwitchedOn(group, "team")) {
+    return interval;
+  }
   if (connector && codeHost && backlogItems !== pullRequests) {
     return `Backlog items: ${backlogItems} · Pull requests: ${pullRequests}`;
   }
@@ -479,6 +490,13 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
   const [catalogFilter, setCatalogFilter] =
     useState<PluginCatalogFilter>("all");
   const [formState, setFormState] = useState<ConnectorFormState | null>(null);
+  const formInstances = useRef(0);
+  /** The team connection whose picker is open. */
+  const [teamPicker, setTeamPicker] = useState<{
+    pluginId: string;
+    connectionId: string;
+    teamName: string;
+  } | null>(null);
 
   const importedCountsByPlugin = useMemo(
     () =>
@@ -537,6 +555,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
     const initialValues = buildConnectorFormValues(plugin);
     workflow.clearFeedback();
     setFormState({
+      instance: (formInstances.current += 1),
       pluginId: plugin.id,
       editingConnectionId: null,
       initialValues,
@@ -554,6 +573,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
     );
     workflow.clearFeedback();
     setFormState({
+      instance: (formInstances.current += 1),
       pluginId: plugin.id,
       editingConnectionId: connection.id,
       initialValues,
@@ -563,6 +583,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
 
   const handleSave = async () => {
     if (!formState || !activePlugin) return;
+    let saved: ConnectorConnectionSummary | undefined;
     const completed = await workflow.execute({
       type: "save",
       pluginId: formState.pluginId,
@@ -574,8 +595,30 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
         },
       ),
       connectionId: formState.editingConnectionId ?? undefined,
+      onSaved: (connection) => {
+        saved = connection;
+      },
     });
-    if (completed) setFormState(null);
+    if (!completed) return;
+    setFormState(null);
+    if (formState.editingConnectionId || !pluginHasTeam(activePlugin)) return;
+    if (!saved) return;
+    const added = saved;
+    // The first sync brings the team's projects and holds the ones whose name
+    // a local project has; the picker then links or adds them. A failed sync
+    // leaves the connection saved, with its error, and no picker: Sync again,
+    // then Choose projects.
+    const synced = await workflow.execute({
+      type: "teamSync",
+      pluginId: formState.pluginId,
+      connectionId: added.id,
+    });
+    if (!synced) return;
+    setTeamPicker({
+      pluginId: formState.pluginId,
+      connectionId: added.id,
+      teamName: added.tenantLabel,
+    });
   };
 
   const handleDelete = async (pluginId: string, connectionId: string) => {
@@ -684,9 +727,11 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                 {group.connections.length} connection
                 {group.connections.length === 1 ? "" : "s"}
               </Badge>
-              <Badge variant="outline">
-                {importedCountsByPlugin[group.plugin.id] ?? 0} backlog items
-              </Badge>
+              {pluginHasConnector(group.plugin) ? (
+                <Badge variant="outline">
+                  {importedCountsByPlugin[group.plugin.id] ?? 0} backlog items
+                </Badge>
+              ) : null}
             </>
           }
         >
@@ -806,6 +851,30 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                       />
                     );
                   })}
+                  {pluginHasTeam(group.plugin) &&
+                  !groupFormState.editingConnectionId ? (
+                    <TeamCreateField
+                      pluginId={group.plugin.id}
+                      values={groupFormState.values}
+                      disabled={
+                        isMutatingConnector ||
+                        !isCapabilityActive(group, "team")
+                      }
+                      onCreated={(created) =>
+                        // Only into the form that asked: one closed or
+                        // opened anew meanwhile keeps its own values.
+                        setFormState((current) =>
+                          current &&
+                          current.instance === groupFormState.instance
+                            ? {
+                                ...current,
+                                values: { ...current.values, ...created },
+                              }
+                            : current,
+                        )
+                      }
+                    />
+                  ) : null}
                 </FieldGroup>
                 <div className="flex flex-wrap justify-end gap-3 pt-2">
                   <Button
@@ -883,6 +952,14 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                           {connection.selectedImportCount} selected
                         </p>
                       ) : null}
+                      {pluginHasTeam(group.plugin) ? (
+                        <HeldArrivalsLine
+                          count={
+                            state.teamConnections?.[connection.id]?.heldArrivals
+                              .length ?? 0
+                          }
+                        />
+                      ) : null}
                       {connection.lastError ? (
                         <p className="text-sm break-words text-destructive">
                           {connection.lastError}
@@ -920,8 +997,49 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                           Sync
                         </Button>
                       ) : null}
+                      {pluginHasTeam(group.plugin) ? (
+                        <>
+                          <Button
+                            variant="outline"
+                            disabled={
+                              isMutatingConnector ||
+                              connectors?.pluginsEnabled === false ||
+                              !isCapabilityActive(group, "team")
+                            }
+                            onClick={() =>
+                              void workflow.execute({
+                                type: "teamSync",
+                                pluginId: group.plugin.id,
+                                connectionId: connection.id,
+                              })
+                            }
+                          >
+                            <RefreshCw data-icon="inline-start" />
+                            {pluginHasConnector(group.plugin)
+                              ? "Sync projects"
+                              : "Sync"}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            disabled={
+                              isMutatingConnector ||
+                              !isCapabilityActive(group, "team")
+                            }
+                            onClick={() =>
+                              setTeamPicker({
+                                pluginId: group.plugin.id,
+                                connectionId: connection.id,
+                                teamName: connection.tenantLabel,
+                              })
+                            }
+                          >
+                            Choose projects
+                          </Button>
+                        </>
+                      ) : null}
                       {group.plugin.capabilities.codeHost ||
-                      group.plugin.capabilities.calendar ? (
+                      group.plugin.capabilities.calendar ||
+                      group.plugin.capabilities.team ? (
                         <AlertDialog>
                           <AlertDialogTrigger
                             render={
@@ -981,6 +1099,24 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
               </div>
             )}
           </section>
+        ) : null}
+
+        {teamPicker && teamPicker.pluginId === group.plugin.id ? (
+          <TeamPickerDialog
+            open
+            onOpenChange={(open) => {
+              if (!open) setTeamPicker(null);
+            }}
+            connectionId={teamPicker.connectionId}
+            teamName={teamPicker.teamName}
+            onApplied={() =>
+              void workflow.execute({
+                type: "teamSync",
+                pluginId: teamPicker.pluginId,
+                connectionId: teamPicker.connectionId,
+              })
+            }
+          />
         ) : null}
 
         {group.plugin.capabilities.agentTask ? (
