@@ -29,6 +29,17 @@ describe("buildPrompt", () => {
     expect(prompt).not.toContain("mark_entries_submitted");
   });
 
+  it("tells the agent to submit a week only when the task asks, as its last step", () => {
+    const prompt = buildPrompt({
+      taskPrompt: "Submit the week.",
+      values: { sessionId: "s-1" },
+    });
+
+    expect(prompt).toContain(
+      "- Call submit_week only when the task asks for it, as its last step. It locks the week in Ajour.",
+    );
+  });
+
   it("refuses a slot without a value", () => {
     expect(() =>
       buildPrompt({ taskPrompt: "{{settings.x}}", values: { sessionId: "s" } }),

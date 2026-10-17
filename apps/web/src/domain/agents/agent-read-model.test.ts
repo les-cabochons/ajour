@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { LocalAppState, LocalTimesheetEntry } from "@/domain/local-state";
 import {
   getWeekChangesForAgent,
+  getWeekStatusForAgent,
   getWorkItemForAgent,
   listProjectsForAgent,
   listTimeEntriesForAgent,
@@ -152,6 +153,80 @@ function stateWithCodedProject(): LocalAppState {
 }
 
 describe("agent read model", () => {
+  it("reports the week's status: lock, waiting changes, committed hours and entries, and pace", () => {
+    const state: LocalAppState = {
+      ...createState(),
+      timesheetTombstones: [
+        {
+          entryId: "gone",
+          commit: {
+            at: 5,
+            localDate: "2026-10-15",
+            projectId: "project-1",
+            taskId: "task-1",
+            durationMs: HOUR / 2,
+          },
+        },
+      ],
+    };
+    const acme = {
+      projectName: "Acme",
+      projectFullName: "Acme",
+      taskName: "Build",
+    };
+    const input = {
+      weekDates: WEEK,
+      today: "2026-10-14",
+      projectPropertyPlugins: [],
+    };
+
+    expect(getWeekStatusForAgent(state, input)).toEqual({
+      weekOf: "2026-10-12",
+      locked: false,
+      // e1 was never committed, and "gone" was deleted since its commit.
+      uncommittedChanges: 2,
+      committedHoursByDay: [
+        { date: "2026-10-12", hours: 0 },
+        { date: "2026-10-13", hours: 1 },
+        { date: "2026-10-14", hours: 0 },
+        { date: "2026-10-15", hours: 0.5 },
+        { date: "2026-10-16", hours: 0 },
+        { date: "2026-10-17", hours: 0 },
+        { date: "2026-10-18", hours: 0 },
+      ],
+      committedEntries: [
+        {
+          entryId: "e2",
+          externalId: externalEntryId("e2"),
+          committed: {
+            date: "2026-10-13",
+            ...acme,
+            hours: 1,
+            note: "Afternoon",
+          },
+        },
+        {
+          entryId: "gone",
+          externalId: externalEntryId("gone"),
+          committed: { date: "2026-10-15", ...acme, hours: 0.5 },
+        },
+      ],
+      // Monday to Wednesday expect 24 hours; e1 and e2 log 2.
+      pace: {
+        loggedHours: 2,
+        targetHours: 40,
+        expectedHours: 24,
+        status: "under",
+      },
+    });
+    expect(
+      getWeekStatusForAgent(
+        { ...state, lockedWeeks: [{ weekOf: "2026-10-12", lockedAt: 1 }] },
+        input,
+      ).locked,
+    ).toBe(true);
+  });
+
   it("reads the running entry with its counted minutes", () => {
     expect(readRunningTimer(createState(), NOW)).toEqual({
       timerId: "timer-1",

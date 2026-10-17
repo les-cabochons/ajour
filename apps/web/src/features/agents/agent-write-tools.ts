@@ -187,6 +187,7 @@ export const ENTRY_WRITE_TOOLS = [
   "move_entry",
   "duplicate_entry",
   "mark_entries_committed",
+  "submit_week",
 ] as const satisfies readonly WriteToolName[];
 export type EntryWriteTool = (typeof ENTRY_WRITE_TOOLS)[number];
 
@@ -416,6 +417,23 @@ export function runEntryWriteTool(
     case "mark_entries_committed": {
       const input =
         writeToolInputSchemas.mark_entries_committed.parse(rawInput);
+      // A change on a submitted week is refused first, before its version.
+      // A deleted entry counts on its committed day.
+      const tombstones = new Map(
+        state.timesheetTombstones.map((tombstone) => [
+          tombstone.entryId,
+          tombstone,
+        ]),
+      );
+      for (const change of input.changes) {
+        const day =
+          tombstones.get(change.entryId)?.commit.localDate ??
+          state.timesheetEntries.find(
+            (candidate) => candidate._id === change.entryId,
+          )?.localDate;
+        const lockReason = day ? getDateLockReason(state, day) : undefined;
+        if (lockReason) throw new AgentToolRefusal(lockReason);
+      }
       // Refuses before any write when a change differs from its version.
       // Every listed pair is checked, so an entry listed twice with an old
       // and a current version is refused too.
@@ -433,6 +451,19 @@ export function runEntryWriteTool(
         objectId: entryIds[0]!,
         objectTitle: `${count} ${noun}`,
         undoSubject: "entry",
+      };
+    }
+    case "submit_week": {
+      const input = writeToolInputSchemas.submit_week.parse(rawInput);
+      const { undoToken, result } = localStore.submitWeek(input.weekOf);
+      if (!result.ok) throw new AgentToolRefusal(result.message);
+      return {
+        output: { weekOf: result.weekOf, locked: true },
+        undoToken,
+        action: "Submitted the week",
+        objectId: result.weekOf,
+        objectTitle: `Week of ${result.weekOf}`,
+        undoSubject: "week",
       };
     }
   }

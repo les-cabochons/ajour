@@ -28,6 +28,11 @@ import {
   type TimesheetChange,
   type TimesheetCommitValues,
 } from "@/domain/time/timesheet-commit";
+import { getLockedWeek } from "@/domain/time/locked-weeks";
+import {
+  computeWeekPace,
+  getPaceTolerancePercent,
+} from "@/domain/time/week-pace";
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
 import {
   externalEntryId,
@@ -391,4 +396,69 @@ export function checkChangeVersionsOrRefuse(
       `${[...stale].join(", ")} changed since you read it. Call get_week_changes again and apply its current values.`,
     );
   }
+}
+
+/**
+ * The week's submission status for agents: whether it is submitted, how many
+ * changes wait, what the external timesheet holds per day and per entry from
+ * the committed copies, and Ajour's pace check, in decimal hours.
+ */
+export function getWeekStatusForAgent(
+  state: LocalAppState,
+  {
+    weekDates,
+    today,
+    projectPropertyPlugins,
+  }: {
+    weekDates: string[];
+    today: string;
+    /** Active plugins that add project properties. Passed in to keep domain free of `lib/`. */
+    projectPropertyPlugins: ProjectPropertyPlugin[];
+  },
+): DataToolOutput<"get_week_status"> {
+  const week = new Set(weekDates);
+  // The committed copies of the week: saved entries, then deleted ones.
+  const committed = [
+    ...state.timesheetEntries.flatMap((entry) =>
+      entry.commit ? [{ entryId: entry._id, commit: entry.commit }] : [],
+    ),
+    ...state.timesheetTombstones,
+  ]
+    .filter(({ commit }) => week.has(commit.localDate))
+    .sort((left, right) =>
+      left.commit.localDate.localeCompare(right.commit.localDate),
+    );
+  const loggedMs = state.timesheetEntries
+    .filter((entry) => week.has(entry.localDate))
+    .reduce((total, entry) => total + entry.durationMs, 0);
+
+  return {
+    weekOf: weekDates[0]!,
+    locked: getLockedWeek(state, weekDates[0]!) !== undefined,
+    uncommittedChanges: listWeekChanges({
+      entries: state.timesheetEntries,
+      tombstones: state.timesheetTombstones,
+      weekDates,
+    }).length,
+    committedHoursByDay: weekDates.map((date) => ({
+      date,
+      hours: toHours(
+        committed
+          .filter(({ commit }) => commit.localDate === date)
+          .reduce((total, { commit }) => total + commit.durationMs, 0),
+      ),
+    })),
+    committedEntries: committed.map(({ entryId, commit }) => ({
+      entryId,
+      externalId: externalEntryId(entryId),
+      committed: toAgentChangeValues(state, commit, projectPropertyPlugins),
+    })),
+    pace: computeWeekPace({
+      weekDates,
+      today,
+      capacityTargets: state.userPreferences.weeklyCapacityTargets,
+      loggedMs,
+      tolerancePercent: getPaceTolerancePercent(state.userPreferences),
+    }),
+  };
 }

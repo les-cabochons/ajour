@@ -62,6 +62,43 @@ describe("agent tool contracts", () => {
     ).toEqual({ weekOf: "2026-10-14", onlyChecked: true });
   });
 
+  it("reads a week's status and submits a week, each by any of its days", () => {
+    expect(
+      readToolInputSchemas.get_week_status.parse({ weekOf: "2026-10-18" }),
+    ).toEqual({ weekOf: "2026-10-18" });
+    expect(
+      writeToolInputSchemas.submit_week.safeParse({ weekOf: "next week" })
+        .success,
+    ).toBe(false);
+    expect(
+      dataToolOutputSchemas.submit_week.parse({
+        weekOf: "2026-10-12",
+        locked: true,
+      }),
+    ).toEqual({ weekOf: "2026-10-12", locked: true });
+    expect(
+      dataToolOutputSchemas.get_week_status.parse({
+        weekOf: "2026-10-12",
+        locked: false,
+        uncommittedChanges: 0,
+        committedHoursByDay: [{ date: "2026-10-12", hours: 7.5 }],
+        committedEntries: [
+          {
+            entryId: "e1",
+            externalId: "ajour:00000000",
+            committed: { date: "2026-10-12", hours: 7.5 },
+          },
+        ],
+        pace: {
+          loggedHours: 7.5,
+          targetHours: 40,
+          expectedHours: 8,
+          status: "on-pace",
+        },
+      }).committedEntries,
+    ).toHaveLength(1);
+  });
+
   it("needs at least one change, each with its version, to mark as committed", () => {
     const parse = (input: unknown) =>
       writeToolInputSchemas.mark_entries_committed.safeParse(input).success;
