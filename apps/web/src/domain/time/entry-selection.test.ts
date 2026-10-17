@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
   EMPTY_ENTRY_SELECTION,
+  extendEntrySelection,
   getSelectionActionIds,
   getPasteDate,
   keepShownEntries,
+  selectAllEntries,
   selectEntryOnClick,
+  selectEntryOnMenu,
+  selectEntryOnPress,
 } from "@/domain/time/entry-selection";
 
 const ORDER = ["a", "b", "c", "d", "e"];
@@ -116,34 +120,117 @@ describe("getSelectionActionIds", () => {
   const pair = { ids: ["a", "b"], anchorId: "b" };
 
   it("applies to the whole selection from a selected entry", () => {
-    expect(getSelectionActionIds(pair, "a", { fromKey: true })).toEqual([
-      "a",
-      "b",
-    ]);
-    expect(getSelectionActionIds(pair, "b", { fromKey: false })).toEqual([
-      "a",
-      "b",
-    ]);
+    expect(getSelectionActionIds(pair, "a")).toEqual(["a", "b"]);
+    expect(getSelectionActionIds(pair, "b")).toEqual(["a", "b"]);
   });
 
   it("applies to the selection, not the focused entry, when the key comes from an unselected entry", () => {
     // Cmd+click toggled "b" off, and "b" kept focus.
     const toggledOff = { ids: ["a"], anchorId: "b" };
 
-    expect(getSelectionActionIds(toggledOff, "b", { fromKey: true })).toEqual([
-      "a",
-    ]);
+    expect(getSelectionActionIds(toggledOff, "b")).toEqual(["a"]);
   });
 
-  it("leaves a single entry, or a menu on an unselected entry, to the entry itself", () => {
+  it("leaves an entry that is the whole selection, or no selection, to the entry itself", () => {
     expect(
-      getSelectionActionIds({ ids: ["a"], anchorId: "a" }, "a", {
-        fromKey: true,
-      }),
+      getSelectionActionIds({ ids: ["a"], anchorId: "a" }, "a"),
     ).toBeNull();
-    expect(getSelectionActionIds(pair, "c", { fromKey: false })).toBeNull();
+    expect(getSelectionActionIds(EMPTY_ENTRY_SELECTION, "a")).toBeNull();
+  });
+});
+
+describe("selectEntryOnPress", () => {
+  const pair = { ids: ["a", "b"], anchorId: "a" };
+
+  it("selects an unselected entry alone on a plain press, so a drag carries only it", () => {
+    expect(selectEntryOnPress(pair, "d", PLAIN)).toEqual({
+      ids: ["d"],
+      anchorId: "d",
+    });
+  });
+
+  it("keeps the selection on a press on a selected entry, so a drag carries all of it", () => {
+    expect(selectEntryOnPress(pair, "b", PLAIN)).toBe(pair);
+  });
+
+  it("leaves Shift, Cmd and Ctrl presses to the click", () => {
+    expect(selectEntryOnPress(pair, "d", RANGE)).toBe(pair);
+    expect(selectEntryOnPress(pair, "d", TOGGLE)).toBe(pair);
+  });
+});
+
+describe("selectEntryOnMenu", () => {
+  const pair = { ids: ["a", "b"], anchorId: "a" };
+
+  it("selects an unselected entry alone before its menu opens", () => {
+    expect(selectEntryOnMenu(pair, "c")).toEqual({ ids: ["c"], anchorId: "c" });
+  });
+
+  it("keeps the selection when the entry is part of it", () => {
+    expect(selectEntryOnMenu(pair, "b")).toBe(pair);
+  });
+});
+
+describe("selectAllEntries", () => {
+  it("selects every shown entry, anchored on the first", () => {
+    expect(selectAllEntries(ORDER)).toEqual({ ids: ORDER, anchorId: "a" });
+  });
+
+  it("selects nothing when nothing is shown", () => {
+    expect(selectAllEntries([])).toEqual(EMPTY_ENTRY_SELECTION);
+  });
+
+  it("anchors Shift+click on the first entry after Select All", () => {
     expect(
-      getSelectionActionIds(EMPTY_ENTRY_SELECTION, "a", { fromKey: true }),
+      selectEntryOnClick(selectAllEntries(ORDER), ORDER, "c", RANGE),
+    ).toEqual({ ids: ["a", "b", "c"], anchorId: "a" });
+  });
+});
+
+describe("extendEntrySelection", () => {
+  it("moves focus one entry in reading order and selects the range from the anchor", () => {
+    const anchored = { ids: ["b"], anchorId: "b" };
+
+    const down = extendEntrySelection(anchored, ORDER, "b", 1);
+    expect(down).toEqual({
+      focusId: "c",
+      selection: { ids: ["b", "c"], anchorId: "b" },
+    });
+
+    const further = extendEntrySelection(down!.selection, ORDER, "c", 1);
+    expect(further?.selection).toEqual({ ids: ["b", "c", "d"], anchorId: "b" });
+
+    // Going back shrinks the range toward the anchor, then past it.
+    const back = extendEntrySelection(further!.selection, ORDER, "d", -1);
+    expect(back?.selection.ids).toEqual(["b", "c"]);
+    const past = extendEntrySelection(
+      { ids: ["b"], anchorId: "b" },
+      ORDER,
+      "b",
+      -1,
+    );
+    expect(past?.selection).toEqual({ ids: ["a", "b"], anchorId: "b" });
+  });
+
+  it("anchors on the focused entry when there is no anchor", () => {
+    expect(
+      extendEntrySelection(EMPTY_ENTRY_SELECTION, ORDER, "c", 1)?.selection,
+    ).toEqual({ ids: ["c", "d"], anchorId: "c" });
+    expect(
+      extendEntrySelection({ ids: [], anchorId: "gone" }, ORDER, "c", -1)
+        ?.selection,
+    ).toEqual({ ids: ["b", "c"], anchorId: "c" });
+  });
+
+  it("stops at either end of the list", () => {
+    expect(
+      extendEntrySelection(EMPTY_ENTRY_SELECTION, ORDER, "a", -1),
+    ).toBeNull();
+    expect(
+      extendEntrySelection(EMPTY_ENTRY_SELECTION, ORDER, "e", 1),
+    ).toBeNull();
+    expect(
+      extendEntrySelection(EMPTY_ENTRY_SELECTION, ORDER, "x", 1),
     ).toBeNull();
   });
 });

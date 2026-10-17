@@ -20,7 +20,7 @@ Decided in [Action model for entries, timers, projects, tasks and work items](ht
 3. Some actions swap with a state counterpart in the same slot: Continue and Stop, Delete and Discard, Archive and Restore.
 4. Delete, Discard and Archive come last and use the destructive style.
 5. Every action has a shortcut slot. The keyboard section assigns the keys.
-6. Selection is single. Focus and selection are the same thing, and actions apply to the focused object. Multi-select and bulk actions are out of scope, except Delete row in the Week Grid, which removes the entries of one project/task row for that week.
+6. Focus and selection are the same thing, and actions apply to the focused object, except for time entries on the Day list and the Week Days cards, which select like a file explorer (see "Selecting, copying and pasting entries"). There, selection-wide actions apply to every selected entry and single-subject actions to the focused entry. Delete row in the Week Grid removes the entries of one project/task row for that week.
 7. Exception to rule 1: Move up and Move down (Alt+Up and Alt+Down) reorder sortable objects. They exist as keyboard shortcuts and palette commands only, not in the right-click or "…" menus. Sortable objects are time entries within a day, projects, tasks and top-level backlog items.
 
 8. Grid rows have no "…" button. Delete row appears in the right-click menu on the row name and its cells. Shift+Backspace works on focused cells only, so only the cell menu shows the shortcut.
@@ -365,10 +365,40 @@ Frequent in-app actions use single keys. They only work when focus is not in a t
 
 ### Selecting, copying and pasting entries
 
-- The Day list and the Week Days cards select like a file explorer. A click selects one entry and focuses it, Cmd or Ctrl+click adds or removes one, and Shift+click selects the range from the last plain or Cmd click. Week ranges follow reading order: Monday's cards top to bottom, then Tuesday's. Keyboard focus moves a single selection with it.
-- A double click or Enter opens the editor, and Space does on Week cards. A single click no longer does. A tap on a touch screen still opens it. Week Grid cells keep their click.
+Decided in the 2026-10-16 grilling of the selection feature: [Entry selection acts like a file explorer](https://github.com/les-cabochons/ajour/issues/199). The Day list and the Week Days cards select like a file explorer, and the selection is the subject of every action that can take several entries.
+
+#### Selecting
+
+- A click selects one entry and focuses it, Cmd or Ctrl+click adds or removes one, and Shift+click selects the range from the anchor: the last plain or Cmd click. Week ranges follow reading order: Monday's cards top to bottom, then Tuesday's.
+- Mouse-down on an unselected entry replaces the selection with that entry at once, as Finder does. Mouse-down on a selected entry keeps the selection, and a plain click without a drag collapses it to that entry on mouse-up.
+- A right-click on an unselected entry selects that entry alone before its menu opens. A right-click on a selected entry keeps the selection, and the menu acts on it.
+- Cmd+A, and the Edit menu's Select All, selects every shown entry of the day or week while focus is in the list or the columns and not in a text field.
+- Plain ↑ and ↓ move focus and collapse the selection to the focused entry. Shift+↑ and Shift+↓ extend the range from the anchor, in reading order on the Week cards too. With no anchor, the focused entry is the anchor; after Cmd+A, the first shown entry is.
+- A double click or Enter opens the editor, and Space does on Week cards. A single click no longer does. A tap on a touch screen still opens it. Week Grid cells keep their click. Calendar suggestions never join the selection.
 - Escape, a click on empty space, or showing another day or week clears the selection.
-- Cmd+C, Cmd+X and Delete act on every selected entry, with one Undo for Delete. Mark as not committed from a selected entry's menu marks every committed entry in the selection, with one Undo. The Delete key follows the selection even when focus sits on an entry Cmd+click just deselected; a menu's Delete on an unselected entry deletes that entry. The other item keys act on the focused entry. Copy, cut and a multiple Delete skip the running entry.
+
+#### Which actions take the selection
+
+- Selection-wide actions apply to every selected entry with one Undo: Delete, Copy, Cut, Drag (reorder and move), Move to…, Duplicate, Duplicate to… and Mark as not committed. Their keys (Delete, Cmd+C, Cmd+X, M, D) follow the selection even when focus sits on an entry Cmd+click just deselected.
+- Single-subject actions apply to the focused entry only: Edit, Continue, Stop and Discard. Their keys (Enter, C, S) follow focus.
+- The running entry is skipped by every selection-wide action and stays where it is. The toast counts only what moved: "Moved 2 entries".
+- On a selection of two or more, the right-click menu of a selected entry pluralizes the selection-wide actions with the count ("Delete 3 entries", "Move 3 entries to…", "Duplicate 3 entries", "Mark 3 entries as not committed") and hides the single-subject ones.
+- Move to… and Duplicate to… open their date dialog once, titled "Move 3 entries" or "Duplicate 3 entries". Every selected entry lands on the chosen day at its end in reading order. Duplicate (D) puts each copy at the end of its own entry's day, in reading order, with "Duplicated 3 entries". Mark as not committed marks every committed entry in the selection.
+- Delete goes straight through with one Undo toast naming the count. No confirmation dialog.
+
+#### Dragging a selection
+
+- Dragging a selected entry drags the whole selection. The preview shows the pressed card or row with a count badge, like a Finder stack.
+- Dropped entries become one contiguous block at the drop line, in reading order, whether they came from that day or from other days. A drop on another day with no drop line puts the block at the end of that day, as a single move and a paste do.
+- On the Week Days cards, a drop on another day's column moves the block there. On the Day list, dragging rows over a day in the day strip highlights it as a drop target, and dropping moves the block to that day. Dropping on the shown day's own tab or on the week total does nothing. The view stays on the shown day.
+- A same-day reorder stays silent. A move to another day, by card drag or day-strip drop, shows "Moved 3 entries to Tue 14" with one Undo for the block.
+
+#### What stays selected
+
+- Moved entries stay selected where they land. In the Day view they leave the shown day, so the selection empties. After Duplicate, Duplicate to… or a copy paste, the new copies become the selection, as Finder does. Deleted and cut-then-pasted entries follow the move rule.
+
+#### Clipboard
+
 - Ajour listens to the browser's copy, cut and paste events, so the desktop Edit menu works too, and text fields keep their own clipboard. The entries stay in memory, and their text summary goes on the system clipboard. Cmd+V pastes entries only while the system clipboard still holds that summary.
 - Cut entries stay dimmed until the paste moves them, like Move to…. Copies are new entries, which the Commit page lists as added. Pasted entries go to the end of their day in reading order.
 - Cmd+V on the Day view pastes on the shown day. On the Week view each entry keeps its weekday in the shown week. A right-click on a Days column's empty space offers Paste here and Paste on same weekdays.

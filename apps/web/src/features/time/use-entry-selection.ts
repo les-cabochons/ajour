@@ -16,10 +16,14 @@ import {
 import { formatClockDuration } from "@/domain/time/duration";
 import {
   EMPTY_ENTRY_SELECTION,
+  extendEntrySelection,
   getPasteDate,
   getSelectionActionIds,
   keepShownEntries,
+  selectAllEntries,
   selectEntryOnClick,
+  selectEntryOnMenu,
+  selectEntryOnPress,
   type EntryPasteTarget,
   type EntrySelection,
 } from "@/domain/time/entry-selection";
@@ -43,6 +47,15 @@ function countEntries(count: number) {
   return count === 1 ? "1 entry" : `${count} entries`;
 }
 
+const ARROW_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
+
+/** The selection id of a focusable entry, from its `data-selection-id`. */
+function getSelectionId(element: Element | null) {
+  return element instanceof HTMLElement
+    ? element.dataset.selectionId
+    : undefined;
+}
+
 /**
  * Whether an entry action is a Delete that may apply to the selection: Delete from
  * a key or a menu, or the Delete key on the running entry, whose action is Discard.
@@ -57,9 +70,16 @@ function isSelectionDelete(actionId: TimeEntryActionId, key?: object) {
  * cards. See "Selecting, copying and pasting entries" in agents/ux-spec.md.
  *
  * A click selects an entry, Cmd or Ctrl+click adds one, Shift+click selects a
- * range. Double click opens the entry, and so does a tap on a touch screen.
- * Copy, cut and paste listen to the browser's clipboard events, so the keys and
- * the desktop Edit menu both work, and text fields keep their own clipboard.
+ * range. A press on an unselected entry selects it at once, and opening an
+ * entry's menu selects it when it is not selected. Cmd+A and the Edit menu's
+ * Select All select every shown entry, Shift+Up and Shift+Down extend the
+ * range, and plain arrows collapse it to the focused entry. Double click opens
+ * the entry, and so does a tap on a touch screen. Copy, cut and paste listen to
+ * the browser's clipboard events, so the keys and the desktop Edit menu both
+ * work, and text fields keep their own clipboard.
+ *
+ * Each entry carries `data-selection-id` with its id in `orderedIds`, and the
+ * list or the columns take `scopeRef`.
  */
 export function useEntrySelection({
   resetKey,
@@ -84,6 +104,9 @@ export function useEntrySelection({
   const state = useLocalState();
   const projects = useLocalProjects();
   const clipboard = useEntryClipboard();
+  const scopeRef = useRef<HTMLDivElement>(null);
+  /** Set while Shift+arrow moves focus, so `handleFocus` keeps the new range. */
+  const extendingRef = useRef(false);
   const [stored, setStored] = useState<{
     resetKey: string;
     selection: EntrySelection;
@@ -163,6 +186,7 @@ export function useEntrySelection({
     describeForText,
     paste,
     pasteTarget,
+    selectAll,
   });
   useEffect(() => {
     latest.current = {
@@ -170,6 +194,7 @@ export function useEntrySelection({
       describeForText,
       paste,
       pasteTarget,
+      selectAll,
     };
   });
 
@@ -206,15 +231,47 @@ export function useEntrySelection({
       latest.current.paste(latest.current.pasteTarget);
     }
 
+    /**
+     * The Edit menu's Select All runs the browser's select-all command, which
+     * fires `selectstart` on the page outside the entries. While an entry has
+     * focus, it selects the entries instead of the page's text. A text
+     * selection started with the pointer inside the entries is left alone.
+     */
+    function selectAllFromMenu(event: Event) {
+      const scope = scopeRef.current;
+      const active = document.activeElement;
+      if (
+        !scope ||
+        !active ||
+        !scope.contains(active) ||
+        isTextEditingTarget(active) ||
+        (event.target instanceof Node && scope.contains(event.target))
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      latest.current.selectAll();
+    }
+
     document.addEventListener("copy", copyOrCut);
     document.addEventListener("cut", copyOrCut);
     document.addEventListener("paste", pasteFromClipboard);
+    document.addEventListener("selectstart", selectAllFromMenu);
     return () => {
       document.removeEventListener("copy", copyOrCut);
       document.removeEventListener("cut", copyOrCut);
       document.removeEventListener("paste", pasteFromClipboard);
+      document.removeEventListener("selectstart", selectAllFromMenu);
     };
   }, []);
+
+  /** Cmd+A and Select All: every shown entry. */
+  function selectAll() {
+    if (orderedIds.length > 0) {
+      select(selectAllEntries(orderedIds));
+    }
+  }
 
   /** A click on an entry: selects it, or opens it on a touch screen. */
   function handleClick(entryId: string, event: ReactMouseEvent<HTMLElement>) {
@@ -239,11 +296,35 @@ export function useEntrySelection({
   }
 
   /**
+   * A press on an entry, before any drag: an unselected entry is selected alone
+   * at once, so the drag that may follow carries it only. A press on a selected
+   * entry keeps the selection for the drag. Touch presses are left to the tap.
+   */
+  function handlePress(entryId: string, event: ReactPointerEvent<HTMLElement>) {
+    if (event.button !== 0 || event.pointerType === "touch") return;
+    const next = selectEntryOnPress(selection, entryId, {
+      range: event.shiftKey,
+      toggle: event.metaKey || event.ctrlKey,
+    });
+    if (next !== selection) select(next);
+  }
+
+  /**
+   * Opening an entry's menu, by right-click, the menu key or Shift+F10, selects
+   * the entry first when it is not selected, so the menu acts on the selection.
+   */
+  function handleMenu(entryId: string) {
+    const next = selectEntryOnMenu(selection, entryId);
+    if (next !== selection) select(next);
+  }
+
+  /**
    * Keyboard focus moves the selection, as arrows do in a file explorer. A click
    * also focuses the entry, and leaves the selection to `handleClick`.
    */
   function handleFocus(entryId: string, event: ReactFocusEvent<HTMLElement>) {
     if (
+      !extendingRef.current &&
       event.target === event.currentTarget &&
       event.currentTarget.matches(":focus-visible") &&
       !selectedIds.has(entryId)
@@ -264,14 +345,77 @@ export function useEntrySelection({
     }
   }
 
-  /** On the list or the columns: Escape clears the selection. */
+  /**
+   * On the list or the columns, after the focused entry's own keys:
+   *
+   * - Escape clears the selection.
+   * - Cmd or Ctrl+A selects every shown entry.
+   * - Shift+Up and Shift+Down move focus in reading order and extend the range.
+   * - A plain arrow that moved focus to another entry selects that entry alone.
+   */
   function handleScopeKeyDown(event: ReactKeyboardEvent<HTMLElement>) {
+    if (event.nativeEvent.isComposing) return;
+
+    if (event.key === "Escape") {
+      if (!event.defaultPrevented && selection.ids.length > 0) {
+        select(EMPTY_ENTRY_SELECTION);
+      }
+      return;
+    }
+
+    const hasCommand = event.metaKey || event.ctrlKey;
     if (
-      event.key === "Escape" &&
-      !event.defaultPrevented &&
-      selection.ids.length > 0
+      hasCommand &&
+      !event.altKey &&
+      !event.shiftKey &&
+      event.key.toLowerCase() === "a"
     ) {
-      select(EMPTY_ENTRY_SELECTION);
+      if (event.defaultPrevented || isTextEditingTarget(event.target)) return;
+      event.preventDefault();
+      selectAll();
+      return;
+    }
+
+    if (!ARROW_KEYS.has(event.key) || hasCommand || event.altKey) return;
+    const fromId = getSelectionId(event.target as Element);
+    if (fromId === undefined) return;
+
+    if (event.shiftKey) {
+      if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+      // Shift+arrow at either end still keeps the page from scrolling.
+      event.preventDefault();
+      const extended = extendEntrySelection(
+        selection,
+        orderedIds,
+        fromId,
+        event.key === "ArrowUp" ? -1 : 1,
+      );
+      if (!extended) return;
+      select(extended.selection);
+      extendingRef.current = true;
+      try {
+        scopeRef.current
+          ?.querySelector<HTMLElement>(
+            `[data-selection-id="${CSS.escape(extended.focusId)}"]`,
+          )
+          ?.focus();
+      } finally {
+        extendingRef.current = false;
+      }
+      return;
+    }
+
+    // The entry's own handler has already moved focus for a plain arrow. At
+    // the top or bottom of the list focus stays, and Up or Down still
+    // collapses the selection to the focused entry.
+    const focusedId = getSelectionId(document.activeElement);
+    const isVertical = event.key === "ArrowUp" || event.key === "ArrowDown";
+    if (
+      focusedId !== undefined &&
+      (focusedId !== fromId || isVertical) &&
+      (selection.ids.length !== 1 || selection.ids[0] !== focusedId)
+    ) {
+      select({ ids: [focusedId], anchorId: focusedId });
     }
   }
 
@@ -291,9 +435,7 @@ export function useEntrySelection({
     key?: object,
   ) {
     if (isSelectionDelete(actionId, key)) {
-      if (
-        !getSelectionActionIds(selection, entryId, { fromKey: Boolean(key) })
-      ) {
+      if (!getSelectionActionIds(selection, entryId)) {
         return false;
       }
 
@@ -308,7 +450,7 @@ export function useEntrySelection({
     }
 
     if (actionId === "mark-not-committed") {
-      if (!getSelectionActionIds(selection, entryId, { fromKey: false })) {
+      if (!getSelectionActionIds(selection, entryId)) {
         return false;
       }
 
@@ -326,11 +468,14 @@ export function useEntrySelection({
   }
 
   return {
+    scopeRef,
     selectedIds,
     cutIds,
     canPaste: clipboard !== null,
     paste,
     handleClick,
+    handlePress,
+    handleMenu,
     handleFocus,
     handleScopePointerDown,
     handleScopeKeyDown,
