@@ -23,9 +23,16 @@ import { Button } from "@/components/ui/button";
 import { Value } from "@/components/ui/value";
 import { RunningDot } from "@/components/running-dot";
 import { ObjectContextMenu } from "@/components/object-actions-menu";
-import { useTimeEntryActions } from "@/features/time/time-entry-actions";
+import {
+  formatToastDay,
+  offerTimeEntryUndo,
+  useTimeEntryActions,
+} from "@/features/time/time-entry-actions";
 import { useEntrySelection } from "@/features/time/use-entry-selection";
-import type { TimeEntryActionId } from "@/domain/actions/object-actions";
+import {
+  formatEntryCount,
+  type TimeEntryActionId,
+} from "@/domain/actions/object-actions";
 import { formatClockDuration } from "@/domain/time/duration";
 import { isTimesheetEntryCommitted } from "@/domain/time/timesheet-commit";
 import { placeRunningRow } from "@/domain/time/timesheet-entry";
@@ -33,6 +40,7 @@ import {
   getLocalProjectDisplayName,
   type LocalTimesheetEntry,
 } from "@/domain/local-state";
+import { getDayStripDrop } from "@/lib/cross-day-entry-drag";
 import { localStore } from "@/lib/local-store";
 import {
   createSharedTableDragPointerSession,
@@ -58,6 +66,13 @@ type EntryDragState = {
   pointerId: number;
   /** Where the rows land among the rows that stay. */
   targetIndex: number;
+  /** The day strip's day under the pointer, where the rows would move. */
+  dayDropDate: string | null;
+  /**
+   * True while the pointer is above the list, toward the day strip, but not on
+   * another day: a drop there, such as on the shown day's tab, changes nothing.
+   */
+  aboveList: boolean;
   pointerX: number;
   pointerY: number;
   offsetX: number;
@@ -141,17 +156,25 @@ function EntryMain({
  * their other actions in the right-click menu. A click selects a row for copy,
  * cut and paste; a double click, Enter and "New entry" ask the page to open the
  * entry editor through `onOpenEntry`. An empty target means a new entry on
- * `date`.
+ * `date`. Dragging selected rows drags them all; dropped on the list they land
+ * together at the drop line, and dropped on another day in the day strip they
+ * move to the end of that day.
  */
 export function TimerPanel({
   date,
   activeEntryId,
   onOpenEntry,
+  dayDropTargets,
+  onDayDropTargetChange,
 }: {
   date: string;
   /** The entry open in the editor, highlighted in the list. */
   activeEntryId?: string;
   onOpenEntry: (target: { entryId?: string; timerId?: string }) => void;
+  /** The day strip's tabs for the other days, by date, where rows can drop. */
+  dayDropTargets?: ReadonlyMap<string, HTMLElement>;
+  /** Called with the strip's day under the dragged rows, or null. */
+  onDayDropTargetChange?: (localDate: string | null) => void;
 }) {
   const state = useLocalState();
   const projects = useLocalProjects();
@@ -230,7 +253,14 @@ export function TimerPanel({
   const canReorderEntries = draggableEntryIds.length > 1;
   // While rows are dragged, every sortable row sits where the drop would put it.
   const dropIndexById = useMemo(() => {
-    if (!entryDragState) return null;
+    // Over the day strip, the rows that stay keep their places.
+    if (
+      !entryDragState ||
+      entryDragState.dayDropDate ||
+      entryDragState.aboveList
+    ) {
+      return null;
+    }
     const order =
       getSharedTableBlockDropOrder(
         draggableEntryIds,
@@ -289,13 +319,35 @@ export function TimerPanel({
             currentDrag.targetIndex,
           )
         : null;
-      if (shouldCommit && currentDrag && order) {
+      if (shouldCommit && currentDrag?.dayDropDate) {
+        const targetDate = currentDrag.dayDropDate;
+        const { undoToken, movedIds } = localStore.dropTimesheetEntries(
+          currentDrag.entryIds,
+          targetDate,
+          Number.MAX_SAFE_INTEGER,
+        );
+        if (movedIds.length > 0) {
+          const day = formatToastDay(targetDate);
+          offerTimeEntryUndo(
+            undoToken,
+            currentDrag.entryIds.length === 1
+              ? `Moved to ${day}`
+              : `Moved ${formatEntryCount(movedIds.length)} to ${day}`,
+          );
+        }
+      } else if (
+        shouldCommit &&
+        currentDrag &&
+        !currentDrag.aboveList &&
+        order
+      ) {
         localStore.dropTimesheetEntries(
           currentDrag.entryIds,
           date,
           currentDrag.targetIndex,
         );
       }
+      onDayDropTargetChange?.(null);
 
       suppressEntryClickUntilRef.current =
         performance.now() + SHARED_TABLE_DRAG_CLICK_SUPPRESSION_MS;
@@ -304,7 +356,13 @@ export function TimerPanel({
       setPressedEntryId(null);
       resetEntryDragVisuals();
     },
-    [clearEntryPointerSession, date, draggableEntryIds, resetEntryDragVisuals],
+    [
+      clearEntryPointerSession,
+      date,
+      draggableEntryIds,
+      onDayDropTargetChange,
+      resetEntryDragVisuals,
+    ],
   );
 
   useEffect(() => {
@@ -314,8 +372,9 @@ export function TimerPanel({
       setEntryDragState(null);
       setPressedEntryId(null);
       resetEntryDragVisuals();
+      onDayDropTargetChange?.(null);
     };
-  }, [clearEntryPointerSession, resetEntryDragVisuals]);
+  }, [clearEntryPointerSession, onDayDropTargetChange, resetEntryDragVisuals]);
 
   function openEntry(entry: LocalTimesheetEntry | RunningEntryRow) {
     if (performance.now() < suppressEntryClickUntilRef.current) {
@@ -347,7 +406,8 @@ export function TimerPanel({
   ) {
     if (
       !isSortableRow(entry) ||
-      !canReorderEntries ||
+      // A lone row can still go to another day in the strip.
+      (!canReorderEntries && !dayDropTargets?.size) ||
       event.button !== 0 ||
       isEntryDragBlockedTarget(event.target)
     ) {
@@ -367,6 +427,42 @@ export function TimerPanel({
     setPressedEntryId(entry._id);
 
     const { clientX, clientY, pointerId, pointerType } = event;
+    /** Where a drop would go, with the list's top read now. */
+    const locateDrop = (pointer: { clientX: number; clientY: number }) =>
+      getDayStripDrop(
+        pointer,
+        dayDropTargets,
+        selection.scopeRef.current?.getBoundingClientRect().top,
+      );
+    /**
+     * Measures the drop again where the pointer last was, for a scroll that
+     * moved the list and the strip under a still pointer, and before a drop.
+     */
+    const refreshDrop = () => {
+      const current = entryDragStateRef.current;
+      if (!current) return;
+      const pointer = { clientX: current.pointerX, clientY: current.pointerY };
+      const drop = locateDrop(pointer);
+      const targetIndex = getSharedTableBlockDropIndex(
+        draggableEntryIds,
+        dragged,
+        current.pointerY,
+        entryRowRefs.current,
+      );
+      if (
+        drop.dayDropDate === current.dayDropDate &&
+        drop.aboveList === current.aboveList &&
+        targetIndex === current.targetIndex
+      ) {
+        return;
+      }
+      if (drop.dayDropDate !== current.dayDropDate) {
+        onDayDropTargetChange?.(drop.dayDropDate);
+      }
+      const next = { ...current, ...drop, targetIndex };
+      entryDragStateRef.current = next;
+      setEntryDragState(next);
+    };
     const startDrag = (pointerX: number, pointerY: number) => {
       const row = entryRowRefs.current.get(entry._id);
       if (!row) {
@@ -382,6 +478,9 @@ export function TimerPanel({
       suppressEntryClickUntilRef.current =
         performance.now() + SHARED_TABLE_DRAG_CLICK_SUPPRESSION_MS;
       setPressedEntryId(null);
+      // The move that starts the drag may already be over the strip.
+      const drop = locateDrop({ clientX: pointerX, clientY: pointerY });
+      if (drop.dayDropDate) onDayDropTargetChange?.(drop.dayDropDate);
       const nextDragState = {
         entryId: entry._id,
         entryIds,
@@ -392,6 +491,7 @@ export function TimerPanel({
           pointerY,
           entryRowRefs.current,
         ),
+        ...drop,
         pointerX,
         pointerY,
         offsetX: pointerX - rect.left,
@@ -421,8 +521,13 @@ export function TimerPanel({
           return;
         }
 
+        const drop = locateDrop(pointer);
+        if (drop.dayDropDate !== currentDrag.dayDropDate) {
+          onDayDropTargetChange?.(drop.dayDropDate);
+        }
         const nextDragState: EntryDragState = {
           ...currentDrag,
+          ...drop,
           pointerX: pointer.clientX,
           pointerY: pointer.clientY,
           targetIndex: getSharedTableBlockDropIndex(
@@ -437,8 +542,10 @@ export function TimerPanel({
       },
       onEnd: (shouldCommit) => {
         entryPointerSessionRef.current = null;
+        if (shouldCommit) refreshDrop();
         finishEntryDrag(shouldCommit);
       },
+      onScroll: refreshDrop,
       onPressEnd: () => {
         entryPointerSessionRef.current = null;
         setPressedEntryId(null);
@@ -698,7 +805,12 @@ export function TimerPanel({
           style={{
             width: entryDragState.width,
             minHeight: entryDragState.height,
-            transform: getSharedTableDragOverlayTransform(entryDragState),
+            // Above the list, toward the day strip, the preview follows the
+            // pointer; over the list it stays in the list's column.
+            transform:
+              entryDragState.dayDropDate || entryDragState.aboveList
+                ? `translate3d(${Math.round(entryDragState.pointerX - entryDragState.offsetX)}px, ${Math.round(entryDragState.pointerY - entryDragState.offsetY)}px, 0)`
+                : getSharedTableDragOverlayTransform(entryDragState),
           }}
         >
           <div className="time-entry-main">

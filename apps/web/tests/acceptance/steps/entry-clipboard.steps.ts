@@ -317,3 +317,141 @@ When(
     await page.mouse.up();
   },
 );
+
+function stripTab(page: Page, day: string) {
+  return page.getByRole("tab", {
+    name: new RegExp(`^${day.slice(0, 3)}`, "i"),
+  });
+}
+
+When("I open Tuesday's Day list", async ({ page }) => {
+  await page.goto("/time/2026-10-06");
+  await expect(dayRow(page, "Login form")).toBeVisible();
+});
+
+When(
+  "I start dragging the {string} entry onto {word} in the day strip",
+  async ({ page }, text: string, day: string) => {
+    const tab = await stripTab(page, day).boundingBox();
+    if (!tab) throw new Error(`The ${day} tab is not rendered`);
+    await pressAndMove(page, dayRow(page, text), {
+      x: tab.x + tab.width / 2,
+      y: tab.y + tab.height / 2,
+    });
+  },
+);
+
+When(
+  "I drag the {string} entry onto {word} in the day strip",
+  async ({ page }, text: string, day: string) => {
+    const tab = await stripTab(page, day).boundingBox();
+    if (!tab) throw new Error(`The ${day} tab is not rendered`);
+    await pressAndMove(page, dayRow(page, text), {
+      x: tab.x + tab.width / 2,
+      y: tab.y + tab.height / 2,
+    });
+    await page.mouse.up();
+  },
+);
+
+Then(
+  "{word}'s tab in the day strip is a drop target",
+  async ({ page }, day: string) => {
+    await expect(stripTab(page, day)).toHaveClass(/is-drop-target/);
+  },
+);
+
+Then(
+  "{word}'s tab in the day strip is not a drop target",
+  async ({ page }, day: string) => {
+    await expect(page.locator(".time-entry-drag-preview")).toBeVisible();
+    await expect(stripTab(page, day)).not.toHaveClass(/is-drop-target/);
+  },
+);
+
+Then("{word} is the shown day", async ({ page }, day: string) => {
+  await expect(stripTab(page, day)).toHaveAttribute("aria-selected", "true");
+});
+
+When(
+  "I flick the {string} entry onto {word} in the day strip",
+  async ({ page }, text: string, day: string) => {
+    const tab = await stripTab(page, day).boundingBox();
+    const row = await dayRow(page, text).boundingBox();
+    if (!tab || !row) throw new Error("The row or the tab is not rendered");
+    // One move: the one that starts the drag already lands on the tab.
+    await page.mouse.move(row.x + row.width / 2, row.y + row.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(tab.x + tab.width / 2, tab.y + tab.height / 2);
+    await page.mouse.up();
+  },
+);
+
+/**
+ * Scrolls the element that scrolls the Day page, the list and the strip
+ * together, to `top`. Returns where it got to.
+ */
+async function scrollDayPage(page: Page, top: number) {
+  return page.evaluate((target) => {
+    const candidates: Element[] = [];
+    let element = document.querySelector(".time-entries")?.parentElement;
+    while (element) {
+      candidates.push(element);
+      element = element.parentElement;
+    }
+    if (document.scrollingElement) candidates.push(document.scrollingElement);
+    const scroller = candidates.find(
+      (candidate) =>
+        candidate.scrollHeight > candidate.clientHeight + 1 &&
+        getComputedStyle(candidate).overflowY !== "hidden",
+    );
+    if (!scroller) throw new Error("The Day page does not scroll");
+    scroller.scrollTop = target;
+    return scroller.scrollTop;
+  }, top);
+}
+
+/** Where the "drag above Login form" step left the pointer, for the scroll step. */
+let heldPointer: { x: number; y: number } | null = null;
+let scrolledBy = 0;
+
+When(
+  "I open Monday's Day list in a short window, scrolled past the day strip",
+  async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 240 });
+    await page.goto("/time/2026-10-05");
+    await expect(dayRow(page, "API")).toBeVisible();
+    const tab = await stripTab(page, "Monday").boundingBox();
+    const login = await dayRow(page, "Login form").boundingBox();
+    if (!tab || !login)
+      throw new Error("The strip or the list is not rendered");
+    // Scrolled so that, scrolled back, Monday's tab comes where the upper half
+    // of "Login form" is now.
+    const wanted = login.y + 8 - (tab.y + tab.height / 2);
+    scrolledBy = await scrollDayPage(page, wanted);
+    expect(scrolledBy).toBeGreaterThan(wanted - 1);
+    heldPointer = { x: tab.x + tab.width / 2, y: login.y + 8 - scrolledBy };
+  },
+);
+
+When(
+  "I drag the {string} entry above the {string} entry without releasing",
+  async ({ page }, text: string, target: string) => {
+    if (!heldPointer) throw new Error("Open the short window first");
+    const row = await dayRow(page, text).boundingBox();
+    const above = await dayRow(page, target).boundingBox();
+    if (!row || !above) throw new Error("The rows are not rendered");
+    await page.mouse.move(heldPointer.x, row.y + row.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(heldPointer.x, above.y + 8, { steps: 10 });
+    heldPointer = { x: heldPointer.x, y: above.y + 8 };
+  },
+);
+
+When(
+  "the page scrolls back up until Monday's tab is under the pointer",
+  async ({ page }) => {
+    await scrollDayPage(page, 0);
+    await expect(stripTab(page, "Monday")).toBeVisible();
+  },
+);

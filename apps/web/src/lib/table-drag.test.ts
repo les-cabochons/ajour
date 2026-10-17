@@ -11,6 +11,45 @@ import {
   setSharedTableDragDocumentState,
 } from "@/lib/table-drag";
 
+describe("drag session scroll", () => {
+  function session(isDragging: () => boolean) {
+    const eventSource = new EventTarget();
+    const onScroll = vi.fn();
+    const pointerSession = createSharedTableDragPointerSession({
+      eventSource,
+      pointerId: 1,
+      pointerType: "mouse",
+      originX: 0,
+      originY: 0,
+      isDragging,
+      onStart: vi.fn(),
+      onMove: vi.fn(),
+      onEnd: vi.fn(),
+      onPressEnd: vi.fn(),
+      onScroll,
+    });
+    return { eventSource, onScroll, pointerSession };
+  }
+
+  it("reports scrolls during a drag, and none after the session ends", () => {
+    const { eventSource, onScroll, pointerSession } = session(() => true);
+
+    eventSource.dispatchEvent(new Event("scroll"));
+    expect(onScroll).toHaveBeenCalledTimes(1);
+
+    pointerSession.dispose();
+    eventSource.dispatchEvent(new Event("scroll"));
+    expect(onScroll).toHaveBeenCalledTimes(1);
+  });
+
+  it("ignores scrolls while the press has not become a drag", () => {
+    const { eventSource, onScroll } = session(() => false);
+
+    eventSource.dispatchEvent(new Event("scroll"));
+    expect(onScroll).not.toHaveBeenCalled();
+  });
+});
+
 describe("block drops", () => {
   // Rows 40px tall from the top: a 0–40, b 40–80, c 80–120, d 120–160.
   const rows = new Map(
