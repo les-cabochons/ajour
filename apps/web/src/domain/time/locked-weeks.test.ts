@@ -5,6 +5,9 @@ import type {
   LocalTimesheetEntry,
   LocalTimesheetImportDraft,
 } from "@/domain/local-state";
+import { captureUndo, restoreUndo } from "@/domain/local-state-undo";
+import { getWeekDates } from "@/domain/time/local-date";
+import { listWeekChanges } from "@/domain/time/timesheet-commit";
 import { DEFAULT_PROJECT_ICON } from "@/domain/projects/project-icon";
 import {
   acceptCalendarSuggestions,
@@ -15,10 +18,13 @@ import {
   findLockedWeekWrite,
   getDateLockReason,
   getLockedWeek,
+  getSubmitWeekRefusal,
   isDateLocked,
   LockedWeekError,
   lockedWeekMessage,
   normalizeLockedWeeks,
+  reopenWeek,
+  submitWeek,
 } from "@/domain/time/locked-weeks";
 import { toCommittedCopy } from "@/domain/time/timesheet-commit";
 import {
@@ -26,6 +32,7 @@ import {
   deleteTimesheetEntry,
   dropTimesheetEntries,
   duplicateTimesheetEntry,
+  markTimesheetEntriesCommitted,
   markTimesheetEntriesNotCommitted,
   moveTimesheetEntry,
   pasteTimesheetEntries,
@@ -477,5 +484,143 @@ describe("the write check", () => {
       factories,
     );
     expect(findLockedWeekWrite(before, switched)).toBe("2026-10-12");
+  });
+});
+
+describe("submit and reopen", () => {
+  const open = () => createState({ lockedWeeks: [] });
+  const changesOf = (state: LocalAppState) =>
+    listWeekChanges({
+      entries: state.timesheetEntries,
+      tombstones: state.timesheetTombstones,
+      weekDates: getWeekDates(LOCKED),
+    });
+
+  it("locks the week of any of its days, once every change is committed", () => {
+    const { state, result } = submitWeek(open(), "2026-10-11", () => 70);
+
+    expect(result).toEqual({ ok: true, weekOf: LOCKED });
+    expect(state.lockedWeeks).toEqual([{ weekOf: LOCKED, lockedAt: 70 }]);
+    expect(isDateLocked(state, "2026-10-06")).toBe(true);
+  });
+
+  it("refuses while a change is not committed, and says how many", () => {
+    const added = saveManualTimesheetEntry(
+      open(),
+      { localDate: "2026-10-07", projectId: "p1", durationMs: HOUR },
+      factories,
+    );
+
+    expect(submitWeek(added, LOCKED, () => 70)).toEqual({
+      state: added,
+      result: {
+        ok: false,
+        kind: "uncommitted-changes",
+        count: 1,
+        message:
+          "Commit your changes first. The week of 2026-10-05 has 1 change that is not committed.",
+      },
+    });
+    expect(
+      getSubmitWeekRefusal(deleteTimesheetEntry(added, "locked"), LOCKED)
+        ?.message,
+    ).toBe(
+      "Commit your changes first. The week of 2026-10-05 has 2 changes that are not committed.",
+    );
+  });
+
+  it("refuses while the running entry is in the week, even after midnight", () => {
+    const running = createState({
+      lockedWeeks: [],
+      timers: [runningOn("2026-10-11")],
+    });
+
+    expect(getSubmitWeekRefusal(running, LOCKED)).toEqual({
+      kind: "running-entry",
+      message:
+        "Stop the running entry first. It is on 2026-10-11, in the week of 2026-10-05.",
+    });
+    expect(submitWeek(running, "2026-10-12", () => 70).result).toEqual({
+      ok: true,
+      weekOf: "2026-10-12",
+    });
+  });
+
+  it("refuses a week already submitted", () => {
+    expect(getSubmitWeekRefusal(createState(), "2026-10-07")).toEqual({
+      kind: "already-submitted",
+      message: "The week of 2026-10-05 is already submitted.",
+    });
+  });
+
+  it("reopens a week, and a later edit shows as a change again", () => {
+    const reopened = reopenWeek(createState(), "2026-10-09");
+    expect(reopened.lockedWeeks).toEqual([]);
+    expect(changesOf(reopened)).toEqual([]);
+
+    const edited = updateTimesheetEntry(
+      reopened,
+      "locked",
+      { projectId: "p1", taskId: "t1", note: "locked", durationMs: 2 * HOUR },
+      factories,
+    );
+
+    expect(findLockedWeekWrite(reopened, edited)).toBeUndefined();
+    expect(changesOf(edited)).toMatchObject([
+      { kind: "updated", entryId: "locked", changedFields: ["durationMs"] },
+    ]);
+  });
+
+  it("leaves the state alone when the week is not submitted", () => {
+    const state = open();
+    expect(reopenWeek(state, LOCKED)).toBe(state);
+  });
+
+  it("undoes a submit back to the open week, copies and tombstones as they were", () => {
+    const tombstone = {
+      entryId: "gone",
+      commit: {
+        at: 5,
+        localDate: "2026-10-14",
+        projectId: "p1",
+        taskId: "t1",
+        durationMs: HOUR,
+      },
+    };
+    const before = createState({
+      lockedWeeks: [],
+      timesheetTombstones: [tombstone],
+    });
+    const after = submitWeek(before, LOCKED, () => 70).state;
+
+    const undo = captureUndo(before, after)!;
+    const restored = restoreUndo(after, undo);
+
+    expect(undo.lockedWeeks).toHaveLength(1);
+    expect(restored.result).toBe("restored");
+    expect(restored.state.lockedWeeks).toEqual([]);
+    expect(restored.state.timesheetEntries).toEqual(before.timesheetEntries);
+    expect(restored.state.timesheetTombstones).toEqual([tombstone]);
+  });
+
+  it("refuses the Undo of a commit once the week is submitted", () => {
+    const added = saveManualTimesheetEntry(
+      open(),
+      { localDate: "2026-10-07", projectId: "p1", durationMs: HOUR },
+      factories,
+    );
+    const committed = markTimesheetEntriesCommitted(
+      added,
+      ["timesheet-new"],
+      () => 60,
+    );
+    const commitUndo = captureUndo(added, committed)!;
+    // Another window submitted the week since the commit.
+    const submitted = submitWeek(committed, LOCKED, () => 70).state;
+
+    const restored = restoreUndo(submitted, commitUndo);
+
+    expect(restored.result).toBe("restored");
+    expect(findLockedWeekWrite(submitted, restored.state)).toBe(LOCKED);
   });
 });

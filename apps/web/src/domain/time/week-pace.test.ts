@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { computeWeekPace } from "@/domain/time/week-pace";
+import {
+  computeWeekPace,
+  needsPaceConfirmation,
+} from "@/domain/time/week-pace";
 import type { WeeklyCapacityTargets } from "@/domain/local-state";
 
 const HOUR = 3_600_000;
@@ -113,4 +116,19 @@ describe("computeWeekPace", () => {
       status: "on-pace",
     });
   });
+});
+
+describe("needsPaceConfirmation", () => {
+  it.each([
+    ["over", true, true],
+    ["over", false, true],
+    ["under", true, true],
+    ["under", false, false],
+    ["on-pace", true, false],
+  ] as const)(
+    "asks for a week %s with the under-target warning %s: %s",
+    (status, warn, asks) => {
+      expect(needsPaceConfirmation(status, warn)).toBe(asks);
+    },
+  );
 });

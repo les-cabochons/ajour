@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { getWeekOf } from "@/domain/time/local-date";
+import { getWeekDates, getWeekOf } from "@/domain/time/local-date";
 
 describe("getWeekOf", () => {
   it.each([
@@ -15,5 +15,19 @@ describe("getWeekOf", () => {
     ["2028-02-29", "2028-02-28"],
   ])("puts %s in the week of %s", (localDate, monday) => {
     expect(getWeekOf(localDate)).toBe(monday);
+  });
+});
+
+describe("getWeekDates", () => {
+  it("lists the seven days of the week, Monday first, across a time change", () => {
+    expect(getWeekDates("2026-11-01")).toEqual([
+      "2026-10-26",
+      "2026-10-27",
+      "2026-10-28",
+      "2026-10-29",
+      "2026-10-30",
+      "2026-10-31",
+      "2026-11-01",
+    ]);
   });
 });

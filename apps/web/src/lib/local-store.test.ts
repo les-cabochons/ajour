@@ -3121,6 +3121,42 @@ describe("submitted weeks in the store", () => {
     }
   });
 
+  it("submits a committed week with Undo, and reopens it with Undo", async () => {
+    seedWeek({ locked: false });
+    const { localStore } = await import("./local-store");
+
+    const { undoToken, result } = localStore.submitWeek("2026-10-08");
+    expect(result).toEqual({ ok: true, weekOf: "2026-10-05" });
+    expect(localStore.snapshot().lockedWeeks).toMatchObject([
+      { weekOf: "2026-10-05" },
+    ]);
+    expect(localStore.undo(undoToken!)).toBe("restored");
+    expect(localStore.snapshot().lockedWeeks).toEqual([]);
+
+    localStore.submitWeek("2026-10-05");
+    const reopenToken = localStore.reopenWeek("2026-10-05");
+    expect(localStore.snapshot().lockedWeeks).toEqual([]);
+    expect(localStore.undo(reopenToken!)).toBe("restored");
+    expect(localStore.snapshot().lockedWeeks).toMatchObject([
+      { weekOf: "2026-10-05" },
+    ]);
+  });
+
+  it("returns the refusal with no undo token", async () => {
+    seedWeek({ locked: true });
+    const { localStore } = await import("./local-store");
+
+    expect(localStore.submitWeek("2026-10-05")).toEqual({
+      undoToken: null,
+      result: {
+        ok: false,
+        kind: "already-submitted",
+        message: "The week of 2026-10-05 is already submitted.",
+      },
+    });
+    expect(localStore.reopenWeek("2026-10-12")).toBeNull();
+  });
+
   it("starts with no submitted week", async () => {
     const { localStore } = await import("./local-store");
     expect(localStore.snapshot().lockedWeeks).toEqual([]);

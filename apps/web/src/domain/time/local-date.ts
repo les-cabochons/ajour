@@ -31,3 +31,13 @@ export function getWeekOf(localDate: string): string {
   date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
   return date.toISOString().slice(0, 10);
 }
+
+/** The seven days of the week that holds `localDate`, Monday first. */
+export function getWeekDates(localDate: string): string[] {
+  const monday = new Date(`${getWeekOf(localDate)}T00:00:00Z`);
+  return Array.from({ length: 7 }, (_, index) => {
+    const day = new Date(monday);
+    day.setUTCDate(monday.getUTCDate() + index);
+    return day.toISOString().slice(0, 10);
+  });
+}

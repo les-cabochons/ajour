@@ -97,6 +97,8 @@ import { normalizeTimesheetTombstones } from "@/domain/time/timesheet-commit";
 import {
   assertNoLockedWeekWrite,
   normalizeLockedWeeks,
+  reopenWeek as applyReopenWeek,
+  submitWeek as applySubmitWeek,
 } from "@/domain/time/locked-weeks";
 import {
   captureUndo,
@@ -2165,6 +2167,19 @@ export const localStore = {
     return updateStateWithUndo((state) =>
       applyMarkTimesheetEntriesNotCommitted(state, entryIds),
     );
+  },
+  /**
+   * Submits the week that holds `weekOf`: locks it. See `submitWeek`. Returns
+   * the result with an undo token, null when Ajour refused.
+   */
+  submitWeek(weekOf: string) {
+    return updateStateWithUndoResult((state) =>
+      applySubmitWeek(state, weekOf, Date.now),
+    );
+  },
+  /** Reopens a submitted week. Returns an undo token, or null when it was not submitted. */
+  reopenWeek(weekOf: string) {
+    return updateStateWithUndo((state) => applyReopenWeek(state, weekOf));
   },
   continueTimesheetEntry(entryId: string) {
     updateState((state) =>

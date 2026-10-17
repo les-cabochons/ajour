@@ -1,6 +1,11 @@
 import type { LocalAppState, LocalLockedWeek } from "@/domain/local-state";
 import { recordsEqual } from "@/domain/local-state-undo";
-import { getWeekOf, isValidLocalDate } from "@/domain/time/local-date";
+import {
+  getWeekDates,
+  getWeekOf,
+  isValidLocalDate,
+} from "@/domain/time/local-date";
+import { listWeekChanges } from "@/domain/time/timesheet-commit";
 
 /**
  * Submitted weeks. Submitting a week locks it: its entries are read-only
@@ -173,4 +178,105 @@ function findChangedDay<T>(
     if (weekOf) return weekOf;
   }
   return undefined;
+}
+
+/** Why a week cannot be submitted now. `message` is the agents' refusal; the Commit page words each kind its own way. */
+export type SubmitWeekRefusal =
+  | { kind: "already-submitted"; message: string }
+  | { kind: "uncommitted-changes"; count: number; message: string }
+  | { kind: "running-entry"; message: string };
+
+export type SubmitWeekResult =
+  { ok: true; weekOf: string } | ({ ok: false } & SubmitWeekRefusal);
+
+/**
+ * Why the week that holds `weekOf` cannot be submitted, or undefined when it
+ * can: it is already submitted, a change is not committed, or the running
+ * entry is on one of its days, in that order.
+ */
+export function getSubmitWeekRefusal(
+  state: Pick<
+    LocalAppState,
+    "lockedWeeks" | "timesheetEntries" | "timesheetTombstones" | "timers"
+  >,
+  weekOf: string,
+): SubmitWeekRefusal | undefined {
+  const monday = getWeekOf(weekOf);
+  if (state.lockedWeeks.some((week) => week.weekOf === monday)) {
+    return {
+      kind: "already-submitted",
+      message: `The week of ${monday} is already submitted.`,
+    };
+  }
+
+  const weekDates = getWeekDates(monday);
+  const count = listWeekChanges({
+    entries: state.timesheetEntries,
+    tombstones: state.timesheetTombstones,
+    weekDates,
+  }).length;
+  if (count > 0) {
+    const changes =
+      count === 1 ? "1 change that is" : `${count} changes that are`;
+    return {
+      kind: "uncommitted-changes",
+      count,
+      message: `Commit your changes first. The week of ${monday} has ${changes} not committed.`,
+    };
+  }
+
+  const running = state.timers.find((timer) =>
+    weekDates.includes(timer.localDate),
+  );
+  if (running) {
+    return {
+      kind: "running-entry",
+      message: `Stop the running entry first. It is on ${running.localDate}, in the week of ${monday}.`,
+    };
+  }
+  return undefined;
+}
+
+/**
+ * Submits the week that holds `weekOf`: locks it. A week only locks with
+ * every change committed, so it has no tombstone left to drop. Returns the
+ * same state with the refusal when it cannot.
+ */
+export function submitWeek(
+  state: LocalAppState,
+  weekOf: string,
+  now: () => number,
+): { state: LocalAppState; result: SubmitWeekResult } {
+  const refusal = getSubmitWeekRefusal(state, weekOf);
+  if (refusal) return { state, result: { ok: false, ...refusal } };
+
+  const monday = getWeekOf(weekOf);
+  return {
+    state: {
+      ...state,
+      lockedWeeks: [
+        ...state.lockedWeeks,
+        { weekOf: monday, lockedAt: now() },
+      ].sort((left, right) => left.weekOf.localeCompare(right.weekOf)),
+    },
+    result: { ok: true, weekOf: monday },
+  };
+}
+
+/**
+ * Reopens the week that holds `weekOf`. Its entries keep their committed
+ * copies, so later edits show as changes again. Returns the same state when
+ * the week is not submitted.
+ */
+export function reopenWeek(
+  state: LocalAppState,
+  weekOf: string,
+): LocalAppState {
+  const monday = getWeekOf(weekOf);
+  const lockedWeeks = state.lockedWeeks.filter(
+    (week) => week.weekOf !== monday,
+  );
+  return lockedWeeks.length === state.lockedWeeks.length
+    ? state
+    : { ...state, lockedWeeks };
 }
