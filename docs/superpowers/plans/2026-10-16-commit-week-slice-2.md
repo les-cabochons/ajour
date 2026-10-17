@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** A committed week can be submitted from the Commit page, after a pace check, which locks it: its entries are read-only everywhere, for agents too, until the user reopens it. Agents read a week's status with `get_week_status` and lock it with `submit_week`, and a plugin `submit-week` task, such as Workday's "Submit in Workday", replaces the manual Submit week button.
+**Goal:** A committed week can be submitted from the Commit page, after a pace check, which locks it: its entries are read-only everywhere, for agents too, until the user reopens it. Agents read a week's status with `get_week_status` and lock it with `submit_week`, and a plugin `submit-week` task, such as Workday's "Check Workday and submit", replaces the manual Submit week button.
 
 **Architecture:** `LocalAppState.lockedWeeks` holds the submitted weeks, and `domain/time/locked-weeks.ts` owns the one rule, `isDateLocked`, the Submit and Reopen transitions, and `assertNoLockedWeekWrite`, a check of any state change against the locked weeks. The local store runs that check in `writeState`, the one place every write passes, so no command, Undo or agent tool can change a submitted week; a refused write throws `LockedWeekError`, which agents get as a refusal and the UI shows as a toast through one window listener, while controls with an obvious disabled state (entry actions, Add buttons, drags, the editor) disable themselves with the same reason.
 
@@ -33,7 +33,7 @@
 - MCP instructions get one line, exact: `A submitted week is read-only: Ajour refuses writes to its entries until the user reopens it.`
 - Runner prompt gets one rule, exact, after the commit rule, which stays as it is: `- Call submit_week only when the task asks for it, as its last step. It locks the week in Ajour.`
 - Plugin placement: `agentTaskPlacementSchema = z.enum(["commit-week", "submit-week"])` in `packages/shared/connectors.ts`, used by the manifest and the runner overview. `submit-week` tasks replace the Submit week button and take its disabled reasons.
-- Workday (agent) 0.5.0: task `submit-week`, label "Submit in Workday", prompt `prompts/submit-week.md`, question choices "Submit anyway" and "Stop", then "Update Workday", "I'll fix Ajour" and "Leave it".
+- Workday (agent) 0.5.0: task `submit-week`, label "Check Workday and submit", prompt `prompts/submit-week.md`, question choices "Submit anyway" and "Stop", then "Update Workday", "I'll fix Ajour" and "Leave it".
 - Open dependencies: Ajour PR #207 changes `mark_entries_committed` to `{ changes: { entryId, version }[] }`, and Workday PR #4 is 0.4.1. Rebase on `origin/main` before Task 8 and Task 10, and follow the variant each task names.
 - No enums, namespaces or constructor parameter properties (`erasableSyntaxOnly`). Class fields are declared, then assigned in the constructor.
 - Repository text in English, plain words, no em dashes. Conventional commits whose message ends with `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`.
@@ -2992,10 +2992,10 @@ Append to `apps/web/tests/acceptance/features/agent-runner.feature`:
 
 ```gherkin
   Scenario: A plugin's submit task replaces Submit week
-    Given the local API reports a ready "Submit in Workday" submit task
+    Given the local API reports a ready "Check Workday and submit" submit task
     When I open the Commit page for the week of 2026-10-12
-    Then the Commit page offers "Submit in Workday" instead of Submit week
-    When I press "Submit in Workday"
+    Then the Commit page offers "Check Workday and submit" instead of Submit week
+    When I press "Check Workday and submit"
     Then the "submit-week" run is requested for the week of 2026-10-12
 ```
 
@@ -3005,7 +3005,7 @@ In `apps/web/tests/acceptance/steps/agent-runner.steps.ts`, after `readyOverview
 const submitWeekTask = {
   ...enterWeek,
   taskId: "submit-week",
-  label: "Submit in Workday",
+  label: "Check Workday and submit",
   placement: "submit-week",
 };
 ```
@@ -3120,25 +3120,25 @@ Run: `cd packages/shared && npx vitest run tests/connectors.test.ts`, `just test
 Expected: PASS.
 
 - [ ] **Step 7: Docs.**
-  - `apps/docs/developers/manifest.md`: the `placement` row reads "`commit-week`: a button next to **Mark as committed** on the Commit page. `submit-week`: a button in place of **Submit week**, greyed out like it until every change is committed. Both act on the week on screen." After the example, add: "A `submit-week` task looks the same, such as `"id": "submit-week"`, `"label": "Submit in Workday"`, `"placement": "submit-week"`, `"prompt": "prompts/submit-week.md"`. Its prompt ends with the `submit_week` tool."
+  - `apps/docs/developers/manifest.md`: the `placement` row reads "`commit-week`: a button next to **Mark as committed** on the Commit page. `submit-week`: a button in place of **Submit week**, greyed out like it until every change is committed. Both act on the week on screen." After the example, add: "A `submit-week` task looks the same, such as `"id": "submit-week"`, `"label": "Check Workday and submit"`, `"placement": "submit-week"`, `"prompt": "prompts/submit-week.md"`. Its prompt ends with the `submit_week` tool."
   - `apps/docs/plugins/workday-agent.md`:
-    - Intro, second sentence onward: "...applies them to your Workday timesheet in a Chrome window. Once the week is committed, **Submit in Workday** replaces **Submit week**: the agent checks the week in Workday and submits it there and in Ajour."
-    - Set it up, step 1: "It needs version 0.4.0 or later, and 0.5.0 for **Submit in Workday**." Step 3 starts: "Open **Settings › Plugins › Workday (agent)**. Under **Tasks**, fill in, for **Commit to Workday** and **Submit in Workday**:".
+    - Intro, second sentence onward: "...applies them to your Workday timesheet in a Chrome window. Once the week is committed, **Check Workday and submit** replaces **Submit week**: the agent checks the week in Workday, fixes or asks, then submits it in Ajour."
+    - Set it up, step 1: "It needs version 0.4.0 or later, and 0.5.0 for **Check Workday and submit**." Step 3 starts: "Open **Settings › Plugins › Workday (agent)**. Under **Tasks**, fill in, for **Commit to Workday** and **Check Workday and submit**:".
     - After "## Commit a week" and its "### Run it again", add:
 
 ```md
 ## Submit a week
 
-When every change is committed, press **Submit in Workday** on the Commit page. It replaces **Submit week**, and is greyed out like it while a change is not committed or an entry runs in the week. The agent:
+When every change is committed, press **Check Workday and submit** on the Commit page. It replaces **Submit week**, and is greyed out like it while a change is not committed or an entry runs in the week. The agent:
 
 1. Checks the week in Ajour. When the week is behind or over its targets, it asks **Submit anyway** or **Stop**.
 2. Opens Workday and compares each day with what Ajour committed.
 3. When Workday differs on an entry with one of the week's IDs, it lists the differences and asks: **Update Workday** makes Workday match Ajour, **I'll fix Ajour** stops so you can change and commit in Ajour first, **Leave it** goes on. It never changes an entry without an Ajour ID.
-4. Submits the week in Workday, then in Ajour, which locks it. See [Submit the week](/time/commit#submit-the-week).
+4. Submits the week in Ajour, which locks it. Workday has no Submit step. See [Submit the week](/time/commit#submit-the-week).
 ```
 
     - "What it asks you" gains: "- The week is off pace when you submit it: **Submit anyway** or **Stop**." and "- Workday differs from what Ajour committed: **Update Workday**, **I'll fix Ajour** or **Leave it**."
-  - `apps/docs/time/commit.md`, "Commit with an agent", after the first paragraph: "A plugin can also replace **Submit week** with its own button, such as **Submit in Workday**, which checks the week in the timesheet tool before it submits it there and in Ajour."
+  - `apps/docs/time/commit.md`, "Commit with an agent", after the first paragraph: "A plugin can also replace **Submit week** with its own button, such as **Check Workday and submit**, which checks the week in the timesheet tool before it submits it in Ajour."
   - `agents/ui-registry.md` line 73: "...sits in the Commit page's actions row: one button per `commit-week` task next to Mark as committed, and the `submit-week` tasks in place of Submit week, with its disabled reasons. `AgentTaskWeekLinks` puts each distinct week link in the week summary..."
   - `agents/architecture.md`, Agent runner paragraph: "...and the Commit page's `AgentTaskButtons`, one set per placement (`commit-week`, `submit-week`), both reading `lib/agent-runner.ts`."
   - `agents/progress-tracker.md`, a new section at the end:
@@ -3254,7 +3254,7 @@ Expected: FAIL. The manifest has one task, and `prompts/submit-week.md` does not
 ```json
 {
   "id": "submit-week",
-  "label": "Submit in Workday",
+  "label": "Check Workday and submit",
   "placement": "submit-week",
   "prompt": "prompts/submit-week.md",
   "estimateMinutes": 10,
@@ -3268,7 +3268,7 @@ Expected: FAIL. The manifest has one task, and `prompts/submit-week.md` does not
 ````markdown
 # Submit the week of {{weekOf}} in Workday
 
-You check that the user's Workday timesheet holds the week of {{weekOf}} as Ajour committed it, fix what differs or ask, submit the week in Workday, then submit it in Ajour. Submitting in Ajour locks the week, so it comes last.
+You check that the user's Workday timesheet holds the week of {{weekOf}} as Ajour committed it, fix what differs or ask, then submit the week in Ajour, which locks it. This Workday has no Submit step: never look for or press a Submit, Review or Soumettre button.
 
 Keep a list of what you checked, fixed and left. The final summary uses it.
 
@@ -3319,7 +3319,7 @@ No difference: go to step 5.
 Ask once, listing each difference with its day, project, task, and hours in Workday and in Ajour. For example: "Workday differs from Ajour on 2 days. Tue, Acme · Build: Workday has 2 h, Ajour committed 1,5 h. Thu: Workday has 1 h more, from an entry without an Ajour ID." Offer the choices "Update Workday", "I'll fix Ajour" and "Leave it".
 
 - "Update Workday": make each Workday entry with one of this week's externalIds match its committed values, add each committed entry Workday lacks, and delete each entry whose Ajour ID is not in committedEntries. Send update_session when you start each day. Then compare again. A difference left from entries without an Ajour ID does not stop the submission: note it for the summary.
-- "I'll fix Ajour": end the session as cancelled with "Change the entries in Ajour, commit them, then run Submit in Workday again." Do not submit.
+- "I'll fix Ajour": end the session as cancelled with "Change the entries in Ajour, commit them, then run Check Workday and submit again." Do not submit.
 - "Leave it": go on with the differences as they are, and note them for the summary.
 
 To add an entry, open the entry dialog from the day itself. Workday's page may be in English or French. Click the empty area of that day's column in the week calendar, below any existing entries. Workday shows a blue "Enter Time" or "Entrer des heures" block there; click it if the first click only showed the block. Do not use the "Actions" menu, it is slower. Fill the dialog in this order, because Workday clears the hours when the time type changes:
@@ -3332,23 +3332,16 @@ Workday shows an error on save: read the message. If it names a field you can fi
 
 Never delete or change an entry in Workday that has no externalId of yours. Those are the user's own.
 
-## 5. Submit in Workday
+## 5. Submit in Ajour
 
-1. Send update_session: "Submitting the week in Workday."
-2. Workday already shows the week as submitted: go to step 6.
-3. Press "Review" if Workday shows it, then "Submit" ("Soumettre" in French), and confirm. Take a snapshot and check Workday shows the week as submitted.
-4. Workday shows an error: end the session as failed with its message. Do not call submit_week.
+Call submit_week with weekOf {{weekOf}}. Ajour refuses: end the session as failed with Ajour's reason.
 
-## 6. Submit in Ajour
+## 6. Summary
 
-Call submit_week with weekOf {{weekOf}}. Ajour refuses: end the session as failed with Ajour's reason, and say that the week is already submitted in Workday.
-
-## 7. Summary
-
-End the session with what you did, for example: "Workday matched Ajour. Submitted the week in Workday and in Ajour." or "Updated 2 Workday entries to match Ajour, then submitted the week in Workday and in Ajour." List each difference you left, with its day, and each day whose total differs because of entries without an Ajour ID.
+End the session with what you did, for example: "Workday matched Ajour. Submitted the week in Ajour." or "Updated 2 Workday entries to match Ajour, then submitted the week in Ajour." List each difference you left, with its day, and each day whose total differs because of entries without an Ajour ID.
 ````
 
-- [ ] **Step 4: README.** Describe both tasks: "Commit to Workday" adds, updates and deletes one Workday entry per Ajour entry, from the Commit page; "Submit in Workday" replaces Submit week once the week is committed, checks the pace, compares Workday with what Ajour committed day by day, fixes or asks, submits the week in Workday, then in Ajour. State that 0.5.0 needs an Ajour with `get_week_status`, `submit_week` and the `submit-week` placement, and that each task has its own settings.
+- [ ] **Step 4: README.** Describe both tasks: "Commit to Workday" adds, updates and deletes one Workday entry per Ajour entry, from the Commit page; "Check Workday and submit" replaces Submit week once the week is committed, checks the pace, compares Workday with what Ajour committed day by day, fixes or asks, then submits the week in Ajour. It never presses a Submit button in Workday. State that 0.5.0 needs an Ajour with `get_week_status`, `submit_week` and the `submit-week` placement, and that each task has its own settings.
 
 - [ ] **Step 5: Verify.** `corepack pnpm verify`. Expected: every test passes and `package/workday-agent-0.5.0.ajour-connector` is written. Then check the archive with Ajour's installer from the Ajour worktree, with a throwaway script outside both repos:
 
