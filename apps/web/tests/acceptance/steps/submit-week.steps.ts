@@ -65,3 +65,19 @@ Then("the Week view shows the week is submitted", async ({ page }) => {
     week.getByRole("button", { name: "Add", exact: true }).first(),
   ).toBeDisabled();
 });
+
+Then(
+  "a toast shows the whole sentence {string}",
+  async ({ page }, sentence: string) => {
+    const title = page
+      .getByRole("region", { name: "Notifications" })
+      .getByText(sentence, { exact: true });
+    await expect(title).toBeVisible();
+    // A truncated title is wider inside than its box.
+    expect(
+      await title.evaluate(
+        (element) => element.scrollWidth <= element.clientWidth,
+      ),
+    ).toBe(true);
+  },
+);

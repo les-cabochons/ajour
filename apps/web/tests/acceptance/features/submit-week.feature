@@ -36,6 +36,11 @@ Feature: Submit the week
     Then the entry editor is read-only
     When I right-click the "Login form" entry
     Then "Delete" is disabled in the menu with the reason "The week of Oct 5 is submitted. Reopen it to change it."
+    When I press the "Escape" key
+    And I click the "API" entry
+    And I press the "ControlOrMeta+c" key
+    And I press the "ControlOrMeta+v" key
+    Then a toast shows the whole sentence "The week of Oct 5 is submitted. Reopen it to change it."
     When I open the Week Days view
     Then the Week view shows the week is submitted
     When I open the Commit page for the week of 2026-10-05
