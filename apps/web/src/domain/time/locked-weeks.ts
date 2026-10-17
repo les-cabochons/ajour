@@ -1,5 +1,5 @@
 import type { LocalAppState, LocalLockedWeek } from "@/domain/local-state";
-import { recordsEqual } from "@/domain/local-state-undo";
+import { recordsEqual } from "@/domain/records-equal";
 import {
   formatShortLocalDate,
   getWeekDates,

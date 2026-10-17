@@ -7,6 +7,7 @@ import {
 } from "@ajour/shared";
 import { todayIsoDate } from "@/lib/utils";
 import { StaleWindowError } from "@/lib/stale-window-error";
+import { recordsEqual } from "@/domain/records-equal";
 import {
   changePullRequest,
   normalizePullRequests,
@@ -108,7 +109,6 @@ import {
   captureUndo,
   getUndoProjectIds,
   completeSourceWriteInUndo,
-  recordsEqual,
   restoreUndo,
   type LocalStateUndo,
   type LocalStateUndoResult,
