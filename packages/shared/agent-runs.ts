@@ -1,5 +1,6 @@
 import { z } from "zod";
 import {
+  agentTaskPlacementSchema,
   connectorFieldSchema,
   connectorFieldValuesSchema,
 } from "./connectors.ts";
@@ -48,7 +49,7 @@ export const agentTaskStatusSchema = z.object({
   pluginName: z.string(),
   taskId: z.string(),
   label: z.string(),
-  placement: z.literal("commit-week"),
+  placement: agentTaskPlacementSchema,
   estimateMinutes: z.number().int(),
   settings: z.array(connectorFieldSchema),
   values: connectorFieldValuesSchema,

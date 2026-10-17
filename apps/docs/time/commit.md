@@ -72,4 +72,6 @@ Under **Lines**, the whole week is grouped into lines with the project, the task
 
 With a plugin such as [Workday (agent)](/plugins/workday-agent), a button such as **Commit to Workday** sits next to **Mark as committed**. It starts an agent that applies the checked changes in your timesheet tool, one entry per change, and marks each one as committed as soon as the tool saved it. The button is greyed out while something is missing; hover it to see what, such as `Fill in Workday timesheet URL in Settings › Plugins › Workday (agent)`.
 
+A plugin can also replace **Submit week** with its own button, such as **Check Workday and submit**, which checks the week in the timesheet tool before it submits it in Ajour.
+
 A link such as **Open the week in Workday**, under the week summary, opens the week in your browser.

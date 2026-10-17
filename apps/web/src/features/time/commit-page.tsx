@@ -54,6 +54,7 @@ import type { LocalProjectIcon } from "@/domain/projects/project-icon";
 import {
   AgentTaskButtons,
   AgentTaskWeekLinks,
+  useHasAgentTasks,
 } from "@/features/agents/agent-task-buttons";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import {
@@ -304,6 +305,7 @@ export function CommitPage({
       }),
     [state.userPreferences.weeklyCapacityTargets, weekDates, weekEntries],
   );
+  const hasSubmitTasks = useHasAgentTasks("submit-week");
   const lockedWeek = getLockedWeek(state, weekOf);
   const submitReason = lockedWeek
     ? undefined
@@ -466,7 +468,7 @@ export function CommitPage({
           </Button>
         ) : (
           <>
-            <AgentTaskButtons weekOf={weekOf} />
+            <AgentTaskButtons weekOf={weekOf} placement="commit-week" />
             {changes.length > 0 ? (
               <Button
                 disabled={checkedIds.length === 0}
@@ -475,18 +477,27 @@ export function CommitPage({
                 Mark as committed
               </Button>
             ) : null}
-            <DisabledReason label="Submit week" reason={submitReason}>
-              <Button
-                // The next step is the primary button: Mark as committed while
-                // changes wait, Submit week after.
-                variant={changes.length > 0 ? "outline" : "default"}
-                disabled={submitReason !== undefined}
-                onClick={requestSubmit}
-              >
-                <Lock data-icon="inline-start" />
-                Submit week
-              </Button>
-            </DisabledReason>
+            {hasSubmitTasks ? (
+              // A plugin's submit task replaces Submit week, with its reasons.
+              <AgentTaskButtons
+                weekOf={weekOf}
+                placement="submit-week"
+                disabledReason={submitReason}
+              />
+            ) : (
+              <DisabledReason label="Submit week" reason={submitReason}>
+                <Button
+                  // The next step is the primary button: Mark as committed while
+                  // changes wait, Submit week after.
+                  variant={changes.length > 0 ? "outline" : "default"}
+                  disabled={submitReason !== undefined}
+                  onClick={requestSubmit}
+                >
+                  <Lock data-icon="inline-start" />
+                  Submit week
+                </Button>
+              </DisabledReason>
+            )}
           </>
         )}
       </div>

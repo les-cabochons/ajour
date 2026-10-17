@@ -848,3 +848,10 @@ Spec: `docs/superpowers/specs/2026-10-15-calendar-suggestions-design.md`. Decisi
 ## Commit change versions, 2026-10-16
 
 - [x] `get_week_changes` gives each change a `version`, and `mark_entries_committed` takes `{ changes: { entryId, version }[] }`. Ajour refuses the whole call when an entry changed since the agent read it, so it never commits values Workday did not receive. Ships with Workday (agent) 0.4.1, which finds entries only by their exact ID.
+
+## Commit week, slice 2, 2026-10-16
+
+- [x] Submit week on the Commit page, after a pace check that uses the pace tolerance and the under-target warning, locks the week with Undo; Reopen week unlocks it with Undo. One rule, `isDateLocked`, and one check in `writeState` keep a submitted week's entries read-only for every command, Undo and agent tool.
+- [x] The Day list, Week Days, Week Grid, entry editor and action menus disable what would change a submitted week, with its reason; other writes show the refusal as a toast. Calendar suggestions skip submitted days.
+- [x] Agents get `get_week_status` and `submit_week`, and the plugin placement `submit-week` replaces Submit week.
+- [ ] Workday (agent) 0.5.0 with `prompts/submit-week.md` in `les-cabochons/ajp-workday-agent`, then a smoke run by Alex.
