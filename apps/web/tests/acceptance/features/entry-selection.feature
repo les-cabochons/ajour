@@ -160,3 +160,45 @@ Feature: Select time entries like a file explorer
     And I go to Thursday in the day strip
     And I press the "ControlOrMeta+v" key
     Then only the "API" entry is selected
+
+  Scenario: Dragging a selected card moves the whole selection to another day
+    Given I have a week of saved entries
+    When I open the Week Days view
+    And I click Monday's "Login form" card
+    And I Cmd-click Monday's "Code review" card
+    And I start dragging Monday's "Code review" card onto Wednesday
+    Then the drag preview counts 2 entries
+    When I release the mouse
+    Then Monday's cards read "API"
+    And Wednesday's cards read "Login form", "Code review"
+    And a toast says "Moved 2 entries to Wed, Oct 7"
+    And 2 cards are selected
+
+  Scenario: A selection from two days lands together at the drop line
+    Given I have a week of saved entries
+    When I open the Week Days view
+    And I click Monday's "API" card
+    And I Cmd-click Tuesday's "Login form" card
+    And I drag Tuesday's "Login form" card above Monday's "Login form" card
+    Then Monday's cards read "API", "Login form", "Login form", "Code review"
+    And Tuesday has no cards
+    And a toast says "Moved 1 entry to Mon, Oct 5"
+
+  Scenario: Dragging an unselected card carries only that card
+    Given I have a week of saved entries
+    When I open the Week Days view
+    And I click Monday's "Login form" card
+    And I Cmd-click Monday's "Code review" card
+    And I drag Monday's "API" card onto Wednesday
+    Then Monday's cards read "Login form", "Code review"
+    And Wednesday's cards read "API"
+    And 1 cards are selected
+
+  Scenario: Dragging selected rows reorders them as one block
+    Given I have a week of saved entries
+    When I open Monday's Day list
+    And I click the "Login form" entry
+    And I Cmd-click the "API" entry
+    And I drag the "API" entry below the "Code review" entry
+    Then the Day list reads "Code review", "Login form", "API"
+    And 2 entries are selected

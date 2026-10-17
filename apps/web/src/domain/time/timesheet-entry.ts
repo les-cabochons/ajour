@@ -417,6 +417,97 @@ export function relocateTimesheetEntries(
 }
 
 /**
+ * Drops entries as one block on `localDate`, as a drag of a selection does:
+ * entries from other days move there, then the block takes its place in front
+ * of the day's entry at `targetIndex` among the entries that stay, in the order
+ * of `entryIds`. An index past the last entry puts the block at the end.
+ * `movedIds` lists the entries that changed day. Entries linked to a running
+ * timer keep their day, as Move to… does; on their own day they still take
+ * their place in the block.
+ *
+ * The new order lives in the day's `committedAt` values alone, made distinct,
+ * and no record changes place in `timesheetEntries`. Undo restores records
+ * where they are, so a day whose entries shared a time, and were ordered by
+ * their place, reads as before after an Undo.
+ */
+export function dropTimesheetEntries(
+  state: LocalAppState,
+  {
+    entryIds,
+    localDate,
+    targetIndex,
+  }: { entryIds: readonly string[]; localDate: string; targetIndex: number },
+  factories: TimesheetEntryFactories,
+): { state: LocalAppState; movedIds: string[] } {
+  const fromOtherDays = entryIds.flatMap((entryId) => {
+    const entry = state.timesheetEntries.find((item) => item._id === entryId);
+    return entry && entry.localDate !== localDate
+      ? [{ entryId, localDate }]
+      : [];
+  });
+  const moved = relocateTimesheetEntries(
+    state,
+    fromOtherDays,
+    "cut",
+    factories,
+  );
+
+  const dayIds = selectSortableDayEntryIds(
+    moved.state.timesheetEntries,
+    localDate,
+  );
+  const onDay = new Set(dayIds);
+  const block = entryIds.filter((entryId) => onDay.has(entryId));
+  const inBlock = new Set(block);
+  const staying = dayIds.filter((entryId) => !inBlock.has(entryId));
+  const index = Math.max(0, Math.min(targetIndex, staying.length));
+  const order = [...staying.slice(0, index), ...block, ...staying.slice(index)];
+
+  return {
+    state: orderDayByCommittedAt(moved.state, order),
+    movedIds: moved.entryIds,
+  };
+}
+
+/**
+ * Gives the entries of `order`, one day's entries, the day's `committedAt`
+ * values in that order, nudged up by a millisecond where two would be equal,
+ * without moving any record in `timesheetEntries`. Returns `state` itself when
+ * nothing changes.
+ */
+function orderDayByCommittedAt(
+  state: LocalAppState,
+  order: readonly string[],
+): LocalAppState {
+  const inOrder = new Set(order);
+  const slots = state.timesheetEntries
+    .filter((entry) => inOrder.has(entry._id))
+    .map((entry) => entry.committedAt)
+    .sort((left, right) => left - right);
+  for (let index = 1; index < slots.length; index += 1) {
+    if (slots[index]! <= slots[index - 1]!) {
+      slots[index] = slots[index - 1]! + 1;
+    }
+  }
+
+  const committedAtById = new Map(
+    order.map((entryId, index) => [entryId, slots[index]!]),
+  );
+  let changed = false;
+  const timesheetEntries = state.timesheetEntries.map((entry) => {
+    const committedAt = committedAtById.get(entry._id);
+    if (committedAt === undefined || committedAt === entry.committedAt) {
+      return entry;
+    }
+
+    changed = true;
+    return { ...entry, committedAt };
+  });
+
+  return changed ? { ...state, timesheetEntries } : state;
+}
+
+/**
  * Carries the committed copy across a rebuild of the entry, such as an edit
  * or a running entry saved again. Edits never change the copy: the change
  * shows on the Commit page until it is committed.

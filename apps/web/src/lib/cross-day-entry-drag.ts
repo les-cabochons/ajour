@@ -1,5 +1,6 @@
 import {
   createSharedTableDragPointerSession,
+  getSharedTableBlockDropOrder,
   type SharedTableDragEventSource,
   type SharedTableDragPointer,
   type SharedTableDragPointerSession,
@@ -74,19 +75,24 @@ export function createCrossDayEntryDragPointerSession(options: {
 }
 
 /**
- * Where the drop line shows while a card is dragged within its own day: above
- * the card it would land in front of, or below the last card. `targetIndex` is
- * the card's index in the day after the drop, as `getSharedTableDragTargetIndex`
- * gives it. Returns null when the card would land where it started.
+ * Where the drop line shows while cards are dragged over a day: above the card
+ * the block would land in front of, or below the day's last card. `entryIds`
+ * lists the day's cards, `draggedIds` the block in reading order, and
+ * `targetIndex` the block's place among the cards that stay, as
+ * `getSharedTableBlockDropIndex` gives it. Returns null when the drop changes
+ * nothing, or the day has no card to mark.
  */
-export function getSameDayDropLine(
+export function getEntryDropLine(
   entryIds: readonly string[],
-  draggedId: string,
+  draggedIds: readonly string[],
   targetIndex: number,
 ): { entryId: string; edge: "before" | "after" } | null {
-  if (entryIds.indexOf(draggedId) === targetIndex) return null;
+  if (!getSharedTableBlockDropOrder(entryIds, draggedIds, targetIndex)) {
+    return null;
+  }
 
-  const others = entryIds.filter((entryId) => entryId !== draggedId);
+  const dragged = new Set(draggedIds);
+  const others = entryIds.filter((entryId) => !dragged.has(entryId));
   const before = others[targetIndex];
   if (before) return { entryId: before, edge: "before" };
 

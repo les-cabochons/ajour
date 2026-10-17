@@ -4,6 +4,15 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Current Baseline
 
+- [x] Drag the whole selection (2026-10-16, #199): dragging a selected Day
+      row or Days card drags every selected saved entry, and an unselected
+      one drags alone. The entries land as one block at the drop line, in
+      reading order, on their own day or another one; a Days column shows the
+      drop line too. The preview carries a count badge. A move to another day
+      shows one Undo; a reorder stays silent. `dropTimesheetEntries` owns the
+      drop, and `lib/table-drag.ts` the block geometry
+      (`getSharedTableBlockDropIndex`, `getSharedTableBlockDropOrder`). Four
+      Chromium scenarios.
 - [x] Selection-wide Move to…, Duplicate and Duplicate to… (2026-10-16,
       #199): on two or more selected entries the right-click menu lists
       "Duplicate 3 entries", "Move 3 entries to…" and the rest with their

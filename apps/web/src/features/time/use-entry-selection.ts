@@ -161,6 +161,20 @@ export function useEntrySelection({
     return selectedEntries;
   }
 
+  /**
+   * The entries a drag that starts on `entryId` carries, in reading order: the
+   * selected saved entries when the entry is one of them, else the entry alone.
+   * A drag on the running entry carries only it.
+   */
+  function getDragIds(entryId: string): string[] {
+    if (entryId === runningEntryId || !selectedIds.has(entryId)) {
+      return [entryId];
+    }
+
+    const ids = selectedEntries.map((entry) => entry._id);
+    return ids.includes(entryId) ? ids : [entryId];
+  }
+
   /** The selection's actions, named with their counts. */
   const selectionActions = useMemo(
     () =>
@@ -569,6 +583,7 @@ export function useEntrySelection({
     handleScopeKeyDown,
     getMenuActions,
     getKeyActions,
+    getDragIds,
     runSelectionAction,
   };
 }

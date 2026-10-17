@@ -4,6 +4,7 @@ import { DEFAULT_PROJECT_ICON } from "@/domain/projects/project-icon";
 import {
   deleteTimesheetEntries,
   deleteTimesheetEntry,
+  dropTimesheetEntries,
   duplicateTimesheetEntry,
   markTimesheetEntriesCommitted,
   markTimesheetEntriesNotCommitted,
@@ -20,6 +21,7 @@ import {
   updateTimesheetEntry,
 } from "@/domain/time/timesheet-entry";
 import { getTimesheetEntryChange } from "@/domain/time/timesheet-commit";
+import { captureUndo, restoreUndo } from "@/domain/local-state-undo";
 import { getSharedTableStepOrder } from "@/lib/table-drag";
 
 function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
@@ -1114,6 +1116,178 @@ describe("pasteTimesheetEntries", () => {
     );
 
     expect(pasted).toBe(state);
+  });
+});
+
+describe("dropTimesheetEntries", () => {
+  const HOUR = 60 * 60 * 1000;
+  function entry(id: string, localDate: string, committedAt: number) {
+    return {
+      _id: id,
+      localDate,
+      projectId: "project-1",
+      taskId: "task-1",
+      label: "Feature work",
+      note: id,
+      durationMs: HOUR,
+      sourceBlockIds: [],
+      committedAt,
+    };
+  }
+  const factories = { createId: () => "unused", now: () => 1000 };
+  function dayOrder(state: LocalAppState, localDate: string) {
+    return selectSortableDayEntryIds(state.timesheetEntries, localDate);
+  }
+
+  it("reorders a block within its day, keeping the block's order", () => {
+    const state = createState({
+      timesheetEntries: [
+        entry("a", "2026-10-05", 10),
+        entry("b", "2026-10-05", 20),
+        entry("c", "2026-10-05", 30),
+        entry("d", "2026-10-05", 40),
+      ],
+    });
+
+    const dropped = dropTimesheetEntries(
+      state,
+      { entryIds: ["a", "c"], localDate: "2026-10-05", targetIndex: 2 },
+      factories,
+    );
+
+    expect(dayOrder(dropped.state, "2026-10-05")).toEqual(["b", "d", "a", "c"]);
+    expect(dropped.movedIds).toEqual([]);
+  });
+
+  it("moves entries from other days into the block at the drop line", () => {
+    const state = createState({
+      timesheetEntries: [
+        entry("mon", "2026-10-05", 10),
+        entry("tue-1", "2026-10-06", 20),
+        entry("tue-2", "2026-10-06", 30),
+        entry("wed", "2026-10-07", 40),
+      ],
+    });
+
+    // Monday's entry and Tuesday's first, dropped between Tuesday's entries.
+    const dropped = dropTimesheetEntries(
+      state,
+      { entryIds: ["mon", "tue-1"], localDate: "2026-10-06", targetIndex: 1 },
+      factories,
+    );
+
+    expect(dayOrder(dropped.state, "2026-10-05")).toEqual([]);
+    expect(dayOrder(dropped.state, "2026-10-06")).toEqual([
+      "tue-2",
+      "mon",
+      "tue-1",
+    ]);
+    expect(dropped.movedIds).toEqual(["mon"]);
+  });
+
+  it("puts the block at the end of the day when the index is past the last entry", () => {
+    const state = createState({
+      timesheetEntries: [
+        entry("mon", "2026-10-05", 10),
+        entry("wed", "2026-10-07", 40),
+      ],
+    });
+
+    const dropped = dropTimesheetEntries(
+      state,
+      { entryIds: ["mon"], localDate: "2026-10-07", targetIndex: 99 },
+      factories,
+    );
+
+    expect(dayOrder(dropped.state, "2026-10-07")).toEqual(["wed", "mon"]);
+  });
+
+  it("orders a day by time alone, so an Undo of the drop restores the day", () => {
+    // Monday's a, c and b share one time and read in their stored order.
+    const state = createState({
+      timesheetEntries: [
+        entry("a", "2026-10-05", 10),
+        entry("x", "2026-10-06", 20),
+        entry("c", "2026-10-05", 10),
+        entry("b", "2026-10-05", 10),
+      ],
+    });
+    expect(dayOrder(state, "2026-10-05")).toEqual(["a", "c", "b"]);
+
+    const dropped = dropTimesheetEntries(
+      state,
+      { entryIds: ["a", "b"], localDate: "2026-10-06", targetIndex: 0 },
+      factories,
+    );
+
+    expect(dayOrder(dropped.state, "2026-10-06")).toEqual(["a", "b", "x"]);
+    // No record moved in the stored list.
+    expect(dropped.state.timesheetEntries.map((item) => item._id)).toEqual([
+      "a",
+      "x",
+      "c",
+      "b",
+    ]);
+    const undo = captureUndo(state, dropped.state);
+    expect(undo).not.toBeNull();
+    const restored = restoreUndo(dropped.state, undo!).state;
+    expect(dayOrder(restored, "2026-10-05")).toEqual(["a", "c", "b"]);
+    expect(dayOrder(restored, "2026-10-06")).toEqual(["x"]);
+  });
+
+  it("makes equal times distinct when it reorders within a day", () => {
+    const state = createState({
+      timesheetEntries: [
+        entry("a", "2026-10-05", 10),
+        entry("b", "2026-10-05", 10),
+        entry("c", "2026-10-05", 10),
+      ],
+    });
+
+    const dropped = dropTimesheetEntries(
+      state,
+      { entryIds: ["a"], localDate: "2026-10-05", targetIndex: 2 },
+      factories,
+    );
+
+    expect(dayOrder(dropped.state, "2026-10-05")).toEqual(["b", "c", "a"]);
+    expect(
+      dropped.state.timesheetEntries.map((item) => item.committedAt),
+    ).toEqual([12, 10, 11]);
+  });
+
+  it("leaves an entry linked to the running timer on its day", () => {
+    const state = createState({
+      timesheetEntries: [
+        entry("running", "2026-10-05", 10),
+        entry("saved", "2026-10-05", 20),
+      ],
+      timers: [
+        {
+          _id: "timer-1",
+          startedAt: 1,
+          localDate: "2026-10-05",
+          projectId: "project-1",
+          taskId: "task-1",
+          accumulatedDurationMs: HOUR,
+          entryId: "running",
+        },
+      ],
+    });
+
+    const dropped = dropTimesheetEntries(
+      state,
+      {
+        entryIds: ["running", "saved"],
+        localDate: "2026-10-06",
+        targetIndex: 0,
+      },
+      factories,
+    );
+
+    expect(dayOrder(dropped.state, "2026-10-05")).toEqual(["running"]);
+    expect(dayOrder(dropped.state, "2026-10-06")).toEqual(["saved"]);
+    expect(dropped.movedIds).toEqual(["saved"]);
   });
 });
 

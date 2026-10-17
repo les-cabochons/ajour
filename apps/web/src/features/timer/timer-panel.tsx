@@ -36,10 +36,9 @@ import {
 import { localStore } from "@/lib/local-store";
 import {
   createSharedTableDragPointerSession,
-  getSharedTableDropOrder,
+  getSharedTableBlockDropIndex,
+  getSharedTableBlockDropOrder,
   getSharedTableDragOverlayTransform,
-  getSharedTableDragRowShift,
-  getSharedTableDragTargetIndex,
   getSharedTableStepOrder,
   setSharedTableDragDocumentState,
   SHARED_TABLE_DRAG_CLICK_SUPPRESSION_MS,
@@ -52,9 +51,12 @@ import { useLocalProjects, useLocalState } from "@/lib/local-hooks";
 import { useRunningClock } from "@/lib/use-now";
 
 type EntryDragState = {
+  /** The pressed row, which the drag preview shows. */
   entryId: string;
+  /** Every row the drag carries, top first, the pressed one included. */
+  entryIds: string[];
   pointerId: number;
-  originIndex: number;
+  /** Where the rows land among the rows that stay. */
   targetIndex: number;
   pointerX: number;
   pointerY: number;
@@ -226,6 +228,17 @@ export function TimerPanel({
     [entryDragState, visibleEntries],
   );
   const canReorderEntries = draggableEntryIds.length > 1;
+  // While rows are dragged, every sortable row sits where the drop would put it.
+  const dropIndexById = useMemo(() => {
+    if (!entryDragState) return null;
+    const order =
+      getSharedTableBlockDropOrder(
+        draggableEntryIds,
+        entryDragState.entryIds,
+        entryDragState.targetIndex,
+      ) ?? draggableEntryIds;
+    return new Map(order.map((entryId, index) => [entryId, index]));
+  }, [draggableEntryIds, entryDragState]);
   const visibleEntryIds = useMemo(
     () => visibleEntries.map((entry) => entry._id),
     [visibleEntries],
@@ -270,14 +283,18 @@ export function TimerPanel({
       clearEntryPointerSession();
 
       const order = currentDrag
-        ? getSharedTableDropOrder(
+        ? getSharedTableBlockDropOrder(
             draggableEntryIds,
-            currentDrag.originIndex,
+            currentDrag.entryIds,
             currentDrag.targetIndex,
           )
         : null;
-      if (shouldCommit && order) {
-        localStore.reorderTimesheetEntries(date, order);
+      if (shouldCommit && currentDrag && order) {
+        localStore.dropTimesheetEntries(
+          currentDrag.entryIds,
+          date,
+          currentDrag.targetIndex,
+        );
       }
 
       suppressEntryClickUntilRef.current =
@@ -337,10 +354,12 @@ export function TimerPanel({
       return;
     }
 
-    const sourceIndex = draggableEntryIds.indexOf(entry._id);
-    if (sourceIndex === -1) {
+    if (!draggableEntryIds.includes(entry._id)) {
       return;
     }
+    // Read now: the press may have just changed the selection to this row.
+    const entryIds = selection.getDragIds(entry._id);
+    const dragged = new Set(entryIds);
 
     const captureTarget = event.currentTarget;
     captureTarget.setPointerCapture(event.pointerId);
@@ -365,9 +384,14 @@ export function TimerPanel({
       setPressedEntryId(null);
       const nextDragState = {
         entryId: entry._id,
+        entryIds,
         pointerId,
-        originIndex: sourceIndex,
-        targetIndex: sourceIndex,
+        targetIndex: getSharedTableBlockDropIndex(
+          draggableEntryIds,
+          dragged,
+          pointerY,
+          entryRowRefs.current,
+        ),
         pointerX,
         pointerY,
         offsetX: pointerX - rect.left,
@@ -401,9 +425,9 @@ export function TimerPanel({
           ...currentDrag,
           pointerX: pointer.clientX,
           pointerY: pointer.clientY,
-          targetIndex: getSharedTableDragTargetIndex(
+          targetIndex: getSharedTableBlockDropIndex(
             draggableEntryIds,
-            currentDrag.entryId,
+            dragged,
             pointer.clientY,
             entryRowRefs.current,
           ),
@@ -487,15 +511,12 @@ export function TimerPanel({
               entryActions.runAction(rowTarget, actionId);
             };
             const draggableIndex = draggableEntryIds.indexOf(entry._id);
-            const isDraggedEntry = entryDragState?.entryId === entry._id;
+            const isDraggedEntry =
+              entryDragState?.entryIds.includes(entry._id) ?? false;
+            const dropIndex = dropIndexById?.get(entry._id);
             const rowShift =
-              entryDragState && draggableIndex !== -1
-                ? getSharedTableDragRowShift({
-                    itemIndex: draggableIndex,
-                    originIndex: entryDragState.originIndex,
-                    targetIndex: entryDragState.targetIndex,
-                    rowHeight: entryDragState.height,
-                  })
+              entryDragState && draggableIndex !== -1 && dropIndex !== undefined
+                ? (dropIndex - draggableIndex) * entryDragState.height
                 : 0;
             const isCommitted =
               !isRunningEntry(entry) && isTimesheetEntryCommitted(entry);
@@ -689,6 +710,11 @@ export function TimerPanel({
           <div className="time-entry-trailing">
             <Value>{formatClockDuration(draggedEntry.durationMs)}</Value>
           </div>
+          {entryDragState.entryIds.length > 1 ? (
+            <span className="entry-drag-count" aria-hidden="true">
+              {entryDragState.entryIds.length}
+            </span>
+          ) : null}
         </div>
       ) : null}
       {entryActions.dialogs}
