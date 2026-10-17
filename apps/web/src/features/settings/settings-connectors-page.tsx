@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react";
+import { useMemo, useRef, useState, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   RiArrowLeftLine as ArrowLeft,
@@ -85,6 +85,8 @@ import {
 } from "./plugin-catalog-ui";
 
 type ConnectorFormState = {
+  /** Which opening of the form this is, so a late result finds its own. */
+  instance: number;
   pluginId: string;
   editingConnectionId: string | null;
   initialValues: ConnectorFieldValues;
@@ -488,6 +490,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
   const [catalogFilter, setCatalogFilter] =
     useState<PluginCatalogFilter>("all");
   const [formState, setFormState] = useState<ConnectorFormState | null>(null);
+  const formInstances = useRef(0);
   /** The team connection whose picker is open. */
   const [teamPicker, setTeamPicker] = useState<{
     pluginId: string;
@@ -552,6 +555,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
     const initialValues = buildConnectorFormValues(plugin);
     workflow.clearFeedback();
     setFormState({
+      instance: (formInstances.current += 1),
       pluginId: plugin.id,
       editingConnectionId: null,
       initialValues,
@@ -569,6 +573,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
     );
     workflow.clearFeedback();
     setFormState({
+      instance: (formInstances.current += 1),
       pluginId: plugin.id,
       editingConnectionId: connection.id,
       initialValues,
@@ -578,11 +583,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
 
   const handleSave = async () => {
     if (!formState || !activePlugin) return;
-    const knownConnectionIds = new Set(
-      connectorGroups
-        .find((group) => group.plugin.id === formState.pluginId)
-        ?.connections.map((connection) => connection.id) ?? [],
-    );
+    let saved: ConnectorConnectionSummary | undefined;
     const completed = await workflow.execute({
       type: "save",
       pluginId: formState.pluginId,
@@ -594,26 +595,25 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
         },
       ),
       connectionId: formState.editingConnectionId ?? undefined,
+      onSaved: (connection) => {
+        saved = connection;
+      },
     });
     if (!completed) return;
     setFormState(null);
     if (formState.editingConnectionId || !pluginHasTeam(activePlugin)) return;
-    const added = workflow
-      .getSnapshot()
-      .connectors?.connectionGroups.find(
-        (group) => group.plugin.id === formState.pluginId,
-      )
-      ?.connections.find(
-        (connection) => !knownConnectionIds.has(connection.id),
-      );
-    if (!added) return;
+    if (!saved) return;
+    const added = saved;
     // The first sync brings the team's projects and holds the ones whose name
-    // a local project has; the picker then links or adds them.
-    await workflow.execute({
+    // a local project has; the picker then links or adds them. A failed sync
+    // leaves the connection saved, with its error, and no picker: Sync again,
+    // then Choose projects.
+    const synced = await workflow.execute({
       type: "teamSync",
       pluginId: formState.pluginId,
       connectionId: added.id,
     });
+    if (!synced) return;
     setTeamPicker({
       pluginId: formState.pluginId,
       connectionId: added.id,
@@ -861,8 +861,11 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                         !isCapabilityActive(group, "team")
                       }
                       onCreated={(created) =>
+                        // Only into the form that asked: one closed or
+                        // opened anew meanwhile keeps its own values.
                         setFormState((current) =>
-                          current
+                          current &&
+                          current.instance === groupFormState.instance
                             ? {
                                 ...current,
                                 values: { ...current.values, ...created },
