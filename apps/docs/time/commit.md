@@ -48,7 +48,7 @@ To mark several entries at once, [select them](./entries.md#select-copy-and-past
 Under **Lines**, the whole week is grouped into lines with the project, the task, the hours and the comments. Click a value to copy it, then paste it in your timesheet tool.
 
 - **Project and task** are one value, such as `CA004 Tech & Design / 07 Run`. It copies both with a space between them, such as `CA004 Tech & Design 07 Run`, which you can paste in your timesheet tool's search box. A line with no task copies the project alone.
-- **Hours** copy as decimals, such as `5.00`, which most timesheet tools expect. The page shows them as clock time.
+- **Hours** copy as decimals with a comma, such as `5,00` or `6,50`, which Workday expects. The page shows them as clock time.
 - **Comments** are the notes of the line's entries, joined with a vertical bar, such as `Standup | Code review`.
 
 **Group by** changes how entries become lines:

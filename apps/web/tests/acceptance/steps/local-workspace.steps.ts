@@ -2336,7 +2336,7 @@ Then(
       page.evaluate(() => navigator.clipboard.readText());
 
     await monday.getByRole("button", { name: "Copy hours: 3.00" }).click();
-    await expect.poll(readClipboard).toBe("3.00");
+    await expect.poll(readClipboard).toBe("3,00");
     await monday
       .getByRole("button", { name: "Copy comments: Login form | API" })
       .click();
