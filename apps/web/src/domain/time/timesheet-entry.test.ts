@@ -1208,6 +1208,39 @@ describe("relocateTimesheetEntries", () => {
     ]);
   });
 
+  it("puts a cut entry already on the target day at the end with the others", () => {
+    // Monday's "a", then Tuesday's "b" above the unselected "c", moved to Tuesday.
+    const state = createState({
+      timesheetEntries: [
+        entry("a", "2026-10-05", 10),
+        entry("b", "2026-10-06", 20),
+        entry("c", "2026-10-06", 30),
+      ],
+    });
+
+    const { state: next } = relocateTimesheetEntries(
+      state,
+      [
+        { entryId: "a", localDate: "2026-10-06" },
+        { entryId: "b", localDate: "2026-10-06" },
+      ],
+      "cut",
+      { createId: () => "unused", now: () => 500 },
+    );
+
+    expect(
+      selectSortableDayEntryIds(next.timesheetEntries, "2026-10-06"),
+    ).toEqual(["c", "a", "b"]);
+    // "b" kept its day and values, so it is not a change.
+    expect(
+      next.timesheetEntries.find((item) => item._id === "b"),
+    ).toMatchObject({
+      localDate: "2026-10-06",
+      note: "b",
+      committedAt: 501,
+    });
+  });
+
   it("returns the same state and no entries when nothing could move", () => {
     const state = createState({
       timesheetEntries: [entry("running", "2026-10-05", 10)],

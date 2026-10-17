@@ -119,7 +119,7 @@ Feature: Select time entries like a file explorer
     And I press the "m" key
     And I choose October 8 in the "Move time entry" dialog
     Then the Day list reads "Login form", "API"
-    And a toast says "Moved 1 entry to Thu, Oct 8"
+    And a toast says "Moved to Thu, Oct 8"
 
   Scenario: Cmd+D duplicates every selected entry, and the copies become the selection
     Given I have a week of saved entries
@@ -130,6 +130,14 @@ Feature: Select time entries like a file explorer
     Then the Day list reads "Login form", "API", "Code review", "Login form", "API"
     And a toast says "Duplicated 2 entries"
     And rows 4 and 5 of the Day list are selected
+
+  Scenario: Cmd+D on the one selected entry selects the copy
+    Given I have a week of saved entries
+    When I open Monday's Day list
+    And I click the "API" entry
+    And I press the "ControlOrMeta+d" key
+    Then the Day list reads "Login form", "API", "Code review", "API"
+    And only row 4 of the Day list is selected
 
   Scenario: Duplicate a range of cards to another day from the menu
     Given I have a week of saved entries

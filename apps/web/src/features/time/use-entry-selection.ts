@@ -521,7 +521,13 @@ export function useEntrySelection({
       actionId === "duplicate-to" ||
       actionId === "move-to"
     ) {
-      if (!getSelectionActionIds(selection, entryId)) {
+      // A copy of the one selected entry becomes the selection too, so the
+      // next Delete removes the copy, not the original.
+      const isOnlySelected =
+        actionId !== "move-to" &&
+        selection.ids.length === 1 &&
+        selection.ids[0] === entryId;
+      if (!getSelectionActionIds(selection, entryId) && !isOnlySelected) {
         return false;
       }
 

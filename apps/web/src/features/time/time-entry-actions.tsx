@@ -189,14 +189,28 @@ export function useTimeEntryActions({
     );
     const count = formatEntryCount(entryIds.length);
     const day = localDate ? formatToastDay(localDate) : "";
-    offerTimeEntryUndo(
-      undoToken,
-      kind === "move-to"
-        ? `Moved ${count} to ${day}`
-        : kind === "duplicate-to"
-          ? `Duplicated ${count} to ${day}`
-          : `Duplicated ${count}`,
-    );
+    const only = entries.length === 1 ? entries[0] : undefined;
+    if (only) {
+      // One entry reads like the entry's own action: a copy in place shows
+      // where it happened, and a move or copy to another day offers Undo.
+      if (kind !== "duplicate" && localDate && localDate !== only.localDate) {
+        offerTimeEntryUndo(
+          undoToken,
+          `${kind === "move-to" ? "Moved" : "Duplicated"} to ${day}`,
+        );
+      } else {
+        skipUndo(undoToken);
+      }
+    } else {
+      offerTimeEntryUndo(
+        undoToken,
+        kind === "move-to"
+          ? `Moved ${count} to ${day}`
+          : kind === "duplicate-to"
+            ? `Duplicated ${count} to ${day}`
+            : `Duplicated ${count}`,
+      );
+    }
     onDone?.(entryIds);
     onAfterAction?.();
   }

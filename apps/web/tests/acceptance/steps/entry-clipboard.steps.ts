@@ -231,3 +231,16 @@ Then(
     await expect(rows.nth(second - 1)).toHaveAttribute("aria-selected", "true");
   },
 );
+
+Then(
+  "only row {int} of the Day list is selected",
+  async ({ page }, row: number) => {
+    await expect(
+      page.locator(".time-entry-row[aria-selected='true']"),
+    ).toHaveCount(1);
+    await expect(page.locator(".time-entry-row").nth(row - 1)).toHaveAttribute(
+      "aria-selected",
+      "true",
+    );
+  },
+);
