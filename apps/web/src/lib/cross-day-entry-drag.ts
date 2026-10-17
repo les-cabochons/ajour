@@ -15,7 +15,7 @@ interface CrossDayDragTarget {
 
 export function getCrossDayDragTarget(
   pointer: Pick<SharedTableDragPointer, "clientX" | "clientY">,
-  targets: Map<string, CrossDayDragTarget>,
+  targets: ReadonlyMap<string, CrossDayDragTarget>,
 ) {
   for (const [localDate, target] of targets) {
     const rect = target.getBoundingClientRect();

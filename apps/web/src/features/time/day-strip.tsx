@@ -20,7 +20,9 @@ function formatDayNumber(localDate: string) {
 /**
  * The Day view's week strip: one tab per visible day with its total, and the week's
  * total at the end. The selected day is underlined; today's number is bold.
- * The date itself and the arrows live in the top bar.
+ * The date itself and the arrows live in the top bar. While Day rows are dragged,
+ * every other day's tab is a drop target: `registerDropTarget` hands the Day list
+ * its element, and `dropTargetDate` lights up the one under the pointer.
  */
 export function DayStrip({
   date,
@@ -30,6 +32,8 @@ export function DayStrip({
   totalValue,
   getDayValue,
   onSelectDate,
+  dropTargetDate,
+  registerDropTarget,
 }: {
   date: string;
   today: string;
@@ -38,6 +42,8 @@ export function DayStrip({
   totalValue: string;
   getDayValue: (localDate: string) => string;
   onSelectDate: (localDate: string) => void;
+  dropTargetDate?: string | null;
+  registerDropTarget?: (localDate: string, node: HTMLElement | null) => void;
 }) {
   return (
     <div
@@ -57,6 +63,12 @@ export function DayStrip({
         return (
           <button
             key={day}
+            // The shown day is not a drop target: its rows are already there.
+            ref={
+              registerDropTarget && !isSelected
+                ? (node) => registerDropTarget(day, node)
+                : undefined
+            }
             type="button"
             role="tab"
             aria-selected={isSelected}
@@ -65,6 +77,7 @@ export function DayStrip({
               "day-strip-day",
               isSelected && "is-selected",
               isToday && "is-today",
+              day === dropTargetDate && "is-drop-target",
             )}
           >
             <span className="day-strip-weekday">

@@ -4,6 +4,13 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Current Baseline
 
+- [x] Drop Day rows on the day strip (2026-10-16, #199): dragging Day rows
+      over another day's tab in the strip lights it up, and dropping moves
+      the rows to the end of that day with one Undo while the view stays on
+      the shown day. A day's only row can move this way. A drop above the
+      list anywhere else, such as on the shown day's tab or the week total,
+      changes nothing. `TimePage` owns the tab registry and the lit tab.
+      Three Chromium scenarios.
 - [x] Drag the whole selection (2026-10-16, #199): dragging a selected Day
       row or Days card drags every selected saved entry, and an unselected
       one drags alone. The entries land as one block at the drop line, in

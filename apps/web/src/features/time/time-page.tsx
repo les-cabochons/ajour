@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearch } from "@tanstack/react-router";
 import { RiAddLine as Plus } from "@remixicon/react";
 import { MessagePanel } from "@/components/app-surface";
@@ -67,6 +67,20 @@ export function TimePage({ date }: { date: string }) {
   const today = todayIsoDate();
   const weekDates = useMemo(() => getIsoWeekDates(date), [date]);
   const currentTimer = state.timers[0] ?? null;
+  // The day strip's tabs, where dragged Day rows can drop, and the one under
+  // the pointer.
+  const dayDropTargetsRef = useRef(new Map<string, HTMLElement>());
+  const [dayDropDate, setDayDropDate] = useState<string | null>(null);
+  const registerDayDropTarget = useCallback(
+    (localDate: string, node: HTMLElement | null) => {
+      if (node) {
+        dayDropTargetsRef.current.set(localDate, node);
+      } else {
+        dayDropTargetsRef.current.delete(localDate);
+      }
+    },
+    [],
+  );
   // Week needs a desktop width. The narrow view does not offer it: a Week link
   // shows Day with a note and keeps `view=week`, so widening the window shows
   // Week. A remembered Week shows Day without the note. The narrow view also edits entries in a full-width dialog instead of
@@ -451,6 +465,8 @@ export function TimePage({ date }: { date: string }) {
               today={today}
               weekDates={weekDates}
               onSelectDate={goToDate}
+              dropTargetDate={dayDropDate}
+              registerDropTarget={registerDayDropTarget}
             />
             {showsWeekUnavailableNote ? (
               <MessagePanel role="status" className="time-page-note">
@@ -461,6 +477,8 @@ export function TimePage({ date }: { date: string }) {
               date={date}
               activeEntryId={activeEntryId}
               onOpenEntry={openEditor}
+              dayDropTargets={dayDropTargetsRef.current}
+              onDayDropTargetChange={setDayDropDate}
             />
             <CalendarDaySection date={date} range={weekRange} />
           </>
@@ -549,11 +567,15 @@ function DayTotalsStrip({
   today,
   weekDates,
   onSelectDate,
+  dropTargetDate,
+  registerDropTarget,
 }: {
   date: string;
   today: string;
   weekDates: string[];
   onSelectDate: (date: string) => void;
+  dropTargetDate: string | null;
+  registerDropTarget: (localDate: string, node: HTMLElement | null) => void;
 }) {
   const state = useLocalState();
   const currentTimer = state.timers[0] ?? null;
@@ -607,6 +629,8 @@ function DayTotalsStrip({
       totalValue={formatClockDuration(weekTotalMs)}
       getDayValue={(day) => formatClockDuration(totalsByDate.get(day) ?? 0)}
       onSelectDate={onSelectDate}
+      dropTargetDate={dropTargetDate}
+      registerDropTarget={registerDropTarget}
     />
   );
 }

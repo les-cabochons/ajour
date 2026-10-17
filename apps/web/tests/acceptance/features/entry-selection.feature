@@ -202,3 +202,33 @@ Feature: Select time entries like a file explorer
     And I drag the "API" entry below the "Code review" entry
     Then the Day list reads "Code review", "Login form", "API"
     And 2 entries are selected
+
+  Scenario: Dropping selected rows on a day in the day strip moves them there
+    Given I have a week of saved entries
+    When I open Monday's Day list
+    And I click the "Login form" entry
+    And I Cmd-click the "API" entry
+    And I start dragging the "API" entry onto Thursday in the day strip
+    Then Thursday's tab in the day strip is a drop target
+    And the drag preview counts 2 entries
+    When I release the mouse
+    Then the Day list reads "Code review"
+    And a toast says "Moved 2 entries to Thu, Oct 8"
+    And Monday is the shown day
+    When I go to Thursday in the day strip
+    Then the Day list reads "Login form", "API"
+
+  Scenario: A day's only entry moves through the day strip
+    Given I have a week of saved entries
+    When I open Tuesday's Day list
+    And I drag the "Login form" entry onto Wednesday in the day strip
+    Then the Day list is empty
+    And a toast says "Moved to Wed, Oct 7"
+
+  Scenario: Dropping rows on the shown day's own tab changes nothing
+    Given I have a week of saved entries
+    When I open Monday's Day list
+    And I start dragging the "API" entry onto Monday in the day strip
+    Then Monday's tab in the day strip is not a drop target
+    When I release the mouse
+    Then the Day list reads "Login form", "API", "Code review"

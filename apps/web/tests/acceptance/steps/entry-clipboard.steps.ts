@@ -317,3 +317,58 @@ When(
     await page.mouse.up();
   },
 );
+
+function stripTab(page: Page, day: string) {
+  return page.getByRole("tab", {
+    name: new RegExp(`^${day.slice(0, 3)}`, "i"),
+  });
+}
+
+When("I open Tuesday's Day list", async ({ page }) => {
+  await page.goto("/time/2026-10-06");
+  await expect(dayRow(page, "Login form")).toBeVisible();
+});
+
+When(
+  "I start dragging the {string} entry onto {word} in the day strip",
+  async ({ page }, text: string, day: string) => {
+    const tab = await stripTab(page, day).boundingBox();
+    if (!tab) throw new Error(`The ${day} tab is not rendered`);
+    await pressAndMove(page, dayRow(page, text), {
+      x: tab.x + tab.width / 2,
+      y: tab.y + tab.height / 2,
+    });
+  },
+);
+
+When(
+  "I drag the {string} entry onto {word} in the day strip",
+  async ({ page }, text: string, day: string) => {
+    const tab = await stripTab(page, day).boundingBox();
+    if (!tab) throw new Error(`The ${day} tab is not rendered`);
+    await pressAndMove(page, dayRow(page, text), {
+      x: tab.x + tab.width / 2,
+      y: tab.y + tab.height / 2,
+    });
+    await page.mouse.up();
+  },
+);
+
+Then(
+  "{word}'s tab in the day strip is a drop target",
+  async ({ page }, day: string) => {
+    await expect(stripTab(page, day)).toHaveClass(/is-drop-target/);
+  },
+);
+
+Then(
+  "{word}'s tab in the day strip is not a drop target",
+  async ({ page }, day: string) => {
+    await expect(page.locator(".time-entry-drag-preview")).toBeVisible();
+    await expect(stripTab(page, day)).not.toHaveClass(/is-drop-target/);
+  },
+);
+
+Then("{word} is the shown day", async ({ page }, day: string) => {
+  await expect(stripTab(page, day)).toHaveAttribute("aria-selected", "true");
+});
