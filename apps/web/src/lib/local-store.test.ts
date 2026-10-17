@@ -3520,6 +3520,84 @@ describe("submitted weeks in the store", () => {
     });
   }
 
+  it("does not submit again on reload a recovered week the user reopened", async () => {
+    const entry = (_id: string, localDate: string) => ({
+      _id,
+      localDate,
+      label: "",
+      note: _id,
+      durationMs: HOUR,
+      sourceBlockIds: [],
+      committedAt: 1,
+    });
+    // The store already holds what the recovery file holds.
+    recoverFromDesktop(
+      {
+        timesheetEntries: [
+          entry("api", "2026-10-06"),
+          entry("next", "2026-10-13"),
+        ],
+        lockedWeeks: [{ weekOf: "2026-10-12", lockedAt: 2 }],
+      },
+      [{ weekOf: "2026-10-12", lockedAt: 2 }],
+    );
+    const { localStore } = await import("./local-store");
+    localStore.reopenWeek("2026-10-12");
+
+    // Reload: the recovery file is offered again.
+    vi.resetModules();
+    const reloaded = (await import("./local-store")).localStore;
+
+    expect(reloaded.snapshot().lockedWeeks).toEqual([]);
+  });
+
+  it("redoes the recovery on the fresh state when storage changed while it ran", async () => {
+    recoverFromDesktop({ lockedWeeks: [] }, []);
+    // Another tab saves an entry right after this one read the state.
+    const getItem = vi.mocked(window.localStorage.getItem);
+    const read = getItem.getMockImplementation()!;
+    let interleaved = false;
+    getItem.mockImplementation((key) => {
+      const value = read(key);
+      if (key === "ajour.local-state.v2" && !interleaved) {
+        interleaved = true;
+        window.localStorage.setItem(
+          "ajour.local-state.v2",
+          JSON.stringify({
+            timesheetEntries: [
+              {
+                _id: "other-tab",
+                localDate: "2026-10-20",
+                label: "",
+                durationMs: HOUR,
+                sourceBlockIds: [],
+                committedAt: 1,
+              },
+            ],
+            revision: "other-tab",
+          }),
+        );
+        window.localStorage.setItem("ajour.local-state.revision", "other-tab");
+      }
+      return value;
+    });
+    try {
+      const { localStore } = await import("./local-store");
+      localStore.snapshot();
+    } finally {
+      getItem.mockImplementation(read);
+    }
+
+    const stored = JSON.parse(
+      window.localStorage.getItem("ajour.local-state.v2")!,
+    ) as { timesheetEntries: { _id: string }[] };
+    expect(stored.timesheetEntries.map((entry) => entry._id)).toEqual([
+      "other-tab",
+      "api",
+      "next",
+    ]);
+  });
+
   it("keeps the submitted weeks of recovered entries", async () => {
     recoverFromDesktop(
       { lockedWeeks: [{ weekOf: "2026-10-19", lockedAt: 3 }] },

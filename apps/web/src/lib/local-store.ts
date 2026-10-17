@@ -930,7 +930,29 @@ function purgeRetiredAuthCache() {
 
 function loadState(): LocalAppState {
   purgeRetiredAuthCache();
-  const bootstrapState = window.ajourDesktop?.bootstrapLocalState;
+  return loadStoredState(window.ajourDesktop?.bootstrapLocalState);
+}
+
+/**
+ * Whether storage still holds the state this window read, `stored` saved at
+ * `revision`. Like the check in `writeState`, a matching hint answers without
+ * a parse; a missing or different hint compares what storage holds.
+ */
+function storageStillHolds(stored: string, revision: unknown) {
+  const hint = readRevisionHint();
+  if (hint !== null && typeof revision === "string") return hint === revision;
+  return window.localStorage.getItem(STORAGE_KEY) === stored;
+}
+
+/**
+ * Reads the stored state, applies the desktop recovery file once, and saves
+ * the result. `retryRecovery` is the recovery decision of a first read whose
+ * save found storage changed: the merge runs again, once, on the fresh state.
+ */
+function loadStoredState(
+  bootstrapState: Partial<LocalAppState> | null | undefined,
+  retryRecovery?: boolean,
+): LocalAppState {
   let stored: string | null;
   try {
     stored = window.localStorage.getItem(STORAGE_KEY);
@@ -955,15 +977,30 @@ function loadState(): LocalAppState {
     return normalizeState(bootstrapState ?? createDefaultState());
   }
 
-  if (shouldBootstrapFromDesktopState(parsedState, bootstrapState)) {
-    const mergedState = normalizeState(
-      mergeDesktopBootstrapState(parsedState, bootstrapState!),
+  if (bootstrapState && !parsedState.desktopBootstrapAppliedAt) {
+    const merge =
+      retryRecovery ??
+      shouldBootstrapFromDesktopState(parsedState, bootstrapState);
+    // With nothing to merge, the recovery still counts as applied, so a week
+    // the user reopens later is not locked again by the same file on reload.
+    const recovered = normalizeState(
+      merge
+        ? mergeDesktopBootstrapState(parsedState, bootstrapState)
+        : { ...parsedState, desktopBootstrapAppliedAt: Date.now() },
     );
     try {
-      return persistState(mergedState);
+      // Another tab may have saved since this read: redo the recovery on
+      // its state, once, instead of overwriting it.
+      if (
+        retryRecovery === undefined &&
+        !storageStillHolds(stored, parsedState.revision)
+      ) {
+        return loadStoredState(bootstrapState, merge);
+      }
+      return persistState(recovered);
     } catch {
-      // Keep the complete merged state in memory when persistence is unavailable.
-      return mergedState;
+      // Keep the complete recovered state in memory when persistence is unavailable.
+      return recovered;
     }
   }
   try {
@@ -1044,6 +1081,11 @@ function persistState<T extends Partial<LocalAppState>>(
  * state and compares the revision inside it: the write goes on when its base
  * was current, and is refused otherwise. The reload keeps the cache current,
  * so the next try works.
+ *
+ * Known limit: two browser tabs of the web build that write within the same
+ * moment can still overwrite each other: the check reads the hint, then
+ * writes, and the browser gives no lock between tabs. The desktop app has one
+ * window, so it is not affected.
  */
 function assertFreshCache(cached: LocalAppState, next: LocalAppState) {
   const hint = readRevisionHint();
