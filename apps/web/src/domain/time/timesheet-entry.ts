@@ -424,6 +424,11 @@ export function relocateTimesheetEntries(
  * `movedIds` lists the entries that changed day. Entries linked to a running
  * timer keep their day, as Move to… does; on their own day they still take
  * their place in the block.
+ *
+ * The new order lives in the day's `committedAt` values alone, made distinct,
+ * and no record changes place in `timesheetEntries`. Undo restores records
+ * where they are, so a day whose entries shared a time, and were ordered by
+ * their place, reads as before after an Undo.
  */
 export function dropTimesheetEntries(
   state: LocalAppState,
@@ -459,9 +464,47 @@ export function dropTimesheetEntries(
   const order = [...staying.slice(0, index), ...block, ...staying.slice(index)];
 
   return {
-    state: reorderTimesheetEntries(moved.state, localDate, order),
+    state: orderDayByCommittedAt(moved.state, order),
     movedIds: moved.entryIds,
   };
+}
+
+/**
+ * Gives the entries of `order`, one day's entries, the day's `committedAt`
+ * values in that order, nudged up by a millisecond where two would be equal,
+ * without moving any record in `timesheetEntries`. Returns `state` itself when
+ * nothing changes.
+ */
+function orderDayByCommittedAt(
+  state: LocalAppState,
+  order: readonly string[],
+): LocalAppState {
+  const inOrder = new Set(order);
+  const slots = state.timesheetEntries
+    .filter((entry) => inOrder.has(entry._id))
+    .map((entry) => entry.committedAt)
+    .sort((left, right) => left - right);
+  for (let index = 1; index < slots.length; index += 1) {
+    if (slots[index]! <= slots[index - 1]!) {
+      slots[index] = slots[index - 1]! + 1;
+    }
+  }
+
+  const committedAtById = new Map(
+    order.map((entryId, index) => [entryId, slots[index]!]),
+  );
+  let changed = false;
+  const timesheetEntries = state.timesheetEntries.map((entry) => {
+    const committedAt = committedAtById.get(entry._id);
+    if (committedAt === undefined || committedAt === entry.committedAt) {
+      return entry;
+    }
+
+    changed = true;
+    return { ...entry, committedAt };
+  });
+
+  return changed ? { ...state, timesheetEntries } : state;
 }
 
 /**
