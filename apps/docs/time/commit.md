@@ -1,6 +1,6 @@
 # Commit your week
 
-Committing copies your week's changes into your company's timesheet tool, such as Workday. Ajour does not connect to that tool. It lists what changed since your last commit, and remembers what you committed. A plugin can add a button that has an agent apply the changes for you, see [Commit with an agent](#commit-with-an-agent).
+Committing copies your week's changes into your company's timesheet tool, such as Workday. Ajour does not connect to that tool. It lists what changed since your last commit, and remembers what you committed. When the whole week is in your timesheet tool, you submit it, and Ajour keeps it as it is. A plugin can add a button that has an agent apply the changes for you, see [Commit with an agent](#commit-with-an-agent).
 
 <Shot name="commit-week" alt="The Commit week page" />
 
@@ -40,6 +40,18 @@ If someone changed an entry in your timesheet tool after you committed it, right
 Only committed entries have this action. An entry you changed since its last commit is already on the Commit page.
 
 To mark several entries at once, [select them](./entries.md#select-copy-and-paste-entries) on the Day list or the Week Days cards, then right-click one of them. Ajour marks every committed entry in the selection, with one Undo.
+
+## Submit the week
+
+When every change is committed, press **Submit week**. When the week is behind its targets, or over them, Ajour asks first, such as **Submit a week under pace?** with **Review** and **Submit anyway**. **Pace tolerance** in [Settings](/app/settings) sets how far off the week may be, and turning off **Under-target submit warning** skips the question for a week behind its targets. A toast offers **Undo**.
+
+**Submit week** is greyed out with **Commit your changes first** while a change is not committed, and with **Stop the running entry first** while an entry runs in the week.
+
+A submitted week shows **Submitted** with a lock on its Commit page and in the Week view. Its entries stay as they are: you cannot add, edit, move, delete or paste entries on its days, and no entry can start on them. Greyed-out actions say why, such as `The week of 2026-10-05 is submitted. Reopen it to change it.` Agents get the same answer.
+
+## Reopen a week
+
+Press **Reopen week** on the week's Commit page. A toast offers **Undo**. The entries can change again, and each change shows on the Commit page as usual.
 
 ## Copy the lines
 

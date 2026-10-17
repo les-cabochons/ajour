@@ -267,7 +267,7 @@ still include every day.
 
 ### Commit Page
 
-Files: `apps/web/src/features/time/commit-page.tsx`, `apps/web/src/features/time/commit-changes.tsx`, `apps/web/src/features/time/commit-week-controls.tsx`
+Files: `apps/web/src/features/time/commit-page.tsx`, `apps/web/src/features/time/commit-changes.tsx`, `apps/web/src/features/time/commit-week-controls.tsx`, `apps/web/src/features/time/week-lock.tsx`
 
 Route `/time/$date/commit` shows the week that holds `$date`. The top bar's
 totals popover (`CommitWeekButton`) opens it in both desktop and narrow views.
@@ -280,7 +280,14 @@ with its own color, named for screen readers), the day, the project and task,
 the hours as a `Value` and the note, each as "old → new" when the committed
 copy differs. "Everything is committed." replaces the list when there is none.
 The plugin actions and "Mark as committed" (with the Undo toast) sit in a
-wrapping row below. "Lines" closes the page: the Group by toolbar and the
+wrapping row below. Submit week follows in the same row, primary once no
+change waits, disabled through `DisabledReason` with "Commit your changes
+first" or "Stop the running entry first". It asks through an `AlertDialog`
+when `needsPaceConfirmation` says so ("Submit a week under pace?", Review and
+Submit anyway), then locks the week with the Undo toast "Week submitted". A
+submitted week shows `WeekLockChip` (`features/time/week-lock.tsx`) and
+"Submitted Oct 16." in the summary, and Reopen week, with the Undo toast
+"Week reopened", replaces the row. "Lines" closes the page: the Group by toolbar and the
 copyable lines under day `SectionHeading`s. Every value copies on click with
 an always-visible icon; hours copy as decimals. Change rules live in
 `domain/time/timesheet-commit.ts`, line grouping and the summary in
