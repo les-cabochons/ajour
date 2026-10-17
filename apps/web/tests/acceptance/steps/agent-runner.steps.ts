@@ -305,6 +305,12 @@ Then(
   },
 );
 
+Then("{string} is the primary button", async ({ page }, label: string) => {
+  await expect(
+    page.getByRole("button", { name: label, exact: true }),
+  ).toHaveClass(/\bbg-primary\b/);
+});
+
 Then(
   "the {string} run is requested for the week of {word}",
   async ({}, taskId: string, weekOf: string) => {

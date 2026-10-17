@@ -32,5 +32,6 @@ Feature: Agent tasks from plugins
     Given the local API reports a ready "Check Workday and submit" submit task
     When I open the Commit page for the week of 2026-10-12
     Then the Commit page offers "Check Workday and submit" instead of Submit week
+    And "Check Workday and submit" is the primary button
     When I press "Check Workday and submit"
     Then the "submit-week" run is requested for the week of 2026-10-12

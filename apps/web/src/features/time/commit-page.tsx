@@ -486,6 +486,8 @@ export function CommitPage({
                 weekOf={weekOf}
                 placement="submit-week"
                 disabledReason={submitReason}
+                // Primary once nothing is left to commit, like Submit week.
+                primary={changes.length === 0}
               />
             ) : (
               <DisabledReason label="Submit week" reason={submitReason}>

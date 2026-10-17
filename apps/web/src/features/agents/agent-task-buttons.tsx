@@ -44,17 +44,21 @@ export function useHasAgentTasks(placement: AgentTaskPlacement) {
  * The Commit page's plugin agent tasks for one placement and the week on
  * screen: one button each, disabled with the reason while the task cannot
  * run, a run is going, a start is in flight, or the week is not ready
- * (`disabledReason`, such as "Commit your changes first"). The week links sit
- * in the week summary, see `AgentTaskWeekLinks`.
+ * (`disabledReason`, such as "Commit your changes first"). With `primary`,
+ * an enabled button is the primary one, as Submit week is once nothing is
+ * left to commit. The week links sit in the week summary, see
+ * `AgentTaskWeekLinks`.
  */
 export function AgentTaskButtons({
   weekOf,
   placement,
   disabledReason,
+  primary = false,
 }: {
   weekOf: string;
   placement: AgentTaskPlacement;
   disabledReason?: string;
+  primary?: boolean;
 }) {
   const state = useAgentRunner();
   const { snapshot } = useAgentBridgeState();
@@ -109,7 +113,7 @@ export function AgentTaskButtons({
           : (task.blockers[0] ?? disabledReason);
         const button = (
           <Button
-            variant="outline"
+            variant={primary && !reason ? "default" : "outline"}
             disabled={Boolean(reason) || starting}
             onClick={() => void start(task)}
           >
