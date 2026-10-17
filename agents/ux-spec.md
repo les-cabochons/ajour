@@ -415,7 +415,7 @@ Cmd+K opens one palette with navigation, global actions, the focused item's acti
   - View: Day, Week, Show or Hide sidebar, Today, Previous, Next, zoom.
   - Entry: the focused entry's action set.
   - Window, and Help with Keyboard shortcuts.
-- macOS uses the native menu bar. On Windows the menus live in the app's title bar at full widths, like the ChatGPT app, and disappear in the narrow view.
+- macOS uses the native menu bar. Windows shows no menu bar for now. Keyboard shortcuts do not depend on it. When turned back on, the menus live in the app's title bar at full widths, like the ChatGPT app, and disappear in the narrow view.
 - Production builds drop Reload and DevTools. Development builds keep them.
 - Single-key shortcuts show in the menus as labels without being registered, so they never fire while the user types.
 - The web build has no menu bar. The palette and the "?" overlay cover everything the menus offer.

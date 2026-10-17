@@ -848,3 +848,7 @@ Spec: `docs/superpowers/specs/2026-10-15-calendar-suggestions-design.md`. Decisi
 ## Commit change versions, 2026-10-16
 
 - [x] `get_week_changes` gives each change a `version`, and `mark_entries_committed` takes `{ changes: { entryId, version }[] }`. Ajour refuses the whole call when an entry changed since the agent read it, so it never commits values Workday did not receive. Ships with Workday (agent) 0.4.1, which finds entries only by their exact ID.
+
+## Windows menu bar hidden, 2026-10-17
+
+- [x] Windows no longer draws the app menus in the title bar. `showWindowsMenuBar` in `features/layout/app-menu-bar.tsx` turns them back on. The native menu stays, so menu actions still reach the renderer.
