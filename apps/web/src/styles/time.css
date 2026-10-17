@@ -336,9 +336,15 @@
     margin-left: -3px;
   }
 
-  .time-entries-add:hover {
+  .time-entries-add:hover:not(:disabled) {
     color: var(--text);
     background: var(--highlight-bg);
+  }
+
+  /* A submitted day: DisabledReason around it says why. */
+  .time-entries-add:disabled {
+    pointer-events: none;
+    opacity: 0.5;
   }
 
   .time-entries-add:focus-visible {

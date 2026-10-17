@@ -33,3 +33,36 @@ Then("the Commit page shows the week is not submitted", async ({ page }) => {
     weekSummary(page).getByText("Submitted", { exact: true }),
   ).toHaveCount(0);
 });
+
+const lockReason =
+  "The week of 2026-10-05 is submitted. Reopen it to change it.";
+
+Then("the entry editor is read-only", async ({ page }) => {
+  const editor = page.getByRole("complementary", { name: "Time entry editor" });
+  await expect(editor.getByText("Submitted", { exact: true })).toBeVisible();
+  await expect(editor.getByText(lockReason)).toBeVisible();
+  await expect(editor.getByLabel("Note")).toBeDisabled();
+  await expect(
+    editor.getByRole("button", { name: "Save", exact: true }),
+  ).toBeDisabled();
+});
+
+Then(
+  "{string} is disabled in the menu with the reason {string}",
+  async ({ page }, label: string, reason: string) => {
+    const item = page
+      .getByRole("menu")
+      .getByRole("menuitem")
+      .filter({ hasText: label });
+    await expect(item).toHaveAttribute("aria-disabled", "true");
+    await expect(item).toContainText(reason);
+  },
+);
+
+Then("the Week view shows the week is submitted", async ({ page }) => {
+  const week = page.getByRole("region", { name: "Week", exact: true });
+  await expect(week.getByText("Submitted", { exact: true })).toBeVisible();
+  await expect(
+    week.getByRole("button", { name: "Add", exact: true }).first(),
+  ).toBeDisabled();
+});
