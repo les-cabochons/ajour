@@ -374,11 +374,11 @@ describe("MCP endpoint", () => {
 
     await agent.callTool({
       name: "mark_entries_committed",
-      arguments: { entryIds: ["e1"] },
+      arguments: { changes: [{ entryId: "e1", version: "v:0a1b2c3d" }] },
     });
     expect(calls[0]).toMatchObject({
       tool: "mark_entries_committed",
-      input: { entryIds: ["e1"] },
+      input: { changes: [{ entryId: "e1", version: "v:0a1b2c3d" }] },
     });
   });
 

@@ -22,12 +22,17 @@ import {
 } from "@/domain/projects/plugin-properties";
 import {
   describeTimesheetCommitValues,
+  getTimesheetEntryChange,
   isTimesheetEntryCommitted,
   listWeekChanges,
+  type TimesheetChange,
   type TimesheetCommitValues,
 } from "@/domain/time/timesheet-commit";
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
-import { externalEntryId } from "@/domain/agents/external-id";
+import {
+  externalEntryId,
+  timesheetChangeVersion,
+} from "@/domain/agents/external-id";
 
 /**
  * What the read tools return to agents: plain ids, names and minutes, shaped
@@ -294,7 +299,8 @@ function toAgentChangeValues(
 /**
  * The week's changes since its last commit, as the Commit page lists them,
  * in decimal hours as Workday wants them. Each one has the entry's external
- * ID. With `onlyChecked`, the changes the user unchecked stay out.
+ * ID and the change's version. With `onlyChecked`, the changes the user
+ * unchecked stay out.
  */
 export function getWeekChangesForAgent(
   state: LocalAppState,
@@ -325,6 +331,7 @@ export function getWeekChangesForAgent(
         change: change.kind,
         entryId: change.entryId,
         externalId: externalEntryId(change.entryId),
+        version: timesheetChangeVersion(change),
         checked: !uncheckedIds.has(change.entryId),
         ...(change.kind === "deleted"
           ? {}
@@ -334,4 +341,54 @@ export function getWeekChangesForAgent(
           : { committed: describe(change.committed) }),
       })),
   };
+}
+
+/**
+ * The change of `entryId` now: its deleted change when it has a tombstone,
+ * else its entry's change. Null when the entry has nothing to commit, and
+ * undefined when Ajour knows no entry or deleted entry with that ID.
+ */
+function findTimesheetChange(
+  state: LocalAppState,
+  entryId: string,
+): TimesheetChange | null | undefined {
+  const tombstone = state.timesheetTombstones.find(
+    (candidate) => candidate.entryId === entryId,
+  );
+  if (tombstone) {
+    return { kind: "deleted", entryId, committed: tombstone.commit };
+  }
+  const entry = state.timesheetEntries.find(
+    (candidate) => candidate._id === entryId,
+  );
+  return entry ? (getTimesheetEntryChange(entry) ?? null) : undefined;
+}
+
+/**
+ * Checks the changes an agent wants to mark as committed against Ajour now,
+ * before anything is written. Refuses an unknown ID, then refuses every change
+ * that is gone or whose version differs from the one get_week_changes gave,
+ * so Ajour never commits values the external timesheet did not receive.
+ */
+export function checkChangeVersionsOrRefuse(
+  state: LocalAppState,
+  changes: readonly { entryId: string; version: string }[],
+): void {
+  const stale = new Set<string>();
+  for (const { entryId, version } of changes) {
+    const change = findTimesheetChange(state, entryId);
+    if (change === undefined) {
+      throw new AgentToolRefusal(
+        `No entry or deleted entry has the id ${entryId}. Call get_week_changes.`,
+      );
+    }
+    if (!change || timesheetChangeVersion(change) !== version) {
+      stale.add(entryId);
+    }
+  }
+  if (stale.size > 0) {
+    throw new AgentToolRefusal(
+      `${[...stale].join(", ")} changed since you read it. Call get_week_changes again and apply its current values.`,
+    );
+  }
 }

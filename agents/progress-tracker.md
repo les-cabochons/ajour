@@ -844,3 +844,7 @@ Spec: `docs/superpowers/specs/2026-10-15-calendar-suggestions-design.md`. Decisi
 - [x] Entries keep a committed copy, deleted committed entries leave a tombstone, and the Commit page lists added, updated and deleted changes with partial selection and Mark as committed with Undo. Stored submitted entries migrate to committed copies.
 - [x] Agents use `get_week_changes` and `mark_entries_committed`; the external ID is `ajour:` and the FNV-1a hash of the entry ID. Plugin placement `submit-week` is now `commit-week`.
 - [ ] Workday (agent) 0.4.0 with `prompts/commit-week.md` in `les-cabochons/ajp-workday-agent`, then a smoke run by Alex.
+
+## Commit change versions, 2026-10-16
+
+- [x] `get_week_changes` gives each change a `version`, and `mark_entries_committed` takes `{ changes: { entryId, version }[] }`. Ajour refuses the whole call when an entry changed since the agent read it, so it never commits values Workday did not receive. Ships with Workday (agent) 0.4.1, which finds entries only by their exact ID.

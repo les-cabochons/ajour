@@ -84,7 +84,21 @@ async function setup() {
     }
     return result;
   };
-  return { localStore, call, project, task };
+  /** The change of `entryId` as get_week_changes gives it, for marking. */
+  const readChange = async (entryId: string, weekOf = "2026-10-13") => {
+    const result = (await call("get_week_changes", {
+      weekOf,
+      onlyChecked: false,
+    })) as {
+      output: { changes: { entryId: string; version: string }[] };
+    };
+    const change = result.output.changes.find(
+      (item) => item.entryId === entryId,
+    );
+    if (!change) throw new Error(`No change for ${entryId}.`);
+    return { entryId, version: change.version };
+  };
+  return { localStore, call, readChange, project, task };
 }
 
 // The first import of these heavy modules is slow and, under full-suite load,
@@ -300,7 +314,7 @@ describe("agent timer and entry tools", () => {
   });
 
   it("lists a new entry as added, commits it, then lists no change", async () => {
-    const { call, project, task } = await setup();
+    const { call, readChange, project, task } = await setup();
     const created = await call("create_entry", {
       date: "2026-10-13",
       projectId: project._id,
@@ -320,13 +334,16 @@ describe("agent timer and entry tools", () => {
             change: "added",
             entryId,
             externalId: expect.stringMatching(/^ajour:[0-9a-f]{8}$/),
+            version: expect.stringMatching(/^v:[0-9a-f]{8}$/),
             current: { date: "2026-10-13", hours: 1.5, note: "Workshop" },
           },
         ],
       },
     });
     expect(
-      await call("mark_entries_committed", { entryIds: [entryId] }),
+      await call("mark_entries_committed", {
+        changes: [await readChange(entryId)],
+      }),
     ).toMatchObject({ ok: true, output: { committed: 1 } });
     expect(offerUndo.mock.calls.at(-1)![1].title).toBe(
       "Claude Code: Marked 1 change as committed",
@@ -346,7 +363,7 @@ describe("agent timer and entry tools", () => {
   });
 
   it("commits a deleted entry by clearing its tombstone", async () => {
-    const { call, localStore, project, task } = await setup();
+    const { call, readChange, localStore, project, task } = await setup();
     localStore.saveManualTimeEntry({
       localDate: "2026-10-13",
       projectId: project._id,
@@ -354,7 +371,7 @@ describe("agent timer and entry tools", () => {
       durationMs: 30 * 60_000,
     });
     const entryId = localStore.snapshot().timesheetEntries[0]!._id;
-    await call("mark_entries_committed", { entryIds: [entryId] });
+    localStore.markTimesheetEntriesCommitted([entryId]);
     localStore.deleteTimesheetEntry(entryId);
 
     expect(
@@ -366,7 +383,9 @@ describe("agent timer and entry tools", () => {
       },
     });
     expect(
-      await call("mark_entries_committed", { entryIds: [entryId] }),
+      await call("mark_entries_committed", {
+        changes: [await readChange(entryId)],
+      }),
     ).toMatchObject({ ok: true, output: { committed: 1 } });
     expect(localStore.snapshot().timesheetTombstones).toEqual([]);
   });
@@ -375,12 +394,110 @@ describe("agent timer and entry tools", () => {
     const { call } = await setup();
 
     expect(
-      await call("mark_entries_committed", { entryIds: ["nope"] }),
+      await call("mark_entries_committed", {
+        changes: [{ entryId: "nope", version: "v:00000000" }],
+      }),
     ).toMatchObject({
       ok: false,
       error:
         "No entry or deleted entry has the id nope. Call get_week_changes.",
     });
+  });
+
+  /** Saves an entry of 30 minutes on Monday and returns its id. */
+  function saveEntry(
+    localStore: Awaited<ReturnType<typeof setup>>["localStore"],
+    projectId: string,
+  ) {
+    localStore.saveManualTimeEntry({
+      localDate: "2026-10-13",
+      projectId,
+      durationMs: 30 * 60_000,
+    });
+    return localStore.snapshot().timesheetEntries.at(-1)!._id;
+  }
+
+  it("refuses a change the user edited since the agent read it, and writes nothing", async () => {
+    const { call, readChange, localStore, project } = await setup();
+    const entryId = saveEntry(localStore, project._id);
+    const read = await readChange(entryId);
+    localStore.updateTimesheetEntry(entryId, {
+      projectId: project._id,
+      durationMs: 45 * 60_000,
+    });
+    const before = localStore.snapshot();
+
+    expect(
+      await call("mark_entries_committed", { changes: [read] }),
+    ).toMatchObject({
+      ok: false,
+      error: `${entryId} changed since you read it. Call get_week_changes again and apply its current values.`,
+    });
+    expect(localStore.snapshot().timesheetEntries).toEqual(
+      before.timesheetEntries,
+    );
+    expect(localStore.snapshot().timesheetEntries[0]!.commit).toBeUndefined();
+  });
+
+  it("refuses a change whose entry the user deleted since the agent read it", async () => {
+    const { call, readChange, localStore, project } = await setup();
+    const entryId = saveEntry(localStore, project._id);
+    localStore.markTimesheetEntriesCommitted([entryId]);
+    localStore.updateTimesheetEntry(entryId, {
+      projectId: project._id,
+      durationMs: 45 * 60_000,
+    });
+    const read = await readChange(entryId);
+    localStore.deleteTimesheetEntry(entryId);
+
+    expect(
+      await call("mark_entries_committed", { changes: [read] }),
+    ).toMatchObject({ ok: false, error: expect.stringContaining(entryId) });
+    expect(localStore.snapshot().timesheetTombstones).toHaveLength(1);
+  });
+
+  it("refuses a deleted change once undo restored the entry", async () => {
+    const { call, readChange, localStore, project } = await setup();
+    const entryId = saveEntry(localStore, project._id);
+    localStore.markTimesheetEntriesCommitted([entryId]);
+    const undoToken = localStore.deleteTimesheetEntry(entryId)!;
+    const read = await readChange(entryId);
+    localStore.undo(undoToken);
+
+    expect(
+      await call("mark_entries_committed", { changes: [read] }),
+    ).toMatchObject({
+      ok: false,
+      error: `${entryId} changed since you read it. Call get_week_changes again and apply its current values.`,
+    });
+    expect(localStore.snapshot().timesheetEntries).toHaveLength(1);
+  });
+
+  it("refuses a whole call when one of its changes is stale, naming each stale id", async () => {
+    const { call, readChange, localStore, project } = await setup();
+    const good = saveEntry(localStore, project._id);
+    const staleA = saveEntry(localStore, project._id);
+    const staleB = saveEntry(localStore, project._id);
+    const changes = [
+      await readChange(good),
+      await readChange(staleA),
+      await readChange(staleB),
+    ];
+    for (const entryId of [staleA, staleB]) {
+      localStore.updateTimesheetEntry(entryId, {
+        projectId: project._id,
+        note: "Edited",
+        durationMs: 30 * 60_000,
+      });
+    }
+
+    expect(await call("mark_entries_committed", { changes })).toMatchObject({
+      ok: false,
+      error: `${staleA}, ${staleB} changed since you read it. Call get_week_changes again and apply its current values.`,
+    });
+    expect(
+      localStore.snapshot().timesheetEntries.every((entry) => !entry.commit),
+    ).toBe(true);
   });
 
   it("leaves out the changes the user unchecked on the Commit page", async () => {

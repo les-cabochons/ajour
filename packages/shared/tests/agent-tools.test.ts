@@ -62,11 +62,16 @@ describe("agent tool contracts", () => {
     ).toEqual({ weekOf: "2026-10-14", onlyChecked: true });
   });
 
-  it("needs at least one entry id to mark as committed", () => {
-    expect(
-      writeToolInputSchemas.mark_entries_committed.safeParse({ entryIds: [] })
-        .success,
-    ).toBe(false);
+  it("needs at least one change, each with its version, to mark as committed", () => {
+    const parse = (input: unknown) =>
+      writeToolInputSchemas.mark_entries_committed.safeParse(input).success;
+
+    expect(parse({ changes: [] })).toBe(false);
+    expect(parse({ changes: [{ entryId: "e1" }] })).toBe(false);
+    expect(parse({ entryIds: ["e1"] })).toBe(false);
+    expect(parse({ changes: [{ entryId: "e1", version: "v:0a1b2c3d" }] })).toBe(
+      true,
+    );
   });
 
   it("accepts a deleted change with committed values only", () => {
@@ -77,6 +82,7 @@ describe("agent tool contracts", () => {
             change: "deleted",
             entryId: "e1",
             externalId: "ajour:00000000",
+            version: "v:00000000",
             checked: true,
             committed: { date: "2026-10-13", hours: 1 },
           },

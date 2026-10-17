@@ -13,6 +13,7 @@ import {
   type ObjectAction,
 } from "@/domain/actions/object-actions";
 import {
+  checkChangeVersionsOrRefuse,
   findWorkItemOrRefuse,
   readRunningTimer,
   toAgentEntry,
@@ -21,7 +22,6 @@ import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
 import { isBacklogItemSnoozed } from "@/domain/backlog/backlog-item-lifecycle";
 import { isSubtaskWorkItem } from "@/domain/backlog/work-item-hierarchy";
 import { findWorkItemTimer } from "@/domain/time/running-entry";
-import { getTimesheetEntryChange } from "@/domain/time/timesheet-commit";
 import {
   getLocalProjectDisplayName,
   type LocalAppState,
@@ -414,26 +414,14 @@ export function runEntryWriteTool(
     case "mark_entries_committed": {
       const input =
         writeToolInputSchemas.mark_entries_committed.parse(rawInput);
-      const entryIds = [...new Set(input.entryIds)];
-      const tombstoneIds = new Set(
-        state.timesheetTombstones.map((tombstone) => tombstone.entryId),
-      );
-      let count = 0;
-      for (const entryId of entryIds) {
-        if (tombstoneIds.has(entryId)) {
-          count += 1;
-          continue;
-        }
-        const entry = state.timesheetEntries.find(
-          (candidate) => candidate._id === entryId,
-        );
-        if (!entry) {
-          throw new AgentToolRefusal(
-            `No entry or deleted entry has the id ${entryId}. Call get_week_changes.`,
-          );
-        }
-        if (getTimesheetEntryChange(entry)) count += 1;
-      }
+      // Refuses before any write when a change differs from its version.
+      // Every listed pair is checked, so an entry listed twice with an old
+      // and a current version is refused too.
+      checkChangeVersionsOrRefuse(state, input.changes);
+      const entryIds = [
+        ...new Set(input.changes.map((change) => change.entryId)),
+      ];
+      const count = entryIds.length;
       const undoToken = localStore.markTimesheetEntriesCommitted(entryIds);
       const noun = count === 1 ? "change" : "changes";
       return {

@@ -130,7 +130,7 @@ The prompt and `weekLink` can use these slots. A slot Ajour does not know fails 
 
 ### What the agent gets
 
-Ajour puts its own rules before your prompt. The agent must report in its session, ask the user only when it cannot go on, mark each change as committed once the external tool saved it, and never type a password or a code. Your prompt describes the steps in the external tool. The agent can use the [MCP tools](/app/agents#what-agents-can-do), including `get_week_changes`, which lists the week's added, updated and deleted entries, each with a stable `externalId`, and `mark_entries_committed`.
+Ajour puts its own rules before your prompt. The agent must report in its session, ask the user only when it cannot go on, mark each change as committed once the external tool saved it, and never type a password or a code. Your prompt describes the steps in the external tool. The agent can use the [MCP tools](/app/agents#what-agents-can-do), including `get_week_changes`, which lists the week's added, updated and deleted entries, each with a stable `externalId` and a `version`, and `mark_entries_committed`, which takes each applied change's `entryId` and `version`. Ajour refuses the call when the user changed an entry since the agent read it.
 
 ## Project properties
 

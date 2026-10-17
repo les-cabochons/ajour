@@ -84,7 +84,7 @@ const TOOL_DESCRIPTIONS: Record<
     "Backlog items. The default `sidebar` filter returns the user's current work list in their order. Filter by workflow state, project or text.",
   get_work_item: "One backlog item with its note, source link and subitems.",
   get_week_changes:
-    "The week's changes since its last commit, one per entry: added, updated or deleted, with the entry's externalId, its current values and, for updated and deleted ones, its committed values. `weekOf` is any date in the week. By default only the changes the user left checked on the Commit page. Write the externalId at the end of the external entry's comment, so later runs find the entry. An entry moved to another week shows in both weeks.",
+    "The week's changes since its last commit, one per entry: added, updated or deleted, with the entry's externalId, the change's version, its current values and, for updated and deleted ones, its committed values. `weekOf` is any date in the week. By default only the changes the user left checked on the Commit page. Write the externalId at the end of the external entry's comment, so later runs find the entry. An entry moved to another week shows in both weeks.",
   start_timer:
     "Starts an entry now on a backlog item, or on a project with an optional task. A running entry is saved first, as Switch does in Ajour.",
   stop_timer: "Stops and saves the running entry.",
@@ -96,7 +96,7 @@ const TOOL_DESCRIPTIONS: Record<
   move_entry: "Moves an entry to another date.",
   duplicate_entry: "Copies an entry, to the same date or another one.",
   mark_entries_committed:
-    "Marks changes as committed once the external timesheet saved them: saves each entry's committed copy, or forgets a deleted entry. Pass entryIds from get_week_changes. A deleted change's ID is accepted once: after its tombstone is cleared, the ID is unknown and the call refuses. Never mark a change you did not apply.",
+    "Marks changes as committed once the external timesheet saved them: saves each entry's committed copy, or forgets a deleted entry. Pass each change's entryId and version from get_week_changes. When any change differs from its version, because the user edited, deleted or restored the entry since, Ajour refuses the whole call: call get_week_changes again and apply the current values. A deleted change's ID is accepted once: after its tombstone is cleared, the ID is unknown and the call refuses. Never mark a change you did not apply.",
   create_work_item:
     "Adds a manual backlog item, or a subitem with parentWorkItemId.",
   edit_work_item:

@@ -9,7 +9,11 @@ import {
   readRunningTimer,
 } from "@/domain/agents/agent-read-model";
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
-import { externalEntryId } from "@/domain/agents/external-id";
+import {
+  externalEntryId,
+  timesheetChangeVersion,
+} from "@/domain/agents/external-id";
+import { listWeekChanges } from "@/domain/time/timesheet-commit";
 
 const HOUR = 3_600_000;
 const NOW = Date.UTC(2026, 9, 14, 15);
@@ -273,6 +277,7 @@ describe("agent read model", () => {
         change: "added",
         entryId: "e1",
         externalId: externalEntryId("e1"),
+        version: expect.stringMatching(/^v:[0-9a-f]{8}$/),
         checked: true,
         current: { date: "2026-10-13", ...acme, hours: 1, note: "Morning" },
       },
@@ -280,6 +285,7 @@ describe("agent read model", () => {
         change: "updated",
         entryId: "e2",
         externalId: externalEntryId("e2"),
+        version: expect.stringMatching(/^v:[0-9a-f]{8}$/),
         checked: true,
         current: { date: "2026-10-13", ...acme, hours: 2, note: "Afternoon" },
         committed: { date: "2026-10-13", ...acme, hours: 1, note: "Afternoon" },
@@ -288,6 +294,7 @@ describe("agent read model", () => {
         change: "deleted",
         entryId: "gone",
         externalId: externalEntryId("gone"),
+        version: expect.stringMatching(/^v:[0-9a-f]{8}$/),
         checked: true,
         // The project is archived since, and still named.
         committed: {
@@ -300,6 +307,21 @@ describe("agent read model", () => {
         },
       },
     ]);
+  });
+
+  it("gives each change the version of its kind, current and committed values", () => {
+    const state = changesState();
+    const expected = listWeekChanges({
+      entries: state.timesheetEntries,
+      tombstones: state.timesheetTombstones,
+      weekDates: WEEK,
+    }).map(timesheetChangeVersion);
+
+    expect(
+      getWeekChangesForAgent(state, allChecked).changes.map(
+        (change) => change.version,
+      ),
+    ).toEqual(expected);
   });
 
   it("leaves out unchecked changes unless asked for every change", () => {
