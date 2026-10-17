@@ -21,6 +21,7 @@ import {
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
 import { isBacklogItemSnoozed } from "@/domain/backlog/backlog-item-lifecycle";
 import { isSubtaskWorkItem } from "@/domain/backlog/work-item-hierarchy";
+import { getDateLockReason } from "@/domain/time/locked-weeks";
 import { findWorkItemTimer } from "@/domain/time/running-entry";
 import {
   getLocalProjectDisplayName,
@@ -151,6 +152,7 @@ export function requireEntry(state: LocalAppState, entryId: string) {
 function entryActions(state: LocalAppState, entry: LocalTimesheetEntry) {
   return getTimeEntryActions(
     getTimeEntryActionState({ isRunning: isEntryRunning(state, entry) }),
+    { lockedReason: getDateLockReason(state, entry.localDate) },
   );
 }
 

@@ -105,6 +105,25 @@ describe("time entry actions", () => {
     ]);
   });
 
+  it("disables what would change an entry of a submitted week, with the reason", () => {
+    const reason =
+      "The week of 2026-10-05 is submitted. Reopen it to change it.";
+
+    expect(
+      getTimeEntryActions("committed", { lockedReason: reason }).map(
+        (action) => [action.id, action.disabledReason],
+      ),
+    ).toEqual([
+      ["edit", undefined],
+      ["continue", undefined],
+      ["duplicate", reason],
+      ["duplicate-to", undefined],
+      ["move-to", reason],
+      ["mark-not-committed", reason],
+      ["delete", reason],
+    ]);
+  });
+
   it("derives the action state from the running and committed flags", () => {
     expect(getTimeEntryActionState({ isRunning: true })).toBe("running");
     expect(getTimeEntryActionState({ isCommitted: true })).toBe("committed");
@@ -149,6 +168,25 @@ describe("time entry selection actions", () => {
       "move-to": "Stop the running entry first",
       delete: "Stop the running entry first",
     });
+  });
+
+  it("disables the selection's actions on a submitted week, except Duplicate to…", () => {
+    const reason =
+      "The week of 2026-10-05 is submitted. Reopen it to change it.";
+
+    expect(
+      getTimeEntrySelectionActions({
+        saved: 2,
+        committed: 2,
+        lockedReason: reason,
+      }).map((action) => [action.id, action.disabledReason]),
+    ).toEqual([
+      ["duplicate", reason],
+      ["duplicate-to", undefined],
+      ["move-to", reason],
+      ["mark-not-committed", reason],
+      ["delete", reason],
+    ]);
   });
 
   it("counts entries in words", () => {
