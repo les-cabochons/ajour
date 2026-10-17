@@ -225,6 +225,14 @@ Feature: Select time entries like a file explorer
     Then the Day list reads "Login form", "Code review"
     And a toast says "Moved to Thu, Oct 8"
 
+  Scenario: Scrolling the shown day's tab under a still pointer cancels the reorder
+    Given I have a week of saved entries
+    When I open Monday's Day list in a short window, scrolled past the day strip
+    And I drag the "API" entry above the "Login form" entry without releasing
+    And the page scrolls back up until Monday's tab is under the pointer
+    And I release the mouse
+    Then the Day list reads "Login form", "API", "Code review"
+
   Scenario: A day's only entry moves through the day strip
     Given I have a week of saved entries
     When I open Tuesday's Day list

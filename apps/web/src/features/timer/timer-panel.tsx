@@ -434,6 +434,35 @@ export function TimerPanel({
         dayDropTargets,
         selection.scopeRef.current?.getBoundingClientRect().top,
       );
+    /**
+     * Measures the drop again where the pointer last was, for a scroll that
+     * moved the list and the strip under a still pointer, and before a drop.
+     */
+    const refreshDrop = () => {
+      const current = entryDragStateRef.current;
+      if (!current) return;
+      const pointer = { clientX: current.pointerX, clientY: current.pointerY };
+      const drop = locateDrop(pointer);
+      const targetIndex = getSharedTableBlockDropIndex(
+        draggableEntryIds,
+        dragged,
+        current.pointerY,
+        entryRowRefs.current,
+      );
+      if (
+        drop.dayDropDate === current.dayDropDate &&
+        drop.aboveList === current.aboveList &&
+        targetIndex === current.targetIndex
+      ) {
+        return;
+      }
+      if (drop.dayDropDate !== current.dayDropDate) {
+        onDayDropTargetChange?.(drop.dayDropDate);
+      }
+      const next = { ...current, ...drop, targetIndex };
+      entryDragStateRef.current = next;
+      setEntryDragState(next);
+    };
     const startDrag = (pointerX: number, pointerY: number) => {
       const row = entryRowRefs.current.get(entry._id);
       if (!row) {
@@ -513,8 +542,10 @@ export function TimerPanel({
       },
       onEnd: (shouldCommit) => {
         entryPointerSessionRef.current = null;
+        if (shouldCommit) refreshDrop();
         finishEntryDrag(shouldCommit);
       },
+      onScroll: refreshDrop,
       onPressEnd: () => {
         entryPointerSessionRef.current = null;
         setPressedEntryId(null);

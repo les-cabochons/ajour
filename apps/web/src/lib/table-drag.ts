@@ -74,6 +74,9 @@ export interface SharedTableDragPointerSession {
  *
  * After Escape, the click that the later release produces is swallowed, so
  * a cancelled press or drag never opens the row.
+ *
+ * `onScroll`, when given, runs on every scroll during a drag, anywhere on the
+ * page, so a caller can measure its targets again while the pointer stays.
  */
 export function createSharedTableDragPointerSession(options: {
   eventSource?: SharedTableDragEventSource;
@@ -88,6 +91,7 @@ export function createSharedTableDragPointerSession(options: {
   onMove: (pointer: SharedTableDragPointer) => void;
   onEnd: (commit: boolean) => void;
   onPressEnd: (cancelled: boolean) => void;
+  onScroll?: () => void;
 }): SharedTableDragPointerSession {
   const eventSource = options.eventSource ?? window;
   let disposed = false;
@@ -102,6 +106,13 @@ export function createSharedTableDragPointerSession(options: {
     eventSource.removeEventListener("pointerup", handlePointerEnd);
     eventSource.removeEventListener("pointercancel", handlePointerEnd);
     eventSource.removeEventListener("keydown", handleKeyDown, CAPTURE);
+    eventSource.removeEventListener("scroll", handleScroll, CAPTURE);
+  };
+
+  const handleScroll: EventListener = () => {
+    if (options.isDragging()) {
+      options.onScroll?.();
+    }
   };
 
   const handlePointerMove: EventListener = (event) => {
@@ -178,6 +189,10 @@ export function createSharedTableDragPointerSession(options: {
   eventSource.addEventListener("pointercancel", handlePointerEnd);
   // Capture runs before the listeners of panels, menus and dialogs.
   eventSource.addEventListener("keydown", handleKeyDown, CAPTURE);
+  if (options.onScroll) {
+    // Scroll does not bubble; capture hears every scrolling element.
+    eventSource.addEventListener("scroll", handleScroll, CAPTURE);
+  }
 
   return {
     pointerId: options.pointerId,
