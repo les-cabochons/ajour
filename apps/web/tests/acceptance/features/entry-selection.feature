@@ -89,3 +89,74 @@ Feature: Select time entries like a file explorer
     And I press the "Shift+ArrowDown" key
     Then 2 cards are selected
     And Tuesday's "Login form" card is selected
+
+  Scenario: The menu of a multiple selection names its count and drops single-entry actions
+    Given I have a week of saved entries
+    When I open Monday's Day list
+    And I click the "API" entry
+    And I Cmd-click the "Login form" entry
+    And I right-click the "API" entry
+    Then the menu lists "Duplicate 2 entries", "Duplicate 2 entries to…", "Move 2 entries to…", "Delete 2 entries"
+
+  Scenario: M moves every selected entry to the chosen day
+    Given I have a week of saved entries
+    When I open Monday's Day list
+    And I click the "API" entry
+    And I Cmd-click the "Login form" entry
+    And I press the "m" key
+    And I choose October 8 in the "Move 2 entries" dialog
+    Then the Day list reads "Code review"
+    And a toast says "Moved 2 entries to Thu, Oct 8"
+    When I go to Thursday in the day strip
+    Then the Day list reads "Login form", "API"
+
+  Scenario: M follows the selection, not the entry Cmd-click just deselected
+    Given I have a week of saved entries
+    When I open Monday's Day list
+    And I click the "Code review" entry
+    And I Cmd-click the "API" entry
+    And I Cmd-click the "API" entry
+    And I press the "m" key
+    And I choose October 8 in the "Move time entry" dialog
+    Then the Day list reads "Login form", "API"
+    And a toast says "Moved to Thu, Oct 8"
+
+  Scenario: Cmd+D duplicates every selected entry, and the copies become the selection
+    Given I have a week of saved entries
+    When I open Monday's Day list
+    And I click the "Login form" entry
+    And I Shift-click the "API" entry
+    And I press the "ControlOrMeta+d" key
+    Then the Day list reads "Login form", "API", "Code review", "Login form", "API"
+    And a toast says "Duplicated 2 entries"
+    And rows 4 and 5 of the Day list are selected
+
+  Scenario: Cmd+D on the one selected entry selects the copy
+    Given I have a week of saved entries
+    When I open Monday's Day list
+    And I click the "API" entry
+    And I press the "ControlOrMeta+d" key
+    Then the Day list reads "Login form", "API", "Code review", "API"
+    And a toast says "Entry duplicated"
+    And only row 4 of the Day list is selected
+
+  Scenario: Duplicate a range of cards to another day from the menu
+    Given I have a week of saved entries
+    When I open the Week Days view
+    And I click Monday's "Login form" card
+    And I Shift-click Monday's "API" card
+    And I right-click Monday's "API" card and choose "Duplicate 2 entries to…"
+    And I choose October 7 in the "Duplicate 2 entries" dialog
+    Then Wednesday's cards read "Login form", "API"
+    And a toast says "Duplicated 2 entries to Wed, Oct 7"
+    And 2 cards are selected
+    And Wednesday's "API" card is selected
+
+  Scenario: Pasted entries become the selection
+    Given I have a week of saved entries
+    When I open Monday's Day list
+    And I click the "API" entry
+    And I press the "ControlOrMeta+c" key
+    And I go to Thursday in the day strip
+    And I press the "ControlOrMeta+v" key
+    Then only the "API" entry is selected

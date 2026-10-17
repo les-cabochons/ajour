@@ -257,6 +257,7 @@ export function WeeklyTimeView({
       preferences.weeklyTimeViewStyle === "days" ? orderedCardIds : [],
     runningEntryId,
     pasteTarget: sameWeekdayTarget,
+    entryActions,
     onOpen: (entryId) =>
       entryId === runningEntryId && currentTimer
         ? onOpenEntry({ timerId: currentTimer._id })
@@ -460,8 +461,9 @@ export function WeeklyTimeView({
   }
 
   /**
-   * Runs a card's action. Delete and Mark as not committed can act on the whole
-   * selection instead. `key` is set when a key ran the action, not a menu.
+   * Runs a card's action. Delete, Duplicate, Duplicate to…, Move to… and Mark as
+   * not committed can act on the whole selection instead. `key` is set when a key
+   * ran the action, not a menu.
    */
   function runCardAction(
     target: Parameters<typeof entryActions.runAction>[0],
@@ -699,10 +701,17 @@ export function WeeklyTimeView({
                       return runningTarget && runningEntryId && runningTime ? (
                         <ObjectContextMenu
                           key={runningEntryId}
-                          actions={entryActions.getActions(runningTarget)}
+                          actions={selection.getMenuActions(
+                            runningEntryId,
+                            entryActions.getActions(runningTarget),
+                          )}
                           keys={TIME_ENTRY_ACTION_KEYS}
                           onAction={(actionId) =>
-                            entryActions.runAction(runningTarget, actionId)
+                            runCardAction(
+                              runningTarget,
+                              runningEntryId,
+                              actionId,
+                            )
                           }
                           render={
                             <div
@@ -741,8 +750,10 @@ export function WeeklyTimeView({
                               }
                               onKeyDown={(event) =>
                                 handleItemKeyDown(event, {
-                                  actions:
+                                  actions: selection.getKeyActions(
+                                    runningEntryId,
                                     entryActions.getActions(runningTarget),
+                                  ),
                                   keys: TIME_ENTRY_ACTION_KEYS,
                                   onAction: (actionId, key) =>
                                     runCardAction(
@@ -786,7 +797,7 @@ export function WeeklyTimeView({
                     return (
                       <ObjectContextMenu
                         key={entry._id}
-                        actions={actions}
+                        actions={selection.getMenuActions(entry._id, actions)}
                         keys={TIME_ENTRY_ACTION_KEYS}
                         onAction={runAction}
                         render={
@@ -829,7 +840,10 @@ export function WeeklyTimeView({
                                 return;
                               }
                               handleItemKeyDown(event, {
-                                actions,
+                                actions: selection.getKeyActions(
+                                  entry._id,
+                                  actions,
+                                ),
                                 keys: TIME_ENTRY_ACTION_KEYS,
                                 onAction: runAction,
                                 onReorder: (step) =>

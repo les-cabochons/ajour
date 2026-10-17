@@ -2875,6 +2875,61 @@ describe("runWithUndo", () => {
   });
 });
 
+describe("relocateTimesheetEntries", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    installMockWindow();
+  });
+
+  it("returns the copies with one undo token that removes them all", async () => {
+    const { localStore } = await import("./local-store");
+    localStore.saveManualTimeEntry({
+      localDate: "2026-10-05",
+      note: "First",
+      durationMs: 60_000,
+    });
+    localStore.saveManualTimeEntry({
+      localDate: "2026-10-06",
+      note: "Second",
+      durationMs: 60_000,
+    });
+    const [first, second] = localStore.snapshot().timesheetEntries;
+
+    const { undoToken, entryIds } = localStore.relocateTimesheetEntries(
+      [
+        { entryId: first!._id, localDate: "2026-10-05" },
+        { entryId: second!._id, localDate: "2026-10-06" },
+      ],
+      "copy",
+    );
+
+    expect(entryIds).toHaveLength(2);
+    expect(entryIds).not.toContain(first!._id);
+    expect(
+      localStore
+        .snapshot()
+        .timesheetEntries.filter((entry) => entryIds.includes(entry._id))
+        .map((entry) => [entry.localDate, entry.note]),
+    ).toEqual([
+      ["2026-10-05", "First"],
+      ["2026-10-06", "Second"],
+    ]);
+
+    expect(localStore.undo(undoToken!)).toBe("restored");
+    expect(localStore.snapshot().timesheetEntries).toHaveLength(2);
+  });
+
+  it("returns no token and no entries when nothing could move", async () => {
+    const { localStore } = await import("./local-store");
+    expect(
+      localStore.relocateTimesheetEntries(
+        [{ entryId: "gone", localDate: "2026-10-05" }],
+        "cut",
+      ),
+    ).toEqual({ undoToken: null, entryIds: [] });
+  });
+});
+
 describe("calendar suggestions in the store", () => {
   beforeEach(() => {
     vi.resetModules();

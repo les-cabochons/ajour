@@ -355,29 +355,65 @@ export function pasteTimesheetEntries(
   mode: "copy" | "cut",
   factories: TimesheetEntryFactories,
 ): LocalAppState {
-  const pastedAt = factories.now();
-  const paste = mode === "cut" ? moveTimesheetEntry : duplicateTimesheetEntry;
+  return relocateTimesheetEntries(state, entries, mode, factories).state;
+}
 
-  return entries.reduce((current, { entryId, localDate }, index) => {
+/**
+ * `pasteTimesheetEntries`, which also reports the entries that landed, in the
+ * order of `entries`: the copies for `copy`, the moved entries for `cut`.
+ * Skipped entries are left out. Duplicate, Duplicate to…, Move to… and a paste
+ * of a selection use it, so the entries that landed become the selection.
+ *
+ * Every entry lands at the end of its day in the order of `entries`, a cut
+ * entry already on that day too, so a selection moved to a day it partly sits
+ * on still ends up together, in reading order.
+ */
+export function relocateTimesheetEntries(
+  state: LocalAppState,
+  entries: readonly PastedTimesheetEntry[],
+  mode: "copy" | "cut",
+  factories: TimesheetEntryFactories,
+): { state: LocalAppState; entryIds: string[] } {
+  const pastedAt = factories.now();
+  const entryIds: string[] = [];
+
+  const next = entries.reduce((current, { entryId, localDate }, index) => {
     const entry = current.timesheetEntries.find((item) => item._id === entryId);
-    if (!entry) {
+    if (!entry || current.timers.some((timer) => timer.entryId === entryId)) {
       return current;
     }
 
-    return paste(
-      current,
-      entryId,
-      {
-        localDate,
-        projectId: entry.projectId,
-        taskId: entry.taskId,
-        note: entry.note,
-        durationMs: entry.durationMs,
-      },
-      // Lists show older entries first, so the first entry gets the earliest time.
-      { ...factories, now: () => pastedAt + index },
-    );
+    const values = {
+      localDate,
+      projectId: entry.projectId,
+      taskId: entry.taskId,
+      note: entry.note,
+      durationMs: entry.durationMs,
+    };
+    // Lists show older entries first, so the first entry gets the earliest time.
+    const stamped = { ...factories, now: () => pastedAt + index };
+    if (mode === "cut") {
+      entryIds.push(entryId);
+      const moved = moveTimesheetEntry(current, entryId, values, stamped);
+      if (entry.localDate !== localDate) return moved;
+      // Moving to its own day keeps an entry's place; here it joins the others
+      // at the end. The order is not part of the committed copy.
+      return {
+        ...moved,
+        timesheetEntries: moved.timesheetEntries.map((item) =>
+          item._id === entryId ? { ...item, committedAt: stamped.now() } : item,
+        ),
+      };
+    }
+
+    const copied = duplicateTimesheetEntry(current, entryId, values, stamped);
+    // A copy is appended to the entries.
+    const copy = copied.timesheetEntries.at(-1);
+    if (copied !== current && copy) entryIds.push(copy._id);
+    return copied;
   }, state);
+
+  return { state: next, entryIds };
 }
 
 /**

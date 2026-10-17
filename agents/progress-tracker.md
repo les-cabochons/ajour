@@ -4,6 +4,14 @@ Use this file as a lightweight running checklist for agent work in this repo. Ke
 
 ## Current Baseline
 
+- [x] Selection-wide Move to…, Duplicate and Duplicate to… (2026-10-16,
+      #199): on two or more selected entries the right-click menu lists
+      "Duplicate 3 entries", "Move 3 entries to…" and the rest with their
+      counts, and hides Edit, Continue, Stop and Discard. M and Cmd+D follow
+      the selection like Delete; Enter, C and S follow focus. The date dialog
+      opens once for all entries. Copies and pasted entries become the
+      selection. `relocateTimesheetEntries` reports the entries that landed;
+      `getTimeEntrySelectionActions` builds the menu. Six Chromium scenarios.
 - [x] Entry selection presses and keys (2026-10-16, #199): a press on an
       unselected Day row or Days card selects it at once, and opening its
       menu by right-click or the menu keys selects it first, so menus always

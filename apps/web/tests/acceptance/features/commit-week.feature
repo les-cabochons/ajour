@@ -32,7 +32,7 @@ Feature: Commit the week
     When I open Monday's Day list
     And I click the "Login form" entry
     And I Cmd-click the "API" entry
-    And I choose "Mark as not committed" from the "API" entry's menu
+    And I choose "Mark 2 entries as not committed" from the "API" entry's menu
     Then a toast says "Marked 2 entries as not committed"
     When I open the Commit page for the week of 2026-10-05
     Then the Commit page lists 2 changes

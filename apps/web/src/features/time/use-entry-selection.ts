@@ -8,7 +8,13 @@ import {
   type MouseEvent as ReactMouseEvent,
   type PointerEvent as ReactPointerEvent,
 } from "react";
-import type { TimeEntryActionId } from "@/domain/actions/object-actions";
+import {
+  formatEntryCount,
+  getTimeEntrySelectionActions,
+  TIME_ENTRY_SELECTION_ACTION_IDS,
+  type ObjectAction,
+  type TimeEntryActionId,
+} from "@/domain/actions/object-actions";
 import {
   getLocalProjectDisplayName,
   type LocalTimesheetEntry,
@@ -31,6 +37,7 @@ import { isTimesheetEntryCommitted } from "@/domain/time/timesheet-commit";
 import {
   formatToastDay,
   offerTimeEntryUndo,
+  type useTimeEntryActions,
 } from "@/features/time/time-entry-actions";
 import {
   getEntryClipboard,
@@ -42,10 +49,6 @@ import {
 import { FOCUS_ITEM_SELECTOR } from "@/lib/item-keys";
 import { useLocalProjects, useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
-
-function countEntries(count: number) {
-  return count === 1 ? "1 entry" : `${count} entries`;
-}
 
 const ARROW_KEYS = new Set(["ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight"]);
 
@@ -86,6 +89,7 @@ export function useEntrySelection({
   orderedIds,
   runningEntryId,
   pasteTarget,
+  entryActions,
   onOpen,
 }: {
   /**
@@ -99,6 +103,8 @@ export function useEntrySelection({
   runningEntryId?: string;
   /** Where Cmd+V and the Edit menu's Paste put entries. */
   pasteTarget: EntryPasteTarget;
+  /** The view's entry actions, which run Duplicate and the date dialogs. */
+  entryActions: Pick<ReturnType<typeof useTimeEntryActions>, "runOnEntries">;
   onOpen: (entryId: string) => void;
 }) {
   const state = useLocalState();
@@ -134,8 +140,14 @@ export function useEntrySelection({
     setStored({ resetKey, selection: next });
   }
 
+  /** Selects the entries an action just put down, such as copies or a paste. */
+  function selectLanded(entryIds: readonly string[]) {
+    select({ ids: [...entryIds], anchorId: entryIds[0] ?? null });
+  }
+
   /** The selected saved entries in reading order, without the running entry. */
-  function getSelectedEntries() {
+  const selectedEntries = useMemo(() => {
+    if (selectedIds.size === 0) return [];
     const entriesById = new Map(
       state.timesheetEntries.map((entry) => [entry._id, entry]),
     );
@@ -143,7 +155,21 @@ export function useEntrySelection({
       const entry = selectedIds.has(id) ? entriesById.get(id) : undefined;
       return entry && id !== runningEntryId ? [entry] : [];
     });
+  }, [orderedIds, runningEntryId, selectedIds, state.timesheetEntries]);
+
+  function getSelectedEntries() {
+    return selectedEntries;
   }
+
+  /** The selection's actions, named with their counts. */
+  const selectionActions = useMemo(
+    () =>
+      getTimeEntrySelectionActions({
+        saved: selectedEntries.length,
+        committed: selectedEntries.filter(isTimesheetEntryCommitted).length,
+      }),
+    [selectedEntries],
+  );
 
   function describeForText(entry: LocalTimesheetEntry) {
     const project = projects.find((item) => item._id === entry.projectId);
@@ -164,7 +190,7 @@ export function useEntrySelection({
     const current = getEntryClipboard();
     if (!current) return;
 
-    const token = localStore.pasteTimesheetEntries(
+    const { undoToken, entryIds } = localStore.relocateTimesheetEntries(
       current.entries.map(({ entryId, localDate }) => ({
         entryId,
         localDate: getPasteDate(localDate, target),
@@ -174,9 +200,11 @@ export function useEntrySelection({
     if (current.mode === "cut") {
       setEntryClipboard(null);
     }
+    // Pasted entries become the selection, where they are shown.
+    selectLanded(entryIds);
     offerTimeEntryUndo(
-      token,
-      `${current.mode === "cut" ? "Moved" : "Pasted"} ${countEntries(current.entries.length)}`,
+      undoToken,
+      `${current.mode === "cut" ? "Moved" : "Pasted"} ${formatEntryCount(current.entries.length)}`,
     );
   }
 
@@ -420,6 +448,42 @@ export function useEntrySelection({
   }
 
   /**
+   * The actions the right-click menu of `entryId` lists: the selection's, named
+   * with their counts, when the entry is part of a selection of two or more, and
+   * `own`, the entry's own actions, otherwise. Opening the menu selects the
+   * entry first (`handleMenu`), so a multiple selection always includes it.
+   */
+  function getMenuActions(
+    entryId: string,
+    own: ObjectAction<TimeEntryActionId>[],
+  ): ObjectAction<TimeEntryActionId>[] {
+    return selection.ids.length >= 2 && selectedIds.has(entryId)
+      ? selectionActions
+      : own;
+  }
+
+  /**
+   * The actions the keys of `entryId` run. When the selection applies to the
+   * entry (see `getSelectionActionIds`), Delete, M and Cmd+D act on the
+   * selection, while Enter, C and S keep acting on the focused entry. The
+   * running entry's Delete key deletes the selection instead of discarding.
+   */
+  function getKeyActions(
+    entryId: string,
+    own: ObjectAction<TimeEntryActionId>[],
+  ): ObjectAction<TimeEntryActionId>[] {
+    if (!getSelectionActionIds(selection, entryId)) return own;
+    return [
+      ...own.filter(
+        (action) =>
+          !TIME_ENTRY_SELECTION_ACTION_IDS.has(action.id) &&
+          action.id !== "discard",
+      ),
+      ...selectionActions,
+    ];
+  }
+
+  /**
    * Runs an action on `entryId` on the whole selection when it applies to it (see
    * `getSelectionActionIds`), with one Undo. `key` is set when a key ran the
    * action, not a menu. Returns false when the caller should run the entry's own
@@ -427,7 +491,10 @@ export function useEntrySelection({
    *
    * - Delete removes the selected saved entries. The running entry stays, as copy
    *   and cut skip it.
-   * - Mark as not committed, from a menu, marks the selected committed entries.
+   * - Duplicate copies each selected saved entry to the end of its day, and
+   *   Move to… and Duplicate to… ask for one day for all of them. The moved
+   *   entries stay selected; the copies become the selection.
+   * - Mark as not committed marks the selected committed entries.
    */
   function runSelectionAction(
     entryId: string,
@@ -443,9 +510,30 @@ export function useEntrySelection({
       if (ids.length > 0) {
         offerTimeEntryUndo(
           localStore.deleteTimesheetEntries(ids),
-          `${countEntries(ids.length)} deleted`,
+          `${formatEntryCount(ids.length)} deleted`,
         );
       }
+      return true;
+    }
+
+    if (
+      actionId === "duplicate" ||
+      actionId === "duplicate-to" ||
+      actionId === "move-to"
+    ) {
+      // A copy of the one selected entry becomes the selection too, so the
+      // next Delete removes the copy, not the original.
+      const isOnlySelected =
+        actionId !== "move-to" &&
+        selection.ids.length === 1 &&
+        selection.ids[0] === entryId;
+      if (!getSelectionActionIds(selection, entryId) && !isOnlySelected) {
+        return false;
+      }
+
+      entryActions.runOnEntries(actionId, getSelectedEntries(), {
+        onDone: selectLanded,
+      });
       return true;
     }
 
@@ -459,7 +547,7 @@ export function useEntrySelection({
         .map((entry) => entry._id);
       offerTimeEntryUndo(
         localStore.markTimesheetEntriesNotCommitted(ids),
-        `Marked ${countEntries(ids.length)} as not committed`,
+        `Marked ${formatEntryCount(ids.length)} as not committed`,
       );
       return true;
     }
@@ -479,6 +567,8 @@ export function useEntrySelection({
     handleFocus,
     handleScopePointerDown,
     handleScopeKeyDown,
+    getMenuActions,
+    getKeyActions,
     runSelectionAction,
   };
 }

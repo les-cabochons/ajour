@@ -127,6 +127,63 @@ export function getTimeEntryActions(
   ];
 }
 
+/** "1 entry" or "3 entries", for menus and toasts about several entries. */
+export function formatEntryCount(count: number) {
+  return count === 1 ? "1 entry" : `${count} entries`;
+}
+
+/** The actions that may apply to every selected entry. */
+export const TIME_ENTRY_SELECTION_ACTION_IDS: ReadonlySet<TimeEntryActionId> =
+  new Set([
+    "duplicate",
+    "duplicate-to",
+    "move-to",
+    "mark-not-committed",
+    "delete",
+  ]);
+
+/**
+ * Lists the actions of a selection of two or more entries, named with how many
+ * entries each acts on: Duplicate 3 entries · Duplicate 3 entries to… · Move 3
+ * entries to… · Mark 2 entries as not committed · Delete 3 entries. Edit,
+ * Continue, Stop and Discard need one entry, so they are not listed. `saved`
+ * counts the selected saved entries, without the running entry, which every
+ * selection action skips; `committed` counts the committed ones among them.
+ */
+export function getTimeEntrySelectionActions({
+  saved,
+  committed,
+}: {
+  saved: number;
+  committed: number;
+}): ObjectAction<TimeEntryActionId>[] {
+  const entries = formatEntryCount(saved);
+  const reason = saved === 0 ? STOP_RUNNING_FIRST : undefined;
+  return [
+    { id: "duplicate", label: `Duplicate ${entries}`, disabledReason: reason },
+    {
+      id: "duplicate-to",
+      label: `Duplicate ${entries} to…`,
+      disabledReason: reason,
+    },
+    { id: "move-to", label: `Move ${entries} to…`, disabledReason: reason },
+    ...(committed > 0
+      ? [
+          {
+            id: "mark-not-committed" as const,
+            label: `Mark ${formatEntryCount(committed)} as not committed`,
+          },
+        ]
+      : []),
+    {
+      id: "delete",
+      label: `Delete ${entries}`,
+      destructive: true,
+      disabledReason: reason,
+    },
+  ];
+}
+
 /** Returns the action state shown for a time entry. */
 export function getTimeEntryActionState(entry: {
   isRunning?: boolean;

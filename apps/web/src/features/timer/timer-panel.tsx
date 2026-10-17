@@ -239,6 +239,7 @@ export function TimerPanel({
     orderedIds: visibleEntryIds,
     runningEntryId: runningEntry?._id,
     pasteTarget,
+    entryActions,
     onOpen: (entryId) => {
       const entry = visibleEntries.find((item) => item._id === entryId);
       if (entry) openEntry(entry);
@@ -502,7 +503,7 @@ export function TimerPanel({
             return (
               <React.Fragment key={entry._id}>
                 <ObjectContextMenu
-                  actions={rowActions}
+                  actions={selection.getMenuActions(entry._id, rowActions)}
                   keys={TIME_ENTRY_ACTION_KEYS}
                   onAction={runRowAction}
                   render={
@@ -560,7 +561,10 @@ export function TimerPanel({
                       }
                       onKeyDown={(event) =>
                         handleItemKeyDown(event, {
-                          actions: rowActions,
+                          actions: selection.getKeyActions(
+                            entry._id,
+                            rowActions,
+                          ),
                           keys: TIME_ENTRY_ACTION_KEYS,
                           onAction: runRowAction,
                           // A new running entry stays last.
