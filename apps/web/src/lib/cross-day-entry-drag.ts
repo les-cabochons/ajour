@@ -33,6 +33,37 @@ export function getCrossDayDragTarget(
 }
 
 /**
+ * Where dragged Day rows would drop with the pointer at `pointer`:
+ *
+ * - on another day's tab in the day strip, `dayDropDate` names that day;
+ * - elsewhere above the list, `aboveList` is true and a drop changes nothing,
+ *   as on the shown day's tab or the week total;
+ * - over the list, both are empty and the rows reorder there.
+ *
+ * `listTop` is the list's top edge where it is now, read on every move, so a
+ * scroll during the drag keeps the strip above it. `tabs` holds the other
+ * days' tabs only.
+ */
+export function getDayStripDrop(
+  pointer: Pick<SharedTableDragPointer, "clientX" | "clientY">,
+  tabs: ReadonlyMap<string, CrossDayDragTarget> | undefined,
+  listTop: number | undefined,
+): { dayDropDate: string | null; aboveList: boolean } {
+  if (!tabs || tabs.size === 0) {
+    return { dayDropDate: null, aboveList: false };
+  }
+
+  const dayDropDate = getCrossDayDragTarget(pointer, tabs);
+  return {
+    dayDropDate,
+    aboveList:
+      dayDropDate === null &&
+      listTop !== undefined &&
+      pointer.clientY < listTop,
+  };
+}
+
+/**
  * The shared pointer session, plus the weekday under the pointer. `onEnd`
  * gets the day the entry was dropped on, or null when the drag was cancelled
  * (pointer cancel or Escape) or ended outside every day.

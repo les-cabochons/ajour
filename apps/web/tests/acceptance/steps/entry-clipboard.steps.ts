@@ -372,3 +372,17 @@ Then(
 Then("{word} is the shown day", async ({ page }, day: string) => {
   await expect(stripTab(page, day)).toHaveAttribute("aria-selected", "true");
 });
+
+When(
+  "I flick the {string} entry onto {word} in the day strip",
+  async ({ page }, text: string, day: string) => {
+    const tab = await stripTab(page, day).boundingBox();
+    const row = await dayRow(page, text).boundingBox();
+    if (!tab || !row) throw new Error("The row or the tab is not rendered");
+    // One move: the one that starts the drag already lands on the tab.
+    await page.mouse.move(row.x + row.width / 2, row.y + row.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(tab.x + tab.width / 2, tab.y + tab.height / 2);
+    await page.mouse.up();
+  },
+);

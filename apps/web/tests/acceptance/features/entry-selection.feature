@@ -218,6 +218,13 @@ Feature: Select time entries like a file explorer
     When I go to Thursday in the day strip
     Then the Day list reads "Login form", "API"
 
+  Scenario: A quick flick onto a day in the day strip still moves the row
+    Given I have a week of saved entries
+    When I open Monday's Day list
+    And I flick the "API" entry onto Thursday in the day strip
+    Then the Day list reads "Login form", "Code review"
+    And a toast says "Moved to Thu, Oct 8"
+
   Scenario: A day's only entry moves through the day strip
     Given I have a week of saved entries
     When I open Tuesday's Day list

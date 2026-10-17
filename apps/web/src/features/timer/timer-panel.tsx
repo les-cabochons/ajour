@@ -40,7 +40,7 @@ import {
   getLocalProjectDisplayName,
   type LocalTimesheetEntry,
 } from "@/domain/local-state";
-import { getCrossDayDragTarget } from "@/lib/cross-day-entry-drag";
+import { getDayStripDrop } from "@/lib/cross-day-entry-drag";
 import { localStore } from "@/lib/local-store";
 import {
   createSharedTableDragPointerSession,
@@ -427,6 +427,13 @@ export function TimerPanel({
     setPressedEntryId(entry._id);
 
     const { clientX, clientY, pointerId, pointerType } = event;
+    /** Where a drop would go, with the list's top read now. */
+    const locateDrop = (pointer: { clientX: number; clientY: number }) =>
+      getDayStripDrop(
+        pointer,
+        dayDropTargets,
+        selection.scopeRef.current?.getBoundingClientRect().top,
+      );
     const startDrag = (pointerX: number, pointerY: number) => {
       const row = entryRowRefs.current.get(entry._id);
       if (!row) {
@@ -442,6 +449,9 @@ export function TimerPanel({
       suppressEntryClickUntilRef.current =
         performance.now() + SHARED_TABLE_DRAG_CLICK_SUPPRESSION_MS;
       setPressedEntryId(null);
+      // The move that starts the drag may already be over the strip.
+      const drop = locateDrop({ clientX: pointerX, clientY: pointerY });
+      if (drop.dayDropDate) onDayDropTargetChange?.(drop.dayDropDate);
       const nextDragState = {
         entryId: entry._id,
         entryIds,
@@ -452,8 +462,7 @@ export function TimerPanel({
           pointerY,
           entryRowRefs.current,
         ),
-        dayDropDate: null,
-        aboveList: false,
+        ...drop,
         pointerX,
         pointerY,
         offsetX: pointerX - rect.left,
@@ -483,19 +492,13 @@ export function TimerPanel({
           return;
         }
 
-        const dayDropDate = dayDropTargets
-          ? getCrossDayDragTarget(pointer, dayDropTargets)
-          : null;
-        if (dayDropDate !== currentDrag.dayDropDate) {
-          onDayDropTargetChange?.(dayDropDate);
+        const drop = locateDrop(pointer);
+        if (drop.dayDropDate !== currentDrag.dayDropDate) {
+          onDayDropTargetChange?.(drop.dayDropDate);
         }
         const nextDragState: EntryDragState = {
           ...currentDrag,
-          dayDropDate,
-          aboveList:
-            dayDropDate === null &&
-            Boolean(dayDropTargets?.size) &&
-            pointer.clientY < currentDrag.minTop,
+          ...drop,
           pointerX: pointer.clientX,
           pointerY: pointer.clientY,
           targetIndex: getSharedTableBlockDropIndex(
@@ -774,9 +777,7 @@ export function TimerPanel({
             // Above the list, toward the day strip, the preview follows the
             // pointer; over the list it stays in the list's column.
             transform:
-              dayDropTargets?.size &&
-              entryDragState.pointerY - entryDragState.offsetY <
-                entryDragState.minTop
+              entryDragState.dayDropDate || entryDragState.aboveList
                 ? `translate3d(${Math.round(entryDragState.pointerX - entryDragState.offsetX)}px, ${Math.round(entryDragState.pointerY - entryDragState.offsetY)}px, 0)`
                 : getSharedTableDragOverlayTransform(entryDragState),
           }}

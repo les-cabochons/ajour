@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createCrossDayEntryDragPointerSession,
   getCrossDayDragTarget,
+  getDayStripDrop,
   getEntryDropLine,
 } from "@/lib/cross-day-entry-drag";
 
@@ -95,6 +96,58 @@ describe("cross-day entry drag geometry", () => {
       stopPropagation: vi.fn(),
     } as unknown as Event);
     expect(onEnd).toHaveBeenCalledWith(null, false);
+  });
+});
+
+describe("day strip drop", () => {
+  // Thursday's tab spans 0-100 by 0-40; the list starts lower.
+  const tabs = new Map([
+    [
+      "2026-10-08",
+      {
+        getBoundingClientRect: () => ({
+          left: 0,
+          right: 100,
+          top: 0,
+          bottom: 40,
+        }),
+      },
+    ],
+  ]);
+
+  it("names the other day under the pointer", () => {
+    expect(getDayStripDrop({ clientX: 50, clientY: 20 }, tabs, 60)).toEqual({
+      dayDropDate: "2026-10-08",
+      aboveList: false,
+    });
+  });
+
+  it("changes nothing elsewhere above the list, such as the shown day's tab", () => {
+    expect(getDayStripDrop({ clientX: 150, clientY: 20 }, tabs, 60)).toEqual({
+      dayDropDate: null,
+      aboveList: true,
+    });
+  });
+
+  it("reorders over the list, measured where the list is now", () => {
+    expect(getDayStripDrop({ clientX: 150, clientY: 80 }, tabs, 60)).toEqual({
+      dayDropDate: null,
+      aboveList: false,
+    });
+    // Scrolled during the drag: the list now starts at 300, the strip at 0.
+    expect(getDayStripDrop({ clientX: 150, clientY: 20 }, tabs, 300)).toEqual({
+      dayDropDate: null,
+      aboveList: true,
+    });
+  });
+
+  it("only reorders when there is no strip", () => {
+    expect(
+      getDayStripDrop({ clientX: 50, clientY: 20 }, undefined, 60),
+    ).toEqual({
+      dayDropDate: null,
+      aboveList: false,
+    });
   });
 });
 
