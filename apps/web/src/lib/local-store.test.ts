@@ -3157,6 +3157,73 @@ describe("submitted weeks in the store", () => {
     expect(localStore.reopenWeek("2026-10-12")).toBeNull();
   });
 
+  /** Another window submitted the week: storage changed, no storage event yet. */
+  function submitInAnotherWindow() {
+    const stored = JSON.parse(
+      window.localStorage.getItem("ajour.local-state.v2")!,
+    ) as Record<string, unknown>;
+    window.localStorage.setItem(
+      "ajour.local-state.v2",
+      JSON.stringify({
+        ...stored,
+        lockedWeeks: [{ weekOf: "2026-10-05", lockedAt: 9 }],
+      }),
+    );
+  }
+
+  it("refuses a stale window's write to a week another window submitted", async () => {
+    seedWeek({ locked: false });
+    const { localStore } = await import("./local-store");
+    localStore.snapshot();
+    submitInAnotherWindow();
+
+    expect(() =>
+      localStore.updateTimesheetEntry("api", {
+        note: "Changed",
+        durationMs: HOUR,
+      }),
+    ).toThrow(reason);
+    const stored = JSON.parse(
+      window.localStorage.getItem("ajour.local-state.v2")!,
+    ) as { lockedWeeks: unknown[]; timesheetEntries: { note: string }[] };
+    expect(stored.lockedWeeks).toEqual([
+      { weekOf: "2026-10-05", lockedAt: 9 },
+    ]);
+    expect(stored.timesheetEntries[0]!.note).toBe("API");
+    expect(localStore.snapshot().lockedWeeks).toEqual([
+      { weekOf: "2026-10-05", lockedAt: 9 },
+    ]);
+  });
+
+  it("refuses any other stale write once, then writes on the fresh state", async () => {
+    seedWeek({ locked: false });
+    const { localStore, StaleWindowError } = await import("./local-store");
+    localStore.snapshot();
+    submitInAnotherWindow();
+    const write = () =>
+      localStore.saveManualTimeEntry({
+        localDate: "2026-10-13",
+        durationMs: HOUR,
+      });
+
+    let refusal: unknown;
+    try {
+      write();
+    } catch (error) {
+      refusal = error;
+    }
+    expect(refusal).toBeInstanceOf(StaleWindowError);
+    expect((refusal as Error).message).toBe(
+      "Ajour changed in another window. Try again.",
+    );
+    expect(localStore.snapshot().timesheetEntries).toHaveLength(1);
+
+    // The refusal refreshed this window, so the next try writes.
+    expect(() => write()).not.toThrow();
+    expect(localStore.snapshot().timesheetEntries).toHaveLength(2);
+    expect(localStore.snapshot().lockedWeeks).toHaveLength(1);
+  });
+
   it("starts with no submitted week", async () => {
     const { localStore } = await import("./local-store");
     expect(localStore.snapshot().lockedWeeks).toEqual([]);

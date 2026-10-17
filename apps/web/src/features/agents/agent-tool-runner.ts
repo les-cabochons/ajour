@@ -34,14 +34,15 @@ import { sendPendingSourceWrites } from "@/features/backlog/backlog-source-write
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { getUncheckedChangeIds } from "@/lib/commit-selection";
 import { localStore } from "@/lib/local-store";
+import { StaleWindowError } from "@/lib/stale-window-error";
 import { getIsoWeekDates, todayIsoDate } from "@/lib/utils";
 
 /**
  * Runs the data tools an agent calls through the local API's bridge. Inputs
  * are validated again here: the renderer does not trust the API's parsing.
  * A refusal returns a sentence the agent can act on. A write the local store
- * refuses because it would change a submitted week returns its lock reason
- * the same way. Anything else throws, and the bridge reports it as a failure.
+ * refuses because it would change a submitted week, or because another
+ * window changed the submitted weeks, returns its reason the same way. Anything else throws, and the bridge reports it as a failure.
  */
 
 function isReadTool(tool: string): tool is ReadToolName {
@@ -181,6 +182,7 @@ export async function runAgentToolCall(
   } catch (error) {
     if (error instanceof AgentToolRefusal) return refuse(error.message);
     if (error instanceof LockedWeekError) return refuse(error.message);
+    if (error instanceof StaleWindowError) return refuse(error.message);
     if (error instanceof ZodError) return refuse(formatZodError(error));
     throw error;
   }

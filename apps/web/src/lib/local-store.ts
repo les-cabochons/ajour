@@ -6,6 +6,7 @@ import {
   type TeamSettings,
 } from "@ajour/shared";
 import { todayIsoDate } from "@/lib/utils";
+import { StaleWindowError } from "@/lib/stale-window-error";
 import {
   changePullRequest,
   normalizePullRequests,
@@ -96,6 +97,8 @@ import {
 import { normalizeTimesheetTombstones } from "@/domain/time/timesheet-commit";
 import {
   assertNoLockedWeekWrite,
+  LockedWeekError,
+  findLockedWeekWrite,
   normalizeLockedWeeks,
   reopenWeek as applyReopenWeek,
   submitWeek as applySubmitWeek,
@@ -104,6 +107,7 @@ import {
   captureUndo,
   getUndoProjectIds,
   completeSourceWriteInUndo,
+  recordsEqual,
   restoreUndo,
   type LocalStateUndo,
   type LocalStateUndoResult,
@@ -225,6 +229,7 @@ export {
   getWorkItemEstimateFieldState,
   hasWorkItemEstimateSyncIssue,
 } from "@/domain/local-state";
+export { StaleWindowError } from "@/lib/stale-window-error";
 export type {
   BacklogSortMode,
   ExtensionBridgeStatus,
@@ -903,10 +908,47 @@ function refreshState(): LocalAppState {
   return cachedState;
 }
 
+/** The submitted weeks in storage, or undefined when storage has none to read. */
+function readStoredLockedWeeks() {
+  try {
+    const stored = window.localStorage.getItem(STORAGE_KEY);
+    if (!stored) return undefined;
+    const parsed = JSON.parse(stored) as Partial<LocalAppState>;
+    return normalizeLockedWeeks(parsed.lockedWeeks);
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * Refuses a write made from a stale cache: another window submitted or
+ * reopened a week, and this window has not read its storage event yet.
+ * Writing would erase that window's lock. Submit, Reopen and their Undo
+ * change the submitted weeks themselves, so they skip this check. The refusal
+ * refreshes the cache, so the next try works on the current state.
+ */
+function assertFreshLockedWeeks(cached: LocalAppState, next: LocalAppState) {
+  if (!recordsEqual(cached.lockedWeeks, next.lockedWeeks)) return;
+  const stored = readStoredLockedWeeks();
+  if (!stored || recordsEqual(stored, cached.lockedWeeks)) return;
+
+  const fresh = refreshState();
+  window.dispatchEvent(new Event(STATE_CHANGE_EVENT));
+  // Judge what this write changes against the fresh locks.
+  const weekOf = findLockedWeekWrite(
+    { ...cached, lockedWeeks: fresh.lockedWeeks },
+    { ...next, lockedWeeks: fresh.lockedWeeks },
+  );
+  throw weekOf ? new LockedWeekError(weekOf) : new StaleWindowError();
+}
+
 function writeState(state: LocalAppState) {
   // Every write passes here, so this one check keeps a submitted week as it
   // is, whatever command, Undo or agent tool made the write.
-  if (cachedState) assertNoLockedWeekWrite(cachedState, state);
+  if (cachedState) {
+    assertFreshLockedWeeks(cachedState, state);
+    assertNoLockedWeekWrite(cachedState, state);
+  }
   const nextState = { ...state, updatedAt: Date.now() };
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
   cachedState = nextState;
