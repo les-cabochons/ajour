@@ -3,11 +3,7 @@ import { fillTemplate } from "@ajour/shared/agent-task-templates";
 import type { AgentTaskStatus } from "@ajour/shared/agent-runs";
 import { RiExternalLinkLine as ExternalLink } from "@remixicon/react";
 import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { DisabledReason } from "@/components/disabled-reason";
 import {
   openAgentPanel,
   useAgentBridgeState,
@@ -103,25 +99,9 @@ export function AgentTaskButtons({ weekOf }: { weekOf: string }) {
         );
         return (
           <div key={`${task.pluginId}/${task.taskId}`} className="contents">
-            {reason ? (
-              // A disabled button gets no pointer events, so the wrapper
-              // carries the tooltip.
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <span
-                      tabIndex={0}
-                      aria-label={`${task.label}: ${reason}`}
-                    />
-                  }
-                >
-                  {button}
-                </TooltipTrigger>
-                <TooltipContent>{reason}</TooltipContent>
-              </Tooltip>
-            ) : (
-              button
-            )}
+            <DisabledReason label={task.label} reason={reason}>
+              {button}
+            </DisabledReason>
           </div>
         );
       })}
