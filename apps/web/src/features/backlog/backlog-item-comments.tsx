@@ -7,6 +7,10 @@ import type {
   BacklogReaction,
 } from "@ajour/shared";
 import { Markdown } from "@/components/markdown";
+import {
+  MarkdownEditor,
+  preloadMarkdownEditor,
+} from "@/components/markdown-editor";
 import { SectionHeading } from "@/components/section-heading";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
@@ -25,8 +29,11 @@ import {
   getPluginsOverview,
   isPluginApiMissing,
   listItemComments,
+  postItemComment,
   subscribePluginsOverview,
 } from "@/lib/app-api";
+import { getCommentDraft, setCommentDraft } from "@/lib/comment-drafts";
+import { getShortcutPlatform } from "@/lib/shortcuts";
 import { getCommentsSeenAt, markCommentsSeen } from "@/lib/comments-seen";
 import type { LocalWorkItem } from "@/domain/local-state";
 
@@ -239,6 +246,20 @@ export function BacklogItemComments({
     }
   };
 
+  // A posted comment joins the thread; the cached page is stale now.
+  const appendComment = (comment: BacklogComment) => {
+    firstPages.delete(key);
+    setThread((current) =>
+      current.kind === "ready"
+        ? {
+            ...current,
+            comments: [...current.comments, comment],
+            total: current.total === undefined ? undefined : current.total + 1,
+          }
+        : current,
+    );
+  };
+
   const count =
     thread.kind === "ready"
       ? (thread.total ?? thread.comments.length)
@@ -286,7 +307,150 @@ export function BacklogItemComments({
           onShowEarlier={() => void loadEarlier()}
         />
       )}
+      {thread.kind === "ready" ? (
+        <CommentComposer
+          key={itemId}
+          itemId={itemId}
+          source={source}
+          onPosted={appendComment}
+        />
+      ) : null}
     </section>
+  );
+}
+
+/**
+ * The editor pinned under the thread. It shows as a plain field until the
+ * user opens it, so CodeMirror loads only then. The text is kept per item
+ * until sent or discarded, and a failed send keeps it (ADR 0008).
+ */
+function CommentComposer({
+  itemId,
+  source,
+  onPosted,
+}: {
+  itemId: string;
+  source: CommentSource;
+  onPosted: (comment: BacklogComment) => void;
+}) {
+  const [text, setText] = useState(() => getCommentDraft(itemId) ?? "");
+  const [open, setOpen] = useState(false);
+  const [sending, setSending] = useState(false);
+  const [error, setError] = useState<string>();
+
+  const limit = source.capability.maxLength;
+  const length = text.trim().length;
+  const overLimit = limit !== undefined && length > limit;
+  const showCount = limit !== undefined && length >= limit * 0.8;
+  const sendKeys = getShortcutPlatform() === "mac" ? "⌘↵" : "Ctrl+Enter";
+
+  // Saved on every change, so a reload or a crash keeps what was typed.
+  const change = (value: string) => {
+    setText(value);
+    setError(undefined);
+    setCommentDraft(itemId, value);
+  };
+
+  const discard = () => {
+    setCommentDraft(itemId, "");
+    setText("");
+    setError(undefined);
+    setOpen(false);
+  };
+
+  const send = async (value: string) => {
+    const body = value.trim();
+    if (!body || sending || (limit !== undefined && body.length > limit)) {
+      return;
+    }
+    setSending(true);
+    setError(undefined);
+    try {
+      const { comment } = await postItemComment(
+        source.pluginId,
+        source.connectionId,
+        { sourceId: source.sourceId, body },
+      );
+      setCommentDraft(itemId, "");
+      setText("");
+      setOpen(false);
+      onPosted(comment);
+    } catch (failure) {
+      setError(
+        failure instanceof Error
+          ? failure.message
+          : "The comment couldn't be sent.",
+      );
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="backlog-comment-composer">
+      {open ? (
+        <>
+          <MarkdownEditor
+            autoFocus
+            aria-label="New comment"
+            value={text}
+            onChange={change}
+            onSubmit={(value) => void send(value)}
+            onCancel={() => setOpen(false)}
+            placeholder="Leave a comment. Markdown supported."
+            minLines={3}
+          />
+          <div className="mt-2 flex min-h-7 items-center gap-2">
+            {error ? (
+              <p
+                role="alert"
+                className="min-w-0 flex-1 truncate text-xs text-destructive"
+                title={error}
+              >
+                Not sent. {error}
+              </p>
+            ) : (
+              <span className="flex-1" />
+            )}
+            {showCount && limit !== undefined ? (
+              <Value tone={overLimit ? "danger" : "muted"}>
+                {length.toLocaleString()} / {limit.toLocaleString()}
+              </Value>
+            ) : null}
+            {text.trim() ? (
+              <Button variant="ghost" size="sm" onClick={discard}>
+                Discard
+              </Button>
+            ) : null}
+            <span className="text-2xs text-muted-foreground">{sendKeys}</span>
+            <Button
+              size="sm"
+              disabled={!text.trim() || overLimit || sending}
+              onClick={() => void send(text)}
+            >
+              {sending ? "Sending…" : "Comment"}
+            </Button>
+          </div>
+        </>
+      ) : (
+        <button
+          type="button"
+          className="backlog-comment-composer-field"
+          onPointerEnter={preloadMarkdownEditor}
+          onFocus={preloadMarkdownEditor}
+          onClick={() => setOpen(true)}
+        >
+          {text.trim() ? (
+            <span className="line-clamp-2 text-left">
+              <span className="font-medium">Draft: </span>
+              {text}
+            </span>
+          ) : (
+            "Leave a comment…"
+          )}
+        </button>
+      )}
+    </div>
   );
 }
 

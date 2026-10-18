@@ -1845,6 +1845,9 @@ describe("backlog comment routes", () => {
     "    total: 1,",
     "  };",
     "}",
+    "export async function postItemComment(connection, request) {",
+    "  return { comment: { id: 'c2', author: { id: 'me', displayName: 'Me' }, body: request.body, createdAt: '2026-10-17T10:00:00Z' } };",
+    "}",
   ].join("\n");
 
   async function createServer(capabilities: Record<string, unknown>) {
@@ -1973,6 +1976,40 @@ describe("backlog comment routes", () => {
         body: JSON.stringify({ sourceId: "42", limit: 5 }),
       }),
     ).resolves.toMatchObject({ status: 404 });
+  });
+
+  it("posts a comment and logs no text", async () => {
+    const { server, connectionId, events } = await createServer({
+      connector: { comments: {} },
+    });
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: listPath(connectionId, "postItemComment"),
+        body: JSON.stringify({ sourceId: "42", body: "Private reply" }),
+      }),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { comment: { id: "c2", body: "Private reply" } },
+    });
+    const logged = events.filter((event) => event.event === "backlog.comments");
+    expect(logged).toEqual([
+      expect.objectContaining({
+        operation: "postItemComment",
+        comment_count: 1,
+        outcome: "ok",
+      }),
+    ]);
+    expect(JSON.stringify(logged)).not.toContain("Private reply");
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: listPath(connectionId, "postItemComment"),
+        body: JSON.stringify({ sourceId: "42", body: "   " }),
+      }),
+    ).resolves.toMatchObject({ status: 400 });
   });
 
   it("keeps the connection's secret out of a failed read", async () => {

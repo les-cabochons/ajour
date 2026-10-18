@@ -727,6 +727,39 @@
     font-weight: 500;
   }
 
+  /* The comment editor stays at the bottom of the window while the thread
+     scrolls (layout B). */
+  .backlog-comment-composer {
+    position: sticky;
+    bottom: 0;
+    z-index: 1;
+    margin-top: 1rem;
+    padding: 0.625rem 0 1rem;
+    border-top: 1px solid var(--border);
+    background: var(--background);
+  }
+
+  .backlog-comment-composer-field {
+    display: flex;
+    width: 100%;
+    min-height: var(--control-height-lg);
+    align-items: center;
+    padding: 0.5rem 0.625rem;
+    border: 1px solid var(--field-border);
+    border-radius: var(--field-radius);
+    background: var(--field-bg);
+    color: var(--muted-foreground);
+    font-size: var(--text-sm);
+    text-align: left;
+    cursor: text;
+  }
+
+  .backlog-comment-composer-field:focus-visible {
+    border-color: var(--ring);
+    outline: none;
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--ring) 40%, transparent);
+  }
+
   .backlog-comments-new::after {
     flex: 1;
     height: 1px;

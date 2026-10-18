@@ -1588,7 +1588,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           pluginId,
           "connector",
           new Set(plugins.map((candidate) => candidate.id)),
-          "reading its comments",
+          "using its comments",
         );
         if (inactive) {
           writeJson(response, 409, { error: inactive });
@@ -1638,7 +1638,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             },
             commentRequest,
           );
-          logCommentEvent("ok", result.comments.length);
+          logCommentEvent(
+            "ok",
+            "comments" in result ? result.comments.length : 1,
+          );
           writeJson(response, 200, result);
         } catch (error) {
           const message = boundConnectionError(

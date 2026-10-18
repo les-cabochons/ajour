@@ -18,7 +18,7 @@ Click an item in the sidebar to open its page. On the Backlog page, a click open
 - **The header**, with the title and the item's actions: **Start entry**, **Snooze**, **Settle** and **New entry**. Click the title to rename it.
 - **The estimates**: **Original**, **Remaining**, **Completed** and **Logged in Ajour**, with a bar of completed over original. Click an estimate to edit it.
 - **Description**, in Markdown. Press **Edit** to change it.
-- **Comments**, for an item synced from a tool whose plugin provides them: the newest five, oldest first, with **Show earlier comments** for the rest. A **New** line marks the comments that arrived since you last opened the item. Ajour reads comments from the tool each time and never stores them.
+- **Comments**, for an item synced from a tool whose plugin provides them: the newest five, oldest first, with **Show earlier comments** for the rest. A **New** line marks the comments that arrived since you last opened the item. Press **Leave a comment…** at the bottom of the thread to write one in Markdown, and <kbd>Ctrl</kbd>+<kbd>Enter</kbd> (<kbd>⌘</kbd>+<kbd>Enter</kbd> on macOS) or **Comment** to send it. It goes to the tool at once. If sending fails, the text stays so you can send it again, and an unsent comment stays as a draft on this device until you send it or press **Discard**. Ajour reads comments from the tool each time and never stores them.
 - **The card**, at the side: state, source state, priority, lifecycle, project, task and source, then the **Subitems**, with **Add subitem**, and the **Time entries** logged on the item, with **Add time entry**.
 
 Changes on the page save when you press <kbd>Enter</kbd> or leave the field, with an Undo toast.

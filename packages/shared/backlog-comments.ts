@@ -98,6 +98,26 @@ export type BacklogListItemCommentsResult = z.infer<
   typeof backlogListItemCommentsResultSchema
 >;
 
+/** The most text Ajour sends in one comment, whatever the source allows. */
+export const BACKLOG_COMMENT_MAX_LENGTH = 1_000_000;
+
+export const backlogPostItemCommentRequestSchema = z.object({
+  sourceId: z.string().min(1).max(400),
+  /** Markdown. Mentions are `[@Name](mention:<id>)`. */
+  body: z.string().trim().min(1).max(BACKLOG_COMMENT_MAX_LENGTH),
+});
+export type BacklogPostItemCommentRequest = z.infer<
+  typeof backlogPostItemCommentRequestSchema
+>;
+
+export const backlogPostItemCommentResultSchema = z.object({
+  /** The comment as the source stored it. */
+  comment: backlogCommentSchema,
+});
+export type BacklogPostItemCommentResult = z.infer<
+  typeof backlogPostItemCommentResultSchema
+>;
+
 /**
  * The comment exports a backlog plugin can provide. Each receives the
  * connection and the parsed request. Their names say "item" because a code
@@ -107,6 +127,11 @@ export const backlogCommentOperations = {
   listItemComments: {
     request: backlogListItemCommentsRequestSchema,
     result: backlogListItemCommentsResultSchema,
+  },
+  /** Posting is part of the comments capability: no flag of its own. */
+  postItemComment: {
+    request: backlogPostItemCommentRequestSchema,
+    result: backlogPostItemCommentResultSchema,
   },
 } as const;
 
