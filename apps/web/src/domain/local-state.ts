@@ -348,6 +348,11 @@ export interface UserPreferences {
   closeParentSubitems: CloseParentSubitems;
   /** How far the week may run ahead of or behind its targets before an agent asks. Default 20. */
   paceTolerancePercent?: number;
+  /**
+   * Whose project names the Commit page's lines show: "ajour" or a plugin ID.
+   * Undefined, or a plugin that is not active, shows Ajour's names.
+   */
+  commitLinesNameSource?: string;
   calendarSuggestions?: CalendarSuggestionSettings;
 }
 

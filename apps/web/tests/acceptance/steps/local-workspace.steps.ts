@@ -1681,7 +1681,7 @@ Then("the week can be committed", async ({ page }) => {
   await page.getByRole("button", { name: "Show day and week totals" }).click();
   const commitWeek = page
     .getByLabel("Current time totals")
-    .getByRole("button", { name: "Commit week" });
+    .getByRole("button", { name: "Commit", exact: true });
 
   await expect(commitWeek).toBeVisible();
   await expect(commitWeek).toBeEnabled();
@@ -2119,7 +2119,7 @@ When(
     await expect(page.locator(".time-page-stack")).toBeVisible({
       timeout: 15_000,
     });
-    await expect(page.getByRole("button", { name: "Commit week" })).toHaveCount(
+    await expect(page.getByRole("button", { name: "Commit", exact: true })).toHaveCount(
       0,
     );
     await page
@@ -2128,7 +2128,7 @@ When(
     await expect(page.getByLabel("Current time totals")).toContainText("5:00");
     await page
       .getByLabel("Current time totals")
-      .getByRole("button", { name: "Commit week" })
+      .getByRole("button", { name: "Commit", exact: true })
       .click();
     await expect(page).toHaveURL(/\/time\/2026-10-05\/commit/);
   },
@@ -2142,13 +2142,13 @@ When(
     await expect(page.locator(".time-page-stack")).toBeVisible({
       timeout: 15_000,
     });
-    await expect(page.getByRole("button", { name: "Commit week" })).toHaveCount(
+    await expect(page.getByRole("button", { name: "Commit", exact: true })).toHaveCount(
       0,
     );
     await page
       .getByRole("button", { name: "Show day and week totals" })
       .click();
-    await page.getByRole("button", { name: "Commit week" }).click();
+    await page.getByRole("button", { name: "Commit", exact: true }).click();
     await expect(page).toHaveURL(/\/time\/2026-10-05\/commit/);
   },
 );
@@ -2164,7 +2164,7 @@ When("I open the Commit page from Settings totals", async ({ page }) => {
   await expect(page).toHaveURL(/\/settings\/general$/);
   await page.getByRole("button", { name: "Show day and week totals" }).click();
   await expect(page.getByLabel("Current time totals")).toContainText("5:00");
-  await page.getByRole("button", { name: "Commit week" }).click();
+  await page.getByRole("button", { name: "Commit", exact: true }).click();
   await expect(page).toHaveURL(/\/time\/2026-10-05\/commit/);
 });
 
@@ -2181,7 +2181,7 @@ When(
       .click();
     await page
       .getByLabel("Current time totals")
-      .getByRole("button", { name: "Commit week" })
+      .getByRole("button", { name: "Commit", exact: true })
       .click();
   },
 );
@@ -2333,7 +2333,7 @@ Then(
       page.evaluate(() => navigator.clipboard.readText());
 
     await monday.getByRole("button", { name: "Copy hours: 3.00" }).click();
-    await expect.poll(readClipboard).toBe("3.00");
+    await expect.poll(readClipboard).toBe("3,00");
     await monday
       .getByRole("button", { name: "Copy comments: Login form | API" })
       .click();

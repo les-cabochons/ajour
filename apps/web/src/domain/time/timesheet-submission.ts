@@ -4,6 +4,10 @@ import {
   type LocalTimesheetEntry,
   type WeeklyCapacityTargets,
 } from "@/domain/local-state";
+import {
+  resolvePluginProperties,
+  type ProjectPropertyPlugin,
+} from "@/domain/projects/plugin-properties";
 
 /**
  * Rules for the Commit page's lines: how the week's entries become copyable
@@ -31,7 +35,10 @@ export interface SubmitLine {
   key: string;
   entryIds: string[];
   projectId?: string;
-  /** Undefined when the entries have no project. */
+  /**
+   * The project's full name, as the external timesheet knows it. Undefined
+   * when the entries have no project.
+   */
   projectName?: string;
   /** The project's code. Undefined when the project has no code. */
   projectCode?: string;
@@ -85,13 +92,14 @@ function describeEntries(
     const task = entry.taskId
       ? project?.tasks.find((candidate) => candidate._id === entry.taskId)
       : undefined;
-    const projectName = project
-      ? getLocalProjectDisplayName(project)
-      : undefined;
+    const projectName = project?.name;
     const projectCode = project?.code?.trim() || undefined;
-    // Imported entries without a task keep their source label as the task.
+    // Imported entries without a task keep their source label as the task,
+    // unless the label is only the project's name.
     const legacyLabel =
-      entry.label.trim() && entry.label !== projectName
+      entry.label.trim() &&
+      entry.label !== projectName &&
+      entry.label !== (project && getLocalProjectDisplayName(project))
         ? entry.label.trim()
         : undefined;
     return {
@@ -183,6 +191,93 @@ export function groupSubmitLines({
           );
     return lines.length > 0 ? [{ key: localDate, localDate, lines }] : [];
   });
+}
+
+/** The Names choice that shows Ajour's own project names. */
+export const AJOUR_LINE_NAME_SOURCE = "ajour";
+
+/** One option of the Lines section's Names switch. */
+export interface LineNameSource {
+  /** `AJOUR_LINE_NAME_SOURCE` or a plugin ID. */
+  id: string;
+  label: string;
+}
+
+/** Ajour, then each active plugin that adds project properties, by section title. */
+export function listLineNameSources(
+  plugins: ProjectPropertyPlugin[] = [],
+): LineNameSource[] {
+  return [
+    { id: AJOUR_LINE_NAME_SOURCE, label: "Ajour" },
+    ...plugins.map((plugin) => ({
+      id: plugin.pluginId,
+      label: plugin.capability.section,
+    })),
+  ];
+}
+
+/**
+ * The saved Names choice, or Ajour when it names no active plugin. `plugins`
+ * is undefined while they load: a saved plugin choice then resolves to
+ * undefined, so no line shows or copies Ajour's name in the meantime.
+ */
+export function resolveLineNameSource(
+  saved: string | undefined,
+  plugins: ProjectPropertyPlugin[] | undefined,
+): string | undefined {
+  if (!saved || saved === AJOUR_LINE_NAME_SOURCE) return AJOUR_LINE_NAME_SOURCE;
+  if (!plugins) return undefined;
+  return plugins.some((plugin) => plugin.pluginId === saved)
+    ? saved
+    : AJOUR_LINE_NAME_SOURCE;
+}
+
+/** What a line's project and task button shows and copies, or that it waits. */
+export type LineNames = { shown: string; copied: string } | { pending: true };
+
+/**
+ * The project name a plugin gives a project: its first field that defaults
+ * to the full name, else its first field. A field with no value falls back
+ * to the full name.
+ */
+function pluginProjectName(
+  project: LocalProject,
+  plugin: ProjectPropertyPlugin,
+) {
+  const properties = resolvePluginProperties(project, plugin);
+  const property =
+    properties.find((item) => item.field.defaultFrom === "fullName") ??
+    properties[0];
+  return property?.value.trim() || project.name;
+}
+
+/**
+ * What a line's project and task button shows ("Project / Task") and copies
+ * ("Project Task"), with the project named by `source`. A missing project or
+ * task leaves only the other one; undefined when the line has neither.
+ * `{ pending: true }` while `source` is undefined, that is while the saved
+ * plugin choice waits for the plugins to load.
+ */
+export function describeLineNames(
+  line: SubmitLine,
+  source: string | undefined,
+  projects: LocalProject[],
+  plugins: ProjectPropertyPlugin[] | undefined,
+): LineNames | undefined {
+  if (source === undefined) return { pending: true };
+  const plugin = plugins?.find((candidate) => candidate.pluginId === source);
+  const project =
+    plugin && line.projectId
+      ? projects.find((candidate) => candidate._id === line.projectId)
+      : undefined;
+  const projectName =
+    plugin && project ? pluginProjectName(project, plugin) : line.projectName;
+  const parts = [projectName, line.taskName].filter((part): part is string =>
+    Boolean(part),
+  );
+  return parts.length > 0
+    ? { shown: parts.join(" / "), copied: parts.join(" ") }
+    : undefined;
 }
 
 export type SubmitWarning =
