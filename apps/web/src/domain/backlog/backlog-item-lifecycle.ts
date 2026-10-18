@@ -1,4 +1,4 @@
-import { normalizeConnectorStatusKey } from "@ajour/shared";
+import { normalizeSourceStatusKey } from "@ajour/shared";
 import type {
   BacklogSortMode,
   LocalAppState,
@@ -81,7 +81,7 @@ function withMoveSourceWrite(
   now?: number,
 ): LocalWorkItem {
   const sourceStatusKey = sourceStatusLabel
-    ? normalizeConnectorStatusKey(sourceStatusLabel)
+    ? normalizeSourceStatusKey(sourceStatusLabel)
     : undefined;
   if (
     !sourceStatusLabel ||
@@ -225,7 +225,7 @@ function saveRunningEntries(
 }
 
 /**
- * Applies the done rules after settings, mapping or connector changes. Every
+ * Applies the done rules after settings, mapping or source changes. Every
  * open item in a done state closes, including items reactivated without a
  * workflow change, with its running entry saved.
  * Archived items keep their done state: a mapping edit never reopens history.
@@ -577,7 +577,7 @@ function getSourceWrite(
 
   const state =
     change.state &&
-    normalizeConnectorStatusKey(change.state.name) !== workItem.sourceStatusKey
+    normalizeSourceStatusKey(change.state.name) !== workItem.sourceStatusKey
       ? change.state.name
       : undefined;
   const priority =
@@ -615,7 +615,7 @@ function getSettleWorkflowStateId(
         state.workflowStateMappings,
         workItem.source,
         workItem.sourceConnectionId,
-        normalizeConnectorStatusKey(change.state.name),
+        normalizeSourceStatusKey(change.state.name),
         workItem.sourceProjectName,
       )
     : undefined;
@@ -744,7 +744,7 @@ function withSourceWrite(
     pendingSourceWrite: sourceWrite,
     ...(sourceWrite.state !== undefined
       ? {
-          sourceStatusKey: normalizeConnectorStatusKey(sourceWrite.state),
+          sourceStatusKey: normalizeSourceStatusKey(sourceWrite.state),
           sourceStatusLabel: sourceWrite.state,
         }
       : {}),

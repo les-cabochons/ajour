@@ -1,6 +1,6 @@
 # Backlog
 
-The backlog holds the work you plan to spend time on. Each backlog item can point at a project and task, so starting it logs time in the right place. Items come from you, or from a connector such as [Azure DevOps](/plugins/azure-devops) or [Jira](/plugins/jira).
+The backlog holds the work you plan to spend time on. Each backlog item can point at a project and task, so starting it logs time in the right place. Items come from you, or from a backlog plugin such as [Azure DevOps](/plugins/azure-devops) or [Jira](/plugins/jira).
 
 <Shot name="backlog-list" alt="The Backlog page grouped by workflow state" />
 
@@ -46,4 +46,4 @@ Done items are archived. To see them, press **Filter**, choose **State**, then *
 
 ## Unmapped source states
 
-When a connector reports a state that is not mapped to one of your workflow states, the filter bar shows a link such as `4 unmapped source states`. It opens **Settings › Workflow**, where you map them. See [Workflow states](/backlog/workflow#map-source-states).
+When a backlog plugin reports a state that is not mapped to one of your workflow states, the filter bar shows a link such as `4 unmapped source states`. It opens **Settings › Workflow**, where you map them. See [Workflow states](/backlog/workflow#map-source-states).

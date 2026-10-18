@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { ConnectorSettleState } from "@ajour/shared";
+import type { BacklogSettleState } from "@ajour/shared";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -36,7 +36,7 @@ import {
   isSettleStateDraftValid,
 } from "@/features/backlog/settle-draft";
 import { offerUndo } from "@/features/feedback/undo-toast";
-import { listConnectorSettleStates } from "@/lib/app-api";
+import { listBacklogSettleStates } from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
 import { useLocalState } from "@/lib/local-hooks";
 
@@ -56,7 +56,7 @@ export function requestSettle(
 }
 
 /**
- * How Settle behaves on an item. Items whose connector can't write settle
+ * How Settle behaves on an item. Items whose plugin can't write settle
  * locally. Others follow their source project's settle rule: Ask opens the
  * dialog, Apply settles with the rule's change. `ask`, from Shift+E or
  * Shift-click, opens the dialog prefilled with the rule instead.
@@ -136,7 +136,7 @@ export async function settleBacklogItemWithUndo(
 
 type StatesLoad =
   | { status: "loading" }
-  | { status: "ready"; states: ConnectorSettleState[] }
+  | { status: "ready"; states: BacklogSettleState[] }
   | { status: "failed"; message: string };
 
 /**
@@ -176,7 +176,7 @@ export function SettleDialogHost() {
   useEffect(() => {
     if (!workItem?.sourceId || !workItem.sourceConnectionId) return;
     let cancelled = false;
-    listConnectorSettleStates(
+    listBacklogSettleStates(
       workItem.source,
       workItem.sourceConnectionId,
       workItem.sourceId,
@@ -318,7 +318,7 @@ export function SettleDialogHost() {
               />
               {change === null && stateDraftValid ? (
                 <FieldError>
-                  This connector cannot clear its source priority. Choose a
+                  This plugin cannot clear its source priority. Choose a
                   priority.
                 </FieldError>
               ) : null}

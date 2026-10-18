@@ -3,30 +3,30 @@ import { pathToFileURL } from "node:url";
 import { PluginWorkerLifetime } from "./plugin-worker-lifetime.ts";
 import { readFile, realpath } from "node:fs/promises";
 import {
-  CONNECTOR_PLUGIN_API_VERSION,
-  connectorFieldValuesSchema,
-  connectorPluginSyncResultSchema,
-  connectorPluginValidationResultSchema,
-  connectorSettleStatesRequestSchema,
-  connectorSettleStatesResultSchema,
-  connectorSettleWriteRequestSchema,
-  connectorSettleWriteResultSchema,
-  connectorSyncWorkItemSchema,
-  connectorValidationContextSchema,
-  type ConnectorFieldValues,
-  type ConnectorPluginManifest,
-  type ConnectorPluginSyncResult,
-  type ConnectorPluginValidationResult,
-  type ConnectorSettleStatesRequest,
-  type ConnectorSettleStatesResult,
-  type ConnectorSettleWriteRequest,
-  type ConnectorSettleWriteResult,
-  type ConnectorSyncWorkItem,
-  type ConnectorValidationContext,
+  PLUGIN_API_VERSION,
+  pluginFieldValuesSchema,
+  backlogPluginSyncResultSchema,
+  pluginValidationResultSchema,
+  backlogSettleStatesRequestSchema,
+  backlogSettleStatesResultSchema,
+  backlogSettleWriteRequestSchema,
+  backlogSettleWriteResultSchema,
+  backlogSyncWorkItemSchema,
+  pluginValidationContextSchema,
+  type PluginFieldValues,
+  type PluginManifest,
+  type BacklogPluginSyncResult,
+  type PluginValidationResult,
+  type BacklogSettleStatesRequest,
+  type BacklogSettleStatesResult,
+  type BacklogSettleWriteRequest,
+  type BacklogSettleWriteResult,
+  type BacklogSyncWorkItem,
+  type PluginValidationContext,
   type SwitchableCapability,
   teamCreateResultSchema,
   type TeamCreateResult,
-} from "../../../packages/shared/connectors.ts";
+} from "../../../packages/shared/plugins.ts";
 import {
   teamCreateRequestSchema,
   teamSyncRequestSchema,
@@ -50,15 +50,15 @@ import {
 } from "../../../packages/shared/calendar.ts";
 import { z } from "zod";
 import {
-  discoverInstalledConnectorPlugins,
-  installConnectorPluginArchive,
-  reconcileConnectorPluginInstallRoot,
+  discoverInstalledPlugins,
+  installPluginArchive,
+  reconcilePluginInstallRoot,
   readAgentTaskPromptFile,
-  readConnectorPlugin,
-  uninstallConnectorPluginPackage,
-  type InstalledConnectorPlugin,
-  type ResolvedConnectorPlugin,
-  type UnavailableConnectorPlugin,
+  readPlugin,
+  uninstallPluginPackage,
+  type InstalledPlugin,
+  type ResolvedPlugin,
+  type UnavailablePlugin,
 } from "./plugin-package.ts";
 
 interface PluginHostOptions {
@@ -87,7 +87,7 @@ const pluginInvocationConnectionSchema = z.object({
   connectedAt: z.number().int().positive(),
   lastSyncAt: z.number().int().positive().optional(),
   lastError: z.string().max(1000).optional(),
-  config: connectorFieldValuesSchema,
+  config: pluginFieldValuesSchema,
 });
 
 type PluginInvocationConnection = z.infer<
@@ -125,17 +125,14 @@ export function capabilityOfMethod(
   return method in calendarOperations ? "calendar" : "codeHost";
 }
 
-function comparePlugins(
-  left: ConnectorPluginManifest,
-  right: ConnectorPluginManifest,
-) {
+function comparePlugins(left: PluginManifest, right: PluginManifest) {
   return (
     left.displayName.localeCompare(right.displayName) ||
     left.id.localeCompare(right.id)
   );
 }
 
-export class ConnectorPluginManager {
+export class PluginManager {
   private readonly installedPluginDirectory: string;
   private readonly developmentPluginDirectories: string[];
   private readonly bundledPluginArchives: string[];
@@ -164,7 +161,7 @@ export class ConnectorPluginManager {
     this.allowDevelopmentPlugins = options.allowDevelopmentPlugins ?? false;
     this.operationGate = options.operationGate;
     this.workers = new PluginWorkerLifetime({
-      name: "Connector",
+      name: "Plugin",
       requestTimeoutMs: options.requestTimeoutMs ?? 30_000,
       workerScriptUrl:
         options.workerScriptUrl ??
@@ -176,14 +173,14 @@ export class ConnectorPluginManager {
     return this.workers.activeOperationCount;
   }
 
-  async listPlugins(): Promise<ConnectorPluginManifest[]> {
+  async listPlugins(): Promise<PluginManifest[]> {
     return (await this.inspectPlugins()).plugins;
   }
 
   /** Runnable plugins, plus installed packages built for another plugin API. */
   async inspectPlugins(): Promise<{
-    plugins: ConnectorPluginManifest[];
-    unavailable: UnavailableConnectorPlugin[];
+    plugins: PluginManifest[];
+    unavailable: UnavailablePlugin[];
   }> {
     this.assertRunning();
     const { plugins, unavailable } = await this.discoverPlugins();
@@ -203,18 +200,18 @@ export class ConnectorPluginManager {
   async installPluginArchive(
     archiveBytes: Uint8Array,
     archiveFilename: string,
-    afterInstall?: (installed: InstalledConnectorPlugin) => Promise<void>,
-  ): Promise<InstalledConnectorPlugin> {
+    afterInstall?: (installed: InstalledPlugin) => Promise<void>,
+  ): Promise<InstalledPlugin> {
     this.assertRunning();
     return await this.runPackageMutation(async () => {
       await this.ensureInitialized();
       if (this.workers.activeOperationCount > 0) {
         throw new Error(
-          "Wait for active connector operations to finish before installing a plugin.",
+          "Wait for active plugin operations to finish before installing a plugin.",
         );
       }
 
-      const installed = await installConnectorPluginArchive({
+      const installed = await installPluginArchive({
         archiveBytes,
         archiveFilename,
         installRoot: this.installedPluginDirectory,
@@ -225,22 +222,22 @@ export class ConnectorPluginManager {
     });
   }
 
-  async uninstallPlugin(pluginId: string): Promise<ConnectorPluginManifest> {
+  async uninstallPlugin(pluginId: string): Promise<PluginManifest> {
     this.assertRunning();
     return await this.runPackageMutation(async () => {
       await this.ensureInitialized();
       await this.cancelPluginOperations(
         pluginId,
-        new Error(`Connector plugin "${pluginId}" was uninstalled.`),
+        new Error(`Plugin "${pluginId}" was uninstalled.`),
       );
 
-      const removedPlugin = await uninstallConnectorPluginPackage({
+      const removedPlugin = await uninstallPluginPackage({
         installRoot: this.installedPluginDirectory,
         pluginId,
       });
       if (!removedPlugin) {
         throw new Error(
-          `Connector plugin "${pluginId}" is not installed as a managed package.`,
+          `Plugin "${pluginId}" is not installed as a managed package.`,
         );
       }
 
@@ -268,32 +265,32 @@ export class ConnectorPluginManager {
   /** `context` names the switchable capabilities that are on. */
   async validateConnection(
     pluginId: string,
-    config: ConnectorFieldValues,
-    context?: ConnectorValidationContext,
-  ): Promise<ConnectorPluginValidationResult> {
+    config: PluginFieldValues,
+    context?: PluginValidationContext,
+  ): Promise<PluginValidationResult> {
     return await this.invokePlugin(
       pluginId,
       "validateConnection",
       {
-        config: connectorFieldValuesSchema.parse(config),
+        config: pluginFieldValuesSchema.parse(config),
         ...(context
-          ? { context: connectorValidationContextSchema.parse(context) }
+          ? { context: pluginValidationContextSchema.parse(context) }
           : {}),
       },
-      connectorPluginValidationResultSchema,
+      pluginValidationResultSchema,
     );
   }
 
   async syncConnection(
     pluginId: string,
     connection: PluginInvocationConnection,
-    workItems: ConnectorSyncWorkItem[] = [],
-  ): Promise<ConnectorPluginSyncResult> {
+    workItems: BacklogSyncWorkItem[] = [],
+  ): Promise<BacklogPluginSyncResult> {
     await this.assertCapability(pluginId, "connector");
     const payload = {
       connection: pluginInvocationConnectionSchema.parse(connection),
       workItems: workItems.map((workItem) =>
-        connectorSyncWorkItemSchema.parse(workItem),
+        backlogSyncWorkItemSchema.parse(workItem),
       ),
     };
 
@@ -301,7 +298,7 @@ export class ConnectorPluginManager {
       pluginId,
       "syncConnection",
       payload,
-      connectorPluginSyncResultSchema,
+      backlogPluginSyncResultSchema,
     );
   }
 
@@ -392,7 +389,7 @@ export class ConnectorPluginManager {
    */
   async createTeam(
     pluginId: string,
-    config: ConnectorFieldValues,
+    config: PluginFieldValues,
     request: TeamCreateRequest,
   ): Promise<TeamCreateResult> {
     await this.assertCapability(pluginId, "team");
@@ -400,7 +397,7 @@ export class ConnectorPluginManager {
       pluginId,
       "createTeam",
       {
-        config: connectorFieldValuesSchema.parse(config),
+        config: pluginFieldValuesSchema.parse(config),
         request: teamCreateRequestSchema.parse(request),
       },
       teamCreateResultSchema,
@@ -428,34 +425,34 @@ export class ConnectorPluginManager {
   async listSettleStates(
     pluginId: string,
     connection: PluginInvocationConnection,
-    request: ConnectorSettleStatesRequest,
-  ): Promise<ConnectorSettleStatesResult> {
+    request: BacklogSettleStatesRequest,
+  ): Promise<BacklogSettleStatesResult> {
     await this.assertSupportsSettle(pluginId);
     return await this.invokePlugin(
       pluginId,
       "listSettleStates",
       {
         connection: pluginInvocationConnectionSchema.parse(connection),
-        request: connectorSettleStatesRequestSchema.parse(request),
+        request: backlogSettleStatesRequestSchema.parse(request),
       },
-      connectorSettleStatesResultSchema,
+      backlogSettleStatesResultSchema,
     );
   }
 
   async writeSettle(
     pluginId: string,
     connection: PluginInvocationConnection,
-    request: ConnectorSettleWriteRequest,
-  ): Promise<ConnectorSettleWriteResult> {
+    request: BacklogSettleWriteRequest,
+  ): Promise<BacklogSettleWriteResult> {
     await this.assertSupportsSettle(pluginId);
     return await this.invokePlugin(
       pluginId,
       "writeSettle",
       {
         connection: pluginInvocationConnectionSchema.parse(connection),
-        request: connectorSettleWriteRequestSchema.parse(request),
+        request: backlogSettleWriteRequestSchema.parse(request),
       },
-      connectorSettleWriteResultSchema,
+      backlogSettleWriteResultSchema,
     );
   }
 
@@ -494,7 +491,7 @@ export class ConnectorPluginManager {
       await this.operationGate?.(pluginId, method);
       return {
         workerData: {
-          apiVersion: CONNECTOR_PLUGIN_API_VERSION,
+          apiVersion: PLUGIN_API_VERSION,
           entrypointUrl: pathToFileURL(plugin.entrypointPath).toString(),
           method,
           params,
@@ -520,7 +517,7 @@ export class ConnectorPluginManager {
     const plugin = await this.getPlugin(pluginId);
     if (!plugin.manifest.capabilities.connector?.settle) {
       throw new Error(
-        `Connector plugin "${pluginId}" does not support settling backlog items.`,
+        `Plugin "${pluginId}" does not support settling backlog items.`,
       );
     }
   }
@@ -528,17 +525,17 @@ export class ConnectorPluginManager {
   private assertCanInvoke() {
     this.assertRunning();
     if (this.mutatingPluginPackage) {
-      throw new Error("Connector plugin package change is in progress.");
+      throw new Error("Plugin package change is in progress.");
     }
   }
 
-  private async getPlugin(pluginId: string): Promise<ResolvedConnectorPlugin> {
+  private async getPlugin(pluginId: string): Promise<ResolvedPlugin> {
     const { plugins, unavailable } = await this.discoverPlugins();
     const plugin = plugins.get(pluginId);
     if (!plugin) {
       throw new Error(
         unavailable.get(pluginId)?.reason ??
-          `Connector plugin "${pluginId}" is not installed.`,
+          `Plugin "${pluginId}" is not installed.`,
       );
     }
 
@@ -546,14 +543,14 @@ export class ConnectorPluginManager {
   }
 
   private async discoverPlugins(): Promise<{
-    plugins: Map<string, ResolvedConnectorPlugin>;
-    unavailable: Map<string, UnavailableConnectorPlugin>;
+    plugins: Map<string, ResolvedPlugin>;
+    unavailable: Map<string, UnavailablePlugin>;
   }> {
     await this.ensureInitialized();
     return await this.runPackageRead(async () => {
-      const plugins = new Map<string, ResolvedConnectorPlugin>();
-      const unavailable = new Map<string, UnavailableConnectorPlugin>();
-      const installed = await discoverInstalledConnectorPlugins(
+      const plugins = new Map<string, ResolvedPlugin>();
+      const unavailable = new Map<string, UnavailablePlugin>();
+      const installed = await discoverInstalledPlugins(
         this.installedPluginDirectory,
       );
 
@@ -567,12 +564,12 @@ export class ConnectorPluginManager {
       if (this.allowDevelopmentPlugins) {
         for (const directory of this.developmentPluginDirectories) {
           try {
-            const plugin = await readConnectorPlugin(directory, "development");
+            const plugin = await readPlugin(directory, "development");
             plugins.set(plugin.manifest.id, plugin);
             unavailable.delete(plugin.manifest.id);
           } catch (error) {
             console.error(
-              `Skipping invalid development connector plugin "${directory}".`,
+              `Skipping invalid development plugin "${directory}".`,
               error,
             );
           }
@@ -600,11 +597,11 @@ export class ConnectorPluginManager {
   }
 
   private async installBundledPlugins() {
-    await reconcileConnectorPluginInstallRoot(this.installedPluginDirectory);
+    await reconcilePluginInstallRoot(this.installedPluginDirectory);
     for (const archivePath of this.bundledPluginArchives) {
       try {
         const archiveBytes = await readFile(archivePath);
-        await installConnectorPluginArchive({
+        await installPluginArchive({
           archiveBytes,
           archiveFilename: path.basename(archivePath),
           installRoot: this.installedPluginDirectory,
@@ -612,7 +609,7 @@ export class ConnectorPluginManager {
         });
       } catch (error) {
         console.error(
-          `Unable to install bundled connector plugin "${archivePath}".`,
+          `Unable to install bundled plugin "${archivePath}".`,
           error,
         );
       }
@@ -621,7 +618,7 @@ export class ConnectorPluginManager {
 
   private assertRunning() {
     if (this.shuttingDown) {
-      throw new Error("Connector plugin host is shutting down.");
+      throw new Error("Plugin host is shutting down.");
     }
   }
 
@@ -658,9 +655,7 @@ export class ConnectorPluginManager {
   private async runPackageMutation<T>(operation: () => Promise<T>): Promise<T> {
     this.assertRunning();
     if (this.mutatingPluginPackage) {
-      throw new Error(
-        "Another connector plugin package change is already in progress.",
-      );
+      throw new Error("Another plugin package change is already in progress.");
     }
 
     this.mutatingPluginPackage = true;
@@ -680,4 +675,4 @@ export class ConnectorPluginManager {
   }
 }
 
-export type ConnectorPluginConnection = PluginInvocationConnection;
+export type PluginConnection = PluginInvocationConnection;

@@ -70,9 +70,9 @@ describe.each([0, 1])(
           }}
           icons={{
             projectsById: new Map(),
-            connectorIconsBySource: {},
-            connectorCurrentColor: "currentColor",
-            connectorTaskIconModesByConnectionId: {},
+            pluginIconsBySource: {},
+            pluginIconCurrentColor: "currentColor",
+            backlogTaskIconModesByConnectionId: {},
           }}
           board={false}
           column={0}
@@ -120,9 +120,9 @@ describe("row controls", () => {
         view={DEFAULT_BACKLOG_VIEW_SETTINGS}
         icons={{
           projectsById: new Map(),
-          connectorIconsBySource: {},
-          connectorCurrentColor: "currentColor",
-          connectorTaskIconModesByConnectionId: {},
+          pluginIconsBySource: {},
+          pluginIconCurrentColor: "currentColor",
+          backlogTaskIconModesByConnectionId: {},
         }}
         board={false}
         column={0}

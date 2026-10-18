@@ -4,7 +4,7 @@ import type {
   AssignmentSource,
   BucketEvidenceItem,
   CaptureSettings,
-  ConnectorBacklogSource,
+  BacklogSource,
   ImportedDraftStatus,
   RuleRecord,
   TeamProject,
@@ -367,7 +367,7 @@ export interface LocalWorkflowState {
  * its own.
  */
 export interface LocalWorkflowStateMapping {
-  source: ConnectorBacklogSource;
+  source: BacklogSource;
   connectionId: string;
   sourceProjectName?: string;
   sourceStatusKey: string;
@@ -388,7 +388,7 @@ export type LocalWorkflowStateWrite =
  * rule, a move writes the first source state mapped to the workflow state.
  */
 export interface LocalWorkflowStateWriteRule {
-  source: ConnectorBacklogSource;
+  source: BacklogSource;
   connectionId: string;
   sourceProjectName?: string;
   workflowStateId: string;
@@ -403,11 +403,11 @@ export interface LocalWorkItem {
    * (synced items only). Archived items are done. See agents/GLOSSARY.md.
    */
   status: "active" | "settled" | "archived";
-  source: "manual" | ConnectorBacklogSource;
+  source: "manual" | BacklogSource;
   sourceId?: string;
   sourceConnectionId?: string;
   sourceConnectionLabel?: string;
-  /** Link to the item in its source tool, when the connector provides one. `sourceId` is an opaque identity, not a URL. */
+  /** Link to the item in its source tool, when the plugin provides one. `sourceId` is an opaque identity, not a URL. */
   sourceUrl?: string;
   sourceProjectName?: string;
   sourceWorkItemType?: string;
@@ -416,7 +416,7 @@ export interface LocalWorkItem {
   parentSourceId?: string;
   /** Ajour's level. A synced item follows its source value until the user sets one. */
   priority?: PriorityLevel;
-  /** The level the source reports. The connector plugin maps its own values to levels. */
+  /** The level the source reports. The plugin maps its own values to levels. */
   importedPriority?: PriorityLevel;
   workflowStateId?: string;
   importedWorkflowStateId?: string;
@@ -545,7 +545,7 @@ export type PersistedLocalWorkItem = Omit<
 > & {
   /** Any whole number before priority had levels. */
   priority?: number;
-  /** A raw source value before connector plugins sent levels. */
+  /** A raw source value before plugins sent levels. */
   importedPriority?: number;
   settledImportedPriority?: number;
   pendingSourceWrite?: Omit<

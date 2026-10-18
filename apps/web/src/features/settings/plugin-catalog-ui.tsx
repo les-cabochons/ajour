@@ -6,7 +6,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { cn } from "@/lib/utils";
 import {
-  CONNECTOR_PLUGIN_API_VERSION,
+  PLUGIN_API_VERSION,
   type PluginCatalogCapability,
   type PluginCatalogEntry,
 } from "@ajour/shared";
@@ -23,7 +23,7 @@ const featureDescriptions: Record<string, string> = {
 };
 
 const capabilityLabels: Record<PluginCatalogCapability, string> = {
-  connector: "Connector",
+  connector: "Backlog",
   codeHost: "Code host",
   calendar: "Calendar",
   team: "Team",
@@ -31,7 +31,7 @@ const capabilityLabels: Record<PluginCatalogCapability, string> = {
   schema: "Schema",
 };
 
-/** "Connector", or "Connector · Code host" for a plugin with both. */
+/** "Backlog", or "Backlog · Code host" for a plugin with both. */
 export function pluginCapabilitiesLabel(entry: PluginCatalogEntry) {
   return entry.capabilities
     .map((capability) => capabilityLabels[capability])
@@ -58,7 +58,7 @@ export function canUpdateFromCatalog(entry: PluginCatalogEntry) {
     entry.status === "available" &&
     entry.install !== undefined &&
     canInstallCatalogPlugin(entry) &&
-    entry.compatibility.pluginApiVersion === CONNECTOR_PLUGIN_API_VERSION
+    entry.compatibility.pluginApiVersion === PLUGIN_API_VERSION
   );
 }
 

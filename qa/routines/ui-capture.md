@@ -24,7 +24,7 @@ Give every UI change a before and after: screenshots of each product surface on 
 
 ## Notes
 
-- The scripts start the web app in test mode on 4173 and mock the connector API, so no desktop runtime is needed. To measure the base branch, start its dev server on another port (`--port 4174 --strictPort --mode test`) and run `AJOUR_QA_PORT=4174 just ui-perf` from the change's checkout.
+- The scripts start the web app in test mode on 4173 and mock the app API, so no desktop runtime is needed. To measure the base branch, start its dev server on another port (`--port 4174 --strictPort --mode test`) and run `AJOUR_QA_PORT=4174 just ui-perf` from the change's checkout.
 - Warm the server first: run once with `AJOUR_PERF_RUNS=1` and discard it, then measure. Stop other browsers and servers; a second dev server or a test run on the same machine inflates every number.
 - `AJOUR_PERF_RUNS` sets how many runs feed each median (default 5). Compare runs on the same machine only.
 - `qa/ui/out` is ignored by git. Screenshots belong in the pull request, not the repository.

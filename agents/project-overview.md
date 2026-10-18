@@ -1,6 +1,6 @@
 # Project Overview
 
-Ajour is a work-focused, local-first time tracker for daily timesheets, project/task tracking, backlog management, and connector-assisted imports.
+Ajour is a work-focused, local-first time tracker for daily timesheets, project/task tracking, backlog management, and plugin-assisted imports.
 
 ## What Exists
 
@@ -10,7 +10,7 @@ Ajour is a work-focused, local-first time tracker for daily timesheets, project/
 - manual time entry creation and editing
 - daily time page
 - backlog management
-- optional Azure DevOps and Jira connector support through local API/plugin surfaces
+- optional Azure DevOps and Jira backlog plugin support through local API/plugin surfaces
 - optional provider-specific project import/export shapes, beginning with Workday-compatible records
 - Electron desktop shell and packaging
 
@@ -22,7 +22,7 @@ The product is aimed at people who need accurate workday time records without tu
 
 - Local-first is the default, not an implementation detail.
 - User-confirmed time entries are more important than passive activity capture.
-- Connector data is assistive. It should not silently overwrite local decisions.
+- Plugin data is assistive. It should not silently overwrite local decisions.
 - Settings and import review flows must make side effects explicit.
 - The interface should be quiet, dense, and operational rather than promotional.
 
@@ -30,9 +30,9 @@ The product is aimed at people who need accurate workday time records without tu
 
 - Start a timer for a project/task, update it during the day, and save it.
 - Add or edit a manual time entry with duration, project/task, and note.
-- Review imported meeting or connector data before accepting it.
+- Review imported meeting or plugin data before accepting it.
 - Manage backlog items and project task estimates.
-- Configure optional connectors without requiring them for the local workflow.
+- Configure optional plugins without requiring them for the local workflow.
 
 ## Non-Goals
 
@@ -46,13 +46,13 @@ The product is aimed at people who need accurate workday time records without tu
 ```text
 apps/web/        React + Vite product UI
 apps/desktop/    Electron runtime and packaging
-apps/api/        optional local API and connector plugin host
+apps/api/        optional local API and plugin host
 packages/shared/ shared domain logic and types
 packages/example/ copy-me template for a new deep-module package
 docs/            architecture and strategy docs
 ```
 
-Installable connector implementations are maintained in standalone
+Installable plugin implementations are maintained in standalone
 repositories, including `les-cabochons/ajc-azure-devops` and
 `les-cabochons/ajc-jira`.
 

@@ -1,14 +1,14 @@
 import { describe, expect, it, vi } from "vitest";
 import type {
-  ConnectorImportCandidate,
-  ConnectorSyncWorkItemUpdate,
+  BacklogImportCandidate,
+  BacklogSyncWorkItemUpdate,
 } from "@ajour/shared";
 import type { LocalAppState } from "@/domain/local-state";
 import {
-  applyConnectorSyncWorkItemUpdates,
-  archiveDoneConnectorWorkItems,
-  importConnectorWorkItems,
-} from "@/domain/backlog/work-item-connector";
+  applyBacklogSyncWorkItemUpdates,
+  archiveDoneSyncedWorkItems,
+  importSyncedWorkItems,
+} from "@/domain/backlog/work-item-sync";
 import {
   restoreBacklogItem,
   moveBacklogItemToState,
@@ -70,8 +70,8 @@ function createState(overrides: Partial<LocalAppState> = {}): LocalAppState {
 }
 
 function createCandidate(
-  overrides: Partial<ConnectorImportCandidate> = {},
-): ConnectorImportCandidate {
+  overrides: Partial<BacklogImportCandidate> = {},
+): BacklogImportCandidate {
   return {
     id: "candidate-1",
     source: "azure_devops",
@@ -104,11 +104,11 @@ const factories = {
   now: () => 500,
 };
 
-describe("connector work item imports", () => {
+describe("synced work item imports", () => {
   it.each([false, true])(
     "source state and priority changes honor changesEndSnoozeEarly=%s",
     (enabled) => {
-      const original = importConnectorWorkItems(
+      const original = importSyncedWorkItems(
         createState(),
         [createCandidate()],
         undefined,
@@ -129,7 +129,7 @@ describe("connector work item imports", () => {
         { state: "Review" },
         { priority: "urgent" as const },
       ]) {
-        const result = importConnectorWorkItems(
+        const result = importSyncedWorkItems(
           state,
           [createCandidate(patch)],
           undefined,
@@ -139,7 +139,7 @@ describe("connector work item imports", () => {
         expect(result.returnedAt).toBe(enabled ? 500 : undefined);
       }
       expect(
-        importConnectorWorkItems(
+        importSyncedWorkItems(
           state,
           [createCandidate({ title: "New title" })],
           undefined,
@@ -170,13 +170,13 @@ describe("connector work item imports", () => {
         },
       ],
     });
-    const imported = importConnectorWorkItems(
+    const imported = importSyncedWorkItems(
       initial,
       [createCandidate()],
       undefined,
       factories,
     ).state;
-    const missing = importConnectorWorkItems(
+    const missing = importSyncedWorkItems(
       imported,
       [],
       { archiveMissingFromConnectionId: "connection-1" },
@@ -191,7 +191,7 @@ describe("connector work item imports", () => {
       name: "Doing",
       done: true,
     });
-    const returned = importConnectorWorkItems(
+    const returned = importSyncedWorkItems(
       configured,
       [createCandidate()],
       undefined,
@@ -209,7 +209,7 @@ describe("connector work item imports", () => {
   });
 
   it("closes a carried settled subitem reactivated in its unchanged Done state", () => {
-    const imported = importConnectorWorkItems(
+    const imported = importSyncedWorkItems(
       createState({
         workflowStates: [
           { _id: "todo", name: "To do", color: "#64748b", createdAt: 1 },
@@ -255,7 +255,7 @@ describe("connector work item imports", () => {
         },
       ],
     };
-    const returned = importConnectorWorkItems(
+    const returned = importSyncedWorkItems(
       carried,
       [createCandidate({ priority: "urgent" })],
       undefined,
@@ -271,8 +271,8 @@ describe("connector work item imports", () => {
       settledWithParentId: undefined,
     });
   });
-  it("keeps the connector's source URL and refreshes it on the next import", () => {
-    const imported = importConnectorWorkItems(
+  it("keeps the plugin's source URL and refreshes it on the next import", () => {
+    const imported = importSyncedWorkItems(
       createState(),
       [createCandidate()],
       undefined,
@@ -282,7 +282,7 @@ describe("connector work item imports", () => {
       "https://example.test/items/42",
     );
 
-    const refreshed = importConnectorWorkItems(
+    const refreshed = importSyncedWorkItems(
       imported,
       [createCandidate({ sourceUrl: "https://example.test/items/42/moved" })],
       undefined,
@@ -295,7 +295,7 @@ describe("connector work item imports", () => {
   });
 
   it("creates mapped work items with estimate baselines", () => {
-    const operation = importConnectorWorkItems(
+    const operation = importSyncedWorkItems(
       createState({
         workflowStates: [
           {
@@ -338,20 +338,20 @@ describe("connector work item imports", () => {
     });
   });
 
-  it("archives missing connector work while respecting explicit retention", () => {
-    const imported = importConnectorWorkItems(
+  it("archives missing synced work while respecting explicit retention", () => {
+    const imported = importSyncedWorkItems(
       createState(),
       [createCandidate()],
       undefined,
       factories,
     ).state;
-    const archived = importConnectorWorkItems(
+    const archived = importSyncedWorkItems(
       imported,
       [],
       { archiveMissingFromConnectionId: "connection-1" },
       factories,
     );
-    const retained = importConnectorWorkItems(
+    const retained = importSyncedWorkItems(
       {
         ...imported,
         workItems: [
@@ -376,7 +376,7 @@ describe("connector work item imports", () => {
   });
 
   it("refreshes imported values without overwriting local estimate decisions", () => {
-    const imported = importConnectorWorkItems(
+    const imported = importSyncedWorkItems(
       createState(),
       [createCandidate()],
       undefined,
@@ -389,7 +389,7 @@ describe("connector work item imports", () => {
         remainingEstimateHours: 4,
       })),
     };
-    const refreshed = importConnectorWorkItems(
+    const refreshed = importSyncedWorkItems(
       locallyEdited,
       [createCandidate({ remainingEstimateHours: 6 })],
       undefined,
@@ -409,7 +409,7 @@ describe("connector work item imports", () => {
   });
 
   it("keeps connection identities separate and deduplicates one import batch", () => {
-    const operation = importConnectorWorkItems(
+    const operation = importSyncedWorkItems(
       createState(),
       [
         createCandidate({ title: "First" }),
@@ -445,7 +445,7 @@ describe("connector work item imports", () => {
   });
 
   it("preserves local notes while refreshing hierarchy metadata", () => {
-    const imported = importConnectorWorkItems(
+    const imported = importSyncedWorkItems(
       createState(),
       [createCandidate({ note: "Remote note" })],
       undefined,
@@ -454,7 +454,7 @@ describe("connector work item imports", () => {
     imported.workItems[0]!.note = "Local note";
     const createId = vi.fn(() => "unused");
 
-    const refreshed = importConnectorWorkItems(
+    const refreshed = importSyncedWorkItems(
       imported,
       [
         createCandidate({
@@ -476,7 +476,7 @@ describe("connector work item imports", () => {
   });
 
   it("preserves a user archive and reactivates only sync-archived items", () => {
-    const imported = importConnectorWorkItems(
+    const imported = importSyncedWorkItems(
       createState(),
       [createCandidate()],
       undefined,
@@ -491,7 +491,7 @@ describe("connector work item imports", () => {
         archivedByMissingSync: false,
       })),
     };
-    const refreshed = importConnectorWorkItems(
+    const refreshed = importSyncedWorkItems(
       userArchived,
       [createCandidate()],
       undefined,
@@ -504,14 +504,14 @@ describe("connector work item imports", () => {
     });
   });
 
-  it("returns the same state for an unchanged connector refresh", () => {
-    const imported = importConnectorWorkItems(
+  it("returns the same state for an unchanged backlog refresh", () => {
+    const imported = importSyncedWorkItems(
       createState(),
       [createCandidate()],
       undefined,
       factories,
     ).state;
-    const refreshed = importConnectorWorkItems(
+    const refreshed = importSyncedWorkItems(
       imported,
       [createCandidate()],
       undefined,
@@ -523,19 +523,19 @@ describe("connector work item imports", () => {
   });
 
   it("adopts imported estimate clears and later values", () => {
-    const imported = importConnectorWorkItems(
+    const imported = importSyncedWorkItems(
       createState(),
       [createCandidate({ remainingEstimateHours: 5 })],
       undefined,
       factories,
     ).state;
-    const cleared = importConnectorWorkItems(
+    const cleared = importSyncedWorkItems(
       imported,
       [createCandidate({ remainingEstimateHours: undefined })],
       undefined,
       factories,
     ).state;
-    const restored = importConnectorWorkItems(
+    const restored = importSyncedWorkItems(
       cleared,
       [createCandidate({ remainingEstimateHours: 7 })],
       undefined,
@@ -547,9 +547,9 @@ describe("connector work item imports", () => {
   });
 });
 
-describe("connector sync of settled items", () => {
+describe("backlog sync of settled items", () => {
   function importAndSettle() {
-    const imported = importConnectorWorkItems(
+    const imported = importSyncedWorkItems(
       createState(),
       [createCandidate()],
       undefined,
@@ -559,7 +559,7 @@ describe("connector sync of settled items", () => {
   }
 
   it("brings a settled item back as returned when its state changed in the source", () => {
-    const refreshed = importConnectorWorkItems(
+    const refreshed = importSyncedWorkItems(
       importAndSettle(),
       [createCandidate({ state: "Ready for QA" })],
       undefined,
@@ -573,7 +573,7 @@ describe("connector sync of settled items", () => {
   });
 
   it("brings a settled item back as returned when its priority changed in the source", () => {
-    const refreshed = importConnectorWorkItems(
+    const refreshed = importSyncedWorkItems(
       importAndSettle(),
       [createCandidate({ priority: "urgent" })],
       undefined,
@@ -598,7 +598,7 @@ describe("connector sync of settled items", () => {
       parentSourceId: "source-1",
       priority: undefined,
     });
-    const imported = importConnectorWorkItems(
+    const imported = importSyncedWorkItems(
       createState(),
       [parent, child],
       undefined,
@@ -609,7 +609,7 @@ describe("connector sync of settled items", () => {
     )!._id;
     const settled = settleBacklogItem(imported, parentId, idFactories);
 
-    const refreshed = importConnectorWorkItems(
+    const refreshed = importSyncedWorkItems(
       settled,
       [{ ...parent, state: "Active again" }, child],
       undefined,
@@ -622,7 +622,7 @@ describe("connector sync of settled items", () => {
   });
 
   it("keeps a settle's values while its write waits, without returning the item", () => {
-    const imported = importConnectorWorkItems(
+    const imported = importSyncedWorkItems(
       createState(),
       [createCandidate()],
       undefined,
@@ -633,7 +633,7 @@ describe("connector sync of settled items", () => {
       priority: 1,
     });
 
-    const refreshed = importConnectorWorkItems(
+    const refreshed = importSyncedWorkItems(
       settled,
       [createCandidate({ title: "Renamed in the source" })],
       undefined,
@@ -650,7 +650,7 @@ describe("connector sync of settled items", () => {
   });
 
   it("keeps a settled item settled when nothing changed in the source", () => {
-    const refreshed = importConnectorWorkItems(
+    const refreshed = importSyncedWorkItems(
       importAndSettle(),
       [createCandidate()],
       undefined,
@@ -661,7 +661,7 @@ describe("connector sync of settled items", () => {
   });
 
   it("keeps a subitem's own priority from the source", () => {
-    const imported = importConnectorWorkItems(
+    const imported = importSyncedWorkItems(
       createState(),
       [
         createCandidate({
@@ -681,7 +681,7 @@ describe("connector sync of settled items", () => {
   });
 });
 
-describe("connector sync of done items", () => {
+describe("backlog sync of done items", () => {
   const done = (overrides: { sourceId?: string; state?: string } = {}) => ({
     source: "azure_devops",
     connectionId: "connection-1",
@@ -691,7 +691,7 @@ describe("connector sync of done items", () => {
   });
 
   function importOne() {
-    return importConnectorWorkItems(
+    return importSyncedWorkItems(
       createState(),
       [createCandidate()],
       undefined,
@@ -700,11 +700,7 @@ describe("connector sync of done items", () => {
   }
 
   it("archives an active item that reached a done category", () => {
-    const result = archiveDoneConnectorWorkItems(
-      importOne(),
-      [done()],
-      factories,
-    );
+    const result = archiveDoneSyncedWorkItems(importOne(), [done()], factories);
 
     expect(result.archivedCount).toBe(1);
     expect(result.state.workItems[0]).toMatchObject({
@@ -719,7 +715,7 @@ describe("connector sync of done items", () => {
   it("archives a settled item with the subitems its settle carried", () => {
     let id = 0;
     const idFactories = { createId: () => `work-item-${++id}`, now: () => 500 };
-    const imported = importConnectorWorkItems(
+    const imported = importSyncedWorkItems(
       createState(),
       [
         createCandidate(),
@@ -748,11 +744,7 @@ describe("connector sync of done items", () => {
       },
     );
 
-    const result = archiveDoneConnectorWorkItems(
-      settled,
-      [done()],
-      idFactories,
-    );
+    const result = archiveDoneSyncedWorkItems(settled, [done()], idFactories);
 
     expect(result.state.workItems.map((workItem) => workItem.status)).toEqual([
       "archived",
@@ -764,7 +756,7 @@ describe("connector sync of done items", () => {
     const state = importOne();
 
     expect(
-      archiveDoneConnectorWorkItems(
+      archiveDoneSyncedWorkItems(
         state,
         [
           done({ sourceId: "unknown" }),
@@ -774,13 +766,13 @@ describe("connector sync of done items", () => {
       ),
     ).toEqual({ state, archivedCount: 0 });
 
-    const archived = archiveDoneConnectorWorkItems(
+    const archived = archiveDoneSyncedWorkItems(
       state,
       [done()],
       factories,
     ).state;
     expect(
-      archiveDoneConnectorWorkItems(archived, [done()], {
+      archiveDoneSyncedWorkItems(archived, [done()], {
         ...factories,
         now: () => 900,
       }),
@@ -788,7 +780,7 @@ describe("connector sync of done items", () => {
   });
 });
 
-describe("connector sync of workflow states", () => {
+describe("backlog sync of workflow states", () => {
   const workflow = () =>
     createState({
       workflowStates: [
@@ -818,7 +810,7 @@ describe("connector sync of workflow states", () => {
       ],
     });
   const sync = (state: LocalAppState, overrides = {}) =>
-    importConnectorWorkItems(
+    importSyncedWorkItems(
       state,
       [createCandidate(overrides)],
       undefined,
@@ -912,7 +904,7 @@ describe("connector sync of workflow states", () => {
       ],
     };
     const imported = sync(mapped);
-    const missing = importConnectorWorkItems(
+    const missing = importSyncedWorkItems(
       imported,
       [],
       { archiveMissingFromConnectionId: "connection-1" },
@@ -975,7 +967,7 @@ describe("connector sync of workflow states", () => {
   });
 
   it("reopens an archived item that the source shows open in another state", () => {
-    const closed = archiveDoneConnectorWorkItems(
+    const closed = archiveDoneSyncedWorkItems(
       sync(workflow()),
       [
         {
@@ -1093,7 +1085,7 @@ describe("connector sync of workflow states", () => {
         settledSourceStatusKey: "active",
       })),
     };
-    const result = archiveDoneConnectorWorkItems(
+    const result = archiveDoneSyncedWorkItems(
       settled,
       [
         {
@@ -1125,7 +1117,7 @@ describe("connector sync of workflow states", () => {
         },
       ],
     };
-    const result = archiveDoneConnectorWorkItems(
+    const result = archiveDoneSyncedWorkItems(
       sync(mapped),
       [
         {
@@ -1173,7 +1165,7 @@ describe("connector sync of workflow states", () => {
     );
     expect(pending.workItems[0]?.status).toBe("archived");
     expect(
-      archiveDoneConnectorWorkItems(
+      archiveDoneSyncedWorkItems(
         pending,
         [
           {
@@ -1225,7 +1217,7 @@ describe("connector sync of workflow states", () => {
               ),
             }
           : closed;
-      const result = archiveDoneConnectorWorkItems(
+      const result = archiveDoneSyncedWorkItems(
         state,
         [
           {
@@ -1290,7 +1282,7 @@ describe("connector sync of workflow states", () => {
           workflowStateId: "review",
         })),
       };
-      const result = archiveDoneConnectorWorkItems(
+      const result = archiveDoneSyncedWorkItems(
         moved,
         [
           {
@@ -1315,15 +1307,15 @@ describe("connector sync of workflow states", () => {
   );
 });
 
-describe("connector estimate sync", () => {
+describe("backlog estimate sync", () => {
   it("records deterministic conflict details", () => {
-    const imported = importConnectorWorkItems(
+    const imported = importSyncedWorkItems(
       createState(),
       [createCandidate()],
       undefined,
       factories,
     ).state;
-    const updates: ConnectorSyncWorkItemUpdate[] = [
+    const updates: BacklogSyncWorkItemUpdate[] = [
       {
         localWorkItemId: "work-item-1",
         sourceId: "source-1",
@@ -1337,7 +1329,7 @@ describe("connector estimate sync", () => {
         },
       },
     ];
-    const synced = applyConnectorSyncWorkItemUpdates(
+    const synced = applyBacklogSyncWorkItemUpdates(
       imported,
       updates,
       () => 700,
@@ -1354,13 +1346,13 @@ describe("connector estimate sync", () => {
   });
 
   it("folds split updates and ignores stale source identities", () => {
-    const imported = importConnectorWorkItems(
+    const imported = importSyncedWorkItems(
       createState(),
       [createCandidate()],
       undefined,
       factories,
     ).state;
-    const synced = applyConnectorSyncWorkItemUpdates(
+    const synced = applyBacklogSyncWorkItemUpdates(
       imported,
       [
         {

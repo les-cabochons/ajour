@@ -1,7 +1,4 @@
-import {
-  normalizeConnectorStatusKey,
-  type ConnectorBacklogSource,
-} from "@ajour/shared";
+import { normalizeSourceStatusKey, type BacklogSource } from "@ajour/shared";
 import type {
   LocalAppState,
   LocalWorkflowState,
@@ -26,7 +23,7 @@ interface WorkflowStateFactories {
 }
 
 export interface WorkflowStateMappingInput {
-  source: ConnectorBacklogSource;
+  source: BacklogSource;
   connectionId: string;
   /** Missing for a mapping that applies to the whole connection. */
   sourceProjectName?: string;
@@ -226,7 +223,7 @@ export function getSourceStatesMappedTo(
   availableSourceStates?: readonly string[],
 ): { key: string; label: string }[] {
   const available = availableSourceStates
-    ? new Set(availableSourceStates.map(normalizeConnectorStatusKey))
+    ? new Set(availableSourceStates.map(normalizeSourceStatusKey))
     : undefined;
   const seen = new Set<string>();
   const states: { key: string; label: string }[] = [];
@@ -326,8 +323,8 @@ export function planWorkflowStateWrite(
     if (
       !mapped.some(
         (label) =>
-          normalizeConnectorStatusKey(label) ===
-          normalizeConnectorStatusKey(rule.sourceStatusLabel),
+          normalizeSourceStatusKey(label) ===
+          normalizeSourceStatusKey(rule.sourceStatusLabel),
       )
     )
       return { kind: "none" };
@@ -341,7 +338,7 @@ export function planWorkflowStateWrite(
     : { kind: "none" };
 }
 
-/** A source state a sync or a connector reported, with its done category. */
+/** A source state a sync or a plugin reported, with its done category. */
 export interface ReportedSourceState {
   source: LocalWorkItem["source"];
   connectionId: string;
@@ -365,7 +362,7 @@ export function autoMapSourceStates(
   for (const entry of reported) {
     if (entry.source === "manual") continue;
     const label = entry.label.trim();
-    const sourceStatusKey = normalizeConnectorStatusKey(label);
+    const sourceStatusKey = normalizeSourceStatusKey(label);
     if (!label || !sourceStatusKey) continue;
     const mappings = [...state.workflowStateMappings, ...added];
     if (
@@ -478,8 +475,8 @@ export function reconcileImportedWorkflowStates(
           rule.workflowStateId,
         ).some(
           (source) =>
-            normalizeConnectorStatusKey(source.label) ===
-            normalizeConnectorStatusKey(
+            normalizeSourceStatusKey(source.label) ===
+            normalizeSourceStatusKey(
               rule.write.kind === "state" ? rule.write.sourceStatusLabel : "",
             ),
         ),
@@ -769,7 +766,7 @@ export function setWorkflowStateMapping(
   state: LocalAppState,
   mapping: WorkflowStateMappingInput,
 ): LocalAppState {
-  const sourceStatusKey = normalizeConnectorStatusKey(mapping.sourceStatusKey);
+  const sourceStatusKey = normalizeSourceStatusKey(mapping.sourceStatusKey);
   if (!mapping.connectionId || !sourceStatusKey) {
     throw new Error("Source status mapping is incomplete.");
   }

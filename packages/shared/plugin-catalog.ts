@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { connectorPluginInstallResponseSchema } from "./connectors";
+import { pluginInstallResponseSchema } from "./plugins";
 
 const httpsUrlSchema = z
   .string()
@@ -107,11 +107,11 @@ export const pluginCatalogSettingsSchema = z.object({
 
 export type PluginCatalogSettings = z.infer<typeof pluginCatalogSettingsSchema>;
 
-export const catalogConnectorDownloadResponseSchema = z.object({
-  type: z.literal("connector"),
-  result: connectorPluginInstallResponseSchema,
+export const catalogPluginDownloadResponseSchema = z.object({
+  type: z.literal("plugin"),
+  result: pluginInstallResponseSchema,
 });
 
-export type CatalogConnectorDownloadResponse = z.infer<
-  typeof catalogConnectorDownloadResponseSchema
+export type CatalogPluginDownloadResponse = z.infer<
+  typeof catalogPluginDownloadResponseSchema
 >;

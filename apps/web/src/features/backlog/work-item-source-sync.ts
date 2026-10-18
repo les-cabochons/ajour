@@ -1,4 +1,4 @@
-import { syncConnectorConnection } from "@/lib/app-api";
+import { syncBacklogConnection } from "@/lib/app-api";
 import type { LocalWorkItem } from "@/domain/local-state";
 
 export function syncBacklogWorkItemToSource(workItem: LocalWorkItem) {
@@ -6,7 +6,7 @@ export function syncBacklogWorkItemToSource(workItem: LocalWorkItem) {
     return;
   }
 
-  void syncConnectorConnection(workItem.source, workItem.sourceConnectionId, {
+  void syncBacklogConnection(workItem.source, workItem.sourceConnectionId, {
     trigger: "source_write",
   }).catch((error) => {
     console.error("Backlog work item sync failed.", error);

@@ -1,9 +1,9 @@
 import {
-  normalizeConnectorStatusKey,
-  type ConnectorDoneWorkItem,
-  type ConnectorImportCandidate,
-  type ConnectorSyncFieldUpdate,
-  type ConnectorSyncWorkItemUpdate,
+  normalizeSourceStatusKey,
+  type BacklogDoneWorkItem,
+  type BacklogImportCandidate,
+  type BacklogSyncFieldUpdate,
+  type BacklogSyncWorkItemUpdate,
 } from "@ajour/shared";
 import type {
   LocalAppState,
@@ -28,14 +28,14 @@ import {
   createImportedEstimateSyncState,
   normalizeWorkItemEstimateValue,
 } from "@/domain/backlog/work-item-estimates";
-import { priorityLevelFromConnector } from "@/domain/backlog/priority";
+import { priorityLevelFromSource } from "@/domain/backlog/priority";
 
-export interface ConnectorWorkItemFactories {
+export interface SyncedWorkItemFactories {
   createId: (prefix: string) => string;
   now: () => number;
 }
 
-export interface ConnectorWorkItemImportResult {
+export interface SyncedWorkItemImportResult {
   importedCount: number;
   updatedCount: number;
   archivedCount: number;
@@ -52,16 +52,16 @@ function getWorkItemSourceKey(workItem: {
   return `${workItem.source}:${connectionId}:${workItem.sourceId}`;
 }
 
-function createConnectorWorkItem(
-  workItem: ConnectorImportCandidate,
+function createSyncedWorkItem(
+  workItem: BacklogImportCandidate,
   mappedWorkflowStateId: string | undefined,
   createId: (prefix: string) => string,
   existingId?: string,
 ): LocalWorkItem {
-  const importedPriority = priorityLevelFromConnector(workItem.priority);
+  const importedPriority = priorityLevelFromSource(workItem.priority);
   const sourceStatusLabel = workItem.state?.trim() || undefined;
   const sourceStatusKey = sourceStatusLabel
-    ? normalizeConnectorStatusKey(sourceStatusLabel)
+    ? normalizeSourceStatusKey(sourceStatusLabel)
     : undefined;
 
   return {
@@ -103,15 +103,15 @@ function createConnectorWorkItem(
   };
 }
 
-function mergeConnectorWorkItem(
+function mergeSyncedWorkItem(
   existingWorkItem: LocalWorkItem,
-  importedWorkItem: ConnectorImportCandidate,
+  importedWorkItem: BacklogImportCandidate,
   mappedWorkflowStateId: string | undefined,
-  factories: ConnectorWorkItemFactories,
+  factories: SyncedWorkItemFactories,
   changesEndSnoozeEarly: boolean,
   preserveSource: boolean,
 ): LocalWorkItem {
-  const nextImportedState = createConnectorWorkItem(
+  const nextImportedState = createSyncedWorkItem(
     importedWorkItem,
     mappedWorkflowStateId,
     factories.createId,
@@ -294,7 +294,7 @@ function mergeConnectorWorkItem(
  */
 function reopenedInSource(
   existingWorkItem: LocalWorkItem,
-  importedWorkItem: ConnectorImportCandidate,
+  importedWorkItem: BacklogImportCandidate,
   importedState: LocalWorkItem,
 ) {
   return (
@@ -325,11 +325,11 @@ function changedSinceSettled(
   );
 }
 
-export function importConnectorWorkItems(
+export function importSyncedWorkItems(
   state: LocalAppState,
-  workItems: ConnectorImportCandidate[],
+  workItems: BacklogImportCandidate[],
   options: { archiveMissingFromConnectionId?: string } | undefined,
-  factories: ConnectorWorkItemFactories,
+  factories: SyncedWorkItemFactories,
 ) {
   const uniqueWorkItems = Array.from(
     new Map(
@@ -338,7 +338,7 @@ export function importConnectorWorkItems(
       ),
     ).values(),
   );
-  const result: ConnectorWorkItemImportResult = {
+  const result: SyncedWorkItemImportResult = {
     importedCount: 0,
     updatedCount: 0,
     archivedCount: 0,
@@ -365,7 +365,7 @@ export function importConnectorWorkItems(
           state.workflowStateMappings,
           workItem.source,
           workItem.connectionId,
-          normalizeConnectorStatusKey(workItem.state),
+          normalizeSourceStatusKey(workItem.state),
           workItem.projectName,
         )
       : undefined;
@@ -375,7 +375,7 @@ export function importConnectorWorkItems(
     }
 
     if (existingWorkItem) {
-      const mergedWorkItem = mergeConnectorWorkItem(
+      const mergedWorkItem = mergeSyncedWorkItem(
         existingWorkItem,
         workItem,
         mappedWorkflowStateId,
@@ -413,7 +413,7 @@ export function importConnectorWorkItems(
       continue;
     }
 
-    const importedItem = createConnectorWorkItem(
+    const importedItem = createSyncedWorkItem(
       workItem,
       mappedWorkflowStateId,
       factories.createId,
@@ -454,7 +454,7 @@ export function importConnectorWorkItems(
     ).map((workItem) => {
       const sourceId = workItem.sourceId;
 
-      // Pending moves may still be absent from the connector's open set.
+      // Pending moves may still be absent from the source's open set.
       if (
         workItem.source === "manual" ||
         workItem.sourceConnectionId !== archiveConnectionId ||
@@ -511,10 +511,10 @@ export function importConnectorWorkItems(
  * Done items Ajour has not imported are ignored. Archived items return only
  * when their changed source state maps to an open workflow state.
  */
-export function archiveDoneConnectorWorkItems(
+export function archiveDoneSyncedWorkItems(
   state: LocalAppState,
-  doneItems: ConnectorDoneWorkItem[],
-  factories: ConnectorWorkItemFactories,
+  doneItems: BacklogDoneWorkItem[],
+  factories: SyncedWorkItemFactories,
 ): { state: LocalAppState; archivedCount: number } {
   let nextState = state;
   let archivedCount = 0;
@@ -534,7 +534,7 @@ export function archiveDoneConnectorWorkItems(
 
     const stateLabel = doneItem.state?.trim();
     const sourceStatusKey = stateLabel
-      ? normalizeConnectorStatusKey(stateLabel)
+      ? normalizeSourceStatusKey(stateLabel)
       : undefined;
     const mappedWorkflowStateId = findMappedWorkflowStateId(
       nextState.workflowStateMappings,
@@ -609,10 +609,10 @@ export function archiveDoneConnectorWorkItems(
   return { state: nextState, archivedCount };
 }
 
-function applyConnectorFieldUpdateToWorkItem(
+function applySourceFieldUpdateToWorkItem(
   workItem: LocalWorkItem,
   fieldKey: LocalWorkItemEstimateFieldKey,
-  update: ConnectorSyncFieldUpdate,
+  update: BacklogSyncFieldUpdate,
   now: () => number,
 ): LocalWorkItem {
   const estimateSync: LocalWorkItemEstimateSyncState = {
@@ -695,16 +695,16 @@ function applyConnectorFieldUpdateToWorkItem(
   }
 }
 
-export function applyConnectorSyncWorkItemUpdates(
+export function applyBacklogSyncWorkItemUpdates(
   state: LocalAppState,
-  updates: ConnectorSyncWorkItemUpdate[],
+  updates: BacklogSyncWorkItemUpdate[],
   now: () => number,
 ): LocalAppState {
   if (updates.length === 0) {
     return state;
   }
 
-  const updatesByWorkItemId = new Map<string, ConnectorSyncWorkItemUpdate[]>();
+  const updatesByWorkItemId = new Map<string, BacklogSyncWorkItemUpdate[]>();
   for (const update of updates) {
     const current = updatesByWorkItemId.get(update.localWorkItemId) ?? [];
     current.push(update);
@@ -725,7 +725,7 @@ export function applyConnectorSyncWorkItemUpdates(
           continue;
         }
         if (update.fields.originalEstimateHours) {
-          nextWorkItem = applyConnectorFieldUpdateToWorkItem(
+          nextWorkItem = applySourceFieldUpdateToWorkItem(
             nextWorkItem,
             "originalEstimateHours",
             update.fields.originalEstimateHours,
@@ -733,7 +733,7 @@ export function applyConnectorSyncWorkItemUpdates(
           );
         }
         if (update.fields.remainingEstimateHours) {
-          nextWorkItem = applyConnectorFieldUpdateToWorkItem(
+          nextWorkItem = applySourceFieldUpdateToWorkItem(
             nextWorkItem,
             "remainingEstimateHours",
             update.fields.remainingEstimateHours,
@@ -741,7 +741,7 @@ export function applyConnectorSyncWorkItemUpdates(
           );
         }
         if (update.fields.completedEstimateHours) {
-          nextWorkItem = applyConnectorFieldUpdateToWorkItem(
+          nextWorkItem = applySourceFieldUpdateToWorkItem(
             nextWorkItem,
             "completedEstimateHours",
             update.fields.completedEstimateHours,

@@ -101,8 +101,8 @@ export function seedScript(options = {}) {
 })()`;
 }
 
-/** The connector overview the mocked API returns: plugins on, nothing connected. */
-export const emptyConnectorsOverview = {
+/** The plugin overview the mocked API returns: plugins on, nothing connected. */
+export const emptyPluginsOverview = {
   pluginsEnabled: true,
   plugins: [],
   connectionGroups: [],

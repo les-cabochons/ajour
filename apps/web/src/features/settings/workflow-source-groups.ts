@@ -1,7 +1,7 @@
 import {
-  normalizeConnectorStatusKey,
-  type ConnectorBacklogSource,
-  type ConnectorBacklogStatus,
+  normalizeSourceStatusKey,
+  type BacklogSource,
+  type BacklogSourceStatus,
 } from "@ajour/shared";
 import { findWorkflowStateMapping } from "@/domain/backlog/workflow-states";
 import type {
@@ -21,7 +21,7 @@ export interface SourceStateRow {
  */
 export interface SourceProjectGroup {
   key: string;
-  source: ConnectorBacklogSource;
+  source: BacklogSource;
   connectionId: string;
   sourceProjectName?: string;
   states: SourceStateRow[];
@@ -31,7 +31,7 @@ export interface SourceProjectGroup {
 
 export interface SourceConnectionGroup {
   key: string;
-  source: ConnectorBacklogSource;
+  source: BacklogSource;
   connectionId: string;
   connectionLabel: string;
   tenantLabel?: string;
@@ -49,7 +49,7 @@ export function getSourceProjectKey(
 function addState(states: SourceStateRow[], label: string | undefined) {
   const trimmed = label?.trim();
   if (!trimmed) return;
-  const key = normalizeConnectorStatusKey(trimmed);
+  const key = normalizeSourceStatusKey(trimmed);
   if (!states.some((state) => state.key === key)) {
     states.push({ key, label: trimmed });
   }
@@ -58,11 +58,11 @@ function addState(states: SourceStateRow[], label: string | undefined) {
 /**
  * Groups source states by connection and source project, from the states
  * syncs registered, the states of synced items, and the states loaded from
- * connectors. Registered states have no source project, so they go in the
+ * plugins. Registered states have no source project, so they go in the
  * connection's own group.
  */
 export function buildSourceConnectionGroups(
-  registered: readonly ConnectorBacklogStatus[],
+  registered: readonly BacklogSourceStatus[],
   workItems: readonly LocalWorkItem[],
   loaded: Readonly<Record<string, readonly string[]>>,
 ): SourceConnectionGroup[] {
@@ -71,7 +71,7 @@ export function buildSourceConnectionGroups(
   const sampleTypes = new Map<string, Set<string>>();
 
   const connectionFor = (
-    source: ConnectorBacklogSource,
+    source: BacklogSource,
     connectionId: string,
     connectionLabel: string,
     tenantLabel?: string,

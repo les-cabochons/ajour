@@ -2,7 +2,7 @@ import {
   calendarOccurrenceKey,
   isCapabilityActive,
   type CalendarEventFacts,
-  type ConnectorsOverview,
+  type PluginsOverview,
 } from "@ajour/shared";
 import { applyLoggedTimeToWorkItems } from "@/domain/backlog/work-item-estimates";
 import type {
@@ -114,7 +114,7 @@ export interface CalendarSuggestion extends CalendarSource {
 }
 
 /** Calendar connections the user can see suggestions from now. */
-export function enabledCalendarGroups(overview: ConnectorsOverview | null) {
+export function enabledCalendarGroups(overview: PluginsOverview | null) {
   return overview?.pluginsEnabled === false
     ? []
     : (overview?.connectionGroups ?? []).filter(

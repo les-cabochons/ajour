@@ -1,15 +1,15 @@
 import { serialize } from "node:v8";
 import { describe, expect, it } from "vitest";
 import {
-  CONNECTOR_PLUGIN_API_VERSION,
-  connectorPluginManifestSchema,
+  PLUGIN_API_VERSION,
+  pluginManifestSchema,
   isCapabilitySwitchedOn,
   pluginHasSwitchableCapabilities,
   pluginHasTeam,
   pluginRunsCode,
   pluginSwitchableCapabilities,
   teamCreateResultSchema,
-} from "../connectors";
+} from "../plugins";
 import { pluginCatalogCapabilitySchema } from "../plugin-catalog";
 import {
   TEAM_CAPABILITY_API_VERSION,
@@ -22,7 +22,7 @@ import {
   teamSyncResultSchema,
 } from "../team-sync";
 
-/** `MAX_CONNECTOR_PLUGIN_RESULT_BYTES` in apps/api/src/plugin-worker.mjs. */
+/** `MAX_PLUGIN_RESULT_BYTES` in apps/api/src/plugin-worker.mjs. */
 const WORKER_RESULT_LIMIT_BYTES = 8 * 1024 * 1024;
 const teamCapability = { apiVersion: TEAM_CAPABILITY_API_VERSION };
 /** A 1 pixel PNG, as the canvas that rasterizes uploaded icons encodes them. */
@@ -32,7 +32,7 @@ const pngDataUrl =
 const teamManifest = {
   id: "example-team",
   version: "0.1.0",
-  apiVersion: CONNECTOR_PLUGIN_API_VERSION,
+  apiVersion: PLUGIN_API_VERSION,
   displayName: "Example team",
   iconSvg: "<svg viewBox='0 0 16 16' />",
   entrypoint: "dist/plugin.js",
@@ -79,7 +79,7 @@ const teamProject = {
 
 describe("team capability in the manifest", () => {
   it("accepts a plugin with only a team, which runs code", () => {
-    const manifest = connectorPluginManifestSchema.parse(teamManifest);
+    const manifest = pluginManifestSchema.parse(teamManifest);
     expect(pluginHasTeam(manifest)).toBe(true);
     expect(pluginRunsCode(manifest)).toBe(true);
     expect(pluginHasSwitchableCapabilities(manifest)).toBe(false);
@@ -87,11 +87,11 @@ describe("team capability in the manifest", () => {
 
   it("requires an entrypoint and connection fields for a team", () => {
     const { entrypoint: _entrypoint, ...withoutEntrypoint } = teamManifest;
+    expect(() => pluginManifestSchema.parse(withoutEntrypoint)).toThrow(
+      /entrypoint/,
+    );
     expect(() =>
-      connectorPluginManifestSchema.parse(withoutEntrypoint),
-    ).toThrow(/entrypoint/);
-    expect(() =>
-      connectorPluginManifestSchema.parse({
+      pluginManifestSchema.parse({
         ...teamManifest,
         connectionFields: [],
       }),
@@ -100,15 +100,15 @@ describe("team capability in the manifest", () => {
 
   it("refuses a team capability API this Ajour does not run", () => {
     expect(() =>
-      connectorPluginManifestSchema.parse({
+      pluginManifestSchema.parse({
         ...teamManifest,
         capabilities: { team: { apiVersion: TEAM_CAPABILITY_API_VERSION + 1 } },
       }),
     ).toThrow();
   });
 
-  it("gives a team its own switch when the plugin also declares a connector", () => {
-    const manifest = connectorPluginManifestSchema.parse({
+  it("gives a team its own switch when the plugin also declares the backlog capability", () => {
+    const manifest = pluginManifestSchema.parse({
       ...teamManifest,
       capabilities: { ...teamManifest.capabilities, connector: {} },
     });
@@ -129,7 +129,7 @@ describe("team capability in the manifest", () => {
   ])(
     "switches only the capabilities a plugin declares",
     (capabilities, switches) => {
-      const manifest = connectorPluginManifestSchema.parse({
+      const manifest = pluginManifestSchema.parse({
         ...teamManifest,
         capabilities,
       });

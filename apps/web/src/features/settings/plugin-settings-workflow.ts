@@ -6,11 +6,11 @@ import {
   switchableCapabilityLabels,
 } from "@ajour/shared";
 import type {
-  ConnectorConnectionSummary,
-  ConnectorFieldValues,
-  ConnectorOverviewGroup,
-  ConnectorPluginManifest,
-  ConnectorsOverview,
+  PluginConnectionSummary,
+  PluginFieldValues,
+  PluginOverviewGroup,
+  PluginManifest,
+  PluginsOverview,
   PluginCatalogCapability,
   PluginCatalogEntry,
   PluginCatalogResponse,
@@ -21,28 +21,28 @@ import type {
 
 export type PluginDisplayEntry = {
   catalog: PluginCatalogEntry;
-  connectorGroup?: ConnectorOverviewGroup;
+  pluginGroup?: PluginOverviewGroup;
   dataShapePlugin?: ProjectDataShapePluginManifest;
 };
 
 export type PluginSettingsDependencies = Pick<
   typeof appApi,
-  | "getCachedConnectorsOverview"
-  | "getConnectorsOverview"
-  | "subscribeConnectorsOverview"
+  | "getCachedPluginsOverview"
+  | "getPluginsOverview"
+  | "subscribePluginsOverview"
   | "getPluginCatalog"
   | "getPluginCatalogSettings"
   | "getProjectDataShapePlugins"
-  | "setConnectorPluginEnabled"
-  | "saveConnectorConnection"
-  | "deleteConnectorConnection"
-  | "syncConnectorConnection"
-  | "installConnectorPlugin"
+  | "setPluginEnabled"
+  | "savePluginConnection"
+  | "deletePluginConnection"
+  | "syncBacklogConnection"
+  | "installPlugin"
   | "setPluginSystemEnabled"
   | "configurePluginCatalog"
   | "downloadCatalogPlugin"
-  | "uninstallConnectorPlugin"
-  | "isConnectorApiMissing"
+  | "uninstallPlugin"
+  | "isPluginApiMissing"
 > & {
   /** From `lib/team-sync.ts`: runs a team connection's rounds. */
   syncTeamConnection: typeof syncTeamConnection;
@@ -54,7 +54,7 @@ export type PluginSettingsDependencies = Pick<
 type PluginSettingsCommand =
   | {
       type: "activate";
-      plugin: ConnectorPluginManifest;
+      plugin: PluginManifest;
       enabled: boolean;
       /** Only this capability, for a plugin that declares both. */
       capability?: SwitchableCapability;
@@ -62,10 +62,10 @@ type PluginSettingsCommand =
   | {
       type: "save";
       pluginId: string;
-      values: ConnectorFieldValues;
+      values: PluginFieldValues;
       connectionId?: string;
       /** Gets the connection the API saved, such as a new one's ID. */
-      onSaved?: (connection: ConnectorConnectionSummary) => void;
+      onSaved?: (connection: PluginConnectionSummary) => void;
     }
   | { type: "delete"; pluginId: string; connectionId: string }
   | { type: "sync"; pluginId: string; connectionId: string }
@@ -73,40 +73,40 @@ type PluginSettingsCommand =
   | { type: "install" }
   | { type: "system"; enabled: boolean }
   | { type: "download"; pluginId: string }
-  | { type: "uninstall"; plugin: ConnectorPluginManifest };
+  | { type: "uninstall"; plugin: PluginManifest };
 
 /** Fallback error text when a command fails with a non-Error value. */
 const commandFailureMessages: Record<PluginSettingsCommand["type"], string> = {
-  activate: "Unable to update the connector plugin.",
-  save: "Unable to save the connector connection.",
-  delete: "Unable to delete the connector connection.",
-  sync: "Unable to sync connector items.",
+  activate: "Unable to update the plugin.",
+  save: "Unable to save the plugin connection.",
+  delete: "Unable to delete the plugin connection.",
+  sync: "Unable to sync backlog items.",
   teamSync: "Unable to sync the team's projects.",
-  install: "Unable to install the connector plugin.",
+  install: "Unable to install the plugin.",
   system: "Unable to update the plugin system.",
   download: "Unable to download the plugin.",
-  uninstall: "Unable to uninstall the connector plugin.",
+  uninstall: "Unable to uninstall the plugin.",
 };
 
 /** Read sources that can be superseded by a newer request, a background event, or a mutation. */
-type SnapshotSource = "connectors" | "shapes" | "catalog" | "settings";
+type SnapshotSource = "overview" | "shapes" | "catalog" | "settings";
 
 interface PluginSettingsSnapshot {
-  connectors: ConnectorsOverview | null;
+  overview: PluginsOverview | null;
   catalog: PluginCatalogResponse | null;
   catalogSettings: PluginCatalogSettings;
   dataShapePlugins: ProjectDataShapePluginManifest[];
   displayEntries: PluginDisplayEntry[];
-  connectorError: string | null;
+  pluginError: string | null;
   catalogError: string | null;
-  /** The web build runs without the connector API; the page shows one calm notice instead of errors. */
-  connectorApiMissing: boolean;
+  /** The web build runs without the app API; the page shows one calm notice instead of errors. */
+  pluginApiMissing: boolean;
   statusMessage: string | null;
-  isMutatingConnector: boolean;
+  isMutatingPlugin: boolean;
 }
 
 function localCatalogEntry(
-  plugin: ConnectorPluginManifest | ProjectDataShapePluginManifest,
+  plugin: PluginManifest | ProjectDataShapePluginManifest,
 ): PluginCatalogEntry {
   const capabilities: PluginCatalogCapability[] =
     "projectDataShape" in plugin.capabilities
@@ -158,7 +158,7 @@ function localCatalogEntry(
     features,
     tags: capabilities.map((capability) =>
       capability === "connector"
-        ? "connector"
+        ? "backlog"
         : capability === "codeHost"
           ? "code-host"
           : capability === "calendar"
@@ -179,12 +179,12 @@ function reconcileEntries(snapshot: PluginSettingsSnapshot) {
       { catalog },
     ]),
   );
-  for (const group of snapshot.connectors?.connectionGroups ?? []) {
+  for (const group of snapshot.overview?.connectionGroups ?? []) {
     const current = entries.get(group.plugin.id);
     entries.set(group.plugin.id, {
       ...current,
       catalog: current?.catalog ?? localCatalogEntry(group.plugin),
-      connectorGroup: group,
+      pluginGroup: group,
     });
   }
   for (const plugin of snapshot.dataShapePlugins) {
@@ -203,16 +203,16 @@ function reconcileEntries(snapshot: PluginSettingsSnapshot) {
 /** Owns settings snapshot reconciliation and operation ordering; transports stay in their adapters. */
 export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
   let snapshot: PluginSettingsSnapshot = {
-    connectors: deps.getCachedConnectorsOverview(),
+    overview: deps.getCachedPluginsOverview(),
     catalog: null,
     catalogSettings: { refreshMinutes: 15 },
     dataShapePlugins: [],
     displayEntries: [],
-    connectorError: null,
+    pluginError: null,
     catalogError: null,
-    connectorApiMissing: false,
+    pluginApiMissing: false,
     statusMessage: null,
-    isMutatingConnector: false,
+    isMutatingPlugin: false,
   };
   snapshot.displayEntries = reconcileEntries(snapshot);
   const listeners = new Set<() => void>();
@@ -221,7 +221,7 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
   let generation = 0;
   let active = true;
   const revisions: Record<SnapshotSource, number> = {
-    connectors: 0,
+    overview: 0,
     shapes: 0,
     catalog: 0,
     settings: 0,
@@ -238,34 +238,34 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
     if (!active) return;
     snapshot = { ...snapshot, ...patch };
     // A disabled master gate hides executable capabilities immediately.
-    if (snapshot.connectors?.pluginsEnabled === false)
+    if (snapshot.overview?.pluginsEnabled === false)
       snapshot.dataShapePlugins = [];
     snapshot.displayEntries = reconcileEntries(snapshot);
     for (const listener of listeners) listener();
   };
-  const receiveConnectors = (connectors: ConnectorsOverview) => {
-    revisions.connectors += 1;
-    update({ connectors, connectorError: null, connectorApiMissing: false });
+  const receivePlugins = (overview: PluginsOverview) => {
+    revisions.overview += 1;
+    update({ overview, pluginError: null, pluginApiMissing: false });
   };
   const errorMessage = (error: unknown, fallback: string) =>
     error instanceof Error ? error.message : fallback;
   /** Patch for a failed API call: a missing API becomes the notice flag, anything else an error. */
-  const connectorFailure = (
+  const pluginFailure = (
     error: unknown,
     fallback: string,
   ): Partial<PluginSettingsSnapshot> =>
-    deps.isConnectorApiMissing(error)
-      ? { connectorApiMissing: true, connectorError: null }
-      : { connectorError: errorMessage(error, fallback) };
+    deps.isPluginApiMissing(error)
+      ? { pluginApiMissing: true, pluginError: null }
+      : { pluginError: errorMessage(error, fallback) };
 
-  async function refreshConnectors() {
-    const isLatest = beginRead("connectors");
+  async function refreshPlugins() {
+    const isLatest = beginRead("overview");
     try {
-      const connectors = await deps.getConnectorsOverview();
-      if (isLatest()) receiveConnectors(connectors);
+      const overview = await deps.getPluginsOverview();
+      if (isLatest()) receivePlugins(overview);
     } catch (error) {
       if (isLatest())
-        update(connectorFailure(error, "Unable to reach the app API."));
+        update(pluginFailure(error, "Unable to reach the app API."));
     }
   }
 
@@ -301,7 +301,7 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
     connectionId: string;
   }) {
     return (
-      snapshot.connectors?.connectionGroups
+      snapshot.overview?.connectionGroups
         .find((group) => group.plugin.id === command.pluginId)
         ?.connections.find(
           (connection) => connection.id === command.connectionId,
@@ -310,28 +310,28 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
   }
 
   async function refresh() {
-    await Promise.all([refreshConnectors(), refreshCatalog(), refreshShapes()]);
+    await Promise.all([refreshPlugins(), refreshCatalog(), refreshShapes()]);
   }
 
   /** Runs one plugin operation at a time. Resolves false when skipped, cancelled, failed, or outlived. */
   async function execute(command: PluginSettingsCommand): Promise<boolean> {
-    if (!active || snapshot.isMutatingConnector) return false;
+    if (!active || snapshot.isMutatingPlugin) return false;
     const epoch = generation;
     const isCurrent = () => active && epoch === generation;
     update({
-      isMutatingConnector: true,
+      isMutatingPlugin: true,
       statusMessage: null,
-      connectorError: null,
+      pluginError: null,
     });
-    const finish = (statusMessage: string, connectors?: ConnectorsOverview) => {
+    const finish = (statusMessage: string, overview?: PluginsOverview) => {
       if (!isCurrent()) return;
-      if (connectors) receiveConnectors(connectors);
+      if (overview) receivePlugins(overview);
       update({ statusMessage });
     };
     try {
       switch (command.type) {
         case "activate": {
-          const connectors = await deps.setConnectorPluginEnabled(
+          const overview = await deps.setPluginEnabled(
             command.plugin.id,
             command.enabled,
             command.capability,
@@ -340,12 +340,12 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
             command.capability
               ? `${switchableCapabilityLabels[command.capability]} ${command.enabled ? "turned on" : "turned off"} for ${command.plugin.displayName}.`
               : `${command.plugin.displayName} ${command.enabled ? "activated" : "deactivated"}.`,
-            connectors,
+            overview,
           );
           break;
         }
         case "save": {
-          const result = await deps.saveConnectorConnection(
+          const result = await deps.savePluginConnection(
             command.pluginId,
             command.values,
             command.connectionId,
@@ -360,7 +360,7 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
         case "delete": {
           finish(
             "Connection removed.",
-            await deps.deleteConnectorConnection(
+            await deps.deletePluginConnection(
               command.pluginId,
               command.connectionId,
             ),
@@ -368,12 +368,12 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
           break;
         }
         case "sync": {
-          const result = await deps.syncConnectorConnection(
+          const result = await deps.syncBacklogConnection(
             command.pluginId,
             command.connectionId,
           );
           if (!isCurrent()) return false;
-          await refreshConnectors();
+          await refreshPlugins();
           const conflictCount = result.workItemUpdates.reduce(
             (sum, item) =>
               sum +
@@ -410,12 +410,12 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
             command.connectionId,
           );
           if (!isCurrent()) return false;
-          await refreshConnectors();
+          await refreshPlugins();
           finish(describeTeamSync(connectionLabel(command), outcome));
           break;
         }
         case "install": {
-          const result = await deps.installConnectorPlugin();
+          const result = await deps.installPlugin();
           // A cancelled file picker returns null.
           if (!result) return false;
           finish(
@@ -425,9 +425,9 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
           break;
         }
         case "system": {
-          const connectors = await deps.setPluginSystemEnabled(command.enabled);
+          const overview = await deps.setPluginSystemEnabled(command.enabled);
           if (!isCurrent()) return false;
-          receiveConnectors(connectors);
+          receivePlugins(overview);
           // Invalidate any shape discovery started before the gate changed.
           revisions.shapes += 1;
           if (command.enabled) await refreshShapes();
@@ -450,7 +450,7 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
           break;
         }
         case "uninstall": {
-          const result = await deps.uninstallConnectorPlugin(command.plugin.id);
+          const result = await deps.uninstallPlugin(command.plugin.id);
           finish(
             `${command.plugin.displayName} uninstalled. Imported backlog items were preserved.`,
             result.overview,
@@ -461,10 +461,10 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
       return isCurrent();
     } catch (error) {
       if (epoch === generation)
-        update(connectorFailure(error, commandFailureMessages[command.type]));
+        update(pluginFailure(error, commandFailureMessages[command.type]));
       return false;
     } finally {
-      if (epoch === generation) update({ isMutatingConnector: false });
+      if (epoch === generation) update({ isMutatingPlugin: false });
     }
   }
 
@@ -489,7 +489,7 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
     } catch (error) {
       if (isLatest())
         update({
-          connectorError: errorMessage(
+          pluginError: errorMessage(
             error,
             "Unable to update catalog refresh settings.",
           ),
@@ -505,22 +505,21 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
         listeners.delete(listener);
       };
     },
-    clearFeedback: () => update({ connectorError: null, statusMessage: null }),
+    clearFeedback: () => update({ pluginError: null, statusMessage: null }),
     refresh,
     execute,
     setCatalogRefreshInterval,
     connect() {
       active = true;
       generation += 1;
-      update({ isMutatingConnector: false });
-      const unsubscribeConnectors =
-        deps.subscribeConnectorsOverview(receiveConnectors);
+      update({ isMutatingPlugin: false });
+      const unsubscribePlugins = deps.subscribePluginsOverview(receivePlugins);
       const unsubscribeCatalog = deps.subscribeCatalog((catalog) => {
         revisions.catalog += 1;
         update({ catalog, catalogError: null });
       });
       // The subscription keeps a cached overview current, so only an empty cache needs a request.
-      if (!deps.getCachedConnectorsOverview()) void refreshConnectors();
+      if (!deps.getCachedPluginsOverview()) void refreshPlugins();
       void refreshCatalog();
       void refreshShapes();
       const isLatestSettings = beginRead("settings");
@@ -531,7 +530,7 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
         (error: unknown) => {
           if (isLatestSettings())
             update({
-              connectorError: errorMessage(
+              pluginError: errorMessage(
                 error,
                 "Unable to load catalog refresh settings.",
               ),
@@ -541,7 +540,7 @@ export function createPluginSettingsWorkflow(deps: PluginSettingsDependencies) {
       return () => {
         active = false;
         generation += 1;
-        unsubscribeConnectors();
+        unsubscribePlugins();
         unsubscribeCatalog();
       };
     },

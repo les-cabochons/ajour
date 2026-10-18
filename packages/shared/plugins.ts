@@ -2,18 +2,18 @@ import { z } from "zod";
 import { allowedTaskSlots, listTemplateSlots } from "./agent-task-templates.ts";
 import { teamCapabilitySchema, teamCreateRequestSchema } from "./team-sync.ts";
 
-export const CONNECTOR_PLUGIN_API_VERSION = 3;
-export const CONNECTOR_PLUGIN_ARCHIVE_EXTENSION = ".ajour-connector";
+export const PLUGIN_API_VERSION = 3;
+export const PLUGIN_ARCHIVE_EXTENSION = ".ajour-connector";
 
-export const connectorSourceSchema = z.string().trim().min(1).max(120);
-export type ConnectorBacklogSource = z.infer<typeof connectorSourceSchema>;
+export const backlogSourceSchema = z.string().trim().min(1).max(120);
+export type BacklogSource = z.infer<typeof backlogSourceSchema>;
 
-export const connectorPluginIdSchema = connectorSourceSchema.regex(
+export const pluginIdSchema = backlogSourceSchema.regex(
   /^[a-z0-9]+(?:[._-][a-z0-9]+)*$/,
-  "Connector plugin identifiers must use lowercase letters, numbers, dots, underscores, or hyphens.",
+  "Plugin identifiers must use lowercase letters, numbers, dots, underscores, or hyphens.",
 );
 
-export function normalizeConnectorStatusKey(value: string) {
+export function normalizeSourceStatusKey(value: string) {
   return value.trim().toLocaleLowerCase();
 }
 
@@ -29,52 +29,50 @@ export const jiraQueryScopes = [
 ] as const;
 export type JiraQueryScope = (typeof jiraQueryScopes)[number];
 
-export const connectorTaskIconDisplayModes = [
+export const backlogTaskIconDisplayModes = [
   "always",
   "fallback",
   "never",
 ] as const;
-export const connectorTaskIconDisplayModeSchema = z.enum(
-  connectorTaskIconDisplayModes,
+export const backlogTaskIconDisplayModeSchema = z.enum(
+  backlogTaskIconDisplayModes,
 );
-export type ConnectorTaskIconDisplayMode = z.infer<
-  typeof connectorTaskIconDisplayModeSchema
+export type BacklogTaskIconDisplayMode = z.infer<
+  typeof backlogTaskIconDisplayModeSchema
 >;
-export const DEFAULT_CONNECTOR_TASK_ICON_DISPLAY_MODE: ConnectorTaskIconDisplayMode =
+export const DEFAULT_BACKLOG_TASK_ICON_DISPLAY_MODE: BacklogTaskIconDisplayMode =
   "always";
 
-export const connectorImportDepthSchema = z.union([z.literal(0), z.literal(1)]);
-export type ConnectorImportDepth = z.infer<typeof connectorImportDepthSchema>;
+export const backlogImportDepthSchema = z.union([z.literal(0), z.literal(1)]);
+export type BacklogImportDepth = z.infer<typeof backlogImportDepthSchema>;
 
-export const connectorFieldValueSchema = z.union([
+export const pluginFieldValueSchema = z.union([
   z.string().max(4000),
   z.number().finite(),
   z.boolean(),
 ]);
-export type ConnectorFieldValue = z.infer<typeof connectorFieldValueSchema>;
+export type PluginFieldValue = z.infer<typeof pluginFieldValueSchema>;
 
-export const connectorFieldValuesSchema = z.record(
+export const pluginFieldValuesSchema = z.record(
   z.string().min(1).max(120),
-  connectorFieldValueSchema,
+  pluginFieldValueSchema,
 );
-export type ConnectorFieldValues = z.infer<typeof connectorFieldValuesSchema>;
+export type PluginFieldValues = z.infer<typeof pluginFieldValuesSchema>;
 
-export const connectorSummaryValueSchema = z.union([
+export const pluginSummaryValueSchema = z.union([
   z.string().max(1000),
   z.number().finite(),
   z.boolean(),
 ]);
-export type ConnectorSummaryValue = z.infer<typeof connectorSummaryValueSchema>;
+export type PluginSummaryValue = z.infer<typeof pluginSummaryValueSchema>;
 
-export const connectorSummaryValuesSchema = z.record(
+export const pluginSummaryValuesSchema = z.record(
   z.string().min(1).max(120),
-  connectorSummaryValueSchema,
+  pluginSummaryValueSchema,
 );
-export type ConnectorSummaryValues = z.infer<
-  typeof connectorSummaryValuesSchema
->;
+export type PluginSummaryValues = z.infer<typeof pluginSummaryValuesSchema>;
 
-export const connectorFieldTypeSchema = z.enum([
+export const pluginFieldTypeSchema = z.enum([
   "text",
   "password",
   "url",
@@ -82,13 +80,13 @@ export const connectorFieldTypeSchema = z.enum([
   "number",
   "checkbox",
 ]);
-export type ConnectorFieldType = z.infer<typeof connectorFieldTypeSchema>;
+export type PluginFieldType = z.infer<typeof pluginFieldTypeSchema>;
 
-export const connectorFieldOptionSchema = z.object({
+export const pluginFieldOptionSchema = z.object({
   value: z.string().min(1).max(120),
   label: z.string().min(1).max(120),
 });
-export type ConnectorFieldOption = z.infer<typeof connectorFieldOptionSchema>;
+export type PluginFieldOption = z.infer<typeof pluginFieldOptionSchema>;
 
 /**
  * The capabilities a user turns on and off separately when a plugin declares
@@ -112,16 +110,16 @@ export const switchableCapabilityLabels: Record<SwitchableCapability, string> =
     team: "Projects",
   };
 
-export const connectorFieldSchema = z.object({
+export const pluginFieldSchema = z.object({
   id: z.string().trim().min(1).max(120),
   label: z.string().trim().min(1).max(120),
-  type: connectorFieldTypeSchema,
+  type: pluginFieldTypeSchema,
   placeholder: z.string().trim().max(240).optional(),
   helpText: z.string().trim().max(500).optional(),
   required: z.boolean().default(false),
   secret: z.boolean().default(false),
-  defaultValue: connectorFieldValueSchema.optional(),
-  options: z.array(connectorFieldOptionSchema).max(50).optional(),
+  defaultValue: pluginFieldValueSchema.optional(),
+  options: z.array(pluginFieldOptionSchema).max(50).optional(),
   min: z.number().finite().optional(),
   max: z.number().finite().optional(),
   step: z.number().finite().optional(),
@@ -132,22 +130,20 @@ export const connectorFieldSchema = z.object({
    */
   capability: switchableCapabilitySchema.optional(),
 });
-export type ConnectorField = z.infer<typeof connectorFieldSchema>;
+export type PluginField = z.infer<typeof pluginFieldSchema>;
 
 /**
  * Ajour's priority levels. Each plugin maps its source's priority values to
  * these levels on sync, and back to a source value on a settle write. An item
  * without a level has No priority.
  */
-export const connectorPriorityLevelSchema = z.enum([
+export const backlogPriorityLevelSchema = z.enum([
   "urgent",
   "high",
   "medium",
   "low",
 ]);
-export type ConnectorPriorityLevel = z.infer<
-  typeof connectorPriorityLevelSchema
->;
+export type BacklogPriorityLevel = z.infer<typeof backlogPriorityLevelSchema>;
 
 /**
  * A task an agent runs for the plugin, from a prompt file. No plugin code
@@ -164,7 +160,7 @@ export const agentTaskSchema = z
     estimateMinutes: z.number().int().min(1).max(240),
     /** URL template for the week in the external tool. Must give https. */
     weekLink: z.string().trim().min(1).max(500).optional(),
-    settings: z.array(connectorFieldSchema).max(20).default([]),
+    settings: z.array(pluginFieldSchema).max(20).default([]),
   })
   .superRefine((task, context) => {
     if (!task.weekLink) return;
@@ -218,11 +214,11 @@ export type ProjectPropertiesCapability = z.infer<
 
 /**
  * What a plugin provides. A plugin declares at least one capability, and its
- * connections serve all of them. A connector without `settle` keeps working:
+ * connections serve all of them. A backlog plugin without `settle` keeps working:
  * Ajour settles its items locally, with no write. See ADR 0001, ADR 0003 and,
  * for `calendar`, ADR 0005.
  */
-export const connectorPluginCapabilitiesSchema = z
+export const pluginCapabilitiesSchema = z
   .object({
     connector: z
       .object({
@@ -248,48 +244,44 @@ export const connectorPluginCapabilitiesSchema = z
       capabilities.projectProperties !== undefined,
     "A plugin must declare at least one capability: connector, codeHost, calendar, team, agentTask or projectProperties.",
   );
-export type ConnectorPluginCapabilities = z.infer<
-  typeof connectorPluginCapabilitiesSchema
->;
+export type PluginCapabilities = z.infer<typeof pluginCapabilitiesSchema>;
 
-export function pluginHasConnector(manifest: {
-  capabilities: ConnectorPluginCapabilities;
+export function pluginHasBacklog(manifest: {
+  capabilities: PluginCapabilities;
 }) {
   return manifest.capabilities.connector !== undefined;
 }
 
 export function pluginHasCodeHost(manifest: {
-  capabilities: ConnectorPluginCapabilities;
+  capabilities: PluginCapabilities;
 }) {
   return manifest.capabilities.codeHost !== undefined;
 }
 
 export function pluginHasCalendar(manifest: {
-  capabilities: ConnectorPluginCapabilities;
+  capabilities: PluginCapabilities;
 }) {
   return manifest.capabilities.calendar !== undefined;
 }
 
-export function pluginHasTeam(manifest: {
-  capabilities: ConnectorPluginCapabilities;
-}) {
+export function pluginHasTeam(manifest: { capabilities: PluginCapabilities }) {
   return manifest.capabilities.team !== undefined;
 }
 
 export function pluginHasAgentTasks(manifest: {
-  capabilities: ConnectorPluginCapabilities;
+  capabilities: PluginCapabilities;
 }) {
   return manifest.capabilities.agentTask !== undefined;
 }
 
 export function pluginHasProjectProperties(manifest: {
-  capabilities: ConnectorPluginCapabilities;
+  capabilities: PluginCapabilities;
 }) {
   return manifest.capabilities.projectProperties !== undefined;
 }
 
 export function pluginHasCapability(
-  manifest: { capabilities: ConnectorPluginCapabilities },
+  manifest: { capabilities: PluginCapabilities },
   capability: SwitchableCapability,
 ) {
   return manifest.capabilities[capability] !== undefined;
@@ -297,7 +289,7 @@ export function pluginHasCapability(
 
 /** The switchable capabilities the plugin declares, in switch order. */
 export function pluginSwitchableCapabilities(manifest: {
-  capabilities: ConnectorPluginCapabilities;
+  capabilities: PluginCapabilities;
 }): SwitchableCapability[] {
   return switchableCapabilitySchema.options.filter((capability) =>
     pluginHasCapability(manifest, capability),
@@ -306,7 +298,7 @@ export function pluginSwitchableCapabilities(manifest: {
 
 /** The plugin declares more than one, so each gets its own switch. */
 export function pluginHasSwitchableCapabilities(manifest: {
-  capabilities: ConnectorPluginCapabilities;
+  capabilities: PluginCapabilities;
 }) {
   return pluginSwitchableCapabilities(manifest).length > 1;
 }
@@ -315,15 +307,13 @@ export function pluginHasSwitchableCapabilities(manifest: {
  * Whether the plugin runs code: it syncs items, serves pull requests, reads
  * a calendar or syncs a team's projects.
  */
-export function pluginRunsCode(manifest: {
-  capabilities: ConnectorPluginCapabilities;
-}) {
+export function pluginRunsCode(manifest: { capabilities: PluginCapabilities }) {
   return pluginSwitchableCapabilities(manifest).length > 0;
 }
 
 /** The manifest fields, before the cross-field rules. The overview extends it. */
-const connectorPluginManifestObjectSchema = z.object({
-  id: connectorPluginIdSchema,
+const pluginManifestObjectSchema = z.object({
+  id: pluginIdSchema,
   version: z
     .string()
     .trim()
@@ -334,19 +324,19 @@ const connectorPluginManifestObjectSchema = z.object({
   iconSvg: z.string().min(1).max(20000),
   /** Absent for a plugin that only declares agent tasks: it runs no code. */
   entrypoint: z.string().trim().min(1).max(240).optional(),
-  connectionFields: z.array(connectorFieldSchema).max(50).default([]),
-  capabilities: connectorPluginCapabilitiesSchema,
+  connectionFields: z.array(pluginFieldSchema).max(50).default([]),
+  capabilities: pluginCapabilitiesSchema,
 });
 
-export const connectorPluginManifestSchema =
-  connectorPluginManifestObjectSchema.superRefine((manifest, context) => {
+export const pluginManifestSchema = pluginManifestObjectSchema.superRefine(
+  (manifest, context) => {
     if (!pluginRunsCode(manifest)) return;
     if (!manifest.entrypoint) {
       context.addIssue({
         code: z.ZodIssueCode.custom,
         path: ["entrypoint"],
         message:
-          "A connector, code host, calendar or team plugin needs an entrypoint.",
+          "A backlog, code host, calendar or team plugin needs an entrypoint.",
       });
     }
     if (manifest.connectionFields.length === 0) {
@@ -354,17 +344,16 @@ export const connectorPluginManifestSchema =
         code: z.ZodIssueCode.custom,
         path: ["connectionFields"],
         message:
-          "A connector, code host, calendar or team plugin needs connection fields.",
+          "A backlog, code host, calendar or team plugin needs connection fields.",
       });
     }
-  });
-export type ConnectorPluginManifest = z.infer<
-  typeof connectorPluginManifestSchema
->;
+  },
+);
+export type PluginManifest = z.infer<typeof pluginManifestSchema>;
 
-export const connectorConnectionSummarySchema = z.object({
+export const pluginConnectionSummarySchema = z.object({
   id: z.string().min(1).max(120),
-  pluginId: connectorSourceSchema,
+  pluginId: backlogSourceSchema,
   label: z.string().min(1).max(120),
   tenantLabel: z.string().min(1).max(120),
   autoSync: z.boolean(),
@@ -378,11 +367,11 @@ export const connectorConnectionSummarySchema = z.object({
   lastErrorAt: z.number().int().positive().optional(),
   pendingImportCount: z.number().int().nonnegative(),
   selectedImportCount: z.number().int().nonnegative(),
-  configSummary: connectorSummaryValuesSchema,
-  editableValues: connectorFieldValuesSchema,
+  configSummary: pluginSummaryValuesSchema,
+  editableValues: pluginFieldValuesSchema,
 });
-export type ConnectorConnectionSummary = z.infer<
-  typeof connectorConnectionSummarySchema
+export type PluginConnectionSummary = z.infer<
+  typeof pluginConnectionSummarySchema
 >;
 
 /**
@@ -393,25 +382,20 @@ export type ConnectorConnectionSummary = z.infer<
  * entrypoint only means the plugin runs no code. Plugin packages still go
  * through the strict manifest schema.
  */
-const connectorOverviewPluginSchema =
-  connectorPluginManifestObjectSchema.extend({
-    entrypoint: z.string().trim().max(240).optional(),
-    unavailableReason: z.string().max(1000).optional(),
-  });
-export type ConnectorOverviewPlugin = z.infer<
-  typeof connectorOverviewPluginSchema
->;
+const pluginOverviewItemSchema = pluginManifestObjectSchema.extend({
+  entrypoint: z.string().trim().max(240).optional(),
+  unavailableReason: z.string().max(1000).optional(),
+});
+export type PluginOverviewItem = z.infer<typeof pluginOverviewItemSchema>;
 
-export const connectorOverviewGroupSchema = z.object({
-  plugin: connectorOverviewPluginSchema,
+export const pluginOverviewGroupSchema = z.object({
+  plugin: pluginOverviewItemSchema,
   enabled: z.boolean(),
   /** Declared capabilities the user turned off. `enabled` still gates all. */
   inactiveCapabilities: z.array(switchableCapabilitySchema).optional(),
-  connections: z.array(connectorConnectionSummarySchema),
+  connections: z.array(pluginConnectionSummarySchema),
 });
-export type ConnectorOverviewGroup = z.infer<
-  typeof connectorOverviewGroupSchema
->;
+export type PluginOverviewGroup = z.infer<typeof pluginOverviewGroupSchema>;
 
 /**
  * Whether the connection syncs pull requests on its interval. For backlog
@@ -420,10 +404,7 @@ export type ConnectorOverviewGroup = z.infer<
  * auto sync, which is what auto sync meant for its pull requests then.
  */
 export function syncsPullRequestsAutomatically(
-  connection: Pick<
-    ConnectorConnectionSummary,
-    "autoSync" | "pullRequestAutoSync"
-  >,
+  connection: Pick<PluginConnectionSummary, "autoSync" | "pullRequestAutoSync">,
 ) {
   return connection.pullRequestAutoSync ?? connection.autoSync;
 }
@@ -431,7 +412,7 @@ export function syncsPullRequestsAutomatically(
 /** Whether the plugin declares the capability and the user left it on. */
 export function isCapabilitySwitchedOn(
   group: {
-    plugin: { capabilities: ConnectorPluginCapabilities };
+    plugin: { capabilities: PluginCapabilities };
     inactiveCapabilities?: readonly SwitchableCapability[];
   },
   capability: SwitchableCapability,
@@ -445,7 +426,7 @@ export function isCapabilitySwitchedOn(
 /** Whether the capability can run: its plugin is on and so is the capability. */
 export function isCapabilityActive(
   group: Pick<
-    ConnectorOverviewGroup,
+    PluginOverviewGroup,
     "plugin" | "enabled" | "inactiveCapabilities"
   >,
   capability: SwitchableCapability,
@@ -453,150 +434,145 @@ export function isCapabilityActive(
   return group.enabled && isCapabilitySwitchedOn(group, capability);
 }
 
-export const connectorsOverviewSchema = z.object({
+export const pluginsOverviewSchema = z.object({
   pluginsEnabled: z.boolean(),
-  plugins: z.array(connectorOverviewPluginSchema),
-  connectionGroups: z.array(connectorOverviewGroupSchema),
+  plugins: z.array(pluginOverviewItemSchema),
+  connectionGroups: z.array(pluginOverviewGroupSchema),
   totalPendingImportCount: z.number().int().nonnegative(),
   totalSelectedImportCount: z.number().int().nonnegative(),
 });
-export type ConnectorsOverview = z.infer<typeof connectorsOverviewSchema>;
+export type PluginsOverview = z.infer<typeof pluginsOverviewSchema>;
 
 export const pluginSystemActivationUpdateSchema = z.object({
   enabled: z.boolean(),
 });
 
 /** Turns the plugin on or off, or only one of its capabilities. */
-export const connectorPluginActivationUpdateSchema = z.object({
+export const pluginActivationUpdateSchema = z.object({
   enabled: z.boolean(),
   capability: switchableCapabilitySchema.optional(),
 });
-export type ConnectorPluginActivationUpdate = z.infer<
-  typeof connectorPluginActivationUpdateSchema
+export type PluginActivationUpdate = z.infer<
+  typeof pluginActivationUpdateSchema
 >;
 
-export const connectorPluginInstallResponseSchema = z.object({
-  plugin: connectorPluginManifestSchema,
+export const pluginInstallResponseSchema = z.object({
+  plugin: pluginManifestSchema,
   replaced: z.boolean(),
-  overview: connectorsOverviewSchema,
+  overview: pluginsOverviewSchema,
 });
-export type ConnectorPluginInstallResponse = z.infer<
-  typeof connectorPluginInstallResponseSchema
+export type PluginInstallResponse = z.infer<typeof pluginInstallResponseSchema>;
+
+export const pluginUninstallResponseSchema = z.object({
+  pluginId: pluginIdSchema,
+  overview: pluginsOverviewSchema,
+});
+export type PluginUninstallResponse = z.infer<
+  typeof pluginUninstallResponseSchema
 >;
 
-export const connectorPluginUninstallResponseSchema = z.object({
-  pluginId: connectorPluginIdSchema,
-  overview: connectorsOverviewSchema,
-});
-export type ConnectorPluginUninstallResponse = z.infer<
-  typeof connectorPluginUninstallResponseSchema
->;
-
-export const connectorBacklogStatusInputSchema = z.object({
-  source: connectorSourceSchema,
+export const backlogSourceStatusInputSchema = z.object({
+  source: backlogSourceSchema,
   connectionId: z.string().trim().min(1).max(120),
   connectionLabel: z.string().trim().min(1).max(120),
   tenantLabel: z.string().trim().min(1).max(120),
   label: z.string().trim().min(1).max(120),
 });
-export type ConnectorBacklogStatusInput = z.infer<
-  typeof connectorBacklogStatusInputSchema
+export type BacklogSourceStatusInput = z.infer<
+  typeof backlogSourceStatusInputSchema
 >;
 
-export const connectorBacklogStatusSchema =
-  connectorBacklogStatusInputSchema.extend({
-    key: z.string().trim().min(1).max(160),
-    lastSeenAt: z.number().int().positive(),
-  });
-export type ConnectorBacklogStatus = z.infer<
-  typeof connectorBacklogStatusSchema
->;
-
-export const connectorBacklogStatusListResponseSchema = z.object({
-  items: z.array(connectorBacklogStatusSchema),
+export const backlogSourceStatusSchema = backlogSourceStatusInputSchema.extend({
+  key: z.string().trim().min(1).max(160),
+  lastSeenAt: z.number().int().positive(),
 });
-export type ConnectorBacklogStatusListResponse = z.infer<
-  typeof connectorBacklogStatusListResponseSchema
->;
+export type BacklogSourceStatus = z.infer<typeof backlogSourceStatusSchema>;
 
-export const connectorBacklogStatusUpsertRequestSchema = z.object({
-  items: z.array(connectorBacklogStatusInputSchema).min(1).max(200),
+export const backlogSourceStatusListResponseSchema = z.object({
+  items: z.array(backlogSourceStatusSchema),
 });
-export type ConnectorBacklogStatusUpsertRequest = z.infer<
-  typeof connectorBacklogStatusUpsertRequestSchema
+export type BacklogSourceStatusListResponse = z.infer<
+  typeof backlogSourceStatusListResponseSchema
 >;
 
-export const connectorBacklogStatusUpsertResponseSchema =
-  connectorBacklogStatusListResponseSchema;
-export type ConnectorBacklogStatusUpsertResponse = z.infer<
-  typeof connectorBacklogStatusUpsertResponseSchema
+export const backlogSourceStatusUpsertRequestSchema = z.object({
+  items: z.array(backlogSourceStatusInputSchema).min(1).max(200),
+});
+export type BacklogSourceStatusUpsertRequest = z.infer<
+  typeof backlogSourceStatusUpsertRequestSchema
 >;
 
-export const connectorEstimateFieldKeySchema = z.enum([
+export const backlogSourceStatusUpsertResponseSchema =
+  backlogSourceStatusListResponseSchema;
+export type BacklogSourceStatusUpsertResponse = z.infer<
+  typeof backlogSourceStatusUpsertResponseSchema
+>;
+
+export const backlogEstimateFieldKeySchema = z.enum([
   "originalEstimateHours",
   "remainingEstimateHours",
   "completedEstimateHours",
 ]);
-export type ConnectorEstimateFieldKey = z.infer<
-  typeof connectorEstimateFieldKeySchema
+export type BacklogEstimateFieldKey = z.infer<
+  typeof backlogEstimateFieldKeySchema
 >;
 
-export const connectorSyncEstimateFieldStateSchema = z.object({
+export const backlogSyncEstimateFieldStateSchema = z.object({
   baselineValue: z.number().finite().nonnegative().optional(),
   remoteValue: z.number().finite().nonnegative().optional(),
   resolution: z.enum(["keep_local"]).optional(),
 });
-export type ConnectorSyncEstimateFieldState = z.infer<
-  typeof connectorSyncEstimateFieldStateSchema
+export type BacklogSyncEstimateFieldState = z.infer<
+  typeof backlogSyncEstimateFieldStateSchema
 >;
 
-export const connectorSyncEstimateStateSchema = z.object({
-  originalEstimateHours: connectorSyncEstimateFieldStateSchema.optional(),
-  remainingEstimateHours: connectorSyncEstimateFieldStateSchema.optional(),
-  completedEstimateHours: connectorSyncEstimateFieldStateSchema.optional(),
+export const backlogSyncEstimateStateSchema = z.object({
+  originalEstimateHours: backlogSyncEstimateFieldStateSchema.optional(),
+  remainingEstimateHours: backlogSyncEstimateFieldStateSchema.optional(),
+  completedEstimateHours: backlogSyncEstimateFieldStateSchema.optional(),
 });
-export type ConnectorSyncEstimateState = z.infer<
-  typeof connectorSyncEstimateStateSchema
+export type BacklogSyncEstimateState = z.infer<
+  typeof backlogSyncEstimateStateSchema
 >;
 
-export const connectorSyncWorkItemSchema = z.object({
+export const backlogSyncWorkItemSchema = z.object({
   localWorkItemId: z.string().trim().min(1).max(200),
   sourceId: z.string().trim().min(1).max(400),
   originalEstimateHours: z.number().finite().nonnegative().optional(),
   remainingEstimateHours: z.number().finite().nonnegative().optional(),
   completedEstimateHours: z.number().finite().nonnegative().optional(),
-  estimateSync: connectorSyncEstimateStateSchema.optional(),
+  estimateSync: backlogSyncEstimateStateSchema.optional(),
 });
-export type ConnectorSyncWorkItem = z.infer<typeof connectorSyncWorkItemSchema>;
+export type BacklogSyncWorkItem = z.infer<typeof backlogSyncWorkItemSchema>;
 
-export const connectorSyncRequestSchema = z.object({
+export const backlogSyncRequestSchema = z.object({
   trigger: z.enum(["manual", "auto", "source_write"]).default("manual"),
-  workItems: z.array(connectorSyncWorkItemSchema).max(1000).default([]),
+  workItems: z.array(backlogSyncWorkItemSchema).max(1000).default([]),
 });
-export type ConnectorSyncRequest = z.infer<typeof connectorSyncRequestSchema>;
+export type BacklogSyncRequest = z.infer<typeof backlogSyncRequestSchema>;
 
-export const connectorConnectionSaveRequestSchema = z.object({
+export const pluginConnectionSaveRequestSchema = z.object({
   id: z.string().trim().min(1).max(120).optional(),
-  values: connectorFieldValuesSchema,
+  values: pluginFieldValuesSchema,
 });
-export type ConnectorConnectionSaveRequest = z.infer<
-  typeof connectorConnectionSaveRequestSchema
+export type PluginConnectionSaveRequest = z.infer<
+  typeof pluginConnectionSaveRequestSchema
 >;
 
-export const connectorConnectionSaveResponseSchema = z.object({
-  overview: connectorsOverviewSchema,
-  connection: connectorConnectionSummarySchema,
+export const pluginConnectionSaveResponseSchema = z.object({
+  overview: pluginsOverviewSchema,
+  connection: pluginConnectionSummarySchema,
 });
-export type ConnectorConnectionSaveResponse = z.infer<
-  typeof connectorConnectionSaveResponseSchema
+export type PluginConnectionSaveResponse = z.infer<
+  typeof pluginConnectionSaveResponseSchema
 >;
 
-export const connectorPluginValidationResultSchema = z.object({
-  normalizedConfig: connectorFieldValuesSchema,
-  connectionSummary: connectorSummaryValuesSchema.default({}),
+export const pluginValidationResultSchema = z.object({
+  normalizedConfig: pluginFieldValuesSchema,
+  connectionSummary: pluginSummaryValuesSchema.default({}),
 });
-export type ConnectorPluginValidationResult = z.infer<
-  typeof connectorPluginValidationResultSchema
+export type PluginValidationResult = z.infer<
+  typeof pluginValidationResultSchema
 >;
 
 /**
@@ -604,11 +580,11 @@ export type ConnectorPluginValidationResult = z.infer<
  * that are on, so a plugin checks only the access they need. Plugins written
  * before it ignore it.
  */
-export const connectorValidationContextSchema = z.object({
+export const pluginValidationContextSchema = z.object({
   capabilities: z.array(switchableCapabilitySchema),
 });
-export type ConnectorValidationContext = z.infer<
-  typeof connectorValidationContextSchema
+export type PluginValidationContext = z.infer<
+  typeof pluginValidationContextSchema
 >;
 
 /**
@@ -616,7 +592,7 @@ export type ConnectorValidationContext = z.infer<
  * join the new team, such as its ID and secret, for the form to fill in.
  */
 export const teamCreateResultSchema = z.object({
-  values: connectorFieldValuesSchema,
+  values: pluginFieldValuesSchema,
 });
 export type TeamCreateResult = z.infer<typeof teamCreateResultSchema>;
 
@@ -625,15 +601,15 @@ export type TeamCreateResult = z.infer<typeof teamCreateResultSchema>;
  * holds so far, such as the deployment URL, and the new team's name.
  */
 export const teamCreateRouteRequestSchema = z.object({
-  values: connectorFieldValuesSchema,
+  values: pluginFieldValuesSchema,
   team: teamCreateRequestSchema,
 });
 export type TeamCreateRouteRequest = z.infer<
   typeof teamCreateRouteRequestSchema
 >;
 
-export const connectorImportCandidateInputSchema = z.object({
-  source: connectorSourceSchema,
+export const backlogImportCandidateInputSchema = z.object({
+  source: backlogSourceSchema,
   connectionId: z.string().trim().min(1).max(120),
   connectionLabel: z.string().trim().min(1).max(120),
   tenantLabel: z.string().trim().min(1).max(120),
@@ -654,33 +630,33 @@ export const connectorImportCandidateInputSchema = z.object({
    */
   stateDone: z.boolean().optional(),
   assignedTo: z.string().trim().max(240).optional(),
-  priority: connectorPriorityLevelSchema.optional(),
+  priority: backlogPriorityLevelSchema.optional(),
   originalEstimateHours: z.number().finite().nonnegative().optional(),
   remainingEstimateHours: z.number().finite().nonnegative().optional(),
   completedEstimateHours: z.number().finite().nonnegative().optional(),
   parentSourceId: z.string().trim().min(1).max(400).optional(),
   parentTitle: z.string().trim().max(240).optional(),
-  depth: connectorImportDepthSchema,
+  depth: backlogImportDepthSchema,
   selectable: z.boolean().default(true),
   selected: z.boolean().optional(),
   childCount: z.number().int().nonnegative().default(0),
   pushedAt: z.number().int().positive().optional(),
 });
-export type ConnectorImportCandidateInput = z.infer<
-  typeof connectorImportCandidateInputSchema
+export type BacklogImportCandidateInput = z.infer<
+  typeof backlogImportCandidateInputSchema
 >;
 
-export const connectorImportCandidateSchema =
-  connectorImportCandidateInputSchema.extend({
+export const backlogImportCandidateSchema =
+  backlogImportCandidateInputSchema.extend({
     id: z.string().min(1).max(200),
     selected: z.boolean(),
     pushedAt: z.number().int().positive(),
   });
-export type ConnectorImportCandidate = z.infer<
-  typeof connectorImportCandidateSchema
+export type BacklogImportCandidate = z.infer<
+  typeof backlogImportCandidateSchema
 >;
 
-export const connectorSyncFieldUpdateSchema = z.object({
+export const backlogSyncFieldUpdateSchema = z.object({
   status: z.enum(["noop", "pushed", "pulled", "conflict", "error"]),
   localValue: z.number().finite().nonnegative().optional(),
   remoteValue: z.number().finite().nonnegative().optional(),
@@ -688,153 +664,153 @@ export const connectorSyncFieldUpdateSchema = z.object({
   nextBaselineValue: z.number().finite().nonnegative().optional(),
   message: z.string().trim().max(1000).optional(),
 });
-export type ConnectorSyncFieldUpdate = z.infer<
-  typeof connectorSyncFieldUpdateSchema
+export type BacklogSyncFieldUpdate = z.infer<
+  typeof backlogSyncFieldUpdateSchema
 >;
 
-export const connectorSyncWorkItemUpdateSchema = z.object({
+export const backlogSyncWorkItemUpdateSchema = z.object({
   localWorkItemId: z.string().trim().min(1).max(200),
   sourceId: z.string().trim().min(1).max(400),
   fields: z.object({
-    originalEstimateHours: connectorSyncFieldUpdateSchema.optional(),
-    remainingEstimateHours: connectorSyncFieldUpdateSchema.optional(),
-    completedEstimateHours: connectorSyncFieldUpdateSchema.optional(),
+    originalEstimateHours: backlogSyncFieldUpdateSchema.optional(),
+    remainingEstimateHours: backlogSyncFieldUpdateSchema.optional(),
+    completedEstimateHours: backlogSyncFieldUpdateSchema.optional(),
   }),
 });
-export type ConnectorSyncWorkItemUpdate = z.infer<
-  typeof connectorSyncWorkItemUpdateSchema
+export type BacklogSyncWorkItemUpdate = z.infer<
+  typeof backlogSyncWorkItemUpdateSchema
 >;
 
 /** A state a backlog item can move to when it is settled. */
-export const connectorSettleStateSchema = z.object({
+export const backlogSettleStateSchema = z.object({
   name: z.string().trim().min(1).max(120),
   /** Groups the state in the settle dialog, in the order the plugin lists. */
   category: z.string().trim().min(1).max(120),
   done: z.boolean(),
 });
-export type ConnectorSettleState = z.infer<typeof connectorSettleStateSchema>;
+export type BacklogSettleState = z.infer<typeof backlogSettleStateSchema>;
 
-export const connectorSettleStatesRequestSchema = z.object({
+export const backlogSettleStatesRequestSchema = z.object({
   sourceId: z.string().trim().min(1).max(400),
 });
-export type ConnectorSettleStatesRequest = z.infer<
-  typeof connectorSettleStatesRequestSchema
+export type BacklogSettleStatesRequest = z.infer<
+  typeof backlogSettleStatesRequestSchema
 >;
 
-export const connectorSettleStatesResultSchema = z.object({
-  states: z.array(connectorSettleStateSchema).max(200),
+export const backlogSettleStatesResultSchema = z.object({
+  states: z.array(backlogSettleStateSchema).max(200),
 });
-export type ConnectorSettleStatesResult = z.infer<
-  typeof connectorSettleStatesResultSchema
+export type BacklogSettleStatesResult = z.infer<
+  typeof backlogSettleStatesResultSchema
 >;
 
 /**
  * Writes a settle to one backlog item. Only changed fields are sent. The
  * plugin turns the priority level into a value of its source priority field.
  */
-export const connectorSettleWriteRequestSchema = z
+export const backlogSettleWriteRequestSchema = z
   .object({
     sourceId: z.string().trim().min(1).max(400),
     state: z.string().trim().min(1).max(120).optional(),
-    priority: connectorPriorityLevelSchema.optional(),
+    priority: backlogPriorityLevelSchema.optional(),
   })
   .refine(
     (request) => request.state !== undefined || request.priority !== undefined,
     "A settle write needs a state, a priority or both.",
   );
-export type ConnectorSettleWriteRequest = z.infer<
-  typeof connectorSettleWriteRequestSchema
+export type BacklogSettleWriteRequest = z.infer<
+  typeof backlogSettleWriteRequestSchema
 >;
 
 /** The item's values in the source after the write. */
-export const connectorSettleWriteResultSchema = z.object({
+export const backlogSettleWriteResultSchema = z.object({
   state: z.string().trim().max(120).optional(),
   stateCategory: z.string().trim().max(120).optional(),
   stateDone: z.boolean().optional(),
-  priority: connectorPriorityLevelSchema.optional(),
+  priority: backlogPriorityLevelSchema.optional(),
 });
-export type ConnectorSettleWriteResult = z.infer<
-  typeof connectorSettleWriteResultSchema
+export type BacklogSettleWriteResult = z.infer<
+  typeof backlogSettleWriteResultSchema
 >;
 
 /** A synced backlog item that reached a done category in its source. */
-export const connectorDoneWorkItemSchema = z.object({
-  source: connectorSourceSchema,
+export const backlogDoneWorkItemSchema = z.object({
+  source: backlogSourceSchema,
   connectionId: z.string().trim().min(1).max(120),
   sourceId: z.string().trim().min(1).max(400),
   state: z.string().trim().max(120).optional(),
 });
-export type ConnectorDoneWorkItem = z.infer<typeof connectorDoneWorkItemSchema>;
+export type BacklogDoneWorkItem = z.infer<typeof backlogDoneWorkItemSchema>;
 
-export const connectorPluginSyncResultSchema = z.object({
-  items: z.array(connectorImportCandidateInputSchema),
-  workItemUpdates: z.array(connectorSyncWorkItemUpdateSchema).default([]),
+export const backlogPluginSyncResultSchema = z.object({
+  items: z.array(backlogImportCandidateInputSchema),
+  workItemUpdates: z.array(backlogSyncWorkItemUpdateSchema).default([]),
 });
-export type ConnectorPluginSyncResult = z.infer<
-  typeof connectorPluginSyncResultSchema
+export type BacklogPluginSyncResult = z.infer<
+  typeof backlogPluginSyncResultSchema
 >;
 
-export const connectorImportPushRequestSchema = z.object({
-  items: z.array(connectorImportCandidateInputSchema).min(1).max(200),
+export const backlogImportPushRequestSchema = z.object({
+  items: z.array(backlogImportCandidateInputSchema).min(1).max(200),
 });
-export type ConnectorImportPushRequest = z.infer<
-  typeof connectorImportPushRequestSchema
+export type BacklogImportPushRequest = z.infer<
+  typeof backlogImportPushRequestSchema
 >;
 
-export const connectorImportPushResponseSchema = z.object({
+export const backlogImportPushResponseSchema = z.object({
   queuedCount: z.number().int().nonnegative(),
   updatedCount: z.number().int().nonnegative(),
   skippedCount: z.number().int().nonnegative(),
 });
-export type ConnectorImportPushResponse = z.infer<
-  typeof connectorImportPushResponseSchema
+export type BacklogImportPushResponse = z.infer<
+  typeof backlogImportPushResponseSchema
 >;
 
-export const connectorImportListResponseSchema = z.object({
-  items: z.array(connectorImportCandidateSchema),
+export const backlogImportListResponseSchema = z.object({
+  items: z.array(backlogImportCandidateSchema),
   totalCount: z.number().int().nonnegative(),
   selectedCount: z.number().int().nonnegative(),
 });
-export type ConnectorImportListResponse = z.infer<
-  typeof connectorImportListResponseSchema
+export type BacklogImportListResponse = z.infer<
+  typeof backlogImportListResponseSchema
 >;
 
-export const connectorImportSelectionUpdateSchema = z.object({
+export const backlogImportSelectionUpdateSchema = z.object({
   ids: z.array(z.string().min(1).max(200)).min(1).max(200),
   selected: z.boolean(),
 });
-export type ConnectorImportSelectionUpdate = z.infer<
-  typeof connectorImportSelectionUpdateSchema
+export type BacklogImportSelectionUpdate = z.infer<
+  typeof backlogImportSelectionUpdateSchema
 >;
 
-export const connectorImportSelectionResponseSchema = z.object({
+export const backlogImportSelectionResponseSchema = z.object({
   updatedCount: z.number().int().nonnegative(),
 });
-export type ConnectorImportSelectionResponse = z.infer<
-  typeof connectorImportSelectionResponseSchema
+export type BacklogImportSelectionResponse = z.infer<
+  typeof backlogImportSelectionResponseSchema
 >;
 
-export const connectorImportDismissRequestSchema = z.object({
+export const backlogImportDismissRequestSchema = z.object({
   ids: z.array(z.string().min(1).max(200)).min(1).max(200),
 });
-export type ConnectorImportDismissRequest = z.infer<
-  typeof connectorImportDismissRequestSchema
+export type BacklogImportDismissRequest = z.infer<
+  typeof backlogImportDismissRequestSchema
 >;
 
-export const connectorImportDismissResponseSchema = z.object({
+export const backlogImportDismissResponseSchema = z.object({
   dismissedCount: z.number().int().nonnegative(),
   /** Present when items were dismissed. Undo passes it back to restore them. */
   undoToken: z.string().min(1).max(200).optional(),
 });
-export type ConnectorImportDismissResponse = z.infer<
-  typeof connectorImportDismissResponseSchema
+export type BacklogImportDismissResponse = z.infer<
+  typeof backlogImportDismissResponseSchema
 >;
 
-export const connectorImportRestoreRequestSchema = z.object({
+export const backlogImportRestoreRequestSchema = z.object({
   undoToken: z.string().min(1).max(200),
 });
-export type ConnectorImportRestoreRequest = z.infer<
-  typeof connectorImportRestoreRequestSchema
+export type BacklogImportRestoreRequest = z.infer<
+  typeof backlogImportRestoreRequestSchema
 >;
 
 /**
@@ -842,30 +818,30 @@ export type ConnectorImportRestoreRequest = z.infer<
  * `expired` means a later dismissal replaced this one, its connection was
  * deleted, or the API restarted.
  */
-export const connectorImportRestoreResponseSchema = z.object({
+export const backlogImportRestoreResponseSchema = z.object({
   result: z.enum(["restored", "stale", "expired"]),
 });
-export type ConnectorImportRestoreResponse = z.infer<
-  typeof connectorImportRestoreResponseSchema
+export type BacklogImportRestoreResponse = z.infer<
+  typeof backlogImportRestoreResponseSchema
 >;
 
-export const connectorImportCommitResponseSchema = z.object({
-  items: z.array(connectorImportCandidateSchema),
+export const backlogImportCommitResponseSchema = z.object({
+  items: z.array(backlogImportCandidateSchema),
   committedCount: z.number().int().nonnegative(),
 });
-export type ConnectorImportCommitResponse = z.infer<
-  typeof connectorImportCommitResponseSchema
+export type BacklogImportCommitResponse = z.infer<
+  typeof backlogImportCommitResponseSchema
 >;
 
-export const connectorSyncResultSchema = z.object({
-  connection: connectorConnectionSummarySchema,
+export const backlogSyncResultSchema = z.object({
+  connection: pluginConnectionSummarySchema,
   mode: z.enum(["review", "backlog"]),
-  items: z.array(connectorImportCandidateSchema),
+  items: z.array(backlogImportCandidateSchema),
   stagedCount: z.number().int().nonnegative(),
   updatedCount: z.number().int().nonnegative(),
   skippedCount: z.number().int().nonnegative(),
-  workItemUpdates: z.array(connectorSyncWorkItemUpdateSchema).default([]),
+  workItemUpdates: z.array(backlogSyncWorkItemUpdateSchema).default([]),
   /** Items that reached a done category. They are never staged for review. */
-  doneItems: z.array(connectorDoneWorkItemSchema).default([]),
+  doneItems: z.array(backlogDoneWorkItemSchema).default([]),
 });
-export type ConnectorSyncResult = z.infer<typeof connectorSyncResultSchema>;
+export type BacklogSyncResult = z.infer<typeof backlogSyncResultSchema>;

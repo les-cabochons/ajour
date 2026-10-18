@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import type { ConnectorSettleState } from "@ajour/shared";
+import type { BacklogSettleState } from "@ajour/shared";
 import { AppPanel, MessagePanel } from "@/components/app-surface";
 import { OptionSelect } from "@/components/ui/option-select";
 import { PRIORITY_LEVELS } from "@/domain/backlog/priority";
@@ -19,15 +19,15 @@ import {
 } from "@/features/backlog/settle-draft";
 
 import {
-  getCachedConnectorsOverview,
-  listConnectorSettleStates,
-  subscribeConnectorsOverview,
+  getCachedPluginsOverview,
+  listBacklogSettleStates,
+  subscribePluginsOverview,
 } from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
 
 /**
  * Settings > Backlog: the settle rule of each source project seen in syncs,
- * for connectors that can write a settle. Ask opens the settle dialog. Apply
+ * for plugins that can write a settle. Ask opens the settle dialog. Apply
  * settles at once with a fixed state, priority or both.
  */
 export function SettleRulesSection({
@@ -37,16 +37,16 @@ export function SettleRulesSection({
   workItems: readonly LocalWorkItem[];
   settleRules: readonly LocalSettleRule[] | undefined;
 }) {
-  // Re-render when the connector list changes, since it decides who can settle.
+  // Re-render when the plugin list changes, since it decides who can settle.
   const [, setOverviewRevision] = useState(0);
   useEffect(
     () =>
-      subscribeConnectorsOverview(() =>
+      subscribePluginsOverview(() =>
         setOverviewRevision((revision) => revision + 1),
       ),
     [],
   );
-  const overview = getCachedConnectorsOverview();
+  const overview = getCachedPluginsOverview();
 
   const groups = useMemo(() => {
     const byConnection = new Map<string, SettleRuleSourceProject[]>();
@@ -76,8 +76,7 @@ export function SettleRulesSection({
       <AppPanel>
         {groups.length === 0 ? (
           <MessagePanel>
-            No source projects yet. Sync a connector that can settle items
-            first.
+            No source projects yet. Sync a plugin that can settle items first.
           </MessagePanel>
         ) : (
           <div className="backlog-settings-source-groups">
@@ -113,7 +112,7 @@ export function SettleRulesSection({
 
 type StatesLoad =
   | { status: "idle" | "loading" }
-  | { status: "ready"; states: ConnectorSettleState[] }
+  | { status: "ready"; states: BacklogSettleState[] }
   | { status: "failed"; message: string };
 
 function SettleRuleRow({
@@ -134,7 +133,7 @@ function SettleRuleRow({
   useEffect(() => {
     if (!applies || load.status !== "idle") return;
     setLoad({ status: "loading" });
-    listConnectorSettleStates(
+    listBacklogSettleStates(
       project.source,
       project.connectionId,
       project.sampleSourceId,

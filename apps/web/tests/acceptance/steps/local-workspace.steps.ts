@@ -5,7 +5,7 @@ import { viewSwitcher } from "../../fixtures/sidebar";
 const { Given, When, Then } = createBdd();
 
 Given("I have a parent editor close fixture", async ({ page }) => {
-  await mockEmptyConnectorOverview(page);
+  await mockEmptyPluginsOverview(page);
   await page.addInitScript(() => {
     if (sessionStorage.getItem("editor-close-fixture-ready")) return;
     localStorage.clear();
@@ -296,8 +296,8 @@ Then(
   },
 );
 
-async function mockEmptyConnectorOverview(page: Page) {
-  await page.route("http://127.0.0.1:8787/api/connectors", async (route) => {
+async function mockEmptyPluginsOverview(page: Page) {
+  await page.route("http://127.0.0.1:8787/api/plugins", async (route) => {
     await route.fulfill({
       json: {
         pluginsEnabled: true,
@@ -314,7 +314,7 @@ async function mockEmptyConnectorOverview(page: Page) {
 }
 
 Given("I have no saved Ajour workspace", async ({ page }) => {
-  await mockEmptyConnectorOverview(page);
+  await mockEmptyPluginsOverview(page);
   await page.addInitScript(() => {
     window.localStorage.clear();
     window.sessionStorage.clear();
@@ -324,7 +324,7 @@ Given("I have no saved Ajour workspace", async ({ page }) => {
 Given(
   "I have no saved Ajour workspace, even after a reload",
   async ({ page }) => {
-    await mockEmptyConnectorOverview(page);
+    await mockEmptyPluginsOverview(page);
     // Clear storage on the first load only, so a reload keeps what the app saved.
     await page.addInitScript(() => {
       const clearedKey = "ajour.acceptance.storage-cleared";
@@ -342,7 +342,7 @@ Given(
 Given(
   "I have two saved entries with a timer running on the first",
   async ({ page }) => {
-    await page.route("http://127.0.0.1:8787/api/connectors", async (route) => {
+    await page.route("http://127.0.0.1:8787/api/plugins", async (route) => {
       await route.fulfill({
         json: {
           pluginsEnabled: true,
@@ -468,7 +468,7 @@ Given(
   },
 );
 Given("I have projects with searchable tasks", async ({ page }) => {
-  await mockEmptyConnectorOverview(page);
+  await mockEmptyPluginsOverview(page);
   await page.addInitScript(() => {
     window.localStorage.clear();
     window.sessionStorage.clear();
@@ -1750,7 +1750,7 @@ Then(
   },
 );
 
-When("I install a packaged connector from settings", async ({ page }) => {
+When("I install a packaged plugin from settings", async ({ page }) => {
   const plugin = {
     id: "example",
     version: "1.2.3",
@@ -1800,7 +1800,7 @@ When("I install a packaged connector from settings", async ({ page }) => {
     };
     return { pluginId: plugin.id, overview: currentOverview };
   });
-  await page.route("http://127.0.0.1:8787/api/connectors", async (route) => {
+  await page.route("http://127.0.0.1:8787/api/plugins", async (route) => {
     await route.fulfill({
       json: currentOverview,
       headers: { "access-control-allow-origin": "*" },
@@ -1816,8 +1816,8 @@ When("I install a packaged connector from settings", async ({ page }) => {
       ajourDesktop: {
         bootstrapLocalState: null;
         runtime: { developmentBuild: false };
-        installConnectorPlugin: () => Promise<typeof response>;
-        uninstallConnectorPlugin: () => Promise<{
+        installPlugin: () => Promise<typeof response>;
+        uninstallPlugin: () => Promise<{
           pluginId: string;
           overview: typeof response.overview;
         }>;
@@ -1826,13 +1826,13 @@ When("I install a packaged connector from settings", async ({ page }) => {
     desktopWindow.ajourDesktop = {
       bootstrapLocalState: null,
       runtime: { developmentBuild: false },
-      installConnectorPlugin: () => desktopWindow.acceptanceInstallPlugin(),
-      uninstallConnectorPlugin: () => desktopWindow.acceptanceUninstallPlugin(),
+      installPlugin: () => desktopWindow.acceptanceInstallPlugin(),
+      uninstallPlugin: () => desktopWindow.acceptanceUninstallPlugin(),
     };
   }, installResponse);
 
   await page.route(
-    "http://127.0.0.1:8787/api/connectors/example/activation",
+    "http://127.0.0.1:8787/api/plugins/example/activation",
     async (route) => {
       const payload = route.request().postDataJSON() as { enabled: boolean };
       currentOverview = {
@@ -1869,21 +1869,18 @@ When("I install a packaged connector from settings", async ({ page }) => {
   await installButton.click();
 });
 
-When(
-  "I deactivate the connector plugin with the keyboard",
-  async ({ page }) => {
-    const deactivateSwitch = page.getByRole("switch", {
-      name: "Deactivate Example",
-    });
-    await deactivateSwitch.focus();
-    await page.keyboard.press("Space");
-    await expect(
-      page.getByRole("switch", { name: "Activate Example" }),
-    ).toHaveAttribute("aria-checked", "false");
-  },
-);
+When("I deactivate the plugin with the keyboard", async ({ page }) => {
+  const deactivateSwitch = page.getByRole("switch", {
+    name: "Deactivate Example",
+  });
+  await deactivateSwitch.focus();
+  await page.keyboard.press("Space");
+  await expect(
+    page.getByRole("switch", { name: "Activate Example" }),
+  ).toHaveAttribute("aria-checked", "false");
+});
 
-Then("the inactive connector plugin remains configurable", async ({ page }) => {
+Then("the inactive plugin remains configurable", async ({ page }) => {
   await page.getByRole("link", { name: "View Example" }).click();
   await expect(page).toHaveURL(/\/settings\/plugins\/example$/);
   await expect(page.getByText("This plugin is inactive.")).toBeVisible();
@@ -1904,16 +1901,16 @@ Then("Outlook Calendar is not offered", async ({ page }) => {
   await expect(page.getByText("Outlook Calendar")).toHaveCount(0);
 });
 
-Then("the connector plugin is reported as installed", async ({ page }) => {
+Then("the plugin is reported as installed", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Plugins" })).toBeVisible();
   await expect(page.getByText("Example 1.2.3 installed.")).toBeVisible();
   // The row shows the plugin's capabilities, then its version.
   await expect(
-    page.getByText("Connector · v1.2.3", { exact: true }),
+    page.getByText("Backlog · v1.2.3", { exact: true }),
   ).toBeVisible();
 });
 
-Then("I can open the connector plugin configuration", async ({ page }) => {
+Then("I can open the plugin configuration", async ({ page }) => {
   await page.getByRole("link", { name: "View Example" }).click();
 
   await expect(page).toHaveURL(/\/settings\/plugins\/example$/);
@@ -1923,17 +1920,17 @@ Then("I can open the connector plugin configuration", async ({ page }) => {
   ).toBeVisible();
 });
 
-When("I open the connector plugin configuration", async ({ page }) => {
+When("I open the plugin configuration", async ({ page }) => {
   await page.getByRole("link", { name: "View Example" }).click();
   await expect(page).toHaveURL(/\/settings\/plugins\/example$/);
 });
 
-When("I uninstall the connector plugin", async ({ page }) => {
+When("I uninstall the plugin", async ({ page }) => {
   await page.getByRole("button", { name: "Uninstall", exact: true }).click();
   await page.getByRole("button", { name: "Uninstall plugin" }).click();
 });
 
-Then("the connector plugin is reported as uninstalled", async ({ page }) => {
+Then("the plugin is reported as uninstalled", async ({ page }) => {
   await expect(page).toHaveURL(/\/settings\/plugins\/example$/);
   await expect(
     page.getByText(
@@ -1948,11 +1945,11 @@ When("I open development plugin settings", async ({ page }) => {
   await page.addInitScript(() => {
     const initialSettings = {
       available: true,
-      directories: ["/workspace/connectors/example"],
+      directories: ["/workspace/plugins/example"],
     };
     const selectedSettings = {
       available: true,
-      directories: ["/workspace/connectors/selected"],
+      directories: ["/workspace/plugins/selected"],
     };
     const desktopWindow = window as typeof window & {
       ajourDesktop: {
@@ -1982,14 +1979,14 @@ Then("I can choose a development plugin directory", async ({ page }) => {
   await expect(
     page.getByRole("heading", { name: "Development plugin directory" }),
   ).toBeVisible();
-  await expect(page.getByText("/workspace/connectors/example")).toBeVisible();
+  await expect(page.getByText("/workspace/plugins/example")).toBeVisible();
 
   await page.getByRole("button", { name: "Choose directory" }).click();
-  await expect(page.getByText("/workspace/connectors/selected")).toBeVisible();
+  await expect(page.getByText("/workspace/plugins/selected")).toBeVisible();
 });
 
 Given("I have a saved entry with an unrounded duration", async ({ page }) => {
-  await mockEmptyConnectorOverview(page);
+  await mockEmptyPluginsOverview(page);
   await page.addInitScript(() => {
     window.localStorage.clear();
     window.sessionStorage.clear();
@@ -2054,7 +2051,7 @@ Then(
 );
 
 Given("I have a week of saved entries", async ({ page }) => {
-  await mockEmptyConnectorOverview(page);
+  await mockEmptyPluginsOverview(page);
   await page.addInitScript(() => {
     const hour = 60 * 60 * 1000;
     const entry = (

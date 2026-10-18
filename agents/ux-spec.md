@@ -68,7 +68,7 @@ Start entry (Stop while its entry runs) · New entry… · Edit · Add subitem �
 
 Changed in [#69](https://github.com/les-cabochons/ajour/issues/69). See the Backlog sidebar section for what Snooze and Settle do.
 
-- Open in source is listed only for items synced from a connector.
+- Open in source is listed only for items synced from a backlog plugin.
 - Archive is listed only for synced items. It archives the item in Ajour and leaves the source tool as it is. On a manual item, Settle already archives. An archived item disables Archive: "The item is archived".
 - Settle shows as "Settle…" when it opens the settle dialog, and as "Settle" when a settle rule applies a fixed change.
 - New entry… replaces the inline "Log time" field as the action for logging time.
@@ -118,7 +118,7 @@ Each nav label matches its page title. Old routes are removed, not redirected.
 | Sync review  | Sync review                    | `/settings/sync-review`  |
 | Debug        | Debug                          | `/settings/debug`        |
 
-The Plugins page tabs are **All · Connectors · Schemas**.
+The Plugins page tabs are **All · Backlog · Schemas**.
 
 ## App shell
 
@@ -304,14 +304,14 @@ No success toasts. The result shows where the action happened:
 
 - Submitting a timesheet: the submit flow shows its own result. See [Submit timesheet flow in full and narrow windows](https://github.com/les-cabochons/ajour/issues/24).
 - Imports and exports: the page shows the result inline, such as the file name and counts.
-- A connector sync the user started: the connector shows that it is syncing, then when it last synced.
+- A backlog sync the user started: the plugin shows that it is syncing, then when it last synced.
 - Starting or switching an entry from another page: the timer dock and the row update.
 
 ### Errors
 
 - Form mistakes show next to the field, as now.
 - An operation the user started (import, export, sync, plugin install) shows its error inline on that page.
-- Background failures, such as an automatic connector sync, show one error toast per failure that stays until dismissed, and a "Last sync failed" line on that connector in Settings.
+- Background failures, such as an automatic backlog sync, show one error toast per failure that stays until dismissed, and a "Last sync failed" line on that plugin in Settings.
 - A settle write that fails after the Undo window puts the item back to active and shows an error toast, naming the item and the reason, that stays until dismissed.
 
 ### Toasts
@@ -477,7 +477,7 @@ Decided in [Backlog page under the new conventions](https://github.com/les-caboc
 
 Settings > Workflow lists, for each connection and source project, its source states. It replaces the Synced status mapping. Explicit Settle rules stay in Settings > Backlog. Moves use the per-workflow write rules below.
 
-- **In:** each source state maps to one workflow state. Connectors list every source state of a source project, so states are mapped before any item reaches them. A plugin that can't list them falls back to the states seen in syncs.
+- **In:** each source state maps to one workflow state. Backlog plugins list every source state of a source project, so states are mapped before any item reaches them. A plugin that can't list them falls back to the states seen in syncs.
 - A new source state in the tool's done category is preselected to map to the first done state. A source state whose name matches a workflow state exactly, ignoring case, maps to it. Anything else stays unmapped.
 - Items in an unmapped source state show under "No state", first on the board and in the list. Settings > Workflow shows the count of unmapped source states, and the Backlog header shows a quiet notice that links there.
 - **Out:** each workflow state has a default source state, Ask, or Don't write. The default starts on the first mapped source state. Ask is offered when two or more source states map in, and opens a dialog with them when an item moves there.
@@ -488,7 +488,7 @@ Settings > Workflow lists, for each connection and source project, its source st
 ### Priority
 
 - Priority has five levels with Linear's icons: Urgent, High, Medium, Low and No priority.
-- Each connector plugin maps its source priority values to levels. A plugin can let the user set that mapping in its connection settings, such as Azure DevOps 1 Urgent, 2 High, 3 Medium and 4 Low by default. A value the plugin maps to no level is No priority.
+- Each backlog plugin maps its source priority values to levels. A plugin can let the user set that mapping in its connection settings, such as Azure DevOps 1 Urgent, 2 High, 3 Medium and 4 Low by default. A value the plugin maps to no level is No priority.
 - Settle and moving into a done state write the level only when it changed. The plugin picks the source value, such as the lowest value of the level's range.
 - Within a level, items keep the custom order.
 
@@ -564,7 +564,7 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 
 ## Backlog sidebar
 
-Decided in [Backlog sidebar with settle, snooze and a backlog item page](https://github.com/les-cabochons/ajour/issues/69). The connector side is [#70](https://github.com/les-cabochons/ajour/issues/70). Delayed writes are recorded in [ADR 0001](adr/0001-connector-writes-after-undo-window.md).
+Decided in [Backlog sidebar with settle, snooze and a backlog item page](https://github.com/les-cabochons/ajour/issues/69). The backlog plugin side is [#70](https://github.com/les-cabochons/ajour/issues/70). Delayed writes are recorded in [ADR 0001](adr/0001-connector-writes-after-undo-window.md).
 
 The sidebar works like the T3 Code and Linear sidebars: the view switcher, the timer dock, then the work itself in one scroll.
 
@@ -700,7 +700,7 @@ Decided in [Settings and Sync review under the new conventions](https://github.c
 
 - Pages keep their content, with sentence case and the labels from the Vocabulary section.
 - Results and errors of imports, exports and syncs show inline on their page, per the Feedback section.
-- When the local connector API is not running, as in the web build, Plugins shows one calm notice: "Connectors need the desktop app". Backlog and Sync review hide their connector sections instead of showing red error banners.
+- When the local app API is not running, as in the web build, Plugins shows one calm notice: "Plugins need the desktop app". Backlog and Sync review hide their plugin sections instead of showing red error banners.
 - Sync review keeps its list with selection, "Sync selected to backlog", and Dismiss. Dismiss shows the Undo toast instead of asking.
 - The Debug page only exists in development builds.
 - Settings > Backlog lists, for each connection, the source projects seen in syncs, each with its settle rule. See the Backlog sidebar section.

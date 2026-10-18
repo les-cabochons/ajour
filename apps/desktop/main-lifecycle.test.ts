@@ -6,7 +6,7 @@ function ipcHandler(channel: string) {
   return new RegExp(`ipcMain\\.handle\\(\\s*"${channel}"`);
 }
 
-describe("desktop connector lifecycle", () => {
+describe("desktop plugin lifecycle", () => {
   it("acquires the single-instance lock before starting application services", async () => {
     const source = await readFile(
       new URL("./electron/main.cjs", import.meta.url),
@@ -78,24 +78,24 @@ describe("desktop connector lifecycle", () => {
     expect(source).toContain("gracefulQuitStarted = false;");
   });
 
-  it("keeps connector installation behind the active desktop window IPC bridge", async () => {
+  it("keeps plugin installation behind the active desktop window IPC bridge", async () => {
     const [mainSource, preloadSource] = await Promise.all([
       readFile(new URL("./electron/main.cjs", import.meta.url), "utf8"),
       readFile(new URL("./electron/preload.cjs", import.meta.url), "utf8"),
     ]);
 
     expect(preloadSource).toContain(
-      'ipcRenderer.invoke("ajour:install-connector-plugin")',
+      'ipcRenderer.invoke("ajour:install-plugin")',
     );
-    expect(mainSource).toMatch(ipcHandler("ajour:install-connector-plugin"));
+    expect(mainSource).toMatch(ipcHandler("ajour:install-plugin"));
     expect(mainSource).toContain("event.sender !== mainWindow.webContents");
-    expect(mainSource).toContain("selectConnectorPluginArchive(");
-    expect(mainSource).toContain("installConnectorPluginForServer(");
+    expect(mainSource).toContain("selectPluginArchive(");
+    expect(mainSource).toContain("installPluginForServer(");
     expect(preloadSource).toContain(
-      'ipcRenderer.invoke("ajour:uninstall-connector-plugin"',
+      'ipcRenderer.invoke("ajour:uninstall-plugin"',
     );
-    expect(mainSource).toMatch(ipcHandler("ajour:uninstall-connector-plugin"));
-    expect(mainSource).toContain("uninstallConnectorPluginForServer(");
+    expect(mainSource).toMatch(ipcHandler("ajour:uninstall-plugin"));
+    expect(mainSource).toContain("uninstallPluginForServer(");
   });
 
   it("keeps GitHub update checks behind the active desktop window IPC bridge", async () => {

@@ -16,27 +16,27 @@ import {
 } from "node:fs/promises";
 import { extract, list } from "tar";
 import {
-  CONNECTOR_PLUGIN_API_VERSION,
-  CONNECTOR_PLUGIN_ARCHIVE_EXTENSION,
-  connectorPluginManifestSchema,
-  connectorPluginIdSchema,
+  PLUGIN_API_VERSION,
+  PLUGIN_ARCHIVE_EXTENSION,
+  pluginManifestSchema,
+  pluginIdSchema,
   type AgentTask,
-  type ConnectorPluginManifest,
-} from "../../../packages/shared/connectors.ts";
+  type PluginManifest,
+} from "../../../packages/shared/plugins.ts";
 import {
   allowedTaskSlots,
   listTemplateSlots,
 } from "../../../packages/shared/agent-task-templates.ts";
 
-export const MAX_CONNECTOR_PLUGIN_ARCHIVE_BYTES = 25 * 1024 * 1024;
-const MAX_CONNECTOR_PLUGIN_FILES = 2_000;
-const MAX_CONNECTOR_PLUGIN_FILE_BYTES = 25 * 1024 * 1024;
-const MAX_CONNECTOR_PLUGIN_EXTRACTED_BYTES = 100 * 1024 * 1024;
+export const MAX_PLUGIN_ARCHIVE_BYTES = 25 * 1024 * 1024;
+const MAX_PLUGIN_FILES = 2_000;
+const MAX_PLUGIN_FILE_BYTES = 25 * 1024 * 1024;
+const MAX_PLUGIN_EXTRACTED_BYTES = 100 * 1024 * 1024;
 const ALLOWED_ARCHIVE_ENTRY_TYPES = new Set(["File", "Directory"]);
 const ALLOWED_ENTRYPOINT_EXTENSIONS = new Set([".cjs", ".js", ".mjs"]);
 
-export interface ResolvedConnectorPlugin {
-  manifest: ConnectorPluginManifest;
+export interface ResolvedPlugin {
+  manifest: PluginManifest;
   directory: string;
   /** Absent for a plugin that runs no code. */
   entrypointPath?: string;
@@ -48,30 +48,30 @@ export interface ResolvedConnectorPlugin {
  * reason written for the user, so the settings page can explain the problem
  * and offer an update instead of showing an unnamed placeholder.
  */
-export interface UnavailableConnectorPlugin {
-  manifest: ConnectorPluginManifest;
+export interface UnavailablePlugin {
+  manifest: PluginManifest;
   directory: string;
   reason: string;
 }
 
 /** Thrown when a valid manifest targets a plugin API this app does not run. */
-export class IncompatibleConnectorPluginError extends Error {
-  readonly manifest: ConnectorPluginManifest;
+export class IncompatiblePluginError extends Error {
+  readonly manifest: PluginManifest;
 
-  constructor(manifest: ConnectorPluginManifest) {
+  constructor(manifest: PluginManifest) {
     const pluginName = `${manifest.displayName} ${manifest.version}`;
     super(
-      manifest.apiVersion < CONNECTOR_PLUGIN_API_VERSION
-        ? `${pluginName} uses plugin API ${manifest.apiVersion}, but this version of Ajour needs plugin API ${CONNECTOR_PLUGIN_API_VERSION}. Update the plugin to use it again.`
-        : `${pluginName} uses plugin API ${manifest.apiVersion}, but this version of Ajour supports plugin API ${CONNECTOR_PLUGIN_API_VERSION}. Update Ajour to use this plugin.`,
+      manifest.apiVersion < PLUGIN_API_VERSION
+        ? `${pluginName} uses plugin API ${manifest.apiVersion}, but this version of Ajour needs plugin API ${PLUGIN_API_VERSION}. Update the plugin to use it again.`
+        : `${pluginName} uses plugin API ${manifest.apiVersion}, but this version of Ajour supports plugin API ${PLUGIN_API_VERSION}. Update Ajour to use this plugin.`,
     );
-    this.name = "IncompatibleConnectorPluginError";
+    this.name = "IncompatiblePluginError";
     this.manifest = manifest;
   }
 }
 
-export interface InstalledConnectorPlugin {
-  manifest: ConnectorPluginManifest;
+export interface InstalledPlugin {
+  manifest: PluginManifest;
   directory: string;
   replaced: boolean;
   installed: boolean;
@@ -130,7 +130,7 @@ export const MAX_AGENT_TASK_PROMPT_BYTES = 64 * 1024;
 export async function readAgentTaskPromptFile(
   directory: string,
   canonicalDirectory: string,
-  manifest: ConnectorPluginManifest,
+  manifest: PluginManifest,
   task: AgentTask,
 ): Promise<string> {
   const description = `Plugin "${manifest.id}" task "${task.id}" prompt`;
@@ -171,11 +171,11 @@ function validateArchiveEntryPath(entryPath: string) {
     /^[A-Za-z]:/.test(normalized) ||
     normalized.split("/").some((segment) => segment === "..")
   ) {
-    throw new Error(`Connector archive contains an unsafe path: ${entryPath}`);
+    throw new Error(`Plugin archive contains an unsafe path: ${entryPath}`);
   }
 }
 
-async function validateConnectorPluginArchive(archivePath: string) {
+async function validatePluginArchive(archivePath: string) {
   let entryCount = 0;
   let extractedBytes = 0;
 
@@ -188,26 +188,26 @@ async function validateConnectorPluginArchive(archivePath: string) {
         try {
           validateArchiveEntryPath(entry.path);
           entryCount += 1;
-          if (entryCount > MAX_CONNECTOR_PLUGIN_FILES) {
+          if (entryCount > MAX_PLUGIN_FILES) {
             throw new Error(
-              `Connector archive contains more than ${MAX_CONNECTOR_PLUGIN_FILES} entries.`,
+              `Plugin archive contains more than ${MAX_PLUGIN_FILES} entries.`,
             );
           }
           if (!ALLOWED_ARCHIVE_ENTRY_TYPES.has(entry.type)) {
             throw new Error(
-              `Connector archive entry "${entry.path}" has unsupported type "${entry.type}".`,
+              `Plugin archive entry "${entry.path}" has unsupported type "${entry.type}".`,
             );
           }
           if (entry.type === "File") {
-            if (entry.size > MAX_CONNECTOR_PLUGIN_FILE_BYTES) {
+            if (entry.size > MAX_PLUGIN_FILE_BYTES) {
               throw new Error(
-                `Connector archive entry "${entry.path}" is too large.`,
+                `Plugin archive entry "${entry.path}" is too large.`,
               );
             }
             extractedBytes += entry.size;
-            if (extractedBytes > MAX_CONNECTOR_PLUGIN_EXTRACTED_BYTES) {
+            if (extractedBytes > MAX_PLUGIN_EXTRACTED_BYTES) {
               throw new Error(
-                "Connector archive expands beyond the allowed size.",
+                "Plugin archive expands beyond the allowed size.",
               );
             }
           }
@@ -215,7 +215,7 @@ async function validateConnectorPluginArchive(archivePath: string) {
           const validationError =
             error instanceof Error
               ? error
-              : new Error("Connector archive validation failed.");
+              : new Error("Plugin archive validation failed.");
           parser.abort(validationError);
           source.destroy();
         }
@@ -228,23 +228,21 @@ async function validateConnectorPluginArchive(archivePath: string) {
   });
 }
 
-export function resolveConnectorPluginEntrypoint(
+export function resolvePluginEntrypoint(
   directory: string,
-  manifest: ConnectorPluginManifest,
+  manifest: PluginManifest,
 ) {
   if (!manifest.entrypoint) {
     throw new Error(`Plugin "${manifest.id}" runs no code.`);
   }
   if (path.isAbsolute(manifest.entrypoint)) {
-    throw new Error(
-      `Connector plugin "${manifest.id}" entrypoint must be relative.`,
-    );
+    throw new Error(`Plugin "${manifest.id}" entrypoint must be relative.`);
   }
 
   const entrypointPath = path.resolve(directory, manifest.entrypoint);
   if (!isPathInside(directory, entrypointPath)) {
     throw new Error(
-      `Connector plugin "${manifest.id}" entrypoint leaves its plugin directory.`,
+      `Plugin "${manifest.id}" entrypoint leaves its plugin directory.`,
     );
   }
 
@@ -254,17 +252,17 @@ export function resolveConnectorPluginEntrypoint(
     )
   ) {
     throw new Error(
-      `Connector plugin "${manifest.id}" entrypoint must be compiled JavaScript.`,
+      `Plugin "${manifest.id}" entrypoint must be compiled JavaScript.`,
     );
   }
 
   return entrypointPath;
 }
 
-export async function readConnectorPlugin(
+export async function readPlugin(
   directory: string,
-  source: ResolvedConnectorPlugin["source"],
-): Promise<ResolvedConnectorPlugin> {
+  source: ResolvedPlugin["source"],
+): Promise<ResolvedPlugin> {
   const pluginDirectory = path.resolve(directory);
   const canonicalPluginDirectory = await realpath(pluginDirectory);
   const manifestPath = path.join(pluginDirectory, "plugin.json");
@@ -272,26 +270,23 @@ export async function readConnectorPlugin(
     pluginDirectory,
     canonicalPluginDirectory,
     manifestPath,
-    "Connector plugin manifest",
+    "Plugin manifest",
   );
   const rawManifest = await readFile(manifestPath, "utf8");
-  const manifest = connectorPluginManifestSchema.parse(JSON.parse(rawManifest));
+  const manifest = pluginManifestSchema.parse(JSON.parse(rawManifest));
 
-  if (manifest.apiVersion !== CONNECTOR_PLUGIN_API_VERSION) {
-    throw new IncompatibleConnectorPluginError(manifest);
+  if (manifest.apiVersion !== PLUGIN_API_VERSION) {
+    throw new IncompatiblePluginError(manifest);
   }
 
   let entrypointPath: string | undefined;
   if (manifest.entrypoint) {
-    entrypointPath = resolveConnectorPluginEntrypoint(
-      pluginDirectory,
-      manifest,
-    );
+    entrypointPath = resolvePluginEntrypoint(pluginDirectory, manifest);
     await assertRegularPluginFile(
       pluginDirectory,
       canonicalPluginDirectory,
       entrypointPath,
-      `Connector plugin "${manifest.id}" entrypoint`,
+      `Plugin "${manifest.id}" entrypoint`,
     );
   }
   // Read every prompt once so a bad one fails the install, not the first run.
@@ -316,11 +311,9 @@ export async function readConnectorPlugin(
  * Reads every installed package. Packages built for another plugin API come
  * back in `unavailable`; other invalid directories are logged and skipped.
  */
-export async function discoverInstalledConnectorPlugins(
-  pluginRoot: string,
-): Promise<{
-  plugins: ResolvedConnectorPlugin[];
-  unavailable: UnavailableConnectorPlugin[];
+export async function discoverInstalledPlugins(pluginRoot: string): Promise<{
+  plugins: ResolvedPlugin[];
+  unavailable: UnavailablePlugin[];
 }> {
   let entries;
   try {
@@ -329,8 +322,8 @@ export async function discoverInstalledConnectorPlugins(
     return { plugins: [], unavailable: [] };
   }
 
-  const plugins: ResolvedConnectorPlugin[] = [];
-  const unavailable: UnavailableConnectorPlugin[] = [];
+  const plugins: ResolvedPlugin[] = [];
+  const unavailable: UnavailablePlugin[] = [];
   for (const entry of entries) {
     if (!entry.isDirectory() || entry.name.startsWith(".")) {
       continue;
@@ -338,13 +331,10 @@ export async function discoverInstalledConnectorPlugins(
 
     try {
       plugins.push(
-        await readConnectorPlugin(
-          path.join(pluginRoot, entry.name),
-          "installed",
-        ),
+        await readPlugin(path.join(pluginRoot, entry.name), "installed"),
       );
     } catch (error) {
-      if (error instanceof IncompatibleConnectorPluginError) {
+      if (error instanceof IncompatiblePluginError) {
         unavailable.push({
           manifest: error.manifest,
           directory: path.join(pluginRoot, entry.name),
@@ -353,7 +343,7 @@ export async function discoverInstalledConnectorPlugins(
         continue;
       }
       console.error(
-        `Skipping invalid connector plugin directory "${entry.name}".`,
+        `Skipping invalid plugin directory "${entry.name}".`,
         error,
       );
     }
@@ -362,7 +352,7 @@ export async function discoverInstalledConnectorPlugins(
   return { plugins, unavailable };
 }
 
-export async function reconcileConnectorPluginInstallRoot(pluginRoot: string) {
+export async function reconcilePluginInstallRoot(pluginRoot: string) {
   await mkdir(pluginRoot, { recursive: true, mode: 0o700 });
   const entries = await readdir(pluginRoot, { withFileTypes: true });
   for (const entry of entries) {
@@ -382,7 +372,7 @@ export async function reconcileConnectorPluginInstallRoot(pluginRoot: string) {
     }
 
     try {
-      const backupPlugin = await readConnectorPlugin(entryPath, "installed");
+      const backupPlugin = await readPlugin(entryPath, "installed");
       const targetDirectory = path.join(pluginRoot, backupPlugin.manifest.id);
       if (await pathExists(targetDirectory)) {
         await rm(entryPath, { recursive: true, force: true });
@@ -390,36 +380,31 @@ export async function reconcileConnectorPluginInstallRoot(pluginRoot: string) {
         await rename(entryPath, targetDirectory);
       }
     } catch (error) {
-      console.error(
-        `Unable to reconcile connector plugin backup "${entryPath}".`,
-        error,
-      );
+      console.error(`Unable to reconcile plugin backup "${entryPath}".`, error);
     }
   }
 }
 
-export async function installConnectorPluginArchive(options: {
+export async function installPluginArchive(options: {
   archiveBytes: Uint8Array;
   archiveFilename: string;
   installRoot: string;
   replaceExisting?: boolean;
-}): Promise<InstalledConnectorPlugin> {
+}): Promise<InstalledPlugin> {
   if (
-    !options.archiveFilename
-      .toLowerCase()
-      .endsWith(CONNECTOR_PLUGIN_ARCHIVE_EXTENSION)
+    !options.archiveFilename.toLowerCase().endsWith(PLUGIN_ARCHIVE_EXTENSION)
   ) {
     throw new Error(
-      `Connector plugin files must use the ${CONNECTOR_PLUGIN_ARCHIVE_EXTENSION} extension.`,
+      `Plugin files must use the ${PLUGIN_ARCHIVE_EXTENSION} extension.`,
     );
   }
 
   if (
     options.archiveBytes.byteLength === 0 ||
-    options.archiveBytes.byteLength > MAX_CONNECTOR_PLUGIN_ARCHIVE_BYTES
+    options.archiveBytes.byteLength > MAX_PLUGIN_ARCHIVE_BYTES
   ) {
     throw new Error(
-      `Connector plugin archives must be between 1 byte and ${MAX_CONNECTOR_PLUGIN_ARCHIVE_BYTES} bytes.`,
+      `Plugin archives must be between 1 byte and ${MAX_PLUGIN_ARCHIVE_BYTES} bytes.`,
     );
   }
 
@@ -433,7 +418,7 @@ export async function installConnectorPluginArchive(options: {
 
   try {
     await writeFile(archivePath, options.archiveBytes, { mode: 0o600 });
-    await validateConnectorPluginArchive(archivePath);
+    await validatePluginArchive(archivePath);
     await extract({
       cwd: payloadDirectory,
       file: archivePath,
@@ -442,10 +427,7 @@ export async function installConnectorPluginArchive(options: {
       strict: true,
     });
 
-    const stagedPlugin = await readConnectorPlugin(
-      payloadDirectory,
-      "installed",
-    );
+    const stagedPlugin = await readPlugin(payloadDirectory, "installed");
     const targetDirectory = path.join(
       options.installRoot,
       stagedPlugin.manifest.id,
@@ -453,10 +435,7 @@ export async function installConnectorPluginArchive(options: {
     const targetExists = await pathExists(targetDirectory);
 
     if (targetExists && options.replaceExisting === false) {
-      const existingPlugin = await readConnectorPlugin(
-        targetDirectory,
-        "installed",
-      );
+      const existingPlugin = await readPlugin(targetDirectory, "installed");
       return {
         manifest: existingPlugin.manifest,
         directory: existingPlugin.directory,
@@ -487,7 +466,7 @@ export async function installConnectorPluginArchive(options: {
       await rm(backupDirectory, { recursive: true, force: true }).catch(
         (error) => {
           console.error(
-            `Unable to remove connector plugin backup "${backupDirectory}".`,
+            `Unable to remove plugin backup "${backupDirectory}".`,
             error,
           );
         },
@@ -505,14 +484,13 @@ export async function installConnectorPluginArchive(options: {
   }
 }
 
-export async function uninstallConnectorPluginPackage(options: {
+export async function uninstallPluginPackage(options: {
   installRoot: string;
   pluginId: string;
-}): Promise<Pick<ResolvedConnectorPlugin, "manifest" | "directory"> | null> {
-  const pluginId = connectorPluginIdSchema.parse(options.pluginId);
+}): Promise<Pick<ResolvedPlugin, "manifest" | "directory"> | null> {
+  const pluginId = pluginIdSchema.parse(options.pluginId);
   const installRoot = path.resolve(options.installRoot);
-  const { plugins, unavailable } =
-    await discoverInstalledConnectorPlugins(installRoot);
+  const { plugins, unavailable } = await discoverInstalledPlugins(installRoot);
   // A package built for another plugin API can still be removed.
   const plugin = [...plugins, ...unavailable].find(
     (candidate) => candidate.manifest.id === pluginId,
@@ -523,7 +501,7 @@ export async function uninstallConnectorPluginPackage(options: {
 
   if (path.dirname(plugin.directory) !== installRoot) {
     throw new Error(
-      `Connector plugin "${pluginId}" is outside the managed plugin directory.`,
+      `Plugin "${pluginId}" is outside the managed plugin directory.`,
     );
   }
 

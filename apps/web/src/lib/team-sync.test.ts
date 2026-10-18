@@ -1,12 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { ConnectorsOverview, TeamSyncRequest } from "@ajour/shared";
+import type { PluginsOverview, TeamSyncRequest } from "@ajour/shared";
 
 const PLUGIN = "team";
 const CONNECTION = "acme";
 const SYNC_URL = `/api/teams/${PLUGIN}/connections/${CONNECTION}/sync`;
 
 /** The local API's view: the team plugin with one connection to `teamId`. */
-function overviewWith(teamId: string | null): ConnectorsOverview {
+function overviewWith(teamId: string | null): PluginsOverview {
   const plugin = {
     id: PLUGIN,
     version: "0.1.0",
@@ -280,7 +280,7 @@ describe("team sync service", () => {
 
     const sync = syncTeamConnection(PLUGIN, CONNECTION);
     await vi.waitFor(() => expect(deliver).toBeTypeOf("function"));
-    await api.deleteConnectorConnection(PLUGIN, CONNECTION);
+    await api.deletePluginConnection(PLUGIN, CONNECTION);
     deliver({
       cursor: "c1",
       projects: [teamProject("r-other", "Gamma")],
@@ -347,7 +347,7 @@ describe("team sync service", () => {
     stub.failDelete = true;
 
     await expect(
-      api.deleteConnectorConnection(PLUGIN, CONNECTION),
+      api.deletePluginConnection(PLUGIN, CONNECTION),
     ).rejects.toThrow(/Storage is busy/);
     const outcome = await syncTeamConnection(PLUGIN, CONNECTION);
 

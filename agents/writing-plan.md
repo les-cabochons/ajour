@@ -56,6 +56,6 @@ Expected direction: feature code should consume pure behavior from `domain`, run
 
 ## Open Decisions
 
-- Decide whether future connector imports should share one review model across plugin sources.
+- Decide whether future backlog imports should share one review model across plugin sources.
 - Decide whether local diagnostics should get a first-class UI under Settings Debug.
 - Decide whether desktop-only behavior should be exposed as explicit capabilities in shared runtime helpers.

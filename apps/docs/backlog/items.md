@@ -7,7 +7,7 @@ A backlog item is a piece of planned work. It has a title, a priority, a workflo
 ## Manual and synced items
 
 - A **manual** item is one you create in Ajour. Its source shows as **Ajour**.
-- A **synced** item comes from a connector, such as Azure DevOps or Jira. It shows its ID, its source project and its source state, and **Open in Azure DevOps** or **Open in Jira** takes you to it.
+- A **synced** item comes from a backlog plugin, such as Azure DevOps or Jira. It shows its ID, its source project and its source state, and **Open in Azure DevOps** or **Open in Jira** takes you to it.
 
 Ajour keeps your changes to a synced item. A sync updates what changed in the source, and asks you when both sides changed the same estimate. See [Sync review](/plugins/sync-review).
 
@@ -38,7 +38,7 @@ Set the item's **Project** and **Task** so the time you log on it lands on the r
 
 **Logged in Ajour** is the sum of your time entries on the item. On a parent, the item editor (**Edit**) has a button next to each estimate that resets it to the total of its subitems.
 
-For synced items, connectors write estimate changes back to the source when they sync. See the [Azure DevOps](/plugins/azure-devops) and [Jira](/plugins/jira) pages for which fields they use.
+For synced items, backlog plugins write estimate changes back to the source when they sync. See the [Azure DevOps](/plugins/azure-devops) and [Jira](/plugins/jira) pages for which fields they use.
 
 ## Subitems
 

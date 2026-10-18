@@ -99,7 +99,7 @@ export function showActionToast({
 
 /**
  * Shows an error from background work that has no place on screen, such as an
- * automatic connector sync. It stays until the user dismisses it.
+ * automatic backlog sync. It stays until the user dismisses it.
  */
 export function showErrorToast({
   title,

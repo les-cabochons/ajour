@@ -22,7 +22,7 @@ const {
   getAppMenuModel,
 } = require("./app-menu.cjs");
 const { createAutomaticUpdateController } = require("./automatic-update.cjs");
-const { selectConnectorPluginArchive } = require("./connector-install.cjs");
+const { selectPluginArchive } = require("./plugin-install.cjs");
 const { createPluginCatalogService } = require("./plugin-catalog.cjs");
 const {
   loadPluginCatalogSettings,
@@ -233,39 +233,34 @@ ipcMain.handle("ajour:open-update-release", async (event, releaseUrl) => {
   await shell.openExternal(releaseUrl);
 });
 
-ipcMain.handle("ajour:install-connector-plugin", async (event) => {
+ipcMain.handle("ajour:install-plugin", async (event) => {
   if (!mainWindow || event.sender !== mainWindow.webContents) {
     throw new Error(
-      "Connector plugins can only be installed by the active Ajour window.",
+      "Plugins can only be installed by the active Ajour window.",
     );
   }
   if (!app.isPackaged) {
     throw new Error(
-      "Packaged connector installation is only available in production builds.",
+      "Packaged plugin installation is only available in production builds.",
     );
   }
 
-  const selectedArchive = await selectConnectorPluginArchive(
-    dialog,
-    mainWindow,
-  );
+  const selectedArchive = await selectPluginArchive(dialog, mainWindow);
   if (!selectedArchive) {
     return null;
   }
 
   await ensureInternalAppApiRunning();
   if (!internalAppApiServer || !internalAppApiModulePromise) {
-    throw new Error("Internal connector API unavailable. Restart the app.");
+    throw new Error("Internal app API unavailable. Restart the app.");
   }
 
-  const { installConnectorPluginForServer } = await internalAppApiModulePromise;
-  if (typeof installConnectorPluginForServer !== "function") {
-    throw new Error(
-      "Internal connector API does not support plugin installation.",
-    );
+  const { installPluginForServer } = await internalAppApiModulePromise;
+  if (typeof installPluginForServer !== "function") {
+    throw new Error("Internal app API does not support plugin installation.");
   }
 
-  return await installConnectorPluginForServer(
+  return await installPluginForServer(
     internalAppApiServer,
     selectedArchive.archiveBytes,
     selectedArchive.archiveFilename,
@@ -312,27 +307,25 @@ ipcMain.handle("ajour:download-catalog-plugin", async (event, pluginId) => {
   const downloaded = await pluginCatalogService.downloadPluginArchive(pluginId);
   await ensureInternalAppApiRunning();
   if (!internalAppApiServer || !internalAppApiModulePromise) {
-    throw new Error("Internal connector API unavailable. Restart the app.");
+    throw new Error("Internal app API unavailable. Restart the app.");
   }
-  const { installConnectorPluginForServer } = await internalAppApiModulePromise;
-  if (typeof installConnectorPluginForServer !== "function") {
-    throw new Error(
-      "Internal connector API does not support plugin installation.",
-    );
+  const { installPluginForServer } = await internalAppApiModulePromise;
+  if (typeof installPluginForServer !== "function") {
+    throw new Error("Internal app API does not support plugin installation.");
   }
-  const result = await installConnectorPluginForServer(
+  const result = await installPluginForServer(
     internalAppApiServer,
     downloaded.archiveBytes,
     downloaded.archiveFilename,
     { enableAfterInstall: false },
   );
-  return { type: "connector", result };
+  return { type: "plugin", result };
 });
 
-ipcMain.handle("ajour:uninstall-connector-plugin", async (event, pluginId) => {
+ipcMain.handle("ajour:uninstall-plugin", async (event, pluginId) => {
   if (!mainWindow || event.sender !== mainWindow.webContents) {
     throw new Error(
-      "Connector plugins can only be uninstalled by the active Ajour window.",
+      "Plugins can only be uninstalled by the active Ajour window.",
     );
   }
   if (!app.isPackaged) {
@@ -343,21 +336,15 @@ ipcMain.handle("ajour:uninstall-connector-plugin", async (event, pluginId) => {
 
   await ensureInternalAppApiRunning();
   if (!internalAppApiServer || !internalAppApiModulePromise) {
-    throw new Error("Internal connector API unavailable. Restart the app.");
+    throw new Error("Internal app API unavailable. Restart the app.");
   }
 
-  const { uninstallConnectorPluginForServer } =
-    await internalAppApiModulePromise;
-  if (typeof uninstallConnectorPluginForServer !== "function") {
-    throw new Error(
-      "Internal connector API does not support plugin uninstall.",
-    );
+  const { uninstallPluginForServer } = await internalAppApiModulePromise;
+  if (typeof uninstallPluginForServer !== "function") {
+    throw new Error("Internal app API does not support plugin uninstall.");
   }
 
-  return await uninstallConnectorPluginForServer(
-    internalAppApiServer,
-    pluginId,
-  );
+  return await uninstallPluginForServer(internalAppApiServer, pluginId);
 });
 
 ipcMain.handle("ajour:get-development-plugin-settings", async (event) => {
@@ -467,18 +454,18 @@ async function waitForInternalAppApiStartup(apiProcess) {
 
   for (let attempt = 0; attempt < 20; attempt += 1) {
     if (internalAppApiServer !== apiProcess) {
-      throw lastError ?? new Error("Internal connector API failed to start");
+      throw lastError ?? new Error("Internal app API failed to start");
     }
 
     if (await checkInternalAppApiHealth()) {
       return;
     }
 
-    lastError = new Error("Internal connector API is still starting");
+    lastError = new Error("Internal app API is still starting");
     await delay(150);
   }
 
-  throw lastError ?? new Error("Internal connector API failed to start");
+  throw lastError ?? new Error("Internal app API failed to start");
 }
 
 function internalAppApiPortInUseError(cause) {
@@ -509,7 +496,7 @@ async function ensureInternalAppApiRunning() {
 
     if (!existsSync(internalAppApiEntryPath)) {
       throw new Error(
-        `Internal connector API entry missing: ${internalAppApiEntryPath}`,
+        `Internal app API entry missing: ${internalAppApiEntryPath}`,
       );
     }
 
@@ -519,7 +506,7 @@ async function ensureInternalAppApiRunning() {
     const { startAppApiServer } = await internalAppApiModulePromise;
     if (typeof startAppApiServer !== "function") {
       throw new Error(
-        `Internal connector API module is missing startAppApiServer: ${internalAppApiEntryPath}`,
+        `Internal app API module is missing startAppApiServer: ${internalAppApiEntryPath}`,
       );
     }
 
@@ -653,18 +640,18 @@ function resolveEnvironmentDevelopmentPluginDirectories() {
 }
 
 function resolveRepositoryDevelopmentPluginDirectories() {
-  const connectorRoot = path.join(internalAppApiRuntimeRoot, "connectors");
-  if (!existsSync(connectorRoot)) {
+  const pluginRoot = path.join(internalAppApiRuntimeRoot, "plugins");
+  if (!existsSync(pluginRoot)) {
     return [];
   }
 
-  return readdirSync(connectorRoot, { withFileTypes: true })
+  return readdirSync(pluginRoot, { withFileTypes: true })
     .filter(
       (entry) =>
         entry.isDirectory() &&
-        existsSync(path.join(connectorRoot, entry.name, "plugin.json")),
+        existsSync(path.join(pluginRoot, entry.name, "plugin.json")),
     )
-    .map((entry) => path.join(connectorRoot, entry.name));
+    .map((entry) => path.join(pluginRoot, entry.name));
 }
 
 function getDevelopmentPluginSettings() {
@@ -797,7 +784,7 @@ if (!hasSingleInstanceLock) {
     try {
       await ensureInternalAppApiRunning();
     } catch (error) {
-      console.error("Failed to start internal connector API.", error);
+      console.error("Failed to start internal app API.", error);
     }
 
     await createMainWindow();

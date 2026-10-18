@@ -1,8 +1,5 @@
 import { z } from "zod";
-import {
-  connectorFieldSchema,
-  connectorFieldValuesSchema,
-} from "./connectors.ts";
+import { pluginFieldSchema, pluginFieldValuesSchema } from "./plugins.ts";
 import { isoDateSchema } from "./agent-tools.ts";
 
 /**
@@ -30,7 +27,7 @@ export const agentRunnerSettingsUpdateSchema =
   agentRunnerSettingsSchema.partial();
 
 export const agentTaskSettingsUpdateSchema = z.object({
-  values: connectorFieldValuesSchema,
+  values: pluginFieldValuesSchema,
 });
 
 export const agentCliStatusSchema = z.object({
@@ -50,8 +47,8 @@ export const agentTaskStatusSchema = z.object({
   label: z.string(),
   placement: z.literal("commit-week"),
   estimateMinutes: z.number().int(),
-  settings: z.array(connectorFieldSchema),
-  values: connectorFieldValuesSchema,
+  settings: z.array(pluginFieldSchema),
+  values: pluginFieldValuesSchema,
   weekLink: z.string().optional(),
   /** Why the task cannot run now, such as "Fill in Workday timesheet URL". Empty when ready. */
   blockers: z.array(z.string()),

@@ -1,14 +1,14 @@
 import {
   isCapabilityActive,
-  type ConnectorConnectionSummary,
-  type ConnectorOverviewGroup,
-  type ConnectorsOverview,
+  type PluginConnectionSummary,
+  type PluginOverviewGroup,
+  type PluginsOverview,
 } from "@ajour/shared";
 import {
   planTeamSync,
   type UnsendableRecord,
 } from "@/domain/projects/team-sync";
-import { getConnectorsOverview, runTeamSyncRound } from "@/lib/app-api";
+import { getPluginsOverview, runTeamSyncRound } from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
 
 /*
@@ -50,8 +50,8 @@ export interface TeamSyncOutcome {
  * keeps the team; a new team ID or deployment does not.
  */
 export function teamConnectionIdentity(
-  group: Pick<ConnectorOverviewGroup, "plugin">,
-  connection: Pick<ConnectorConnectionSummary, "editableValues">,
+  group: Pick<PluginOverviewGroup, "plugin">,
+  connection: Pick<PluginConnectionSummary, "editableValues">,
 ) {
   const fieldIds = group.plugin.connectionFields
     .filter((field) => !field.secret && !HOST_FIELDS.has(field.id))
@@ -69,7 +69,7 @@ export function teamConnectionIdentity(
  * another window counts too.
  */
 async function currentIdentity(pluginId: string, connectionId: string) {
-  const overview = await getConnectorsOverview();
+  const overview = await getPluginsOverview();
   if (overview.pluginsEnabled === false) return undefined;
   const group = overview.connectionGroups.find(
     (entry) => entry.plugin.id === pluginId,
@@ -199,12 +199,12 @@ export interface TeamConnectionChoice {
 
 /** The team connections whose Projects capability is on. */
 export async function listTeamConnections(): Promise<TeamConnectionChoice[]> {
-  return teamConnectionsOf(await getConnectorsOverview());
+  return teamConnectionsOf(await getPluginsOverview());
 }
 
 /** The team connections of an overview whose Projects capability is on. */
 export function teamConnectionsOf(
-  overview: ConnectorsOverview,
+  overview: PluginsOverview,
 ): TeamConnectionChoice[] {
   if (overview.pluginsEnabled === false) return [];
   return overview.connectionGroups

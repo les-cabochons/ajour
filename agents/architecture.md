@@ -6,8 +6,8 @@ Ajour is a local-first time-tracking workspace built as a pnpm monorepo. Keep ar
 
 - `apps/web`: React 19 + Vite renderer. This is the main product UI for timers, time entries, backlog, projects, settings, and local import review.
 - `apps/desktop`: Electron shell that wraps the web renderer and provides desktop packaging/runtime bootstrap.
-- `apps/api`: Optional local API for connector configuration, connector sync, plugin workers, and local import flows.
-- `packages/shared`: Cross-runtime domain types, validation schemas, normalization, aggregation, rule evaluation, and connector contracts.
+- `apps/api`: Optional local API for plugin configuration, backlog sync, plugin workers, and local import flows.
+- `packages/shared`: Cross-runtime domain types, validation schemas, normalization, aggregation, rule evaluation, and plugin contracts.
 - MCP: the local API serves an MCP endpoint at `/mcp/ajour` for agents such as Claude Code and Codex. It is off by default, and each agent client has its own token (ADR 0004). The API forwards every data tool to the renderer over `/api/mcp/bridge`, and `features/agents/agent-tool-runner.ts` runs it through the object action sets with Undo. Sessions, questions and the activity list live in API memory (`apps/api/src/agent-sessions.ts`).
 
 ## Agent runner
@@ -42,9 +42,9 @@ Current deep domain modules demonstrate this boundary:
 - `domain/backlog/work-item-transitions.ts` owns manual work-item creation, hierarchy-aware mapping changes, ordering, deletion, and estimate-conflict decisions.
 - `domain/backlog/backlog-item-lifecycle.ts` owns backlog item status: moves between workflow states (a done state closes the item, leaving one reopens it), settle, unsettle, archive, restore, which open subitems a close or settle takes along, snooze, the Returned mark, and the sidebar's item order.
 - `domain/backlog/workflow-states.ts` owns the workflow: the default states, the Done flag and the rule that one done state always remains, ordering, how source states map onto workflow states per source project (with the connection's mapping as the fallback), automatic mapping of new source states, and the write rules that plan what a move writes to the source.
-- `domain/backlog/priority.ts` owns the priority levels: Urgent, High, Medium, Low and No priority. Connector plugins map their source priority values to levels (`urgent`, `high`, `medium`, `low`) on sync and back on a settle write, so Ajour stores only levels.
+- `domain/backlog/priority.ts` owns the priority levels: Urgent, High, Medium, Low and No priority. Backlog plugins map their source priority values to levels (`urgent`, `high`, `medium`, `low`) on sync and back on a settle write, so Ajour stores only levels.
 - `domain/pull-requests/pull-request-lifecycle.ts` owns provider-neutral pull request reconciliation, local settle and snooze choices, Returned, enabled-connection visibility and closed-item retention. Sync facts exclude bodies and diffs.
-- `domain/backlog/work-item-connector.ts` owns connector import, merge, disappearance, reactivation, and estimate-sync transitions.
+- `domain/backlog/work-item-sync.ts` owns backlog import, merge, disappearance, reactivation, and estimate-sync transitions.
 - `domain/projects/project-transitions.ts` owns project and task creation, legacy hydration, ordering, edits, and archive state.
 - `domain/projects/team-sync.ts` owns shared projects: which team-owned fields a round sends against each record's last-synced copy, how a result merges per field while keeping local changes, held same-name arrivals, and sharing, linking, unsharing and disconnecting. `domain/projects/team-link.ts` reads stored team links back. See ADR 0006.
 - `domain/time/timesheet-entry.ts` owns manual entry creation, edits, deletion with its tombstone, ordering, marking as committed, the migration of stored submission fields, and the corresponding work-item estimate adjustments.
@@ -68,14 +68,14 @@ Shared package logic should handle reusable domain behavior:
 - timeline aggregation and bucket logic
 - activity normalization
 - rules engine behavior
-- connector validation schemas and shared types
+- plugin validation schemas and shared types
 - date/time utilities that must stay consistent across runtimes
 
-The local API is a boundary for connector-driven work. Connector behavior should produce import candidates or explicit updates that the local app can review and store.
+The local API is a boundary for plugin-driven work. Plugin behavior should produce import candidates or explicit updates that the local app can review and store.
 
-## Connector Plugins
+## Plugins
 
-Connectors, code hosts, calendars and teams are capabilities of installable
+Backlog, code host, calendar and team are capabilities of installable
 plugins. A plugin declares one or more in its manifest, and its connections
 serve all of them. A connection field may name the capability it configures, so the connection
 form hides it while that capability is off. `validateConnection` receives the
@@ -94,7 +94,7 @@ application internals.
 
 Plugin loading depends on the application build:
 
-- Development builds may point directly to a plugin directory so connector
+- Development builds may point directly to a plugin directory so plugin
   authors can iterate without packaging an archive. The active directory can
   be selected on Settings → Debug or supplied through
   `AJOUR_DEV_PLUGIN_DIRS`; changing it restarts only the parent-owned
@@ -110,11 +110,11 @@ Plugin loading depends on the application build:
 - Both modes use the same manifest and versioned host protocol. Development
   plugins must not receive capabilities that packaged production plugins do not
   have.
-- Production connector archives are distributed separately from the app and
+- Production plugin archives are distributed separately from the app and
   are not silently installed from bundled repository packages. Uninstall is a
   desktop capability on the same restricted IPC boundary as installation. It
   stops active workers for that plugin, removes the managed package and its
-  saved connections, credentials, staged imports, and connector statuses, and
+  saved connections, credentials, staged imports, and backlog source statuses, and
   preserves already imported application-owned backlog items. Development
   directory plugins can be deactivated but never deleted by the app.
 
@@ -127,7 +127,7 @@ shutdown. Worker capacity is reserved before asynchronous discovery, package
 discovery is serialized against installation and removal, and worker result and
 error payloads are bounded. Because workers are threads rather than child
 processes, they cannot outlive the parent application or remain as orphan
-connector processes.
+plugin processes.
 
 Development plugin loading and browser-origin authorization are separate
 permissions. The local API accepts browser requests only from exact configured
@@ -139,13 +139,13 @@ Worker threads isolate plugin JavaScript state, failures, event loops, and
 dependencies, but they are not a security sandbox. Installed plugin code still
 runs with the current user's filesystem and network permissions.
 
-Plugin activation is local API state. Deactivating an installed connector keeps
+Plugin activation is local API state. Deactivating an installed plugin keeps
 its package, saved connections, staged imports, and already imported backlog
 items intact, but blocks manual sync and excludes its connections from the web
 auto-sync scheduler. Reactivation restores those sync paths without requiring
-the connector to be configured again.
+the plugin to be configured again.
 
-A plugin that declares more than one of connector, code host, calendar and
+A plugin that declares more than one of backlog, code host, calendar and
 team also gets one switch per capability, stored as a per-plugin deny-list next to the
 plugin's own activation. Turning a capability off blocks only its routes and
 scheduler work and cancels only its running operations; the plugin switch still
@@ -165,7 +165,7 @@ connection saved before that field existed keeps following auto sync, which is
 what auto sync meant for its pull requests.
 
 The plugin system also has one persisted master activation gate. Turning it off
-stops connector workers, cancels active project-data-shape operations, hides
+stops plugin workers, cancels active project-data-shape operations, hides
 data-shape capabilities from consumers, and makes every installed plugin
 inactive. It does not rewrite individual activation choices, so turning the
 system on restores the user's previous per-plugin configuration. Catalog
@@ -179,7 +179,7 @@ only normalized metadata and local data URLs. Conditional requests check for
 catalog and image updates at launch and on a configurable interval (15 minutes
 by default, with launch-only refresh available). A built-in snapshot of the
 index keeps the catalog usable on first launch when the remote index is
-unreachable; the validated remote catalog replaces it when available. Catalog connector downloads
+unreachable; the validated remote catalog replaces it when available. Catalog plugin downloads
 reuse the validated managed-package installer and are inactive until the user
 explicitly activates them. The existing local-file installer retains its
 current behavior.
@@ -260,7 +260,7 @@ Default to local-only diagnostics. Any remote event path must be explicitly priv
 - UI components live under `apps/web/src/components`.
 - Feature-specific UI and helpers live under `apps/web/src/features/<feature>`.
 - Put pure cross-feature web behavior in `domain`; reserve `lib` for runtime-aware helpers, persistence, adapters, and application services.
-- Keep connector transport and authentication in runtime adapters; pass validated candidates and updates into pure domain transitions.
+- Keep plugin transport and authentication in runtime adapters; pass validated candidates and updates into pure domain transitions.
 
 ## Verification
 

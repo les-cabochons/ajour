@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { McpSettings } from "@ajour/shared/agent-tools";
-import { getMcpSettings, isConnectorApiMissing } from "@/lib/app-api";
+import { getMcpSettings, isPluginApiMissing } from "@/lib/app-api";
 
 /**
  * MCP settings from the local API, shared by Settings > MCP and the agent
@@ -30,7 +30,7 @@ export async function refreshMcpSettings() {
     setMcpSettings(await getMcpSettings());
   } catch (error) {
     publish(
-      isConnectorApiMissing(error)
+      isPluginApiMissing(error)
         ? { kind: "unavailable" }
         : {
             kind: "error",

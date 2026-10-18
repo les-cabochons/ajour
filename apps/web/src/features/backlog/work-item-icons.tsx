@@ -1,39 +1,39 @@
 import { useEffect, useMemo, useState } from "react";
 import { RiCheckboxBlankCircleLine as TaskIcon } from "@remixicon/react";
 import {
-  DEFAULT_CONNECTOR_TASK_ICON_DISPLAY_MODE,
-  connectorTaskIconDisplayModes,
-  type ConnectorTaskIconDisplayMode,
+  DEFAULT_BACKLOG_TASK_ICON_DISPLAY_MODE,
+  backlogTaskIconDisplayModes,
+  type BacklogTaskIconDisplayMode,
 } from "@ajour/shared";
 import type { LocalProject, LocalWorkItem } from "@/domain/local-state";
-import { getConnectorsOverview } from "@/lib/app-api";
+import { getPluginsOverview } from "@/lib/app-api";
 import { ProjectIcon } from "@/lib/project-icons";
 import { useResolvedTheme } from "@/lib/use-theme";
 import { cn } from "@/lib/utils";
 
 type ResolvedWorkItemIcon =
   | { kind: "project"; project: LocalProject }
-  | { kind: "connector"; svg: string; currentColor: string }
+  | { kind: "plugin"; svg: string; currentColor: string }
   | { kind: "default" };
 
 type WorkItemIconData = {
   projectsById: Map<string, LocalProject>;
-  connectorIconsBySource: Record<string, string>;
-  connectorCurrentColor: string;
-  connectorTaskIconModesByConnectionId: Record<
+  pluginIconsBySource: Record<string, string>;
+  pluginIconCurrentColor: string;
+  backlogTaskIconModesByConnectionId: Record<
     string,
-    ConnectorTaskIconDisplayMode
+    BacklogTaskIconDisplayMode
   >;
 };
 
-function normalizeConnectorTaskIconDisplayMode(
+function normalizeBacklogTaskIconDisplayMode(
   value: unknown,
-): ConnectorTaskIconDisplayMode {
-  return connectorTaskIconDisplayModes.includes(
-    value as ConnectorTaskIconDisplayMode,
+): BacklogTaskIconDisplayMode {
+  return backlogTaskIconDisplayModes.includes(
+    value as BacklogTaskIconDisplayMode,
   )
-    ? (value as ConnectorTaskIconDisplayMode)
-    : DEFAULT_CONNECTOR_TASK_ICON_DISPLAY_MODE;
+    ? (value as BacklogTaskIconDisplayMode)
+    : DEFAULT_BACKLOG_TASK_ICON_DISPLAY_MODE;
 }
 
 export function useWorkItemIconData(
@@ -44,28 +44,28 @@ export function useWorkItemIconData(
     () => new Map(projects.map((project) => [project._id, project] as const)),
     [projects],
   );
-  const [connectorIconsBySource, setConnectorIconsBySource] = useState<
+  const [pluginIconsBySource, setPluginIconsBySource] = useState<
     Record<string, string>
   >({});
-  const [connectorTaskIconModesByConnectionId, setConnectorTaskIconModes] =
-    useState<Record<string, ConnectorTaskIconDisplayMode>>({});
+  const [backlogTaskIconModesByConnectionId, setBacklogTaskIconModes] =
+    useState<Record<string, BacklogTaskIconDisplayMode>>({});
 
   useEffect(() => {
-    void getConnectorsOverview()
+    void getPluginsOverview()
       .then((overview) => {
-        setConnectorIconsBySource(
+        setPluginIconsBySource(
           Object.fromEntries(
             overview.plugins.map(
               (plugin) => [plugin.id, plugin.iconSvg] as const,
             ),
           ),
         );
-        setConnectorTaskIconModes(
+        setBacklogTaskIconModes(
           Object.fromEntries(
             overview.connectionGroups.flatMap((group) =>
               group.connections.map((connection) => [
                 connection.id,
-                normalizeConnectorTaskIconDisplayMode(
+                normalizeBacklogTaskIconDisplayMode(
                   connection.editableValues.taskIconDisplayMode,
                 ),
               ]),
@@ -79,15 +79,15 @@ export function useWorkItemIconData(
   return useMemo(
     () => ({
       projectsById,
-      connectorIconsBySource,
-      connectorCurrentColor: resolvedTheme === "dark" ? "#fafafa" : "#171717",
-      connectorTaskIconModesByConnectionId,
+      pluginIconsBySource,
+      pluginIconCurrentColor: resolvedTheme === "dark" ? "#fafafa" : "#171717",
+      backlogTaskIconModesByConnectionId,
     }),
     [
       projectsById,
-      connectorIconsBySource,
+      pluginIconsBySource,
       resolvedTheme,
-      connectorTaskIconModesByConnectionId,
+      backlogTaskIconModesByConnectionId,
     ],
   );
 }
@@ -97,7 +97,7 @@ const FIXED_SVG_PAINT_ATTRIBUTE =
 const FIXED_SVG_PAINT_STYLE =
   /\b(?:color|fill|stroke|stop-color|flood-color|lighting-color)\s*:\s*(?!(?:currentColor|none|transparent)(?:\s*!important)?\s*(?:[;}"']|$))[^;}"']+/i;
 
-export function resolveConnectorIconPaint(svg: string, currentColor: string) {
+export function resolvePluginIconPaint(svg: string, currentColor: string) {
   const usesCurrentColor = /\bcurrentColor\b/i.test(svg);
   const hasFixedPaint =
     FIXED_SVG_PAINT_ATTRIBUTE.test(svg) || FIXED_SVG_PAINT_STYLE.test(svg);
@@ -118,26 +118,24 @@ export function resolveWorkItemIcon(
   const project = workItem.projectId
     ? iconData.projectsById.get(workItem.projectId)
     : undefined;
-  const hasConnectorSource = workItem.source !== "manual";
+  const isSyncedItem = workItem.source !== "manual";
 
-  if (!hasConnectorSource) {
+  if (!isSyncedItem) {
     return project ? { kind: "project", project } : { kind: "default" };
   }
 
-  const connectorIcon = iconData.connectorIconsBySource[workItem.source];
-  const connectorTaskIconMode = normalizeConnectorTaskIconDisplayMode(
+  const pluginIcon = iconData.pluginIconsBySource[workItem.source];
+  const backlogTaskIconMode = normalizeBacklogTaskIconDisplayMode(
     workItem.sourceConnectionId
-      ? iconData.connectorTaskIconModesByConnectionId[
-          workItem.sourceConnectionId
-        ]
+      ? iconData.backlogTaskIconModesByConnectionId[workItem.sourceConnectionId]
       : undefined,
   );
 
-  if (connectorTaskIconMode === "always" && connectorIcon) {
+  if (backlogTaskIconMode === "always" && pluginIcon) {
     return {
-      kind: "connector",
-      svg: connectorIcon,
-      currentColor: iconData.connectorCurrentColor,
+      kind: "plugin",
+      svg: pluginIcon,
+      currentColor: iconData.pluginIconCurrentColor,
     };
   }
 
@@ -145,11 +143,11 @@ export function resolveWorkItemIcon(
     return { kind: "project", project };
   }
 
-  if (connectorTaskIconMode === "fallback" && connectorIcon) {
+  if (backlogTaskIconMode === "fallback" && pluginIcon) {
     return {
-      kind: "connector",
-      svg: connectorIcon,
-      currentColor: iconData.connectorCurrentColor,
+      kind: "plugin",
+      svg: pluginIcon,
+      currentColor: iconData.pluginIconCurrentColor,
     };
   }
 
@@ -163,8 +161,8 @@ export function WorkItemIcon({
   icon: ResolvedWorkItemIcon;
   className?: string;
 }) {
-  if (icon.kind === "connector") {
-    const paint = resolveConnectorIconPaint(icon.svg, icon.currentColor);
+  if (icon.kind === "plugin") {
+    const paint = resolvePluginIconPaint(icon.svg, icon.currentColor);
     const iconSource = `data:image/svg+xml,${encodeURIComponent(paint.svg)}`;
     return (
       <span

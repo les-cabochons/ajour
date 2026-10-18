@@ -30,7 +30,7 @@ import {
   requireProjectTask,
   type AgentWriteOutcome,
 } from "@/features/agents/agent-write-tools";
-import { listConnectorSettleStates } from "@/lib/app-api";
+import { listBacklogSettleStates } from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
 
 /**
@@ -126,7 +126,7 @@ async function resolveSettleChange(
   }
   let states;
   try {
-    ({ states } = await listConnectorSettleStates(
+    ({ states } = await listBacklogSettleStates(
       item.source,
       item.sourceConnectionId!,
       item.sourceId!,

@@ -6,7 +6,7 @@
 // well above the production figures in the progress tracker. Medians of `RUNS`
 // runs; compare runs on the same machine, with nothing else running.
 import { chromium } from "playwright";
-import { emptyConnectorsOverview, seedScript } from "./seed.mjs";
+import { emptyPluginsOverview, seedScript } from "./seed.mjs";
 import { BASE_URL, ensureServer } from "./server.mjs";
 
 const RUNS = Number(process.env.AJOUR_PERF_RUNS ?? 5);
@@ -25,12 +25,12 @@ async function newContext(seed) {
   const context = await browser.newContext({
     viewport: { width: 1440, height: 900 },
   });
-  await context.route("**/api/connectors", (route) =>
+  await context.route("**/api/plugins", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
       headers: { "access-control-allow-origin": "*" },
-      body: JSON.stringify(emptyConnectorsOverview),
+      body: JSON.stringify(emptyPluginsOverview),
     }),
   );
   await context.addInitScript(seedScript({ large: true, ...seed }));
