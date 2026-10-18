@@ -163,3 +163,127 @@ Then(
     ).toBeVisible();
   },
 );
+
+Given("its plugin accepts comment changes", async ({ page }) => {
+  const base = `${apiUrl}/api/backlog-comments/example/connections/fixture`;
+  await page.route(`${base}/editItemComment`, async (route) => {
+    const request = route.request().postDataJSON() as {
+      commentId: string;
+      body: string;
+    };
+    await route.fulfill({
+      json: {
+        comment: {
+          id: request.commentId,
+          author: { id: "me", displayName: "Alex" },
+          body: request.body,
+          createdAt: "2026-10-16T09:00:00Z",
+          updatedAt: new Date().toISOString(),
+        },
+      },
+      headers: cors,
+    });
+  });
+  await page.route(`${base}/deleteItemComment`, async (route) => {
+    await page.evaluate(() => {
+      const count = Number(sessionStorage.getItem("comment-deletes") ?? "0");
+      sessionStorage.setItem("comment-deletes", String(count + 1));
+    });
+    await route.fulfill({ json: {}, headers: cors });
+  });
+  await page.route(`${base}/setItemCommentReaction`, async (route) => {
+    const request = route.request().postDataJSON() as {
+      commentId: string;
+      reaction: string;
+      reacted: boolean;
+    };
+    const reactions =
+      request.commentId === "c6"
+        ? [
+            { reaction: "like", count: 2, viewerReacted: true },
+            ...(request.reacted
+              ? [{ reaction: request.reaction, count: 1, viewerReacted: true }]
+              : []),
+          ]
+        : [];
+    await route.fulfill({ json: { reactions }, headers: cors });
+  });
+});
+
+const myComment = (page: Page) =>
+  commentsRegion(page).getByRole("article", { name: "Your comment" });
+
+When("I edit my comment to {string}", async ({ page }, text: string) => {
+  await myComment(page)
+    .getByRole("button", { name: "Comment actions" })
+    .click();
+  await page.getByRole("menuitem", { name: "Edit" }).click();
+  const editor = myComment(page).getByRole("textbox", {
+    name: "Edit comment",
+  });
+  await editor.fill(text);
+  await page.keyboard.press("ControlOrMeta+Enter");
+});
+
+Then(
+  "my comment reads {string} and shows it was edited",
+  async ({ page }, text: string) => {
+    await expect(
+      myComment(page).getByRole("textbox", { name: "Edit comment" }),
+    ).toHaveCount(0);
+    await expect(myComment(page)).toContainText(text);
+    await expect(myComment(page)).toContainText("edited");
+  },
+);
+
+When("I delete my comment", async ({ page }) => {
+  await myComment(page)
+    .getByRole("button", { name: "Comment actions" })
+    .click();
+  await page.getByRole("menuitem", { name: "Delete" }).click();
+});
+
+Then("my comment is hidden", async ({ page }) => {
+  await expect(myComment(page)).toHaveCount(0);
+});
+
+When("I undo the delete", async ({ page }) => {
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+});
+
+When("the Undo toast closes on its own", async ({ page }) => {
+  await page.mouse.move(0, 0);
+  await expect(
+    page.getByRole("button", { name: "Undo", exact: true }),
+  ).toHaveCount(0, { timeout: 15_000 });
+});
+
+Then("my comment shows again and no delete was sent", async ({ page }) => {
+  await expect(myComment(page)).toBeVisible();
+  expect(
+    await page.evaluate(() => sessionStorage.getItem("comment-deletes")),
+  ).toBeNull();
+});
+
+Then("the delete was sent once", async ({ page }) => {
+  await expect
+    .poll(() => page.evaluate(() => sessionStorage.getItem("comment-deletes")))
+    .toBe("1");
+  await expect(myComment(page)).toHaveCount(0);
+});
+
+When("I add a Heart to Ana's reply", async ({ page }) => {
+  const reply = commentsRegion(page)
+    .getByRole("article", { name: "Ana Silva's comment" })
+    .last();
+  await reply.getByRole("button", { name: "Add a reaction" }).click();
+  await page.getByRole("menuitem", { name: "Heart" }).click();
+});
+
+Then("Ana's reply shows my Heart", async ({ page }) => {
+  await expect(
+    commentsRegion(page).getByRole("button", {
+      name: "Heart: 1, including you",
+    }),
+  ).toBeVisible();
+});

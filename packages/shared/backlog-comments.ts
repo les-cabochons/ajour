@@ -118,6 +118,52 @@ export type BacklogPostItemCommentResult = z.infer<
   typeof backlogPostItemCommentResultSchema
 >;
 
+const commentRefSchema = z.object({
+  sourceId: z.string().min(1).max(400),
+  commentId: z.string().min(1).max(400),
+});
+
+/** Needs `comments.edit`. Ajour offers it on the user's own comments only. */
+export const backlogEditItemCommentRequestSchema = commentRefSchema.extend({
+  /** Markdown. Mentions are `[@Name](mention:<id>)`. */
+  body: z.string().trim().min(1).max(BACKLOG_COMMENT_MAX_LENGTH),
+});
+export type BacklogEditItemCommentRequest = z.infer<
+  typeof backlogEditItemCommentRequestSchema
+>;
+
+export const backlogEditItemCommentResultSchema =
+  backlogPostItemCommentResultSchema;
+export type BacklogEditItemCommentResult = BacklogPostItemCommentResult;
+
+/**
+ * Needs `comments.delete`. Ajour offers it on the user's own comments only,
+ * and sends it once the Undo toast closes (ADR 0008).
+ */
+export const backlogDeleteItemCommentRequestSchema = commentRefSchema;
+export type BacklogDeleteItemCommentRequest = z.infer<
+  typeof backlogDeleteItemCommentRequestSchema
+>;
+export const backlogDeleteItemCommentResultSchema = z.object({});
+
+/** Adds or removes the user's reaction. Needs the reaction in `comments.reactions`. */
+export const backlogSetItemCommentReactionRequestSchema =
+  commentRefSchema.extend({
+    reaction: backlogReactionSchema,
+    reacted: z.boolean(),
+  });
+export type BacklogSetItemCommentReactionRequest = z.infer<
+  typeof backlogSetItemCommentReactionRequestSchema
+>;
+
+export const backlogSetItemCommentReactionResultSchema = z.object({
+  /** The comment's reactions after the change. */
+  reactions: z.array(backlogCommentReactionSchema).max(backlogReactions.length),
+});
+export type BacklogSetItemCommentReactionResult = z.infer<
+  typeof backlogSetItemCommentReactionResultSchema
+>;
+
 /**
  * The comment exports a backlog plugin can provide. Each receives the
  * connection and the parsed request. Their names say "item" because a code
@@ -133,7 +179,43 @@ export const backlogCommentOperations = {
     request: backlogPostItemCommentRequestSchema,
     result: backlogPostItemCommentResultSchema,
   },
+  editItemComment: {
+    request: backlogEditItemCommentRequestSchema,
+    result: backlogEditItemCommentResultSchema,
+  },
+  deleteItemComment: {
+    request: backlogDeleteItemCommentRequestSchema,
+    result: backlogDeleteItemCommentResultSchema,
+  },
+  setItemCommentReaction: {
+    request: backlogSetItemCommentReactionRequestSchema,
+    result: backlogSetItemCommentReactionResultSchema,
+  },
 } as const;
+
+/**
+ * Whether the declared features allow an operation. Listing and posting come
+ * with the comments capability itself.
+ */
+export function backlogCommentOperationAllowed(
+  capability: BacklogCommentsCapability,
+  operation: BacklogCommentOperation,
+  reaction?: BacklogReaction,
+) {
+  switch (operation) {
+    case "editItemComment":
+      return capability.edit === true;
+    case "deleteItemComment":
+      return capability.delete === true;
+    case "setItemCommentReaction":
+      return (
+        reaction !== undefined &&
+        (capability.reactions ?? []).includes(reaction)
+      );
+    default:
+      return true;
+  }
+}
 
 export type BacklogCommentOperation = keyof typeof backlogCommentOperations;
 

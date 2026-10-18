@@ -18,7 +18,14 @@ export const commentsOverview: PluginsOverview = {
         iconSvg: "<svg />",
         entrypoint: "plugin.mjs",
         capabilities: {
-          connector: { comments: { reactions: ["like"], mentions: true } },
+          connector: {
+            comments: {
+              edit: true,
+              delete: true,
+              reactions: ["like", "heart"],
+              mentions: true,
+            },
+          },
         },
         connectionFields: [
           {

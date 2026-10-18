@@ -88,6 +88,7 @@ import {
 import { useAppSidebar } from "@/lib/app-sidebar";
 import { resolveSidebarWidth, useSidebarLayout } from "@/lib/sidebar-layout";
 import { sendPendingSourceWrites } from "@/features/backlog/backlog-source-writes";
+import { flushPendingCommentDeletes } from "@/lib/comment-deletes";
 import { CloseSubitemsDialogHost } from "@/features/backlog/close-subitems-dialog";
 import { SourceStateDialogHost } from "@/features/backlog/source-state-dialog";
 import { SettleDialogHost } from "@/features/backlog/settle-dialog";
@@ -203,13 +204,14 @@ function PageHeaderSlot({
  * again shows nothing new until the connection syncs or fails differently.
  */
 /**
- * Sends the settle writes left from a session that quit during their Undo
- * window (ADR 0001). There is no offline queue beyond that: a write that fails
+ * Sends the settle writes and comment deletes left from a session that quit
+ * during their Undo window (ADR 0001, ADR 0008). There is no offline queue beyond that: a write that fails
  * here puts its item back to active.
  */
 function PendingSourceWritesFlush() {
   useEffect(() => {
     void sendPendingSourceWrites();
+    void flushPendingCommentDeletes();
   }, []);
   return null;
 }
