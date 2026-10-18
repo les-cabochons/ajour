@@ -48,6 +48,12 @@ import {
   type CalendarOperationRequest,
   type CalendarOperationResult,
 } from "../../../packages/shared/calendar.ts";
+import {
+  backlogCommentOperations,
+  type BacklogCommentOperation,
+  type BacklogCommentOperationRequest,
+  type BacklogCommentOperationResult,
+} from "../../../packages/shared/backlog-comments.ts";
 import { z } from "zod";
 import {
   discoverInstalledPlugins,
@@ -100,6 +106,7 @@ export type PluginMethod =
   | "writeSettle"
   | CodeHostOperation
   | CalendarOperation
+  | BacklogCommentOperation
   | TeamPluginMethod;
 const missingCapabilityMessages: Record<SwitchableCapability, string> = {
   connector: "does not sync backlog items",
@@ -114,7 +121,8 @@ export function capabilityOfMethod(
   if (
     method === "syncConnection" ||
     method === "listSettleStates" ||
-    method === "writeSettle"
+    method === "writeSettle" ||
+    method in backlogCommentOperations
   ) {
     return "connector";
   }
@@ -348,6 +356,36 @@ export class PluginManager {
     const contract = codeHostOperations[operation];
     const resultSchema = contract.result as {
       parse: (value: unknown) => CodeHostOperationResult<Operation>;
+    };
+    return await this.invokePlugin(
+      pluginId,
+      operation,
+      {
+        connection: pluginInvocationConnectionSchema.parse(connection),
+        request: contract.request.parse(request),
+      },
+      resultSchema,
+    );
+  }
+
+  /**
+   * Runs one comment operation on a synced item. See
+   * `backlogCommentOperations` and ADR 0008.
+   */
+  async runBacklogCommentOperation<Operation extends BacklogCommentOperation>(
+    pluginId: string,
+    operation: Operation,
+    connection: PluginInvocationConnection,
+    request: BacklogCommentOperationRequest<Operation>,
+  ): Promise<BacklogCommentOperationResult<Operation>> {
+    await this.assertCapability(pluginId, "connector");
+    const plugin = await this.getPlugin(pluginId);
+    if (!plugin.manifest.capabilities.connector?.comments) {
+      throw new Error(`Plugin "${pluginId}" does not provide comments.`);
+    }
+    const contract = backlogCommentOperations[operation];
+    const resultSchema = contract.result as {
+      parse: (value: unknown) => BacklogCommentOperationResult<Operation>;
     };
     return await this.invokePlugin(
       pluginId,

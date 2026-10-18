@@ -49,4 +49,10 @@ describe("MarkdownRenderer", () => {
     expect(html).not.toContain('type="checkbox" disabled');
     expect(html.match(/data-slot="checkbox"/g)).toHaveLength(2);
   });
+  it("shows a mention as a chip that never navigates", () => {
+    const html = render("Ping [@Ana Silva](mention:abc-123) about it");
+    expect(html).toContain(">@Ana Silva</span>");
+    expect(html).not.toContain("<a");
+    expect(html).not.toContain("abc-123");
+  });
 });

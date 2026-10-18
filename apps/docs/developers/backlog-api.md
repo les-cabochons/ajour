@@ -1,17 +1,18 @@
 # Backlog API
 
-A backlog plugin syncs backlog items and their estimates between a tool and Ajour. It can also write a new state and priority back when the user settles or moves an item. This page is the reference for plugin API version 3. The backlog capability is declared under the `connector` key until plugin API 4.
+A backlog plugin syncs backlog items and their estimates between a tool and Ajour. It can also write a new state and priority back when the user settles or moves an item, and show an item's comments. This page is the reference for plugin API version 3. The backlog capability is declared under the `connector` key until plugin API 4.
 
 ## Functions
 
 Export these as named functions from your entry point. Each can be `async`.
 
-| Function             | Needed when                     | Called when                                                                                                                            |
-| -------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `validateConnection` | Always                          | The user saves a connection.                                                                                                           |
-| `syncConnection`     | `capabilities.connector`        | The user presses **Sync**, the connection's timer fires, or the user saves time on one of your items, so estimate changes get written. |
-| `listSettleStates`   | `capabilities.connector.settle` | The settle dialog opens for one of your items.                                                                                         |
-| `writeSettle`        | `capabilities.connector.settle` | A settle or move is due, after the Undo toast closes.                                                                                  |
+| Function             | Needed when                       | Called when                                                                                                                            |
+| -------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `validateConnection` | Always                            | The user saves a connection.                                                                                                           |
+| `syncConnection`     | `capabilities.connector`          | The user presses **Sync**, the connection's timer fires, or the user saves time on one of your items, so estimate changes get written. |
+| `listSettleStates`   | `capabilities.connector.settle`   | The settle dialog opens for one of your items.                                                                                         |
+| `writeSettle`        | `capabilities.connector.settle`   | A settle or move is due, after the Undo toast closes.                                                                                  |
+| `listItemComments`   | `capabilities.connector.comments` | The user opens one of your items, and again for each "Show earlier comments".                                                          |
 
 ```ts
 export async function validateConnection(
@@ -32,6 +33,11 @@ export async function writeSettle(
   connection: PluginConnection,
   request: BacklogSettleWriteRequest,
 ): Promise<BacklogSettleWriteResult>;
+
+export async function listItemComments(
+  connection: PluginConnection,
+  request: BacklogListItemCommentsRequest,
+): Promise<BacklogListItemCommentsResult>;
 ```
 
 To fail, throw an `Error`. Its message reaches the user as it is. See [Errors](#errors).
@@ -102,6 +108,28 @@ Ajour sends the write once the Undo toast closes, about 8 seconds after the user
 ::: tip Check the target
 `sourceId` comes from your own sync, but treat it as input. Before you send a credential to a URL built from it, check that it points at the connection's site. The Azure DevOps plugin refuses work item URLs outside the configured organization.
 :::
+
+## listItemComments
+
+Return a page of an item's comments when the user opens it. Ajour asks for the newest 5, then 20 more each time the user presses **Show earlier comments**, passing the `earlierCursor` you returned. Return the page oldest first, and set `earlierCursor` while earlier comments remain. Return `total` when your tool says how many comments the item has.
+
+Declare the features your tool supports under `capabilities.connector.comments`:
+
+```json
+"connector": {
+  "comments": {
+    "reactions": ["like", "heart"],
+    "mentions": true,
+    "maxLength": 32767
+  }
+}
+```
+
+- `reactions` lists the reactions your tool supports, in Ajour's names: `like`, `dislike`, `heart`, `hooray`, `laugh`, `confused`, `rocket` and `eyes`. Return each comment's counts and whether the user reacted.
+- Convert each comment to Markdown. Write a mention as `[@Display Name](mention:<id>)`, where the id is yours and stays opaque to Ajour. Ajour shows it as a chip and never follows it.
+- Return the user as `viewer`, in the same id space as comment authors, so Ajour can tell which comments are theirs.
+- Set `restrictedTo` to the group or role that may read a restricted comment, such as a Jira role.
+- Ajour never stores comment text. It holds the newest page in memory for a few minutes, so throw rather than return a partial page. See [ADR 0008](https://github.com/les-cabochons/ajour/blob/main/agents/adr/0008-backlog-comments-are-fetched-and-written-at-once.md).
 
 ## Errors
 
@@ -253,6 +281,57 @@ export interface BacklogSettleWriteResult {
   stateDone?: boolean;
   priority?: BacklogPriorityLevel;
 }
+
+export type BacklogReaction =
+  | "like"
+  | "dislike"
+  | "heart"
+  | "hooray"
+  | "laugh"
+  | "confused"
+  | "rocket"
+  | "eyes";
+
+/** A person in the tool, in the same id space as comment authors. */
+export interface BacklogPerson {
+  id: string;
+  displayName: string;
+}
+
+export interface BacklogListItemCommentsRequest {
+  sourceId: string;
+  /** 1 to 50. */
+  limit: number;
+  /** An `earlierCursor` you returned before. */
+  cursor?: string;
+}
+
+export interface BacklogComment {
+  id: string;
+  author: BacklogPerson;
+  /** Markdown. Mentions are `[@Name](mention:<id>)`. */
+  body: string;
+  /** ISO 8601. */
+  createdAt: string;
+  /** ISO 8601, when the comment changed after it was posted. */
+  updatedAt?: string;
+  reactions?: {
+    reaction: BacklogReaction;
+    count: number;
+    viewerReacted: boolean;
+  }[];
+  /** The group or role that may read it, when restricted. */
+  restrictedTo?: string;
+}
+
+export interface BacklogListItemCommentsResult {
+  viewer: BacklogPerson;
+  /** Oldest first, at most 50. */
+  comments: BacklogComment[];
+  total?: number;
+  /** Set while earlier comments remain. */
+  earlierCursor?: string;
+}
 ```
 
-Ajour's own schemas for these types are in [`packages/shared/plugins.ts`](https://github.com/les-cabochons/ajour/blob/main/packages/shared/plugins.ts). They are the source of truth.
+Ajour's own schemas for these types are in [`packages/shared/plugins.ts`](https://github.com/les-cabochons/ajour/blob/main/packages/shared/plugins.ts) and, for comments, [`packages/shared/backlog-comments.ts`](https://github.com/les-cabochons/ajour/blob/main/packages/shared/backlog-comments.ts). They are the source of truth.

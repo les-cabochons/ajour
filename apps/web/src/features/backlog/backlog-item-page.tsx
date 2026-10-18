@@ -70,6 +70,10 @@ import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { findWorkItemTimer } from "@/domain/time/running-entry";
 import { PriorityIcon } from "@/features/backlog/priority-icon";
+import {
+  BacklogItemComments,
+  useCommentSource,
+} from "@/features/backlog/backlog-item-comments";
 import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
 
 /**
@@ -95,6 +99,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [addingSubitem, setAddingSubitem] = useState(false);
   const workItem = state.workItems.find((item) => item._id === itemId);
+  const commentSource = useCommentSource(workItem);
 
   /** Edit and Add subitem have no panel here: they open the inline fields. */
   function runHosted(action: "edit" | "add-subitem") {
@@ -407,6 +412,13 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                 item={item}
                 readOnly={readOnly}
               />
+              {commentSource ? (
+                <BacklogItemComments
+                  key={item._id}
+                  itemId={item._id}
+                  source={commentSource}
+                />
+              ) : null}
             </div>
             <div className="backlog-item-properties-card">
               <section

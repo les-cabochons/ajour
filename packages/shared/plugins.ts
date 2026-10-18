@@ -1,6 +1,7 @@
 import { z } from "zod";
 import { allowedTaskSlots, listTemplateSlots } from "./agent-task-templates.ts";
 import { teamCapabilitySchema, teamCreateRequestSchema } from "./team-sync.ts";
+import { backlogCommentsCapabilitySchema } from "./backlog-comments.ts";
 
 export const PLUGIN_API_VERSION = 3;
 export const PLUGIN_ARCHIVE_EXTENSION = ".ajour-connector";
@@ -223,6 +224,8 @@ export const pluginCapabilitiesSchema = z
     connector: z
       .object({
         settle: z.boolean().optional(),
+        /** Comments on synced items. See ADR 0008. */
+        comments: backlogCommentsCapabilitySchema.optional(),
       })
       .optional(),
     codeHost: z.object({}).optional(),

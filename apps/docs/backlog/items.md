@@ -18,9 +18,8 @@ Click an item in the sidebar to open its page. On the Backlog page, a click open
 - **The header**, with the title and the item's actions: **Start entry**, **Snooze**, **Settle** and **New entry**. Click the title to rename it.
 - **The estimates**: **Original**, **Remaining**, **Completed** and **Logged in Ajour**, with a bar of completed over original. Click an estimate to edit it.
 - **Description**, in Markdown. Press **Edit** to change it.
-- **Subitems**. Press **Add subitem**, type a name and press <kbd>Enter</kbd>.
-- **Time entries** logged on the item, with **Add time entry**.
-- **The properties card**, at the side: state, source state, priority, lifecycle, project, task and source.
+- **Comments**, for an item synced from a tool whose plugin provides them: the newest five, oldest first, with **Show earlier comments** for the rest. A **New** line marks the comments that arrived since you last opened the item. Ajour reads comments from the tool each time and never stores them.
+- **The card**, at the side: state, source state, priority, lifecycle, project, task and source, then the **Subitems**, with **Add subitem**, and the **Time entries** logged on the item, with **Add time entry**.
 
 Changes on the page save when you press <kbd>Enter</kbd> or leave the field, with an Undo toast.
 

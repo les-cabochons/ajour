@@ -44,6 +44,7 @@ Use this file as the local index for important library choices. Check official d
 - Work-item hierarchy lookup, validation, and inherited mapping rules: `apps/web/src/domain/backlog/work-item-hierarchy.ts`
 - Work-item estimate normalization, display values, reversible logged-time adjustments, overrun tracking, and imported baselines: `apps/web/src/domain/backlog/work-item-estimates.ts`
 - Manual work-item creation, hierarchy-aware edits, ordering, deletion, and estimate-conflict decisions: `apps/web/src/domain/backlog/work-item-transitions.ts`
+- Which synced items have comments, the New divider, edited comments and page merging: `apps/web/src/domain/backlog/comments.ts`. The thread is `features/backlog/backlog-item-comments.tsx`, and each item's last visit lives in `lib/comments-seen.ts`, outside the local state.
 - Backlog item status (settle, unsettle, archive, restore), snooze, the Returned mark and the sidebar's item order: `apps/web/src/domain/backlog/backlog-item-lifecycle.ts`
 - Pull request fact reconciliation, local lifecycle, snooze, Returned, visibility and seven-day closure retention: `apps/web/src/domain/pull-requests/pull-request-lifecycle.ts`
 - Synced work-item identity, local-decision-preserving merge, missing-item archive provenance, done-category archives, and estimate-sync updates: `apps/web/src/domain/backlog/work-item-sync.ts`
