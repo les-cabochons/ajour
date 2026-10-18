@@ -46,7 +46,7 @@ describe("backlog task editor", () => {
     expect(
       createBacklogTaskEditorFields(
         createWorkItem({
-          note: "Description",
+          description: "Description",
           priority: 2,
           workflowStateId: "status-1",
           keepWhenMissingFromSync: true,
@@ -54,7 +54,7 @@ describe("backlog task editor", () => {
       ),
     ).toEqual({
       title: "Original title",
-      note: "Description",
+      description: "Description",
       priority: "2",
       workflowStateId: "status-1",
       parentWorkItemId: "",
@@ -68,7 +68,7 @@ describe("backlog task editor", () => {
   });
 
   it("patches only the fields the user changed, normalized", () => {
-    const workItem = createWorkItem({ note: "Keep my spacing  " });
+    const workItem = createWorkItem({ description: "Keep my spacing  " });
     const fields = createBacklogTaskEditorFields(workItem, {
       title: "  Updated title  ",
       priority: "4",
@@ -131,7 +131,7 @@ describe("backlog task editor", () => {
   it("builds trimmed root and subtask drafts through one path", () => {
     const rootFields = createBacklogTaskEditorFields(undefined, {
       title: "  Root task  ",
-      note: "  Description  ",
+      description: "  Description  ",
       priority: "3",
     });
     const childFields = createBacklogTaskEditorFields(undefined, {
@@ -145,7 +145,7 @@ describe("backlog task editor", () => {
       buildBacklogTaskDraft(rootFields, { isSubtask: false }),
     ).toMatchObject({
       title: "Root task",
-      note: "Description",
+      description: "Description",
       priority: 3,
       parentWorkItemId: undefined,
     });
@@ -193,12 +193,12 @@ describe("backlog task editor", () => {
     it("saves an edited item as a patch of its changes", () => {
       const editor = editDraft(
         { kind: "edit", workItem: createWorkItem() },
-        { title: "Renamed", note: "New note" },
+        { title: "Renamed", description: "New note" },
       );
 
       expect(commitBacklogTaskDraft(editor, "switch")).toEqual({
         kind: "update",
-        patch: { title: "Renamed", note: "New note" },
+        patch: { title: "Renamed", description: "New note" },
       });
     });
 

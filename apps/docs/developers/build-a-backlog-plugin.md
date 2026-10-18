@@ -264,7 +264,7 @@ A few rules this code follows, which every backlog plugin should:
 - `source` equals the manifest `id`.
 - `sourceId` never changes for an item. Ajour keys everything on it.
 - Done items come back with `stateDone: true`, even when your query no longer returns them. Otherwise Ajour keeps them open.
-- Strings respect Ajour's limits: 240 characters for a title, 4,000 for a note.
+- Strings respect Ajour's limits: 240 characters for a title, 4,000 for the `note`, which Ajour shows as the item's description.
 
 ## 6. Write back on settle
 

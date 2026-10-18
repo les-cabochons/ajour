@@ -1,6 +1,6 @@
 # Backlog items
 
-A backlog item is a piece of planned work. It has a title, a priority, a workflow state, estimates, and optionally a project, a task, a note and subitems.
+A backlog item is a piece of planned work. It has a title, a priority, a workflow state, estimates, and optionally a project, a task, a description and subitems.
 
 <Shot name="backlog-item" alt="The page of a backlog item with its estimates, subitems, time entries and properties" />
 
@@ -17,7 +17,7 @@ Click an item in the sidebar to open its page. On the Backlog page, a click open
 
 - **The header**, with the title and the item's actions: **Start entry**, **Snooze**, **Settle** and **New entry**. Click the title to rename it.
 - **The estimates**: **Original**, **Remaining**, **Completed** and **Logged in Ajour**, with a bar of completed over original. Click an estimate to edit it.
-- **Note**, in Markdown. Press **Edit** to change it.
+- **Description**, in Markdown. Press **Edit** to change it.
 - **Subitems**. Press **Add subitem**, type a name and press <kbd>Enter</kbd>.
 - **Time entries** logged on the item, with **Add time entry**.
 - **The properties card**, at the side: state, source state, priority, lifecycle, project, task and source.

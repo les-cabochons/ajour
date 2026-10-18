@@ -37,7 +37,7 @@ import { cn } from "@/lib/utils";
 
 /**
  * The peek on the right of the backlog page: a smaller item page. It keeps the
- * page's header, estimate figures, properties, note and subitems, and lets
+ * page's header, estimate figures, properties, description and subitems, and lets
  * state, priority, project and task change in place. The row's context menu
  * and the item page carry the other actions. See "Peek" in agents/ux-spec.md.
  */
@@ -202,10 +202,10 @@ export function BacklogPeek({
       <section aria-label="Properties">
         <BacklogItemProperties item={item} state={state} />
       </section>
-      {item.note ? (
+      {item.description ? (
         <section>
-          <SectionHeading>Note</SectionHeading>
-          <Markdown>{item.note}</Markdown>
+          <SectionHeading>Description</SectionHeading>
+          <Markdown>{item.description}</Markdown>
         </section>
       ) : null}
       {children.length > 0 ? (

@@ -418,15 +418,15 @@ Feature: Backlog list and board views
     When I open the Backlog parent page
     And I rename the item on its page to "Renamed parent"
     And I set its remaining estimate on its page to "5"
-    And I write "**Bold** note" as its note on its page
+    And I write "**Bold** description" as its description on its page
     And I add the subitem "Inline subitem" on its page
     Then the Backlog parent keeps the inline edits
     And the item page has no actions menu and no editor panel
 
   Scenario: Escape cancels an inline edit on the item page
     When I open the Backlog parent page
-    And I type in the title, the remaining estimate and the note and press Escape each time
-    Then the Backlog parent keeps its saved title, estimate and note
+    And I type in the title, the remaining estimate and the description and press Escape each time
+    Then the Backlog parent keeps its saved title, estimate and description
 
   Scenario: Archive a synced item from the bottom of its properties card
     Given the Backlog parent is synced

@@ -302,10 +302,12 @@ describe("localStore workflow state sync", () => {
         sourceWrites: { [parentId]: "Active" },
       });
       if (outcome === "independent edit")
-        localStore.updateWorkItem(parentId, { note: "Keep my later edit" });
+        localStore.updateWorkItem(parentId, {
+          description: "Keep my later edit",
+        });
       if (outcome === "failure")
         localStore.updateWorkItem(childId, {
-          note: "Keep the child's later edit",
+          description: "Keep the child's later edit",
         });
       const readyAt = localStore
         .snapshot()
@@ -333,7 +335,7 @@ describe("localStore workflow state sync", () => {
         expect(localStore.undo(token!)).toBe("stale");
         expect(
           localStore.snapshot().workItems.find((item) => item._id === parentId)
-            ?.note,
+            ?.description,
         ).toBe("Keep my later edit");
         return;
       }
@@ -348,7 +350,7 @@ describe("localStore workflow state sync", () => {
       expect(child).toEqual(
         outcome === "undo"
           ? closedChild
-          : { ...closedChild, note: "Keep the child's later edit" },
+          : { ...closedChild, description: "Keep the child's later edit" },
       );
     },
   );
@@ -691,7 +693,9 @@ describe("localStore workflow state sync", () => {
           ...(childWrites ? { [childId]: "Closed" } : {}),
         },
       });
-      localStore.updateWorkItem(childId, { note: "Later independent edit" });
+      localStore.updateWorkItem(childId, {
+        description: "Later independent edit",
+      });
       localStore.setWorkflowStateMapping({
         ...mapping,
         workflowStateId: review,
@@ -711,7 +715,7 @@ describe("localStore workflow state sync", () => {
       expect(recoveredChild).toMatchObject({
         status: childWrites ? "archived" : "active",
         workflowStateId: childWrites ? done : review,
-        note: "Later independent edit",
+        description: "Later independent edit",
       });
       if (childWrites) {
         expect(recoveredChild.pendingSourceWrite?.state).toBe("Closed");
@@ -723,7 +727,7 @@ describe("localStore workflow state sync", () => {
         status: "active",
         workflowStateId: review,
         importedWorkflowStateId: review,
-        note: "Later independent edit",
+        description: "Later independent edit",
       });
       expect(
         localStore.snapshot().workItems.find((item) => item._id === childId)

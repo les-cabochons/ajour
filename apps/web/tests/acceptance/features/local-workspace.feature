@@ -526,13 +526,13 @@ Feature: Open the local time workspace
 
   Scenario Outline: Discard all draft fields after an interrupted parent close
     Given I have a parent editor close fixture
-    When I change the parent draft title and note
+    When I change the parent draft title and description
     And I save its editor workflow as Done
     Then the parent editor remains mounted while the subitem choice is pending
     When I interrupt the mixed-field close by "<interruption>"
     Then the parent editor retains every mixed-field draft without saving it
     When I cancel the parent editor draft
-    Then the parent title and note remain unchanged
+    Then the parent title and description remain unchanged
 
     Examples:
       | interruption         |
@@ -541,11 +541,11 @@ Feature: Open the local time workspace
 
   Scenario: Save mixed draft fields after confirming a parent close
     Given I have a parent editor close fixture
-    When I change the parent draft title and note
+    When I change the parent draft title and description
     And I save its editor workflow as Done
     And I include the child in the editor close
     Then the editor closes after the parent and child reach Done
-    And the confirmed title and note remain saved after undoing the close
+    And the confirmed title and description remain saved after undoing the close
 
   Scenario: Close existing items when their workflow state becomes Done
     Given I have a parent editor close fixture

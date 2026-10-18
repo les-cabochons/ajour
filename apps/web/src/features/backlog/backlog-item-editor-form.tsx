@@ -536,12 +536,16 @@ export function BacklogItemEditorForm({
         </Field>
 
         <Field>
-          <FieldLabel htmlFor={`${idPrefix}-note`}>Note</FieldLabel>
+          <FieldLabel htmlFor={`${idPrefix}-description`}>
+            Description
+          </FieldLabel>
           <Textarea
-            id={`${idPrefix}-note`}
-            value={fields.note}
-            onChange={(event) => updateFields({ note: event.target.value })}
-            placeholder="Description, markdown supported (optional)"
+            id={`${idPrefix}-description`}
+            value={fields.description}
+            onChange={(event) =>
+              updateFields({ description: event.target.value })
+            }
+            placeholder="Markdown supported (optional)"
             rows={4}
           />
         </Field>

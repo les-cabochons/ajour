@@ -45,7 +45,7 @@ import {
   AddSubitemRow,
   EstimateFigure,
   InlineTitle,
-  NoteSection,
+  DescriptionSection,
 } from "@/features/backlog/backlog-item-inline-edit";
 import { BacklogItemProperties } from "@/features/backlog/backlog-item-properties";
 import {
@@ -75,7 +75,7 @@ import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
 /**
  * The backlog item page at /backlog/$itemId, from "Backlog item page" in
  * agents/ux-spec.md. The top bar holds the item's actions;
- * the page holds the back link, title, estimate figures and progress, then the note,
+ * the page holds the back link, title, estimate figures and progress, then the description,
  * subitems and time entries beside the properties card. Every field edits in
  * place, so the page has no editor panel and no "…" menu.
  *
@@ -402,7 +402,11 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
 
           <div className="backlog-item-page-columns">
             <div className="flex min-w-0 flex-col">
-              <NoteSection key={item._id} item={item} readOnly={readOnly} />
+              <DescriptionSection
+                key={item._id}
+                item={item}
+                readOnly={readOnly}
+              />
               {!isSubitem ? (
                 <>
                   <SectionHeading

@@ -248,7 +248,7 @@ describe("localStore.importProjectTasks", () => {
     expect(localStore.snapshot().workItems[0]).toMatchObject({
       _id: initialWorkItem?._id,
       title: "Updated title",
-      note: "Original note",
+      description: "Original note",
       sourceId: "https://dev.azure.com/contoso/project/_workitems/edit/123",
       sourceConnectionLabel: "Main connection",
       sourceProjectName: "Project Mercury",

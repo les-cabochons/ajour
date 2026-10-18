@@ -2046,10 +2046,13 @@ When(
   },
 );
 When(
-  "I write {string} as its note on its page",
+  "I write {string} as its description on its page",
   async ({ page }, note: string) => {
     await page.getByRole("button", { name: "Edit", exact: true }).click();
-    const textarea = page.getByRole("textbox", { name: "Note", exact: true });
+    const textarea = page.getByRole("textbox", {
+      name: "Description",
+      exact: true,
+    });
     await textarea.fill(note);
     // Leaving the field saves it; the rendered markdown comes back.
     await textarea.blur();
@@ -2080,7 +2083,7 @@ Then("the Backlog parent keeps the inline edits", async ({ page }) => {
       );
       return {
         title: parent.title,
-        note: parent.note,
+        description: parent.description,
         remainingEstimateHours: parent.remainingEstimateHours,
         added: added && {
           parentWorkItemId: added.parentWorkItemId,
@@ -2091,7 +2094,7 @@ Then("the Backlog parent keeps the inline edits", async ({ page }) => {
     })
     .toEqual({
       title: "Renamed parent",
-      note: "**Bold** note",
+      description: "**Bold** description",
       remainingEstimateHours: 5,
       added: { parentWorkItemId: "parent", projectId: "p", taskId: "t" },
     });
@@ -2111,7 +2114,7 @@ Then(
   },
 );
 When(
-  "I type in the title, the remaining estimate and the note and press Escape each time",
+  "I type in the title, the remaining estimate and the description and press Escape each time",
   async ({ page }) => {
     await page
       .getByRole("heading", { name: "Backlog parent", level: 1 })
@@ -2131,8 +2134,8 @@ When(
 
     await page.getByRole("button", { name: "Edit", exact: true }).click();
     await page
-      .getByRole("textbox", { name: "Note", exact: true })
-      .fill("Cancelled note");
+      .getByRole("textbox", { name: "Description", exact: true })
+      .fill("Cancelled description");
     await page.keyboard.press("Escape");
     await expect(
       page.getByRole("heading", { name: "Backlog parent", level: 1 }),
@@ -2140,7 +2143,7 @@ When(
   },
 );
 Then(
-  "the Backlog parent keeps its saved title, estimate and note",
+  "the Backlog parent keeps its saved title, estimate and description",
   async ({ page }) => {
     const { workItems } = await readBacklogState(page);
     const parent = workItems.find(
@@ -2150,7 +2153,7 @@ Then(
       title: "Backlog parent",
       remainingEstimateHours: 3,
     });
-    expect(parent.note).toBeUndefined();
+    expect(parent.description).toBeUndefined();
   },
 );
 Given("the Backlog parent is synced", async ({ page }) => {
