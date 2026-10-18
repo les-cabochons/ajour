@@ -63,6 +63,7 @@ import {
   calendarOperations,
 } from "../../../packages/shared/calendar.ts";
 import {
+  backlogCommentOperationAllowed,
   backlogCommentOperationSchema,
   backlogCommentOperations,
 } from "../../../packages/shared/backlog-comments.ts";
@@ -1604,6 +1605,22 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         const commentRequest = backlogCommentOperations[
           operation.data
         ].request.parse(await readJsonBody(request));
+        if (
+          !backlogCommentOperationAllowed(
+            plugin.capabilities.connector.comments,
+            operation.data,
+            operation.data === "setItemCommentReaction"
+              ? backlogCommentOperations.setItemCommentReaction.request.parse(
+                  commentRequest,
+                ).reaction
+              : undefined,
+          )
+        ) {
+          writeJson(response, 404, {
+            error: "This plugin does not support that on comments.",
+          });
+          return;
+        }
         const startedAt = Date.now();
         // Ids, counts and duration only. Comment text and authors stay out
         // of the log (ADR 0008).
@@ -1640,7 +1657,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           );
           logCommentEvent(
             "ok",
-            "comments" in result ? result.comments.length : 1,
+            "comments" in result
+              ? result.comments.length
+              : "comment" in result
+                ? 1
+                : 0,
           );
           writeJson(response, 200, result);
         } catch (error) {

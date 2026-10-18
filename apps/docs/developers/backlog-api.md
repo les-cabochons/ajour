@@ -6,14 +6,17 @@ A backlog plugin syncs backlog items and their estimates between a tool and Ajou
 
 Export these as named functions from your entry point. Each can be `async`.
 
-| Function             | Needed when                       | Called when                                                                                                                            |
-| -------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
-| `validateConnection` | Always                            | The user saves a connection.                                                                                                           |
-| `syncConnection`     | `capabilities.connector`          | The user presses **Sync**, the connection's timer fires, or the user saves time on one of your items, so estimate changes get written. |
-| `listSettleStates`   | `capabilities.connector.settle`   | The settle dialog opens for one of your items.                                                                                         |
-| `writeSettle`        | `capabilities.connector.settle`   | A settle or move is due, after the Undo toast closes.                                                                                  |
-| `listItemComments`   | `capabilities.connector.comments` | The user opens one of your items, and again for each "Show earlier comments".                                                          |
-| `postItemComment`    | `capabilities.connector.comments` | The user sends a comment on one of your items.                                                                                         |
+| Function                 | Needed when                                 | Called when                                                                                                                            |
+| ------------------------ | ------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `validateConnection`     | Always                                      | The user saves a connection.                                                                                                           |
+| `syncConnection`         | `capabilities.connector`                    | The user presses **Sync**, the connection's timer fires, or the user saves time on one of your items, so estimate changes get written. |
+| `listSettleStates`       | `capabilities.connector.settle`             | The settle dialog opens for one of your items.                                                                                         |
+| `writeSettle`            | `capabilities.connector.settle`             | A settle or move is due, after the Undo toast closes.                                                                                  |
+| `listItemComments`       | `capabilities.connector.comments`           | The user opens one of your items, and again for each "Show earlier comments".                                                          |
+| `postItemComment`        | `capabilities.connector.comments`           | The user sends a comment on one of your items.                                                                                         |
+| `editItemComment`        | `capabilities.connector.comments.edit`      | The user edits one of their own comments.                                                                                              |
+| `deleteItemComment`      | `capabilities.connector.comments.delete`    | The Undo toast of a deleted comment closes, or Ajour starts again after quitting during it.                                            |
+| `setItemCommentReaction` | `capabilities.connector.comments.reactions` | The user adds or removes their reaction.                                                                                               |
 
 ```ts
 export async function validateConnection(
@@ -44,6 +47,21 @@ export async function postItemComment(
   connection: PluginConnection,
   request: BacklogPostItemCommentRequest,
 ): Promise<BacklogPostItemCommentResult>;
+
+export async function editItemComment(
+  connection: PluginConnection,
+  request: BacklogEditItemCommentRequest,
+): Promise<BacklogPostItemCommentResult>;
+
+export async function deleteItemComment(
+  connection: PluginConnection,
+  request: BacklogDeleteItemCommentRequest,
+): Promise<Record<string, never>>;
+
+export async function setItemCommentReaction(
+  connection: PluginConnection,
+  request: BacklogSetItemCommentReactionRequest,
+): Promise<BacklogSetItemCommentReactionResult>;
 ```
 
 To fail, throw an `Error`. Its message reaches the user as it is. See [Errors](#errors).
@@ -140,6 +158,14 @@ Declare the features your tool supports under `capabilities.connector.comments`:
 ## postItemComment
 
 Post the comment at once and return it as your tool stored it. Ajour sends Markdown, with mentions as `[@Name](mention:<id>)`, and shows your returned comment at the end of the thread. If you throw, Ajour keeps the text in the editor and shows your message, so the user can send it again. Ajour doesn't queue comments for later (ADR 0008). Declare `maxLength` when your tool limits comment length, measured as your tool measures it, and check the converted size before you send.
+
+## Editing, deleting and reacting
+
+Declare `edit`, `delete` and `reactions` under `capabilities.connector.comments` for what your tool allows. Ajour offers edit and delete only on the user's own comments, those whose author is your `viewer`.
+
+- `editItemComment` saves at once and returns the comment as your tool stored it. If you throw, the editor keeps the text and shows your message.
+- `deleteItemComment` comes once the Undo toast closes, about 8 seconds after the user deletes, or at the next launch if Ajour quit first. Return `{}`. If you throw, the comment comes back and Ajour shows your message.
+- `setItemCommentReaction` adds the user's reaction when `reacted` is true and removes it otherwise. Return the comment's reactions after the change. Ajour shows the change before you answer and puts it back if you throw.
 
 ## Errors
 
@@ -343,6 +369,30 @@ export interface BacklogPostItemCommentRequest {
 export interface BacklogPostItemCommentResult {
   /** The comment as your tool stored it. */
   comment: BacklogComment;
+}
+
+export interface BacklogEditItemCommentRequest {
+  sourceId: string;
+  commentId: string;
+  /** Markdown. Mentions are `[@Name](mention:<id>)`. */
+  body: string;
+}
+
+export interface BacklogDeleteItemCommentRequest {
+  sourceId: string;
+  commentId: string;
+}
+
+export interface BacklogSetItemCommentReactionRequest {
+  sourceId: string;
+  commentId: string;
+  reaction: BacklogReaction;
+  /** True to add the user's reaction, false to remove it. */
+  reacted: boolean;
+}
+
+export interface BacklogSetItemCommentReactionResult {
+  reactions: NonNullable<BacklogComment["reactions"]>;
 }
 
 export interface BacklogListItemCommentsResult {

@@ -1,6 +1,7 @@
 import {
   isCapabilityActive,
   type BacklogComment,
+  type BacklogReaction,
   type BacklogCommentsCapability,
   type BacklogPerson,
   type PluginsOverview,
@@ -99,4 +100,31 @@ export function mergeEarlierComments(
     ...earlier.filter((comment) => !loadedIds.has(comment.id)),
     ...loaded,
   ];
+}
+
+/**
+ * The reactions after the user adds or removes theirs, shown before the
+ * source tool confirms. Reactions keep their order; a new one goes last.
+ */
+export function withViewerReaction(
+  reactions: NonNullable<BacklogComment["reactions"]>,
+  reaction: BacklogReaction,
+  reacted: boolean,
+): NonNullable<BacklogComment["reactions"]> {
+  const existing = reactions.find((entry) => entry.reaction === reaction);
+  if (!existing) {
+    return reacted
+      ? [...reactions, { reaction, count: 1, viewerReacted: true }]
+      : reactions;
+  }
+  if (existing.viewerReacted === reacted) return reactions;
+  return reactions.map((entry) =>
+    entry.reaction === reaction
+      ? {
+          ...entry,
+          count: Math.max(0, entry.count + (reacted ? 1 : -1)),
+          viewerReacted: reacted,
+        }
+      : entry,
+  );
 }

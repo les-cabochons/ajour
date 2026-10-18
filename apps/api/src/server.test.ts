@@ -1845,6 +1845,15 @@ describe("backlog comment routes", () => {
     "    total: 1,",
     "  };",
     "}",
+    "export async function editItemComment(connection, request) {",
+    "  return { comment: { id: request.commentId, author: { id: 'me', displayName: 'Me' }, body: request.body, createdAt: '2026-10-17T10:00:00Z', updatedAt: '2026-10-17T11:00:00Z' } };",
+    "}",
+    "export async function deleteItemComment() {",
+    "  return {};",
+    "}",
+    "export async function setItemCommentReaction(connection, request) {",
+    "  return { reactions: request.reacted ? [{ reaction: request.reaction, count: 1, viewerReacted: true }] : [] };",
+    "}",
     "export async function postItemComment(connection, request) {",
     "  return { comment: { id: 'c2', author: { id: 'me', displayName: 'Me' }, body: request.body, createdAt: '2026-10-17T10:00:00Z' } };",
     "}",
@@ -2010,6 +2019,66 @@ describe("backlog comment routes", () => {
         body: JSON.stringify({ sourceId: "42", body: "   " }),
       }),
     ).resolves.toMatchObject({ status: 400 });
+  });
+
+  it("runs edit, delete and reactions only when the plugin declares them", async () => {
+    const limited = await createServer({ connector: { comments: {} } });
+    const ref = { sourceId: "42", commentId: "c1" };
+    for (const [operation, body] of [
+      ["editItemComment", { ...ref, body: "Changed" }],
+      ["deleteItemComment", ref],
+      ["setItemCommentReaction", { ...ref, reaction: "like", reacted: true }],
+    ] as const) {
+      await expect(
+        dispatchJsonRequest(limited.server, {
+          method: "POST",
+          path: listPath(limited.connectionId, operation),
+          body: JSON.stringify(body),
+        }),
+      ).resolves.toMatchObject({ status: 404 });
+    }
+
+    const full = await createServer({
+      connector: {
+        comments: { edit: true, delete: true, reactions: ["like"] },
+      },
+    });
+    await expect(
+      dispatchJsonRequest(full.server, {
+        method: "POST",
+        path: listPath(full.connectionId, "editItemComment"),
+        body: JSON.stringify({ ...ref, body: "Changed" }),
+      }),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { comment: { id: "c1", body: "Changed" } },
+    });
+    await expect(
+      dispatchJsonRequest(full.server, {
+        method: "POST",
+        path: listPath(full.connectionId, "deleteItemComment"),
+        body: JSON.stringify(ref),
+      }),
+    ).resolves.toMatchObject({ status: 200, body: {} });
+    await expect(
+      dispatchJsonRequest(full.server, {
+        method: "POST",
+        path: listPath(full.connectionId, "setItemCommentReaction"),
+        body: JSON.stringify({ ...ref, reaction: "like", reacted: true }),
+      }),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: {
+        reactions: [{ reaction: "like", count: 1, viewerReacted: true }],
+      },
+    });
+    await expect(
+      dispatchJsonRequest(full.server, {
+        method: "POST",
+        path: listPath(full.connectionId, "setItemCommentReaction"),
+        body: JSON.stringify({ ...ref, reaction: "heart", reacted: true }),
+      }),
+    ).resolves.toMatchObject({ status: 404 });
   });
 
   it("keeps the connection's secret out of a failed read", async () => {

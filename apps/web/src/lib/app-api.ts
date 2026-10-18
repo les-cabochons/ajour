@@ -72,6 +72,14 @@ import {
   backlogPostItemCommentResultSchema,
   type BacklogPostItemCommentRequest,
   type BacklogPostItemCommentResult,
+  backlogEditItemCommentResultSchema,
+  type BacklogEditItemCommentRequest,
+  type BacklogEditItemCommentResult,
+  backlogDeleteItemCommentResultSchema,
+  type BacklogDeleteItemCommentRequest,
+  backlogSetItemCommentReactionResultSchema,
+  type BacklogSetItemCommentReactionRequest,
+  type BacklogSetItemCommentReactionResult,
   teamCreateResultSchema,
   teamSyncResultSchema,
   type TeamCreateResult,
@@ -585,6 +593,53 @@ export function postItemComment(
     `/api/backlog-comments/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/postItemComment`,
     { method: "POST", body: JSON.stringify(request) },
     backlogPostItemCommentResultSchema,
+  );
+}
+
+function commentOperationPath(
+  pluginId: string,
+  connectionId: string,
+  operation: string,
+) {
+  return `/api/backlog-comments/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/${operation}`;
+}
+
+/** Edits one of the user's comments at once (ADR 0008). */
+export function editItemComment(
+  pluginId: string,
+  connectionId: string,
+  request: BacklogEditItemCommentRequest,
+): Promise<BacklogEditItemCommentResult> {
+  return appApiRequest(
+    commentOperationPath(pluginId, connectionId, "editItemComment"),
+    { method: "POST", body: JSON.stringify(request) },
+    backlogEditItemCommentResultSchema,
+  );
+}
+
+/** Deletes one of the user's comments. Ajour calls it after the Undo window. */
+export async function deleteItemComment(
+  pluginId: string,
+  connectionId: string,
+  request: BacklogDeleteItemCommentRequest,
+): Promise<void> {
+  await appApiRequest(
+    commentOperationPath(pluginId, connectionId, "deleteItemComment"),
+    { method: "POST", body: JSON.stringify(request) },
+    backlogDeleteItemCommentResultSchema,
+  );
+}
+
+/** Adds or removes the user's reaction on a comment. */
+export function setItemCommentReaction(
+  pluginId: string,
+  connectionId: string,
+  request: BacklogSetItemCommentReactionRequest,
+): Promise<BacklogSetItemCommentReactionResult> {
+  return appApiRequest(
+    commentOperationPath(pluginId, connectionId, "setItemCommentReaction"),
+    { method: "POST", body: JSON.stringify(request) },
+    backlogSetItemCommentReactionResultSchema,
   );
 }
 

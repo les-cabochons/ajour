@@ -460,6 +460,41 @@ Feature: Backlog list and board views
     Then the comment is not sent and the editor keeps "Keep me"
     And after a reload the comment field shows the draft "Keep me"
 
+  Scenario: Edit my comment on a synced item
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin accepts comment changes
+    When I open the Backlog parent page
+    And I edit my comment to "Code first, then the task name."
+    Then my comment reads "Code first, then the task name." and shows it was edited
+
+  Scenario: Undo deleting my comment
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin accepts comment changes
+    When I open the Backlog parent page
+    And I delete my comment
+    Then my comment is hidden
+    When I undo the delete
+    Then my comment shows again and no delete was sent
+
+  Scenario: Delete my comment once the Undo toast closes
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin accepts comment changes
+    When I open the Backlog parent page
+    And I delete my comment
+    And the Undo toast closes on its own
+    Then the delete was sent once
+
+  Scenario: React to a comment
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin accepts comment changes
+    When I open the Backlog parent page
+    And I add a Heart to Ana's reply
+    Then Ana's reply shows my Heart
+
   Scenario: Archive a synced item from the bottom of its properties card
     Given the Backlog parent is synced
     When I open the Backlog parent page

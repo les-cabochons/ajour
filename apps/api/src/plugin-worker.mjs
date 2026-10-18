@@ -27,6 +27,9 @@ const CALENDAR_METHODS = new Set(["listCalendarEvents"]);
 const BACKLOG_COMMENT_METHODS = new Set([
   "listItemComments",
   "postItemComment",
+  "editItemComment",
+  "deleteItemComment",
+  "setItemCommentReaction",
 ]);
 
 // Keep in sync with `teamPluginMethods` in packages/shared/team-sync.ts.

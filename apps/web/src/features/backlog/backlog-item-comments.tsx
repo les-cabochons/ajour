@@ -1,7 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { RiArrowUpSLine as EarlierIcon } from "@remixicon/react";
+import {
+  RiArrowUpSLine as EarlierIcon,
+  RiEmotionLine as ReactIcon,
+  RiMoreLine as MoreIcon,
+} from "@remixicon/react";
 import type {
   BacklogComment,
+  BacklogCommentsCapability,
   BacklogListItemCommentsResult,
   BacklogPerson,
   BacklogReaction,
@@ -14,7 +19,14 @@ import {
 import { SectionHeading } from "@/components/section-heading";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { Skeleton } from "@/components/ui/skeleton";
+import { showErrorToast, showUndoToast } from "@/components/ui/toast";
 import { Value } from "@/components/ui/value";
 import {
   commentSourceOf,
@@ -22,16 +34,25 @@ import {
   isEditedComment,
   isOwnComment,
   mergeEarlierComments,
+  withViewerReaction,
   type CommentSource,
 } from "@/domain/backlog/comments";
 import {
   getCachedPluginsOverview,
   getPluginsOverview,
   isPluginApiMissing,
+  editItemComment,
   listItemComments,
   postItemComment,
+  setItemCommentReaction,
   subscribePluginsOverview,
 } from "@/lib/app-api";
+import {
+  cancelCommentDelete,
+  pendingCommentDeleteIds,
+  queueCommentDelete,
+  sendCommentDelete,
+} from "@/lib/comment-deletes";
 import { getCommentDraft, setCommentDraft } from "@/lib/comment-drafts";
 import { getShortcutPlatform } from "@/lib/shortcuts";
 import { getCommentsSeenAt, markCommentsSeen } from "@/lib/comments-seen";
@@ -246,6 +267,128 @@ export function BacklogItemComments({
     }
   };
 
+  // Comments waiting for their delete stay hidden, even after a restart.
+  const [hidden, setHidden] = useState(pendingCommentDeleteIds);
+  const unhide = (commentId: string) =>
+    setHidden((current) => {
+      const next = new Set(current);
+      next.delete(commentId);
+      return next;
+    });
+
+  const updateComment = (
+    commentId: string,
+    change: (comment: BacklogComment) => BacklogComment,
+  ) => {
+    firstPages.delete(key);
+    setThread((current) =>
+      current.kind === "ready"
+        ? {
+            ...current,
+            comments: current.comments.map((comment) =>
+              comment.id === commentId ? change(comment) : comment,
+            ),
+          }
+        : current,
+    );
+  };
+
+  /** Saves at once; a failure reaches the editor, which keeps the text. */
+  const editComment = async (comment: BacklogComment, body: string) => {
+    const { comment: edited } = await editItemComment(
+      source.pluginId,
+      source.connectionId,
+      { sourceId: source.sourceId, commentId: comment.id, body },
+    );
+    updateComment(comment.id, () => edited);
+  };
+
+  /** Hides the comment now and deletes it once the Undo toast closes. */
+  const deleteComment = (comment: BacklogComment) => {
+    queueCommentDelete({
+      itemId,
+      pluginId: source.pluginId,
+      connectionId: source.connectionId,
+      sourceId: source.sourceId,
+      commentId: comment.id,
+      at: Date.now(),
+    });
+    setHidden((current) => new Set(current).add(comment.id));
+    firstPages.delete(key);
+    let undone = false;
+    showUndoToast({
+      title: "Comment deleted",
+      onUndo: () => {
+        undone = true;
+        cancelCommentDelete(comment.id);
+        unhide(comment.id);
+      },
+      onClose: () => {
+        if (undone) return;
+        sendCommentDelete(comment.id).then(
+          () =>
+            setThread((current) =>
+              current.kind === "ready"
+                ? {
+                    ...current,
+                    comments: current.comments.filter(
+                      (candidate) => candidate.id !== comment.id,
+                    ),
+                    total:
+                      current.total === undefined
+                        ? undefined
+                        : current.total - 1,
+                  }
+                : current,
+            ),
+          (error: unknown) => {
+            unhide(comment.id);
+            showErrorToast({
+              title: "The comment wasn't deleted",
+              description: error instanceof Error ? error.message : undefined,
+            });
+          },
+        );
+      },
+    });
+  };
+
+  /** Shows the change at once and puts it back if the source refuses it. */
+  const toggleReaction = async (
+    comment: BacklogComment,
+    reaction: BacklogReaction,
+  ) => {
+    const before = comment.reactions ?? [];
+    const reacted = !before.find((entry) => entry.reaction === reaction)
+      ?.viewerReacted;
+    updateComment(comment.id, (current) => ({
+      ...current,
+      reactions: withViewerReaction(before, reaction, reacted),
+    }));
+    try {
+      const { reactions } = await setItemCommentReaction(
+        source.pluginId,
+        source.connectionId,
+        {
+          sourceId: source.sourceId,
+          commentId: comment.id,
+          reaction,
+          reacted,
+        },
+      );
+      updateComment(comment.id, (current) => ({ ...current, reactions }));
+    } catch (error) {
+      updateComment(comment.id, (current) => ({
+        ...current,
+        reactions: before,
+      }));
+      showErrorToast({
+        title: "The reaction wasn't saved",
+        description: error instanceof Error ? error.message : undefined,
+      });
+    }
+  };
+
   // A posted comment joins the thread; the cached page is stale now.
   const appendComment = (comment: BacklogComment) => {
     firstPages.delete(key);
@@ -262,7 +405,7 @@ export function BacklogItemComments({
 
   const count =
     thread.kind === "ready"
-      ? (thread.total ?? thread.comments.length)
+      ? (thread.total ?? thread.comments.length) - hidden.size
       : undefined;
 
   return (
@@ -298,13 +441,20 @@ export function BacklogItemComments({
             Retry
           </Button>
         </div>
-      ) : thread.comments.length === 0 ? (
+      ) : thread.comments.every((comment) => hidden.has(comment.id)) ? (
         <p className="text-sm text-muted-foreground">No comments yet.</p>
       ) : (
         <CommentThread
           thread={thread}
           seenAt={seenAt}
+          hidden={hidden}
+          capability={source.capability}
           onShowEarlier={() => void loadEarlier()}
+          onEdit={editComment}
+          onDelete={deleteComment}
+          onToggleReaction={(comment, reaction) =>
+            void toggleReaction(comment, reaction)
+          }
         />
       )}
       {thread.kind === "ready" ? (
@@ -457,16 +607,32 @@ function CommentComposer({
 function CommentThread({
   thread,
   seenAt,
+  hidden,
+  capability,
   onShowEarlier,
+  onEdit,
+  onDelete,
+  onToggleReaction,
 }: {
   thread: Extract<Thread, { kind: "ready" }>;
   seenAt: number | undefined;
+  hidden: ReadonlySet<string>;
+  capability: BacklogCommentsCapability;
   onShowEarlier: () => void;
+  onEdit: (comment: BacklogComment, body: string) => Promise<void>;
+  onDelete: (comment: BacklogComment) => void;
+  onToggleReaction: (
+    comment: BacklogComment,
+    reaction: BacklogReaction,
+  ) => void;
 }) {
-  const newIndex = firstNewCommentIndex(thread.comments, thread.viewer, seenAt);
-  const hidden =
-    thread.total !== undefined
-      ? Math.max(0, thread.total - thread.comments.length)
+  const comments = thread.comments.filter((comment) => !hidden.has(comment.id));
+  const newIndex = firstNewCommentIndex(comments, thread.viewer, seenAt);
+  const shownTotal =
+    thread.total !== undefined ? thread.total - hidden.size : undefined;
+  const earlier =
+    shownTotal !== undefined
+      ? Math.max(0, shownTotal - comments.length)
       : undefined;
   return (
     <>
@@ -480,7 +646,7 @@ function CommentThread({
         >
           <EarlierIcon data-icon="inline-start" />
           Show earlier comments
-          {hidden ? <Value tone="muted">{hidden}</Value> : null}
+          {earlier ? <Value tone="muted">{earlier}</Value> : null}
         </Button>
       ) : null}
       {thread.earlierError ? (
@@ -489,12 +655,16 @@ function CommentThread({
         </p>
       ) : null}
       <ol className="backlog-comments">
-        {thread.comments.map((comment, index) => (
+        {comments.map((comment, index) => (
           <CommentItem
             key={comment.id}
             comment={comment}
             viewer={thread.viewer}
+            capability={capability}
             isFirstNew={index === newIndex}
+            onEdit={onEdit}
+            onDelete={onDelete}
+            onToggleReaction={onToggleReaction}
           />
         ))}
       </ol>
@@ -505,14 +675,54 @@ function CommentThread({
 function CommentItem({
   comment,
   viewer,
+  capability,
   isFirstNew,
+  onEdit,
+  onDelete,
+  onToggleReaction,
 }: {
   comment: BacklogComment;
   viewer: BacklogPerson;
+  capability: BacklogCommentsCapability;
   isFirstNew: boolean;
+  onEdit: (comment: BacklogComment, body: string) => Promise<void>;
+  onDelete: (comment: BacklogComment) => void;
+  onToggleReaction: (
+    comment: BacklogComment,
+    reaction: BacklogReaction,
+  ) => void;
 }) {
   const own = isOwnComment(comment, viewer);
   const author = own ? "You" : comment.author.displayName || "Someone";
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(comment.body);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string>();
+  const reactable = capability.reactions ?? [];
+  const canEdit = own && capability.edit === true;
+  const canDelete = own && capability.delete === true;
+
+  const save = async (value: string) => {
+    const body = value.trim();
+    if (!body || saving) return;
+    if (body === comment.body.trim()) {
+      setEditing(false);
+      return;
+    }
+    setSaving(true);
+    setError(undefined);
+    try {
+      await onEdit(comment, body);
+      setEditing(false);
+    } catch (failure) {
+      setError(
+        failure instanceof Error ? failure.message : "The edit wasn't saved.",
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <>
       {isFirstNew ? (
@@ -535,32 +745,161 @@ function CommentItem({
               {isEditedComment(comment) ? " · edited" : ""}
             </span>
             {comment.restrictedTo ? (
-              <Chip className="ml-auto">
-                Restricted to {comment.restrictedTo}
-              </Chip>
+              <Chip>Restricted to {comment.restrictedTo}</Chip>
             ) : null}
+            <span className="ml-auto flex items-center gap-0.5">
+              {reactable.length > 0 ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Add a reaction"
+                      />
+                    }
+                  >
+                    <ReactIcon />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {reactable.map((reaction) => (
+                      <DropdownMenuItem
+                        key={reaction}
+                        onClick={() => onToggleReaction(comment, reaction)}
+                      >
+                        <span aria-hidden="true">
+                          {reactionEmoji[reaction]}
+                        </span>
+                        {reactionNames[reaction]}
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
+              {canEdit || canDelete ? (
+                <DropdownMenu>
+                  <DropdownMenuTrigger
+                    render={
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Comment actions"
+                      />
+                    }
+                  >
+                    <MoreIcon />
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end">
+                    {canEdit ? (
+                      <DropdownMenuItem
+                        onClick={() => {
+                          setDraft(comment.body);
+                          setError(undefined);
+                          setEditing(true);
+                        }}
+                      >
+                        Edit
+                      </DropdownMenuItem>
+                    ) : null}
+                    {canDelete ? (
+                      <DropdownMenuItem
+                        variant="destructive"
+                        onClick={() => onDelete(comment)}
+                      >
+                        Delete
+                      </DropdownMenuItem>
+                    ) : null}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              ) : null}
+            </span>
           </header>
           <div className="backlog-comment-body">
-            <Markdown>{comment.body}</Markdown>
+            {editing ? (
+              <>
+                <MarkdownEditor
+                  autoFocus
+                  aria-label="Edit comment"
+                  value={draft}
+                  onChange={setDraft}
+                  onSubmit={(value) => void save(value)}
+                  onCancel={() => setEditing(false)}
+                  minLines={2}
+                />
+                <div className="mt-2 flex items-center gap-2">
+                  {error ? (
+                    <p
+                      role="alert"
+                      className="min-w-0 flex-1 truncate text-xs text-destructive"
+                      title={error}
+                    >
+                      Not saved. {error}
+                    </p>
+                  ) : (
+                    <span className="flex-1" />
+                  )}
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setEditing(false)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={!draft.trim() || saving}
+                    onClick={() => void save(draft)}
+                  >
+                    {saving ? "Saving…" : "Save"}
+                  </Button>
+                </div>
+              </>
+            ) : (
+              <Markdown>{comment.body}</Markdown>
+            )}
             {comment.reactions?.some((reaction) => reaction.count > 0) ? (
               <div className="backlog-comment-reactions">
                 {comment.reactions
                   .filter((reaction) => reaction.count > 0)
-                  .map((reaction) => (
-                    <span
-                      key={reaction.reaction}
-                      className="backlog-comment-reaction"
-                      data-viewer-reacted={
-                        reaction.viewerReacted ? "" : undefined
-                      }
-                      aria-label={`${reactionNames[reaction.reaction]}: ${reaction.count}${reaction.viewerReacted ? ", including you" : ""}`}
-                    >
-                      <span aria-hidden="true">
-                        {reactionEmoji[reaction.reaction]}
+                  .map((reaction) => {
+                    const label = `${reactionNames[reaction.reaction]}: ${reaction.count}${reaction.viewerReacted ? ", including you" : ""}`;
+                    const content = (
+                      <>
+                        <span aria-hidden="true">
+                          {reactionEmoji[reaction.reaction]}
+                        </span>
+                        <Value aria-hidden="true">{reaction.count}</Value>
+                      </>
+                    );
+                    return reactable.includes(reaction.reaction) ? (
+                      <button
+                        key={reaction.reaction}
+                        type="button"
+                        className="backlog-comment-reaction"
+                        data-viewer-reacted={
+                          reaction.viewerReacted ? "" : undefined
+                        }
+                        aria-pressed={reaction.viewerReacted}
+                        aria-label={label}
+                        onClick={() =>
+                          onToggleReaction(comment, reaction.reaction)
+                        }
+                      >
+                        {content}
+                      </button>
+                    ) : (
+                      <span
+                        key={reaction.reaction}
+                        className="backlog-comment-reaction"
+                        data-viewer-reacted={
+                          reaction.viewerReacted ? "" : undefined
+                        }
+                        aria-label={label}
+                      >
+                        {content}
                       </span>
-                      <Value aria-hidden="true">{reaction.count}</Value>
-                    </span>
-                  ))}
+                    );
+                  })}
               </div>
             ) : null}
           </div>

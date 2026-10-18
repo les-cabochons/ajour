@@ -5,6 +5,7 @@ import {
   firstNewCommentIndex,
   isEditedComment,
   mergeEarlierComments,
+  withViewerReaction,
 } from "@/domain/backlog/comments";
 
 const viewer = { id: "me", displayName: "Me" };
@@ -119,5 +120,20 @@ describe("backlog comments", () => {
     expect(
       mergeEarlierComments(earlier, loaded).map((entry) => entry.id),
     ).toEqual(["a", "b", "c"]);
+  });
+  it("adds, raises and lowers the user's reaction", () => {
+    const like = { reaction: "like" as const, count: 2, viewerReacted: false };
+
+    expect(withViewerReaction([like], "like", true)).toEqual([
+      { reaction: "like", count: 3, viewerReacted: true },
+    ]);
+    expect(
+      withViewerReaction([{ ...like, viewerReacted: true }], "like", false),
+    ).toEqual([{ reaction: "like", count: 1, viewerReacted: false }]);
+    expect(withViewerReaction([like], "heart", true)).toEqual([
+      like,
+      { reaction: "heart", count: 1, viewerReacted: true },
+    ]);
+    expect(withViewerReaction([like], "heart", false)).toEqual([like]);
   });
 });
