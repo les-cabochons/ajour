@@ -598,12 +598,12 @@
 
   .backlog-item-page-columns {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) 17rem;
+    grid-template-columns: minmax(0, 1fr) 18rem;
     gap: 2.5rem;
   }
 
-  /* The one card on the item page: properties read as a unit beside the
-     note, subitems and time entries. */
+  /* The one card on the item page, beside the description: the properties,
+     then the subitems and the time entries, each under a divider. */
   .backlog-item-properties-card {
     display: flex;
     flex-direction: column;
@@ -612,6 +612,23 @@
     padding: 0.875rem 1rem 1rem;
     border: 1px solid var(--border);
     border-radius: var(--radius-md);
+  }
+
+  .backlog-item-card-properties {
+    display: flex;
+    flex-direction: column;
+    gap: 0.875rem;
+  }
+
+  .backlog-item-card-section {
+    display: flex;
+    flex-direction: column;
+    padding-top: 0.75rem;
+    border-top: 1px solid var(--border);
+  }
+
+  .backlog-item-card-section .backlog-item-row:last-child {
+    border-bottom: 0;
   }
 
   /* Text that turns into a field on click: the title and the estimates. */

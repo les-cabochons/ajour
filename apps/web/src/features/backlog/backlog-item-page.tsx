@@ -407,8 +407,35 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                 item={item}
                 readOnly={readOnly}
               />
+            </div>
+            <div className="backlog-item-properties-card">
+              <section
+                className="backlog-item-card-properties"
+                aria-label="Properties"
+              >
+                <BacklogItemProperties item={item} state={state}>
+                  <PropertyRow label="Source">
+                    {item.source === "manual"
+                      ? "Ajour"
+                      : (item.sourceProjectName ??
+                        item.sourceConnectionLabel ??
+                        "–")}
+                  </PropertyRow>
+                </BacklogItemProperties>
+                {archiveAction && !archiveAction.disabledReason ? (
+                  <PropertyActions>
+                    <PropertyAction onClick={() => runAction("archive")}>
+                      <ArchiveIcon aria-hidden="true" />
+                      {archiveAction.label}
+                    </PropertyAction>
+                  </PropertyActions>
+                ) : null}
+              </section>
               {!isSubitem ? (
-                <>
+                <section
+                  className="backlog-item-card-section"
+                  aria-label="Subitems"
+                >
                   <SectionHeading
                     trailing={
                       subitems.length
@@ -447,11 +474,6 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                           {subitem.priority !== undefined ? (
                             <PriorityIcon priority={subitem.priority} />
                           ) : null}
-                          {subitem.sourceStatusLabel ? (
-                            <span className="text-xs text-muted-foreground">
-                              {subitem.sourceStatusLabel}
-                            </span>
-                          ) : null}
                           <Value tone="muted" className="w-10 text-right">
                             {formatHours(subitem.remainingEstimateHours)}
                           </Value>
@@ -466,83 +488,68 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                       onAddingChange={setAddingSubitem}
                     />
                   ) : null}
-                </>
+                </section>
               ) : null}
-              <SectionHeading
-                trailing={
-                  entries.length ? (
-                    <Value>{formatClockDuration(loggedMs)}</Value>
-                  ) : undefined
-                }
+              <section
+                className="backlog-item-card-section"
+                aria-label="Time entries"
               >
-                Time entries
-              </SectionHeading>
-              {entries.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No time logged yet.
-                </p>
-              ) : (
-                <div className="backlog-item-rows">
-                  {entries.map((entry) => (
-                    <Link
-                      key={entry._id}
-                      to="/time/$date"
-                      params={{ date: entry.localDate }}
-                      className="backlog-item-row"
-                    >
-                      <span className="w-24 shrink-0 text-muted-foreground">
-                        {new Date(
-                          `${entry.localDate}T12:00:00`,
-                        ).toLocaleDateString(undefined, {
-                          weekday: "short",
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </span>
-                      <span className="backlog-item-row-title">
-                        {entry.note ?? (
-                          <span className="text-muted-foreground">No note</span>
-                        )}
-                      </span>
-                      <Value>{formatClockDuration(entry.durationMs)}</Value>
-                    </Link>
-                  ))}
-                </div>
-              )}
-              {!readOnly ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="mt-1 w-fit text-muted-foreground"
-                  onClick={(event) => openNewEntry(event.currentTarget)}
+                <SectionHeading
+                  trailing={
+                    entries.length ? (
+                      <Value>{formatClockDuration(loggedMs)}</Value>
+                    ) : undefined
+                  }
                 >
-                  <AddIcon data-icon="inline-start" />
-                  Add time entry
-                </Button>
-              ) : null}
+                  Time entries
+                </SectionHeading>
+                {entries.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No time logged yet.
+                  </p>
+                ) : (
+                  <div className="backlog-item-rows">
+                    {entries.map((entry) => (
+                      <Link
+                        key={entry._id}
+                        to="/time/$date"
+                        params={{ date: entry.localDate }}
+                        className="backlog-item-row"
+                      >
+                        <span className="w-20 shrink-0 text-muted-foreground">
+                          {new Date(
+                            `${entry.localDate}T12:00:00`,
+                          ).toLocaleDateString(undefined, {
+                            weekday: "short",
+                            month: "short",
+                            day: "numeric",
+                          })}
+                        </span>
+                        <span className="backlog-item-row-title">
+                          {entry.note ?? (
+                            <span className="text-muted-foreground">
+                              No note
+                            </span>
+                          )}
+                        </span>
+                        <Value>{formatClockDuration(entry.durationMs)}</Value>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+                {!readOnly ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-1 w-fit text-muted-foreground"
+                    onClick={(event) => openNewEntry(event.currentTarget)}
+                  >
+                    <AddIcon data-icon="inline-start" />
+                    Add time entry
+                  </Button>
+                ) : null}
+              </section>
             </div>
-            <section
-              className="backlog-item-properties-card"
-              aria-label="Properties"
-            >
-              <BacklogItemProperties item={item} state={state}>
-                <PropertyRow label="Source">
-                  {item.source === "manual"
-                    ? "Ajour"
-                    : (item.sourceProjectName ??
-                      item.sourceConnectionLabel ??
-                      "–")}
-                </PropertyRow>
-              </BacklogItemProperties>
-              {archiveAction && !archiveAction.disabledReason ? (
-                <PropertyActions>
-                  <PropertyAction onClick={() => runAction("archive")}>
-                    <ArchiveIcon aria-hidden="true" />
-                    {archiveAction.label}
-                  </PropertyAction>
-                </PropertyActions>
-              ) : null}
-            </section>
           </div>
         </div>
       </div>
