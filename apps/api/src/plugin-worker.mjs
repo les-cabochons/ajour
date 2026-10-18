@@ -24,7 +24,10 @@ const CODE_HOST_METHODS = new Set([
 const CALENDAR_METHODS = new Set(["listCalendarEvents"]);
 
 // Keep in sync with `backlogCommentOperations` in packages/shared/backlog-comments.ts.
-const BACKLOG_COMMENT_METHODS = new Set(["listItemComments"]);
+const BACKLOG_COMMENT_METHODS = new Set([
+  "listItemComments",
+  "postItemComment",
+]);
 
 // Keep in sync with `teamPluginMethods` in packages/shared/team-sync.ts.
 const TEAM_CONNECTION_METHODS = new Set(["syncTeamProjects"]);

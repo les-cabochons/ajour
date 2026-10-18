@@ -443,6 +443,23 @@ Feature: Backlog list and board views
     When I show earlier comments
     Then all seven comments show, oldest first
 
+  Scenario: Post a comment on a synced item
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin accepts new comments
+    When I open the Backlog parent page
+    And I write "Shipping it today" in a new comment and press Mod+Enter
+    Then my new comment "Shipping it today" shows last in the thread
+
+  Scenario: A comment that fails to send stays as a draft
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin refuses new comments
+    When I open the Backlog parent page
+    And I write "Keep me" in a new comment and press Mod+Enter
+    Then the comment is not sent and the editor keeps "Keep me"
+    And after a reload the comment field shows the draft "Keep me"
+
   Scenario: Archive a synced item from the bottom of its properties card
     Given the Backlog parent is synced
     When I open the Backlog parent page

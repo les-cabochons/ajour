@@ -13,6 +13,7 @@ Export these as named functions from your entry point. Each can be `async`.
 | `listSettleStates`   | `capabilities.connector.settle`   | The settle dialog opens for one of your items.                                                                                         |
 | `writeSettle`        | `capabilities.connector.settle`   | A settle or move is due, after the Undo toast closes.                                                                                  |
 | `listItemComments`   | `capabilities.connector.comments` | The user opens one of your items, and again for each "Show earlier comments".                                                          |
+| `postItemComment`    | `capabilities.connector.comments` | The user sends a comment on one of your items.                                                                                         |
 
 ```ts
 export async function validateConnection(
@@ -38,6 +39,11 @@ export async function listItemComments(
   connection: PluginConnection,
   request: BacklogListItemCommentsRequest,
 ): Promise<BacklogListItemCommentsResult>;
+
+export async function postItemComment(
+  connection: PluginConnection,
+  request: BacklogPostItemCommentRequest,
+): Promise<BacklogPostItemCommentResult>;
 ```
 
 To fail, throw an `Error`. Its message reaches the user as it is. See [Errors](#errors).
@@ -130,6 +136,10 @@ Declare the features your tool supports under `capabilities.connector.comments`:
 - Return the user as `viewer`, in the same id space as comment authors, so Ajour can tell which comments are theirs.
 - Set `restrictedTo` to the group or role that may read a restricted comment, such as a Jira role.
 - Ajour never stores comment text. It holds the newest page in memory for a few minutes, so throw rather than return a partial page. See [ADR 0008](https://github.com/les-cabochons/ajour/blob/main/agents/adr/0008-backlog-comments-are-fetched-and-written-at-once.md).
+
+## postItemComment
+
+Post the comment at once and return it as your tool stored it. Ajour sends Markdown, with mentions as `[@Name](mention:<id>)`, and shows your returned comment at the end of the thread. If you throw, Ajour keeps the text in the editor and shows your message, so the user can send it again. Ajour doesn't queue comments for later (ADR 0008). Declare `maxLength` when your tool limits comment length, measured as your tool measures it, and check the converted size before you send.
 
 ## Errors
 
@@ -322,6 +332,17 @@ export interface BacklogComment {
   }[];
   /** The group or role that may read it, when restricted. */
   restrictedTo?: string;
+}
+
+export interface BacklogPostItemCommentRequest {
+  sourceId: string;
+  /** Markdown. Mentions are `[@Name](mention:<id>)`. */
+  body: string;
+}
+
+export interface BacklogPostItemCommentResult {
+  /** The comment as your tool stored it. */
+  comment: BacklogComment;
 }
 
 export interface BacklogListItemCommentsResult {

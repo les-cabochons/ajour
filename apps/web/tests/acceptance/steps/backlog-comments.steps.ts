@@ -87,3 +87,79 @@ Then("all seven comments show, oldest first", async ({ page }) => {
     }),
   ).toHaveCount(0);
 });
+
+Given("its plugin {word} new comments", async ({ page }, outcome: string) => {
+  await page.route(
+    `${apiUrl}/api/backlog-comments/example/connections/fixture/postItemComment`,
+    async (route) => {
+      if (outcome !== "accepts") {
+        await route.fulfill({
+          status: 502,
+          json: { error: "Azure DevOps request failed (403): no access" },
+          headers: cors,
+        });
+        return;
+      }
+      const request = route.request().postDataJSON() as { body: string };
+      await route.fulfill({
+        json: {
+          comment: {
+            id: "c8",
+            author: { id: "me", displayName: "Alex" },
+            body: request.body,
+            createdAt: new Date().toISOString(),
+          },
+        },
+        headers: cors,
+      });
+    },
+  );
+});
+
+When(
+  "I write {string} in a new comment and press Mod+Enter",
+  async ({ page }, text: string) => {
+    await commentsRegion(page)
+      .getByRole("button", { name: "Leave a comment…" })
+      .click();
+    const editor = commentsRegion(page).getByRole("textbox", {
+      name: "New comment",
+    });
+    await editor.fill(text);
+    await page.keyboard.press("ControlOrMeta+Enter");
+  },
+);
+
+Then(
+  "my new comment {string} shows last in the thread",
+  async ({ page }, text: string) => {
+    const articles = commentsRegion(page).getByRole("article");
+    await expect(articles.last()).toContainText(text);
+    await expect(articles.last()).toContainText("You");
+    await expect(
+      commentsRegion(page).getByRole("button", { name: "Leave a comment…" }),
+    ).toBeVisible();
+  },
+);
+
+Then(
+  "the comment is not sent and the editor keeps {string}",
+  async ({ page }, text: string) => {
+    await expect(commentsRegion(page).getByRole("alert")).toContainText(
+      "Not sent. Azure DevOps request failed (403): no access",
+    );
+    await expect(
+      commentsRegion(page).getByRole("textbox", { name: "New comment" }),
+    ).toHaveText(text);
+  },
+);
+
+Then(
+  "after a reload the comment field shows the draft {string}",
+  async ({ page }, text: string) => {
+    await page.reload();
+    await expect(
+      commentsRegion(page).getByRole("button", { name: `Draft: ${text}` }),
+    ).toBeVisible();
+  },
+);

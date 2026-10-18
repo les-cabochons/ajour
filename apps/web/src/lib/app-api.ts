@@ -69,6 +69,9 @@ import {
   backlogListItemCommentsResultSchema,
   type BacklogListItemCommentsRequest,
   type BacklogListItemCommentsResult,
+  backlogPostItemCommentResultSchema,
+  type BacklogPostItemCommentRequest,
+  type BacklogPostItemCommentResult,
   teamCreateResultSchema,
   teamSyncResultSchema,
   type TeamCreateResult,
@@ -569,6 +572,19 @@ export function listItemComments(
     `/api/backlog-comments/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/listItemComments`,
     { method: "POST", body: JSON.stringify(request) },
     backlogListItemCommentsResultSchema,
+  );
+}
+
+/** Posts a comment on a synced item at once (ADR 0008). */
+export function postItemComment(
+  pluginId: string,
+  connectionId: string,
+  request: BacklogPostItemCommentRequest,
+): Promise<BacklogPostItemCommentResult> {
+  return appApiRequest(
+    `/api/backlog-comments/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/postItemComment`,
+    { method: "POST", body: JSON.stringify(request) },
+    backlogPostItemCommentResultSchema,
   );
 }
 
