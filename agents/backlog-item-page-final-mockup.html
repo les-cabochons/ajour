@@ -1,0 +1,1068 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ajour — Backlog item page with comments (chosen layout)</title>
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      .study {
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+        padding: 4px 0 24px;
+        font-family: var(--font-sans, "Geist", system-ui, sans-serif);
+        color: var(--foreground, #18181b);
+      }
+      .study-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+      }
+      .study-bar span {
+        color: var(--muted-foreground, #71717a);
+        margin-right: 4px;
+      }
+      .study-bar button {
+        height: 26px;
+        padding: 0 10px;
+        border: 1px solid var(--border, #e4e4e7);
+        border-radius: 6px;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+      .study-bar button[aria-pressed="true"] {
+        background: var(--secondary, #f4f4f5);
+        font-weight: 500;
+      }
+      .notes {
+        margin: 0;
+        padding-left: 18px;
+        color: var(--muted-foreground, #71717a);
+        font-size: 13px;
+        line-height: 1.6;
+      }
+      .viewport {
+        padding: 16px;
+        border-radius: var(--radius, 10px);
+        background: #e9e9ee;
+        overflow: hidden;
+      }
+      .viewport.dark {
+        background: #0c0c0f;
+      }
+
+      .mock {
+        --bg: oklch(1 0 0);
+        --fg: oklch(0.17 0.006 285);
+        --primary: oklch(0.52 0.19 285);
+        --secondary: oklch(0.965 0.002 285);
+        --muted-fg: oklch(0.52 0.012 285);
+        --success: oklch(0.6 0.16 150);
+        --border: oklch(0.915 0.004 285);
+        --surface-high: oklch(0.965 0.002 285);
+        --surface-highest: oklch(0.935 0.003 285);
+        --tertiary: oklch(0.68 0.01 285);
+        --hover: color-mix(in srgb, var(--fg) 4.5%, transparent);
+        --highlight: color-mix(in srgb, var(--fg) 3%, transparent);
+        --indigo-muted: color-mix(in srgb, var(--primary) 12%, transparent);
+        --field-border: color-mix(in srgb, var(--fg) 14%, transparent);
+        width: 1000px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: "Geist", system-ui, sans-serif;
+        font-size: 13px;
+        line-height: 1.45;
+        font-variant-numeric: tabular-nums;
+      }
+      .mock.dark {
+        --bg: oklch(0.17 0.004 285);
+        --fg: oklch(0.93 0.003 285);
+        --primary: oklch(0.64 0.17 285);
+        --secondary: oklch(0.245 0.004 285);
+        --muted-fg: oklch(0.68 0.008 285);
+        --success: oklch(0.72 0.17 150);
+        --border: oklch(1 0 0 / 9%);
+        --surface-high: oklch(0.25 0.004 285);
+        --surface-highest: oklch(0.29 0.004 285);
+        --tertiary: oklch(0.5 0.008 285);
+        --hover: oklch(1 0 0 / 6%);
+        --highlight: oklch(1 0 0 / 4%);
+        --field-border: oklch(1 0 0 / 12%);
+      }
+      .mock * {
+        box-sizing: border-box;
+      }
+      .mock svg {
+        width: 16px;
+        height: 16px;
+        flex: none;
+      }
+      .mono {
+        font-family: "Geist Mono", ui-monospace, monospace;
+        font-size: 12px;
+      }
+      .muted {
+        color: var(--muted-fg);
+      }
+
+      .topbar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 48px;
+        padding: 0 16px;
+        border-bottom: 1px solid var(--border);
+      }
+      .spacer {
+        flex: 1;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 28px;
+        padding: 0 10px;
+        border-radius: 6px;
+        color: var(--fg);
+        font-weight: 500;
+        white-space: nowrap;
+      }
+      .btn svg {
+        width: 14px;
+        height: 14px;
+      }
+      .btn.primary {
+        background: var(--primary);
+        color: #fff;
+      }
+      .btn.sm {
+        height: 24px;
+        padding: 0 8px;
+        font-size: 12px;
+      }
+      .icon-btn {
+        display: inline-grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        border-radius: 4px;
+        color: var(--muted-fg);
+      }
+      .icon-btn svg {
+        width: 15px;
+        height: 15px;
+      }
+
+      .body {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 292px;
+        grid-template-rows: 1250px;
+        gap: 36px;
+        padding: 0 24px;
+      }
+      .main {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+        min-height: 0;
+      }
+      .scroll {
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+        padding-top: 18px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+      }
+      .rail {
+        padding-top: 18px;
+      }
+
+      .back {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        margin-bottom: -10px;
+        color: var(--muted-fg);
+        font-size: 12px;
+      }
+      .back svg {
+        width: 13px;
+        height: 13px;
+      }
+      .head {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+      }
+      .tile {
+        display: grid;
+        place-items: center;
+        width: 32px;
+        height: 32px;
+        margin-top: 2px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        color: oklch(0.6 0.13 240);
+      }
+      .title {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 600;
+        line-height: 1.3;
+        letter-spacing: -0.01em;
+      }
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 8px;
+        margin-top: 6px;
+        color: var(--muted-fg);
+        font-size: 12px;
+      }
+      .meta svg {
+        width: 12px;
+        height: 12px;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 20px;
+        padding: 0 6px;
+        border-radius: 4px;
+        background: var(--secondary);
+        color: var(--fg);
+        font-size: 12px;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex: none;
+      }
+      .notice {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: -6px 0 0;
+        color: var(--muted-fg);
+        font-size: 12px;
+      }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        height: 18px;
+        padding: 0 6px;
+        border-radius: 4px;
+        background: var(--indigo-muted);
+        color: var(--primary);
+        font-size: 11px;
+        font-weight: 500;
+      }
+      .figures {
+        display: flex;
+        gap: 40px;
+      }
+      .figure .label {
+        color: var(--muted-fg);
+        font-size: 12px;
+      }
+      .figure .val {
+        margin-top: 2px;
+        font:
+          500 16px "Geist Mono",
+          ui-monospace,
+          monospace;
+      }
+      .progress {
+        max-width: 480px;
+        height: 3px;
+        margin-top: 10px;
+        overflow: hidden;
+        border-radius: 2px;
+        background: var(--border);
+      }
+      .progress > div {
+        width: 62%;
+        height: 100%;
+        background: var(--success);
+      }
+
+      .sh {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 20px;
+        margin: 0 0 6px;
+        color: var(--muted-fg);
+        font-size: 12px;
+        font-weight: 500;
+      }
+      .sh .trail {
+        margin-left: auto;
+        font-weight: 400;
+      }
+      .sh .count {
+        font:
+          400 12px "Geist Mono",
+          ui-monospace,
+          monospace;
+        color: var(--tertiary);
+      }
+      .md {
+        line-height: 1.55;
+      }
+      .md p {
+        margin: 0 0 8px;
+      }
+      .md h4 {
+        margin: 12px 0 4px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .md ul {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+      .md li {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 22px;
+      }
+      .md a {
+        color: var(--primary);
+      }
+      .cb {
+        display: grid;
+        place-items: center;
+        width: 14px;
+        height: 14px;
+        border: 1px solid var(--field-border);
+        border-radius: 4px;
+        flex: none;
+      }
+      .cb.on {
+        border-color: var(--primary);
+        background: var(--primary);
+        color: #fff;
+      }
+      .cb svg {
+        width: 10px;
+        height: 10px;
+      }
+      code {
+        padding: 1px 4px;
+        border-radius: 4px;
+        background: var(--secondary);
+        font:
+          12px "Geist Mono",
+          ui-monospace,
+          monospace;
+      }
+
+      .mention {
+        padding: 0 3px;
+        border-radius: 4px;
+        background: var(--indigo-muted);
+        color: var(--primary);
+        font-weight: 500;
+      }
+      .avatar {
+        display: grid;
+        place-items: center;
+        width: 28px;
+        height: 28px;
+        border-radius: 50%;
+        background: var(--surface-highest);
+        color: var(--muted-fg);
+        font-size: 11px;
+        font-weight: 600;
+        flex: none;
+      }
+      .author {
+        font-weight: 500;
+      }
+      .reacts {
+        display: flex;
+        gap: 4px;
+        margin-top: 8px;
+      }
+      .react {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        height: 22px;
+        padding: 0 7px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        font-size: 12px;
+      }
+      .react .mono {
+        font-size: 11px;
+      }
+      .react.mine {
+        border-color: color-mix(in srgb, var(--primary) 45%, transparent);
+        background: var(--indigo-muted);
+      }
+      .new-divider {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0 0 14px -40px;
+        color: var(--primary);
+        font-size: 11px;
+        font-weight: 500;
+      }
+      .new-divider::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: color-mix(in srgb, var(--primary) 55%, transparent);
+      }
+
+      .tl {
+        position: relative;
+        padding-left: 40px;
+      }
+      .tl::before {
+        content: "";
+        position: absolute;
+        top: 34px;
+        bottom: 0;
+        left: 13px;
+        width: 1px;
+        background: var(--border);
+      }
+      .tl-item {
+        position: relative;
+        margin-bottom: 14px;
+      }
+      .tl-item > .avatar {
+        position: absolute;
+        top: 3px;
+        left: -40px;
+      }
+      .earlier {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        margin: 0 0 12px -40px;
+        padding: 0 8px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--bg);
+        color: var(--muted-fg);
+        font-size: 12px;
+        position: relative;
+      }
+      .earlier svg {
+        width: 13px;
+        height: 13px;
+      }
+      .box {
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        background: var(--bg);
+      }
+      .box-h {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 34px;
+        padding: 0 6px 0 12px;
+        border-bottom: 1px solid var(--border);
+        background: var(--highlight);
+        font-size: 12px;
+      }
+      .box-b {
+        padding: 10px 12px 12px;
+      }
+      .actions {
+        display: inline-flex;
+        gap: 2px;
+        margin-left: auto;
+      }
+
+      .image {
+        width: 300px;
+        margin-top: 8px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
+      .image-art {
+        display: grid;
+        grid-template-columns: 0.9fr 1.3fr 0.6fr;
+        gap: 3px;
+        padding: 12px;
+        background: var(--surface-high);
+      }
+      .image-art i {
+        display: block;
+        height: 8px;
+        border-radius: 2px;
+        background: var(--surface-highest);
+      }
+      .image-art i.h {
+        background: color-mix(in srgb, var(--fg) 22%, transparent);
+      }
+      .file {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        margin-top: 8px;
+        padding: 0 8px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        font-size: 12px;
+      }
+      .file svg {
+        width: 13px;
+        height: 13px;
+        color: var(--muted-fg);
+      }
+
+      .pinned {
+        position: relative;
+        padding: 10px 0 16px;
+        border-top: 1px solid var(--border);
+        background: var(--bg);
+      }
+      .composer {
+        border-radius: 6px;
+        box-shadow: 0 0 0 2px
+          color-mix(in srgb, var(--primary) 45%, transparent);
+      }
+      .cm {
+        min-height: 60px;
+        padding: 10px 12px 6px;
+        line-height: 1.55;
+      }
+      .mk {
+        color: var(--tertiary);
+      }
+      .typing {
+        color: var(--primary);
+      }
+      .caret {
+        display: inline-block;
+        width: 1px;
+        height: 15px;
+        margin-left: 1px;
+        vertical-align: -3px;
+        background: var(--fg);
+      }
+      .pending {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin-top: 8px;
+      }
+      .thumb {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        height: 40px;
+        padding: 4px 8px 4px 4px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        font-size: 12px;
+      }
+      .thumb .px {
+        width: 44px;
+        height: 30px;
+        border-radius: 4px;
+        background: linear-gradient(
+          var(--surface-highest) 0 30%,
+          var(--surface-high) 30%
+        );
+      }
+      .cbar {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 4px 6px 6px 8px;
+      }
+      .hint {
+        margin: 0 6px;
+        color: var(--tertiary);
+        font-size: 11px;
+      }
+      .popover {
+        position: absolute;
+        left: 400px;
+        bottom: 128px;
+        z-index: 2;
+        width: 230px;
+        padding: 4px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg);
+        box-shadow:
+          0 12px 28px color-mix(in srgb, var(--fg) 12%, transparent),
+          0 2px 6px color-mix(in srgb, var(--fg) 6%, transparent);
+      }
+      .opt {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 30px;
+        padding: 0 8px;
+        border-radius: 4px;
+      }
+      .opt.sel {
+        background: var(--hover);
+      }
+      .opt .avatar {
+        width: 20px;
+        height: 20px;
+        font-size: 9px;
+      }
+
+      .card {
+        padding: 14px 16px 12px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
+      .props {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 0 16px;
+        margin: 0;
+      }
+      .props dt {
+        display: flex;
+        align-items: center;
+        min-height: 28px;
+        color: var(--muted-fg);
+      }
+      .props dd {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 28px;
+        margin: 0;
+      }
+      .switch {
+        width: 26px;
+        height: 16px;
+        padding: 2px;
+        border-radius: 8px;
+        background: var(--surface-highest);
+      }
+      .switch::after {
+        content: "";
+        display: block;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--bg);
+      }
+      .prio {
+        display: inline-flex;
+        align-items: flex-end;
+        gap: 1.5px;
+        height: 12px;
+      }
+      .prio i {
+        width: 3px;
+        border-radius: 1px;
+        background: var(--fg);
+      }
+      .prio i:nth-child(1) {
+        height: 5px;
+      }
+      .prio i:nth-child(2) {
+        height: 8px;
+      }
+      .prio i:nth-child(3) {
+        height: 11px;
+        opacity: 0.25;
+      }
+      .prop-action {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 3px;
+        width: 64px;
+        margin-top: 8px;
+        color: var(--muted-fg);
+        font-size: 11px;
+      }
+      .card-sh {
+        display: flex;
+        align-items: center;
+        margin: 12px 0 4px;
+        padding-top: 12px;
+        border-top: 1px solid var(--border);
+        color: var(--muted-fg);
+        font-size: 12px;
+        font-weight: 500;
+      }
+      .card-sh .trail {
+        margin-left: auto;
+        font-weight: 400;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 30px;
+        padding: 0 4px;
+        border-bottom: 1px solid var(--border);
+      }
+      .row:last-child {
+        border-bottom: 0;
+      }
+      .row .t {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .row svg {
+        width: 14px;
+        height: 14px;
+      }
+      .row .date {
+        width: 76px;
+        flex: none;
+        color: var(--muted-fg);
+        font-size: 12px;
+      }
+      .add-row {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        padding: 0 4px;
+        color: var(--muted-fg);
+        font-size: 12px;
+      }
+      .add-row svg {
+        width: 13px;
+        height: 13px;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="study">
+      <div class="study-bar">
+        <span>Theme</span>
+        <button type="button" data-theme="light">Light</button>
+        <button type="button" data-theme="dark">Dark</button>
+      </div>
+      <div class="viewport"><div class="mock" id="mock"></div></div>
+      <ul class="notes">
+        <li>
+          The newest 5 comments show. “Show earlier comments” loads 20 more each
+          time.
+        </li>
+        <li>
+          The editor stays pinned to the bottom of the window while the thread
+          scrolls. CodeMirror loads on first focus.
+        </li>
+        <li>
+          Images show inline and load as they scroll into view. SVG and other
+          files show as file chips.
+        </li>
+        <li>A pasted file stays on this machine until you click Comment.</li>
+        <li>
+          Typing @ searches people through the plugin. The mention is stored as
+          <code>[@Ana Silva](mention:…)</code> and shown as a chip.
+        </li>
+        <li>
+          Edit and delete sit in the “…” menu of your own comments. Deleting
+          waits for the Undo toast to close.
+        </li>
+      </ul>
+    </div>
+
+    <script>
+      const svg = (b, f) =>
+        `<svg viewBox="0 0 24 24" fill="${f ? "currentColor" : "none"}" stroke="${f ? "none" : "currentColor"}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${b}</svg>`;
+      const I = {
+        play: svg('<path d="M7 5l12 7-12 7z"/>', true),
+        snooze: svg(
+          '<path d="M19.5 14.5A7.5 7.5 0 1 1 9.5 4.5a6 6 0 0 0 10 10z"/>',
+        ),
+        settle: svg(
+          '<circle cx="12" cy="12" r="8.5"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/>',
+        ),
+        plus: svg('<path d="M12 5v14M5 12h14"/>'),
+        ext: svg(
+          '<path d="M14 5h5v5M19 5l-8 8M18 14v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h4"/>',
+        ),
+        back: svg('<path d="M19 12H5M11 6l-6 6 6 6"/>'),
+        clip: svg(
+          '<path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7.1-7.1l8.2-8.2a3.3 3.3 0 0 1 4.7 4.7l-8.2 8.2a1.7 1.7 0 0 1-2.4-2.4l7.4-7.4"/>',
+        ),
+        at: svg(
+          '<circle cx="12" cy="12" r="3.5"/><path d="M15.5 12v1.5a2.5 2.5 0 0 0 5 0V12a8.5 8.5 0 1 0-3.4 6.8"/>',
+        ),
+        smile: svg(
+          '<circle cx="11" cy="13" r="7.5"/><path d="M8 15a4 4 0 0 0 6 0M8.6 11h.01M13.4 11h.01M19.5 2.5v5M17 5h5"/>',
+        ),
+        more: svg(
+          '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
+          true,
+        ),
+        story: svg(
+          '<path d="M6 4h9.5A2.5 2.5 0 0 1 18 6.5V20H8.5A2.5 2.5 0 0 1 6 17.5zM6 17.5A2.5 2.5 0 0 1 8.5 15H18"/>',
+        ),
+        task: svg(
+          '<rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
+        ),
+        check: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
+        up: svg('<path d="M6 15l6-6 6 6"/>'),
+        archive: svg(
+          '<rect x="3.5" y="4.5" width="17" height="4" rx="1"/><path d="M5 8.5V19h14V8.5M10 12.5h4"/>',
+        ),
+        file: svg(
+          '<path d="M7 3.5h7l4 4V20a.5.5 0 0 1-.5.5h-10.5a.5.5 0 0 1-.5-.5V4a.5.5 0 0 1 .5-.5zM14 3.5V8h4"/>',
+        ),
+        x: svg('<path d="M7 7l10 10M17 7L7 17"/>'),
+      };
+      const PROJECT = "oklch(0.62 0.14 230)";
+      const STATE = "oklch(0.7 0.15 75)";
+      const av = (ini) => `<span class="avatar">${ini}</span>`;
+      const mention = (n) => `<span class="mention">@${n}</span>`;
+      const image = (name, size) => `
+        <div class="image">
+          <div class="image-art">${'<i class="h"></i>'.repeat(3)}${"<i></i>".repeat(15)}</div>
+        </div>`;
+
+      const comments = [
+        {
+          who: "Marc Dubois",
+          ini: "MD",
+          when: "Oct 12",
+          text: `Here's the import flow on Workday's side, for reference.`,
+          file: "workday-import-flow.svg · 18 KB",
+        },
+        {
+          who: "Ana Silva",
+          ini: "AS",
+          when: "Oct 13",
+          text: "Can we include the project code? Finance spends about an hour rebuilding it every Monday.",
+        },
+        {
+          who: "You",
+          ini: "AT",
+          mine: true,
+          when: "Oct 14",
+          text: `Yes. ${mention("Ana Silva")} should the code come before or after the task name? Here's a draft:`,
+          image: true,
+          reacts: [{ e: "👍", n: 1 }],
+        },
+        {
+          who: "Ana Silva",
+          ini: "AS",
+          when: "10:42",
+          edited: true,
+          isNew: true,
+          text: "Before the task name, please, in the same order as the Workday template.",
+          reacts: [
+            { e: "👍", n: 2, mine: true },
+            { e: "🎉", n: 1 },
+          ],
+        },
+        {
+          who: "Marc Dubois",
+          ini: "MD",
+          when: "11:05",
+          isNew: true,
+          text: "Heads up: Workday cuts codes longer than 10 characters, so <code>CONTOSO-PORTAL</code> won't fit.",
+        },
+      ];
+
+      const thread = [
+        `<span class="earlier">${I.up}Show earlier comments <span class="mono">18</span></span>`,
+      ];
+      comments.forEach((c, i) => {
+        if (c.isNew && !comments[i - 1].isNew)
+          thread.push(`<div class="new-divider">New</div>`);
+        thread.push(`
+          <div class="tl-item">
+            ${av(c.ini)}
+            <div class="box">
+              <div class="box-h">
+                <span class="author">${c.who}</span>
+                <span class="muted">commented ${c.when}${c.edited ? " · edited" : ""}</span>
+                <span class="actions"><span class="icon-btn">${I.smile}</span>${c.mine ? `<span class="icon-btn">${I.more}</span>` : ""}</span>
+              </div>
+              <div class="box-b">
+                <div>${c.text}</div>
+                ${c.image ? image() : ""}
+                ${c.file ? `<span class="file">${I.file}${c.file}</span>` : ""}
+                ${c.reacts ? `<div class="reacts">${c.reacts.map((r) => `<span class="react ${r.mine ? "mine" : ""}">${r.e}<span class="mono">${r.n}</span></span>`).join("")}</div>` : ""}
+              </div>
+            </div>
+          </div>`);
+      });
+
+      document.getElementById("mock").innerHTML = `
+        <div class="topbar">
+          <span class="btn primary">${I.play}Start entry</span>
+          <span class="btn">${I.snooze}Snooze</span>
+          <span class="btn">${I.settle}Settle</span>
+          <span class="btn">${I.plus}New entry</span>
+          <span class="spacer"></span>
+          <span class="icon-btn">${I.plus}</span>
+          <span class="mono muted" style="margin-left:6px">6:20</span>
+        </div>
+        <div class="body">
+          <div class="main">
+            <div class="scroll">
+              <span class="back">${I.back}Back to Backlog</span>
+              <div class="head">
+                <span class="tile">${I.story}</span>
+                <div style="min-width:0;flex:1">
+                  <h1 class="title">Export the week to CSV with project codes</h1>
+                  <div class="meta">
+                    <span class="chip">User Story</span>
+                    <span class="chip"><span class="dot" style="background:${PROJECT}"></span>Contoso Portal</span>
+                    <span class="mono">#4821</span>
+                    <span style="display:inline-flex;align-items:center;gap:4px">Active in Contoso Portal ${I.ext}</span>
+                    <span>↳ Finance exports</span>
+                  </div>
+                </div>
+              </div>
+              <p class="notice"><span class="badge">Returned</span>Today 10:42 · Ana Silva commented while it waited in “Waiting for client”</p>
+              <div>
+                <div class="figures">
+                  <div class="figure"><div class="label">Original</div><div class="val">8h</div></div>
+                  <div class="figure"><div class="label">Remaining</div><div class="val">3h</div></div>
+                  <div class="figure"><div class="label">Completed</div><div class="val">5h</div></div>
+                  <div class="figure"><div class="label">Logged in Ajour</div><div class="val">4:35</div></div>
+                </div>
+                <div class="progress"><div></div></div>
+              </div>
+              <div>
+                <div class="sh">Description<span class="trail" style="font-weight:400">Edit</span></div>
+                <div class="md">
+                  <p>Finance imports our weekly time into Workday every Monday. Today they rebuild the project codes by hand from the CSV export.</p>
+                  <h4>Acceptance criteria</h4>
+                  <ul>
+                    <li><span class="cb on">${I.check}</span>One row per time entry</li>
+                    <li><span class="cb"></span>A project code column before the task name</li>
+                    <li><span class="cb"></span>Same column order as the <a>Workday import template</a></li>
+                  </ul>
+                </div>
+              </div>
+              <div>
+                <div class="sh">Comments <span class="count">23</span></div>
+                <div class="tl">${thread.join("")}</div>
+              </div>
+            </div>
+            <div class="pinned">
+              <div class="popover">
+                <div class="opt sel"><span class="avatar">AS</span>Ana Silva</div>
+                <div class="opt"><span class="avatar">AL</span>Andrew Lee</div>
+                <div class="opt"><span class="avatar">AN</span>Anouk Martel</div>
+              </div>
+              <div class="composer">
+                <div class="cm">
+                  Done: the <span class="mk">**</span><b>project code</b><span class="mk">**</span> now comes first. It ships with Monday's build. <span class="typing">@An</span><span class="caret"></span>
+                  <div class="pending">
+                    <span class="thumb"><span class="px"></span>export-v2.png <span class="mono muted">84 KB</span><span class="icon-btn" style="width:18px;height:18px">${I.x}</span></span>
+                  </div>
+                </div>
+                <div class="cbar">
+                  <span class="icon-btn">${I.clip}</span>
+                  <span class="icon-btn">${I.at}</span>
+                  <span class="hint">Markdown</span>
+                  <span class="spacer"></span>
+                  <span class="hint">⌘↵</span>
+                  <span class="btn primary sm">Comment</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <aside class="rail">
+            <div class="card">
+              <dl class="props">
+                <dt>Workflow state</dt><dd><span class="dot" style="background:${STATE}"></span>In progress</dd>
+                <dt>Source state</dt><dd>Active</dd>
+                <dt>Priority</dt><dd><span class="prio"><i></i><i></i><i></i></span>High</dd>
+                <dt>Project</dt><dd><span class="dot" style="background:${PROJECT}"></span>Contoso Portal</dd>
+                <dt>Task</dt><dd>Development</dd>
+                <dt>Source project</dt><dd>Contoso Portal</dd>
+                <dt>Keep when missing</dt><dd><span class="switch"></span></dd>
+              </dl>
+              <span class="prop-action">${I.archive}Archive</span>
+              <div class="card-sh">Subitems<span class="trail">2 of 3 done</span></div>
+              <div class="row"><span class="muted">${I.task}</span><span class="t muted">Add the code column</span><span class="mono muted">0h</span></div>
+              <div class="row"><span class="muted">${I.task}</span><span class="t">Match the Workday column order</span><span class="mono muted">2h</span></div>
+              <div class="row"><span class="muted">${I.task}</span><span class="t muted">Update the export docs</span><span class="mono muted">0h</span></div>
+              <span class="add-row">${I.plus}Add subitem</span>
+              <div class="card-sh">Time entries<span class="trail mono">4:35</span></div>
+              <div class="row"><span class="date">Mon, Oct 13</span><span class="t muted">Column mapping</span><span class="mono">1:30</span></div>
+              <div class="row"><span class="date">Tue, Oct 14</span><span class="t muted">Draft export</span><span class="mono">2:05</span></div>
+              <div class="row"><span class="date">Thu, Oct 16</span><span class="t muted">Code order</span><span class="mono">1:00</span></div>
+              <span class="add-row">${I.plus}Add time entry</span>
+            </div>
+          </aside>
+        </div>`;
+
+      function fit() {
+        const vp = document.querySelector(".viewport");
+        document.getElementById("mock").style.zoom = String(
+          Math.min(1, (vp.clientWidth - 32) / 1000),
+        );
+      }
+      function setTheme(t) {
+        document
+          .querySelectorAll(".mock, .viewport")
+          .forEach((el) => el.classList.toggle("dark", t === "dark"));
+        document
+          .querySelectorAll("[data-theme]")
+          .forEach((b) =>
+            b.setAttribute("aria-pressed", String(b.dataset.theme === t)),
+          );
+      }
+      function hostIsDark() {
+        const color = getComputedStyle(
+          document.documentElement,
+        ).backgroundColor;
+        const c = document.createElement("canvas");
+        c.width = c.height = 1;
+        const ctx = c.getContext("2d");
+        ctx.fillStyle = "#fff";
+        ctx.fillStyle = color;
+        ctx.fillRect(0, 0, 1, 1);
+        const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+        if (a === 0) return matchMedia("(prefers-color-scheme: dark)").matches;
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b < 128;
+      }
+      document
+        .querySelectorAll("[data-theme]")
+        .forEach((b) =>
+          b.addEventListener("click", () => setTheme(b.dataset.theme)),
+        );
+      setTheme(hostIsDark() ? "dark" : "light");
+      fit();
+      addEventListener("resize", fit);
+    </script>
+  </body>
+</html>
