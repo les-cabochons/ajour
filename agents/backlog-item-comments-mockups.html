@@ -1,0 +1,1419 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Ajour — Backlog item page with comments, four layouts</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600&family=Geist+Mono:wght@400;500&display=swap"
+      rel="stylesheet"
+    />
+    <style>
+      .study {
+        display: flex;
+        flex-direction: column;
+        gap: 36px;
+        padding: 4px 0 24px;
+        font-family: var(--font-sans, "Geist", system-ui, sans-serif);
+        color: var(--foreground, #18181b);
+      }
+      .study-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px;
+        font-size: 13px;
+      }
+      .study-bar span {
+        color: var(--muted-foreground, #71717a);
+        margin-right: 4px;
+      }
+      .study-bar button {
+        height: 26px;
+        padding: 0 10px;
+        border: 1px solid var(--border, #e4e4e7);
+        border-radius: 6px;
+        background: transparent;
+        color: inherit;
+        font: inherit;
+        cursor: pointer;
+      }
+      .study-bar button[aria-pressed="true"] {
+        background: var(--secondary, #f4f4f5);
+        font-weight: 500;
+      }
+      .variant-head h2 {
+        margin: 0;
+        font-size: 15px;
+        font-weight: 600;
+      }
+      .variant-head p {
+        margin: 4px 0 0;
+        max-width: 72ch;
+        color: var(--muted-foreground, #71717a);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+      .viewport {
+        margin-top: 10px;
+        padding: 16px;
+        border-radius: var(--radius, 10px);
+        background: #e9e9ee;
+        overflow: hidden;
+      }
+      .viewport.dark {
+        background: #0c0c0f;
+      }
+
+      /* ---------- Ajour tokens (from apps/web/src/styles.css) ---------- */
+      .mock {
+        --bg: oklch(1 0 0);
+        --fg: oklch(0.17 0.006 285);
+        --primary: oklch(0.52 0.19 285);
+        --secondary: oklch(0.965 0.002 285);
+        --muted-fg: oklch(0.52 0.012 285);
+        --success: oklch(0.6 0.16 150);
+        --warning: oklch(0.66 0.16 60);
+        --border: oklch(0.915 0.004 285);
+        --surface-high: oklch(0.965 0.002 285);
+        --surface-highest: oklch(0.935 0.003 285);
+        --tertiary: oklch(0.68 0.01 285);
+        --hover: color-mix(in srgb, var(--fg) 4.5%, transparent);
+        --highlight: color-mix(in srgb, var(--fg) 3%, transparent);
+        --indigo-muted: color-mix(in srgb, var(--primary) 12%, transparent);
+        --field-border: color-mix(in srgb, var(--fg) 14%, transparent);
+        --sidebar: oklch(0.975 0.002 285);
+        width: 1000px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg);
+        color: var(--fg);
+        font-family: "Geist", system-ui, sans-serif;
+        font-size: 13px;
+        line-height: 1.45;
+        font-variant-numeric: tabular-nums;
+      }
+      .mock.dark {
+        --bg: oklch(0.17 0.004 285);
+        --fg: oklch(0.93 0.003 285);
+        --primary: oklch(0.64 0.17 285);
+        --secondary: oklch(0.245 0.004 285);
+        --muted-fg: oklch(0.68 0.008 285);
+        --success: oklch(0.72 0.17 150);
+        --warning: oklch(0.78 0.15 70);
+        --border: oklch(1 0 0 / 9%);
+        --surface-high: oklch(0.25 0.004 285);
+        --surface-highest: oklch(0.29 0.004 285);
+        --tertiary: oklch(0.5 0.008 285);
+        --hover: oklch(1 0 0 / 6%);
+        --highlight: oklch(1 0 0 / 4%);
+        --field-border: oklch(1 0 0 / 12%);
+        --sidebar: oklch(0.19 0.004 285);
+      }
+      .mock * {
+        box-sizing: border-box;
+      }
+      .mock svg {
+        width: 16px;
+        height: 16px;
+        flex: none;
+      }
+      .mono {
+        font-family: "Geist Mono", ui-monospace, monospace;
+        font-size: 12px;
+      }
+      .muted {
+        color: var(--muted-fg);
+      }
+      .tert {
+        color: var(--tertiary);
+      }
+
+      /* top bar */
+      .topbar {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 48px;
+        padding: 0 16px;
+        border-bottom: 1px solid var(--border);
+      }
+      .topbar .spacer {
+        flex: 1;
+      }
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 28px;
+        padding: 0 10px;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        background: none;
+        color: var(--fg);
+        font:
+          500 13px "Geist",
+          system-ui,
+          sans-serif;
+        white-space: nowrap;
+      }
+      .btn svg {
+        width: 14px;
+        height: 14px;
+      }
+      .btn.primary {
+        background: var(--primary);
+        color: #fff;
+      }
+      .btn.outline {
+        border-color: var(--border);
+      }
+      .btn.sm {
+        height: 24px;
+        padding: 0 8px;
+        font-size: 12px;
+      }
+      .btn.ghost.muted {
+        color: var(--muted-fg);
+      }
+      .icon-btn {
+        display: inline-grid;
+        place-items: center;
+        width: 24px;
+        height: 24px;
+        border-radius: 4px;
+        color: var(--muted-fg);
+      }
+      .icon-btn svg {
+        width: 15px;
+        height: 15px;
+      }
+      .icon-btn.on {
+        background: var(--hover);
+        color: var(--fg);
+      }
+
+      /* page */
+      .page {
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        padding: 18px 24px 32px;
+      }
+      .back {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        margin-bottom: -10px;
+        color: var(--muted-fg);
+        font-size: 12px;
+      }
+      .back svg {
+        width: 13px;
+        height: 13px;
+      }
+      .head {
+        display: flex;
+        gap: 12px;
+        align-items: flex-start;
+      }
+      .tile {
+        display: grid;
+        place-items: center;
+        width: 32px;
+        height: 32px;
+        margin-top: 2px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+        color: oklch(0.6 0.13 240);
+      }
+      .title {
+        margin: 0;
+        font-size: 20px;
+        font-weight: 600;
+        line-height: 1.3;
+        letter-spacing: -0.01em;
+      }
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 6px 8px;
+        margin-top: 6px;
+        color: var(--muted-fg);
+        font-size: 12px;
+      }
+      .meta svg {
+        width: 12px;
+        height: 12px;
+      }
+      .chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 5px;
+        height: 20px;
+        padding: 0 6px;
+        border-radius: 4px;
+        background: var(--secondary);
+        color: var(--fg);
+        font-size: 12px;
+      }
+      .dot {
+        width: 8px;
+        height: 8px;
+        border-radius: 50%;
+        flex: none;
+      }
+      .notice {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: -6px 0 0;
+        color: var(--muted-fg);
+        font-size: 12px;
+      }
+      .badge-returned {
+        display: inline-flex;
+        align-items: center;
+        height: 18px;
+        padding: 0 6px;
+        border-radius: 4px;
+        background: var(--indigo-muted);
+        color: var(--primary);
+        font-size: 11px;
+        font-weight: 500;
+      }
+      .figures {
+        display: flex;
+        gap: 40px;
+      }
+      .figure .label {
+        color: var(--muted-fg);
+        font-size: 12px;
+      }
+      .figure .val {
+        margin-top: 2px;
+        font:
+          500 16px "Geist Mono",
+          ui-monospace,
+          monospace;
+      }
+      .progress {
+        max-width: 480px;
+        height: 3px;
+        margin-top: 10px;
+        overflow: hidden;
+        border-radius: 2px;
+        background: var(--border);
+      }
+      .progress > div {
+        width: 62%;
+        height: 100%;
+        background: var(--success);
+      }
+      .cols {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 292px;
+        gap: 36px;
+        align-items: start;
+      }
+      .sh {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 20px;
+        margin: 22px 0 6px;
+        color: var(--muted-fg);
+        font-size: 12px;
+        font-weight: 500;
+      }
+      .sh:first-child {
+        margin-top: 0;
+      }
+      .sh .trail {
+        margin-left: auto;
+        font-weight: 400;
+      }
+      .sh .count {
+        font:
+          400 12px "Geist Mono",
+          ui-monospace,
+          monospace;
+        color: var(--tertiary);
+      }
+      .subtle-link {
+        color: var(--muted-fg);
+        font-weight: 400;
+      }
+
+      /* rendered markdown */
+      .md {
+        font-size: 13px;
+        line-height: 1.55;
+      }
+      .md p {
+        margin: 0 0 8px;
+      }
+      .md h4 {
+        margin: 12px 0 4px;
+        font-size: 13px;
+        font-weight: 600;
+      }
+      .md ul {
+        margin: 0 0 8px;
+        padding: 0;
+        list-style: none;
+      }
+      .md li {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 22px;
+      }
+      .cb {
+        display: grid;
+        place-items: center;
+        width: 14px;
+        height: 14px;
+        border: 1px solid var(--field-border);
+        border-radius: 4px;
+        flex: none;
+      }
+      .cb.on {
+        border-color: var(--primary);
+        background: var(--primary);
+        color: #fff;
+      }
+      .cb svg {
+        width: 10px;
+        height: 10px;
+      }
+      .md code,
+      .c-text code {
+        padding: 1px 4px;
+        border-radius: 4px;
+        background: var(--secondary);
+        font:
+          12px "Geist Mono",
+          ui-monospace,
+          monospace;
+      }
+      .md a {
+        color: var(--primary);
+        text-decoration: none;
+      }
+
+      /* comments, shared */
+      .mention {
+        padding: 0 3px;
+        border-radius: 4px;
+        background: var(--indigo-muted);
+        color: var(--primary);
+        font-weight: 500;
+      }
+      .avatar {
+        display: grid;
+        place-items: center;
+        width: 20px;
+        height: 20px;
+        border-radius: 50%;
+        background: var(--surface-highest);
+        color: var(--muted-fg);
+        font-size: 9px;
+        font-weight: 600;
+        flex: none;
+      }
+      .avatar.lg {
+        width: 28px;
+        height: 28px;
+        font-size: 11px;
+      }
+      .author {
+        font-weight: 500;
+      }
+      .reacts {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 4px;
+        margin-top: 6px;
+      }
+      .react {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        height: 22px;
+        padding: 0 7px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        font-size: 12px;
+      }
+      .react .mono {
+        font-size: 11px;
+      }
+      .react.mine {
+        border-color: color-mix(in srgb, var(--primary) 45%, transparent);
+        background: var(--indigo-muted);
+      }
+      .react.add {
+        width: 26px;
+        justify-content: center;
+        padding: 0;
+        color: var(--muted-fg);
+      }
+      .react.add svg {
+        width: 14px;
+        height: 14px;
+      }
+      .new-divider {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 6px 0;
+        color: var(--primary);
+        font-size: 11px;
+        font-weight: 500;
+      }
+      .new-divider::after {
+        content: "";
+        flex: 1;
+        height: 1px;
+        background: color-mix(in srgb, var(--primary) 55%, transparent);
+      }
+      .shot {
+        width: 248px;
+        margin-top: 8px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
+      .shot-img {
+        display: grid;
+        grid-template-columns: 0.9fr 1.3fr 0.6fr;
+        gap: 1px;
+        padding: 8px;
+        background: var(--surface-high);
+      }
+      .shot-img i {
+        display: block;
+        height: 7px;
+        border-radius: 2px;
+        background: var(--surface-highest);
+      }
+      .shot-img i.h {
+        background: color-mix(in srgb, var(--fg) 22%, transparent);
+      }
+      .shot-cap {
+        display: flex;
+        justify-content: space-between;
+        padding: 4px 8px;
+        border-top: 1px solid var(--border);
+        color: var(--muted-fg);
+        font-size: 11px;
+      }
+      .hover-actions {
+        display: inline-flex;
+        gap: 2px;
+        margin-left: auto;
+      }
+
+      /* composer: CodeMirror, styled Markdown */
+      .composer {
+        margin-top: 12px;
+        border: 1px solid var(--field-border);
+        border-radius: 6px;
+        background: var(--bg);
+      }
+      .composer.focus {
+        box-shadow: 0 0 0 2px
+          color-mix(in srgb, var(--primary) 45%, transparent);
+        border-color: transparent;
+      }
+      .cm {
+        min-height: 64px;
+        padding: 10px 12px 6px;
+        line-height: 1.55;
+      }
+      .cm .mk {
+        color: var(--tertiary);
+      }
+      .cm b {
+        font-weight: 600;
+      }
+      .caret {
+        display: inline-block;
+        width: 1px;
+        height: 15px;
+        margin-left: 1px;
+        vertical-align: -3px;
+        background: var(--fg);
+      }
+      .attach {
+        display: flex;
+        gap: 6px;
+        margin-top: 8px;
+      }
+      .file {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 24px;
+        padding: 0 8px;
+        border: 1px solid var(--border);
+        border-radius: 4px;
+        font-size: 12px;
+      }
+      .file svg {
+        width: 13px;
+        height: 13px;
+        color: var(--muted-fg);
+      }
+      .cbar {
+        display: flex;
+        align-items: center;
+        gap: 2px;
+        padding: 4px 6px 6px 8px;
+      }
+      .cbar .grow {
+        flex: 1;
+      }
+      .kbd {
+        margin-right: 6px;
+        color: var(--tertiary);
+        font-size: 11px;
+      }
+      .popover {
+        position: absolute;
+        z-index: 2;
+        width: 220px;
+        padding: 4px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--bg);
+        box-shadow:
+          0 12px 28px color-mix(in srgb, var(--fg) 12%, transparent),
+          0 2px 6px color-mix(in srgb, var(--fg) 6%, transparent);
+      }
+      .popover .opt {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 28px;
+        padding: 0 8px;
+        border-radius: 4px;
+      }
+      .popover .opt.sel {
+        background: var(--hover);
+      }
+
+      /* rail */
+      .card {
+        display: flex;
+        flex-direction: column;
+        gap: 14px;
+        padding: 14px 16px 16px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
+      .props {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 0 16px;
+        margin: 0;
+      }
+      .props dt {
+        display: flex;
+        align-items: center;
+        min-height: 28px;
+        color: var(--muted-fg);
+      }
+      .props dd {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        min-height: 28px;
+        margin: 0;
+      }
+      .switch {
+        width: 26px;
+        height: 16px;
+        padding: 2px;
+        border-radius: 8px;
+        background: var(--surface-highest);
+      }
+      .switch::after {
+        content: "";
+        display: block;
+        width: 12px;
+        height: 12px;
+        border-radius: 50%;
+        background: var(--bg);
+      }
+      .prio {
+        display: inline-flex;
+        align-items: flex-end;
+        gap: 1.5px;
+        height: 12px;
+      }
+      .prio i {
+        width: 3px;
+        border-radius: 1px;
+        background: var(--fg);
+      }
+      .prio i:nth-child(1) {
+        height: 5px;
+      }
+      .prio i:nth-child(2) {
+        height: 8px;
+      }
+      .prio i:nth-child(3) {
+        height: 11px;
+        opacity: 0.25;
+      }
+      .prop-action {
+        display: inline-flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 3px;
+        width: 64px;
+        color: var(--muted-fg);
+        font-size: 11px;
+      }
+      .rows {
+        display: flex;
+        flex-direction: column;
+      }
+      .row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 30px;
+        padding: 0 4px;
+        border-bottom: 1px solid var(--border);
+        font-size: 13px;
+      }
+      .row .t {
+        flex: 1;
+        min-width: 0;
+        overflow: hidden;
+        white-space: nowrap;
+        text-overflow: ellipsis;
+      }
+      .row svg {
+        width: 14px;
+        height: 14px;
+      }
+      .row .date {
+        width: 76px;
+        flex: none;
+        color: var(--muted-fg);
+        font-size: 12px;
+      }
+      .add-row {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        height: 26px;
+        margin-top: 4px;
+        padding: 0 6px;
+        color: var(--muted-fg);
+        font-size: 12px;
+      }
+      .add-row svg {
+        width: 13px;
+        height: 13px;
+      }
+      .seg {
+        display: flex;
+        gap: 2px;
+        padding: 2px;
+        border-radius: 6px;
+        background: var(--secondary);
+      }
+      .seg span {
+        display: inline-flex;
+        flex: 1;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        height: 24px;
+        border-radius: 4px;
+        color: var(--muted-fg);
+        font-size: 12px;
+        font-weight: 500;
+      }
+      .seg span.on {
+        background: var(--bg);
+        color: var(--fg);
+        box-shadow: 0 0 0 1px var(--border);
+      }
+      .disclosure {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 30px;
+        border-top: 1px solid var(--border);
+        font-size: 12px;
+        font-weight: 500;
+        color: var(--muted-fg);
+      }
+      .disclosure svg {
+        width: 13px;
+        height: 13px;
+      }
+      .disclosure .trail {
+        margin-left: auto;
+        font-weight: 400;
+      }
+
+      /* A: feed */
+      .feed-c {
+        padding: 10px 8px 10px;
+        margin: 0 -8px;
+        border-radius: 6px;
+      }
+      .feed-c.hovered {
+        background: var(--highlight);
+      }
+      .feed-h {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        height: 24px;
+      }
+      .feed-b {
+        padding-left: 28px;
+      }
+
+      /* B: blocks on a timeline */
+      .tl {
+        position: relative;
+        padding-left: 40px;
+      }
+      .tl::before {
+        content: "";
+        position: absolute;
+        top: 8px;
+        bottom: 40px;
+        left: 13px;
+        width: 1px;
+        background: var(--border);
+      }
+      .tl-item {
+        position: relative;
+        margin-bottom: 14px;
+      }
+      .tl-item > .avatar {
+        position: absolute;
+        top: 3px;
+        left: -40px;
+      }
+      .box {
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
+      .box.mine {
+        border-color: color-mix(in srgb, var(--primary) 30%, var(--border));
+      }
+      .box-h {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        height: 34px;
+        padding: 0 6px 0 12px;
+        border-bottom: 1px solid var(--border);
+        background: var(--highlight);
+        font-size: 12px;
+      }
+      .box-b {
+        padding: 10px 12px 12px;
+      }
+      .tl .new-divider {
+        margin: 0 0 14px -40px;
+      }
+      .tl .composer {
+        margin-top: 0;
+      }
+
+      /* C: dense, pinned composer */
+      .c-pane {
+        display: flex;
+        flex-direction: column;
+        height: 600px;
+      }
+      .c-scroll {
+        flex: 1;
+        min-height: 0;
+        overflow: hidden;
+        position: relative;
+      }
+      .clamp {
+        position: relative;
+        max-height: 92px;
+        overflow: hidden;
+      }
+      .clamp::after {
+        content: "";
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        height: 36px;
+        background: linear-gradient(transparent, var(--bg));
+      }
+      .dense {
+        padding: 8px 0;
+        border-bottom: 1px solid var(--border);
+      }
+      .dense-h {
+        display: flex;
+        align-items: baseline;
+        gap: 6px;
+      }
+      .dense-h .mini-react {
+        margin-left: auto;
+        color: var(--muted-fg);
+        font-size: 12px;
+      }
+      .pinned {
+        padding-top: 8px;
+        border-top: 1px solid var(--border);
+      }
+      .pinned .composer {
+        margin-top: 0;
+      }
+
+      /* D: activity */
+      .act-event {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 28px;
+        color: var(--muted-fg);
+        font-size: 12px;
+      }
+      .act-event .ic {
+        display: grid;
+        place-items: center;
+        width: 20px;
+        height: 20px;
+        flex: none;
+      }
+      .act-event svg {
+        width: 13px;
+        height: 13px;
+      }
+      .act-event .when {
+        margin-left: auto;
+        color: var(--tertiary);
+      }
+      .act-c {
+        display: flex;
+        gap: 8px;
+        padding: 8px 0;
+      }
+      .act-c .bubble {
+        flex: 1;
+        min-width: 0;
+        padding: 8px 12px 10px;
+        border: 1px solid var(--border);
+        border-radius: 6px;
+      }
+      .act-c .bh {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-bottom: 2px;
+        font-size: 12px;
+      }
+      .act-filter {
+        display: flex;
+        gap: 2px;
+        margin-left: auto;
+      }
+      .act-filter span {
+        height: 20px;
+        padding: 0 6px;
+        border-radius: 4px;
+        color: var(--muted-fg);
+        font-size: 11px;
+        font-weight: 500;
+        line-height: 20px;
+      }
+      .act-filter span.on {
+        background: var(--secondary);
+        color: var(--fg);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="study">
+      <div class="study-bar">
+        <span>Theme</span>
+        <button type="button" data-theme="light">Light</button>
+        <button type="button" data-theme="dark">Dark</button>
+      </div>
+      <div id="variants"></div>
+    </div>
+
+    <script>
+      const svg = (body, fill) =>
+        `<svg viewBox="0 0 24 24" fill="${fill ? "currentColor" : "none"}" stroke="${fill ? "none" : "currentColor"}" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${body}</svg>`;
+      const I = {
+        play: svg('<path d="M7 5l12 7-12 7z"/>', true),
+        snooze: svg(
+          '<path d="M19.5 14.5A7.5 7.5 0 1 1 9.5 4.5a6 6 0 0 0 10 10z"/>',
+        ),
+        settle: svg(
+          '<circle cx="12" cy="12" r="8.5"/><path d="M8.5 12.5l2.5 2.5 4.5-5"/>',
+        ),
+        plus: svg('<path d="M12 5v14M5 12h14"/>'),
+        ext: svg(
+          '<path d="M14 5h5v5M19 5l-8 8M18 14v4a1 1 0 0 1-1 1H6a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h4"/>',
+        ),
+        back: svg('<path d="M19 12H5M11 6l-6 6 6 6"/>'),
+        clip: svg(
+          '<path d="M20 11.5l-7.8 7.8a5 5 0 0 1-7.1-7.1l8.2-8.2a3.3 3.3 0 0 1 4.7 4.7l-8.2 8.2a1.7 1.7 0 0 1-2.4-2.4l7.4-7.4"/>',
+        ),
+        at: svg(
+          '<circle cx="12" cy="12" r="3.5"/><path d="M15.5 12v1.5a2.5 2.5 0 0 0 5 0V12a8.5 8.5 0 1 0-3.4 6.8"/>',
+        ),
+        smile: svg(
+          '<circle cx="11" cy="13" r="7.5"/><path d="M8 15a4 4 0 0 0 6 0M8.6 11h.01M13.4 11h.01M19.5 2.5v5M17 5h5"/>',
+        ),
+        more: svg(
+          '<circle cx="5" cy="12" r="1.6"/><circle cx="12" cy="12" r="1.6"/><circle cx="19" cy="12" r="1.6"/>',
+          true,
+        ),
+        pencil: svg('<path d="M4 20h4L19 9l-4-4L4 16z"/>'),
+        trash: svg(
+          '<path d="M5 7h14M10 11v6M14 11v6M6.5 7l1 13h9l1-13M9 7V4h6v3"/>',
+        ),
+        story: svg(
+          '<path d="M6 4h9.5A2.5 2.5 0 0 1 18 6.5V20H8.5A2.5 2.5 0 0 1 6 17.5zM6 17.5A2.5 2.5 0 0 1 8.5 15H18"/>',
+        ),
+        task: svg(
+          '<rect x="4.5" y="4.5" width="15" height="15" rx="3"/><path d="M8.5 12l2.5 2.5 4.5-5"/>',
+        ),
+        check: svg('<path d="M5 12.5l4.5 4.5L19 7.5"/>'),
+        chevD: svg('<path d="M6 9l6 6 6-6"/>'),
+        chevR: svg('<path d="M9 6l6 6-6 6"/>'),
+        archive: svg(
+          '<rect x="3.5" y="4.5" width="17" height="4" rx="1"/><path d="M5 8.5V19h14V8.5M10 12.5h4"/>',
+        ),
+        image: svg(
+          '<rect x="3.5" y="4.5" width="17" height="15" rx="2"/><circle cx="9" cy="10" r="1.6"/><path d="M20.5 16l-5-5-8 8.5"/>',
+        ),
+        returned: svg('<path d="M9 14l-4-4 4-4M5 10h9a5 5 0 0 1 0 10h-2"/>'),
+        state: svg(
+          '<circle cx="12" cy="12" r="3"/><circle cx="12" cy="12" r="8.5"/>',
+        ),
+        clock: svg(
+          '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+        ),
+        bold: svg(
+          '<path d="M7 5h6a3.5 3.5 0 0 1 0 7H7zM7 12h7a3.5 3.5 0 0 1 0 7H7z"/>',
+        ),
+      };
+
+      const PROJECT = "oklch(0.62 0.14 230)";
+      const STATE = "oklch(0.7 0.15 75)";
+      const av = (initials, cls = "") =>
+        `<span class="avatar ${cls}">${initials}</span>`;
+      const mention = (name) => `<span class="mention">@${name}</span>`;
+
+      const shot = (name, size) => `
+        <div class="shot">
+          <div class="shot-img">
+            ${'<i class="h"></i>'.repeat(3)}${"<i></i>".repeat(12)}
+          </div>
+          <div class="shot-cap"><span>${name}</span><span class="mono">${size}</span></div>
+        </div>`;
+
+      const comments = [
+        {
+          who: "Ana Silva",
+          ini: "AS",
+          when: "Oct 13",
+          text: "Can we include the project code? Finance spends about an hour rebuilding it every Monday.",
+        },
+        {
+          who: "You",
+          ini: "AT",
+          mine: true,
+          when: "Oct 14",
+          text: `Yes. ${mention("Ana Silva")} should the code come before or after the task name? Here's a draft:`,
+          image: shot("export-draft.png", "112 KB"),
+          reacts: [{ e: "👍", n: 1 }],
+        },
+        {
+          who: "Ana Silva",
+          ini: "AS",
+          when: "10:42",
+          edited: true,
+          isNew: true,
+          text: "Before the task name, please, in the same order as the Workday template.",
+          reacts: [
+            { e: "👍", n: 2, mine: true },
+            { e: "🎉", n: 1 },
+          ],
+        },
+        {
+          who: "Marc Dubois",
+          ini: "MD",
+          when: "11:05",
+          isNew: true,
+          text: "Heads up: Workday cuts codes longer than 10 characters, so <code>CONTOSO-PORTAL</code> won't fit.",
+        },
+      ];
+
+      const reacts = (c, withAdd = true) =>
+        c.reacts || withAdd
+          ? `<div class="reacts">${(c.reacts || [])
+              .map(
+                (r) =>
+                  `<span class="react ${r.mine ? "mine" : ""}">${r.e}<span class="mono">${r.n}</span></span>`,
+              )
+              .join(
+                "",
+              )}${withAdd ? `<span class="react add">${I.smile}</span>` : ""}</div>`
+          : "";
+
+      const description = `
+        <div class="md">
+          <p>Finance imports our weekly time into Workday every Monday. Today they rebuild the project codes by hand from the CSV export.</p>
+          <h4>Acceptance criteria</h4>
+          <ul>
+            <li><span class="cb on">${I.check}</span>One row per time entry</li>
+            <li><span class="cb"></span>A project code column before the task name</li>
+            <li><span class="cb"></span>Same column order as the <a>Workday import template</a></li>
+          </ul>
+        </div>`;
+
+      const composer = (opts = {}) => `
+        <div class="composer ${opts.focus ? "focus" : ""}" style="position:relative">
+          <div class="cm">
+            ${mention("Ana Silva")} done: the <span class="mk">**</span><b>project code</b><span class="mk">**</span> now comes first. It ships with Monday's build.<span class="caret"></span>
+            <div class="attach"><span class="file">${I.image}export-v2.png<span class="mono muted">84 KB</span></span></div>
+          </div>
+          <div class="cbar">
+            <span class="icon-btn">${I.clip}</span>
+            <span class="icon-btn">${I.at}</span>
+            <span class="kbd" style="margin-left:6px">Markdown</span>
+            <span class="grow"></span>
+            <span class="kbd">⌘↵</span>
+            <span class="btn primary sm">Comment</span>
+          </div>
+        </div>`;
+
+      const topbar = `
+        <div class="topbar">
+          <span class="btn primary">${I.play}Start entry</span>
+          <span class="btn ghost">${I.snooze}Snooze</span>
+          <span class="btn ghost">${I.settle}Settle</span>
+          <span class="btn ghost">${I.plus}New entry</span>
+          <span class="spacer"></span>
+          <span class="icon-btn">${I.plus}</span>
+          <span class="mono muted" style="margin-left:6px">6:20</span>
+        </div>`;
+
+      const header = `
+        <span class="back">${I.back}Back to Backlog</span>
+        <div class="head">
+          <span class="tile">${I.story}</span>
+          <div style="min-width:0;flex:1">
+            <h1 class="title">Export the week to CSV with project codes</h1>
+            <div class="meta">
+              <span class="chip">User Story</span>
+              <span class="chip"><span class="dot" style="background:${PROJECT}"></span>Contoso Portal</span>
+              <span class="mono">#4821</span>
+              <span style="display:inline-flex;align-items:center;gap:4px">Active in Contoso Portal ${I.ext}</span>
+              <span>↳ Finance exports</span>
+            </div>
+          </div>
+        </div>
+        <p class="notice"><span class="badge-returned">Returned</span>Today 10:42 · Ana Silva commented while it waited in “Waiting for client”</p>
+        <div>
+          <div class="figures">
+            <div class="figure"><div class="label">Original</div><div class="val">8h</div></div>
+            <div class="figure"><div class="label">Remaining</div><div class="val">3h</div></div>
+            <div class="figure"><div class="label">Completed</div><div class="val">5h</div></div>
+            <div class="figure"><div class="label">Logged in Ajour</div><div class="val">4:35</div></div>
+          </div>
+          <div class="progress"><div></div></div>
+        </div>`;
+
+      const props = `
+        <dl class="props">
+          <dt>Workflow state</dt><dd><span class="dot" style="background:${STATE}"></span>In progress</dd>
+          <dt>Source state</dt><dd>Active</dd>
+          <dt>Priority</dt><dd><span class="prio"><i></i><i></i><i></i></span>High</dd>
+          <dt>Project</dt><dd><span class="dot" style="background:${PROJECT}"></span>Contoso Portal</dd>
+          <dt>Task</dt><dd>Development</dd>
+          <dt>Source project</dt><dd>Contoso Portal</dd>
+          <dt>Keep when missing</dt><dd><span class="switch"></span></dd>
+        </dl>`;
+      const archive = `<div><span class="prop-action">${I.archive}Archive</span></div>`;
+
+      const subitemRows = `
+        <div class="rows">
+          <div class="row"><span class="muted">${I.task}</span><span class="t muted">Add the code column</span><span class="mono muted">0h</span></div>
+          <div class="row"><span class="muted">${I.task}</span><span class="t">Match the Workday column order</span><span class="mono muted">2h</span></div>
+          <div class="row"><span class="muted">${I.task}</span><span class="t muted">Update the export docs</span><span class="mono muted">0h</span></div>
+        </div>`;
+      const entryRows = `
+        <div class="rows">
+          <div class="row"><span class="date">Mon, Oct 13</span><span class="t muted">Column mapping</span><span class="mono">1:30</span></div>
+          <div class="row"><span class="date">Tue, Oct 14</span><span class="t muted">Draft export</span><span class="mono">2:05</span></div>
+          <div class="row"><span class="date">Thu, Oct 16</span><span class="t muted">Code order</span><span class="mono">1:00</span></div>
+        </div>`;
+      const addSub = `<span class="add-row">${I.plus}Add subitem</span>`;
+      const addEntry = `<span class="add-row">${I.plus}Add time entry</span>`;
+
+      const descHeading = `<div class="sh">Description<span class="trail subtle-link">Edit</span></div>`;
+
+      /* ---------------- A: Feed ---------------- */
+      function variantA() {
+        const items = [];
+        comments.forEach((c, i) => {
+          if (c.isNew && !comments[i - 1].isNew)
+            items.push(`<div class="new-divider">New</div>`);
+          items.push(`
+            <div class="feed-c ${c.mine ? "hovered" : ""}">
+              <div class="feed-h">
+                ${av(c.ini)}<span class="author">${c.who}</span>
+                <span class="muted" style="font-size:12px">${c.when}${c.edited ? " · edited" : ""}</span>
+                ${c.mine ? `<span class="hover-actions"><span class="icon-btn">${I.smile}</span><span class="icon-btn">${I.pencil}</span><span class="icon-btn">${I.trash}</span></span>` : ""}
+              </div>
+              <div class="feed-b">
+                <div class="c-text">${c.text}</div>
+                ${c.image || ""}
+                ${c.reacts ? reacts(c, false) : ""}
+              </div>
+            </div>`);
+        });
+        const main = `
+          ${descHeading}${description}
+          <div class="sh">Comments <span class="count">4</span></div>
+          ${items.join("")}
+          ${composer({ focus: true })}`;
+        const rail = `
+          <div class="card">${props}${archive}</div>
+          <div class="sh" style="margin-top:22px">Subitems<span class="trail">2 of 3 done</span></div>
+          ${subitemRows}${addSub}
+          <div class="sh">Time entries<span class="trail mono">4:35</span></div>
+          ${entryRows}${addEntry}`;
+        return { main, rail };
+      }
+
+      /* ---------------- B: Blocks on a timeline ---------------- */
+      function variantB() {
+        const items = [];
+        comments.forEach((c, i) => {
+          if (c.isNew && !comments[i - 1].isNew)
+            items.push(`<div class="new-divider">New</div>`);
+          items.push(`
+            <div class="tl-item">
+              ${av(c.ini, "lg")}
+              <div class="box ${c.mine ? "mine" : ""}">
+                <div class="box-h">
+                  <span class="author">${c.who}</span>
+                  <span class="muted">commented ${c.when}${c.edited ? " · edited" : ""}</span>
+                  <span class="hover-actions"><span class="icon-btn">${I.smile}</span><span class="icon-btn">${I.more}</span></span>
+                </div>
+                <div class="box-b">
+                  <div class="c-text">${c.text}</div>
+                  ${c.image || ""}
+                  ${c.reacts ? reacts(c, false) : ""}
+                </div>
+              </div>
+            </div>`);
+        });
+        items.push(`<div class="tl-item">${av("AT", "lg")}${composer()}</div>`);
+        const main = `
+          ${descHeading}${description}
+          <div class="sh">Comments <span class="count">4</span></div>
+          <div class="tl">${items.join("")}</div>`;
+        const rail = `
+          <div class="card" style="gap:0">
+            ${props}
+            <div style="margin-top:6px">${archive}</div>
+            <div class="sh" style="margin:14px 0 4px;padding-top:12px;border-top:1px solid var(--border);height:auto">Subitems<span class="trail">2 of 3 done</span></div>
+            ${subitemRows}${addSub}
+            <div class="sh" style="margin:14px 0 4px;padding-top:12px;border-top:1px solid var(--border);height:auto">Time entries<span class="trail mono">4:35</span></div>
+            ${entryRows}${addEntry}
+          </div>`;
+        return { main, rail };
+      }
+
+      /* ---------------- C: Dense with a pinned composer ---------------- */
+      function variantC() {
+        const items = [];
+        comments.forEach((c, i) => {
+          if (c.isNew && !comments[i - 1].isNew)
+            items.push(
+              `<div class="new-divider" style="margin:8px 0 0">New</div>`,
+            );
+          const r = c.reacts
+            ? `<span class="mini-react">${c.reacts.map((x) => `${x.e} <span class="mono">${x.n}</span>`).join(" &nbsp;")}</span>`
+            : "";
+          items.push(`
+            <div class="dense">
+              <div class="dense-h"><span class="author">${c.who}</span><span class="muted" style="font-size:12px">${c.when}${c.edited ? " · edited" : ""}</span>${r}</div>
+              <div class="c-text">${c.text}</div>
+              ${c.image || ""}
+            </div>`);
+        });
+        const main = `
+          <div class="c-pane">
+            <div class="c-scroll">
+              ${descHeading}
+              <div class="clamp">${description}</div>
+              <span class="add-row" style="padding:0;margin:2px 0 0">${I.chevD}Show all</span>
+              <div class="sh">Comments <span class="count">4</span></div>
+              ${items.join("")}
+            </div>
+            <div class="pinned">${composer({ focus: true })}</div>
+          </div>`;
+        const rail = `
+          <div class="card">${props}${archive}</div>
+          <div class="seg" style="margin-top:20px"><span>Subitems <span class="mono">2/3</span></span><span class="on">Time entries <span class="mono">4:35</span></span></div>
+          <div style="margin-top:6px">${entryRows}${addEntry}</div>`;
+        return { main, rail };
+      }
+
+      /* ---------------- D: Activity ---------------- */
+      function variantD() {
+        const ev = (icon, html, when) =>
+          `<div class="act-event"><span class="ic">${icon}</span><span>${html}</span><span class="when">${when}</span></div>`;
+        const com = (c) => `
+          <div class="act-c">
+            ${av(c.ini)}
+            <div class="bubble">
+              <div class="bh"><span class="author">${c.who}</span><span class="muted">${c.when}${c.edited ? " · edited" : ""}</span>
+                <span class="hover-actions"><span class="icon-btn">${I.smile}</span><span class="icon-btn">${I.more}</span></span></div>
+              <div class="c-text">${c.text}</div>
+              ${c.image || ""}
+              ${c.reacts ? reacts(c, false) : ""}
+            </div>
+          </div>`;
+        const main = `
+          ${descHeading}${description}
+          <div class="sh">Activity<span class="act-filter"><span class="on">All</span><span>Comments</span></span></div>
+          ${ev(I.state, "Imported from Contoso Portal", "Oct 12")}
+          ${com(comments[0])}
+          ${com(comments[1])}
+          ${ev(I.settle, "You settled it · waiting in “Waiting for client”", "Oct 14")}
+          <div class="new-divider">New</div>
+          ${com(comments[2])}
+          ${ev(I.returned, "<span style='color:var(--primary)'>Returned</span> · Ana Silva commented", "10:42")}
+          ${com(comments[3])}
+          ${composer()}`;
+        const rail = `
+          <div class="card">${props}${archive}</div>
+          <div style="margin-top:18px">
+            <div class="disclosure">${I.chevD}Subitems<span class="trail">2 of 3 done</span></div>
+            ${subitemRows}${addSub}
+            <div class="disclosure" style="margin-top:8px">${I.chevR}Time entries<span class="trail mono">4:35</span></div>
+          </div>`;
+        return { main, rail };
+      }
+
+      const variants = [
+        {
+          id: "A",
+          name: "A · Feed",
+          blurb:
+            "Linear-style. Comments read as a quiet feed: avatar, name and time on one line, the text indented under it. Hovering a comment reveals react, edit and delete (shown on your comment). The rail keeps the properties card, with subitems and time entries as plain lists under it.",
+          build: variantA,
+        },
+        {
+          id: "B",
+          name: "B · Blocks on a timeline",
+          blurb:
+            "GitHub-style. Each comment is a bordered block with a header strip on a vertical line, so long threads with images stay easy to tell apart. Edit and delete live in the “…” menu. The rail is one card: properties, then subitems, then time entries.",
+          build: variantB,
+        },
+        {
+          id: "C",
+          name: "C · Dense with a pinned composer",
+          blurb:
+            "Chat-like. The description is clamped with “Show all”, comments are compact rows with reaction counts inline, and the editor stays pinned to the bottom of the window while the thread scrolls. The rail switches between subitems and time entries with a segmented control.",
+          build: variantC,
+        },
+        {
+          id: "D",
+          name: "D · Activity",
+          blurb:
+            "Comments interleaved with what happened to the item in Ajour: imported, settled, returned. It explains why an item came back, but needs a small local event log that Ajour doesn't keep today. The rail's subitems and time entries fold open and closed.",
+          build: variantD,
+        },
+      ];
+
+      const root = document.getElementById("variants");
+      root.innerHTML = variants
+        .map((v) => {
+          const { main, rail } = v.build();
+          return `
+            <section class="variant" style="margin-bottom:36px">
+              <div class="variant-head"><h2>${v.name}</h2><p>${v.blurb}</p></div>
+              <div class="viewport">
+                <div class="mock">
+                  ${topbar}
+                  <div class="page">
+                    ${header}
+                    <div class="cols"><div style="min-width:0">${main}</div><aside>${rail}</aside></div>
+                  </div>
+                </div>
+              </div>
+            </section>`;
+        })
+        .join("");
+
+      function fit() {
+        document.querySelectorAll(".viewport").forEach((vp) => {
+          const inner = vp.clientWidth - 32;
+          vp.firstElementChild.style.zoom = String(Math.min(1, inner / 1000));
+        });
+      }
+
+      function setTheme(theme) {
+        document
+          .querySelectorAll(".mock, .viewport")
+          .forEach((el) => el.classList.toggle("dark", theme === "dark"));
+        document
+          .querySelectorAll("[data-theme]")
+          .forEach((b) =>
+            b.setAttribute("aria-pressed", String(b.dataset.theme === theme)),
+          );
+      }
+
+      function hostIsDark() {
+        const color = getComputedStyle(
+          document.documentElement,
+        ).backgroundColor;
+        const canvas = document.createElement("canvas");
+        canvas.width = canvas.height = 1;
+        const ctx = canvas.getContext("2d");
+        ctx.fillStyle = "#fff";
+        ctx.fillStyle = color;
+        ctx.fillRect(0, 0, 1, 1);
+        const [r, g, b, a] = ctx.getImageData(0, 0, 1, 1).data;
+        if (a === 0)
+          return window.matchMedia("(prefers-color-scheme: dark)").matches;
+        return 0.2126 * r + 0.7152 * g + 0.0722 * b < 128;
+      }
+
+      document
+        .querySelectorAll("[data-theme]")
+        .forEach((b) =>
+          b.addEventListener("click", () => setTheme(b.dataset.theme)),
+        );
+      setTheme(hostIsDark() ? "dark" : "light");
+      fit();
+      window.addEventListener("resize", fit);
+    </script>
+  </body>
+</html>

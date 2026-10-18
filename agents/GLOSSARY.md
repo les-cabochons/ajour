@@ -34,6 +34,22 @@ _Avoid_: Publish, upload, sync (for the action)
 A piece of planned work in the user's backlog, optionally mapped to a project and task.
 _Avoid_: Task, work item, issue, to-do
 
+**Description**:
+The text that explains what a backlog item is about. A synced backlog item's description comes from its source tool.
+_Avoid_: Note (for a backlog item), body, details
+
+**Comment**:
+A message someone posted on a synced backlog item or a pull request. It lives in the source tool or code host, and Ajour shows it there without keeping its text. Manual backlog items have no comments.
+_Avoid_: Note, discussion, message
+
+**Mention**:
+A reference to a person inside a description or comment that notifies them in the source tool.
+_Avoid_: Tag, ping
+
+**Lossy conversion**:
+Turning a description or comment from its source tool's format into Markdown in a way that drops something the source can hold, such as a colour or a Jira panel. Ajour writes such text back only when the user has allowed lossy conversion and confirms the loss.
+_Avoid_: Downgrade, simplification
+
 **Subitem**:
 A backlog item nested one level under another backlog item.
 _Avoid_: Subtask, child item
@@ -63,7 +79,7 @@ The state of a synced backlog item or pull request that waits on someone or some
 _Avoid_: Waiting, blocked, on hold (as the Ajour state)
 
 **Source project**:
-The project in a connector's source tool that a synced backlog item belongs to. It is separate from an Ajour project.
+The project in the source tool that a synced backlog item belongs to. It is separate from an Ajour project.
 _Avoid_: Remote project, connector project
 
 **Settle rule**:
@@ -167,24 +183,24 @@ _Avoid_: Cancel, delete (for a running entry)
 ### Extensions
 
 **Plugin**:
-An installable extension of Ajour that provides one or more capabilities: connector, schema, code host, calendar or team. When a plugin provides more than one of connector, code host, calendar and team, the user turns each on and off separately, as Backlog items, Pull requests, Calendar events and Projects.
-_Avoid_: Extension, add-on, integration
+An installable extension of Ajour that provides one or more capabilities: backlog, schema, code host, calendar or team. When a plugin provides more than one of backlog, code host, calendar and team, the user turns each on and off separately, as Backlog items, Pull requests, Calendar events and Projects.
+_Avoid_: Extension, add-on, integration, connector
 
 **Team**:
 A group of people who share one set of projects and tasks through a team plugin. A workspace can connect to several teams.
 _Avoid_: Backend, server, workspace, organization
 
-**Connector**:
-A plugin capability that syncs backlog items and estimates with an external tool, such as Azure DevOps, Jira or GitHub issues.
-_Avoid_: Integration, sync plugin
+**Backlog** (capability):
+A plugin capability that syncs backlog items, with their descriptions, estimates and comments, between Ajour and a source tool such as Azure DevOps, Jira or GitHub issues. Say "backlog capability" wherever the user's backlog could be meant.
+_Avoid_: Connector, integration, sync plugin
 
 **Schema**:
 A plugin capability that defines how projects and tasks map to an external file layout, such as Workday.
+_Avoid_: Data shape, project data shape (in user-facing text)
 
 **Code host**:
 A plugin capability that provides the user's pull requests from a tool such as GitHub or Azure DevOps, and carries out the user's reviews, comments and merges there.
 _Avoid_: Git provider, PR plugin, forge
-_Avoid_: Data shape, project data shape (in user-facing text)
 
 **Calendar**:
 A plugin capability that provides the user's calendar events for a date range, from a tool such as Google Calendar, Outlook or Exchange. Read-only.
