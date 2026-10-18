@@ -23,6 +23,7 @@ Use this file as the local index for important library choices. Check official d
 - zod
 - ExcelJS
 - react-markdown with remark-gfm and remark-breaks
+- CodeMirror 6 (`@codemirror/state`, `view`, `language`, `commands`, `lang-markdown` and `@lezer/highlight`) for Markdown editing
 
 ## Web UI Usage
 
@@ -32,7 +33,8 @@ Use this file as the local index for important library choices. Check official d
 - The plugin settings form renders plugin fields through `apps/web/src/features/settings/plugin-settings-ui.tsx`.
 - Settings exposes installed capabilities through `/settings/plugins`; the catalog owns activation and links to `/settings/plugins/$pluginId`, where plugin-specific forms and connection actions live.
 - Use `@remixicon/react` for icons. Keep icon imports in feature modules or local UI modules; do not inline custom SVGs for common actions.
-- Render markdown text, such as backlog item notes, through `Markdown` in `apps/web/src/components/markdown.tsx`. It lazy-loads the parser from `markdown-renderer.tsx`, so do not import `react-markdown` elsewhere.
+- Render markdown text, such as backlog item descriptions, through `Markdown` in `apps/web/src/components/markdown.tsx`. It lazy-loads the parser from `markdown-renderer.tsx`, so do not import `react-markdown` elsewhere.
+- Edit Markdown text through `MarkdownEditor` in `apps/web/src/components/markdown-editor.tsx`. It lazy-loads CodeMirror from `markdown-editor-view.tsx`, so do not import `@codemirror/*` elsewhere. It uses `markdownLanguage` without the `markdown()` helper, which would also load HTML, CSS and JavaScript highlighting. The text stays Markdown: markers are dimmed and the marked-up text is styled, and the editor never rewrites text the user did not touch. `preloadMarkdownEditor()` starts the download from an Edit button's pointer or focus.
 - Use `Checkbox` from `apps/web/src/components/ui/checkbox.tsx` for app checkboxes, including indeterminate selection states.
 
 ## Web Domain Modules

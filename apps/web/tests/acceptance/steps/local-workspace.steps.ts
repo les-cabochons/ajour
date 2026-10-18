@@ -205,7 +205,7 @@ Then(
     ).toHaveValue("Unsaved parent title");
     await expect(
       editor.getByRole("textbox", { name: "Description", exact: true }),
-    ).toHaveValue("Unsaved parent description");
+    ).toHaveText("Unsaved parent description");
     await expect(
       editor.getByRole("combobox", { name: "Workflow state", exact: true }),
     ).toHaveValue("Done");

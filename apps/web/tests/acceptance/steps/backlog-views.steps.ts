@@ -2114,6 +2114,37 @@ Then(
   },
 );
 When(
+  "I write {string} as its description and press Mod+Enter",
+  async ({ page }, description: string) => {
+    await page.getByRole("button", { name: "Edit", exact: true }).click();
+    await page
+      .getByRole("textbox", { name: "Description", exact: true })
+      .fill(description);
+    await page.keyboard.press("ControlOrMeta+Enter");
+    await expect(
+      page.getByRole("textbox", { name: "Description", exact: true }),
+    ).toHaveCount(0);
+  },
+);
+Then(
+  "the Backlog parent's description is {string}",
+  async ({ page }, description: string) => {
+    await expect
+      .poll(async () => {
+        const { workItems } = await readBacklogState(page);
+        return workItems.find((item: { _id: string }) => item._id === "parent")
+          ?.description;
+      })
+      .toBe(description);
+  },
+);
+Then(
+  "its description shows {string}",
+  async ({ page }, description: string) => {
+    await expect(page.getByText(description, { exact: true })).toBeVisible();
+  },
+);
+When(
   "I type in the title, the remaining estimate and the description and press Escape each time",
   async ({ page }) => {
     await page
