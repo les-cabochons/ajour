@@ -155,7 +155,7 @@ export interface BacklogImportCandidateInput {
   sourceUrl?: string;
   /** 1 to 240 characters. */
   title: string;
-  /** Markdown. Up to 4,000 characters. */
+  /** The item's description, in Markdown. Up to 4,000 characters. */
   note?: string;
   projectName?: string;
   /** Such as "Bug" or "User Story". */

@@ -210,7 +210,7 @@ export async function runWorkItemWriteTool(
       const { result: workItemId, undoToken } = localStore.runWithUndo(() =>
         localStore.addWorkItem({
           title: input.title,
-          note: input.note,
+          description: input.description,
           projectId: input.projectId,
           taskId: input.taskId,
           priority: input.priority ?? undefined,
@@ -230,7 +230,9 @@ export async function runWorkItemWriteTool(
 
       const patch: WorkItemPatch = {};
       if (input.title !== undefined) patch.title = input.title;
-      if (input.note !== undefined) patch.note = input.note;
+      if (input.description !== undefined) {
+        patch.description = input.description;
+      }
       if (input.priority !== undefined) {
         patch.priority = input.priority ?? undefined;
       }

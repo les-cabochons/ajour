@@ -522,7 +522,7 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 ### Peek
 
 - Clicking a row or card opens the peek on the right. Space toggles it on the focused row. It follows the clicked item until Escape or × closes it.
-- The peek is a smaller item page. It shows the id with Open page and ×, the title with its type, project and source link, the item page's snoozed, settled, archived or returned notice, Start entry and Edit, the estimate figures, then the properties (state, source state, priority, lifecycle, project, task), the note and the subitems.
+- The peek is a smaller item page. It shows the id with Open page and ×, the title with its type, project and source link, the item page's snoozed, settled, archived or returned notice, Start entry and Edit, the estimate figures, then the properties (state, source state, priority, lifecycle, project, task), the description and the subitems.
 - The peek has no "…" menu. The row's context menu and the item page carry the other actions.
 - Dragging the peek's left edge resizes it, like every side panel: 300px to 720px, at most half the page. Arrow keys on the edge move it by 16px and a double-click resets 340px. Each page keeps its own panel width, per device: Backlog (peek and editor), the backlog item page, Time, Projects and Agents.
 - State, priority, project and task change in place and save at once with Undo, like the pickers on a card.
@@ -558,7 +558,7 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 ### Editing
 
 - Editing a backlog item uses the editor form, in the peek slot on wide windows and the full-width dialog in the narrow view, with the entry editor's rules: explicit Save (button, Enter in the title, Cmd+Enter), Escape or × discards, outside clicks do nothing.
-- The form holds title, workflow state, priority, project and task mapping, note, the estimates with their "Reset to subitem total" buttons, and "Keep when missing from sync" for synced items. Its header has the "…" action menu.
+- The form holds title, workflow state, priority, project and task mapping, description, the estimates with their "Reset to subitem total" buttons, and "Keep when missing from sync" for synced items. Its header has the "…" action menu.
 - "New backlog item" in the page header opens a blank form. "Add subitem" opens it with the parent set.
 - Start entry stays on hover, in the "…" menu and in the peek. Entries start on today.
 
@@ -671,13 +671,13 @@ Syncs move synced items between states:
 
 - The page lives at `/backlog/$itemId`. Clicking a row in the sidebar or on the Backlog page, or pressing Enter on it, opens it.
 - Its back link returns to the page it was opened from. Opened from the sidebar while Time, Projects or Pull requests showed, it reads "Back to Time" (or Projects, Pull requests) and returns to that page with its search, such as the Week view. Moving to a parent or subitem keeps that page. Otherwise it reads "Back to Backlog". The page keeps its origin in `?from=`.
-- V1 shows only what Ajour stores: title, type and external id with Open in source, source state and workflow state, project and task mapping, priority, estimates with their sync state, note, parent and subitems, and the time entries logged on it.
+- V1 shows only what Ajour stores: title, type and external id with Open in source, source state and workflow state, project and task mapping, priority, estimates with their sync state, description, parent and subitems, and the time entries logged on it.
 - Layout, from the prototype: variant C's header over variant A's body.
   - Header: the type icon in a square tile, the title, and a muted line with the external id (linked to the source), the source project and the source state. The actions sit on the right: Start entry, Snooze, Settle and New entry, or Unsnooze, Unsettle or Restore depending on the state. There is no "…" menu; the page's keys still run Delete and the other item actions, and a synced item's Archive sits at the bottom of the properties card.
   - A notice under the header when the item is snoozed, settled, archived or returned, such as "Settled today 7:51 p.m. · waiting in "Waiting for client"".
   - Four tiles: Original, Remaining, Completed and Logged in Ajour. A tile shows the estimate's sync conflict when there is one. Clicking an estimate turns it into a field.
   - A progress bar: completed over original.
-  - Two columns below. The main column has the note, the subitems and the time entries, with "Add subitem" and "Add time entry" under their lists. The note's heading has a subtle Edit that swaps the rendered markdown for its raw text. The right card lists workflow state, source state and priority, then project, task and source project, each editable in place like the peek, and a "Keep when missing from sync" switch for synced items.
+  - Two columns below. The main column has the description, the subitems and the time entries, with "Add subitem" and "Add time entry" under their lists. The description's heading has a subtle Edit that swaps the rendered markdown for its raw text. The right card lists workflow state, source state and priority, then project, task and source project, each editable in place like the peek, and a "Keep when missing from sync" switch for synced items.
 - The right panel leaves room for fields not imported yet, such as assignee, iteration, area path, tags, acceptance criteria and comments. See [#71](https://github.com/les-cabochons/ajour/issues/71).
 - The page is designed for Azure DevOps first, then Jira.
 - The page edits in place: no editor side panel. Click the title, or press Enter, to rename. Every inline edit saves on Enter or blur with the Undo toast, and Escape cancels.

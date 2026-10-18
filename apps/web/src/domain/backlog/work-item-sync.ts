@@ -85,7 +85,7 @@ function createSyncedWorkItem(
     sourceStatusLabel,
     projectId: undefined,
     taskId: undefined,
-    note: workItem.note?.trim() || undefined,
+    description: workItem.note?.trim() || undefined,
     originalEstimateHours: normalizeWorkItemEstimateValue(
       workItem.originalEstimateHours,
     ),
@@ -206,7 +206,7 @@ function mergeSyncedWorkItem(
       factories.now(),
     ),
     title: nextImportedState.title,
-    note: existingWorkItem.note,
+    description: existingWorkItem.description,
     sourceId: nextImportedState.sourceId,
     sourceUrl: nextImportedState.sourceUrl,
     sourceConnectionId: nextImportedState.sourceConnectionId,

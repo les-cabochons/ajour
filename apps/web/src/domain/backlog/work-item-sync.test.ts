@@ -451,7 +451,7 @@ describe("synced work item imports", () => {
       undefined,
       factories,
     ).state;
-    imported.workItems[0]!.note = "Local note";
+    imported.workItems[0]!.description = "Local note";
     const createId = vi.fn(() => "unused");
 
     const refreshed = importSyncedWorkItems(
@@ -469,7 +469,7 @@ describe("synced work item imports", () => {
 
     expect(createId).not.toHaveBeenCalled();
     expect(refreshed.state.workItems[0]).toMatchObject({
-      note: "Local note",
+      description: "Local note",
       hierarchyLevel: 1,
       parentSourceId: "parent-1",
     });

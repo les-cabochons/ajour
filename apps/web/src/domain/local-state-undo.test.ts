@@ -531,7 +531,7 @@ function createBacklogState(): LocalAppState {
       ],
       workItems: [
         workItem({ _id: "item-first", workflowStateId: "status-doing" }),
-        workItem({ _id: "item-parent", note: "Parent notes" }),
+        workItem({ _id: "item-parent", description: "Parent notes" }),
         workItem({ _id: "subitem-1", parentWorkItemId: "item-parent" }),
         workItem({
           _id: "item-synced",
@@ -620,7 +620,9 @@ describe("backlog and project undo", () => {
         now: () => 100,
       }),
     );
-    const edited = updateWorkItem(after, "item-parent", { note: "Edited" });
+    const edited = updateWorkItem(after, "item-parent", {
+      description: "Edited",
+    });
 
     const restored = restoreUndo(edited, undo);
 

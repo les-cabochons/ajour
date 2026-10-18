@@ -204,10 +204,10 @@ export function EstimateFigure({
 }
 
 /**
- * The note section. The rendered markdown has a subtle Edit beside its
+ * The description section. The rendered markdown has a subtle Edit beside its
  * heading that swaps it for the raw markdown in a text area.
  */
-export function NoteSection({
+export function DescriptionSection({
   item,
   readOnly,
 }: {
@@ -218,9 +218,9 @@ export function NoteSection({
   const closer = useCloseOnce(() => setEditing(false));
 
   const save = (value: string) => {
-    const note = value.trim() || undefined;
-    if (note !== item.note) {
-      patchBacklogItemWithUndo(item, { note }, "Note changed");
+    const description = value.trim() || undefined;
+    if (description !== item.description) {
+      patchBacklogItemWithUndo(item, { description }, "Description changed");
     }
   };
   return (
@@ -241,15 +241,15 @@ export function NoteSection({
           ) : undefined
         }
       >
-        Note
+        Description
       </SectionHeading>
       {editing ? (
         <Textarea
           autoFocus
-          aria-label="Note"
-          defaultValue={item.note ?? ""}
-          placeholder="Description, markdown supported"
-          rows={Math.max(4, (item.note ?? "").split("\n").length + 1)}
+          aria-label="Description"
+          defaultValue={item.description ?? ""}
+          placeholder="Markdown supported"
+          rows={Math.max(4, (item.description ?? "").split("\n").length + 1)}
           className="font-mono text-xs"
           onBlur={(event) => {
             const { value } = event.currentTarget;
@@ -269,10 +269,10 @@ export function NoteSection({
             }
           }}
         />
-      ) : item.note ? (
-        <Markdown>{item.note}</Markdown>
+      ) : item.description ? (
+        <Markdown>{item.description}</Markdown>
       ) : (
-        <p className="text-sm text-muted-foreground">No note.</p>
+        <p className="text-sm text-muted-foreground">No description.</p>
       )}
     </>
   );

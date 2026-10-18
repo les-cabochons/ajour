@@ -1193,10 +1193,10 @@ describe("writing a move to the source", () => {
     moved.workItems.splice(2, 0, item("new"));
     const edited = reorderWorkItems(moved, ["e", "d"]);
     const a = find(edited, "a")!;
-    a.note = "Keep this note";
+    a.description = "Keep this note";
     const failed = failSourceWrite(edited, "a");
     expect(ids(failed)).toEqual(["a", "untouched", "new", "b", "c", "e", "d"]);
-    expect(find(failed, "a")?.note).toBe("Keep this note");
+    expect(find(failed, "a")?.description).toBe("Keep this note");
   });
 
   it("preserves a later explicit reorder of the dragged range", () => {

@@ -26,7 +26,7 @@ On the board, each workflow state is a column. Drag a card to another column to 
 
 ## Create an item
 
-Press the **+** next to a group or column name to create an item in that group. With **None** grouping, use the **New backlog item** row at the end of the list. Give it a title, then optionally a priority, a workflow state, a project and task, a note and estimates. See [Backlog items](/backlog/items).
+Press the **+** next to a group or column name to create an item in that group. With **None** grouping, use the **New backlog item** row at the end of the list. Give it a title, then optionally a priority, a workflow state, a project and task, a description and estimates. See [Backlog items](/backlog/items).
 
 ## Filter the backlog
 
@@ -36,7 +36,7 @@ Press **Filter** and pick a property, then a value. You can filter by state, pri
 
 ## Peek at an item
 
-Click a row, or focus it and press <kbd>Space</kbd>, to open the peek: the item's estimates, properties, note and subitems in a side panel, next to the list. Press <kbd>Space</kbd> again to close it. Double-click a row, or press **Open page** in the peek, to go to the item's page.
+Click a row, or focus it and press <kbd>Space</kbd>, to open the peek: the item's estimates, properties, description and subitems in a side panel, next to the list. Press <kbd>Space</kbd> again to close it. Double-click a row, or press **Open page** in the peek, to go to the item's page.
 
 <Shot name="backlog-peek" alt="The peek next to the backlog list" />
 

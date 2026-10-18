@@ -425,7 +425,8 @@ export interface LocalWorkItem {
   projectId?: string;
   taskId?: string;
   inheritsParentMapping?: boolean;
-  note?: string;
+  /** Markdown that explains the item. A synced item's comes from its source tool. */
+  description?: string;
   originalEstimateHours?: number;
   remainingEstimateHours?: number;
   remainingEstimateOverrunHours?: number;
@@ -567,11 +568,13 @@ export type PersistedLocalWorkItem = Omit<
   /** Workflow states were called backlog statuses before. */
   backlogStatusId?: string;
   importedBacklogStatusId?: string;
+  /** The description was called the note before. */
+  note?: string;
 };
 
 export interface LocalWorkItemDraft {
   title: string;
-  note?: string;
+  description?: string;
   projectId?: string;
   taskId?: string;
   inheritsParentMapping?: boolean;

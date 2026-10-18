@@ -133,7 +133,7 @@ Then(
   },
 );
 Then(
-  "the confirmed title and note remain saved after undoing the close",
+  "the confirmed title and description remain saved after undoing the close",
   async ({ page }) => {
     const readParent = () =>
       page.evaluate(() =>
@@ -145,14 +145,14 @@ Then(
       );
     expect(await readParent()).toMatchObject({
       title: "Unsaved parent title",
-      note: "Unsaved parent note",
+      description: "Unsaved parent description",
       status: "archived",
       workflowStateId: "done",
     });
     await page.getByRole("button", { name: "Undo", exact: true }).click();
     await expect.poll(readParent).toMatchObject({
       title: "Unsaved parent title",
-      note: "Unsaved parent note",
+      description: "Unsaved parent description",
       status: "active",
       workflowStateId: "doing",
     });
@@ -161,7 +161,7 @@ Then(
 When("I cancel the parent editor close prompt", async ({ page }) => {
   await page.keyboard.press("Escape");
 });
-When("I change the parent draft title and note", async ({ page }) => {
+When("I change the parent draft title and description", async ({ page }) => {
   const editor = page.getByRole("complementary", {
     name: "Backlog item editor",
   });
@@ -169,8 +169,8 @@ When("I change the parent draft title and note", async ({ page }) => {
     .getByPlaceholder("Item name", { exact: true })
     .fill("Unsaved parent title");
   await editor
-    .getByRole("textbox", { name: "Note", exact: true })
-    .fill("Unsaved parent note");
+    .getByRole("textbox", { name: "Description", exact: true })
+    .fill("Unsaved parent description");
 });
 When(
   "I interrupt the mixed-field close by {string}",
@@ -204,8 +204,8 @@ Then(
       editor.getByPlaceholder("Item name", { exact: true }),
     ).toHaveValue("Unsaved parent title");
     await expect(
-      editor.getByRole("textbox", { name: "Note", exact: true }),
-    ).toHaveValue("Unsaved parent note");
+      editor.getByRole("textbox", { name: "Description", exact: true }),
+    ).toHaveValue("Unsaved parent description");
     await expect(
       editor.getByRole("combobox", { name: "Workflow state", exact: true }),
     ).toHaveValue("Done");
@@ -219,7 +219,7 @@ Then(
       status: "active",
       workflowStateId: "doing",
     });
-    expect(parent.note).toBeUndefined();
+    expect(parent.description).toBeUndefined();
   },
 );
 When("I cancel the parent editor draft", async ({ page }) => {
@@ -228,7 +228,7 @@ When("I cancel the parent editor draft", async ({ page }) => {
     .getByRole("button", { name: "Cancel", exact: true })
     .click();
 });
-Then("the parent title and note remain unchanged", async ({ page }) => {
+Then("the parent title and description remain unchanged", async ({ page }) => {
   await expect(
     page.getByRole("complementary", { name: "Backlog item editor" }),
   ).toHaveCount(0);
@@ -242,7 +242,7 @@ Then("the parent title and note remain unchanged", async ({ page }) => {
     status: "active",
     workflowStateId: "doing",
   });
-  expect(parent.note).toBeUndefined();
+  expect(parent.description).toBeUndefined();
 });
 Then(
   "the parent editor retains its Done draft and the item remains active",

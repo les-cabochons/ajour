@@ -10,7 +10,7 @@ import { isPriorityLevel, type PriorityLevel } from "@/domain/backlog/priority";
  */
 export interface BacklogTaskEditorFields {
   title: string;
-  note: string;
+  description: string;
   priority: string;
   workflowStateId: string;
   parentWorkItemId: string;
@@ -91,7 +91,7 @@ export type BacklogTaskDraftCommitReason = "save" | "switch";
 
 export const EMPTY_BACKLOG_TASK_EDITOR_FIELDS: BacklogTaskEditorFields = {
   title: "",
-  note: "",
+  description: "",
   priority: "",
   workflowStateId: "",
   parentWorkItemId: "",
@@ -142,7 +142,7 @@ export function createBacklogTaskEditorFields(
   const fields = workItem
     ? {
         title: workItem.title,
-        note: workItem.note ?? "",
+        description: workItem.description ?? "",
         priority: formatPriorityInput(workItem.priority),
         workflowStateId: workItem.workflowStateId ?? "",
         parentWorkItemId: workItem.parentWorkItemId ?? "",
@@ -285,7 +285,7 @@ function parseEditorEstimates(fields: BacklogTaskEditorFields) {
 
 /**
  * Builds the patch for a saved item from the fields the user changed. Unchanged fields
- * stay out of the patch, so saving never rewrites a note, title or precise estimate the
+ * stay out of the patch, so saving never rewrites a description, title or precise estimate the
  * user did not touch. Returns `null` when a changed field does not parse.
  */
 export function buildBacklogTaskPatch(
@@ -304,8 +304,8 @@ export function buildBacklogTaskPatch(
     patch.title = title;
   }
 
-  if (fields.note !== saved.note) {
-    patch.note = fields.note.trim() || undefined;
+  if (fields.description !== saved.description) {
+    patch.description = fields.description.trim() || undefined;
   }
 
   if (!options.isSubtask && fields.priority !== saved.priority) {
@@ -364,7 +364,7 @@ export function buildBacklogTaskDraft(
 
   return {
     title: fields.title.trim(),
-    note: fields.note.trim() || undefined,
+    description: fields.description.trim() || undefined,
     parentWorkItemId: fields.parentWorkItemId || undefined,
     priority: options.isSubtask
       ? undefined

@@ -241,7 +241,7 @@ export function getWorkItemForAgent(
   const item = findWorkItemOrRefuse(state, workItemId);
   return {
     ...toAgentWorkItem(state, item, now),
-    ...(item.note ? { note: item.note } : {}),
+    ...(item.description ? { description: item.description } : {}),
     ...(item.sourceUrl ? { sourceUrl: item.sourceUrl } : {}),
     subitems: state.workItems
       .filter((candidate) => candidate.parentWorkItemId === item._id)

@@ -32,7 +32,7 @@ Cover at least:
 - **Done items.** A tracked item that left your query and closed comes back with `stateDone: true`.
 - **Estimates.** Each row of the [estimate table](/developers/backlog-api#estimates): noop, push, pull, conflict, and a failed write.
 - **Priorities.** Each level both ways, and a value that maps to no level.
-- **Limits.** A title over 240 characters, a note over 4,000. Ajour refuses the whole result if one item breaks a limit.
+- **Limits.** A title over 240 characters, a `note` (the item's description) over 4,000. Ajour refuses the whole result if one item breaks a limit.
 - **The manifest.** The official plugins run `scripts/connector-manifest.mjs`, a copy of Ajour's manifest rules, in a test, so a bad `plugin.json` fails CI instead of the install.
 
 ## Run in a development build
