@@ -1,10 +1,13 @@
-import { useRef, useState, type KeyboardEvent } from "react";
+import { useRef, useState } from "react";
 import { RiAddLine as AddIcon } from "@remixicon/react";
 import { Markdown } from "@/components/markdown";
+import {
+  MarkdownEditor,
+  preloadMarkdownEditor,
+} from "@/components/markdown-editor";
 import { SectionHeading } from "@/components/section-heading";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Textarea } from "@/components/ui/textarea";
 import { Figure } from "@/components/ui/value";
 import type {
   LocalWorkItem,
@@ -205,7 +208,7 @@ export function EstimateFigure({
 
 /**
  * The description section. The rendered markdown has a subtle Edit beside its
- * heading that swaps it for the raw markdown in a text area.
+ * heading that swaps it for the Markdown editor.
  */
 export function DescriptionSection({
   item,
@@ -231,6 +234,8 @@ export function DescriptionSection({
             <button
               type="button"
               className="backlog-item-subtle-action"
+              onPointerEnter={preloadMarkdownEditor}
+              onFocus={preloadMarkdownEditor}
               onClick={() => {
                 closer.reset();
                 setEditing(true);
@@ -244,30 +249,15 @@ export function DescriptionSection({
         Description
       </SectionHeading>
       {editing ? (
-        <Textarea
+        <MarkdownEditor
           autoFocus
           aria-label="Description"
           defaultValue={item.description ?? ""}
           placeholder="Markdown supported"
-          rows={Math.max(4, (item.description ?? "").split("\n").length + 1)}
-          className="font-mono text-xs"
-          onBlur={(event) => {
-            const { value } = event.currentTarget;
-            closer.close(() => save(value));
-          }}
-          onKeyDown={(event: KeyboardEvent<HTMLTextAreaElement>) => {
-            if (event.key === "Escape") {
-              event.preventDefault();
-              closer.close();
-            } else if (
-              event.key === "Enter" &&
-              (event.metaKey || event.ctrlKey)
-            ) {
-              event.preventDefault();
-              const { value } = event.currentTarget;
-              closer.close(() => save(value));
-            }
-          }}
+          minLines={4}
+          onBlur={(value) => closer.close(() => save(value))}
+          onSubmit={(value) => closer.close(() => save(value))}
+          onCancel={() => closer.close()}
         />
       ) : item.description ? (
         <Markdown>{item.description}</Markdown>

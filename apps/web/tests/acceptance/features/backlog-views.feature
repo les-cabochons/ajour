@@ -423,6 +423,12 @@ Feature: Backlog list and board views
     Then the Backlog parent keeps the inline edits
     And the item page has no actions menu and no editor panel
 
+  Scenario: Save a description with the keyboard on the item page
+    When I open the Backlog parent page
+    And I write "Saved from the keys" as its description and press Mod+Enter
+    Then the Backlog parent's description is "Saved from the keys"
+    And its description shows "Saved from the keys"
+
   Scenario: Escape cancels an inline edit on the item page
     When I open the Backlog parent page
     And I type in the title, the remaining estimate and the description and press Escape each time
