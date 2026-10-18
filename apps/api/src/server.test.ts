@@ -1854,6 +1854,9 @@ describe("backlog comment routes", () => {
     "export async function setItemCommentReaction(connection, request) {",
     "  return { reactions: request.reacted ? [{ reaction: request.reaction, count: 1, viewerReacted: true }] : [] };",
     "}",
+    "export async function searchItemPeople(connection, request) {",
+    "  return { people: [{ id: 'ana', displayName: 'Ana Silva ' + request.query }] };",
+    "}",
     "export async function postItemComment(connection, request) {",
     "  return { comment: { id: 'c2', author: { id: 'me', displayName: 'Me' }, body: request.body, createdAt: '2026-10-17T10:00:00Z' } };",
     "}",
@@ -2079,6 +2082,34 @@ describe("backlog comment routes", () => {
         body: JSON.stringify({ ...ref, reaction: "heart", reacted: true }),
       }),
     ).resolves.toMatchObject({ status: 404 });
+  });
+
+  it("searches people only for a plugin that declares mentions", async () => {
+    const request = { sourceId: "42", query: "an", limit: 8 };
+    const without = await createServer({ connector: { comments: {} } });
+    await expect(
+      dispatchJsonRequest(without.server, {
+        method: "POST",
+        path: listPath(without.connectionId, "searchItemPeople"),
+        body: JSON.stringify(request),
+      }),
+    ).resolves.toMatchObject({ status: 404 });
+
+    const { server, connectionId, events } = await createServer({
+      connector: { comments: { mentions: true } },
+    });
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: listPath(connectionId, "searchItemPeople"),
+        body: JSON.stringify(request),
+      }),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: { people: [{ id: "ana", displayName: "Ana Silva an" }] },
+    });
+    const logged = events.filter((event) => event.event === "backlog.comments");
+    expect(JSON.stringify(logged)).not.toContain("Ana Silva");
   });
 
   it("keeps the connection's secret out of a failed read", async () => {

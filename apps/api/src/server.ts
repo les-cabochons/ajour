@@ -1659,9 +1659,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             "ok",
             "comments" in result
               ? result.comments.length
-              : "comment" in result
-                ? 1
-                : 0,
+              : "people" in result
+                ? result.people.length
+                : "comment" in result
+                  ? 1
+                  : 0,
           );
           writeJson(response, 200, result);
         } catch (error) {

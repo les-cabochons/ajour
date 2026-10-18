@@ -17,6 +17,7 @@ Export these as named functions from your entry point. Each can be `async`.
 | `editItemComment`        | `capabilities.connector.comments.edit`      | The user edits one of their own comments.                                                                                              |
 | `deleteItemComment`      | `capabilities.connector.comments.delete`    | The Undo toast of a deleted comment closes, or Ajour starts again after quitting during it.                                            |
 | `setItemCommentReaction` | `capabilities.connector.comments.reactions` | The user adds or removes their reaction.                                                                                               |
+| `searchItemPeople`       | `capabilities.connector.comments.mentions`  | The user types `@` and a few letters in a comment.                                                                                     |
 
 ```ts
 export async function validateConnection(
@@ -62,6 +63,11 @@ export async function setItemCommentReaction(
   connection: PluginConnection,
   request: BacklogSetItemCommentReactionRequest,
 ): Promise<BacklogSetItemCommentReactionResult>;
+
+export async function searchItemPeople(
+  connection: PluginConnection,
+  request: BacklogSearchItemPeopleRequest,
+): Promise<BacklogSearchItemPeopleResult>;
 ```
 
 To fail, throw an `Error`. Its message reaches the user as it is. See [Errors](#errors).
@@ -166,6 +172,10 @@ Declare `edit`, `delete` and `reactions` under `capabilities.connector.comments`
 - `editItemComment` saves at once and returns the comment as your tool stored it. If you throw, the editor keeps the text and shows your message.
 - `deleteItemComment` comes once the Undo toast closes, about 8 seconds after the user deletes, or at the next launch if Ajour quit first. Return `{}`. If you throw, the comment comes back and Ajour shows your message.
 - `setItemCommentReaction` adds the user's reaction when `reacted` is true and removes it otherwise. Return the comment's reactions after the change. Ajour shows the change before you answer and puts it back if you throw.
+
+## Mentions
+
+With `mentions: true`, Ajour suggests people when the user types `@` in a comment and calls `searchItemPeople` with what they typed. Return at most `limit` people who can be mentioned on the item, with the ids your mentions use. Ajour inserts `[@Display Name](mention:<id>)` and shows it as a chip; your `postItemComment` and `editItemComment` turn it into your tool's mention, so the person is notified.
 
 ## Errors
 
@@ -393,6 +403,19 @@ export interface BacklogSetItemCommentReactionRequest {
 
 export interface BacklogSetItemCommentReactionResult {
   reactions: NonNullable<BacklogComment["reactions"]>;
+}
+
+export interface BacklogSearchItemPeopleRequest {
+  sourceId: string;
+  /** What the user typed after `@`. */
+  query: string;
+  /** 1 to 20. */
+  limit: number;
+}
+
+export interface BacklogSearchItemPeopleResult {
+  /** In the id space of `mention:<id>`. */
+  people: BacklogPerson[];
 }
 
 export interface BacklogListItemCommentsResult {

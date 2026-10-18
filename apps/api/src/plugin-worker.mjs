@@ -30,6 +30,7 @@ const BACKLOG_COMMENT_METHODS = new Set([
   "editItemComment",
   "deleteItemComment",
   "setItemCommentReaction",
+  "searchItemPeople",
 ]);
 
 // Keep in sync with `teamPluginMethods` in packages/shared/team-sync.ts.

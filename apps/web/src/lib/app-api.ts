@@ -80,6 +80,9 @@ import {
   backlogSetItemCommentReactionResultSchema,
   type BacklogSetItemCommentReactionRequest,
   type BacklogSetItemCommentReactionResult,
+  backlogSearchItemPeopleResultSchema,
+  type BacklogSearchItemPeopleRequest,
+  type BacklogSearchItemPeopleResult,
   teamCreateResultSchema,
   teamSyncResultSchema,
   type TeamCreateResult,
@@ -627,6 +630,19 @@ export async function deleteItemComment(
     commentOperationPath(pluginId, connectionId, "deleteItemComment"),
     { method: "POST", body: JSON.stringify(request) },
     backlogDeleteItemCommentResultSchema,
+  );
+}
+
+/** People the user can mention on the item, for the editor's @ suggestions. */
+export function searchItemPeople(
+  pluginId: string,
+  connectionId: string,
+  request: BacklogSearchItemPeopleRequest,
+): Promise<BacklogSearchItemPeopleResult> {
+  return appApiRequest(
+    commentOperationPath(pluginId, connectionId, "searchItemPeople"),
+    { method: "POST", body: JSON.stringify(request) },
+    backlogSearchItemPeopleResultSchema,
   );
 }
 

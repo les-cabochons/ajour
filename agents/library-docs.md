@@ -23,7 +23,7 @@ Use this file as the local index for important library choices. Check official d
 - zod
 - ExcelJS
 - react-markdown with remark-gfm and remark-breaks
-- CodeMirror 6 (`@codemirror/state`, `view`, `language`, `commands`, `lang-markdown` and `@lezer/highlight`) for Markdown editing
+- CodeMirror 6 (`@codemirror/state`, `view`, `language`, `commands`, `autocomplete`, `lang-markdown` and `@lezer/highlight`) for Markdown editing
 
 ## Web UI Usage
 
