@@ -20,8 +20,8 @@ import type {
 } from "../../../../packages/shared/agent-runs.ts";
 import type {
   AgentTask,
-  ConnectorFieldValues,
-} from "../../../../packages/shared/connectors.ts";
+  PluginFieldValues,
+} from "../../../../packages/shared/plugins.ts";
 import { fillTemplate } from "../../../../packages/shared/agent-task-templates.ts";
 import type { AgentSessions } from "../agent-sessions.ts";
 import type {
@@ -69,7 +69,7 @@ interface RunnerStorage {
   getAgentTaskValues(
     pluginId: string,
     taskId: string,
-  ): Promise<ConnectorFieldValues>;
+  ): Promise<PluginFieldValues>;
   createMcpClient(name: string): Promise<McpClientCreateResponse>;
   revokeMcpClient(clientId: string): Promise<boolean>;
 }

@@ -42,7 +42,7 @@ async function mockMcp(page: Page, initial: Partial<McpMockState> = {}) {
   };
   let bridgeOpened = false;
 
-  await page.route(`${apiUrl}/api/connectors`, (route) =>
+  await page.route(`${apiUrl}/api/plugins`, (route) =>
     route.fulfill({
       json: {
         pluginsEnabled: false,

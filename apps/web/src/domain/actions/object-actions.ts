@@ -312,7 +312,7 @@ function formatDeleteLabel(subitemCount: number) {
  * Pin/Unpin · Settle/Unsettle/Restore · Change source state… · Open in
  * source · Archive · Delete.
  *
- * Open in source is listed only when a connector provided the item's URL.
+ * Open in source is listed only when a plugin provided the item's URL.
  * Archive is listed only for synced items: it archives in Ajour and leaves the
  * source as it is. A manual item archives through Settle.
  */

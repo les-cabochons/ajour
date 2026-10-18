@@ -511,7 +511,7 @@ function importDraft(_id: string): LocalTimesheetImportDraft {
 
 /**
  * A parent backlog item whose two subitems sit apart in the list, two backlog
- * statuses with one connector mapping, a second project task and three import
+ * statuses with one source mapping, a second project task and three import
  * drafts.
  */
 function createBacklogState(): LocalAppState {

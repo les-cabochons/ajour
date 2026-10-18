@@ -47,7 +47,7 @@ describe("code host sync persistence", () => {
   it("deduplicates scheduled and manual sync and preserves settled choices across a reload", async () => {
     const api = await import("./app-api");
     const { localStore } = await import("./local-store");
-    api.cacheConnectorsOverview(overview);
+    api.cachePluginsOverview(overview);
     localStore.syncPullRequests(source, result);
     const id = localStore.snapshot().pullRequests![0]!._id;
     localStore.changePullRequest(id, { type: "settle" });
@@ -98,7 +98,7 @@ describe("code host sync persistence", () => {
   it("does not recreate records after a connection is removed during a sync", async () => {
     const api = await import("./app-api");
     const { localStore } = await import("./local-store");
-    api.cacheConnectorsOverview(overview);
+    api.cachePluginsOverview(overview);
     localStore.syncPullRequests(source, result);
     const post = deferred();
     vi.stubGlobal(
@@ -114,7 +114,7 @@ describe("code host sync persistence", () => {
       ),
     );
     const sync = api.syncCodeHostConnection("github", "work");
-    await api.deleteConnectorConnection("github", "work");
+    await api.deletePluginConnection("github", "work");
     post.resolve(Response.json(result));
     await sync;
     expect(localStore.snapshot().pullRequests).toEqual([]);
@@ -123,7 +123,7 @@ describe("code host sync persistence", () => {
   it("rejects a stale overview after plugin deactivation and keeps the local list", async () => {
     const api = await import("./app-api");
     const { localStore } = await import("./local-store");
-    api.cacheConnectorsOverview(overview);
+    api.cachePluginsOverview(overview);
     localStore.syncPullRequests(source, result);
     const before = localStore.snapshot();
     const get = deferred();
@@ -135,7 +135,7 @@ describe("code host sync persistence", () => {
     vi.stubGlobal("fetch", fetch);
     const sync = api.syncCodeHostConnection("github", "work");
     await vi.waitFor(() => expect(fetch).toHaveBeenCalledTimes(2));
-    api.cacheConnectorsOverview({ ...overview, pluginsEnabled: false });
+    api.cachePluginsOverview({ ...overview, pluginsEnabled: false });
     get.resolve(Response.json(overview));
     await sync;
     expect(localStore.snapshot()).toBe(before);
@@ -156,7 +156,7 @@ describe("code host sync persistence", () => {
 
     const replacementOverview = structuredClone(overview);
     replacementOverview.connectionGroups[0]!.connections[0]!.id = "replacement";
-    api.cacheConnectorsOverview(replacementOverview);
+    api.cachePluginsOverview(replacementOverview);
     const bodies: unknown[] = [];
     vi.stubGlobal(
       "fetch",
@@ -214,7 +214,7 @@ describe("code host sync persistence", () => {
     const before = localStore.snapshot();
     const replacementOverview = structuredClone(overview);
     replacementOverview.connectionGroups[0]!.connections[0]!.id = "replacement";
-    api.cacheConnectorsOverview(replacementOverview);
+    api.cachePluginsOverview(replacementOverview);
     vi.stubGlobal(
       "fetch",
       vi.fn(async (_url: string, init?: RequestInit) =>

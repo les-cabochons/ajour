@@ -58,7 +58,7 @@ Ajour is an operational desktop/web app. Build interfaces for scanning, repeated
 
 - Keep the fastest path for daily time entry visible and reachable.
 - Make destructive actions explicit and reversible where practical.
-- Connector sync and import actions must communicate side effects.
+- Backlog sync and import actions must communicate side effects.
 - Preserve user-entered values during validation errors.
 - Settings save on change or on blur, only when the value changed, with the Undo toast where the UX spec gives one. No per-row Save buttons.
 - Escape cancels every drag and puts the item back. Dropping an item where it started changes nothing. Reorder and cross-day drags get both from `lib/table-drag.ts`.

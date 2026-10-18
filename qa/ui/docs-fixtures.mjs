@@ -39,8 +39,8 @@ function connection(pluginId, id, label, tenantLabel, extra = {}) {
   };
 }
 
-/** The connector overview with Azure DevOps, Jira and GitHub connected. */
-export function connectorsOverview() {
+/** The plugin overview with Azure DevOps, Jira and GitHub connected. */
+export function pluginsOverview() {
   const plugins = [manifests.azure_devops, manifests.jira, manifests.github];
   return {
     pluginsEnabled: true,
@@ -182,7 +182,7 @@ export function stagedImports() {
   return { items, totalCount: items.length, selectedCount: 2 };
 }
 
-/** Source states the connectors reported, for Settings › Workflow. */
+/** Source states the plugins reported, for Settings › Workflow. */
 export function sourceStatuses() {
   const now = Date.now();
   const ado = (label) => ({
@@ -253,8 +253,8 @@ export function desktopBridgeScript() {
     configurePluginCatalog: async (settings) => settings,
     onPluginCatalogUpdated: () => () => {},
     downloadCatalogPlugin: async () => { throw new Error("Not in screenshots"); },
-    installConnectorPlugin: async () => null,
-    uninstallConnectorPlugin: async () => { throw new Error("Not in screenshots"); },
+    installPlugin: async () => null,
+    uninstallPlugin: async () => { throw new Error("Not in screenshots"); },
     checkForUpdates: async (track) => ({ track, currentVersion: "1.4.0", latestVersion: "1.4.0", latestTag: "v1.4.0", releaseName: "Ajour 1.4.0", releaseUrl: "https://github.com/les-cabochons/ajour/releases", publishedAt: new Date().toISOString(), updateAvailable: false, checkedAt: new Date().toISOString() }),
     configureAutomaticUpdates: async () => {},
     openUpdateRelease: async () => {},

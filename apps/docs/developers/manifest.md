@@ -1,6 +1,6 @@
 # Manifest
 
-Every connector and code host plugin has a `plugin.json` file at its root. Ajour reads it when it installs or loads the plugin, and refuses the plugin if it does not match the schema below. Unknown keys are ignored.
+Every backlog and code host plugin has a `plugin.json` file at its root. Ajour reads it when it installs or loads the plugin, and refuses the plugin if it does not match the schema below. Unknown keys are ignored.
 
 For schema plugins, see [Schema API](/developers/schema-api#manifest).
 
@@ -55,7 +55,7 @@ For schema plugins, see [Schema API](/developers/schema-api#manifest).
 | `capabilities`     | object | At least one of `connector`, `codeHost`, `calendar`, `team`, `agentTask` and `projectProperties`. See below.                                                                       |
 | `connectionFields` | array  | 1 to 50 [connection fields](#connection-fields). Optional, and empty by default, for a plugin with only `agentTask`.                                                               |
 
-The `id` is permanent. It names the install folder, and it is the `source` of every item your connector syncs. Changing it orphans the user's connections and items.
+The `id` is permanent. It names the install folder, and it is the `source` of every item your plugin syncs. Changing it orphans the user's connections and items.
 
 ## Capabilities
 
@@ -68,13 +68,15 @@ The `id` is permanent. It names the install folder, and it is the `source` of ev
 
 | Capability          | Means                                                                                                                                                                       |
 | ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `connector`         | The plugin exports `syncConnection`. See [Connector API](/developers/connector-api).                                                                                        |
+| `connector`         | The backlog capability. The plugin exports `syncConnection`. See [Backlog API](/developers/backlog-api).                                                                    |
 | `connector.settle`  | Optional. `true` if the plugin exports `listSettleStates` and `writeSettle`, and can write states and priorities. Without it, Ajour settles items locally and never writes. |
 | `codeHost`          | The plugin exports `syncPullRequests`. See [Code host API](/developers/code-host-api).                                                                                      |
 | `calendar`          | The plugin exports `listCalendarEvents`. Read-only. See [Calendar API](/developers/calendar-api).                                                                           |
 | `team`              | `{ "apiVersion": 1 }`. The plugin exports `createTeam` and `syncTeamProjects`, and keeps a team's shared projects in step. See [Team API](/developers/team-api).            |
 | `agentTask`         | The plugin declares tasks that a coding agent runs from a prompt. No plugin code runs. See [Agent tasks](#agent-tasks).                                                     |
 | `projectProperties` | Text properties the plugin adds to every project. No plugin code runs. See [Project properties](#project-properties).                                                       |
+
+The backlog capability is declared under the `connector` key until plugin API 4.
 
 Ajour only calls the functions your capabilities declare.
 
@@ -198,11 +200,11 @@ Ajour handles four field IDs itself. Declare them so the form shows them, with y
 | `autoSync`                | checkbox | Sync on a timer while Ajour is open. Defaults to `false`.       |
 | `autoSyncIntervalMinutes` | number   | Minutes between automatic syncs, 1 to 1440. Defaults to 15.     |
 
-Ajour removes these from `config` before it calls your plugin. They reach you as properties of the [connection](/developers/connector-api#connection) instead.
+Ajour removes these from `config` before it calls your plugin. They reach you as properties of the [connection](/developers/backlog-api#connection) instead.
 
 ### Imported task icon
 
-A connector can also declare a `taskIconDisplayMode` select field. Ajour reads it to decide which icon an imported item shows:
+A backlog plugin can also declare a `taskIconDisplayMode` select field. Ajour reads it to decide which icon an imported item shows:
 
 | Value      | Icon                                                           |
 | ---------- | -------------------------------------------------------------- |

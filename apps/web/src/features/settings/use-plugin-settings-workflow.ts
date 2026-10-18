@@ -1,7 +1,7 @@
 import { syncTeamConnection } from "@/lib/team-sync";
 import { useEffect, useState, useSyncExternalStore } from "react";
 import * as appApi from "@/lib/app-api";
-import { useRetryWhileConnectorApiMissing } from "@/lib/use-connector-api-retry";
+import { useRetryWhilePluginApiMissing } from "@/lib/use-plugin-api-retry";
 import { createPluginSettingsWorkflow } from "./plugin-settings-workflow";
 
 /** React adapter for the catalog and plugin-detail workflow. */
@@ -19,9 +19,6 @@ export function usePluginSettingsWorkflow() {
     workflow.getSnapshot,
   );
   useEffect(() => workflow.connect(), [workflow]);
-  useRetryWhileConnectorApiMissing(
-    snapshot.connectorApiMissing,
-    workflow.refresh,
-  );
+  useRetryWhilePluginApiMissing(snapshot.pluginApiMissing, workflow.refresh);
   return { ...snapshot, workflow };
 }

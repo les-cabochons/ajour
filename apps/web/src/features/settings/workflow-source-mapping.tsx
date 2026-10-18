@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import { isCapabilityActive, type ConnectorBacklogStatus } from "@ajour/shared";
+import { isCapabilityActive, type BacklogSourceStatus } from "@ajour/shared";
 import {
   RiArrowRightSLine as ChevronRight,
   RiDownloadLine as LoadIcon,
@@ -22,8 +22,8 @@ import {
   type SourceProjectGroup,
 } from "@/features/settings/workflow-source-groups";
 import {
-  getCachedConnectorsOverview,
-  listConnectorSettleStates,
+  getCachedPluginsOverview,
+  listBacklogSettleStates,
 } from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
 
@@ -40,7 +40,7 @@ export function WorkflowSourceMapping({
   onError,
 }: {
   state: LocalAppState;
-  registered: readonly ConnectorBacklogStatus[];
+  registered: readonly BacklogSourceStatus[];
   onError: (message: string | null) => void;
 }) {
   const [loaded, setLoaded] = useState<Record<string, string[]>>({});
@@ -55,7 +55,7 @@ export function WorkflowSourceMapping({
     try {
       const results = await Promise.all(
         project.sampleSourceIds.map((sourceId) =>
-          listConnectorSettleStates(
+          listBacklogSettleStates(
             project.source,
             project.connectionId,
             sourceId,
@@ -89,7 +89,7 @@ export function WorkflowSourceMapping({
   if (groups.length === 0) {
     return (
       <MessagePanel>
-        No source states yet. Run a connector sync first.
+        No source states yet. Run a backlog sync first.
       </MessagePanel>
     );
   }
@@ -136,7 +136,7 @@ export function WorkflowSourceMapping({
 }
 
 function canListStates(source: string) {
-  const group = getCachedConnectorsOverview()?.connectionGroups.find(
+  const group = getCachedPluginsOverview()?.connectionGroups.find(
     (candidate) => candidate.plugin.id === source,
   );
   return Boolean(

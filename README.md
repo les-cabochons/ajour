@@ -1,6 +1,6 @@
 # Ajour - Ajour
 
-Ajour is a local-first time-tracking workspace with a web app, an Electron desktop shell, shared domain logic, and an optional local API for connector-driven imports.
+Ajour is a local-first time-tracking workspace with a web app, an Electron desktop shell, shared domain logic, and an optional local API for plugin-driven imports.
 
 ## What Exists Today
 
@@ -147,21 +147,21 @@ just desktop-make
 
 ### Local API
 
-The optional local API lives in `apps/api` and defaults to `127.0.0.1:8787`. It supports connector configuration, sync, and local import review flows.
+The optional local API lives in `apps/api` and defaults to `127.0.0.1:8787`. It supports plugin configuration, sync, and local import review flows.
 
-### Connector plugins
+### Plugins
 
-Connector implementations live in standalone repositories. They compile to
+Plugin implementations live in standalone repositories. They compile to
 self-contained JavaScript and do not import API, desktop, web, or shared
 application source at runtime.
 
-Each standalone connector repository owns its compilation and watch process.
+Each standalone plugin repository owns its compilation and watch process.
 Run `just install` there, then keep `just dev` running while developing the
-connector. In Ajour, set `AJOUR_DEV_PLUGIN_DIRS` to a platform-delimited
+plugin. In Ajour, set `AJOUR_DEV_PLUGIN_DIRS` to a platform-delimited
 list of development plugin directories, or choose a directory from Settings →
 Debug in the development desktop app. A selected directory must contain
 `plugin.json` and its compiled manifest entrypoint. Ajour loads that output but
-does not compile or watch the external connector. The Debug setting is persisted
+does not compile or watch the external plugin. The Debug setting is persisted
 for future development launches and is ignored by production builds. An explicit
 `AJOUR_DEV_PLUGIN_DIRS` value overrides the saved Debug setting for that
 launch.
@@ -173,15 +173,15 @@ AJOUR_DEV_PLUGIN_DIRS=/absolute/path/to/plugin just desktop-start
 Production desktop installs use one local `.ajour-connector` archive at a time
 through Settings → Plugins. Archive installation is available only through the
 desktop bridge and its native file chooser, not the loopback HTTP API. Official
-connector implementations and their versioned builds are maintained in:
+plugin implementations and their versioned builds are maintained in:
 
 - [`les-cabochons/ajc-azure-devops`](https://github.com/les-cabochons/ajc-azure-devops)
 - [`les-cabochons/ajc-jira`](https://github.com/les-cabochons/ajc-jira)
 
 Each archive contains `plugin.json` and the compiled `dist/` tree. The manifest
-declares the connector version, host API version, entrypoint, icon, and
-connection fields. Production builds do not preinstall connector archives.
-Uninstalling removes the managed archive contents and connector configuration
+declares the plugin version, host API version, entrypoint, icon, and
+connection fields. Production builds do not preinstall plugin archives.
+Uninstalling removes the managed archive contents and plugin configuration
 while retaining backlog items that were already imported.
 
 ## Verification
@@ -199,7 +199,7 @@ just build
 ```text
 apps/web/        React + Vite app for the main time-tracking UI
 apps/desktop/    Electron shell and packaging scripts
-apps/api/        local API for connectors and import flows
+apps/api/        local API for plugins and import flows
 packages/shared/ shared schemas, rules, and domain logic
 packages/example/ copy-me template for a new deep-module package
 docs/            architecture and logging notes
@@ -239,7 +239,7 @@ Generate and run the Gherkin acceptance shell:
 just acceptance-test
 ```
 
-This command runs `bddgen` and then Playwright in Chromium. The Vite server uses `127.0.0.1:4173` in test mode, and the step binding supplies an empty local connector fixture so acceptance does not depend on live services or credentials.
+This command runs `bddgen` and then Playwright in Chromium. The Vite server uses `127.0.0.1:4173` in test mode, and the step binding supplies an empty local plugin fixture so acceptance does not depend on live services or credentials.
 
 QA routines are manual Markdown procedures under `qa/routines/`; testers follow them directly rather than invoking a QA command.
 
@@ -254,7 +254,7 @@ QA routines are manual Markdown procedures under `qa/routines/`; testers follow 
 | `apps/web/vite.config.ts`                                    | Extends Vitest's default exclusions with `.features-gen/` so generated Playwright specifications cannot enter the unit suite.                                |
 | `apps/web/playwright.config.ts`                              | Configures feature/step discovery, generated tests, Chromium, diagnostics, retries, and the isolated web server.                                             |
 | `apps/web/tests/acceptance/features/local-workspace.feature` | Describes the user-visible local daily-workspace smoke behavior in Gherkin.                                                                                  |
-| `apps/web/tests/acceptance/steps/local-workspace.steps.ts`   | Binds the scenario to Playwright using accessible UI roles, clean browser state, and a controlled connector fixture.                                         |
+| `apps/web/tests/acceptance/steps/local-workspace.steps.ts`   | Binds the scenario to Playwright using accessible UI roles, clean browser state, and a controlled plugin fixture.                                            |
 | `qa/routines/local-workspace-smoke.md`                       | Gives a human tester prerequisites, data, observable actions and results, cleanup, evidence, and pass/fail fields.                                           |
 | `docs/testing-shell-plan.md`                                 | Records the non-overlapping layout, runner choices, commands, and verification plan.                                                                         |
 | `agents.md`                                                  | Preserves the repository's operational agent instructions and explains every context file under `agents/`.                                                   |

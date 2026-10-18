@@ -29,8 +29,8 @@ Use this file as the local index for important library choices. Check official d
 - Feature code should import app controls from `apps/web/src/components/ui`, not directly from Base UI, shadcn internals, or other primitive packages.
 - Base UI is wrapped by local files such as `button.tsx`, `checkbox.tsx`, `dialog.tsx`, `dropdown-menu.tsx`, `context-menu.tsx`, `input.tsx`, `popover.tsx`, `select.tsx`, `switch.tsx`, and `tabs.tsx`.
 - App-specific repeated surfaces live in `apps/web/src/components/app-surface.tsx`.
-- The settings connector form renders plugin fields through `apps/web/src/features/settings/connector-settings-ui.tsx`.
-- Settings exposes installed capabilities through `/settings/plugins`; the catalog owns activation and links to `/settings/plugins/$pluginId`, where connector-specific forms and connection actions live.
+- The plugin settings form renders plugin fields through `apps/web/src/features/settings/plugin-settings-ui.tsx`.
+- Settings exposes installed capabilities through `/settings/plugins`; the catalog owns activation and links to `/settings/plugins/$pluginId`, where plugin-specific forms and connection actions live.
 - Use `@remixicon/react` for icons. Keep icon imports in feature modules or local UI modules; do not inline custom SVGs for common actions.
 - Render markdown text, such as backlog item notes, through `Markdown` in `apps/web/src/components/markdown.tsx`. It lazy-loads the parser from `markdown-renderer.tsx`, so do not import `react-markdown` elsewhere.
 - Use `Checkbox` from `apps/web/src/components/ui/checkbox.tsx` for app checkboxes, including indeterminate selection states.
@@ -44,7 +44,7 @@ Use this file as the local index for important library choices. Check official d
 - Manual work-item creation, hierarchy-aware edits, ordering, deletion, and estimate-conflict decisions: `apps/web/src/domain/backlog/work-item-transitions.ts`
 - Backlog item status (settle, unsettle, archive, restore), snooze, the Returned mark and the sidebar's item order: `apps/web/src/domain/backlog/backlog-item-lifecycle.ts`
 - Pull request fact reconciliation, local lifecycle, snooze, Returned, visibility and seven-day closure retention: `apps/web/src/domain/pull-requests/pull-request-lifecycle.ts`
-- Connector work-item identity, local-decision-preserving merge, missing-item archive provenance, done-category archives, and estimate-sync updates: `apps/web/src/domain/backlog/work-item-connector.ts`
+- Synced work-item identity, local-decision-preserving merge, missing-item archive provenance, done-category archives, and estimate-sync updates: `apps/web/src/domain/backlog/work-item-sync.ts`
 - Clock and decimal-hours formatting and hours-input parsing: `apps/web/src/domain/time/duration.ts`
 - Timesheet entry creation, editing, deletion and tombstones, ordering, marking as committed, and linked estimate adjustments: `apps/web/src/domain/time/timesheet-entry.ts`
 - Committed copies, change detection (added, updated, deleted), the week's change list and the names an external timesheet matches: `apps/web/src/domain/time/timesheet-commit.ts`
@@ -112,9 +112,9 @@ The backlog editor module is feature-local because its vocabulary and commands b
 ## API
 
 - Local API lives in `apps/api`
-- Connector package validation and installation: `apps/api/src/plugin-package.ts`
-- Connector discovery, request/reply validation, and package mutation coordination: `apps/api/src/plugin-host.ts`
-- Shared ephemeral worker admission, cancellation, timeout, termination, and shutdown drain: `apps/api/src/plugin-worker-lifetime.ts`. Each connector/data-shape manager owns a separate four-operation quota and its own worker script.
+- Plugin package validation and installation: `apps/api/src/plugin-package.ts`
+- Plugin discovery, request/reply validation, and package mutation coordination: `apps/api/src/plugin-host.ts`
+- Shared ephemeral worker admission, cancellation, timeout, termination, and shutdown drain: `apps/api/src/plugin-worker-lifetime.ts`. Each plugin/data-shape manager owns a separate four-operation quota and its own worker script.
 - Worker entrypoint bridge: `apps/api/src/plugin-worker.mjs`
 - Project data-shape manifest and dataset contracts: `packages/shared/project-data-shapes.ts`
 - Project data-shape discovery and worker orchestration: `apps/api/src/project-data-shape-plugin.ts` and `apps/api/src/project-data-shape-host.ts`
@@ -122,26 +122,28 @@ The backlog editor module is feature-local because its vocabulary and commands b
 - `@modelcontextprotocol/sdk`: the MCP server over Streamable HTTP in stateless mode, at `/mcp/ajour`. Transport, authentication and the tool table: `apps/api/src/mcp-server.ts`. Client tokens: `apps/api/src/mcp-clients.ts`. Sessions, questions and activity: `apps/api/src/agent-sessions.ts`. Tool schemas: `packages/shared/agent-tools.ts`. The renderer side: `apps/web/src/lib/mcp-bridge.ts` holds the bridge connection and `features/agents/agent-tool-runner.ts` runs the tools.
 - `@playwright/mcp`: the browser tools the agent runner gives a coding agent. Pinned to an exact version, never fetched with `npx @latest`. Owned by `apps/api/src/agent-runner/playwright-mcp.ts`.
 
-## Connector Plugins
+## Plugins
 
-- Connector packages live in the standalone `les-cabochons/ajc-azure-devops`
+- Backlog plugin packages live in the standalone `les-cabochons/ajc-azure-devops`
   and `les-cabochons/ajc-jira` repositories, and the GitHub code host in
   `les-cabochons/ajc-github`.
-- Each connector compiles to local JavaScript modules and packages
+- Each plugin compiles to local JavaScript modules and packages
   `plugin.json` plus `dist/` into one `.ajour-connector` archive.
 - Development builds load configured plugin directories; production builds
   only install packaged archives into the managed user-data plugin directory.
 - Desktop archive installation crosses the restricted preload/IPC bridge and
   calls the API runtime directly; it is not an HTTP endpoint.
-- `plugin.json` (plugin API version 2) declares its capabilities:
+- `plugin.json` (plugin API version 3) declares its capabilities:
   `"capabilities": { "connector": {}, "codeHost": {} }`, with at least one.
+  The backlog capability is declared under the `connector` key until plugin
+  API 4.
   Connections belong to the plugin and serve every capability it declares.
-- Every plugin exports `validateConnection(config)`. A connector also exports
-  `syncConnection(connection, workItems)`. A connector that declares
+- Every plugin exports `validateConnection(config)`. A backlog plugin also exports
+  `syncConnection(connection, workItems)`. A backlog plugin that declares
   `"connector": { "settle": true }` also exports
   `listSettleStates(connection, { sourceId })` and
   `writeSettle(connection, { sourceId, state?, priority? })`. The contract is
-  in `packages/shared/connectors.ts`. See ADR 0001.
+  in `packages/shared/plugins.ts`. See ADR 0001.
 - A code host exports one function per entry of `codeHostOperations` in
   `packages/shared/code-host.ts`, each called as
   `operation(connection, request)`. The API exposes them at
@@ -151,7 +153,7 @@ The backlog editor module is feature-local because its vocabulary and commands b
 - A team plugin declares `"team": { "apiVersion": 1 }` and keeps a team's
   shared projects in step. Its payloads, page bounds and the team-owned fields
   are in `packages/shared/team-sync.ts`; the `createTeam` result is in
-  `packages/shared/connectors.ts`. It exports `createTeam(config, request)` and
+  `packages/shared/plugins.ts`. It exports `createTeam(config, request)` and
   `syncTeamProjects(connection, request)`; the API exposes them at
   `POST /api/teams/:pluginId/create` and
   `POST /api/teams/:pluginId/connections/:connectionId/sync`. The sync rules
@@ -168,7 +170,7 @@ The backlog editor module is feature-local because its vocabulary and commands b
 ## Shared
 
 - Shared domain package: `@ajour/shared`
-- Contains validation schemas, connector contracts, timeline aggregation, activity normalization, rules, and time utilities.
+- Contains validation schemas, plugin contracts, timeline aggregation, activity normalization, rules, and time utilities.
 
 ## Documentation Lookup Rules
 

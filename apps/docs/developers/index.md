@@ -16,11 +16,11 @@ A plugin has one or more capabilities:
 
 | Capability    | What it does                                                                     | Example                                                      | API version |
 | ------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------ | ----------- |
-| **Connector** | Syncs backlog items and estimates. Optionally writes states and priorities back. | [Azure DevOps](/plugins/azure-devops), [Jira](/plugins/jira) | 3           |
+| **Backlog**   | Syncs backlog items and estimates. Optionally writes states and priorities back. | [Azure DevOps](/plugins/azure-devops), [Jira](/plugins/jira) | 3           |
 | **Code host** | Provides the user's pull requests as facts. Ajour decides which need the user.   | [GitHub](/plugins/github)                                    | 3           |
 | **Schema**    | Maps projects and tasks to and from a file layout.                               | [Workday](/plugins/workday)                                  | 1           |
 
-One package can be a connector and a code host at once. A schema is a separate kind of package.
+One package can be a backlog plugin and a code host at once. A schema is a separate kind of package.
 
 ## How it runs
 
@@ -62,14 +62,14 @@ Plugins are not sandboxed. A plugin can reach the user's files and network like 
 
 ## API versions
 
-Ajour checks a plugin's `apiVersion` exactly. A connector or code host for API `3` works with Ajour versions that use API `3`, and with no other. When Ajour changes the API, it shows older plugins as unavailable until they are updated, and keeps their connections and data. Plan to release a new version of your plugin when the API version changes.
+Ajour checks a plugin's `apiVersion` exactly. A backlog plugin or code host for API `3` works with Ajour versions that use API `3`, and with no other. When Ajour changes the API, it shows older plugins as unavailable until they are updated, and keeps their connections and data. Plan to release a new version of your plugin when the API version changes.
 
 ## Start here
 
 <DocLinks :items="[
-  { icon: 'terminal', title: 'Build a connector', text: 'Write a GitHub Issues connector, run it in Ajour, and package it.', link: '/developers/build-a-connector' },
+  { icon: 'terminal', title: 'Build a backlog plugin', text: 'Write a GitHub Issues backlog plugin, run it in Ajour, and package it.', link: '/developers/build-a-backlog-plugin' },
   { icon: 'list', title: 'Manifest', text: 'Every field of plugin.json.', link: '/developers/manifest' },
-  { icon: 'code', title: 'Connector API', text: 'Functions, types and sync rules for connectors.', link: '/developers/connector-api' },
+  { icon: 'code', title: 'Backlog API', text: 'Functions, types and sync rules for backlog plugins.', link: '/developers/backlog-api' },
   { icon: 'pullRequest', title: 'Code host API', text: 'Pull request facts for code hosts.', link: '/developers/code-host-api' },
   { icon: 'calendar', title: 'Calendar API', text: 'Calendar events for time suggestions.', link: '/developers/calendar-api' },
   { icon: 'excel', title: 'Schema API', text: 'Map projects and tasks to a file layout.', link: '/developers/schema-api' },
@@ -78,4 +78,4 @@ Ajour checks a plugin's `apiVersion` exactly. A connector or code host for API `
   { icon: 'upload', title: 'Publish a plugin', text: 'Package, release and list your plugin in the catalog.', link: '/developers/publish' },
 ]" />
 
-The best examples are the official plugins. [ajc-jira](https://github.com/les-cabochons/ajc-jira) is the smallest connector, [ajc-azure-devops](https://github.com/les-cabochons/ajc-azure-devops) shows configurable priorities, and [ajc-github](https://github.com/les-cabochons/ajc-github) is a code host.
+The best examples are the official plugins. [ajc-jira](https://github.com/les-cabochons/ajc-jira) is the smallest backlog plugin, [ajc-azure-devops](https://github.com/les-cabochons/ajc-azure-devops) shows configurable priorities, and [ajc-github](https://github.com/les-cabochons/ajc-github) is a code host.

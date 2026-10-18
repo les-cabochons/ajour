@@ -1,5 +1,5 @@
 import { useMemo, useState } from "react";
-import type { ConnectorFieldValues } from "@ajour/shared";
+import type { PluginFieldValues } from "@ajour/shared";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
@@ -47,9 +47,9 @@ export function TeamCreateField({
   onCreated,
 }: {
   pluginId: string;
-  values: ConnectorFieldValues;
+  values: PluginFieldValues;
   disabled: boolean;
-  onCreated: (values: ConnectorFieldValues) => void;
+  onCreated: (values: PluginFieldValues) => void;
 }) {
   const [name, setName] = useState("");
   const [creating, setCreating] = useState(false);

@@ -1,17 +1,17 @@
 import {
   isCapabilitySwitchedOn,
-  pluginHasConnector,
+  pluginHasBacklog,
   syncsPullRequestsAutomatically,
-  type ConnectorField,
-  type ConnectorFieldValue,
-  type ConnectorFieldValues,
-  type ConnectorPluginManifest,
+  type PluginField,
+  type PluginFieldValue,
+  type PluginFieldValues,
+  type PluginManifest,
   type SwitchableCapability,
 } from "@ajour/shared";
 
 export const SAVED_SECRET_MASK = "••••••••••••";
 
-function buildDefaultValue(field: ConnectorField): ConnectorFieldValue {
+function buildDefaultValue(field: PluginField): PluginFieldValue {
   if (field.defaultValue !== undefined) {
     return field.defaultValue;
   }
@@ -26,11 +26,11 @@ function buildDefaultValue(field: ConnectorField): ConnectorFieldValue {
   }
 }
 
-export function buildConnectorFormValues(
-  plugin: ConnectorPluginManifest,
-  editableValues?: ConnectorFieldValues,
-): ConnectorFieldValues {
-  const values: ConnectorFieldValues = {};
+export function buildPluginFormValues(
+  plugin: PluginManifest,
+  editableValues?: PluginFieldValues,
+): PluginFieldValues {
+  const values: PluginFieldValues = {};
   const hasEditableValues = editableValues !== undefined;
 
   for (const field of plugin.connectionFields) {
@@ -52,10 +52,10 @@ export function buildConnectorFormValues(
  * backlog items with auto sync, pull requests with their own automatic sync,
  * or a team, which always syncs on it.
  */
-export function isConnectorFieldShown(
-  plugin: ConnectorPluginManifest,
-  field: ConnectorField,
-  values: ConnectorFieldValues,
+export function isPluginFieldShown(
+  plugin: PluginManifest,
+  field: PluginField,
+  values: PluginFieldValues,
   inactiveCapabilities: readonly SwitchableCapability[] = [],
 ) {
   const active = (capability: SwitchableCapability) =>
@@ -65,7 +65,7 @@ export function isConnectorFieldShown(
   }
   if (field.id === "autoSyncIntervalMinutes") {
     const workItems =
-      (!pluginHasConnector(plugin) || active("connector")) &&
+      (!pluginHasBacklog(plugin) || active("connector")) &&
       values.autoSync === true;
     const pullRequests =
       active("codeHost") &&
@@ -80,13 +80,13 @@ export function isConnectorFieldShown(
   return true;
 }
 
-function isFieldEmpty(value: ConnectorFieldValue | undefined) {
+function isFieldEmpty(value: PluginFieldValue | undefined) {
   return value === undefined || value === "" || value === null;
 }
 
-export function canSubmitConnectorForm(
-  plugin: ConnectorPluginManifest | undefined,
-  values: ConnectorFieldValues,
+export function canSubmitPluginForm(
+  plugin: PluginManifest | undefined,
+  values: PluginFieldValues,
   options?: {
     allowSavedSecrets?: boolean;
     inactiveCapabilities?: readonly SwitchableCapability[];
@@ -99,12 +99,7 @@ export function canSubmitConnectorForm(
   return plugin.connectionFields.every((field) => {
     if (
       !field.required ||
-      !isConnectorFieldShown(
-        plugin,
-        field,
-        values,
-        options?.inactiveCapabilities,
-      )
+      !isPluginFieldShown(plugin, field, values, options?.inactiveCapabilities)
     ) {
       return true;
     }
@@ -121,12 +116,12 @@ export function canSubmitConnectorForm(
   });
 }
 
-export function normalizeConnectorFormValuesForSave(
-  plugin: ConnectorPluginManifest,
-  values: ConnectorFieldValues,
+export function normalizePluginFormValuesForSave(
+  plugin: PluginManifest,
+  values: PluginFieldValues,
   options?: { allowSavedSecrets?: boolean },
-): ConnectorFieldValues {
-  const normalizedValues: ConnectorFieldValues = { ...values };
+): PluginFieldValues {
+  const normalizedValues: PluginFieldValues = { ...values };
 
   for (const field of plugin.connectionFields) {
     if (
@@ -141,10 +136,10 @@ export function normalizeConnectorFormValuesForSave(
   return normalizedValues;
 }
 
-export function areConnectorFormValuesEqual(
-  plugin: ConnectorPluginManifest,
-  left: ConnectorFieldValues,
-  right: ConnectorFieldValues,
+export function arePluginFormValuesEqual(
+  plugin: PluginManifest,
+  left: PluginFieldValues,
+  right: PluginFieldValues,
 ) {
   return plugin.connectionFields.every(
     (field) => left[field.id] === right[field.id],

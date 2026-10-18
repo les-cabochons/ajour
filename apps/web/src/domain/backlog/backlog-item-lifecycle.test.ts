@@ -434,12 +434,12 @@ describe("settling with a change to the source", () => {
   });
 
   it.each([
-    { connectorDone: false, mappedState: "done", expectedStatus: "archived" },
-    { connectorDone: true, mappedState: "review", expectedStatus: "settled" },
-    { connectorDone: true, mappedState: undefined, expectedStatus: "settled" },
+    { sourceDone: false, mappedState: "done", expectedStatus: "archived" },
+    { sourceDone: true, mappedState: "review", expectedStatus: "settled" },
+    { sourceDone: true, mappedState: undefined, expectedStatus: "settled" },
   ])(
-    "uses mapping $mappedState rather than connector Done $connectorDone for Settle",
-    ({ connectorDone, mappedState, expectedStatus }) => {
+    "uses mapping $mappedState rather than source Done $connectorDone for Settle",
+    ({ sourceDone, mappedState, expectedStatus }) => {
       const before = createState({
         workflowStates: [
           { _id: "doing", name: "Doing", color: "#000000", createdAt: 1 },
@@ -474,7 +474,7 @@ describe("settling with a change to the source", () => {
         before,
         "a",
         factories,
-        { state: { name: "Resolved", done: connectorDone } },
+        { state: { name: "Resolved", done: sourceDone } },
         { includeSubitems: true },
       );
       expect(find(next, "a")).toMatchObject({

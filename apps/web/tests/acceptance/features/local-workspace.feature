@@ -467,17 +467,17 @@ Feature: Open the local time workspace
     When I save one hour to the selected project and task
     Then the time entry uses project "aaa xyz" and task "222 000"
 
-  Scenario: Install a packaged connector from local files
+  Scenario: Install a packaged plugin from local files
     Given I have no saved Ajour workspace
-    When I install a packaged connector from settings
-    Then the connector plugin is reported as installed
-    And I can open the connector plugin configuration
+    When I install a packaged plugin from settings
+    Then the plugin is reported as installed
+    And I can open the plugin configuration
 
   Scenario: Deactivate a plugin without losing its configuration page
     Given I have no saved Ajour workspace
-    When I install a packaged connector from settings
-    And I deactivate the connector plugin with the keyboard
-    Then the inactive connector plugin remains configurable
+    When I install a packaged plugin from settings
+    And I deactivate the plugin with the keyboard
+    Then the inactive plugin remains configurable
 
   Scenario: Explain an empty plugin catalog
     Given I have no saved Ajour workspace
@@ -485,12 +485,12 @@ Feature: Open the local time workspace
     Then the empty plugin catalog is explained
     And Outlook Calendar is not offered
 
-  Scenario: Uninstall a packaged connector while preserving imported work
+  Scenario: Uninstall a packaged plugin while preserving imported work
     Given I have no saved Ajour workspace
-    When I install a packaged connector from settings
-    And I open the connector plugin configuration
-    And I uninstall the connector plugin
-    Then the connector plugin is reported as uninstalled
+    When I install a packaged plugin from settings
+    And I open the plugin configuration
+    And I uninstall the plugin
+    Then the plugin is reported as uninstalled
 
   Scenario: Configure a development plugin directory from Debug settings
     Given I have no saved Ajour workspace

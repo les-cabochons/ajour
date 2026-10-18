@@ -30,7 +30,7 @@ Cover at least:
 
 - **Mapping.** One real API response per item type, turned into the item you expect.
 - **Done items.** A tracked item that left your query and closed comes back with `stateDone: true`.
-- **Estimates.** Each row of the [estimate table](/developers/connector-api#estimates): noop, push, pull, conflict, and a failed write.
+- **Estimates.** Each row of the [estimate table](/developers/backlog-api#estimates): noop, push, pull, conflict, and a failed write.
 - **Priorities.** Each level both ways, and a value that maps to no level.
 - **Limits.** A title over 240 characters, a note over 4,000. Ajour refuses the whole result if one item breaks a limit.
 - **The manifest.** The official plugins run `scripts/connector-manifest.mjs`, a copy of Ajour's manifest rules, in a test, so a bad `plugin.json` fails CI instead of the install.
@@ -52,7 +52,7 @@ Separate several folders with `:` on macOS, or `;` on Windows. Instead of the va
 - A development plugin replaces an installed plugin with the same `id`.
 - Production builds ignore development folders.
 
-If your plugin does not show up, check the terminal that runs `just desktop-start`. Ajour logs `Skipping invalid development connector plugin "<folder>"` with the reason, such as a wrong `apiVersion`.
+If your plugin does not show up, check the terminal that runs `just desktop-start`. Ajour logs `Skipping invalid development plugin "<folder>"` with the reason, such as a wrong `apiVersion`.
 
 ## Read errors
 

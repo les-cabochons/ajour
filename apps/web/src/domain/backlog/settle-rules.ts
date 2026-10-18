@@ -17,7 +17,7 @@ export interface SettleRuleSourceProject {
   connectionId: string;
   connectionLabel: string;
   sourceProjectName: string;
-  /** An item of the project, to ask its connector which states exist. */
+  /** An item of the project, to ask its plugin which states exist. */
   sampleSourceId: string;
 }
 
@@ -107,7 +107,7 @@ export function listSettleRuleSourceProjects(
       workItem.sourceProjectName,
     ].join("\n");
     const existing = projects.get(key);
-    // Prefer an active item: its connector is the likeliest to list states.
+    // Prefer an active item: its plugin is the likeliest to list states.
     if (!existing || workItem.status === "active") {
       projects.set(key, {
         source: workItem.source,
@@ -149,7 +149,7 @@ export function normalizeSettleRules(value: unknown): LocalSettleRule[] {
       typeof rule.state.done === "boolean"
         ? { name: rule.state.name, done: rule.state.done }
         : undefined;
-    // Rules held raw source values before connector plugins sent levels. A
+    // Rules held raw source values before plugins sent levels. A
     // rule that only set such a value goes back to Ask, so it never settles
     // without the write the user chose.
     const priority = isPriorityLevel(rule.priority) ? rule.priority : undefined;

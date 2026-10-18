@@ -5,7 +5,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
-import { emptyConnectorsOverview, seedScript } from "./seed.mjs";
+import { emptyPluginsOverview, seedScript } from "./seed.mjs";
 import { BASE_URL, ensureServer } from "./server.mjs";
 
 const OUT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "out");
@@ -24,12 +24,12 @@ async function session(
     colorScheme,
     deviceScaleFactor: 1,
   });
-  await context.route("**/api/connectors", (route) =>
+  await context.route("**/api/plugins", (route) =>
     route.fulfill({
       status: 200,
       contentType: "application/json",
       headers: { "access-control-allow-origin": "*" },
-      body: JSON.stringify(emptyConnectorsOverview),
+      body: JSON.stringify(emptyPluginsOverview),
     }),
   );
   await context.addInitScript(seedScript(seed));

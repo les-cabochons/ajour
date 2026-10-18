@@ -1,11 +1,11 @@
 import { useEffect, useState } from "react";
 import { Link } from "@tanstack/react-router";
-import type { AgentTask, ConnectorFieldValues } from "@ajour/shared";
+import type { AgentTask, PluginFieldValues } from "@ajour/shared";
 import type { AgentTaskStatus } from "@ajour/shared/agent-runs";
 import { AppPanel, SettingRow } from "@/components/app-surface";
 import { Button } from "@/components/ui/button";
 import { FieldGroup } from "@/components/ui/field";
-import { ConnectorFieldInput } from "@/features/settings/connector-settings-ui";
+import { PluginFieldInput } from "@/features/settings/plugin-settings-ui";
 import { saveAgentTaskSettings } from "@/lib/app-api";
 import {
   refreshAgentRunner,
@@ -84,9 +84,9 @@ function TaskSettings({
   onSave,
 }: {
   task: AgentTaskStatus;
-  onSave: (values: ConnectorFieldValues) => Promise<void>;
+  onSave: (values: PluginFieldValues) => Promise<void>;
 }) {
-  const [values, setValues] = useState<ConnectorFieldValues>(task.values);
+  const [values, setValues] = useState<PluginFieldValues>(task.values);
   return (
     <AppPanel className="pb-4">
       <div>
@@ -116,7 +116,7 @@ function TaskSettings({
         >
           <FieldGroup className="desktop:grid desktop:grid-cols-2 desktop:gap-x-6 desktop:gap-y-5">
             {task.settings.map((field) => (
-              <ConnectorFieldInput
+              <PluginFieldInput
                 key={field.id}
                 field={field}
                 value={values[field.id]}

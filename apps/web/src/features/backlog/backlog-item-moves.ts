@@ -17,7 +17,7 @@ import {
 import { requestSourceStateChoice } from "@/features/backlog/source-state-dialog";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import { localStore } from "@/lib/local-store";
-import { listConnectorSettleStates } from "@/lib/app-api";
+import { listBacklogSettleStates } from "@/lib/app-api";
 
 function readUnchangedItem(expected: LocalWorkItem) {
   const current = localStore
@@ -45,12 +45,12 @@ function readUnchangedItem(expected: LocalWorkItem) {
     : undefined;
 }
 
-/** The connector couldn't list an item's source states. */
+/** The plugin couldn't list an item's source states. */
 export class SourceStatesLoadError extends Error {}
 
 async function loadSourceStates(workItem: LocalWorkItem): Promise<string[]> {
   try {
-    const result = await listConnectorSettleStates(
+    const result = await listBacklogSettleStates(
       workItem.source,
       workItem.sourceConnectionId!,
       workItem.sourceId!,
@@ -230,7 +230,7 @@ export type BacklogMoveResult =
  * with its open subitems when `choices` says so, and leaving one reopens it.
  * Synced items get a pending write of their new source state, as their
  * source project's write rule says; subitems take the rule's first state.
- * Throws SourceStatesLoadError when the connector can't list the states.
+ * Throws SourceStatesLoadError when the plugin can't list the states.
  */
 export async function moveBacklogItem(
   workItem: LocalWorkItem,

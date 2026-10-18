@@ -2,10 +2,10 @@ import { createRequire } from "node:module";
 import { describe, expect, it, vi } from "vitest";
 
 const require = createRequire(import.meta.url);
-const { MAX_CONNECTOR_PLUGIN_ARCHIVE_BYTES, selectConnectorPluginArchive } =
-  require("./electron/connector-install.cjs") as {
-    MAX_CONNECTOR_PLUGIN_ARCHIVE_BYTES: number;
-    selectConnectorPluginArchive: (
+const { MAX_PLUGIN_ARCHIVE_BYTES, selectPluginArchive } =
+  require("./electron/plugin-install.cjs") as {
+    MAX_PLUGIN_ARCHIVE_BYTES: number;
+    selectPluginArchive: (
       dialog: {
         showOpenDialog: ReturnType<typeof vi.fn>;
       },
@@ -19,7 +19,7 @@ const { MAX_CONNECTOR_PLUGIN_ARCHIVE_BYTES, selectConnectorPluginArchive } =
     } | null>;
   };
 
-describe("desktop connector file selection", () => {
+describe("desktop plugin file selection", () => {
   it("returns no archive when the native file chooser is cancelled", async () => {
     const dialog = {
       showOpenDialog: vi.fn().mockResolvedValue({
@@ -28,10 +28,10 @@ describe("desktop connector file selection", () => {
       }),
     };
 
-    await expect(selectConnectorPluginArchive(dialog, {})).resolves.toBeNull();
+    await expect(selectPluginArchive(dialog, {})).resolves.toBeNull();
   });
 
-  it("reads the single connector archive selected by the user", async () => {
+  it("reads the single plugin archive selected by the user", async () => {
     const parentWindow = {};
     const archiveBytes = Buffer.from("connector-archive");
     const dialog = {
@@ -59,7 +59,7 @@ describe("desktop connector file selection", () => {
     const open = vi.fn().mockResolvedValue(archive);
 
     await expect(
-      selectConnectorPluginArchive(dialog, parentWindow, { open }),
+      selectPluginArchive(dialog, parentWindow, { open }),
     ).resolves.toEqual({
       archiveBytes,
       archiveFilename: "example.ajour-connector",
@@ -80,16 +80,16 @@ describe("desktop connector file selection", () => {
     const archive = {
       stat: vi.fn().mockResolvedValue({
         isFile: () => true,
-        size: MAX_CONNECTOR_PLUGIN_ARCHIVE_BYTES + 1,
+        size: MAX_PLUGIN_ARCHIVE_BYTES + 1,
       }),
       read: vi.fn(),
       close: vi.fn().mockResolvedValue(undefined),
     };
     const open = vi.fn().mockResolvedValue(archive);
 
-    await expect(
-      selectConnectorPluginArchive(dialog, {}, { open }),
-    ).rejects.toThrow("Connector plugin archives must be between 1 byte");
+    await expect(selectPluginArchive(dialog, {}, { open })).rejects.toThrow(
+      "Plugin archives must be between 1 byte",
+    );
     expect(archive.read).not.toHaveBeenCalled();
     expect(archive.close).toHaveBeenCalledOnce();
   });

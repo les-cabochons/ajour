@@ -43,7 +43,7 @@ import {
 } from "@/features/projects/project-team-ui";
 import { localStore } from "@/lib/local-store";
 import { listProjectPropertyPlugins } from "@/lib/plugin-project-properties";
-import { subscribeConnectorsOverview } from "@/lib/app-api";
+import { subscribePluginsOverview } from "@/lib/app-api";
 import {
   listTeamConnections,
   teamConnectionsOf,
@@ -337,7 +337,7 @@ export function ProjectPropertiesCard({
       .then((next) => active && setTeams(next))
       .catch(() => undefined);
     // A team connection removed, added or turned off elsewhere shows here.
-    const unsubscribe = subscribeConnectorsOverview((overview) => {
+    const unsubscribe = subscribePluginsOverview((overview) => {
       if (active) setTeams(teamConnectionsOf(overview));
     });
     return () => {

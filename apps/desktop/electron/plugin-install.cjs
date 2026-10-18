@@ -1,19 +1,19 @@
 const { open } = require("node:fs/promises");
 const path = require("node:path");
 
-const MAX_CONNECTOR_PLUGIN_ARCHIVE_BYTES = 25 * 1024 * 1024;
+const MAX_PLUGIN_ARCHIVE_BYTES = 25 * 1024 * 1024;
 
-async function selectConnectorPluginArchive(
+async function selectPluginArchive(
   dialog,
   parentWindow,
   dependencies = { open },
 ) {
   const selection = await dialog.showOpenDialog(parentWindow, {
-    title: "Install connector plugin",
+    title: "Install plugin",
     properties: ["openFile"],
     filters: [
       {
-        name: "Ajour connector plugins",
+        name: "Ajour plugins",
         extensions: ["ajour-connector"],
       },
     ],
@@ -29,21 +29,18 @@ async function selectConnectorPluginArchive(
     if (
       !archiveStat.isFile() ||
       archiveStat.size === 0 ||
-      archiveStat.size > MAX_CONNECTOR_PLUGIN_ARCHIVE_BYTES
+      archiveStat.size > MAX_PLUGIN_ARCHIVE_BYTES
     ) {
       throw new Error(
-        `Connector plugin archives must be between 1 byte and ${MAX_CONNECTOR_PLUGIN_ARCHIVE_BYTES} bytes.`,
+        `Plugin archives must be between 1 byte and ${MAX_PLUGIN_ARCHIVE_BYTES} bytes.`,
       );
     }
 
     const chunks = [];
     let totalBytes = 0;
-    while (totalBytes <= MAX_CONNECTOR_PLUGIN_ARCHIVE_BYTES) {
+    while (totalBytes <= MAX_PLUGIN_ARCHIVE_BYTES) {
       const buffer = Buffer.allocUnsafe(
-        Math.min(
-          64 * 1024,
-          MAX_CONNECTOR_PLUGIN_ARCHIVE_BYTES + 1 - totalBytes,
-        ),
+        Math.min(64 * 1024, MAX_PLUGIN_ARCHIVE_BYTES + 1 - totalBytes),
       );
       const { bytesRead } = await archive.read(
         buffer,
@@ -57,9 +54,9 @@ async function selectConnectorPluginArchive(
       chunks.push(buffer.subarray(0, bytesRead));
       totalBytes += bytesRead;
     }
-    if (totalBytes === 0 || totalBytes > MAX_CONNECTOR_PLUGIN_ARCHIVE_BYTES) {
+    if (totalBytes === 0 || totalBytes > MAX_PLUGIN_ARCHIVE_BYTES) {
       throw new Error(
-        `Connector plugin archives must be between 1 byte and ${MAX_CONNECTOR_PLUGIN_ARCHIVE_BYTES} bytes.`,
+        `Plugin archives must be between 1 byte and ${MAX_PLUGIN_ARCHIVE_BYTES} bytes.`,
       );
     }
 
@@ -73,6 +70,6 @@ async function selectConnectorPluginArchive(
 }
 
 module.exports = {
-  MAX_CONNECTOR_PLUGIN_ARCHIVE_BYTES,
-  selectConnectorPluginArchive,
+  MAX_PLUGIN_ARCHIVE_BYTES,
+  selectPluginArchive,
 };

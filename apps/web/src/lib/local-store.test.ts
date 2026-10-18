@@ -110,7 +110,7 @@ describe("localStore workflow state sync", () => {
         workflowStateId: doing,
       });
     }
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const id = localStore.snapshot().workItems[0]!._id;
     localStore.settleWorkItem(id, { state: { name: "Waiting", done: false } });
     localStore.updateWorkflowState(doing, { name: "Doing", done: true });
@@ -145,8 +145,8 @@ describe("localStore workflow state sync", () => {
         sourceStatusKey: "active",
         workflowStateId: doing,
       });
-      localStore.importConnectorWorkItems([buildImportCandidate()]);
-      localStore.importConnectorWorkItems([], {
+      localStore.importSyncedWorkItems([buildImportCandidate()]);
+      localStore.importSyncedWorkItems([], {
         archiveMissingFromConnectionId: "ado-1",
       });
       localStore.updateWorkflowState(doing, { name: "Doing", done: true });
@@ -162,7 +162,7 @@ describe("localStore workflow state sync", () => {
       );
       vi.resetModules();
       const reloaded = (await import("./local-store")).localStore;
-      reloaded.importConnectorWorkItems([buildImportCandidate()]);
+      reloaded.importSyncedWorkItems([buildImportCandidate()]);
       expect(reloaded.snapshot().workItems[0]).toMatchObject({
         status: "active",
         archivedByMissingSync: false,
@@ -234,7 +234,7 @@ describe("localStore workflow state sync", () => {
       state: "Closed",
       stateDone: true,
     });
-    localStore.importConnectorWorkItems([candidate]);
+    localStore.importSyncedWorkItems([candidate]);
     const closed = localStore.snapshot().workItems[0]!;
     expect(closed.status).toBe("archived");
     const token = localStore.moveWorkItemToState(closed._id, openId, {
@@ -243,10 +243,10 @@ describe("localStore workflow state sync", () => {
     const pending = localStore.snapshot().workItems[0]!;
     expect(pending.status).toBe("active");
     expect(pending.pendingSourceWrite?.state).toBe("Active");
-    localStore.importConnectorWorkItems([candidate]);
+    localStore.importSyncedWorkItems([candidate]);
     expect(localStore.snapshot().workItems[0]).toEqual(pending);
     expect(
-      localStore.archiveDoneConnectorWorkItems([
+      localStore.archiveDoneSyncedWorkItems([
         {
           source: candidate.source,
           connectionId: candidate.connectionId,
@@ -255,7 +255,7 @@ describe("localStore workflow state sync", () => {
         },
       ]),
     ).toBe(0);
-    localStore.importConnectorWorkItems([], {
+    localStore.importSyncedWorkItems([], {
       archiveMissingFromConnectionId: "ado-1",
     });
     expect(localStore.snapshot().workItems[0]).toEqual(pending);
@@ -286,7 +286,7 @@ describe("localStore workflow state sync", () => {
           sourceStatusKey,
           workflowStateId,
         });
-      localStore.importConnectorWorkItems([buildImportCandidate()]);
+      localStore.importSyncedWorkItems([buildImportCandidate()]);
       const parentId = localStore.snapshot().workItems[0]!._id;
       const childId = localStore.addSubtask(parentId, {
         title: "Manual child",
@@ -374,7 +374,7 @@ describe("localStore workflow state sync", () => {
         ...mapping,
         workflowStateId: review,
       });
-      localStore.importConnectorWorkItems([buildImportCandidate()]);
+      localStore.importSyncedWorkItems([buildImportCandidate()]);
       const id = localStore.snapshot().workItems[0]!._id;
       localStore.moveWorkItemToState(id, review, {
         sourceWrites: { [id]: "In QA" },
@@ -456,7 +456,7 @@ describe("localStore workflow state sync", () => {
         sourceStatusKey: "In QA",
         workflowStateId: writing,
       });
-      localStore.importConnectorWorkItems([buildImportCandidate()]);
+      localStore.importSyncedWorkItems([buildImportCandidate()]);
       const id = localStore.snapshot().workItems[0]!._id;
       localStore.moveWorkItemToState(id, writing, {
         sourceWrites: { [id]: "In QA" },
@@ -528,7 +528,7 @@ describe("localStore workflow state sync", () => {
       sourceStatusKey: "Working",
       workflowStateId: working,
     });
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const id = localStore.snapshot().workItems[0]!._id;
     localStore.moveWorkItemToState(id, review, {
       sourceWrites: { [id]: "In QA" },
@@ -583,7 +583,7 @@ describe("localStore workflow state sync", () => {
       parentSourceId: parent.sourceId,
       depth: 1,
     });
-    localStore.importConnectorWorkItems([parent, child]);
+    localStore.importSyncedWorkItems([parent, child]);
     const parentId = localStore
       .snapshot()
       .workItems.find((item) => item.sourceId === parent.sourceId)!._id;
@@ -632,7 +632,7 @@ describe("localStore workflow state sync", () => {
       sourceStatusKey: "Active",
     };
     localStore.setWorkflowStateMapping({ ...mapping, workflowStateId: review });
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const id = localStore.snapshot().workItems[0]!._id;
     localStore.updateWorkItem(id, { workflowStateId: open });
     localStore.settleWorkItem(id, { priority: 1 });
@@ -677,7 +677,7 @@ describe("localStore workflow state sync", () => {
         parentSourceId: parent.sourceId,
         depth: 1,
       });
-      localStore.importConnectorWorkItems([parent, child]);
+      localStore.importSyncedWorkItems([parent, child]);
       const parentId = localStore
         .snapshot()
         .workItems.find((item) => item.sourceId === parent.sourceId)!._id;
@@ -747,7 +747,7 @@ describe("localStore workflow state sync", () => {
       sourceStatusKey: "Active",
     };
     localStore.setWorkflowStateMapping({ ...mapping, workflowStateId: review });
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const id = localStore.snapshot().workItems[0]!._id;
     localStore.updateWorkItem(id, { workflowStateId: open });
     localStore.settleWorkItem(id, { priority: 1 });
@@ -802,7 +802,7 @@ describe("localStore workflow state sync", () => {
         parentSourceId: parent.sourceId,
         depth: 1,
       });
-      localStore.importConnectorWorkItems(
+      localStore.importSyncedWorkItems(
         includeSubitems ? [parent, child] : [parent],
       );
       const id = localStore
@@ -901,7 +901,7 @@ describe("localStore workflow state sync", () => {
         parentSourceId: parent.sourceId,
         depth: 1,
       });
-      localStore.importConnectorWorkItems(
+      localStore.importSyncedWorkItems(
         includeSubitems ? [parent, child] : [parent],
       );
       const id = localStore
@@ -995,9 +995,9 @@ describe("localStore workflow state sync", () => {
         sourceStatusKey: "In QA",
         workflowStateId: review,
       });
-      localStore.importConnectorWorkItems([buildImportCandidate()]);
+      localStore.importSyncedWorkItems([buildImportCandidate()]);
       const id = localStore.snapshot().workItems[0]!._id;
-      localStore.importConnectorWorkItems([], {
+      localStore.importSyncedWorkItems([], {
         archiveMissingFromConnectionId: "ado-1",
       });
       expect(localStore.snapshot().workItems[0]).toMatchObject({
@@ -1063,7 +1063,7 @@ describe("localStore workflow state sync", () => {
         parentSourceId: parent.sourceId,
         depth: 1,
       });
-      localStore.importConnectorWorkItems(
+      localStore.importSyncedWorkItems(
         children === "synced" ? [parent, child] : [parent],
       );
       const id = localStore
@@ -1089,7 +1089,7 @@ describe("localStore workflow state sync", () => {
         });
       if (isMissing) {
         localStore.settleWorkItem(id, undefined, { includeSubitems: true });
-        localStore.importConnectorWorkItems([], {
+        localStore.importSyncedWorkItems([], {
           archiveMissingFromConnectionId: "ado-1",
         });
       } else {
@@ -1144,7 +1144,7 @@ describe("localStore workflow state sync", () => {
       vi.resetModules();
       const restarted = (await import("./local-store")).localStore;
       if (isMissing)
-        restarted.importConnectorWorkItems(
+        restarted.importSyncedWorkItems(
           children === "synced" ? [parent, child] : [parent],
         );
       else restarted.restoreWorkItem(id);
@@ -1166,7 +1166,7 @@ describe("localStore workflow state sync", () => {
 
   it("recovers the last successful priority write when its replacement fails", async () => {
     const { localStore } = await import("./local-store");
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const id = localStore.snapshot().workItems[0]!._id;
     localStore.settleWorkItem(id, { priority: 1 });
     const sentItems = localStore.snapshot().workItems;
@@ -1199,7 +1199,7 @@ describe("localStore workflow state sync", () => {
         sourceStatusKey: label,
         workflowStateId,
       });
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const id = localStore.snapshot().workItems[0]!._id;
     localStore.moveWorkItemToState(id, workingId, {
       sourceWrites: { [id]: "Working" },
@@ -1224,7 +1224,7 @@ describe("localStore workflow state sync", () => {
     async (path) => {
       const { localStore } = await import("./local-store");
       const candidate = buildImportCandidate({ state: "Resolved" });
-      localStore.importConnectorWorkItems([candidate]);
+      localStore.importSyncedWorkItems([candidate]);
       const item = localStore.snapshot().workItems[0]!;
       expect(item.workflowStateId).toBeUndefined();
       localStore.startTimer({
@@ -1241,12 +1241,12 @@ describe("localStore workflow state sync", () => {
           },
         ]);
       } else if (path === "import") {
-        localStore.importConnectorWorkItems([
+        localStore.importSyncedWorkItems([
           buildImportCandidate({ state: "Resolved", stateDone: true }),
         ]);
       } else {
         expect(
-          localStore.archiveDoneConnectorWorkItems([
+          localStore.archiveDoneSyncedWorkItems([
             {
               source: candidate.source,
               connectionId: candidate.connectionId,
@@ -1297,7 +1297,7 @@ describe("localStore workflow state sync", () => {
       depth: 1,
       parentSourceId: parent.sourceId,
     });
-    localStore.importConnectorWorkItems([parent, child]);
+    localStore.importSyncedWorkItems([parent, child]);
     const parentId = localStore
       .snapshot()
       .workItems.find((item) => item.sourceId === parent.sourceId)!._id;
@@ -1322,7 +1322,7 @@ describe("localStore workflow state sync", () => {
       status: "active",
       pendingSourceWrite: undefined,
     });
-    localStore.importConnectorWorkItems(
+    localStore.importSyncedWorkItems(
       [parent, child].map((item) => ({
         ...item,
         state: "Closed",
@@ -1330,7 +1330,7 @@ describe("localStore workflow state sync", () => {
       })),
     );
     expect(localStore.snapshot().workItems).toEqual(pending);
-    localStore.archiveDoneConnectorWorkItems(
+    localStore.archiveDoneSyncedWorkItems(
       [parent, child].map((item) => ({
         source: item.source,
         connectionId: item.connectionId,
@@ -1338,7 +1338,7 @@ describe("localStore workflow state sync", () => {
         state: "Closed",
       })),
     );
-    localStore.importConnectorWorkItems([], {
+    localStore.importSyncedWorkItems([], {
       archiveMissingFromConnectionId: "ado-1",
     });
     expect(localStore.snapshot().workItems).toEqual(pending);
@@ -1353,7 +1353,7 @@ describe("localStore workflow state sync", () => {
   it("preserves a local open-state override when automatic mapping discovers Done", async () => {
     const { localStore } = await import("./local-store");
     const candidate = buildImportCandidate({ state: "Resolved" });
-    localStore.importConnectorWorkItems([candidate]);
+    localStore.importSyncedWorkItems([candidate]);
     const item = localStore.snapshot().workItems[0]!;
     const openId = localStore
       .snapshot()
@@ -1484,7 +1484,7 @@ describe("localStore workflow state sync", () => {
       workflowStateId: todoStatusId,
     });
 
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const importedItem = localStore.snapshot().workItems[0];
     expect(importedItem).toMatchObject({
       workflowStateId: todoStatusId,
@@ -1511,7 +1511,7 @@ describe("localStore workflow state sync", () => {
 
   it("closes open items when their source state is mapped to a done state, with Undo", async () => {
     const { localStore } = await import("./local-store");
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const doneStateId = localStore
       .snapshot()
       .workflowStates.find((workflowState) => workflowState.done)!._id;
@@ -1800,11 +1800,11 @@ describe("localStore workflow state sync", () => {
   it("archives imported work items that disappear during auto-sync reconciliation", async () => {
     const { localStore } = await import("./local-store");
 
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const importedItem = localStore.snapshot().workItems[0];
     expect(importedItem?.status).toBe("active");
 
-    const result = localStore.importConnectorWorkItems([], {
+    const result = localStore.importSyncedWorkItems([], {
       archiveMissingFromConnectionId: "ado-1",
     });
 
@@ -1817,7 +1817,7 @@ describe("localStore workflow state sync", () => {
 
   it("drops a settle's pending write when the settle is undone", async () => {
     const { localStore } = await import("./local-store");
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const workItemId = localStore.snapshot().workItems[0]!._id;
 
     const token = localStore.settleWorkItem(workItemId, {
@@ -1842,10 +1842,10 @@ describe("localStore workflow state sync", () => {
     const { localStore } = await import("./local-store");
 
     const candidate = buildImportCandidate();
-    localStore.importConnectorWorkItems([candidate]);
+    localStore.importSyncedWorkItems([candidate]);
     const importedItem = localStore.snapshot().workItems[0]!;
 
-    localStore.importConnectorWorkItems([], {
+    localStore.importSyncedWorkItems([], {
       archiveMissingFromConnectionId: "ado-1",
     });
 
@@ -1854,7 +1854,7 @@ describe("localStore workflow state sync", () => {
       status: "archived",
     });
 
-    const result = localStore.importConnectorWorkItems([candidate], {
+    const result = localStore.importSyncedWorkItems([candidate], {
       archiveMissingFromConnectionId: "ado-1",
     });
 
@@ -1869,7 +1869,7 @@ describe("localStore workflow state sync", () => {
   it("keeps opted-in imported work items during auto-sync reconciliation", async () => {
     const { localStore } = await import("./local-store");
 
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const importedItem = localStore.snapshot().workItems[0]!;
 
     expect(importedItem.keepWhenMissingFromSync).toBe(false);
@@ -1878,7 +1878,7 @@ describe("localStore workflow state sync", () => {
       keepWhenMissingFromSync: true,
     });
 
-    const result = localStore.importConnectorWorkItems([], {
+    const result = localStore.importSyncedWorkItems([], {
       archiveMissingFromConnectionId: "ado-1",
     });
 
@@ -1890,10 +1890,10 @@ describe("localStore workflow state sync", () => {
     });
   });
 
-  it("initializes imported estimate fields from connector candidates", async () => {
+  it("initializes imported estimate fields from backlog candidates", async () => {
     const { localStore } = await import("./local-store");
 
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
 
     expect(localStore.snapshot().workItems[0]).toMatchObject({
       originalEstimateHours: 12,
@@ -1908,7 +1908,7 @@ describe("localStore workflow state sync", () => {
     const projectId = localStore.snapshot().projects[0]!._id;
     localStore.addProjectTask(projectId, { name: "Imported task" });
     const taskId = localStore.snapshot().projects[0]!.tasks.at(-1)!._id;
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const workItem = localStore.snapshot().workItems[0]!;
     localStore.updateWorkItem(workItem._id, {
       projectId,
@@ -1934,7 +1934,7 @@ describe("localStore workflow state sync", () => {
     const projectId = localStore.snapshot().projects[0]!._id;
     localStore.addProjectTask(projectId, { name: "Overrun task" });
     const taskId = localStore.snapshot().projects[0]!.tasks.at(-1)!._id;
-    localStore.importConnectorWorkItems([
+    localStore.importSyncedWorkItems([
       buildImportCandidate({
         remainingEstimateHours: 1,
         completedEstimateHours: 0,
@@ -1962,7 +1962,7 @@ describe("localStore workflow state sync", () => {
   it("updates estimates for a backlog work item even when no project or task is mapped", async () => {
     const { localStore } = await import("./local-store");
 
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const workItem = localStore.snapshot().workItems[0]!;
 
     localStore.saveManualTimeEntry({
@@ -2110,7 +2110,7 @@ describe("localStore workflow state sync", () => {
   it("reverses unmapped backlog estimate deltas when the linked time entry is deleted", async () => {
     const { localStore } = await import("./local-store");
 
-    localStore.importConnectorWorkItems([buildImportCandidate()]);
+    localStore.importSyncedWorkItems([buildImportCandidate()]);
     const workItem = localStore.snapshot().workItems[0]!;
 
     localStore.saveManualTimeEntry({

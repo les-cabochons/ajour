@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  CONNECTOR_PLUGIN_API_VERSION,
-  connectorPluginManifestSchema,
-  connectorSettleWriteRequestSchema,
-  connectorSettleWriteResultSchema,
+  PLUGIN_API_VERSION,
+  pluginManifestSchema,
+  backlogSettleWriteRequestSchema,
+  backlogSettleWriteResultSchema,
   isCapabilityActive,
   pluginHasAgentTasks,
   pluginHasSwitchableCapabilities,
@@ -11,14 +11,14 @@ import {
   pluginHasProjectProperties,
   pluginHasCalendar,
   pluginHasCodeHost,
-  pluginHasConnector,
+  pluginHasBacklog,
   pluginRunsCode,
-} from "../connectors";
+} from "../plugins";
 
 const validManifest = {
   id: "example_connector",
   version: "1.2.3",
-  apiVersion: CONNECTOR_PLUGIN_API_VERSION,
+  apiVersion: PLUGIN_API_VERSION,
   displayName: "Example connector",
   iconSvg: "<svg viewBox='0 0 16 16' />",
   entrypoint: "dist/plugin.js",
@@ -33,18 +33,18 @@ const validManifest = {
   ],
 };
 
-describe("connector plugin manifest", () => {
-  it("accepts a versioned installable connector contract", () => {
-    expect(connectorPluginManifestSchema.parse(validManifest)).toMatchObject({
+describe("plugin manifest", () => {
+  it("accepts a versioned installable backlog plugin contract", () => {
+    expect(pluginManifestSchema.parse(validManifest)).toMatchObject({
       id: "example_connector",
       version: "1.2.3",
-      apiVersion: CONNECTOR_PLUGIN_API_VERSION,
+      apiVersion: PLUGIN_API_VERSION,
     });
   });
 
   it("rejects identifiers that could create nested install paths", () => {
     expect(() =>
-      connectorPluginManifestSchema.parse({
+      pluginManifestSchema.parse({
         ...validManifest,
         id: "../outside",
       }),
@@ -53,7 +53,7 @@ describe("connector plugin manifest", () => {
 
   it("rejects manifests without a semantic version", () => {
     expect(() =>
-      connectorPluginManifestSchema.parse({
+      pluginManifestSchema.parse({
         ...validManifest,
         version: "latest",
       }),
@@ -62,24 +62,24 @@ describe("connector plugin manifest", () => {
 
   it("rejects manifests that declare no capability", () => {
     expect(() =>
-      connectorPluginManifestSchema.parse({
+      pluginManifestSchema.parse({
         ...validManifest,
         capabilities: {},
       }),
     ).toThrow("at least one capability");
   });
 
-  it("accepts a plugin that is both a connector and a code host", () => {
-    const manifest = connectorPluginManifestSchema.parse({
+  it("accepts a plugin that is both a backlog plugin and a code host", () => {
+    const manifest = pluginManifestSchema.parse({
       ...validManifest,
       capabilities: { connector: { settle: true }, codeHost: {} },
     });
-    expect(pluginHasConnector(manifest)).toBe(true);
+    expect(pluginHasBacklog(manifest)).toBe(true);
     expect(pluginHasCodeHost(manifest)).toBe(true);
   });
 
   it("keeps the capability a connection field configures", () => {
-    const manifest = connectorPluginManifestSchema.parse({
+    const manifest = pluginManifestSchema.parse({
       ...validManifest,
       capabilities: { connector: {}, codeHost: {} },
       connectionFields: [
@@ -97,11 +97,11 @@ describe("connector plugin manifest", () => {
   });
 
   it("gives a plugin with backlog items and a calendar a switch for each", () => {
-    const both = connectorPluginManifestSchema.parse({
+    const both = pluginManifestSchema.parse({
       ...validManifest,
       capabilities: { connector: {}, calendar: {} },
     });
-    const calendarOnly = connectorPluginManifestSchema.parse({
+    const calendarOnly = pluginManifestSchema.parse({
       ...validManifest,
       capabilities: { calendar: {} },
     });
@@ -110,7 +110,7 @@ describe("connector plugin manifest", () => {
   });
 
   it("reads a capability as active only while the plugin is on and the capability is not off", () => {
-    const plugin = connectorPluginManifestSchema.parse({
+    const plugin = pluginManifestSchema.parse({
       ...validManifest,
       capabilities: { connector: {}, codeHost: {} },
     });
@@ -160,35 +160,35 @@ describe("connector plugin manifest", () => {
     ).toBe(true);
   });
 
-  it("accepts a code host without the connector capability", () => {
-    const manifest = connectorPluginManifestSchema.parse({
+  it("accepts a code host without the backlog capability", () => {
+    const manifest = pluginManifestSchema.parse({
       ...validManifest,
       capabilities: { codeHost: {} },
     });
-    expect(pluginHasConnector(manifest)).toBe(false);
+    expect(pluginHasBacklog(manifest)).toBe(false);
     expect(pluginHasCodeHost(manifest)).toBe(true);
   });
 
-  it("accepts a calendar without the connector capability", () => {
-    const manifest = connectorPluginManifestSchema.parse({
+  it("accepts a calendar without the backlog capability", () => {
+    const manifest = pluginManifestSchema.parse({
       ...validManifest,
       capabilities: { calendar: {} },
     });
-    expect(pluginHasConnector(manifest)).toBe(false);
+    expect(pluginHasBacklog(manifest)).toBe(false);
     expect(pluginHasCalendar(manifest)).toBe(true);
     expect(pluginRunsCode(manifest)).toBe(true);
   });
 
   it("requires an entrypoint and connection fields for a calendar", () => {
     expect(() =>
-      connectorPluginManifestSchema.parse({
+      pluginManifestSchema.parse({
         ...validManifest,
         entrypoint: undefined,
         capabilities: { calendar: {} },
       }),
     ).toThrow(/entrypoint/);
     expect(() =>
-      connectorPluginManifestSchema.parse({
+      pluginManifestSchema.parse({
         ...validManifest,
         connectionFields: [],
         capabilities: { calendar: {} },
@@ -198,16 +198,16 @@ describe("connector plugin manifest", () => {
 
   it("carries priority as an Ajour level, never a source value", () => {
     expect(
-      connectorSettleWriteRequestSchema.parse({
+      backlogSettleWriteRequestSchema.parse({
         sourceId: "42",
         priority: "high",
       }).priority,
     ).toBe("high");
     expect(() =>
-      connectorSettleWriteRequestSchema.parse({ sourceId: "42", priority: 2 }),
+      backlogSettleWriteRequestSchema.parse({ sourceId: "42", priority: 2 }),
     ).toThrow();
     expect(() =>
-      connectorSettleWriteResultSchema.parse({ priority: 25 }),
+      backlogSettleWriteResultSchema.parse({ priority: 25 }),
     ).toThrow();
   });
 });
@@ -215,7 +215,7 @@ describe("connector plugin manifest", () => {
 const agentTaskBase = {
   id: "ajp-workday",
   version: "1.0.0",
-  apiVersion: CONNECTOR_PLUGIN_API_VERSION,
+  apiVersion: PLUGIN_API_VERSION,
   displayName: "Workday",
   iconSvg: "<svg/>",
 };
@@ -239,7 +239,7 @@ const agentTask = {
 describe("plugin manifest capabilities", () => {
   it("refuses the old submit-week placement", () => {
     expect(() =>
-      connectorPluginManifestSchema.parse({
+      pluginManifestSchema.parse({
         ...agentTaskBase,
         capabilities: {
           agentTask: { tasks: [{ ...agentTask, placement: "submit-week" }] },
@@ -249,7 +249,7 @@ describe("plugin manifest capabilities", () => {
   });
 
   it("accepts a plugin with only agent tasks, without entrypoint or connection fields", () => {
-    const manifest = connectorPluginManifestSchema.parse({
+    const manifest = pluginManifestSchema.parse({
       ...agentTaskBase,
       capabilities: { agentTask: { tasks: [agentTask] } },
     });
@@ -258,9 +258,9 @@ describe("plugin manifest capabilities", () => {
     expect(pluginHasAgentTasks(manifest)).toBe(true);
   });
 
-  it("still requires an entrypoint and connection fields for a connector", () => {
+  it("still requires an entrypoint and connection fields for a backlog plugin", () => {
     expect(() =>
-      connectorPluginManifestSchema.parse({
+      pluginManifestSchema.parse({
         ...agentTaskBase,
         capabilities: { connector: {} },
       }),
@@ -269,7 +269,7 @@ describe("plugin manifest capabilities", () => {
 
   it("refuses a week link slot that is not known", () => {
     expect(() =>
-      connectorPluginManifestSchema.parse({
+      pluginManifestSchema.parse({
         ...agentTaskBase,
         capabilities: {
           agentTask: {
@@ -282,7 +282,7 @@ describe("plugin manifest capabilities", () => {
 
   it("refuses a plugin with no capability", () => {
     expect(() =>
-      connectorPluginManifestSchema.parse({
+      pluginManifestSchema.parse({
         ...agentTaskBase,
         capabilities: {},
       }),
@@ -298,7 +298,7 @@ describe("plugin manifest capabilities", () => {
   };
 
   it("accepts a plugin with only project properties", () => {
-    const manifest = connectorPluginManifestSchema.parse({
+    const manifest = pluginManifestSchema.parse({
       ...agentTaskBase,
       capabilities: { projectProperties },
     });
@@ -308,7 +308,7 @@ describe("plugin manifest capabilities", () => {
 
   it("refuses two project property fields with the same id", () => {
     expect(() =>
-      connectorPluginManifestSchema.parse({
+      pluginManifestSchema.parse({
         ...agentTaskBase,
         capabilities: {
           projectProperties: {
@@ -322,7 +322,7 @@ describe("plugin manifest capabilities", () => {
 
   it("refuses a default from an unknown project value", () => {
     expect(() =>
-      connectorPluginManifestSchema.parse({
+      pluginManifestSchema.parse({
         ...agentTaskBase,
         capabilities: {
           projectProperties: {

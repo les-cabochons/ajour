@@ -1,16 +1,16 @@
 import { pluginHasProjectProperties } from "@ajour/shared";
 import type { ProjectPropertyPlugin } from "@/domain/projects/plugin-properties";
-import { getConnectorsOverview, isConnectorApiMissing } from "@/lib/app-api";
+import { getPluginsOverview, isPluginApiMissing } from "@/lib/app-api";
 
 /**
- * The active plugins that add project properties, from the connectors
+ * The active plugins that add project properties, from the plugins
  * overview. Empty without the local API, as in the web build.
  */
 export async function listProjectPropertyPlugins(): Promise<
   ProjectPropertyPlugin[]
 > {
   try {
-    const overview = await getConnectorsOverview();
+    const overview = await getPluginsOverview();
     if (overview.pluginsEnabled === false) return [];
     return overview.connectionGroups.flatMap((group) =>
       group.enabled &&
@@ -25,7 +25,7 @@ export async function listProjectPropertyPlugins(): Promise<
         : [],
     );
   } catch (error) {
-    if (isConnectorApiMissing(error)) return [];
+    if (isPluginApiMissing(error)) return [];
     throw error;
   }
 }

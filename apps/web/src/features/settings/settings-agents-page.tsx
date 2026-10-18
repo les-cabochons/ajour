@@ -13,7 +13,7 @@ import {
 /**
  * Settings > Agents: which coding agent Ajour starts for plugin agent tasks
  * and which browser it drives. Each task's own settings sit on its plugin's
- * page, next to the connector settings of other plugins.
+ * page, next to the connection settings of other plugins.
  */
 export function SettingsAgentsPage() {
   const state = useAgentRunner();

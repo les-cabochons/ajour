@@ -74,8 +74,8 @@ import { formatClockDuration } from "@/domain/time/duration";
 import { formatElapsedDuration } from "@/domain/time/running-entry";
 import { findPinnedTask } from "@/domain/projects/project-transitions";
 import {
-  getConnectorsOverview,
-  syncConnectorConnection,
+  getPluginsOverview,
+  syncBacklogConnection,
   syncCodeHostConnection,
 } from "@/lib/app-api";
 import { syncTeamConnection } from "@/lib/team-sync";
@@ -214,7 +214,7 @@ function PendingSourceWritesFlush() {
   return null;
 }
 
-function ConnectorAutoSyncScheduler() {
+function BacklogAutoSyncScheduler() {
   const loopStateRef = useRef({
     cancelled: false,
     running: false,
@@ -245,7 +245,7 @@ function ConnectorAutoSyncScheduler() {
 
       loopState.running = true;
       try {
-        const overview = await getConnectorsOverview();
+        const overview = await getPluginsOverview();
         const now = Date.now();
         // Each capability has its own automatic sync: auto sync imports work
         // items straight to the backlog, pull requests have their own, and a
@@ -295,7 +295,7 @@ function ConnectorAutoSyncScheduler() {
             capability,
             run: () =>
               capability === "connector"
-                ? syncConnectorConnection(
+                ? syncBacklogConnection(
                     dueConnection.pluginId,
                     dueConnection.connection.id,
                     { trigger: "auto" },
@@ -318,7 +318,7 @@ function ConnectorAutoSyncScheduler() {
               loopState.shownFailures.delete(failureKey);
             } catch (error) {
               console.error(
-                `Connector auto sync failed for "${dueConnection.pluginId}".`,
+                `Backlog auto sync failed for "${dueConnection.pluginId}".`,
                 error,
               );
               const message =
@@ -334,7 +334,7 @@ function ConnectorAutoSyncScheduler() {
           }
         }
       } catch (error) {
-        console.error("Connector auto sync failed.", error);
+        console.error("Backlog auto sync failed.", error);
       } finally {
         loopState.running = false;
         scheduleNext();
@@ -770,7 +770,7 @@ export function AppShell() {
       )}
     >
       <RunningEntryWindowTitle />
-      <ConnectorAutoSyncScheduler />
+      <BacklogAutoSyncScheduler />
       <PendingSourceWritesFlush />
       <ShortcutOverlay />
       <AgentBridgeHost />

@@ -53,7 +53,7 @@ describe("work item hierarchy", () => {
   it("treats a manual subtask as a child of an imported parent", async () => {
     const { localStore } = await import("../../lib/local-store");
 
-    localStore.importConnectorWorkItems([
+    localStore.importSyncedWorkItems([
       {
         id: "connector-parent",
         source: "azure_devops",

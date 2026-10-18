@@ -42,10 +42,10 @@ import {
 } from "./plugin-settings-workflow";
 import { useLocalState } from "@/lib/local-hooks";
 import type {
-  ConnectorConnectionSummary,
-  ConnectorFieldValues,
-  ConnectorOverviewGroup,
-  ConnectorPluginManifest,
+  PluginConnectionSummary,
+  PluginFieldValues,
+  PluginOverviewGroup,
+  PluginManifest,
   PluginCatalogCapability,
   PluginCatalogEntry,
   PluginCatalogSettings,
@@ -54,20 +54,20 @@ import type {
 import {
   isCapabilityActive,
   isCapabilitySwitchedOn,
-  pluginHasConnector,
+  pluginHasBacklog,
   pluginHasTeam,
   pluginRunsCode,
   syncsPullRequestsAutomatically,
 } from "@ajour/shared";
 import {
-  areConnectorFormValuesEqual,
-  buildConnectorFormValues,
-  canSubmitConnectorForm,
-  isConnectorFieldShown,
-  normalizeConnectorFormValuesForSave,
-} from "./connector-form-state";
+  arePluginFormValuesEqual,
+  buildPluginFormValues,
+  canSubmitPluginForm,
+  isPluginFieldShown,
+  normalizePluginFormValuesForSave,
+} from "./plugin-form-state";
 import { PluginCapabilitySwitches } from "./plugin-capability-switches";
-import { ConnectorFieldInput } from "./connector-settings-ui";
+import { PluginFieldInput } from "./plugin-settings-ui";
 import {
   HeldArrivalsLine,
   TeamCreateField,
@@ -84,19 +84,19 @@ import {
   pluginCapabilitiesLabel,
 } from "./plugin-catalog-ui";
 
-type ConnectorFormState = {
+type PluginFormState = {
   /** Which opening of the form this is, so a late result finds its own. */
   instance: number;
   pluginId: string;
   editingConnectionId: string | null;
-  initialValues: ConnectorFieldValues;
-  values: ConnectorFieldValues;
+  initialValues: PluginFieldValues;
+  values: PluginFieldValues;
 };
 
 type PluginCatalogFilter = "all" | PluginCatalogCapability;
 
-/** The one notice Plugins shows when the web build runs without the connector API. */
-const CONNECTORS_NEED_DESKTOP_APP = "Connectors need the desktop app.";
+/** The one notice Plugins shows when the web build runs without the app API. */
+const PLUGINS_NEED_DESKTOP_APP = "Plugins need the desktop app.";
 
 /**
  * How the connection syncs, per capability that is on. Auto sync imports work
@@ -104,23 +104,23 @@ const CONNECTORS_NEED_DESKTOP_APP = "Connectors need the desktop app.";
  * requests have their own automatic sync.
  */
 function syncModeLabel(
-  group: ConnectorOverviewGroup,
-  connection: ConnectorConnectionSummary,
+  group: PluginOverviewGroup,
+  connection: PluginConnectionSummary,
 ) {
   const interval = `Auto every ${connection.autoSyncIntervalMinutes} min`;
   const backlogItems = connection.autoSync ? interval : "Stage for review";
   const pullRequests = syncsPullRequestsAutomatically(connection)
     ? interval
     : "Manual sync";
-  const connector = isCapabilitySwitchedOn(group, "connector");
+  const backlog = isCapabilitySwitchedOn(group, "connector");
   const codeHost = isCapabilitySwitchedOn(group, "codeHost");
-  if (!connector && !codeHost && isCapabilitySwitchedOn(group, "team")) {
+  if (!backlog && !codeHost && isCapabilitySwitchedOn(group, "team")) {
     return interval;
   }
-  if (connector && codeHost && backlogItems !== pullRequests) {
+  if (backlog && codeHost && backlogItems !== pullRequests) {
     return `Backlog items: ${backlogItems} · Pull requests: ${pullRequests}`;
   }
-  return connector || !codeHost ? backlogItems : pullRequests;
+  return backlog || !codeHost ? backlogItems : pullRequests;
 }
 
 /** An empty list as plain text in the list's place, with no frame. */
@@ -199,10 +199,10 @@ function PluginCatalogRow({
   onDownload: () => void;
   onEnabledChange: (enabled: boolean) => void;
 }) {
-  const { catalog, connectorGroup, dataShapePlugin } = entry;
-  const installed = Boolean(connectorGroup || dataShapePlugin);
-  const unavailableReason = connectorGroup?.plugin.unavailableReason;
-  const version = connectorGroup?.plugin.version ?? dataShapePlugin?.version;
+  const { catalog, pluginGroup, dataShapePlugin } = entry;
+  const installed = Boolean(pluginGroup || dataShapePlugin);
+  const unavailableReason = pluginGroup?.plugin.unavailableReason;
+  const version = pluginGroup?.plugin.version ?? dataShapePlugin?.version;
   const statusLabel = unavailableReason
     ? "Unavailable"
     : installed
@@ -224,7 +224,7 @@ function PluginCatalogRow({
       >
         <PluginIdentityMark
           entry={catalog}
-          iconSvg={connectorGroup?.plugin.iconSvg ?? dataShapePlugin?.iconSvg}
+          iconSvg={pluginGroup?.plugin.iconSvg ?? dataShapePlugin?.iconSvg}
         />
         <span className="flex min-w-0 flex-1 flex-col gap-0.5">
           <span className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
@@ -251,16 +251,16 @@ function PluginCatalogRow({
           isMutating={isMutating}
           onUpdate={onDownload}
         />
-      ) : connectorGroup ? (
+      ) : pluginGroup ? (
         <Switch
           className="shrink-0"
-          checked={connectorGroup.enabled}
+          checked={pluginGroup.enabled}
           disabled={
             isMutating ||
             !pluginsEnabled ||
-            connectorGroup.plugin.unavailableReason !== undefined
+            pluginGroup.plugin.unavailableReason !== undefined
           }
-          aria-label={`${connectorGroup.enabled ? "Deactivate" : "Activate"} ${catalog.title}`}
+          aria-label={`${pluginGroup.enabled ? "Deactivate" : "Activate"} ${catalog.title}`}
           onCheckedChange={onEnabledChange}
         />
       ) : !installed && catalog.status === "available" ? (
@@ -384,7 +384,7 @@ function PluginsHeader({
             All
           </TabsTrigger>
           <TabsTrigger value="connector" className="px-1.5 desktop:px-3">
-            Connectors
+            Backlog
           </TabsTrigger>
           <TabsTrigger value="codeHost" className="px-1.5 desktop:px-3">
             Code hosts
@@ -468,28 +468,27 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
   const state = useLocalState();
   const isDevelopmentBuild =
     window.ajourDesktop?.runtime?.developmentBuild === true;
-  const canInstallConnectorPlugins =
-    Boolean(window.ajourDesktop?.installConnectorPlugin) && !isDevelopmentBuild;
-  const canUninstallConnectorPlugins =
-    Boolean(window.ajourDesktop?.uninstallConnectorPlugin) &&
-    !isDevelopmentBuild;
+  const canInstallPlugins =
+    Boolean(window.ajourDesktop?.installPlugin) && !isDevelopmentBuild;
+  const canUninstallPlugins =
+    Boolean(window.ajourDesktop?.uninstallPlugin) && !isDevelopmentBuild;
   const canDownloadCatalogPlugins =
     Boolean(window.ajourDesktop?.downloadCatalogPlugin) && !isDevelopmentBuild;
   const {
-    connectors,
+    overview,
     catalog,
     catalogSettings,
     displayEntries,
     catalogError,
-    connectorError,
-    connectorApiMissing,
+    pluginError,
+    pluginApiMissing,
     statusMessage,
-    isMutatingConnector,
+    isMutatingPlugin,
     workflow,
   } = usePluginSettingsWorkflow();
   const [catalogFilter, setCatalogFilter] =
     useState<PluginCatalogFilter>("all");
-  const [formState, setFormState] = useState<ConnectorFormState | null>(null);
+  const [formState, setFormState] = useState<PluginFormState | null>(null);
   const formInstances = useRef(0);
   /** The team connection whose picker is open. */
   const [teamPicker, setTeamPicker] = useState<{
@@ -511,7 +510,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
     [state.workItems],
   );
 
-  const connectorGroups = connectors?.connectionGroups ?? [];
+  const pluginGroups = overview?.connectionGroups ?? [];
   const filteredDisplayEntries = displayEntries.filter(
     (entry) =>
       catalogFilter === "all" ||
@@ -520,19 +519,17 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
   const pluginsById = useMemo(
     () =>
       new Map(
-        (connectors?.plugins ?? []).map(
-          (plugin) => [plugin.id, plugin] as const,
-        ),
+        (overview?.plugins ?? []).map((plugin) => [plugin.id, plugin] as const),
       ),
-    [connectors?.plugins],
+    [overview?.plugins],
   );
   const activePlugin = formState
-    ? (connectorGroups.find((group) => group.plugin.id === formState.pluginId)
+    ? (pluginGroups.find((group) => group.plugin.id === formState.pluginId)
         ?.plugin ?? pluginsById.get(formState.pluginId))
     : undefined;
   const isFormDirty =
     formState && activePlugin
-      ? !areConnectorFormValuesEqual(
+      ? !arePluginFormValuesEqual(
           activePlugin,
           formState.values,
           formState.initialValues,
@@ -540,7 +537,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
       : false;
 
   const handlePluginActivation = (
-    group: ConnectorOverviewGroup,
+    group: PluginOverviewGroup,
     enabled: boolean,
     capability?: SwitchableCapability,
   ) =>
@@ -551,8 +548,8 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
       capability,
     });
 
-  const handleCreate = (plugin: ConnectorPluginManifest) => {
-    const initialValues = buildConnectorFormValues(plugin);
+  const handleCreate = (plugin: PluginManifest) => {
+    const initialValues = buildPluginFormValues(plugin);
     workflow.clearFeedback();
     setFormState({
       instance: (formInstances.current += 1),
@@ -564,10 +561,10 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
   };
 
   const handleEdit = (
-    plugin: ConnectorPluginManifest,
-    connection: ConnectorConnectionSummary,
+    plugin: PluginManifest,
+    connection: PluginConnectionSummary,
   ) => {
-    const initialValues = buildConnectorFormValues(
+    const initialValues = buildPluginFormValues(
       plugin,
       connection.editableValues,
     );
@@ -583,17 +580,13 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
 
   const handleSave = async () => {
     if (!formState || !activePlugin) return;
-    let saved: ConnectorConnectionSummary | undefined;
+    let saved: PluginConnectionSummary | undefined;
     const completed = await workflow.execute({
       type: "save",
       pluginId: formState.pluginId,
-      values: normalizeConnectorFormValuesForSave(
-        activePlugin,
-        formState.values,
-        {
-          allowSavedSecrets: Boolean(formState.editingConnectionId),
-        },
-      ),
+      values: normalizePluginFormValuesForSave(activePlugin, formState.values, {
+        allowSavedSecrets: Boolean(formState.editingConnectionId),
+      }),
       connectionId: formState.editingConnectionId ?? undefined,
       onSaved: (connection) => {
         saved = connection;
@@ -633,19 +626,19 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
   };
   const handleDownloadPlugin = (entry: PluginCatalogEntry) =>
     workflow.execute({ type: "download", pluginId: entry.id });
-  const handleUninstallPlugin = async (group: ConnectorOverviewGroup) => {
+  const handleUninstallPlugin = async (group: PluginOverviewGroup) => {
     if (await workflow.execute({ type: "uninstall", plugin: group.plugin }))
       setFormState(null);
   };
 
   const renderMessages = () =>
-    connectorApiMissing ? (
-      <MessagePanel>{CONNECTORS_NEED_DESKTOP_APP}</MessagePanel>
+    pluginApiMissing ? (
+      <MessagePanel>{PLUGINS_NEED_DESKTOP_APP}</MessagePanel>
     ) : (
       <>
         {statusMessage ? <MessagePanel>{statusMessage}</MessagePanel> : null}
-        {connectorError ? (
-          <MessagePanel tone="warning">{connectorError}</MessagePanel>
+        {pluginError ? (
+          <MessagePanel tone="warning">{pluginError}</MessagePanel>
         ) : null}
         {catalog?.warning ? (
           <MessagePanel tone="warning">
@@ -662,9 +655,9 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
       </>
     );
 
-  const renderConnectorDetail = (
+  const renderPluginDetail = (
     entry: PluginCatalogEntry,
-    group: ConnectorOverviewGroup,
+    group: PluginOverviewGroup,
   ) => {
     const groupFormState =
       formState?.pluginId === group.plugin.id ? formState : null;
@@ -682,13 +675,13 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
               <UpdatePluginButton
                 title={entry.title}
                 canDownload={canDownloadCatalogPlugins}
-                isMutating={isMutatingConnector}
+                isMutating={isMutatingPlugin}
                 onUpdate={() => void handleDownloadPlugin(entry)}
               />
-            ) : unavailableReason && canInstallConnectorPlugins ? (
+            ) : unavailableReason && canInstallPlugins ? (
               <Button
                 variant="outline"
-                disabled={isMutatingConnector}
+                disabled={isMutatingPlugin}
                 onClick={() => void workflow.execute({ type: "install" })}
               >
                 <Upload data-icon="inline-start" />
@@ -702,8 +695,8 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                 <Switch
                   checked={group.enabled}
                   disabled={
-                    isMutatingConnector ||
-                    connectors?.pluginsEnabled === false ||
+                    isMutatingPlugin ||
+                    overview?.pluginsEnabled === false ||
                     group.plugin.unavailableReason !== undefined
                   }
                   aria-label={`${group.enabled ? "Deactivate" : "Activate"} ${entry.title}`}
@@ -727,7 +720,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                 {group.connections.length} connection
                 {group.connections.length === 1 ? "" : "s"}
               </Badge>
-              {pluginHasConnector(group.plugin) ? (
+              {pluginHasBacklog(group.plugin) ? (
                 <Badge variant="outline">
                   {importedCountsByPlugin[group.plugin.id] ?? 0} backlog items
                 </Badge>
@@ -757,7 +750,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
           <PluginInfoList entry={entry} version={group.plugin.version} />
         </section>
 
-        {connectors?.pluginsEnabled === false ? (
+        {overview?.pluginsEnabled === false ? (
           <MessagePanel tone="warning">
             The plugin system is deactivated. All plugin execution and sync are
             paused until you enable it from the Plugins catalog.
@@ -773,8 +766,8 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
           group={group}
           title={entry.title}
           disabled={
-            isMutatingConnector ||
-            connectors?.pluginsEnabled === false ||
+            isMutatingPlugin ||
+            overview?.pluginsEnabled === false ||
             Boolean(unavailableReason)
           }
           onChange={(capability, enabled) =>
@@ -793,8 +786,8 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
               </div>
               <Button
                 disabled={
-                  isMutatingConnector ||
-                  connectors?.pluginsEnabled === false ||
+                  isMutatingPlugin ||
+                  overview?.pluginsEnabled === false ||
                   Boolean(unavailableReason)
                 }
                 onClick={() => handleCreate(group.plugin)}
@@ -820,7 +813,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                 <FieldGroup className="desktop:grid desktop:grid-cols-2 desktop:gap-x-6 desktop:gap-y-5">
                   {group.plugin.connectionFields.map((field) => {
                     if (
-                      !isConnectorFieldShown(
+                      !isPluginFieldShown(
                         group.plugin,
                         field,
                         groupFormState.values,
@@ -831,7 +824,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                     }
 
                     return (
-                      <ConnectorFieldInput
+                      <PluginFieldInput
                         key={field.id}
                         field={field}
                         value={groupFormState.values[field.id]}
@@ -857,8 +850,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                       pluginId={group.plugin.id}
                       values={groupFormState.values}
                       disabled={
-                        isMutatingConnector ||
-                        !isCapabilityActive(group, "team")
+                        isMutatingPlugin || !isCapabilityActive(group, "team")
                       }
                       onCreated={(created) =>
                         // Only into the form that asked: one closed or
@@ -879,16 +871,16 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                 <div className="flex flex-wrap justify-end gap-3 pt-2">
                   <Button
                     variant="outline"
-                    disabled={isMutatingConnector}
+                    disabled={isMutatingPlugin}
                     onClick={() => setFormState(null)}
                   >
                     Cancel
                   </Button>
                   <Button
                     disabled={
-                      isMutatingConnector ||
+                      isMutatingPlugin ||
                       !isFormDirty ||
-                      !canSubmitConnectorForm(
+                      !canSubmitPluginForm(
                         activePlugin,
                         groupFormState.values,
                         {
@@ -931,7 +923,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                         >
                           {unavailableReason
                             ? "Unavailable"
-                            : connectors?.pluginsEnabled === false ||
+                            : overview?.pluginsEnabled === false ||
                                 !group.enabled
                               ? "Paused"
                               : connection.lastError
@@ -946,7 +938,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                         {connection.tenantLabel}
                       </p>
                       {!connection.autoSync &&
-                      pluginHasConnector(group.plugin) ? (
+                      pluginHasBacklog(group.plugin) ? (
                         <p className="text-xs text-[var(--text-tertiary)]">
                           {connection.pendingImportCount} staged ·{" "}
                           {connection.selectedImportCount} selected
@@ -970,19 +962,19 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                       <Button
                         variant="outline"
                         disabled={
-                          isMutatingConnector || Boolean(unavailableReason)
+                          isMutatingPlugin || Boolean(unavailableReason)
                         }
                         onClick={() => handleEdit(group.plugin, connection)}
                       >
                         <Pencil data-icon="inline-start" />
                         Edit
                       </Button>
-                      {pluginHasConnector(group.plugin) ? (
+                      {pluginHasBacklog(group.plugin) ? (
                         <Button
                           variant="outline"
                           disabled={
-                            isMutatingConnector ||
-                            connectors?.pluginsEnabled === false ||
+                            isMutatingPlugin ||
+                            overview?.pluginsEnabled === false ||
                             !isCapabilityActive(group, "connector")
                           }
                           onClick={() =>
@@ -1002,8 +994,8 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                           <Button
                             variant="outline"
                             disabled={
-                              isMutatingConnector ||
-                              connectors?.pluginsEnabled === false ||
+                              isMutatingPlugin ||
+                              overview?.pluginsEnabled === false ||
                               !isCapabilityActive(group, "team")
                             }
                             onClick={() =>
@@ -1015,14 +1007,14 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                             }
                           >
                             <RefreshCw data-icon="inline-start" />
-                            {pluginHasConnector(group.plugin)
+                            {pluginHasBacklog(group.plugin)
                               ? "Sync projects"
                               : "Sync"}
                           </Button>
                           <Button
                             variant="outline"
                             disabled={
-                              isMutatingConnector ||
+                              isMutatingPlugin ||
                               !isCapabilityActive(group, "team")
                             }
                             onClick={() =>
@@ -1045,7 +1037,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                             render={
                               <Button
                                 variant="destructive"
-                                disabled={isMutatingConnector}
+                                disabled={isMutatingPlugin}
                               >
                                 <Trash2 data-icon="inline-start" />
                                 Remove
@@ -1084,7 +1076,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                       ) : (
                         <Button
                           variant="destructive"
-                          disabled={isMutatingConnector}
+                          disabled={isMutatingPlugin}
                           onClick={() =>
                             void handleDelete(group.plugin.id, connection.id)
                           }
@@ -1126,7 +1118,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
           />
         ) : null}
 
-        {canUninstallConnectorPlugins ? (
+        {canUninstallPlugins ? (
           <section className="settings-section">
             <h2 className="settings-section-title">Uninstall plugin</h2>
             <p className="settings-section-desc">
@@ -1141,10 +1133,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
               <AlertDialog>
                 <AlertDialogTrigger
                   render={
-                    <Button
-                      variant="destructive"
-                      disabled={isMutatingConnector}
-                    />
+                    <Button variant="destructive" disabled={isMutatingPlugin} />
                   }
                 >
                   <Trash2 data-icon="inline-start" />
@@ -1157,15 +1146,15 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                     </AlertDialogTitle>
                     <AlertDialogDescription>
                       This removes the plugin package, saved connections,
-                      credentials, staged imports, and connector statuses.
-                      Already imported backlog items are preserved.
+                      credentials, staged imports, and source states. Already
+                      imported backlog items are preserved.
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
                     <AlertDialogCancel>Cancel</AlertDialogCancel>
                     <AlertDialogAction
                       variant="destructive"
-                      disabled={isMutatingConnector}
+                      disabled={isMutatingPlugin}
                       onClick={() => void handleUninstallPlugin(group)}
                     >
                       Uninstall plugin
@@ -1205,7 +1194,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
             ) : available ? (
               <Button
                 className="w-full desktop:w-auto"
-                disabled={!canDownloadThisEntry || isMutatingConnector}
+                disabled={!canDownloadThisEntry || isMutatingPlugin}
                 title={
                   !canInstallCatalogPlugin(catalogEntry)
                     ? "Packaged schema-plugin installation is not available in this Ajour version."
@@ -1294,18 +1283,18 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
   if (pluginId) {
     return (
       <div className="settings-sections">
-        {selectedDisplayEntry?.connectorGroup ? (
-          renderConnectorDetail(
+        {selectedDisplayEntry?.pluginGroup ? (
+          renderPluginDetail(
             selectedDisplayEntry.catalog,
-            selectedDisplayEntry.connectorGroup,
+            selectedDisplayEntry.pluginGroup,
           )
         ) : selectedDisplayEntry ? (
           renderCatalogDetail(selectedDisplayEntry)
-        ) : catalog === null || connectors === null ? (
+        ) : catalog === null || overview === null ? (
           <section className="settings-section">
             <AllPluginsLink />
             {renderMessages()}
-            {connectorApiMissing ? null : (
+            {pluginApiMissing ? null : (
               <MessagePanel>Loading plugin…</MessagePanel>
             )}
           </section>
@@ -1323,7 +1312,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
     );
   }
 
-  if (connectorApiMissing) {
+  if (pluginApiMissing) {
     return (
       <div className="settings-sections">
         <section className="settings-section">
@@ -1337,12 +1326,12 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
   return (
     <div className="settings-sections">
       <PluginsHeader
-        canInstall={canInstallConnectorPlugins}
-        isMutating={isMutatingConnector}
+        canInstall={canInstallPlugins}
+        isMutating={isMutatingPlugin}
         onInstall={() => void workflow.execute({ type: "install" })}
         filter={catalogFilter}
         onFilterChange={setCatalogFilter}
-        pluginsEnabled={connectors?.pluginsEnabled ?? true}
+        pluginsEnabled={overview?.pluginsEnabled ?? true}
         refreshMinutes={catalogSettings.refreshMinutes}
         canConfigureRefresh={Boolean(
           window.ajourDesktop?.configurePluginCatalog,
@@ -1364,13 +1353,13 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                     key={entry.catalog.id}
                     entry={entry}
                     canDownload={canDownloadCatalogPlugins}
-                    pluginsEnabled={connectors?.pluginsEnabled ?? true}
-                    isMutating={isMutatingConnector}
+                    pluginsEnabled={overview?.pluginsEnabled ?? true}
+                    isMutating={isMutatingPlugin}
                     onDownload={() => void handleDownloadPlugin(entry.catalog)}
                     onEnabledChange={(enabled) =>
-                      entry.connectorGroup
+                      entry.pluginGroup
                         ? void handlePluginActivation(
-                            entry.connectorGroup,
+                            entry.pluginGroup,
                             enabled,
                           )
                         : undefined
@@ -1378,13 +1367,13 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                   />
                 ))}
               </div>
-            ) : catalog || connectors ? (
+            ) : catalog || overview ? (
               <EmptyListText title="No matching plugins">
                 Choose another category or install a compatible plugin from a
                 local file.
               </EmptyListText>
             ) : null}
-            {catalog === null && connectors === null && !connectorError ? (
+            {catalog === null && overview === null && !pluginError ? (
               <MessagePanel>Loading plugins…</MessagePanel>
             ) : null}
           </div>
@@ -1397,7 +1386,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
             {catalog
               ? ` · Catalog checked ${new Date(catalog.checkedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
               : ""}
-            {!canInstallConnectorPlugins
+            {!canInstallPlugins
               ? " · Downloads and packaged installation are available in the desktop app."
               : ""}
           </p>

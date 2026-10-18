@@ -47,7 +47,7 @@ Ajour is a time tracker for people who fill a timesheet every week. It keeps you
 
 <DocLinks :items="[
   { icon: 'code', title: 'Plugin API', text: 'What a plugin can do, and what it cannot.', link: '/developers/' },
-  { icon: 'terminal', title: 'Build a connector', text: 'Write, run and package a connector in an afternoon.', link: '/developers/build-a-connector' },
+  { icon: 'terminal', title: 'Build a backlog plugin', text: 'Write, run and package a backlog plugin in an afternoon.', link: '/developers/build-a-backlog-plugin' },
 ]" />
 
 </div>

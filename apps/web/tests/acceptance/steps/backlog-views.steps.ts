@@ -5,7 +5,7 @@ const { Given, When, Then } = createBdd();
 const peekPanel = (page: Page) =>
   page.getByRole("complementary", { name: "Backlog item peek" });
 Given("I have a backlog view fixture", async ({ page }) => {
-  await page.route("http://127.0.0.1:8787/api/connectors", (route) =>
+  await page.route("http://127.0.0.1:8787/api/plugins", (route) =>
     route.fulfill({
       json: {
         pluginsEnabled: false,
@@ -1295,7 +1295,7 @@ Given(
         { id: "url", label: "URL", type: "url", required: true, secret: false },
       ],
     };
-    await page.route("http://127.0.0.1:8787/api/connectors", (route) =>
+    await page.route("http://127.0.0.1:8787/api/plugins", (route) =>
       route.fulfill({
         json: {
           pluginsEnabled: true,
@@ -1370,10 +1370,10 @@ Given(
     });
     await page.reload();
     await page.evaluate(async () => {
-      const { getConnectorsOverview } = await import(
+      const { getPluginsOverview } = await import(
         /* @vite-ignore */ "/src/lib/app-api.ts"
       );
-      await getConnectorsOverview();
+      await getPluginsOverview();
     });
   },
 );

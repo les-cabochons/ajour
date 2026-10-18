@@ -14,7 +14,7 @@ vi.mock("@/lib/local-store", () => ({
     failSourceWrite: mocks.fail,
   },
 }));
-vi.mock("@/lib/app-api", () => ({ writeConnectorSettle: mocks.write }));
+vi.mock("@/lib/app-api", () => ({ writeBacklogSettle: mocks.write }));
 vi.mock("@/components/ui/toast", () => ({ showErrorToast: mocks.error }));
 let item: LocalWorkItem;
 beforeEach(() => {

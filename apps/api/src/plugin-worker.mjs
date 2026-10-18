@@ -1,8 +1,8 @@
 import { parentPort, workerData } from "node:worker_threads";
 import { serialize } from "node:v8";
 
-const MAX_CONNECTOR_PLUGIN_RESULT_BYTES = 8 * 1024 * 1024;
-const MAX_CONNECTOR_PLUGIN_ERROR_MESSAGE_CHARACTERS = 4_096;
+const MAX_PLUGIN_RESULT_BYTES = 8 * 1024 * 1024;
+const MAX_PLUGIN_ERROR_MESSAGE_CHARACTERS = 4_096;
 
 // Keep in sync with `codeHostOperations` in packages/shared/code-host.ts.
 const CODE_HOST_METHODS = new Set([
@@ -27,14 +27,14 @@ const CALENDAR_METHODS = new Set(["listCalendarEvents"]);
 const TEAM_CONNECTION_METHODS = new Set(["syncTeamProjects"]);
 
 if (!parentPort) {
-  throw new Error("Connector plugin worker requires a parent port.");
+  throw new Error("Plugin worker requires a parent port.");
 }
 
 async function run() {
   const pluginModule = await import(workerData.entrypointUrl);
   const handler = pluginModule[workerData.method];
   if (typeof handler !== "function") {
-    throw new Error(`Connector plugin does not export ${workerData.method}().`);
+    throw new Error(`Plugin does not export ${workerData.method}().`);
   }
 
   if (workerData.method === "validateConnection") {
@@ -65,22 +65,22 @@ async function run() {
     );
   }
 
-  throw new Error(`Unknown connector plugin method: ${workerData.method}`);
+  throw new Error(`Unknown plugin method: ${workerData.method}`);
 }
 
 function errorMessage(error) {
   const message =
-    error instanceof Error ? error.message : "Unknown connector plugin error.";
-  if (message.length <= MAX_CONNECTOR_PLUGIN_ERROR_MESSAGE_CHARACTERS) {
+    error instanceof Error ? error.message : "Unknown plugin error.";
+  if (message.length <= MAX_PLUGIN_ERROR_MESSAGE_CHARACTERS) {
     return message;
   }
-  return `${message.slice(0, MAX_CONNECTOR_PLUGIN_ERROR_MESSAGE_CHARACTERS - 1)}…`;
+  return `${message.slice(0, MAX_PLUGIN_ERROR_MESSAGE_CHARACTERS - 1)}…`;
 }
 
 try {
   const result = await run();
-  if (serialize(result).byteLength > MAX_CONNECTOR_PLUGIN_RESULT_BYTES) {
-    throw new Error("Connector plugin result exceeds the allowed size.");
+  if (serialize(result).byteLength > MAX_PLUGIN_RESULT_BYTES) {
+    throw new Error("Plugin result exceeds the allowed size.");
   }
   parentPort.postMessage({
     ok: true,

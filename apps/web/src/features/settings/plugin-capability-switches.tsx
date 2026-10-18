@@ -4,7 +4,7 @@ import {
   pluginHasSwitchableCapabilities,
   pluginSwitchableCapabilities,
   switchableCapabilityLabels,
-  type ConnectorOverviewGroup,
+  type PluginOverviewGroup,
   type SwitchableCapability,
 } from "@ajour/shared";
 import { SettingRow } from "@/components/app-surface";
@@ -19,7 +19,7 @@ const capabilityDescriptions: Record<SwitchableCapability, string> = {
 
 /**
  * The Capabilities section of a plugin that declares more than one of a
- * connector, a code host, a calendar and a team: one switch each, under the
+ * backlog capability, a code host, a calendar and a team: one switch each, under the
  * plugin's own switch. Turning one off
  * pauses it and keeps its connections and data.
  */
@@ -29,7 +29,7 @@ export function PluginCapabilitySwitches({
   disabled,
   onChange,
 }: {
-  group: ConnectorOverviewGroup;
+  group: PluginOverviewGroup;
   title: string;
   disabled: boolean;
   onChange: (capability: SwitchableCapability, enabled: boolean) => void;

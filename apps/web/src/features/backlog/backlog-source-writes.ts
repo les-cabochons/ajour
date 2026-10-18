@@ -2,18 +2,15 @@ import { showErrorToast } from "@/components/ui/toast";
 import { isCapabilityActive } from "@ajour/shared";
 import type { LocalWorkItem } from "@/domain/local-state";
 import { hasSameSourceWriteRequest } from "@/domain/backlog/backlog-item-lifecycle";
-import { connectorPriorityFromLevel } from "@/domain/backlog/priority";
-import {
-  getCachedConnectorsOverview,
-  writeConnectorSettle,
-} from "@/lib/app-api";
+import { sourcePriorityFromLevel } from "@/domain/backlog/priority";
+import { getCachedPluginsOverview, writeBacklogSettle } from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
 
 /** Items whose write is on its way, so a second flush doesn't send it twice. */
 const sending = new Set<string>();
 
 /**
- * Whether the item is synced and its active connector can write to the source.
+ * Whether the item is synced and its active plugin can write to the source.
  * Settle then opens the settle dialog, and moves write the new source state.
  * Other items settle and move locally.
  */
@@ -26,7 +23,7 @@ export function canWriteToSource(workItem: LocalWorkItem) {
     return false;
   }
 
-  const group = getCachedConnectorsOverview()?.connectionGroups.find(
+  const group = getCachedPluginsOverview()?.connectionGroups.find(
     (candidate) => candidate.plugin.id === workItem.source,
   );
   return Boolean(
@@ -87,10 +84,10 @@ async function sendSourceWrite(
     if (!workItem.sourceId || !workItem.sourceConnectionId) {
       throw new Error("The item is no longer linked to its source.");
     }
-    await writeConnectorSettle(workItem.source, workItem.sourceConnectionId, {
+    await writeBacklogSettle(workItem.source, workItem.sourceConnectionId, {
       sourceId: workItem.sourceId,
       state: write.state,
-      priority: connectorPriorityFromLevel(write.priority),
+      priority: sourcePriorityFromLevel(write.priority),
     });
     localStore.completeSourceWrite(workItem._id, sentItems);
   } catch (error) {

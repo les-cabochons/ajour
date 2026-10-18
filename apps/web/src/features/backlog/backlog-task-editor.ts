@@ -53,7 +53,7 @@ export type SubitemEstimateTotals = Record<BacklogEstimateFieldKey, number>;
 export interface BacklogTaskEditorState {
   isNew: boolean;
   isSubitem: boolean;
-  /** The item came from a connector, so it has synced values to reset to. */
+  /** The item came from a plugin, so it has synced values to reset to. */
   isSynced: boolean;
   validation: BacklogTaskEditorValidation;
   hasChanges: boolean;

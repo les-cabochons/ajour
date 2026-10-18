@@ -43,7 +43,7 @@ export class ProjectDataShapePluginManager {
   constructor(options: ProjectDataShapeHostOptions = {}) {
     this.pluginDirectories = options.pluginDirectories ?? [];
     this.workers = new PluginWorkerLifetime({
-      name: "Schema",
+      name: "Schema plugin",
       requestTimeoutMs: options.requestTimeoutMs ?? 30_000,
       workerScriptUrl:
         options.workerScriptUrl ??

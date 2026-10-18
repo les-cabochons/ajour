@@ -549,7 +549,7 @@ export function BacklogPage() {
                 <EmptyDescription>
                   {view.filters.length
                     ? "Change the filters to see more items."
-                    : "Create a backlog item or import items from a connector."}
+                    : "Create a backlog item or import items from a plugin."}
                 </EmptyDescription>
               </EmptyHeader>
               {!view.filters.length && (

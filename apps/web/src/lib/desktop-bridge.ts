@@ -1,7 +1,7 @@
 import type {
-  CatalogConnectorDownloadResponse,
-  ConnectorPluginInstallResponse,
-  ConnectorPluginUninstallResponse,
+  CatalogPluginDownloadResponse,
+  PluginInstallResponse,
+  PluginUninstallResponse,
   PluginCatalogResponse,
   PluginCatalogSettings,
 } from "@ajour/shared";
@@ -74,7 +74,7 @@ declare global {
       ) => Promise<DesktopUpdateCheckResult>;
       configureAutomaticUpdates?: (track: UpdateTrack) => Promise<void>;
       openUpdateRelease?: (releaseUrl: string) => Promise<void>;
-      installConnectorPlugin?: () => Promise<ConnectorPluginInstallResponse | null>;
+      installPlugin?: () => Promise<PluginInstallResponse | null>;
       getPluginCatalog?: () => Promise<PluginCatalogResponse>;
       getPluginCatalogSettings?: () => Promise<PluginCatalogSettings>;
       configurePluginCatalog?: (
@@ -85,10 +85,8 @@ declare global {
       ) => () => void;
       downloadCatalogPlugin?: (
         pluginId: string,
-      ) => Promise<CatalogConnectorDownloadResponse>;
-      uninstallConnectorPlugin?: (
-        pluginId: string,
-      ) => Promise<ConnectorPluginUninstallResponse>;
+      ) => Promise<CatalogPluginDownloadResponse>;
+      uninstallPlugin?: (pluginId: string) => Promise<PluginUninstallResponse>;
       getDevelopmentPluginSettings?: () => Promise<DevelopmentPluginSettings>;
       selectDevelopmentPluginDirectory?: () => Promise<DevelopmentPluginSettings | null>;
       clearDevelopmentPluginDirectories?: () => Promise<DevelopmentPluginSettings>;

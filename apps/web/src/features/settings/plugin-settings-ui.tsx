@@ -9,17 +9,17 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { OptionSelect } from "@/components/ui/option-select";
 import { cn } from "@/lib/utils";
-import type { ConnectorField, ConnectorFieldValue } from "@ajour/shared";
-import { SAVED_SECRET_MASK } from "./connector-form-state";
+import type { PluginField, PluginFieldValue } from "@ajour/shared";
+import { SAVED_SECRET_MASK } from "./plugin-form-state";
 
-function ConnectorFieldInput({
+function PluginFieldInput({
   field,
   value,
   onChange,
 }: {
-  field: ConnectorField;
-  value: ConnectorFieldValue | undefined;
-  onChange: (nextValue: ConnectorFieldValue) => void;
+  field: PluginField;
+  value: PluginFieldValue | undefined;
+  onChange: (nextValue: PluginFieldValue) => void;
 }) {
   const isWideField =
     field.type === "checkbox" ||
@@ -119,4 +119,4 @@ function ConnectorFieldInput({
   );
 }
 
-export { ConnectorFieldInput };
+export { PluginFieldInput };

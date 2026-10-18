@@ -31,7 +31,7 @@ To skip the dialog, set a settle rule per source project in **Settings › Backl
 - **Ask**, the default, opens the settle dialog every time.
 - **Apply** settles at once with a fixed state, a fixed priority, or both. Press <kbd>Shift</kbd> <kbd>E</kbd>, or hold <kbd>Shift</kbd> and press **Settle**, to open the dialog anyway.
 
-Sync a connector before you set rules. The source projects appear after the first sync.
+Run a backlog sync before you set rules. The source projects appear after the first sync.
 
 ### Unsettle
 

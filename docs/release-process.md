@@ -52,7 +52,7 @@ the matching GitHub channel at startup, after a track change, when the user
 selects **Check again**, and every four hours while Ajour remains open.
 Available updates download in the background. Once a download is verified,
 Ajour asks whether to restart now or later. **Restart now** shuts down the
-internal connector API before handing off to the installer. **Later** leaves
+internal app API before handing off to the installer. **Later** leaves
 the update pending and installs it on the next normal app quit. macOS continues
 to use the renderer-safe release check and manual release link until its builds
 are signed and notarized.

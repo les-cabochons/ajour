@@ -178,7 +178,7 @@ describe("localStore.importProjectTasks", () => {
     const { localStore } = await import("../../lib/local-store");
 
     expect(
-      localStore.importConnectorWorkItems([
+      localStore.importSyncedWorkItems([
         {
           id: "connector-initial",
           source: "azure_devops",
@@ -213,7 +213,7 @@ describe("localStore.importProjectTasks", () => {
     expect(initialWorkItem?._id).toBeTruthy();
 
     expect(
-      localStore.importConnectorWorkItems([
+      localStore.importSyncedWorkItems([
         {
           id: "connector-updated",
           source: "azure_devops",
@@ -262,7 +262,7 @@ describe("localStore.importProjectTasks", () => {
     const { localStore } = await import("../../lib/local-store");
 
     expect(
-      localStore.importConnectorWorkItems([
+      localStore.importSyncedWorkItems([
         {
           id: "connector-empty-priority",
           source: "azure_devops",
@@ -321,7 +321,7 @@ describe("localStore.importProjectTasks", () => {
   it("keeps a manually edited priority while refreshing the imported priority value", async () => {
     const { localStore } = await import("../../lib/local-store");
 
-    localStore.importConnectorWorkItems([
+    localStore.importSyncedWorkItems([
       {
         id: "connector-initial-priority",
         source: "azure_devops",
@@ -349,7 +349,7 @@ describe("localStore.importProjectTasks", () => {
     expect(importedWorkItem?._id).toBeTruthy();
 
     localStore.updateWorkItem(importedWorkItem!._id, { priority: 2 });
-    localStore.importConnectorWorkItems([
+    localStore.importSyncedWorkItems([
       {
         id: "connector-updated-priority",
         source: "azure_devops",

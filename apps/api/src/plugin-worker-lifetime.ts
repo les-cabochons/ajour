@@ -1,6 +1,6 @@
 import { Worker } from "node:worker_threads";
 
-/** Each host owns its own lifetime instance, so connector and data-shape quotas stay separate. */
+/** Each host owns its own lifetime instance, so plugin and data-shape quotas stay separate. */
 const MAX_CONCURRENT_OPERATIONS_PER_HOST = 4;
 const MAX_PLUGIN_ERROR_MESSAGE_CHARACTERS = 4_096;
 
@@ -18,7 +18,7 @@ interface Operation {
 }
 
 interface WorkerLifetimeOptions {
-  name: "Connector" | "Schema";
+  name: "Plugin" | "Schema plugin";
   workerScriptUrl: URL;
   requestTimeoutMs: number;
 }
@@ -44,7 +44,7 @@ export class PluginWorkerLifetime<TMethod extends string> {
 
   assertRunning() {
     if (this.shuttingDown) {
-      throw new Error(`${this.options.name} plugin host is shutting down.`);
+      throw new Error(`${this.options.name} host is shutting down.`);
     }
   }
 
@@ -56,7 +56,7 @@ export class PluginWorkerLifetime<TMethod extends string> {
     this.assertRunning();
     if (this.operations.size >= MAX_CONCURRENT_OPERATIONS_PER_HOST) {
       throw new Error(
-        `Too many ${this.options.name.toLowerCase()} plugin operations are already running.`,
+        `Too many ${this.options.name.toLowerCase()} operations are already running.`,
       );
     }
     let release!: () => void;
@@ -176,7 +176,7 @@ export class PluginWorkerLifetime<TMethod extends string> {
                 ? message.error
                     .trim()
                     .slice(0, MAX_PLUGIN_ERROR_MESSAGE_CHARACTERS)
-                : `Unknown ${this.options.name.toLowerCase()} plugin error.`;
+                : `Unknown ${this.options.name.toLowerCase()} error.`;
             void finalize(new Error(detail));
           }
         },
@@ -185,14 +185,14 @@ export class PluginWorkerLifetime<TMethod extends string> {
         if (!settled)
           void finalize(
             new Error(
-              `${this.options.name} plugin "${operation.pluginId}" exited before returning a result (code ${code}).`,
+              `${this.options.name} "${operation.pluginId}" exited before returning a result (code ${code}).`,
             ),
           );
       });
       timeout = setTimeout(() => {
         void finalize(
           new Error(
-            `${this.options.name} plugin "${operation.pluginId}" timed out while handling ${method}.`,
+            `${this.options.name} "${operation.pluginId}" timed out while handling ${method}.`,
           ),
         );
       }, this.options.requestTimeoutMs);

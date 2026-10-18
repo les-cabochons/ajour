@@ -13,8 +13,8 @@ import { create } from "tar";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   createAppApiServer,
-  installConnectorPluginForServer,
-  uninstallConnectorPluginForServer,
+  installPluginForServer,
+  uninstallPluginForServer,
 } from "./server.ts";
 
 const ICON = "<svg viewBox='0 0 16 16'><path d='M0 0h16v16H0z' /></svg>";
@@ -169,7 +169,7 @@ async function dispatchJsonRequest(
   });
 }
 
-describe("connector plugin installation boundary", () => {
+describe("plugin installation boundary", () => {
   const tempDirs: string[] = [];
   const servers: Server[] = [];
 
@@ -192,7 +192,7 @@ describe("connector plugin installation boundary", () => {
     );
   });
 
-  it("installs and uninstalls a packaged connector through desktop-owned capabilities", async () => {
+  it("installs and uninstalls a packaged plugin through desktop-owned capabilities", async () => {
     const root = await tempDir();
     const pluginDirectory = await createPlugin(
       path.join(root, "source"),
@@ -222,7 +222,7 @@ describe("connector plugin installation boundary", () => {
     servers.push(server);
 
     const archiveBytes = await readFile(archivePath);
-    const response = await installConnectorPluginForServer(
+    const response = await installPluginForServer(
       server,
       archiveBytes,
       path.basename(archivePath),
@@ -241,10 +241,7 @@ describe("connector plugin installation boundary", () => {
       },
     });
 
-    const uninstallResponse = await uninstallConnectorPluginForServer(
-      server,
-      "jira",
-    );
+    const uninstallResponse = await uninstallPluginForServer(server, "jira");
     expect(uninstallResponse).toMatchObject({
       pluginId: "jira",
       overview: {
@@ -308,7 +305,7 @@ describe("connector plugin installation boundary", () => {
 
       const before = await dispatchJsonRequest(server, {
         method: "GET",
-        path: "/api/connectors",
+        path: "/api/plugins",
       });
       expect(before.body).toMatchObject({
         connectionGroups: [
@@ -325,7 +322,7 @@ describe("connector plugin installation boundary", () => {
         ],
       });
 
-      const update = await installConnectorPluginForServer(
+      const update = await installPluginForServer(
         server,
         await readFile(archivePath),
         path.basename(archivePath),
@@ -419,7 +416,7 @@ describe("connector plugin installation boundary", () => {
       });
       servers.push(server);
 
-      const update = await installConnectorPluginForServer(
+      const update = await installPluginForServer(
         server,
         await readFile(archivePath),
         path.basename(archivePath),
@@ -436,7 +433,7 @@ describe("connector plugin installation boundary", () => {
     },
   );
 
-  it("does not expose connector package changes through the loopback HTTP server", async () => {
+  it("does not expose plugin package changes through the loopback HTTP server", async () => {
     const root = await tempDir();
     const server = createAppApiServer({
       statePath: path.join(root, "state.json"),
@@ -447,7 +444,7 @@ describe("connector plugin installation boundary", () => {
 
     const response = await dispatchJsonRequest(server, {
       method: "POST",
-      path: "/api/connectors/plugins/install",
+      path: "/api/plugins/plugins/install",
       headers: {
         "Content-Type": "application/octet-stream",
       },
@@ -457,18 +454,18 @@ describe("connector plugin installation boundary", () => {
     expect(response).toEqual({
       status: 404,
       body: {
-        error: "No route for POST /api/connectors/plugins/install",
+        error: "No route for POST /api/plugins/plugins/install",
       },
     });
 
     const uninstallResponse = await dispatchJsonRequest(server, {
       method: "DELETE",
-      path: "/api/connectors/plugins/jira",
+      path: "/api/plugins/plugins/jira",
     });
     expect(uninstallResponse).toEqual({
       status: 404,
       body: {
-        error: "No route for DELETE /api/connectors/plugins/jira",
+        error: "No route for DELETE /api/plugins/plugins/jira",
       },
     });
   });
@@ -585,7 +582,7 @@ describe("connector plugin installation boundary", () => {
     await expect(
       dispatchJsonRequest(server, {
         method: "POST",
-        path: "/api/connectors/jira/activation",
+        path: "/api/plugins/jira/activation",
         headers: { Origin: "https://attacker.example" },
         body: JSON.stringify({ enabled: false }),
       }),
@@ -640,7 +637,7 @@ describe("connector plugin installation boundary", () => {
     await expect(
       dispatchJsonRequest(server, {
         method: "GET",
-        path: "/api/connectors",
+        path: "/api/plugins",
         headers: { Host: "attacker.example:8787" },
       }),
     ).resolves.toEqual({
@@ -672,7 +669,7 @@ describe("connector plugin installation boundary", () => {
 
     const connectionResponse = await dispatchJsonRequest(server, {
       method: "POST",
-      path: "/api/connectors/jira/connections",
+      path: "/api/plugins/jira/connections",
       body: JSON.stringify({
         values: {
           label: "Main Jira",
@@ -690,7 +687,7 @@ describe("connector plugin installation boundary", () => {
 
     const deactivated = await dispatchJsonRequest(server, {
       method: "POST",
-      path: "/api/connectors/jira/activation",
+      path: "/api/plugins/jira/activation",
       body: JSON.stringify({ enabled: false }),
     });
     expect(deactivated).toMatchObject({
@@ -708,19 +705,19 @@ describe("connector plugin installation boundary", () => {
     await expect(
       dispatchJsonRequest(server, {
         method: "POST",
-        path: `/api/connectors/jira/connections/${connectionId}/sync`,
+        path: `/api/plugins/jira/connections/${connectionId}/sync`,
         body: JSON.stringify({ trigger: "manual", workItems: [] }),
       }),
     ).resolves.toEqual({
       status: 409,
       body: {
-        error: "Activate this connector plugin before syncing.",
+        error: "Activate this plugin before syncing.",
       },
     });
   });
 });
 
-describe("connector settle routes", () => {
+describe("backlog settle routes", () => {
   const tempDirs: string[] = [];
   const servers: Server[] = [];
 
@@ -781,7 +778,7 @@ describe("connector settle routes", () => {
     servers.push(server);
     const connectionResponse = await dispatchJsonRequest(server, {
       method: "POST",
-      path: "/api/connectors/jira/connections",
+      path: "/api/plugins/jira/connections",
       body: JSON.stringify({
         values: {
           label: "Main Jira",
@@ -804,7 +801,7 @@ describe("connector settle routes", () => {
     await expect(
       dispatchJsonRequest(server, {
         method: "POST",
-        path: `/api/connectors/jira/connections/${connectionId}/settle-states`,
+        path: `/api/plugins/jira/connections/${connectionId}/settle-states`,
         body: JSON.stringify({ sourceId: "OPEN-1" }),
       }),
     ).resolves.toEqual({
@@ -820,7 +817,7 @@ describe("connector settle routes", () => {
     await expect(
       dispatchJsonRequest(server, {
         method: "POST",
-        path: `/api/connectors/jira/connections/${connectionId}/settle`,
+        path: `/api/plugins/jira/connections/${connectionId}/settle`,
         body: JSON.stringify({
           sourceId: "OPEN-1",
           state: "Waiting",
@@ -838,7 +835,7 @@ describe("connector settle routes", () => {
 
     const empty = await dispatchJsonRequest(server, {
       method: "POST",
-      path: `/api/connectors/jira/connections/${connectionId}/settle`,
+      path: `/api/plugins/jira/connections/${connectionId}/settle`,
       body: JSON.stringify({ sourceId: "OPEN-1" }),
     });
     expect(empty.status).toBe(400);
@@ -846,7 +843,7 @@ describe("connector settle routes", () => {
     await expect(
       dispatchJsonRequest(server, {
         method: "POST",
-        path: `/api/connectors/jira/connections/${connectionId}/settle`,
+        path: `/api/plugins/jira/connections/${connectionId}/settle`,
         body: JSON.stringify({ sourceId: "FAIL-1", state: "Waiting" }),
       }),
     ).resolves.toEqual({
@@ -861,12 +858,12 @@ describe("connector settle routes", () => {
     await expect(
       dispatchJsonRequest(server, {
         method: "POST",
-        path: `/api/connectors/jira/connections/${connectionId}/settle-states`,
+        path: `/api/plugins/jira/connections/${connectionId}/settle-states`,
         body: JSON.stringify({ sourceId: "OPEN-1" }),
       }),
     ).resolves.toEqual({
       status: 409,
-      body: { error: "This connector plugin does not support settling." },
+      body: { error: "This plugin does not support settling." },
     });
   });
 
@@ -875,7 +872,7 @@ describe("connector settle routes", () => {
 
     const synced = await dispatchJsonRequest(server, {
       method: "POST",
-      path: `/api/connectors/jira/connections/${connectionId}/sync`,
+      path: `/api/plugins/jira/connections/${connectionId}/sync`,
       body: JSON.stringify({ trigger: "manual", workItems: [] }),
     });
     expect(synced).toMatchObject({
@@ -946,7 +943,7 @@ describe("code host routes", () => {
     servers.push(server);
     const connectionResponse = await dispatchJsonRequest(server, {
       method: "POST",
-      path: "/api/connectors/jira/connections",
+      path: "/api/plugins/jira/connections",
       body: JSON.stringify({
         values: {
           label: "Work",
@@ -979,7 +976,7 @@ describe("code host routes", () => {
 
     const overview = await dispatchJsonRequest(server, {
       method: "GET",
-      path: "/api/connectors",
+      path: "/api/plugins",
     });
     const connection = (
       overview.body as {
@@ -989,13 +986,13 @@ describe("code host routes", () => {
     expect(connection?.lastSyncAt).toEqual(expect.any(Number));
   });
 
-  it("refuses backlog sync for a plugin without the connector capability", async () => {
+  it("refuses backlog sync for a plugin without the backlog capability", async () => {
     const { server, connectionId } = await createServer({ codeHost: {} });
 
     await expect(
       dispatchJsonRequest(server, {
         method: "POST",
-        path: `/api/connectors/jira/connections/${connectionId}/sync`,
+        path: `/api/plugins/jira/connections/${connectionId}/sync`,
         body: JSON.stringify({ trigger: "manual" }),
       }),
     ).resolves.toEqual({
@@ -1004,12 +1001,12 @@ describe("code host routes", () => {
     });
   });
 
-  it("rejects unknown operations, connector-only plugins and malformed requests", async () => {
-    const connectorOnly = await createServer({ connector: {} });
+  it("rejects unknown operations, backlog-only plugins and malformed requests", async () => {
+    const backlogOnly = await createServer({ connector: {} });
     await expect(
-      dispatchJsonRequest(connectorOnly.server, {
+      dispatchJsonRequest(backlogOnly.server, {
         method: "POST",
-        path: `/api/code-hosts/jira/connections/${connectorOnly.connectionId}/syncPullRequests`,
+        path: `/api/code-hosts/jira/connections/${backlogOnly.connectionId}/syncPullRequests`,
         body: JSON.stringify({ tracked: [] }),
       }),
     ).resolves.toMatchObject({ status: 404 });
@@ -1039,7 +1036,7 @@ describe("code host routes", () => {
 
     const activation = await dispatchJsonRequest(server, {
       method: "POST",
-      path: "/api/connectors/jira/activation",
+      path: "/api/plugins/jira/activation",
       body: JSON.stringify({ enabled: false, capability: "codeHost" }),
     });
     expect(activation).toMatchObject({
@@ -1066,13 +1063,13 @@ describe("code host routes", () => {
 
     await dispatchJsonRequest(server, {
       method: "POST",
-      path: "/api/connectors/jira/activation",
+      path: "/api/plugins/jira/activation",
       body: JSON.stringify({ enabled: false, capability: "connector" }),
     });
     await expect(
       dispatchJsonRequest(server, {
         method: "POST",
-        path: `/api/connectors/jira/connections/${connectionId}/sync`,
+        path: `/api/plugins/jira/connections/${connectionId}/sync`,
         body: JSON.stringify({ trigger: "manual" }),
       }),
     ).resolves.toEqual({
@@ -1088,7 +1085,7 @@ describe("code host routes", () => {
         (
           await dispatchJsonRequest(server, {
             method: "GET",
-            path: "/api/connectors",
+            path: "/api/plugins",
           })
         ).body as {
           connectionGroups: {
@@ -1103,7 +1100,7 @@ describe("code host routes", () => {
     const save = (values: Record<string, unknown>) =>
       dispatchJsonRequest(server, {
         method: "POST",
-        path: "/api/connectors/jira/connections",
+        path: "/api/plugins/jira/connections",
         body: JSON.stringify({
           id: connectionId,
           values: {
@@ -1143,7 +1140,7 @@ describe("code host routes", () => {
     await expect(
       dispatchJsonRequest(server, {
         method: "POST",
-        path: "/api/connectors/jira/activation",
+        path: "/api/plugins/jira/activation",
         body: JSON.stringify({ enabled: false, capability: "connector" }),
       }),
     ).resolves.toMatchObject({ status: 400 });
@@ -1160,13 +1157,13 @@ describe("code host routes", () => {
     );
     await dispatchJsonRequest(server, {
       method: "POST",
-      path: "/api/connectors/jira/activation",
+      path: "/api/plugins/jira/activation",
       body: JSON.stringify({ enabled: false, capability: "connector" }),
     });
 
     const response = await dispatchJsonRequest(server, {
       method: "POST",
-      path: "/api/connectors/jira/connections",
+      path: "/api/plugins/jira/connections",
       body: JSON.stringify({
         values: {
           label: "Second",
@@ -1263,7 +1260,7 @@ describe("calendar routes", () => {
     servers.push(server);
     const connectionResponse = await dispatchJsonRequest(server, {
       method: "POST",
-      path: "/api/connectors/jira/connections",
+      path: "/api/plugins/jira/connections",
       body: JSON.stringify({
         values: {
           label: "Work",
@@ -1361,7 +1358,7 @@ describe("calendar routes", () => {
     await expect(
       dispatchJsonRequest(server, {
         method: "POST",
-        path: "/api/connectors/jira/activation",
+        path: "/api/plugins/jira/activation",
         body: JSON.stringify({ enabled: false, capability: "calendar" }),
       }),
     ).resolves.toMatchObject({
@@ -1389,7 +1386,7 @@ describe("calendar routes", () => {
     const calendarOnly = await createServer({ calendar: {} });
     await dispatchJsonRequest(calendarOnly.server, {
       method: "POST",
-      path: "/api/connectors/jira/activation",
+      path: "/api/plugins/jira/activation",
       body: JSON.stringify({ enabled: false }),
     });
     await expect(
@@ -1425,7 +1422,7 @@ describe("calendar routes", () => {
 
     const overview = await dispatchJsonRequest(server, {
       method: "GET",
-      path: "/api/connectors",
+      path: "/api/plugins",
     });
     expect(JSON.stringify(overview.body)).not.toContain(FEED);
     expect(JSON.stringify(events)).not.toContain(FEED);
@@ -1617,7 +1614,7 @@ describe("team routes", () => {
     servers.push(server);
     const connectionResponse = await dispatchJsonRequest(server, {
       method: "POST",
-      path: "/api/connectors/jira/connections",
+      path: "/api/plugins/jira/connections",
       body: JSON.stringify({
         values: {
           label: "Acme team",
@@ -1638,7 +1635,7 @@ describe("team routes", () => {
   async function lastError(server: Server) {
     const overview = await dispatchJsonRequest(server, {
       method: "GET",
-      path: "/api/connectors",
+      path: "/api/plugins",
     });
     return (
       overview.body as {
@@ -1758,7 +1755,7 @@ describe("team routes", () => {
 
     const overview = await dispatchJsonRequest(server, {
       method: "GET",
-      path: "/api/connectors",
+      path: "/api/plugins",
     });
     expect(overview.status).toBe(200);
     expect((await lastError(server))?.lastError?.length).toBe(1_000);
@@ -1773,11 +1770,11 @@ describe("team routes", () => {
   });
 
   it("refuses plugins without a team, a turned-off team, and malformed rounds", async () => {
-    const connectorOnly = await createServer({ connector: {} });
+    const backlogOnly = await createServer({ connector: {} });
     await expect(
-      dispatchJsonRequest(connectorOnly.server, {
+      dispatchJsonRequest(backlogOnly.server, {
         method: "POST",
-        path: `/api/teams/jira/connections/${connectorOnly.connectionId}/sync`,
+        path: `/api/teams/jira/connections/${backlogOnly.connectionId}/sync`,
         body: JSON.stringify({ changes: [] }),
       }),
     ).resolves.toEqual({
@@ -1799,7 +1796,7 @@ describe("team routes", () => {
 
     await dispatchJsonRequest(server, {
       method: "POST",
-      path: "/api/connectors/jira/activation",
+      path: "/api/plugins/jira/activation",
       body: JSON.stringify({ enabled: false, capability: "team" }),
     });
     await expect(

@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
-import type { ConnectorPluginManifest } from "@ajour/shared";
+import type { PluginManifest } from "@ajour/shared";
 import {
-  areConnectorFormValuesEqual,
-  buildConnectorFormValues,
-  canSubmitConnectorForm,
-  isConnectorFieldShown,
-  normalizeConnectorFormValuesForSave,
+  arePluginFormValuesEqual,
+  buildPluginFormValues,
+  canSubmitPluginForm,
+  isPluginFieldShown,
+  normalizePluginFormValuesForSave,
   SAVED_SECRET_MASK,
-} from "./connector-form-state";
+} from "./plugin-form-state";
 
-const plugin: ConnectorPluginManifest = {
+const plugin: PluginManifest = {
   id: "azure_devops",
   version: "1.0.0",
   apiVersion: 3,
@@ -48,7 +48,7 @@ const plugin: ConnectorPluginManifest = {
   ],
 };
 
-const both: ConnectorPluginManifest = {
+const both: PluginManifest = {
   ...plugin,
   capabilities: { connector: {}, codeHost: {} },
   connectionFields: [
@@ -82,18 +82,18 @@ describe("capability fields", () => {
       autoSync: false,
       autoSyncIntervalMinutes: 15,
     };
-    expect(
-      isConnectorFieldShown(both, field("pullRequestsInclude"), values),
-    ).toBe(true);
-    expect(canSubmitConnectorForm(both, values)).toBe(false);
+    expect(isPluginFieldShown(both, field("pullRequestsInclude"), values)).toBe(
+      true,
+    );
+    expect(canSubmitPluginForm(both, values)).toBe(false);
 
     expect(
-      isConnectorFieldShown(both, field("pullRequestsInclude"), values, [
+      isPluginFieldShown(both, field("pullRequestsInclude"), values, [
         "codeHost",
       ]),
     ).toBe(false);
     expect(
-      canSubmitConnectorForm(both, values, {
+      canSubmitPluginForm(both, values, {
         inactiveCapabilities: ["codeHost"],
       }),
     ).toBe(true);
@@ -102,15 +102,15 @@ describe("capability fields", () => {
   it("shows the interval while backlog items or pull requests sync on it", () => {
     const interval = field("autoSyncIntervalMinutes");
     const off = { autoSync: false, pullRequestAutoSync: false };
-    expect(isConnectorFieldShown(both, interval, off)).toBe(false);
+    expect(isPluginFieldShown(both, interval, off)).toBe(false);
     expect(
-      isConnectorFieldShown(both, interval, {
+      isPluginFieldShown(both, interval, {
         ...off,
         pullRequestAutoSync: true,
       }),
     ).toBe(true);
     expect(
-      isConnectorFieldShown(
+      isPluginFieldShown(
         both,
         interval,
         { ...off, pullRequestAutoSync: true },
@@ -118,18 +118,18 @@ describe("capability fields", () => {
       ),
     ).toBe(false);
     expect(
-      isConnectorFieldShown(both, interval, { ...off, autoSync: true }, [
+      isPluginFieldShown(both, interval, { ...off, autoSync: true }, [
         "codeHost",
       ]),
     ).toBe(true);
     expect(
-      isConnectorFieldShown(both, interval, { ...off, autoSync: true }, [
+      isPluginFieldShown(both, interval, { ...off, autoSync: true }, [
         "connector",
       ]),
     ).toBe(false);
     // Saved before pull requests had their own setting: they follow auto sync.
     expect(
-      isConnectorFieldShown(
+      isPluginFieldShown(
         { ...both, capabilities: { codeHost: {} } },
         interval,
         {
@@ -140,10 +140,10 @@ describe("capability fields", () => {
   });
 });
 
-describe("connector form state", () => {
+describe("plugin form state", () => {
   it("masks secret fields when building edit values", () => {
     expect(
-      buildConnectorFormValues(plugin, {
+      buildPluginFormValues(plugin, {
         label: "Main",
         taskIconDisplayMode: "fallback",
       }),
@@ -156,7 +156,7 @@ describe("connector form state", () => {
 
   it("allows editing an existing connection without re-entering the secret", () => {
     expect(
-      canSubmitConnectorForm(
+      canSubmitPluginForm(
         plugin,
         {
           label: "Main",
@@ -170,7 +170,7 @@ describe("connector form state", () => {
 
   it("still requires the secret when creating a new connection", () => {
     expect(
-      canSubmitConnectorForm(plugin, {
+      canSubmitPluginForm(plugin, {
         label: "Main",
         personalAccessToken: "",
         taskIconDisplayMode: "fallback",
@@ -180,7 +180,7 @@ describe("connector form state", () => {
 
   it("normalizes an unchanged saved secret mask back to an empty value on save", () => {
     expect(
-      normalizeConnectorFormValuesForSave(
+      normalizePluginFormValuesForSave(
         plugin,
         {
           label: "Main",
@@ -198,7 +198,7 @@ describe("connector form state", () => {
 
   it("preserves a newly entered secret on save", () => {
     expect(
-      normalizeConnectorFormValuesForSave(
+      normalizePluginFormValuesForSave(
         plugin,
         {
           label: "Main",
@@ -215,24 +215,24 @@ describe("connector form state", () => {
   });
 
   it("treats unchanged edit values as equal", () => {
-    const initialValues = buildConnectorFormValues(plugin, {
+    const initialValues = buildPluginFormValues(plugin, {
       label: "Main",
       taskIconDisplayMode: "fallback",
     });
 
-    expect(
-      areConnectorFormValuesEqual(plugin, initialValues, initialValues),
-    ).toBe(true);
+    expect(arePluginFormValuesEqual(plugin, initialValues, initialValues)).toBe(
+      true,
+    );
   });
 
   it("detects changes in edit values", () => {
-    const initialValues = buildConnectorFormValues(plugin, {
+    const initialValues = buildPluginFormValues(plugin, {
       label: "Main",
       taskIconDisplayMode: "fallback",
     });
 
     expect(
-      areConnectorFormValuesEqual(
+      arePluginFormValuesEqual(
         plugin,
         {
           ...initialValues,
