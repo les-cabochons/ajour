@@ -44,6 +44,7 @@ import {
   editItemComment,
   listItemComments,
   postItemComment,
+  searchItemPeople,
   setItemCommentReaction,
   subscribePluginsOverview,
 } from "@/lib/app-api";
@@ -92,6 +93,22 @@ const firstPages = new Map<
   string,
   { at: number; result: BacklogListItemCommentsResult }
 >();
+
+/** The editor's @ suggestions, when the plugin can search people. */
+function mentionSearch(source: CommentSource) {
+  return source.capability.mentions
+    ? {
+        search: async (query: string) =>
+          (
+            await searchItemPeople(source.pluginId, source.connectionId, {
+              sourceId: source.sourceId,
+              query,
+              limit: 8,
+            })
+          ).people,
+      }
+    : undefined;
+}
 
 function cacheKey(source: CommentSource) {
   return `${source.pluginId}\n${source.connectionId}\n${source.sourceId}`;
@@ -449,6 +466,7 @@ export function BacklogItemComments({
           seenAt={seenAt}
           hidden={hidden}
           capability={source.capability}
+          mentions={mentionSearch(source)}
           onShowEarlier={() => void loadEarlier()}
           onEdit={editComment}
           onDelete={deleteComment}
@@ -547,8 +565,9 @@ function CommentComposer({
             onChange={change}
             onSubmit={(value) => void send(value)}
             onCancel={() => setOpen(false)}
-            placeholder="Leave a comment. Markdown supported."
+            placeholder="Leave a comment. Markdown supported. Type @ to mention someone."
             minLines={3}
+            mentions={mentionSearch(source)}
           />
           <div className="mt-2 flex min-h-7 items-center gap-2">
             {error ? (
@@ -609,6 +628,7 @@ function CommentThread({
   seenAt,
   hidden,
   capability,
+  mentions,
   onShowEarlier,
   onEdit,
   onDelete,
@@ -618,6 +638,7 @@ function CommentThread({
   seenAt: number | undefined;
   hidden: ReadonlySet<string>;
   capability: BacklogCommentsCapability;
+  mentions: ReturnType<typeof mentionSearch>;
   onShowEarlier: () => void;
   onEdit: (comment: BacklogComment, body: string) => Promise<void>;
   onDelete: (comment: BacklogComment) => void;
@@ -661,6 +682,7 @@ function CommentThread({
             comment={comment}
             viewer={thread.viewer}
             capability={capability}
+            mentions={mentions}
             isFirstNew={index === newIndex}
             onEdit={onEdit}
             onDelete={onDelete}
@@ -676,6 +698,7 @@ function CommentItem({
   comment,
   viewer,
   capability,
+  mentions,
   isFirstNew,
   onEdit,
   onDelete,
@@ -684,6 +707,7 @@ function CommentItem({
   comment: BacklogComment;
   viewer: BacklogPerson;
   capability: BacklogCommentsCapability;
+  mentions: ReturnType<typeof mentionSearch>;
   isFirstNew: boolean;
   onEdit: (comment: BacklogComment, body: string) => Promise<void>;
   onDelete: (comment: BacklogComment) => void;
@@ -825,6 +849,7 @@ function CommentItem({
                   onSubmit={(value) => void save(value)}
                   onCancel={() => setEditing(false)}
                   minLines={2}
+                  mentions={mentions}
                 />
                 <div className="mt-2 flex items-center gap-2">
                   {error ? (

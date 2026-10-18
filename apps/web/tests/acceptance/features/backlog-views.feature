@@ -495,6 +495,14 @@ Feature: Backlog list and board views
     And I add a Heart to Ana's reply
     Then Ana's reply shows my Heart
 
+  Scenario: Mention someone in a comment
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people and records posted comments
+    When I open the Backlog parent page
+    And I mention Ana in a new comment and send it
+    Then the comment went out with Ana's mention, shown as a chip
+
   Scenario: Archive a synced item from the bottom of its properties card
     Given the Backlog parent is synced
     When I open the Backlog parent page

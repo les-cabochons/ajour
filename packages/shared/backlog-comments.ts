@@ -164,6 +164,24 @@ export type BacklogSetItemCommentReactionResult = z.infer<
   typeof backlogSetItemCommentReactionResultSchema
 >;
 
+/** People to mention on the item, for the editor's @ suggestions. Needs `comments.mentions`. */
+export const backlogSearchItemPeopleRequestSchema = z.object({
+  sourceId: z.string().min(1).max(400),
+  query: z.string().trim().min(1).max(100),
+  limit: z.number().int().min(1).max(20),
+});
+export type BacklogSearchItemPeopleRequest = z.infer<
+  typeof backlogSearchItemPeopleRequestSchema
+>;
+
+export const backlogSearchItemPeopleResultSchema = z.object({
+  /** In the id space of `mention:<id>`. */
+  people: z.array(backlogPersonSchema).max(20),
+});
+export type BacklogSearchItemPeopleResult = z.infer<
+  typeof backlogSearchItemPeopleResultSchema
+>;
+
 /**
  * The comment exports a backlog plugin can provide. Each receives the
  * connection and the parsed request. Their names say "item" because a code
@@ -191,6 +209,10 @@ export const backlogCommentOperations = {
     request: backlogSetItemCommentReactionRequestSchema,
     result: backlogSetItemCommentReactionResultSchema,
   },
+  searchItemPeople: {
+    request: backlogSearchItemPeopleRequestSchema,
+    result: backlogSearchItemPeopleResultSchema,
+  },
 } as const;
 
 /**
@@ -207,6 +229,8 @@ export function backlogCommentOperationAllowed(
       return capability.edit === true;
     case "deleteItemComment":
       return capability.delete === true;
+    case "searchItemPeople":
+      return capability.mentions === true;
     case "setItemCommentReaction":
       return (
         reaction !== undefined &&

@@ -287,3 +287,64 @@ Then("Ana's reply shows my Heart", async ({ page }) => {
     }),
   ).toBeVisible();
 });
+
+Given(
+  "its plugin finds people and records posted comments",
+  async ({ page }) => {
+    const base = `${apiUrl}/api/backlog-comments/example/connections/fixture`;
+    await page.route(`${base}/searchItemPeople`, async (route) => {
+      const { query } = route.request().postDataJSON() as { query: string };
+      const people = [
+        { id: "ana", displayName: "Ana Silva" },
+        { id: "andrew", displayName: "Andrew Lee" },
+      ].filter((person) =>
+        person.displayName.toLowerCase().startsWith(query.toLowerCase()),
+      );
+      await route.fulfill({ json: { people }, headers: cors });
+    });
+    await page.route(`${base}/postItemComment`, async (route) => {
+      const request = route.request().postDataJSON() as { body: string };
+      await page.evaluate((body) => {
+        sessionStorage.setItem("posted-comment", body);
+      }, request.body);
+      await route.fulfill({
+        json: {
+          comment: {
+            id: "c9",
+            author: { id: "me", displayName: "Alex" },
+            body: request.body,
+            createdAt: new Date().toISOString(),
+          },
+        },
+        headers: cors,
+      });
+    });
+  },
+);
+
+When("I mention Ana in a new comment and send it", async ({ page }) => {
+  await commentsRegion(page)
+    .getByRole("button", { name: "Leave a comment…" })
+    .click();
+  const editor = commentsRegion(page).getByRole("textbox", {
+    name: "New comment",
+  });
+  // The editor loads on first use; type once it has the focus.
+  await expect(editor).toBeFocused();
+  await page.keyboard.type("Thanks @Ana");
+  await page.getByRole("option", { name: "Ana Silva" }).click();
+  await expect(editor.locator(".cm-mention")).toHaveText("@Ana Silva");
+  await page.keyboard.type("for the review");
+  await page.keyboard.press("ControlOrMeta+Enter");
+});
+
+Then(
+  "the comment went out with Ana's mention, shown as a chip",
+  async ({ page }) => {
+    await expect
+      .poll(() => page.evaluate(() => sessionStorage.getItem("posted-comment")))
+      .toBe("Thanks [@Ana Silva](mention:ana) for the review");
+    const posted = commentsRegion(page).getByRole("article").last();
+    await expect(posted.getByText("@Ana Silva", { exact: true })).toBeVisible();
+  },
+);

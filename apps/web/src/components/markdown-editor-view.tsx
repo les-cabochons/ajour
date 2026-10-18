@@ -1,4 +1,11 @@
 import { useEffect, useRef, type CSSProperties } from "react";
+import type { BacklogPerson } from "@ajour/shared";
+import {
+  autocompletion,
+  completionKeymap,
+  type CompletionContext,
+  type CompletionResult,
+} from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdownKeymap, markdownLanguage } from "@codemirror/lang-markdown";
 import {
@@ -8,9 +15,15 @@ import {
 } from "@codemirror/language";
 import { EditorState, Prec } from "@codemirror/state";
 import {
+  Decoration,
   EditorView,
+  MatchDecorator,
+  ViewPlugin,
+  WidgetType,
   keymap,
   placeholder as placeholderText,
+  type DecorationSet,
+  type ViewUpdate,
 } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 
@@ -32,6 +45,86 @@ export interface MarkdownEditorProps {
   autoFocus?: boolean;
   /** The height the editor keeps while it holds fewer lines. */
   minLines?: number;
+  /** Suggests people after `@`, and inserts `[@Name](mention:<id>)`. */
+  mentions?: { search: (query: string) => Promise<BacklogPerson[]> };
+}
+
+/** A mention reads as one chip and moves as one character. */
+class MentionWidget extends WidgetType {
+  constructor(readonly name: string) {
+    super();
+  }
+
+  eq(other: MentionWidget) {
+    return other.name === this.name;
+  }
+
+  toDOM() {
+    const chip = document.createElement("span");
+    chip.className = "cm-mention";
+    chip.textContent = `@${this.name}`;
+    return chip;
+  }
+}
+
+const mentionMatcher = new MatchDecorator({
+  regexp: /\[@([^\]\n]+)\]\(mention:[^)\s]+\)/g,
+  decoration: (match) =>
+    Decoration.replace({ widget: new MentionWidget(match[1] ?? "") }),
+});
+
+const mentionChips = ViewPlugin.fromClass(
+  class {
+    decorations: DecorationSet;
+
+    constructor(view: EditorView) {
+      this.decorations = mentionMatcher.createDeco(view);
+    }
+
+    update(update: ViewUpdate) {
+      this.decorations = mentionMatcher.updateDeco(update, this.decorations);
+    }
+  },
+  {
+    decorations: (plugin) => plugin.decorations,
+    provide: (plugin) =>
+      EditorView.atomicRanges.of(
+        (view) => view.plugin(plugin)?.decorations ?? Decoration.none,
+      ),
+  },
+);
+
+const escapeName = (name: string) => name.replace(/[[\]\\]/g, "");
+
+/** Suggestions for the word after `@`, at the start of a word. */
+function mentionSource(
+  search: () => (query: string) => Promise<BacklogPerson[]>,
+) {
+  return async (
+    context: CompletionContext,
+  ): Promise<CompletionResult | null> => {
+    const word = context.matchBefore(/@[^\s@[\]()]*$/);
+    if (!word) return null;
+    const before =
+      word.from > 0 ? context.state.sliceDoc(word.from - 1, word.from) : "";
+    if (before && !/[\s(]/.test(before)) return null;
+    const query = word.text.slice(1);
+    if (!query) return null;
+    // Typing fast asks once, for the last query.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    if (context.aborted) return null;
+    const people = await search()(query);
+    if (context.aborted) return null;
+    return {
+      from: word.from,
+      filter: false,
+      options: people.map((person) => ({
+        label: person.displayName || person.id,
+        apply: `[@${escapeName(person.displayName || person.id)}](mention:${person.id}) `,
+        type: "mention",
+      })),
+    };
+  };
 }
 
 // GFM in its plain language form: the `markdown()` helper would also load
@@ -72,6 +165,30 @@ const editorTheme = EditorView.theme({
   ".cm-line": { padding: "0" },
   ".cm-cursor": { borderLeftColor: "var(--foreground)" },
   ".cm-placeholder": { color: "var(--muted-foreground)" },
+  ".cm-mention": {
+    padding: "0 0.125rem",
+    borderRadius: "var(--radius-sm)",
+    backgroundColor: "var(--indigo-muted)",
+    color: "var(--primary)",
+    fontWeight: "500",
+  },
+  ".cm-tooltip.cm-tooltip-autocomplete": {
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius-lg)",
+    backgroundColor: "var(--popover)",
+    boxShadow: "var(--shadow-popup)",
+    padding: "0.25rem",
+  },
+  ".cm-tooltip.cm-tooltip-autocomplete > ul > li": {
+    padding: "0.25rem 0.5rem",
+    borderRadius: "var(--radius-sm)",
+    fontFamily: "var(--font-sans)",
+    fontSize: "var(--text-sm)",
+  },
+  ".cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]": {
+    backgroundColor: "var(--hover-bg)",
+    color: "var(--foreground)",
+  },
   "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection":
     { backgroundColor: "color-mix(in srgb, var(--primary) 22%, transparent)" },
 });
@@ -92,12 +209,13 @@ export default function MarkdownEditorView({
   placeholder,
   autoFocus,
   minLines = 3,
+  mentions,
 }: MarkdownEditorProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
   // The view is built once; its handlers read the latest props through this.
-  const handlers = useRef({ onChange, onBlur, onSubmit, onCancel });
-  handlers.current = { onChange, onBlur, onSubmit, onCancel };
+  const handlers = useRef({ onChange, onBlur, onSubmit, onCancel, mentions });
+  handlers.current = { onChange, onBlur, onSubmit, onCancel, mentions };
 
   useEffect(() => {
     const parent = parentRef.current;
@@ -130,6 +248,21 @@ export default function MarkdownEditorView({
             ]),
           ),
           history(),
+          mentionChips,
+          ...(mentions
+            ? [
+                autocompletion({
+                  override: [
+                    mentionSource(
+                      () =>
+                        handlers.current.mentions?.search ?? (async () => []),
+                    ),
+                  ],
+                  icons: false,
+                }),
+                keymap.of(completionKeymap),
+              ]
+            : []),
           keymap.of([...markdownKeymap, ...defaultKeymap, ...historyKeymap]),
           markdownSupport,
           syntaxHighlighting(markdownHighlight),
