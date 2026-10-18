@@ -78,6 +78,39 @@ describe("plugin manifest", () => {
     expect(pluginHasCodeHost(manifest)).toBe(true);
   });
 
+  it("keeps the comment features a backlog plugin declares", () => {
+    const manifest = pluginManifestSchema.parse({
+      ...validManifest,
+      capabilities: {
+        connector: {
+          comments: {
+            edit: true,
+            delete: true,
+            reactions: ["like", "heart"],
+            mentions: true,
+            maxLength: 32_767,
+          },
+        },
+      },
+    });
+    expect(manifest.capabilities.connector?.comments).toEqual({
+      edit: true,
+      delete: true,
+      reactions: ["like", "heart"],
+      mentions: true,
+      maxLength: 32_767,
+    });
+  });
+
+  it("rejects a reaction outside Ajour's names", () => {
+    expect(() =>
+      pluginManifestSchema.parse({
+        ...validManifest,
+        capabilities: { connector: { comments: { reactions: ["fire"] } } },
+      }),
+    ).toThrow();
+  });
+
   it("keeps the capability a connection field configures", () => {
     const manifest = pluginManifestSchema.parse({
       ...validManifest,

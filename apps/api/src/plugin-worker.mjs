@@ -23,6 +23,9 @@ const CODE_HOST_METHODS = new Set([
 // Keep in sync with `calendarOperations` in packages/shared/calendar.ts.
 const CALENDAR_METHODS = new Set(["listCalendarEvents"]);
 
+// Keep in sync with `backlogCommentOperations` in packages/shared/backlog-comments.ts.
+const BACKLOG_COMMENT_METHODS = new Set(["listItemComments"]);
+
 // Keep in sync with `teamPluginMethods` in packages/shared/team-sync.ts.
 const TEAM_CONNECTION_METHODS = new Set(["syncTeamProjects"]);
 
@@ -57,6 +60,7 @@ async function run() {
     workerData.method === "writeSettle" ||
     CODE_HOST_METHODS.has(workerData.method) ||
     CALENDAR_METHODS.has(workerData.method) ||
+    BACKLOG_COMMENT_METHODS.has(workerData.method) ||
     TEAM_CONNECTION_METHODS.has(workerData.method)
   ) {
     return await handler(

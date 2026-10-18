@@ -1813,3 +1813,180 @@ describe("team routes", () => {
     });
   });
 });
+
+describe("backlog comment routes", () => {
+  const tempDirs: string[] = [];
+  const servers: Server[] = [];
+  const TOKEN = "pat-5f3a9c0d1e2f3a4b5c6d7e8f";
+
+  afterEach(async () => {
+    for (const server of servers.splice(0)) {
+      server.emit("close");
+    }
+    await Promise.all(
+      tempDirs
+        .splice(0)
+        .map((directory) => rm(directory, { recursive: true, force: true })),
+    );
+  });
+
+  const commentPluginSource = [
+    "export async function validateConnection(config) {",
+    "  return { normalizedConfig: config, connectionSummary: {} };",
+    "}",
+    "export async function syncConnection() {",
+    "  return { items: [] };",
+    "}",
+    "export async function listItemComments(connection, request) {",
+    "  if (request.sourceId === 'broken') throw new Error('Could not read with ' + connection.config.token);",
+    "  return {",
+    "    viewer: { id: 'me', displayName: 'Me' },",
+    "    comments: [{ id: 'c1', author: { id: 'ana', displayName: 'Ana Silva' }, body: 'Secret client detail', createdAt: '2026-10-13T10:42:00Z' }],",
+    "    total: 1,",
+    "  };",
+    "}",
+  ].join("\n");
+
+  async function createServer(capabilities: Record<string, unknown>) {
+    const root = await mkdtemp(path.join(os.tmpdir(), "ajour-comments-api-"));
+    tempDirs.push(root);
+    const pluginDirectory = await createPlugin(
+      path.join(root, "source"),
+      commentPluginSource,
+      "plugin.mjs",
+      {
+        capabilities,
+        connectionFields: [
+          { id: "label", label: "Label", type: "text", required: true },
+          {
+            id: "tenantLabel",
+            label: "Organization",
+            type: "text",
+            required: true,
+          },
+          {
+            id: "token",
+            label: "Token",
+            type: "text",
+            required: true,
+            secret: true,
+          },
+        ],
+      },
+    );
+    const events: Record<string, unknown>[] = [];
+    const server = createAppApiServer({
+      statePath: path.join(root, "state.json"),
+      installedPluginDirectory: path.join(root, "installed"),
+      developmentPluginDirectories: [pluginDirectory],
+      allowDevelopmentPlugins: true,
+      mcpLogEvent: (event) => events.push(event),
+    });
+    servers.push(server);
+    const connectionResponse = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: "/api/plugins/jira/connections",
+      body: JSON.stringify({
+        values: {
+          label: "Work",
+          tenantLabel: "Contoso",
+          autoSync: false,
+          autoSyncIntervalMinutes: 10,
+          token: TOKEN,
+        },
+      }),
+    });
+    const connectionId = (
+      connectionResponse.body as { connection: { id: string } }
+    ).connection.id;
+    return { server, connectionId, events };
+  }
+
+  const listPath = (connectionId: string, operation = "listItemComments") =>
+    `/api/backlog-comments/jira/connections/${connectionId}/${operation}`;
+
+  it("lists an item's comments and logs no text or author", async () => {
+    const { server, connectionId, events } = await createServer({
+      connector: { comments: { reactions: ["like"] } },
+    });
+
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: listPath(connectionId),
+        body: JSON.stringify({ sourceId: "42", limit: 5 }),
+      }),
+    ).resolves.toMatchObject({
+      status: 200,
+      body: {
+        viewer: { id: "me" },
+        comments: [{ id: "c1", body: "Secret client detail" }],
+        total: 1,
+      },
+    });
+
+    const logged = events.filter((event) => event.event === "backlog.comments");
+    expect(logged).toEqual([
+      expect.objectContaining({
+        operation: "listItemComments",
+        plugin_id: "jira",
+        connection_id: connectionId,
+        comment_count: 1,
+        outcome: "ok",
+      }),
+    ]);
+    expect(JSON.stringify(logged)).not.toContain("Secret client detail");
+    expect(JSON.stringify(logged)).not.toContain("Ana Silva");
+  });
+
+  it("rejects plugins without comments, unknown operations and malformed requests", async () => {
+    const backlogOnly = await createServer({ connector: {} });
+    await expect(
+      dispatchJsonRequest(backlogOnly.server, {
+        method: "POST",
+        path: listPath(backlogOnly.connectionId),
+        body: JSON.stringify({ sourceId: "42", limit: 5 }),
+      }),
+    ).resolves.toMatchObject({ status: 404 });
+
+    const { server, connectionId } = await createServer({
+      connector: { comments: {} },
+    });
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: listPath(connectionId, "deleteEverything"),
+        body: JSON.stringify({}),
+      }),
+    ).resolves.toMatchObject({ status: 404 });
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: listPath(connectionId),
+        body: JSON.stringify({ sourceId: "42", limit: 500 }),
+      }),
+    ).resolves.toMatchObject({ status: 400 });
+    await expect(
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: listPath("missing"),
+        body: JSON.stringify({ sourceId: "42", limit: 5 }),
+      }),
+    ).resolves.toMatchObject({ status: 404 });
+  });
+
+  it("keeps the connection's secret out of a failed read", async () => {
+    const { server, connectionId } = await createServer({
+      connector: { comments: {} },
+    });
+
+    const response = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: listPath(connectionId),
+      body: JSON.stringify({ sourceId: "broken", limit: 5 }),
+    });
+
+    expect(response.status).toBe(502);
+    expect(JSON.stringify(response.body)).not.toContain(TOKEN);
+  });
+});

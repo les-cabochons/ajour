@@ -62,6 +62,10 @@ import {
   calendarOperationSchema,
   calendarOperations,
 } from "../../../packages/shared/calendar.ts";
+import {
+  backlogCommentOperationSchema,
+  backlogCommentOperations,
+} from "../../../packages/shared/backlog-comments.ts";
 import { teamSyncRequestSchema } from "../../../packages/shared/team-sync.ts";
 import {
   projectDataShapeExportRequestSchema,
@@ -307,6 +311,12 @@ function matchPluginRoute(pathname: string) {
 function matchCodeHostRoute(pathname: string) {
   return pathname.match(
     /^\/api\/code-hosts\/([^/]+)\/connections\/([^/]+)\/([A-Za-z]+)$/,
+  );
+}
+
+function matchBacklogCommentRoute(pathname: string) {
+  return pathname.match(
+    /^\/api\/backlog-comments\/([^/]+)\/connections\/([^/]+)\/([A-Za-z]+)$/,
   );
 }
 
@@ -1547,6 +1557,94 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
               message,
             );
           }
+          writeJson(response, 502, { error: message });
+        }
+        return;
+      }
+
+      const backlogCommentRoute = matchBacklogCommentRoute(requestUrl.pathname);
+      if (backlogCommentRoute && request.method === "POST") {
+        const [, rawPluginId, rawConnectionId, rawOperation] =
+          backlogCommentRoute;
+        const pluginId = pluginIdSchema.parse(
+          decodeURIComponent(rawPluginId ?? ""),
+        );
+        const connectionId = decodeURIComponent(rawConnectionId ?? "");
+        const operation = backlogCommentOperationSchema.safeParse(rawOperation);
+        if (!operation.success) {
+          writeJson(response, 404, { error: "Unknown comment operation." });
+          return;
+        }
+        const plugins = await pluginManager.listPlugins();
+        const plugin = plugins.find((candidate) => candidate.id === pluginId);
+        if (!plugin?.capabilities.connector?.comments) {
+          writeJson(response, 404, {
+            error: "This plugin does not provide comments.",
+          });
+          return;
+        }
+        const inactive = await inactiveCapabilityError(
+          storage,
+          pluginId,
+          "connector",
+          new Set(plugins.map((candidate) => candidate.id)),
+          "reading its comments",
+        );
+        if (inactive) {
+          writeJson(response, 409, { error: inactive });
+          return;
+        }
+        const connection = await storage.getConnection(pluginId, connectionId);
+        if (!connection) {
+          writeJson(response, 404, { error: "Connection not found." });
+          return;
+        }
+
+        // A malformed body fails here, outside the try, as a 400.
+        const commentRequest = backlogCommentOperations[
+          operation.data
+        ].request.parse(await readJsonBody(request));
+        const startedAt = Date.now();
+        // Ids, counts and duration only. Comment text and authors stay out
+        // of the log (ADR 0008).
+        const logCommentEvent = (
+          outcome: "ok" | "error",
+          commentCount?: number,
+        ) =>
+          logMcpEvent({
+            event: "backlog.comments",
+            operation: operation.data,
+            plugin_id: pluginId,
+            connection_id: connectionId,
+            comment_count: commentCount,
+            outcome,
+            duration_ms: Date.now() - startedAt,
+          });
+        try {
+          const result = await pluginManager.runBacklogCommentOperation(
+            pluginId,
+            operation.data,
+            {
+              id: connection.id,
+              pluginId: connection.pluginId,
+              label: connection.label,
+              tenantLabel: connection.tenantLabel,
+              autoSync: connection.autoSync,
+              autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
+              connectedAt: connection.connectedAt,
+              lastSyncAt: connection.lastSyncAt,
+              lastError: connection.lastError,
+              config: connection.config,
+            },
+            commentRequest,
+          );
+          logCommentEvent("ok", result.comments.length);
+          writeJson(response, 200, result);
+        } catch (error) {
+          const message = boundConnectionError(
+            redactSecretValues(errorMessage(error), plugin, connection.config),
+          );
+          logCommentEvent("error");
           writeJson(response, 502, { error: message });
         }
         return;

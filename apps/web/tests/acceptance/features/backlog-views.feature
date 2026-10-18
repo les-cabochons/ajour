@@ -434,6 +434,15 @@ Feature: Backlog list and board views
     And I type in the title, the remaining estimate and the description and press Escape each time
     Then the Backlog parent keeps its saved title, estimate and description
 
+  Scenario: Read a synced item's comments on its page
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    When I open the Backlog parent page
+    Then the page shows the newest five comments with a New divider before Ana's reply
+    And my comment says You and its mention shows as a chip
+    When I show earlier comments
+    Then all seven comments show, oldest first
+
   Scenario: Archive a synced item from the bottom of its properties card
     Given the Backlog parent is synced
     When I open the Backlog parent page

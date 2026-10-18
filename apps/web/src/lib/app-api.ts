@@ -66,6 +66,9 @@ import { localStore } from "@/lib/local-store";
 import {
   calendarListEventsResultSchema,
   type CalendarListEventsRequest,
+  backlogListItemCommentsResultSchema,
+  type BacklogListItemCommentsRequest,
+  type BacklogListItemCommentsResult,
   teamCreateResultSchema,
   teamSyncResultSchema,
   type TeamCreateResult,
@@ -554,6 +557,19 @@ export async function deletePluginConnection(
   localStore.removeConnectionCalendarData(pluginId, connectionId);
   localStore.removeConnectionTeamData(connectionId);
   return overview;
+}
+
+/** A page of a synced item's comments, newest last (ADR 0008). */
+export function listItemComments(
+  pluginId: string,
+  connectionId: string,
+  request: BacklogListItemCommentsRequest,
+): Promise<BacklogListItemCommentsResult> {
+  return appApiRequest(
+    `/api/backlog-comments/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/listItemComments`,
+    { method: "POST", body: JSON.stringify(request) },
+    backlogListItemCommentsResultSchema,
+  );
 }
 
 /** One connection's calendar events for a range of days (ADR 0005). */
