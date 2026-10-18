@@ -44,7 +44,6 @@ import {
   editItemComment,
   listItemComments,
   postItemComment,
-  searchItemPeople,
   setItemCommentReaction,
   subscribePluginsOverview,
 } from "@/lib/app-api";
@@ -54,7 +53,16 @@ import {
   queueCommentDelete,
   sendCommentDelete,
 } from "@/lib/comment-deletes";
-import { getCommentDraft, setCommentDraft } from "@/lib/comment-drafts";
+import {
+  getCommentDraft,
+  setCommentDraft,
+  subscribeCommentDrafts,
+} from "@/lib/comment-drafts";
+import {
+  commentMentionSearch,
+  commentThreadKey,
+  subscribePostedComments,
+} from "@/features/backlog/comment-threads";
 import { getShortcutPlatform } from "@/lib/shortcuts";
 import { getCommentsSeenAt, markCommentsSeen } from "@/lib/comments-seen";
 import type { LocalWorkItem } from "@/domain/local-state";
@@ -93,25 +101,19 @@ const firstPages = new Map<
   string,
   { at: number; result: BacklogListItemCommentsResult }
 >();
+// A comment posted from elsewhere makes the item's cached page stale.
+subscribePostedComments((threadKey) => firstPages.delete(threadKey));
 
-/** The editor's @ suggestions, when the plugin can search people. */
-function mentionSearch(source: CommentSource) {
-  return source.capability.mentions
+/** The thread with a posted comment at its end, once. */
+function withPostedComment(thread: Thread, comment: BacklogComment): Thread {
+  return thread.kind === "ready" &&
+    !thread.comments.some((shown) => shown.id === comment.id)
     ? {
-        search: async (query: string) =>
-          (
-            await searchItemPeople(source.pluginId, source.connectionId, {
-              sourceId: source.sourceId,
-              query,
-              limit: 8,
-            })
-          ).people,
+        ...thread,
+        comments: [...thread.comments, comment],
+        total: thread.total === undefined ? undefined : thread.total + 1,
       }
-    : undefined;
-}
-
-function cacheKey(source: CommentSource) {
-  return `${source.pluginId}\n${source.connectionId}\n${source.sourceId}`;
+    : thread;
 }
 
 type Thread =
@@ -195,7 +197,7 @@ export function BacklogItemComments({
   itemId: string;
   source: CommentSource;
 }) {
-  const key = cacheKey(source);
+  const key = commentThreadKey(source);
   const [thread, setThread] = useState<Thread>(() => {
     const cached = firstPages.get(key);
     return cached && Date.now() - cached.at < CACHE_MS
@@ -215,7 +217,7 @@ export function BacklogItemComments({
         current.connectionId,
         { sourceId: current.sourceId, limit: FIRST_COMMENT_PAGE },
       );
-      firstPages.set(cacheKey(current), { at: Date.now(), result });
+      firstPages.set(commentThreadKey(current), { at: Date.now(), result });
       setThread({ kind: "ready", ...result, loadingEarlier: false });
     } catch (error) {
       setThread(
@@ -409,16 +411,19 @@ export function BacklogItemComments({
   // A posted comment joins the thread; the cached page is stale now.
   const appendComment = (comment: BacklogComment) => {
     firstPages.delete(key);
-    setThread((current) =>
-      current.kind === "ready"
-        ? {
-            ...current,
-            comments: [...current.comments, comment],
-            total: current.total === undefined ? undefined : current.total + 1,
-          }
-        : current,
-    );
+    setThread((current) => withPostedComment(current, comment));
   };
+
+  // A comment posted from elsewhere, such as the settle dialog, joins too.
+  useEffect(
+    () =>
+      subscribePostedComments((threadKey, comment) => {
+        if (threadKey === key) {
+          setThread((current) => withPostedComment(current, comment));
+        }
+      }),
+    [key],
+  );
 
   const count =
     thread.kind === "ready"
@@ -466,7 +471,7 @@ export function BacklogItemComments({
           seenAt={seenAt}
           hidden={hidden}
           capability={source.capability}
-          mentions={mentionSearch(source)}
+          mentions={commentMentionSearch(source)}
           onShowEarlier={() => void loadEarlier()}
           onEdit={editComment}
           onDelete={deleteComment}
@@ -505,6 +510,15 @@ function CommentComposer({
   const [open, setOpen] = useState(false);
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string>();
+
+  // A settle that was undone or failed puts its comment back here.
+  useEffect(
+    () =>
+      subscribeCommentDrafts((draftItemId, value) => {
+        if (draftItemId === itemId) setText(value);
+      }),
+    [itemId],
+  );
 
   const limit = source.capability.maxLength;
   const length = text.trim().length;
@@ -567,7 +581,7 @@ function CommentComposer({
             onCancel={() => setOpen(false)}
             placeholder="Leave a comment. Markdown supported. Type @ to mention someone."
             minLines={3}
-            mentions={mentionSearch(source)}
+            mentions={commentMentionSearch(source)}
           />
           <div className="mt-2 flex min-h-7 items-center gap-2">
             {error ? (
@@ -638,7 +652,7 @@ function CommentThread({
   seenAt: number | undefined;
   hidden: ReadonlySet<string>;
   capability: BacklogCommentsCapability;
-  mentions: ReturnType<typeof mentionSearch>;
+  mentions: ReturnType<typeof commentMentionSearch>;
   onShowEarlier: () => void;
   onEdit: (comment: BacklogComment, body: string) => Promise<void>;
   onDelete: (comment: BacklogComment) => void;
@@ -707,7 +721,7 @@ function CommentItem({
   comment: BacklogComment;
   viewer: BacklogPerson;
   capability: BacklogCommentsCapability;
-  mentions: ReturnType<typeof mentionSearch>;
+  mentions: ReturnType<typeof commentMentionSearch>;
   isFirstNew: boolean;
   onEdit: (comment: BacklogComment, body: string) => Promise<void>;
   onDelete: (comment: BacklogComment) => void;

@@ -504,6 +504,25 @@ Feature: Backlog list and board views
     When I open the Backlog parent page
     Then its page says Ana commented, and still does once the mark is cleared
 
+  Scenario: Settle a synced item with a comment
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin settles items and records what it writes
+    When I open the Backlog parent page
+    And I settle it in Waiting with the comment "Waiting on the client"
+    And the Undo toast closes on its own
+    Then the source got the settle, then the comment "Waiting on the client"
+    And my new comment "Waiting on the client" shows last in the thread
+
+  Scenario: Undoing a settle keeps its comment as a draft
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin settles items and records what it writes
+    When I open the Backlog parent page
+    And I settle it in Waiting with the comment "Waiting on the client"
+    And I undo the settle
+    Then nothing went to the source and the comment field shows the draft "Waiting on the client"
+
   Scenario: Mention someone in a comment
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit

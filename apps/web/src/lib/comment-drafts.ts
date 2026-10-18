@@ -66,6 +66,17 @@ export function getCommentDraft(itemId: string): string | undefined {
   return read()[itemId]?.text;
 }
 
+type DraftListener = (itemId: string, text: string) => void;
+const listeners = new Set<DraftListener>();
+
+/** Calls `listener` whenever a draft is saved or cleared, such as by Undo. */
+export function subscribeCommentDrafts(listener: DraftListener) {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
+}
+
 /** Saves the item's unsent comment; empty text clears it. */
 export function setCommentDraft(itemId: string, text: string) {
   try {
@@ -76,4 +87,14 @@ export function setCommentDraft(itemId: string, text: string) {
   } catch {
     // The draft then lasts only while the page stays open.
   }
+  for (const listener of listeners) listener(itemId, text);
+}
+
+/** Keeps a comment that wasn't sent as the item's draft, after any draft there. */
+export function keepCommentAsDraft(itemId: string, text: string) {
+  const current = getCommentDraft(itemId)?.trim();
+  setCommentDraft(
+    itemId,
+    current && current !== text.trim() ? `${current}\n\n${text}` : text,
+  );
 }
