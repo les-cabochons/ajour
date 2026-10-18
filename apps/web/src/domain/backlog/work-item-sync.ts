@@ -1,5 +1,7 @@
 import {
   normalizeSourceStatusKey,
+  type BacklogItemCommentFacts,
+  type BacklogPerson,
   type BacklogDoneWorkItem,
   type BacklogImportCandidate,
   type BacklogSyncFieldUpdate,
@@ -285,6 +287,56 @@ function mergeSyncedWorkItem(
         }
       : {}),
   };
+}
+
+/**
+ * A settled item comes back when someone else commented after it was settled
+ * (ADR 0008). The latest such comment names who brought it back.
+ */
+export function returnItemsWithNewComments(
+  state: LocalAppState,
+  facts: readonly BacklogItemCommentFacts[],
+  viewer: BacklogPerson,
+  now: () => number,
+): LocalAppState {
+  let next = state;
+  for (const entry of facts) {
+    const item = next.workItems.find(
+      (candidate) => candidate._id === entry.localWorkItemId,
+    );
+    if (!item || item.status !== "settled") continue;
+    const settledAt = item.settledAt ?? 0;
+    const latest = entry.comments
+      .filter(
+        (comment) =>
+          comment.author.id !== viewer.id &&
+          Date.parse(comment.createdAt) > settledAt,
+      )
+      .sort(
+        (left, right) =>
+          Date.parse(left.createdAt) - Date.parse(right.createdAt),
+      )
+      .at(-1);
+    if (!latest) continue;
+    const at = now();
+    next = unsettleBacklogItem(next, item._id);
+    next = {
+      ...next,
+      workItems: next.workItems.map((workItem) =>
+        workItem._id === item._id
+          ? {
+              ...workItem,
+              returnedAt: at,
+              returnedByComment: {
+                author: latest.author.displayName || "Someone",
+                at,
+              },
+            }
+          : workItem,
+      ),
+    };
+  }
+  return next;
 }
 
 /**

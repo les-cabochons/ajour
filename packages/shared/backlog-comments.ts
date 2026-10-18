@@ -73,6 +73,29 @@ export const backlogCommentSchema = z.object({
 });
 export type BacklogComment = z.infer<typeof backlogCommentSchema>;
 
+/**
+ * A comment without its text. Syncs report these for settled items, so a
+ * comment from someone else can bring the item back (ADR 0008).
+ */
+export const backlogCommentFactSchema = z.object({
+  id: z.string().min(1).max(400),
+  author: backlogPersonSchema,
+  /** ISO 8601. */
+  createdAt: z.string().min(1).max(40),
+  /** Whether it mentions the user. */
+  mentionsViewer: z.boolean().optional(),
+});
+export type BacklogCommentFact = z.infer<typeof backlogCommentFactSchema>;
+
+export const backlogItemCommentFactsSchema = z.object({
+  localWorkItemId: z.string().trim().min(1).max(200),
+  /** The comments posted after the item's `commentsSince`. */
+  comments: z.array(backlogCommentFactSchema).max(50),
+});
+export type BacklogItemCommentFacts = z.infer<
+  typeof backlogItemCommentFactsSchema
+>;
+
 export const backlogListItemCommentsRequestSchema = z.object({
   /** The item's `sourceId` in its connection. */
   sourceId: z.string().min(1).max(400),

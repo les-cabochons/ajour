@@ -17,6 +17,8 @@ import type { CodeHostSyncResult } from "@ajour/shared";
 import type {
   BacklogImportCandidate,
   BacklogDoneWorkItem,
+  BacklogItemCommentFacts,
+  BacklogPerson,
   BacklogSyncWorkItemUpdate,
   ProjectDataShapeImportProject,
 } from "@ajour/shared";
@@ -73,6 +75,7 @@ import {
 } from "@/domain/backlog/work-item-transitions";
 import {
   applyBacklogSyncWorkItemUpdates as applySyncedWorkItemUpdates,
+  returnItemsWithNewComments as applyReturnItemsWithNewComments,
   archiveDoneSyncedWorkItems,
   importSyncedWorkItems as applySyncedWorkItemImport,
 } from "@/domain/backlog/work-item-sync";
@@ -1748,6 +1751,15 @@ export const localStore = {
       ).length;
       return { state: next, result: result.archivedCount + newlyClosed };
     });
+  },
+  /** Brings back settled items that someone else commented on (ADR 0008). */
+  returnItemsWithNewComments(
+    facts: BacklogItemCommentFacts[],
+    viewer: BacklogPerson,
+  ) {
+    updateState((state) =>
+      applyReturnItemsWithNewComments(state, facts, viewer, Date.now),
+    );
   },
   applyBacklogSyncWorkItemUpdates(updates: BacklogSyncWorkItemUpdate[]) {
     if (updates.length === 0) {

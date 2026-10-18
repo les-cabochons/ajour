@@ -1,6 +1,7 @@
 import type {
   BacklogComment,
   BacklogListItemCommentsResult,
+  BacklogSyncResult,
   PluginsOverview,
 } from "@ajour/shared";
 
@@ -130,3 +131,40 @@ export function fixtureCommentPage(
         earlierCursor: "earlier",
       };
 }
+
+/** The Backlog parent was settled the morning before Ana's comment. */
+export const parentSettledAt = Date.parse("2026-10-18T09:00:00Z");
+
+/** The same connection, syncing on its own, so the app syncs it at launch. */
+export const autoSyncOverview: PluginsOverview = {
+  ...commentsOverview,
+  connectionGroups: commentsOverview.connectionGroups.map((group) => ({
+    ...group,
+    connections: group.connections.map((connection) => ({
+      ...connection,
+      autoSync: true,
+    })),
+  })),
+};
+
+/** A sync that reports Ana's comment on the settled parent, and nothing else. */
+export const syncWithAnaComment: BacklogSyncResult = {
+  connection: commentsOverview.connectionGroups[0]!.connections[0]!,
+  mode: "review",
+  items: [],
+  stagedCount: 0,
+  updatedCount: 0,
+  skippedCount: 0,
+  workItemUpdates: [],
+  doneItems: [],
+  viewer: me,
+  commentFacts: [
+    {
+      localWorkItemId: "parent",
+      comments: [
+        { id: "c10", author: me, createdAt: "2026-10-18T09:30:00Z" },
+        { id: "c11", author: ana, createdAt: "2026-10-18T10:00:00Z" },
+      ],
+    },
+  ],
+};

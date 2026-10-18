@@ -366,6 +366,7 @@ describe("PluginManager", () => {
     await expect(duringInstall).resolves.toEqual({
       items: [],
       workItemUpdates: [],
+      commentFacts: [],
     });
     expect(events).toEqual(["after-install finished", "operation ran"]);
   });
@@ -892,7 +893,7 @@ describe("PluginManager", () => {
     ).rejects.toThrow("Pull requests are off.");
     await expect(
       pluginManager.syncConnection("github", connection),
-    ).resolves.toEqual({ items: [], workItemUpdates: [] });
+    ).resolves.toEqual({ items: [], workItemUpdates: [], commentFacts: [] });
   });
 
   it("dispatches every code host operation in the worker", async () => {

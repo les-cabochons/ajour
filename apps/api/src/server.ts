@@ -1448,6 +1448,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
                 skippedCount: stageResult.skippedCount,
                 workItemUpdates: fetched.workItemUpdates,
                 doneItems,
+                viewer: fetched.viewer,
+                commentFacts: fetched.commentFacts,
               }),
             );
           } catch (error) {

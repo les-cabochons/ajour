@@ -8,6 +8,7 @@ import {
   applyBacklogSyncWorkItemUpdates,
   archiveDoneSyncedWorkItems,
   importSyncedWorkItems,
+  returnItemsWithNewComments,
 } from "@/domain/backlog/work-item-sync";
 import {
   restoreBacklogItem,
@@ -678,6 +679,118 @@ describe("backlog sync of settled items", () => {
       priority: 2,
       importedPriority: 2,
     });
+  });
+});
+
+describe("backlog sync of comments on settled items", () => {
+  const settledAt = Date.parse("2026-10-18T10:00:00Z");
+  const viewer = { id: "me", displayName: "Alex" };
+  const ana = { id: "ana", displayName: "Ana Silva" };
+  const atSettle = { createId: () => "work-item-1", now: () => settledAt };
+
+  function settledItem() {
+    const imported = importSyncedWorkItems(
+      createState(),
+      [createCandidate()],
+      undefined,
+      atSettle,
+    ).state;
+    return settleBacklogItem(imported, "work-item-1", atSettle);
+  }
+
+  const comment = (
+    id: string,
+    author: { id: string; displayName: string },
+    createdAt: string,
+  ) => ({ id, author, createdAt });
+
+  it("brings a settled item back when someone else commented after it was settled", () => {
+    const returned = returnItemsWithNewComments(
+      settledItem(),
+      [
+        {
+          localWorkItemId: "work-item-1",
+          comments: [
+            comment(
+              "c1",
+              { id: "bo", displayName: "Bo" },
+              "2026-10-18T11:00:00Z",
+            ),
+            comment("c2", ana, "2026-10-18T12:00:00Z"),
+          ],
+        },
+      ],
+      viewer,
+      () => 900,
+    );
+
+    expect(returned.workItems[0]).toMatchObject({
+      status: "active",
+      settledAt: undefined,
+      returnedAt: 900,
+      returnedByComment: { author: "Ana Silva", at: 900 },
+    });
+  });
+
+  it("keeps the item settled for the user's own comments and earlier ones", () => {
+    const state = settledItem();
+    const returned = returnItemsWithNewComments(
+      state,
+      [
+        {
+          localWorkItemId: "work-item-1",
+          comments: [
+            comment("c1", viewer, "2026-10-18T11:00:00Z"),
+            comment("c2", ana, "2026-10-18T09:00:00Z"),
+          ],
+        },
+      ],
+      viewer,
+      () => 900,
+    );
+
+    expect(returned).toBe(state);
+  });
+
+  it("leaves active items and unknown ids alone", () => {
+    const active = importSyncedWorkItems(
+      createState(),
+      [createCandidate()],
+      undefined,
+      atSettle,
+    ).state;
+    const facts = [
+      {
+        localWorkItemId: "work-item-1",
+        comments: [comment("c1", ana, "2026-10-18T11:00:00Z")],
+      },
+      {
+        localWorkItemId: "missing",
+        comments: [comment("c2", ana, "2026-10-18T11:00:00Z")],
+      },
+    ];
+
+    expect(returnItemsWithNewComments(active, facts, viewer, () => 900)).toBe(
+      active,
+    );
+  });
+
+  it("names someone when the source has no display name", () => {
+    const returned = returnItemsWithNewComments(
+      settledItem(),
+      [
+        {
+          localWorkItemId: "work-item-1",
+          comments: [
+            comment("c1", { id: "x", displayName: "" }, "2026-10-18T11:00:00Z"),
+          ],
+        },
+      ],
+      viewer,
+      () => 900,
+    );
+
+    expect(returned.workItems[0]?.returnedByComment?.author).toBe("Someone");
   });
 });
 

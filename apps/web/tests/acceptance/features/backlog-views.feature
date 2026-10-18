@@ -495,6 +495,15 @@ Feature: Backlog list and board views
     And I add a Heart to Ana's reply
     Then Ana's reply shows my Heart
 
+  Scenario: A comment from someone else brings a settled item back
+    Given the Backlog parent is synced
+    And the Backlog parent is settled and its next sync reports a comment from Ana
+    When I reload the app
+    Then the sync asked for the comments since the parent was settled
+    And the parent has a Returned mark
+    When I open the Backlog parent page
+    Then its page says Ana commented, and still does once the mark is cleared
+
   Scenario: Mention someone in a comment
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit

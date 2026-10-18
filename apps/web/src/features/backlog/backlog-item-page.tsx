@@ -55,7 +55,11 @@ import {
 import { getBacklogItemBackLink } from "@/features/backlog/backlog-item-search";
 import { getWorkItemEntryValues } from "@/features/backlog/work-item-timer-comment";
 import { openNewEntryEditor } from "@/features/time/new-entry-request";
-import { getBacklogItemNotice } from "@/features/backlog/backlog-item-notice";
+import {
+  captureReturnNotice,
+  getVisitNotice,
+  type BacklogItemReturnNotice,
+} from "@/features/backlog/backlog-item-notice";
 import {
   WorkItemIcon,
   resolveWorkItemIcon,
@@ -107,8 +111,19 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
     else setAddingSubitem(true);
   }
 
-  // Opening the item clears its Returned mark.
+  const [returnNotice, setReturnNotice] =
+    useState<BacklogItemReturnNotice | null>(null);
+  // Opening the item clears its Returned mark; the page keeps saying why it
+  // came back until the user leaves.
   useEffect(() => {
+    const opened = localStore
+      .snapshot()
+      .workItems.find((workItem) => workItem._id === itemId);
+    const captured = opened ? captureReturnNotice(opened, Date.now()) : null;
+    // A second run for the same item, as in StrictMode, finds the mark cleared.
+    setReturnNotice(
+      (previous) => captured ?? (previous?.itemId === itemId ? previous : null),
+    );
     localStore.markWorkItemOpened(itemId);
     setEditingTitle(false);
     setAddingSubitem(false);
@@ -197,7 +212,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
     item.originalEstimateHours && item.completedEstimateHours !== undefined
       ? Math.min(1, item.completedEstimateHours / item.originalEstimateHours)
       : 0;
-  const notice = getBacklogItemNotice(item, now);
+  const notice = getVisitNotice(item, now, returnNotice);
 
   function runAction(
     actionId: BacklogItemActionId,
