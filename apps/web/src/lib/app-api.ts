@@ -721,6 +721,11 @@ export function syncBacklogConnection(
           originalEstimateHours: workItem.originalEstimateHours,
           remainingEstimateHours: workItem.remainingEstimateHours,
           completedEstimateHours: workItem.completedEstimateHours,
+          // A settled item waits on someone; their comment brings it back.
+          commentsSince:
+            workItem.status === "settled" && workItem.settledAt
+              ? new Date(workItem.settledAt).toISOString()
+              : undefined,
           estimateSync: workItem.estimateSync
             ? {
                 originalEstimateHours: workItem.estimateSync
@@ -788,6 +793,9 @@ export function syncBacklogConnection(
           })
         : { importedCount: 0, updatedCount: 0 };
     localStore.applyBacklogSyncWorkItemUpdates(result.workItemUpdates);
+    if (result.viewer && result.commentFacts.length > 0) {
+      localStore.returnItemsWithNewComments(result.commentFacts, result.viewer);
+    }
 
     return {
       ...result,

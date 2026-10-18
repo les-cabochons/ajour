@@ -741,11 +741,17 @@ describe("backlog settle routes", () => {
     "  tenantLabel: 'Acme', sourceId, externalId: sourceId, title: sourceId,",
     "  workItemType: 'Task', state, stateDone, depth: 0, selectable: true, childCount: 0,",
     "});",
-    "export async function syncConnection(connection) {",
+    "export async function syncConnection(connection, workItems) {",
     "  return {",
     "    items: [item('OPEN-1', 'In Progress', false), item('DONE-1', 'Done', true)]",
     "      .map((candidate) => ({ ...candidate, connectionId: connection.id })),",
     "    workItemUpdates: [],",
+    "    viewer: { id: 'me', displayName: 'Alex' },",
+    "    commentFacts: workItems",
+    "      .filter((workItem) => workItem.commentsSince)",
+    "      .map((workItem) => ({ localWorkItemId: workItem.localWorkItemId, comments: [",
+    "        { id: 'c1', author: { id: 'ana', displayName: 'Ana' }, createdAt: workItem.commentsSince },",
+    "      ] })),",
     "  };",
     "}",
     "export async function listSettleStates(connection, request) {",
@@ -894,6 +900,44 @@ describe("backlog settle routes", () => {
         (item) => item.sourceId,
       ),
     ).toEqual(["OPEN-1"]);
+  });
+
+  it("passes on the comment facts a sync reports for settled items", async () => {
+    const { server, connectionId } = await createServer({ settle: true });
+
+    const synced = await dispatchJsonRequest(server, {
+      method: "POST",
+      path: `/api/plugins/jira/connections/${connectionId}/sync`,
+      body: JSON.stringify({
+        trigger: "manual",
+        workItems: [
+          {
+            localWorkItemId: "settled-1",
+            sourceId: "OPEN-1",
+            commentsSince: "2026-10-18T10:00:00.000Z",
+          },
+          { localWorkItemId: "active-1", sourceId: "OPEN-2" },
+        ],
+      }),
+    });
+    expect(synced).toMatchObject({
+      status: 200,
+      body: {
+        viewer: { id: "me", displayName: "Alex" },
+        commentFacts: [
+          {
+            localWorkItemId: "settled-1",
+            comments: [
+              {
+                id: "c1",
+                author: { id: "ana", displayName: "Ana" },
+                createdAt: "2026-10-18T10:00:00.000Z",
+              },
+            ],
+          },
+        ],
+      },
+    });
   });
 });
 

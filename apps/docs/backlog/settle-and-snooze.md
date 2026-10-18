@@ -35,7 +35,11 @@ Run a backlog sync before you set rules. The source projects appear after the fi
 
 ### Unsettle
 
-A settled item comes back to your plate on its own when a sync shows a state or priority other than the ones it had when you settled it. Its page then says **Changed in the source since you settled it**. To bring it back yourself, press **Unsettle**.
+A settled item comes back to your plate on its own when a sync shows a state or priority other than the ones it had when you settled it. Its page then says **Changed in the source since you settled it**.
+
+It also comes back when someone else comments on it after you settled it, if its plugin reads comments. Its page then names them, such as **Ana Silva commented since you settled it**. Your own comments don't bring it back.
+
+To bring it back yourself, press **Unsettle**.
 
 ## Snooze an item
 

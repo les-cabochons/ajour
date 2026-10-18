@@ -442,6 +442,11 @@ export interface LocalWorkItem {
   /** Set when a sync brings a settled item back. Cleared when the user opens it. */
   returnedAt?: number;
   /**
+   * Set when a comment brought the item back, with the same `at` as
+   * `returnedAt`, so its notice can name the person. Never the comment text.
+   */
+  returnedByComment?: { author: string; at: number };
+  /**
    * When the user pinned the item to the top of the sidebar list. Local: a
    * sync keeps it and never writes it to the source.
    */

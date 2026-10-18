@@ -121,6 +121,12 @@ Return each field's result in `workItemUpdates`, with `nextBaselineValue` set to
 
 Skip fields the user did not map. The official plugins ship this logic in `src/estimate-sync.ts`. Copy it from [ajc-jira](https://github.com/les-cabochons/ajc-jira/blob/main/src/estimate-sync.ts).
 
+### Comments on settled items
+
+If you provide comments, Ajour brings a settled item back when someone else comments on it. For each settled item, `workItems` has `commentsSince`, the time it was settled. Return the comments posted after it in `commentFacts`, without their text: id, author and time, at most 50 per item, and `mentionsViewer` when one mentions the user. Return the user as `viewer`, in the same id space as comment authors, as in `listItemComments`.
+
+Ajour ignores comments by the `viewer` and those before `commentsSince`. Fetch only the newest comments of each settled item, and skip an item whose comments fail rather than fail the sync. Leave both fields out if you don't provide comments.
+
 ### Priorities
 
 Ajour has four priority levels: `urgent`, `high`, `medium` and `low`. Map your tool's priorities to these levels on sync, and back to a value of your tool on write. Leave `priority` out for an item with no priority, or a priority that maps to no level. Ajour never sees your tool's priority values.
@@ -272,6 +278,8 @@ export interface BacklogSyncWorkItem {
     remainingEstimateHours?: BacklogSyncEstimateFieldState;
     completedEstimateHours?: BacklogSyncEstimateFieldState;
   };
+  /** Set on settled items: report the comments posted after it (ISO 8601). */
+  commentsSince?: string;
 }
 
 export interface BacklogSyncFieldUpdate {
@@ -296,6 +304,25 @@ export interface BacklogSyncWorkItemUpdate {
 export interface BacklogPluginSyncResult {
   items: BacklogImportCandidateInput[];
   workItemUpdates?: BacklogSyncWorkItemUpdate[];
+  /** The user, in the id space of comment authors. Needed with `commentFacts`. */
+  viewer?: BacklogPerson;
+  /** At most 1,000 items. */
+  commentFacts?: BacklogItemCommentFacts[];
+}
+
+/** A comment without its text. */
+export interface BacklogCommentFact {
+  id: string;
+  author: BacklogPerson;
+  /** ISO 8601. */
+  createdAt: string;
+  mentionsViewer?: boolean;
+}
+
+export interface BacklogItemCommentFacts {
+  localWorkItemId: string;
+  /** At most 50. */
+  comments: BacklogCommentFact[];
 }
 
 /** A state an item can move to when it is settled. */

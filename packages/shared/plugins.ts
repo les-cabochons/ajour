@@ -1,7 +1,11 @@
 import { z } from "zod";
 import { allowedTaskSlots, listTemplateSlots } from "./agent-task-templates.ts";
 import { teamCapabilitySchema, teamCreateRequestSchema } from "./team-sync.ts";
-import { backlogCommentsCapabilitySchema } from "./backlog-comments.ts";
+import {
+  backlogCommentsCapabilitySchema,
+  backlogItemCommentFactsSchema,
+  backlogPersonSchema,
+} from "./backlog-comments.ts";
 
 export const PLUGIN_API_VERSION = 3;
 export const PLUGIN_ARCHIVE_EXTENSION = ".ajour-connector";
@@ -545,6 +549,11 @@ export const backlogSyncWorkItemSchema = z.object({
   remainingEstimateHours: z.number().finite().nonnegative().optional(),
   completedEstimateHours: z.number().finite().nonnegative().optional(),
   estimateSync: backlogSyncEstimateStateSchema.optional(),
+  /**
+   * Set on settled items: report the comments posted after this time
+   * (ISO 8601) as `commentFacts`. See ADR 0008.
+   */
+  commentsSince: z.string().min(1).max(40).optional(),
 });
 export type BacklogSyncWorkItem = z.infer<typeof backlogSyncWorkItemSchema>;
 
@@ -748,6 +757,10 @@ export type BacklogDoneWorkItem = z.infer<typeof backlogDoneWorkItemSchema>;
 export const backlogPluginSyncResultSchema = z.object({
   items: z.array(backlogImportCandidateInputSchema),
   workItemUpdates: z.array(backlogSyncWorkItemUpdateSchema).default([]),
+  /** The user, in the id space of comment authors. Needed with `commentFacts`. */
+  viewer: backlogPersonSchema.optional(),
+  /** New comments on the settled items that had `commentsSince`. */
+  commentFacts: z.array(backlogItemCommentFactsSchema).max(1000).default([]),
 });
 export type BacklogPluginSyncResult = z.infer<
   typeof backlogPluginSyncResultSchema
@@ -846,5 +859,7 @@ export const backlogSyncResultSchema = z.object({
   workItemUpdates: z.array(backlogSyncWorkItemUpdateSchema).default([]),
   /** Items that reached a done category. They are never staged for review. */
   doneItems: z.array(backlogDoneWorkItemSchema).default([]),
+  viewer: backlogPersonSchema.optional(),
+  commentFacts: z.array(backlogItemCommentFactsSchema).max(1000).default([]),
 });
 export type BacklogSyncResult = z.infer<typeof backlogSyncResultSchema>;

@@ -1,9 +1,12 @@
 import { expect, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 import {
+  autoSyncOverview,
   commentsOverview,
   commentsSeenAt,
   fixtureCommentPage,
+  parentSettledAt,
+  syncWithAnaComment,
 } from "../../fixtures/backlog-comments";
 
 const { Given, When, Then } = createBdd();
@@ -346,5 +349,70 @@ Then(
       .toBe("Thanks [@Ana Silva](mention:ana) for the review");
     const posted = commentsRegion(page).getByRole("article").last();
     await expect(posted.getByText("@Ana Silva", { exact: true })).toBeVisible();
+  },
+);
+
+Given(
+  "the Backlog parent is settled and its next sync reports a comment from Ana",
+  async ({ page }) => {
+    await page.route(`${apiUrl}/api/plugins`, (route) =>
+      route.fulfill({ json: autoSyncOverview, headers: cors }),
+    );
+    await page.route(
+      `${apiUrl}/api/plugins/example/connections/fixture/sync`,
+      async (route) => {
+        const request = route.request().postDataJSON() as {
+          workItems: { localWorkItemId: string; commentsSince?: string }[];
+        };
+        const parent = request.workItems.find(
+          (workItem) => workItem.localWorkItemId === "parent",
+        );
+        await page.evaluate((since) => {
+          sessionStorage.setItem("comments-since", since ?? "none");
+        }, parent?.commentsSince);
+        await route.fulfill({ json: syncWithAnaComment, headers: cors });
+      },
+    );
+    await page.evaluate((settledAt) => {
+      const state = JSON.parse(localStorage.getItem("ajour.local-state.v2")!);
+      const parent = state.workItems.find(
+        (item: { _id: string }) => item._id === "parent",
+      );
+      Object.assign(parent, { status: "settled", settledAt });
+      localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+    }, parentSettledAt);
+  },
+);
+
+Then(
+  "the sync asked for the comments since the parent was settled",
+  async ({ page }) => {
+    await expect
+      .poll(() => page.evaluate(() => sessionStorage.getItem("comments-since")))
+      .toBe(new Date(parentSettledAt).toISOString());
+  },
+);
+
+Then("the parent has a Returned mark", async ({ page }) => {
+  await expect(
+    page.getByRole("button", {
+      name: "Clear the returned mark on Backlog parent",
+      exact: true,
+    }),
+  ).toBeVisible();
+});
+
+Then(
+  "its page says Ana commented, and still does once the mark is cleared",
+  async ({ page }) => {
+    const notice = page.getByText("Ana Silva commented since you settled it");
+    await expect(notice).toBeVisible();
+    await expect(
+      page.getByRole("button", {
+        name: "Clear the returned mark on Backlog parent",
+        exact: true,
+      }),
+    ).toHaveCount(0);
+    await expect(notice).toBeVisible();
   },
 );

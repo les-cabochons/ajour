@@ -26,7 +26,10 @@ import {
   ESTIMATE_FIGURES,
   formatHours,
 } from "@/features/backlog/backlog-estimates";
-import { getBacklogItemNotice } from "@/features/backlog/backlog-item-notice";
+import {
+  getVisitNotice,
+  type BacklogItemReturnNotice,
+} from "@/features/backlog/backlog-item-notice";
 import {
   WorkItemIcon,
   resolveWorkItemIcon,
@@ -45,6 +48,7 @@ export function BacklogPeek({
   item,
   state,
   now,
+  returnNotice = null,
   onClose,
   onOpen,
   onAction,
@@ -53,6 +57,8 @@ export function BacklogPeek({
   item: LocalWorkItem;
   state: LocalAppState;
   now: number;
+  /** Why the item came back, read before the peek cleared its Returned mark. */
+  returnNotice?: BacklogItemReturnNotice | null;
   onClose: () => void;
   onOpen: () => void;
   onAction: (action: BacklogItemActionId) => void;
@@ -81,7 +87,7 @@ export function BacklogPeek({
   const stopAction = actions.find((action) => action.id === "stop-entry");
   const children = getDirectChildWorkItems(item, state.workItems);
   const reference = parseWorkItemReference(item.sourceId) ?? item.sourceId;
-  const notice = getBacklogItemNotice(item, now);
+  const notice = getVisitNotice(item, now, returnNotice);
   const progress =
     item.originalEstimateHours && item.completedEstimateHours !== undefined
       ? Math.min(1, item.completedEstimateHours / item.originalEstimateHours)

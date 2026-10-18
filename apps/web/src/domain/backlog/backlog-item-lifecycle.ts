@@ -1196,6 +1196,7 @@ export function markBacklogItemOpened(
   return updateOne(state, workItemId, (workItem) => ({
     ...workItem,
     returnedAt: undefined,
+    returnedByComment: undefined,
     snoozedUntil: undefined,
   }));
 }
