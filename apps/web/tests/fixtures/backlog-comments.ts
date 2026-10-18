@@ -168,3 +168,21 @@ export const syncWithAnaComment: BacklogSyncResult = {
     },
   ],
 };
+
+/** The same plugin, able to settle its items too. */
+export const settleCommentsOverview: PluginsOverview = {
+  ...commentsOverview,
+  connectionGroups: commentsOverview.connectionGroups.map((group) => ({
+    ...group,
+    plugin: {
+      ...group.plugin,
+      capabilities: {
+        ...group.plugin.capabilities,
+        connector: { ...group.plugin.capabilities.connector, settle: true },
+      },
+    },
+  })),
+};
+settleCommentsOverview.plugins = settleCommentsOverview.connectionGroups.map(
+  (group) => group.plugin,
+);

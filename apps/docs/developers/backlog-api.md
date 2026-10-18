@@ -13,7 +13,7 @@ Export these as named functions from your entry point. Each can be `async`.
 | `listSettleStates`       | `capabilities.connector.settle`             | The settle dialog opens for one of your items.                                                                                         |
 | `writeSettle`            | `capabilities.connector.settle`             | A settle or move is due, after the Undo toast closes.                                                                                  |
 | `listItemComments`       | `capabilities.connector.comments`           | The user opens one of your items, and again for each "Show earlier comments".                                                          |
-| `postItemComment`        | `capabilities.connector.comments`           | The user sends a comment on one of your items.                                                                                         |
+| `postItemComment`        | `capabilities.connector.comments`           | The user sends a comment on one of your items, or settles one with a comment, after the settle's write.                                |
 | `editItemComment`        | `capabilities.connector.comments.edit`      | The user edits one of their own comments.                                                                                              |
 | `deleteItemComment`      | `capabilities.connector.comments.delete`    | The Undo toast of a deleted comment closes, or Ajour starts again after quitting during it.                                            |
 | `setItemCommentReaction` | `capabilities.connector.comments.reactions` | The user adds or removes their reaction.                                                                                               |
@@ -169,7 +169,7 @@ Declare the features your tool supports under `capabilities.connector.comments`:
 
 ## postItemComment
 
-Post the comment at once and return it as your tool stored it. Ajour sends Markdown, with mentions as `[@Name](mention:<id>)`, and shows your returned comment at the end of the thread. If you throw, Ajour keeps the text in the editor and shows your message, so the user can send it again. Ajour doesn't queue comments for later (ADR 0008). Declare `maxLength` when your tool limits comment length, measured as your tool measures it, and check the converted size before you send.
+Post the comment at once and return it as your tool stored it. A comment typed in the settle dialog comes after `writeSettle`, once the Undo toast closes. Ajour sends Markdown, with mentions as `[@Name](mention:<id>)`, and shows your returned comment at the end of the thread. If you throw, Ajour keeps the text in the editor and shows your message, so the user can send it again. Ajour doesn't queue comments for later (ADR 0008). Declare `maxLength` when your tool limits comment length, measured as your tool measures it, and check the converted size before you send.
 
 ## Editing, deleting and reacting
 

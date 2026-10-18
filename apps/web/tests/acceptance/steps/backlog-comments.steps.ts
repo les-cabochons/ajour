@@ -6,6 +6,7 @@ import {
   commentsSeenAt,
   fixtureCommentPage,
   parentSettledAt,
+  settleCommentsOverview,
   syncWithAnaComment,
 } from "../../fixtures/backlog-comments";
 
@@ -414,5 +415,107 @@ Then(
       }),
     ).toHaveCount(0);
     await expect(notice).toBeVisible();
+  },
+);
+
+/** What the plugin wrote, in order, kept in the session to survive the route. */
+async function recordWrite(page: Page, write: string) {
+  await page.evaluate((entry) => {
+    const writes = JSON.parse(sessionStorage.getItem("source-writes") ?? "[]");
+    sessionStorage.setItem("source-writes", JSON.stringify([...writes, entry]));
+  }, write);
+}
+
+Given(
+  "its plugin settles items and records what it writes",
+  async ({ page }) => {
+    await page.route(`${apiUrl}/api/plugins`, (route) =>
+      route.fulfill({ json: settleCommentsOverview, headers: cors }),
+    );
+    const base = `${apiUrl}/api/plugins/example/connections/fixture`;
+    await page.route(`${base}/settle-states`, (route) =>
+      route.fulfill({
+        json: {
+          states: [
+            { name: "Active", category: "In Progress", done: false },
+            { name: "Waiting", category: "In Progress", done: false },
+            { name: "Done", category: "Done", done: true },
+          ],
+        },
+        headers: cors,
+      }),
+    );
+    await page.route(`${base}/settle`, async (route) => {
+      const request = route.request().postDataJSON() as { state?: string };
+      await recordWrite(page, `settle:${request.state}`);
+      await route.fulfill({ json: { state: request.state }, headers: cors });
+    });
+    await page.route(
+      `${apiUrl}/api/backlog-comments/example/connections/fixture/postItemComment`,
+      async (route) => {
+        const request = route.request().postDataJSON() as { body: string };
+        await recordWrite(page, `comment:${request.body}`);
+        await route.fulfill({
+          json: {
+            comment: {
+              id: "c20",
+              author: { id: "me", displayName: "Alex" },
+              body: request.body,
+              createdAt: new Date().toISOString(),
+            },
+          },
+          headers: cors,
+        });
+      },
+    );
+  },
+);
+
+When(
+  "I settle it in Waiting with the comment {string}",
+  async ({ page }, text: string) => {
+    await page
+      .locator(".ajour-page-header-slot")
+      .getByRole("button", { name: "Settle", exact: true })
+      .click();
+    const dialog = page.getByRole("dialog", { name: "Settle", exact: true });
+    await dialog.getByLabel("State", { exact: true }).click();
+    await page.getByRole("option", { name: "Waiting", exact: true }).click();
+    const editor = dialog.getByRole("textbox", { name: "Comment" });
+    await editor.click();
+    await expect(editor).toBeFocused();
+    await page.keyboard.type(text);
+    await dialog.getByRole("button", { name: "Settle", exact: true }).click();
+    // The parent has an open subitem; it stays on the list.
+    await page
+      .getByRole("dialog", { name: /^Also settle/ })
+      .getByRole("button", { name: "Only this item" })
+      .click();
+    await expect(dialog).toHaveCount(0);
+  },
+);
+
+When("I undo the settle", async ({ page }) => {
+  await page.getByRole("button", { name: "Undo", exact: true }).click();
+});
+
+Then(
+  "the source got the settle, then the comment {string}",
+  async ({ page }, text: string) => {
+    await expect
+      .poll(() => page.evaluate(() => sessionStorage.getItem("source-writes")))
+      .toBe(JSON.stringify(["settle:Waiting", `comment:${text}`]));
+  },
+);
+
+Then(
+  "nothing went to the source and the comment field shows the draft {string}",
+  async ({ page }, text: string) => {
+    await expect(
+      commentsRegion(page).getByRole("button", { name: `Draft: ${text}` }),
+    ).toBeVisible();
+    expect(
+      await page.evaluate(() => sessionStorage.getItem("source-writes")),
+    ).toBeNull();
   },
 );

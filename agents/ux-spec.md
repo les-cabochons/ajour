@@ -641,6 +641,7 @@ Settle means the user has nothing left to do on the item for now.
   - Apply sets a fixed state, priority or both without a dialog.
 - Settling into a source state that maps to a done state archives the item instead and moves it there. Azure DevOps Resolved usually maps to a state that isn't done, because it means waiting on QA.
 - Only changed fields are written, and only after the Undo toast closes. If Ajour quits during the window, the write is sent at the next launch. There is no offline queue beyond that.
+- When the item's plugin provides comments, the dialog ends with an optional Comment, a Markdown editor with @ mentions. ⌘/Ctrl+Enter settles. The comment is posted after the write lands, or when the Undo toast closes if nothing is written, and joins the item's thread. Undo, a failed write or a refused post keeps it as the item's comment draft instead; the last two say so in an error toast (ADR 0008).
 - Settling stops and saves the running entry on the item. Undo restores the entry as it was, still running from its original start.
 - A plugin without the settle capability settles its items locally, with no write.
 - Settling a parent with open subitems asks whether to include them, as in Closing a parent under Backlog. Undo restores them together. Settling a synced subitem writes that subitem through its own source project's mapping.

@@ -87,7 +87,10 @@ import {
 } from "@/lib/timer-totals";
 import { useAppSidebar } from "@/lib/app-sidebar";
 import { resolveSidebarWidth, useSidebarLayout } from "@/lib/sidebar-layout";
-import { sendPendingSourceWrites } from "@/features/backlog/backlog-source-writes";
+import {
+  flushSettleComments,
+  sendPendingSourceWrites,
+} from "@/features/backlog/backlog-source-writes";
 import { flushPendingCommentDeletes } from "@/lib/comment-deletes";
 import { CloseSubitemsDialogHost } from "@/features/backlog/close-subitems-dialog";
 import { SourceStateDialogHost } from "@/features/backlog/source-state-dialog";
@@ -212,6 +215,7 @@ function PendingSourceWritesFlush() {
   useEffect(() => {
     void sendPendingSourceWrites();
     void flushPendingCommentDeletes();
+    void flushSettleComments();
   }, []);
   return null;
 }
