@@ -27,7 +27,9 @@ Ajour checks GitHub for a newer version when you open **Settings › General**, 
 
 Until the first stable release, choose **Nightly**, or Ajour never finds an update.
 
-On Windows, Ajour also checks every 4 hours, and downloads the update in the background. When it is ready, Ajour asks you to restart now or later. If you choose later, the update installs when you next quit the app.
+Ajour also checks on startup and every 4 hours. The update icon at the bottom right of the sidebar shows when a version is available. Click the neutral icon to check again.
+
+On Windows, click the available update to open a warning. **Update and restart** downloads the version and restarts Ajour to install it. Save your work first. **Cancel** leaves the update available. Checks never download updates, and quitting the app never installs one.
 
 On macOS, Ajour shows that a new version is available, with a **View release** button. Download the new `.dmg` and replace the app. Automatic updates on macOS need a signed app, which Ajour does not have yet.
 

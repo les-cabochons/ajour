@@ -8,18 +8,22 @@ const { createAutomaticUpdateController, isCandidateCoreAtLeastCurrent } =
     createAutomaticUpdateController: (options: Record<string, unknown>) => {
       checkNow: (track?: "stable" | "nightly") => Promise<unknown>;
       configure: (track: "stable" | "nightly") => Promise<unknown>;
+      updateAndRestart: (track: string, version: string) => Promise<unknown>;
+      getState: () => { status: string };
       dispose: () => void;
-      installPendingUpdate: () => boolean;
-      isInstallingUpdate: () => boolean;
     };
     isCandidateCoreAtLeastCurrent: (
-      currentVersion: string | { major: number; minor: number; patch: number },
-      candidateVersion: string,
+      current: string,
+      candidate: string,
     ) => boolean;
   };
 
-function createCancellationToken() {
-  return { cancel: vi.fn() };
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((done) => {
+    resolve = done;
+  });
+  return { promise, resolve };
 }
 
 class FakeUpdater extends EventEmitter {
@@ -33,7 +37,7 @@ class FakeUpdater extends EventEmitter {
   currentVersion = { major: 1, minor: 0, patch: 0 };
   defaultSupportCheck = vi.fn().mockResolvedValue(true);
   isUpdateSupported = this.defaultSupportCheck;
-  cancellationToken = createCancellationToken();
+  cancellationToken = { cancel: vi.fn() };
   checkForUpdates = vi.fn().mockImplementation(async () => ({
     isUpdateAvailable: true,
     updateInfo: { version: "1.0.1" },
@@ -45,12 +49,21 @@ class FakeUpdater extends EventEmitter {
 
 function createController(overrides: Record<string, unknown> = {}) {
   const autoUpdater = new FakeUpdater();
-  const dialog = {
-    showMessageBox: vi.fn().mockResolvedValue({ response: 1 }),
-  };
+  const dialog = { showMessageBox: vi.fn().mockResolvedValue({ response: 0 }) };
   const prepareToInstall = vi.fn().mockResolvedValue(undefined);
   const resetInstallPreparation = vi.fn();
-  const logger = { error: vi.fn(), info: vi.fn(), warn: vi.fn() };
+  const checkForUpdates = vi.fn(async (track: string) => ({
+    track,
+    currentVersion: "1.0.0",
+    latestVersion: "1.0.1",
+    latestTag: "v1.0.1",
+    releaseName: "Ajour 1.0.1",
+    releaseUrl: "https://github.com/les-cabochons/ajour/releases/tag/v1.0.1",
+    publishedAt: "2026-10-18T12:00:00Z",
+    updateAvailable: true,
+    checkedAt: "2026-10-19T12:00:00Z",
+  }));
+  const scheduled: Array<() => void> = [];
   const controller = createAutomaticUpdateController({
     autoUpdater,
     isEnabled: true,
@@ -58,206 +71,334 @@ function createController(overrides: Record<string, unknown> = {}) {
     getMainWindow: () => null,
     prepareToInstall,
     resetInstallPreparation,
-    logger,
-    setTimeoutImpl: vi.fn(() => ({ unref: vi.fn() })),
+    checkForUpdates,
+    logger: { error: vi.fn() },
+    setTimeoutImpl: (callback: () => void) => {
+      scheduled.push(callback);
+      return { unref: vi.fn() };
+    },
     clearTimeoutImpl: vi.fn(),
     ...overrides,
   });
-
   return {
     autoUpdater,
     controller,
     dialog,
-    logger,
     prepareToInstall,
     resetInstallPreparation,
+    checkForUpdates,
+    scheduled,
   };
 }
 
-function emitDownloadedUpdate(autoUpdater: FakeUpdater) {
-  autoUpdater.downloadUpdate.mockImplementationOnce(async () => {
-    autoUpdater.emit("update-downloaded", { version: "1.0.1" });
-    return ["update.exe"];
-  });
-}
-
-describe("desktop automatic updates", () => {
-  it("manually downloads from the selected stable or nightly channel", async () => {
-    const { autoUpdater, controller } = createController();
-
+describe("user-controlled desktop updates", () => {
+  it("checks on startup, periodically and manually without downloading or prompting", async () => {
+    const { autoUpdater, controller, dialog, checkForUpdates, scheduled } =
+      createController();
     await controller.configure("stable");
-    expect(autoUpdater).toMatchObject({
-      autoDownload: false,
-      autoInstallOnAppQuit: false,
-      disableWebInstaller: true,
-      channel: "latest",
-      allowPrerelease: false,
-      allowDowngrade: false,
+    expect(controller.getState()).toMatchObject({
+      status: "available",
+      track: "stable",
     });
-    expect(autoUpdater.checkForUpdates).toHaveBeenCalledTimes(1);
-    expect(autoUpdater.downloadUpdate).toHaveBeenCalledWith(
-      autoUpdater.cancellationToken,
-    );
-
-    autoUpdater.cancellationToken = createCancellationToken();
+    scheduled[0]();
+    await vi.waitFor(() => expect(checkForUpdates).toHaveBeenCalledTimes(2));
+    await controller.checkNow("stable");
     await controller.configure("nightly");
+    expect(checkForUpdates.mock.calls.map(([track]) => track)).toEqual([
+      "stable",
+      "stable",
+      "stable",
+      "nightly",
+    ]);
+    expect(autoUpdater.downloadUpdate).not.toHaveBeenCalled();
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+    expect(dialog.showMessageBox).not.toHaveBeenCalled();
+    expect(autoUpdater.autoDownload).toBe(false);
+    expect(autoUpdater.autoInstallOnAppQuit).toBe(false);
+  });
+
+  it("warns before downloading and leaves a cancelled update available", async () => {
+    const { autoUpdater, controller, dialog } = createController();
+    await controller.configure("stable");
+    await controller.updateAndRestart("stable", "1.0.1");
+    expect(dialog.showMessageBox).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: "warning",
+        buttons: ["Cancel", "Update and restart"],
+        defaultId: 0,
+        cancelId: 0,
+        message: "Update Ajour to 1.0.1?",
+        detail: expect.stringContaining("Save your work"),
+      }),
+    );
+    expect(autoUpdater.downloadUpdate).not.toHaveBeenCalled();
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+    expect(controller.getState().status).toBe("available");
+  });
+
+  it("downloads only the confirmed candidate and waits for shutdown before restarting", async () => {
+    const shutdown = deferred<void>();
+    const prepareToInstall = vi.fn(() => shutdown.promise);
+    const { autoUpdater, controller, dialog } = createController({
+      prepareToInstall,
+    });
+    dialog.showMessageBox.mockResolvedValue({ response: 1 });
+    await controller.configure("nightly");
+    const update = controller.updateAndRestart("nightly", "1.0.1");
+    await vi.waitFor(() => expect(prepareToInstall).toHaveBeenCalled());
     expect(autoUpdater).toMatchObject({
       channel: "nightly",
       allowPrerelease: true,
       allowDowngrade: true,
     });
-    expect(autoUpdater.checkForUpdates).toHaveBeenCalledTimes(2);
-    expect(autoUpdater.downloadUpdate).toHaveBeenCalledTimes(2);
+    expect(autoUpdater.downloadUpdate).toHaveBeenCalledWith(
+      autoUpdater.cancellationToken,
+    );
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+    shutdown.resolve();
+    await update;
+    expect(autoUpdater.quitAndInstall).toHaveBeenCalledWith(false, true);
+    expect(controller.getState().status).toBe("installing");
   });
 
-  it("does not contact the update service when automatic installation is disabled", async () => {
-    const { autoUpdater, controller } = createController({ isEnabled: false });
-
+  it("keeps checks available on platforms without in-place installation", async () => {
+    const { controller, autoUpdater, dialog } = createController({
+      isEnabled: false,
+    });
     await controller.configure("stable");
-    expect(autoUpdater.checkForUpdates).not.toHaveBeenCalled();
+    expect(controller.getState()).toMatchObject({
+      status: "available",
+      canInstall: false,
+    });
+    await controller.updateAndRestart("stable", "1.0.1");
+    expect(dialog.showMessageBox).not.toHaveBeenCalled();
     expect(autoUpdater.downloadUpdate).not.toHaveBeenCalled();
   });
 
-  it("asks before restarting and installs the current-track downloaded update", async () => {
-    const { autoUpdater, controller, dialog, prepareToInstall } =
-      createController();
-    dialog.showMessageBox.mockResolvedValue({ response: 0 });
-    emitDownloadedUpdate(autoUpdater);
+  it.each(["configure", "checkNow"] as const)(
+    "ignores a track change through %s once shutdown preparation begins",
+    async (action) => {
+      const shutdown = deferred<void>();
+      const prepareToInstall = vi.fn(() => shutdown.promise);
+      const {
+        controller,
+        autoUpdater,
+        dialog,
+        checkForUpdates,
+        resetInstallPreparation,
+      } = createController({ prepareToInstall });
+      dialog.showMessageBox.mockResolvedValue({ response: 1 });
+      await controller.configure("stable");
+      const update = controller.updateAndRestart("stable", "1.0.1");
+      await vi.waitFor(() => expect(prepareToInstall).toHaveBeenCalled());
 
-    await controller.configure("stable");
-    await vi.waitFor(() => expect(prepareToInstall).toHaveBeenCalledTimes(1));
-
-    expect(dialog.showMessageBox).toHaveBeenCalledWith(
-      expect.objectContaining({
-        buttons: ["Restart now", "Later"],
-        message: "Ajour 1.0.1 has been downloaded.",
-      }),
-    );
-    expect(autoUpdater.quitAndInstall).toHaveBeenCalledWith(false, true);
-    expect(controller.isInstallingUpdate()).toBe(true);
-  });
-
-  it("installs a current-track Later update only when the main process quits", async () => {
-    const { autoUpdater, controller, dialog, prepareToInstall } =
-      createController();
-    emitDownloadedUpdate(autoUpdater);
-
-    await controller.configure("stable");
-    await vi.waitFor(() =>
-      expect(dialog.showMessageBox).toHaveBeenCalledTimes(1),
-    );
-
-    expect(prepareToInstall).not.toHaveBeenCalled();
-    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
-    expect(controller.installPendingUpdate()).toBe(true);
-    expect(autoUpdater.quitAndInstall).toHaveBeenCalledWith(false, true);
-  });
-
-  it("invalidates a downloaded nightly update when the user switches to stable", async () => {
-    const { autoUpdater, controller, dialog } = createController();
-    emitDownloadedUpdate(autoUpdater);
-
-    await controller.configure("nightly");
-    await vi.waitFor(() =>
-      expect(dialog.showMessageBox).toHaveBeenCalledTimes(1),
-    );
-
-    autoUpdater.cancellationToken = createCancellationToken();
-    await controller.configure("stable");
-
-    expect(controller.installPendingUpdate()).toBe(false);
-    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
-  });
-
-  it("cancels an in-progress download and ignores its completion after a track switch", async () => {
-    const { autoUpdater, controller, dialog } = createController();
-    let resolveDownload!: (value: string[]) => void;
-    const downloadPromise = new Promise<string[]>((resolve) => {
-      resolveDownload = resolve;
-    });
-    autoUpdater.downloadUpdate.mockReturnValueOnce(downloadPromise);
-
-    const nightlyCheck = controller.configure("nightly");
-    await vi.waitFor(() =>
-      expect(autoUpdater.downloadUpdate).toHaveBeenCalledTimes(1),
-    );
-    const nightlyToken = autoUpdater.cancellationToken;
-    autoUpdater.cancellationToken = createCancellationToken();
-    const stableCheck = controller.configure("stable");
-
-    expect(nightlyToken.cancel).toHaveBeenCalledTimes(1);
-    autoUpdater.emit("update-downloaded", { version: "1.0.1" });
-    resolveDownload(["nightly.exe"]);
-    await nightlyCheck;
-    await stableCheck;
-    await vi.waitFor(() =>
-      expect(autoUpdater.checkForUpdates).toHaveBeenCalledTimes(2),
-    );
-
-    expect(dialog.showMessageBox).not.toHaveBeenCalled();
-    expect(controller.installPendingUpdate()).toBe(false);
-  });
-
-  it("restores install preparation state when shutdown preparation fails", async () => {
-    const { autoUpdater, controller, dialog, resetInstallPreparation } =
-      createController({
-        prepareToInstall: vi
-          .fn()
-          .mockRejectedValue(new Error("API stop failed")),
+      const trackChange = controller[action]("nightly");
+      expect(controller.getState()).toMatchObject({
+        status: "installing",
+        track: "stable",
       });
-    dialog.showMessageBox.mockResolvedValue({ response: 0 });
-    emitDownloadedUpdate(autoUpdater);
+      shutdown.resolve();
+      await update;
+      await trackChange;
 
+      expect(autoUpdater.quitAndInstall).toHaveBeenCalledWith(false, true);
+      expect(resetInstallPreparation).not.toHaveBeenCalled();
+      await controller[action]("nightly");
+      expect(controller.getState()).toMatchObject({
+        status: "installing",
+        track: "stable",
+      });
+      expect(checkForUpdates).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("ignores repeated clicks while confirming and downloading and reports progress", async () => {
+    const confirmation = deferred<{ response: number }>();
+    const download = deferred<string[]>();
+    const { controller, autoUpdater, dialog } = createController();
+    dialog.showMessageBox.mockReturnValue(confirmation.promise);
+    autoUpdater.downloadUpdate.mockReturnValue(download.promise);
     await controller.configure("stable");
+    const update = controller.updateAndRestart("stable", "1.0.1");
+    await controller.updateAndRestart("stable", "1.0.1");
+    expect(controller.getState().status).toBe("confirming");
+    confirmation.resolve({ response: 1 });
     await vi.waitFor(() =>
-      expect(resetInstallPreparation).toHaveBeenCalledTimes(1),
+      expect(autoUpdater.downloadUpdate).toHaveBeenCalled(),
     );
+    autoUpdater.emit("download-progress", { percent: 42.2 });
+    expect(controller.getState()).toMatchObject({
+      status: "downloading",
+      progress: 42,
+    });
+    void controller.checkNow("stable");
+    await controller.updateAndRestart("stable", "1.0.1");
+    download.resolve(["update.exe"]);
+    await update;
+    expect(dialog.showMessageBox).toHaveBeenCalledTimes(1);
+    expect(autoUpdater.downloadUpdate).toHaveBeenCalledTimes(1);
+  });
 
-    expect(controller.isInstallingUpdate()).toBe(false);
+  it("rejects a different release before downloading", async () => {
+    const { controller, autoUpdater, dialog } = createController();
+    await controller.configure("stable");
+    dialog.showMessageBox.mockResolvedValue({ response: 1 });
+    autoUpdater.checkForUpdates.mockResolvedValue({
+      isUpdateAvailable: true,
+      updateInfo: { version: "1.0.2" },
+    });
+    await controller.updateAndRestart("stable", "1.0.1");
+    expect(controller.getState()).toMatchObject({
+      status: "error",
+      error: expect.stringContaining("changed"),
+    });
+    expect(autoUpdater.downloadUpdate).not.toHaveBeenCalled();
+  });
+
+  it("invalidates a pending confirmation when the release track changes", async () => {
+    const confirmation = deferred<{ response: number }>();
+    const { controller, autoUpdater, dialog } = createController();
+    dialog.showMessageBox.mockReturnValue(confirmation.promise);
+    await controller.configure("nightly");
+    const update = controller.updateAndRestart("nightly", "1.0.1");
+    await vi.waitFor(() => expect(dialog.showMessageBox).toHaveBeenCalled());
+    const check = controller.configure("stable");
+    confirmation.resolve({ response: 1 });
+    await update;
+    await check;
+    expect(controller.getState()).toMatchObject({
+      status: "available",
+      track: "stable",
+    });
+    expect(autoUpdater.downloadUpdate).not.toHaveBeenCalled();
+  });
+
+  it("cancels a download and ignores its completion after a track change", async () => {
+    const download = deferred<string[]>();
+    const { controller, autoUpdater, dialog } = createController();
+    dialog.showMessageBox.mockResolvedValue({ response: 1 });
+    autoUpdater.downloadUpdate.mockReturnValue(download.promise);
+    await controller.configure("nightly");
+    const update = controller.updateAndRestart("nightly", "1.0.1");
+    await vi.waitFor(() =>
+      expect(autoUpdater.downloadUpdate).toHaveBeenCalled(),
+    );
+    const check = controller.configure("stable");
+    expect(autoUpdater.cancellationToken.cancel).toHaveBeenCalledTimes(1);
+    download.resolve(["old.exe"]);
+    await update;
+    await check;
+    expect(controller.getState()).toMatchObject({
+      status: "available",
+      track: "stable",
+    });
     expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
   });
 
-  it("restores install preparation state when the updater reports an install error", async () => {
-    const { autoUpdater, controller, dialog, resetInstallPreparation } =
-      createController();
-    dialog.showMessageBox.mockResolvedValue({ response: 0 });
-    emitDownloadedUpdate(autoUpdater);
-
-    await controller.configure("stable");
-    await vi.waitFor(() => expect(controller.isInstallingUpdate()).toBe(true));
-    autoUpdater.emit("error", new Error("installer launch failed"));
-
-    expect(controller.isInstallingUpdate()).toBe(false);
-    expect(resetInstallPreparation).toHaveBeenCalledTimes(1);
+  it("ignores a late availability response after the selected track changes", async () => {
+    const { controller, checkForUpdates } = createController();
+    const result = await checkForUpdates("nightly");
+    const check = deferred<typeof result>();
+    checkForUpdates.mockReturnValueOnce(check.promise);
+    const nightly = controller.configure("nightly");
+    await vi.waitFor(() => expect(checkForUpdates).toHaveBeenCalledTimes(2));
+    const stable = controller.configure("stable");
+    check.resolve(result);
+    await nightly;
+    await stable;
+    expect(controller.getState()).toMatchObject({
+      track: "stable",
+      result: { track: "stable" },
+    });
   });
 
-  it("retains default platform support checks and rejects lower version cores", async () => {
-    const { autoUpdater, controller } = createController();
+  it("retains a known update after a check failure and permits retry", async () => {
+    const { controller, checkForUpdates } = createController();
+    await controller.configure("stable");
+    checkForUpdates.mockRejectedValueOnce(new Error("Offline"));
+    await controller.checkNow();
+    expect(controller.getState()).toMatchObject({
+      status: "error",
+      error: "Offline",
+      result: { latestVersion: "1.0.1" },
+    });
+    await controller.checkNow();
+    expect(controller.getState().status).toBe("available");
+  });
 
-    await controller.configure("nightly");
+  it("does not install when the app quits during a confirmed download", async () => {
+    const download = deferred<string[]>();
+    const { controller, autoUpdater, dialog } = createController();
+    dialog.showMessageBox.mockResolvedValue({ response: 1 });
+    autoUpdater.downloadUpdate.mockReturnValue(download.promise);
+    await controller.configure("stable");
+    const update = controller.updateAndRestart("stable", "1.0.1");
+    await vi.waitFor(() =>
+      expect(autoUpdater.downloadUpdate).toHaveBeenCalled(),
+    );
+    controller.dispose();
+    expect(autoUpdater.cancellationToken.cancel).toHaveBeenCalled();
+    expect(() =>
+      autoUpdater.emit("error", new Error("Download cancelled during quit")),
+    ).not.toThrow();
+    download.resolve(["cancelled.exe"]);
+    await update;
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+    expect(autoUpdater.autoInstallOnAppQuit).toBe(false);
+  });
 
+  it("allows retry after a download fails without installing on quit", async () => {
+    const { controller, autoUpdater, dialog } = createController();
+    await controller.configure("stable");
+    dialog.showMessageBox.mockResolvedValue({ response: 1 });
+    autoUpdater.downloadUpdate.mockRejectedValueOnce(
+      new Error("Download failed"),
+    );
+    await controller.updateAndRestart("stable", "1.0.1");
+    expect(controller.getState()).toMatchObject({
+      status: "error",
+      error: "Download failed",
+    });
+    expect(autoUpdater.autoInstallOnAppQuit).toBe(false);
+    expect(autoUpdater.quitAndInstall).not.toHaveBeenCalled();
+    await controller.updateAndRestart("stable", "1.0.1");
+    expect(autoUpdater.quitAndInstall).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["shutdown", "installer"])(
+    "restores preparation state after a %s failure",
+    async (failure) => {
+      const {
+        controller,
+        autoUpdater,
+        dialog,
+        prepareToInstall,
+        resetInstallPreparation,
+      } = createController();
+      await controller.configure("stable");
+      dialog.showMessageBox.mockResolvedValue({ response: 1 });
+      if (failure === "shutdown")
+        prepareToInstall.mockRejectedValueOnce(new Error("API stop failed"));
+      else
+        autoUpdater.quitAndInstall.mockImplementationOnce(() => {
+          autoUpdater.emit("error", new Error("Installer launch failed"));
+        });
+      await controller.updateAndRestart("stable", "1.0.1");
+      expect(controller.getState().status).toBe("error");
+      expect(resetInstallPreparation).toHaveBeenCalledTimes(1);
+    },
+  );
+
+  it("retains platform support checks and rejects older version cores", async () => {
+    const { autoUpdater } = createController();
     expect(
       await autoUpdater.isUpdateSupported({ version: "1.0.0-nightly.1" }),
     ).toBe(true);
     expect(
       await autoUpdater.isUpdateSupported({ version: "0.9.9-nightly.99" }),
     ).toBe(false);
-    expect(
-      await autoUpdater.isUpdateSupported({ version: "1.1.0-nightly.1" }),
-    ).toBe(true);
-    expect(autoUpdater.defaultSupportCheck).toHaveBeenCalledTimes(3);
-  });
-});
-
-describe("automatic update version-core guard", () => {
-  it("accepts the same or a newer core and rejects an older core", () => {
-    expect(isCandidateCoreAtLeastCurrent("2.0.0", "2.0.0-nightly.1")).toBe(
-      true,
-    );
-    expect(isCandidateCoreAtLeastCurrent("2.0.0", "2.1.0-nightly.1")).toBe(
-      true,
-    );
-    expect(isCandidateCoreAtLeastCurrent("2.0.0", "1.99.99-nightly.99")).toBe(
+    autoUpdater.defaultSupportCheck.mockResolvedValueOnce(false);
+    expect(await autoUpdater.isUpdateSupported({ version: "1.1.0" })).toBe(
       false,
     );
     expect(isCandidateCoreAtLeastCurrent("2.0.0", "invalid")).toBe(false);

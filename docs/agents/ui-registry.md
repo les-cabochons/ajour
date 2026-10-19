@@ -15,12 +15,12 @@ The redesign direction decided on 2026-10-14: Linear's density and structure, Ve
 - **PropertyList.** `components/property-list.tsx`: label and value pairs in a two-column grid with 28px rows, replacing boxed side panels on detail pages.
 - **Empty.** `components/ui/empty.tsx`: a 13px title, a 12px line and at most one outline button; `align="start"` in lists, centered on empty pages.
 - **Buttons.** `xs` 20px, `sm` 24px, default 28px, `lg` 32px; `icon-xs`, `icon-sm`, `icon`, `icon-lg` likewise. Primary is the accent indigo. Inputs and selects are 32px with 4px corners.
-- **Sidebar.** Solid surface one step below the content (above it in dark), no blur, a header as tall as the titlebar with Hide sidebar, an 18px mark and a 14px semibold wordmark (left padding clears the macOS traffic lights), the view switcher (`features/layout/sidebar-view-switcher.tsx`, the open view's icon and name opening a dropdown of link items with mono counts and a check on the open view) with Search and the filter menu (`features/layout/sidebar-search.tsx`: Search expands into a search box; the filter is a `Popover` with a `Command` project list and a Custom or Priority `ToggleGroup` beside its search box; `domain/backlog/sidebar-filter.ts` decides which rows match), the timer dock as a flat bordered block, Settings at the bottom. Returned pull requests show a filled accent count in the switcher's menu.
+- **Sidebar.** Solid surface one step below the content (above it in dark), no blur, a header as tall as the titlebar with Hide sidebar, an 18px mark and a 14px semibold wordmark (left padding clears the macOS traffic lights), the view switcher (`features/layout/sidebar-view-switcher.tsx`, the open view's icon and name opening a dropdown of link items with mono counts and a check on the open view) with Search and the filter menu (`features/layout/sidebar-search.tsx`: Search expands into a search box; the filter is a `Popover` with a `Command` project list and a Custom or Priority `ToggleGroup` beside its search box; `domain/backlog/sidebar-filter.ts` decides which rows match), the timer dock as a flat bordered block, a fixed footer with Settings and selected-week Commit icons on the left and the desktop update control on the right. The footer lives in `features/layout/sidebar-footer.tsx`. Returned pull requests show a filled accent count in the switcher's menu.
 - **Capture and budgets.** `just ui-capture` screenshots every surface into `qa/ui/out`; `just ui-perf` prints the renderer budgets on the 600-item workspace. See `qa/routines/ui-capture.md`.
 
 ## App Shell
 
-- Desktop uses a full-height application sidebar with a quiet translucent surface distinct from the workspace. Only macOS reserves a top chrome strip for native traffic lights. Windows places the sidebar header at the top of the window. The timer dock, then Time, Backlog, Pull requests and Projects, sit below the header. The foot is one row of icon-only buttons with tooltips: Settings (`app.settings` shortcut, neutral active tint) at the left, Commit week (`CommitWeekButton` in `features/time/commit-week-button.tsx`, `RiCalendarCheckLine`, tooltip "Commit") at the right. The sidebar has no rail state, so the foot has no collapsed layout. While the sidebar is hidden in a wide window on a Time page, the top bar shows the same `CommitWeekButton` right after Show sidebar. Other pages, Settings included, show no Commit button while the sidebar is hidden.
+- Desktop uses a full-height application sidebar with a quiet translucent surface distinct from the workspace. Only macOS reserves a top chrome strip for native traffic lights. Windows places the sidebar header at the top of the window. The timer dock, then Time, Backlog, Pull requests and Projects, sit below the header. The foot is one row of icon-only buttons with tooltips: Settings (`app.settings` shortcut) and Commit week (`CommitWeekButton` in `features/time/commit-week-button.tsx`, `RiCalendarCheckLine`, tooltip "Commit") at the left, and desktop updates at the right. The sidebar has no rail state, so the foot has no collapsed layout. While the sidebar is hidden in a wide window on a Time page, the top bar shows the same `CommitWeekButton` right after Show sidebar. Other pages, Settings included, show no Commit button while the sidebar is hidden.
 - The application sidebar, `features/layout/app-navigation-sidebar.tsx`, is expanded or hidden; there is no icon rail. Hide sidebar next to the logo, Show sidebar at the start of the titlebar (`SidebarToggleButton`) and Cmd+B (Ctrl+B outside macOS) switch between them. `lib/app-sidebar.ts` owns the state: it saves the choice per device in `localStorage` under `ajour.app-sidebar` (a saved "rail" reads as hidden), and the sidebar follows that choice at every desktop width, beside the page. The shell exposes "inline" or "none" as `data-app-sidebar` on `.ajour-app-body`, and sets `--app-sidebar-width` to 0 while it is not inline. Cmd+B lives in the shortcut registry, `lib/shortcuts.ts`, like every other key.
 - `features/layout/timer-dock.tsx` owns the running entry's display. `TimerDock` heads the sidebar. While idle, it shows Start for an empty entry and today's total at the right on one line, with no suggested backlog item. The shared `NewEntryButton` sits at the right of the sidebar's view-switcher row, after Search and the filter menu. Neither idle nor running sidebar timer cards contain it. `FloatingTimerDock` shows the running entry on one line at the bottom left while the sidebar is not on screen, and not in the narrow view, where the totals pill carries the running time. Both open the running entry editor through one shared open state, `setRunningEntryEditorOpen`, which `startBlankEntry` also uses after it starts an empty entry from the sidebar's or the floating dock's Start. `RunningEntryWindowTitle` writes it to `document.title`. `summarizeRunningEntry` in `domain/time/running-entry.ts` picks the title, meta line and remaining estimate.
 - "?" opens the shortcut overlay, `features/layout/shortcut-overlay.tsx`: a Dialog with a search field that lists every shortcut in the registry, grouped by scope ("Anywhere", "Time page", "Focused row or card"), with alternate keys after "or". Day rows and Week cards carry `data-entry-id` so C can continue the focused entry.
@@ -164,20 +164,23 @@ hero, the capability band is a plain line of text ("External service → Plugin
 → Local backlog") above the feature badges. Never fetch remote images from the
 renderer. Dialogs and `MessagePanel` notices are the only framed surfaces.
 
-### Application Updates
+### Application updates
 
-File: `apps/web/src/features/settings/settings-general-page.tsx`
-Last updated: 2026-08-06
+Files: `apps/web/src/features/settings/application-updates-settings.tsx`, `apps/web/src/features/layout/sidebar-footer.tsx`, `apps/web/src/lib/desktop-updates.ts`
+Last updated: 2026-10-19
 
 The stable/nightly choice is a `SettingRow` with the shared outline toggle
 group. Keep exactly one track selected and explain nightly risk in the row's
 description. Repository status follows below it, separated by space only. Status text uses `aria-live`, preserves its layout while checking,
 and shows the release action only when a newer matching release exists. Web-only
 rendering keeps the preference available but identifies the desktop requirement.
-Packaged Windows builds download the selected track in the background and use a
-native restart confirmation only after the update is ready; the app never
-restarts without the user's confirmation. Other platforms show truthful manual
-update guidance while preserving the same release-track status and link.
+The desktop controller owns update state, shared through `lib/desktop-updates.ts`.
+Startup, periodic, and manual checks only report availability. The sidebar footer
+uses `TooltipButton` for Settings and Commit on the left and updates on the right.
+On supported Windows builds, clicking an available update opens a native warning
+before downloading and restarting. Cancel leaves the update available, and an
+ordinary quit never installs it. Other desktop builds open the release page for
+manual installation. The browser has no footer update button.
 
 ### Weekly Time Overview
 
