@@ -52,8 +52,10 @@ import type {
   SwitchableCapability,
 } from "@ajour/shared";
 import {
+  connectionAgentAccess,
   isCapabilityActive,
   isCapabilitySwitchedOn,
+  pluginConnectionFormFields,
   pluginHasBacklog,
   pluginHasTeam,
   pluginRunsCode,
@@ -97,6 +99,27 @@ type PluginCatalogFilter = "all" | PluginCatalogCapability;
 
 /** The one notice Plugins shows when the web build runs without the app API. */
 const PLUGINS_NEED_DESKTOP_APP = "Plugins need the desktop app.";
+
+/** What agents may do with the connection's comments, when the user allowed any. */
+function agentAccessLabel(
+  group: PluginOverviewGroup,
+  connection: PluginConnectionSummary,
+) {
+  if (
+    !group.plugin.capabilities.connector?.comments ||
+    !isCapabilitySwitchedOn(group, "connector")
+  ) {
+    return null;
+  }
+  switch (connectionAgentAccess(connection)) {
+    case "read":
+      return "Agents read comments";
+    case "readWrite":
+      return "Agents read and post comments";
+    default:
+      return null;
+  }
+}
 
 /**
  * How the connection syncs, per capability that is on. Auto sync imports work
@@ -811,7 +834,7 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                   </p>
                 </div>
                 <FieldGroup className="desktop:grid desktop:grid-cols-2 desktop:gap-x-6 desktop:gap-y-5">
-                  {group.plugin.connectionFields.map((field) => {
+                  {pluginConnectionFormFields(group.plugin).map((field) => {
                     if (
                       !isPluginFieldShown(
                         group.plugin,
@@ -933,6 +956,11 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
                         <Badge variant="outline">
                           {syncModeLabel(group, connection)}
                         </Badge>
+                        {agentAccessLabel(group, connection) ? (
+                          <Badge variant="outline">
+                            {agentAccessLabel(group, connection)}
+                          </Badge>
+                        ) : null}
                       </div>
                       <p className="text-[13px] break-words text-muted-foreground">
                         {connection.tenantLabel}

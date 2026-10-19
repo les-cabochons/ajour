@@ -423,6 +423,14 @@ export function subscribePluginsOverview(
   };
 }
 
+/**
+ * The overview exactly as the local API answers this request, never a
+ * cached or newer one, for checks that grant access.
+ */
+export function fetchPluginsOverview(): Promise<PluginsOverview> {
+  return appApiRequest("/api/plugins", undefined, pluginsOverviewSchema);
+}
+
 export async function getPluginsOverview(): Promise<PluginsOverview> {
   const requestRevision = pluginsOverviewRevision;
   const requestId = ++latestPluginsOverviewRequest;
@@ -574,13 +582,22 @@ export async function deletePluginConnection(
 }
 
 /** A page of a synced item's comments, newest last (ADR 0008). */
+/**
+ * An agent's comment call carries `agent=1`, so the local API enforces the
+ * connection's agent access at the operation (ADR 0004).
+ */
+type CommentCaller = { agent?: boolean };
+const agentQuery = (caller?: CommentCaller) =>
+  caller?.agent ? "?agent=1" : "";
+
 export function listItemComments(
   pluginId: string,
   connectionId: string,
   request: BacklogListItemCommentsRequest,
+  caller?: CommentCaller,
 ): Promise<BacklogListItemCommentsResult> {
   return appApiRequest(
-    `/api/backlog-comments/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/listItemComments`,
+    `/api/backlog-comments/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/listItemComments${agentQuery(caller)}`,
     { method: "POST", body: JSON.stringify(request) },
     backlogListItemCommentsResultSchema,
   );
@@ -591,9 +608,10 @@ export function postItemComment(
   pluginId: string,
   connectionId: string,
   request: BacklogPostItemCommentRequest,
+  caller?: CommentCaller,
 ): Promise<BacklogPostItemCommentResult> {
   return appApiRequest(
-    `/api/backlog-comments/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/postItemComment`,
+    `/api/backlog-comments/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/postItemComment${agentQuery(caller)}`,
     { method: "POST", body: JSON.stringify(request) },
     backlogPostItemCommentResultSchema,
   );

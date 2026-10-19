@@ -377,6 +377,8 @@ export class PluginManager {
     operation: Operation,
     connection: PluginInvocationConnection,
     request: BacklogCommentOperationRequest<Operation>,
+    /** Throws to refuse the call at the last moment before the plugin runs. */
+    admit?: () => Promise<void>,
   ): Promise<BacklogCommentOperationResult<Operation>> {
     await this.assertCapability(pluginId, "connector");
     const plugin = await this.getPlugin(pluginId);
@@ -395,6 +397,7 @@ export class PluginManager {
         request: contract.request.parse(request),
       },
       resultSchema,
+      admit,
     );
   }
 
@@ -517,6 +520,7 @@ export class PluginManager {
     method: PluginMethod,
     params: Record<string, unknown>,
     schema: { parse: (value: unknown) => T },
+    admit?: () => Promise<void>,
   ): Promise<T> {
     this.assertCanInvoke();
     return await this.workers.run(pluginId, method, async () => {
@@ -527,6 +531,7 @@ export class PluginManager {
         throw new Error(`Plugin "${pluginId}" runs no code.`);
       }
       await this.operationGate?.(pluginId, method);
+      await admit?.();
       return {
         workerData: {
           apiVersion: PLUGIN_API_VERSION,

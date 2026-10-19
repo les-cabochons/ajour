@@ -141,6 +141,19 @@ describe("capability fields", () => {
 });
 
 describe("plugin form state", () => {
+  it("starts a comment plugin's agent access at None and keeps a saved level", () => {
+    const withComments: PluginManifest = {
+      ...plugin,
+      capabilities: { connector: { comments: {} } },
+    };
+
+    expect(buildPluginFormValues(withComments).agentAccess).toBe("none");
+    expect(
+      buildPluginFormValues(withComments, { agentAccess: "read" }).agentAccess,
+    ).toBe("read");
+    expect(buildPluginFormValues(plugin)).not.toHaveProperty("agentAccess");
+  });
+
   it("masks secret fields when building edit values", () => {
     expect(
       buildPluginFormValues(plugin, {

@@ -55,6 +55,11 @@ export interface AgentWriteOutcome {
   undoSubject: string;
   /** Synced items whose source write goes when the Undo window closes. */
   sourceWriteIds?: string[];
+  /**
+   * Settle comments this action queued. Each is released when the Undo
+   * window closes, and goes after its item's write.
+   */
+  settleComments?: { commentId: string; workItemId: string }[];
 }
 
 /** Throws the action's disabled reason, or a refusal when the set lacks it. */

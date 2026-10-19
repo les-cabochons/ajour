@@ -1,4 +1,8 @@
 import { z } from "zod";
+import {
+  BACKLOG_COMMENT_MAX_LENGTH,
+  backlogReactionSchema,
+} from "./backlog-comments.ts";
 
 /**
  * Contracts between the local API's MCP endpoint and the renderer that runs
@@ -117,6 +121,13 @@ export const readToolInputSchemas = {
     limit: z.number().int().min(1).max(200).default(50),
   }),
   get_work_item: z.object({ workItemId: z.string().min(1) }),
+  /** Needs Read on the item's connection. */
+  list_work_item_comments: z.object({
+    workItemId: z.string().min(1),
+    limit: z.number().int().min(1).max(50).default(20),
+    /** An earlierCursor from a previous answer, for the comments before it. */
+    cursor: z.string().min(1).max(2_000).optional(),
+  }),
   get_week_changes: z.object({
     weekOf: isoDateSchema,
     onlyChecked: z.boolean().default(true),
@@ -140,6 +151,12 @@ const priorityInputSchema = z
   .union([z.literal(1), z.literal(2), z.literal(3), z.literal(4)])
   .nullable();
 const workItemIdInput = z.object({ workItemId: z.string() });
+/** Markdown. A mention is `[@Name](mention:<id>)`, with an author id. */
+const commentBodySchema = z
+  .string()
+  .trim()
+  .min(1)
+  .max(BACKLOG_COMMENT_MAX_LENGTH);
 /** A state name in the item's source, such as "In QA". */
 const sourceStateInputSchema = z.string().trim().min(1).max(120);
 
@@ -227,6 +244,13 @@ export const writeToolInputSchemas = {
     includeSubitems: z.boolean().optional(),
     /** For a synced item: the source state it settles in. */
     sourceState: sourceStateInputSchema.optional(),
+    /** Posted after the settle. Needs Read and post on the item's connection. */
+    comment: commentBodySchema.optional(),
+  }),
+  /** Needs Read and post on the item's connection. */
+  post_work_item_comment: z.object({
+    workItemId: z.string(),
+    body: commentBodySchema,
   }),
   unsettle_work_item: workItemIdInput,
   snooze_work_item: z.object({
@@ -353,6 +377,32 @@ export const dataToolOutputSchemas = {
       }),
     ),
   }),
+  list_work_item_comments: z.object({
+    /** Oldest first: the newest `limit` comments before the cursor. */
+    comments: z.array(
+      z.object({
+        commentId: z.string(),
+        author: z.object({ id: z.string(), name: z.string() }),
+        /** Whether the user wrote it. */
+        byUser: z.boolean(),
+        /** Markdown. */
+        body: z.string(),
+        createdAt: z.string(),
+        updatedAt: z.string().optional(),
+        reactions: z
+          .array(
+            z.object({
+              reaction: backlogReactionSchema,
+              count: z.number(),
+              byUser: z.boolean(),
+            }),
+          )
+          .optional(),
+      }),
+    ),
+    total: z.number().optional(),
+    earlierCursor: z.string().optional(),
+  }),
   get_week_changes: z.object({
     changes: z.array(
       z.object({
@@ -415,6 +465,11 @@ export const dataToolOutputSchemas = {
   edit_work_item: agentWorkItemSchema,
   move_work_item: agentWorkItemSchema,
   settle_work_item: agentWorkItemSchema,
+  post_work_item_comment: z.object({
+    workItemId: z.string(),
+    /** The comment goes to the source when the Undo toast closes. */
+    queued: z.literal(true),
+  }),
   unsettle_work_item: agentWorkItemSchema,
   snooze_work_item: agentWorkItemSchema,
   unsnooze_work_item: agentWorkItemSchema,

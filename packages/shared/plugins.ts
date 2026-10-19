@@ -365,6 +365,50 @@ export const pluginManifestSchema = pluginManifestObjectSchema.superRefine(
 );
 export type PluginManifest = z.infer<typeof pluginManifestSchema>;
 
+/**
+ * What connected agents may do with a connection's comments (map #234): None,
+ * the default, Read, or Read and post. Agents' models run at their provider,
+ * so comments they read leave the machine (ADR 0004). Ajour owns the setting:
+ * a plugin cannot declare it or set its default.
+ */
+export const agentAccessSchema = z.enum(["none", "read", "readWrite"]);
+export type AgentAccess = z.infer<typeof agentAccessSchema>;
+
+export const AGENT_ACCESS_FIELD_ID = "agentAccess";
+
+const agentAccessField: PluginField = {
+  id: AGENT_ACCESS_FIELD_ID,
+  label: "Agent access to comments",
+  type: "select",
+  helpText:
+    "What connected agents may do with this connection's comments. Comments an agent reads go to its model provider.",
+  required: true,
+  secret: false,
+  defaultValue: "none",
+  options: [
+    { value: "none", label: "None" },
+    { value: "read", label: "Read" },
+    { value: "readWrite", label: "Read and post" },
+  ],
+  capability: "connector",
+};
+
+/**
+ * The connection form's fields: the plugin's own, then the ones Ajour adds
+ * for what the plugin provides. A plugin field with an id Ajour owns is
+ * dropped.
+ */
+export function pluginConnectionFormFields(
+  plugin: Pick<PluginManifest, "connectionFields" | "capabilities">,
+): PluginField[] {
+  const fields = plugin.connectionFields.filter(
+    (field) => field.id !== AGENT_ACCESS_FIELD_ID,
+  );
+  return plugin.capabilities.connector?.comments
+    ? [...fields, agentAccessField]
+    : fields;
+}
+
 export const pluginConnectionSummarySchema = z.object({
   id: z.string().min(1).max(120),
   pluginId: backlogSourceSchema,
@@ -374,6 +418,8 @@ export const pluginConnectionSummarySchema = z.object({
   autoSyncIntervalMinutes: z.number().int().min(1).max(1440),
   /** Pull requests sync on the interval. Absent until the connection saves it. */
   pullRequestAutoSync: z.boolean().optional(),
+  /** Absent means None. See `connectionAgentAccess`. */
+  agentAccess: agentAccessSchema.optional(),
   connectedAt: z.number().int().positive(),
   lastSyncAt: z.number().int().positive().optional(),
   lastError: z.string().max(1000).optional(),
@@ -421,6 +467,21 @@ export function syncsPullRequestsAutomatically(
   connection: Pick<PluginConnectionSummary, "autoSync" | "pullRequestAutoSync">,
 ) {
   return connection.pullRequestAutoSync ?? connection.autoSync;
+}
+
+/** Whether the access level lets agents read, or read and post, comments. */
+export function agentAccessAllows(
+  access: AgentAccess,
+  need: "read" | "readWrite",
+) {
+  return need === "read" ? access !== "none" : access === "readWrite";
+}
+
+/** What agents may do with the connection's comments. None until the user allows more. */
+export function connectionAgentAccess(
+  connection: Pick<PluginConnectionSummary, "agentAccess">,
+): AgentAccess {
+  return connection.agentAccess ?? "none";
 }
 
 /** Whether the plugin declares the capability and the user left it on. */

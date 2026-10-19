@@ -53,6 +53,11 @@ import {
   backlogImportSelectionUpdateSchema,
   pluginsOverviewSchema,
   teamCreateRouteRequestSchema,
+  AGENT_ACCESS_FIELD_ID,
+  agentAccessAllows,
+  agentAccessSchema,
+  connectionAgentAccess,
+  type AgentAccess,
 } from "../../../packages/shared/plugins.ts";
 import {
   codeHostOperationSchema,
@@ -142,6 +147,7 @@ const RESERVED_CONNECTION_FIELDS = new Set([
   "autoSync",
   "autoSyncIntervalMinutes",
   "pullRequestAutoSync",
+  AGENT_ACCESS_FIELD_ID,
 ]);
 
 function materializeAutoSyncCandidates(
@@ -420,6 +426,9 @@ function parseConnectionValues(values: PluginFieldValues) {
           parsedValues.pullRequestAutoSync,
           "pullRequestAutoSync",
         );
+  const agentAccess = parseAgentAccessValue(
+    parsedValues[AGENT_ACCESS_FIELD_ID],
+  );
 
   const config = Object.fromEntries(
     Object.entries(parsedValues).filter(
@@ -433,8 +442,28 @@ function parseConnectionValues(values: PluginFieldValues) {
     autoSync,
     autoSyncIntervalMinutes,
     pullRequestAutoSync,
+    agentAccess,
     config,
   };
+}
+
+/** The plugin's config without the fields Ajour owns, which it never received. */
+function withoutReservedFields(config: PluginFieldValues): PluginFieldValues {
+  return Object.fromEntries(
+    Object.entries(config).filter(
+      ([key]) => !RESERVED_CONNECTION_FIELDS.has(key),
+    ),
+  );
+}
+
+/** Undefined keeps the saved value; a connection never saved with it has None. */
+function parseAgentAccessValue(value: unknown): AgentAccess | undefined {
+  if (value === undefined) return undefined;
+  const parsed = agentAccessSchema.safeParse(value);
+  if (parsed.success) return parsed.data;
+  throw new Error(
+    'Plugin field "agentAccess" must be "none", "read" or "readWrite".',
+  );
 }
 
 function isHttpUrl(value: unknown): boolean {
@@ -1174,13 +1203,16 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           const existingConnection = payload.id
             ? await storage.getConnection(pluginId, payload.id)
             : null;
-          const configForSave = plugin
-            ? mergeConnectionConfigForSave(
-                plugin,
-                parsedValues.config,
-                existingConnection?.config,
-              )
-            : parsedValues.config;
+          // A config saved before Ajour kept its own fields out may hold one.
+          const configForSave = withoutReservedFields(
+            plugin
+              ? mergeConnectionConfigForSave(
+                  plugin,
+                  parsedValues.config,
+                  existingConnection?.config,
+                )
+              : parsedValues.config,
+          );
           const validation = await pluginManager.validateConnection(
             pluginId,
             configForSave,
@@ -1200,7 +1232,9 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             autoSync: parsedValues.autoSync,
             autoSyncIntervalMinutes: parsedValues.autoSyncIntervalMinutes,
             pullRequestAutoSync: parsedValues.pullRequestAutoSync,
-            config: validation.normalizedConfig,
+            agentAccess: parsedValues.agentAccess,
+            // The plugin's answer can't set a field Ajour owns.
+            config: withoutReservedFields(validation.normalizedConfig),
             configSummary: validation.connectionSummary,
           });
           const { overview, summary } = await findConnectionSummary(
@@ -1624,10 +1658,18 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           return;
         }
         const startedAt = Date.now();
+        // An agent's call says so; Ajour's own pages don't. The access it
+        // needs follows from the operation, not from the caller.
+        const forAgent = requestUrl.searchParams.get("agent") === "1";
+        const agentNeed =
+          operation.data === "listItemComments" ||
+          operation.data === "searchItemPeople"
+            ? "read"
+            : "readWrite";
         // Ids, counts and duration only. Comment text and authors stay out
         // of the log (ADR 0008).
         const logCommentEvent = (
-          outcome: "ok" | "error",
+          outcome: "ok" | "error" | "refused",
           commentCount?: number,
         ) =>
           logMcpEvent({
@@ -1635,10 +1677,41 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             operation: operation.data,
             plugin_id: pluginId,
             connection_id: connectionId,
+            agent: forAgent,
             comment_count: commentCount,
             outcome,
             duration_ms: Date.now() - startedAt,
           });
+        /**
+         * Refuses an agent's call the user doesn't allow on the connection,
+         * as stored now: before the plugin runs, and again before a read's
+         * text leaves, so a revocation saved meanwhile holds.
+         */
+        const agentRefusal = `The user hasn't allowed agents to ${agentNeed === "read" ? "read" : "post"} comments on the "${connection.label}" connection.`;
+        const agentAllowed = async () => {
+          if (!forAgent) return true;
+          const current = await storage.getConnection(pluginId, connectionId);
+          return Boolean(
+            current &&
+            agentAccessAllows(connectionAgentAccess(current), agentNeed),
+          );
+        };
+        const refuseAgent = () => {
+          logCommentEvent("refused");
+          writeJson(response, 403, { error: agentRefusal });
+        };
+        if (!(await agentAllowed())) {
+          refuseAgent();
+          return;
+        }
+        // Checked again at the plugin's admission, after the host's own
+        // waits, so a revocation saved meanwhile stops a post.
+        let refusedAtAdmission = false;
+        const admit = async () => {
+          if (await agentAllowed()) return;
+          refusedAtAdmission = true;
+          throw new Error(agentRefusal);
+        };
         try {
           const result = await pluginManager.runBacklogCommentOperation(
             pluginId,
@@ -1656,7 +1729,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
               config: connection.config,
             },
             commentRequest,
+            admit,
           );
+          // A read's text leaves only while the agent may still read. A
+          // change was allowed at admission and has happened: it stands.
+          if (agentNeed === "read" && !(await agentAllowed())) {
+            refuseAgent();
+            return;
+          }
           logCommentEvent(
             "ok",
             "comments" in result
@@ -1669,6 +1749,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           );
           writeJson(response, 200, result);
         } catch (error) {
+          if (refusedAtAdmission) {
+            refuseAgent();
+            return;
+          }
           const message = boundConnectionError(
             redactSecretValues(errorMessage(error), plugin, connection.config),
           );

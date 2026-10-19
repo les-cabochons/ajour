@@ -10,6 +10,10 @@ import {
   postItemComment,
   writeBacklogSettle,
 } from "@/lib/app-api";
+import {
+  agentAccessAllows,
+  readAgentCommentAccess,
+} from "@/lib/agent-comment-access";
 import { keepCommentAsDraft } from "@/lib/comment-drafts";
 import { localStore } from "@/lib/local-store";
 import {
@@ -159,9 +163,10 @@ function keepAsDrafts(
 
 /**
  * Posts the item's settle comments that are ready: their settle's Undo
- * window closed, and the item's pending write landed. A settle that was
- * undone keeps its comment as the item's draft instead, as does a refused
- * post (ADR 0008).
+ * window closed, and the item's pending write landed. An agent's comment
+ * also needs the agent to be still allowed to post. A settle that was
+ * undone, failed or replaced keeps its comment as the item's draft
+ * instead, as does a refused post (ADR 0008).
  */
 export async function sendSettleComments(workItemId: string) {
   const itemNow = () =>
@@ -172,12 +177,47 @@ export async function sendSettleComments(workItemId: string) {
   if (itemNow()?.pendingSourceWrite) return;
   const ready = settleCommentsOf(workItemId).filter((entry) => entry.ready);
   await Promise.all(
-    ready.map(async ({ id }) => {
-      const entry = takeSettleComment(id);
+    ready.map(async (queued) => {
+      // An agent's comment: read its access before taking the comment, so
+      // what the item does meanwhile is checked below.
+      let agentCheck: { allowed: boolean } | { error: unknown } | undefined;
+      if (queued.agentClient) {
+        try {
+          const { access } = await readAgentCommentAccess({
+            source: queued.pluginId,
+            sourceConnectionId: queued.connectionId,
+            sourceId: queued.sourceId,
+          });
+          agentCheck = { allowed: agentAccessAllows(access, "readWrite") };
+        } catch (error) {
+          agentCheck = { error };
+        }
+      }
+      // A write that started meanwhile goes first and sends it after.
+      if (itemNow()?.pendingSourceWrite) return;
+      const entry = takeSettleComment(queued.id);
       const item = itemNow();
       if (!entry || !item) return;
       if (!settleStands(item, entry)) {
         keepCommentAsDraft(workItemId, entry.body);
+        return;
+      }
+      const author = entry.agentClient ? `${entry.agentClient}'s` : "your";
+      if (agentCheck && "error" in agentCheck) {
+        keepCommentAsDraft(workItemId, entry.body);
+        showErrorToast({
+          title: `Couldn't post ${author} comment on "${item.title}"`,
+          description: `${agentCheck.error instanceof Error ? agentCheck.error.message : "Unknown error"} It's kept as a draft on the item.`,
+        });
+        return;
+      }
+      if (agentCheck && !agentCheck.allowed) {
+        keepCommentAsDraft(workItemId, entry.body);
+        showErrorToast({
+          title: `${entry.agentClient}'s comment on "${item.title}" wasn't posted`,
+          description:
+            "Agents can no longer post comments on its connection. It's kept as a draft on the item.",
+        });
         return;
       }
       try {
@@ -185,12 +225,14 @@ export async function sendSettleComments(workItemId: string) {
           entry.pluginId,
           entry.connectionId,
           { sourceId: entry.sourceId, body: entry.body },
+          // An agent's comment: the API checks its access at the post.
+          entry.agentClient ? { agent: true } : undefined,
         );
         announcePostedComment(entry, comment);
       } catch (error) {
         keepCommentAsDraft(workItemId, entry.body);
         showErrorToast({
-          title: `Couldn't post your comment on "${item.title}"`,
+          title: `Couldn't post ${author} comment on "${item.title}"`,
           description: `${error instanceof Error ? error.message : "Unknown error"} It's kept as a draft on the item.`,
         });
       }

@@ -168,6 +168,66 @@ describe("PluginManager", () => {
     );
   });
 
+  it("lets a comment call's admission check stop the plugin at the last moment", async () => {
+    const root = await tempDir();
+    const marker = path.join(root, "posted.txt");
+    const pluginDirectory = await createPluginDirectory(
+      root,
+      "jira",
+      [
+        "import { writeFile } from 'node:fs/promises';",
+        "export async function validateConnection(config) {",
+        "  return { normalizedConfig: config, connectionSummary: {} };",
+        "}",
+        "export async function postItemComment(connection, request) {",
+        `  await writeFile(${JSON.stringify(marker)}, request.body);`,
+        "  return { comment: { id: 'c1', author: { id: 'me', displayName: 'Me' }, body: request.body, createdAt: '2026-10-18T10:00:00Z' } };",
+        "}",
+      ].join("\n"),
+      { capabilities: { connector: { comments: {} } } },
+    );
+    const pluginManager = manager({
+      installedPluginDirectory: path.join(root, "installed"),
+      developmentPluginDirectories: [pluginDirectory],
+      allowDevelopmentPlugins: true,
+    });
+    const connection = {
+      id: "connection-1",
+      pluginId: "jira",
+      label: "Work",
+      tenantLabel: "Contoso",
+      autoSync: false,
+      autoSyncIntervalMinutes: 15,
+      connectedAt: 1,
+      config: {},
+    };
+    const request = { sourceId: "ENG-1", body: "Fixed" };
+
+    await expect(
+      pluginManager.runBacklogCommentOperation(
+        "jira",
+        "postItemComment",
+        connection,
+        request,
+        async () => {
+          throw new Error("Revoked.");
+        },
+      ),
+    ).rejects.toThrow("Revoked.");
+    await expect(access(marker)).rejects.toThrow();
+
+    await expect(
+      pluginManager.runBacklogCommentOperation(
+        "jira",
+        "postItemComment",
+        connection,
+        request,
+        async () => undefined,
+      ),
+    ).resolves.toMatchObject({ comment: { body: "Fixed" } });
+    await expect(access(marker)).resolves.toBeUndefined();
+  });
+
   it("loads a development plugin and executes each operation in a worker", async () => {
     const root = await tempDir();
     const pluginDirectory = await createPluginDirectory(

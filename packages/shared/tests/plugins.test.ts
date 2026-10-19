@@ -13,6 +13,8 @@ import {
   pluginHasCodeHost,
   pluginHasBacklog,
   pluginRunsCode,
+  pluginConnectionFormFields,
+  connectionAgentAccess,
 } from "../plugins";
 
 const validManifest = {
@@ -371,5 +373,51 @@ describe("plugin manifest capabilities", () => {
         },
       }),
     ).toThrow();
+  });
+});
+
+describe("agent access to comments", () => {
+  const manifest = pluginManifestSchema.parse(validManifest);
+  const declaringIt = {
+    ...manifest,
+    connectionFields: [
+      ...manifest.connectionFields,
+      {
+        id: "agentAccess",
+        label: "Agents",
+        type: "select" as const,
+        required: true,
+        secret: false,
+        defaultValue: "readWrite",
+      },
+    ],
+  };
+
+  it("is Ajour's field on a plugin with comments, None by default", () => {
+    const withComments = {
+      ...declaringIt,
+      capabilities: { connector: { comments: {} } },
+    };
+    const fields = pluginConnectionFormFields(withComments);
+
+    expect(fields.filter((field) => field.id === "agentAccess")).toEqual([
+      expect.objectContaining({
+        label: "Agent access to comments",
+        defaultValue: "none",
+        capability: "connector",
+      }),
+    ]);
+    expect(fields.at(-1)?.id).toBe("agentAccess");
+  });
+
+  it("is absent without comments, even when the plugin declares the id", () => {
+    expect(
+      pluginConnectionFormFields(declaringIt).map((field) => field.id),
+    ).not.toContain("agentAccess");
+  });
+
+  it("reads None from a connection saved before the setting", () => {
+    expect(connectionAgentAccess({})).toBe("none");
+    expect(connectionAgentAccess({ agentAccess: "read" })).toBe("read");
   });
 });

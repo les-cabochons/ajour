@@ -1,5 +1,6 @@
 import {
   isCapabilitySwitchedOn,
+  pluginConnectionFormFields,
   pluginHasBacklog,
   syncsPullRequestsAutomatically,
   type PluginField,
@@ -33,7 +34,7 @@ export function buildPluginFormValues(
   const values: PluginFieldValues = {};
   const hasEditableValues = editableValues !== undefined;
 
-  for (const field of plugin.connectionFields) {
+  for (const field of pluginConnectionFormFields(plugin)) {
     values[field.id] =
       editableValues?.[field.id] ??
       (field.secret && hasEditableValues
@@ -96,7 +97,7 @@ export function canSubmitPluginForm(
     return false;
   }
 
-  return plugin.connectionFields.every((field) => {
+  return pluginConnectionFormFields(plugin).every((field) => {
     if (
       !field.required ||
       !isPluginFieldShown(plugin, field, values, options?.inactiveCapabilities)
@@ -123,7 +124,7 @@ export function normalizePluginFormValuesForSave(
 ): PluginFieldValues {
   const normalizedValues: PluginFieldValues = { ...values };
 
-  for (const field of plugin.connectionFields) {
+  for (const field of pluginConnectionFormFields(plugin)) {
     if (
       field.secret &&
       options?.allowSavedSecrets &&
@@ -141,7 +142,7 @@ export function arePluginFormValuesEqual(
   left: PluginFieldValues,
   right: PluginFieldValues,
 ) {
-  return plugin.connectionFields.every(
+  return pluginConnectionFormFields(plugin).every(
     (field) => left[field.id] === right[field.id],
   );
 }

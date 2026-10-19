@@ -1883,6 +1883,12 @@ describe("backlog comment routes", () => {
     "}",
     "export async function listItemComments(connection, request) {",
     "  if (request.sourceId === 'broken') throw new Error('Could not read with ' + connection.config.token);",
+    "  if (request.sourceId.startsWith('slow:')) {",
+    "    const [, entered, release] = request.sourceId.split('|');",
+    "    const fs = await import('node:fs/promises');",
+    "    await fs.writeFile(entered, '');",
+    "    while (!(await fs.access(release).then(() => true, () => false))) await new Promise((resolve) => setTimeout(resolve, 10));",
+    "  }",
     "  return {",
     "    viewer: { id: 'me', displayName: 'Me' },",
     "    comments: [{ id: 'c1', author: { id: 'ana', displayName: 'Ana Silva' }, body: 'Secret client detail', createdAt: '2026-10-13T10:42:00Z' }],",
@@ -1902,20 +1908,30 @@ describe("backlog comment routes", () => {
     "  return { people: [{ id: 'ana', displayName: 'Ana Silva ' + request.query }] };",
     "}",
     "export async function postItemComment(connection, request) {",
+    "  if (request.body.startsWith('slow|')) {",
+    "    const [, entered, release] = request.body.split('|');",
+    "    const fs = await import('node:fs/promises');",
+    "    await fs.writeFile(entered, '');",
+    "    while (!(await fs.access(release).then(() => true, () => false))) await new Promise((resolve) => setTimeout(resolve, 10));",
+    "  }",
     "  return { comment: { id: 'c2', author: { id: 'me', displayName: 'Me' }, body: request.body, createdAt: '2026-10-17T10:00:00Z' } };",
     "}",
   ].join("\n");
 
-  async function createServer(capabilities: Record<string, unknown>) {
+  async function createServer(
+    capabilities: Record<string, unknown>,
+    plugin: { source?: string; extraFields?: Record<string, unknown>[] } = {},
+  ) {
     const root = await mkdtemp(path.join(os.tmpdir(), "ajour-comments-api-"));
     tempDirs.push(root);
     const pluginDirectory = await createPlugin(
       path.join(root, "source"),
-      commentPluginSource,
+      plugin.source ?? commentPluginSource,
       "plugin.mjs",
       {
         capabilities,
         connectionFields: [
+          ...(plugin.extraFields ?? []),
           { id: "label", label: "Label", type: "text", required: true },
           {
             id: "tenantLabel",
@@ -1958,11 +1974,199 @@ describe("backlog comment routes", () => {
     const connectionId = (
       connectionResponse.body as { connection: { id: string } }
     ).connection.id;
-    return { server, connectionId, events };
+    return { server, connectionId, events, root };
   }
 
   const listPath = (connectionId: string, operation = "listItemComments") =>
     `/api/backlog-comments/jira/connections/${connectionId}/${operation}`;
+
+  it("keeps agent access to comments as Ajour's setting, None until the user changes it", async () => {
+    const { server, connectionId, root } = await createServer({
+      connector: { comments: {} },
+    });
+    const connection = async () =>
+      (
+        (
+          await dispatchJsonRequest(server, {
+            method: "GET",
+            path: "/api/plugins",
+          })
+        ).body as {
+          connectionGroups: {
+            connections: {
+              agentAccess?: string;
+              editableValues: Record<string, unknown>;
+            }[];
+          }[];
+        }
+      ).connectionGroups[0]!.connections[0]!;
+    const save = (values: Record<string, unknown>) =>
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: "/api/plugins/jira/connections",
+        body: JSON.stringify({
+          id: connectionId,
+          values: {
+            label: "Work",
+            tenantLabel: "Contoso",
+            autoSyncIntervalMinutes: 10,
+            token: TOKEN,
+            ...values,
+          },
+        }),
+      });
+
+    expect(await connection()).toMatchObject({
+      editableValues: { agentAccess: "none" },
+    });
+    expect((await connection()).agentAccess).toBeUndefined();
+
+    expect((await save({ agentAccess: "read" })).status).toBe(200);
+    expect(await connection()).toMatchObject({
+      agentAccess: "read",
+      editableValues: { agentAccess: "read" },
+    });
+
+    // A save without it keeps it; an unknown level is refused.
+    await save({});
+    expect((await connection()).agentAccess).toBe("read");
+    expect((await save({ agentAccess: "everything" })).status).toBe(400);
+    expect((await connection()).agentAccess).toBe("read");
+
+    // The plugin never receives the setting with its config.
+    const stored = JSON.parse(
+      await readFile(path.join(root, "state.json"), "utf8"),
+    ) as { connections: { config: Record<string, unknown> }[] };
+    expect(stored.connections[0]!.config).not.toHaveProperty("agentAccess");
+  });
+
+  it("keeps agent access Ajour's even when the plugin declares and returns it", async () => {
+    const { server, connectionId, root } = await createServer(
+      { connector: { comments: {} } },
+      {
+        source: commentPluginSource.replace(
+          "return { normalizedConfig: config, connectionSummary: {} };",
+          "return { normalizedConfig: { ...config, agentAccess: 'readWrite' }, connectionSummary: {} };",
+        ),
+        extraFields: [
+          {
+            id: "agentAccess",
+            label: "Agents",
+            type: "text",
+            defaultValue: "readWrite",
+          },
+        ],
+      },
+    );
+
+    const overview = (
+      await dispatchJsonRequest(server, { method: "GET", path: "/api/plugins" })
+    ).body as {
+      connectionGroups: {
+        connections: {
+          id: string;
+          agentAccess?: string;
+          editableValues: Record<string, unknown>;
+        }[];
+      }[];
+    };
+    const connection = overview.connectionGroups[0]!.connections.find(
+      (candidate) => candidate.id === connectionId,
+    )!;
+    expect(connection.agentAccess).toBeUndefined();
+    expect(connection.editableValues.agentAccess).toBe("none");
+    const stored = JSON.parse(
+      await readFile(path.join(root, "state.json"), "utf8"),
+    ) as { connections: { config: Record<string, unknown> }[] };
+    expect(stored.connections[0]!.config).not.toHaveProperty("agentAccess");
+  });
+
+  it("enforces agent access on an agent's comment calls, even when revoked mid-read", async () => {
+    const { server, connectionId, events, root } = await createServer({
+      connector: { comments: {} },
+    });
+    const call = (operation: string, body: unknown, agent = true) =>
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `${listPath(connectionId, operation)}${agent ? "?agent=1" : ""}`,
+        body: JSON.stringify(body),
+      });
+    const setAccess = (agentAccess: string) =>
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: "/api/plugins/jira/connections",
+        body: JSON.stringify({
+          id: connectionId,
+          values: {
+            label: "Work",
+            tenantLabel: "Contoso",
+            autoSyncIntervalMinutes: 10,
+            token: TOKEN,
+            agentAccess,
+          },
+        }),
+      });
+    const list = { sourceId: "4821", limit: 5 };
+
+    // None: an agent gets nothing; Ajour's own page still reads.
+    expect(await call("listItemComments", list)).toEqual({
+      status: 403,
+      body: {
+        error:
+          'The user hasn\'t allowed agents to read comments on the "Work" connection.',
+      },
+    });
+    expect((await call("listItemComments", list, false)).status).toBe(200);
+
+    // Read: an agent reads, but can't post.
+    await setAccess("read");
+    expect((await call("listItemComments", list)).status).toBe(200);
+    expect(
+      (await call("postItemComment", { sourceId: "4821", body: "Hi" })).status,
+    ).toBe(403);
+
+    // Revoked while the plugin answers: the text doesn't leave.
+    const entered = path.join(root, "entered");
+    const release = path.join(root, "release");
+    const slow = call("listItemComments", {
+      sourceId: `slow:|${entered}|${release}`,
+      limit: 5,
+    });
+    await expect
+      .poll(() =>
+        access(entered).then(
+          () => true,
+          () => false,
+        ),
+      )
+      .toBe(true);
+    await setAccess("none");
+    await writeFile(release, "");
+    expect(await slow).toMatchObject({ status: 403 });
+    const refused = events.filter((event) => event.outcome === "refused");
+    expect(refused).toHaveLength(3);
+    expect(refused.every((event) => event.agent === true)).toBe(true);
+
+    // A post allowed at admission stands, even if access drops meanwhile.
+    await setAccess("readWrite");
+    const posting = path.join(root, "posting");
+    const posted = path.join(root, "posted");
+    const post = call("postItemComment", {
+      sourceId: "4821",
+      body: `slow|${posting}|${posted}`,
+    });
+    await expect
+      .poll(() =>
+        access(posting).then(
+          () => true,
+          () => false,
+        ),
+      )
+      .toBe(true);
+    await setAccess("read");
+    await writeFile(posted, "");
+    expect(await post).toMatchObject({ status: 200 });
+  });
 
   it("lists an item's comments and logs no text or author", async () => {
     const { server, connectionId, events } = await createServer({

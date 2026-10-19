@@ -1,5 +1,6 @@
 import {
   writeToolInputSchemas,
+  type AgentClientRef,
   type WriteToolName,
 } from "@ajour/shared/agent-tools";
 import {
@@ -24,6 +25,10 @@ import type { CloseSubitemsVerb } from "@/features/backlog/close-subitems-dialog
 import { getSettleBehavior } from "@/features/backlog/settle-dialog";
 import { findSettleState } from "@/features/backlog/settle-draft";
 import {
+  assertCommentFits,
+  requireAgentCommentAccess,
+} from "@/features/agents/agent-comment-tools";
+import {
   assertAllowed,
   backlogActionOptions,
   nextTaskId,
@@ -32,6 +37,7 @@ import {
 } from "@/features/agents/agent-write-tools";
 import { listBacklogSettleStates } from "@/lib/app-api";
 import { localStore } from "@/lib/local-store";
+import { queueSettleComment } from "@/lib/settle-comments";
 
 /**
  * Backlog item tools. Like the UI, they check the item's action set, and
@@ -157,6 +163,7 @@ function outcome(
   undoToken: string | null,
   action: string,
   sourceWriteIds: string[] = [],
+  settleComments: AgentWriteOutcome["settleComments"] = [],
 ): AgentWriteOutcome {
   const after = localStore.snapshot();
   const item = findWorkItemOrRefuse(after, workItemId);
@@ -168,12 +175,14 @@ function outcome(
     objectTitle: item.title,
     undoSubject: "backlog item",
     sourceWriteIds,
+    settleComments,
   };
 }
 
 export async function runWorkItemWriteTool(
   tool: WorkItemWriteTool,
   rawInput: unknown,
+  client: AgentClientRef,
 ): Promise<AgentWriteOutcome> {
   const state = localStore.snapshot();
   const now = Date.now();
@@ -304,6 +313,13 @@ export async function runWorkItemWriteTool(
       const input = writeToolInputSchemas.settle_work_item.parse(rawInput);
       const item = findWorkItemOrRefuse(state, input.workItemId);
       assertAllowed(actionsFor(item), "settle");
+      // Checked first, so a refused comment leaves the item as it was.
+      const commentSource = input.comment
+        ? await requireAgentCommentAccess(item, "readWrite")
+        : undefined;
+      if (commentSource && input.comment) {
+        assertCommentFits(commentSource, input.comment);
+      }
       const change = await resolveSettleChange(item, input.sourceState);
       const includeSubitems = await resolveAgentIncludeSubitems(
         item,
@@ -319,6 +335,20 @@ export async function runWorkItemWriteTool(
         );
       }
       const settled = findWorkItemOrRefuse(localStore.snapshot(), item._id);
+      const commentId = crypto.randomUUID();
+      if (commentSource && input.comment) {
+        queueSettleComment({
+          id: commentId,
+          settleId: settled.settleId,
+          agentClient: client.name,
+          itemId: item._id,
+          pluginId: commentSource.pluginId,
+          connectionId: commentSource.connectionId,
+          sourceId: commentSource.sourceId,
+          body: input.comment,
+          at: Date.now(),
+        });
+      }
       return outcome(
         item._id,
         undoToken,
@@ -327,6 +357,7 @@ export async function runWorkItemWriteTool(
           : "Settled a backlog item",
         // Like the UI, the settle's source write goes when the Undo toast closes.
         settled.pendingSourceWrite ? [item._id] : [],
+        commentSource ? [{ commentId, workItemId: item._id }] : [],
       );
     }
 
