@@ -13,7 +13,7 @@ import {
   LanguageSupport,
   syntaxHighlighting,
 } from "@codemirror/language";
-import { EditorState, Prec } from "@codemirror/state";
+import { EditorState, Prec, StateEffect, StateField } from "@codemirror/state";
 import {
   Decoration,
   EditorView,
@@ -22,6 +22,7 @@ import {
   WidgetType,
   keymap,
   placeholder as placeholderText,
+  showTooltip,
   type DecorationSet,
   type ViewUpdate,
 } from "@codemirror/view";
@@ -96,6 +97,56 @@ const mentionChips = ViewPlugin.fromClass(
 
 const escapeName = (name: string) => name.replace(/[[\]\\]/g, "");
 
+/** The `@word` being typed, which the mention suggestions answer. */
+const mentionWord = /@[^\s@[\]()]*$/;
+
+interface MentionStatus {
+  /** Where the `@` is. */
+  from: number;
+  text: string;
+}
+
+const setMentionStatus = StateEffect.define<MentionStatus | null>();
+
+/**
+ * A line in place of the suggestions when there are none to pick: asking
+ * for a name after a bare `@`, or saying no one was found. It goes when the
+ * text changes, the cursor leaves the `@word` or the editor loses focus.
+ */
+const mentionStatus = StateField.define<MentionStatus | null>({
+  create: () => null,
+  update(status, transaction) {
+    for (const effect of transaction.effects) {
+      if (effect.is(setMentionStatus)) return effect.value;
+    }
+    // Typing asks again, and the answer brings the next line.
+    if (!status || transaction.docChanged) return null;
+    if (!transaction.selection) return status;
+    const head = transaction.state.selection.main.head;
+    const typed = transaction.state.sliceDoc(status.from, head);
+    return /^@[^\s@[\]()]*$/.test(typed) ? status : null;
+  },
+  provide: (field) => [
+    showTooltip.from(field, (status) =>
+      status
+        ? {
+            pos: status.from,
+            create: () => {
+              const dom = document.createElement("div");
+              dom.className = "cm-mention-status";
+              dom.setAttribute("role", "status");
+              dom.textContent = status.text;
+              return { dom };
+            },
+          }
+        : null,
+    ),
+    EditorView.focusChangeEffect.of((_state, focusing) =>
+      focusing ? null : setMentionStatus.of(null),
+    ),
+  ],
+});
+
 /** Suggestions for the word after `@`, at the start of a word. */
 function mentionSource(
   search: () => (query: string) => Promise<BacklogPerson[]>,
@@ -103,18 +154,32 @@ function mentionSource(
   return async (
     context: CompletionContext,
   ): Promise<CompletionResult | null> => {
-    const word = context.matchBefore(/@[^\s@[\]()]*$/);
+    const word = context.matchBefore(mentionWord);
     if (!word) return null;
     const before =
       word.from > 0 ? context.state.sliceDoc(word.from - 1, word.from) : "";
     if (before && !/[\s(]/.test(before)) return null;
+    const showStatus = (text: string | null) =>
+      context.view?.dispatch({
+        effects: setMentionStatus.of(text ? { from: word.from, text } : null),
+      });
     const query = word.text.slice(1);
-    if (!query) return null;
+    if (!query) {
+      // Out of the completion's own update.
+      await Promise.resolve();
+      if (!context.aborted) showStatus("Type a name to mention someone");
+      return null;
+    }
     // Typing fast asks once, for the last query.
     await new Promise((resolve) => setTimeout(resolve, 200));
     if (context.aborted) return null;
-    const people = await search()(query);
+    // A search that fails reads like one that found no one.
+    const people = await search()(query).catch(() => []);
     if (context.aborted) return null;
+    if (people.length === 0) {
+      showStatus("No one found");
+      return null;
+    }
     return {
       from: word.from,
       filter: false,
@@ -178,6 +243,16 @@ const editorTheme = EditorView.theme({
     backgroundColor: "var(--popover)",
     boxShadow: "var(--shadow-popup)",
     padding: "0.25rem",
+  },
+  ".cm-tooltip.cm-mention-status": {
+    border: "1px solid var(--border)",
+    borderRadius: "var(--radius-lg)",
+    backgroundColor: "var(--popover)",
+    boxShadow: "var(--shadow-popup)",
+    padding: "0.375rem 0.75rem",
+    color: "var(--muted-foreground)",
+    fontFamily: "var(--font-sans)",
+    fontSize: "var(--text-sm)",
   },
   ".cm-tooltip.cm-tooltip-autocomplete > ul > li": {
     padding: "0.25rem 0.5rem",
@@ -260,6 +335,7 @@ export default function MarkdownEditorView({
                   ],
                   icons: false,
                 }),
+                mentionStatus,
                 keymap.of(completionKeymap),
               ]
             : []),

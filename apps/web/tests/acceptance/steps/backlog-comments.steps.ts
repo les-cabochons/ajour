@@ -412,6 +412,51 @@ When("I mention Ana in a new comment and send it", async ({ page }) => {
   await page.keyboard.press("ControlOrMeta+Enter");
 });
 
+Given("its plugin fails to search people", async ({ page }) => {
+  await page.route(
+    `${apiUrl}/api/backlog-comments/example/connections/fixture/searchItemPeople`,
+    (route) =>
+      route.fulfill({
+        status: 502,
+        json: { error: "Azure DevOps request failed (401): people search" },
+        headers: cors,
+      }),
+  );
+});
+
+When("I type {string} in a new comment", async ({ page }, text: string) => {
+  await commentsRegion(page)
+    .getByRole("button", { name: "Leave a comment…" })
+    .click();
+  // The editor loads on first use; type once it has the focus.
+  await expect(
+    commentsRegion(page).getByRole("textbox", { name: "New comment" }),
+  ).toBeFocused();
+  await page.keyboard.type(text);
+});
+
+When("I keep typing {string}", async ({ page }, text: string) => {
+  await page.keyboard.type(text);
+});
+
+const mentionStatus = (page: Page) =>
+  commentsRegion(page).locator(".cm-mention-status");
+
+Then("the mention suggestions ask for a name", async ({ page }) => {
+  await expect(mentionStatus(page)).toHaveText(
+    "Type a name to mention someone",
+  );
+});
+
+Then("the mention suggestions say no one was found", async ({ page }) => {
+  await expect(mentionStatus(page)).toHaveText("No one found");
+  await expect(page.getByRole("option")).toHaveCount(0);
+});
+
+Then("the mention suggestions are closed", async ({ page }) => {
+  await expect(mentionStatus(page)).toHaveCount(0);
+});
+
 Then(
   "the comment went out with Ana's mention, shown as a chip",
   async ({ page }) => {
