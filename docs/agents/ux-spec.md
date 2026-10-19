@@ -700,7 +700,7 @@ Decided in [#281](https://github.com/les-cabochons/ajour/issues/281).
 - While the item's project or task differs from its timelog, a button follows the Project property:
   - When the project does not exist, an amber warning, "Create project Beta Corp", opens an AlertDialog with Cancel and Create project, or Restore project when an archived project has that name. Confirming creates or restores it with the task.
   - When the task does not exist or is archived, an amber warning, "Add task Deploy to Team site", opens an AlertDialog with Cancel and Add task or Restore task. For a shared project it says the team gets the task too.
-  - When both exist but the item is set to others, as after a pick in the properties, a muted reset icon, the one "Reset to subitem total" uses, "Use Acme website › Development from the description", sets them at once.
+  - When both exist but the item is set to others, as after a pick in the properties, a muted back arrow, "Use Acme website › Development from the description", sets them at once.
   - Each sets the project and task on the item and shows the Undo toast.
 
 ## Projects

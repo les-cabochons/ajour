@@ -46,7 +46,7 @@ The description text.
 
 - **Fields** such as `Teamwork` show in the properties, after the item's own. A list, or a field with fields under it, is a section that starts closed; click its name to open it. Ajour remembers the sections you open, on every item.
 - **`timelog`** sets the item's **Project** and **Task** when you save it, or when a synced item arrives with one. The project is matched by name, display name or code. A task the project lacks is created, except in a shared project, where Ajour asks first because your team gets the task too. If you pick another project or task afterwards, Ajour keeps your pick.
-- While the item's project or task differs from its timelog, an icon follows **Project**. A warning icon means the project or task doesn't exist: click it to create it, and Ajour sets it on the item. A reset icon, the circular arrow, means you picked something else: click it to go back to the timelog's project and task.
+- While the item's project or task differs from its timelog, an icon follows **Project**. A warning icon means the project or task doesn't exist: click it to create it, and Ajour sets it on the item. A back arrow means you picked something else: click it to go back to the timelog's project and task.
 
 Web links in a description, in its text or its fields, show their full address and ask before they open. Check **Don't ask again** to open them at once, and turn the question back on in **Settings › Backlog › Descriptions**.
 

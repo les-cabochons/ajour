@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   RiErrorWarningLine as WarningIcon,
-  RiRefreshLine as ResetIcon,
+  RiArrowGoBackLine as ResetIcon,
 } from "@remixicon/react";
 import { TooltipButton } from "@/components/tooltip-button";
 import {
