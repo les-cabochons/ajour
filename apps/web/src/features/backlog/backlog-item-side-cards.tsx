@@ -1,4 +1,4 @@
-import { useId, type ReactNode } from "react";
+import { useId, useRef, type ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   RiAddLine as AddIcon,
@@ -60,6 +60,10 @@ function FoldingCard({
   children: ReactNode;
 }) {
   const contentId = useId();
+  // The state shown when the pointer went down on the title. Pressing it can
+  // blur an empty name field, which folds the card before the click lands;
+  // the click must still fold it, not reopen it.
+  const openAtPress = useRef<boolean | null>(null);
   return (
     <section className="backlog-item-card" aria-label={label}>
       <div className="backlog-item-card-header">
@@ -69,7 +73,17 @@ function FoldingCard({
             aria-expanded={open}
             aria-controls={contentId}
             className="backlog-item-card-toggle"
-            onClick={() => onOpenChange(!open)}
+            onPointerDown={() => {
+              openAtPress.current = open;
+            }}
+            onPointerLeave={() => {
+              openAtPress.current = null;
+            }}
+            onClick={() => {
+              const wasOpen = openAtPress.current ?? open;
+              openAtPress.current = null;
+              onOpenChange(!wasOpen);
+            }}
           >
             <ChevronIcon
               aria-hidden="true"

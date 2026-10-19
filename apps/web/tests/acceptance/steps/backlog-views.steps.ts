@@ -2275,6 +2275,26 @@ Then(
     ).toBeNull();
   },
 );
+When("I press Add subitem and then the Subitems title", async ({ page }) => {
+  await page.getByRole("button", { name: "Add subitem", exact: true }).click();
+  await expect(
+    page.getByRole("textbox", { name: "New subitem name" }),
+  ).toBeFocused();
+  // The press blurs the empty name field, which closes it first.
+  await sideCard(page, "Subitems").toggle.click();
+});
+Then(
+  "the Subitems card stays closed, even after a reload",
+  async ({ page }) => {
+    const { toggle } = sideCard(page, "Subitems");
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await page.reload();
+    await expect(sideCard(page, "Subitems").toggle).toHaveAttribute(
+      "aria-expanded",
+      "false",
+    );
+  },
+);
 When("I open the Subitems card", async ({ page }) => {
   await sideCard(page, "Subitems").toggle.click();
 });

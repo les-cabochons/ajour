@@ -577,6 +577,11 @@ Feature: Backlog list and board views
     And I reload the item page
     Then the Subitems card is still open and Time entries is still closed
 
+  Scenario: Fold the Subitems card from its title while adding a subitem
+    When I open the Backlog parent page
+    And I press Add subitem and then the Subitems title
+    Then the Subitems card stays closed, even after a reload
+
   Scenario: Keep a synced item when it goes missing from sync
     Given the Backlog parent is synced
     When I open the Backlog parent page
