@@ -10,7 +10,7 @@ import {
   RiStopLine as StopIcon,
   RiTimeLine as SnoozeIcon,
 } from "@remixicon/react";
-import { PageHeader } from "@/components/page-header";
+import { PageHeader, type PageBreadcrumbItem } from "@/components/page-header";
 import {
   PropertyAction,
   PropertyActions,
@@ -70,6 +70,7 @@ import { useActionRequest } from "@/lib/action-request";
 import { BACKLOG_ITEM_ACTION_KEYS, handleItemKeyDown } from "@/lib/item-keys";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
+import { ProjectIcon } from "@/lib/project-icons";
 import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { findWorkItemTimer } from "@/domain/time/running-entry";
@@ -82,10 +83,10 @@ import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
 
 /**
  * The backlog item page at /backlog/$itemId, from "Backlog item page" in
- * docs/agents/ux-spec.md. The top bar holds the item's actions;
- * the page holds the back link, title, estimate figures and progress, then the description,
- * subitems and time entries beside the properties card. Every field edits in
- * place, so the page has no editor panel and no "…" menu.
+ * docs/agents/ux-spec.md. The top bar holds the breadcrumb and the item's
+ * actions; the page holds the back link, title, estimate figures and progress,
+ * then the description, subitems and time entries beside the properties card.
+ * Every field edits in place, so the page has no editor panel and no "…" menu.
  *
  * The page itself is the focused object, so E settles, B snoozes and Enter
  * renames as soon as it opens.
@@ -203,6 +204,25 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
       )
     : undefined;
   const project = state.projects.find((entry) => entry._id === item.projectId);
+  // The item's project, or Backlog without one, whichever page it was opened
+  // from: the back link already returns there.
+  const breadcrumb: PageBreadcrumbItem[] = [
+    project
+      ? {
+          label: getLocalProjectDisplayName(project),
+          icon: (
+            <ProjectIcon
+              icon={project.icon}
+              color={project.color}
+              className="ajour-sidebar-icon shrink-0"
+            />
+          ),
+          to: "/projects/$projectId",
+          params: { projectId: project._id },
+        }
+      : { label: "Backlog", to: "/backlog" },
+    { label: item.title },
+  ];
   const reference =
     item.source === "azure_devops"
       ? parseWorkItemReference(item.sourceId)
@@ -309,6 +329,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
           }
         >
           <PageHeader
+            breadcrumb={breadcrumb}
             backLink={backLink}
             actions={
               <>

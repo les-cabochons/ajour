@@ -6,12 +6,14 @@ import { registerPageHeader, usePageHeaderSlot } from "@/lib/page-header";
 import { cn } from "@/lib/utils";
 
 /**
- * A page's title and actions, shown in the top bar through the shell's slot.
- * Detail pages keep their title and optional back link in the page content.
+ * A page's title or breadcrumb and its actions, shown in the top bar through
+ * the shell's slot. Detail pages keep their title and optional back link in
+ * the page content.
  */
 export function PageHeader({
   title,
   meta,
+  breadcrumb,
   backLink,
   actions,
   children,
@@ -19,6 +21,8 @@ export function PageHeader({
   title?: ReactNode;
   /** A muted count after the title, such as the number of listed items. */
   meta?: ReactNode;
+  /** Where a detail page sits, such as its project, in place of a title. */
+  breadcrumb?: PageBreadcrumbItem[];
   backLink?: PageBackLink;
   actions?: ReactNode;
   /** Controls that belong with the title, such as a date switcher. */
@@ -30,7 +34,9 @@ export function PageHeader({
   const content = (
     <>
       <div className="ajour-page-header-title">
-        {title !== undefined ? (
+        {breadcrumb ? (
+          <PageBreadcrumb items={breadcrumb} />
+        ) : title !== undefined ? (
           <PageTitle meta={meta}>{title}</PageTitle>
         ) : null}
         {children}
@@ -45,7 +51,10 @@ export function PageHeader({
   // header renders where the page put it instead, as the page's first row.
   // A header with only a back link, like the project page's, adds no row.
   const hasContent =
-    title !== undefined || children !== undefined || actions !== undefined;
+    title !== undefined ||
+    breadcrumb !== undefined ||
+    children !== undefined ||
+    actions !== undefined;
   return (
     <>
       {slot ? (
@@ -93,6 +102,60 @@ export function PageTitle({
         <span className="ajour-page-title-meta">{meta}</span>
       ) : null}
     </>
+  );
+}
+
+export interface PageBreadcrumbItem {
+  label: string;
+  /** Drawn before the label, such as the project's icon. */
+  icon?: ReactNode;
+  /** The route the crumb opens. The last crumb has none: it is the current page. */
+  to?: string;
+  /** Path params of `to`, such as the project's id. */
+  params?: Record<string, string>;
+}
+
+/** "ajour / Build latest main": every crumb but the last links to its page. */
+function PageBreadcrumb({ items }: { items: PageBreadcrumbItem[] }) {
+  return (
+    <nav aria-label="Breadcrumb" className="ajour-page-breadcrumb">
+      <ol>
+        {items.map((item, index) => {
+          const isLast = index === items.length - 1;
+          const label = (
+            <>
+              {item.icon}
+              <span className="truncate">{item.label}</span>
+            </>
+          );
+          return (
+            <li key={index}>
+              {index > 0 ? (
+                <span aria-hidden="true" className="ajour-page-breadcrumb-sep">
+                  /
+                </span>
+              ) : null}
+              {item.to && !isLast ? (
+                <Link
+                  to={item.to}
+                  params={item.params as never}
+                  className="ajour-page-breadcrumb-link"
+                >
+                  {label}
+                </Link>
+              ) : (
+                <span
+                  aria-current={isLast ? "page" : undefined}
+                  className="ajour-page-breadcrumb-current"
+                >
+                  {label}
+                </span>
+              )}
+            </li>
+          );
+        })}
+      </ol>
+    </nav>
   );
 }
 
