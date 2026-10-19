@@ -14,6 +14,10 @@ describe("getFrontmatterSectionId", () => {
     expect(getFrontmatterSectionId(["Client", "Contact"])).not.toBe(
       getFrontmatterSectionId(["Contact"]),
     );
+    // A quoted key may hold a line break, so it can't be the separator.
+    expect(getFrontmatterSectionId(["Client\nContact"])).not.toBe(
+      getFrontmatterSectionId(["Client", "Contact"]),
+    );
   });
 });
 

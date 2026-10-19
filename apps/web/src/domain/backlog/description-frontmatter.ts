@@ -52,6 +52,16 @@ interface Parsed<T> {
 /** How deep keys may nest. A deeper block is not frontmatter. */
 const MAX_NESTING = 16;
 
+/** YAML reads at most 1,024 characters ahead for a key's `:`. */
+const MAX_KEY_LENGTH = 1024;
+
+/**
+ * A character YAML does not allow written raw, a bare carriage return
+ * included. An escape in a double-quoted string can still spell one.
+ */
+const FORBIDDEN_CHARACTER =
+  /[^\t\x20-\x7E\x85\xA0-\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}]/u;
+
 const OPENING = /^---[ \t]*\r?\n/;
 const CLOSING = /^(?:---|\.\.\.)[ \t]*$/;
 
@@ -65,7 +75,9 @@ export function splitDescription(description: string): SplitDescription {
   const closing = lines.findIndex((line) => CLOSING.test(line));
   if (closing < 0) return unchanged;
 
-  const yamlLines = toYamlLines(lines.slice(0, closing));
+  const block = lines.slice(0, closing);
+  if (block.some((line) => FORBIDDEN_CHARACTER.test(line))) return unchanged;
+  const yamlLines = toYamlLines(block);
   const map = yamlLines && parseMap(yamlLines, 0, 0, 1);
   if (!map) return unchanged;
 
@@ -152,16 +164,24 @@ function isYamlMap(value: YamlValue): value is YamlMap {
   return Array.isArray(value) && value.some((entry) => Array.isArray(entry));
 }
 
-/** Drops blank and comment lines. Null when a tab indents a line. */
+/**
+ * Drops blank and comment lines. Null when a tab indents a line. Only spaces
+ * and tabs are YAML whitespace; a non-breaking space is text.
+ */
 function toYamlLines(lines: string[]): YamlLine[] | null {
   const yamlLines: YamlLine[] = [];
   for (const line of lines) {
-    if (!line.trim() || /^\s*#/.test(line)) continue;
-    const indent = line.length - line.trimStart().length;
+    if (/^[ \t]*(?:#.*)?$/.test(line)) continue;
+    const indent = /^[ \t]*/.exec(line)![0].length;
     if (line.slice(0, indent).includes("\t")) return null;
-    yamlLines.push({ indent, text: line.slice(indent).trimEnd() });
+    yamlLines.push({ indent, text: trimSpaces(line.slice(indent)) });
   }
   return yamlLines;
+}
+
+/** Trims YAML whitespace, spaces and tabs, and nothing else. */
+function trimSpaces(text: string) {
+  return text.replace(/^[ \t]+|[ \t]+$/g, "");
 }
 
 function isListItem(text: string) {
@@ -243,6 +263,9 @@ function splitKey(text: string): { key: string; value: string } | null {
     if (!quoted) return null;
     const rest = /^[ \t]*:(?=[ \t]|$)/.exec(text.slice(quoted.end));
     if (!rest || !quoted.value) return null;
+    if (isTooLongKey(text.slice(0, quoted.end + rest[0].length - 1))) {
+      return null;
+    }
     return {
       key: quoted.value,
       value: withoutComment(text.slice(quoted.end + rest[0].length)),
@@ -254,14 +277,20 @@ function splitKey(text: string): { key: string; value: string } | null {
   // key's; `Owner#1` without a space before `#` is still a key.
   const comment = /[ \t]#/.exec(text);
   if (comment && comment.index < colon.index) return null;
-  const key = text.slice(0, colon.index).trim();
+  if (isTooLongKey(text.slice(0, colon.index))) return null;
+  const key = trimSpaces(text.slice(0, colon.index));
   if (!key || !isPlainScalar(key)) return null;
   return { key, value: withoutComment(text.slice(colon.index + 1)) };
 }
 
+/** Whether the text before a key's `:` runs past what YAML reads ahead. */
+function isTooLongKey(text: string) {
+  return [...text].length > MAX_KEY_LENGTH;
+}
+
 /** A value that is only a comment, as in `timelog: # note`, is empty. */
 function withoutComment(value: string) {
-  const trimmed = value.trim();
+  const trimmed = trimSpaces(value);
   return trimmed.startsWith("#") ? "" : trimmed;
 }
 
@@ -289,7 +318,7 @@ function parseInlineValue(text: string): YamlValue | null {
           quote = null;
         }
       }
-    } else if ((char === '"' || char === "'") && !current.trim()) {
+    } else if ((char === '"' || char === "'") && !trimSpaces(current)) {
       // Only a quote that starts an item opens a quoted string; one inside a
       // plain item, as in `Bob's`, is text.
       quote = char;
@@ -313,13 +342,13 @@ function parseInlineValue(text: string): YamlValue | null {
   items.push(current);
   // `[]` has no items, and one comma may follow the last item; any other
   // empty item is invalid YAML.
-  if (items.length === 1 && !items[0]!.trim()) items.pop();
-  else if (items.length > 1 && !items.at(-1)!.trim()) items.pop();
-  if (items.some((item) => !item.trim())) return null;
+  if (items.length === 1 && !trimSpaces(items[0]!)) items.pop();
+  else if (items.length > 1 && !trimSpaces(items.at(-1)!)) items.pop();
+  if (items.some((item) => !trimSpaces(item))) return null;
 
   const values: string[] = [];
   for (const item of items) {
-    const value = parseScalar(item.trim());
+    const value = parseScalar(trimSpaces(item));
     if (value === null) return null;
     values.push(value);
   }
@@ -334,9 +363,12 @@ function parseScalar(text: string): string | null {
   }
   // A comment starts at a # after a space, so a link's # stays.
   const comment = /[ \t]#/.exec(text);
-  const value = (comment ? text.slice(0, comment.index) : text).trim();
-  if (!isPlainScalar(value)) return null;
-  return value === "~" || value === "null" ? "" : value;
+  const value = trimSpaces(comment ? text.slice(0, comment.index) : text);
+  // A YAML null is not text, so it is outside what Ajour reads.
+  if (!isPlainScalar(value) || /^(?:~|null|Null|NULL)$/.test(value)) {
+    return null;
+  }
+  return value;
 }
 
 /**

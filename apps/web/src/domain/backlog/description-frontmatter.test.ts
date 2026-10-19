@@ -275,6 +275,63 @@ describe("splitDescription", () => {
     ).toEqual([{ kind: "list", key: "Owners", values: ["Ada", "Grace"] }]);
   });
 
+  it("treats only spaces and tabs as YAML whitespace", () => {
+    // A non-breaking space neither indents nor trims: ` project` is a
+    // second root key, and `timelog ` is not the timelog.
+    expect(
+      getDescriptionTimelog("---\ntimelog:\n project: Acme\n---"),
+    ).toBeUndefined();
+    expect(
+      getDescriptionTimelog("---\ntimelog :\n  project: Acme\n---"),
+    ).toBeUndefined();
+  });
+
+  it("is not frontmatter with a bare carriage return or a character YAML forbids", () => {
+    for (const block of [
+      "Owner: a\rb",
+      "Owner: 'a\rb'",
+      "Owner: Ada\u0000",
+      "# note \u0001\nOwner: Ada",
+      'Owner: "Ada\u0007"',
+    ]) {
+      expect(
+        splitDescription(`---\n${block}\n---\nText`).frontmatter,
+      ).toBeNull();
+    }
+    // An escape spells a control character without writing it raw.
+    expect(
+      splitDescription('---\nOwner: "Ada\\x07"\n---').frontmatter?.fields,
+    ).toEqual([{ kind: "value", key: "Owner", value: "Ada\u0007" }]);
+  });
+
+  it("is not frontmatter when a key runs past YAML's 1,024 characters", () => {
+    const key = (length: number) => "a".repeat(length);
+    expect(
+      splitDescription(`---\n${key(1024)}: Ada\n---`).frontmatter,
+    ).not.toBeNull();
+    expect(
+      splitDescription(`---\n${key(1025)}: Ada\n---`).frontmatter,
+    ).toBeNull();
+    expect(
+      splitDescription(`---\n"${key(1023)}": Ada\n---`).frontmatter,
+    ).toBeNull();
+  });
+
+  it("is not frontmatter with a YAML null, which is not text", () => {
+    for (const value of ["null", "Null", "NULL", "~", "[007, null]", "[~]"]) {
+      expect(
+        splitDescription(`---\nOwner: ${value}\n---\nText`).frontmatter,
+      ).toBeNull();
+    }
+    expect(
+      splitDescription('---\nOwner: "null"\nCode: 007\n---').frontmatter
+        ?.fields,
+    ).toEqual([
+      { kind: "value", key: "Owner", value: "null" },
+      { kind: "value", key: "Code", value: "007" },
+    ]);
+  });
+
   it("is not frontmatter when a comment hides a key's colon", () => {
     const description = [
       "---",

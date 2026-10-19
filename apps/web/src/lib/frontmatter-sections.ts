@@ -13,8 +13,8 @@ export const MAX_OPEN_FRONTMATTER_SECTIONS = 200;
 
 /** The section a path of keys names, such as Client then Contact. */
 export function getFrontmatterSectionId(path: readonly string[]) {
-  // Keys are single YAML lines, so a line break cannot appear inside one.
-  return path.map((key) => key.toLowerCase()).join("\n");
+  // A quoted key can hold any character, so no separator is safe.
+  return JSON.stringify(path.map((key) => key.toLowerCase()));
 }
 
 /** Unknown values are dropped; the newest sections are kept. */
