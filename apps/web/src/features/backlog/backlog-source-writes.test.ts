@@ -307,4 +307,30 @@ describe("the comment typed in the settle dialog", () => {
     expect(mocks.post).not.toHaveBeenCalled();
     expect(mocks.keepDraft).toHaveBeenCalledWith("a", "Waiting on the client");
   });
+
+  it("goes once a write it waited on is undone", async () => {
+    const {
+      queueSettleComment,
+      releaseSettleComment,
+      sendPendingSourceWrites,
+      settleCommentsOf,
+    } = await load();
+    // A move made after the settle waits to write; the comment waits on it.
+    item = {
+      ...item,
+      pendingSourceWrite: { state: "Review", readyAt: 99_000, previous: {} },
+    };
+    queueSettleComment(comment("s1"));
+    await releaseSettleComment("s1", "a");
+    expect(mocks.post).not.toHaveBeenCalled();
+    expect(settleCommentsOf("a")).toHaveLength(1);
+
+    // Undo takes the move back; its toast's close sends what is left.
+    item = { ...item, pendingSourceWrite: undefined };
+    await sendPendingSourceWrites(["a"]);
+
+    expect(mocks.write).not.toHaveBeenCalled();
+    expect(mocks.post).toHaveBeenCalledOnce();
+    expect(settleCommentsOf("a")).toEqual([]);
+  });
 });
