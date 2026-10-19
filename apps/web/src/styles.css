@@ -291,6 +291,33 @@
     @apply outline-none;
   }
 
+  /* Interactive elements point, as in shadcn/ui. The base layer sits under
+     components and utilities, so explicit cursors (grab, resize, text) win. */
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]),
+  a[href],
+  /* Base UI renders Switch and Checkbox as spans and marks them data-disabled. */
+  :is([role="switch"], [role="checkbox"]):not(
+      [data-disabled],
+      [aria-disabled="true"],
+      [aria-readonly="true"]
+    ) {
+    cursor: pointer;
+  }
+
+  /* aria-disabled covers buttons kept focusable so their tooltip still shows. */
+  button:disabled,
+  button[aria-disabled="true"],
+  [role="button"][aria-disabled="true"],
+  a[aria-disabled="true"],
+  :is([role="switch"], [role="checkbox"]):is(
+    [data-disabled],
+    [aria-disabled="true"],
+    [aria-readonly="true"]
+  ) {
+    cursor: default;
+  }
+
   select option {
     background: var(--surface);
     color: var(--text);

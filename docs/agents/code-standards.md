@@ -110,6 +110,7 @@ For shared interaction changes, add direct state/geometry tests and verify every
 Runtime performance is a hard constraint. Visual polish never costs render time.
 
 - Every shell, list, sidebar, or other UI change runs `just ui-perf` before and after, on the seeded large workspace of 600 backlog items and 1,800 entries. No measurement may be more than 10% worse than the base branch. The procedure is `qa/routines/ui-capture.md`.
+- A change that touches only CSS properties that trigger neither layout nor paint, such as `cursor`, skips `just ui-perf`. Its PR says so instead of giving numbers.
 - `just ui-perf` reports four numbers: cold load, Start click, a Backlog store write, and renderer work per second with a timer running. Put the base and change numbers in the PR.
 - Single runs vary by tens of percent. Warm the server first, run the base branch and the change on separate ports with `AJOUR_QA_PORT`, compare pairs taken at the same machine speed, and repeat a pair that disagrees.
 - The dev server runs React's development build, so its numbers sit well above production. On Windows in production, after the October 2026 fixes, a cold load takes about 150 ms, a Start click about 40 ms, and a store write about 75 ms with 300 Backlog rows. A running timer costs about 4 ms of renderer work per second.
