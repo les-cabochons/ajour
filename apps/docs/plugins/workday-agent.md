@@ -16,7 +16,7 @@ It is a different plugin from [Workday](/plugins/workday), the schema for import
 
 ## Set it up
 
-1. Install the plugin from its `.ajour-connector` file in **Settings › Plugins**. It needs version 0.4.0 or later, and 0.5.0 for **Check Workday and submit**.
+1. In **Settings › Plugins**, find **Workday (agent)** and press **Download**. Version 0.5.0 or later has both tasks.
 2. In **Settings › Agents**, pick the agent. Leave **Browser** on **Ajour's Chrome window** unless you want the agent to use your own Chrome profile.
 3. Open **Settings › Plugins › Workday (agent)**. Under **Tasks**, fill in, for **Commit to Workday** and **Check Workday and submit**:
    - **Workday timesheet URL**: open Enter Time in Workday and copy the address.
