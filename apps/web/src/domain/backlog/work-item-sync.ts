@@ -293,25 +293,29 @@ function mergeSyncedWorkItem(
  * A settled item comes back when someone else commented after it was settled
  * (ADR 0008). The latest such comment names who brought it back.
  *
- * `settledSince` holds each item's settle time as the sync asked about it, so
- * an item the same sync already returned for a source change still names who
- * commented. An item whose settle write still waits is left alone, so its
+ * `sync` holds each item's settle time as the sync asked about it, and when
+ * it asked. An item settled again since keeps its settle: the comment
+ * predates it. An item the same sync already returned for a source change
+ * still names who commented. An item whose settle write still waits, itself
+ * or as a subitem its parent's settle carried, is left alone, so the settle's
  * Undo keeps working; the next sync reports the comment again.
  */
 export function returnItemsWithNewComments(
   state: LocalAppState,
   facts: readonly BacklogItemCommentFacts[],
   viewer: BacklogPerson,
-  settledSince: ReadonlyMap<string, number>,
+  sync: { settledSince: ReadonlyMap<string, number>; requestedAt: number },
   now: () => number,
 ): LocalAppState {
   let next = state;
   for (const entry of facts) {
-    const since = settledSince.get(entry.localWorkItemId);
+    const since = sync.settledSince.get(entry.localWorkItemId);
     const item = next.workItems.find(
       (candidate) => candidate._id === entry.localWorkItemId,
     );
-    if (since === undefined || !item || item.pendingSourceWrite) continue;
+    if (since === undefined || !item || waitsOnSettleWrite(next, item)) {
+      continue;
+    }
     const latest = entry.comments
       .filter(
         (comment) =>
@@ -326,11 +330,16 @@ export function returnItemsWithNewComments(
     if (!latest) continue;
     const author = latest.author.displayName || "Someone";
     if (item.status === "settled") {
+      if (item.settledAt !== since) continue;
       const at = now();
       next = unsettleBacklogItem(next, item._id);
       next = withReturnedByComment(next, item._id, { author, at }, at);
-    } else if (item.status === "active" && item.returnedAt !== undefined) {
-      // Settled when the sync began, so this sync brought it back.
+    } else if (
+      item.status === "active" &&
+      item.returnedAt !== undefined &&
+      item.returnedAt >= sync.requestedAt
+    ) {
+      // Settled when the sync began, and this sync brought it back.
       next = withReturnedByComment(
         next,
         item._id,
@@ -340,6 +349,17 @@ export function returnItemsWithNewComments(
     }
   }
   return next;
+}
+
+/** Whether a settle write waits on the item or on the parent that carried it. */
+function waitsOnSettleWrite(state: LocalAppState, item: LocalWorkItem) {
+  if (item.pendingSourceWrite) return true;
+  const parentId = item.settledWithParentId;
+  return Boolean(
+    parentId &&
+    state.workItems.find((candidate) => candidate._id === parentId)
+      ?.pendingSourceWrite,
+  );
 }
 
 function withReturnedByComment(

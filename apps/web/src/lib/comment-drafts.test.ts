@@ -77,3 +77,24 @@ describe("the draft after a send", () => {
     expect(draftAfterSend("Sant, more", "Sent")).toBe("Sant, more");
   });
 });
+
+describe("drafts without storage", () => {
+  afterEach(() => vi.unstubAllGlobals());
+
+  it("keep a comment for the session when storage refuses it", async () => {
+    vi.stubGlobal("window", {
+      localStorage: {
+        getItem: () => null,
+        setItem: () => {
+          throw new Error("QuotaExceededError");
+        },
+      },
+    });
+    vi.resetModules();
+    const drafts = await import("@/lib/comment-drafts");
+
+    drafts.keepCommentAsDraft("item", "Waiting on the client");
+
+    expect(drafts.getCommentDraft("item")).toBe("Waiting on the client");
+  });
+});
