@@ -523,6 +523,16 @@ Feature: Backlog list and board views
     And I undo the settle
     Then nothing went to the source and the comment field shows the draft "Waiting on the client"
 
+  Scenario: A settle comment stays a draft when its settle ends before it goes
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin settles items and records what it writes
+    When I open the Backlog parent page
+    And I settle it in Waiting with the comment "Waiting on the client"
+    And I unsettle it from its page header
+    And I archive it from its properties card
+    Then no comment went to the source and the comment field shows the draft "Waiting on the client"
+
   Scenario: Mention someone in a comment
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit

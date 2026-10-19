@@ -28,7 +28,6 @@ import type { LocalWorkItem } from "@/domain/local-state";
 import { findSettleRule } from "@/domain/backlog/settle-rules";
 import {
   canWriteSettle,
-  keepSettleCommentsAsDrafts,
   releaseSettleComment,
   sendPendingSourceWrites,
 } from "@/features/backlog/backlog-source-writes";
@@ -133,8 +132,6 @@ export async function settleBacklogItemWithUndo(
   const settled = localStore
     .snapshot()
     .workItems.find((candidate) => candidate._id === workItem._id);
-  // Comments still waiting on an earlier settle lost it: they become drafts.
-  keepSettleCommentsAsDrafts(workItem._id);
   const body = comment?.trim();
   const commentSource = body
     ? commentSourceOf(workItem, getCachedPluginsOverview())
