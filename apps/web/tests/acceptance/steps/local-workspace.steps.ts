@@ -2323,7 +2323,7 @@ Then("the Commit page merges Monday's task entries", async ({ page }) => {
   const monday = page.getByRole("region", { name: "Monday, Oct 5" });
   await expect(monday.getByRole("listitem")).toHaveCount(2);
   await expect(
-    monday.getByRole("button", { name: "Copy hours: 3.00" }),
+    monday.getByRole("button", { name: "Copy hours: 3,00" }),
   ).toHaveText("3:00");
 });
 
@@ -2335,7 +2335,7 @@ Then(
     const readClipboard = () =>
       page.evaluate(() => navigator.clipboard.readText());
 
-    await monday.getByRole("button", { name: "Copy hours: 3.00" }).click();
+    await monday.getByRole("button", { name: "Copy hours: 3,00" }).click();
     await expect.poll(readClipboard).toBe("3,00");
     await monday
       .getByRole("button", { name: "Copy comments: Login form | API" })
