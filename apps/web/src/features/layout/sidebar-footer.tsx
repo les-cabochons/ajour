@@ -1,3 +1,4 @@
+import { memo } from "react";
 import { Link } from "@tanstack/react-router";
 import {
   RiSettings3Line as Settings,
@@ -32,7 +33,6 @@ function SidebarUpdateButton() {
       : state.status === "available"
         ? UpdateAvailable
         : CheckUpdates;
-  if (!window.ajourDesktop?.checkForUpdates) return null;
   return (
     <>
       <TooltipButton
@@ -69,7 +69,7 @@ function SidebarUpdateButton() {
   );
 }
 
-export function AppSidebarFooter({
+export const AppSidebarFooter = memo(function AppSidebarFooter({
   selectedTimeDate,
 }: {
   selectedTimeDate: string;
@@ -95,7 +95,7 @@ export function AppSidebarFooter({
         </TooltipButton>
         <CommitWeekButton selectedTimeDate={selectedTimeDate} side="top" />
       </div>
-      <SidebarUpdateButton />
+      {window.ajourDesktop?.checkForUpdates ? <SidebarUpdateButton /> : null}
     </SidebarFooter>
   );
-}
+});
