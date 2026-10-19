@@ -301,3 +301,87 @@ When("I open today's Day list", async ({ page }) => {
     timeout: 15_000,
   });
 });
+
+Given(
+  "my weekly target is {int} hours, all on Monday",
+  async ({ page }, hours: number) => {
+    // Runs after the week's seed, once, so later loads keep what the app saved.
+    await page.addInitScript(
+      (targetMs: number) => {
+        if (sessionStorage.getItem("weekly-target-ready")) return;
+        sessionStorage.setItem("weekly-target-ready", "true");
+        const state = JSON.parse(
+          localStorage.getItem("ajour.local-state.v2") ?? "{}",
+        );
+        state.userPreferences = {
+          ...state.userPreferences,
+          weeklyCapacityTargets: {
+            monday: targetMs,
+            tuesday: 0,
+            wednesday: 0,
+            thursday: 0,
+            friday: 0,
+            saturday: 0,
+            sunday: 0,
+          },
+        };
+        localStorage.setItem("ajour.local-state.v2", JSON.stringify(state));
+      },
+      hours * 60 * 60 * 1000,
+    );
+  },
+);
+
+When("I duplicate Monday's {string} entry", async ({ page }, note: string) => {
+  await page.goto("/time/2026-10-05");
+  const entries = page.getByText(note, { exact: true });
+  await expect(entries).toHaveCount(1, { timeout: 15_000 });
+  await entries.click({ button: "right" });
+  // "Duplicate to…" also starts with "Duplicate".
+  await page
+    .getByRole("menuitem")
+    .filter({ hasText: /^Duplicate/ })
+    .filter({ hasNotText: "to…" })
+    .click();
+  await expect(entries).toHaveCount(2);
+});
+
+function weekCompleteDialog(page: Page) {
+  return page.getByRole("alertdialog", { name: "Week complete" });
+}
+
+Then(
+  "Ajour asks {string}: {string}",
+  async ({ page }, title: string, description: string) => {
+    const dialog = page.getByRole("alertdialog", { name: title });
+    await expect(dialog).toBeVisible();
+    await expect(dialog).toContainText(description);
+  },
+);
+
+When("I answer {string}", async ({ page }, answer: string) => {
+  await weekCompleteDialog(page)
+    .getByRole("button", { name: answer, exact: true })
+    .click();
+});
+
+Then(
+  "the Commit page for the week of {word} is open",
+  async ({ page }, weekOf: string) => {
+    await expect(page).toHaveURL(new RegExp(`/time/${weekOf}/commit`));
+    await expect(weekCompleteDialog(page)).toHaveCount(0);
+    await expect(changeList(page).getByRole("listitem")).toHaveCount(1, {
+      timeout: 15_000,
+    });
+  },
+);
+
+Then("Ajour does not ask again", async ({ page }) => {
+  await expect(weekCompleteDialog(page)).toHaveCount(0);
+  const prompted = await page.evaluate(
+    () =>
+      JSON.parse(localStorage.getItem("ajour.local-state.v2") ?? "{}")
+        .commitPromptedWeeks,
+  );
+  expect(prompted).toEqual(["2026-10-05"]);
+});

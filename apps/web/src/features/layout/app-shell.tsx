@@ -65,6 +65,7 @@ import {
   type NewEntryRequest,
 } from "@/features/time/new-entry-request";
 import { TimeEntryModal } from "@/features/timer/time-entry-modal";
+import { WeekTargetPromptHost } from "@/features/time/week-target-prompt";
 import {
   SettingsNavigation,
   getSettingsPages,
@@ -764,6 +765,7 @@ export function AppShell() {
       <SettleDialogHost />
       <CloseSubitemsDialogHost />
       <SourceStateDialogHost />
+      <WeekTargetPromptHost />
       {/* useAppSidebar owns the state, persistence and Cmd/Ctrl+B, so the
           provider is controlled and its own shortcut stays off. */}
       <SidebarProvider
