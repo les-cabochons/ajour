@@ -126,7 +126,7 @@ Decided in [App shell and collapsible sidebar](https://github.com/les-cabochons/
 
 ### Desktop widths
 
-- The app sidebar is expanded (resizable, see the Backlog sidebar section for widths) or hidden. There is no icon rail. From the top: Hide sidebar and the logo, the view switcher with Search and the project filter, the timer dock, then the work list. Settings sits at the bottom.
+- The app sidebar is expanded (resizable, see the Backlog sidebar section for widths) or hidden. There is no icon rail. From the top: Hide sidebar and the logo, the view switcher with Search and the project filter, the timer dock, then the work list. Its fixed footer has Settings and Commit icon buttons at the left. Commit opens the selected date's week. The desktop app's update button sits at the right.
 - Hide sidebar and the logo sit on the titlebar's row, as in T3 Code: right of the traffic lights on macOS, in the window's top left corner elsewhere. Hide sidebar sits where Show sidebar sits in the titlebar, so the button does not move when the sidebar toggles.
 - The view switcher works like ChatGPT's: the open view's name, such as "Time", opens a menu of Time, Backlog, Pull requests (only while a code host plugin is enabled) and Projects with their live counts, today's total next to Time, the number of listed items next to Backlog, and next to Pull requests the number that need the user, as a filled badge when any returned. A check marks the open view. A backlog item's page belongs to Backlog, unless it was opened from the sidebar while Time, Projects or Pull requests showed: that view stays selected.
 - Cmd+B (Ctrl+B on Windows), Hide sidebar next to the logo and Show sidebar at the start of the titlebar toggle it. The View menu gets "Show sidebar" or "Hide sidebar" once the menu bar exists. There is no second shortcut.
@@ -562,6 +562,17 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 - The form holds title, workflow state, priority, project and task mapping, description, the estimates with their "Reset to subitem total" buttons, and "Keep when missing from sync" for synced items. Its header has the "…" action menu.
 - "New backlog item" in the page header opens a blank form. "Add subitem" opens it with the parent set.
 - Start entry stays on hover, in the "…" menu and in the peek. Entries start on today.
+
+## Application updates
+
+Decided in [Sidebar footer actions and user-controlled application updates](https://github.com/les-cabochons/ajour/issues/274).
+
+- Desktop checks the selected Stable or Nightly track on startup and every four hours. Opening Settings > General, the application menu's Check for updates, and the neutral footer update button also check. Checks never download or install an update.
+- The footer button shows a filled upward arrow when a newer version is available. Its tooltip names the version. Clicking the neutral button checks and reports availability, an up-to-date result, or a retryable error. Finding an update waits for another click.
+- On supported Windows builds, clicking the available version opens a warning before any download. It names the version, explains that Ajour will download and restart, and asks the user to save work first. Cancel is the default button. Update and restart confirms the download, followed by orderly shutdown and installation. An ordinary quit never installs an update.
+- The button reports checking, confirmation, download progress, and restart without resizing the footer. It ignores repeated actions while busy. Errors offer another check. Settings shares the same state and offers Check again and, while available, Update and restart.
+- Changing release track invalidates the old candidate and cancels its download. Late results from the old track cannot trigger installation. A temporary check failure retains a previously discovered candidate on the same track.
+- Desktop platforms without in-place installation open the release page for manual installation. The browser app has no footer update button. Hidden sidebars and the narrow view keep their existing layout; Settings and the desktop menu remain available.
 
 ## Backlog sidebar
 

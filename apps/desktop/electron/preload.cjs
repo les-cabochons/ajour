@@ -14,6 +14,15 @@ contextBridge.exposeInMainWorld("ajourDesktop", {
     ipcRenderer.send("ajour:set-window-chrome-theme", theme),
   checkForUpdates: (track) =>
     ipcRenderer.invoke("ajour:check-for-updates", track),
+  getUpdateState: () => ipcRenderer.invoke("ajour:get-update-state"),
+  onUpdateStateChanged: (callback) => {
+    const listener = (_event, state) => callback(state);
+    ipcRenderer.on("ajour:update-state-changed", listener);
+    return () =>
+      ipcRenderer.removeListener("ajour:update-state-changed", listener);
+  },
+  updateAndRestart: (track, version) =>
+    ipcRenderer.invoke("ajour:update-and-restart", track, version),
   configureAutomaticUpdates: (track) =>
     ipcRenderer.invoke("ajour:configure-automatic-updates", track),
   openUpdateRelease: (releaseUrl) =>

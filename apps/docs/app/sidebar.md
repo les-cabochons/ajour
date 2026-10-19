@@ -16,7 +16,8 @@ From top to bottom, the sidebar has:
 - **Your work list**: active backlog items, with pinned items first.
 - **Pull requests** that need you, when a code host is connected.
 - **Snoozed** and **Settled** sections, collapsed by default.
-- **Settings** at the bottom left, and **Commit** at the bottom right, which opens the [Commit page](/time/commit) for the week on screen.
+- **Settings** and **Commit** at the bottom left. Commit opens the selected week's changes.
+- **Application updates** at the bottom right in the desktop app. The icon shows when an update is available. Click it to check, or to confirm updating when a version is available. See [Updates](/start/install#updates).
 
 ## Switch views
 

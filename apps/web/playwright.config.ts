@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 import { defineBddConfig } from "playwright-bdd";
 
 const acceptanceHost = "127.0.0.1";
-const acceptancePort = 4173;
+const acceptancePort = Number(process.env.AJOUR_ACCEPTANCE_PORT ?? 4173);
 const baseURL = `http://${acceptanceHost}:${acceptancePort}`;
 
 const testDir = defineBddConfig({
@@ -28,7 +28,7 @@ export default defineConfig({
     },
   ],
   webServer: {
-    command: "just acceptance-server",
+    command: `just --set ACCEPTANCE_WEB_PORT ${acceptancePort} acceptance-server`,
     url: baseURL,
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

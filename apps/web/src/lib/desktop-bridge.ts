@@ -24,6 +24,23 @@ export interface DesktopUpdateCheckResult {
   checkedAt: string;
 }
 
+export interface DesktopUpdateState {
+  status:
+    | "idle"
+    | "checking"
+    | "up-to-date"
+    | "available"
+    | "confirming"
+    | "downloading"
+    | "installing"
+    | "error";
+  track: UpdateTrack | null;
+  result: DesktopUpdateCheckResult | null;
+  progress: number | null;
+  error: string | null;
+  canInstall: boolean;
+}
+
 /**
  * One item of the desktop app menu, as `apps/desktop/electron/app-menu.cjs`
  * describes it. Action items name a shortcut registry action; role items run an
@@ -69,9 +86,15 @@ declare global {
       /** Runs a role item of the app menu, such as Copy, in the main process. */
       runMenuItem?: (itemId: string) => void;
       setWindowChromeTheme?: (theme: "dark" | "light") => void;
-      checkForUpdates?: (
+      checkForUpdates?: (track: UpdateTrack) => Promise<DesktopUpdateState>;
+      getUpdateState?: () => Promise<DesktopUpdateState>;
+      onUpdateStateChanged?: (
+        callback: (state: DesktopUpdateState) => void,
+      ) => () => void;
+      updateAndRestart?: (
         track: UpdateTrack,
-      ) => Promise<DesktopUpdateCheckResult>;
+        version: string,
+      ) => Promise<DesktopUpdateState>;
       configureAutomaticUpdates?: (track: UpdateTrack) => Promise<void>;
       openUpdateRelease?: (releaseUrl: string) => Promise<void>;
       installPlugin?: () => Promise<PluginInstallResponse | null>;
