@@ -333,16 +333,22 @@ When("the local API sends the agent tasks", () => {
 });
 
 Then(
-  "the Commit page offers {string} instead of Submit week",
+  "the Commit page offers {string} alongside Submit week",
   async ({ page }, label: string) => {
     await expect(
       page.getByRole("button", { name: label, exact: true }),
     ).toBeEnabled();
     await expect(
       page.getByRole("button", { name: "Submit week", exact: true }),
-    ).toHaveCount(0);
+    ).toBeEnabled();
   },
 );
+
+Then("the manual Submit week button is enabled", async ({ page }) => {
+  await expect(
+    page.getByRole("button", { name: "Submit week", exact: true }),
+  ).toBeEnabled();
+});
 
 Then("{string} is the primary button", async ({ page }, label: string) => {
   await expect(

@@ -3,7 +3,7 @@ import type {
   AgentRunnerOverview,
   AgentTaskStatus,
 } from "@ajour/shared/agent-runs";
-import { getAgentTaskPresence } from "./agent-task-buttons";
+import { getAgentTaskPresence, isAgentRunGoing } from "./agent-task-buttons";
 
 const submitTask = {
   pluginId: "ajp-workday",
@@ -45,5 +45,46 @@ describe("getAgentTaskPresence", () => {
     expect(
       getAgentTaskPresence({ kind: "error", message: "Down" }, "submit-week"),
     ).toBe("absent");
+  });
+});
+
+describe("isAgentRunGoing", () => {
+  const ready = { kind: "ready", overview: overview([submitTask]) } as const;
+
+  it("is idle with no current run and no runner session", () => {
+    expect(isAgentRunGoing(ready, [])).toBe(false);
+    expect(isAgentRunGoing({ kind: "loading" }, [])).toBe(false);
+    expect(isAgentRunGoing(ready, [{ runId: "run-1", state: "ended" }])).toBe(
+      false,
+    );
+    // A session the user opened, not the runner.
+    expect(isAgentRunGoing(ready, [{ state: "active" }])).toBe(false);
+  });
+
+  it("is going while the API reports a current run", () => {
+    const state = {
+      kind: "ready",
+      overview: {
+        ...overview([submitTask]),
+        currentRun: {
+          id: "run-1",
+          pluginId: "ajp-workday",
+          taskId: "submit-week",
+          weekOf: "2026-10-12",
+          sessionId: "session-1",
+          startedAt: 0,
+        },
+      },
+    } as const;
+    expect(isAgentRunGoing(state, [])).toBe(true);
+  });
+
+  it("is going while a runner session is active or stalled", () => {
+    expect(isAgentRunGoing(ready, [{ runId: "run-1", state: "active" }])).toBe(
+      true,
+    );
+    expect(isAgentRunGoing(ready, [{ runId: "run-1", state: "stalled" }])).toBe(
+      true,
+    );
   });
 });
