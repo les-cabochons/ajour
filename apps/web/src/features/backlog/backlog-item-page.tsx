@@ -421,18 +421,14 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
           </div>
 
           <div className="backlog-item-page-columns">
-            <div className="flex min-w-0 flex-col">
-              <DescriptionSection
-                key={item._id}
-                item={item}
-                readOnly={readOnly}
-              />
+            {/* The key resets the description editor and the comment drafts
+                when another item opens. It sits on the column, not on each
+                child: siblings sharing a key leave the old item's description
+                on the page. */}
+            <div key={item._id} className="flex min-w-0 flex-col">
+              <DescriptionSection item={item} readOnly={readOnly} />
               {commentSource ? (
-                <BacklogItemComments
-                  key={item._id}
-                  itemId={item._id}
-                  source={commentSource}
-                />
+                <BacklogItemComments itemId={item._id} source={commentSource} />
               ) : null}
             </div>
             <div className="backlog-item-properties-card">

@@ -2139,6 +2139,18 @@ Then(
   },
 );
 Then(
+  "the item page shows one description, for {string}",
+  async ({ page }, title: string) => {
+    await expect(
+      page.getByRole("heading", { name: title, level: 1 }),
+    ).toBeVisible();
+    // A page left behind by an earlier item would add its own Description.
+    await expect(
+      page.getByRole("heading", { name: "Description", level: 2 }),
+    ).toHaveCount(1);
+  },
+);
+Then(
   "its description shows {string}",
   async ({ page }, description: string) => {
     await expect(page.getByText(description, { exact: true })).toBeVisible();
