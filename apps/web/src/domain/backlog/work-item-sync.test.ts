@@ -687,6 +687,11 @@ describe("backlog sync of comments on settled items", () => {
   const viewer = { id: "me", displayName: "Alex" };
   const ana = { id: "ana", displayName: "Ana Silva" };
   const atSettle = { createId: () => "work-item-1", now: () => settledAt };
+  // The settle time the sync asked about, and when it asked.
+  const sync = {
+    settledSince: new Map([["work-item-1", settledAt]]),
+    returnedBySync: new Set(["work-item-1"]),
+  };
 
   function settledItem() {
     const imported = importSyncedWorkItems(
@@ -721,6 +726,7 @@ describe("backlog sync of comments on settled items", () => {
         },
       ],
       viewer,
+      sync,
       () => 900,
     );
 
@@ -746,6 +752,7 @@ describe("backlog sync of comments on settled items", () => {
         },
       ],
       viewer,
+      sync,
       () => 900,
     );
 
@@ -770,9 +777,232 @@ describe("backlog sync of comments on settled items", () => {
       },
     ];
 
-    expect(returnItemsWithNewComments(active, facts, viewer, () => 900)).toBe(
-      active,
+    expect(
+      returnItemsWithNewComments(
+        active,
+        facts,
+        viewer,
+        { settledSince: new Map(), returnedBySync: new Set<string>() },
+        () => 900,
+      ),
+    ).toBe(active);
+  });
+
+  it("leaves an item alone while its settle write waits, so Undo still works", () => {
+    const imported = importSyncedWorkItems(
+      createState(),
+      [createCandidate()],
+      undefined,
+      atSettle,
+    ).state;
+    const settled = settleBacklogItem(imported, "work-item-1", atSettle, {
+      state: { name: "Waiting", done: false },
+    });
+    expect(settled.workItems[0]?.pendingSourceWrite).toBeDefined();
+
+    expect(
+      returnItemsWithNewComments(
+        settled,
+        [
+          {
+            localWorkItemId: "work-item-1",
+            comments: [comment("c1", ana, "2026-10-18T10:00:05Z")],
+          },
+        ],
+        viewer,
+        sync,
+        () => 900,
+      ),
+    ).toBe(settled);
+  });
+
+  it("names who commented on an item the same sync brought back for a source change", () => {
+    const changed = importSyncedWorkItems(
+      settledItem(),
+      [createCandidate({ priority: "urgent" })],
+      undefined,
+      { ...atSettle, now: () => 800 },
+    ).state;
+    expect(changed.workItems[0]).toMatchObject({
+      status: "active",
+      returnedAt: 800,
+    });
+
+    const returned = returnItemsWithNewComments(
+      changed,
+      [
+        {
+          localWorkItemId: "work-item-1",
+          comments: [comment("c1", ana, "2026-10-18T11:00:00Z")],
+        },
+      ],
+      viewer,
+      sync,
+      () => 900,
     );
+
+    expect(returned.workItems[0]).toMatchObject({
+      status: "active",
+      returnedAt: 800,
+      returnedByComment: { author: "Ana Silva", at: 800 },
+    });
+  });
+
+  it("keeps an item settled again since the sync asked: the comment predates it", () => {
+    const resettled = settleBacklogItem(
+      { ...settledItem() },
+      "work-item-1",
+      atSettle,
+    );
+    const later = {
+      ...resettled,
+      workItems: resettled.workItems.map((workItem) => ({
+        ...workItem,
+        settledAt: settledAt + 180_000,
+      })),
+    };
+
+    expect(
+      returnItemsWithNewComments(
+        later,
+        [
+          {
+            localWorkItemId: "work-item-1",
+            comments: [comment("c1", ana, "2026-10-18T10:01:00Z")],
+          },
+        ],
+        viewer,
+        sync,
+        () => 900,
+      ),
+    ).toBe(later);
+  });
+
+  it("leaves a subitem alone while the parent's settle that carried it waits to write", () => {
+    let id = 0;
+    const idFactories = {
+      createId: () => `work-item-${++id}`,
+      now: () => settledAt,
+    };
+    const imported = importSyncedWorkItems(
+      createState(),
+      [
+        createCandidate(),
+        createCandidate({
+          id: "candidate-2",
+          sourceId: "source-2",
+          externalId: "43",
+          depth: 1,
+          parentSourceId: "source-1",
+          priority: undefined,
+        }),
+      ],
+      undefined,
+      idFactories,
+    ).state;
+    const parentId = imported.workItems.find(
+      (workItem) => workItem.sourceId === "source-1",
+    )!._id;
+    const childId = imported.workItems.find(
+      (workItem) => workItem.sourceId === "source-2",
+    )!._id;
+    const settled = settleBacklogItem(
+      imported,
+      parentId,
+      idFactories,
+      { state: { name: "Waiting", done: false } },
+      { includeSubitems: true },
+    );
+    expect(
+      settled.workItems.find((workItem) => workItem._id === childId),
+    ).toMatchObject({ status: "settled", settledWithParentId: parentId });
+
+    expect(
+      returnItemsWithNewComments(
+        settled,
+        [
+          {
+            localWorkItemId: childId,
+            comments: [comment("c1", ana, "2026-10-18T10:00:05Z")],
+          },
+        ],
+        viewer,
+        {
+          settledSince: new Map([[childId, settledAt]]),
+          returnedBySync: new Set<string>(),
+        },
+        () => 900,
+      ),
+    ).toBe(settled);
+  });
+
+  it("leaves the name another sync's answer gave", () => {
+    // A later sync returned the item and named Ana; this older answer
+    // didn't return it, so its earlier comment by Bob names no one.
+    const named = {
+      ...createState(),
+      workItems: importSyncedWorkItems(
+        createState(),
+        [createCandidate()],
+        undefined,
+        atSettle,
+      ).state.workItems.map((workItem) => ({
+        ...workItem,
+        returnedAt: 950,
+        returnedByComment: { author: "Ana Silva", at: 950 },
+      })),
+    };
+
+    expect(
+      returnItemsWithNewComments(
+        named,
+        [
+          {
+            localWorkItemId: "work-item-1",
+            comments: [
+              comment(
+                "c1",
+                { id: "bo", displayName: "Bob" },
+                "2026-10-18T10:30:00Z",
+              ),
+            ],
+          },
+        ],
+        viewer,
+        {
+          settledSince: new Map([["work-item-1", settledAt]]),
+          returnedBySync: new Set<string>(),
+        },
+        () => 900,
+      ),
+    ).toBe(named);
+  });
+
+  it("names no one for an item returned before the sync asked", () => {
+    const returnedEarlier = {
+      ...createState(),
+      workItems: importSyncedWorkItems(
+        createState(),
+        [createCandidate()],
+        undefined,
+        atSettle,
+      ).state.workItems.map((workItem) => ({ ...workItem, returnedAt: 600 })),
+    };
+
+    expect(
+      returnItemsWithNewComments(
+        returnedEarlier,
+        [
+          {
+            localWorkItemId: "work-item-1",
+            comments: [comment("c1", ana, "2026-10-18T11:00:00Z")],
+          },
+        ],
+        viewer,
+        { ...sync, returnedBySync: new Set<string>() },
+        () => 900,
+      ),
+    ).toBe(returnedEarlier);
   });
 
   it("names someone when the source has no display name", () => {
@@ -787,6 +1017,7 @@ describe("backlog sync of comments on settled items", () => {
         },
       ],
       viewer,
+      sync,
       () => 900,
     );
 

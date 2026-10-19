@@ -267,6 +267,7 @@ function mergeSyncedWorkItem(
           status: "active" as const,
           returnedAt: factories.now(),
           archivedAt: undefined,
+          settleId: undefined,
           archivedSourceStatusKey: undefined,
           settledWithParentId: undefined,
           workflowStateIdBeforeClose: undefined,
@@ -281,6 +282,7 @@ function mergeSyncedWorkItem(
           status: "active" as const,
           returnedAt: factories.now(),
           settledAt: undefined,
+          settleId: undefined,
           settledWithParentId: undefined,
           settledSourceStatusKey: undefined,
           settledImportedPriority: undefined,
@@ -292,25 +294,38 @@ function mergeSyncedWorkItem(
 /**
  * A settled item comes back when someone else commented after it was settled
  * (ADR 0008). The latest such comment names who brought it back.
+ *
+ * `sync` holds each item's settle time as the sync asked about it, and the
+ * items this sync's own answer already returned for a source change, which
+ * still name who commented. An item settled again since keeps its settle:
+ * the comment predates it. An item whose settle write still waits, itself
+ * or as a subitem its parent's settle carried, is left alone, so the settle's
+ * Undo keeps working; the next sync reports the comment again.
  */
 export function returnItemsWithNewComments(
   state: LocalAppState,
   facts: readonly BacklogItemCommentFacts[],
   viewer: BacklogPerson,
+  sync: {
+    settledSince: ReadonlyMap<string, number>;
+    returnedBySync: ReadonlySet<string>;
+  },
   now: () => number,
 ): LocalAppState {
   let next = state;
   for (const entry of facts) {
+    const since = sync.settledSince.get(entry.localWorkItemId);
     const item = next.workItems.find(
       (candidate) => candidate._id === entry.localWorkItemId,
     );
-    if (!item || item.status !== "settled") continue;
-    const settledAt = item.settledAt ?? 0;
+    if (since === undefined || !item || waitsOnSettleWrite(next, item)) {
+      continue;
+    }
     const latest = entry.comments
       .filter(
         (comment) =>
           comment.author.id !== viewer.id &&
-          Date.parse(comment.createdAt) > settledAt,
+          Date.parse(comment.createdAt) > since,
       )
       .sort(
         (left, right) =>
@@ -318,25 +333,54 @@ export function returnItemsWithNewComments(
       )
       .at(-1);
     if (!latest) continue;
-    const at = now();
-    next = unsettleBacklogItem(next, item._id);
-    next = {
-      ...next,
-      workItems: next.workItems.map((workItem) =>
-        workItem._id === item._id
-          ? {
-              ...workItem,
-              returnedAt: at,
-              returnedByComment: {
-                author: latest.author.displayName || "Someone",
-                at,
-              },
-            }
-          : workItem,
-      ),
-    };
+    const author = latest.author.displayName || "Someone";
+    if (item.status === "settled") {
+      if (item.settledAt !== since) continue;
+      const at = now();
+      next = unsettleBacklogItem(next, item._id);
+      next = withReturnedByComment(next, item._id, { author, at }, at);
+    } else if (
+      item.status === "active" &&
+      item.returnedAt !== undefined &&
+      sync.returnedBySync.has(item._id)
+    ) {
+      // This answer brought it back from the settle it asked about.
+      next = withReturnedByComment(
+        next,
+        item._id,
+        { author, at: item.returnedAt },
+        item.returnedAt,
+      );
+    }
   }
   return next;
+}
+
+/** Whether a settle write waits on the item or on the parent that carried it. */
+function waitsOnSettleWrite(state: LocalAppState, item: LocalWorkItem) {
+  if (item.pendingSourceWrite) return true;
+  const parentId = item.settledWithParentId;
+  return Boolean(
+    parentId &&
+    state.workItems.find((candidate) => candidate._id === parentId)
+      ?.pendingSourceWrite,
+  );
+}
+
+function withReturnedByComment(
+  state: LocalAppState,
+  workItemId: string,
+  returnedByComment: { author: string; at: number },
+  returnedAt: number,
+): LocalAppState {
+  return {
+    ...state,
+    workItems: state.workItems.map((workItem) =>
+      workItem._id === workItemId
+        ? { ...workItem, returnedAt, returnedByComment }
+        : workItem,
+    ),
+  };
 }
 
 /**
@@ -484,6 +528,7 @@ export function importSyncedWorkItems(
             ...workItem,
             status: "active" as const,
             settledAt: undefined,
+            settleId: undefined,
             settledWithParentId: undefined,
             settledSourceStatusKey: undefined,
             settledImportedPriority: undefined,

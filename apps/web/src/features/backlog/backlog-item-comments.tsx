@@ -34,6 +34,7 @@ import {
   isEditedComment,
   isOwnComment,
   mergeEarlierComments,
+  withPostedComments,
   withViewerReaction,
   type CommentSource,
 } from "@/domain/backlog/comments";
@@ -54,6 +55,7 @@ import {
   sendCommentDelete,
 } from "@/lib/comment-deletes";
 import {
+  draftAfterSend,
   getCommentDraft,
   setCommentDraft,
   subscribeCommentDrafts,
@@ -101,8 +103,13 @@ const firstPages = new Map<
   string,
   { at: number; result: BacklogListItemCommentsResult }
 >();
-// A comment posted from elsewhere makes the item's cached page stale.
-subscribePostedComments((threadKey) => firstPages.delete(threadKey));
+// A comment posted from elsewhere makes the item's cached page stale, and
+// so does any load that began before it, mounted or not.
+const pageGenerations = new Map<string, number>();
+subscribePostedComments((threadKey) => {
+  firstPages.delete(threadKey);
+  pageGenerations.set(threadKey, (pageGenerations.get(threadKey) ?? 0) + 1);
+});
 
 /** The thread with a posted comment at its end, once. */
 function withPostedComment(thread: Thread, comment: BacklogComment): Thread {
@@ -209,15 +216,30 @@ export function BacklogItemComments({
   const sourceRef = useRef(source);
   sourceRef.current = source;
 
+  // Comments posted elsewhere during a load, which its answer may predate.
+  const postedDuringLoad = useRef<{ key: string; comments: BacklogComment[] }>({
+    key,
+    comments: [],
+  });
+
   const loadFirstPage = useCallback(async () => {
     const current = sourceRef.current;
+    const loadKey = commentThreadKey(current);
+    const generation = pageGenerations.get(loadKey) ?? 0;
+    postedDuringLoad.current = { key: loadKey, comments: [] };
     try {
-      const result = await listItemComments(
+      const page = await listItemComments(
         current.pluginId,
         current.connectionId,
         { sourceId: current.sourceId, limit: FIRST_COMMENT_PAGE },
       );
-      firstPages.set(commentThreadKey(current), { at: Date.now(), result });
+      const result =
+        postedDuringLoad.current.key === loadKey
+          ? withPostedComments(page, postedDuringLoad.current.comments)
+          : page;
+      if ((pageGenerations.get(loadKey) ?? 0) === generation) {
+        firstPages.set(loadKey, { at: Date.now(), result });
+      }
       setThread({ kind: "ready", ...result, loadingEarlier: false });
     } catch (error) {
       setThread(
@@ -287,7 +309,7 @@ export function BacklogItemComments({
   };
 
   // Comments waiting for their delete stay hidden, even after a restart.
-  const [hidden, setHidden] = useState(pendingCommentDeleteIds);
+  const [hidden, setHidden] = useState(() => pendingCommentDeleteIds(source));
   const unhide = (commentId: string) =>
     setHidden((current) => {
       const next = new Set(current);
@@ -324,14 +346,13 @@ export function BacklogItemComments({
 
   /** Hides the comment now and deletes it once the Undo toast closes. */
   const deleteComment = (comment: BacklogComment) => {
-    queueCommentDelete({
-      itemId,
+    const ref = {
       pluginId: source.pluginId,
       connectionId: source.connectionId,
       sourceId: source.sourceId,
       commentId: comment.id,
-      at: Date.now(),
-    });
+    };
+    queueCommentDelete({ ...ref, itemId, at: Date.now() });
     setHidden((current) => new Set(current).add(comment.id));
     firstPages.delete(key);
     let undone = false;
@@ -339,12 +360,12 @@ export function BacklogItemComments({
       title: "Comment deleted",
       onUndo: () => {
         undone = true;
-        cancelCommentDelete(comment.id);
+        cancelCommentDelete(ref);
         unhide(comment.id);
       },
       onClose: () => {
         if (undone) return;
-        sendCommentDelete(comment.id).then(
+        sendCommentDelete(ref).then(
           () =>
             setThread((current) =>
               current.kind === "ready"
@@ -418,9 +439,11 @@ export function BacklogItemComments({
   useEffect(
     () =>
       subscribePostedComments((threadKey, comment) => {
-        if (threadKey === key) {
-          setThread((current) => withPostedComment(current, comment));
+        if (threadKey !== key) return;
+        if (postedDuringLoad.current.key === key) {
+          postedDuringLoad.current.comments.push(comment);
         }
+        setThread((current) => withPostedComment(current, comment));
       }),
     [key],
   );
@@ -553,9 +576,11 @@ function CommentComposer({
         source.connectionId,
         { sourceId: source.sourceId, body },
       );
-      setCommentDraft(itemId, "");
-      setText("");
-      setOpen(false);
+      // Only what went out leaves the draft; text added meanwhile stays.
+      const rest = draftAfterSend(getCommentDraft(itemId) ?? "", value);
+      setCommentDraft(itemId, rest);
+      setText(rest);
+      if (!rest) setOpen(false);
       onPosted(comment);
     } catch (failure) {
       setError(

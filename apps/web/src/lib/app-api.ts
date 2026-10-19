@@ -782,6 +782,30 @@ export function syncBacklogConnection(
     },
     backlogSyncResultSchema,
   ).then((result) => {
+    // The items still in the settle this sync asked about, before its answer
+    // changes any of them.
+    const asked = new Map(
+      payload.workItems.flatMap((workItem) =>
+        workItem.commentsSince
+          ? [
+              [
+                workItem.localWorkItemId,
+                Date.parse(workItem.commentsSince),
+              ] as const,
+            ]
+          : [],
+      ),
+    );
+    const stillSettled = new Set(
+      localStore
+        .snapshot()
+        .workItems.filter(
+          (workItem) =>
+            workItem.status === "settled" &&
+            asked.get(workItem._id) === workItem.settledAt,
+        )
+        .map((workItem) => workItem._id),
+    );
     // Done items go first, so a done item that left the open set is archived
     // as done rather than as missing from the sync.
     localStore.archiveDoneSyncedWorkItems(result.doneItems);
@@ -794,7 +818,23 @@ export function syncBacklogConnection(
         : { importedCount: 0, updatedCount: 0 };
     localStore.applyBacklogSyncWorkItemUpdates(result.workItemUpdates);
     if (result.viewer && result.commentFacts.length > 0) {
-      localStore.returnItemsWithNewComments(result.commentFacts, result.viewer);
+      // Returned by this answer's import: settled before it, active after.
+      const returnedBySync = new Set(
+        localStore
+          .snapshot()
+          .workItems.filter(
+            (workItem) =>
+              stillSettled.has(workItem._id) &&
+              workItem.status === "active" &&
+              workItem.returnedAt !== undefined,
+          )
+          .map((workItem) => workItem._id),
+      );
+      localStore.returnItemsWithNewComments(
+        result.commentFacts,
+        result.viewer,
+        { settledSince: asked, returnedBySync },
+      );
     }
 
     return {

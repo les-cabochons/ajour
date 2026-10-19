@@ -28,8 +28,8 @@ import type { LocalWorkItem } from "@/domain/local-state";
 import { findSettleRule } from "@/domain/backlog/settle-rules";
 import {
   canWriteSettle,
+  releaseSettleComment,
   sendPendingSourceWrites,
-  sendSettleComment,
 } from "@/features/backlog/backlog-source-writes";
 import { commentMentionSearch } from "@/features/backlog/comment-threads";
 import { resolveIncludeSubitems } from "@/features/backlog/backlog-item-moves";
@@ -136,8 +136,11 @@ export async function settleBacklogItemWithUndo(
   const commentSource = body
     ? commentSourceOf(workItem, getCachedPluginsOverview())
     : undefined;
+  const commentId = crypto.randomUUID();
   if (body && commentSource) {
     queueSettleComment({
+      id: commentId,
+      settleId: settled?.settleId,
       itemId: workItem._id,
       pluginId: commentSource.pluginId,
       connectionId: commentSource.connectionId,
@@ -156,8 +159,10 @@ export async function settleBacklogItemWithUndo(
       settled?.pendingSourceWrite || commentSource
         ? () => {
             void sendPendingSourceWrites([workItem._id]);
-            // Waits for the write above when there is one.
-            void sendSettleComment(workItem._id);
+            // This settle's own comment only; it waits for the write above.
+            if (commentSource) {
+              void releaseSettleComment(commentId, workItem._id);
+            }
           }
         : undefined,
   });

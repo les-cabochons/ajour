@@ -51,7 +51,11 @@ export function withCommentDraft(
   );
 }
 
+/** Set only while storage refuses the drafts. */
+let unsaved: CommentDrafts | undefined;
+
 function read(): CommentDrafts {
+  if (unsaved) return unsaved;
   try {
     return parseCommentDrafts(
       window.localStorage.getItem(COMMENT_DRAFTS_STORAGE_KEY),
@@ -79,15 +83,27 @@ export function subscribeCommentDrafts(listener: DraftListener) {
 
 /** Saves the item's unsent comment; empty text clears it. */
 export function setCommentDraft(itemId: string, text: string) {
+  const drafts = withCommentDraft(read(), itemId, text, Date.now());
   try {
     window.localStorage.setItem(
       COMMENT_DRAFTS_STORAGE_KEY,
-      JSON.stringify(withCommentDraft(read(), itemId, text, Date.now())),
+      JSON.stringify(drafts),
     );
+    unsaved = undefined;
   } catch {
-    // The draft then lasts only while the page stays open.
+    // The drafts then last until Ajour quits.
+    unsaved = drafts;
   }
   for (const listener of listeners) listener(itemId, text);
+}
+
+/**
+ * The draft left once `sent` went out: what was typed or put back after it,
+ * such as a settle's comment that Undo returned meanwhile.
+ */
+export function draftAfterSend(draft: string, sent: string) {
+  if (draft.trim() === sent.trim()) return "";
+  return draft.startsWith(sent) ? draft.slice(sent.length).trim() : draft;
 }
 
 /** Keeps a comment that wasn't sent as the item's draft, after any draft there. */

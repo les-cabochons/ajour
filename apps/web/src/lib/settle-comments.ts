@@ -1,14 +1,19 @@
+import { createDeviceQueue } from "@/lib/device-queue";
+
 /**
- * Comments typed in the settle dialog, waiting for the settle to stand (ADR
- * 0008): they go to the source tool after the settle's write lands, or when
- * the Undo toast closes for a settle with nothing to write. Kept per device,
- * outside the local state, so a quit during the Undo window still sends them
- * at the next launch.
+ * Comments typed in the settle dialog, or by an agent settling an item,
+ * waiting for their settle to stand (ADR 0008). Each belongs to one settle:
+ * it is ready once that settle's Undo toast closes, and goes to the source
+ * tool after the item's pending write lands. Kept per device, outside the
+ * local state, so a quit during the Undo window still sends it at the next
+ * launch.
  */
 export const PENDING_SETTLE_COMMENTS_STORAGE_KEY =
   "ajour.pending-settle-comments";
 
 export interface PendingSettleComment {
+  /** One per settle, so a settle's toast acts on its own comment only. */
+  id: string;
   itemId: string;
   pluginId: string;
   connectionId: string;
@@ -16,71 +21,76 @@ export interface PendingSettleComment {
   /** Markdown. Mentions are `[@Name](mention:<id>)`. */
   body: string;
   at: number;
+  /** Set when the settle's Undo window closed. Until then it waits. */
+  ready?: boolean;
+  /** The item's `settleId` right after its settle. Absent on older entries. */
+  settleId?: string;
 }
 
-const isPendingComment = (value: unknown): value is PendingSettleComment => {
-  if (!value || typeof value !== "object") return false;
+/**
+ * A stored comment. One queued before comments had ids, by a session that
+ * quit during its Undo window, gets an id and is ready, as at any launch.
+ */
+function toPendingComment(value: unknown): PendingSettleComment | undefined {
+  if (!value || typeof value !== "object") return undefined;
   const entry = value as Record<string, unknown>;
-  return (
-    ["itemId", "pluginId", "connectionId", "sourceId", "body"].every(
+  if (
+    !["itemId", "pluginId", "connectionId", "sourceId", "body"].every(
       (key) => typeof entry[key] === "string",
-    ) && typeof entry.at === "number"
-  );
-};
+    ) ||
+    typeof entry.at !== "number" ||
+    (entry.ready !== undefined && typeof entry.ready !== "boolean") ||
+    (entry.settleId !== undefined && typeof entry.settleId !== "string")
+  ) {
+    return undefined;
+  }
+  const comment = entry as unknown as PendingSettleComment;
+  return typeof entry.id === "string"
+    ? comment
+    : { ...comment, id: `${comment.itemId}:${comment.at}`, ready: true };
+}
+
+const queue = createDeviceQueue(
+  PENDING_SETTLE_COMMENTS_STORAGE_KEY,
+  toPendingComment,
+);
 
 /** Broken entries are dropped. */
-export function parsePendingSettleComments(
-  value: string | null,
-): PendingSettleComment[] {
-  try {
-    const parsed: unknown = value ? JSON.parse(value) : [];
-    return Array.isArray(parsed) ? parsed.filter(isPendingComment) : [];
-  } catch {
-    return [];
-  }
-}
+export const parsePendingSettleComments = queue.parse;
 
-function read() {
-  try {
-    return parsePendingSettleComments(
-      window.localStorage.getItem(PENDING_SETTLE_COMMENTS_STORAGE_KEY),
-    );
-  } catch {
-    return [];
-  }
-}
-
-function write(entries: PendingSettleComment[]) {
-  try {
-    window.localStorage.setItem(
-      PENDING_SETTLE_COMMENTS_STORAGE_KEY,
-      JSON.stringify(entries),
-    );
-  } catch {
-    // The comment then only waits in this session.
-  }
-}
-
-/** One comment per item: a new settle replaces the one before. */
 export function queueSettleComment(entry: PendingSettleComment) {
-  write([
-    ...read().filter((pending) => pending.itemId !== entry.itemId),
+  queue.write([
+    ...queue.read().filter((pending) => pending.id !== entry.id),
     entry,
   ]);
 }
 
-export function getSettleComment(itemId: string) {
-  return read().find((entry) => entry.itemId === itemId);
+/** Its settle's Undo window closed: it goes once the item's write lands. */
+export function markSettleCommentReady(id: string) {
+  queue.write(
+    queue
+      .read()
+      .map((entry) => (entry.id === id ? { ...entry, ready: true } : entry)),
+  );
 }
 
-/** Takes the item's comment off the queue, so it is never sent twice. */
-export function takeSettleComment(itemId: string) {
-  const entries = read();
-  const entry = entries.find((pending) => pending.itemId === itemId);
-  if (entry) write(entries.filter((pending) => pending.itemId !== itemId));
+/** At launch, the session that could undo them is gone. */
+export function markSettleCommentsReady() {
+  queue.write(queue.read().map((entry) => ({ ...entry, ready: true })));
+}
+
+export function settleCommentsOf(itemId: string) {
+  return queue.read().filter((entry) => entry.itemId === itemId);
+}
+
+/** Takes a comment off the queue, so it is sent or kept at most once. */
+export function takeSettleComment(id: string) {
+  const entries = queue.read();
+  const entry = entries.find((pending) => pending.id === id);
+  if (entry) queue.write(entries.filter((pending) => pending.id !== id));
   return entry;
 }
 
 export function settleCommentItemIds() {
-  return read().map((entry) => entry.itemId);
+  return [...new Set(queue.read().map((entry) => entry.itemId))];
 }
