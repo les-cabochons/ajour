@@ -10,7 +10,7 @@ import {
  * Committed copies: what changed in a week since its last commit. An entry
  * with no committed copy is added, one whose copy differs or is stale is
  * updated, and a tombstone is a deleted entry. Agents and the Commit page read the same
- * list. See docs/superpowers/specs/2026-10-15-commit-week-design.md.
+ * list. See docs/specs/2026-10-15-commit-week-design.md.
  */
 
 /** The values a commit compares. Other fields, such as the order, never make a change. */

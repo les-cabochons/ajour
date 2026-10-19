@@ -5,7 +5,7 @@ import {
 } from "@/domain/local-state";
 import type { LocalPullRequest } from "@/domain/pull-requests/pull-request-lifecycle";
 
-/** What narrows the sidebar's work list. See "Search and project filter" in agents/ux-spec.md. */
+/** What narrows the sidebar's work list. See "Search and project filter" in docs/agents/ux-spec.md. */
 export interface SidebarFilter {
   /** Typed in the sidebar's search box. Blank matches everything. */
   query: string;

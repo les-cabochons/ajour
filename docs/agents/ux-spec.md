@@ -1,6 +1,6 @@
 # UX spec
 
-This spec defines how Ajour behaves for the user, across the whole app. It is built one decision at a time through the [UX wayfinder map](https://github.com/les-cabochons/ajour/issues/6). Each section links the ticket that decided it. Terms follow [`GLOSSARY.md`](GLOSSARY.md).
+This spec defines how Ajour behaves for the user, across the whole app. It is built one decision at a time through the [UX wayfinder map](https://github.com/les-cabochons/ajour/issues/6). Each section links the ticket that decided it. Terms follow [`GLOSSARY.md`](../../GLOSSARY.md).
 
 Scope: desktop (Electron) first with web parity. The narrow view is a first-class layout. This spec covers interaction and layout. Visual tokens stay in [`ui-tokens.md`](ui-tokens.md).
 
@@ -87,7 +87,7 @@ Changed in [#69](https://github.com/les-cabochons/ajour/issues/69). See the Back
 
 ## Vocabulary
 
-Decided in [Product name and vocabulary](https://github.com/les-cabochons/ajour/issues/11). Domain terms live in [`GLOSSARY.md`](GLOSSARY.md). This section covers names and labels.
+Decided in [Product name and vocabulary](https://github.com/les-cabochons/ajour/issues/11). Domain terms live in [`GLOSSARY.md`](../../GLOSSARY.md). This section covers names and labels.
 
 ### Product name
 
@@ -424,7 +424,7 @@ Cmd+K opens one palette with navigation, global actions, the focused item's acti
 
 "?" opens an overlay listing every shortcut, with a search field.
 
-Superseded by the Commit page: `docs/superpowers/specs/2026-10-15-commit-week-design.md`.
+Superseded by the Commit page: `docs/specs/2026-10-15-commit-week-design.md`.
 
 ## Submit timesheet
 
@@ -464,7 +464,7 @@ One "Submit week" button, styled the same, sits in the Day and Week headers at e
 
 ## Backlog
 
-Decided in [Backlog page under the new conventions](https://github.com/les-cabochons/ajour/issues/25), then redesigned as a list and a board inspired by Linear: [ADR 0002](adr/0002-workflow-states-and-done.md), and the prototype on branch `prototype/backlog-views`, where variant A won, with the peek and project swimlanes from variant B. The page takes Linear's density and options and keeps Ajour's tokens, fonts and quiet style.
+Decided in [Backlog page under the new conventions](https://github.com/les-cabochons/ajour/issues/25), then redesigned as a list and a board inspired by Linear: [ADR 0002](../adr/0002-workflow-states-and-done.md), and the prototype on branch `prototype/backlog-views`, where variant A won, with the peek and project swimlanes from variant B. The page takes Linear's density and options and keeps Ajour's tokens, fonts and quiet style.
 
 ### Workflow
 
@@ -481,7 +481,7 @@ Settings > Workflow lists, for each connection and source project, its source st
 - A new source state in the tool's done category is preselected to map to the first done state. A source state whose name matches a workflow state exactly, ignoring case, maps to it. Anything else stays unmapped.
 - Items in an unmapped source state show under "No state", first on the board and in the list. Settings > Workflow shows the count of unmapped source states, and the Backlog header shows a quiet notice that links there.
 - **Out:** each workflow state has a default source state, Ask, or Don't write. The default starts on the first mapped source state. Ask is offered when two or more source states map in, and opens a dialog with them when an item moves there.
-- Moving a synced item writes its new source state after the Undo window, as Settle does in [ADR 0001](adr/0001-connector-writes-after-undo-window.md). A plugin without the write capability moves the item locally.
+- Moving a synced item writes its new source state after the Undo window, as Settle does in [ADR 0001](../adr/0001-connector-writes-after-undo-window.md). A plugin without the write capability moves the item locally.
 - "Change source state…" writes another source state of the same workflow state and leaves the item in place. It shows in the "…" and right-click menus when two or more source states map in, and on the card's source-state label.
 - A sync that shows a different source state moves the item to that state's mapping. A sync that shows an archived item in a source state that isn't done makes it active again in the mapped column, as returned.
 
@@ -564,7 +564,7 @@ The layout, grouping, swimlanes, done window, toggles and properties are saved p
 
 ## Backlog sidebar
 
-Decided in [Backlog sidebar with settle, snooze and a backlog item page](https://github.com/les-cabochons/ajour/issues/69). The backlog plugin side is [#70](https://github.com/les-cabochons/ajour/issues/70). Delayed writes are recorded in [ADR 0001](adr/0001-connector-writes-after-undo-window.md).
+Decided in [Backlog sidebar with settle, snooze and a backlog item page](https://github.com/les-cabochons/ajour/issues/69). The backlog plugin side is [#70](https://github.com/les-cabochons/ajour/issues/70). Delayed writes are recorded in [ADR 0001](../adr/0001-connector-writes-after-undo-window.md).
 
 The sidebar works like the T3 Code and Linear sidebars: the view switcher, the timer dock, then the work itself in one scroll.
 

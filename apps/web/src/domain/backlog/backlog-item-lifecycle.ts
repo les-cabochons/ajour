@@ -29,7 +29,7 @@ import { saveTimer } from "@/domain/time/timer-transitions";
 
 /**
  * Settle, snooze and their counterparts, from "Backlog sidebar" in
- * agents/ux-spec.md. Terms follow agents/GLOSSARY.md.
+ * docs/agents/ux-spec.md. Terms follow GLOSSARY.md.
  */
 
 /** Whether a settle or close also takes the parent's open subitems. */

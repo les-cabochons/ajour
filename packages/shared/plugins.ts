@@ -152,7 +152,7 @@ export type BacklogPriorityLevel = z.infer<typeof backlogPriorityLevelSchema>;
 
 /**
  * A task an agent runs for the plugin, from a prompt file. No plugin code
- * runs. See docs/superpowers/specs/2026-10-15-ajour-agent-runner-design.md.
+ * runs. See docs/specs/2026-10-15-ajour-agent-runner-design.md.
  */
 export const agentTaskSchema = z
   .object({
@@ -185,7 +185,7 @@ export type AgentTask = z.infer<typeof agentTaskSchema>;
 /**
  * Text properties a plugin adds to every project, shown in a section of the
  * project properties card. See
- * docs/superpowers/specs/2026-10-15-plugin-project-properties-design.md.
+ * docs/specs/2026-10-15-plugin-project-properties-design.md.
  */
 export const projectPropertyFieldSchema = z.object({
   id: z.string().regex(/^[a-z0-9][a-z0-9-]{0,62}$/),

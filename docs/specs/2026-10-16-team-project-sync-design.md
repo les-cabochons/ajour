@@ -2,7 +2,7 @@
 
 - Status: Approved design, spec waiting for review
 - Date: 2026-10-16
-- Builds on: `2026-10-15-plugin-project-properties-design.md`, the per-capability switches of #177, and [ADR 0006](../../../agents/adr/0006-shared-projects-last-writer-wins.md)
+- Builds on: `2026-10-15-plugin-project-properties-design.md`, the per-capability switches of #177, and [ADR 0006](../adr/0006-shared-projects-last-writer-wins.md)
 
 ## Why
 
@@ -84,7 +84,7 @@ A pure module, `apps/web/src/domain/projects/team-sync.ts`, owns:
 
 Stored links are read back by `domain/projects/team-link.ts`, which `normalizeProject` uses, so project normalization does not depend on the sync rules.
 
-The rules are in [ADR 0006](../../../agents/adr/0006-shared-projects-last-writer-wins.md): last writer wins per field, archive without review, nothing deleted.
+The rules are in [ADR 0006](../adr/0006-shared-projects-last-writer-wins.md): last writer wins per field, archive without review, nothing deleted.
 
 ## Code
 

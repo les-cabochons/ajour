@@ -9,6 +9,16 @@
 - Add comments only when they explain non-obvious domain or runtime constraints.
 - Prettier owns formatting with its default settings, plus `prettier-plugin-tailwindcss` for class order, in `prettier.config.mjs`. This matches create-t3-app. Run `just format` before committing; `just format-check` must pass.
 
+## Before Editing
+
+- Read the relevant feature, shared logic, and tests.
+- Identify the owning runtime: web, desktop, api, or shared. For web code, also identify the owning layer: pure domain, runtime or application library, feature workflow, or reusable component.
+- Check whether the change touches the local-first privacy boundary, and whether persisted local state needs compatibility handling.
+- For UI changes, read `docs/agents/ui-rules.md`, `docs/agents/ui-registry.md`, `docs/agents/ui-tokens.md`, and `docs/agents/library-docs.md` first.
+- For lifecycle changes, start from the owning transition module listed in `docs/agents/library-docs.md`, and keep `local-store.ts` as persistence and command wiring.
+- State the intended files before a non-trivial edit, and keep edits scoped to the requested behavior.
+- When a page grows mixed responsibilities, extract feature-local UI modules before adding more inline rendering.
+
 ## TypeScript
 
 - Prefer explicit domain types over loose records.
@@ -95,13 +105,28 @@ For UI-only changes, run typecheck and consider a browser check for layout or in
 
 For shared interaction changes, add direct state/geometry tests and verify every current caller. Pointer reordering currently serves backlog work items on the Backlog page and in the sidebar, timesheet entries, project tasks, and project navigation.
 
+## Performance
+
+Runtime performance is a hard constraint. Visual polish never costs render time.
+
+- Every shell, list, sidebar, or other UI change runs `just ui-perf` before and after, on the seeded large workspace of 600 backlog items and 1,800 entries. No measurement may be more than 10% worse than the base branch. The procedure is `qa/routines/ui-capture.md`.
+- `just ui-perf` reports four numbers: cold load, Start click, a Backlog store write, and renderer work per second with a timer running. Put the base and change numbers in the PR.
+- Single runs vary by tens of percent. Warm the server first, run the base branch and the change on separate ports with `AJOUR_QA_PORT`, compare pairs taken at the same machine speed, and repeat a pair that disagrees.
+- The dev server runs React's development build, so its numbers sit well above production. On Windows in production, after the October 2026 fixes, a cold load takes about 150 ms, a Start click about 40 ms, and a store write about 75 ms with 300 Backlog rows. A running timer costs about 4 ms of renderer work per second.
+- These costs were removed once, and a change must not bring them back:
+  - re-rendering the titlebar or the page every second while a timer runs, instead of sharing one clock through `useRunningClock`;
+  - a store write that re-reads storage for each subscriber;
+  - pickers, tooltips, and menus mounted on every row before hover or focus;
+  - `backdrop-filter`, shadows on scrolling rows, and hover transitions on long lists;
+  - a wrapper element around every row only to hold a drag ref.
+
 ## Logging And Privacy
 
 - Do not use scattered `console.log()` as the operational logging strategy.
 - Follow the wide-events model in `docs/logging-strategy.md`.
 - Never log raw URLs, query strings, URL fragments, meeting contents, uncommitted notes, or private activity details to a remote sink by default.
 
-## Commands
+## Verification
 
 Use `just`:
 
@@ -113,3 +138,20 @@ just format-check
 ```
 
 `just test` runs tests across workspace packages that expose a test script, including the web and shared suites.
+
+For a narrow change, run the closest focused tests first, then the broader checks if risk remains. For a visual change, start the app and inspect the affected view in a browser.
+
+These consistency checks should find nothing. A match is a boundary violation or an import from a retired path:
+
+```sh
+rg -n 'settings-panel|message-panel' apps/web/src/features
+rg -n 'type="checkbox"' apps/web/src/features
+rg -n '@base-ui/react' apps/web/src/features
+rg -n 'from "@/features/' apps/web/src/domain apps/web/src/lib
+rg -n 'hours-input|project-task-budget|project-task-import-utils' apps/web/src
+rg -n 'features/backlog/(work-item-estimates|work-item-hierarchy)' apps/web/src
+rg -n 'window.addEventListener\("pointer(move|up|cancel)"' apps/web/src/features
+rg -n '^function (formatPriorityInput|parsePriorityInput|formatEstimateInput|parseEstimateInput|buildManualTimeEntryNote)' apps/web/src/features/backlog
+```
+
+Feature code consumes pure behavior from `domain`, runtime behavior from `lib`, local wrappers from `apps/web/src/components/ui`, app-level surfaces from `apps/web/src/components/app-surface.tsx`, or feature-local modules that own repeated rendering.

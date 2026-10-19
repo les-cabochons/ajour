@@ -42,7 +42,7 @@ import { cn } from "@/lib/utils";
  * The peek on the right of the backlog page: a smaller item page. It keeps the
  * page's header, estimate figures, properties, description and subitems, and lets
  * state, priority, project and task change in place. The row's context menu
- * and the item page carry the other actions. See "Peek" in agents/ux-spec.md.
+ * and the item page carry the other actions. See "Peek" in docs/agents/ux-spec.md.
  */
 export function BacklogPeek({
   item,

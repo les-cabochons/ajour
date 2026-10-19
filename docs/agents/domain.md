@@ -7,8 +7,8 @@ packages. Write domain documentation in English.
 
 Read these files when they exist:
 
-- `agents/GLOSSARY.md` for domain terms.
-- Relevant ADRs in `agents/adr/` for recorded decisions.
+- `GLOSSARY.md` at the repository root for domain terms.
+- Relevant ADRs in `docs/adr/` for recorded decisions.
 
 If these files are absent, continue silently. Create them only when
 domain-modeling work resolves a term or records a decision.
@@ -16,14 +16,13 @@ domain-modeling work resolves a term or records a decision.
 ## File layout
 
 ```text
-agents/
-  GLOSSARY.md
+GLOSSARY.md
+docs/
   adr/
     0001-<decision-name>.md
 ```
 
-These paths replace the engineering skills' default root glossary
-and `docs/adr/` paths.
+These are the engineering skills' default paths.
 
 ## Vocabulary
 

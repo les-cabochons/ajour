@@ -70,7 +70,7 @@ function isSelectionDelete(actionId: TimeEntryActionId, key?: object) {
 
 /**
  * Selection, copy, cut and paste of entries on the Day list and the Week Days
- * cards. See "Selecting, copying and pasting entries" in agents/ux-spec.md.
+ * cards. See "Selecting, copying and pasting entries" in docs/agents/ux-spec.md.
  *
  * A click selects an entry, Cmd or Ctrl+click adds one, Shift+click selects a
  * range. A press on an unselected entry selects it at once, and opening an

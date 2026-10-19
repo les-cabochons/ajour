@@ -1,6 +1,6 @@
 # UI Rules
 
-Ajour is an operational desktop/web app. Build interfaces for scanning, repeated daily entry, correction, and review. The model is Linear's density and structure with Vercel's restraint in color; see `agents/ui-tokens.md` for the values and `agents/ui-registry.md` for the shared patterns.
+Ajour is an operational desktop/web app. Build interfaces for scanning, repeated daily entry, correction, and review. The model is Linear's density and structure with Vercel's restraint in color; see `docs/agents/ui-tokens.md` for the values and `docs/agents/ui-registry.md` for the shared patterns.
 
 ## Product Feel
 
@@ -48,7 +48,7 @@ Ajour is an operational desktop/web app. Build interfaces for scanning, repeated
 
 ## Color
 
-- Use semantic CSS variables from `agents/ui-tokens.md`.
+- Use semantic CSS variables from `docs/agents/ui-tokens.md`.
 - The accent (`--primary`) marks primary buttons, focus, links and selected options. The active navigation row is a neutral tint.
 - Green means running. Red means destructive or failed. Amber with an icon means warning. Change symbols are the one exception, see below. Success results are plain text with a check icon, never a green box.
 - Change symbols on the Commit page carry their kind's color: Added green, Updated amber, Deleted red. Each kind also has its own icon shape.
@@ -69,7 +69,7 @@ Ajour is an operational desktop/web app. Build interfaces for scanning, repeated
 - No transitions on rows, hover states, nav items or chips. Transitions only on overlays opening and closing, at most 150ms, opacity and transform only. No shimmer.
 - No `backdrop-filter` anywhere. No `box-shadow` inside a scrolling list.
 - Rows mount their pickers, tooltips and menus on hover or focus, and sidebar rows stay memoized. A redesign may not add a component that mounts per row.
-- Every shell, list or sidebar change is measured with `just ui-perf` before and after on the large workspace. The progress tracker's numbers are budgets; a regression over 10% blocks the change.
+- Every shell, list or sidebar change is measured with `just ui-perf` before and after on the large workspace. The budgets are in the Performance section of `docs/agents/code-standards.md`; a regression over 10% blocks the change.
 
 ## Accessibility
 

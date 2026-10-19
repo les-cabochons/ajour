@@ -1,5 +1,5 @@
 /**
- * The Snooze… choices from "Backlog sidebar" in agents/ux-spec.md. The clock
+ * The Snooze… choices from "Backlog sidebar" in docs/agents/ux-spec.md. The clock
  * times are fixed: Ajour has no workday setting.
  */
 export interface SnoozePreset {

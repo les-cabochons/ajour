@@ -197,7 +197,7 @@ export interface LocalTimerDraft {
 
 /**
  * An entry as it was last committed: the copy the external timesheet holds.
- * See docs/superpowers/specs/2026-10-15-commit-week-design.md.
+ * See docs/specs/2026-10-15-commit-week-design.md.
  */
 export interface LocalTimesheetEntryCommit {
   /** When the copy was saved. */
@@ -405,7 +405,7 @@ export interface LocalWorkItem {
   title: string;
   /**
    * Active items are on the user's plate. Settled items wait on someone else
-   * (synced items only). Archived items are done. See agents/GLOSSARY.md.
+   * (synced items only). Archived items are done. See GLOSSARY.md.
    */
   status: "active" | "settled" | "archived";
   source: "manual" | BacklogSource;

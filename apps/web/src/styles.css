@@ -2001,7 +2001,7 @@
 
 /* The expanded sidebar's right edge. Dragging resizes it, and dragging past
    the minimum snaps it to the rail. See "Width" under "Backlog sidebar" in
-   agents/ux-spec.md. */
+   docs/agents/ux-spec.md. */
 .ajour-shell-sidebar {
   position: relative;
 }

@@ -1,9 +1,9 @@
 # Ajour MCP: data tools, agent sessions and the agent indicator
 
 - Date: 2026-10-14
-- Status: Implemented. Plan: docs/superpowers/plans/2026-10-14-ajour-mcp.md
+- Status: Implemented. Its plan was removed once the work shipped; git history keeps it.
 - Scope: MCP endpoint in the local API, client tokens, Ajour data tools, agent sessions, questions, the agent indicator and panel
-- Decisions: [ADR 0004](../../../agents/adr/0004-mcp-sends-local-data-to-the-clients-model.md)
+- Decisions: [ADR 0004](../adr/0004-mcp-sends-local-data-to-the-clients-model.md)
 - Follow-up: spec B, the agent runner and the Workday plugin (see "Later")
 
 ## Summary
@@ -32,7 +32,7 @@ This spec is the first of two. Spec B adds the agent runner, where Ajour starts 
 
 ## Terms
 
-These go into `agents/GLOSSARY.md` under a new "Agents" section.
+These go into `GLOSSARY.md` under a new "Agents" section.
 
 - **Agent**: a program driven by an LLM that uses Ajour through MCP, such as Claude Code or Codex.
 - **Agent client**: one configured connection for an agent, with its own name and token, such as "Claude Code on this Mac".

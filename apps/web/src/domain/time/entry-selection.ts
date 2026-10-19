@@ -1,7 +1,7 @@
 /**
  * Selecting time entries on the Day list and the Week Days cards, as in a file
  * explorer, and where pasted entries land. See "Selecting, copying and pasting
- * entries" in agents/ux-spec.md.
+ * entries" in docs/agents/ux-spec.md.
  */
 
 /**
