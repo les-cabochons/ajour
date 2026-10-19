@@ -90,6 +90,7 @@ import { resolveSidebarWidth, useSidebarLayout } from "@/lib/sidebar-layout";
 import {
   flushSettleComments,
   sendPendingSourceWrites,
+  watchSettleEnds,
 } from "@/features/backlog/backlog-source-writes";
 import { flushPendingCommentDeletes } from "@/lib/comment-deletes";
 import { flushAgentComments } from "@/features/agents/agent-comment-tools";
@@ -219,6 +220,8 @@ function PendingSourceWritesFlush() {
     void flushSettleComments();
     void flushAgentComments();
   }, []);
+  // A settle that ends turns its waiting comments into drafts.
+  useEffect(() => watchSettleEnds(), []);
   return null;
 }
 

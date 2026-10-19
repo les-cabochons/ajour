@@ -135,12 +135,8 @@ async function sendSourceWrite(
   }
 }
 
-/**
- * Keeps every comment waiting on the item's settle as its draft: its write
- * failed, or a new settle replaces the one they came with. An item settles
- * again only after its earlier settle stopped standing.
- */
-export function keepSettleCommentsAsDrafts(workItemId: string) {
+/** Keeps every comment waiting on the item's settle as its draft. */
+function keepSettleCommentsAsDrafts(workItemId: string) {
   let kept = 0;
   for (const { id } of settleCommentsOf(workItemId)) {
     const entry = takeSettleComment(id);
@@ -233,10 +229,43 @@ export async function sendSettleComments(workItemId: string) {
 /**
  * Whether the settle a comment was typed with still stands: the item is
  * settled, or archived since, and still comes from the comment's thread. A
- * settle that was replaced already turned its comments into drafts.
+ * settle that ended already turned its comments into drafts, see
+ * `watchSettleEnds`.
  */
 function settleStands(item: LocalWorkItem, entry: PendingSettleComment) {
   return item.status !== "active" && isCommentSourceOf(item, entry);
+}
+
+/**
+ * Turns an item's waiting settle comments into drafts as soon as its settle
+ * ends: the item is active again, whether unsettled, restored, returned by a
+ * sync, undone or put back by a failed write. A settle that goes on into an
+ * archive keeps them. So a later settle, of the item or of a parent carrying
+ * it, never finds an earlier settle's comment. Returns the unsubscribe.
+ */
+export function watchSettleEnds() {
+  const statusesOf = () =>
+    new Map(
+      localStore
+        .snapshot()
+        .workItems.map((workItem) => [workItem._id, workItem.status]),
+    );
+  let before = statusesOf();
+  return localStore.subscribe(() => {
+    const now = statusesOf();
+    const ended = [...now].filter(
+      ([id, status]) =>
+        status === "active" &&
+        before.get(id) !== undefined &&
+        before.get(id) !== "active",
+    );
+    before = now;
+    if (ended.length === 0) return;
+    const queued = new Set(settleCommentItemIds());
+    for (const [id] of ended) {
+      if (queued.has(id)) keepSettleCommentsAsDrafts(id);
+    }
+  });
 }
 
 /**

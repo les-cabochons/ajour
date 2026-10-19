@@ -10,12 +10,17 @@ const mocks = vi.hoisted(() => ({
   keepDraft: vi.fn(),
   announce: vi.fn(),
   access: vi.fn(),
+  listeners: new Set<() => void>(),
 }));
 vi.mock("@/lib/local-store", () => ({
   localStore: {
     snapshot: mocks.snapshot,
     completeSourceWrite: mocks.complete,
     failSourceWrite: mocks.fail,
+    subscribe: (listener: () => void) => {
+      mocks.listeners.add(listener);
+      return () => mocks.listeners.delete(listener);
+    },
   },
 }));
 vi.mock("@/lib/app-api", () => ({
@@ -339,45 +344,67 @@ describe("the comment typed in the settle dialog", () => {
     });
   });
 
-  it("leaves nothing to post when the item settles again while an agent's access loads", async () => {
+  it("leaves nothing to post when the settle ends while an agent's access loads", async () => {
     const {
-      keepSettleCommentsAsDrafts,
       queueSettleComment,
       releaseSettleComment,
       settleCommentsOf,
+      watchSettleEnds,
     } = await load();
     item = { ...item, pendingSourceWrite: undefined };
+    const stop = watchSettleEnds();
     queueSettleComment({ ...comment("s1"), agentClient: "Claude Code" });
-    // While access loads, the user unsettles and settles again.
+    // While access loads, the user unsettles the item.
     mocks.access.mockImplementationOnce(async () => {
-      keepSettleCommentsAsDrafts("a");
+      item = { ...item, status: "active" };
+      for (const listener of mocks.listeners) listener();
       return { access: "readWrite" };
     });
 
     await releaseSettleComment("s1", "a");
+    stop();
 
     expect(mocks.post).not.toHaveBeenCalled();
     expect(mocks.keepDraft).toHaveBeenCalledWith("a", "Waiting on the client");
     expect(settleCommentsOf("a")).toEqual([]);
   });
 
-  it("turns an earlier settle's comments into drafts when the item settles again", async () => {
+  it("turns waiting comments into drafts the moment their settle ends", async () => {
     const {
       queueSettleComment,
-      keepSettleCommentsAsDrafts,
       releaseSettleComment,
       settleCommentsOf,
+      watchSettleEnds,
     } = await load();
     item = { ...item, pendingSourceWrite: undefined };
+    const stop = watchSettleEnds();
     queueSettleComment(comment("s1"));
 
-    // The item settles again: its earlier settle no longer stands.
-    keepSettleCommentsAsDrafts("a");
+    // Unsettled, then archived before the toast closes: the settle ended.
+    item = { ...item, status: "active" };
+    for (const listener of mocks.listeners) listener();
+    item = { ...item, status: "archived", archivedAt: 6000 };
+    for (const listener of mocks.listeners) listener();
     await releaseSettleComment("s1", "a");
+    stop();
 
     expect(mocks.post).not.toHaveBeenCalled();
     expect(mocks.keepDraft).toHaveBeenCalledWith("a", "Waiting on the client");
     expect(settleCommentsOf("a")).toEqual([]);
+  });
+
+  it("keeps waiting comments when a standing settle goes on into an archive", async () => {
+    const { queueSettleComment, settleCommentsOf, watchSettleEnds } =
+      await load();
+    const stop = watchSettleEnds();
+    queueSettleComment(comment("s1"));
+
+    item = { ...item, status: "archived", archivedAt: 6000 };
+    for (const listener of mocks.listeners) listener();
+    stop();
+
+    expect(mocks.keepDraft).not.toHaveBeenCalled();
+    expect(settleCommentsOf("a")).toHaveLength(1);
   });
 
   it("still posts when the settled item was archived meanwhile", async () => {

@@ -519,3 +519,24 @@ Then(
     ).toBeNull();
   },
 );
+
+When("I unsettle it from its page header", async ({ page }) => {
+  await page
+    .locator(".ajour-page-header-slot")
+    .getByRole("button", { name: "Unsettle", exact: true })
+    .click();
+});
+
+Then(
+  "no comment went to the source and the comment field shows the draft {string}",
+  async ({ page }, text: string) => {
+    await expect(
+      commentsRegion(page).getByRole("button", { name: `Draft: ${text}` }),
+    ).toBeVisible();
+    const writes = JSON.parse(
+      (await page.evaluate(() => sessionStorage.getItem("source-writes"))) ??
+        "[]",
+    ) as string[];
+    expect(writes.filter((write) => write.startsWith("comment:"))).toEqual([]);
+  },
+);
