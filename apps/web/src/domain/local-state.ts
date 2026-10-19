@@ -427,6 +427,12 @@ export interface LocalWorkItem {
   sourceConnectionLabel?: string;
   /** Link to the item in its source tool, when the plugin provides one. `sourceId` is an opaque identity, not a URL. */
   sourceUrl?: string;
+  /**
+   * The item's id as its source tool shows it, such as "1234", "PAY-12" or
+   * "acme/api#12": the plugin's `externalId`. Items synced before it was
+   * kept get it at their next sync.
+   */
+  sourceExternalId?: string;
   sourceProjectName?: string;
   sourceWorkItemType?: string;
   hierarchyLevel?: 0 | 1;

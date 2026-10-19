@@ -50,6 +50,9 @@ const AZURE_AREAS = new Set(["_workitems", "_git"]);
 /** Hosts whose first label is the organization, as in acme.atlassian.net. */
 const ORGANIZATION_SUBDOMAINS = [".atlassian.net", ".visualstudio.com"];
 const JIRA_KEY = /^[A-Z][A-Z0-9_]+-\d+$/;
+/** The key at the end of a plugin's external id: "1234", "acme/api#12" or "PAY-12". */
+const EXTERNAL_ID_KEY =
+  /(?:^|#)(\d+)$|(?:^|[^A-Za-z0-9_])([A-Z][A-Z0-9_]+-\d+)$/;
 
 interface SourceLocation {
   organization: string;
@@ -138,9 +141,15 @@ function lastSegment(value: string | undefined) {
   return path.split("/").filter(Boolean).at(-1);
 }
 
-/** The item's id as people write it in its source tool: "1234" or "ABC-12". */
+/**
+ * The item's id as people write it in its source tool: "1234" or "ABC-12".
+ * The plugin's external id says it; items synced before Ajour kept that id
+ * fall back to the end of their link.
+ */
 export function getWorkItemKey(workItem: LocalWorkItem) {
   if (workItem.source === "manual") return undefined;
+  const external = workItem.sourceExternalId?.match(EXTERNAL_ID_KEY);
+  if (external) return external[1] ?? external[2];
   for (const value of [workItem.sourceUrl, workItem.sourceId]) {
     const segment = lastSegment(value);
     if (segment && (/^\d+$/.test(segment) || JIRA_KEY.test(segment))) {
@@ -182,14 +191,15 @@ export function findPullRequestsNamingItem(
   const key = getWorkItemKey(workItem);
   if (!key) return [];
   if (JIRA_KEY.test(key)) {
-    // An underscore belongs to a longer key, as in TEAM_PAY-12.
-    const pattern = new RegExp(`(?<![A-Za-z0-9_])${key}(?![0-9])`, "i");
+    // A letter, digit or underscore on either side makes another key, as in
+    // TEAM_PAY-12 or PAY-12abc.
+    const pattern = new RegExp(`(?<![A-Za-z0-9_])${key}(?![A-Za-z0-9_])`, "i");
     return pullRequests.filter((item) => pattern.test(item.facts.title));
   }
 
   const scope = locateWorkItem(workItem)?.numberScope;
   if (!scope) return [];
-  const pattern = new RegExp(`(?<![\\w#])#${key}(?![0-9])`);
+  const pattern = new RegExp(`(?<![\\w#])#${key}(?!\\w)`);
   return pullRequests.filter(
     (item) =>
       pattern.test(item.facts.title) &&

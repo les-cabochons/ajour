@@ -165,6 +165,31 @@ describe("where a backlog item comes from", () => {
     ).toEqual({ organization: "Work", project: "acme/api" });
   });
 
+  it("takes the key from the plugin's external id first", () => {
+    const opaque = item("opaque", {
+      source: "linear",
+      sourceId: "9f2c4b1e-77aa-4e0b-9a51-3c2e1f0d8b6a",
+      sourceUrl: "https://tracker.example.com/t/9f2c4b1e",
+      sourceExternalId: "LIN-42",
+    });
+    expect(getWorkItemKey(opaque)).toBe("LIN-42");
+    expect(
+      getWorkItemKey({ ...issue, sourceExternalId: "les-cabochons/ajour#288" }),
+    ).toBe("288");
+    expect(getWorkItemKey({ ...workItem, sourceExternalId: "1234" })).toBe(
+      "1234",
+    );
+    // An external id with no key in it leaves the link to say.
+    expect(
+      getWorkItemKey({ ...jiraIssue, sourceExternalId: "issue-a1b2" }),
+    ).toBe("PAY-12");
+    expect(
+      findPullRequestsNamingItem(opaque, [
+        pullRequest("https://github.com/acme/api/pull/1", "LIN-42 retry"),
+      ]),
+    ).toHaveLength(1);
+  });
+
   it("has no origin or key for a manual item", () => {
     expect(getWorkItemOrigin(item("manual"))).toBeUndefined();
     expect(getWorkItemKey(item("manual", { sourceId: "12" }))).toBeUndefined();
@@ -189,12 +214,17 @@ describe("pull requests that name a backlog item", () => {
       "https://github.com/les-cabochons/ajour/pull/301",
       "Fix AB#288",
     );
+    const suffixed = pullRequest(
+      "https://github.com/les-cabochons/ajour/pull/302",
+      "Fix #288abc",
+    );
     expect(
       findPullRequestsNamingItem(issue, [
         same,
         otherRepository,
         longerNumber,
         boardsMention,
+        suffixed,
       ]),
     ).toEqual([same]);
   });
@@ -248,14 +278,24 @@ describe("pull requests that name a backlog item", () => {
       "https://github.com/acme/api/pull/4",
       "Fix TEAM_PAY-12",
     );
+    const suffixed = pullRequest(
+      "https://github.com/acme/api/pull/5",
+      "Fix PAY-12abc",
+    );
+    const branchLike = pullRequest(
+      "https://github.com/acme/api/pull/6",
+      "PAY-12-round-totals",
+    );
     expect(
       findPullRequestsNamingItem(jiraIssue, [
         named,
         longer,
         prefixed,
         underscored,
+        suffixed,
+        branchLike,
       ]),
-    ).toEqual([named]);
+    ).toEqual([named, branchLike]);
   });
 
   it("matches nothing for a manual item", () => {

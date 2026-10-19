@@ -297,6 +297,24 @@ describe("synced work item imports", () => {
     );
   });
 
+  it("keeps the plugin's external id and refreshes it on the next import", () => {
+    const imported = importSyncedWorkItems(
+      createState(),
+      [createCandidate()],
+      undefined,
+      factories,
+    ).state;
+    expect(imported.workItems[0]?.sourceExternalId).toBe("42");
+
+    const refreshed = importSyncedWorkItems(
+      imported,
+      [createCandidate({ externalId: "MER-42" })],
+      undefined,
+      factories,
+    ).state;
+    expect(refreshed.workItems[0]?.sourceExternalId).toBe("MER-42");
+  });
+
   it("creates mapped work items with estimate baselines", () => {
     const operation = importSyncedWorkItems(
       createState({
