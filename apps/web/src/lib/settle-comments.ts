@@ -23,6 +23,8 @@ export interface PendingSettleComment {
   at: number;
   /** Set when the settle's Undo window closed. Until then it waits. */
   ready?: boolean;
+  /** The item's `settleId` right after its settle. Absent on older entries. */
+  settleId?: string;
   /** The agent client that settled the item, which must still be allowed to post. */
   agentClient?: string;
 }
@@ -40,6 +42,7 @@ function toPendingComment(value: unknown): PendingSettleComment | undefined {
     ) ||
     typeof entry.at !== "number" ||
     (entry.ready !== undefined && typeof entry.ready !== "boolean") ||
+    (entry.settleId !== undefined && typeof entry.settleId !== "string") ||
     (entry.agentClient !== undefined && typeof entry.agentClient !== "string")
   ) {
     return undefined;

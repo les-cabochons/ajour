@@ -140,6 +140,7 @@ export async function settleBacklogItemWithUndo(
   if (body && commentSource) {
     queueSettleComment({
       id: commentId,
+      settleId: settled?.settleId,
       itemId: workItem._id,
       pluginId: commentSource.pluginId,
       connectionId: commentSource.connectionId,

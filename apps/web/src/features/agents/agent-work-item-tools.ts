@@ -339,6 +339,7 @@ export async function runWorkItemWriteTool(
       if (commentSource && input.comment) {
         queueSettleComment({
           id: commentId,
+          settleId: settled.settleId,
           agentClient: client.name,
           itemId: item._id,
           pluginId: commentSource.pluginId,

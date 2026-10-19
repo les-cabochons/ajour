@@ -458,6 +458,12 @@ export interface LocalWorkItem {
   pinnedAt?: number;
   settledAt?: number;
   /**
+   * Which settle the item is in: new at each settle, kept when a settled item
+   * is archived, cleared when the item is active again. A comment queued with
+   * a settle goes only while its item is still in that settle.
+   */
+  settleId?: string;
+  /**
    * The parent whose settle or close carried this subitem along, so they come
    * back together.
    */
@@ -500,6 +506,7 @@ export type LocalWorkItemMoveSnapshot = Pick<
   | "archivedByMissingSync"
   | "archivedSourceStatusKey"
   | "settledAt"
+  | "settleId"
   | "settledWithParentId"
   | "settledSourceStatusKey"
   | "settledImportedPriority"
@@ -532,6 +539,7 @@ export interface LocalPendingSourceWrite {
       LocalWorkItem,
       | "status"
       | "settledAt"
+      | "settleId"
       | "archivedAt"
       | "archivedByMissingSync"
       | "archivedSourceStatusKey"

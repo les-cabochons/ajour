@@ -114,6 +114,35 @@ function find(state: LocalAppState, id: string) {
   return state.workItems.find((workItem) => workItem._id === id);
 }
 
+describe("settle ids", () => {
+  it("gives each settle an id that an archive keeps and a return to active clears", () => {
+    let next = 0;
+    const counting = {
+      createId: (prefix: string) => `${prefix}-${++next}`,
+      now: () => 1_000,
+    };
+    const settled = settleBacklogItem(
+      createState({ workItems: [synced("a")] }),
+      "a",
+      counting,
+    );
+    expect(find(settled, "a")?.status).toBe("settled");
+    const firstId = find(settled, "a")?.settleId;
+    expect(firstId).toMatch(/^settle-/);
+
+    const archived = archiveBacklogItem(settled, "a", counting);
+    expect(find(archived, "a")).toMatchObject({
+      status: "archived",
+      settleId: firstId,
+    });
+
+    const unsettled = unsettleBacklogItem(settled, "a");
+    expect(find(unsettled, "a")?.settleId).toBeUndefined();
+    const again = settleBacklogItem(unsettled, "a", counting);
+    expect(find(again, "a")?.settleId).not.toBe(firstId);
+  });
+});
+
 describe("enabling Done on an occupied workflow state", () => {
   it.each(["archived", "settled", "active"] as const)(
     "closes a reactivated or legacy %s item without a workflow change",

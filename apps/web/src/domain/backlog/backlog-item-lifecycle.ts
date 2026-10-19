@@ -55,6 +55,7 @@ function moveSnapshot(item: LocalWorkItem): LocalWorkItemMoveSnapshot {
     archivedByMissingSync: item.archivedByMissingSync,
     archivedSourceStatusKey: item.archivedSourceStatusKey,
     settledAt: item.settledAt,
+    settleId: item.settleId,
     settledWithParentId: item.settledWithParentId,
     settledSourceStatusKey: item.settledSourceStatusKey,
     settledImportedPriority: item.settledImportedPriority,
@@ -687,18 +688,24 @@ export function settleBacklogItem(
     factories,
   );
   // A snooze ends with the settle, so the item never comes back as returned.
+  // Each settle has its own id; a later archive keeps it.
   const settle = (workItem: LocalWorkItem): LocalWorkItem =>
     archives
-      ? closeWorkItem(
-          workItem,
-          selectedWorkflowStateId ?? getClosingWorkflowStateId(state, workItem),
-          state.workflowStates,
-          now,
-        )
+      ? {
+          ...closeWorkItem(
+            workItem,
+            selectedWorkflowStateId ??
+              getClosingWorkflowStateId(state, workItem),
+            state.workflowStates,
+            now,
+          ),
+          settleId: factories.createId("settle"),
+        }
       : {
           ...workItem,
           status: "settled",
           settledAt: now,
+          settleId: factories.createId("settle"),
           settledSourceStatusKey: workItem.sourceStatusKey,
           settledImportedPriority: workItem.importedPriority,
           snoozedUntil: undefined,
@@ -1063,6 +1070,7 @@ function reactivate(
             ...workItem,
             status: "active",
             settledAt: undefined,
+            settleId: undefined,
             settledWithParentId: undefined,
             settledSourceStatusKey: undefined,
             settledImportedPriority: undefined,
