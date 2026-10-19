@@ -51,7 +51,7 @@ Rest the mouse on an item for a moment to see a card beside the sidebar with wha
 
 <Shot name="sidebar-hover-card" alt="The hover card of a backlog item beside the sidebar, with its source and subitems" />
 
-Once the card shows, moving to another item moves it there. You can move the mouse onto the card. Click a subitem or a pull request to open it in Ajour, or <kbd>⌘</kbd>-click it to open it in its tool. Pressing in the list, scrolling, <kbd>Esc</kbd>, or leaving the item and the card closes it.
+Once the card shows, moving to another item moves it there. You can move the mouse onto the card. Click a subitem or a pull request to open it in Ajour. <kbd>⌘</kbd>-click a pull request or a synced subitem to open it in its tool instead. Pressing in the list, scrolling, <kbd>Esc</kbd>, or leaving the item and the card closes it.
 
 The card opens with a mouse only, and never takes focus. From the keyboard, the [item page](/backlog/items) shows the source, the parent and the subitems.
 
