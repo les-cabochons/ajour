@@ -362,19 +362,28 @@ Then("Ana's reply shows my Heart", async ({ page }) => {
   ).toBeVisible();
 });
 
+/** The fixture's people whose name has a word starting with each word of the query. */
+function findPeople(query: string) {
+  const parts = query.toLowerCase().split(/\s+/).filter(Boolean);
+  return [
+    { id: "ana", displayName: "Ana Silva" },
+    { id: "andrew", displayName: "Andrew Lee" },
+  ].filter((person) => {
+    const words = person.displayName.toLowerCase().split(" ");
+    return parts.every((part) => words.some((word) => word.startsWith(part)));
+  });
+}
+
 Given(
   "its plugin finds people and records posted comments",
   async ({ page }) => {
     const base = `${apiUrl}/api/backlog-comments/example/connections/fixture`;
     await page.route(`${base}/searchItemPeople`, async (route) => {
       const { query } = route.request().postDataJSON() as { query: string };
-      const people = [
-        { id: "ana", displayName: "Ana Silva" },
-        { id: "andrew", displayName: "Andrew Lee" },
-      ].filter((person) =>
-        person.displayName.toLowerCase().startsWith(query.toLowerCase()),
-      );
-      await route.fulfill({ json: { people }, headers: cors });
+      await route.fulfill({
+        json: { people: findPeople(query) },
+        headers: cors,
+      });
     });
     await page.route(`${base}/postItemComment`, async (route) => {
       const request = route.request().postDataJSON() as { body: string };
@@ -435,13 +444,7 @@ Given("its plugin finds people, slowly", async ({ page }) => {
   await page.route(peopleSearchUrl, async (route) => {
     const { query } = route.request().postDataJSON() as { query: string };
     await new Promise((resolve) => setTimeout(resolve, 1_000));
-    const people = [
-      { id: "ana", displayName: "Ana Silva" },
-      { id: "andrew", displayName: "Andrew Lee" },
-    ].filter((person) =>
-      person.displayName.toLowerCase().startsWith(query.toLowerCase()),
-    );
-    await route.fulfill({ json: { people }, headers: cors });
+    await route.fulfill({ json: { people: findPeople(query) }, headers: cors });
   });
 });
 
@@ -496,6 +499,38 @@ When("I type {string} in a new comment", async ({ page }, text: string) => {
 
 When("I keep typing {string}", async ({ page }, text: string) => {
   await page.keyboard.type(text);
+});
+
+When("I pick Ana from the suggestions", async ({ page }) => {
+  await page.getByRole("option", { name: "Ana Silva" }).click();
+});
+
+Then("the new comment mentions Ana as a chip", async ({ page }) => {
+  const editor = commentsRegion(page).getByRole("textbox", {
+    name: "New comment",
+  });
+  await expect(editor.locator(".cm-mention")).toHaveText("@Ana Silva");
+});
+
+When(
+  "I keep typing {string} until the search for {string} answers",
+  async ({ page }, text: string, query: string) => {
+    const answered = page.waitForResponse(
+      (response) =>
+        response.url() === peopleSearchUrl &&
+        (response.request().postDataJSON() as { query: string }).query ===
+          query,
+    );
+    await page.keyboard.type(text);
+    await answered;
+  },
+);
+
+Then("nothing is suggested and no status shows", async ({ page }) => {
+  // Give the answer time to reach the editor.
+  await page.waitForTimeout(200);
+  await expect(page.getByRole("option")).toHaveCount(0);
+  await expect(mentionStatus(page)).toHaveCount(0);
 });
 
 const mentionStatus = (page: Page) =>

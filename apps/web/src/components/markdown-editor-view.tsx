@@ -97,8 +97,14 @@ const mentionChips = ViewPlugin.fromClass(
 
 const escapeName = (name: string) => name.replace(/[[\]\\]/g, "");
 
-/** The `@word` being typed, which the mention suggestions answer. */
-const mentionWord = /@[^\s@[\]()]*$/;
+/**
+ * The `@name` being typed, which the mention suggestions answer: up to three
+ * words with one space between them, so a last name can follow the first.
+ * Two spaces or a fourth word end it.
+ */
+const mentionName = String.raw`@(?:[^\s@[\]()]+(?: [^\s@[\]()]+){0,2} ?)?`;
+const mentionWord = new RegExp(`${mentionName}$`);
+const wholeMentionWord = new RegExp(`^${mentionName}$`);
 
 interface MentionStatus {
   /** Where the `@` is. */
@@ -124,7 +130,7 @@ const mentionStatus = StateField.define<MentionStatus | null>({
     if (!transaction.selection) return status;
     const head = transaction.state.selection.main.head;
     const typed = transaction.state.sliceDoc(status.from, head);
-    return /^@[^\s@[\]()]*$/.test(typed) ? status : null;
+    return wholeMentionWord.test(typed) ? status : null;
   },
   provide: (field) => [
     showTooltip.from(field, (status) =>
@@ -147,7 +153,7 @@ const mentionStatus = StateField.define<MentionStatus | null>({
   ],
 });
 
-/** Suggestions for the word after `@`, at the start of a word. */
+/** Suggestions for the name after `@`, at the start of a word. */
 function mentionSource(
   search: () => (query: string) => Promise<BacklogPerson[]>,
 ) {
@@ -182,7 +188,7 @@ function mentionSource(
         effects: setMentionStatus.of(text ? { from: word.from, text } : null),
       });
     };
-    const query = word.text.slice(1);
+    const query = word.text.slice(1).trim();
     if (!query) {
       // Out of the completion's own update.
       await Promise.resolve();
@@ -197,7 +203,9 @@ function mentionSource(
     const people = await search()(query).catch(() => []);
     if (!stillTyped()) return outdated;
     if (people.length === 0) {
-      showStatus("No one found");
+      // After a space, no one found likely means the user writes on, so the
+      // suggestions just close.
+      if (!/\s/.test(word.text)) showStatus("No one found");
       return null;
     }
     // A retry that finds people replaces an earlier "No one found".
