@@ -60,9 +60,10 @@ function FoldingCard({
   children: ReactNode;
 }) {
   const contentId = useId();
-  // The state shown when the pointer went down on the title. Pressing it can
-  // blur an empty name field, which folds the card before the click lands;
-  // the click must still fold it, not reopen it.
+  // The state shown when the primary button went down on the title. Pressing
+  // it can blur an empty name field, which folds the card before the click
+  // lands; the click must still fold it, not reopen it. Keyboard clicks act
+  // on the current state.
   const openAtPress = useRef<boolean | null>(null);
   return (
     <section className="backlog-item-card" aria-label={label}>
@@ -73,14 +74,15 @@ function FoldingCard({
             aria-expanded={open}
             aria-controls={contentId}
             className="backlog-item-card-toggle"
-            onPointerDown={() => {
-              openAtPress.current = open;
+            onPointerDown={(event) => {
+              openAtPress.current = event.button === 0 ? open : null;
             }}
             onPointerLeave={() => {
               openAtPress.current = null;
             }}
-            onClick={() => {
-              const wasOpen = openAtPress.current ?? open;
+            onClick={(event) => {
+              const wasOpen =
+                event.detail > 0 ? (openAtPress.current ?? open) : open;
               openAtPress.current = null;
               onOpenChange(!wasOpen);
             }}

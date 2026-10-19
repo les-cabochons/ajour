@@ -582,6 +582,11 @@ Feature: Backlog list and board views
     And I press Add subitem and then the Subitems title
     Then the Subitems card stays closed, even after a reload
 
+  Scenario: Open the Subitems card with Enter after a right-click on its title
+    When I open the Backlog parent page
+    And I press Add subitem, right-click the Subitems title and press Enter
+    Then the Subitems card is open
+
   Scenario: Keep a synced item when it goes missing from sync
     Given the Backlog parent is synced
     When I open the Backlog parent page

@@ -2295,6 +2295,25 @@ Then(
     );
   },
 );
+When(
+  "I press Add subitem, right-click the Subitems title and press Enter",
+  async ({ page }) => {
+    await page
+      .getByRole("button", { name: "Add subitem", exact: true })
+      .click();
+    const { toggle } = sideCard(page, "Subitems");
+    // The right press blurs the empty name field, which folds the card.
+    await toggle.click({ button: "right" });
+    await expect(toggle).toHaveAttribute("aria-expanded", "false");
+    await toggle.press("Enter");
+  },
+);
+Then("the Subitems card is open", async ({ page }) => {
+  await expect(sideCard(page, "Subitems").toggle).toHaveAttribute(
+    "aria-expanded",
+    "true",
+  );
+});
 When("I open the Subitems card", async ({ page }) => {
   await sideCard(page, "Subitems").toggle.click();
 });
