@@ -65,6 +65,7 @@ function state(
   return {
     timesheetEntries,
     commitPromptedWeeks: [],
+    lockedWeeks: [],
     userPreferences: { weeklyCapacityTargets: targets },
     ...overrides,
   };
@@ -85,15 +86,6 @@ describe("findWeekReachingTarget", () => {
 
     expect(reach(before, after)).toEqual({
       weekOf: "2026-10-12",
-      weekDates: [
-        "2026-10-12",
-        "2026-10-13",
-        "2026-10-14",
-        "2026-10-15",
-        "2026-10-16",
-        "2026-10-17",
-        "2026-10-18",
-      ],
       totalMs: 37.5 * hour,
       targetMs: 37.5 * hour,
     });
@@ -129,6 +121,16 @@ describe("findWeekReachingTarget", () => {
     const before = state(fourDays, { commitPromptedWeeks: ["2026-10-12"] });
     const after = state([...fourDays, entry("fri", "2026-10-16", 7.5 * hour)], {
       commitPromptedWeeks: ["2026-10-12"],
+    });
+
+    expect(reach(before, after)).toBeNull();
+  });
+
+  it("ignores a submitted week", () => {
+    const lockedWeeks = [{ weekOf: "2026-10-12", lockedAt: 1 }];
+    const before = state(fourDays, { lockedWeeks });
+    const after = state([...fourDays, entry("fri", "2026-10-16", 7.5 * hour)], {
+      lockedWeeks,
     });
 
     expect(reach(before, after)).toBeNull();

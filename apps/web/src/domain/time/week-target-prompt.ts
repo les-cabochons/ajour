@@ -1,5 +1,10 @@
 import type { LocalAppState, UserPreferences } from "@/domain/local-state";
-import { getLocalWeekDates } from "@/domain/time/local-date";
+import {
+  getWeekDates,
+  getWeekOf,
+  isValidLocalDate,
+} from "@/domain/time/local-date";
+import { isDateLocked } from "@/domain/time/locked-weeks";
 import { summarizeWeek } from "@/domain/time/timesheet-submission";
 
 /**
@@ -7,16 +12,14 @@ import { summarizeWeek } from "@/domain/time/timesheet-submission";
  * saved total from below its capacity target to the target or above. Live
  * running time is not saved, so it never counts; stopping the entry saves it,
  * and that write can. Ajour asks once per week, whatever the answer, and
- * remembers the week in `commitPromptedWeeks`.
- *
- * Locked weeks do not exist yet (commit week slice 2). When they do, a locked
- * week must not ask either.
+ * remembers the week in `commitPromptedWeeks`. A submitted week never asks:
+ * its entries cannot change, and there is nothing left to commit.
  */
 
 /** What the rule reads. The full `LocalAppState` fits. */
 export type WeekTargetState = Pick<
   LocalAppState,
-  "timesheetEntries" | "commitPromptedWeeks"
+  "timesheetEntries" | "commitPromptedWeeks" | "lockedWeeks"
 > & {
   userPreferences: Pick<UserPreferences, "weeklyCapacityTargets">;
 };
@@ -25,8 +28,6 @@ export type WeekTargetState = Pick<
 export interface WeekTargetReached {
   /** The week's Monday, "YYYY-MM-DD". */
   weekOf: string;
-  /** Monday to Sunday. */
-  weekDates: string[];
   totalMs: number;
   targetMs: number;
 }
@@ -44,8 +45,7 @@ export function listTouchedWeeks(
   if (before.timesheetEntries === after.timesheetEntries) return [];
   const weeks = new Set<string>();
   const touch = (localDate: string) => {
-    const monday = getLocalWeekDates(localDate)[0];
-    if (monday) weeks.add(monday);
+    if (isValidLocalDate(localDate)) weeks.add(getWeekOf(localDate));
   };
   const previous = new Map(
     before.timesheetEntries.map((entry) => [entry._id, entry]),
@@ -70,8 +70,9 @@ export function listTouchedWeeks(
 
 /**
  * The first of `touchedWeeks` whose saved total went from below its target to
- * the target or above, or null. The week needs a target above 0 and must not
- * have asked before. Both totals use the targets after the write.
+ * the target or above, or null. The week needs a target above 0, must not have
+ * asked before, and must not be submitted after the write. Both totals use the
+ * targets after the write.
  */
 export function findWeekReachingTarget({
   before,
@@ -97,14 +98,14 @@ export function findWeekReachingTarget({
 
   for (const weekOf of [...touchedWeeks].sort()) {
     if (prompted.has(weekOf)) continue;
-    const weekDates = getLocalWeekDates(weekOf);
-    if (weekDates[0] !== weekOf) continue;
+    if (!isValidLocalDate(weekOf) || getWeekOf(weekOf) !== weekOf) continue;
+    if (isDateLocked(after, weekOf)) continue;
+    const weekDates = getWeekDates(weekOf);
     const now = summarize(after, weekDates);
     if (now.targetMs <= 0 || now.isUnderTarget) continue;
     if (!summarize(before, weekDates).isUnderTarget) continue;
     return {
       weekOf,
-      weekDates,
       totalMs: now.totalMs,
       targetMs: now.targetMs,
     };

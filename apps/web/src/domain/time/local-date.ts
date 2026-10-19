@@ -18,31 +18,6 @@ export function isValidLocalDate(value: string) {
   );
 }
 
-function formatUtcDate(date: Date) {
-  return date.toISOString().slice(0, 10);
-}
-
-/**
- * The Monday-to-Sunday week that holds `localDate`, as seven "YYYY-MM-DD"
- * days. Empty for a value that is not a real day. Calendar math in UTC, so the
- * result does not depend on the time zone.
- */
-export function getLocalWeekDates(localDate: string): string[] {
-  if (!isValidLocalDate(localDate)) return [];
-  const [year, month, day] = localDate.split("-").map(Number) as [
-    number,
-    number,
-    number,
-  ];
-  const monday = new Date(Date.UTC(year, month - 1, day));
-  monday.setUTCDate(monday.getUTCDate() - ((monday.getUTCDay() + 6) % 7));
-  return Array.from({ length: 7 }, (_, index) => {
-    const date = new Date(monday);
-    date.setUTCDate(monday.getUTCDate() + index);
-    return formatUtcDate(date);
-  });
-}
-
 /**
  * The Monday of the week that holds `localDate`, `YYYY-MM-DD`. Weeks run
  * Monday to Sunday. The arithmetic is in UTC on the date alone, so the time

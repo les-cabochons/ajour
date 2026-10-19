@@ -84,7 +84,7 @@ Feature: Commit the week
     Given I have a committed week of entries
     And my weekly target is 5 hours, all on Monday
     When I duplicate Tuesday's "Spec review" entry
-    Then Ajour asks "Week complete": "You logged 5:00 of 5:00 for the week of Oct 5 to 11. Commit and lock it now?"
+    Then Ajour asks "Week complete": "You logged 5:00 of 5:00 for the week of Oct 5. Commit and submit it now?"
     When I answer "Commit"
     Then the Commit page for the week of 2026-10-05 is open
     When I delete Monday's "Login form" entry
