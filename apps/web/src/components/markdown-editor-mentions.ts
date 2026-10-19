@@ -35,11 +35,6 @@ interface MentionAtCursor {
   from: number;
   /** The `@name` up to the cursor. */
   word: string;
-  /**
-   * Where the name ends: past the cursor when it sits inside a word of the
-   * name, as when Ctrl+Space asks there.
-   */
-  to: number;
   /** The name, as the search gets it. */
   query: string;
 }
@@ -51,15 +46,9 @@ function mentionAtCursor(state: EditorState): MentionAtCursor | null {
   const start = Math.max(line.from, main.head - 250);
   const match = mentionWord.exec(state.sliceDoc(start, main.head));
   if (!match) return null;
-  // The cursor inside a word of the name: the name goes on past it. After a
-  // space, what follows is the user's text.
-  const rest = /\s$/.test(match[0])
-    ? ""
-    : /^[^\s@[\]()]*/.exec(state.sliceDoc(main.head, line.to))![0];
   return {
     from: start + match.index,
     word: match[0],
-    to: main.head + rest.length,
     query: match[0].slice(1).trim().replace(/\s+/g, " "),
   };
 }
@@ -67,6 +56,8 @@ function mentionAtCursor(state: EditorState): MentionAtCursor | null {
 interface Picker extends MentionAtCursor {
   /** Each opening, so an answer knows which picker asked. */
   id: number;
+  /** Where the cursor was when the name was last asked for. */
+  head: number;
   /** The last answer, kept in view while the next search runs. */
   people: BacklogPerson[];
   /** The query `people` answers; null before the first answer. */
@@ -101,6 +92,49 @@ const closePicker = StateEffect.define<null>();
  */
 const reopenPicker = StateEffect.define<null>();
 
+/** A name's characters, as the mention pattern reads them. */
+const nameChars = /^[^\s@[\]()]*/;
+const nameCharsBefore = /[^\s@[\]()]*$/;
+
+/** Whether `head` is in the word the picker's name was asked from. */
+function withinWord(state: EditorState, picker: Picker, head: number) {
+  if (/\s$/.test(picker.word)) return false;
+  const line = state.doc.lineAt(picker.head);
+  const start =
+    picker.head -
+    nameCharsBefore.exec(state.sliceDoc(line.from, picker.head))![0].length;
+  const end =
+    picker.head +
+    nameChars.exec(state.sliceDoc(picker.head, line.to))![0].length;
+  return head >= start && head <= end;
+}
+
+const comparable = (text: string) =>
+  text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+
+/**
+ * Where picking a person ends the replaced name. It takes the rest of the
+ * word the cursor sits in, then each next word while the name still reads
+ * as the start of the person's, so `@A|na Silva` becomes Ana Silva's mention
+ * while `@Ana| please` keeps "please".
+ */
+function nameEnd(state: EditorState, from: number, person: BacklogPerson) {
+  const head = state.selection.main.head;
+  const line = state.doc.lineAt(head);
+  let end = /\s$/.test(state.sliceDoc(from, head))
+    ? head
+    : head + nameChars.exec(state.sliceDoc(head, line.to))![0].length;
+  const name = comparable(person.displayName || person.id);
+  for (;;) {
+    const next = /^ [^\s@[\]()]+/.exec(state.sliceDoc(end, line.to));
+    if (!next) break;
+    const words = comparable(state.sliceDoc(from + 1, end + next[0].length));
+    if (!name.startsWith(words)) break;
+    end += next[0].length;
+  }
+  return end;
+}
+
 function searching(picker: Picker) {
   return picker.answered !== picker.query;
 }
@@ -128,7 +162,7 @@ const mentions = StateField.define<Mentions>({
       picker = {
         ...picker,
         from,
-        to: transaction.changes.mapPos(picker.to, 1),
+        head: transaction.changes.mapPos(picker.head, 1),
         // The picker follows its `@`, as when its line moves.
         ...(from === picker.from
           ? {}
@@ -179,20 +213,18 @@ const mentions = StateField.define<Mentions>({
       return { picker: null, dismissed, nextId };
     if (picker && picker.from === at.from) {
       if (!transaction.docChanged && !reopen) {
-        // Moving the cursor back within the name keeps its answer; moving on
-        // past it closes it.
-        return picker.word.startsWith(at.word)
+        // Moving the cursor back within the name, or within the word it was
+        // asked from, keeps its answer; moving on past them closes it.
+        return picker.word.startsWith(at.word) ||
+          withinWord(transaction.state, picker, at.from + at.word.length)
           ? { picker, dismissed, nextId }
           : { picker: null, dismissed, nextId };
       }
-      const head = transaction.state.selection.main.head;
       return {
         picker: {
           ...picker,
           ...at,
-          // The open picker knows where the whole name ends, past a last
-          // name the cursor sits before.
-          to: Math.max(reopen ? at.to : head, picker.to),
+          head: transaction.state.selection.main.head,
           ...(reopen ? { id: nextId, answered: null } : {}),
         },
         dismissed,
@@ -206,8 +238,7 @@ const mentions = StateField.define<Mentions>({
     return {
       picker: {
         ...at,
-        // Typing ends the name at the cursor, even against a word after it.
-        ...(reopen ? {} : { to: transaction.state.selection.main.head }),
+        head: transaction.state.selection.main.head,
         id: nextId,
         people: [],
         answered: null,
@@ -261,7 +292,11 @@ function pickPerson(view: EditorView, index: number) {
   if (!picker || !person) return false;
   const insert = `[@${escapeName(person.displayName || person.id)}](mention:${person.id}) `;
   view.dispatch({
-    changes: { from: picker.from, to: picker.to, insert },
+    changes: {
+      from: picker.from,
+      to: nameEnd(view.state, picker.from, person),
+      insert,
+    },
     selection: { anchor: picker.from + insert.length },
     userEvent: "input.complete",
   });

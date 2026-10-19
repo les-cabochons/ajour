@@ -714,6 +714,31 @@ Feature: Backlog list and board views
     And I pick Ana from the suggestions
     Then the new comment reads only the mention "@Ana Silva"
 
+  Scenario: Moving through the name the picker was asked from keeps it open
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people and records posted comments
+    When I open the Backlog parent page
+    And I type "@Ana Silva" in a new comment
+    Then Ana is suggested once the search is done
+    When I move back 8 characters and ask for suggestions
+    Then Ana is suggested once the search is done
+    When I move forward 1 characters
+    And I pick Ana from the suggestions
+    Then the new comment reads only the mention "@Ana Silva"
+
+  Scenario: Words after two spaces stay when picking
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people and records posted comments
+    When I open the Backlog parent page
+    And I type "@Ana please" in a new comment
+    And I move back 7 characters and ask for suggestions
+    Then Ana is suggested once the search is done
+    When I keep typing " "
+    And I pick Ana from the suggestions
+    Then the new comment reads "@Ana Silva  please"
+
   Scenario: Picking before other words keeps them
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit
