@@ -53,6 +53,8 @@ Semantic variables, light and dark under `:root` and `:root.dark`:
 
 App-level aliases: `--surface-lowest`, `--surface-low` (the sidebar), `--surface`, `--surface-high`, `--surface-highest`, `--text`, `--text-secondary`, `--text-tertiary`, `--hover-bg`, `--highlight-bg`, `--field-bg`, `--field-border`, `--success-bg`, `--warning-bg`, `--danger-muted`, `--indigo-muted`.
 
+The comment header's reaction and actions buttons use `foreground/10` for hover and `foreground/20` while pressed or while their menu is open. These tints apply in both themes.
+
 The chrome is solid: `--nav-bg` and `--app-sidebar-bg` are opaque, with no blur.
 
 ## Shadows
