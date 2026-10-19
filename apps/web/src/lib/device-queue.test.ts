@@ -1,7 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDeviceQueue } from "@/lib/device-queue";
 
-const isText = (value: unknown): value is string => typeof value === "string";
+const isText = (value: unknown) =>
+  typeof value === "string" ? value : undefined;
 
 describe("device queues", () => {
   afterEach(() => vi.unstubAllGlobals());

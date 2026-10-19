@@ -25,21 +25,31 @@ export interface PendingSettleComment {
   ready?: boolean;
 }
 
-const isPendingComment = (value: unknown): value is PendingSettleComment => {
-  if (!value || typeof value !== "object") return false;
+/**
+ * A stored comment. One queued before comments had ids, by a session that
+ * quit during its Undo window, gets an id and is ready, as at any launch.
+ */
+function toPendingComment(value: unknown): PendingSettleComment | undefined {
+  if (!value || typeof value !== "object") return undefined;
   const entry = value as Record<string, unknown>;
-  return (
-    ["id", "itemId", "pluginId", "connectionId", "sourceId", "body"].every(
+  if (
+    !["itemId", "pluginId", "connectionId", "sourceId", "body"].every(
       (key) => typeof entry[key] === "string",
-    ) &&
-    typeof entry.at === "number" &&
-    (entry.ready === undefined || typeof entry.ready === "boolean")
-  );
-};
+    ) ||
+    typeof entry.at !== "number" ||
+    (entry.ready !== undefined && typeof entry.ready !== "boolean")
+  ) {
+    return undefined;
+  }
+  const comment = entry as unknown as PendingSettleComment;
+  return typeof entry.id === "string"
+    ? comment
+    : { ...comment, id: `${comment.itemId}:${comment.at}`, ready: true };
+}
 
 const queue = createDeviceQueue(
   PENDING_SETTLE_COMMENTS_STORAGE_KEY,
-  isPendingComment,
+  toPendingComment,
 );
 
 /** Broken entries are dropped. */

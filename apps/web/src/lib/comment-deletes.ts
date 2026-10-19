@@ -30,9 +30,8 @@ const isPendingDelete = (value: unknown): value is PendingCommentDelete => {
   );
 };
 
-const queue = createDeviceQueue(
-  PENDING_COMMENT_DELETES_STORAGE_KEY,
-  isPendingDelete,
+const queue = createDeviceQueue(PENDING_COMMENT_DELETES_STORAGE_KEY, (value) =>
+  isPendingDelete(value) ? value : undefined,
 );
 const read = queue.read;
 const write = queue.write;
