@@ -365,7 +365,7 @@ export function SettingsGeneralPage() {
           <SettingRow
             label="Under-target submit warning"
             labelFor="warn-under-capacity"
-            description="Ask for confirmation when submitted time is below the week target."
+            description="Ask before Submit week locks a week that is behind its targets."
           >
             <Switch
               id="warn-under-capacity"
@@ -378,9 +378,9 @@ export function SettingsGeneralPage() {
             />
           </SettingRow>
           <SettingRow
-            label="Agent pace tolerance"
+            label="Pace tolerance"
             labelFor="pace-tolerance"
-            description="How far, in percent, the week may run ahead of or behind its targets before an agent asks you. Going over the week's target always asks."
+            description="How far, in percent, the week may run ahead of or behind its targets before Submit week or an agent asks you. Going over the week's target always asks."
           >
             <Input
               id="pace-tolerance"

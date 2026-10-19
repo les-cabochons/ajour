@@ -45,8 +45,15 @@ export function showUndoToast({
       onUndo: () => {
         if (undone) return;
         undone = true;
-        // Undo before closing: closing runs `onClose`, which may drop the undo.
-        onUndo();
+        try {
+          // Undo before closing: closing runs `onClose`, which may drop the undo.
+          onUndo();
+        } catch (error) {
+          // A refused Undo, such as a stale window's, keeps the toast and lets
+          // the user press Undo again.
+          undone = false;
+          throw error;
+        }
         toastManager.close(id);
       },
     },
@@ -183,8 +190,9 @@ function ToastList() {
       <ToastPrimitive.Content className="flex min-w-0 flex-1 items-center gap-3">
         <div className="flex min-w-0 flex-1 flex-col gap-0.5">
           <ToastPrimitive.Title
+            // Titles wrap, so a refusal such as the lock message reads whole.
             className={cn(
-              "truncate font-medium",
+              "font-medium [overflow-wrap:anywhere]",
               toast.type === "error" && "text-destructive",
             )}
           />

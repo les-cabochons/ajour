@@ -1,18 +1,19 @@
 import { useEffect, useState } from "react";
 import { fillTemplate } from "@ajour/shared/agent-task-templates";
+import type { AgentTaskPlacement } from "@ajour/shared";
 import type { AgentTaskStatus } from "@ajour/shared/agent-runs";
 import { RiExternalLinkLine as ExternalLink } from "@remixicon/react";
 import { Button } from "@/components/ui/button";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { DisabledReason } from "@/components/disabled-reason";
 import {
   openAgentPanel,
   useAgentBridgeState,
 } from "@/features/agents/agent-bridge-state";
-import { refreshAgentRunner, useAgentRunner } from "@/lib/agent-runner";
+import {
+  refreshAgentRunner,
+  useAgentRunner,
+  type AgentRunnerState,
+} from "@/lib/agent-runner";
 import { startAgentRun } from "@/lib/app-api";
 
 /** The task's week link for `weekOf`, or undefined when it is not https. */
@@ -34,13 +35,52 @@ export function weekLinkFor(task: AgentTaskStatus, weekOf: string) {
   }
 }
 
+/** Whether an active plugin has a task for a placement, or `loading` until Ajour knows. */
+export type AgentTaskPresence = "loading" | "present" | "absent";
+
 /**
- * The Commit page's plugin agent tasks for the week on screen: one button
- * each, disabled with the reason while the task cannot run or a run is
- * going or a start is in flight. The week links sit in the week summary,
- * see `AgentTaskWeekLinks`.
+ * Whether an active plugin has a task for `placement`, such as one that
+ * replaces Submit week. `loading` while the overview loads on a cold start.
+ * Without the local API (the web build) or with a failed overview there is
+ * no task, so the page falls back to its own button: `AgentTaskButtons`
+ * shows nothing then either.
  */
-export function AgentTaskButtons({ weekOf }: { weekOf: string }) {
+export function getAgentTaskPresence(
+  state: AgentRunnerState,
+  placement: AgentTaskPlacement,
+): AgentTaskPresence {
+  if (state.kind === "loading") return "loading";
+  return state.kind === "ready" &&
+    state.overview.tasks.some((task) => task.placement === placement)
+    ? "present"
+    : "absent";
+}
+
+/** `getAgentTaskPresence` for the current agent runner overview. */
+export function useAgentTaskPresence(placement: AgentTaskPlacement) {
+  return getAgentTaskPresence(useAgentRunner(), placement);
+}
+
+/**
+ * The Commit page's plugin agent tasks for one placement and the week on
+ * screen: one button each, disabled with the reason while the task cannot
+ * run, a run is going, a start is in flight, or the week is not ready
+ * (`disabledReason`, such as "Commit your changes first"). With `primary`,
+ * an enabled button is the primary one, as Submit week is once nothing is
+ * left to commit. The week links sit in the week summary, see
+ * `AgentTaskWeekLinks`.
+ */
+export function AgentTaskButtons({
+  weekOf,
+  placement,
+  disabledReason,
+  primary = false,
+}: {
+  weekOf: string;
+  placement: AgentTaskPlacement;
+  disabledReason?: string;
+  primary?: boolean;
+}) {
   const state = useAgentRunner();
   const { snapshot } = useAgentBridgeState();
   const [error, setError] = useState<string | null>(null);
@@ -55,7 +95,7 @@ export function AgentTaskButtons({ weekOf }: { weekOf: string }) {
 
   if (state.kind !== "ready") return null;
   const tasks = state.overview.tasks.filter(
-    (task) => task.placement === "commit-week",
+    (task) => task.placement === placement,
   );
   if (tasks.length === 0) return null;
   // The API's current run covers a CLI that outlives its ended session.
@@ -91,10 +131,10 @@ export function AgentTaskButtons({ weekOf }: { weekOf: string }) {
       {tasks.map((task) => {
         const reason = running
           ? "An agent task is already running."
-          : task.blockers[0];
+          : (task.blockers[0] ?? disabledReason);
         const button = (
           <Button
-            variant="outline"
+            variant={primary && !reason ? "default" : "outline"}
             disabled={Boolean(reason) || starting}
             onClick={() => void start(task)}
           >
@@ -103,25 +143,9 @@ export function AgentTaskButtons({ weekOf }: { weekOf: string }) {
         );
         return (
           <div key={`${task.pluginId}/${task.taskId}`} className="contents">
-            {reason ? (
-              // A disabled button gets no pointer events, so the wrapper
-              // carries the tooltip.
-              <Tooltip>
-                <TooltipTrigger
-                  render={
-                    <span
-                      tabIndex={0}
-                      aria-label={`${task.label}: ${reason}`}
-                    />
-                  }
-                >
-                  {button}
-                </TooltipTrigger>
-                <TooltipContent>{reason}</TooltipContent>
-              </Tooltip>
-            ) : (
-              button
-            )}
+            <DisabledReason label={task.label} reason={reason}>
+              {button}
+            </DisabledReason>
           </div>
         );
       })}
@@ -132,15 +156,18 @@ export function AgentTaskButtons({ weekOf }: { weekOf: string }) {
 
 /**
  * Muted links to the week in each task's external tool, for the Commit
- * page's week summary. A task whose link does not fill to https shows none.
+ * page's week summary. Tasks that share a link show it once. A task whose link does not fill to https shows none.
  */
 export function AgentTaskWeekLinks({ weekOf }: { weekOf: string }) {
   const state = useAgentRunner();
   if (state.kind !== "ready") return null;
+  const seen = new Set<string>();
   const links = state.overview.tasks.flatMap((task) => {
-    const url =
-      task.placement === "commit-week" ? weekLinkFor(task, weekOf) : undefined;
-    return url ? [{ key: `${task.pluginId}/${task.taskId}`, url, task }] : [];
+    const url = weekLinkFor(task, weekOf);
+    // A plugin's tasks often share one link.
+    if (!url || seen.has(url)) return [];
+    seen.add(url);
+    return [{ key: `${task.pluginId}/${task.taskId}`, url, task }];
   });
   if (links.length === 0) return null;
   return (

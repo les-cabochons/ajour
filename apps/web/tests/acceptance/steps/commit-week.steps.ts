@@ -123,7 +123,8 @@ Then("the Commit page says everything is committed", async ({ page }) => {
 When(
   "I change Monday's {string} entry to {string} hours",
   async ({ page }, note: string, hours: string) => {
-    await page.goto("/time/2026-10-05");
+    // The Time page opens the last view shown, so ask for Day.
+    await page.goto("/time/2026-10-05?view=day");
     const row = page.locator(".time-entry-row").filter({ hasText: note });
     await row.dblclick();
     await page.getByRole("textbox", { name: "Hours", exact: true }).fill(hours);

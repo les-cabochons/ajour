@@ -5,19 +5,38 @@ import {
   RiCheckLine as Check,
   RiErrorWarningLine as Warning,
   RiFileCopyLine as Copy,
+  RiLockLine as Lock,
+  RiLockUnlockLine as Unlock,
 } from "@remixicon/react";
 import { useNavigate } from "@tanstack/react-router";
+import { DisabledReason } from "@/components/disabled-reason";
 import { PageHeader } from "@/components/page-header";
 import { SectionHeading } from "@/components/section-heading";
 import { TooltipButton } from "@/components/tooltip-button";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
 import { Empty, EmptyHeader, EmptyTitle } from "@/components/ui/empty";
+import { showToast } from "@/components/ui/toast";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Value } from "@/components/ui/value";
 import {
   formatClockDuration,
   formatDecimalHours,
 } from "@/domain/time/duration";
+import {
+  getLockedWeek,
+  getSubmitWeekRefusal,
+  type SubmitWeekRefusal,
+} from "@/domain/time/locked-weeks";
 import { listWeekChanges } from "@/domain/time/timesheet-commit";
 import {
   describeLineNames,
@@ -30,17 +49,25 @@ import {
   type SubmitLine,
   type SubmitWarning,
 } from "@/domain/time/timesheet-submission";
+import {
+  computeWeekPace,
+  getPaceTolerancePercent,
+  needsPaceConfirmation,
+  type WeekPace,
+} from "@/domain/time/week-pace";
 import type { ProjectPropertyPlugin } from "@/domain/projects/plugin-properties";
 import type { LocalProjectIcon } from "@/domain/projects/project-icon";
 import {
   AgentTaskButtons,
   AgentTaskWeekLinks,
+  useAgentTaskPresence,
 } from "@/features/agents/agent-task-buttons";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import {
   CommitChangeList,
   formatShortDay,
 } from "@/features/time/commit-changes";
+import { WeekLockChip } from "@/features/time/week-lock";
 import { copyTextToClipboard } from "@/lib/clipboard";
 import {
   resetCheckedChanges,
@@ -51,7 +78,7 @@ import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 import { listProjectPropertyPlugins } from "@/lib/plugin-project-properties";
 import { ProjectIcon } from "@/lib/project-icons";
-import { cn, getIsoWeekDates } from "@/lib/utils";
+import { cn, getIsoWeekDates, todayIsoDate } from "@/lib/utils";
 
 const GROUP_BY_OPTIONS: { value: SubmitGroupBy; label: string }[] = [
   { value: "day-task", label: "Day and task" },
@@ -76,6 +103,34 @@ function formatMonthDay(localDate: string) {
     month: "short",
     day: "numeric",
   }).format(dateAtNoon(localDate));
+}
+
+const HOUR = 3_600_000;
+
+/** Decimal hours as clock time, such as 4:00. */
+function formatHours(hours: number) {
+  return formatClockDuration(hours * HOUR);
+}
+
+/** The day a week was submitted, such as "Oct 16". */
+function formatLockedDay(lockedAt: number) {
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+  }).format(new Date(lockedAt));
+}
+
+/**
+ * Why Submit week, or a plugin's submit task, is disabled: the short copy for
+ * each refusal. A submitted week shows Reopen week instead.
+ */
+export function getSubmitButtonReason(
+  refusal: SubmitWeekRefusal | undefined,
+): string | undefined {
+  if (refusal?.kind === "uncommitted-changes")
+    return "Commit your changes first";
+  if (refusal?.kind === "running-entry") return "Stop the running entry first";
+  return undefined;
 }
 
 function countLabel(count: number, singular: string, plural: string) {
@@ -205,7 +260,9 @@ function SubmitLineRow({
  * commit, each with a checkbox, under a heading that collapses them, then the
  * week's lines to copy into the external timesheet. The Names switch picks
  * Ajour's or a plugin's project names for the lines, and is saved in the user
- * preferences. Mark as committed saves the checked changes.
+ * preferences. Mark as committed saves the checked changes. Submit week checks
+ * the pace, then locks the week; a submitted week shows its lock and Reopen
+ * week instead.
  */
 export function CommitPage({
   date,
@@ -292,6 +349,20 @@ export function CommitPage({
       }),
     [state.userPreferences.weeklyCapacityTargets, weekDates, weekEntries],
   );
+  const submitTasks = useAgentTaskPresence("submit-week");
+  const lockedWeek = getLockedWeek(state, weekOf);
+  const submitReason = lockedWeek
+    ? undefined
+    : getSubmitButtonReason(getSubmitWeekRefusal(state, weekOf));
+  // Until the agent tasks load, a plugin's submit task may replace Submit
+  // week, so the button waits instead of letting the week lock by hand.
+  const manualSubmitReason =
+    submitReason ??
+    (submitTasks === "loading" ? "Loading agent tasks" : undefined);
+  // The pace the confirmation shows. It stays set after the dialog closes, so
+  // the closing dialog keeps its title; `paceCheckOpen` drives the dialog.
+  const [paceCheck, setPaceCheck] = useState<WeekPace | null>(null);
+  const [paceCheckOpen, setPaceCheckOpen] = useState(false);
   const progress =
     summary.targetMs > 0
       ? Math.min(100, (summary.totalMs / summary.targetMs) * 100)
@@ -302,6 +373,45 @@ export function CommitPage({
     offerUndo(localStore.markTimesheetEntriesCommitted(checkedIds), {
       title: `${count} ${count === 1 ? "change" : "changes"} committed`,
       subject: "entry",
+    });
+  }
+
+  function lockWeek() {
+    setPaceCheckOpen(false);
+    const { undoToken, result } = localStore.submitWeek(weekOf);
+    if (!result.ok) {
+      showToast(result.message);
+      return;
+    }
+    offerUndo(undoToken, { title: "Week submitted", subject: "week" });
+  }
+
+  /** Submit week: asks first when the week is off pace, then locks it. */
+  function requestSubmit() {
+    const pace = computeWeekPace({
+      weekDates,
+      today: todayIsoDate(),
+      capacityTargets: state.userPreferences.weeklyCapacityTargets,
+      loggedMs: summary.totalMs,
+      tolerancePercent: getPaceTolerancePercent(state.userPreferences),
+    });
+    if (
+      needsPaceConfirmation(
+        pace.status,
+        state.userPreferences.warnWhenSubmittingUnderCapacity,
+      )
+    ) {
+      setPaceCheck(pace);
+      setPaceCheckOpen(true);
+      return;
+    }
+    lockWeek();
+  }
+
+  function reopen() {
+    offerUndo(localStore.reopenWeek(weekOf), {
+      title: "Week reopened",
+      subject: "week",
     });
   }
 
@@ -366,6 +476,13 @@ export function CommitPage({
             ))}
           </ul>
         ) : null}
+        {lockedWeek ? (
+          <p className="flex items-center gap-2 text-sm text-muted-foreground">
+            <WeekLockChip />
+            Submitted {formatLockedDay(lockedWeek.lockedAt)}. Its entries are
+            read-only until you reopen the week.
+          </p>
+        ) : null}
         <AgentTaskWeekLinks weekOf={weekOf} />
       </section>
 
@@ -412,12 +529,47 @@ export function CommitPage({
         aria-label="Commit actions"
         className="flex flex-wrap items-center gap-2 empty:hidden"
       >
-        <AgentTaskButtons weekOf={weekOf} />
-        {changes.length > 0 ? (
-          <Button disabled={checkedIds.length === 0} onClick={markCommitted}>
-            Mark as committed
+        {lockedWeek ? (
+          <Button variant="outline" onClick={reopen}>
+            <Unlock data-icon="inline-start" />
+            Reopen week
           </Button>
-        ) : null}
+        ) : (
+          <>
+            <AgentTaskButtons weekOf={weekOf} placement="commit-week" />
+            {changes.length > 0 ? (
+              <Button
+                disabled={checkedIds.length === 0}
+                onClick={markCommitted}
+              >
+                Mark as committed
+              </Button>
+            ) : null}
+            {submitTasks === "present" ? (
+              // A plugin's submit task replaces Submit week, with its reasons.
+              <AgentTaskButtons
+                weekOf={weekOf}
+                placement="submit-week"
+                disabledReason={submitReason}
+                // Primary once nothing is left to commit, like Submit week.
+                primary={changes.length === 0}
+              />
+            ) : (
+              <DisabledReason label="Submit week" reason={manualSubmitReason}>
+                <Button
+                  // The next step is the primary button: Mark as committed while
+                  // changes wait, Submit week after.
+                  variant={changes.length > 0 ? "outline" : "default"}
+                  disabled={manualSubmitReason !== undefined}
+                  onClick={requestSubmit}
+                >
+                  <Lock data-icon="inline-start" />
+                  Submit week
+                </Button>
+              </DisabledReason>
+            )}
+          </>
+        )}
       </div>
 
       <section
@@ -535,6 +687,29 @@ export function CommitPage({
           </>
         )}
       </section>
+
+      <AlertDialog open={paceCheckOpen} onOpenChange={setPaceCheckOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {paceCheck?.status === "over"
+                ? "Submit a week over pace?"
+                : "Submit a week under pace?"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {paceCheck
+                ? `You logged ${formatHours(paceCheck.loggedHours)} of the ${formatHours(paceCheck.expectedHours)} expected by now.`
+                : null}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Review</AlertDialogCancel>
+            <AlertDialogAction onClick={lockWeek}>
+              Submit anyway
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

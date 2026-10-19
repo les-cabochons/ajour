@@ -6,6 +6,7 @@ import {
   type TeamSettings,
 } from "@ajour/shared";
 import { todayIsoDate } from "@/lib/utils";
+import { StaleWindowError } from "@/lib/stale-window-error";
 import {
   changePullRequest,
   normalizePullRequests,
@@ -97,6 +98,15 @@ import {
   updateTimesheetEntry as applyUpdateTimesheetEntry,
 } from "@/domain/time/timesheet-entry";
 import { normalizeTimesheetTombstones } from "@/domain/time/timesheet-commit";
+import {
+  assertNoLockedWeekWrite,
+  LockedWeekError,
+  findLockedWeekWrite,
+  isDateLocked,
+  normalizeLockedWeeks,
+  reopenWeek as applyReopenWeek,
+  submitWeek as applySubmitWeek,
+} from "@/domain/time/locked-weeks";
 import {
   captureUndo,
   getUndoProjectIds,
@@ -222,6 +232,7 @@ export {
   getWorkItemEstimateFieldState,
   hasWorkItemEstimateSyncIssue,
 } from "@/domain/local-state";
+export { StaleWindowError } from "@/lib/stale-window-error";
 export type {
   BacklogSortMode,
   ExtensionBridgeStatus,
@@ -252,6 +263,11 @@ export type {
 } from "@/domain/local-state";
 
 const STORAGE_KEY = "ajour.local-state.v2";
+/**
+ * Changes with every write of STORAGE_KEY, so a window learns that another
+ * one wrote by reading this short value instead of the whole state.
+ */
+const REVISION_KEY = "ajour.local-state.revision";
 const STATE_CHANGE_EVENT = "ajour-local-state";
 const RETIRED_AUTH_CACHE_PREFIX = "msal.";
 
@@ -305,6 +321,8 @@ function normalizeCapacityTarget(value: unknown, fallback: number) {
 }
 
 let cachedState: LocalAppState | undefined;
+/** The revision of the stored state this window last read or wrote. */
+let cachedRevision: string | null = null;
 
 function arrayOrDefault<T>(value: unknown, fallback: T[]): T[] {
   return Array.isArray(value) ? (value as T[]) : fallback;
@@ -330,6 +348,7 @@ function createDefaultState(): LocalAppState {
     timers: [],
     timesheetEntries: [],
     timesheetTombstones: [],
+    lockedWeeks: [],
     timesheetImportDrafts: [],
     workItems: [],
     pullRequests: [],
@@ -456,6 +475,7 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
       timesheetTombstones: normalizeTimesheetTombstones(
         persistedState.timesheetTombstones,
       ),
+      lockedWeeks: normalizeLockedWeeks(persistedState.lockedWeeks),
       timesheetImportDrafts: arrayOrDefault(
         persistedState.timesheetImportDrafts,
         defaults.timesheetImportDrafts,
@@ -720,6 +740,18 @@ function shouldBootstrapFromDesktopState(
     return false;
   }
 
+  // Submitted weeks alone are worth recovering: they keep the week as sent.
+  const currentWeeks = new Set(
+    normalizeLockedWeeks(currentState?.lockedWeeks).map((week) => week.weekOf),
+  );
+  if (
+    normalizeLockedWeeks(bootstrapState.lockedWeeks).some(
+      (week) => !currentWeeks.has(week.weekOf),
+    )
+  ) {
+    return true;
+  }
+
   const bootstrapTimesheetCount = bootstrapState.timesheetEntries?.length ?? 0;
   const currentTimesheetCount = currentState?.timesheetEntries?.length ?? 0;
   if (currentTimesheetCount === 0 && bootstrapTimesheetCount > 0) {
@@ -736,6 +768,15 @@ function shouldBootstrapFromDesktopState(
   return currentHasDefaultProjects && bootstrapHasCustomProjects;
 }
 
+/** Logs, once, how many recovered records a submitted week kept out. */
+function warnLeftOut(count: number, one: string, many: string) {
+  if (count > 0) {
+    console.warn(
+      `Desktop recovery left out ${count} ${count === 1 ? one : many} in a submitted week.`,
+    );
+  }
+}
+
 function mergeDesktopBootstrapState(
   currentState: Partial<LocalAppState> | undefined,
   bootstrapState: Partial<LocalAppState>,
@@ -744,17 +785,77 @@ function mergeDesktopBootstrapState(
     ...(currentState ?? {}),
   };
 
+  // A recovered entry must not land in a week this store submitted, so the
+  // lock stays as the user left it. Recovered submitted weeks come along,
+  // even with no entry to recover.
+  const currentLocks = {
+    lockedWeeks: normalizeLockedWeeks(nextState.lockedWeeks),
+  };
   if ((bootstrapState.timesheetEntries?.length ?? 0) > 0) {
+    const currentIds = new Set(
+      (nextState.timesheetEntries ?? []).map((entry) => entry?._id),
+    );
+    const recovered = bootstrapState.timesheetEntries!.filter(
+      (entry) =>
+        currentIds.has(entry?._id) ||
+        typeof entry?.localDate !== "string" ||
+        !isDateLocked(currentLocks, entry.localDate),
+    );
+    warnLeftOut(
+      bootstrapState.timesheetEntries!.length - recovered.length,
+      "entry",
+      "entries",
+    );
     nextState.timesheetEntries = mergeBootstrapTimesheetEntries(
       nextState.timesheetEntries,
-      bootstrapState.timesheetEntries,
+      recovered,
     );
   }
+  // A recovered lock on the week of this store's running entry would strand
+  // it: it could never be saved there. Leave that week open.
+  const runningDays = (nextState.timers ?? []).flatMap((timer) =>
+    timer?._id && typeof timer.startedAt === "number"
+      ? [normalizeTimer(timer).localDate]
+      : [],
+  );
+  const recoveredLocks = normalizeLockedWeeks(
+    bootstrapState.lockedWeeks,
+  ).filter((week) => {
+    if (isDateLocked(currentLocks, week.weekOf)) return true;
+    const strands = runningDays.some((day) =>
+      isDateLocked({ lockedWeeks: [week] }, day),
+    );
+    if (strands) {
+      console.warn(
+        `Desktop recovery did not submit the week of ${week.weekOf}: the running entry is on it.`,
+      );
+    }
+    return !strands;
+  });
+  const mergedLocks = {
+    lockedWeeks: normalizeLockedWeeks([
+      ...currentLocks.lockedWeeks,
+      ...recoveredLocks,
+    ]),
+  };
+  nextState.lockedWeeks = mergedLocks.lockedWeeks;
   if (
     (nextState.timers?.length ?? 0) === 0 &&
     (bootstrapState.timers?.length ?? 0) > 0
   ) {
-    nextState.timers = bootstrapState.timers;
+    // A running entry in a submitted week could never be saved there.
+    const recovered = bootstrapState.timers!.filter(
+      (timer) =>
+        !timer?._id ||
+        typeof timer.startedAt !== "number" ||
+        !isDateLocked(mergedLocks, normalizeTimer(timer).localDate),
+    );
+    warnLeftOut(
+      bootstrapState.timers!.length - recovered.length,
+      "running entry",
+      "running entries",
+    );
+    nextState.timers = recovered;
   }
   if (
     Array.isArray(bootstrapState.projects) &&
@@ -840,7 +941,29 @@ function purgeRetiredAuthCache() {
 
 function loadState(): LocalAppState {
   purgeRetiredAuthCache();
-  const bootstrapState = window.ajourDesktop?.bootstrapLocalState;
+  return loadStoredState(window.ajourDesktop?.bootstrapLocalState);
+}
+
+/**
+ * Whether storage still holds the state this window read, `stored` saved at
+ * `revision`. Like the check in `writeState`, a matching hint answers without
+ * a parse; a missing or different hint compares what storage holds.
+ */
+function storageStillHolds(stored: string, revision: unknown) {
+  const hint = readRevisionHint();
+  if (hint !== null && typeof revision === "string") return hint === revision;
+  return window.localStorage.getItem(STORAGE_KEY) === stored;
+}
+
+/**
+ * Reads the stored state, applies the desktop recovery file once, and saves
+ * the result. `retryRecovery` is the recovery decision of a first read whose
+ * save found storage changed: the merge runs again, once, on the fresh state.
+ */
+function loadStoredState(
+  bootstrapState: Partial<LocalAppState> | null | undefined,
+  retryRecovery?: boolean,
+): LocalAppState {
   let stored: string | null;
   try {
     stored = window.localStorage.getItem(STORAGE_KEY);
@@ -865,26 +988,38 @@ function loadState(): LocalAppState {
     return normalizeState(bootstrapState ?? createDefaultState());
   }
 
-  if (shouldBootstrapFromDesktopState(parsedState, bootstrapState)) {
-    const mergedState = normalizeState(
-      mergeDesktopBootstrapState(parsedState, bootstrapState!),
+  if (bootstrapState && !parsedState.desktopBootstrapAppliedAt) {
+    const merge =
+      retryRecovery ??
+      shouldBootstrapFromDesktopState(parsedState, bootstrapState);
+    // With nothing to merge, the recovery still counts as applied, so a week
+    // the user reopens later is not locked again by the same file on reload.
+    const recovered = normalizeState(
+      merge
+        ? mergeDesktopBootstrapState(parsedState, bootstrapState)
+        : { ...parsedState, desktopBootstrapAppliedAt: Date.now() },
     );
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(mergedState));
+      // Another tab may have saved since this read: redo the recovery on
+      // its state, once, instead of overwriting it.
+      if (
+        retryRecovery === undefined &&
+        !storageStillHolds(stored, parsedState.revision)
+      ) {
+        return loadStoredState(bootstrapState, merge);
+      }
+      return persistState(recovered);
     } catch {
-      // Keep the complete merged state in memory when persistence is unavailable.
+      // Keep the complete recovered state in memory when persistence is unavailable.
+      return recovered;
     }
-    return mergedState;
   }
   try {
     const normalizedState = normalizeState(parsedState);
     if (containsRetiredOutlookState(parsedState)) {
       try {
         if (window.localStorage.getItem(STORAGE_KEY) === stored) {
-          window.localStorage.setItem(
-            STORAGE_KEY,
-            JSON.stringify(normalizedState),
-          );
+          return persistState(normalizedState);
         }
       } catch {
         // Keep the sanitized state in memory when persistence is unavailable.
@@ -897,18 +1032,103 @@ function loadState(): LocalAppState {
 }
 
 function readState(): LocalAppState {
-  cachedState ??= loadState();
+  if (!cachedState) refreshState();
+  return cachedState!;
+}
+
+/**
+ * Reloads the state from storage. Its revision is the one saved inside it,
+ * never the hint key read apart, so a write from another window between the
+ * two reads cannot pair an old state with a newer revision.
+ */
+function refreshState(): LocalAppState {
+  cachedState = loadState();
+  cachedRevision = cachedState.revision ?? null;
   return cachedState;
 }
 
-function refreshState(): LocalAppState {
-  cachedState = loadState();
-  return cachedState;
+/** The revision hint key, or null when it is missing or unreadable. */
+function readRevisionHint(): string | null {
+  try {
+    return window.localStorage.getItem(REVISION_KEY);
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Saves `state` with a new revision inside it, in one atomic write, then the
+ * same revision under the hint key. When the hint cannot be written, it is
+ * removed, so other windows reload and compare the revision inside the state
+ * instead of trusting an old hint. Returns the saved state.
+ */
+function persistState<T extends Partial<LocalAppState>>(
+  state: T,
+): T & { revision: string } {
+  const saved = { ...state, revision: createId("revision") };
+  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(saved));
+  try {
+    window.localStorage.setItem(REVISION_KEY, saved.revision);
+  } catch (error) {
+    try {
+      window.localStorage.removeItem(REVISION_KEY);
+    } catch {
+      // The warning below covers both failures.
+    }
+    console.warn(
+      "Ajour could not save its revision hint; other windows reload before each write.",
+      error,
+    );
+  }
+  return saved;
+}
+
+/**
+ * Refuses a write made from a stale cache: another window wrote since this
+ * window last read or wrote the state, and this window has not read its
+ * storage event yet. Writing would erase that window's write, such as a lock.
+ * It reads only the hint key when it matches, so a write in a single window
+ * never parses the stored state. A missing or different hint reloads the
+ * state and compares the revision inside it: the write goes on when its base
+ * was current, and is refused otherwise. The reload keeps the cache current,
+ * so the next try works.
+ *
+ * Known limit: two browser tabs of the web build that write within the same
+ * moment can still overwrite each other: the check reads the hint, then
+ * writes, and the browser gives no lock between tabs. The desktop app has one
+ * window, so it is not affected.
+ */
+function assertFreshCache(cached: LocalAppState, next: LocalAppState) {
+  const hint = readRevisionHint();
+  if (hint !== null && hint === cachedRevision) return;
+
+  const baseRevision = cachedRevision;
+  const fresh = refreshState();
+  if (cachedRevision === baseRevision) {
+    // The base was current: keep the cached object, so its readers see no change.
+    cachedState = cached;
+    return;
+  }
+
+  window.dispatchEvent(new Event(STATE_CHANGE_EVENT));
+  // Judge what this write changes against the fresh locks.
+  const weekOf = findLockedWeekWrite(
+    { ...cached, lockedWeeks: fresh.lockedWeeks },
+    { ...next, lockedWeeks: fresh.lockedWeeks },
+  );
+  throw weekOf ? new LockedWeekError(weekOf) : new StaleWindowError();
 }
 
 function writeState(state: LocalAppState) {
-  const nextState = { ...state, updatedAt: Date.now() };
-  window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
+  // Every write passes here, Submit, Reopen and every Undo included, so these
+  // checks keep a submitted week as it is, whatever command, Undo or agent
+  // tool made the write.
+  if (cachedState) {
+    assertFreshCache(cachedState, state);
+    assertNoLockedWeekWrite(cachedState, state);
+  }
+  const nextState = persistState({ ...state, updatedAt: Date.now() });
+  cachedRevision = nextState.revision;
   cachedState = nextState;
   window.dispatchEvent(new Event(STATE_CHANGE_EVENT));
 }
@@ -1065,6 +1285,10 @@ function listenForOtherWindowWrites() {
   });
 }
 
+/**
+ * The local store. A command that would change a submitted week throws
+ * `LockedWeekError` and writes nothing.
+ */
 export const localStore = {
   subscribe(callback: () => void) {
     listenForOtherWindowWrites();
@@ -2115,19 +2339,28 @@ export const localStore = {
       return "expired";
     }
 
-    const { undo } = lastUndo;
+    const kept = lastUndo;
+    const { undo } = kept;
     lastUndo = undefined;
-    releaseTeamPushHold();
-    return updateStateWithResult((state) => {
-      const restored = restoreUndo(state, undo);
-      return {
-        ...restored,
-        state: reconcileSourceWriteMappings(state, restored.state, {
-          createId,
-          now: Date.now,
-        }),
-      };
-    });
+    try {
+      releaseTeamPushHold();
+      return updateStateWithResult((state) => {
+        const restored = restoreUndo(state, undo);
+        return {
+          ...restored,
+          state: reconcileSourceWriteMappings(state, restored.state, {
+            createId,
+            now: Date.now,
+          }),
+        };
+      });
+    } catch (error) {
+      // Another window wrote first. The refusal reloaded this window, so keep
+      // the undo: a retry runs it against the fresh state, which says "stale"
+      // only when the undo itself no longer applies.
+      if (error instanceof StaleWindowError) lastUndo ??= kept;
+      throw error;
+    }
   },
   /** Drops the undo for `token` once its toast closes. A newer undo is kept. */
   forgetUndo(token: string) {
@@ -2176,6 +2409,19 @@ export const localStore = {
     return updateStateWithUndo((state) =>
       applyMarkTimesheetEntriesNotCommitted(state, entryIds),
     );
+  },
+  /**
+   * Submits the week that holds `weekOf`: locks it. See `submitWeek`. Returns
+   * the result with an undo token, null when Ajour refused.
+   */
+  submitWeek(weekOf: string) {
+    return updateStateWithUndoResult((state) =>
+      applySubmitWeek(state, weekOf, Date.now),
+    );
+  },
+  /** Reopens a submitted week. Returns an undo token, or null when it was not submitted. */
+  reopenWeek(weekOf: string) {
+    return updateStateWithUndo((state) => applyReopenWeek(state, weekOf));
   },
   continueTimesheetEntry(entryId: string) {
     updateState((state) =>

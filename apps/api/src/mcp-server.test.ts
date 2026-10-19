@@ -365,7 +365,9 @@ describe("MCP endpoint", () => {
       expect.arrayContaining([
         "start_timer",
         "get_week_changes",
+        "get_week_status",
         "mark_entries_committed",
+        "submit_week",
         "create_work_item",
         "restore_work_item",
         "list_work_item_comments",

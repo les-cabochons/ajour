@@ -27,3 +27,18 @@ Feature: Agent tasks from plugins
     And I press "Save"
     Then the timesheet URL "https://wd.example/t" is saved
     And the task says "Ready to run from the Commit page."
+
+  Scenario: A plugin's submit task replaces Submit week
+    Given the local API reports a ready "Check Workday and submit" submit task
+    When I open the Commit page for the week of 2026-10-12
+    Then the Commit page offers "Check Workday and submit" instead of Submit week
+    And "Check Workday and submit" is the primary button
+    When I press "Check Workday and submit"
+    Then the "submit-week" run is requested for the week of 2026-10-12
+
+  Scenario: Submit week waits while the agent tasks load
+    Given the local API holds back a ready "Check Workday and submit" submit task
+    When I open the Commit page for the week of 2026-10-12
+    Then "Submit week" is disabled with the reason "Loading agent tasks"
+    When the local API sends the agent tasks
+    Then the Commit page offers "Check Workday and submit" instead of Submit week

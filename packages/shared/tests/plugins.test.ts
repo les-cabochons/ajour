@@ -272,15 +272,19 @@ const agentTask = {
 };
 
 describe("plugin manifest capabilities", () => {
-  it("refuses the old submit-week placement", () => {
-    expect(() =>
+  it("places a task next to Mark as committed or in place of Submit week", () => {
+    const parse = (placement: string) =>
       pluginManifestSchema.parse({
         ...agentTaskBase,
-        capabilities: {
-          agentTask: { tasks: [{ ...agentTask, placement: "submit-week" }] },
-        },
-      }),
-    ).toThrow(/placement/);
+        capabilities: { agentTask: { tasks: [{ ...agentTask, placement }] } },
+      });
+
+    for (const placement of ["commit-week", "submit-week"]) {
+      expect(parse(placement).capabilities.agentTask?.tasks[0]?.placement).toBe(
+        placement,
+      );
+    }
+    expect(() => parse("reset-sync")).toThrow(/placement/);
   });
 
   it("accepts a plugin with only agent tasks, without entrypoint or connection fields", () => {

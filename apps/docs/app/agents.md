@@ -27,15 +27,17 @@ Create one client per agent, so you can revoke one without the others. **Revoke*
 
 ## What agents can do
 
-| Kind         | Tools                                                                                                        |
-| ------------ | ------------------------------------------------------------------------------------------------------------ |
-| Read         | The running entry, time entries, projects, backlog items, and the week's changes since its last commit.      |
-| Time         | Start, stop and edit the running entry. Create, edit, move and duplicate entries. Mark changes as committed. |
-| Backlog      | Create, edit and move items. Settle, snooze, archive and restore them.                                       |
-| Comments     | Read a synced item's comments, and post one, only where you allow it. See below.                             |
-| Conversation | Report what they are doing, and ask you a question.                                                          |
+| Kind         | Tools                                                                                                                                                                     |
+| ------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Read         | The running entry, time entries, projects, backlog items, the week's changes since its last commit, and whether the week is submitted, with its committed hours and pace. |
+| Time         | Start, stop and edit the running entry. Create, edit, move and duplicate entries. Mark changes as committed, and submit a week.                                           |
+| Backlog      | Create, edit and move items. Settle, snooze, archive and restore them.                                                                                                    |
+| Comments     | Read a synced item's comments, and post one, only where you allow it. See below.                                                                                          |
+| Conversation | Report what they are doing, and ask you a question.                                                                                                                       |
 
 Agents cannot delete anything. Their changes go through the same actions as yours, with the same Undo toast.
+
+A submitted week is read-only for agents too: Ajour refuses their writes to it with the reason.
 
 ### Comments
 
