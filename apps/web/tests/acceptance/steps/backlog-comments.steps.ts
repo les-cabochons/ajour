@@ -412,6 +412,110 @@ When("I mention Ana in a new comment and send it", async ({ page }) => {
   await page.keyboard.press("ControlOrMeta+Enter");
 });
 
+const peopleSearchUrl = `${apiUrl}/api/backlog-comments/example/connections/fixture/searchItemPeople`;
+
+Given("its plugin fails to search people", async ({ page }) => {
+  await page.route(peopleSearchUrl, (route) =>
+    route.fulfill({
+      status: 502,
+      json: { error: "Azure DevOps request failed (401): people search" },
+      headers: cors,
+    }),
+  );
+});
+
+Given("its plugin finds no one, slowly", async ({ page }) => {
+  await page.route(peopleSearchUrl, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    await route.fulfill({ json: { people: [] }, headers: cors });
+  });
+});
+
+Given("its plugin finds people, slowly", async ({ page }) => {
+  await page.route(peopleSearchUrl, async (route) => {
+    const { query } = route.request().postDataJSON() as { query: string };
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    const people = [
+      { id: "ana", displayName: "Ana Silva" },
+      { id: "andrew", displayName: "Andrew Lee" },
+    ].filter((person) =>
+      person.displayName.toLowerCase().startsWith(query.toLowerCase()),
+    );
+    await route.fulfill({ json: { people }, headers: cors });
+  });
+});
+
+When(
+  "the people search works again and I ask for suggestions",
+  async ({ page }) => {
+    await page.unroute(peopleSearchUrl);
+    await page.route(peopleSearchUrl, (route) =>
+      route.fulfill({
+        json: { people: [{ id: "ana", displayName: "Ana Silva" }] },
+        headers: cors,
+      }),
+    );
+    await page.keyboard.press("Control+Space");
+  },
+);
+
+Then("Ana is suggested and no status shows", async ({ page }) => {
+  await expect(page.getByRole("option", { name: "Ana Silva" })).toBeVisible();
+  await expect(mentionStatus(page)).toHaveCount(0);
+});
+
+When(
+  "I keep typing {string} before the search answers",
+  async ({ page }, text: string) => {
+    const answered = page.waitForResponse(peopleSearchUrl);
+    await page.waitForRequest(peopleSearchUrl);
+    await page.keyboard.type(text);
+    await answered;
+  },
+);
+
+Then(
+  "the mention suggestions are closed once the search answers",
+  async ({ page }) => {
+    // Give the late answer time to reach the editor.
+    await page.waitForTimeout(200);
+    await expect(mentionStatus(page)).toHaveCount(0);
+  },
+);
+
+When("I type {string} in a new comment", async ({ page }, text: string) => {
+  await commentsRegion(page)
+    .getByRole("button", { name: "Leave a comment…" })
+    .click();
+  // The editor loads on first use; type once it has the focus.
+  await expect(
+    commentsRegion(page).getByRole("textbox", { name: "New comment" }),
+  ).toBeFocused();
+  await page.keyboard.type(text);
+});
+
+When("I keep typing {string}", async ({ page }, text: string) => {
+  await page.keyboard.type(text);
+});
+
+const mentionStatus = (page: Page) =>
+  commentsRegion(page).locator(".cm-mention-status");
+
+Then("the mention suggestions ask for a name", async ({ page }) => {
+  await expect(mentionStatus(page)).toHaveText(
+    "Type a name to mention someone",
+  );
+});
+
+Then("the mention suggestions say no one was found", async ({ page }) => {
+  await expect(mentionStatus(page)).toHaveText("No one found");
+  await expect(page.getByRole("option")).toHaveCount(0);
+});
+
+Then("the mention suggestions are closed", async ({ page }) => {
+  await expect(mentionStatus(page)).toHaveCount(0);
+});
+
 Then(
   "the comment went out with Ana's mention, shown as a chip",
   async ({ page }) => {

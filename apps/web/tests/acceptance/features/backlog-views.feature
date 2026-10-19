@@ -561,6 +561,46 @@ Feature: Backlog list and board views
     And I mention Ana in a new comment and send it
     Then the comment went out with Ana's mention, shown as a chip
 
+  Scenario: Mention suggestions say when no one matches
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people and records posted comments
+    When I open the Backlog parent page
+    And I type "@" in a new comment
+    Then the mention suggestions ask for a name
+    When I keep typing "Zoe"
+    Then the mention suggestions say no one was found
+    When I keep typing " "
+    Then the mention suggestions are closed
+
+  Scenario: A failed people search reads as no one found
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin fails to search people
+    When I open the Backlog parent page
+    And I type "@Ana" in a new comment
+    Then the mention suggestions say no one was found
+    When the people search works again and I ask for suggestions
+    Then Ana is suggested and no status shows
+
+  Scenario: A slow people search answers only the name still being typed
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds no one, slowly
+    When I open the Backlog parent page
+    And I type "@Zo" in a new comment
+    And I keep typing " " before the search answers
+    Then the mention suggestions are closed once the search answers
+
+  Scenario: Typing on while a people search runs searches the longer name
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people, slowly
+    When I open the Backlog parent page
+    And I type "@A" in a new comment
+    And I keep typing "na" before the search answers
+    Then Ana is suggested and no status shows
+
   Scenario: Archive a synced item from the bottom of its properties card
     Given the Backlog parent is synced
     When I open the Backlog parent page
