@@ -162,23 +162,52 @@ const mentionStatus = StateField.define<MentionStatus | null>({
   ],
 });
 
-const setDismissedMention = StateEffect.define<number | null>();
+/** Escape closed the search for the `@` here, if one is at the cursor. */
+const dismissMention = StateEffect.define<number | null>();
+/** Ctrl+Space asks again. */
+const liftDismissal = StateEffect.define<null>();
 
 /**
  * Where the `@` is whose suggestions Escape closed: typing on in that name
  * asks no more, until Ctrl+Space asks again. It goes with the `@`.
  */
-const dismissedMention = StateField.define<number | null>({
-  create: () => null,
-  update(from, transaction) {
+const dismissedMention = StateField.define<{
+  from: number | null;
+  /** How many times Escape closed a search, so an older one never counts. */
+  count: number;
+}>({
+  create: () => ({ from: null, count: 0 }),
+  update(dismissed, transaction) {
     for (const effect of transaction.effects) {
-      if (effect.is(setDismissedMention)) return effect.value;
+      if (effect.is(dismissMention)) {
+        return { from: effect.value, count: dismissed.count + 1 };
+      }
+      if (effect.is(liftDismissal)) return { ...dismissed, from: null };
     }
-    return from === null
-      ? null
-      : transaction.changes.mapPos(from, 1, MapMode.TrackDel);
+    return dismissed.from === null
+      ? dismissed
+      : {
+          ...dismissed,
+          from: transaction.changes.mapPos(dismissed.from, 1, MapMode.TrackDel),
+        };
   },
 });
+
+/**
+ * Asking for suggestions with Ctrl+Space (Alt+` on a Mac) lifts the
+ * dismissal at once, before CodeMirror gets to ask.
+ */
+const askAgainKeymap = keymap.of(
+  [{ key: "Ctrl-Space" }, { mac: "Alt-`" }].map((binding) => ({
+    ...binding,
+    run: (view: EditorView) => {
+      if (view.state.field(dismissedMention, false)?.from != null) {
+        view.dispatch({ effects: liftDismissal.of(null) });
+      }
+      return false;
+    },
+  })),
+);
 
 /**
  * Escape closes the suggestions or their status line first, so it leaves
@@ -198,11 +227,11 @@ function closeMentions(view: EditorView) {
   const mentioning =
     Boolean(status) ||
     completion === "active" ||
-    (from !== null && from !== state.field(dismissedMention, false));
+    (from !== null && from !== state.field(dismissedMention, false)?.from);
   closeCompletion(view);
   if (!mentioning) return false;
   view.dispatch({
-    effects: [setMentionStatus.of(null), setDismissedMention.of(from)],
+    effects: [setMentionStatus.of(null), dismissMention.of(from)],
   });
   return true;
 }
@@ -216,12 +245,8 @@ function mentionSource(
   ): Promise<CompletionResult | null> => {
     const word = context.matchBefore(mentionWord);
     if (!word) return null;
-    if (context.state.field(dismissedMention, false) === word.from) {
-      if (!context.explicit) return null;
-      // Ctrl+Space asks again, and typing on keeps asking.
-      await Promise.resolve();
-      context.view?.dispatch({ effects: setDismissedMention.of(null) });
-    }
+    const dismissed = context.state.field(dismissedMention, false);
+    if (dismissed?.from === word.from) return null;
     // CodeMirror keeps a query running while the text changes, so an answer
     // counts only while this `@word` is still what is typed, in focus.
     const stillTyped = () => {
@@ -231,8 +256,8 @@ function mentionSource(
       return (
         !context.aborted &&
         view.hasFocus &&
-        // Escape closed this name's search while it ran.
-        state.field(dismissedMention, false) !== word.from &&
+        // Escape closed this search while it ran.
+        state.field(dismissedMention, false)?.count === dismissed?.count &&
         state.sliceDoc(word.from, state.selection.main.head) === word.text
       );
     };
@@ -418,6 +443,8 @@ export default function MarkdownEditorView({
           mentionChips,
           ...(mentions
             ? [
+                // Ahead of the completion's own Ctrl+Space.
+                Prec.highest(askAgainKeymap),
                 autocompletion({
                   override: [
                     mentionSource(

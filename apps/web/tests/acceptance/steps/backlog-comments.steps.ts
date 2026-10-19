@@ -548,6 +548,20 @@ When(
   },
 );
 
+When(
+  "I press Escape, ask again and press Escape while the first search runs",
+  async ({ page }) => {
+    const answered = page.waitForResponse(peopleSearchUrl);
+    await page.waitForRequest(peopleSearchUrl);
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Control+Space");
+    await page.keyboard.press("Escape");
+    await answered;
+    // Give the late answers time to reach the editor.
+    await page.waitForTimeout(1_500);
+  },
+);
+
 Then(
   "nothing is suggested and the new comment stays open with {string}",
   async ({ page }, text: string) => {

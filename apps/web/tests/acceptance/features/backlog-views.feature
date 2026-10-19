@@ -612,6 +612,15 @@ Feature: Backlog list and board views
     And I press Escape in the new comment while the search runs
     Then nothing is suggested and the new comment stays open with "@Zoe"
 
+  Scenario: Escape after asking again stops the search, not the editor
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds no one, slowly
+    When I open the Backlog parent page
+    And I type "@Zoe" in a new comment
+    And I press Escape, ask again and press Escape while the first search runs
+    Then nothing is suggested and the new comment stays open with "@Zoe"
+
   Scenario: Escape stops a mention search before it starts
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit
