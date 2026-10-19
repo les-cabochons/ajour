@@ -17,7 +17,10 @@ Ajour has a few objects, and each one has one job. This page names them and show
 : The entry that is counting now. At most one entry runs at a time, and it is always on today. Ajour has no separate "timer": you start, switch and stop entries.
 
 **Timesheet**
-: Your entries for one week. Ajour does not send your timesheet anywhere. You copy its changes into your company's tool and mark them as committed.
+: Your entries for one week. Ajour does not send your timesheet anywhere on its own. You copy its changes into your company's tool, or have an [agent](/plugins/workday-agent) do it, and mark them as committed.
+
+**Submitted week**
+: A week you lock once all its changes are committed. Its entries are read-only, for agents too, until you reopen it.
 
 **Capacity**
 : How many hours you plan to work each weekday. Ajour compares each day and week against it, and can warn you when you go over or submit under it.
@@ -48,19 +51,31 @@ Ajour has a few objects, and each one has one job. This page names them and show
 **Snooze**
 : Hide an item from the sidebar until a time you choose. Snoozing is local and never changes the source tool.
 
+**Comment**
+: A message someone posted on a synced item, in its source tool. Ajour shows the comments on the item's page without keeping their text. See [Comments](/backlog/comments).
+
 ## Plugins
 
 **Plugin**
 : An installable extension. Each plugin has one or more capabilities.
 
 **Backlog capability**
-: A plugin capability that syncs backlog items and their estimates with a tool such as Azure DevOps or Jira.
+: A plugin capability that syncs backlog items, with their descriptions, estimates and comments, with a tool such as Azure DevOps or Jira.
 
 **Code host**
-: A plugin capability that lists your pull requests from a tool such as GitHub.
+: A plugin capability that lists your pull requests from a tool such as GitHub or Azure DevOps.
+
+**Calendar**
+: A plugin capability that reads your calendar, so the Time page can suggest your meetings as entries. See [Calendar suggestions](/time/calendar-suggestions).
+
+**Team**
+: A plugin capability that shares projects and tasks with your team. See [Shared projects](/projects/shared-projects).
 
 **Schema**
 : A plugin capability that maps projects and tasks to a file layout, such as the one Workday imports.
+
+**Agent task**
+: Work a plugin asks a coding agent to do for you, such as entering your week in Workday. See [Agent tasks](/app/agents#agent-tasks).
 
 **Connection**
 : One account or site a plugin talks to, with its own credentials and settings. A plugin can have several connections, for example one per client.

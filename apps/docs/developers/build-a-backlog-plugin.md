@@ -220,7 +220,7 @@ function toItem(
     sourceUrl: issue.html_url,
     title: issue.title.slice(0, 240),
     note: issue.body ? issue.body.slice(0, 4000) : undefined,
-    projectName: issue.repository_url.split("/repos/")[1],
+    projectName: issue.repository_url.split("/repos/")[1].slice(0, 120),
     workItemType: "Issue",
     state: closed ? "Closed" : "Open",
     stateCategory: closed ? "Closed" : "Open",
@@ -264,7 +264,7 @@ A few rules this code follows, which every backlog plugin should:
 - `source` equals the manifest `id`.
 - `sourceId` never changes for an item. Ajour keys everything on it.
 - Done items come back with `stateDone: true`, even when your query no longer returns them. Otherwise Ajour keeps them open.
-- Strings respect Ajour's limits: 240 characters for a title, 4,000 for the `note`, which Ajour shows as the item's description.
+- Strings respect Ajour's limits: 240 characters for a title, 120 for a project name, and 4,000 for the `note`, which Ajour takes as the item's description when it first arrives.
 
 ## 6. Write back on settle
 

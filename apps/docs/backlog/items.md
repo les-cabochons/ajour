@@ -9,27 +9,38 @@ A backlog item is a piece of planned work. It has a title, a priority, a workflo
 - A **manual** item is one you create in Ajour. Its source shows as **Ajour**.
 - A **synced** item comes from a backlog plugin, such as Azure DevOps or Jira. It shows its ID, its source project and its source state, and **Open in Azure DevOps** or **Open in Jira** takes you to it.
 
-Ajour keeps your changes to a synced item. A sync updates what changed in the source, and asks you when both sides changed the same estimate. See [Sync review](/plugins/sync-review).
+A sync updates what changed in the source and keeps your changes to the state, priority and estimates. When both sides changed the same estimate, Ajour asks you which to keep. See [Sync review](/plugins/sync-review).
 
 ## The item page
 
 Click an item in the sidebar to open its page. On the Backlog page, a click opens the [peek](/backlog/#peek-at-an-item), and a double-click or <kbd>Enter</kbd> opens the page. The page has:
 
-- **The header**, with the title and the item's actions: **Start entry**, **Snooze**, **Settle** and **New entry**. Click the title to rename it.
+- **The top bar**, with the item's project and title. Click the project to open its page. An item without a project shows **Backlog** instead. The item's actions sit on the right: **Start entry** (**Stop** while its entry runs), **Snooze**, **Settle** and **New entry**. A snoozed, settled or archived item shows **Unsnooze**, **Unsettle** or **Restore** instead.
+- **The title**, under a link back to the page you came from, such as **Back to Backlog** or **Back to Time**. Click the title to rename it. The line under it shows the item's type and project, its source state with a link to the source, or **Manual item**, and the parent of a subitem.
+- **A notice** when the item is snoozed, settled or archived, or came back to your plate, such as **Changed in the source since you settled it**.
 - **The estimates**: **Original**, **Remaining**, **Completed** and **Logged in Ajour**, with a bar of completed over original. Click an estimate to edit it.
-- **Description**, in Markdown. Press **Edit** to change it.
-- **Comments**, for an item synced from a tool whose plugin provides them: the newest five, oldest first, with **Show earlier comments** for the rest. A **New** line marks the comments that arrived since you last opened the item. Press **Leave a comment…** at the bottom of the thread to write one in Markdown, and <kbd>Ctrl</kbd>+<kbd>Enter</kbd> (<kbd>⌘</kbd>+<kbd>Enter</kbd> on macOS) or **Comment** to send it. It goes to the tool at once. If sending fails, the text stays so you can send it again, and an unsent comment stays as a draft on this device until you send it or press **Discard**. Type **@** and a few letters to mention someone, when the tool supports it; pick a person and they show as a chip, and the tool notifies them. On your own comments, **…** offers **Edit** and **Delete** when the tool allows them. A deleted comment disappears at once, and **Undo** in the toast brings it back; the tool only deletes it once the toast closes. Click a reaction to add or remove yours, or use the smiley to add another. Ajour reads comments from the tool each time and never stores them.
-- **The cards**, at the side. The first holds the state, source state, priority, lifecycle, project, task and source, and **When missing** for a synced item. Under it, **Subitems** and **Time entries** start closed on a summary: a segment per subitem, filled when done (one bar past ten subitems), with the hours left, and how many entries there are with the last day one was logged. Click a card's title to open its list. Its **+** adds a subitem or a time entry. Each card stays open or closed on this device.
+- **The [description](#description)**, then the [comments](/backlog/comments) of a synced item.
+- **The cards**, at the side. The first holds the state, source state, priority, lifecycle, project, task and source, then **When missing** and **Archive** for a synced item, and the fields of the description's [frontmatter](#frontmatter). Under it, **Subitems** and **Time entries** start closed on a summary: a segment per subitem, filled when done (one bar past ten subitems), with the hours left, and how many entries there are with the last day one was logged. Click a card's title to open its list, and click an entry to open its day. A card's **+** adds a subitem or a time entry. Each card stays open or closed on this device. A subitem has no **Subitems** card.
 
-Changes on the page save when you press <kbd>Enter</kbd> or leave the field, with an Undo toast.
+Changes on the page save when you press <kbd>Enter</kbd>, pick a value or leave the field, with an Undo toast. <kbd>Esc</kbd> cancels.
+
+While the page itself has focus, as when it opens, the item's keys work: <kbd>Enter</kbd> renames it, <kbd>S</kbd> starts or stops an entry, <kbd>E</kbd> settles, <kbd>B</kbd> snoozes and <kbd>Backspace</kbd> deletes, with Undo.
+
+## Description
+
+The description says what the work is, in Markdown. Press **Edit** next to **Description** to change it. The editor keeps your Markdown as you type and styles it, such as headings, bold text and links. Press <kbd>⌘</kbd> <kbd>Enter</kbd> or click outside the editor to save, with an Undo toast, or <kbd>Esc</kbd> to cancel.
+
+A synced item's description comes from its source when the item first arrives. After that, syncs leave it as it is, and your edits stay in Ajour: they don't go back to the source.
+
+Web links in a description, in its text or its [frontmatter](#frontmatter), show their full address and ask before they open. Check **Don't ask again** to open them at once, and turn the question back on in **Settings › Backlog › Descriptions**.
 
 ## Map an item to a task
 
-Set the item's **Project** and **Task** so the time you log on it lands on the right task. Synced items cannot know your tasks, so map them once after they arrive. Starting an item with no task starts an entry with no task, which the Commit page then flags.
+Set the item's **Project** and **Task** so the time you log on it lands on the right task. Synced items cannot know your tasks, so map them once after they arrive, or name them in the description's [timelog](#frontmatter). Starting an item with no task starts an entry with no task, which the Commit page then flags.
 
 ## Frontmatter
 
-A description can start with a block of fields between two `---` lines. Ajour reads it and shows its fields in the item's properties instead of the description; **Edit** shows the block.
+A description can start with a block of fields between two `---` lines. Ajour reads it and shows its fields in the item's properties instead of the description. **Edit** shows the block.
 
 ```md
 ---
@@ -48,9 +59,7 @@ The description text.
 - **`timelog`** sets the item's **Project** and **Task** when you save it, or when a synced item arrives with one. The project is matched by name, display name or code. A task the project lacks is created, and an archived one is restored, except in a shared project: your team would get the task too, so Ajour leaves it to you. If you pick another project or task afterwards, Ajour keeps your pick.
 - While the item's project or task differs from its timelog, an icon follows **Project**. A warning icon means the project or task doesn't exist or is archived: click it to create or restore it, and Ajour sets it on the item. A back arrow means you picked something else: click it to go back to the timelog's project and task.
 
-Web links in a description, in its text or its fields, show their full address and ask before they open. Check **Don't ask again** to open them at once, and turn the question back on in **Settings › Backlog › Descriptions**.
-
-This works in synced descriptions too, so you can map items in the source tool once.
+This works in synced descriptions too, so you can map items in the source tool before they reach Ajour.
 
 ## Estimates
 
@@ -60,7 +69,7 @@ This works in synced descriptions too, so you can map items in the source tool o
 | **Remaining** | What is left. The sidebar shows this one.  |
 | **Completed** | What was spent, as recorded in the source. |
 
-**Logged in Ajour** is the sum of your time entries on the item. On a parent, the item editor (**Edit**) has a button next to each estimate that resets it to the total of its subitems.
+**Logged in Ajour** is the sum of your time entries on the item. An estimate that changed both in Ajour and in the source shows **Conflict** until you choose in [Sync review](/plugins/sync-review). On a parent, the item editor on the Backlog page has a button next to each estimate that resets it to the total of its subitems.
 
 For synced items, backlog plugins write estimate changes back to the source when they sync. See the [Azure DevOps](/plugins/azure-devops) and [Jira](/plugins/jira) pages for which fields they use.
 
@@ -68,25 +77,27 @@ For synced items, backlog plugins write estimate changes back to the source when
 
 A subitem is one level under its parent. Subitems cannot have subitems. When you close a parent that has open subitems, Ajour asks whether to close them too. Set a default in **Settings › Backlog › Subitems**.
 
+To add subitems on the item page, press **+** on the **Subitems** card, type a name and press <kbd>Enter</kbd>. Each subitem takes the parent's project and task, and the field stays open for the next one. <kbd>Esc</kbd> closes it.
+
 ## Actions
 
-Right-click an item, press **…**, or focus it and press <kbd>.</kbd>.
+Right-click an item, press **…**, or focus it and press <kbd>.</kbd>. Lines split the menu into groups of related actions. An action that doesn't apply right now stays in the menu, greyed out. In the desktop app, the right-click menu is your system's own menu.
 
 <Shot name="backlog-item-menu" alt="The actions menu of a backlog item" />
 
-| Action                      | What it does                                                                        |
-| --------------------------- | ----------------------------------------------------------------------------------- |
-| **Start entry** or **Stop** | Starts or stops a running entry on the item.                                        |
-| **New entry…**              | Logs hours on the item.                                                             |
-| **Edit**                    | Opens the item editor.                                                              |
-| **Add subitem**             | Creates a subitem.                                                                  |
-| **Snooze…**                 | Hides the item from the sidebar until a time you pick.                              |
-| **Pin**                     | Keeps the item at the top of the sidebar.                                           |
-| **Settle**                  | Takes the item off your plate. See [Settle and snooze](/backlog/settle-and-snooze). |
-| **Change source state…**    | Picks the exact source state, when several map to the same workflow state.          |
-| **Open in …**               | Opens the item in its source tool.                                                  |
-| **Archive**                 | Archives a synced item.                                                             |
-| **Delete**                  | Deletes the item and its subitems, with Undo.                                       |
+| Action                      | What it does                                                                                                                                                                                                     |
+| --------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Start entry** or **Stop** | Starts or stops a running entry on the item.                                                                                                                                                                     |
+| **New entry…**              | Logs hours on the item.                                                                                                                                                                                          |
+| **Edit**                    | Opens the item editor on the Backlog page. Elsewhere, opens the item's page to rename it.                                                                                                                        |
+| **Add subitem**             | Creates a subitem.                                                                                                                                                                                               |
+| **Snooze…**                 | Hides the item from the sidebar until a time you pick. A snoozed item shows **Unsnooze**.                                                                                                                        |
+| **Pin**                     | Keeps the item at the top of the sidebar. A pinned item shows **Unpin**.                                                                                                                                         |
+| **Settle…**                 | Takes the item off your plate. It reads **Settle** when a settle rule skips the dialog. A settled item shows **Unsettle**, and an archived one **Restore**. See [Settle and snooze](/backlog/settle-and-snooze). |
+| **Change source state…**    | Picks the exact source state, when several map to the same workflow state.                                                                                                                                       |
+| **Open in …**               | Opens the item in its source tool.                                                                                                                                                                               |
+| **Archive**                 | Archives a synced item in Ajour. The source tool keeps it as it is.                                                                                                                                              |
+| **Delete**                  | Deletes the item and its subitems, with Undo.                                                                                                                                                                    |
 
 ## Keep when missing from sync
 

@@ -13,7 +13,7 @@ Export these as named functions from your entry point. Each can be `async`.
 | `listSettleStates`       | `capabilities.connector.settle`             | The settle dialog opens for one of your items.                                                                                         |
 | `writeSettle`            | `capabilities.connector.settle`             | A settle or move is due, after the Undo toast closes.                                                                                  |
 | `listItemComments`       | `capabilities.connector.comments`           | The user opens one of your items, and again for each "Show earlier comments".                                                          |
-| `postItemComment`        | `capabilities.connector.comments`           | The user sends a comment on one of your items, or settles one with a comment, after the settle's write.                                |
+| `postItemComment`        | `capabilities.connector.comments`           | The user sends a comment on one of your items. A settle's or an agent's comment comes once its Undo toast closes.                      |
 | `editItemComment`        | `capabilities.connector.comments.edit`      | The user edits one of their own comments.                                                                                              |
 | `deleteItemComment`      | `capabilities.connector.comments.delete`    | The Undo toast of a deleted comment closes, or Ajour starts again after quitting during it.                                            |
 | `setItemCommentReaction` | `capabilities.connector.comments.reactions` | The user adds or removes their reaction.                                                                                               |
@@ -22,6 +22,7 @@ Export these as named functions from your entry point. Each can be `async`.
 ```ts
 export async function validateConnection(
   config: PluginFieldValues,
+  context: PluginValidationContext,
 ): Promise<PluginValidationResult>;
 
 export async function syncConnection(
@@ -74,14 +75,14 @@ To fail, throw an `Error`. Its message reaches the user as it is. See [Errors](#
 
 ## validateConnection
 
-Ajour calls it with the form's values, without the [reserved fields](/developers/manifest#reserved-fields). Saved secrets the user did not retype are filled in. Check the credentials against the tool, then return:
+Ajour calls it with the form's values, without the [reserved fields](/developers/manifest#reserved-fields). Saved secrets the user did not retype are filled in. The second argument, `context`, lists in `capabilities` the capabilities the user has on, such as `["connector"]`, so you check only the access they need. Check the credentials against the tool, then return:
 
 - `normalizedConfig`: the values to store. Ajour stores exactly this, so a field you leave out is lost. Trim strings and fix URLs here.
 - `connectionSummary`: optional facts shown on the connection's row, such as the account name. Never secrets.
 
 ## syncConnection
 
-Ajour calls it with the [connection](#connection) and every item it tracks for that connection, at most 1,000. Return the items to show, and the result of any estimate writes.
+Ajour calls it with the [connection](#types) and every item it tracks for that connection, at most 1,000. Return the items to show, and the result of any estimate writes.
 
 ### What Ajour does with the items
 
@@ -101,6 +102,12 @@ So:
 ### Subitems
 
 Ajour supports one level of hierarchy. Return a child with `depth: 1`, `parentSourceId` and `parentTitle`, and its parent with `depth: 0` and `childCount`. A parent the user cannot import, there only for context, has `selectable: false`.
+
+### Descriptions
+
+Return the item's description in `note`, converted to Markdown, up to 4,000 characters. Ajour takes it when the item first arrives. Later syncs leave the description in Ajour as it is, and Ajour never writes it back.
+
+A description can start with a [frontmatter](/backlog/items#frontmatter) block, YAML between two `---` lines, whose `timelog` sets the item's project and task in Ajour. When you convert your tool's text, keep such a block at the very start, as written.
 
 ### Estimates
 
@@ -147,13 +154,15 @@ Ajour sends the write once the Undo toast closes, about 8 seconds after the user
 
 ## listItemComments
 
-Return a page of an item's comments when the user opens it. Ajour asks for the newest 5, then 20 more each time the user presses **Show earlier comments**, passing the `earlierCursor` you returned. Return the page oldest first, and set `earlierCursor` while earlier comments remain. Return `total` when your tool says how many comments the item has.
+Return a page of an item's comments when the user opens it. Ajour asks for the newest 5, then 20 more each time the user presses **Show earlier comments**, passing the `earlierCursor` you returned. An agent the user allowed to read comments asks for up to 50 at a time. Return the page oldest first, and set `earlierCursor` while earlier comments remain. Return `total` when your tool says how many comments the item has.
 
-Declare the features your tool supports under `capabilities.connector.comments`:
+Declare the features your tool supports under `capabilities.connector.comments`. The key alone means you list and post comments:
 
 ```json
 "connector": {
   "comments": {
+    "edit": true,
+    "delete": true,
     "reactions": ["like", "heart"],
     "mentions": true,
     "maxLength": 32767
@@ -166,10 +175,11 @@ Declare the features your tool supports under `capabilities.connector.comments`:
 - Return the user as `viewer`, in the same id space as comment authors, so Ajour can tell which comments are theirs.
 - Set `restrictedTo` to the group or role that may read a restricted comment, such as a Jira role.
 - Ajour never stores comment text. It holds the newest page in memory for a few minutes, so throw rather than return a partial page. See [ADR 0008](https://github.com/les-cabochons/ajour/blob/main/docs/adr/0008-backlog-comments-are-fetched-and-written-at-once.md).
+- Ajour adds its own **Agent access to comments** field to your connection form: None, the default, Read, or Read and post. The value never reaches your plugin. Calls for an agent arrive like the user's.
 
 ## postItemComment
 
-Post the comment at once and return it as your tool stored it. A comment typed in the settle dialog comes after `writeSettle`, once the Undo toast closes. Ajour sends Markdown, with mentions as `[@Name](mention:<id>)`, and shows your returned comment at the end of the thread. If you throw, Ajour keeps the text in the editor and shows your message, so the user can send it again. Ajour doesn't queue comments for later (ADR 0008). Declare `maxLength` when your tool limits comment length, measured as your tool measures it, and check the converted size before you send.
+Post the comment at once and return it as your tool stored it. A comment typed in the settle dialog, or posted by an agent, comes once its Undo toast closes, and after `writeSettle` when the settle writes. Ajour sends Markdown, with mentions as `[@Name](mention:<id>)`, and shows your returned comment at the end of the thread. If you throw, Ajour keeps the text as a draft and shows your message, so the user can send it again. Ajour doesn't queue comments for later (ADR 0008). Declare `maxLength`, 1 to 10,000,000, when your tool limits comment length, measured as your tool measures it, and check the converted size before you send.
 
 ## Editing, deleting and reacting
 
@@ -181,13 +191,13 @@ Declare `edit`, `delete` and `reactions` under `capabilities.connector.comments`
 
 ## Mentions
 
-With `mentions: true`, Ajour suggests people when the user types `@` in a comment and calls `searchItemPeople` with what they typed. A bare `@` calls it with an empty `query`: return the people most likely to be mentioned, such as the item's assignee and commenters, or none. Return at most `limit` people who can be mentioned on the item, with the ids your mentions use, and each one's `email` when you know it, which Ajour shows under the name. Ajour inserts `[@Display Name](mention:<id>)` and shows it as a chip; your `postItemComment` and `editItemComment` turn it into your tool's mention, so the person is notified.
+With `mentions: true`, Ajour suggests people when the user types `@` in a comment and calls `searchItemPeople` with what they typed. A bare `@` calls it with an empty `query`: return the people most likely to be mentioned, such as the item's assignee and commenters, or none. A `query` can hold up to three words, such as `Ana Silva`, so match it against whole names. Return at most `limit` people who can be mentioned on the item, with the ids your mentions use, and each one's `email` when you know it, which Ajour shows under the name. Ajour inserts `[@Display Name](mention:<id>)` and shows it as a chip; your `postItemComment` and `editItemComment` turn it into your tool's mention, so the person is notified.
 
 ## Errors
 
 - Throw an `Error` whose message tells the user what to do, such as `Set a priority field on the Azure DevOps connection to write priority.`
 - Prefix HTTP failures with the tool's name and status, such as `Jira request failed (401): …`.
-- Ajour shows the message on the connection's row, in a toast, or in the settle error. It cuts messages at 4,096 characters.
+- Ajour shows the message on the connection's row, in a toast, or in the settle error. It cuts messages at 4,096 characters, and at 1,000 on the connection's row, so put the useful part first.
 - A result that does not match the types below fails the whole call with a validation message. Test your results against the limits.
 
 ## Types
@@ -199,6 +209,15 @@ export type BacklogPriorityLevel = "urgent" | "high" | "medium" | "low";
 export type PluginFieldValue = string | number | boolean;
 export type PluginFieldValues = Record<string, PluginFieldValue>;
 export type PluginSummaryValues = Record<string, string | number | boolean>;
+
+/** The capabilities a user can turn on and off. "connector" is the backlog. */
+export type SwitchableCapability =
+  "connector" | "codeHost" | "calendar" | "team";
+
+export interface PluginValidationContext {
+  /** The capabilities the user has on. */
+  capabilities: SwitchableCapability[];
+}
 
 export interface PluginValidationResult {
   /** Stored as the connection's config, as is. */
@@ -232,21 +251,26 @@ export interface BacklogImportCandidateInput {
   sourceId: string;
   /** The ID people see, such as "42" or "ENG-1". Up to 120 characters. */
   externalId: string;
+  /** An absolute URL. */
   sourceUrl?: string;
   /** 1 to 240 characters. */
   title: string;
   /** The item's description, in Markdown. Up to 4,000 characters. */
   note?: string;
+  /** Up to 120 characters. */
   projectName?: string;
-  /** Such as "Bug" or "User Story". */
+  /** Such as "Bug" or "User Story". Up to 120 characters. */
   workItemType: string;
+  /** Up to 120 characters. */
   state?: string;
   /** The state's category, such as "In Progress". */
   stateCategory?: string;
   /** True in a done category. Ajour archives done items. */
   stateDone?: boolean;
+  /** Up to 240 characters. */
   assignedTo?: string;
   priority?: BacklogPriorityLevel;
+  /** Hours, 0 or more. */
   originalEstimateHours?: number;
   remainingEstimateHours?: number;
   completedEstimateHours?: number;
@@ -254,9 +278,12 @@ export interface BacklogImportCandidateInput {
   parentTitle?: string;
   depth: 0 | 1;
   /** False for a parent included only as context. Defaults to true. */
-  selectable: boolean;
+  selectable?: boolean;
+  /** Selected for import in Sync review. Defaults to true. */
   selected?: boolean;
-  childCount: number;
+  /** Defaults to 0. */
+  childCount?: number;
+  /** When the item reached Ajour, in Unix milliseconds. Defaults to now. */
   pushedAt?: number;
 }
 

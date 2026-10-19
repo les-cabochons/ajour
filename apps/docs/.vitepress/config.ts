@@ -16,6 +16,7 @@ const guideSidebar: DefaultTheme.SidebarItem[] = [
     items: [
       { text: "Day view", link: "/time/day-view" },
       { text: "Week view", link: "/time/week-view" },
+      { text: "Calendar suggestions", link: "/time/calendar-suggestions" },
       { text: "Running entries", link: "/time/running-entries" },
       { text: "Time entries", link: "/time/entries" },
       { text: "Commit your week", link: "/time/commit" },
@@ -26,6 +27,7 @@ const guideSidebar: DefaultTheme.SidebarItem[] = [
     items: [
       { text: "Backlog", link: "/backlog/" },
       { text: "Backlog items", link: "/backlog/items" },
+      { text: "Comments", link: "/backlog/comments" },
       { text: "Display options", link: "/backlog/display-options" },
       { text: "Settle and snooze", link: "/backlog/settle-and-snooze" },
       { text: "Workflow states", link: "/backlog/workflow" },
@@ -62,6 +64,7 @@ const guideSidebar: DefaultTheme.SidebarItem[] = [
       { text: "Azure DevOps", link: "/plugins/azure-devops" },
       { text: "Jira", link: "/plugins/jira" },
       { text: "GitHub", link: "/plugins/github" },
+      { text: "Calendar address (ICS)", link: "/plugins/ics" },
       { text: "Workday", link: "/plugins/workday" },
       { text: "Workday (agent)", link: "/plugins/workday-agent" },
       { text: "Sync review", link: "/plugins/sync-review" },

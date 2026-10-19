@@ -6,7 +6,7 @@ Committing copies your week's changes into your company's timesheet tool, such a
 
 ## Open the page
 
-Click the **Commit** button, a calendar with a check mark, at the bottom right of the sidebar. While the sidebar is hidden on a Time page, it sits at the left of the title bar. In a [narrow window](/app/narrow-windows), it sits at the end of the toggle at the bottom left. It opens the Commit page for the week on screen: the week of the day you are on, or the last day you picked on the Time page.
+Click the **Commit** button, a calendar with a check mark, at the bottom left of the sidebar, next to **Settings**. While the sidebar is hidden on a Time page, it sits at the left of the title bar. In a [narrow window](/app/narrow-windows), it sits at the end of the toggle at the bottom left. It opens the Commit page for the week on screen: the week of the day you are on, or the last day you picked on the Time page.
 
 When your saved time reaches the week's target, Ajour asks **Week complete**, such as "You logged 37:30 of 37:30 for the week of Oct 12 to 18. Commit and lock it now?". Press **Commit** to open the Commit page, or **Later** to close the question. Ajour asks once per week, whatever you answer. A running entry counts once you stop it. The target is the sum of your **Time capacity** in [Settings](/app/settings), and a week with no capacity never asks. A [submitted week](#submit-the-week) never asks either.
 
@@ -35,7 +35,7 @@ Click the **Changes** heading to hide the list, and click it again to show it. *
 
 ## Mark as committed
 
-When the checked changes are in your timesheet tool, press **Mark as committed**. A toast offers **Undo**. The entry editor shows a **Committed** chip on each committed entry.
+When the checked changes are in your timesheet tool, press **Mark as committed**. A toast offers **Undo**. A committed entry shows a check on its Day row, **committed** on its Week Days card, and a **Committed** chip in the entry editor.
 
 ## Mark as not committed
 
@@ -51,7 +51,7 @@ When every change is committed, press **Submit week**. When the week is behind i
 
 **Submit week** is greyed out with **Commit your changes first** while a change is not committed, and with **Stop the running entry first** while an entry runs in the week.
 
-A submitted week shows **Submitted** with a lock on its Commit page and in the Week view. Its entries stay as they are: you cannot add, edit, move, delete or paste entries on its days, and no entry can start on them. Greyed-out actions say why, such as `The week of Oct 5 is submitted. Reopen it to change it.` Agents get the same answer.
+A submitted week shows **Submitted** with a lock on its Commit page and in the Week view. Its entries stay as they are: you cannot add, edit, move, delete or paste entries on its days, and no entry can start on them. Hover a greyed-out button to see why, such as `The week of Oct 5 is submitted. Reopen it to change it.` Agents get the same answer. You can still open an entry to read it, copy it, **Continue** it today, or use **Duplicate to…** to copy it to a week that is not submitted.
 
 ## Reopen a week
 
@@ -73,7 +73,7 @@ Under **Lines**, the whole week is grouped into lines with the project, the task
 | **Day**          | day                      |
 | **Task**         | task, for the whole week |
 
-Lines show each project's full name. When a plugin adds project properties, such as [Workday (agent)](/plugins/workday-agent), a **Names** switch sits next to **Group by**. Choose **Workday** to show the project's Workday name instead, which you can set in the project's **Workday** section. Ajour remembers your choice.
+Lines show each project's full name. When a plugin adds project properties, such as [Workday (agent)](/plugins/workday-agent), a **Names** switch sits next to **Group by**. **Ajour** shows the full name. Choose **Workday** to show the project's Workday name instead, which you can set in the project's **Workday** section. Ajour remembers your choice.
 
 ## Commit with an agent
 
@@ -81,4 +81,4 @@ With a plugin such as [Workday (agent)](/plugins/workday-agent), a button such a
 
 A plugin can also offer its own button, such as **Check Workday and submit**, which checks the week in the timesheet tool before it submits it in Ajour. **Submit week** stays available beside it to mark the week as submitted in Ajour without running an agent. It does not submit anything in Workday. Both actions wait until every change is committed and no entry is running in the week. **Submit week** also waits while an agent task runs, since the task may submit the week itself.
 
-A link such as **Open the week in Workday**, under the week summary, opens the week in your browser.
+A link such as **Open the week in Workday (agent)**, under the week summary, opens the week in your browser.

@@ -20,7 +20,7 @@ The desktop app runs a local API inside its main process, on `127.0.0.1:8787`. T
 
 | Not available                    | Why                                                                                |
 | -------------------------------- | ---------------------------------------------------------------------------------- |
-| Ajour's data                     | The window owns the workspace. The API and plugins never get it.                   |
+| Ajour's data                     | The window owns the workspace. A plugin gets only what each call passes.           |
 | Environment variables            | `process.env` is empty in the worker.                                              |
 | Logs                             | `console` output is discarded. Throw errors with clear messages instead.           |
 | UI                               | Ajour draws every screen. Describe fields in the manifest.                         |
@@ -35,7 +35,7 @@ The desktop app runs a local API inside its main process, on `127.0.0.1:8787`. T
 | Calls running at once                 | 4 per host. A fifth fails with "Too many plugin operations are already running." |
 | Result size                           | 8 MiB. Results must be plain data that can be cloned.                            |
 | Memory                                | 128 MB of old-generation heap, 32 MB young generation.                           |
-| Error message                         | 4,096 characters.                                                                |
+| Error message                         | 4,096 characters, and 1,000 on the connection's row.                             |
 | Items Ajour sends to `syncConnection` | 1,000.                                                                           |
 | Package archive                       | 25 MiB, 2,000 entries, 100 MiB once extracted.                                   |
 
@@ -59,7 +59,7 @@ As a plugin author:
 
 ## API versions
 
-Ajour accepts a backlog or code host plugin only if its `apiVersion` equals Ajour's plugin API version, today `3`. There is no range. When the version changes:
+Ajour accepts a plugin only if its `apiVersion` equals Ajour's plugin API version, today `3`. There is no range. Schema plugins have their own version, `1`, checked the same way. When the version changes:
 
 - Installed plugins with another version stay installed but show as unavailable, with the reason. Their connections and items stay.
 - The catalog offers an update once a release with the new version exists.

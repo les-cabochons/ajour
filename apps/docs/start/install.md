@@ -8,6 +8,8 @@ Ajour is a desktop app for macOS and Windows. Download the installer for your ma
 | macOS (Intel)         | `Ajour-<version>-x64.dmg`   |
 | Windows               | `Ajour-<version>-x64.exe`   |
 
+On macOS, open the `.dmg` and drag Ajour to **Applications**. On Windows, run the `.exe`. It installs Ajour for your user only, in `%LOCALAPPDATA%\Programs\ajour`, and opens it.
+
 ::: info Nightly builds only
 Ajour has no stable release yet. Every release on the page is a nightly build, marked **Pre-release**. Take the newest one.
 :::
@@ -20,18 +22,20 @@ On macOS, open the app once, then go to **System Settings › Privacy & Security
 
 ## Updates
 
-Ajour checks GitHub for a newer version when you open **Settings › General**, or when you choose **Ajour › Check for updates…** in the menu bar. Pick the track in **Settings › General › Application updates**:
+Ajour checks GitHub for a newer version on startup, every 4 hours, and when you open **Settings › General**. To check now, click the arrow at the bottom right of the sidebar, or press **Check again** in **Settings › General › Application updates**. On macOS, you can also choose **Ajour › Check for updates…** in the menu bar. Checks never download an update.
+
+Pick the track in **Settings › General › Application updates**:
 
 - **Stable**, the default, follows stable releases.
 - **Nightly** follows the nightly builds.
 
 Until the first stable release, choose **Nightly**, or Ajour never finds an update.
 
-Ajour also checks on startup and every 4 hours. The update icon at the bottom right of the sidebar shows when a version is available. Click the neutral icon to check again.
+When a version is available, the arrow at the bottom right of the sidebar stands out, and its tooltip names the version.
 
-On Windows, click the available update to open a warning. **Update and restart** downloads the version and restarts Ajour to install it. Save your work first. **Cancel** leaves the update available. Checks never download updates, and quitting the app never installs one.
+On Windows, click it, or press **Update and restart** in Settings, to open a warning. **Update and restart** downloads the version and restarts Ajour to install it. Save your work first. **Cancel** leaves the update available. Quitting the app never installs an update.
 
-On macOS, Ajour shows that a new version is available, with a **View release** button. Download the new `.dmg` and replace the app. Automatic updates on macOS need a signed app, which Ajour does not have yet.
+On macOS, click it, or press **View release** in Settings, to open the release page. Download the new `.dmg` and replace the app. Automatic updates on macOS need a signed app, which Ajour does not have yet.
 
 ## The web version
 

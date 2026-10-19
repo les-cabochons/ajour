@@ -16,15 +16,17 @@ github_issues-0.1.0.ajour-connector
 
 The official plugins build it with `scripts/package-connector.mjs`. Copy it, with `scripts/connector-manifest.mjs`, from [ajc-jira](https://github.com/les-cabochons/ajc-jira/tree/main/scripts). It checks that:
 
-- `plugin.json` passes Ajour's manifest rules, with `apiVersion` 3.
+- `plugin.json` passes Ajour's manifest rules, with `apiVersion` 3. This copy accepts the backlog and code host capabilities only, so adapt it for others.
 - `package.json` and `plugin.json` have the same version.
 - The entry point is a compiled JavaScript file inside `dist/`.
 
 It writes `package/<id>-<version>.ajour-connector`.
 
+A plugin that runs no code, such as one with only agent tasks, packs `plugin.json` and its prompt files instead. See the [ajp-workday-agent script](https://github.com/les-cabochons/ajp-workday-agent/blob/main/scripts/package-connector.mjs).
+
 ## Share a file
 
-Send the archive. Users install it with **Settings › Plugins › Install from file**, in the desktop app. A plugin installed from a file starts active. Installing a newer file with the same `id` replaces the plugin and keeps its connections.
+Send the archive. Users install it with **Settings › Plugins › Install from file**, in the desktop app. A plugin installed from a file starts active, and one downloaded from the catalog starts off. Installing a newer file with the same `id` replaces the plugin and keeps its connections and whether it was on. A capability that the update adds starts off, if the plugin has more than one that the user can turn on and off.
 
 ## Release on GitHub
 

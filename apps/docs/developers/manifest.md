@@ -1,6 +1,6 @@
 # Manifest
 
-Every backlog and code host plugin has a `plugin.json` file at its root. Ajour reads it when it installs or loads the plugin, and refuses the plugin if it does not match the schema below. Unknown keys are ignored.
+Every plugin has a `plugin.json` file at its root. Ajour reads it when it installs or loads the plugin, and refuses the plugin if it does not match the schema below. Unknown keys are ignored.
 
 For schema plugins, see [Schema API](/developers/schema-api#manifest).
 
@@ -51,9 +51,9 @@ For schema plugins, see [Schema API](/developers/schema-api#manifest).
 | `displayName`      | string | 1 to 120 characters.                                                                                                                                                               |
 | `description`      | string | Optional. Up to 500 characters.                                                                                                                                                    |
 | `iconSvg`          | string | Inline SVG markup, up to 20,000 characters.                                                                                                                                        |
-| `entrypoint`       | string | Relative path to a `.js`, `.mjs` or `.cjs` file inside the package. No symlinks. Leave it out for a plugin with only `agentTask`.                                                  |
+| `entrypoint`       | string | Relative path to a `.js`, `.mjs` or `.cjs` file inside the package. No symlinks. Leave it out for a plugin that runs no code, with only `agentTask` or `projectProperties`.        |
 | `capabilities`     | object | At least one of `connector`, `codeHost`, `calendar`, `team`, `agentTask` and `projectProperties`. See below.                                                                       |
-| `connectionFields` | array  | 1 to 50 [connection fields](#connection-fields). Optional, and empty by default, for a plugin with only `agentTask`.                                                               |
+| `connectionFields` | array  | 1 to 50 [connection fields](#connection-fields). Optional, and empty by default, for a plugin that runs no code.                                                                   |
 
 The `id` is permanent. It names the install folder, and it is the `source` of every item your plugin syncs. Changing it orphans the user's connections and items.
 
@@ -66,23 +66,28 @@ The `id` is permanent. It names the install folder, and it is the `source` of ev
 }
 ```
 
-| Capability          | Means                                                                                                                                                                       |
-| ------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `connector`         | The backlog capability. The plugin exports `syncConnection`. See [Backlog API](/developers/backlog-api).                                                                    |
-| `connector.settle`  | Optional. `true` if the plugin exports `listSettleStates` and `writeSettle`, and can write states and priorities. Without it, Ajour settles items locally and never writes. |
-| `codeHost`          | The plugin exports `syncPullRequests`. See [Code host API](/developers/code-host-api).                                                                                      |
-| `calendar`          | The plugin exports `listCalendarEvents`. Read-only. See [Calendar API](/developers/calendar-api).                                                                           |
-| `team`              | `{ "apiVersion": 1 }`. The plugin exports `createTeam` and `syncTeamProjects`, and keeps a team's shared projects in step. See [Team API](/developers/team-api).            |
-| `agentTask`         | The plugin declares tasks that a coding agent runs from a prompt. No plugin code runs. See [Agent tasks](#agent-tasks).                                                     |
-| `projectProperties` | Text properties the plugin adds to every project. No plugin code runs. See [Project properties](#project-properties).                                                       |
+| Capability           | Means                                                                                                                                                                       |
+| -------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `connector`          | The backlog capability. The plugin exports `syncConnection`. See [Backlog API](/developers/backlog-api).                                                                    |
+| `connector.settle`   | Optional. `true` if the plugin exports `listSettleStates` and `writeSettle`, and can write states and priorities. Without it, Ajour settles items locally and never writes. |
+| `connector.comments` | Optional. The plugin lists and posts comments on its items, with the features it declares. See [Backlog API](/developers/backlog-api#listitemcomments).                     |
+| `codeHost`           | The plugin exports `syncPullRequests`. See [Code host API](/developers/code-host-api).                                                                                      |
+| `calendar`           | The plugin exports `listCalendarEvents`. Read-only. See [Calendar API](/developers/calendar-api).                                                                           |
+| `team`               | `{ "apiVersion": 1 }`. The plugin exports `createTeam` and `syncTeamProjects`, and keeps a team's shared projects in step. See [Team API](/developers/team-api).            |
+| `agentTask`          | The plugin declares tasks that a coding agent runs from a prompt. No plugin code runs. See [Agent tasks](#agent-tasks).                                                     |
+| `projectProperties`  | Text properties the plugin adds to every project. No plugin code runs. See [Project properties](#project-properties).                                                       |
 
 The backlog capability is declared under the `connector` key until plugin API 4.
 
 Ajour only calls the functions your capabilities declare.
 
+When a plugin declares more than one of `connector`, `codeHost`, `calendar` and `team`, the user turns each on and off separately, as **Backlog items**, **Pull requests**, **Calendar events** and **Projects**. A capability that an update adds starts off for users who had the plugin. Agent tasks and project properties follow the plugin's own switch.
+
 ## Agent tasks
 
 An agent task is a Markdown prompt that Ajour gives to the user's coding agent, Claude Code, Codex or OpenCode, with the Ajour MCP tools and a Chrome window. Ajour only reads the prompt file. A plugin that declares only `agentTask` runs no code and needs no `entrypoint`.
+
+A task can run once the user has turned on MCP, picked an installed agent in **Settings › Agents**, and filled the task's required settings. Until then, the button is disabled and says what is missing. One task runs at a time.
 
 ```json
 "capabilities": {
@@ -106,19 +111,19 @@ An agent task is a Markdown prompt that Ajour gives to the user's coding agent, 
 
 | Key               | Type   | Rules                                                                                                                                                                                                            |
 | ----------------- | ------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `id`              | string | Unique in the plugin.                                                                                                                                                                                            |
-| `label`           | string | The button label on the Commit page.                                                                                                                                                                             |
+| `id`              | string | Lowercase letters, digits and `-`, up to 63 characters, starting with a letter or digit. Keep it unique in the plugin.                                                                                           |
+| `label`           | string | The button label on the Commit page. 1 to 60 characters.                                                                                                                                                         |
 | `placement`       | string | `commit-week`: a button next to **Mark as committed** on the Commit page. `submit-week`: a button alongside **Submit week**, greyed out like it until every change is committed. Both act on the week on screen. |
 | `prompt`          | string | Relative path to a Markdown file in the package. A regular file, no symlinks, at most 64 KB.                                                                                                                     |
-| `estimateMinutes` | number | How long a run usually takes. The agent panel uses it to tell a slow run from a stuck one.                                                                                                                       |
-| `weekLink`        | string | Optional. A URL template for **Open the week in…**. Shown only when it fills to an `https:` URL.                                                                                                                 |
-| `settings`        | array  | Optional. Fields with the [connection field](#connection-fields) keys. The user fills them on the plugin's page, under Tasks. Tasks share a setting by its `id`: declare it in each task that uses it.           |
+| `estimateMinutes` | number | A whole number from 1 to 240: how long a run usually takes. The agent panel uses it to tell a slow run from a stuck one.                                                                                         |
+| `weekLink`        | string | Optional. A URL template for **Open the week in…**, up to 500 characters. Shown only when it fills to an `https:` URL.                                                                                           |
+| `settings`        | array  | Optional. Up to 20 fields with the [connection field](#connection-fields) keys. The user fills them on the plugin's page, under Tasks. Tasks share a setting by its `id`: declare it in each task that uses it.  |
 
 A `submit-week` task looks the same, such as `"id": "submit-week"`, `"label": "Check Workday and submit"`, `"placement": "submit-week"`, `"prompt": "prompts/submit-week.md"`. Its prompt ends with the `submit_week` tool.
 
 A plugin can declare up to 10 tasks.
 
-The tasks of a plugin share their settings. A setting `id` holds one value for every task that declares it, and the plugin's page asks for it once, with the field of the first task that declares it.
+The tasks of a plugin share their settings. A setting `id` holds one value for every task that declares it, and the plugin's page asks for it once, with the label, type and default of the first task that declares it. Each task still decides with `required` whether it needs the setting to run.
 
 ### Slots
 
@@ -126,11 +131,11 @@ The prompt and `weekLink` can use these slots. A slot Ajour does not know fails 
 
 ::: v-pre
 
-| Slot                | Value                                                      |
-| ------------------- | ---------------------------------------------------------- |
-| `{{weekOf}}`        | The ISO date of the week's Monday, such as `2026-10-12`.   |
-| `{{sessionId}}`     | The agent session Ajour opened for the run.                |
-| `{{settings.<id>}}` | The value of the task setting `<id>`, or empty when unset. |
+| Slot                | Value                                                                   |
+| ------------------- | ----------------------------------------------------------------------- |
+| `{{weekOf}}`        | The ISO date of the week's Monday, such as `2026-10-12`.                |
+| `{{sessionId}}`     | The agent session Ajour opened for the run. Empty in `weekLink`.        |
+| `{{settings.<id>}}` | The value of the task setting `<id>`, its default, or empty when unset. |
 
 :::
 
@@ -170,20 +175,21 @@ Ajour shows the fields in a section of the project's properties card, titled `se
 
 Ajour draws the connection form from `connectionFields`, in order. The values reach your plugin as `config`, keyed by `id`.
 
-| Key                  | Type                        | Rules                                                        |
-| -------------------- | --------------------------- | ------------------------------------------------------------ |
-| `id`                 | string                      | 1 to 120 characters. Keep it unique: values are keyed by it. |
-| `label`              | string                      | The form label. 1 to 120 characters.                         |
-| `type`               | string                      | `text`, `password`, `url`, `select`, `number` or `checkbox`. |
-| `placeholder`        | string                      | Optional. Up to 240 characters.                              |
-| `helpText`           | string                      | Optional. Shown under the field. Up to 500 characters.       |
-| `required`           | boolean                     | Defaults to `false`.                                         |
-| `secret`             | boolean                     | Defaults to `false`. See below.                              |
-| `defaultValue`       | string, number or boolean   | Optional.                                                    |
-| `options`            | array of `{ value, label }` | For `select`. Up to 50.                                      |
-| `min`, `max`, `step` | number                      | Optional, for `number`.                                      |
+| Key                  | Type                        | Rules                                                                                                                                                                                         |
+| -------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `id`                 | string                      | 1 to 120 characters. Keep it unique: values are keyed by it.                                                                                                                                  |
+| `label`              | string                      | The form label. 1 to 120 characters.                                                                                                                                                          |
+| `type`               | string                      | `text`, `password`, `url`, `select`, `number` or `checkbox`.                                                                                                                                  |
+| `placeholder`        | string                      | Optional. Up to 240 characters.                                                                                                                                                               |
+| `helpText`           | string                      | Optional. Shown under the field. Up to 500 characters.                                                                                                                                        |
+| `required`           | boolean                     | Defaults to `false`.                                                                                                                                                                          |
+| `secret`             | boolean                     | Defaults to `false`. See below.                                                                                                                                                               |
+| `defaultValue`       | string, number or boolean   | Optional.                                                                                                                                                                                     |
+| `options`            | array of `{ value, label }` | For `select`. Up to 50.                                                                                                                                                                       |
+| `min`, `max`, `step` | number                      | Optional, for `number`.                                                                                                                                                                       |
+| `capability`         | string                      | Optional. `connector`, `codeHost`, `calendar` or `team`: the capability the field configures. The form hides the field, and skips its required check, while the user has that capability off. |
 
-Values are strings, numbers or booleans. Strings are at most 4,000 characters.
+Values are strings, numbers or booleans. Strings are at most 4,000 characters. Without a `defaultValue`, a checkbox starts unchecked, a number at `min` or 0, and other fields empty.
 
 ### Secret fields
 
@@ -195,16 +201,18 @@ Ajour stores connection values, secrets included, in a JSON file that only the u
 
 ### Reserved fields
 
-Ajour handles four field IDs itself. Declare them so the form shows them, with your labels.
+Ajour handles these field IDs itself. Declare the ones that apply, so the form shows them with your labels.
 
-| ID                        | Type     | Meaning                                                         |
-| ------------------------- | -------- | --------------------------------------------------------------- |
-| `label`                   | text     | Required. The connection's name in Ajour.                       |
-| `tenantLabel`             | text     | Required. The account, site or client, shown next to the label. |
-| `autoSync`                | checkbox | Sync on a timer while Ajour is open. Defaults to `false`.       |
-| `autoSyncIntervalMinutes` | number   | Minutes between automatic syncs, 1 to 1440. Defaults to 15.     |
+| ID                        | Type     | Meaning                                                                                                               |
+| ------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------- |
+| `label`                   | text     | Required. The connection's name in Ajour.                                                                             |
+| `tenantLabel`             | text     | Required. The account, site or client, shown next to the label.                                                       |
+| `autoSync`                | checkbox | Sync backlog items on a timer while Ajour is open, straight into the backlog. Defaults to `false`.                    |
+| `autoSyncIntervalMinutes` | number   | Minutes between automatic syncs, 1 to 1440. Defaults to 15. A team syncs on it whenever **Projects** is on.           |
+| `pullRequestAutoSync`     | checkbox | Sync pull requests on the timer. Without this field, pull requests follow `autoSync`.                                 |
+| `agentAccess`             | select   | Do not declare it. Ajour adds **Agent access to comments** to a plugin with comments, and drops a field with this ID. |
 
-Ajour removes these from `config` before it calls your plugin. They reach you as properties of the [connection](/developers/backlog-api#connection) instead.
+Ajour removes these from `config` before it calls your plugin, and from the `normalizedConfig` you return. The first four reach you as properties of the [connection](/developers/backlog-api#types) instead.
 
 ### Imported task icon
 

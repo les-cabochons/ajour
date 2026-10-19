@@ -1,6 +1,7 @@
 // What the docs screenshots need beyond the seeded workspace: the official
 // plugins installed and connected, a desktop bridge that serves the plugin
-// catalog, staged imports, and a few pull requests. Used by docs-shots.mjs.
+// catalog, staged imports, comments, calendar events and a few pull
+// requests. Used by docs-shots.mjs.
 import fs from "node:fs";
 import { createRequire } from "node:module";
 
@@ -19,8 +20,15 @@ const manifests = JSON.parse(
 
 const HOUR = 3_600_000;
 
+/**
+ * The time of every shot: a Thursday afternoon, so the seeded week is full
+ * whatever day the shots are taken. docs-shots.mjs sets the browser clock to
+ * it, and the fixtures below use it instead of the real clock.
+ */
+export const NOW = new Date(2026, 9, 15, 14, 30).getTime();
+
 function connection(pluginId, id, label, tenantLabel, extra = {}) {
-  const now = Date.now();
+  const now = NOW;
   return {
     id,
     pluginId,
@@ -39,16 +47,33 @@ function connection(pluginId, id, label, tenantLabel, extra = {}) {
   };
 }
 
-/** The plugin overview with Azure DevOps, Jira and GitHub connected. */
-export function pluginsOverview() {
+/** The ICS calendar plugin and its connection, for the calendar shots. */
+const calendarGroup = () => ({
+  plugin: manifests.ics,
+  enabled: true,
+  connections: [
+    connection("ics", "ics-work", "Work calendar", "Outlook", {
+      configSummary: {},
+      editableValues: { email: "sam@contoso.com" },
+    }),
+  ],
+});
+
+/**
+ * The plugin overview with Azure DevOps, Jira and GitHub connected. With
+ * `calendar`, the ICS calendar plugin is connected too.
+ */
+export function pluginsOverview({ calendar = false } = {}) {
   const plugins = [manifests.azure_devops, manifests.jira, manifests.github];
-  return {
+  const overview = {
     pluginsEnabled: true,
     plugins,
     connectionGroups: [
       {
         plugin: manifests.azure_devops,
         enabled: true,
+        // Pull requests come from GitHub in these shots.
+        inactiveCapabilities: ["codeHost"],
         connections: [
           connection("azure_devops", "ado-work", "Contoso", "Contoso", {
             pendingImportCount: 3,
@@ -92,6 +117,8 @@ export function pluginsOverview() {
       {
         plugin: manifests.github,
         enabled: true,
+        // The backlog comes from Azure DevOps and Jira in these shots.
+        inactiveCapabilities: ["connector"],
         connections: [
           connection("github", "gh-work", "Work", "Contoso on GitHub", {
             autoSync: true,
@@ -111,11 +138,16 @@ export function pluginsOverview() {
     totalPendingImportCount: 3,
     totalSelectedImportCount: 2,
   };
+  if (calendar) {
+    overview.plugins.push(manifests.ics);
+    overview.connectionGroups.push(calendarGroup());
+  }
+  return overview;
 }
 
 /** Azure DevOps items waiting in Sync review. */
 export function stagedImports() {
-  const now = Date.now();
+  const now = NOW;
   const base = {
     source: "azure_devops",
     connectionId: "ado-work",
@@ -184,7 +216,7 @@ export function stagedImports() {
 
 /** Source states the plugins reported, for Settings › Workflow. */
 export function sourceStatuses() {
-  const now = Date.now();
+  const now = NOW;
   const ado = (label) => ({
     source: "azure_devops",
     connectionId: "ado-work",
@@ -233,8 +265,8 @@ export const mcpSettings = (enabled = true) => ({
     {
       id: "client-1",
       name: "Claude Code on this Mac",
-      createdAt: Date.now() - 6 * 24 * HOUR,
-      lastUsedAt: Date.now() - 2 * HOUR,
+      createdAt: NOW - 6 * 24 * HOUR,
+      lastUsedAt: NOW - 2 * HOUR,
     },
   ],
 });
@@ -336,5 +368,115 @@ export function pullRequestsScript() {
     }),
   ];
   localStorage.setItem(key, JSON.stringify(state));
+})()`;
+}
+
+const sam = { id: "sam", displayName: "Sam Rivera", email: "sam@contoso.com" };
+const jo = { id: "jo", displayName: "Jo Park", email: "jo.park@contoso.com" };
+const lee = {
+  id: "lee",
+  displayName: "Lee Chen",
+  email: "lee.chen@contoso.com",
+};
+const joanna = {
+  id: "joanna",
+  displayName: "Joanna Brooks",
+  email: "joanna.brooks@contoso.com",
+};
+
+/** The comments of the synced backlog items, as Azure DevOps returns them. */
+export function itemComments() {
+  const at = (hoursAgo) => new Date(NOW - hoursAgo * HOUR).toISOString();
+  return {
+    viewer: sam,
+    total: 4,
+    comments: [
+      {
+        id: "c1",
+        author: jo,
+        body: "Arrow keys should wrap to the next row at the end of a week, like a spreadsheet.",
+        createdAt: at(30),
+      },
+      {
+        id: "c2",
+        author: sam,
+        body: "Agreed. Tab moves to the next cell, and Enter edits the hours.",
+        createdAt: at(28),
+        reactions: [{ reaction: "like", count: 2, viewerReacted: false }],
+      },
+      {
+        id: "c3",
+        author: lee,
+        body: "[@Sam Rivera](mention:sam) the grid loses focus after a paste. Can you check it before the release?",
+        createdAt: at(2),
+        updatedAt: at(1.5),
+      },
+      {
+        id: "c4",
+        author: jo,
+        body: "Pairing on it this afternoon.",
+        createdAt: at(1),
+        reactions: [{ reaction: "heart", count: 1, viewerReacted: true }],
+      },
+    ],
+  };
+}
+
+/** The people the @ suggestions offer for "jo". */
+export const itemPeople = () => ({ people: [jo, joanna] });
+
+/** A week of meetings in the ICS calendar, around the fixed Thursday. */
+export function calendarEvents() {
+  const at = (day, hour, minute = 0) =>
+    new Date(2026, 9, day, hour, minute).getTime();
+  const meeting = (eventId, title, day, from, to, extra = {}) => ({
+    eventId,
+    title,
+    startsAt: at(day, ...from),
+    endsAt: at(day, ...to),
+    allDay: false,
+    status: "confirmed",
+    response: "accepted",
+    busy: true,
+    ...extra,
+  });
+  const harborSync = (day) =>
+    meeting(`harbor-sync-${day}`, "Harbor sync", day, [10], [10, 30], {
+      seriesId: "harbor-sync",
+    });
+  return {
+    events: [
+      harborSync(12),
+      meeting("security", "Security training", 13, [11], [12]),
+      meeting("demo-prep", "Atlas demo prep", 14, [15], [15, 30]),
+      harborSync(15),
+      meeting("lunch", "Lunch", 15, [12], [13], { busy: false }),
+      meeting("design-review", "Design review: settings icons", 15, [13], [14]),
+      {
+        ...meeting("freeze", "Release freeze", 15, [0], [0]),
+        endsAt: at(16, 0),
+        allDay: true,
+        busy: false,
+      },
+      meeting("go-no-go", "Release 1.4 go/no-go", 16, [10], [10, 45]),
+    ],
+  };
+}
+
+/**
+ * What the user did before the shots: Ajour remembers the project of the
+ * Harbor sync, and the Week grid item was opened before its last comments.
+ * Runs after the seed script.
+ */
+export function rememberedScript() {
+  return `(() => {
+  const key = "ajour.local-state.v2";
+  const raw = localStorage.getItem(key);
+  if (!raw) return;
+  const state = JSON.parse(raw);
+  const now = Date.now();
+  state.calendarEventRules = [{ _id: "rule-harbor-sync", pluginId: "ics", connectionId: "ics-work", seriesId: "harbor-sync", label: "Harbor sync", action: "assign", projectId: "p-harbor", taskId: "t-harbor-dev", createdAt: now - 7 * 24 * 3600000 }];
+  localStorage.setItem(key, JSON.stringify(state));
+  localStorage.setItem("ajour.comments-seen", JSON.stringify({ w2: now - 3 * 3600000 }));
 })()`;
 }

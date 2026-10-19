@@ -13,7 +13,7 @@ export async function listCalendarEvents(
 ): Promise<CalendarListEventsResult>;
 ```
 
-Ajour calls it when the user opens a week in the Time view, presses **Refresh**, and on a timer while the window is visible. `from` and `to` are local dates as `YYYY-MM-DD`, both included, at most 62 days apart. `timeZone` is the user's IANA time zone, such as `America/Toronto`. Use it for floating times and all-day dates.
+Ajour calls it when the user opens a week in the Time view, presses **Refresh**, and on a timer while the window is visible. `from` and `to` are local dates as `YYYY-MM-DD`, both included, covering at most 62 days. `timeZone` is the user's IANA time zone, such as `America/Toronto`. Use it for floating times and all-day dates.
 
 Return every occurrence that overlaps the range, at most 1,000:
 
@@ -39,7 +39,7 @@ interface CalendarListEventsResult {
 }
 
 interface CalendarEventFacts {
-  /** The provider's id of the event, the UID in ICS. */
+  /** The provider's id of the event, the UID in ICS. Up to 400 characters. */
   eventId: string;
   /** Shared by every occurrence of a recurring event. Leave it out for a one-off. */
   seriesId?: string;
@@ -67,7 +67,7 @@ Throw an `Error` with a message the user can act on, such as "The calendar addre
 
 ## Connection fields
 
-A calendar usually needs one secret field. For an ICS address:
+A calendar usually needs one secret field. For an ICS address, as in [ajc-ics](https://github.com/les-cabochons/ajc-ics):
 
 ```json
 {

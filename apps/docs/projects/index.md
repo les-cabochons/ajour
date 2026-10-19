@@ -8,7 +8,9 @@ Press <kbd>G</kbd> then <kbd>P</kbd>, or pick **Projects** in the sidebar's view
 
 ## The Projects list
 
-Each row shows the project, its number of tasks, the time logged this week and its budget. **Active** and **Archived** at the top switch between the two lists.
+Each row shows the project, its number of active tasks, the time logged this week and how much of its budget is used. A shared project shows a team mark. **Active** and **Archived** at the top switch between the two lists.
+
+Drag a row, or press <kbd>Alt</kbd> <kbd>↑</kbd> and <kbd>Alt</kbd> <kbd>↓</kbd>, to reorder the active projects. Right-click a row, or press its **…** button, for **Edit**, **New task** and **Archive**.
 
 ## Create a project
 
@@ -24,16 +26,20 @@ Press **New project**.
 | **Color**        | Pick a preset or type a hex color.                                                                                                                                  |
 | **Project icon** | One of 67 presets, or upload a favicon (`.png`, `.svg` or `.ico`). Turn on **Keep native colors** to show an upload in its own colors instead of the project color. |
 
+Press **Create project**. The project's page opens.
+
 ## The project page
 
 Click a project to open its page.
 
 <Shot name="project-page" alt="A project page with its figures, tasks and properties" />
 
-- **The figures** show time this week and all time, and for budgeted tasks, the budget, the time used and what remains.
+- **The figures** show time this week and all time. For budgeted tasks, they add the budget, the time used and what remains. Without a budget, they show the number of active tasks.
 - **Tasks** lists the project's tasks. See [Tasks](/projects/tasks).
-- **Time entries** lists every entry on the project.
-- **The properties card**, at the side, has the full name, code, color, icon and status. Change them in place. With a team plugin, it also has **Share with team**, or a **Team** row and **Stop sharing** for a shared project. See [Shared projects](/projects/shared-projects).
+- **Time entries** lists every entry on the project, by day. Click one to open its day.
+- **The properties card**, at the side, has the full name, code, color, icon and status. Change them in place. Each change saves on <kbd>Enter</kbd> or when you leave the field, with Undo. <kbd>Esc</kbd> cancels. A shared project also shows its **Team**. See [Shared projects](/projects/shared-projects).
+
+The bottom of the card has **Import tasks…**, **Share with team** when a team plugin is connected, or **Stop sharing** for a shared project, and **Archive**.
 
 Plugins can add their own section to the properties card, such as **Workday** with the project's Workday name and code. Click the section title to open it. An empty row shows its default in grey.
 
@@ -41,6 +47,6 @@ Click the title to rename the display name.
 
 ## Archive a project
 
-Choose **Archive** in the project's properties or its actions menu. Its entries stay. Its page shows a notice and its fields are read-only. Find it under **Archived**, and press **Restore** to bring it back.
+Choose **Archive** in the project's properties or its actions menu. An Undo toast follows. Its entries stay. Its page shows a notice and its fields are read-only. Find it under **Archived**, and press **Restore** to bring it back.
 
 Ajour never deletes a project, so your past entries always keep their project.

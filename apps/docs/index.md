@@ -40,7 +40,7 @@ Ajour is a time tracker for people who fill a timesheet every week. It keeps you
   { icon: 'plug', title: 'Plugins overview', text: 'Install, activate and connect plugins.', link: '/plugins/' },
   { icon: 'inbox', title: 'Azure DevOps', text: 'Sync work items and write estimates, states and priorities back.', link: '/plugins/azure-devops' },
   { icon: 'inbox', title: 'Jira', text: 'Sync Jira issues and write estimates, statuses and priorities back.', link: '/plugins/jira' },
-  { icon: 'pullRequest', title: 'GitHub', text: 'List the pull requests you wrote or were asked to review.', link: '/plugins/github' },
+  { icon: 'pullRequest', title: 'GitHub', text: 'List the pull requests you wrote or were asked to review, and sync your issues.', link: '/plugins/github' },
 ]" />
 
 ## Build a plugin
