@@ -1201,19 +1201,6 @@ export function markBacklogItemOpened(
   }));
 }
 
-/**
- * Which settle the item is in: when it was settled, or archived by a settle
- * into a done state. Undefined for an active item. A comment queued with a
- * settle goes only while its item is still in that settle.
- */
-export function settleMarkOf(workItem: LocalWorkItem) {
-  return workItem.status === "settled"
-    ? workItem.settledAt
-    : workItem.status === "archived"
-      ? workItem.archivedAt
-      : undefined;
-}
-
 /** Whether an active item is hidden by a snooze that has not ended at `now`. */
 export function isBacklogItemSnoozed(workItem: LocalWorkItem, now: number) {
   return (

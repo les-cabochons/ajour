@@ -12,10 +12,7 @@ import {
   toAgentWorkItem,
 } from "@/domain/agents/agent-read-model";
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
-import {
-  settleMarkOf,
-  type BacklogSettleChange,
-} from "@/domain/backlog/backlog-item-lifecycle";
+import type { BacklogSettleChange } from "@/domain/backlog/backlog-item-lifecycle";
 import type { WorkItemPatch } from "@/domain/backlog/work-item-transitions";
 import type { LocalAppState, LocalWorkItem } from "@/domain/local-state";
 import {
@@ -25,6 +22,7 @@ import {
   type SourceStateRequest,
 } from "@/features/backlog/backlog-item-moves";
 import type { CloseSubitemsVerb } from "@/features/backlog/close-subitems-dialog";
+import { keepSettleCommentsAsDrafts } from "@/features/backlog/backlog-source-writes";
 import { getSettleBehavior } from "@/features/backlog/settle-dialog";
 import { findSettleState } from "@/features/backlog/settle-draft";
 import {
@@ -338,11 +336,12 @@ export async function runWorkItemWriteTool(
         );
       }
       const settled = findWorkItemOrRefuse(localStore.snapshot(), item._id);
+      // Comments still waiting on an earlier settle lost it: they become drafts.
+      keepSettleCommentsAsDrafts(item._id);
       const commentId = crypto.randomUUID();
       if (commentSource && input.comment) {
         queueSettleComment({
           id: commentId,
-          settleMark: settleMarkOf(settled),
           agentClient: client.name,
           itemId: item._id,
           pluginId: commentSource.pluginId,
