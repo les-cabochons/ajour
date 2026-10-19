@@ -45,6 +45,8 @@ export type BacklogCommentsCapability = z.infer<
 export const backlogPersonSchema = z.object({
   id: z.string().min(1).max(400),
   displayName: z.string().max(400),
+  /** Under the name in the @ suggestions, to tell people apart. */
+  email: z.string().max(400).optional(),
 });
 export type BacklogPerson = z.infer<typeof backlogPersonSchema>;
 
@@ -190,7 +192,8 @@ export type BacklogSetItemCommentReactionResult = z.infer<
 /** People to mention on the item, for the editor's @ suggestions. Needs `comments.mentions`. */
 export const backlogSearchItemPeopleRequestSchema = z.object({
   sourceId: z.string().min(1).max(400),
-  query: z.string().trim().min(1).max(100),
+  /** Empty after a bare @, which asks for the item's own people. */
+  query: z.string().trim().max(100),
   limit: z.number().int().min(1).max(20),
 });
 export type BacklogSearchItemPeopleRequest = z.infer<

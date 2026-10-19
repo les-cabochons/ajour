@@ -1,13 +1,5 @@
 import { useEffect, useRef, type CSSProperties } from "react";
 import type { BacklogPerson } from "@ajour/shared";
-import {
-  autocompletion,
-  closeCompletion,
-  completionKeymap,
-  completionStatus,
-  type CompletionContext,
-  type CompletionResult,
-} from "@codemirror/autocomplete";
 import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdownKeymap, markdownLanguage } from "@codemirror/lang-markdown";
 import {
@@ -15,13 +7,7 @@ import {
   LanguageSupport,
   syntaxHighlighting,
 } from "@codemirror/language";
-import {
-  EditorState,
-  MapMode,
-  Prec,
-  StateEffect,
-  StateField,
-} from "@codemirror/state";
+import { EditorState, Prec } from "@codemirror/state";
 import {
   Decoration,
   EditorView,
@@ -30,11 +16,14 @@ import {
   WidgetType,
   keymap,
   placeholder as placeholderText,
-  showTooltip,
   type DecorationSet,
   type ViewUpdate,
 } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
+import {
+  closeMentionPicker,
+  mentionPicker,
+} from "@/components/markdown-editor-mentions";
 
 export interface MarkdownEditorProps {
   /** The text of a controlled editor. Pass it with `onChange`. */
@@ -103,211 +92,6 @@ const mentionChips = ViewPlugin.fromClass(
   },
 );
 
-const escapeName = (name: string) => name.replace(/[[\]\\]/g, "");
-
-/**
- * The `@name` being typed, which the mention suggestions answer: up to three
- * words with one space between them, so a last name can follow the first.
- * Two spaces or a fourth word end it.
- */
-const mentionWord = /@(?:[^\s@[\]()]+(?: [^\s@[\]()]+){0,2} ?)?$/;
-
-interface MentionStatus {
-  /** Where the `@` is. */
-  from: number;
-  /** The `@name` it answers. */
-  word: string;
-  text: string;
-}
-
-const setMentionStatus = StateEffect.define<MentionStatus | null>();
-
-/**
- * A line in place of the suggestions when there are none to pick: asking
- * for a name after a bare `@`, or saying no one was found. It goes when the
- * text changes, the cursor leaves the `@name` it answers or the editor loses
- * focus.
- */
-const mentionStatus = StateField.define<MentionStatus | null>({
-  create: () => null,
-  update(status, transaction) {
-    for (const effect of transaction.effects) {
-      if (effect.is(setMentionStatus)) return effect.value;
-    }
-    // Typing asks again, and the answer brings the next line.
-    if (!status || transaction.docChanged) return null;
-    if (!transaction.selection) return status;
-    const head = transaction.state.selection.main.head;
-    const typed = transaction.state.sliceDoc(status.from, head);
-    return head > status.from && status.word.startsWith(typed) ? status : null;
-  },
-  provide: (field) => [
-    showTooltip.from(field, (status) =>
-      status
-        ? {
-            pos: status.from,
-            create: () => {
-              const dom = document.createElement("div");
-              dom.className = "cm-mention-status";
-              dom.setAttribute("role", "status");
-              dom.textContent = status.text;
-              return { dom };
-            },
-          }
-        : null,
-    ),
-    EditorView.focusChangeEffect.of((_state, focusing) =>
-      focusing ? null : setMentionStatus.of(null),
-    ),
-  ],
-});
-
-/** Escape closed the search for the `@` here, if one is at the cursor. */
-const dismissMention = StateEffect.define<number | null>();
-/** Ctrl+Space asks again. */
-const liftDismissal = StateEffect.define<null>();
-
-/**
- * Where the `@` is whose suggestions Escape closed: typing on in that name
- * asks no more, until Ctrl+Space asks again. It goes with the `@`.
- */
-const dismissedMention = StateField.define<{
-  from: number | null;
-  /** How many times Escape closed a search, so an older one never counts. */
-  count: number;
-}>({
-  create: () => ({ from: null, count: 0 }),
-  update(dismissed, transaction) {
-    for (const effect of transaction.effects) {
-      if (effect.is(dismissMention)) {
-        return { from: effect.value, count: dismissed.count + 1 };
-      }
-      if (effect.is(liftDismissal)) return { ...dismissed, from: null };
-    }
-    return dismissed.from === null
-      ? dismissed
-      : {
-          ...dismissed,
-          from: transaction.changes.mapPos(dismissed.from, 1, MapMode.TrackDel),
-        };
-  },
-});
-
-/**
- * Asking for suggestions with Ctrl+Space (Alt+` on a Mac) lifts the
- * dismissal at once, before CodeMirror gets to ask.
- */
-const askAgainKeymap = keymap.of(
-  [{ key: "Ctrl-Space" }, { mac: "Alt-`" }].map((binding) => ({
-    ...binding,
-    run: (view: EditorView) => {
-      if (view.state.field(dismissedMention, false)?.from != null) {
-        view.dispatch({ effects: liftDismissal.of(null) });
-      }
-      return false;
-    },
-  })),
-);
-
-/**
- * Escape closes the suggestions or their status line first, so it leaves
- * the editor only when nothing about a mention is showing.
- */
-function closeMentions(view: EditorView) {
-  const { state } = view;
-  const status = state.field(mentionStatus, false);
-  const completion = completionStatus(state);
-  if (!status && completion === null) return false;
-  const head = state.selection.main.head;
-  const line = state.doc.lineAt(head);
-  const word = mentionWord.exec(state.sliceDoc(line.from, head));
-  const from = status?.from ?? (word ? line.from + word.index : null);
-  // CodeMirror also waits a moment after ordinary typing; Escape then
-  // leaves the editor, unless a search for an @name at the cursor runs.
-  const mentioning =
-    Boolean(status) ||
-    completion === "active" ||
-    (from !== null && from !== state.field(dismissedMention, false)?.from);
-  closeCompletion(view);
-  if (!mentioning) return false;
-  view.dispatch({
-    effects: [setMentionStatus.of(null), dismissMention.of(from)],
-  });
-  return true;
-}
-
-/** Suggestions for the name after `@`, even inside a word, as in an email. */
-function mentionSource(
-  search: () => (query: string) => Promise<BacklogPerson[]>,
-) {
-  return async (
-    context: CompletionContext,
-  ): Promise<CompletionResult | null> => {
-    const word = context.matchBefore(mentionWord);
-    if (!word) return null;
-    const dismissed = context.state.field(dismissedMention, false);
-    if (dismissed?.from === word.from) return null;
-    // CodeMirror keeps a query running while the text changes, so an answer
-    // counts only while this `@word` is still what is typed, in focus.
-    const stillTyped = () => {
-      const view = context.view;
-      if (!view) return true;
-      const { state } = view;
-      return (
-        !context.aborted &&
-        view.hasFocus &&
-        // Escape closed this search while it ran.
-        state.field(dismissedMention, false)?.count === dismissed?.count &&
-        state.sliceDoc(word.from, state.selection.main.head) === word.text
-      );
-    };
-    // An empty answer, not null: CodeMirror reads null as a failure and
-    // stops, while an answer that the newer text outdates makes it ask again.
-    const outdated: CompletionResult = { from: word.from, options: [] };
-    const showStatus = (text: string | null) => {
-      const view = context.view;
-      if (!view) return;
-      if (text === null && !view.state.field(mentionStatus, false)) return;
-      view.dispatch({
-        effects: setMentionStatus.of(
-          text ? { from: word.from, word: word.text, text } : null,
-        ),
-      });
-    };
-    const query = word.text.slice(1).trim();
-    if (!query) {
-      // Out of the completion's own update.
-      await Promise.resolve();
-      if (!stillTyped()) return outdated;
-      showStatus("Type a name to mention someone");
-      return null;
-    }
-    // Typing fast asks once, for the last query.
-    await new Promise((resolve) => setTimeout(resolve, 200));
-    if (!stillTyped()) return outdated;
-    // A search that fails reads like one that found no one.
-    const people = await search()(query).catch(() => []);
-    if (!stillTyped()) return outdated;
-    if (people.length === 0) {
-      // After a space, no one found likely means the user writes on, so the
-      // suggestions just close.
-      if (!/\s/.test(word.text)) showStatus("No one found");
-      return null;
-    }
-    // A retry that finds people replaces an earlier "No one found".
-    showStatus(null);
-    return {
-      from: word.from,
-      filter: false,
-      options: people.map((person) => ({
-        label: person.displayName || person.id,
-        apply: `[@${escapeName(person.displayName || person.id)}](mention:${person.id}) `,
-        type: "mention",
-      })),
-    };
-  };
-}
-
 // GFM in its plain language form: the `markdown()` helper would also load
 // HTML, CSS and JavaScript highlighting for code blocks.
 const markdownSupport = new LanguageSupport(markdownLanguage);
@@ -352,33 +136,6 @@ const editorTheme = EditorView.theme({
     backgroundColor: "var(--indigo-muted)",
     color: "var(--primary)",
     fontWeight: "500",
-  },
-  ".cm-tooltip.cm-tooltip-autocomplete": {
-    border: "1px solid var(--border)",
-    borderRadius: "var(--radius-lg)",
-    backgroundColor: "var(--popover)",
-    boxShadow: "var(--shadow-popup)",
-    padding: "0.25rem",
-  },
-  ".cm-tooltip.cm-mention-status": {
-    border: "1px solid var(--border)",
-    borderRadius: "var(--radius-lg)",
-    backgroundColor: "var(--popover)",
-    boxShadow: "var(--shadow-popup)",
-    padding: "0.375rem 0.75rem",
-    color: "var(--muted-foreground)",
-    fontFamily: "var(--font-sans)",
-    fontSize: "var(--text-sm)",
-  },
-  ".cm-tooltip.cm-tooltip-autocomplete > ul > li": {
-    padding: "0.25rem 0.5rem",
-    borderRadius: "var(--radius-sm)",
-    fontFamily: "var(--font-sans)",
-    fontSize: "var(--text-sm)",
-  },
-  ".cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]": {
-    backgroundColor: "var(--hover-bg)",
-    color: "var(--foreground)",
   },
   "&.cm-focused .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection":
     { backgroundColor: "color-mix(in srgb, var(--primary) 22%, transparent)" },
@@ -430,7 +187,7 @@ export default function MarkdownEditorView({
               {
                 key: "Escape",
                 run: (target) => {
-                  if (closeMentions(target)) return true;
+                  if (closeMentionPicker(target)) return true;
                   const cancel = handlers.current.onCancel;
                   if (!cancel) return false;
                   cancel();
@@ -443,20 +200,9 @@ export default function MarkdownEditorView({
           mentionChips,
           ...(mentions
             ? [
-                // Ahead of the completion's own Ctrl+Space.
-                Prec.highest(askAgainKeymap),
-                autocompletion({
-                  override: [
-                    mentionSource(
-                      () =>
-                        handlers.current.mentions?.search ?? (async () => []),
-                    ),
-                  ],
-                  icons: false,
-                }),
-                mentionStatus,
-                dismissedMention,
-                keymap.of(completionKeymap),
+                mentionPicker(
+                  () => handlers.current.mentions?.search ?? (async () => []),
+                ),
               ]
             : []),
           keymap.of([...markdownKeymap, ...defaultKeymap, ...historyKeymap]),

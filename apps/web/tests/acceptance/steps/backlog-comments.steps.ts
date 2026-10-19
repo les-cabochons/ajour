@@ -366,8 +366,12 @@ Then("Ana's reply shows my Heart", async ({ page }) => {
 function findPeople(query: string) {
   const parts = query.toLowerCase().split(/\s+/).filter(Boolean);
   return [
-    { id: "ana", displayName: "Ana Silva" },
-    { id: "andrew", displayName: "Andrew Lee" },
+    { id: "ana", displayName: "Ana Silva", email: "ana.silva@example.com" },
+    {
+      id: "andrew",
+      displayName: "Andrew Lee",
+      email: "andrew.lee@example.com",
+    },
   ].filter((person) => {
     const words = person.displayName.toLowerCase().split(" ");
     return parts.every((part) => words.some((word) => word.startsWith(part)));
@@ -462,9 +466,41 @@ When(
   },
 );
 
-Then("Ana is suggested and no status shows", async ({ page }) => {
+Then("Ana is suggested once the search is done", async ({ page }) => {
   await expect(page.getByRole("option", { name: "Ana Silva" })).toBeVisible();
-  await expect(mentionStatus(page)).toHaveCount(0);
+  await expect(mentionStatus(page)).toHaveText(/^Showing \d+ suggestions?$/);
+});
+
+Then("Ana and Andrew are suggested, with their emails", async ({ page }) => {
+  const options = page.getByRole("option");
+  await expect(options).toHaveCount(2);
+  await expect(options.nth(0)).toHaveText(
+    /Ana Silva\s*ana\.silva@example\.com/,
+  );
+  await expect(options.nth(1)).toHaveText(
+    /Andrew Lee\s*andrew\.lee@example\.com/,
+  );
+  await expect(mentionStatus(page)).toHaveText("Showing 2 suggestions");
+});
+
+Then("Ana and Andrew stay in view while it searches", async ({ page }) => {
+  await expect(mentionStatus(page)).toHaveText("Searching…");
+  await expect(page.getByRole("option")).toHaveCount(2);
+});
+
+Then("Andrew alone is suggested once the search is done", async ({ page }) => {
+  await expect(mentionStatus(page)).toHaveText("Showing 1 suggestion");
+  await expect(page.getByRole("option")).toHaveCount(1);
+  await expect(page.getByRole("option", { name: "Andrew Lee" })).toBeVisible();
+});
+
+Then("the mention suggestions say they are searching", async ({ page }) => {
+  await expect(mentionStatus(page)).toHaveText("Searching…");
+});
+
+When("I move down the suggestions and press Enter", async ({ page }) => {
+  await page.keyboard.press("ArrowDown");
+  await page.keyboard.press("Enter");
 });
 
 When(
@@ -482,7 +518,7 @@ Then(
   async ({ page }) => {
     // Give the late answer time to reach the editor.
     await page.waitForTimeout(200);
-    await expect(mentionStatus(page)).toHaveCount(0);
+    await expect(mentionPicker(page)).toHaveCount(0);
   },
 );
 
@@ -565,8 +601,7 @@ When(
 Then(
   "nothing is suggested and the new comment stays open with {string}",
   async ({ page }, text: string) => {
-    await expect(page.getByRole("option")).toHaveCount(0);
-    await expect(mentionStatus(page)).toHaveCount(0);
+    await expect(mentionPicker(page)).toHaveCount(0);
     const editor = commentsRegion(page).getByRole("textbox", {
       name: "New comment",
     });
@@ -580,8 +615,7 @@ Then("no people search ran since Escape", async ({ page }) => {
   await page.waitForTimeout(600);
   const searches = peopleSearches.get(page)!;
   expect(searches.count).toBe(searches.atEscape);
-  await expect(page.getByRole("option")).toHaveCount(0);
-  await expect(mentionStatus(page)).toHaveCount(0);
+  await expect(mentionPicker(page)).toHaveCount(0);
 });
 
 Then(
@@ -600,12 +634,15 @@ When("I pick Ana from the suggestions", async ({ page }) => {
   await page.getByRole("option", { name: "Ana Silva" }).click();
 });
 
-Then("the new comment mentions Ana as a chip", async ({ page }) => {
-  const editor = commentsRegion(page).getByRole("textbox", {
-    name: "New comment",
-  });
-  await expect(editor.locator(".cm-mention")).toHaveText("@Ana Silva");
-});
+Then(
+  "the new comment mentions {string} as a chip",
+  async ({ page }, chip: string) => {
+    const editor = commentsRegion(page).getByRole("textbox", {
+      name: "New comment",
+    });
+    await expect(editor.locator(".cm-mention")).toHaveText(chip);
+  },
+);
 
 When(
   "I keep typing {string} until the search for {string} answers",
@@ -624,12 +661,14 @@ When(
 Then("nothing is suggested and no status shows", async ({ page }) => {
   // Give the answer time to reach the editor.
   await page.waitForTimeout(200);
-  await expect(page.getByRole("option")).toHaveCount(0);
-  await expect(mentionStatus(page)).toHaveCount(0);
+  await expect(mentionPicker(page)).toHaveCount(0);
 });
 
+const mentionPicker = (page: Page) =>
+  commentsRegion(page).locator(".cm-mention-picker");
+/** The picker's footer: what it found, or that it is searching. */
 const mentionStatus = (page: Page) =>
-  commentsRegion(page).locator(".cm-mention-status");
+  mentionPicker(page).locator(".cm-mention-status");
 
 Then("the mention suggestions ask for a name", async ({ page }) => {
   await expect(mentionStatus(page)).toHaveText(
@@ -643,7 +682,7 @@ Then("the mention suggestions say no one was found", async ({ page }) => {
 });
 
 Then("the mention suggestions are closed", async ({ page }) => {
-  await expect(mentionStatus(page)).toHaveCount(0);
+  await expect(mentionPicker(page)).toHaveCount(0);
 });
 
 Then(

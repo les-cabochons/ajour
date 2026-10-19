@@ -34,6 +34,7 @@ import {
   isEditedComment,
   isOwnComment,
   mergeEarlierComments,
+  personInitials,
   withPostedComments,
   withViewerReaction,
   type CommentSource,
@@ -155,15 +156,6 @@ export function formatCommentTime(iso: string, now = new Date()) {
     day: "numeric",
     ...(date.getFullYear() === now.getFullYear() ? {} : { year: "numeric" }),
   });
-}
-
-function initials(name: string) {
-  const parts = name.trim().split(/\s+/).filter(Boolean);
-  const letters =
-    parts.length > 1
-      ? `${parts[0]![0]}${parts[parts.length - 1]![0]}`
-      : (parts[0]?.slice(0, 2) ?? "?");
-  return letters.toUpperCase();
 }
 
 /**
@@ -798,7 +790,7 @@ function CommentItem({
       ) : null}
       <li className="backlog-comment">
         <span className="backlog-comment-avatar" aria-hidden="true">
-          {initials(comment.author.displayName || "?")}
+          {personInitials(comment.author.displayName || "?")}
         </span>
         <article
           className="backlog-comment-box"

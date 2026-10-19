@@ -567,9 +567,9 @@ Feature: Backlog list and board views
     And its plugin finds people and records posted comments
     When I open the Backlog parent page
     And I type "@Ana Sil" in a new comment
-    Then Ana is suggested and no status shows
+    Then Ana is suggested once the search is done
     When I pick Ana from the suggestions
-    Then the new comment mentions Ana as a chip
+    Then the new comment mentions "@Ana Silva" as a chip
 
   Scenario: Writing on after a name closes the suggestions without a status
     Given the Backlog parent is synced
@@ -577,7 +577,7 @@ Feature: Backlog list and board views
     And its plugin finds people and records posted comments
     When I open the Backlog parent page
     And I type "@Ana" in a new comment
-    Then Ana is suggested and no status shows
+    Then Ana is suggested once the search is done
     When I keep typing " thanks" until the search for "Ana thanks" answers
     Then nothing is suggested and no status shows
 
@@ -587,7 +587,7 @@ Feature: Backlog list and board views
     And its plugin finds people and records posted comments
     When I open the Backlog parent page
     And I type "write to team@Ana" in a new comment
-    Then Ana is suggested and no status shows
+    Then Ana is suggested once the search is done
 
   Scenario: Escape closes the mention suggestions before the editor
     Given the Backlog parent is synced
@@ -595,7 +595,7 @@ Feature: Backlog list and board views
     And its plugin finds people and records posted comments
     When I open the Backlog parent page
     And I type "@Ana" in a new comment
-    Then Ana is suggested and no status shows
+    Then Ana is suggested once the search is done
     When I press Escape in the new comment
     Then nothing is suggested and the new comment stays open with "@Ana"
     When I keep typing " Sil"
@@ -650,13 +650,44 @@ Feature: Backlog list and board views
     When I press Escape in the new comment
     Then nothing is suggested and the new comment stays open with "@Zoe"
 
+  Scenario: A bare @ with no one to suggest asks for a name
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds no one, slowly
+    When I open the Backlog parent page
+    And I type "@" in a new comment
+    Then the mention suggestions say they are searching
+    And the mention suggestions ask for a name
+
+  Scenario: The suggestions stay open while a name is searched
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people, slowly
+    When I open the Backlog parent page
+    And I type "@" in a new comment
+    Then the mention suggestions say they are searching
+    And Ana and Andrew are suggested, with their emails
+    When I keep typing "And"
+    Then Ana and Andrew stay in view while it searches
+    And Andrew alone is suggested once the search is done
+
+  Scenario: Pick a person with the keyboard
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people and records posted comments
+    When I open the Backlog parent page
+    And I type "@An" in a new comment
+    Then Ana is suggested once the search is done
+    When I move down the suggestions and press Enter
+    Then the new comment mentions "@Andrew Lee" as a chip
+
   Scenario: Mention suggestions say when no one matches
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit
     And its plugin finds people and records posted comments
     When I open the Backlog parent page
     And I type "@" in a new comment
-    Then the mention suggestions ask for a name
+    Then Ana and Andrew are suggested, with their emails
     When I keep typing "Zoe"
     Then the mention suggestions say no one was found
     When I keep typing " "
@@ -681,7 +712,7 @@ Feature: Backlog list and board views
     And I type "@Ana" in a new comment
     Then the mention suggestions say no one was found
     When the people search works again and I ask for suggestions
-    Then Ana is suggested and no status shows
+    Then Ana is suggested once the search is done
 
   Scenario: A slow people search answers only the name still being typed
     Given the Backlog parent is synced
@@ -699,7 +730,7 @@ Feature: Backlog list and board views
     When I open the Backlog parent page
     And I type "@A" in a new comment
     And I keep typing "na" before the search answers
-    Then Ana is suggested and no status shows
+    Then Ana is suggested once the search is done
 
   Scenario: Archive a synced item from the bottom of its properties card
     Given the Backlog parent is synced

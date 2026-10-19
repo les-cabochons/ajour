@@ -161,3 +161,13 @@ export function withViewerReaction(
       : entry,
   );
 }
+
+/** Up to two letters for a person's avatar: first and last name, or the start of one. */
+export function personInitials(name: string) {
+  const parts = name.trim().split(/\s+/).filter(Boolean);
+  const letters =
+    parts.length > 1
+      ? `${parts[0]![0]}${parts[parts.length - 1]![0]}`
+      : (parts[0]?.slice(0, 2) ?? "?");
+  return letters.toUpperCase();
+}
