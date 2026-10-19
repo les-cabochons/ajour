@@ -266,6 +266,11 @@ Decided in [Adding and changing time in the week view](https://github.com/les-ca
 - A click on a card opens it in the side panel. Right-click on a card opens the time entry action set.
 - Dragging a card to another day moves it. Move to… is the keyboard path. Shortcuts come from [Keyboard model and command palette](https://github.com/les-cabochons/ajour/issues/18), and a move shows the Undo toast.
 
+### Over-capacity warning
+
+- While Settings › General › Over-capacity warning is on, a day total more than 50% over its capacity target shows a warning icon: past 12 hours on an 8-hour day. The week total shows it once the week passes its target.
+- An hour or two past the target is a normal day and shows nothing. Hovering a total still shows its exact share of the target.
+
 ## Feedback
 
 Decided in [Undo, confirmation and feedback policy](https://github.com/les-cabochons/ajour/issues/17).

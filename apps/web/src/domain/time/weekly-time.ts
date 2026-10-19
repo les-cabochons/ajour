@@ -15,6 +15,17 @@ const CAPACITY_KEYS = [
   "sunday",
 ] as const;
 
+/**
+ * A day is far over capacity once its total passes 1.5 times its target. An
+ * hour or so past the target is a normal day, so the Week view warns only about
+ * a day more than 50% over it. The week total warns once it passes its target.
+ */
+const FAR_OVER_CAPACITY_RATIO = 1.5;
+
+function isFarOverCapacity(totalMs: number, capacityMs: number) {
+  return capacityMs > 0 && totalMs > capacityMs * FAR_OVER_CAPACITY_RATIO;
+}
+
 /** Filters a Monday-to-Sunday week for display without changing its totals. */
 export function getVisibleWeekDates(
   weekDates: string[],
@@ -38,8 +49,9 @@ export interface WeeklyRunningTime {
 export interface WeeklyDayProjection {
   capacityMs: number;
   entries: LocalTimesheetEntry[];
+  /** More than 50% over the day's target. */
+  farOverCapacity: boolean;
   localDate: string;
-  overCapacity: boolean;
   totalMs: number;
 }
 
@@ -197,8 +209,8 @@ export function projectWeeklyTime({
     return {
       capacityMs,
       entries: dayEntries,
+      farOverCapacity: isFarOverCapacity(totalMs, capacityMs),
       localDate,
-      overCapacity: capacityMs > 0 && totalMs > capacityMs,
       totalMs,
     };
   });

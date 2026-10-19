@@ -68,7 +68,10 @@ interface Picker extends MentionAtCursor {
 
 interface Mentions {
   picker: Picker | null;
-  /** Where the `@` is whose picker Escape closed: it opens no more until Ctrl+Space. */
+  /**
+   * Where the `@` is whose picker Escape closed: it opens no more until
+   * Ctrl+Space, and the dismissal goes with that `@`.
+   */
   dismissed: number | null;
   nextId: number;
 }
@@ -109,7 +112,7 @@ const mentions = StateField.define<Mentions>({
   update(value, transaction) {
     let { picker, dismissed, nextId } = value;
     if (transaction.docChanged && dismissed !== null) {
-      dismissed = transaction.changes.mapPos(dismissed, 1, MapMode.TrackDel);
+      dismissed = transaction.changes.mapPos(dismissed, 1, MapMode.TrackAfter);
     }
     if (transaction.docChanged && picker) {
       picker = {

@@ -640,6 +640,17 @@ Feature: Backlog list and board views
     And I press Escape in the new comment
     Then the new comment is closed, keeping the draft "Looks good"
 
+  Scenario: A new @ in place of a dismissed one suggests again
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people and records posted comments
+    When I open the Backlog parent page
+    And I type "@Ana" in a new comment
+    Then Ana is suggested once the search is done
+    When I press Escape in the new comment
+    And I select all and type "@Ana"
+    Then Ana is suggested once the search is done
+
   Scenario: Escape closes a mention status line before the editor
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit
