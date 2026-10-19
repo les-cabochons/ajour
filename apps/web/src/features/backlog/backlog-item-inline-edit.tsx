@@ -1,6 +1,5 @@
 import { useRef, useState } from "react";
 import { RiAddLine as AddIcon } from "@remixicon/react";
-import { Markdown } from "@/components/markdown";
 import {
   MarkdownEditor,
   preloadMarkdownEditor,
@@ -15,6 +14,7 @@ import type {
 } from "@/domain/local-state";
 import { formatHours } from "@/features/backlog/backlog-estimates";
 import { patchBacklogItemWithUndo } from "@/features/backlog/backlog-item-surface";
+import { DescriptionView } from "@/features/backlog/description-view";
 import {
   buildBacklogTaskDraft,
   createBacklogTaskEditorSeed,
@@ -208,7 +208,8 @@ export function EstimateFigure({
 
 /**
  * The description section. The rendered markdown has a subtle Edit beside its
- * heading that swaps it for the Markdown editor.
+ * heading that swaps it for the Markdown editor, which shows the frontmatter
+ * the rendered view hides.
  */
 export function DescriptionSection({
   item,
@@ -260,7 +261,7 @@ export function DescriptionSection({
           onCancel={() => closer.close()}
         />
       ) : item.description ? (
-        <Markdown>{item.description}</Markdown>
+        <DescriptionView description={item.description} />
       ) : (
         <p className="text-sm text-muted-foreground">No description.</p>
       )}

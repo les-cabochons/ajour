@@ -10,7 +10,6 @@ import { useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import { TooltipButton } from "@/components/tooltip-button";
-import { Markdown } from "@/components/markdown";
 import { SectionHeading } from "@/components/section-heading";
 import { Figure, FigureRow, Value } from "@/components/ui/value";
 import { getDirectChildWorkItems } from "@/domain/backlog/work-item-hierarchy";
@@ -22,6 +21,7 @@ import {
 import type { BacklogItemActionId } from "@/domain/actions/object-actions";
 import { getBacklogSurfaceActions } from "@/features/backlog/backlog-item-surface";
 import { BacklogItemProperties } from "@/features/backlog/backlog-item-properties";
+import { DescriptionView } from "@/features/backlog/description-view";
 import {
   ESTIMATE_FIGURES,
   formatHours,
@@ -211,7 +211,7 @@ export function BacklogPeek({
       {item.description ? (
         <section>
           <SectionHeading>Description</SectionHeading>
-          <Markdown>{item.description}</Markdown>
+          <DescriptionView description={item.description} />
         </section>
       ) : null}
       {children.length > 0 ? (

@@ -1,8 +1,9 @@
-import type { ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import { PropertyList, PropertyRow } from "@/components/property-list";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
 import { Switch } from "@/components/ui/switch";
+import { getMissingTimelogProject } from "@/domain/backlog/description-timelog";
 import {
   getLocalProjectDisplayName,
   type LocalAppState,
@@ -17,6 +18,7 @@ import {
   changeSourceStateWithUndo,
   getOtherSourceStates,
 } from "@/features/backlog/backlog-item-moves";
+import { TimelogProjectButton } from "@/features/backlog/timelog-project-button";
 
 /** Project and task lists outgrow their narrow fields, so names fit. */
 const LONG_NAME_LIST_WIDTH = 320;
@@ -25,7 +27,8 @@ const LONG_NAME_LIST_WIDTH = 320;
  * A backlog item's properties, each changed in place with Undo: state, source
  * state, priority, project and task, then the "Keep when missing from sync"
  * switch for synced items. The peek and the item page show the same rows;
- * `children` adds rows before the switch.
+ * `children` adds rows before the switch. A warning beside Project offers to
+ * create the project the description's timelog names when it does not exist.
  */
 export function BacklogItemProperties({
   item,
@@ -37,6 +40,11 @@ export function BacklogItemProperties({
   children?: ReactNode;
 }) {
   const project = state.projects.find((p) => p._id === item.projectId);
+  const description = item.description;
+  const missingTimelogProject = useMemo(
+    () => getMissingTimelogProject(state.projects, { description }),
+    [state.projects, description],
+  );
   return (
     <div className="flex flex-col gap-3">
       <PropertyList>
@@ -84,6 +92,12 @@ export function BacklogItemProperties({
               );
             }}
           />
+          {missingTimelogProject && item.status !== "archived" ? (
+            <TimelogProjectButton
+              workItemId={item._id}
+              missing={missingTimelogProject}
+            />
+          ) : null}
         </PropertyRow>
         <PropertyRow label="Task">
           <SearchableSelect

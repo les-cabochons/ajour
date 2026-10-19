@@ -977,3 +977,20 @@
   > .searchable-select {
   width: calc(100% + 0.625rem + 1px);
 }
+
+/* The timelog's missing project warning follows the Project picker. */
+:is(.backlog-peek, .backlog-item-properties-card)
+  [data-slot="property-list"]
+  dd
+  > .searchable-select:has(+ .timelog-project-button) {
+  width: auto;
+  min-width: 0;
+  flex: 1;
+}
+
+:is(.backlog-peek, .backlog-item-properties-card)
+  [data-slot="property-list"]
+  dd
+  > .timelog-project-button {
+  margin-inline-start: 0;
+}
