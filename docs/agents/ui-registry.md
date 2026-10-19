@@ -164,20 +164,23 @@ hero, the capability band is a plain line of text ("External service → Plugin
 → Local backlog") above the feature badges. Never fetch remote images from the
 renderer. Dialogs and `MessagePanel` notices are the only framed surfaces.
 
-### Application Updates
+### Application updates
 
-File: `apps/web/src/features/settings/settings-general-page.tsx`
-Last updated: 2026-08-06
+Files: `apps/web/src/features/settings/application-updates-settings.tsx`, `apps/web/src/features/layout/sidebar-footer.tsx`, `apps/web/src/lib/desktop-updates.ts`
+Last updated: 2026-10-19
 
 The stable/nightly choice is a `SettingRow` with the shared outline toggle
 group. Keep exactly one track selected and explain nightly risk in the row's
 description. Repository status follows below it, separated by space only. Status text uses `aria-live`, preserves its layout while checking,
 and shows the release action only when a newer matching release exists. Web-only
 rendering keeps the preference available but identifies the desktop requirement.
-Packaged Windows builds download the selected track in the background and use a
-native restart confirmation only after the update is ready; the app never
-restarts without the user's confirmation. Other platforms show truthful manual
-update guidance while preserving the same release-track status and link.
+The desktop controller owns update state, shared through `lib/desktop-updates.ts`.
+Startup, periodic, and manual checks only report availability. The sidebar footer
+uses `TooltipButton` for Settings and Commit on the left and updates on the right.
+On supported Windows builds, clicking an available update opens a native warning
+before downloading and restarting. Cancel leaves the update available, and an
+ordinary quit never installs it. Other desktop builds open the release page for
+manual installation. The browser has no footer update button.
 
 ### Weekly Time Overview
 
@@ -329,5 +332,3 @@ the file format. The schema, export and import are three cardless sections of
 transfer is a line of text under its action. Time entry import and export
 (`settings-export-page.tsx`) follows the same layout, with staged import drafts
 as plain rows that carry Add and Dismiss.
-
-- Application updates share the desktop-owned state through `lib/desktop-updates.ts`. The footer uses `TooltipButton`; Settings composes `features/settings/application-updates-settings.tsx`. Availability checks do not download. The desktop controller shows a native warning before downloading and restarting. Unsupported desktop builds open the release page. The browser has no footer update button.
