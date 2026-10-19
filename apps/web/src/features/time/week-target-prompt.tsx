@@ -10,7 +10,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { formatClockDuration } from "@/domain/time/duration";
-import { formatShortLocalDate } from "@/domain/time/local-date";
+import { formatShortLocalDate, getWeekDates } from "@/domain/time/local-date";
 import type { WeekTargetReached } from "@/domain/time/week-target-prompt";
 import { useOpenCommitPage } from "@/features/time/use-open-commit-page";
 import { watchWeekTargets } from "@/features/time/week-target-watch";
@@ -44,7 +44,7 @@ export function WeekTargetPromptHost() {
           <AlertDialogTitle>Week complete</AlertDialogTitle>
           <AlertDialogDescription>
             {reached
-              ? `You logged ${formatClockDuration(reached.totalMs)} of ${formatClockDuration(reached.targetMs)} for the week of ${formatShortLocalDate(reached.weekOf, new Date().getFullYear())}. Commit and submit it now?`
+              ? `You logged ${formatClockDuration(reached.totalMs)} of ${formatClockDuration(reached.targetMs)} for the week of ${formatWeekRange(reached.weekOf)}. Commit and lock it now?`
               : null}
           </AlertDialogDescription>
         </AlertDialogHeader>
@@ -63,4 +63,17 @@ export function WeekTargetPromptHost() {
       </AlertDialogContent>
     </AlertDialog>
   );
+}
+
+/** "Oct 12 to 18", or "Sep 28 to Oct 4" across a month, with the year when it is not this year. */
+function formatWeekRange(weekOf: string) {
+  const year = new Date().getFullYear();
+  const days = getWeekDates(weekOf);
+  const monday = days[0]!;
+  const sunday = days[6]!;
+  const sameMonth = monday.slice(0, 7) === sunday.slice(0, 7);
+  const end = sameMonth
+    ? formatShortLocalDate(sunday, year).replace(/^\S+ /, "")
+    : formatShortLocalDate(sunday, year);
+  return `${formatShortLocalDate(monday, year)} to ${end}`;
 }
