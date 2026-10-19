@@ -304,6 +304,27 @@ describe("splitDescription", () => {
     ).toEqual([{ kind: "value", key: "Owner", value: "Ada\u0007" }]);
   });
 
+  it("keeps a byte-order mark only inside quotes, as YAML allows", () => {
+    for (const block of [
+      "timelog:\n  project: Acme﻿",
+      "Owner﻿: Ada",
+      "Owner: Ada # note ﻿",
+      "# note ﻿\nOwner: Ada",
+      "Owner: # note ﻿",
+      'Owner: "Ada" # note ﻿',
+      "Owners: [Ada﻿]",
+    ]) {
+      const description = `---\n${block}\n---\nBody`;
+      expect(splitDescription(description)).toEqual({
+        frontmatter: null,
+        body: description,
+      });
+    }
+    expect(
+      splitDescription('---\nOwner: "Ada﻿"\n---').frontmatter?.fields,
+    ).toEqual([{ kind: "value", key: "Owner", value: "Ada﻿" }]);
+  });
+
   it("is not frontmatter when a key runs past YAML's 1,024 characters", () => {
     const key = (length: number) => "a".repeat(length);
     expect(

@@ -62,6 +62,9 @@ const MAX_KEY_LENGTH = 1024;
 const FORBIDDEN_CHARACTER =
   /[^\t\x20-\x7E\x85\xA0-\uD7FF\uE000-\uFFFD\u{10000}-\u{10FFFF}]/u;
 
+/** YAML allows a byte-order mark inside a document only within quotes. */
+const BYTE_ORDER_MARK = "\uFEFF";
+
 const OPENING = /^---[ \t]*\r?\n/;
 const CLOSING = /^(?:---|\.\.\.)[ \t]*$/;
 
@@ -171,7 +174,10 @@ function isYamlMap(value: YamlValue): value is YamlMap {
 function toYamlLines(lines: string[]): YamlLine[] | null {
   const yamlLines: YamlLine[] = [];
   for (const line of lines) {
-    if (/^[ \t]*(?:#.*)?$/.test(line)) continue;
+    if (/^[ \t]*(?:#.*)?$/.test(line)) {
+      if (line.includes(BYTE_ORDER_MARK)) return null;
+      continue;
+    }
     const indent = /^[ \t]*/.exec(line)![0].length;
     if (line.slice(0, indent).includes("\t")) return null;
     yamlLines.push({ indent, text: trimSpaces(line.slice(indent)) });
@@ -288,10 +294,15 @@ function isTooLongKey(text: string) {
   return [...text].length > MAX_KEY_LENGTH;
 }
 
-/** A value that is only a comment, as in `timelog: # note`, is empty. */
+/**
+ * A value that is only a comment, as in `timelog: # note`, is empty. A
+ * comment holding a byte-order mark stays, so the value fails as invalid.
+ */
 function withoutComment(value: string) {
   const trimmed = trimSpaces(value);
-  return trimmed.startsWith("#") ? "" : trimmed;
+  return trimmed.startsWith("#") && !trimmed.includes(BYTE_ORDER_MARK)
+    ? ""
+    : trimmed;
 }
 
 function parseInlineValue(text: string): YamlValue | null {
@@ -361,6 +372,8 @@ function parseScalar(text: string): string | null {
     if (!quoted || !isEmptyOrComment(text.slice(quoted.end))) return null;
     return quoted.value;
   }
+  // Unquoted, a byte-order mark is invalid, in the value or its comment.
+  if (text.includes(BYTE_ORDER_MARK)) return null;
   // A comment starts at a # after a space, so a link's # stays.
   const comment = /[ \t]#/.exec(text);
   const value = trimSpaces(comment ? text.slice(0, comment.index) : text);
@@ -380,12 +393,13 @@ function isPlainScalar(value: string) {
   return (
     !/^[[\]{},#&*!|>'"%@`]/.test(value) &&
     !/^[-?:](?:[ \t]|$)/.test(value) &&
-    !/:(?:[ \t]|$)/.test(value)
+    !/:(?:[ \t]|$)/.test(value) &&
+    !value.includes(BYTE_ORDER_MARK)
   );
 }
 
 function isEmptyOrComment(text: string) {
-  return /^(?:[ \t]*|[ \t]+#.*)$/.test(text);
+  return /^(?:[ \t]*|[ \t]+#.*)$/.test(text) && !text.includes(BYTE_ORDER_MARK);
 }
 
 /** YAML's one-character escapes in double-quoted strings. */
