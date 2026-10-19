@@ -26,10 +26,10 @@ Give a task a number with **Assign shortcut…**. Press that number anywhere to 
 
 ## 2. Track time as you work
 
-1. Press <kbd>S</kbd>, or **Start** at the top of the sidebar. A running entry starts and its editor opens.
+1. Press **Start** at the top of the sidebar. A running entry starts and its editor opens. <kbd>S</kbd> starts one too; click it in the sidebar to open its editor.
 2. Pick a project and task, type a note, and press **Save**. The entry keeps running.
 3. Keep working. The running entry counts up in the sidebar and in the window title.
-4. Press <kbd>S</kbd> again to stop. The time is saved as an entry on today.
+4. Press <kbd>S</kbd> again to stop. The time is saved as an entry on the day it started.
 
 <Shot name="timer-dock" alt="The running entry at the top of the sidebar, with its time and estimate" />
 

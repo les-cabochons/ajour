@@ -17,7 +17,7 @@ Press <kbd>N</kbd>, or the **+** button in the sidebar. You can also choose **Ne
 
 Press **Save**, <kbd>⌘</kbd> <kbd>Enter</kbd>, or <kbd>Enter</kbd> in **Hours** or **Note**. <kbd>Shift</kbd> <kbd>Enter</kbd> starts a new line in the note.
 
-To start the entry instead of logging hours, leave **Hours** empty and press **Start**. With hours filled in, **Start** counts on from them. A running entry always runs on today, so on another day the form says **Starts today**. See [Running entries](/time/running-entries).
+To start the entry instead of logging hours, leave **Hours** empty and press **Start**. With hours filled in, **Start** counts on from them. A running entry always starts on today, so on another day the form says **Starts today**. See [Running entries](/time/running-entries).
 
 ## Edit an entry
 

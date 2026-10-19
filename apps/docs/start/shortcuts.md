@@ -40,22 +40,22 @@ On a focused cell of the Week Grid, the number keys type hours instead.
 
 Use <kbd>↑</kbd> and <kbd>↓</kbd> to move focus between rows, and <kbd>←</kbd> and <kbd>→</kbd> between days in the Week view or between columns on the backlog board. These keys then act on the focused row. They also work on a backlog item's page, where <kbd>Enter</kbd> renames the item.
 
-| Key                                                                   | Action                                                                                                          |
-| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| <kbd>Enter</kbd>                                                      | Open or edit. On a calendar meeting with a project, add it.                                                     |
-| <kbd>Space</kbd>                                                      | Open or close the peek of a backlog item. Open a Week Days card. Add a meeting card, or pick its project first. |
-| <kbd>.</kbd>, <kbd>Shift</kbd> <kbd>F10</kbd> or the context menu key | Open the actions menu                                                                                           |
-| <kbd>E</kbd>                                                          | Settle a backlog item or pull request                                                                           |
-| <kbd>Shift</kbd> <kbd>E</kbd>                                         | Settle a backlog item with the settle dialog                                                                    |
-| <kbd>B</kbd>                                                          | Snooze a backlog item or pull request                                                                           |
-| <kbd>Shift</kbd> <kbd>S</kbd>                                         | Change state                                                                                                    |
-| <kbd>P</kbd>                                                          | Change priority                                                                                                 |
-| <kbd>Alt</kbd> <kbd>←</kbd> or <kbd>Alt</kbd> <kbd>→</kbd>            | Move to the previous or next workflow state                                                                     |
-| <kbd>Alt</kbd> <kbd>↑</kbd> or <kbd>Alt</kbd> <kbd>↓</kbd>            | Move up or down                                                                                                 |
-| <kbd>⌘</kbd> <kbd>D</kbd>                                             | Duplicate an entry                                                                                              |
-| <kbd>M</kbd>                                                          | Move an entry to another day                                                                                    |
-| <kbd>Backspace</kbd> or <kbd>Delete</kbd>                             | Delete an entry or backlog item, discard a running entry, archive a task                                        |
-| <kbd>Shift</kbd> <kbd>Backspace</kbd>                                 | Delete a row of the Week Grid                                                                                   |
+| Key                                                                   | Action                                                                                                                |
+| --------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------- |
+| <kbd>Enter</kbd>                                                      | Open or edit. On a calendar meeting with a project, add it.                                                           |
+| <kbd>Space</kbd>                                                      | Open or close the peek of a backlog item. Open a saved Week Days card. Add a meeting card, or pick its project first. |
+| <kbd>.</kbd>, <kbd>Shift</kbd> <kbd>F10</kbd> or the context menu key | Open the actions menu                                                                                                 |
+| <kbd>E</kbd>                                                          | Settle a backlog item or pull request                                                                                 |
+| <kbd>Shift</kbd> <kbd>E</kbd>                                         | Settle a backlog item with the settle dialog                                                                          |
+| <kbd>B</kbd>                                                          | Snooze a backlog item or pull request                                                                                 |
+| <kbd>Shift</kbd> <kbd>S</kbd>                                         | Change state                                                                                                          |
+| <kbd>P</kbd>                                                          | Change priority                                                                                                       |
+| <kbd>Alt</kbd> <kbd>←</kbd> or <kbd>Alt</kbd> <kbd>→</kbd>            | Move to the previous or next workflow state                                                                           |
+| <kbd>Alt</kbd> <kbd>↑</kbd> or <kbd>Alt</kbd> <kbd>↓</kbd>            | Move up or down                                                                                                       |
+| <kbd>⌘</kbd> <kbd>D</kbd>                                             | Duplicate an entry                                                                                                    |
+| <kbd>M</kbd>                                                          | Move an entry to another day                                                                                          |
+| <kbd>Backspace</kbd> or <kbd>Delete</kbd>                             | Delete an entry or backlog item, discard the running entry when no other entry is selected, archive a task            |
+| <kbd>Shift</kbd> <kbd>Backspace</kbd>                                 | Delete a row of the Week Grid                                                                                         |
 
 On a calendar meeting, <kbd>Backspace</kbd> or <kbd>Delete</kbd> dismisses it. See [Calendar suggestions](/time/calendar-suggestions).
 

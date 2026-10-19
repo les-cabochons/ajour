@@ -52,14 +52,14 @@ To delete a row, right-click its name and choose **Delete row**, or press <kbd>S
 
 ## Days
 
-The Days layout has one column per day, with a card per entry. Use it to see the order of your day and your notes. Each card shows the project, the hours, the task, the note, and whether the entry is **saved** or **committed**. The running entry's card shows **Running**.
+The Days layout has one column per day, with a card per entry. Use it to see the order of your day and your notes. A saved card shows the project, the hours, the task, the note, and whether the entry is **saved** or **committed**. The running entry's card shows **Running** and the time counted so far.
 
 Each day reads from top to bottom in the order you worked: the oldest entry first. A continued entry keeps its place while it runs, and a new running entry comes last. Right-click a card for its actions.
 
 <Shot name="time-week-days" alt="The Week view as days: one column per day with a card per entry" />
 
 - Drag a card to another day to move the entry there. Drag it within a day to reorder it. Dragging a selected card drags every selected card except the running entry, and they land together where you drop them. The running card cannot be dragged.
-- Double-click a card, or press <kbd>Enter</kbd> or <kbd>Space</kbd> on it, to open it in the side panel. A single click selects it, so you can [copy and paste](/time/entries#select-copy-and-paste-entries) it.
+- Double-click a card, or press <kbd>Enter</kbd> on it, to open it in the side panel. <kbd>Space</kbd> also opens a saved card. A single click selects it, so you can [copy and paste](/time/entries#select-copy-and-paste-entries) it.
 - Right-click a column's empty space for **Paste here** and **Paste on same weekdays**.
 - Press **+ Add** at the bottom of a column, or double-click the day's header or the empty space in its column, for a new entry on that day. It lands at the end of the day.
 - While a calendar plugin is on, the day's meetings show as dashed cards under **From calendar**. See [Calendar suggestions](/time/calendar-suggestions).

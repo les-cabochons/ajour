@@ -14,7 +14,7 @@ Ajour has a few objects, and each one has one job. This page names them and show
 : Time spent on a task on one day, with an optional note. An entry is **running** or **saved**. A saved entry is **committed** when your timesheet tool has it as it is; editing it makes a change to commit.
 
 **Running entry**
-: The entry that is counting now. At most one entry runs at a time, and it is always on today. Ajour has no separate "timer": you start, switch and stop entries.
+: The entry that is counting now. At most one entry runs at a time. It starts on today and keeps that date until it stops. Ajour has no separate "timer": you start, switch and stop entries.
 
 **Timesheet**
 : Your entries for one week. Ajour does not send your timesheet anywhere on its own. You copy its changes into your company's tool, or have an [agent](/plugins/workday-agent) do it, and mark them as committed.

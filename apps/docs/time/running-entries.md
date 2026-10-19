@@ -14,7 +14,7 @@ There are several ways to start, depending on what you are about to work on:
 - Press <kbd>C</kbd> to continue the focused entry, or your most recent one.
 - In the entry editor, leave **Hours** empty and press **Start**. With hours filled in, the entry counts on from them.
 
-Only one entry runs at a time. Starting another one stops the running entry and saves it. The editor names this **Switch**. A running entry always runs on today.
+Only one entry runs at a time. Starting another one stops the running entry and saves it. The editor names this **Switch**. A running entry always starts on today.
 
 ## While it runs
 
@@ -30,7 +30,7 @@ Click the running entry to open its editor. Change its task, its note or the hou
 
 Press <kbd>S</kbd>, or the stop button next to the time. Ajour saves the entry on the day it started, even past midnight. Use **Move to…** to put it on another day.
 
-To throw away the time counted since the entry last started, choose **Discard** in its actions menu, or press <kbd>Backspace</kbd> on its row. An Undo toast shows for 8 seconds.
+To throw away the time counted since the entry last started, choose **Discard** in its actions menu, or press <kbd>Backspace</kbd> on its row while no other entry is selected. With other entries selected, <kbd>Backspace</kbd> deletes them and keeps the running entry. An Undo toast shows for 8 seconds.
 
 ## Continue an entry
 
