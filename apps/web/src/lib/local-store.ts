@@ -63,6 +63,10 @@ import {
   normalizeSettleRules,
 } from "@/domain/backlog/settle-rules";
 import {
+  applyDescriptionTimelogs,
+  createTimelogProject as applyCreateTimelogProject,
+} from "@/domain/backlog/description-timelog";
+import {
   acceptRemoteEstimateValue as applyAcceptRemoteEstimateValue,
   addWorkItem as applyAddWorkItem,
   deleteWorkItem as applyDeleteWorkItem,
@@ -1229,6 +1233,17 @@ function updateStateWithUndo(
   return token;
 }
 
+/**
+ * Sets the project and task of each backlog item whose description timelog
+ * the write changed. See domain/backlog/description-timelog.ts.
+ */
+function withDescriptionTimelogs(previous: LocalAppState, next: LocalAppState) {
+  return applyDescriptionTimelogs(previous.workItems, next, {
+    createId,
+    now: Date.now,
+  });
+}
+
 /** How long a team sync in another window waits for an open Undo, at most. */
 const TEAM_PUSH_HOLD_MS = 60_000;
 
@@ -1915,12 +1930,13 @@ export const localStore = {
     );
   },
   addWorkItem(workItem: LocalWorkItemDraft) {
-    return updateStateWithResult((state) =>
-      applyAddWorkItem(state, workItem, {
+    return updateStateWithResult((state) => {
+      const added = applyAddWorkItem(state, workItem, {
         createId,
         now: Date.now,
-      }),
-    );
+      });
+      return { ...added, state: withDescriptionTimelogs(state, added.state) };
+    });
   },
   addSubtask(
     parentWorkItemId: string,
@@ -1938,8 +1954,8 @@ export const localStore = {
       archiveMissingFromConnectionId?: string;
     },
   ) {
-    return updateStateWithResult((state) =>
-      applySyncedWorkItemImport(
+    return updateStateWithResult((state) => {
+      const imported = applySyncedWorkItemImport(
         applyWorkflowStateLifecycle(
           state,
           autoMapSourceStates(
@@ -1966,8 +1982,13 @@ export const localStore = {
           createId,
           now: Date.now,
         },
-      ),
-    );
+      );
+      // A new item whose description has a timelog arrives mapped.
+      return {
+        ...imported,
+        state: withDescriptionTimelogs(state, imported.state),
+      };
+    });
   },
   /** Archives the synced items a sync reports in a done category. */
   archiveDoneSyncedWorkItems(doneItems: BacklogDoneWorkItem[]) {
@@ -2073,17 +2094,43 @@ export const localStore = {
     workItemId: string,
     patch: Partial<Omit<LocalWorkItem, "_id" | "createdAt" | "source">>,
   ) {
-    updateState((state) => applyUpdateWorkItem(state, workItemId, patch));
+    updateState((state) =>
+      withDescriptionTimelogs(
+        state,
+        applyUpdateWorkItem(state, workItemId, patch),
+      ),
+    );
   },
+  /**
+   * Updates a backlog item. A description whose timelog changed also sets the
+   * item's project and task, in the same Undo. Returns an undo token, or null
+   * when nothing changed.
+   */
   updateWorkItemWithUndo(
     workItemId: string,
     patch: Parameters<typeof applyUpdateWorkItem>[2],
     orderedIds?: string[],
   ) {
     return updateStateWithUndo((state) => {
-      const updated = applyUpdateWorkItem(state, workItemId, patch);
+      const updated = withDescriptionTimelogs(
+        state,
+        applyUpdateWorkItem(state, workItemId, patch),
+      );
       return orderedIds ? applyReorderWorkItems(updated, orderedIds) : updated;
     });
+  },
+  /**
+   * Creates the project the item's description timelog names, or restores an
+   * archived one of that name, with its task, and maps the item to them.
+   * Returns an undo token, or null when nothing changed.
+   */
+  createTimelogProjectWithUndo(workItemId: string) {
+    return updateStateWithUndo((state) =>
+      applyCreateTimelogProject(state, workItemId, {
+        createId,
+        now: Date.now,
+      }),
+    );
   },
   /** Restores an archived backlog item, with the subitems its settle carried. */
   restoreWorkItem(workItemId: string) {

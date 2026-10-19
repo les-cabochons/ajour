@@ -3772,3 +3772,80 @@ describe("submitted weeks in the store", () => {
     ]);
   });
 });
+
+describe("localStore description timelog", () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.stubGlobal("crypto", {
+      randomUUID: vi.fn(() => `uuid-${Math.random().toString(16).slice(2)}`),
+    });
+    installMockWindow();
+  });
+
+  const description = [
+    "---",
+    "timelog:",
+    "  project: Acme",
+    "  task: Development",
+    "---",
+    "Build the page.",
+  ].join("\n");
+
+  it("maps the item and creates its task in the description's Undo", async () => {
+    const { localStore } = await import("./local-store");
+    const projectId = localStore.addProject({ name: "Acme", color: "#111111" });
+    const itemId = localStore.addWorkItem({ title: "Landing page" });
+    const before = localStore.snapshot();
+
+    const token = localStore.updateWorkItemWithUndo(itemId, { description });
+
+    const project = localStore
+      .snapshot()
+      .projects.find((candidate) => candidate._id === projectId)!;
+    const created = project.tasks.find((task) => task.name === "Development");
+    expect(created?.status).toBe("active");
+    expect(localStore.snapshot().workItems[0]).toMatchObject({
+      projectId,
+      taskId: created?._id,
+      description,
+    });
+
+    expect(localStore.undo(token!)).toBe("restored");
+    expect(localStore.snapshot().projects).toEqual(before.projects);
+    expect(localStore.snapshot().workItems).toEqual(before.workItems);
+  });
+
+  it("maps a synced item whose description arrives with a timelog", async () => {
+    const { localStore } = await import("./local-store");
+    const projectId = localStore.addProject({ name: "Acme", color: "#111111" });
+
+    localStore.importSyncedWorkItems([
+      buildImportCandidate({ note: description }),
+    ]);
+
+    expect(localStore.snapshot().workItems[0]?.projectId).toBe(projectId);
+    expect(localStore.snapshot().workItems[0]?.taskId).toBeDefined();
+  });
+
+  it("creates the missing project with Undo", async () => {
+    const { localStore } = await import("./local-store");
+    const itemId = localStore.addWorkItem({
+      title: "Landing page",
+      description,
+    });
+    const before = localStore.snapshot();
+    expect(before.workItems[0]?.projectId).toBeUndefined();
+
+    const token = localStore.createTimelogProjectWithUndo(itemId);
+
+    const project = localStore.snapshot().projects.at(-1)!;
+    expect(project).toMatchObject({ name: "Acme", status: "active" });
+    expect(localStore.snapshot().workItems[0]).toMatchObject({
+      projectId: project._id,
+      taskId: project.tasks[0]?._id,
+    });
+    expect(localStore.undo(token!)).toBe("restored");
+    expect(localStore.snapshot().projects).toEqual(before.projects);
+    expect(localStore.snapshot().workItems).toEqual(before.workItems);
+  });
+});
