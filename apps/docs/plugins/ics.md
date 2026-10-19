@@ -29,12 +29,12 @@ Anyone with the address can read your whole calendar until you reset it: **Reset
 
 ## Connection fields
 
-| Field                | What to enter                                                                                                                                                                                                                         |
-| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **Connection label** | A name for this connection, such as `Work calendar`.                                                                                                                                                                                  |
-| **Calendar**         | Which calendar this is, such as `Google Calendar`.                                                                                                                                                                                    |
-| **Calendar address** | The address from above. Ajour never shows it again.                                                                                                                                                                                   |
-| **Your email**       | Optional. Lets Ajour find your reply to each meeting, so **Hide meetings you declined** works. Leave it empty if the calendar has no attendee lists. For a Google calendar, the plugin uses the calendar's name, which is your email. |
+| Field                | What to enter                                                                                                                                                                                                                                                                    |
+| -------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Connection label** | A name for this connection, such as `Work calendar`.                                                                                                                                                                                                                             |
+| **Calendar**         | Which calendar this is, such as `Google Calendar`.                                                                                                                                                                                                                               |
+| **Calendar address** | The address from above. Ajour never shows it again.                                                                                                                                                                                                                              |
+| **Your email**       | Optional. Lets Ajour find your reply to each meeting, so **Hide meetings you declined** works. Leave it empty if the calendar has no attendee lists. Left empty, the plugin uses the calendar's name when that name is an email address, as it is for your main Google calendar. |
 
 ## What reaches Ajour
 

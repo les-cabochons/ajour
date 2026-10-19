@@ -451,13 +451,18 @@ async function capture(browser, encoder, shot, theme) {
       body: JSON.stringify(handler ? handler() : { error: "Not mocked" }),
     });
   });
-  // Before the seed, so the seed's dates follow the fixed clock.
   await context.clock.setSystemTime(NOW);
-  await context.addInitScript(seedScript({ ...shot.seed, theme }));
-  await context.addInitScript(pullRequestsScript());
-  await context.addInitScript(rememberedScript());
-  await context.addInitScript(desktopBridgeScript());
-  await context.addInitScript(quietEventSourceScript());
+  // One script, because Playwright runs several init scripts in no set
+  // order, and the later parts read the workspace the seed writes.
+  await context.addInitScript(
+    [
+      seedScript({ ...shot.seed, theme, now: NOW }),
+      pullRequestsScript(),
+      rememberedScript(),
+      desktopBridgeScript(),
+      quietEventSourceScript(),
+    ].join("\n;\n"),
+  );
   const page = await context.newPage();
   const file = path.join(OUT, `${shot.name}-${theme}.webp`);
   let png;

@@ -61,7 +61,7 @@ A synced work item shows its Azure DevOps comments on its page. You can post com
 - A mention notifies the person in Azure DevOps.
 - When someone else comments on an item you settled, the next sync brings it back to your plate. With many settled items, it can take a few syncs.
 
-Ajour reads comments from Azure DevOps each time and never stores their text.
+Ajour reads comments from Azure DevOps when you open the item, keeps them in memory for five minutes, and never stores their text.
 
 ## Priorities
 

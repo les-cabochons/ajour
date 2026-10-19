@@ -323,7 +323,7 @@ export function pullRequestsScript() {
   const raw = localStorage.getItem(key);
   if (!raw) return;
   const state = JSON.parse(raw);
-  const now = Date.now();
+  const now = ${NOW};
   const min = 60000, hour = 3600000;
   const user = (login, displayName) => ({ login, displayName, isBot: false });
   const me = user("sam-contoso", "Sam Rivera");
@@ -474,7 +474,7 @@ export function rememberedScript() {
   const raw = localStorage.getItem(key);
   if (!raw) return;
   const state = JSON.parse(raw);
-  const now = Date.now();
+  const now = ${NOW};
   state.calendarEventRules = [{ _id: "rule-harbor-sync", pluginId: "ics", connectionId: "ics-work", seriesId: "harbor-sync", label: "Harbor sync", action: "assign", projectId: "p-harbor", taskId: "t-harbor-dev", createdAt: now - 7 * 24 * 3600000 }];
   localStorage.setItem(key, JSON.stringify(state));
   localStorage.setItem("ajour.comments-seen", JSON.stringify({ w2: now - 3 * 3600000 }));

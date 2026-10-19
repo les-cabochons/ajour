@@ -4,7 +4,7 @@ A synced item shows its comments on its page, under the description, when its ba
 
 <Shot name="backlog-comments" alt="Comments on an item page, with the people picker open after @jo" />
 
-Ajour reads the comments from the tool when you open the item and never stores their text. Comments need the desktop app.
+Ajour reads the comments from the tool when you open the item and keeps them in memory for five minutes, so reopening the item within that time shows the same thread. It never stores their text. Comments need the desktop app.
 
 ## Read comments
 

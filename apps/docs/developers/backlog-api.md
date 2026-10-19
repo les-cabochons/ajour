@@ -174,12 +174,12 @@ Declare the features your tool supports under `capabilities.connector.comments`.
 - Convert each comment to Markdown. Write a mention as `[@Display Name](mention:<id>)`, where the id is yours and stays opaque to Ajour. Ajour shows it as a chip and never follows it.
 - Return the user as `viewer`, in the same id space as comment authors, so Ajour can tell which comments are theirs.
 - Set `restrictedTo` to the group or role that may read a restricted comment, such as a Jira role.
-- Ajour never stores comment text. It holds the newest page in memory for a few minutes, so throw rather than return a partial page. See [ADR 0008](https://github.com/les-cabochons/ajour/blob/main/docs/adr/0008-backlog-comments-are-fetched-and-written-at-once.md).
+- Ajour never stores the comment text it fetches. It holds the newest page in memory for five minutes, so throw rather than return a partial page. See [ADR 0008](https://github.com/les-cabochons/ajour/blob/main/docs/adr/0008-backlog-comments-are-fetched-and-written-at-once.md).
 - Ajour adds its own **Agent access to comments** field to your connection form: None, the default, Read, or Read and post. The value never reaches your plugin. Calls for an agent arrive like the user's.
 
 ## postItemComment
 
-Post the comment at once and return it as your tool stored it. A comment typed in the settle dialog, or posted by an agent, comes once its Undo toast closes, and after `writeSettle` when the settle writes. Ajour sends Markdown, with mentions as `[@Name](mention:<id>)`, and shows your returned comment at the end of the thread. If you throw, Ajour keeps the text as a draft and shows your message, so the user can send it again. Ajour doesn't queue comments for later (ADR 0008). Declare `maxLength`, 1 to 10,000,000, when your tool limits comment length, measured as your tool measures it, and check the converted size before you send.
+Post the comment at once and return it as your tool stored it. A comment typed in the settle dialog, or posted by an agent, comes once its Undo toast closes, and after `writeSettle` when the settle writes. Ajour sends Markdown, with mentions as `[@Name](mention:<id>)`, and shows your returned comment at the end of the thread. If you throw, Ajour keeps the text as a draft and shows your message, so the user can send it again. Ajour doesn't retry a failed post. A settle or agent comment waits on the device for its Undo window, so after a quit it can reach you at the next launch. Declare `maxLength`, 1 to 10,000,000, when your tool limits comment length, measured as your tool measures it, and check the converted size before you send.
 
 ## Editing, deleting and reacting
 

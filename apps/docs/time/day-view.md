@@ -65,6 +65,6 @@ Right-click a row, or press <kbd>.</kbd> on it, for the actions on that entry. H
 
 The day lists entries oldest first, so a new entry lands at the bottom. Drag a row, or press <kbd>Alt</kbd> <kbd>↑</kbd> and <kbd>Alt</kbd> <kbd>↓</kbd>. A continued entry keeps its place while it runs and moves like the others. A new running entry stays last.
 
-Dragging a selected row drags every selected row. They land together where you drop them.
+Dragging a selected row drags every selected row except the running entry. They land together where you drop them. Dragging the running entry moves it alone.
 
 To move rows to another day, drag them onto that day in the week strip. The day lights up, and the rows go to the end of that day, with an Undo toast such as `Moved 2 entries to Tue, Oct 14`. The Day view stays on the day you are looking at. A day of a submitted week takes no drop.

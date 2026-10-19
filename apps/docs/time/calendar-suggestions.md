@@ -27,11 +27,11 @@ The new entry lands on the meeting's day, with the meeting's duration and its ti
 
 On a Week Days card, click the card to add it, or to pick its project first.
 
-| Key                                       | Action                                                                     |
-| ----------------------------------------- | -------------------------------------------------------------------------- |
-| <kbd>Enter</kbd>                          | Add the focused meeting, or open its project picker when it has no project |
-| <kbd>Space</kbd>                          | The same, on a Week Days card                                              |
-| <kbd>Backspace</kbd> or <kbd>Delete</kbd> | Dismiss the focused meeting                                                |
+| Key                                       | Action                                                                                  |
+| ----------------------------------------- | --------------------------------------------------------------------------------------- |
+| <kbd>Enter</kbd>                          | Add the focused meeting, once it has a project                                          |
+| <kbd>Space</kbd>                          | On a Week Days card, add the meeting, or open its project picker when it has no project |
+| <kbd>Backspace</kbd> or <kbd>Delete</kbd> | Dismiss the focused meeting                                                             |
 
 ## Add the week at once
 
