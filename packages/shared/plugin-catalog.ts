@@ -89,6 +89,8 @@ export const pluginCatalogResponseSchema = z.object({
   checkedAt: z.string().datetime(),
   source: z.enum(["network", "cache"]),
   warning: z.string().max(1_000).optional(),
+  /** Entries this Ajour version cannot read, such as a newer capability. */
+  skippedPluginIds: z.array(z.string().max(100)).max(100).optional(),
 });
 
 export type PluginCatalogResponse = z.infer<typeof pluginCatalogResponseSchema>;

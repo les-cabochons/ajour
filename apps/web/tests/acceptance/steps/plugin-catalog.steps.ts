@@ -49,6 +49,41 @@ Given(
   },
 );
 
+Given(
+  "the catalog skipped an entry this Ajour cannot read",
+  async ({ page }) => {
+    // Runs after the Background's script, so it wraps its catalog.
+    await page.addInitScript(() => {
+      const desktop = (
+        window as unknown as {
+          ajourDesktop: { getPluginCatalog: () => Promise<object> };
+        }
+      ).ajourDesktop;
+      const original = desktop.getPluginCatalog;
+      desktop.getPluginCatalog = async () => ({
+        ...(await original()),
+        source: "network",
+        skippedPluginIds: ["future-plugin"],
+      });
+    });
+  },
+);
+
+Then("the catalog says {string}", async ({ page }, text: string) => {
+  await expect(page.getByText(text, { exact: true })).toBeVisible();
+});
+
+Then(
+  "the catalog does not say it was loaded from its local cache",
+  async ({ page }) => {
+    await expect(
+      page.getByText("The catalog was loaded from its local cache", {
+        exact: false,
+      }),
+    ).toHaveCount(0);
+  },
+);
+
 When(
   "I open the catalog at {int} pixels wide",
   async ({ page }, width: number) => {
@@ -57,8 +92,15 @@ When(
   },
 );
 
-Then("all four plugin filters fit inside the viewport", async ({ page }) => {
-  for (const name of ["All", "Backlog", "Code hosts", "Schemas"]) {
+Then("every plugin filter fits inside the viewport", async ({ page }) => {
+  for (const name of [
+    "All",
+    "Backlog",
+    "Code hosts",
+    "Calendars",
+    "Agent tasks",
+    "Schemas",
+  ]) {
     const tab = page.getByRole("tab", { name, exact: true });
     await expect(tab).toBeVisible();
     const box = await tab.boundingBox();
@@ -105,6 +147,22 @@ Then("the Workday schema is the only catalog entry", async ({ page }) => {
     /Workday schema/,
   );
 });
+
+Then(
+  "the Workday agent is the only catalog entry and offers a download",
+  async ({ page }) => {
+    await expect(page.getByRole("link", { name: /^View / })).toHaveText(
+      /Workday \(agent\)/,
+    );
+    await expect(
+      page.getByRole("button", {
+        name: "Download Workday (agent)",
+        exact: true,
+      }),
+    ).toBeEnabled();
+    await page.screenshot({ path: "test-results/catalog-agent-tasks.png" });
+  },
+);
 
 const oldJira = {
   id: "jira",

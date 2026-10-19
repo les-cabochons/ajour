@@ -5,7 +5,7 @@ Feature: Browse plugin capabilities
 
   Scenario Outline: Keep every catalog filter reachable
     When I open the catalog at <width> pixels wide
-    Then all four plugin filters fit inside the viewport
+    Then every plugin filter fits inside the viewport
 
     Examples:
       | width |
@@ -23,6 +23,14 @@ Feature: Browse plugin capabilities
     And the GitHub catalog entry offers a download
     When I select the "Schemas" plugin filter
     Then the Workday schema is the only catalog entry
+    When I select the "Agent tasks" plugin filter
+    Then the Workday agent is the only catalog entry and offers a download
+
+  Scenario: Say which catalog entries need a newer Ajour
+    Given the catalog skipped an entry this Ajour cannot read
+    When I open the plugins catalog
+    Then the catalog says "This version of Ajour can't read these catalog entries: future-plugin. Update Ajour to see them."
+    And the catalog does not say it was loaded from its local cache
 
   Scenario Outline: Update an incompatible installed plugin without removing its connections
     Given an installed Jira plugin uses an older plugin API

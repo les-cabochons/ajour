@@ -44,7 +44,8 @@ export function canInstallCatalogPlugin(entry: PluginCatalogEntry) {
     entry.capabilities.includes("connector") ||
     entry.capabilities.includes("codeHost") ||
     entry.capabilities.includes("calendar") ||
-    entry.capabilities.includes("team")
+    entry.capabilities.includes("team") ||
+    entry.capabilities.includes("agentTask")
   );
 }
 

@@ -80,6 +80,8 @@ const PLUGIN_CAPABILITIES = new Set([
   "connector",
   "codeHost",
   "calendar",
+  "team",
+  "agentTask",
   "schema",
 ]);
 
@@ -576,6 +578,7 @@ function createPluginCatalogService(options) {
     await mkdir(imageDirectory, { recursive: true });
     const cache = await loadCache(cacheFile);
     const warnings = [];
+    const skippedPluginIds = [];
     const catalogText = await fetchText(CATALOG_URL, cache, warnings);
     const catalogEntries = parseCatalog(
       YAML.parse(catalogText, {
@@ -591,14 +594,26 @@ function createPluginCatalogService(options) {
         CATALOG_BASE_URL,
       ).toString();
       const definitionText = await fetchText(definitionUrl, cache, warnings);
-      const normalized = normalizeCatalogEntry(
-        YAML.parse(definitionText, {
-          schema: "core",
-          strict: true,
-          uniqueKeys: true,
-        }),
-        catalogEntry.id,
-      );
+      let normalized;
+      try {
+        normalized = normalizeCatalogEntry(
+          YAML.parse(definitionText, {
+            schema: "core",
+            strict: true,
+            uniqueKeys: true,
+          }),
+          catalogEntry.id,
+        );
+      } catch (error) {
+        // One entry this Ajour version cannot read, such as a newer
+        // capability, must not hide the rest of the catalog. It is not a
+        // cache fallback, so it stays out of the warnings.
+        console.warn(
+          `Skipped catalog entry ${catalogEntry.id}: ${error.message}`,
+        );
+        skippedPluginIds.push(catalogEntry.id);
+        continue;
+      }
       const images = {};
       for (const [role, imagePath] of Object.entries(
         normalized.imagePaths ?? {},
@@ -638,6 +653,9 @@ function createPluginCatalogService(options) {
       source: warnings.length > 0 ? "cache" : "network",
       ...(warnings.length > 0
         ? { warning: warnings.join(" ").slice(0, 1_000) }
+        : {}),
+      ...(skippedPluginIds.length > 0
+        ? { skippedPluginIds: skippedPluginIds.slice(0, 100) }
         : {}),
     };
     return currentCatalog;
@@ -691,7 +709,9 @@ function createPluginCatalogService(options) {
     if (
       !entry.capabilities.includes("connector") &&
       !entry.capabilities.includes("codeHost") &&
-      !entry.capabilities.includes("calendar")
+      !entry.capabilities.includes("calendar") &&
+      !entry.capabilities.includes("team") &&
+      !entry.capabilities.includes("agentTask")
     ) {
       throw new Error(
         "This Ajour version cannot install packaged schema plugins yet.",

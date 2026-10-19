@@ -401,7 +401,8 @@ function PluginsHeader({
         <TabsList
           variant="line"
           aria-label="Filter plugins"
-          className="max-w-full gap-0 p-0 desktop:gap-1 desktop:p-1"
+          // Six filters: the row wraps instead of overflowing a narrow window.
+          className="h-auto! max-w-full flex-wrap justify-start! gap-0 p-0 desktop:gap-1 desktop:p-1"
         >
           <TabsTrigger value="all" className="px-1.5 desktop:px-3">
             All
@@ -414,6 +415,9 @@ function PluginsHeader({
           </TabsTrigger>
           <TabsTrigger value="calendar" className="px-1.5 desktop:px-3">
             Calendars
+          </TabsTrigger>
+          <TabsTrigger value="agentTask" className="px-1.5 desktop:px-3">
+            Agent tasks
           </TabsTrigger>
           <TabsTrigger value="schema" className="px-1.5 desktop:px-3">
             Schemas
@@ -667,6 +671,12 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
           <MessagePanel tone="warning">
             The catalog was loaded from its local cache. Artwork and metadata
             will refresh when the index is reachable.
+          </MessagePanel>
+        ) : null}
+        {catalog?.skippedPluginIds?.length ? (
+          <MessagePanel>
+            This version of Ajour can't read these catalog entries:{" "}
+            {catalog.skippedPluginIds.join(", ")}. Update Ajour to see them.
           </MessagePanel>
         ) : null}
         {catalogError ? (

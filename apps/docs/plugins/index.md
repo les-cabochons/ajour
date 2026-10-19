@@ -19,7 +19,7 @@ Want to connect another tool? See [Build a plugin](/developers/).
 ## Install a plugin
 
 1. Open **Settings › Plugins**.
-2. Find the plugin. The tabs filter by capability: **Backlog**, **Code hosts** and **Schemas**.
+2. Find the plugin. The tabs filter by capability: **Backlog**, **Code hosts**, **Calendars**, **Agent tasks** and **Schemas**.
 3. Press **Download**. Ajour downloads the latest release from the plugin's GitHub repository and installs it turned off.
 4. Turn on the plugin's switch to activate it.
 
