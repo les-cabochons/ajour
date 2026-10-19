@@ -382,4 +382,52 @@ describe("the comment typed in the settle dialog", () => {
     expect(mocks.post).toHaveBeenCalledOnce();
     expect(settleCommentsOf("a")).toEqual([]);
   });
+
+  it("leaves a newer settle's comment, queued after the end was seen, waiting", async () => {
+    const { queueSettleComment, settleCommentsOf, watchSettleEnds } =
+      await load();
+    const stop = watchSettleEnds();
+    queueSettleComment(comment("s1"));
+    // Another window settles the item again and queues a new comment just
+    // after this one saw the earlier settle end.
+    vi.setSystemTime(2000);
+    queueSettleComment({ ...comment("s2", "Newer"), at: 3000 });
+
+    item = { ...item, status: "active" };
+    for (const listener of mocks.listeners) listener();
+    stop();
+
+    expect(mocks.keepDraft).toHaveBeenCalledExactlyOnceWith(
+      "a",
+      "Waiting on the client",
+    );
+    expect(settleCommentsOf("a").map((entry) => entry.id)).toEqual(["s2"]);
+  });
+
+  it("says the comment was kept when the watcher drafts it during a failed write's recovery", async () => {
+    const { queueSettleComment, sendPendingSourceWrites, watchSettleEnds } =
+      await load();
+    const stop = watchSettleEnds();
+    queueSettleComment(comment("s1"));
+    mocks.write.mockRejectedValueOnce(new Error("Transition not allowed."));
+    mocks.fail.mockImplementation(() => {
+      item = { ...item, status: "active", pendingSourceWrite: undefined };
+      for (const listener of mocks.listeners) listener();
+    });
+
+    await sendPendingSourceWrites(["a"]);
+    stop();
+
+    expect(mocks.keepDraft).toHaveBeenCalledExactlyOnceWith(
+      "a",
+      "Waiting on the client",
+    );
+    expect(mocks.error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        description: expect.stringContaining(
+          "Your comment is kept as a draft on it.",
+        ),
+      }),
+    );
+  });
 });
