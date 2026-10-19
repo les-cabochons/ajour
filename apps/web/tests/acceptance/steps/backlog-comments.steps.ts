@@ -547,6 +547,12 @@ When(
   },
 );
 
+When("I move back {int} characters", async ({ page }, count: number) => {
+  for (let index = 0; index < count; index += 1) {
+    await page.keyboard.press("ArrowLeft");
+  }
+});
+
 When("I move forward {int} characters", async ({ page }, count: number) => {
   for (let index = 0; index < count; index += 1) {
     await page.keyboard.press("ArrowRight");

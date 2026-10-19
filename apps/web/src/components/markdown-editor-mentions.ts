@@ -113,24 +113,27 @@ const comparable = (text: string) =>
   text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
 /**
- * Where picking a person ends the replaced name. It takes the rest of the
- * word the cursor sits in, then each next word while the name still reads
- * as the start of the person's, so `@A|na Silva` becomes Ana Silva's mention
- * while `@Ana| please` keeps "please".
+ * Where picking a person ends the replaced name. Past the cursor it takes
+ * the text a word at a time, the word the cursor sits in or against first,
+ * and only while the text from the `@` still reads as the start of the
+ * person's name: `@A|na Silva` and `@Ana |Silva` become Ana Silva's mention,
+ * while `@Ana|please` and `@Ana please` keep "please".
  */
 function nameEnd(state: EditorState, from: number, person: BacklogPerson) {
   const head = state.selection.main.head;
   const line = state.doc.lineAt(head);
-  let end = /\s$/.test(state.sliceDoc(from, head))
-    ? head
-    : head + nameChars.exec(state.sliceDoc(head, line.to))![0].length;
   const name = comparable(person.displayName || person.id);
-  for (;;) {
-    const next = /^ [^\s@[\]()]+/.exec(state.sliceDoc(end, line.to));
-    if (!next) break;
-    const words = comparable(state.sliceDoc(from + 1, end + next[0].length));
-    if (!name.startsWith(words)) break;
-    end += next[0].length;
+  let end = head;
+  for (const [index, word] of [/^[^\s@[\]()]+/, /^ [^\s@[\]()]+/].entries()) {
+    for (;;) {
+      const next = word.exec(state.sliceDoc(end, line.to));
+      if (!next) break;
+      const reads = comparable(state.sliceDoc(from + 1, end + next[0].length));
+      if (!name.startsWith(reads)) return end;
+      end += next[0].length;
+      // The word the cursor sits in or against comes once.
+      if (index === 0) break;
+    }
   }
   return end;
 }

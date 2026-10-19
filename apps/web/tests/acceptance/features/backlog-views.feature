@@ -739,6 +739,28 @@ Feature: Backlog list and board views
     And I pick Ana from the suggestions
     Then the new comment reads "@Ana Silva  please"
 
+  Scenario: Picking a mention typed against a word keeps the word
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people and records posted comments
+    When I open the Backlog parent page
+    And I type "please review" in a new comment
+    And I go to the start of the line and type "@Ana"
+    Then Ana is suggested once the search is done
+    When I pick Ana from the suggestions
+    Then the new comment reads "@Ana Silva please review"
+
+  Scenario: Picking at the start of a last name replaces it once
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people and records posted comments
+    When I open the Backlog parent page
+    And I type "@Ana Silva" in a new comment
+    Then Ana is suggested once the search is done
+    When I move back 5 characters
+    And I pick Ana from the suggestions
+    Then the new comment reads only the mention "@Ana Silva"
+
   Scenario: Picking before other words keeps them
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit
