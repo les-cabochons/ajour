@@ -1,10 +1,7 @@
 import { showErrorToast } from "@/components/ui/toast";
 import { isCapabilityActive } from "@ajour/shared";
 import type { LocalWorkItem } from "@/domain/local-state";
-import {
-  hasSameSourceWriteRequest,
-  settleMarkOf,
-} from "@/domain/backlog/backlog-item-lifecycle";
+import { hasSameSourceWriteRequest } from "@/domain/backlog/backlog-item-lifecycle";
 import { isCommentSourceOf } from "@/domain/backlog/comments";
 import { sourcePriorityFromLevel } from "@/domain/backlog/priority";
 import { announcePostedComment } from "@/features/backlog/comment-threads";
@@ -134,8 +131,12 @@ async function sendSourceWrite(
   }
 }
 
-/** Keeps every comment waiting on the item's settle as its draft. */
-function keepSettleCommentsAsDrafts(workItemId: string) {
+/**
+ * Keeps every comment waiting on the item's settle as its draft: its write
+ * failed, or a new settle replaces the one they came with. An item settles
+ * again only after its earlier settle stopped standing.
+ */
+export function keepSettleCommentsAsDrafts(workItemId: string) {
   let kept = 0;
   for (const { id } of settleCommentsOf(workItemId)) {
     const entry = takeSettleComment(id);
@@ -188,16 +189,12 @@ export async function sendSettleComments(workItemId: string) {
 }
 
 /**
- * Whether the settle a comment was typed with still stands: not undone,
- * failed or replaced by another settle, and the item still comes from the
- * comment's thread.
+ * Whether the settle a comment was typed with still stands: the item is
+ * settled, or archived since, and still comes from the comment's thread. A
+ * settle that was replaced already turned its comments into drafts.
  */
 function settleStands(item: LocalWorkItem, entry: PendingSettleComment) {
-  return (
-    item.status !== "active" &&
-    isCommentSourceOf(item, entry) &&
-    (entry.settleMark === undefined || settleMarkOf(item) === entry.settleMark)
-  );
+  return item.status !== "active" && isCommentSourceOf(item, entry);
 }
 
 /**

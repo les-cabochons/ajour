@@ -285,16 +285,41 @@ describe("the comment typed in the settle dialog", () => {
     expect(settleCommentsOf("a")).toEqual([]);
   });
 
-  it("keeps a comment as a draft when its settle was replaced by another", async () => {
-    const { queueSettleComment, releaseSettleComment } = await load();
-    item = { ...item, pendingSourceWrite: undefined, settledAt: 2000 };
-    // Typed with the settle at 1000; the user unsettled and settled again.
-    queueSettleComment({ ...comment("s1"), settleMark: 1000 });
+  it("turns an earlier settle's comments into drafts when the item settles again", async () => {
+    const {
+      queueSettleComment,
+      keepSettleCommentsAsDrafts,
+      releaseSettleComment,
+      settleCommentsOf,
+    } = await load();
+    item = { ...item, pendingSourceWrite: undefined };
+    queueSettleComment(comment("s1"));
 
+    // The item settles again: its earlier settle no longer stands.
+    keepSettleCommentsAsDrafts("a");
     await releaseSettleComment("s1", "a");
 
     expect(mocks.post).not.toHaveBeenCalled();
     expect(mocks.keepDraft).toHaveBeenCalledWith("a", "Waiting on the client");
+    expect(settleCommentsOf("a")).toEqual([]);
+  });
+
+  it("still posts when the settled item was archived meanwhile", async () => {
+    const { queueSettleComment, releaseSettleComment } = await load();
+    // A sync reported it done while the comment waited: the settle stands.
+    item = {
+      ...item,
+      status: "archived",
+      settledAt: undefined,
+      archivedAt: 5000,
+      pendingSourceWrite: undefined,
+    };
+    queueSettleComment(comment("s1"));
+
+    await releaseSettleComment("s1", "a");
+
+    expect(mocks.post).toHaveBeenCalledOnce();
+    expect(mocks.keepDraft).not.toHaveBeenCalled();
   });
 
   it("keeps a comment as a draft when its item now comes from another source", async () => {

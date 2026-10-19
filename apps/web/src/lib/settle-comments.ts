@@ -23,8 +23,6 @@ export interface PendingSettleComment {
   at: number;
   /** Set when the settle's Undo window closed. Until then it waits. */
   ready?: boolean;
-  /** The item's `settleMarkOf` right after its settle. Absent on older entries. */
-  settleMark?: number;
 }
 
 /**
@@ -39,8 +37,7 @@ function toPendingComment(value: unknown): PendingSettleComment | undefined {
       (key) => typeof entry[key] === "string",
     ) ||
     typeof entry.at !== "number" ||
-    (entry.ready !== undefined && typeof entry.ready !== "boolean") ||
-    (entry.settleMark !== undefined && typeof entry.settleMark !== "number")
+    (entry.ready !== undefined && typeof entry.ready !== "boolean")
   ) {
     return undefined;
   }
