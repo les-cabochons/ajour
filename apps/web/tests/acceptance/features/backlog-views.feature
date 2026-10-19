@@ -566,3 +566,31 @@ Feature: Backlog list and board views
     When I open the Backlog parent page
     And I archive it from its properties card
     Then the Backlog parent is archived and its page offers Restore
+
+  Scenario: Fold the Subitems and Time entries cards on the item page
+    When I open the Backlog parent page
+    Then the Subitems and Time entries cards are closed on their summary
+    When I add the subitem "Folded subitem" on its page
+    And I press Escape in the subitem name field
+    Then the Subitems card is closed on "0 of 2 done" and the page has the focus
+    When I open the Subitems card
+    And I reload the item page
+    Then the Subitems card is still open and Time entries is still closed
+
+  Scenario: Fold the Subitems card from its title while adding a subitem
+    When I open the Backlog parent page
+    And I press Add subitem and then the Subitems title
+    Then the Subitems card stays closed, even after a reload
+
+  Scenario: Open the Subitems card with Enter after a right-click on its title
+    When I open the Backlog parent page
+    And I press Add subitem, right-click the Subitems title and press Enter
+    Then the Subitems card is open
+
+  Scenario: Keep a synced item when it goes missing from sync
+    Given the Backlog parent is synced
+    When I open the Backlog parent page
+    And I set When missing to Keep on its properties card
+    Then the Backlog parent is kept when missing from sync
+    When I undo the When missing change
+    Then the Backlog parent is archived when missing from sync

@@ -1,12 +1,10 @@
 import { useRef, useState } from "react";
-import { RiAddLine as AddIcon } from "@remixicon/react";
 import { Markdown } from "@/components/markdown";
 import {
   MarkdownEditor,
   preloadMarkdownEditor,
 } from "@/components/markdown-editor";
 import { SectionHeading } from "@/components/section-heading";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Figure } from "@/components/ui/value";
 import type {
@@ -269,18 +267,20 @@ export function DescriptionSection({
 }
 
 /**
- * "Add subitem" under the subitem list. It opens a name field that creates a
- * subitem with the parent's project and task on Enter, then stays open for
- * the next one. Escape, or leaving it empty, closes it.
+ * The name field under the subitem list, shown while `adding`: the Subitems
+ * card's + opens it. Enter creates a subitem with the parent's project and
+ * task, and the field stays open for the next one. Escape, or leaving it
+ * empty, closes it.
  */
 export function AddSubitemRow({
   parent,
   adding,
-  onAddingChange,
+  onClose,
 }: {
   parent: LocalWorkItem;
   adding: boolean;
-  onAddingChange: (adding: boolean) => void;
+  /** `escaped` when Escape closed it, so the caller can take focus back. */
+  onClose: (escaped: boolean) => void;
 }) {
   const [title, setTitle] = useState("");
 
@@ -294,19 +294,7 @@ export function AddSubitemRow({
     setTitle("");
   }
 
-  if (!adding) {
-    return (
-      <Button
-        variant="ghost"
-        size="sm"
-        className="mt-1 w-fit text-muted-foreground"
-        onClick={() => onAddingChange(true)}
-      >
-        <AddIcon data-icon="inline-start" />
-        Add subitem
-      </Button>
-    );
-  }
+  if (!adding) return null;
 
   return (
     <Input
@@ -317,7 +305,7 @@ export function AddSubitemRow({
       className="mt-1"
       onChange={(event) => setTitle(event.target.value)}
       onBlur={() => {
-        if (!title.trim()) onAddingChange(false);
+        if (!title.trim()) onClose(false);
       }}
       onKeyDown={(event) => {
         if (event.nativeEvent.isComposing) return;
@@ -327,7 +315,7 @@ export function AddSubitemRow({
         } else if (event.key === "Escape") {
           event.preventDefault();
           setTitle("");
-          onAddingChange(false);
+          onClose(true);
         }
       }}
     />

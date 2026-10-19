@@ -5,6 +5,7 @@ import {
   groupBacklogItems,
   orderBacklogItems,
   selectBacklogViewItems,
+  getSubitemHoursLeft,
   getSubitemProgress,
 } from "./backlog-view";
 import type { LocalAppState, LocalWorkItem } from "@/domain/local-state";
@@ -314,6 +315,25 @@ describe("backlog ordering and grouping", () => {
         item("c", { status: "archived" }),
       ]),
     ).toEqual({ closed: 1, total: 3 });
+  });
+  it("sums the hours left on open subitems only", () => {
+    expect(
+      getSubitemHoursLeft([
+        item("a", { remainingEstimateHours: 2.5 }),
+        item("b", { status: "settled", remainingEstimateHours: 0 }),
+        item("c"),
+        item("d", { status: "archived", remainingEstimateHours: 4 }),
+      ]),
+    ).toBe(2.5);
+  });
+  it("has no hours left when no open subitem has an estimate", () => {
+    expect(getSubitemHoursLeft([])).toBeUndefined();
+    expect(
+      getSubitemHoursLeft([
+        item("a"),
+        item("b", { status: "archived", remainingEstimateHours: 3 }),
+      ]),
+    ).toBeUndefined();
   });
   it("keeps assigned archived projects marked while omitting empty archived projects", () => {
     const groups = groupBacklogItems(
