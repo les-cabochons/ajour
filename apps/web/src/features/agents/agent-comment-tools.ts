@@ -1,4 +1,3 @@
-import { connectionAgentAccess, type PluginsOverview } from "@ajour/shared";
 import {
   readToolInputSchemas,
   writeToolInputSchemas,
@@ -10,7 +9,7 @@ import { showErrorToast, showUndoToast } from "@/components/ui/toast";
 import { findWorkItemOrRefuse } from "@/domain/agents/agent-read-model";
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
 import {
-  commentSourceOf,
+  isCommentSourceOf,
   isOwnComment,
   type CommentSource,
 } from "@/domain/backlog/comments";
@@ -22,10 +21,10 @@ import {
   takeAgentComment,
 } from "@/lib/agent-comments";
 import {
-  getPluginsOverview,
-  listItemComments,
-  postItemComment,
-} from "@/lib/app-api";
+  agentAccessAllows,
+  readAgentCommentAccess,
+} from "@/lib/agent-comment-access";
+import { listItemComments, postItemComment } from "@/lib/app-api";
 import { pendingCommentDeleteIds } from "@/lib/comment-deletes";
 import { keepCommentAsDraft } from "@/lib/comment-drafts";
 import { localStore } from "@/lib/local-store";
@@ -42,36 +41,31 @@ const errorMessage = (error: unknown) =>
 
 /**
  * The item's comments, when the user lets agents `need` them on its
- * connection. Refuses with what the user can change otherwise.
+ * connection now. Refuses with what the user can change otherwise.
  */
 export async function requireAgentCommentAccess(
   item: LocalWorkItem,
   need: "read" | "readWrite",
 ): Promise<CommentSource> {
-  let overview: PluginsOverview;
+  let current;
   try {
-    overview = await getPluginsOverview();
+    current = await readAgentCommentAccess(item);
   } catch (error) {
     throw new AgentToolRefusal(
       `Ajour couldn't read its plugin settings: ${errorMessage(error)}`,
     );
   }
-  const source = commentSourceOf(item, overview);
-  if (!source) {
+  if (!current.source) {
     throw new AgentToolRefusal(
       "This item has no comments in Ajour. Only items synced from a plugin that provides comments have them.",
     );
   }
-  const connection = overview.connectionGroups
-    .find((group) => group.plugin.id === source.pluginId)
-    ?.connections.find((candidate) => candidate.id === source.connectionId);
-  const access = connection ? connectionAgentAccess(connection) : "none";
-  if (access === "none" || (need === "readWrite" && access !== "readWrite")) {
+  if (!agentAccessAllows(current.access, need)) {
     throw new AgentToolRefusal(
-      `The user hasn't allowed agents to ${need === "read" ? "read" : "post"} comments on the "${connection?.label ?? "item's"}" connection. They can change "Agent access to comments" on it in Ajour's Settings, under Plugins.`,
+      `The user hasn't allowed agents to ${need === "read" ? "read" : "post"} comments on the "${current.connectionLabel ?? "item's"}" connection. They can change "Agent access to comments" on it in Ajour's Settings, under Plugins.`,
     );
   }
-  return source;
+  return current.source;
 }
 
 /** Refuses a comment longer than the source takes. */
@@ -103,7 +97,7 @@ export async function listCommentsForAgent(
     );
   }
   // A comment the user deleted waits for its Undo window; it is gone for them.
-  const deleted = pendingCommentDeleteIds();
+  const deleted = pendingCommentDeleteIds(source);
   return {
     comments: page.comments
       .filter((comment) => !deleted.has(comment.id))
@@ -176,13 +170,29 @@ export async function postCommentForAgent(
 }
 
 /**
- * Posts a queued agent comment. A refused post keeps it as the item's
- * comment draft, so the user can send or discard it.
+ * Posts a queued agent comment, if its item is still there and the user
+ * still lets agents post on its connection. Otherwise, or when the source
+ * refuses it, it becomes the item's comment draft, so the user can send or
+ * discard it. A comment whose item was deleted goes with it.
  */
 export async function sendAgentComment(id: string) {
   const entry = takeAgentComment(id);
   if (!entry) return;
+  const item = localStore
+    .snapshot()
+    .workItems.find((workItem) => workItem._id === entry.itemId);
+  if (!item || !isCommentSourceOf(item, entry)) return;
   try {
+    const current = await readAgentCommentAccess(item);
+    if (!agentAccessAllows(current.access, "readWrite")) {
+      keepCommentAsDraft(entry.itemId, entry.body);
+      showErrorToast({
+        title: `${entry.clientName}'s comment on "${item.title}" wasn't posted`,
+        description:
+          "Agents can no longer post comments on its connection. It's kept as a draft on the item.",
+      });
+      return;
+    }
     const { comment } = await postItemComment(
       entry.pluginId,
       entry.connectionId,

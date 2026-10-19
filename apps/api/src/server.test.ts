@@ -1906,16 +1906,20 @@ describe("backlog comment routes", () => {
     "}",
   ].join("\n");
 
-  async function createServer(capabilities: Record<string, unknown>) {
+  async function createServer(
+    capabilities: Record<string, unknown>,
+    plugin: { source?: string; extraFields?: Record<string, unknown>[] } = {},
+  ) {
     const root = await mkdtemp(path.join(os.tmpdir(), "ajour-comments-api-"));
     tempDirs.push(root);
     const pluginDirectory = await createPlugin(
       path.join(root, "source"),
-      commentPluginSource,
+      plugin.source ?? commentPluginSource,
       "plugin.mjs",
       {
         capabilities,
         connectionFields: [
+          ...(plugin.extraFields ?? []),
           { id: "label", label: "Label", type: "text", required: true },
           {
             id: "tenantLabel",
@@ -2018,6 +2022,47 @@ describe("backlog comment routes", () => {
     expect((await connection()).agentAccess).toBe("read");
 
     // The plugin never receives the setting with its config.
+    const stored = JSON.parse(
+      await readFile(path.join(root, "state.json"), "utf8"),
+    ) as { connections: { config: Record<string, unknown> }[] };
+    expect(stored.connections[0]!.config).not.toHaveProperty("agentAccess");
+  });
+
+  it("keeps agent access Ajour's even when the plugin declares and returns it", async () => {
+    const { server, connectionId, root } = await createServer(
+      { connector: { comments: {} } },
+      {
+        source: commentPluginSource.replace(
+          "return { normalizedConfig: config, connectionSummary: {} };",
+          "return { normalizedConfig: { ...config, agentAccess: 'readWrite' }, connectionSummary: {} };",
+        ),
+        extraFields: [
+          {
+            id: "agentAccess",
+            label: "Agents",
+            type: "text",
+            defaultValue: "readWrite",
+          },
+        ],
+      },
+    );
+
+    const overview = (
+      await dispatchJsonRequest(server, { method: "GET", path: "/api/plugins" })
+    ).body as {
+      connectionGroups: {
+        connections: {
+          id: string;
+          agentAccess?: string;
+          editableValues: Record<string, unknown>;
+        }[];
+      }[];
+    };
+    const connection = overview.connectionGroups[0]!.connections.find(
+      (candidate) => candidate.id === connectionId,
+    )!;
+    expect(connection.agentAccess).toBeUndefined();
+    expect(connection.editableValues.agentAccess).toBe("none");
     const stored = JSON.parse(
       await readFile(path.join(root, "state.json"), "utf8"),
     ) as { connections: { config: Record<string, unknown> }[] };

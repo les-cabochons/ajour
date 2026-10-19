@@ -8,7 +8,7 @@ const {
   canWriteToSource,
   sendPendingSourceWrites,
   listBacklogSettleStates,
-  getPluginsOverview,
+  fetchPluginsOverview,
   listItemComments,
   postItemComment,
   showUndoToast,
@@ -18,7 +18,7 @@ const {
   canWriteToSource: vi.fn((_item: { title: string }) => false),
   sendPendingSourceWrites: vi.fn(),
   listBacklogSettleStates: vi.fn(),
-  getPluginsOverview: vi.fn(),
+  fetchPluginsOverview: vi.fn(),
   listItemComments: vi.fn(),
   postItemComment: vi.fn(),
   showUndoToast: vi.fn(),
@@ -34,7 +34,7 @@ vi.mock("@/features/backlog/backlog-source-writes", async (importOriginal) => ({
 vi.mock("@/lib/app-api", async (importOriginal) => ({
   ...(await importOriginal<object>()),
   listBacklogSettleStates,
-  getPluginsOverview,
+  fetchPluginsOverview,
   listItemComments,
   postItemComment,
 }));
@@ -915,7 +915,7 @@ const ana = { id: "ana", displayName: "Ana Silva" };
 
 describe("agent comment tools", () => {
   beforeEach(() => {
-    getPluginsOverview.mockReset();
+    fetchPluginsOverview.mockReset();
     listItemComments.mockReset();
     postItemComment.mockReset();
     showUndoToast.mockClear();
@@ -925,7 +925,7 @@ describe("agent comment tools", () => {
   it("refuses comments until the user allows agents on the connection", async () => {
     const { call, localStore } = await setup();
     const workItemId = importSyncedItem(localStore);
-    getPluginsOverview.mockResolvedValue(pluginsOverview());
+    fetchPluginsOverview.mockResolvedValue(pluginsOverview());
 
     expect(await call("list_work_item_comments", { workItemId })).toMatchObject(
       {
@@ -936,7 +936,7 @@ describe("agent comment tools", () => {
       },
     );
 
-    getPluginsOverview.mockResolvedValue(pluginsOverview("read"));
+    fetchPluginsOverview.mockResolvedValue(pluginsOverview("read"));
     listItemComments.mockResolvedValue({ viewer: me, comments: [] });
     expect(await call("list_work_item_comments", { workItemId })).toMatchObject(
       { ok: true, output: { comments: [] } },
@@ -953,7 +953,7 @@ describe("agent comment tools", () => {
   it("lists comments oldest first, marking the user's own and leaving out deleted ones", async () => {
     const { call, localStore } = await setup();
     const workItemId = importSyncedItem(localStore);
-    getPluginsOverview.mockResolvedValue(pluginsOverview("read"));
+    fetchPluginsOverview.mockResolvedValue(pluginsOverview("read"));
     window.localStorage.setItem(
       "ajour.pending-comment-deletes",
       JSON.stringify([
@@ -963,6 +963,14 @@ describe("agent comment tools", () => {
           connectionId: "ado-1",
           sourceId: "101",
           commentId: "c3",
+          at: 1,
+        },
+        {
+          itemId: "elsewhere",
+          pluginId: "azure_devops",
+          connectionId: "other-connection",
+          sourceId: "101",
+          commentId: "c1",
           at: 1,
         },
       ]),
@@ -1037,7 +1045,7 @@ describe("agent comment tools", () => {
   it("posts a comment when its Undo toast closes, and drops it on Undo", async () => {
     const { call, localStore } = await setup();
     const workItemId = importSyncedItem(localStore);
-    getPluginsOverview.mockResolvedValue(pluginsOverview("readWrite"));
+    fetchPluginsOverview.mockResolvedValue(pluginsOverview("readWrite"));
     postItemComment.mockResolvedValue({
       comment: {
         id: "c9",
@@ -1084,7 +1092,7 @@ describe("agent comment tools", () => {
   it("keeps a refused agent comment as the item's draft", async () => {
     const { call, localStore } = await setup();
     const workItemId = importSyncedItem(localStore);
-    getPluginsOverview.mockResolvedValue(pluginsOverview("readWrite"));
+    fetchPluginsOverview.mockResolvedValue(pluginsOverview("readWrite"));
     postItemComment.mockRejectedValue(new Error("No access."));
 
     await call("post_work_item_comment", { workItemId, body: "Fixed in 1.2" });
@@ -1103,7 +1111,7 @@ describe("agent comment tools", () => {
   it("refuses a comment longer than the source takes", async () => {
     const { call, localStore } = await setup();
     const workItemId = importSyncedItem(localStore);
-    getPluginsOverview.mockResolvedValue(pluginsOverview("readWrite"));
+    fetchPluginsOverview.mockResolvedValue(pluginsOverview("readWrite"));
 
     expect(
       await call("post_work_item_comment", {
@@ -1120,7 +1128,7 @@ describe("agent comment tools", () => {
   it("settles with a comment that waits for the settle's write", async () => {
     const { call, localStore } = await setup();
     const workItemId = importSyncedItem(localStore);
-    getPluginsOverview.mockResolvedValue(pluginsOverview("read"));
+    fetchPluginsOverview.mockResolvedValue(pluginsOverview("read"));
 
     expect(
       await call("settle_work_item", {
@@ -1138,7 +1146,7 @@ describe("agent comment tools", () => {
         ?.status,
     ).toBe("active");
 
-    getPluginsOverview.mockResolvedValue(pluginsOverview("readWrite"));
+    fetchPluginsOverview.mockResolvedValue(pluginsOverview("readWrite"));
     expect(
       await call("settle_work_item", {
         workItemId,
@@ -1161,6 +1169,58 @@ describe("agent comment tools", () => {
     expect(postItemComment).not.toHaveBeenCalled();
     expect(settleCommentsOf(workItemId)).toEqual([
       expect.objectContaining({ ready: true }),
+    ]);
+  });
+
+  it("keeps a queued comment as a draft when the user revoked access before it went", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = importSyncedItem(localStore);
+    fetchPluginsOverview.mockResolvedValue(pluginsOverview("readWrite"));
+    await call("post_work_item_comment", { workItemId, body: "Fixed in 1.2" });
+
+    fetchPluginsOverview.mockResolvedValue(pluginsOverview("read"));
+    showUndoToast.mock.calls.at(-1)![0].onClose();
+
+    await vi.waitFor(() =>
+      expect(showErrorToast).toHaveBeenCalledWith({
+        title: `Claude Code's comment on "Synced" wasn't posted`,
+        description:
+          "Agents can no longer post comments on its connection. It's kept as a draft on the item.",
+      }),
+    );
+    expect(postItemComment).not.toHaveBeenCalled();
+    const { getCommentDraft } = await import("@/lib/comment-drafts");
+    expect(getCommentDraft(workItemId)).toBe("Fixed in 1.2");
+  });
+
+  it("drops a queued comment whose item was deleted before it went", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = importSyncedItem(localStore);
+    fetchPluginsOverview.mockResolvedValue(pluginsOverview("readWrite"));
+    await call("post_work_item_comment", { workItemId, body: "Fixed in 1.2" });
+
+    localStore.deleteWorkItem(workItemId);
+    showUndoToast.mock.calls.at(-1)![0].onClose();
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(postItemComment).not.toHaveBeenCalled();
+    expect(showErrorToast).not.toHaveBeenCalled();
+  });
+
+  it("names the agent on its settle comment, so the send checks its access again", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = importSyncedItem(localStore);
+    fetchPluginsOverview.mockResolvedValue(pluginsOverview("readWrite"));
+
+    await call("settle_work_item", {
+      workItemId,
+      sourceState: "In QA",
+      comment: "Waiting on QA",
+    });
+
+    const { settleCommentsOf } = await import("@/lib/settle-comments");
+    expect(settleCommentsOf(workItemId)).toEqual([
+      expect.objectContaining({ agentClient: "Claude Code" }),
     ]);
   });
 });

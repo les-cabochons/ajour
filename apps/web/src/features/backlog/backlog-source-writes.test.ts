@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   post: vi.fn(),
   keepDraft: vi.fn(),
   announce: vi.fn(),
+  access: vi.fn(),
 }));
 vi.mock("@/lib/local-store", () => ({
   localStore: {
@@ -24,6 +25,11 @@ vi.mock("@/lib/app-api", () => ({
 vi.mock("@/components/ui/toast", () => ({ showErrorToast: mocks.error }));
 vi.mock("@/lib/comment-drafts", () => ({
   keepCommentAsDraft: mocks.keepDraft,
+}));
+vi.mock("@/lib/agent-comment-access", () => ({
+  readAgentCommentAccess: mocks.access,
+  agentAccessAllows: (access: string, need: "read" | "readWrite") =>
+    need === "read" ? access !== "none" : access === "readWrite",
 }));
 vi.mock("@/features/backlog/comment-threads", () => ({
   announcePostedComment: mocks.announce,
@@ -283,5 +289,40 @@ describe("the comment typed in the settle dialog", () => {
 
     expect(mocks.post).toHaveBeenCalledOnce();
     expect(settleCommentsOf("a")).toEqual([]);
+  });
+
+  it("posts an agent's settle comment only while the agent may still post", async () => {
+    const { queueSettleComment, releaseSettleComment } = await load();
+    item = { ...item, pendingSourceWrite: undefined };
+    queueSettleComment({ ...comment("s1"), agentClient: "Claude Code" });
+    queueSettleComment({
+      ...comment("s2", "Second"),
+      agentClient: "Claude Code",
+    });
+
+    mocks.access.mockResolvedValueOnce({ access: "readWrite" });
+    await releaseSettleComment("s1", "a");
+    expect(mocks.post).toHaveBeenCalledOnce();
+
+    mocks.access.mockResolvedValueOnce({ access: "read" });
+    await releaseSettleComment("s2", "a");
+    expect(mocks.post).toHaveBeenCalledOnce();
+    expect(mocks.keepDraft).toHaveBeenCalledWith("a", "Second");
+    expect(mocks.error).toHaveBeenCalledWith({
+      title: `Claude Code's comment on "A" wasn't posted`,
+      description:
+        "Agents can no longer post comments on its connection. It's kept as a draft on the item.",
+    });
+  });
+
+  it("keeps a comment as a draft when its item now comes from another source", async () => {
+    const { queueSettleComment, releaseSettleComment } = await load();
+    item = { ...item, pendingSourceWrite: undefined, sourceId: "2" };
+    queueSettleComment(comment("s1"));
+
+    await releaseSettleComment("s1", "a");
+
+    expect(mocks.post).not.toHaveBeenCalled();
+    expect(mocks.keepDraft).toHaveBeenCalledWith("a", "Waiting on the client");
   });
 });

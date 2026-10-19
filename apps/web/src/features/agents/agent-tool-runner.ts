@@ -176,7 +176,7 @@ export async function runAgentToolCall(
     if (isWorkItemWriteTool(call.tool)) {
       return finishWrite(
         call,
-        await runWorkItemWriteTool(call.tool, call.input),
+        await runWorkItemWriteTool(call.tool, call.input, call.client),
       );
     }
     if (call.tool === "post_work_item_comment") {

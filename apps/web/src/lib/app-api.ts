@@ -423,6 +423,14 @@ export function subscribePluginsOverview(
   };
 }
 
+/**
+ * The overview exactly as the local API answers this request, never a
+ * cached or newer one, for checks that grant access.
+ */
+export function fetchPluginsOverview(): Promise<PluginsOverview> {
+  return appApiRequest("/api/plugins", undefined, pluginsOverviewSchema);
+}
+
 export async function getPluginsOverview(): Promise<PluginsOverview> {
   const requestRevision = pluginsOverviewRevision;
   const requestId = ++latestPluginsOverviewRequest;

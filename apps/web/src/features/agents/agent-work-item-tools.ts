@@ -1,5 +1,6 @@
 import {
   writeToolInputSchemas,
+  type AgentClientRef,
   type WriteToolName,
 } from "@ajour/shared/agent-tools";
 import {
@@ -181,6 +182,7 @@ function outcome(
 export async function runWorkItemWriteTool(
   tool: WorkItemWriteTool,
   rawInput: unknown,
+  client: AgentClientRef,
 ): Promise<AgentWriteOutcome> {
   const state = localStore.snapshot();
   const now = Date.now();
@@ -337,6 +339,7 @@ export async function runWorkItemWriteTool(
       if (commentSource && input.comment) {
         queueSettleComment({
           id: commentId,
+          agentClient: client.name,
           itemId: item._id,
           pluginId: commentSource.pluginId,
           connectionId: commentSource.connectionId,

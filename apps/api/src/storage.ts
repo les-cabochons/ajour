@@ -380,9 +380,6 @@ function toEditableValues(
     autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
     pullRequestAutoSync: syncsPullRequestsAutomatically(connection),
   };
-  if (plugin.capabilities.connector?.comments) {
-    editableValues[AGENT_ACCESS_FIELD_ID] = connectionAgentAccess(connection);
-  }
 
   for (const field of plugin.connectionFields) {
     if (field.secret) {
@@ -393,6 +390,12 @@ function toEditableValues(
     if (value !== undefined) {
       editableValues[field.id] = value;
     }
+  }
+  // Ajour's own setting, set last so no plugin field or config can stand in.
+  if (plugin.capabilities.connector?.comments) {
+    editableValues[AGENT_ACCESS_FIELD_ID] = connectionAgentAccess(connection);
+  } else {
+    delete editableValues[AGENT_ACCESS_FIELD_ID];
   }
 
   return editableValues;

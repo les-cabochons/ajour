@@ -445,6 +445,15 @@ function parseConnectionValues(values: PluginFieldValues) {
   };
 }
 
+/** The plugin's config without the fields Ajour owns, which it never received. */
+function withoutReservedFields(config: PluginFieldValues): PluginFieldValues {
+  return Object.fromEntries(
+    Object.entries(config).filter(
+      ([key]) => !RESERVED_CONNECTION_FIELDS.has(key),
+    ),
+  );
+}
+
 /** Undefined keeps the saved value; a connection never saved with it has None. */
 function parseAgentAccessValue(value: unknown): AgentAccess | undefined {
   if (value === undefined) return undefined;
@@ -1219,7 +1228,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             autoSyncIntervalMinutes: parsedValues.autoSyncIntervalMinutes,
             pullRequestAutoSync: parsedValues.pullRequestAutoSync,
             agentAccess: parsedValues.agentAccess,
-            config: validation.normalizedConfig,
+            // The plugin's answer can't set a field Ajour owns.
+            config: withoutReservedFields(validation.normalizedConfig),
             configSummary: validation.connectionSummary,
           });
           const { overview, summary } = await findConnectionSummary(

@@ -9,6 +9,11 @@ import {
   postItemComment,
   writeBacklogSettle,
 } from "@/lib/app-api";
+import { isCommentSourceOf } from "@/domain/backlog/comments";
+import {
+  agentAccessAllows,
+  readAgentCommentAccess,
+} from "@/lib/agent-comment-access";
 import { keepCommentAsDraft } from "@/lib/comment-drafts";
 import { localStore } from "@/lib/local-store";
 import {
@@ -148,11 +153,26 @@ export async function sendSettleComments(workItemId: string) {
     ready.map(async ({ id }) => {
       const entry = takeSettleComment(id);
       if (!entry || !item) return;
-      if (item.status === "active") {
+      if (item.status === "active" || !isCommentSourceOf(item, entry)) {
         keepCommentAsDraft(workItemId, entry.body);
         return;
       }
       try {
+        if (
+          entry.agentClient &&
+          !agentAccessAllows(
+            (await readAgentCommentAccess(item)).access,
+            "readWrite",
+          )
+        ) {
+          keepCommentAsDraft(workItemId, entry.body);
+          showErrorToast({
+            title: `${entry.agentClient}'s comment on "${item.title}" wasn't posted`,
+            description:
+              "Agents can no longer post comments on its connection. It's kept as a draft on the item.",
+          });
+          return;
+        }
         const { comment } = await postItemComment(
           entry.pluginId,
           entry.connectionId,

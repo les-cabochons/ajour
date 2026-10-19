@@ -43,7 +43,7 @@ A synced item's comments are other people's words, often a client's, so agents g
 
 - **None**, the default: agents can't read or post comments on the connection's items.
 - **Read**: agents can read the comments. What they read goes to their model provider, like the rest of your data.
-- **Read and post**: agents can also post a comment, or settle an item with one. The comment waits for its Undo toast, like a comment you delete, and goes to the source when the toast closes. **Undo** cancels it. If the source refuses it, Ajour keeps it as a draft on the item.
+- **Read and post**: agents can also post a comment, or settle an item with one. The comment waits for its Undo toast, like a comment you delete, and goes to the source when the toast closes. **Undo** cancels it. If you take back the access before it goes, or the source refuses it, Ajour keeps it as a draft on the item. A comment on an item you deleted goes with it.
 
 The connection's row shows **Agents read comments** or **Agents read and post comments** while you allow it.
 
