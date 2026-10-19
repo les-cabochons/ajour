@@ -62,18 +62,18 @@ Feature: Open the local time workspace
 
   Scenario: Copy a week's lines from the Commit page
     Given I have a week of saved entries
-    When I open the Commit page from the Week totals dropdown
+    When I open the Commit page from the sidebar on the Week view
     Then the Commit page merges Monday's task entries
     And copying the merged line gives decimal hours and merged comments
 
   Scenario: Open the Commit page from the narrow view
     Given I have a week of saved entries
-    When I open the Commit page from the narrow totals dropdown
+    When I open the Commit page from the narrow bottom row
     Then the Commit page lists the week's entries
 
-  Scenario: Open the selected week's Commit page from Settings
+  Scenario: Open the selected week's Commit page from the Backlog
     Given I have a week of saved entries
-    When I open the Commit page from Settings totals
+    When I open the Commit page from the sidebar on the Backlog
     Then the Commit page lists the week's entries
 
   Scenario: Save a valid entry draft before opening the Commit page

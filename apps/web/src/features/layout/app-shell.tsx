@@ -69,7 +69,6 @@ import {
   SettingsNavigation,
   getSettingsPages,
 } from "@/features/settings/settings-navigation";
-import { CommitWeekButton } from "@/features/time/commit-week-controls";
 import { formatClockDuration } from "@/domain/time/duration";
 import { formatElapsedDuration } from "@/domain/time/running-entry";
 import { findPinnedTask } from "@/domain/projects/project-transitions";
@@ -355,18 +354,17 @@ function ConnectorAutoSyncScheduler() {
 }
 
 /**
- * The selected day's titlebar pill, with day and week totals and Commit week.
+ * The selected day's titlebar pill: "Today" and the day total on today, the
+ * day total alone on another day. Its popover has the day and week totals.
  * With `showsRunningEntry`, as in the narrow view, a running entry replaces
  * the day total on the pill with its own time, and the popover gets a Current
  * timer row that opens the entry's editor.
  */
 function DayTotalsPill({
   date,
-  onCommit,
   showsRunningEntry = false,
 }: {
   date: string;
-  onCommit: () => void;
   showsRunningEntry?: boolean;
 }) {
   const state = useLocalState();
@@ -425,9 +423,9 @@ function DayTotalsPill({
           </>
         ) : (
           <>
-            <span className="ajour-nav-total-label">
-              {date === todayIsoDate() ? "Today" : "Day"}
-            </span>
+            {date === todayIsoDate() ? (
+              <span className="ajour-nav-total-label">Today</span>
+            ) : null}
             <span className="ajour-nav-total-value">
               {formatClockDuration(dayTotalMs)}
             </span>
@@ -454,14 +452,6 @@ function DayTotalsPill({
           <span className="day-totals-popup-value">
             {formatClockDuration(dayTotalMs)}
           </span>
-        </div>
-        <div className="mt-1 border-t border-border pt-2">
-          <CommitWeekButton
-            onClick={() => {
-              setOpen(false);
-              onCommit();
-            }}
-          />
         </div>
       </PopoverContent>
     </Popover>
@@ -519,13 +509,11 @@ function GlobalTimerBar({
   date,
   showsFloatingDock,
   floatingDockWidth,
-  onCommit,
 }: {
   date: string;
   showsFloatingDock: boolean;
   /** Fits the floating dock inside the left column, as in Settings. */
   floatingDockWidth?: number;
-  onCommit: () => void;
 }) {
   const state = useLocalState();
   const projects = useLocalProjects();
@@ -672,11 +660,7 @@ function GlobalTimerBar({
           )}
         </div>
       ) : null}
-      <DayTotalsPill
-        date={date}
-        onCommit={onCommit}
-        showsRunningEntry={isNarrowView}
-      />
+      <DayTotalsPill date={date} showsRunningEntry={isNarrowView} />
       {isNarrowView && editor === "new" ? (
         <TimeEntryModal
           date={today}
@@ -898,25 +882,6 @@ export function AppShell() {
                 showsFloatingDock={
                   showsSettingsSidebar || appSidebar.state === "hidden"
                 }
-                onCommit={() => {
-                  if (isTimeActive && /^\/time\/[^/]+$/.test(pathname)) {
-                    void navigate({
-                      to: "/time/$date",
-                      params: {
-                        date: pathname.split("/")[2] ?? selectedTimeDate,
-                      },
-                      search: ((previous: Record<string, unknown>) => ({
-                        ...previous,
-                        action: "commit-week",
-                      })) as never,
-                    });
-                  } else {
-                    void navigate({
-                      to: "/time/$date/commit",
-                      params: { date: selectedTimeDate },
-                    });
-                  }
-                }}
               />
             </div>
           </nav>

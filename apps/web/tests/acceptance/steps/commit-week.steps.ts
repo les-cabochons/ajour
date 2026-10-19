@@ -273,3 +273,31 @@ Then("the clipboard holds {string}", async ({ page }, text: string) => {
     .poll(() => page.evaluate(() => navigator.clipboard.readText()))
     .toBe(text);
 });
+
+function totalsTrigger(page: Page) {
+  return page.getByRole("button", { name: "Show day and week totals" });
+}
+
+Then("the titlebar totals read {string}", async ({ page }, text: string) => {
+  // The label and the value are separate spans with no text between them.
+  await expect
+    .poll(async () =>
+      (await totalsTrigger(page).locator("span").allInnerTexts()).join(" "),
+    )
+    .toBe(text);
+});
+
+Then("the totals popover has no Commit button", async ({ page }) => {
+  await totalsTrigger(page).click();
+  const popover = page.getByLabel("Current time totals");
+  await expect(popover).toContainText("Week total");
+  await expect(popover.getByRole("button")).toHaveCount(0);
+  await page.keyboard.press("Escape");
+});
+
+When("I open today's Day list", async ({ page }) => {
+  await page.goto("/time/today");
+  await expect(page.locator(".time-page-stack")).toBeVisible({
+    timeout: 15_000,
+  });
+});

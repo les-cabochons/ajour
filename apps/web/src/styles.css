@@ -775,6 +775,14 @@
     outline: 1px solid var(--focus-ring);
     outline-offset: 1px;
   }
+
+  /* Between the sections and Commit week, which is an action. */
+  .ajour-narrow-switcher-divider {
+    width: 1px;
+    height: 16px;
+    margin-inline: 2px;
+    background: var(--border);
+  }
   /* ----------------------------------------------------------------
      Toggle tabs
      ---------------------------------------------------------------- */
@@ -1801,6 +1809,12 @@
 
 .ajour-app-sidebar-toggle:hover {
   color: var(--text);
+}
+
+/* Settings in the sidebar foot while a Settings page is open. */
+.ajour-app-sidebar-toggle[data-active="true"] {
+  color: var(--text);
+  background: var(--app-sidebar-active-bg);
 }
 
 .ajour-tooltip-shortcut {

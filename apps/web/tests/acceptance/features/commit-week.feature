@@ -58,3 +58,18 @@ Feature: Commit the week
     Then the clipboard holds "CA004 Tech & Design Development"
     When I open the Commit page for the week of 2026-10-05
     Then Monday's "Development" line shows "CA004 Tech & Design / Development"
+
+  Scenario: Open the Commit page from the sidebar
+    Given I have a committed week of entries
+    When I open Monday's Day list
+    And I press "Commit week"
+    Then the Commit page says everything is committed
+
+  Scenario: The totals show the day total and no Commit button
+    Given I have a committed week of entries
+    When I open Monday's Day list
+    Then the titlebar totals read "3:00"
+    And the totals popover has no Commit button
+    When I open today's Day list
+    Then the titlebar totals read "Today 0:00"
+
