@@ -467,4 +467,16 @@ describe("the comment typed in the settle dialog", () => {
       }),
     );
   });
+
+  it("keeps an older comment as a draft once its item is in a settle with an id", async () => {
+    const { queueSettleComment, releaseSettleComment } = await load();
+    // Queued before settles had ids; the item has settled again since.
+    item = { ...item, pendingSourceWrite: undefined, settleId: "settle-2" };
+    queueSettleComment(comment("s1"));
+
+    await releaseSettleComment("s1", "a");
+
+    expect(mocks.post).not.toHaveBeenCalled();
+    expect(mocks.keepDraft).toHaveBeenCalledWith("a", "Waiting on the client");
+  });
 });

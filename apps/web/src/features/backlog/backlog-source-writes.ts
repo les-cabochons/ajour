@@ -138,9 +138,12 @@ async function sendSourceWrite(
   }
 }
 
-/** Whether a queued comment came with that settle. Older entries name none. */
+/**
+ * Whether a queued comment came with that settle. An older entry, queued
+ * before settles had ids, matches only an item settled before then too.
+ */
 function isOfSettle(entry: PendingSettleComment, settleId: string | undefined) {
-  return entry.settleId === undefined || entry.settleId === settleId;
+  return entry.settleId === settleId;
 }
 
 /** Keeps these queued comments as the item's draft, each at most once. */
