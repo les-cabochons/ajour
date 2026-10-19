@@ -159,27 +159,45 @@ function mentionSource(
     const before =
       word.from > 0 ? context.state.sliceDoc(word.from - 1, word.from) : "";
     if (before && !/[\s(]/.test(before)) return null;
-    const showStatus = (text: string | null) =>
-      context.view?.dispatch({
+    // CodeMirror keeps a query running while the text changes, so an answer
+    // counts only while this `@word` is still what is typed, in focus.
+    const stillTyped = () => {
+      const view = context.view;
+      if (!view) return true;
+      const { state } = view;
+      return (
+        !context.aborted &&
+        view.hasFocus &&
+        state.sliceDoc(word.from, state.selection.main.head) === word.text
+      );
+    };
+    const showStatus = (text: string | null) => {
+      const view = context.view;
+      if (!view) return;
+      if (text === null && !view.state.field(mentionStatus, false)) return;
+      view.dispatch({
         effects: setMentionStatus.of(text ? { from: word.from, text } : null),
       });
+    };
     const query = word.text.slice(1);
     if (!query) {
       // Out of the completion's own update.
       await Promise.resolve();
-      if (!context.aborted) showStatus("Type a name to mention someone");
+      if (stillTyped()) showStatus("Type a name to mention someone");
       return null;
     }
     // Typing fast asks once, for the last query.
     await new Promise((resolve) => setTimeout(resolve, 200));
-    if (context.aborted) return null;
+    if (!stillTyped()) return null;
     // A search that fails reads like one that found no one.
     const people = await search()(query).catch(() => []);
-    if (context.aborted) return null;
+    if (!stillTyped()) return null;
     if (people.length === 0) {
       showStatus("No one found");
       return null;
     }
+    // A retry that finds people replaces an earlier "No one found".
+    showStatus(null);
     return {
       from: word.from,
       filter: false,

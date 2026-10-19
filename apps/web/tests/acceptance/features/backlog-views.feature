@@ -580,6 +580,17 @@ Feature: Backlog list and board views
     When I open the Backlog parent page
     And I type "@Ana" in a new comment
     Then the mention suggestions say no one was found
+    When the people search works again and I ask for suggestions
+    Then Ana is suggested and no status shows
+
+  Scenario: A slow people search answers only the name still being typed
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds no one, slowly
+    When I open the Backlog parent page
+    And I type "@Zo" in a new comment
+    And I keep typing " " before the search answers
+    Then the mention suggestions are closed once the search answers
 
   Scenario: Archive a synced item from the bottom of its properties card
     Given the Backlog parent is synced
