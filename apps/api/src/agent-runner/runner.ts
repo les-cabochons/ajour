@@ -18,9 +18,10 @@ import type {
   AgentRunStartRequest,
   AgentTaskStatus,
 } from "../../../../packages/shared/agent-runs.ts";
-import type {
-  AgentTask,
-  PluginFieldValues,
+import {
+  agentTaskSettingFields,
+  type AgentTask,
+  type PluginFieldValues,
 } from "../../../../packages/shared/plugins.ts";
 import { fillTemplate } from "../../../../packages/shared/agent-task-templates.ts";
 import type { AgentSessions } from "../agent-sessions.ts";
@@ -66,10 +67,7 @@ export class AgentRunError extends Error {
 interface RunnerStorage {
   getMcpSettings(): Promise<{ enabled: boolean }>;
   getAgentRunnerSettings(): Promise<AgentRunnerSettings>;
-  getAgentTaskValues(
-    pluginId: string,
-    taskId: string,
-  ): Promise<PluginFieldValues>;
+  getAgentTaskValues(pluginId: string): Promise<PluginFieldValues>;
   createMcpClient(name: string): Promise<McpClientCreateResponse>;
   revokeMcpClient(clientId: string): Promise<boolean>;
 }
@@ -222,27 +220,36 @@ export class AgentRunner {
     const cli = clis.find((candidate) => candidate.id === settings.cli);
     for (const plugin of await this.options.plugins.listPlugins()) {
       if (!(await this.options.plugins.isPluginEnabled(plugin.id))) continue;
-      for (const task of plugin.capabilities.agentTask?.tasks ?? []) {
+      // The plugin's tasks share their settings by ID, and the first task
+      // that declares a setting gives its label and default, as on the form.
+      const pluginTasks = plugin.capabilities.agentTask?.tasks ?? [];
+      const sharedFields = new Map(
+        agentTaskSettingFields(pluginTasks).map((field) => [field.id, field]),
+      );
+      const saved = await this.options.storage.getAgentTaskValues(plugin.id);
+      for (const task of pluginTasks) {
+        // Each task still decides which settings it requires.
+        const fields = task.settings.map((field) => ({
+          ...(sharedFields.get(field.id) ?? field),
+          required: field.required,
+        }));
         // A setting the user never saved falls back to its manifest default.
         const values = {
           ...Object.fromEntries(
-            task.settings.flatMap((field) =>
+            fields.flatMap((field) =>
               field.defaultValue === undefined
                 ? []
                 : [[field.id, field.defaultValue]],
             ),
           ),
-          ...(await this.options.storage.getAgentTaskValues(
-            plugin.id,
-            task.id,
-          )),
+          ...saved,
         };
         const blockers = [
           ...(mcpEnabled ? [] : ["Turn on MCP in Settings > MCP"]),
           ...(cli?.supported && cli.installed
             ? []
             : ["Pick an installed agent in Settings > Agents"]),
-          ...task.settings
+          ...fields
             .filter(
               (field) =>
                 field.required &&

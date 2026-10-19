@@ -39,6 +39,13 @@ const enterWeek = {
   blockers: [] as string[],
 };
 
+const submitWeekTask = {
+  ...enterWeek,
+  taskId: "submit-week",
+  label: "Check Workday and submit",
+  placement: "submit-week",
+};
+
 const readyOverview = {
   settings: { cli: "claude-code", browserMode: "ajour-chrome", model: "" },
   clis: [
@@ -52,13 +59,6 @@ const readyOverview = {
   ],
   tasks: [enterWeek],
   currentRun: null,
-};
-
-const submitWeekTask = {
-  ...enterWeek,
-  taskId: "submit-week",
-  label: "Check Workday and submit",
-  placement: "submit-week",
 };
 
 /** What the bridge sends once the run is going: a session the runner owns. */
@@ -146,10 +146,20 @@ async function mockRunner(
     route.fulfill({ json: overview, headers: cors }),
   );
   await page.route(
-    `${apiUrl}/api/agents/tasks/ajp-workday/enter-week/settings`,
+    `${apiUrl}/api/agents/plugins/ajp-workday/settings`,
     async (route) => {
-      state.settingsSaves.push(route.request().postDataJSON());
-      await route.fulfill({ json: readyOverview, headers: cors });
+      const body = route.request().postDataJSON() as { values: object };
+      state.settingsSaves.push(body);
+      // The saved settings fill every task of the plugin.
+      const tasks = (overview as { tasks: object[] }).tasks.map((task) => ({
+        ...task,
+        values: body.values,
+        blockers: [],
+      }));
+      await route.fulfill({
+        json: { ...readyOverview, tasks },
+        headers: cors,
+      });
     },
   );
   await page.route(`${apiUrl}/api/agent-runs`, async (route) => {
@@ -173,7 +183,20 @@ async function mockRunner(
 
 let runner: RunnerMockState;
 
-/** The installed manifest of a plugin that declares only the agent task. */
+const manifestTask = (task: typeof enterWeek) => ({
+  id: task.taskId,
+  label: task.label,
+  placement: task.placement,
+  prompt: `prompts/${task.taskId}.md`,
+  estimateMinutes: task.estimateMinutes,
+  weekLink: task.weekLink,
+  settings: task.settings,
+});
+
+/**
+ * The installed manifest of a plugin that declares only agent tasks: both
+ * ask for the same timesheet URL.
+ */
 const workdayPlugin = {
   id: "ajp-workday",
   displayName: "Workday",
@@ -184,17 +207,7 @@ const workdayPlugin = {
   connectionFields: [],
   capabilities: {
     agentTask: {
-      tasks: [
-        {
-          id: enterWeek.taskId,
-          label: enterWeek.label,
-          placement: enterWeek.placement,
-          prompt: "prompts/enter-week.md",
-          estimateMinutes: enterWeek.estimateMinutes,
-          weekLink: enterWeek.weekLink,
-          settings: enterWeek.settings,
-        },
-      ],
+      tasks: [manifestTask(enterWeek), manifestTask(submitWeekTask)],
     },
   },
 };
@@ -206,15 +219,13 @@ Given(
       page,
       {
         ...readyOverview,
-        tasks: [
-          {
-            ...enterWeek,
-            values: {},
-            blockers: [
-              "Fill in Workday timesheet URL in Settings > Plugins > Workday",
-            ],
-          },
-        ],
+        tasks: [enterWeek, submitWeekTask].map((task) => ({
+          ...task,
+          values: {},
+          blockers: [
+            "Fill in Workday timesheet URL in Settings > Plugins > Workday",
+          ],
+        })),
       },
       [workdayPlugin],
     );
@@ -235,8 +246,12 @@ When(
   },
 );
 
-Then("the task says {string}", async ({ page }, text: string) => {
-  await expect(page.getByText(text, { exact: true })).toBeVisible();
+Then("both tasks say {string}", async ({ page }, text: string) => {
+  await expect(page.getByText(text, { exact: true })).toHaveCount(2);
+});
+
+Then("the page asks for {string} once", async ({ page }, label: string) => {
+  await expect(page.getByLabel(label, { exact: true })).toHaveCount(1);
 });
 
 Then(

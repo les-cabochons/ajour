@@ -1005,13 +1005,13 @@ export async function updateAgentRunnerSettings(
   );
 }
 
+/** Saves the settings every agent task of the plugin shares. */
 export async function saveAgentTaskSettings(
   pluginId: string,
-  taskId: string,
   values: PluginFieldValues,
 ) {
   return appApiRequest(
-    `/api/agents/tasks/${encodeURIComponent(pluginId)}/${encodeURIComponent(taskId)}/settings`,
+    `/api/agents/plugins/${encodeURIComponent(pluginId)}/settings`,
     { method: "POST", body: JSON.stringify({ values }) },
     agentRunnerOverviewSchema,
   );

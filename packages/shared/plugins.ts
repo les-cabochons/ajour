@@ -190,6 +190,22 @@ export const agentTaskSchema = z
 export type AgentTask = z.infer<typeof agentTaskSchema>;
 
 /**
+ * The settings of a plugin's agent tasks, once each. Tasks share a setting
+ * by its ID, so the first task that declares an ID gives its field.
+ */
+export function agentTaskSettingFields(
+  tasks: readonly Pick<AgentTask, "settings">[],
+): PluginField[] {
+  const fields = new Map<string, PluginField>();
+  for (const task of tasks) {
+    for (const field of task.settings) {
+      if (!fields.has(field.id)) fields.set(field.id, field);
+    }
+  }
+  return [...fields.values()];
+}
+
+/**
  * Text properties a plugin adds to every project, shown in a section of the
  * project properties card. See
  * docs/specs/2026-10-15-plugin-project-properties-design.md.

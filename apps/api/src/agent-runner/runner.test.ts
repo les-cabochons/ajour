@@ -7,7 +7,10 @@ import { AgentSessions } from "../agent-sessions.ts";
 import { claudeCodeAdapter } from "./adapters/claude-code.ts";
 import { codexAdapter } from "./adapters/codex.ts";
 import type { AgentCliId } from "../../../../packages/shared/agent-runs.ts";
-import type { PluginField } from "../../../../packages/shared/plugins.ts";
+import type {
+  AgentTask,
+  PluginField,
+} from "../../../../packages/shared/plugins.ts";
 import type { AgentCliAdapter } from "./adapter.ts";
 import { AgentRunner } from "./runner.ts";
 
@@ -81,7 +84,11 @@ function fakeStorage({
   };
 }
 
-function fakePlugins(prompt: string, weekLink: string) {
+function fakePlugins(
+  prompt: string,
+  weekLink: string,
+  otherTasks: AgentTask[] = [],
+) {
   const manifest = {
     id: "ajp-test",
     displayName: "Workday",
@@ -97,6 +104,7 @@ function fakePlugins(prompt: string, weekLink: string) {
             weekLink,
             settings: fakeSettings,
           },
+          ...otherTasks,
         ],
       },
     },
@@ -117,6 +125,7 @@ async function setup(
     killGraceMs?: number;
     values?: Record<string, string>;
     weekLink?: string;
+    otherTasks?: AgentTask[];
   } = {},
 ) {
   const work = await mkdtemp(path.join(tmpdir(), "ajour-runner-test-"));
@@ -134,6 +143,7 @@ async function setup(
     plugins: fakePlugins(
       "Enter week {{weekOf}} in {{settings.url}}.",
       options.weekLink ?? "{{settings.url}}?date={{weekOf}}",
+      options.otherTasks,
     ),
     adapters: [options.adapter ?? fakeAdapter(script, report)],
     findExecutable: async () => "/fake/claude",
@@ -522,6 +532,98 @@ describe("AgentRunner", () => {
     } finally {
       delete fakeSettings[0]!.defaultValue;
     }
+  });
+
+  it("gives every task the default of the first task that declares a setting", async () => {
+    fakeSettings[0]!.defaultValue = "https://wd.example/default";
+    try {
+      const { runner } = await setup([], {
+        values: {},
+        otherTasks: [
+          {
+            id: "submit-week",
+            label: "Submit",
+            placement: "submit-week",
+            prompt: "p.md",
+            estimateMinutes: 10,
+            settings: [
+              {
+                id: "url",
+                label: "Other label",
+                type: "url",
+                required: true,
+                secret: false,
+              },
+            ],
+          },
+        ],
+      });
+      const submit = (await runner.overview()).tasks.find(
+        (task) => task.taskId === "submit-week",
+      )!;
+      expect(submit.values.url).toBe("https://wd.example/default");
+      expect(submit.blockers).toEqual([]);
+    } finally {
+      delete fakeSettings[0]!.defaultValue;
+    }
+  });
+
+  it("names a missing shared setting by its first declaration", async () => {
+    const { runner } = await setup([], {
+      values: {},
+      otherTasks: [
+        {
+          id: "submit-week",
+          label: "Submit",
+          placement: "submit-week",
+          prompt: "p.md",
+          estimateMinutes: 10,
+          settings: [
+            {
+              id: "url",
+              label: "Other label",
+              type: "url",
+              required: true,
+              secret: false,
+            },
+          ],
+        },
+      ],
+    });
+    const submit = (await runner.overview()).tasks.find(
+      (task) => task.taskId === "submit-week",
+    )!;
+    expect(submit.blockers).toEqual([
+      "Fill in URL in Settings > Plugins > Workday",
+    ]);
+  });
+
+  it("keeps a setting required for the task that requires it", async () => {
+    const { runner } = await setup([], {
+      otherTasks: [
+        {
+          id: "submit-week",
+          label: "Submit",
+          placement: "submit-week",
+          prompt: "p.md",
+          estimateMinutes: 10,
+          settings: [
+            {
+              id: "note",
+              label: "Other note",
+              type: "text",
+              required: true,
+              secret: false,
+            },
+          ],
+        },
+      ],
+    });
+    const [enter, submit] = (await runner.overview()).tasks;
+    expect(enter!.blockers).toEqual([]);
+    expect(submit!.blockers).toEqual([
+      "Fill in Note in Settings > Plugins > Workday",
+    ]);
   });
 
   it("fills an unset optional setting as an empty string", async () => {

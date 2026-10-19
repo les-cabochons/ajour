@@ -18,10 +18,10 @@ It is a different plugin from [Workday](/plugins/workday), the schema for import
 
 1. In **Settings › Plugins**, find **Workday (agent)** and press **Download**. Version 0.5.0 or later has both tasks.
 2. In **Settings › Agents**, pick the agent. Leave **Browser** on **Ajour's Chrome window** unless you want the agent to use your own Chrome profile.
-3. Open **Settings › Plugins › Workday (agent)**. Under **Tasks**, fill in, for **Commit to Workday** and **Check Workday and submit**:
+3. Open **Settings › Plugins › Workday (agent)**. Under **Tasks**, fill in, once for both tasks:
    - **Workday timesheet URL**: open Enter Time in Workday and copy the address.
    - **Sign-in username**, optional: your work email. See [Sign-in](#sign-in).
-4. Press **Save**. The task says **Ready to run from the Commit page.**
+4. Press **Save**. **Commit to Workday** and **Check Workday and submit** both say **Ready to run from the Commit page.**
 
 ## Match your projects
 

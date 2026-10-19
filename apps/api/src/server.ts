@@ -10,6 +10,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
+  agentTaskSettingFields,
   backlogSourceStatusListResponseSchema,
   backlogSourceStatusUpsertRequestSchema,
   backlogSourceStatusUpsertResponseSchema,
@@ -695,8 +696,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     storage: {
       getMcpSettings: () => storage.getMcpSettings(),
       getAgentRunnerSettings: () => storage.getAgentRunnerSettings(),
-      getAgentTaskValues: (pluginId, taskId) =>
-        storage.getAgentTaskValues(pluginId, taskId),
+      getAgentTaskValues: (pluginId) => storage.getAgentTaskValues(pluginId),
       createMcpClient: (name) => createMcpClient(storage, name),
       revokeMcpClient: (clientId) =>
         storage.revokeMcpClient(clientId, Date.now()),
@@ -813,32 +813,33 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         return;
       }
 
+      // A plugin's agent tasks share their settings, so they save together.
       const agentTaskSettingsRoute = requestUrl.pathname.match(
-        /^\/api\/agents\/tasks\/([^/]+)\/([^/]+)\/settings$/,
+        /^\/api\/agents\/plugins\/([^/]+)\/settings$/,
       );
       if (request.method === "POST" && agentTaskSettingsRoute) {
         const payload = agentTaskSettingsUpdateSchema.parse(
           await readJsonBody(request),
         );
         const pluginId = decodeURIComponent(agentTaskSettingsRoute[1] ?? "");
-        const taskId = decodeURIComponent(agentTaskSettingsRoute[2] ?? "");
-        const task = (await pluginManager.listPlugins())
-          .find((plugin) => plugin.id === pluginId)
-          ?.capabilities.agentTask?.tasks.find(
-            (candidate) => candidate.id === taskId,
-          );
-        if (!task) {
+        const tasks = (await pluginManager.listPlugins()).find(
+          (plugin) => plugin.id === pluginId,
+        )?.capabilities.agentTask?.tasks;
+        if (!tasks) {
           writeJson(response, 404, {
-            error: "This agent task is not available.",
+            error: "This plugin has no agent tasks.",
           });
           return;
         }
-        const parsed = parseAgentTaskValues(task.settings, payload.values);
+        const parsed = parseAgentTaskValues(
+          agentTaskSettingFields(tasks),
+          payload.values,
+        );
         if ("error" in parsed) {
           writeJson(response, 400, { error: parsed.error });
           return;
         }
-        await storage.setAgentTaskValues(pluginId, taskId, parsed.values);
+        await storage.setAgentTaskValues(pluginId, parsed.values);
         writeJson(response, 200, await agentRunner.overview());
         return;
       }

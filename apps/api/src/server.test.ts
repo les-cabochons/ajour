@@ -1516,6 +1516,21 @@ describe("agent task settings route", () => {
                   { id: "note", label: "Note", type: "text" },
                 ],
               },
+              {
+                id: "submit-week",
+                label: "Submit",
+                placement: "submit-week",
+                prompt: "prompts/enter-week.md",
+                estimateMinutes: 5,
+                settings: [
+                  {
+                    id: "url",
+                    label: "Timesheet URL",
+                    type: "url",
+                    required: true,
+                  },
+                ],
+              },
             ],
           },
         },
@@ -1537,20 +1552,16 @@ describe("agent task settings route", () => {
     return server;
   }
 
-  const save = (server: Server, route: string, values: object) =>
+  const save = (server: Server, pluginId: string, values: object) =>
     dispatchJsonRequest(server, {
       method: "POST",
-      path: `/api/agents/tasks/${route}/settings`,
+      path: `/api/agents/plugins/${pluginId}/settings`,
       body: JSON.stringify({ values }),
     });
 
-  it("answers 404 for a plugin or task the plugins do not declare", async () => {
+  it("answers 404 for a plugin without agent tasks", async () => {
     const server = await createServer();
-    await expect(save(server, "nope/enter-week", {})).resolves.toMatchObject({
-      status: 404,
-      body: { error: expect.any(String) },
-    });
-    await expect(save(server, "jira/nope", {})).resolves.toMatchObject({
+    await expect(save(server, "nope", {})).resolves.toMatchObject({
       status: 404,
       body: { error: expect.any(String) },
     });
@@ -1558,7 +1569,7 @@ describe("agent task settings route", () => {
 
   it("keeps only declared settings and refuses a bad URL", async () => {
     const server = await createServer();
-    const saved = await save(server, "jira/enter-week", {
+    const saved = await save(server, "jira", {
       url: "https://wd.example/t",
       note: "hi",
       stray: "dropped",
@@ -1568,15 +1579,37 @@ describe("agent task settings route", () => {
     expect(task!.values).toEqual({ url: "https://wd.example/t", note: "hi" });
 
     await expect(
-      save(server, "jira/enter-week", { url: "javascript:alert(1)" }),
+      save(server, "jira", { url: "javascript:alert(1)" }),
     ).resolves.toMatchObject({ status: 400 });
     await expect(
-      save(server, "jira/enter-week", { url: "not a url" }),
+      save(server, "jira", { url: "not a url" }),
     ).resolves.toMatchObject({ status: 400 });
     // An empty value is allowed: the runner blocks the run until it is filled.
-    await expect(
-      save(server, "jira/enter-week", { url: "" }),
-    ).resolves.toMatchObject({ status: 200 });
+    await expect(save(server, "jira", { url: "" })).resolves.toMatchObject({
+      status: 200,
+    });
+  });
+
+  it("shares a setting between every task of the plugin", async () => {
+    const server = await createServer();
+    const saved = await save(server, "jira", { url: "https://wd.example/t" });
+    const tasks = (
+      saved.body as {
+        tasks: {
+          taskId: string;
+          values: { url?: string };
+          blockers: string[];
+        }[];
+      }
+    ).tasks;
+    expect(tasks.map((task) => [task.taskId, task.values.url])).toEqual([
+      ["enter-week", "https://wd.example/t"],
+      ["submit-week", "https://wd.example/t"],
+    ]);
+    const submit = tasks.find((task) => task.taskId === "submit-week")!;
+    expect(submit.blockers.some((blocker) => blocker.includes("URL"))).toBe(
+      false,
+    );
   });
 });
 

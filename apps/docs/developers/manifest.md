@@ -112,11 +112,13 @@ An agent task is a Markdown prompt that Ajour gives to the user's coding agent, 
 | `prompt`          | string | Relative path to a Markdown file in the package. A regular file, no symlinks, at most 64 KB.                                                                                                                       |
 | `estimateMinutes` | number | How long a run usually takes. The agent panel uses it to tell a slow run from a stuck one.                                                                                                                         |
 | `weekLink`        | string | Optional. A URL template for **Open the week in…**. Shown only when it fills to an `https:` URL.                                                                                                                   |
-| `settings`        | array  | Optional. Fields with the [connection field](#connection-fields) keys. The user fills them on the plugin's page, under Tasks.                                                                                      |
+| `settings`        | array  | Optional. Fields with the [connection field](#connection-fields) keys. The user fills them on the plugin's page, under Tasks. Tasks share a setting by its `id`: declare it in each task that uses it.             |
 
 A `submit-week` task looks the same, such as `"id": "submit-week"`, `"label": "Check Workday and submit"`, `"placement": "submit-week"`, `"prompt": "prompts/submit-week.md"`. Its prompt ends with the `submit_week` tool.
 
 A plugin can declare up to 10 tasks.
+
+The tasks of a plugin share their settings. A setting `id` holds one value for every task that declares it, and the plugin's page asks for it once, with the field of the first task that declares it.
 
 ### Slots
 
