@@ -285,7 +285,9 @@ function parseInlineValue(text: string): YamlValue | null {
           quote = null;
         }
       }
-    } else if (char === '"' || char === "'") {
+    } else if ((char === '"' || char === "'") && !current.trim()) {
+      // Only a quote that starts an item opens a quoted string; one inside a
+      // plain item, as in `Bob's`, is text.
       quote = char;
       current += char;
     } else if (char === "[" || char === "{") {

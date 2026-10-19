@@ -232,6 +232,17 @@ describe("splitDescription", () => {
     ]);
   });
 
+  it("reads quotes inside a plain inline-list item as text", () => {
+    expect(
+      splitDescription(
+        `---\nLabels: [Bob's, Jane's]\nMore: [don't, say "hi"]\n---`,
+      ).frontmatter?.fields,
+    ).toEqual([
+      { kind: "list", key: "Labels", values: ["Bob's", "Jane's"] },
+      { kind: "list", key: "More", values: ["don't", 'say "hi"'] },
+    ]);
+  });
+
   it("keeps plain values with colons that are not followed by a space", () => {
     expect(
       splitDescription("---\nStart: 10:30\nLink: https://example.com/a:b\n---")
