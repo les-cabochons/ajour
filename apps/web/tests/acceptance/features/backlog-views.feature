@@ -737,7 +737,7 @@ Feature: Backlog list and board views
     Then Ana is suggested once the search is done
     When I keep typing " "
     And I pick Ana from the suggestions
-    Then the new comment reads "@Ana Silva  please"
+    Then the new comment reads "@Ana Silva please"
 
   Scenario: Picking a mention typed against a word keeps the word
     Given the Backlog parent is synced
@@ -758,6 +758,28 @@ Feature: Backlog list and board views
     And I type "@Ana Silva" in a new comment
     Then Ana is suggested once the search is done
     When I move back 5 characters
+    And I pick Ana from the suggestions
+    Then the new comment reads only the mention "@Ana Silva"
+
+  Scenario: Picking before a last name and a comma keeps the comma
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people and records posted comments
+    When I open the Backlog parent page
+    And I type "@Ana Silva, please review" in a new comment
+    And I move back 21 characters and ask for suggestions
+    Then Ana is suggested once the search is done
+    When I pick Ana from the suggestions
+    Then the new comment reads "@Ana Silva, please review"
+
+  Scenario: Picking inside a last name typed alone replaces it
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people and records posted comments
+    When I open the Backlog parent page
+    And I type "@Silva" in a new comment
+    Then Ana is suggested once the search is done
+    When I move back 2 characters and ask for suggestions
     And I pick Ana from the suggestions
     Then the new comment reads only the mention "@Ana Silva"
 

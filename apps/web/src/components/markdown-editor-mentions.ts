@@ -112,30 +112,47 @@ function withinWord(state: EditorState, picker: Picker, head: number) {
 const comparable = (text: string) =>
   text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
+const letterOrDigit = /[\p{L}\p{N}]/u;
+
 /**
  * Where picking a person ends the replaced name. Past the cursor it takes
- * the text a word at a time, the word the cursor sits in or against first,
- * and only while the text from the `@` still reads as the start of the
- * person's name: `@A|na Silva` and `@Ana |Silva` become Ana Silva's mention,
- * while `@Ana|please` and `@Ana please` keep "please".
+ * the text that goes on with the person's name, from whichever word of it
+ * the name before the cursor starts, and stops at a word's end: `@A|na
+ * Silva`, `@Ana |Silva` and `@Ana| Silva, please` become Ana Silva's
+ * mention, keeping the comma, while `@Ana|please` and `@Ana please` keep
+ * "please".
  */
 function nameEnd(state: EditorState, from: number, person: BacklogPerson) {
   const head = state.selection.main.head;
-  const line = state.doc.lineAt(head);
+  const after = state.sliceDoc(head, state.doc.lineAt(head).to);
   const name = comparable(person.displayName || person.id);
-  let end = head;
-  for (const [index, word] of [/^[^\s@[\]()]+/, /^ [^\s@[\]()]+/].entries()) {
-    for (;;) {
-      const next = word.exec(state.sliceDoc(end, line.to));
-      if (!next) break;
-      const reads = comparable(state.sliceDoc(from + 1, end + next[0].length));
-      if (!name.startsWith(reads)) return end;
-      end += next[0].length;
-      // The word the cursor sits in or against comes once.
-      if (index === 0) break;
+  const typed = comparable(state.sliceDoc(from + 1, head));
+  // Where each word of the name starts, as a last name may be typed alone.
+  const wordStarts = [0, ...[...name.matchAll(/ /g)].map((m) => m.index + 1)];
+  let longest = 0;
+  for (const start of wordStarts) {
+    if (!name.startsWith(typed, start)) continue;
+    const rest = name.slice(start + typed.length);
+    let taken = 0;
+    while (
+      taken < after.length &&
+      taken < rest.length &&
+      comparable(after[taken]!) === rest[taken]
+    ) {
+      taken += 1;
     }
+    // Not into the middle of a word, and not onto a space.
+    while (
+      taken > 0 &&
+      (after[taken - 1] === " " ||
+        (letterOrDigit.test(after[taken - 1]!) &&
+          letterOrDigit.test(after[taken] ?? "")))
+    ) {
+      taken -= 1;
+    }
+    longest = Math.max(longest, taken);
   }
-  return end;
+  return head + longest;
 }
 
 function searching(picker: Picker) {
@@ -293,13 +310,12 @@ function pickPerson(view: EditorView, index: number) {
   const picker = visiblePicker(view.state);
   const person = picker?.people[index];
   if (!picker || !person) return false;
-  const insert = `[@${escapeName(person.displayName || person.id)}](mention:${person.id}) `;
+  const to = nameEnd(view.state, picker.from, person);
+  // A space to type on after, unless a space or punctuation follows already.
+  const next = view.state.sliceDoc(to, to + 1);
+  const insert = `[@${escapeName(person.displayName || person.id)}](mention:${person.id})${/^[\s.,;:!?)\]}]/.test(next) ? "" : " "}`;
   view.dispatch({
-    changes: {
-      from: picker.from,
-      to: nameEnd(view.state, picker.from, person),
-      insert,
-    },
+    changes: { from: picker.from, to, insert },
     selection: { anchor: picker.from + insert.length },
     userEvent: "input.complete",
   });
