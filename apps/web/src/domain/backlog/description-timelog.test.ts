@@ -339,6 +339,56 @@ describe("applyDescriptionTimelogs", () => {
     ).toBe(next);
   });
 
+  it("keeps a project the same write sets, even one the item already had", () => {
+    const { previous, next } = write(
+      {
+        projects: [acme, project({ _id: "other", name: "Other" })],
+        workItems: [item({ projectId: "other" })],
+      },
+      (state) => withDescription(state, timelog("Acme", "Design")),
+    );
+
+    expect(
+      applyDescriptionTimelogs(
+        previous.workItems,
+        next,
+        createFactories(),
+        new Set(["item"]),
+      ),
+    ).toBe(next);
+  });
+
+  it("maps a new subitem whose project only came from its parent", () => {
+    const parent = item({ _id: "parent", projectId: "other" });
+    const previous = createState({
+      projects: [acme, project({ _id: "other", name: "Other" })],
+      workItems: [parent],
+    });
+    const next = {
+      ...previous,
+      workItems: [
+        item({
+          _id: "child",
+          parentWorkItemId: "parent",
+          hierarchyLevel: 1,
+          projectId: "other",
+          inheritsParentMapping: true,
+          description: timelog("Acme", "Design"),
+        }),
+        parent,
+      ],
+    };
+
+    expect(
+      applyDescriptionTimelogs(previous.workItems, next, createFactories())
+        .workItems[0],
+    ).toMatchObject({
+      projectId: "acme",
+      taskId: "design",
+      inheritsParentMapping: false,
+    });
+  });
+
   it("maps a new item, such as a synced one, unless it already has a project", () => {
     const previous = createState({ projects: [acme] });
     const next = {

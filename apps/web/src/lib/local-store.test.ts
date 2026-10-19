@@ -3815,6 +3815,23 @@ describe("localStore description timelog", () => {
     expect(localStore.snapshot().workItems).toEqual(before.workItems);
   });
 
+  it("keeps a project the same update sets, even the one the item had", async () => {
+    const { localStore } = await import("./local-store");
+    localStore.addProject({ name: "Acme", color: "#111111" });
+    const otherId = localStore.addProject({ name: "Other", color: "#222222" });
+    const itemId = localStore.addWorkItem({
+      title: "Landing page",
+      projectId: otherId,
+    });
+
+    localStore.updateWorkItemWithUndo(itemId, {
+      projectId: otherId,
+      description,
+    });
+
+    expect(localStore.snapshot().workItems[0]?.projectId).toBe(otherId);
+  });
+
   it("maps a synced item whose description arrives with a timelog", async () => {
     const { localStore } = await import("./local-store");
     const projectId = localStore.addProject({ name: "Acme", color: "#111111" });

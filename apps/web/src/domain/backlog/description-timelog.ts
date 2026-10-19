@@ -8,11 +8,12 @@ import {
   getLocalProjectDisplayName,
   type LocalAppState,
   type LocalProject,
+  type LocalProjectTask,
   type LocalWorkItem,
 } from "@/domain/local-state";
 import {
   addProject,
-  addProjectTask,
+  createProjectTask,
   DEFAULT_PROJECT_COLOR,
   setProjectTaskStatus,
   updateProject,
@@ -24,7 +25,8 @@ import {
  * Saving a description applies its timelog when the timelog changed, unless
  * the project is missing or the task would change a shared project. Whenever
  * the item's project or task differs from the timelog, the properties offer
- * to apply it (`getTimelogMismatch`, `applyItemTimelog`).
+ * to apply it (`getTimelogMismatch`, `applyItemTimelog`). Both read the
+ * timelog through `resolveTimelogTarget`, so they never disagree.
  */
 
 /** How the item's project and task differ from what its timelog names. */
@@ -57,6 +59,20 @@ export type TimelogMismatch =
       taskName?: string;
     };
 
+/** What a timelog points to among the user's projects. */
+type TimelogTarget =
+  | {
+      /** No active project matches; `archived` is one of that name. */
+      kind: "no-project";
+      archived?: LocalProject;
+    }
+  | {
+      kind: "project";
+      project: LocalProject;
+      /** The task of the timelog's name: an active one, else an archived one. */
+      task?: LocalProjectTask;
+    };
+
 function sameName(candidate: string | undefined, name: string) {
   return candidate?.trim().toLowerCase() === name.toLowerCase();
 }
@@ -76,24 +92,30 @@ function findTimelogProject(
   );
 }
 
-/** The project's task of that name: an active one first, else an archived one. */
-function findTimelogTask(project: LocalProject, name: string) {
-  const named = project.tasks.filter((task) => sameName(task.name, name));
-  return named.find((task) => task.status === "active") ?? named[0];
-}
-
 /**
- * The project a timelog points to: the one it names, or for a timelog with
- * only a task, the item's own project.
+ * The project and task a timelog points to: the project it names, or for a
+ * timelog with only a task, the item's own project. Null when a timelog with
+ * only a task meets an item without a project.
  */
-function getTimelogProject(
+function resolveTimelogTarget(
   projects: LocalProject[],
   workItem: Pick<LocalWorkItem, "projectId">,
   timelog: DescriptionTimelog,
-) {
-  return timelog.project
+): TimelogTarget | null {
+  const project = timelog.project
     ? findTimelogProject(projects, timelog.project, "active")
-    : projects.find((project) => project._id === workItem.projectId);
+    : projects.find((candidate) => candidate._id === workItem.projectId);
+  if (!project) {
+    if (!timelog.project) return null;
+    const archived = findTimelogProject(projects, timelog.project, "archived");
+    return { kind: "no-project", ...(archived ? { archived } : {}) };
+  }
+  const named = timelog.task
+    ? project.tasks.filter((task) => sameName(task.name, timelog.task!))
+    : [];
+  const task =
+    named.find((candidate) => candidate.status === "active") ?? named[0];
+  return { kind: "project", project, ...(task ? { task } : {}) };
 }
 
 /** How the item differs from its description's timelog, or null when it matches. */
@@ -102,24 +124,22 @@ export function getTimelogMismatch(
   workItem: Pick<LocalWorkItem, "description" | "projectId" | "taskId">,
 ): TimelogMismatch | null {
   const timelog = getDescriptionTimelog(workItem.description);
-  if (!timelog) return null;
+  const target = timelog
+    ? resolveTimelogTarget(projects, workItem, timelog)
+    : null;
+  if (!timelog || !target) return null;
 
-  const project = getTimelogProject(projects, workItem, timelog);
-  if (!project) {
-    if (!timelog.project) return null;
-    const archived = findTimelogProject(projects, timelog.project, "archived");
+  if (target.kind === "no-project") {
     return {
       kind: "missing-project",
-      projectName: timelog.project,
+      projectName: timelog.project!,
       ...(timelog.task ? { taskName: timelog.task } : {}),
-      ...(archived ? { archivedProjectId: archived._id } : {}),
+      ...(target.archived ? { archivedProjectId: target.archived._id } : {}),
     };
   }
 
+  const { project, task } = target;
   const projectName = getLocalProjectDisplayName(project);
-  const task = timelog.task
-    ? findTimelogTask(project, timelog.task)
-    : undefined;
   if (timelog.task && task?.status !== "active") {
     return {
       kind: "missing-task",
@@ -166,57 +186,60 @@ function applyTimelog(
   factories: ProjectFactories,
   options: ApplyTimelogOptions,
 ): LocalAppState {
+  let target = resolveTimelogTarget(state.projects, workItem, timelog);
+  if (!target) return state;
   let projects = state.projects;
-  let project = getTimelogProject(projects, workItem, timelog);
-  if (!project && timelog.project && options.createProject) {
-    const archived = findTimelogProject(projects, timelog.project, "archived");
+
+  if (target.kind === "no-project") {
+    if (!options.createProject) return state;
     let projectId: string;
-    if (archived) {
-      projectId = archived._id;
+    if (target.archived) {
+      projectId = target.archived._id;
       projects = updateProject(projects, projectId, { status: "active" });
     } else {
       const added = addProject(
         projects,
-        { name: timelog.project, color: DEFAULT_PROJECT_COLOR },
+        { name: timelog.project!, color: DEFAULT_PROJECT_COLOR },
         factories,
       );
       projects = added.projects;
       projectId = added.result;
     }
-    project = projects.find((candidate) => candidate._id === projectId);
+    target = resolveTimelogTarget(
+      projects,
+      { projectId },
+      {
+        ...timelog,
+        project: undefined,
+      },
+    );
+    if (target?.kind !== "project") return state;
   }
-  if (!project) return state;
-  const projectId = project._id;
 
+  const { project, task } = target;
+  const projectId = project._id;
   let taskId = workItem.projectId === projectId ? workItem.taskId : undefined;
   if (timelog.task) {
-    const task = findTimelogTask(project, timelog.task);
-    if (
-      task?.status !== "active" &&
-      project.team &&
-      !options.changeSharedTasks
-    ) {
-      return state;
-    }
-    if (!task) {
-      projects = addProjectTask(
-        projects,
-        projectId,
-        { name: timelog.task },
-        factories,
-      );
-      taskId = projects
-        .find((candidate) => candidate._id === projectId)
-        ?.tasks.at(-1)?._id;
-    } else {
+    if (task?.status === "active") {
       taskId = task._id;
-      if (task.status === "archived") {
+    } else {
+      if (project.team && !options.changeSharedTasks) return state;
+      if (task) {
+        taskId = task._id;
         projects = setProjectTaskStatus(
           projects,
           projectId,
           task._id,
           "active",
           factories.now,
+        );
+      } else {
+        const created = createProjectTask({ name: timelog.task }, factories);
+        taskId = created._id;
+        projects = projects.map((candidate) =>
+          candidate._id === projectId
+            ? { ...candidate, tasks: [...candidate.tasks, created] }
+            : candidate,
         );
       }
     }
@@ -233,15 +256,18 @@ function applyTimelog(
 
 /**
  * Applies the timelog of every description a write changed. `previous` is
- * the backlog before the write and `next` the state it produced. An item the
- * write also mapped keeps that mapping, and so does a new item created with a
- * project. A missing project, or a task a shared project lacks, waits for the
- * user. Returns `next` itself when nothing applies.
+ * the backlog before the write and `next` the state it produced.
+ * `mappedIds` are the items whose project or task the write itself set: they
+ * keep that mapping, as does an item whose mapping the write changed, and a
+ * new item created with a project of its own rather than its parent's. A
+ * missing project, or a task a shared project lacks, waits for the user.
+ * Returns `next` itself when nothing applies.
  */
 export function applyDescriptionTimelogs(
   previous: LocalWorkItem[],
   next: LocalAppState,
   factories: ProjectFactories,
+  mappedIds: ReadonlySet<string> = new Set(),
 ): LocalAppState {
   if (previous === next.workItems) return next;
   const previousById = new Map(previous.map((item) => [item._id, item]));
@@ -249,6 +275,7 @@ export function applyDescriptionTimelogs(
   for (const written of next.workItems) {
     const before = previousById.get(written._id);
     if (before?.description === written.description) continue;
+    if (mappedIds.has(written._id)) continue;
     const timelog = getDescriptionTimelog(written.description);
     if (!timelog) continue;
     if (before) {
@@ -261,7 +288,7 @@ export function applyDescriptionTimelogs(
       ) {
         continue;
       }
-    } else if (written.projectId) {
+    } else if (written.projectId && !written.inheritsParentMapping) {
       continue;
     }
     // An earlier item's mapping may have carried this one along as a subitem.

@@ -1237,11 +1237,37 @@ function updateStateWithUndo(
  * Sets the project and task of each backlog item whose description timelog
  * the write changed. See domain/backlog/description-timelog.ts.
  */
-function withDescriptionTimelogs(previous: LocalAppState, next: LocalAppState) {
-  return applyDescriptionTimelogs(previous.workItems, next, {
-    createId,
-    now: Date.now,
-  });
+function withDescriptionTimelogs(
+  previous: LocalAppState,
+  next: LocalAppState,
+  mappedIds?: ReadonlySet<string>,
+) {
+  return applyDescriptionTimelogs(
+    previous.workItems,
+    next,
+    { createId, now: Date.now },
+    mappedIds,
+  );
+}
+
+/**
+ * Updates a backlog item, then applies its description's timelog if the
+ * patch changed it, unless the patch sets the project or task itself.
+ */
+function updateWorkItemState(
+  state: LocalAppState,
+  workItemId: string,
+  patch: Parameters<typeof applyUpdateWorkItem>[2],
+) {
+  const mapped =
+    "projectId" in patch || "taskId" in patch
+      ? new Set([workItemId])
+      : undefined;
+  return withDescriptionTimelogs(
+    state,
+    applyUpdateWorkItem(state, workItemId, patch),
+    mapped,
+  );
 }
 
 /** How long a team sync in another window waits for an open Undo, at most. */
@@ -2094,12 +2120,7 @@ export const localStore = {
     workItemId: string,
     patch: Partial<Omit<LocalWorkItem, "_id" | "createdAt" | "source">>,
   ) {
-    updateState((state) =>
-      withDescriptionTimelogs(
-        state,
-        applyUpdateWorkItem(state, workItemId, patch),
-      ),
-    );
+    updateState((state) => updateWorkItemState(state, workItemId, patch));
   },
   /**
    * Updates a backlog item. A description whose timelog changed also sets the
@@ -2112,10 +2133,7 @@ export const localStore = {
     orderedIds?: string[],
   ) {
     return updateStateWithUndo((state) => {
-      const updated = withDescriptionTimelogs(
-        state,
-        applyUpdateWorkItem(state, workItemId, patch),
-      );
+      const updated = updateWorkItemState(state, workItemId, patch);
       return orderedIds ? applyReorderWorkItems(updated, orderedIds) : updated;
     });
   },
