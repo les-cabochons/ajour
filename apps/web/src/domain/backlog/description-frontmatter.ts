@@ -2,18 +2,21 @@
  * Frontmatter: a YAML block at the very start of a backlog item's
  * description, between two `---` lines, through which the description sends
  * data to Ajour (#281). Its `timelog` names the item's project and task, and
- * its other keys show as fields above the description text.
+ * its other keys show in the item's properties.
  *
  * Ajour reads a small subset of YAML: `key: value`, maps nested by
  * indentation, quoted strings, `#` comments and lists of plain values. A block
  * outside the subset is not frontmatter, so the description shows as written.
  */
 
-/** A key of the block other than `timelog`. A nested key reads `parent.child`. */
-export interface FrontmatterField {
-  key: string;
-  values: string[];
-}
+/**
+ * A key of the block other than `timelog`, with a plain value, a list of
+ * plain values, or the fields nested under it. Empty ones are left out.
+ */
+export type FrontmatterField =
+  | { kind: "value"; key: string; value: string }
+  | { kind: "list"; key: string; values: string[] }
+  | { kind: "map"; key: string; fields: FrontmatterField[] };
 
 /** The project and task a description's `timelog` names, trimmed. */
 export interface DescriptionTimelog {
@@ -103,18 +106,12 @@ export function isSameTimelog(
 }
 
 function toFrontmatter(map: YamlMap): DescriptionFrontmatter {
-  const fields: FrontmatterField[] = [];
-  let timelog: DescriptionTimelog | undefined;
-  let hasTimelogKey = false;
-  for (const [key, value] of map) {
-    if (key.toLowerCase() === "timelog") {
-      // A repeated key is invalid YAML; the first one counts.
-      if (!hasTimelogKey) timelog = readTimelog(value);
-      hasTimelogKey = true;
-      continue;
-    }
-    collectFields(key, value, fields);
-  }
+  // A repeated key is invalid YAML; the first one counts.
+  const timelogEntry = map.find(([key]) => key.toLowerCase() === "timelog");
+  const timelog = timelogEntry ? readTimelog(timelogEntry[1]) : undefined;
+  const fields = toFields(
+    map.filter(([key]) => key.toLowerCase() !== "timelog"),
+  );
   return timelog ? { fields, timelog } : { fields };
 }
 
@@ -135,19 +132,18 @@ function readTimelog(value: YamlValue): DescriptionTimelog | undefined {
   };
 }
 
-function collectFields(
-  key: string,
-  value: YamlValue,
-  fields: FrontmatterField[],
-) {
-  if (isYamlMap(value)) {
-    for (const [childKey, childValue] of value) {
-      collectFields(`${key}.${childKey}`, childValue, fields);
+function toFields(map: YamlMap): FrontmatterField[] {
+  return map.flatMap(([key, value]): FrontmatterField[] => {
+    if (typeof value === "string") {
+      return value ? [{ kind: "value", key, value }] : [];
     }
-    return;
-  }
-  const values = (typeof value === "string" ? [value] : value).filter(Boolean);
-  if (values.length > 0) fields.push({ key, values });
+    if (isYamlMap(value)) {
+      const fields = toFields(value);
+      return fields.length > 0 ? [{ kind: "map", key, fields }] : [];
+    }
+    const values = value.filter(Boolean);
+    return values.length > 0 ? [{ kind: "list", key, values }] : [];
+  });
 }
 
 function isYamlMap(value: YamlValue): value is YamlMap {

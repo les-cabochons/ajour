@@ -1,5 +1,6 @@
-import { useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { RiAddLine as AddIcon } from "@remixicon/react";
+import { Markdown } from "@/components/markdown";
 import {
   MarkdownEditor,
   preloadMarkdownEditor,
@@ -8,13 +9,13 @@ import { SectionHeading } from "@/components/section-heading";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Figure } from "@/components/ui/value";
+import { splitDescription } from "@/domain/backlog/description-frontmatter";
 import type {
   LocalWorkItem,
   LocalWorkItemEstimateFieldKey,
 } from "@/domain/local-state";
 import { formatHours } from "@/features/backlog/backlog-estimates";
 import { patchBacklogItemWithUndo } from "@/features/backlog/backlog-item-surface";
-import { DescriptionView } from "@/features/backlog/description-view";
 import {
   buildBacklogTaskDraft,
   createBacklogTaskEditorSeed,
@@ -208,8 +209,8 @@ export function EstimateFigure({
 
 /**
  * The description section. The rendered markdown has a subtle Edit beside its
- * heading that swaps it for the Markdown editor, which shows the frontmatter
- * the rendered view hides.
+ * heading that swaps it for the Markdown editor. The rendered text leaves out
+ * the frontmatter, which the properties card shows and the editor keeps.
  */
 export function DescriptionSection({
   item,
@@ -220,6 +221,10 @@ export function DescriptionSection({
 }) {
   const [editing, setEditing] = useState(false);
   const closer = useCloseOnce(() => setEditing(false));
+  const body = useMemo(
+    () => (item.description ? splitDescription(item.description).body : ""),
+    [item.description],
+  );
 
   const save = (value: string) => {
     const description = value.trim() || undefined;
@@ -260,8 +265,8 @@ export function DescriptionSection({
           onSubmit={(value) => closer.close(() => save(value))}
           onCancel={() => closer.close()}
         />
-      ) : item.description ? (
-        <DescriptionView description={item.description} />
+      ) : body ? (
+        <Markdown>{body}</Markdown>
       ) : (
         <p className="text-sm text-muted-foreground">No description.</p>
       )}

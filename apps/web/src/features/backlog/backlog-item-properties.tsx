@@ -18,6 +18,11 @@ import {
   changeSourceStateWithUndo,
   getOtherSourceStates,
 } from "@/features/backlog/backlog-item-moves";
+import {
+  FrontmatterRows,
+  FrontmatterSections,
+  useFrontmatterFields,
+} from "@/features/backlog/frontmatter-properties";
 import { TimelogProjectButton } from "@/features/backlog/timelog-project-button";
 
 /** Project and task lists outgrow their narrow fields, so names fit. */
@@ -27,8 +32,10 @@ const LONG_NAME_LIST_WIDTH = 320;
  * A backlog item's properties, each changed in place with Undo: state, source
  * state, priority, project and task, then the "Keep when missing from sync"
  * switch for synced items. The peek and the item page show the same rows;
- * `children` adds rows before the switch. A warning beside Project offers to
- * create the project the description's timelog names when it does not exist.
+ * `children` adds rows before the switch. The description's frontmatter
+ * follows: plain values as rows, lists and nested keys as closed sections. A
+ * warning beside Project offers to create the project the description's
+ * timelog names when it does not exist.
  */
 export function BacklogItemProperties({
   item,
@@ -45,6 +52,7 @@ export function BacklogItemProperties({
     () => getMissingTimelogProject(state.projects, { description }),
     [state.projects, description],
   );
+  const frontmatterFields = useFrontmatterFields(description);
   return (
     <div className="flex flex-col gap-3">
       <PropertyList>
@@ -121,7 +129,9 @@ export function BacklogItemProperties({
           />
         </PropertyRow>
         {children}
+        <FrontmatterRows fields={frontmatterFields} />
       </PropertyList>
+      <FrontmatterSections fields={frontmatterFields} />
       {item.source !== "manual" ? (
         <label className="flex items-center gap-2.5 border-t pt-3 text-sm">
           <Switch

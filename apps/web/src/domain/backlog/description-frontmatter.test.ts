@@ -25,8 +25,9 @@ describe("splitDescription", () => {
       frontmatter: {
         fields: [
           {
+            kind: "value",
             key: "Teamwork",
-            values: ["https://acme.teamwork.com/app/tasks/123"],
+            value: "https://acme.teamwork.com/app/tasks/123",
           },
         ],
         timelog: { project: "Acme website", task: "Development" },
@@ -57,7 +58,7 @@ describe("splitDescription", () => {
 
   it("reads Windows line endings and an empty body", () => {
     expect(splitDescription("---\r\nOwner: Ada\r\n---\r\n")).toEqual({
-      frontmatter: { fields: [{ key: "Owner", values: ["Ada"] }] },
+      frontmatter: { fields: [{ kind: "value", key: "Owner", value: "Ada" }] },
       body: "",
     });
   });
@@ -79,9 +80,13 @@ describe("splitDescription", () => {
     );
 
     expect(split.frontmatter?.fields).toEqual([
-      { key: "Quoted", values: ["a: b # not a comment"] },
-      { key: "Single", values: ["it's"] },
-      { key: "Link", values: ["https://acme.teamwork.com/#/tasks/1"] },
+      { kind: "value", key: "Quoted", value: "a: b # not a comment" },
+      { kind: "value", key: "Single", value: "it's" },
+      {
+        kind: "value",
+        key: "Link",
+        value: "https://acme.teamwork.com/#/tasks/1",
+      },
     ]);
   });
 
@@ -100,13 +105,17 @@ describe("splitDescription", () => {
     );
 
     expect(split.frontmatter?.fields).toEqual([
-      { key: "Links", values: ["https://one.example", "https://two.example"] },
-      { key: "Tags", values: ["alpha", "beta, gamma"] },
-      { key: "Owners", values: ["Ada"] },
+      {
+        kind: "list",
+        key: "Links",
+        values: ["https://one.example", "https://two.example"],
+      },
+      { kind: "list", key: "Tags", values: ["alpha", "beta, gamma"] },
+      { kind: "list", key: "Owners", values: ["Ada"] },
     ]);
   });
 
-  it("names a nested field by its path and skips empty values", () => {
+  it("keeps nested fields under their parent and skips empty values", () => {
     const split = splitDescription(
       [
         "---",
@@ -115,13 +124,26 @@ describe("splitDescription", () => {
         "  Contact:",
         "    Email: ada@acme.test",
         "Empty:",
+        "Blank:",
+        "  Inside:",
+        "None: []",
         "---",
       ].join("\n"),
     );
 
     expect(split.frontmatter?.fields).toEqual([
-      { key: "Client.Name", values: ["Acme"] },
-      { key: "Client.Contact.Email", values: ["ada@acme.test"] },
+      {
+        kind: "map",
+        key: "Client",
+        fields: [
+          { kind: "value", key: "Name", value: "Acme" },
+          {
+            kind: "map",
+            key: "Contact",
+            fields: [{ kind: "value", key: "Email", value: "ada@acme.test" }],
+          },
+        ],
+      },
     ]);
   });
 

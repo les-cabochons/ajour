@@ -39,7 +39,7 @@ The text that explains what a backlog item is about. A synced backlog item's des
 _Avoid_: Note (for a backlog item), body, details
 
 **Frontmatter**:
-A block of fields at the very start of a description, between two `---` lines, through which the description sends data to Ajour. Its timelog sets the backlog item's project and task; its other fields show above the description.
+A block of fields at the very start of a description, between two `---` lines, through which the description sends data to Ajour. Its timelog sets the backlog item's project and task; its other fields show in the item's properties.
 _Avoid_: Metadata, header, properties (for the block)
 
 **Comment**:
