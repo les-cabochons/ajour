@@ -58,7 +58,7 @@ Each day reads from top to bottom in the order you worked: the oldest entry firs
 
 <Shot name="time-week-days" alt="The Week view as days: one column per day with a card per entry" />
 
-- Drag a card to another day to move the entry there. Drag it within a day to reorder it. Dragging a selected card drags every selected card except the running entry, and they land together where you drop them. The running entry stays on its day.
+- Drag a card to another day to move the entry there. Drag it within a day to reorder it. Dragging a selected card drags every selected card except the running entry, and they land together where you drop them. The running card cannot be dragged.
 - Double-click a card, or press <kbd>Enter</kbd> or <kbd>Space</kbd> on it, to open it in the side panel. A single click selects it, so you can [copy and paste](/time/entries#select-copy-and-paste-entries) it.
 - Right-click a column's empty space for **Paste here** and **Paste on same weekdays**.
 - Press **+ Add** at the bottom of a column, or double-click the day's header or the empty space in its column, for a new entry on that day. It lands at the end of the day.
