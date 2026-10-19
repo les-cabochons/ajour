@@ -4,6 +4,7 @@ import type {
   LocalTimesheetEntry,
   LocalWorkItem,
 } from "@/domain/local-state";
+import { lockedWeekMessage } from "@/domain/time/locked-weeks";
 import { SHORTCUTS } from "@/lib/shortcuts";
 import {
   MAX_SEARCH_RESULTS,
@@ -63,6 +64,7 @@ function input(overrides: Partial<PaletteInput> = {}): PaletteInput {
     projects: [atlas, borealis],
     workItems: [],
     timesheetEntries: [],
+    lockedWeeks: [],
     timer: null,
     shortcuts: SHORTCUTS,
     settingsPages: [{ to: "/settings/general", label: "General" }],
@@ -375,6 +377,42 @@ describe("buildPaletteSections", () => {
         actionId: "duplicate",
       },
     });
+  });
+
+  it("locks the focused entry's actions on a submitted week", () => {
+    const entry = {
+      _id: "entry-1",
+      localDate: "2026-10-06",
+      projectId: "atlas",
+      taskId: "atlas-task-0",
+      label: "",
+      durationMs: 3_600_000,
+      sourceBlockIds: [],
+      committedAt: 1,
+    } as LocalTimesheetEntry;
+    const section = buildPaletteSections(
+      input({
+        focused: { kind: "time-entry", entryId: "entry-1", isRunning: false },
+        timesheetEntries: [entry],
+        lockedWeeks: [{ weekOf: "2026-10-05", lockedAt: 1 }],
+      }),
+    )[0]!;
+    const reason = lockedWeekMessage("2026-10-05");
+
+    expect(
+      section.items
+        .filter((item) => item.locked)
+        .map((item) => [item.label, item.disabledReason]),
+    ).toEqual([
+      ["Duplicate", reason],
+      ["Move to…", reason],
+      ["Move up", reason],
+      ["Move down", reason],
+      ["Delete", reason],
+    ]);
+    expect(
+      section.items.filter((item) => !item.locked).map((item) => item.label),
+    ).toEqual(["Edit", "Continue", "Duplicate to…"]);
   });
 
   it("moves a resumed running entry like its saved entry", () => {

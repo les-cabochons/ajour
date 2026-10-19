@@ -11,11 +11,16 @@ import {
   getTimeEntryActions,
   getTimeEntryActionState,
   getTimeEntrySelectionActions,
+  markLockedActions,
   type ObjectAction,
 } from "@/domain/actions/object-actions";
 
 function ids(actions: ObjectAction[]) {
   return actions.map((action) => action.id);
+}
+
+function lockedIds(actions: ObjectAction[]) {
+  return actions.filter((action) => action.locked).map((action) => action.id);
 }
 
 function disabledReasons(actions: ObjectAction[]) {
@@ -110,19 +115,24 @@ describe("time entry actions", () => {
 
   it("disables what would change an entry of a submitted week, with the reason", () => {
     const reason = lockedWeekMessage("2026-10-05");
+    const actions = getTimeEntryActions("committed", { lockedReason: reason });
 
-    expect(
-      getTimeEntryActions("committed", { lockedReason: reason }).map(
-        (action) => [action.id, action.disabledReason],
-      ),
-    ).toEqual([
-      ["edit", undefined],
-      ["continue", undefined],
-      ["duplicate", reason],
-      ["duplicate-to", undefined],
-      ["move-to", reason],
-      ["mark-not-committed", reason],
-      ["delete", reason],
+    expect(actions.map((action) => [action.id, action.disabledReason])).toEqual(
+      [
+        ["edit", undefined],
+        ["continue", undefined],
+        ["duplicate", reason],
+        ["duplicate-to", undefined],
+        ["move-to", reason],
+        ["mark-not-committed", reason],
+        ["delete", reason],
+      ],
+    );
+    expect(lockedIds(actions)).toEqual([
+      "duplicate",
+      "move-to",
+      "mark-not-committed",
+      "delete",
     ]);
   });
 
@@ -175,18 +185,49 @@ describe("time entry selection actions", () => {
   it("disables the selection's actions on a submitted week, except Duplicate to…", () => {
     const reason = lockedWeekMessage("2026-10-05");
 
+    const actions = getTimeEntrySelectionActions({
+      saved: 2,
+      committed: 2,
+      lockedReason: reason,
+    });
+
+    expect(actions.map((action) => [action.id, action.disabledReason])).toEqual(
+      [
+        ["duplicate", reason],
+        ["duplicate-to", undefined],
+        ["move-to", reason],
+        ["mark-not-committed", reason],
+        ["delete", reason],
+      ],
+    );
+    expect(lockedIds(actions)).toEqual([
+      "duplicate",
+      "move-to",
+      "mark-not-committed",
+      "delete",
+    ]);
+  });
+
+  it("marks only the actions the submitted week disables as locked", () => {
+    const reason = lockedWeekMessage("2026-10-05");
+
     expect(
-      getTimeEntrySelectionActions({
-        saved: 2,
-        committed: 2,
-        lockedReason: reason,
-      }).map((action) => [action.id, action.disabledReason]),
+      markLockedActions<ObjectAction>(
+        [
+          { id: "paste", label: "Paste", disabledReason: reason },
+          {
+            id: "delete-row",
+            label: "Delete row",
+            disabledReason: "Stop the running entry first",
+          },
+          { id: "open", label: "Open" },
+        ],
+        reason,
+      ).map((action) => [action.id, action.locked]),
     ).toEqual([
-      ["duplicate", reason],
-      ["duplicate-to", undefined],
-      ["move-to", reason],
-      ["mark-not-committed", reason],
-      ["delete", reason],
+      ["paste", true],
+      ["delete-row", undefined],
+      ["open", undefined],
     ]);
   });
 
@@ -659,6 +700,18 @@ describe("time entry clipboard actions", () => {
       paste: "Week of Oct 5 is submitted",
     });
     expect(disabledReasons(actions)).not.toHaveProperty("copy");
+  });
+
+  it("locks Cut for the entry's week and Paste for the day it lands on", () => {
+    const actions = addTimeEntryClipboardActions(getTimeEntryActions("saved"), {
+      saved: 1,
+      selected: 1,
+      canPaste: true,
+      lockedReason: lockedWeekMessage("2026-10-05"),
+      pasteLockedReason: lockedWeekMessage("2026-10-12"),
+    });
+
+    expect(lockedIds(actions)).toEqual(["cut", "paste"]);
   });
 
   it("disables Cut and Copy on the running entry and Paste until entries are copied", () => {

@@ -19,11 +19,33 @@ export interface ObjectAction<Id extends string = string> {
   clipboard?: ClipboardCommand;
   /** Present when the action is listed but unavailable in the current state. */
   disabledReason?: string;
+  /**
+   * Set with `disabledReason` when a submitted week disables the action. The
+   * browser's menus and the command palette grey it but let it be chosen, and
+   * choosing it, or pressing its key, shows the reason as a toast.
+   */
+  locked?: boolean;
   /** A side effect worth knowing before choosing the action. */
   hint?: string;
 }
 
 export type ClipboardCommand = "cut" | "copy" | "paste";
+
+/**
+ * Marks the actions that `lockedReason`, a submitted week's refusal, disables.
+ * An action disabled for another reason, such as a running entry, keeps it.
+ */
+export function markLockedActions<Action extends ObjectAction>(
+  actions: Action[],
+  lockedReason: string | undefined,
+): Action[] {
+  if (!lockedReason) return actions;
+  return actions.map((action) =>
+    action.disabledReason === lockedReason
+      ? { ...action, locked: true }
+      : action,
+  );
+}
 
 /**
  * Splits an action set into the sections a menu separates with a line. A
@@ -141,7 +163,7 @@ export function getTimeEntryActions(
     ? STOP_RUNNING_FIRST
     : options.invalidDraftReason;
 
-  return [
+  const actions: ObjectAction<TimeEntryActionId>[] = [
     {
       id: "edit",
       label: "Edit",
@@ -194,6 +216,7 @@ export function getTimeEntryActions(
           disabledReason: options.lockedReason,
         },
   ];
+  return markLockedActions(actions, options.lockedReason);
 }
 
 /** "1 entry" or "3 entries", for menus and toasts about several entries. */
@@ -232,7 +255,7 @@ export function getTimeEntrySelectionActions({
 }): ObjectAction<TimeEntryActionId>[] {
   const entries = formatEntryCount(saved);
   const reason = saved === 0 ? STOP_RUNNING_FIRST : undefined;
-  return [
+  const actions: ObjectAction<TimeEntryActionId>[] = [
     {
       id: "duplicate",
       label: `Duplicate ${entries}`,
@@ -268,6 +291,7 @@ export function getTimeEntrySelectionActions({
       disabledReason: reason ?? lockedReason,
     },
   ];
+  return markLockedActions(actions, lockedReason);
 }
 
 /** The reason Paste is disabled until entries are copied or cut. */
@@ -328,7 +352,10 @@ export function addTimeEntryClipboardActions(
   const index = at === -1 ? actions.length : at;
   return [
     ...actions.slice(0, index),
-    ...clipboardActions,
+    ...markLockedActions(
+      markLockedActions(clipboardActions, lockedReason),
+      pasteLockedReason,
+    ),
     ...actions.slice(index),
   ];
 }

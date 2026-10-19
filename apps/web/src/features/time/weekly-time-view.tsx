@@ -17,6 +17,7 @@ import { ObjectContextMenu } from "@/components/object-actions-menu";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   formatEntryCount,
+  markLockedActions,
   PASTE_NEEDS_ENTRIES,
   type ObjectAction,
   type TimeEntryActionId,
@@ -272,18 +273,23 @@ export function WeeklyTimeView({
   const pasteDisabledReason = selection.canPaste
     ? undefined
     : PASTE_NEEDS_ENTRIES;
-  const columnPasteActions: ObjectAction<ColumnPasteActionId>[] = [
-    {
-      id: "paste-here",
-      label: "Paste here",
-      disabledReason: lockReason ?? pasteDisabledReason,
-    },
-    {
-      id: "paste-same-weekdays",
-      label: "Paste on same weekdays",
-      disabledReason: lockReason ?? pasteDisabledReason,
-    },
-  ];
+  const columnPasteActions = markLockedActions<
+    ObjectAction<ColumnPasteActionId>
+  >(
+    [
+      {
+        id: "paste-here",
+        label: "Paste here",
+        disabledReason: lockReason ?? pasteDisabledReason,
+      },
+      {
+        id: "paste-same-weekdays",
+        label: "Paste on same weekdays",
+        disabledReason: lockReason ?? pasteDisabledReason,
+      },
+    ],
+    lockReason,
+  );
   const draggedEntry = dragState
     ? (state.timesheetEntries.find(
         (entry) => entry._id === dragState.entryId,

@@ -31,6 +31,8 @@ Decided in [Action model for entries, timers, projects, tasks and work items](ht
 
 11. Exception to rule 1: Cut, Copy and Paste are listed only in the menus of Day rows and Days cards, where entries can be selected. Grid cells and editors do not list them.
 
+12. Exception to rule 2: an action disabled because its week is submitted shows no reason in the command palette either, since every such action would repeat the same sentence. In Ajour's own menus and the palette it stays greyed out but can still be chosen: choosing it, or pressing its key, changes nothing and shows the reason as a toast, "The week of Oct 12 is submitted. Reopen it to change it." The desktop app's native right-click menus cannot choose a greyed-out item, so there it is only greyed out.
+
 ### Time entry
 
 | Slot                  | Saved      | Committed                                                       | Running                                     |
@@ -294,7 +296,7 @@ Decided in [Undo, confirmation and feedback policy](https://github.com/les-caboc
 
 ### Principle
 
-Feedback appears where the action happened. Toasts are kept to two cases: Undo, and errors from background work that has no place on screen.
+Feedback appears where the action happened. Toasts are kept to three cases: Undo, errors from background work that has no place on screen, and a submitted week's refusal of a write, which has no other place to say why (rule 12 of the action model).
 
 ### Undo instead of confirmation
 

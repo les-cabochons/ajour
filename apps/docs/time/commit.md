@@ -51,7 +51,7 @@ When every change is committed, press **Submit week**. When the week is behind i
 
 **Submit week** is greyed out with **Commit your changes first** while a change is not committed, and with **Stop the running entry first** while an entry runs in the week.
 
-A submitted week shows **Submitted** with a lock on its Commit page and in the Week view. Its entries stay as they are: you cannot add, edit, move, delete or paste entries on its days, and no entry can start on them. Hover a greyed-out button to see why, such as `The week of Oct 5 is submitted. Reopen it to change it.` Agents get the same answer. You can still open an entry to read it, copy it, **Continue** it today, or use **Duplicate to…** to copy it to a week that is not submitted.
+A submitted week shows **Submitted** with a lock on its Commit page and in the Week view. Its entries stay as they are: you cannot add, edit, move, delete or paste entries on its days, and no entry can start on them. Hover a greyed-out button to see why, such as `The week of Oct 5 is submitted. Reopen it to change it.` Choosing a greyed-out action in the command palette or a **…** menu, or pressing its shortcut, shows the same sentence in a toast. Agents get the same answer. You can still open an entry to read it, copy it, **Continue** it today, or use **Duplicate to…** to copy it to a week that is not submitted.
 
 ## Reopen a week
 

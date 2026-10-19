@@ -21,9 +21,11 @@ import {
   getDirectChildWorkItems,
   isSubtaskWorkItem,
 } from "@/domain/backlog/work-item-hierarchy";
+import { getDateLockReason } from "@/domain/time/locked-weeks";
 import { isTimesheetEntryCommitted } from "@/domain/time/timesheet-commit";
 import {
   getLocalProjectDisplayName,
+  type LocalLockedWeek,
   type LocalProject,
   type LocalProjectTask,
   type LocalTimer,
@@ -91,6 +93,8 @@ export interface PaletteItem {
   keys?: string[];
   /** Present when the item is listed but unavailable, per the action model. */
   disabledReason?: string;
+  /** Set when a submitted week disables the item, as on `ObjectAction`. */
+  locked?: boolean;
   /** A side effect worth knowing before choosing the item. */
   hint?: string;
   destructive?: boolean;
@@ -111,6 +115,8 @@ export interface PaletteInput {
   projects: readonly LocalProject[];
   workItems: readonly LocalWorkItem[];
   timesheetEntries: readonly LocalTimesheetEntry[];
+  /** Submitted weeks, whose entries' actions are locked. */
+  lockedWeeks: LocalLockedWeek[];
   timer: LocalTimer | null;
   /** Shortcuts with a mounted handler, in registry order. */
   shortcuts: readonly ShortcutDefinition[];
@@ -289,6 +295,7 @@ function toItems<Id extends string>(
           ? formatShortcutKeys(getShortcut(shortcutId), keys.platform)
           : undefined,
       disabledReason: action.disabledReason,
+      locked: action.locked,
       hint: action.hint,
       destructive: action.destructive,
       command: toCommand(action.id),
@@ -305,7 +312,7 @@ function withReorderItems(
   section: PaletteSection,
   target: SortableObjectRef,
   platform: ShortcutPlatform,
-  disabledReason?: string,
+  disabled?: Pick<PaletteItem, "disabledReason" | "locked">,
 ): PaletteSection {
   const reorderItems = (
     [
@@ -318,7 +325,8 @@ function withReorderItems(
       id: `${section.id}:${shortcutId}`,
       label: shortcut.label,
       keys: formatShortcutKeys(shortcut, platform),
-      disabledReason,
+      disabledReason: disabled?.disabledReason,
+      locked: disabled?.locked,
       command: { kind: "reorder", target, step },
     };
   });
@@ -475,7 +483,7 @@ function focusedSection(input: PaletteInput): PaletteSection | null {
           // A resumed entry sorts like its saved entry; a new one stays last.
           input.timesheetEntries.some((entry) => entry._id === focused.entryId)
             ? undefined
-            : "A new running entry stays last",
+            : { disabledReason: "A new running entry stays last" },
         );
       }
 
@@ -483,6 +491,7 @@ function focusedSection(input: PaletteInput): PaletteSection | null {
         (item) => item._id === focused.entryId,
       );
       if (!entry) return null;
+      const lockedReason = getDateLockReason(input, entry.localDate);
       return withReorderItems(
         {
           id: prefix,
@@ -493,6 +502,7 @@ function focusedSection(input: PaletteInput): PaletteSection | null {
               getTimeEntryActionState({
                 isCommitted: isTimesheetEntryCommitted(entry),
               }),
+              { lockedReason },
             ),
             (actionId) => ({
               kind: "time-entry",
@@ -504,6 +514,9 @@ function focusedSection(input: PaletteInput): PaletteSection | null {
         },
         focused,
         platform,
+        lockedReason
+          ? { disabledReason: lockedReason, locked: true }
+          : undefined,
       );
     }
     case "task": {
