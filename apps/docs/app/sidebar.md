@@ -39,6 +39,22 @@ Hover an item for **Start entry**, **Snooze…** and **Settle**. Click it to ope
 
 A dot on an item means it came back on its own, from a snooze or a change in its source, and you have not opened it yet. Click the dot to clear it.
 
+## Hover card
+
+Rest the mouse on an item for a moment to see a card beside the sidebar with what the row has no room for:
+
+- The whole title.
+- Where the item comes from: its tool's logo, the organization and project, and its ID, such as `48190` or `PAY-12`. A manual item has none.
+- On a subitem, its parent.
+- The subitems, open ones first, with how many are done, such as `1/2`. Eight show, then a count of the rest.
+- The pull requests whose title names the item, open ones first. Five show, then a count of the rest. A key such as `PAY-12` counts from any repository. A number such as `#1234` counts only from the same GitHub repository or Azure DevOps organization. Only pull requests on the [Pull requests](/pull-requests/) page count.
+
+<Shot name="sidebar-hover-card" alt="The hover card of a backlog item beside the sidebar, with its source and subitems" />
+
+Once the card shows, moving to another item moves it there. You can move the mouse onto the card. Click a subitem or a pull request to open it in Ajour, or <kbd>⌘</kbd>-click it to open it in its tool. Pressing in the list, scrolling, <kbd>Esc</kbd>, or leaving the item and the card closes it.
+
+The card opens with a mouse only, and never takes focus. From the keyboard, the [item page](/backlog/items) shows the source, the parent and the subitems.
+
 ## Application updates
 
 In the desktop app, the arrow at the bottom right, **Check for updates**, checks for a new version of Ajour. When one is available, the arrow stands out and its tooltip names the version. Click it then to update. While it works, it spins, and its tooltip shows the progress. See [Updates](/start/install#updates).
