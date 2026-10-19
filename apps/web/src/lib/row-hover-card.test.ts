@@ -105,6 +105,31 @@ describe("row hover card timing", () => {
     expect(shown).toBe("a");
   });
 
+  it("closes when its row goes while the pointer is over the card", () => {
+    intent.enterRow("a", "a");
+    vi.advanceTimersByTime(delays.open);
+    intent.leaveRows();
+    intent.enterCard();
+    intent.rowGone();
+    expect(shown).toBeNull();
+
+    // The new row under the pointer opens after the full wait.
+    intent.enterRow("b", "b");
+    vi.advanceTimersByTime(delays.move);
+    expect(shown).toBeNull();
+    vi.advanceTimersByTime(delays.open - delays.move);
+    expect(shown).toBe("b");
+  });
+
+  it("opens again on the row that replaced the shown one", () => {
+    intent.enterRow("a", "a");
+    vi.advanceTimersByTime(delays.open);
+    intent.rowGone();
+    intent.enterRow("a", "a-replaced");
+    vi.advanceTimersByTime(delays.open);
+    expect(shown).toBe("a-replaced");
+  });
+
   it("closes when the pointer leaves, and on dismiss until it leaves the row", () => {
     intent.enterRow("a", "a");
     vi.advanceTimersByTime(delays.open);

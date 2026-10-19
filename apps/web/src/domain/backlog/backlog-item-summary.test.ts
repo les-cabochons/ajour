@@ -124,6 +124,34 @@ describe("where a backlog item comes from", () => {
     ).toEqual({ organization: "jira.acme.com", project: undefined });
   });
 
+  it("keeps a GitHub repository whose name looks like an Azure DevOps area", () => {
+    expect(
+      getWorkItemOrigin(
+        item("underscore", {
+          source: "github",
+          sourceUrl: "https://github.com/acme/_infra/issues/12",
+        }),
+      ),
+    ).toEqual({ organization: "acme", project: "_infra" });
+    expect(
+      getWorkItemOrigin(
+        item("issues-repo", {
+          source: "github",
+          sourceUrl: "https://github.com/acme/issues/issues/12",
+        }),
+      ),
+    ).toEqual({ organization: "acme", project: "issues" });
+    expect(
+      getWorkItemOrigin(
+        item("server", {
+          source: "azure_devops",
+          sourceUrl:
+            "https://tfs.acme.com/tfs/Main/Web%20App/_workitems/edit/12",
+        }),
+      ),
+    ).toEqual({ organization: "Main", project: "Web App" });
+  });
+
   it("falls back to the connection without a link", () => {
     expect(
       getWorkItemOrigin(
@@ -171,6 +199,24 @@ describe("pull requests that name a backlog item", () => {
     ).toEqual([same]);
   });
 
+  it("keeps a number to its repository when the name starts with an underscore", () => {
+    const infraIssue = item("infra", {
+      source: "github",
+      sourceUrl: "https://github.com/acme/_infra/issues/12",
+    });
+    const same = pullRequest(
+      "https://github.com/acme/_infra/pull/3",
+      "Fix #12",
+    );
+    const other = pullRequest(
+      "https://github.com/other/_tools/pull/3",
+      "Fix #12",
+    );
+    expect(findPullRequestsNamingItem(infraIssue, [same, other])).toEqual([
+      same,
+    ]);
+  });
+
   it("matches a number anywhere in the same Azure DevOps organization", () => {
     const otherProject = pullRequest(
       "https://dev.azure.com/acme/Platform/_git/api/pullrequest/9",
@@ -198,8 +244,17 @@ describe("pull requests that name a backlog item", () => {
       "https://github.com/acme/api/pull/3",
       "XPAY-12: round totals",
     );
+    const underscored = pullRequest(
+      "https://github.com/acme/api/pull/4",
+      "Fix TEAM_PAY-12",
+    );
     expect(
-      findPullRequestsNamingItem(jiraIssue, [named, longer, prefixed]),
+      findPullRequestsNamingItem(jiraIssue, [
+        named,
+        longer,
+        prefixed,
+        underscored,
+      ]),
     ).toEqual([named]);
   });
 

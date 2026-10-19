@@ -16,6 +16,11 @@ export interface RowHoverIntent<T> {
   leaveCard(): void;
   /** Closes the card. It opens again only after the pointer leaves the row. */
   dismiss(): void;
+  /**
+   * The shown row left the list or was replaced. Closes the card and forgets
+   * the pointer, so resting on the row that replaced it opens the card again.
+   */
+  rowGone(): void;
   dispose(): void;
 }
 
@@ -76,6 +81,13 @@ export function createRowHoverIntent<T>(
     },
     dismiss() {
       clearTimeout(timer);
+      overCard = false;
+      hide();
+    },
+    rowGone() {
+      clearTimeout(timer);
+      hoveredId = undefined;
+      // The card unmounts under the pointer without a pointer leave.
       overCard = false;
       hide();
     },
@@ -145,6 +157,7 @@ export function useRowHoverCard(
   return {
     shown,
     dismiss: intent.dismiss,
+    rowGone: intent.rowGone,
     /** Spread on the card, so the pointer can cross over to it. */
     cardProps: {
       onPointerEnter: intent.enterCard,

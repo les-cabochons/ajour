@@ -1,4 +1,9 @@
-import type { MouseEvent, ReactNode, RefObject } from "react";
+import {
+  useLayoutEffect,
+  type MouseEvent,
+  type ReactNode,
+  type RefObject,
+} from "react";
 import { Link, useRouter } from "@tanstack/react-router";
 import {
   RiCornerLeftUpLine as ParentIcon,
@@ -256,7 +261,7 @@ export function BacklogItemHoverCard({
   now: number;
   iconData: IconData;
 }) {
-  const { shown, dismiss, cardProps } = useRowHoverCard(
+  const { shown, dismiss, rowGone, cardProps } = useRowHoverCard(
     container,
     ROW_SELECTOR,
     readItemId,
@@ -264,6 +269,11 @@ export function BacklogItemHoverCard({
   const workItem = shown
     ? state.workItems.find((candidate) => candidate._id === shown.id)
     : undefined;
+  // A sync can take the row away under the card, or replace it. React removes
+  // the old row in the commit, after this renders, so look again after it.
+  useLayoutEffect(() => {
+    if (shown && (!workItem || !shown.element.isConnected)) rowGone();
+  });
   if (!shown || !workItem || !shown.element.isConnected) return null;
 
   return (

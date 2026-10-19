@@ -45,6 +45,8 @@ const REPOSITORY_KINDS = new Set([
   "merge_requests",
   "work_items",
 ]);
+/** Azure DevOps areas of a project, as in /org/project/_workitems/edit/12. */
+const AZURE_AREAS = new Set(["_workitems", "_git"]);
 /** Hosts whose first label is the organization, as in acme.atlassian.net. */
 const ORGANIZATION_SUBDOMAINS = [".atlassian.net", ".visualstudio.com"];
 const JIRA_KEY = /^[A-Z][A-Z0-9_]+-\d+$/;
@@ -94,23 +96,31 @@ function locate(value: string | undefined): SourceLocation | undefined {
     ? host.split(".")[0]!
     : host;
 
-  // Azure DevOps: /org/project/_workitems/edit/12 or /org/project/_git/repo/pullrequest/3.
-  const area = segments.findIndex((segment) => segment.startsWith("_"));
-  if (area >= 1) {
-    return {
-      organization: area >= 2 ? segments[area - 2]! : site,
-      project: segments[area - 1],
-      numberScope: scope(area - 1),
-    };
-  }
-
-  // GitHub and GitLab: /owner/repo/issues/12 or /owner/repo/pull/3.
-  const kind = segments.findIndex((segment) => REPOSITORY_KINDS.has(segment));
+  // GitHub and GitLab: /owner/repo/issues/12 or /owner/repo/pull/3. The
+  // number after the kind tells it from a repository named "issues".
+  const kind = segments.findIndex(
+    (segment, index) =>
+      index >= 2 &&
+      REPOSITORY_KINDS.has(segment) &&
+      /^\d+$/.test(segments[index + 1] ?? ""),
+  );
   if (kind >= 2) {
     return {
       organization: segments[0]!,
       project: segments.slice(1, kind).join("/"),
       numberScope: scope(kind),
+    };
+  }
+
+  // Azure DevOps: /org/project/_workitems/edit/12 or /org/project/_git/repo/pullrequest/3.
+  const area = segments.findIndex(
+    (segment, index) => index >= 1 && AZURE_AREAS.has(segment),
+  );
+  if (area >= 1) {
+    return {
+      organization: area >= 2 ? segments[area - 2]! : site,
+      project: segments[area - 1],
+      numberScope: scope(area - 1),
     };
   }
 
@@ -172,7 +182,8 @@ export function findPullRequestsNamingItem(
   const key = getWorkItemKey(workItem);
   if (!key) return [];
   if (JIRA_KEY.test(key)) {
-    const pattern = new RegExp(`(?<![A-Za-z0-9])${key}(?![0-9])`, "i");
+    // An underscore belongs to a longer key, as in TEAM_PAY-12.
+    const pattern = new RegExp(`(?<![A-Za-z0-9_])${key}(?![0-9])`, "i");
     return pullRequests.filter((item) => pattern.test(item.facts.title));
   }
 
