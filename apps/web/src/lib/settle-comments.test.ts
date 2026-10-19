@@ -44,6 +44,16 @@ describe("pending settle comments", () => {
     expect(parsePendingSettleComments("nope")).toEqual([]);
   });
 
+  it("gives a comment queued before ids one, ready to send", async () => {
+    const { parsePendingSettleComments } =
+      await import("@/lib/settle-comments");
+    const { id: _id, ...legacy } = entry("unused");
+
+    expect(parsePendingSettleComments(JSON.stringify([legacy]))).toEqual([
+      { ...legacy, id: "item:1", ready: true },
+    ]);
+  });
+
   it("keeps each settle's comment apart, readies one at a time, and takes it once", async () => {
     const values = stubStorage();
     const queue = await import("@/lib/settle-comments");

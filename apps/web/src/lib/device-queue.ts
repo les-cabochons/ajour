@@ -6,7 +6,8 @@
  */
 export function createDeviceQueue<Entry>(
   storageKey: string,
-  isEntry: (value: unknown) => value is Entry,
+  /** The stored value as an entry, upgraded if needed, or undefined if broken. */
+  toEntry: (value: unknown) => Entry | undefined,
 ) {
   /** Set only while storage refuses the list. */
   let unsaved: Entry[] | undefined;
@@ -15,7 +16,12 @@ export function createDeviceQueue<Entry>(
   const parse = (value: string | null): Entry[] => {
     try {
       const parsed: unknown = value ? JSON.parse(value) : [];
-      return Array.isArray(parsed) ? parsed.filter(isEntry) : [];
+      return Array.isArray(parsed)
+        ? parsed.flatMap((value) => {
+            const entry = toEntry(value);
+            return entry === undefined ? [] : [entry];
+          })
+        : [];
     } catch {
       return [];
     }
