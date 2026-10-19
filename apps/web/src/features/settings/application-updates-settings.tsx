@@ -56,6 +56,7 @@ export function ApplicationUpdatesSettings() {
         >
           <ToggleGroup
             aria-label="Update track"
+            disabled={state.status === "installing"}
             variant="outline"
             value={[updateTrack]}
             onValueChange={(values) => {

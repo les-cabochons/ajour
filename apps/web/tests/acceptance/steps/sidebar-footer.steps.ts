@@ -12,6 +12,7 @@ declare global {
       cancelUpdate: () => void;
       acceptUpdate: () => void;
       progress: (percent: number) => void;
+      install: () => void;
     };
   }
 }
@@ -162,6 +163,7 @@ Given(
         },
         acceptUpdate: () => publish({ status: "downloading", progress: 0 }),
         progress: (progress) => publish({ status: "downloading", progress }),
+        install: () => publish({ status: "installing", progress: 100 }),
       };
       window.ajourDesktop = {
         runtime: {
@@ -300,6 +302,25 @@ Then("Settings shows the download progress", async ({ page }) => {
 Then("Settings disables Check again", async ({ page }) => {
   await expect(
     page.getByRole("button", { name: "Check again", exact: true }),
+  ).toBeDisabled();
+});
+Then("Settings allows update track changes", async ({ page }) => {
+  await expect(
+    page.getByRole("button", { name: "Use stable updates" }),
+  ).toBeEnabled();
+  await expect(
+    page.getByRole("button", { name: "Use nightly updates" }),
+  ).toBeEnabled();
+});
+When("the desktop starts installing the update", async ({ page }) => {
+  await page.evaluate(() => window.footerUpdateFixture.install());
+});
+Then("Settings disables update track changes", async ({ page }) => {
+  await expect(
+    page.getByRole("button", { name: "Use stable updates" }),
+  ).toBeDisabled();
+  await expect(
+    page.getByRole("button", { name: "Use nightly updates" }),
   ).toBeDisabled();
 });
 Then(

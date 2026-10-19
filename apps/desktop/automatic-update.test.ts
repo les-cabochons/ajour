@@ -175,6 +175,43 @@ describe("user-controlled desktop updates", () => {
     expect(autoUpdater.downloadUpdate).not.toHaveBeenCalled();
   });
 
+  it.each(["configure", "checkNow"] as const)(
+    "ignores a track change through %s once shutdown preparation begins",
+    async (action) => {
+      const shutdown = deferred<void>();
+      const prepareToInstall = vi.fn(() => shutdown.promise);
+      const {
+        controller,
+        autoUpdater,
+        dialog,
+        checkForUpdates,
+        resetInstallPreparation,
+      } = createController({ prepareToInstall });
+      dialog.showMessageBox.mockResolvedValue({ response: 1 });
+      await controller.configure("stable");
+      const update = controller.updateAndRestart("stable", "1.0.1");
+      await vi.waitFor(() => expect(prepareToInstall).toHaveBeenCalled());
+
+      const trackChange = controller[action]("nightly");
+      expect(controller.getState()).toMatchObject({
+        status: "installing",
+        track: "stable",
+      });
+      shutdown.resolve();
+      await update;
+      await trackChange;
+
+      expect(autoUpdater.quitAndInstall).toHaveBeenCalledWith(false, true);
+      expect(resetInstallPreparation).not.toHaveBeenCalled();
+      await controller[action]("nightly");
+      expect(controller.getState()).toMatchObject({
+        status: "installing",
+        track: "stable",
+      });
+      expect(checkForUpdates).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it("ignores repeated clicks while confirming and downloading and reports progress", async () => {
     const confirmation = deferred<{ response: number }>();
     const download = deferred<string[]>();

@@ -117,6 +117,9 @@ function createAutomaticUpdateController({
   function selectTrack(track) {
     assertUpdateTrack(track);
     if (disposed) throw new Error("Application updates have stopped.");
+    // Shutdown preparation may already have stopped the internal API.
+    // Keep the confirmed installation current through restart.
+    if (state.status === "installing") return false;
     if (track === currentTrack) return false;
     currentTrack = track;
     generation += 1;

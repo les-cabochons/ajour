@@ -46,6 +46,9 @@ Feature: Sidebar footer actions and manual application updates
     When the desktop reports download progress of 42 percent
     Then Settings shows the download progress
     And Settings disables Check again
+    And Settings allows update track changes
+    When the desktop starts installing the update
+    Then Settings disables update track changes
 
   Scenario: Open the release page on a platform without in-place installation
     Given the desktop footer has "manual-install" update state
