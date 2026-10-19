@@ -103,8 +103,13 @@ const firstPages = new Map<
   string,
   { at: number; result: BacklogListItemCommentsResult }
 >();
-// A comment posted from elsewhere makes the item's cached page stale.
-subscribePostedComments((threadKey) => firstPages.delete(threadKey));
+// A comment posted from elsewhere makes the item's cached page stale, and
+// so does any load that began before it, mounted or not.
+const pageGenerations = new Map<string, number>();
+subscribePostedComments((threadKey) => {
+  firstPages.delete(threadKey);
+  pageGenerations.set(threadKey, (pageGenerations.get(threadKey) ?? 0) + 1);
+});
 
 /** The thread with a posted comment at its end, once. */
 function withPostedComment(thread: Thread, comment: BacklogComment): Thread {
@@ -220,6 +225,7 @@ export function BacklogItemComments({
   const loadFirstPage = useCallback(async () => {
     const current = sourceRef.current;
     const loadKey = commentThreadKey(current);
+    const generation = pageGenerations.get(loadKey) ?? 0;
     postedDuringLoad.current = { key: loadKey, comments: [] };
     try {
       const page = await listItemComments(
@@ -231,7 +237,9 @@ export function BacklogItemComments({
         postedDuringLoad.current.key === loadKey
           ? withPostedComments(page, postedDuringLoad.current.comments)
           : page;
-      firstPages.set(loadKey, { at: Date.now(), result });
+      if ((pageGenerations.get(loadKey) ?? 0) === generation) {
+        firstPages.set(loadKey, { at: Date.now(), result });
+      }
       setThread({ kind: "ready", ...result, loadingEarlier: false });
     } catch (error) {
       setThread(
@@ -301,7 +309,7 @@ export function BacklogItemComments({
   };
 
   // Comments waiting for their delete stay hidden, even after a restart.
-  const [hidden, setHidden] = useState(pendingCommentDeleteIds);
+  const [hidden, setHidden] = useState(() => pendingCommentDeleteIds(source));
   const unhide = (commentId: string) =>
     setHidden((current) => {
       const next = new Set(current);
@@ -338,14 +346,13 @@ export function BacklogItemComments({
 
   /** Hides the comment now and deletes it once the Undo toast closes. */
   const deleteComment = (comment: BacklogComment) => {
-    queueCommentDelete({
-      itemId,
+    const ref = {
       pluginId: source.pluginId,
       connectionId: source.connectionId,
       sourceId: source.sourceId,
       commentId: comment.id,
-      at: Date.now(),
-    });
+    };
+    queueCommentDelete({ ...ref, itemId, at: Date.now() });
     setHidden((current) => new Set(current).add(comment.id));
     firstPages.delete(key);
     let undone = false;
@@ -353,12 +360,12 @@ export function BacklogItemComments({
       title: "Comment deleted",
       onUndo: () => {
         undone = true;
-        cancelCommentDelete(comment.id);
+        cancelCommentDelete(ref);
         unhide(comment.id);
       },
       onClose: () => {
         if (undone) return;
-        sendCommentDelete(comment.id).then(
+        sendCommentDelete(ref).then(
           () =>
             setThread((current) =>
               current.kind === "ready"

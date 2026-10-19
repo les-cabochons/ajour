@@ -774,6 +774,7 @@ export function syncBacklogConnection(
     ...(input ?? { trigger: "manual" }),
     workItems: syncedWorkItems,
   });
+  const requestedAt = Date.now();
   return appApiRequest(
     `/api/plugins/${encodeURIComponent(pluginId)}/connections/${encodeURIComponent(connectionId)}/sync`,
     {
@@ -810,7 +811,7 @@ export function syncBacklogConnection(
       localStore.returnItemsWithNewComments(
         result.commentFacts,
         result.viewer,
-        settledSince,
+        { settledSince, requestedAt },
       );
     }
 

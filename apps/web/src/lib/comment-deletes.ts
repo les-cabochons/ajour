@@ -39,32 +39,52 @@ const write = queue.write;
 /** Broken entries are dropped. */
 export const parsePendingCommentDeletes = queue.parse;
 
-/** Comments that wait to be deleted, so the thread keeps them hidden. */
-export function pendingCommentDeleteIds() {
-  return new Set(read().map((entry) => entry.commentId));
+/** A comment in one item's thread. Comment ids repeat across sources. */
+export type CommentRef = Pick<
+  PendingCommentDelete,
+  "pluginId" | "connectionId" | "sourceId" | "commentId"
+>;
+
+const sameComment = (left: CommentRef, right: CommentRef) =>
+  left.pluginId === right.pluginId &&
+  left.connectionId === right.connectionId &&
+  left.sourceId === right.sourceId &&
+  left.commentId === right.commentId;
+
+/** The thread's comments that wait to be deleted, so it keeps them hidden. */
+export function pendingCommentDeleteIds(
+  thread: Pick<CommentRef, "pluginId" | "connectionId" | "sourceId">,
+) {
+  return new Set(
+    read()
+      .filter(
+        (entry) =>
+          entry.pluginId === thread.pluginId &&
+          entry.connectionId === thread.connectionId &&
+          entry.sourceId === thread.sourceId,
+      )
+      .map((entry) => entry.commentId),
+  );
 }
 
 export function queueCommentDelete(entry: PendingCommentDelete) {
-  write([
-    ...read().filter((pending) => pending.commentId !== entry.commentId),
-    entry,
-  ]);
+  write([...read().filter((pending) => !sameComment(pending, entry)), entry]);
 }
 
 /** Undo: the comment stays and nothing is sent. */
-export function cancelCommentDelete(commentId: string) {
-  write(read().filter((entry) => entry.commentId !== commentId));
+export function cancelCommentDelete(comment: CommentRef) {
+  write(read().filter((entry) => !sameComment(entry, comment)));
 }
 
 /**
  * Sends a queued delete. It leaves the queue first, so a second call never
  * sends it twice. Throws when the source tool refuses it.
  */
-export async function sendCommentDelete(commentId: string) {
+export async function sendCommentDelete(comment: CommentRef) {
   const entries = read();
-  const entry = entries.find((pending) => pending.commentId === commentId);
+  const entry = entries.find((pending) => sameComment(pending, comment));
   if (!entry) return;
-  write(entries.filter((pending) => pending.commentId !== commentId));
+  write(entries.filter((pending) => !sameComment(pending, comment)));
   await deleteItemComment(entry.pluginId, entry.connectionId, {
     sourceId: entry.sourceId,
     commentId: entry.commentId,
@@ -76,7 +96,7 @@ export async function flushPendingCommentDeletes() {
   await Promise.all(
     read().map(async (entry) => {
       try {
-        await sendCommentDelete(entry.commentId);
+        await sendCommentDelete(entry);
       } catch (error) {
         showErrorToast({
           title: "A comment wasn't deleted",
