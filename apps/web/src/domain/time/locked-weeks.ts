@@ -1,4 +1,8 @@
-import type { LocalAppState, LocalLockedWeek } from "@/domain/local-state";
+import type {
+  LocalAppState,
+  LocalLockedWeek,
+  LocalTimesheetEntry,
+} from "@/domain/local-state";
 import { recordsEqual } from "@/domain/records-equal";
 import {
   formatShortLocalDate,
@@ -102,8 +106,10 @@ export type LockCheckState = Pick<
  * Reopen and their Undo pass. The write changes it when it adds, changes or
  * removes an entry on one of its days (the entry's day before or after the
  * write), a tombstone whose committed day is in it, or a running entry on one
- * of its days. Records compare by value, so a write that rebuilds an equal
- * record passes.
+ * of its days, or when it reorders its entries. Records compare by value, so
+ * a write that rebuilds an equal record passes. The order counts because
+ * entries that share `committedAt` show in array order, so Move up and Move
+ * down on them change only their positions.
  */
 export function findLockedWeekWrite(
   before: LockCheckState,
@@ -128,6 +134,11 @@ export function findLockedWeekWrite(
       after.timesheetEntries,
       (entry) => entry._id,
       (entry) => entry.localDate,
+      lockedWeekOf,
+    ) ??
+    findReorderedWeek(
+      before.timesheetEntries,
+      after.timesheetEntries,
       lockedWeekOf,
     ) ??
     findChangedDay(
@@ -186,6 +197,27 @@ function findChangedDay<T>(
     if (weekOf) return weekOf;
   }
   return undefined;
+}
+
+/**
+ * The first locked week whose entries come in another order after the write.
+ * Runs after `findChangedDay`, so the locked weeks hold the same entries before
+ * and after, and only their positions can differ.
+ */
+function findReorderedWeek(
+  before: readonly LocalTimesheetEntry[],
+  after: readonly LocalTimesheetEntry[],
+  lockedWeekOf: (localDate: string) => string | undefined,
+): string | undefined {
+  if (before === after) return undefined;
+  const lockedEntries = (entries: readonly LocalTimesheetEntry[]) =>
+    entries.filter((entry) => lockedWeekOf(entry.localDate) !== undefined);
+  const beforeLocked = lockedEntries(before);
+  const afterLocked = lockedEntries(after);
+  const moved = afterLocked.find(
+    (entry, index) => entry._id !== beforeLocked[index]?._id,
+  );
+  return moved ? lockedWeekOf(moved.localDate) : undefined;
 }
 
 /** Why a week cannot be submitted now. `message` is the agents' refusal; the Commit page words each kind its own way. */

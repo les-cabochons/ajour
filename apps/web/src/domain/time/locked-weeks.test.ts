@@ -352,6 +352,18 @@ describe("the write check", () => {
       (s) => reorderTimesheetEntries(s, "2026-10-06", ["locked-2", "locked"]),
     ],
     [
+      // Two entries that share `committedAt` show in array order, so Move up
+      // swaps them in the array and leaves every record as it was.
+      "reorder a locked day whose entries share a time",
+      createState({
+        timesheetEntries: [
+          committedEntry("locked", "2026-10-06", 10),
+          committedEntry("locked-2", "2026-10-06", 10),
+        ],
+      }),
+      (s) => reorderTimesheetEntries(s, "2026-10-06", ["locked-2", "locked"]),
+    ],
+    [
       "mark a locked entry as not committed",
       createState(),
       (s) => markTimesheetEntriesNotCommitted(s, ["locked"]),
@@ -427,6 +439,17 @@ describe("the write check", () => {
       (s) => ({ ...s, lockedWeeks: [{ weekOf: LOCKED, lockedAt: 60 }] }),
     ],
     ["reopen the week", createState(), (s) => ({ ...s, lockedWeeks: [] })],
+    [
+      "reorder an open day whose entries share a time",
+      createState({
+        timesheetEntries: [
+          committedEntry("locked", "2026-10-06", 10),
+          committedEntry("open", "2026-10-13", 10),
+          committedEntry("open-2", "2026-10-13", 10),
+        ],
+      }),
+      (s) => reorderTimesheetEntries(s, "2026-10-13", ["open-2", "open"]),
+    ],
     [
       "rebuild every entry with the same values",
       createState(),
