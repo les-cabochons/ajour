@@ -23,6 +23,7 @@ import {
   FrontmatterSections,
   useFrontmatterFields,
 } from "@/features/backlog/frontmatter-properties";
+import { useLinkQuestion } from "@/features/backlog/description-links";
 import { TimelogButton } from "@/features/backlog/timelog-button";
 
 /** Project and task lists outgrow their narrow fields, so names fit. */
@@ -54,6 +55,8 @@ export function BacklogItemProperties({
     [state.projects, description, projectId, taskId],
   );
   const frontmatterFields = useFrontmatterFields(description);
+  // One question for every frontmatter link in the card.
+  const linkQuestion = useLinkQuestion();
   return (
     <div className="flex flex-col gap-3">
       <PropertyList>
@@ -127,9 +130,16 @@ export function BacklogItemProperties({
           />
         </PropertyRow>
         {children}
-        <FrontmatterRows fields={frontmatterFields} />
+        <FrontmatterRows
+          fields={frontmatterFields}
+          onLinkClick={linkQuestion.ask}
+        />
       </PropertyList>
-      <FrontmatterSections fields={frontmatterFields} />
+      <FrontmatterSections
+        fields={frontmatterFields}
+        onLinkClick={linkQuestion.ask}
+      />
+      {linkQuestion.dialog}
       {item.source !== "manual" ? (
         <label className="flex items-center gap-2.5 border-t pt-3 text-sm">
           <Switch

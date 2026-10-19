@@ -1,4 +1,5 @@
-import type { ComponentProps, ReactNode } from "react";
+import { useId, type ComponentProps, type ReactNode } from "react";
+import { RiArrowRightSLine as ChevronIcon } from "@remixicon/react";
 
 import { cn } from "@/lib/utils";
 
@@ -79,5 +80,57 @@ export function PropertyAction({
       )}
       {...props}
     />
+  );
+}
+
+/**
+ * A section of a properties card that its title opens and closes: a chevron,
+ * the title and an optional trailing value. A top-level section sits under a
+ * rule; a nested one does not. `indent` lines the content up under the title.
+ * The project page's plugin sections and a description's frontmatter use it.
+ */
+export function PropertySection({
+  title,
+  trailing,
+  open,
+  onOpenChange,
+  nested = false,
+  indent = false,
+  children,
+}: {
+  title: ReactNode;
+  trailing?: ReactNode;
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
+  nested?: boolean;
+  indent?: boolean;
+  children: ReactNode;
+}) {
+  const contentId = useId();
+  return (
+    <div className={cn("flex flex-col gap-2.5", !nested && "border-t pt-3")}>
+      <button
+        type="button"
+        aria-expanded={open}
+        aria-controls={contentId}
+        className="flex min-w-0 items-center gap-1 text-left text-xs font-medium text-muted-foreground hover:text-foreground"
+        onClick={() => onOpenChange(!open)}
+      >
+        <ChevronIcon
+          aria-hidden="true"
+          className={cn("size-4 shrink-0", open && "rotate-90")}
+        />
+        <span className="truncate">{title}</span>
+        {trailing}
+      </button>
+      {open ? (
+        <div
+          id={contentId}
+          className={cn("flex min-w-0 flex-col gap-2.5", indent && "pl-5")}
+        >
+          {children}
+        </div>
+      ) : null}
+    </div>
   );
 }

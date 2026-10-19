@@ -28,7 +28,7 @@ describe("frontmatter in the properties", () => {
   it("lists plain values as property rows, a link as a link", () => {
     const html = renderToStaticMarkup(
       <PropertyList>
-        <FrontmatterRows fields={fields} />
+        <FrontmatterRows fields={fields} onLinkClick={() => {}} />
       </PropertyList>,
     );
 
@@ -43,7 +43,9 @@ describe("frontmatter in the properties", () => {
   });
 
   it("shows each list and nested key as a section that starts closed", () => {
-    const html = renderToStaticMarkup(<FrontmatterSections fields={fields} />);
+    const html = renderToStaticMarkup(
+      <FrontmatterSections fields={fields} onLinkClick={() => {}} />,
+    );
 
     expect(html.match(/aria-expanded="false"/g)).toHaveLength(2);
     expect(html).toContain("Links");

@@ -2,7 +2,10 @@ import { SettleRulesSection } from "@/features/settings/settle-rules-section";
 import { AppPanel, SettingRow } from "@/components/app-surface";
 import { Switch } from "@/components/ui/switch";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import type { CloseParentSubitems } from "@/domain/local-state";
+import {
+  asksBeforeOpeningDescriptionLinks,
+  type CloseParentSubitems,
+} from "@/domain/local-state";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 
@@ -66,9 +69,7 @@ export function SettingsBacklogPage() {
           >
             <Switch
               id="ask-before-description-links"
-              checked={
-                state.userPreferences.askBeforeOpeningDescriptionLinks !== false
-              }
+              checked={asksBeforeOpeningDescriptionLinks(state.userPreferences)}
               onCheckedChange={(checked) =>
                 localStore.setUserPreferences({
                   askBeforeOpeningDescriptionLinks: checked,

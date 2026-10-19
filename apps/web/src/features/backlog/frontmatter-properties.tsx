@@ -1,30 +1,32 @@
-import { useId, useMemo } from "react";
+import { useMemo, type MouseEvent } from "react";
+import { RiExternalLinkLine as ExternalIcon } from "@remixicon/react";
 import {
-  RiArrowRightSLine as ChevronIcon,
-  RiExternalLinkLine as ExternalIcon,
-} from "@remixicon/react";
-import { PropertyList, PropertyRow } from "@/components/property-list";
+  PropertyList,
+  PropertyRow,
+  PropertySection,
+} from "@/components/property-list";
 import { Value } from "@/components/ui/value";
 import {
   isFrontmatterLink,
   splitDescription,
   type FrontmatterField,
 } from "@/domain/backlog/description-frontmatter";
-import { useLinkQuestion } from "@/features/backlog/description-links";
 import {
   getFrontmatterSectionId,
   setFrontmatterSectionOpen,
   useFrontmatterSectionOpen,
 } from "@/lib/frontmatter-sections";
-import { cn } from "@/lib/utils";
 
 /*
  * A description's frontmatter fields in the backlog item's properties
  * (#281): plain values are rows of the property list, and each list or
  * nested key is a section below it, closed until the user opens it. This
  * device remembers which sections are open, by their keys, on every item.
- * A link asks before it opens.
+ * Links ask before they open through the card's one `useLinkQuestion`.
  */
+
+/** What a link calls on click and middle click: `useLinkQuestion`'s `ask`. */
+type OnLinkClick = (event: MouseEvent, href: string) => void;
 
 /** The frontmatter fields of a description, without its timelog. */
 export function useFrontmatterFields(description: string | undefined) {
@@ -38,11 +40,17 @@ export function useFrontmatterFields(description: string | undefined) {
 }
 
 /** The plain values, as rows inside a `PropertyList`. */
-export function FrontmatterRows({ fields }: { fields: FrontmatterField[] }) {
+export function FrontmatterRows({
+  fields,
+  onLinkClick,
+}: {
+  fields: FrontmatterField[];
+  onLinkClick: OnLinkClick;
+}) {
   return fields.map((field) =>
     field.kind === "value" ? (
       <PropertyRow key={field.key} label={field.key}>
-        <FrontmatterValue value={field.value} />
+        <FrontmatterValue value={field.value} onLinkClick={onLinkClick} />
       </PropertyRow>
     ) : null,
   );
@@ -51,9 +59,11 @@ export function FrontmatterRows({ fields }: { fields: FrontmatterField[] }) {
 /** The lists and nested keys, each a section that starts closed. */
 export function FrontmatterSections({
   fields,
+  onLinkClick,
   parentPath = [],
 }: {
   fields: FrontmatterField[];
+  onLinkClick: OnLinkClick;
   /** The keys above these fields, for a section nested in another. */
   parentPath?: readonly string[];
 }) {
@@ -63,6 +73,7 @@ export function FrontmatterSections({
         key={field.key}
         field={field}
         path={[...parentPath, field.key]}
+        onLinkClick={onLinkClick}
       />
     ),
   );
@@ -71,86 +82,86 @@ export function FrontmatterSections({
 function FrontmatterSection({
   field,
   path,
+  onLinkClick,
 }: {
   field: Exclude<FrontmatterField, { kind: "value" }>;
   path: readonly string[];
+  onLinkClick: OnLinkClick;
 }) {
   const sectionId = getFrontmatterSectionId(path);
   const open = useFrontmatterSectionOpen(sectionId);
-  const contentId = useId();
-  const nested = path.length > 1;
   const hasRows =
     field.kind === "map" &&
     field.fields.some((child) => child.kind === "value");
   return (
-    <div className={cn("flex flex-col gap-2.5", !nested && "border-t pt-3")}>
-      <button
-        type="button"
-        aria-expanded={open}
-        aria-controls={contentId}
-        className="flex min-w-0 items-center gap-1 text-left text-xs font-medium text-muted-foreground hover:text-foreground"
-        onClick={() => setFrontmatterSectionOpen(sectionId, !open)}
-      >
-        <ChevronIcon
-          aria-hidden="true"
-          className={cn("size-4 shrink-0", open && "rotate-90")}
-        />
-        <span className="truncate">{field.key}</span>
-        {field.kind === "list" ? (
+    <PropertySection
+      title={field.key}
+      trailing={
+        field.kind === "list" ? (
           <Value tone="muted" className="ml-auto">
             {field.values.length}
           </Value>
-        ) : null}
-      </button>
-      {open ? (
-        <div id={contentId} className="flex min-w-0 flex-col gap-2.5 pl-5">
-          {field.kind === "list" ? (
-            <ul className="flex flex-col">
-              {field.values.map((value, index) => (
-                <li
-                  key={index}
-                  className="flex min-h-7 min-w-0 items-center text-sm"
-                >
-                  <FrontmatterValue value={value} />
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <>
-              {hasRows ? (
-                <PropertyList>
-                  <FrontmatterRows fields={field.fields} />
-                </PropertyList>
-              ) : null}
-              <FrontmatterSections fields={field.fields} parentPath={path} />
-            </>
-          )}
-        </div>
-      ) : null}
-    </div>
+        ) : undefined
+      }
+      open={open}
+      onOpenChange={(next) => setFrontmatterSectionOpen(sectionId, next)}
+      nested={path.length > 1}
+      indent
+    >
+      {field.kind === "list" ? (
+        <ul className="flex flex-col">
+          {field.values.map((value, index) => (
+            <li
+              key={index}
+              className="flex min-h-7 min-w-0 items-center text-sm"
+            >
+              <FrontmatterValue value={value} onLinkClick={onLinkClick} />
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <>
+          {hasRows ? (
+            <PropertyList>
+              <FrontmatterRows
+                fields={field.fields}
+                onLinkClick={onLinkClick}
+              />
+            </PropertyList>
+          ) : null}
+          <FrontmatterSections
+            fields={field.fields}
+            parentPath={path}
+            onLinkClick={onLinkClick}
+          />
+        </>
+      )}
+    </PropertySection>
   );
 }
 
 /** A value as text, or a link that asks before it opens. */
-function FrontmatterValue({ value }: { value: string }) {
-  const { ask, dialog } = useLinkQuestion();
+function FrontmatterValue({
+  value,
+  onLinkClick,
+}: {
+  value: string;
+  onLinkClick: OnLinkClick;
+}) {
   if (!isFrontmatterLink(value)) {
     return <span className="min-w-0 break-words">{value}</span>;
   }
   return (
-    <>
-      <a
-        href={value}
-        target="_blank"
-        rel="noreferrer"
-        className="inline-flex min-w-0 items-center gap-1"
-        onClick={(event) => ask(event, value)}
-        onAuxClick={(event) => ask(event, value)}
-      >
-        <span className="truncate">{value}</span>
-        <ExternalIcon className="size-3 shrink-0" />
-      </a>
-      {dialog}
-    </>
+    <a
+      href={value}
+      target="_blank"
+      rel="noreferrer"
+      className="inline-flex min-w-0 items-center gap-1"
+      onClick={(event) => onLinkClick(event, value)}
+      onAuxClick={(event) => onLinkClick(event, value)}
+    >
+      <span className="truncate">{value}</span>
+      <ExternalIcon className="size-3 shrink-0" />
+    </a>
   );
 }

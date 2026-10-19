@@ -754,6 +754,13 @@ export function hasWorkItemEstimateSyncIssue(workItem: LocalWorkItem) {
   });
 }
 
+/** Whether a description link asks before it opens. On unless turned off. */
+export function asksBeforeOpeningDescriptionLinks(
+  preferences: Pick<UserPreferences, "askBeforeOpeningDescriptionLinks">,
+) {
+  return preferences.askBeforeOpeningDescriptionLinks !== false;
+}
+
 export function getLocalProjectDisplayName(
   project: Pick<LocalProject, "name" | "displayName">,
 ) {

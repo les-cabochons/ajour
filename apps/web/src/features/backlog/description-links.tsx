@@ -11,6 +11,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Checkbox } from "@/components/ui/checkbox";
+import { asksBeforeOpeningDescriptionLinks } from "@/domain/local-state";
 import { localStore } from "@/lib/local-store";
 import { openSourceUrl } from "@/lib/source-navigation";
 
@@ -31,10 +32,11 @@ export function useLinkQuestion() {
   function ask(event: MouseEvent, href: string) {
     // A right click opens the context menu, not the link.
     if (event.type === "auxclick" && event.button !== 1) return;
-    const asking =
-      localStore.snapshot().userPreferences.askBeforeOpeningDescriptionLinks !==
-      false;
-    if (!asking) return;
+    if (
+      !asksBeforeOpeningDescriptionLinks(localStore.snapshot().userPreferences)
+    ) {
+      return;
+    }
     event.preventDefault();
     setUrl(href);
   }

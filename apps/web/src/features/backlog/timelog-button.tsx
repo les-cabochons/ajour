@@ -1,7 +1,7 @@
 import { useState } from "react";
 import {
   RiErrorWarningLine as WarningIcon,
-  RiArrowGoBackLine as ResetIcon,
+  RiArrowGoBackLine as BackIcon,
 } from "@remixicon/react";
 import { TooltipButton } from "@/components/tooltip-button";
 import {
@@ -64,7 +64,7 @@ export function TimelogButton({
           />
         }
       >
-        <ResetIcon />
+        <BackIcon />
       </TooltipButton>
     );
   }
