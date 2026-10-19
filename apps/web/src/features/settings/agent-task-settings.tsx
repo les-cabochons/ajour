@@ -70,6 +70,7 @@ export function PluginAgentTasks({
       </AppPanel>
       {fields.length > 0 ? (
         <TaskSettingsForm
+          key={pluginId}
           fields={fields}
           initialValues={sharedValues(statuses, fields)}
           onSave={async (values) => {
