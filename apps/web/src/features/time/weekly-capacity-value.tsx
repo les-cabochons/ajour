@@ -19,21 +19,20 @@ export function formatWeekDay(
 
 /**
  * A day or week total in the Week view. Hovering shows the capacity target and
- * how much of it is used; the warning icon marks a total more than 50% over
- * its target.
+ * how much of it is used; the warning icon marks a total far over its target.
  */
 export function CapacityValue({
   capacityMs,
+  farOverCapacity,
   label,
   microLabel,
-  overCapacity,
   showWarning,
   totalMs,
 }: {
   capacityMs: number;
+  farOverCapacity: boolean;
   label: string;
   microLabel?: string;
-  overCapacity: boolean;
   showWarning: boolean;
   totalMs: number;
 }) {
@@ -61,7 +60,7 @@ export function CapacityValue({
           </span>
         </HoverCardContent>
       </HoverCard>
-      {showWarning && overCapacity ? (
+      {showWarning && farOverCapacity ? (
         <AlertTriangle
           className="weekly-capacity-warning"
           aria-label="Over capacity"

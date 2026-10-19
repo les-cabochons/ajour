@@ -20,10 +20,10 @@ const CAPACITY_KEYS = [
  * Running an hour or so past the target is a normal day, so the Week view only
  * warns about time more than 50% over it.
  */
-const OVER_CAPACITY_RATIO = 1.5;
+const FAR_OVER_CAPACITY_RATIO = 1.5;
 
-function isOverCapacity(totalMs: number, capacityMs: number) {
-  return capacityMs > 0 && totalMs > capacityMs * OVER_CAPACITY_RATIO;
+function isFarOverCapacity(totalMs: number, capacityMs: number) {
+  return capacityMs > 0 && totalMs > capacityMs * FAR_OVER_CAPACITY_RATIO;
 }
 
 /** Filters a Monday-to-Sunday week for display without changing its totals. */
@@ -49,9 +49,9 @@ export interface WeeklyRunningTime {
 export interface WeeklyDayProjection {
   capacityMs: number;
   entries: LocalTimesheetEntry[];
-  localDate: string;
   /** More than 50% over the day's target. */
-  overCapacity: boolean;
+  farOverCapacity: boolean;
+  localDate: string;
   totalMs: number;
 }
 
@@ -162,9 +162,9 @@ export function selectWeeklyGridCell({
 export interface WeeklyTimeProjection {
   capacityMs: number;
   days: WeeklyDayProjection[];
-  gridRows: WeeklyGridRow[];
   /** More than 50% over the week's target. */
-  overCapacity: boolean;
+  farOverCapacity: boolean;
+  gridRows: WeeklyGridRow[];
   totalMs: number;
 }
 
@@ -210,8 +210,8 @@ export function projectWeeklyTime({
     return {
       capacityMs,
       entries: dayEntries,
+      farOverCapacity: isFarOverCapacity(totalMs, capacityMs),
       localDate,
-      overCapacity: isOverCapacity(totalMs, capacityMs),
       totalMs,
     };
   });
@@ -387,6 +387,7 @@ export function projectWeeklyTime({
   return {
     capacityMs,
     days: days.filter((day) => visibleDates.has(day.localDate)),
+    farOverCapacity: isFarOverCapacity(totalMs, capacityMs),
     gridRows: gridRows.map((row) => ({
       ...row,
       dayEntries: row.dayEntries.filter((_, index) =>
@@ -396,7 +397,6 @@ export function projectWeeklyTime({
         visibleDates.has(weekDates[index]!),
       ),
     })),
-    overCapacity: isOverCapacity(totalMs, capacityMs),
     totalMs,
   };
 }

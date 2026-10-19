@@ -792,7 +792,7 @@ export function WeekGrid({
                         label={formatWeekDay(day.localDate, {
                           weekday: "long",
                         })}
-                        overCapacity={day.overCapacity}
+                        farOverCapacity={day.farOverCapacity}
                         showWarning={showCapacityWarning}
                       />
                     </span>

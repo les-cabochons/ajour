@@ -614,7 +614,7 @@ export function WeeklyTimeView({
             capacityMs={projection.capacityMs}
             totalMs={projection.totalMs}
             label="Week capacity"
-            overCapacity={projection.overCapacity}
+            farOverCapacity={projection.farOverCapacity}
             showWarning={preferences.warnWhenOverCapacity}
           />
         </div>
@@ -726,7 +726,7 @@ export function WeeklyTimeView({
                     capacityMs={day.capacityMs}
                     totalMs={day.totalMs}
                     label={formatWeekDay(day.localDate, { weekday: "long" })}
-                    overCapacity={day.overCapacity}
+                    farOverCapacity={day.farOverCapacity}
                     showWarning={preferences.warnWhenOverCapacity}
                   />
                 </header>
