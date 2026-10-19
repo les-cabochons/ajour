@@ -29,17 +29,38 @@ Feature: Agent tasks from plugins
     Then the timesheet URL "https://wd.example/t" is saved
     And both tasks say "Ready to run from the Commit page."
 
-  Scenario: A plugin's submit task replaces Submit week
+  Scenario: A plugin's submit task keeps manual submission available
     Given the local API reports a ready "Check Workday and submit" submit task
     When I open the Commit page for the week of 2026-10-12
-    Then the Commit page offers "Check Workday and submit" instead of Submit week
+    Then the Commit page offers "Check Workday and submit" alongside Submit week
     And "Check Workday and submit" is the primary button
     When I press "Check Workday and submit"
     Then the "submit-week" run is requested for the week of 2026-10-12
 
-  Scenario: Submit week waits while the agent tasks load
+  Scenario: Submit week stays available while the agent tasks load
     Given the local API holds back a ready "Check Workday and submit" submit task
     When I open the Commit page for the week of 2026-10-12
-    Then "Submit week" is disabled with the reason "Loading agent tasks"
+    Then the manual Submit week button is enabled
     When the local API sends the agent tasks
-    Then the Commit page offers "Check Workday and submit" instead of Submit week
+    Then the Commit page offers "Check Workday and submit" alongside Submit week
+
+  Scenario: Manually submit and reopen a committed week without starting an agent
+    Given I have a committed week of entries
+    And the local API reports a ready "Check Workday and submit" submit task
+    When I change Monday's "API" entry to "2:30" hours
+    And I open the Commit page for the week of 2026-10-05
+    Then "Submit week" is disabled with the reason "Commit your changes first"
+    When I press "Mark as committed"
+    And I press "Submit week"
+    And I press "Submit anyway"
+    Then the Commit page shows the week is submitted
+    And no agent run is requested
+    When I undo the manual week submission
+    Then the Commit page shows the week is not submitted
+    When I press "Submit week"
+    And I press "Submit anyway"
+    And I reload the page
+    Then the Commit page shows the week is submitted
+    When I press "Reopen week"
+    Then the Commit page shows the week is not submitted
+    And no agent run is requested

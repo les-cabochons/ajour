@@ -437,6 +437,7 @@ One "Submit week" button, styled the same, sits in the Day and Week headers at e
 ### Summary
 
 - The page leads with the week's total against its target, a progress bar, and warnings such as days under target or entries without a task.
+- On the Commit page, Submit week remains available beside a plugin's submit-week task, including while agent tasks load. It locks the week in Ajour without starting an agent or submitting to the external timesheet. The plugin task stays primary when the week is ready. Both actions retain the uncommitted-change and running-entry guards; manual submission keeps its pace confirmation, Undo and Reopen week.
 - The total and warnings follow the current selection.
 - Submitting under the week target still asks for confirmation.
 

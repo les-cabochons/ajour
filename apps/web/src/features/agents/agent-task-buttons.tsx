@@ -40,9 +40,9 @@ export type AgentTaskPresence = "loading" | "present" | "absent";
 
 /**
  * Whether an active plugin has a task for `placement`, such as one that
- * replaces Submit week. `loading` while the overview loads on a cold start.
+ * sits alongside Submit week. `loading` while the overview loads on a cold start.
  * Without the local API (the web build) or with a failed overview there is
- * no task, so the page falls back to its own button: `AgentTaskButtons`
+ * no task; the page always keeps its own button: `AgentTaskButtons`
  * shows nothing then either.
  */
 export function getAgentTaskPresence(

@@ -79,6 +79,6 @@ Lines show each project's full name. When a plugin adds project properties, such
 
 With a plugin such as [Workday (agent)](/plugins/workday-agent), a button such as **Commit to Workday** sits next to **Mark as committed**. It starts an agent that applies the checked changes in your timesheet tool, one entry per change, and marks each one as committed as soon as the tool saved it. The button is greyed out while something is missing; hover it to see what, such as `Fill in Workday timesheet URL in Settings › Plugins › Workday (agent)`.
 
-A plugin can also replace **Submit week** with its own button, such as **Check Workday and submit**, which checks the week in the timesheet tool before it submits it in Ajour.
+A plugin can also offer its own button, such as **Check Workday and submit**, which checks the week in the timesheet tool before it submits it in Ajour. **Submit week** stays available beside it to mark the week as submitted in Ajour without running an agent. It does not submit anything in Workday. Both actions wait until every change is committed and no entry is running in the week.
 
 A link such as **Open the week in Workday**, under the week summary, opens the week in your browser.
