@@ -208,6 +208,30 @@ describe("splitDescription", () => {
     }
   });
 
+  it("is not frontmatter when a map repeats a key, ignoring case", () => {
+    expect(
+      getDescriptionTimelog(
+        "---\ntimelog:\n  project: Alpha\n  project: Beta\n---",
+      ),
+    ).toBeUndefined();
+    expect(
+      splitDescription("---\nOwner: Ada\nowner: Grace\n---\nText").frontmatter,
+    ).toBeNull();
+    expect(
+      splitDescription("---\ntimelog:\n  project: A\nTimelog:\n  task: B\n---")
+        .frontmatter,
+    ).toBeNull();
+  });
+
+  it("keeps escaped quotes and commas inside quoted items of an inline list", () => {
+    expect(
+      splitDescription(`---\nLabels: ["a\\"b", 'it''s, ok', next]\n---`)
+        .frontmatter?.fields,
+    ).toEqual([
+      { kind: "list", key: "Labels", values: ['a"b', "it's, ok", "next"] },
+    ]);
+  });
+
   it("keeps plain values with colons that are not followed by a space", () => {
     expect(
       splitDescription("---\nStart: 10:30\nLink: https://example.com/a:b\n---")

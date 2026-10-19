@@ -109,7 +109,6 @@ export function isSameTimelog(
 }
 
 function toFrontmatter(map: YamlMap): DescriptionFrontmatter {
-  // A repeated key is invalid YAML; the first one counts.
   const timelogEntry = map.find(([key]) => key.toLowerCase() === "timelog");
   const timelog = timelogEntry ? readTimelog(timelogEntry[1]) : undefined;
   const fields = toFields(
@@ -177,13 +176,17 @@ function parseMap(
 ): Parsed<YamlMap> | null {
   if (depth > MAX_NESTING) return null;
   const map: YamlMap = [];
+  // A repeated key is invalid YAML, and keys match ignoring case, so one
+  // that repeats in any case makes the block ambiguous.
+  const seen = new Set<string>();
   let index = start;
   while (index < lines.length) {
     const line = lines[index]!;
     if (line.indent < indent) break;
     if (line.indent > indent || isListItem(line.text)) return null;
     const entry = splitKey(line.text);
-    if (!entry) return null;
+    if (!entry || seen.has(entry.key.toLowerCase())) return null;
+    seen.add(entry.key.toLowerCase());
     index += 1;
 
     if (entry.value) {
@@ -270,7 +273,18 @@ function parseInlineValue(text: string): YamlValue | null {
     const char = text[index]!;
     if (quote) {
       current += char;
-      if (char === quote) quote = null;
+      // An escaped character, `\"` or `''`, never ends the string.
+      if (quote === '"' && char === "\\") {
+        current += text[index + 1] ?? "";
+        index += 1;
+      } else if (char === quote) {
+        if (quote === "'" && text[index + 1] === "'") {
+          current += "'";
+          index += 1;
+        } else {
+          quote = null;
+        }
+      }
     } else if (char === '"' || char === "'") {
       quote = char;
       current += char;
