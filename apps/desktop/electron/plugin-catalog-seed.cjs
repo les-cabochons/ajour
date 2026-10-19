@@ -99,6 +99,38 @@ const BUILT_IN_PLUGIN_CATALOG_ENTRIES = [
   },
   {
     schemaVersion: 2,
+    id: "workday-agent",
+    title: "Workday (agent)",
+    description:
+      "Commit your Ajour week to the Workday web timesheet through a coding agent, Claude Code, Codex or OpenCode, in a Chrome window. Unofficial. It drives Workday's page, so it breaks when the page changes. It never signs in for you.",
+    author: {
+      name: "Alex Trépanier",
+      url: "https://github.com/alextrepa",
+    },
+    license: {
+      name: "MIT License",
+      spdxId: "MIT",
+      url: "https://github.com/les-cabochons/ajp-workday-agent/blob/main/LICENSE",
+    },
+    website: "https://docs.ajour.day/plugins/workday-agent",
+    repository: {
+      provider: "github",
+      slug: "les-cabochons/ajp-workday-agent",
+      url: "https://github.com/les-cabochons/ajp-workday-agent",
+    },
+    status: "available",
+    compatibility: { pluginApiVersion: 3 },
+    capabilities: ["agentTask"],
+    features: ["timesheet-commit", "timesheet-submit", "project-properties"],
+    install: {
+      method: "github-release",
+      allowPrereleases: true,
+      assetPattern: "^workday-agent-[0-9A-Za-z.+-]+\\.ajour-connector$",
+    },
+    tags: ["workday", "timesheet", "agent"],
+  },
+  {
+    schemaVersion: 2,
     id: "workday-project-data",
     title: "Workday schema",
     description:
