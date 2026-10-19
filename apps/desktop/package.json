@@ -16,6 +16,7 @@
     "make:win": "node scripts/run-builder-command.cjs make win32",
     "start": "node scripts/run-renderer.cjs build && node scripts/run-renderer.cjs start",
     "test": "vitest run",
+    "prototype:renderer-cost": "node prototype/plugin-renderer-cost/run.mjs",
     "typecheck": "node --check electron/main.cjs"
   },
   "dependencies": {
