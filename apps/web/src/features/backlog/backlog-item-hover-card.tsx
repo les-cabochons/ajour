@@ -272,7 +272,7 @@ export function BacklogItemHoverCard({
   // A sync can take the row away under the card, or replace it. React removes
   // the old row in the commit, after this renders, so look again after it.
   useLayoutEffect(() => {
-    if (shown && (!workItem || !shown.element.isConnected)) rowGone();
+    if (shown && (!workItem || !shown.element.isConnected)) rowGone(shown.id);
   });
   if (!shown || !workItem || !shown.element.isConnected) return null;
 

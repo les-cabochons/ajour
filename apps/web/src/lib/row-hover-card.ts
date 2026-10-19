@@ -17,10 +17,12 @@ export interface RowHoverIntent<T> {
   /** Closes the card. It opens again only after the pointer leaves the row. */
   dismiss(): void;
   /**
-   * The shown row left the list or was replaced. Closes the card and forgets
-   * the pointer, so resting on the row that replaced it opens the card again.
+   * The row `id` of the shown card left the list or was replaced. Closes the
+   * card. When the pointer was on that row, it is forgotten, so resting on the
+   * row that replaced it opens the card again; another row it rests on keeps
+   * its card coming.
    */
-  rowGone(): void;
+  rowGone(id: string): void;
   dispose(): void;
 }
 
@@ -84,12 +86,14 @@ export function createRowHoverIntent<T>(
       overCard = false;
       hide();
     },
-    rowGone() {
-      clearTimeout(timer);
-      hoveredId = undefined;
+    rowGone(id) {
+      if (hoveredId === undefined || hoveredId === id) {
+        clearTimeout(timer);
+        hoveredId = undefined;
+      }
       // The card unmounts under the pointer without a pointer leave.
       overCard = false;
-      hide();
+      if (shownId === id) hide();
     },
     dispose() {
       clearTimeout(timer);

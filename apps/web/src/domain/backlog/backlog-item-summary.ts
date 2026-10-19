@@ -120,9 +120,26 @@ function locate(value: string | undefined): SourceLocation | undefined {
     (segment, index) => index >= 1 && AZURE_AREAS.has(segment),
   );
   if (area >= 1) {
+    const project = segments[area - 1];
+    // Azure DevOps Services names one organization two ways, dev.azure.com/org
+    // and the older org.visualstudio.com, with or without its collection.
+    const cloud =
+      host === "dev.azure.com"
+        ? segments[0]
+        : host.endsWith(".visualstudio.com")
+          ? host.split(".")[0]
+          : undefined;
+    if (cloud) {
+      return {
+        organization: cloud,
+        project,
+        numberScope: `azure-devops/${cloud.toLowerCase()}`,
+      };
+    }
+    // Azure DevOps Server: the collection shares the numbers.
     return {
-      organization: area >= 2 ? segments[area - 2]! : site,
-      project: segments[area - 1],
+      organization: area >= 2 ? segments[area - 2]! : host,
+      project,
       numberScope: scope(area - 1),
     };
   }

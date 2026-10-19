@@ -108,6 +108,18 @@ describe("where a backlog item comes from", () => {
     expect(getWorkItemKey(workItem)).toBe("1234");
   });
 
+  it("reads the organization of an older visualstudio.com link with its collection", () => {
+    expect(
+      getWorkItemOrigin(
+        item("collection", {
+          source: "azure_devops",
+          sourceUrl:
+            "https://acme.visualstudio.com/DefaultCollection/Web/_workitems/edit/1234",
+        }),
+      ),
+    ).toEqual({ organization: "acme", project: "Web" });
+  });
+
   it("reads the Jira site and keeps the source project", () => {
     expect(getWorkItemOrigin(jiraIssue)).toEqual({
       organization: "acme",
@@ -259,6 +271,32 @@ describe("pull requests that name a backlog item", () => {
     expect(
       findPullRequestsNamingItem(workItem, [otherProject, otherOrganization]),
     ).toEqual([otherProject]);
+  });
+
+  it("matches a number across the two addresses of one Azure DevOps organization", () => {
+    const legacy = item("legacy", {
+      source: "azure_devops",
+      sourceUrl:
+        "https://acme.visualstudio.com/DefaultCollection/Web/_workitems/edit/1234",
+    });
+    const sameHost = pullRequest(
+      "https://acme.visualstudio.com/Web/_git/api/pullrequest/9",
+      "Fix #1234",
+    );
+    const newHost = pullRequest(
+      "https://dev.azure.com/ACME/Platform/_git/api/pullrequest/10",
+      "Fix #1234",
+    );
+    const other = pullRequest(
+      "https://globex.visualstudio.com/Web/_git/api/pullrequest/11",
+      "Fix #1234",
+    );
+    expect(
+      findPullRequestsNamingItem(legacy, [sameHost, newHost, other]),
+    ).toEqual([sameHost, newHost]);
+    expect(
+      findPullRequestsNamingItem(workItem, [sameHost, newHost, other]),
+    ).toEqual([sameHost, newHost]);
   });
 
   it("matches a key in any repository, whatever its case", () => {
