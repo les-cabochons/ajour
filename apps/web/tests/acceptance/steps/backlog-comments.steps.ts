@@ -1,4 +1,4 @@
-import { expect, type Page } from "@playwright/test";
+import { expect, type Page, type Request } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 import {
   autoSyncOverview,
@@ -634,6 +634,100 @@ When("I select all and type {string}", async ({ page }, text: string) => {
   await page.keyboard.press("ControlOrMeta+A");
   await page.keyboard.type(text);
 });
+
+Then(
+  "the new comment reads only the mention {string}",
+  async ({ page }, chip: string) => {
+    const editor = commentsRegion(page).getByRole("textbox", {
+      name: "New comment",
+    });
+    await expect(editor.locator(".cm-mention")).toHaveText(chip);
+    await expect
+      .poll(async () => (await editor.textContent())?.trim())
+      .toBe(chip);
+  },
+);
+
+Given(
+  "its plugin answers its first search for Ana late, with no one",
+  async ({ page }) => {
+    let searchesForAna = 0;
+    await page.route(peopleSearchUrl, async (route) => {
+      const { query } = route.request().postDataJSON() as { query: string };
+      if (query === "Ana" && ++searchesForAna === 1) {
+        await new Promise((resolve) => setTimeout(resolve, 1_000));
+        await route.fulfill({ json: { people: [] }, headers: cors });
+        return;
+      }
+      await route.fulfill({
+        json: { people: findPeople(query) },
+        headers: cors,
+      });
+    });
+  },
+);
+
+const searchFor = (query: string) => (request: Request) =>
+  request.url() === peopleSearchUrl &&
+  (request.postDataJSON() as { query: string }).query === query;
+
+When(
+  "I type {string} and take it back while the first search for Ana runs",
+  async ({ page }, text: string) => {
+    await page.waitForRequest(searchFor("Ana"));
+    // Both answers for Ana: the second, fast one, then the first, late one.
+    let answers = 0;
+    const bothAnswered = new Promise<void>((resolve) => {
+      page.on("response", (response) => {
+        if (searchFor("Ana")(response.request()) && ++answers === 2) resolve();
+      });
+    });
+    await page.keyboard.type(text);
+    await page.keyboard.press("Backspace");
+    await bothAnswered;
+  },
+);
+
+Then("Ana is still suggested after the late answer", async ({ page }) => {
+  // Give the late answer time to reach the editor.
+  await page.waitForTimeout(300);
+  await expect(page.getByRole("option", { name: "Ana Silva" })).toBeVisible();
+  await expect(mentionStatus(page)).toHaveText(/^Showing \d+ suggestions?$/);
+});
+
+When("I press Enter in the new comment", async ({ page }) => {
+  await page.keyboard.press("Enter");
+});
+
+Then(
+  "the new comment still reads {string} while the picker searches",
+  async ({ page }, text: string) => {
+    await expect(mentionStatus(page)).toHaveText("Searching…");
+    await expect(
+      commentsRegion(page).getByRole("textbox", { name: "New comment" }),
+    ).toHaveText(text);
+  },
+);
+
+When("I move the line up with Alt+ArrowUp", async ({ page }) => {
+  await page.keyboard.press("Alt+ArrowUp");
+});
+
+Then(
+  "the picker sits by the line with {string}",
+  async ({ page }, text: string) => {
+    const line = commentsRegion(page).locator(".cm-line", { hasText: text });
+    await expect(line).toHaveCount(1);
+    await expect(mentionPicker(page)).toBeVisible();
+    const lineBox = (await line.boundingBox())!;
+    const pickerBox = (await mentionPicker(page).boundingBox())!;
+    const gap = Math.min(
+      Math.abs(pickerBox.y - (lineBox.y + lineBox.height)),
+      Math.abs(lineBox.y - (pickerBox.y + pickerBox.height)),
+    );
+    expect(gap).toBeLessThan(12);
+  },
+);
 
 When("I pick Ana from the suggestions", async ({ page }) => {
   await page.getByRole("option", { name: "Ana Silva" }).click();

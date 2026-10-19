@@ -692,6 +692,50 @@ Feature: Backlog list and board views
     When I move down the suggestions and press Enter
     Then the new comment mentions "@Andrew Lee" as a chip
 
+  Scenario: Picking with the cursor inside a name replaces the whole name
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people and records posted comments
+    When I open the Backlog parent page
+    And I type "@Ana" in a new comment
+    Then Ana is suggested once the search is done
+    When I move back 2 characters and ask for suggestions
+    And I pick Ana from the suggestions
+    Then the new comment reads only the mention "@Ana Silva"
+
+  Scenario: An older answer never replaces a newer one for the same name
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin answers its first search for Ana late, with no one
+    When I open the Backlog parent page
+    And I type "@Ana" in a new comment
+    And I type "x" and take it back while the first search for Ana runs
+    Then Ana is still suggested after the late answer
+
+  Scenario: Enter waits for the search instead of starting a new line
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people, slowly
+    When I open the Backlog parent page
+    And I type "@Ana" in a new comment
+    And I press Enter in the new comment
+    Then the new comment still reads "@Ana" while the picker searches
+    And Ana is suggested once the search is done
+    When I press Enter in the new comment
+    Then the new comment mentions "@Ana Silva" as a chip
+
+  Scenario: The picker follows its @ when the line moves
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people and records posted comments
+    When I open the Backlog parent page
+    And I type "First line" in a new comment
+    And I press Enter in the new comment
+    And I keep typing "@Ana"
+    Then Ana is suggested once the search is done
+    When I move the line up with Alt+ArrowUp
+    Then the picker sits by the line with "@Ana"
+
   Scenario: Mention suggestions say when no one matches
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit

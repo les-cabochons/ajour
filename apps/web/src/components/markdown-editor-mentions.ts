@@ -35,6 +35,11 @@ interface MentionAtCursor {
   from: number;
   /** The `@name` up to the cursor. */
   word: string;
+  /**
+   * Where the name ends, past the cursor when it sits inside the name:
+   * picking replaces up to here.
+   */
+  to: number;
   /** The name, as the search gets it. */
   query: string;
 }
@@ -46,9 +51,11 @@ function mentionAtCursor(state: EditorState): MentionAtCursor | null {
   const start = Math.max(line.from, main.head - 250);
   const match = mentionWord.exec(state.sliceDoc(start, main.head));
   if (!match) return null;
+  const rest = /^[^\s@[\]()]*/.exec(state.sliceDoc(main.head, line.to))![0];
   return {
     from: start + match.index,
     word: match[0],
+    to: main.head + rest.length,
     query: match[0].slice(1).trim().replace(/\s+/g, " "),
   };
 }
@@ -56,8 +63,6 @@ function mentionAtCursor(state: EditorState): MentionAtCursor | null {
 interface Picker extends MentionAtCursor {
   /** Each opening, so an answer knows which picker asked. */
   id: number;
-  /** Where the name ends, which picking replaces up to. */
-  to: number;
   /** The last answer, kept in view while the next search runs. */
   people: BacklogPerson[];
   /** The query `people` answers; null before the first answer. */
@@ -115,10 +120,15 @@ const mentions = StateField.define<Mentions>({
       dismissed = transaction.changes.mapPos(dismissed, 1, MapMode.TrackAfter);
     }
     if (transaction.docChanged && picker) {
+      const from = transaction.changes.mapPos(picker.from, 1);
       picker = {
         ...picker,
-        from: transaction.changes.mapPos(picker.from, 1),
+        from,
         to: transaction.changes.mapPos(picker.to, 1),
+        // The picker follows its `@`, as when its line moves.
+        ...(from === picker.from
+          ? {}
+          : { tooltip: { ...picker.tooltip, pos: from } }),
       };
     }
     let reopen = false;
@@ -171,12 +181,10 @@ const mentions = StateField.define<Mentions>({
           ? { picker, dismissed, nextId }
           : { picker: null, dismissed, nextId };
       }
-      const head = transaction.state.selection.main.head;
       return {
         picker: {
           ...picker,
           ...at,
-          to: head,
           ...(reopen ? { id: nextId, answered: null } : {}),
         },
         dismissed,
@@ -191,7 +199,6 @@ const mentions = StateField.define<Mentions>({
       picker: {
         ...at,
         id: nextId,
-        to: transaction.state.selection.main.head,
         people: [],
         answered: null,
         selected: 0,
@@ -264,7 +271,7 @@ function movePicker(view: EditorView, step: number) {
 /** Enter and Tab pick only from an answer to what is typed. */
 function pickSelected(view: EditorView) {
   const picker = visiblePicker(view.state);
-  if (!picker || picker.people.length === 0) return false;
+  if (!picker) return false;
   // While the answer is out of date, the keys wait for the next one.
   if (searching(picker)) return true;
   return pickPerson(view, picker.selected);
@@ -294,6 +301,8 @@ function searchPlugin(search: () => PeopleSearch) {
     class {
       timer: ReturnType<typeof setTimeout> | undefined;
       key: string | null = null;
+      /** Each change of what to search, so only the latest search answers. */
+      generation = 0;
       destroyed = false;
 
       constructor(readonly view: EditorView) {
@@ -310,17 +319,20 @@ function searchPlugin(search: () => PeopleSearch) {
           picker && searching(picker) ? `${picker.id}\n${picker.query}` : null;
         if (key === this.key) return;
         this.key = key;
+        this.generation += 1;
         clearTimeout(this.timer);
         if (!picker || key === null) return;
         const { id, query } = picker;
+        const generation = this.generation;
         this.timer = setTimeout(
           () => {
-            // A search that fails reads like one that found no one. The
-            // picker drops an answer to a name it no longer shows.
+            // A search that fails reads like one that found no one. An
+            // answer counts only while nothing newer was asked, even when
+            // the text came back to the same name.
             void search()(query)
               .catch(() => [])
               .then((people) => {
-                if (this.destroyed) return;
+                if (this.destroyed || generation !== this.generation) return;
                 this.view.dispatch({
                   effects: answerSearch.of({ id, query, people }),
                 });
