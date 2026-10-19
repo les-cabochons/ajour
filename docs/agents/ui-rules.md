@@ -12,9 +12,9 @@ Ajour is an operational desktop/web app. Build interfaces for scanning, repeated
 
 ## Layout
 
-- The 48px top bar is the page header. List pages (Time, Backlog, Commit, Settings pages) put their title there with `PageHeader`. Projects leaves the top bar title empty. Detail pages (backlog item, project) keep a small muted "Back to" link above the object's title in the content at 20px. Page actions sit after the title; the global entry controls and the day total stay at the right end.
+- The 48px top bar is the page header. List pages (Time, Backlog, Commit, Settings pages) put their title there with `PageHeader`. Projects leaves the top bar title empty. Detail pages (backlog item, project) keep a small muted "Back to" link above the object's title in the content at 20px. The backlog item page also puts a breadcrumb in the top bar: its project (or Backlog), then its title. Page actions sit after the title; the global entry controls and the day total stay at the right end.
 - No second title band under the top bar. A page may have one toolbar row (filters, a week strip) at most.
-- Cardless everywhere except dialogs, popovers, the timer dock and the properties cards of the backlog item page and the project page. Stats are a `FigureRow`, object properties a `PropertyList`, lists are bordered rows with no outer frame, and sections are separated by a `SectionHeading` and space.
+- Cardless everywhere except dialogs, popovers, the timer dock, the side cards of the backlog item page (properties, Subitems and Time entries) and the properties card of the project page. Stats are a `FigureRow`, object properties a `PropertyList`, lists are bordered rows with no outer frame, and sections are separated by a `SectionHeading` and space.
 - Settings pages: sections 3rem apart under a 16px heading; each setting is a `SettingRow` (13px label, 12px description, control trailing) with no border or background between rows.
 - Prefer full-width app surfaces with constrained inner content where needed.
 - Keep fixed-format elements stable with explicit width, height, grid tracks, or aspect ratios. Rows, headers and controls have fixed heights, so a state change never causes layout work.
@@ -34,7 +34,7 @@ Ajour is an operational desktop/web app. Build interfaces for scanning, repeated
 - Feature pages should not directly reference `settings-panel` or `message-panel`; those classes are owned by the app-surface module.
 - Use Remix icons already present in the app for icon buttons and navigation.
 - Use icon-only buttons for common commands when the icon is familiar and an accessible label is provided.
-- Every icon-only button shows a tooltip with its label and, when the action has a shortcut in `lib/shortcuts.ts`, its key. Use `TooltipButton` from `apps/web/src/components/tooltip-button.tsx`; its `render` prop takes a `Button`, a `Link` or a menu or popover trigger. Do not use `title=` on icon buttons. The one exception is the sidebar rows' hover actions (Start entry or Stop, Snooze…, Settle): they have no tooltip, so hovering down the list does not cover it.
+- Every icon-only button shows a tooltip with its label and, when the action has a shortcut in `lib/shortcuts.ts`, its key. Use `TooltipButton` from `apps/web/src/components/tooltip-button.tsx`; its `render` prop takes a `Button`, a `Link` or a menu or popover trigger. Do not use `title=` on icon buttons. Exceptions are the sidebar rows' hover actions (Start entry or Stop, Snooze…, Settle), so hovering down the list does not cover it, and the comment header's reaction and actions buttons, which use hover, pressed and open-menu tints without a tooltip.
 - Every modal surface uses `Dialog`, `AlertDialog` or `Sheet` from `apps/web/src/components/ui`, and anchored surfaces use `Popover`. Do not build overlays by hand: no `role="dialog"` divs, fixed backdrops or `*-modal-overlay` classes.
 - Use segmented controls, toggles, selects, tabs, popovers, dialogs, and menus according to their existing local patterns.
 
@@ -62,6 +62,7 @@ Ajour is an operational desktop/web app. Build interfaces for scanning, repeated
 - Preserve user-entered values during validation errors.
 - Settings save on change or on blur, only when the value changed, with the Undo toast where the UX spec gives one. No per-row Save buttons.
 - Escape cancels every drag and puts the item back. Dropping an item where it started changes nothing. Reorder and cross-day drags get both from `lib/table-drag.ts`.
+- Enabled buttons, `role="button"` elements, links, switches and checkboxes show the pointer cursor, and disabled or `aria-disabled` ones show the default cursor. The base layer of `apps/web/src/styles.css` sets both, so components do not add `cursor-pointer`. Set a cursor only when it means something else, such as grab, resize or text.
 - Route loading shows `PageSkeleton` from `apps/web/src/components/page-skeleton.tsx`, the page layout in `Skeleton` blocks, after 150ms. Faster loads show nothing.
 
 ## Motion and performance

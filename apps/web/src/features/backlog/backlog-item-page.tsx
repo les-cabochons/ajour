@@ -10,13 +10,12 @@ import {
   RiStopLine as StopIcon,
   RiTimeLine as SnoozeIcon,
 } from "@remixicon/react";
-import { PageHeader } from "@/components/page-header";
+import { PageHeader, type PageBreadcrumbItem } from "@/components/page-header";
 import {
   PropertyAction,
   PropertyActions,
   PropertyRow,
 } from "@/components/property-list";
-import { SectionHeading } from "@/components/section-heading";
 import { Button } from "@/components/ui/button";
 import { Chip } from "@/components/ui/chip";
 import {
@@ -25,7 +24,7 @@ import {
   EmptyHeader,
   EmptyTitle,
 } from "@/components/ui/empty";
-import { Figure, FigureRow, Value } from "@/components/ui/value";
+import { Figure, FigureRow } from "@/components/ui/value";
 import {
   getBacklogItemActions,
   type BacklogItemActionId,
@@ -42,16 +41,12 @@ import { formatClockDuration } from "@/domain/time/duration";
 import { settleOpensDialog } from "@/features/backlog/settle-dialog";
 import { runBacklogItemAction } from "@/features/backlog/backlog-item-actions";
 import {
-  AddSubitemRow,
   EstimateFigure,
   InlineTitle,
   DescriptionSection,
 } from "@/features/backlog/backlog-item-inline-edit";
 import { BacklogItemProperties } from "@/features/backlog/backlog-item-properties";
-import {
-  ESTIMATE_FIGURES,
-  formatHours,
-} from "@/features/backlog/backlog-estimates";
+import { ESTIMATE_FIGURES } from "@/features/backlog/backlog-estimates";
 import { getBacklogItemBackLink } from "@/features/backlog/backlog-item-search";
 import { getWorkItemEntryValues } from "@/features/backlog/work-item-timer-comment";
 import { openNewEntryEditor } from "@/features/time/new-entry-request";
@@ -70,22 +65,30 @@ import { useActionRequest } from "@/lib/action-request";
 import { BACKLOG_ITEM_ACTION_KEYS, handleItemKeyDown } from "@/lib/item-keys";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
+import { ProjectIcon } from "@/lib/project-icons";
 import { useNow } from "@/lib/use-now";
-import { cn } from "@/lib/utils";
 import { findWorkItemTimer } from "@/domain/time/running-entry";
-import { PriorityIcon } from "@/features/backlog/priority-icon";
 import {
   BacklogItemComments,
   useCommentSource,
 } from "@/features/backlog/backlog-item-comments";
 import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
+import {
+  SubitemsCard,
+  TimeEntriesCard,
+} from "@/features/backlog/backlog-item-side-cards";
+import {
+  updateBacklogItemCards,
+  useBacklogItemCards,
+} from "@/lib/backlog-item-cards";
 
 /**
  * The backlog item page at /backlog/$itemId, from "Backlog item page" in
- * docs/agents/ux-spec.md. The top bar holds the item's actions;
- * the page holds the back link, title, estimate figures and progress, then the description,
- * subitems and time entries beside the properties card. Every field edits in
- * place, so the page has no editor panel and no "…" menu.
+ * docs/agents/ux-spec.md. The top bar holds the breadcrumb and the item's
+ * actions; the page holds the back link, title, estimate figures and progress,
+ * then the description beside the properties card and the folding Subitems
+ * and Time entries cards.
+ * Every field edits in place, so the page has no editor panel and no "…" menu.
  *
  * The page itself is the focused object, so E settles, B snoozes and Enter
  * renames as soon as it opens.
@@ -104,11 +107,18 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
   const [addingSubitem, setAddingSubitem] = useState(false);
   const workItem = state.workItems.find((item) => item._id === itemId);
   const commentSource = useCommentSource(workItem);
+  const cards = useBacklogItemCards();
 
-  /** Edit and Add subitem have no panel here: they open the inline fields. */
+  /**
+   * Edit and Add subitem have no panel here: they open the inline fields. Add
+   * subitem opens the Subitems card while its name field is open.
+   */
   function runHosted(action: "edit" | "add-subitem") {
-    if (action === "edit") setEditingTitle(true);
-    else setAddingSubitem(true);
+    if (action === "edit") {
+      setEditingTitle(true);
+    } else {
+      setAddingSubitem(true);
+    }
   }
 
   const [returnNotice, setReturnNotice] =
@@ -132,7 +142,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
 
   // The sidebar and the command palette ask for Edit and Add subitem with
   // `?action=`. Only enabled actions of the item run: Edit renames the item,
-  // Add subitem opens the name field under its subitems.
+  // Add subitem opens the Subitems card on its name field.
   useActionRequest(({ action }) => {
     if (action !== "edit" && action !== "add-subitem") return;
     const currentState = localStore.snapshot();
@@ -203,6 +213,25 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
       )
     : undefined;
   const project = state.projects.find((entry) => entry._id === item.projectId);
+  // The item's project, or Backlog without one, whichever page it was opened
+  // from: the back link already returns there.
+  const breadcrumb: PageBreadcrumbItem[] = [
+    project
+      ? {
+          label: getLocalProjectDisplayName(project),
+          icon: (
+            <ProjectIcon
+              icon={project.icon}
+              color={project.color}
+              className="ajour-sidebar-icon shrink-0"
+            />
+          ),
+          to: "/projects/$projectId",
+          params: { projectId: project._id },
+        }
+      : { label: "Backlog", to: "/backlog" },
+    { label: item.title },
+  ];
   const reference =
     item.source === "azure_devops"
       ? parseWorkItemReference(item.sourceId)
@@ -309,6 +338,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
           }
         >
           <PageHeader
+            breadcrumb={breadcrumb}
             backLink={backLink}
             actions={
               <>
@@ -431,9 +461,9 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                 <BacklogItemComments itemId={item._id} source={commentSource} />
               ) : null}
             </div>
-            <div className="backlog-item-properties-card">
+            <div className="backlog-item-side-cards">
               <section
-                className="backlog-item-card-properties"
+                className="backlog-item-card backlog-item-properties-card"
                 aria-label="Properties"
               >
                 <BacklogItemProperties item={item} state={state}>
@@ -455,123 +485,35 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                 ) : null}
               </section>
               {!isSubitem ? (
-                <section
-                  className="backlog-item-card-section"
-                  aria-label="Subitems"
-                >
-                  <SectionHeading
-                    trailing={
-                      subitems.length
-                        ? `${subitems.filter((subitem) => subitem.status === "archived").length} of ${subitems.length} done`
-                        : undefined
-                    }
-                  >
-                    Subitems
-                  </SectionHeading>
-                  {subitems.length === 0 && !addingSubitem ? (
-                    <p className="text-sm text-muted-foreground">
-                      No subitems.
-                    </p>
-                  ) : (
-                    <div className="backlog-item-rows">
-                      {subitems.map((subitem) => (
-                        <Link
-                          key={subitem._id}
-                          to="/backlog/$itemId"
-                          params={{ itemId: subitem._id }}
-                          search={{ from }}
-                          className="backlog-item-row"
-                        >
-                          <WorkItemIcon
-                            icon={resolveWorkItemIcon(subitem, iconData)}
-                          />
-                          <span
-                            className={cn(
-                              "backlog-item-row-title",
-                              subitem.status === "archived" &&
-                                "text-muted-foreground",
-                            )}
-                          >
-                            {subitem.title}
-                          </span>
-                          {subitem.priority !== undefined ? (
-                            <PriorityIcon priority={subitem.priority} />
-                          ) : null}
-                          <Value tone="muted" className="w-10 text-right">
-                            {formatHours(subitem.remainingEstimateHours)}
-                          </Value>
-                        </Link>
-                      ))}
-                    </div>
-                  )}
-                  {!readOnly ? (
-                    <AddSubitemRow
-                      parent={item}
-                      adding={addingSubitem}
-                      onAddingChange={setAddingSubitem}
-                    />
-                  ) : null}
-                </section>
-              ) : null}
-              <section
-                className="backlog-item-card-section"
-                aria-label="Time entries"
-              >
-                <SectionHeading
-                  trailing={
-                    entries.length ? (
-                      <Value>{formatClockDuration(loggedMs)}</Value>
-                    ) : undefined
+                <SubitemsCard
+                  parent={item}
+                  subitems={subitems}
+                  iconData={iconData}
+                  from={from}
+                  open={cards.subitemsOpen}
+                  onOpenChange={(subitemsOpen) =>
+                    updateBacklogItemCards({ subitemsOpen })
                   }
-                >
-                  Time entries
-                </SectionHeading>
-                {entries.length === 0 ? (
-                  <p className="text-sm text-muted-foreground">
-                    No time logged yet.
-                  </p>
-                ) : (
-                  <div className="backlog-item-rows">
-                    {entries.map((entry) => (
-                      <Link
-                        key={entry._id}
-                        to="/time/$date"
-                        params={{ date: entry.localDate }}
-                        className="backlog-item-row"
-                      >
-                        <span className="w-20 shrink-0 text-muted-foreground">
-                          {new Date(
-                            `${entry.localDate}T12:00:00`,
-                          ).toLocaleDateString(undefined, {
-                            weekday: "short",
-                            month: "short",
-                            day: "numeric",
-                          })}
-                        </span>
-                        <span className="backlog-item-row-title">
-                          {entry.note ?? (
-                            <span className="text-muted-foreground">
-                              No note
-                            </span>
-                          )}
-                        </span>
-                        <Value>{formatClockDuration(entry.durationMs)}</Value>
-                      </Link>
-                    ))}
-                  </div>
-                )}
-                {!readOnly ? (
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    className="mt-1 w-fit text-muted-foreground"
-                    onClick={(event) => openNewEntry(event.currentTarget)}
-                  >
-                    <AddIcon data-icon="inline-start" />
-                    Add time entry
-                  </Button>
-                ) : null}
-              </section>
+                  readOnly={readOnly}
+                  adding={addingSubitem}
+                  onAdd={() => runHosted("add-subitem")}
+                  onAddingClose={(escaped) => {
+                    setAddingSubitem(false);
+                    // Escape gives the keys back to the page, as on the title.
+                    if (escaped)
+                      focusRef.current?.focus({ preventScroll: true });
+                  }}
+                />
+              ) : null}
+              <TimeEntriesCard
+                entries={entries}
+                loggedMs={loggedMs}
+                open={cards.timeEntriesOpen}
+                onOpenChange={(timeEntriesOpen) =>
+                  updateBacklogItemCards({ timeEntriesOpen })
+                }
+                onAdd={readOnly ? undefined : openNewEntry}
+              />
             </div>
           </div>
         </div>

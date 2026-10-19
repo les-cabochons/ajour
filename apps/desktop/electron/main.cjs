@@ -105,6 +105,17 @@ const checkForUpdatesCoordinated = createUpdateCheckCoordinator();
 const automaticUpdateController = createAutomaticUpdateController({
   autoUpdater,
   isEnabled: automaticUpdatesEnabled,
+  checkForUpdates: (track) =>
+    checkForUpdatesCoordinated({
+      track,
+      currentVersion: app.getVersion(),
+      fetchImpl: net.fetch,
+    }),
+  onStateChanged: (state) => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.webContents.send("ajour:update-state-changed", state);
+    }
+  },
   dialog,
   getMainWindow: () => mainWindow,
   prepareToInstall: async () => {
@@ -212,12 +223,17 @@ ipcMain.on("ajour:set-window-chrome-theme", (event, theme) => {
 
 ipcMain.handle("ajour:check-for-updates", async (event, track) => {
   assertActiveDesktopWindow(event, "check for application updates");
-  void automaticUpdateController.checkNow(track);
-  return await checkForUpdatesCoordinated({
-    track,
-    currentVersion: app.getVersion(),
-    fetchImpl: net.fetch,
-  });
+  return await automaticUpdateController.checkNow(track);
+});
+
+ipcMain.handle("ajour:get-update-state", (event) => {
+  assertActiveDesktopWindow(event, "read application update state");
+  return automaticUpdateController.getState();
+});
+
+ipcMain.handle("ajour:update-and-restart", async (event, track, version) => {
+  assertActiveDesktopWindow(event, "update and restart the application");
+  return await automaticUpdateController.updateAndRestart(track, version);
 });
 
 ipcMain.handle("ajour:configure-automatic-updates", async (event, track) => {
@@ -807,11 +823,10 @@ if (!hasSingleInstanceLock) {
       pluginCatalogRefreshTimer = null;
     }
     event.preventDefault();
+    automaticUpdateController.dispose();
     void stopInternalAppApi().finally(() => {
-      if (!automaticUpdateController.installPendingUpdate()) {
-        gracefulQuitStarted = true;
-        app.quit();
-      }
+      gracefulQuitStarted = true;
+      app.quit();
     });
   });
 

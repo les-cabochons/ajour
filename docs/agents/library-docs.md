@@ -98,7 +98,7 @@ The backlog editor module is feature-local because its vocabulary and commands b
 - desktop bootstrap in `apps/desktop/electron`
 - GitHub release selection, tag-to-package-version mapping, and update
   availability checks: `apps/desktop/electron/update-check.cjs`
-- Windows background download, track-bound cancellation, restart confirmation,
+- Application update state, check-only polling, confirmed Windows downloads, track-bound cancellation,
   and installer handoff:
   `apps/desktop/electron/automatic-update.cjs`
 - Update checks cross the context-isolated preload/IPC bridge; the renderer does

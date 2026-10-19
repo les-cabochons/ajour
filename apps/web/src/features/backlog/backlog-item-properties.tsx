@@ -2,7 +2,15 @@ import { useMemo, type ReactNode } from "react";
 import { PropertyList, PropertyRow } from "@/components/property-list";
 import { Button } from "@/components/ui/button";
 import { SearchableSelect } from "@/components/ui/searchable-select";
-import { Switch } from "@/components/ui/switch";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuLabel,
+  DropdownMenuRadioGroup,
+  DropdownMenuRadioItem,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import { getTimelogMismatch } from "@/domain/backlog/description-timelog";
 import {
   getLocalProjectDisplayName,
@@ -18,12 +26,12 @@ import {
   changeSourceStateWithUndo,
   getOtherSourceStates,
 } from "@/features/backlog/backlog-item-moves";
+import { useLinkQuestion } from "@/features/backlog/description-links";
 import {
   FrontmatterRows,
   FrontmatterSections,
   useFrontmatterFields,
 } from "@/features/backlog/frontmatter-properties";
-import { useLinkQuestion } from "@/features/backlog/description-links";
 import { TimelogButton } from "@/features/backlog/timelog-button";
 
 /** Project and task lists outgrow their narrow fields, so names fit. */
@@ -31,12 +39,11 @@ const LONG_NAME_LIST_WIDTH = 320;
 
 /**
  * A backlog item's properties, each changed in place with Undo: state, source
- * state, priority, project and task, then the "Keep when missing from sync"
- * switch for synced items. The peek and the item page show the same rows;
- * `children` adds rows before the switch. The description's frontmatter
- * follows: plain values as rows, lists and nested keys as sections. A button
- * after Project offers the description's timelog while the item's project or
- * task differs from it.
+ * state, priority, project and task, then When missing for synced items. The
+ * peek and the item page show the same rows; `children` adds rows before
+ * When missing. The description's frontmatter follows: plain values as rows,
+ * lists and nested keys as sections. A button after Project offers the
+ * description's timelog while the item's project or task differs from it.
  */
 export function BacklogItemProperties({
   item,
@@ -130,6 +137,11 @@ export function BacklogItemProperties({
           />
         </PropertyRow>
         {children}
+        {item.source !== "manual" ? (
+          <PropertyRow label="When missing">
+            <MissingFromSyncPicker item={item} />
+          </PropertyRow>
+        ) : null}
         <FrontmatterRows
           fields={frontmatterFields}
           onLinkClick={linkQuestion.ask}
@@ -140,26 +152,58 @@ export function BacklogItemProperties({
         onLinkClick={linkQuestion.ask}
       />
       {linkQuestion.dialog}
-      {item.source !== "manual" ? (
-        <label className="flex items-center gap-2.5 border-t pt-3 text-sm">
-          <Switch
-            size="sm"
-            checked={item.keepWhenMissingFromSync ?? false}
+    </div>
+  );
+}
+
+/**
+ * What an automatic sync does with the item once it stops coming back, for
+ * example after it is reassigned: archive it, the default, or keep it.
+ */
+function MissingFromSyncPicker({ item }: { item: LocalWorkItem }) {
+  const keep = item.keepWhenMissingFromSync ?? false;
+  const label = keep ? "Keep" : "Archive";
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger
+        render={
+          <Button
+            variant="ghost"
+            className="justify-start"
             // An archived item is read-only until Restore.
             disabled={item.status === "archived"}
-            onCheckedChange={(keepWhenMissingFromSync) =>
+            aria-label={`When missing from sync: ${label}`}
+          />
+        }
+      >
+        {label}
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="start">
+        <DropdownMenuGroup>
+          <DropdownMenuLabel>When missing from sync</DropdownMenuLabel>
+          <DropdownMenuRadioGroup
+            value={keep ? "keep" : "archive"}
+            onValueChange={(value) => {
+              const keepWhenMissingFromSync = value === "keep";
+              if (keepWhenMissingFromSync === keep) return;
               patchBacklogItemWithUndo(
                 item,
                 { keepWhenMissingFromSync },
                 keepWhenMissingFromSync
                   ? "Kept when missing from sync"
                   : "Archived when missing from sync",
-              )
-            }
-          />
-          Keep when missing from sync
-        </label>
-      ) : null}
-    </div>
+              );
+            }}
+          >
+            <DropdownMenuRadioItem value="archive" closeOnClick>
+              Archive
+            </DropdownMenuRadioItem>
+            <DropdownMenuRadioItem value="keep" closeOnClick>
+              Keep
+            </DropdownMenuRadioItem>
+          </DropdownMenuRadioGroup>
+        </DropdownMenuGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }

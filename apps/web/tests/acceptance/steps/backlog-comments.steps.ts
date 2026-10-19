@@ -217,6 +217,76 @@ Given("its plugin accepts comment changes", async ({ page }) => {
 const myComment = (page: Page) =>
   commentsRegion(page).getByRole("article", { name: "Your comment" });
 
+Then(
+  "my comment controls show hover and pressed feedback in the {string} theme",
+  async ({ page }, theme: string) => {
+    if (theme !== "light" && theme !== "dark")
+      throw new Error(`Unknown theme: ${theme}`);
+    await page.evaluate(async (themeMode) => {
+      const { localStore } = await import("/src/lib/local-store.ts");
+      localStore.setUserPreferences({ themeMode });
+    }, theme);
+    await expect(page.locator("html")).toHaveClass(new RegExp(theme));
+    for (const { label, menuItem } of [
+      { label: "Add a reaction", menuItem: "Heart" },
+      { label: "Comment actions", menuItem: "Edit" },
+    ]) {
+      const control = myComment(page).getByRole("button", { name: label });
+      await page.mouse.move(0, 0);
+      const background = await control.evaluate(
+        (element) => getComputedStyle(element).backgroundColor,
+      );
+      await control.hover();
+      const hovered = await control.evaluate(
+        (element) => getComputedStyle(element).backgroundColor,
+      );
+      expect(hovered).not.toBe(background);
+      // Absence needs an observation window for a tooltip that mounts after hover.
+      await page.waitForTimeout(300);
+      await expect(page.locator('[data-slot="tooltip-content"]')).toHaveCount(
+        0,
+      );
+      await expect(control).not.toHaveAttribute("title");
+      await page.mouse.down();
+      const pressed = await control.evaluate(
+        (element) => getComputedStyle(element).backgroundColor,
+      );
+      await page.mouse.up();
+      expect(pressed).not.toBe(hovered);
+      await expect(page.getByRole("menu")).toBeVisible();
+      await page.mouse.move(0, 0);
+      await expect(control).toHaveCSS("background-color", pressed);
+      // Closing the menu while holding the mouse isolates :active from aria-expanded.
+      await control.hover();
+      await page.mouse.down();
+      try {
+        await expect(control).toHaveAttribute("aria-expanded", "false");
+        await expect(control).toHaveCSS("background-color", pressed);
+      } finally {
+        await page.mouse.up();
+      }
+      await page.mouse.move(0, 0);
+      await control.focus();
+      await page.keyboard.press("Shift+Tab");
+      await page.keyboard.press("Tab");
+      await expect(control).toBeFocused();
+      expect(
+        await control.evaluate((element) => element.matches(":focus-visible")),
+      ).toBe(true);
+      await expect(control).not.toHaveCSS("box-shadow", "none");
+      await page.keyboard.press("Enter");
+      await expect(page.getByRole("menu")).toBeVisible();
+      await expect(
+        page.getByRole("menuitem", {
+          name: menuItem,
+          exact: true,
+        }),
+      ).toBeVisible();
+      await page.keyboard.press("Escape");
+    }
+  },
+);
+
 When("I edit my comment to {string}", async ({ page }, text: string) => {
   await myComment(page)
     .getByRole("button", { name: "Comment actions" })
@@ -340,6 +410,110 @@ When("I mention Ana in a new comment and send it", async ({ page }) => {
   await expect(editor.locator(".cm-mention")).toHaveText("@Ana Silva");
   await page.keyboard.type("for the review");
   await page.keyboard.press("ControlOrMeta+Enter");
+});
+
+const peopleSearchUrl = `${apiUrl}/api/backlog-comments/example/connections/fixture/searchItemPeople`;
+
+Given("its plugin fails to search people", async ({ page }) => {
+  await page.route(peopleSearchUrl, (route) =>
+    route.fulfill({
+      status: 502,
+      json: { error: "Azure DevOps request failed (401): people search" },
+      headers: cors,
+    }),
+  );
+});
+
+Given("its plugin finds no one, slowly", async ({ page }) => {
+  await page.route(peopleSearchUrl, async (route) => {
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    await route.fulfill({ json: { people: [] }, headers: cors });
+  });
+});
+
+Given("its plugin finds people, slowly", async ({ page }) => {
+  await page.route(peopleSearchUrl, async (route) => {
+    const { query } = route.request().postDataJSON() as { query: string };
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    const people = [
+      { id: "ana", displayName: "Ana Silva" },
+      { id: "andrew", displayName: "Andrew Lee" },
+    ].filter((person) =>
+      person.displayName.toLowerCase().startsWith(query.toLowerCase()),
+    );
+    await route.fulfill({ json: { people }, headers: cors });
+  });
+});
+
+When(
+  "the people search works again and I ask for suggestions",
+  async ({ page }) => {
+    await page.unroute(peopleSearchUrl);
+    await page.route(peopleSearchUrl, (route) =>
+      route.fulfill({
+        json: { people: [{ id: "ana", displayName: "Ana Silva" }] },
+        headers: cors,
+      }),
+    );
+    await page.keyboard.press("Control+Space");
+  },
+);
+
+Then("Ana is suggested and no status shows", async ({ page }) => {
+  await expect(page.getByRole("option", { name: "Ana Silva" })).toBeVisible();
+  await expect(mentionStatus(page)).toHaveCount(0);
+});
+
+When(
+  "I keep typing {string} before the search answers",
+  async ({ page }, text: string) => {
+    const answered = page.waitForResponse(peopleSearchUrl);
+    await page.waitForRequest(peopleSearchUrl);
+    await page.keyboard.type(text);
+    await answered;
+  },
+);
+
+Then(
+  "the mention suggestions are closed once the search answers",
+  async ({ page }) => {
+    // Give the late answer time to reach the editor.
+    await page.waitForTimeout(200);
+    await expect(mentionStatus(page)).toHaveCount(0);
+  },
+);
+
+When("I type {string} in a new comment", async ({ page }, text: string) => {
+  await commentsRegion(page)
+    .getByRole("button", { name: "Leave a comment…" })
+    .click();
+  // The editor loads on first use; type once it has the focus.
+  await expect(
+    commentsRegion(page).getByRole("textbox", { name: "New comment" }),
+  ).toBeFocused();
+  await page.keyboard.type(text);
+});
+
+When("I keep typing {string}", async ({ page }, text: string) => {
+  await page.keyboard.type(text);
+});
+
+const mentionStatus = (page: Page) =>
+  commentsRegion(page).locator(".cm-mention-status");
+
+Then("the mention suggestions ask for a name", async ({ page }) => {
+  await expect(mentionStatus(page)).toHaveText(
+    "Type a name to mention someone",
+  );
+});
+
+Then("the mention suggestions say no one was found", async ({ page }) => {
+  await expect(mentionStatus(page)).toHaveText("No one found");
+  await expect(page.getByRole("option")).toHaveCount(0);
+});
+
+Then("the mention suggestions are closed", async ({ page }) => {
+  await expect(mentionStatus(page)).toHaveCount(0);
 });
 
 Then(

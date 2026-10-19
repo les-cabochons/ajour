@@ -47,9 +47,7 @@ describe("desktop plugin lifecycle", () => {
     expect(source).not.toContain("resolveBundledPluginArchives()");
     expect(source).toContain("installedPluginDirectory:");
     expect(source).toContain('app.on("before-quit"');
-    expect(source).toContain(
-      "automaticUpdateController.installPendingUpdate()",
-    );
+    expect(source).not.toContain("installPendingUpdate");
     expect(source).toContain("stopInternalAppApi().finally(() => {");
   });
 

@@ -1,15 +1,11 @@
 import { useMemo, useRef, type KeyboardEvent, type PointerEvent } from "react";
-import { Link, useRouterState } from "@tanstack/react-router";
-import {
-  RiSettings3Line as Settings,
-  RiSideBarLine as SidebarIcon,
-} from "@remixicon/react";
+import { useRouterState } from "@tanstack/react-router";
+import { RiSideBarLine as SidebarIcon } from "@remixicon/react";
 import { BrandLogo } from "@/components/brand-logo";
-import { Button, buttonVariants } from "@/components/ui/button";
+import { Button } from "@/components/ui/button";
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarHeader,
 } from "@/components/ui/sidebar";
 import { TooltipButton } from "@/components/tooltip-button";
@@ -17,7 +13,7 @@ import { selectSidebarBacklogItems } from "@/domain/backlog/backlog-item-lifecyc
 import { createSidebarMatcher } from "@/domain/backlog/sidebar-filter";
 import { isPullRequestReturned } from "@/domain/pull-requests/pull-request-lifecycle";
 import { getSectionPathname } from "@/features/backlog/backlog-item-search";
-import { getAppSection } from "@/features/layout/app-section";
+import { AppSidebarFooter } from "@/features/layout/sidebar-footer";
 import { SidebarBacklogList } from "@/features/layout/sidebar-backlog-list";
 import {
   SidebarPullRequests,
@@ -36,7 +32,6 @@ import {
   TimerDock,
   TodayTotal,
 } from "@/features/layout/timer-dock";
-import { CommitWeekButton } from "@/features/time/commit-week-button";
 import type { AppSidebarState } from "@/lib/app-sidebar";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
@@ -179,7 +174,6 @@ export function AppNavigationSidebar({
   const state = useLocalState();
   const now = useNow();
   const layout = useSidebarLayout();
-  const isSettingsActive = getAppSection(pathname) === "settings";
   // A backlog item opened from Time or Projects keeps that view selected.
   const sectionPathname = useRouterState({
     select: (router) =>
@@ -277,29 +271,7 @@ export function AppNavigationSidebar({
         </SidebarBacklogList>
       </SidebarContent>
 
-      {/* One row: Settings at the left, Commit week at the right. */}
-      <SidebarFooter className="flex-row items-center justify-between">
-        <TooltipButton
-          label="Settings"
-          shortcut="app.settings"
-          side="top"
-          render={
-            <Link
-              // The sidebar is wide-only, where /settings only redirects.
-              to="/settings/general"
-              aria-current={isSettingsActive ? "page" : undefined}
-              data-active={isSettingsActive}
-              className={cn(
-                buttonVariants({ variant: "ghost", size: "icon" }),
-                "ajour-app-sidebar-toggle",
-              )}
-            />
-          }
-        >
-          <Settings />
-        </TooltipButton>
-        <CommitWeekButton selectedTimeDate={selectedTimeDate} side="top" />
-      </SidebarFooter>
+      <AppSidebarFooter selectedTimeDate={selectedTimeDate} />
       <SidebarResizeHandle onStateChange={onStateChange} />
     </Sidebar>
   );

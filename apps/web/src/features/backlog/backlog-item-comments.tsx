@@ -98,6 +98,9 @@ const reactionNames: Record<BacklogReaction, string> = {
   eyes: "Eyes",
 };
 
+const commentActionClassName =
+  "hover:bg-foreground/10 aria-expanded:bg-foreground/20 active:bg-foreground/20 dark:hover:bg-foreground/10 dark:aria-expanded:bg-foreground/20 dark:active:bg-foreground/20";
+
 // The text of the newest page, held in memory only (ADR 0008).
 const firstPages = new Map<
   string,
@@ -818,6 +821,7 @@ function CommentItem({
                       <Button
                         variant="ghost"
                         size="icon-sm"
+                        className={commentActionClassName}
                         aria-label="Add a reaction"
                       />
                     }
@@ -846,6 +850,7 @@ function CommentItem({
                       <Button
                         variant="ghost"
                         size="icon-sm"
+                        className={commentActionClassName}
                         aria-label="Comment actions"
                       />
                     }
