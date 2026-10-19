@@ -15,7 +15,7 @@ Settings has three groups: **App**, **Work** and **Data**.
 | **Density**                     | **Comfortable** or **Compact** sidebar rows.                                                                                                           |
 | **Time capacity**               | The hours you plan to work each weekday. Defaults to 8 hours Monday to Friday.                                                                         |
 | **Hide non-working days**       | Hides days with 0 hours of capacity, such as weekends, from the day strip and the Week view. Time logged on them still counts. Off by default.         |
-| **Over-capacity warning**       | Flags days and weeks more than 50% over their capacity, such as a 13-hour day against 8 hours. On by default.                                          |
+| **Over-capacity warning**       | Flags days more than 50% over their capacity, such as a 13-hour day against 8 hours, and weeks over theirs. On by default.                             |
 | **Under-target submit warning** | Asks before **Submit week** locks a week behind its targets. On by default.                                                                            |
 | **Pace tolerance**              | How far, in percent, a week may be ahead of or behind its targets before **Submit week** or an agent asks you. 20 by default.                          |
 | **Update track**                | **Stable** or **Nightly**. See [Install Ajour](/start/install#updates).                                                                                |

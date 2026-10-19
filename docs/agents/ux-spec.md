@@ -268,7 +268,7 @@ Decided in [Adding and changing time in the week view](https://github.com/les-ca
 
 ### Over-capacity warning
 
-- While Settings › General › Over-capacity warning is on, a day or week total more than 50% over its capacity target shows a warning icon: past 12 hours on an 8-hour day, past 60 hours on a 40-hour week.
+- While Settings › General › Over-capacity warning is on, a day total more than 50% over its capacity target shows a warning icon: past 12 hours on an 8-hour day. The week total shows it once the week passes its target.
 - An hour or two past the target is a normal day and shows nothing. Hovering a total still shows its exact share of the target.
 
 ## Feedback

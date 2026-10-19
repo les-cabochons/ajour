@@ -16,9 +16,9 @@ const CAPACITY_KEYS = [
 ] as const;
 
 /**
- * A day or week is over capacity once its total passes 1.5 times its target.
- * Running an hour or so past the target is a normal day, so the Week view only
- * warns about time more than 50% over it.
+ * A day is far over capacity once its total passes 1.5 times its target. An
+ * hour or so past the target is a normal day, so the Week view warns only about
+ * a day more than 50% over it. The week total warns once it passes its target.
  */
 const FAR_OVER_CAPACITY_RATIO = 1.5;
 
@@ -162,9 +162,8 @@ export function selectWeeklyGridCell({
 export interface WeeklyTimeProjection {
   capacityMs: number;
   days: WeeklyDayProjection[];
-  /** More than 50% over the week's target. */
-  farOverCapacity: boolean;
   gridRows: WeeklyGridRow[];
+  overCapacity: boolean;
   totalMs: number;
 }
 
@@ -387,7 +386,6 @@ export function projectWeeklyTime({
   return {
     capacityMs,
     days: days.filter((day) => visibleDates.has(day.localDate)),
-    farOverCapacity: isFarOverCapacity(totalMs, capacityMs),
     gridRows: gridRows.map((row) => ({
       ...row,
       dayEntries: row.dayEntries.filter((_, index) =>
@@ -397,6 +395,7 @@ export function projectWeeklyTime({
         visibleDates.has(weekDates[index]!),
       ),
     })),
+    overCapacity: capacityMs > 0 && totalMs > capacityMs,
     totalMs,
   };
 }

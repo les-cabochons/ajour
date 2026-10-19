@@ -294,7 +294,7 @@ describe("weekly time projection", () => {
     });
     expect(projection).toMatchObject({
       capacityMs: 5,
-      farOverCapacity: true,
+      overCapacity: true,
       totalMs: 12,
     });
     expect(projection.gridRows).toEqual(
@@ -314,7 +314,7 @@ describe("weekly time projection", () => {
     ).toBe(false);
   });
 
-  it("is far over capacity only past 50% over the target", () => {
+  it("warns about a day only past 50% over its target, and a week past its target", () => {
     const HOUR = 3_600_000;
     const projectWeek = (dayHours: number[]) =>
       projectWeeklyTime({
@@ -350,7 +350,7 @@ describe("weekly time projection", () => {
       false,
       false,
     ]);
-    expect(usualWeek.farOverCapacity).toBe(false);
+    expect(usualWeek.overCapacity).toBe(true);
 
     const longDays = projectWeek([12, 12.5, 8, 8, 8, 1]);
     expect(longDays.days.map((day) => day.farOverCapacity)).toEqual([
@@ -363,8 +363,7 @@ describe("weekly time projection", () => {
       false,
     ]);
 
-    expect(projectWeek([12, 12, 12, 12, 12]).farOverCapacity).toBe(false);
-    expect(projectWeek([12, 12, 12, 12, 12.5]).farOverCapacity).toBe(true);
+    expect(projectWeek([8, 8, 8, 8, 8]).overCapacity).toBe(false);
   });
 
   it("lists each cell's entries without the running entry's saved part", () => {

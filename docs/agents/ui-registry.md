@@ -235,7 +235,7 @@ click or Enter on a card opens it in the side panel. Columns run to the bottom
 of the page, and a double-click on a column's header or empty space opens a
 new entry for that day, like its Add button. Normal headers show logged totals only;
 capacity target and utilization live in hover cards, with an optional compact
-warning once a total runs more than 50% over its target.
+warning once a day runs more than 50% over its target or the week passes its own.
 
 A submitted week (`domain/time/locked-weeks.ts`) shows `WeekLockChip` beside
 the week total. Its cards and Day rows do not drag or reorder, and its days'
