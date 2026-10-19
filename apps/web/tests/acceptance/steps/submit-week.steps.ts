@@ -54,7 +54,8 @@ Then(
       .getByRole("menuitem")
       .filter({ hasText: label });
     await expect(item).toHaveAttribute("aria-disabled", "true");
-    await expect(item).toContainText(reason);
+    // Menus show no reasons (#288); screen readers hear it as the description.
+    await expect(item).toHaveAttribute("aria-description", reason);
   },
 );
 

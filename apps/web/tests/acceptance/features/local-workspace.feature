@@ -208,6 +208,15 @@ Feature: Open the local time workspace
     When I undo with the toast button
     Then the "Code review" cell on Monday shows "1:00"
 
+  Scenario: Selected text in a Week Grid row name gets the system's edit menu
+    Given I have a week of saved entries
+    And the desktop app picks "Cancel" from its right-click menus
+    When I open the Week Grid
+    And I select and right-click the "Code review" row name
+    Then the desktop app showed no menu
+    When I right-click the "Code review" row name with nothing selected
+    Then the desktop menu lists "Delete row"
+
   Scenario: Delete an empty Week Grid row without confirmation
     Given I have a week of saved entries
     When I open the Week Grid

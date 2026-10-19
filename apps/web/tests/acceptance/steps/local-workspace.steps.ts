@@ -2260,6 +2260,9 @@ Then("the entry's action menu is open", async ({ page }) => {
   await expect(menu.getByRole("menuitem")).toHaveText([
     /^Edit(↩|Enter)$/,
     /^ContinueC$/,
+    /^Cut(⌘X|Ctrl\+X)$/,
+    /^Copy(⌘C|Ctrl\+C)$/,
+    /^Paste(⌘V|Ctrl\+V)$/,
     /^Duplicate(⌘D|Ctrl\+D)$/,
     /^Duplicate to…$/,
     /^Move to…M$/,
@@ -2964,6 +2967,34 @@ When("I add a Week Grid row without a task", async ({ page }) => {
     .click();
   await expect(weekGridCell(page, "No task", "Monday")).toBeVisible();
 });
+
+When(
+  "I select and right-click the {string} row name",
+  async ({ page }, task: string) => {
+    const name = weekGridRow(page, task)
+      .locator(".weekly-grid-task-name")
+      .getByText(task, { exact: true });
+    await name.evaluate((element) => {
+      const range = document.createRange();
+      range.selectNodeContents(element);
+      const selection = window.getSelection()!;
+      selection.removeAllRanges();
+      selection.addRange(range);
+    });
+    await name.click({ button: "right" });
+  },
+);
+
+When(
+  "I right-click the {string} row name with nothing selected",
+  async ({ page }, task: string) => {
+    await page.evaluate(() => window.getSelection()?.removeAllRanges());
+    await weekGridRow(page, task)
+      .locator(".weekly-grid-task-name")
+      .getByText(task, { exact: true })
+      .click({ button: "right" });
+  },
+);
 
 When(
   "I delete the {string} row from its name menu",

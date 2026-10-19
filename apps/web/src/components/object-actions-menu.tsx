@@ -1,6 +1,9 @@
 import * as React from "react";
 import { RiMoreLine as More } from "@remixicon/react";
-import type { ObjectAction } from "@/domain/actions/object-actions";
+import {
+  getObjectActionSections,
+  type ObjectAction,
+} from "@/domain/actions/object-actions";
 import { TooltipButton } from "@/components/tooltip-button";
 import { Button } from "@/components/ui/button";
 import {
@@ -18,7 +21,16 @@ import {
 } from "@/components/ui/dropdown-menu";
 import { FOCUS_ITEM_SELECTOR, type ActionKeys } from "@/lib/item-keys";
 import {
+  hasNativeContextMenu,
+  leavesContextMenuToSystem,
+  showNativeContextMenu,
+  trackMenuPresses,
+} from "@/lib/native-context-menu";
+import {
+  CLIPBOARD_KEYS,
+  formatAriaKeyChord,
   formatAriaKeyShortcuts,
+  formatKeyChord,
   formatShortcutKeys,
   getShortcut,
   getShortcutPlatform,
@@ -37,52 +49,83 @@ interface ObjectActionsProps<Id extends string> {
 
 const platform = getShortcutPlatform();
 
-/** Renders one action set as menu items. Shared by the "…" menu and the right-click menu. */
+/**
+ * The key a menu item shows for `action` and its `aria-keyshortcuts` value:
+ * the system's key for Cut, Copy and Paste, else the action's shortcut.
+ */
+function getActionKeyLabel<Id extends string>(
+  action: ObjectAction<Id>,
+  keys: ActionKeys<Id> | undefined,
+) {
+  if (action.clipboard) {
+    const chord = CLIPBOARD_KEYS[action.clipboard];
+    return {
+      label: formatKeyChord(chord, platform),
+      aria: formatAriaKeyChord(chord, platform),
+    };
+  }
+
+  const shortcutId = keys?.[action.id];
+  if (!shortcutId) {
+    return undefined;
+  }
+
+  const shortcut = getShortcut(shortcutId);
+  return {
+    label: formatShortcutKeys(shortcut, platform).join(" "),
+    aria: formatAriaKeyShortcuts(shortcut, platform),
+  };
+}
+
+/**
+ * Renders one action set as menu items, with a line between its sections (see
+ * `getObjectActionSections`). Shared by the "…" menu and the browser's
+ * right-click menu; the desktop app draws right-click menus natively. A
+ * disabled action is greyed out; only screen readers hear its reason.
+ */
 export function ObjectActionItems<Id extends string>({
   actions,
   onAction,
   keys,
 }: ObjectActionsProps<Id>) {
-  return actions.map((action, index) => {
-    const startsDestructiveGroup =
-      action.destructive && index > 0 && !actions[index - 1]?.destructive;
-    const detail = action.disabledReason ?? action.hint;
-    const shortcut = keys?.[action.id]
-      ? getShortcut(keys[action.id]!)
-      : undefined;
-    return (
-      <React.Fragment key={action.id}>
-        {startsDestructiveGroup ? <DropdownMenuSeparator /> : null}
-        <DropdownMenuItem
-          variant={action.destructive ? "destructive" : "default"}
-          disabled={Boolean(action.disabledReason)}
-          aria-keyshortcuts={
-            shortcut ? formatAriaKeyShortcuts(shortcut, platform) : undefined
-          }
-          onClick={(event) => {
-            event.stopPropagation();
-            onAction(action.id);
-          }}
-          className="flex-col items-stretch gap-0"
-        >
-          <span className="flex items-center gap-6">
-            <span>{action.label}</span>
-            {shortcut ? (
-              // aria-keyshortcuts tells screen readers; the label stays the name.
-              <DropdownMenuShortcut aria-hidden="true">
-                {formatShortcutKeys(shortcut, platform).join(" ")}
-              </DropdownMenuShortcut>
-            ) : null}
-          </span>
-          {detail ? (
-            <span className="text-xs font-normal text-muted-foreground">
-              {detail}
+  return getObjectActionSections(actions).map((section, index) => (
+    <React.Fragment key={section[0]!.id}>
+      {index > 0 ? <DropdownMenuSeparator /> : null}
+      {section.map((action) => {
+        const detail = action.disabledReason ? undefined : action.hint;
+        const keyLabel = getActionKeyLabel(action, keys);
+        return (
+          <DropdownMenuItem
+            key={action.id}
+            variant={action.destructive ? "destructive" : "default"}
+            disabled={Boolean(action.disabledReason)}
+            aria-description={action.disabledReason}
+            aria-keyshortcuts={keyLabel?.aria}
+            onClick={(event) => {
+              event.stopPropagation();
+              onAction(action.id);
+            }}
+            className="flex-col items-stretch gap-0"
+          >
+            <span className="flex items-center gap-6">
+              <span>{action.label}</span>
+              {keyLabel ? (
+                // aria-keyshortcuts tells screen readers; the label stays the name.
+                <DropdownMenuShortcut aria-hidden="true">
+                  {keyLabel.label}
+                </DropdownMenuShortcut>
+              ) : null}
             </span>
-          ) : null}
-        </DropdownMenuItem>
-      </React.Fragment>
-    );
-  });
+            {detail ? (
+              <span className="text-xs font-normal text-muted-foreground">
+                {detail}
+              </span>
+            ) : null}
+          </DropdownMenuItem>
+        );
+      })}
+    </React.Fragment>
+  ));
 }
 
 /**
@@ -167,20 +210,26 @@ export function ObjectActionsButton<Id extends string>({
   );
 }
 
-/**
- * Opens an object's action set on right-click. `render` is the element that receives
- * the right-click, such as a table row or a card; its props are merged by Base UI.
- */
-export function ObjectContextMenu<Id extends string>({
-  actions,
-  onAction,
-  keys,
-  render,
-  children,
-}: ObjectActionsProps<Id> & {
+type ObjectContextMenuProps<Id extends string> = ObjectActionsProps<Id> & {
   render: React.ReactElement;
   children?: React.ReactNode;
-}) {
+};
+
+const nativeContextMenu = hasNativeContextMenu();
+
+/**
+ * Opens an object's action set on right-click. `render` is the element that receives
+ * the right-click, such as a table row or a card. The desktop app shows the system's
+ * own menu; the browser shows the Base UI menu, which merges its props into `render`.
+ */
+export function ObjectContextMenu<Id extends string>(
+  props: ObjectContextMenuProps<Id>,
+) {
+  if (nativeContextMenu) {
+    return <NativeObjectContextMenu {...props} />;
+  }
+
+  const { actions, onAction, keys, render, children } = props;
   return (
     <ContextMenu>
       <ContextMenuTrigger render={render}>{children}</ContextMenuTrigger>
@@ -189,4 +238,56 @@ export function ObjectContextMenu<Id extends string>({
       </ContextMenuContent>
     </ContextMenu>
   );
+}
+
+/**
+ * The desktop right-click menu. A right-click in a text field or on selected
+ * text inside `render` is left to the system's edit menu (Cut, Copy, Paste), and
+ * `render`'s own handler does not run. The menu pops up after the render that
+ * the right-click causes, so it lists the actions of the selection that
+ * `render`'s own handler has just made.
+ */
+function NativeObjectContextMenu<Id extends string>({
+  actions,
+  onAction,
+  keys,
+  render,
+  children,
+}: ObjectContextMenuProps<Id>) {
+  const [request, setRequest] = React.useState<{ x: number; y: number }>();
+  const latest = React.useRef({ actions, onAction, keys });
+  React.useLayoutEffect(() => {
+    latest.current = { actions, onAction, keys };
+  });
+
+  React.useEffect(() => {
+    trackMenuPresses();
+  }, []);
+
+  React.useEffect(() => {
+    if (!request) return;
+    const { actions: shown, keys: shownKeys } = latest.current;
+    void showNativeContextMenu(shown, shownKeys, request).then((id) => {
+      if (id !== null) latest.current.onAction(id);
+    });
+  }, [request]);
+
+  const element = render as React.ReactElement<
+    React.HTMLAttributes<HTMLElement>
+  >;
+  const handleContextMenu = (event: React.MouseEvent<HTMLElement>) => {
+    if (leavesContextMenuToSystem(event.nativeEvent)) return;
+    element.props.onContextMenu?.(event);
+    event.preventDefault();
+    event.stopPropagation();
+    setRequest({ x: event.clientX, y: event.clientY });
+  };
+
+  return children === undefined
+    ? React.cloneElement(element, { onContextMenu: handleContextMenu })
+    : React.cloneElement(
+        element,
+        { onContextMenu: handleContextMenu },
+        children,
+      );
 }

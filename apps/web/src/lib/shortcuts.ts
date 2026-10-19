@@ -10,6 +10,7 @@
 
 // Type-only, so this module stays free of runtime imports: the desktop menu
 // tests load it outside the web app's path aliases.
+import type { ClipboardCommand } from "@/domain/actions/object-actions";
 import type { PinnedTaskSlot } from "@/domain/local-state";
 
 export type ShortcutPlatform = "mac" | "other";
@@ -574,8 +575,18 @@ const NAMED_KEY_LABELS: Record<string, Record<ShortcutPlatform, string>> = {
   " ": { mac: "Space", other: "Space" },
 };
 
+/**
+ * The system's Cut, Copy and Paste keys. The browser runs them, so they are not
+ * in the registry. Menus show them next to an object's clipboard actions.
+ */
+export const CLIPBOARD_KEYS: Readonly<Record<ClipboardCommand, KeyChord>> = {
+  cut: { key: "x", mod: true },
+  copy: { key: "c", mod: true },
+  paste: { key: "v", mod: true },
+};
+
 /** One key chord's label, such as "⌘B", "Ctrl+B", "⌥↑" or "Shift+F10". */
-function formatKeyChord(chord: KeyChord, platform: ShortcutPlatform) {
+export function formatKeyChord(chord: KeyChord, platform: ShortcutPlatform) {
   const key =
     NAMED_KEY_LABELS[chord.key]?.[platform] ??
     (isNamedKey(chord.key) ? chord.key : chord.key.toUpperCase());
@@ -652,17 +663,23 @@ export function formatAriaKeyShortcuts(
   }
 
   return [chord, ...(shortcut.alternateKeys ?? [])]
-    .map((keyChord) =>
-      [
-        keyChord.mod && (platform === "mac" ? "Meta" : "Control"),
-        keyChord.alt && "Alt",
-        keyChord.shift && "Shift",
-        isNamedKey(keyChord.key) ? keyChord.key : keyChord.key.toUpperCase(),
-      ]
-        .filter(Boolean)
-        .join("+"),
-    )
+    .map((keyChord) => formatAriaKeyChord(keyChord, platform))
     .join(" ");
+}
+
+/** The `aria-keyshortcuts` value for one chord, such as "Meta+C". */
+export function formatAriaKeyChord(
+  chord: KeyChord,
+  platform: ShortcutPlatform,
+) {
+  return [
+    chord.mod && (platform === "mac" ? "Meta" : "Control"),
+    chord.alt && "Alt",
+    chord.shift && "Shift",
+    isNamedKey(chord.key) ? chord.key : chord.key.toUpperCase(),
+  ]
+    .filter(Boolean)
+    .join("+");
 }
 
 export function getShortcut(id: ShortcutActionId): ShortcutDefinition {

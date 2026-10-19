@@ -108,6 +108,7 @@ The backlog editor module is feature-local because its vocabulary and commands b
   `apps/desktop/electron/plugin-catalog-seed.cjs`
 - Catalog refresh persistence: `apps/desktop/electron/plugin-catalog-settings.cjs`
 - Application menu per platform and build type: `apps/desktop/electron/app-menu.cjs`.
+- Native right-click menus: `apps/desktop/electron/context-menu.cjs` validates the renderer's items and builds the object and edit menu templates; `apps/web/src/lib/native-context-menu.ts` turns an action set into those items.
   Action items send shortcut registry ids to the renderer over
   `ajour:menu-action`; role items run Electron roles in main. The renderer key
   listener stays the one binding path for registry keys. Single keys never

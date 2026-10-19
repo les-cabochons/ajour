@@ -16,7 +16,7 @@ Decided in [Action model for entries, timers, projects, tasks and work items](ht
    - keyboard shortcuts on the focused object,
    - the command palette (Cmd+K), acting on the focused object,
    - the Electron menu bar.
-2. Kind decides which actions the set lists. State decides which of them are enabled. A disabled action stays in the menu with a short reason, for example "Duplicate · Stop the timer first". An action that never applies to a kind is not listed for it.
+2. Kind decides which actions the set lists. State decides which of them are enabled. A disabled action stays in the menu, greyed out. Menus do not say why (decided in [#288](https://github.com/les-cabochons/ajour/issues/288)); screen readers hear the reason as the item's description, and the command palette and disabled buttons still show it, for example "Stop the running entry first". An action that never applies to a kind is not listed for it.
 3. Some actions swap with a state counterpart in the same slot: Continue and Stop, Delete and Discard, Archive and Restore.
 4. Delete, Discard and Archive come last and use the destructive style.
 5. Every action has a shortcut slot. The keyboard section assigns the keys.
@@ -28,6 +28,8 @@ Decided in [Action model for entries, timers, projects, tasks and work items](ht
 9. Exception to rule 2: Mark as not committed is listed on committed entries only. Listed and disabled on every other entry, it would add a line to most menus for a rare repair.
 
 10. Time entry rows and cards (Day rows, Days cards and the Grid cell list) have no "…" button. Right-click and the menu keys open their action set. Day rows show Continue at their end, and the running row shows Stop in the same slot.
+
+11. Exception to rule 1: Cut, Copy and Paste are listed only in the menus of Day rows and Days cards, where entries can be selected. Grid cells and editors do not list them.
 
 ### Time entry
 
@@ -76,6 +78,21 @@ Changed in [#69](https://github.com/les-cabochons/ajour/issues/69). See the Back
 - A settled item disables Snooze… and Pin: "Unsettle the item first".
 - A subitem disables Add subitem: "Subitems can't have subitems".
 - Delete removes the item's subitems too, and its label states the count, for example "Delete (and 2 subitems)".
+
+### Right-click menus
+
+Decided in [Native right-click menus with groups and Cut, Copy, Paste](https://github.com/les-cabochons/ajour/issues/288).
+
+- A menu draws a line between groups of related actions. Each action set names its groups (`group` in `domain/actions/object-actions.ts`), and the destructive actions at the end share the last one:
+  - time entry: Edit · Continue/Stop | Cut · Copy · Paste | Duplicate · Duplicate to… · Move to… · Mark as not committed | Delete/Discard
+  - backlog item: Start entry/Stop · New entry… | Edit · Add subitem | Snooze… · Pin · Settle | Change source state… · Open in source | Archive · Delete
+  - task: Start entry · New entry… | Edit · Assign shortcut… | Archive/Restore
+  - project: Edit · New task | Archive/Restore
+  - calendar suggestion: Add · Choose project… | Dismiss · Hide this meeting · Forget this meeting
+  - pull request: Open in the provider | Settle · Snooze…
+- The desktop app shows right-click menus with the system's menus: an NSMenu on macOS, and Electron's menus styled for the platform on Windows and Linux, as T3 Code does. They follow Ajour's theme, not only the system's. Each item shows its key and nothing else: no reason, no hint. macOS puts a bin before Delete and Discard and a box before Archive. The browser keeps Ajour's own menu, and the "…" menus stay Ajour's own everywhere.
+- A right-click in a text field, or on selected text, opens the system's edit menu: Cut, Copy, Paste, then Select all, after spelling suggestions and Copy link when they apply. A text field inside a row or card gets this menu, not the object's. A right-click anywhere else that no object claims opens nothing.
+- Day rows and Days cards list Cut, Copy and Paste after Continue, with ⌘X, ⌘C and ⌘V (rule 11). They act as those keys do (see "Selecting, copying and pasting entries"). Paste is disabled until entries are copied.
 
 ### Decided elsewhere
 
@@ -387,7 +404,7 @@ Decided in the 2026-10-16 grilling of the selection feature: [Entry selection ac
 - Selection-wide actions apply to every selected entry with one Undo: Delete, Copy, Cut, Drag (reorder and move), Move to…, Duplicate, Duplicate to… and Mark as not committed. Their keys (Delete, Cmd+C, Cmd+X, M, D) follow the selection even when focus sits on an entry Cmd+click just deselected.
 - Single-subject actions apply to the focused entry only: Edit, Continue, Stop and Discard. Their keys (Enter, C, S) follow focus.
 - The running entry is skipped by every selection-wide action and stays where it is. The toast counts only what moved: "Moved 2 entries".
-- On a selection of two or more, the right-click menu of a selected entry pluralizes the selection-wide actions with the count ("Delete 3 entries", "Move 3 entries to…", "Duplicate 3 entries", "Mark 3 entries as not committed") and hides the single-subject ones.
+- On a selection of two or more, the right-click menu of a selected entry pluralizes the selection-wide actions with the count ("Cut 3 entries", "Copy 3 entries", "Delete 3 entries", "Move 3 entries to…", "Duplicate 3 entries", "Mark 3 entries as not committed") and hides the single-subject ones.
 - Move to… and Duplicate to… open their date dialog once, titled "Move 3 entries" or "Duplicate 3 entries". Every selected entry lands on the chosen day at its end in reading order. Duplicate (D) puts each copy at the end of its own entry's day, in reading order, with "Duplicated 3 entries". Mark as not committed marks every committed entry in the selection.
 - Delete goes straight through with one Undo toast naming the count. No confirmation dialog.
 
@@ -407,6 +424,7 @@ Decided in the 2026-10-16 grilling of the selection feature: [Entry selection ac
 - Ajour listens to the browser's copy, cut and paste events, so the desktop Edit menu works too, and text fields keep their own clipboard. The entries stay in memory, and their text summary goes on the system clipboard. Cmd+V pastes entries only while the system clipboard still holds that summary.
 - Cut entries stay dimmed until the paste moves them, like Move to…. Copies are new entries, which the Commit page lists as added. Pasted entries go to the end of their day in reading order.
 - Cmd+V on the Day view pastes on the shown day. On the Week view each entry keeps its weekday in the shown week. A right-click on a Days column's empty space offers Paste here and Paste on same weekdays.
+- Paste from a menu (an entry's Paste, Paste here and Paste on same weekdays) also pastes only while the system clipboard holds the summary. Where the page may not read the clipboard, as in a browser that refuses, it pastes Ajour's copy.
 
 ### Command palette
 

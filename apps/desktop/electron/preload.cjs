@@ -1,5 +1,19 @@
 const { contextBridge, ipcRenderer } = require("electron");
 
+// The edit menu's Copy on selected text. The page copies the focused entries on
+// any copy event, so this one copy skips the page's listeners and stays the
+// browser's own copy, with formatting and links. The pass is in place before
+// the copy is asked for, and goes after that copy or a second.
+ipcRenderer.on("ajour:copy-selection", () => {
+  const passToBrowser = (event) => event.stopImmediatePropagation();
+  window.addEventListener("copy", passToBrowser, { capture: true, once: true });
+  setTimeout(
+    () => window.removeEventListener("copy", passToBrowser, { capture: true }),
+    1000,
+  );
+  ipcRenderer.send("ajour:run-edit-command", "copy");
+});
+
 contextBridge.exposeInMainWorld("ajourDesktop", {
   bootstrapLocalState: ipcRenderer.sendSync("ajour:get-bootstrap-local-state"),
   runtime: ipcRenderer.sendSync("ajour:get-runtime-info"),
@@ -10,6 +24,11 @@ contextBridge.exposeInMainWorld("ajourDesktop", {
     return () => ipcRenderer.removeListener("ajour:menu-action", listener);
   },
   runMenuItem: (itemId) => ipcRenderer.send("ajour:run-menu-item", itemId),
+  showContextMenu: (items, position) =>
+    ipcRenderer.invoke("ajour:show-context-menu", items, position),
+  runEditCommand: (command) =>
+    ipcRenderer.send("ajour:run-edit-command", command),
+  setThemeSource: (mode) => ipcRenderer.send("ajour:set-theme-source", mode),
   setWindowChromeTheme: (theme) =>
     ipcRenderer.send("ajour:set-window-chrome-theme", theme),
   checkForUpdates: (track) =>

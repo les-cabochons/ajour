@@ -26,3 +26,15 @@ export async function copyTextToClipboard(value: string): Promise<boolean> {
     document.body.removeChild(textarea);
   }
 }
+
+/**
+ * Reads the system clipboard's text, or undefined where the page may not read
+ * it: the API is missing, or the browser or the user refused.
+ */
+export async function readTextFromClipboard(): Promise<string | undefined> {
+  try {
+    return await navigator.clipboard?.readText();
+  } catch {
+    return undefined;
+  }
+}

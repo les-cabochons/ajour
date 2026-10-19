@@ -8,18 +8,56 @@
 export interface ObjectAction<Id extends string = string> {
   id: Id;
   label: string;
+  /**
+   * The run of related actions this one belongs to. Menus draw a line where the
+   * group changes (see `getObjectActionSections`).
+   */
+  group?: string;
   /** Destructive actions come last and use the destructive style. */
   destructive?: boolean;
+  /** Set on the object's Cut, Copy and Paste, so menus show the system's keys. */
+  clipboard?: ClipboardCommand;
   /** Present when the action is listed but unavailable in the current state. */
   disabledReason?: string;
   /** A side effect worth knowing before choosing the action. */
   hint?: string;
 }
 
+export type ClipboardCommand = "cut" | "copy" | "paste";
+
+/**
+ * Splits an action set into the sections a menu separates with a line. A
+ * section starts where the group changes. The destructive actions at the end
+ * (Delete, Discard, Archive) share one last section, whatever their groups.
+ */
+export function getObjectActionSections<Action extends ObjectAction>(
+  actions: readonly Action[],
+): Action[][] {
+  const sections: Action[][] = [];
+  for (const action of actions) {
+    const section = sections.at(-1);
+    const previous = section?.at(-1);
+    const continuesSection =
+      previous !== undefined &&
+      (action.destructive
+        ? previous.destructive
+        : !previous.destructive && action.group === previous.group);
+    if (section && continuesSection) {
+      section.push(action);
+    } else {
+      sections.push([action]);
+    }
+  }
+  return sections;
+}
+
 export type TimeEntryActionId =
   | "edit"
   | "continue"
   | "stop"
+  | "cut"
+  | "copy"
+  | "paste"
   | "duplicate"
   | "duplicate-to"
   | "move-to"
@@ -34,7 +72,7 @@ export type CalendarSuggestionActionId =
   "add" | "choose-project" | "dismiss" | "hide-meeting" | "forget-meeting";
 
 /**
- * Lists a calendar suggestion's actions: Add · Choose project… · Dismiss ·
+ * Lists a calendar suggestion's actions: Add · Choose project… | Dismiss ·
  * Hide this meeting · Forget this meeting. The copy says meeting, never rule.
  */
 export function getCalendarSuggestionActions(suggestion: {
@@ -49,20 +87,23 @@ export function getCalendarSuggestionActions(suggestion: {
     {
       id: "add",
       label: "Add",
+      group: "add",
       disabledReason: suggestion.projectId
         ? undefined
         : "Choose a project first",
     },
-    { id: "choose-project", label: "Choose project…" },
-    { id: "dismiss", label: "Dismiss" },
+    { id: "choose-project", label: "Choose project…", group: "add" },
+    { id: "dismiss", label: "Dismiss", group: "hide" },
     {
       id: "hide-meeting",
       label: "Hide this meeting",
+      group: "hide",
       disabledReason: recurringReason,
     },
     {
       id: "forget-meeting",
       label: "Forget this meeting",
+      group: "hide",
       disabledReason:
         recurringReason ??
         (suggestion.ruleId ? undefined : "Nothing remembered yet"),
@@ -86,9 +127,10 @@ export interface TimeEntryActionOptions {
 const STOP_RUNNING_FIRST = "Stop the running entry first";
 
 /**
- * Lists a time entry's actions: Edit · Continue/Stop · Duplicate · Duplicate to… ·
- * Move to… · Mark as not committed · Delete/Discard. Only committed entries list
- * Mark as not committed.
+ * Lists a time entry's actions: Edit · Continue/Stop | Duplicate · Duplicate to… ·
+ * Move to… · Mark as not committed | Delete/Discard. Only committed entries list
+ * Mark as not committed. Where entries can be selected, the menus add Cut · Copy
+ * · Paste after Continue (`addTimeEntryClipboardActions`).
  */
 export function getTimeEntryActions(
   state: TimeEntryActionState,
@@ -103,29 +145,34 @@ export function getTimeEntryActions(
     {
       id: "edit",
       label: "Edit",
+      group: "open",
       disabledReason: options.isEditing ? "Already editing" : undefined,
     },
     isRunning
-      ? { id: "stop", label: "Stop" }
+      ? { id: "stop", label: "Stop", group: "open" }
       : {
           id: "continue",
           label: "Continue",
+          group: "open",
           // Editors save the draft before continuing, so an invalid draft blocks it.
           disabledReason: options.invalidDraftReason,
         },
     {
       id: "duplicate",
       label: "Duplicate",
+      group: "place",
       disabledReason: options.lockedReason ?? relocationReason,
     },
     {
       id: "duplicate-to",
       label: "Duplicate to…",
+      group: "place",
       disabledReason: relocationReason,
     },
     {
       id: "move-to",
       label: "Move to…",
+      group: "place",
       disabledReason: options.lockedReason ?? relocationReason,
     },
     ...(state === "committed"
@@ -133,6 +180,7 @@ export function getTimeEntryActions(
           {
             id: "mark-not-committed" as const,
             label: "Mark as not committed",
+            group: "place",
             disabledReason: options.lockedReason,
           },
         ]
@@ -166,7 +214,7 @@ export const TIME_ENTRY_SELECTION_ACTION_IDS: ReadonlySet<TimeEntryActionId> =
 /**
  * Lists the actions of a selection of two or more entries, named with how many
  * entries each acts on: Duplicate 3 entries · Duplicate 3 entries to… · Move 3
- * entries to… · Mark 2 entries as not committed · Delete 3 entries. Edit,
+ * entries to… · Mark 2 entries as not committed | Delete 3 entries. Edit,
  * Continue, Stop and Discard need one entry, so they are not listed. `saved`
  * counts the selected saved entries, without the running entry, which every
  * selection action skips; `committed` counts the committed ones among them.
@@ -188,16 +236,19 @@ export function getTimeEntrySelectionActions({
     {
       id: "duplicate",
       label: `Duplicate ${entries}`,
+      group: "place",
       disabledReason: reason ?? lockedReason,
     },
     {
       id: "duplicate-to",
       label: `Duplicate ${entries} to…`,
+      group: "place",
       disabledReason: reason,
     },
     {
       id: "move-to",
       label: `Move ${entries} to…`,
+      group: "place",
       disabledReason: reason ?? lockedReason,
     },
     ...(committed > 0
@@ -205,6 +256,7 @@ export function getTimeEntrySelectionActions({
           {
             id: "mark-not-committed" as const,
             label: `Mark ${formatEntryCount(committed)} as not committed`,
+            group: "place",
             disabledReason: lockedReason,
           },
         ]
@@ -215,6 +267,69 @@ export function getTimeEntrySelectionActions({
       destructive: true,
       disabledReason: reason ?? lockedReason,
     },
+  ];
+}
+
+/** The reason Paste is disabled until entries are copied or cut. */
+export const PASTE_NEEDS_ENTRIES = "Copy or cut entries first";
+
+/**
+ * Adds Cut · Copy · Paste as their own group after the entry's first group (Edit
+ * and Continue), or first on a selection's menu. `saved` counts the entries a cut
+ * or copy takes, without the running entry, and `selected` the entries the menu
+ * acts on: a selection of two or more names its count, as in "Copy 3 entries".
+ * On a submitted week, `lockedReason` disables Cut, which moves the entries,
+ * and `pasteLockedReason` disables Paste when it would land in one. Copy
+ * changes nothing, so it stays.
+ */
+export function addTimeEntryClipboardActions(
+  actions: readonly ObjectAction<TimeEntryActionId>[],
+  {
+    saved,
+    selected,
+    canPaste,
+    lockedReason,
+    pasteLockedReason,
+  }: {
+    saved: number;
+    selected: number;
+    canPaste: boolean;
+    lockedReason?: string;
+    pasteLockedReason?: string;
+  },
+): ObjectAction<TimeEntryActionId>[] {
+  const count = selected >= 2 ? ` ${formatEntryCount(saved)}` : "";
+  const reason = saved === 0 ? STOP_RUNNING_FIRST : undefined;
+  const clipboardActions: ObjectAction<TimeEntryActionId>[] = [
+    {
+      id: "cut",
+      label: `Cut${count}`,
+      group: "clipboard",
+      clipboard: "cut",
+      disabledReason: reason ?? lockedReason,
+    },
+    {
+      id: "copy",
+      label: `Copy${count}`,
+      group: "clipboard",
+      clipboard: "copy",
+      disabledReason: reason,
+    },
+    {
+      id: "paste",
+      label: "Paste",
+      group: "clipboard",
+      clipboard: "paste",
+      disabledReason:
+        pasteLockedReason ?? (canPaste ? undefined : PASTE_NEEDS_ENTRIES),
+    },
+  ];
+  const at = actions.findIndex((action) => action.group !== "open");
+  const index = at === -1 ? actions.length : at;
+  return [
+    ...actions.slice(0, index),
+    ...clipboardActions,
+    ...actions.slice(index),
   ];
 }
 
@@ -243,10 +358,15 @@ export function getProjectActions(project: {
   const reason = isArchived ? RESTORE_PROJECT_FIRST : undefined;
 
   return [
-    { id: "edit", label: "Edit", disabledReason: reason },
-    { id: "new-task", label: "New task", disabledReason: reason },
+    { id: "edit", label: "Edit", group: "edit", disabledReason: reason },
+    {
+      id: "new-task",
+      label: "New task",
+      group: "edit",
+      disabledReason: reason,
+    },
     isArchived
-      ? { id: "restore", label: "Restore" }
+      ? { id: "restore", label: "Restore", group: "archive" }
       : { id: "archive", label: "Archive", destructive: true },
   ];
 }
@@ -261,7 +381,7 @@ export type TaskActionId =
 
 /**
  * Lists a task's actions:
- * Start entry · New entry… · Edit · Assign shortcut… · Archive/Restore.
+ * Start entry · New entry… | Edit · Assign shortcut… | Archive/Restore.
  * An archived project blocks every action, including Restore of the task.
  */
 export function getTaskActions(
@@ -275,16 +395,32 @@ export function getTaskActions(
     projectReason ?? (isTaskArchived ? RESTORE_TASK_FIRST : undefined);
 
   return [
-    { id: "start-entry", label: "Start entry", disabledReason: workReason },
-    { id: "new-entry", label: "New entry…", disabledReason: workReason },
-    { id: "edit", label: "Edit", disabledReason: workReason },
+    {
+      id: "start-entry",
+      label: "Start entry",
+      group: "track",
+      disabledReason: workReason,
+    },
+    {
+      id: "new-entry",
+      label: "New entry…",
+      group: "track",
+      disabledReason: workReason,
+    },
+    { id: "edit", label: "Edit", group: "edit", disabledReason: workReason },
     {
       id: "assign-shortcut",
       label: "Assign shortcut…",
+      group: "edit",
       disabledReason: workReason,
     },
     isTaskArchived
-      ? { id: "restore", label: "Restore", disabledReason: projectReason }
+      ? {
+          id: "restore",
+          label: "Restore",
+          group: "archive",
+          disabledReason: projectReason,
+        }
       : {
           id: "archive",
           label: "Archive",
@@ -342,9 +478,9 @@ function formatDeleteLabel(subitemCount: number) {
 
 /**
  * Lists a backlog item's actions:
- * Start entry/Stop · New entry… · Edit · Add subitem · Snooze…/Unsnooze ·
- * Pin/Unpin · Settle/Unsettle/Restore · Change source state… · Open in
- * source · Archive · Delete.
+ * Start entry/Stop · New entry… | Edit · Add subitem | Snooze…/Unsnooze ·
+ * Pin/Unpin · Settle/Unsettle/Restore | Change source state… · Open in
+ * source | Archive · Delete.
  *
  * Open in source is listed only when a plugin provided the item's URL.
  * Archive is listed only for synced items: it archives in Ajour and leaves the
@@ -365,51 +501,62 @@ export function getBacklogItemActions(
   const actions: ObjectAction<BacklogItemActionId>[] = [
     // Stop takes Start entry's slot while the item's entry runs.
     options.isRunning
-      ? { id: "stop-entry", label: "Stop" }
+      ? { id: "stop-entry", label: "Stop", group: "track" }
       : {
           id: "start-entry",
           label: "Start entry",
+          group: "track",
           disabledReason: archivedReason,
         },
-    { id: "new-entry", label: "New entry…", disabledReason: archivedReason },
+    {
+      id: "new-entry",
+      label: "New entry…",
+      group: "track",
+      disabledReason: archivedReason,
+    },
     {
       id: "edit",
       label: "Edit",
+      group: "edit",
       disabledReason:
         archivedReason ?? (options.isEditing ? "Already editing" : undefined),
     },
     {
       id: "add-subitem",
       label: "Add subitem",
+      group: "edit",
       disabledReason: options.isSubitem
         ? "Subitems can't have subitems"
         : archivedReason,
     },
     options.isSnoozed
-      ? { id: "unsnooze", label: "Unsnooze" }
+      ? { id: "unsnooze", label: "Unsnooze", group: "triage" }
       : {
           id: "snooze",
           label: "Snooze…",
+          group: "triage",
           disabledReason:
             archivedReason ??
             (isSettled ? "Unsettle the item first" : undefined),
         },
     item.pinnedAt !== undefined
-      ? { id: "unpin", label: "Unpin" }
+      ? { id: "unpin", label: "Unpin", group: "triage" }
       : {
           id: "pin",
           label: "Pin",
+          group: "triage",
           disabledReason:
             archivedReason ??
             (isSettled ? "Unsettle the item first" : undefined),
         },
     isArchived
-      ? { id: "restore", label: "Restore" }
+      ? { id: "restore", label: "Restore", group: "triage" }
       : isSettled
-        ? { id: "unsettle", label: "Unsettle" }
+        ? { id: "unsettle", label: "Unsettle", group: "triage" }
         : {
             id: "settle",
             label: options.settleOpensDialog ? "Settle…" : "Settle",
+            group: "triage",
           },
   ];
 
@@ -417,6 +564,7 @@ export function getBacklogItemActions(
     actions.push({
       id: "change-source-state",
       label: "Change source state…",
+      group: "source",
       disabledReason: archivedReason,
     });
   }
@@ -432,6 +580,7 @@ export function getBacklogItemActions(
     actions.push({
       id: "open-in-source",
       label: `Open in ${sourceName}`,
+      group: "source",
       hint: "Ctrl-click or Cmd-click",
     });
   }

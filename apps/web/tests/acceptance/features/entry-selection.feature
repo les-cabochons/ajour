@@ -96,7 +96,27 @@ Feature: Select time entries like a file explorer
     And I click the "API" entry
     And I Cmd-click the "Login form" entry
     And I right-click the "API" entry
-    Then the menu lists "Duplicate 2 entries", "Duplicate 2 entries to…", "Move 2 entries to…", "Delete 2 entries"
+    Then the menu lists "Cut 2 entries", "Copy 2 entries", "Paste", "Duplicate 2 entries", "Duplicate 2 entries to…", "Move 2 entries to…", "Delete 2 entries"
+
+  Scenario: The desktop menu lists the actions of the entry under the pointer
+    Given I have a week of saved entries
+    And the desktop app picks "Delete" from its right-click menus
+    When I open Monday's Day list
+    And I click the "API" entry
+    And I Cmd-click the "Login form" entry
+    And I right-click the "Code review" entry
+    Then the desktop menu lists "Edit", "Continue", "Cut", "Copy", "Paste", "Duplicate", "Duplicate to…", "Move to…", "Delete"
+    And the Day list reads "Login form", "API"
+    And a toast says "Entry deleted"
+
+  Scenario: Selected text gets the system's edit menu, not the entry's
+    Given I have a week of saved entries
+    And the desktop app picks "Delete" from its right-click menus
+    When I open Monday's Day list
+    And I select the text "API" in its entry
+    And I right-click the selected text "API"
+    Then the desktop app showed no menu
+    And the Day list reads "Login form", "API", "Code review"
 
   Scenario: M moves every selected entry to the chosen day
     Given I have a week of saved entries
