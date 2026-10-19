@@ -673,6 +673,12 @@ export function SettingsPluginsPage({ pluginId }: { pluginId?: string }) {
             will refresh when the index is reachable.
           </MessagePanel>
         ) : null}
+        {catalog?.skippedPluginIds?.length ? (
+          <MessagePanel>
+            This version of Ajour can't read these catalog entries:{" "}
+            {catalog.skippedPluginIds.join(", ")}. Update Ajour to see them.
+          </MessagePanel>
+        ) : null}
         {catalogError ? (
           // The web build has no catalog: that is a notice, not a failure.
           <MessagePanel tone={isDesktopShell ? "warning" : "default"}>

@@ -26,6 +26,12 @@ Feature: Browse plugin capabilities
     When I select the "Agent tasks" plugin filter
     Then the Workday agent is the only catalog entry and offers a download
 
+  Scenario: Say which catalog entries need a newer Ajour
+    Given the catalog skipped an entry this Ajour cannot read
+    When I open the plugins catalog
+    Then the catalog says "This version of Ajour can't read these catalog entries: future-plugin. Update Ajour to see them."
+    And the catalog does not say it was loaded from its local cache
+
   Scenario Outline: Update an incompatible installed plugin without removing its connections
     Given an installed Jira plugin uses an older plugin API
     When I open the <view> for Jira at <width> pixels wide

@@ -118,7 +118,7 @@ Each nav label matches its page title. Old routes are removed, not redirected.
 | Sync review  | Sync review                    | `/settings/sync-review`  |
 | Debug        | Debug                          | `/settings/debug`        |
 
-The Plugins page tabs are **All · Backlog · Code hosts · Calendars · Agent tasks · Schemas**. The tabs wrap on narrow windows. Agent task plugins can be downloaded from the catalog.
+The Plugins page tabs are **All · Backlog · Code hosts · Calendars · Agent tasks · Schemas**. The tabs wrap on narrow windows. Agent task plugins can be downloaded from the catalog. A catalog entry this Ajour version can't read is left out, and the page names it and says to update Ajour.
 
 ## App shell
 

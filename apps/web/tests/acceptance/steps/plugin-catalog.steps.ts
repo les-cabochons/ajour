@@ -49,6 +49,41 @@ Given(
   },
 );
 
+Given(
+  "the catalog skipped an entry this Ajour cannot read",
+  async ({ page }) => {
+    // Runs after the Background's script, so it wraps its catalog.
+    await page.addInitScript(() => {
+      const desktop = (
+        window as unknown as {
+          ajourDesktop: { getPluginCatalog: () => Promise<object> };
+        }
+      ).ajourDesktop;
+      const original = desktop.getPluginCatalog;
+      desktop.getPluginCatalog = async () => ({
+        ...(await original()),
+        source: "network",
+        skippedPluginIds: ["future-plugin"],
+      });
+    });
+  },
+);
+
+Then("the catalog says {string}", async ({ page }, text: string) => {
+  await expect(page.getByText(text, { exact: true })).toBeVisible();
+});
+
+Then(
+  "the catalog does not say it was loaded from its local cache",
+  async ({ page }) => {
+    await expect(
+      page.getByText("The catalog was loaded from its local cache", {
+        exact: false,
+      }),
+    ).toHaveCount(0);
+  },
+);
+
 When(
   "I open the catalog at {int} pixels wide",
   async ({ page }, width: number) => {

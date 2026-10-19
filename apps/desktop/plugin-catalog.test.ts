@@ -277,7 +277,7 @@ describe("desktop plugin catalog", () => {
             );
           }
           if (url === definitionUrl) return response(definition);
-          if (url === imageUrl) {
+          if (url === imageUrl || url.endsWith("plugins/valid/thumbnail.png")) {
             return response(Buffer.from("image"), {
               headers: { "content-type": "image/png" },
             });
@@ -314,7 +314,10 @@ describe("desktop plugin catalog", () => {
     const catalog = await service.refresh();
 
     expect(catalog.entries.map((entry) => entry.id)).toEqual(["valid"]);
-    expect(catalog.warning).toContain("Skipped azure_devops");
+    // A skipped entry is not a cache fallback.
+    expect(catalog.source).toBe("network");
+    expect(catalog.warning).toBeUndefined();
+    expect(catalog.skippedPluginIds).toEqual(["azure_devops"]);
   });
 
   function serviceWithReleases(releases: unknown[]) {
