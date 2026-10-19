@@ -21,9 +21,8 @@ import { personInitials } from "@/domain/backlog/comments";
 export type PeopleSearch = (query: string) => Promise<BacklogPerson[]>;
 
 /**
- * The `@name` before the cursor, even inside a word, as in an email: up to
- * three words with one space between them, so a last name can follow the
- * first. Two spaces or a fourth word end it.
+ * The `@name` before the cursor: up to three words with one space between
+ * them, so a last name can follow the first. Two spaces or a fourth word end it.
  */
 const mentionWord = /@(?:[^\s@[\]()]+(?: [^\s@[\]()]+){0,2} ?)?$/;
 
@@ -46,8 +45,13 @@ function mentionAtCursor(state: EditorState): MentionAtCursor | null {
   const start = Math.max(line.from, main.head - 250);
   const match = mentionWord.exec(state.sliceDoc(start, main.head));
   if (!match) return null;
+  const from = start + match.index;
+  // An @ inside a word belongs to its text, such as an email address.
+  if (from > line.from && !/[\s([{]/.test(state.sliceDoc(from - 1, from))) {
+    return null;
+  }
   return {
-    from: start + match.index,
+    from,
     word: match[0],
     query: match[0].slice(1).trim().replace(/\s+/g, " "),
   };
