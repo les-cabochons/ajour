@@ -729,6 +729,23 @@ Then(
   },
 );
 
+When(
+  "I go to the start of the line and type {string}",
+  async ({ page }, text: string) => {
+    await page.keyboard.press("Home");
+    await page.keyboard.type(text);
+  },
+);
+
+Then("the new comment reads {string}", async ({ page }, text: string) => {
+  const editor = commentsRegion(page).getByRole("textbox", {
+    name: "New comment",
+  });
+  await expect
+    .poll(async () => (await editor.textContent())?.trim())
+    .toBe(text);
+});
+
 When("I pick Ana from the suggestions", async ({ page }) => {
   await page.getByRole("option", { name: "Ana Silva" }).click();
 });

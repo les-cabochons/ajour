@@ -703,6 +703,28 @@ Feature: Backlog list and board views
     And I pick Ana from the suggestions
     Then the new comment reads only the mention "@Ana Silva"
 
+  Scenario: Picking with the cursor inside a first and last name replaces both
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people and records posted comments
+    When I open the Backlog parent page
+    And I type "@Ana Silva" in a new comment
+    Then Ana is suggested once the search is done
+    When I move back 8 characters and ask for suggestions
+    And I pick Ana from the suggestions
+    Then the new comment reads only the mention "@Ana Silva"
+
+  Scenario: Picking before other words keeps them
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people and records posted comments
+    When I open the Backlog parent page
+    And I type "please review" in a new comment
+    And I go to the start of the line and type "@Ana "
+    Then Ana is suggested once the search is done
+    When I pick Ana from the suggestions
+    Then the new comment reads "@Ana Silva please review"
+
   Scenario: An older answer never replaces a newer one for the same name
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit

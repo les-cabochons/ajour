@@ -36,8 +36,8 @@ interface MentionAtCursor {
   /** The `@name` up to the cursor. */
   word: string;
   /**
-   * Where the name ends, past the cursor when it sits inside the name:
-   * picking replaces up to here.
+   * Where the name ends: past the cursor when it sits inside a word of the
+   * name, as when Ctrl+Space asks there.
    */
   to: number;
   /** The name, as the search gets it. */
@@ -51,7 +51,11 @@ function mentionAtCursor(state: EditorState): MentionAtCursor | null {
   const start = Math.max(line.from, main.head - 250);
   const match = mentionWord.exec(state.sliceDoc(start, main.head));
   if (!match) return null;
-  const rest = /^[^\s@[\]()]*/.exec(state.sliceDoc(main.head, line.to))![0];
+  // The cursor inside a word of the name: the name goes on past it. After a
+  // space, what follows is the user's text.
+  const rest = /\s$/.test(match[0])
+    ? ""
+    : /^[^\s@[\]()]*/.exec(state.sliceDoc(main.head, line.to))![0];
   return {
     from: start + match.index,
     word: match[0],
@@ -181,10 +185,14 @@ const mentions = StateField.define<Mentions>({
           ? { picker, dismissed, nextId }
           : { picker: null, dismissed, nextId };
       }
+      const head = transaction.state.selection.main.head;
       return {
         picker: {
           ...picker,
           ...at,
+          // The open picker knows where the whole name ends, past a last
+          // name the cursor sits before.
+          to: Math.max(reopen ? at.to : head, picker.to),
           ...(reopen ? { id: nextId, answered: null } : {}),
         },
         dismissed,
@@ -198,6 +206,8 @@ const mentions = StateField.define<Mentions>({
     return {
       picker: {
         ...at,
+        // Typing ends the name at the cursor, even against a word after it.
+        ...(reopen ? {} : { to: transaction.state.selection.main.head }),
         id: nextId,
         people: [],
         answered: null,
