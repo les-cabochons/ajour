@@ -292,6 +292,9 @@ function parseInlineValue(text: string): YamlValue | null {
       current += char;
     } else if (char === "[" || char === "{") {
       return null;
+    } else if (char === "#" && /[ \t]/.test(text[index - 1] ?? "")) {
+      // A comment runs to the end of the line, so the list never closes.
+      return null;
     } else if (char === ",") {
       items.push(current);
       current = "";

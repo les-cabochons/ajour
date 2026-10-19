@@ -232,6 +232,26 @@ describe("splitDescription", () => {
     ]);
   });
 
+  it("is not frontmatter when a comment cuts an inline list short", () => {
+    const description = [
+      "---",
+      "Owners: [Ada # include Grace, Grace]",
+      "timelog:",
+      "  project: Acme",
+      "---",
+      "Text",
+    ].join("\n");
+    expect(splitDescription(description)).toEqual({
+      frontmatter: null,
+      body: description,
+    });
+    expect(getDescriptionTimelog(description)).toBeUndefined();
+    expect(
+      splitDescription("---\nOwners: [Ada, Grace] # both\n---").frontmatter
+        ?.fields,
+    ).toEqual([{ kind: "list", key: "Owners", values: ["Ada", "Grace"] }]);
+  });
+
   it("reads quotes inside a plain inline-list item as text", () => {
     expect(
       splitDescription(
