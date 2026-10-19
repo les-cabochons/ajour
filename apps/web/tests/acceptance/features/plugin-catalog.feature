@@ -5,7 +5,7 @@ Feature: Browse plugin capabilities
 
   Scenario Outline: Keep every catalog filter reachable
     When I open the catalog at <width> pixels wide
-    Then all four plugin filters fit inside the viewport
+    Then every plugin filter fits inside the viewport
 
     Examples:
       | width |
@@ -23,6 +23,8 @@ Feature: Browse plugin capabilities
     And the GitHub catalog entry offers a download
     When I select the "Schemas" plugin filter
     Then the Workday schema is the only catalog entry
+    When I select the "Agent tasks" plugin filter
+    Then the Workday agent is the only catalog entry and offers a download
 
   Scenario Outline: Update an incompatible installed plugin without removing its connections
     Given an installed Jira plugin uses an older plugin API

@@ -124,15 +124,15 @@ Last updated: 2026-10-13
 The catalog page carries no cards. The header holds the page title, Install
 from file, and two `SettingRow`s: the Plugin system switch and the Refresh
 catalog select. Below it the category tabs (All, Backlog, Code hosts,
-Schemas) sit over a single-column list of plain rows: identity mark, name with
+Calendars, Agent tasks, Schemas) sit over a single-column list of plain rows: identity mark, name with
 a status badge, a two-line description, and a meta line with capabilities and
 version, such as "Backlog · Code host · v1.2.0". The trailing action is the
 activation `Switch` for an installed plugin, or Download for an available
-remote backlog plugin or code host. Rows are separated by spacing and only tint on
+remote backlog, code host, calendar, team or agent task plugin. Rows are separated by spacing and only tint on
 hover. Catalog entries merge normalized Ajour-index metadata with installed
 backlog and schema capabilities; a plugin with several capabilities appears
-under each tab. The filter tabs use compact spacing below 768px so all four
-fit at 320px. Only an installed plugin can be activated. Manual file
+under each tab. The filter tabs wrap with compact spacing below 768px so every filter
+fits at 320px. Only an installed plugin can be activated. Manual file
 installation remains a separate action.
 
 An unavailable installed plugin shows its reason in the catalog row and a

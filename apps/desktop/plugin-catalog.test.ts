@@ -206,11 +206,12 @@ describe("desktop plugin catalog", () => {
       "azure_devops",
       "github",
       "jira",
+      "workday-agent",
       "workday-project-data",
     ]);
   });
 
-  it.each(["connector", "codeHost", "calendar"])(
+  it.each(["connector", "codeHost", "calendar", "team", "agentTask"])(
     "selects and bounds the newest matching GitHub release asset for %s",
     async (capability) => {
       const cacheDirectory = await tempDirectory();
@@ -263,13 +264,18 @@ describe("desktop plugin catalog", () => {
     },
   );
 
-  function serviceForPluginYaml(definition: string) {
+  function serviceForPluginYaml(definition: string, index = catalogYaml) {
     return tempDirectory().then((cacheDirectory) =>
       createPluginCatalogService({
         cacheDirectory,
         fetchImpl: vi.fn(async (input: string | URL | Request) => {
           const url = String(input);
-          if (url === CATALOG_URL) return response(catalogYaml);
+          if (url === CATALOG_URL) return response(index);
+          if (url.endsWith("plugins/valid/plugin.yaml")) {
+            return response(
+              pluginYaml.replace("id: azure_devops", "id: valid"),
+            );
+          }
           if (url === definitionUrl) return response(definition);
           if (url === imageUrl) {
             return response(Buffer.from("image"), {
@@ -296,18 +302,19 @@ describe("desktop plugin catalog", () => {
     );
   });
 
-  it("rejects a catalog entry with an unknown capability", async () => {
+  it("skips a catalog entry with an unknown capability and keeps the rest", async () => {
     const service = await serviceForPluginYaml(
       pluginYaml.replace(
         "capabilities:\n  - connector",
         "capabilities:\n  - work-item-sync",
       ),
+      `${catalogYaml}  - plugins/valid/plugin.yaml\n`,
     );
 
     const catalog = await service.refresh();
 
-    expect(catalog.source).toBe("cache");
-    expect(catalog.warning).toBeDefined();
+    expect(catalog.entries.map((entry) => entry.id)).toEqual(["valid"]);
+    expect(catalog.warning).toContain("Skipped azure_devops");
   });
 
   function serviceWithReleases(releases: unknown[]) {
