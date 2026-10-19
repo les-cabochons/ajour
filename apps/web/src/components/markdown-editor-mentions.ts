@@ -112,47 +112,43 @@ function withinWord(state: EditorState, picker: Picker, head: number) {
 const comparable = (text: string) =>
   text.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
-const letterOrDigit = /[\p{L}\p{N}]/u;
+/** A word of a name in the text, without the punctuation after it. */
+const nameWordAt = /^[\p{L}\p{N}]+/u;
 
 /**
  * Where picking a person ends the replaced name. Past the cursor it takes
- * the text that goes on with the person's name, from whichever word of it
- * the name before the cursor starts, and stops at a word's end: `@A|na
- * Silva`, `@Ana |Silva` and `@Ana| Silva, please` become Ana Silva's
- * mention, keeping the comma, while `@Ana|please` and `@Ana please` keep
- * "please".
+ * whole words that belong to the person's name, any word of it, so a
+ * skipped middle name or a last name typed alone still matches: the rest of
+ * the word the cursor is in when it completes one of them, then each next
+ * word that starts one. Other words and punctuation stay: `@A|na Silva` and
+ * `@Ana| Silva, please` become Ana Silva's mention, keeping the comma,
+ * while `@Ana|please` and `@Ana please` keep "please".
  */
 function nameEnd(state: EditorState, from: number, person: BacklogPerson) {
   const head = state.selection.main.head;
   const after = state.sliceDoc(head, state.doc.lineAt(head).to);
-  const name = comparable(person.displayName || person.id);
-  const typed = comparable(state.sliceDoc(from + 1, head));
-  // Where each word of the name starts, as a last name may be typed alone.
-  const wordStarts = [0, ...[...name.matchAll(/ /g)].map((m) => m.index + 1)];
-  let longest = 0;
-  for (const start of wordStarts) {
-    if (!name.startsWith(typed, start)) continue;
-    const rest = name.slice(start + typed.length);
-    let taken = 0;
-    while (
-      taken < after.length &&
-      taken < rest.length &&
-      comparable(after[taken]!) === rest[taken]
-    ) {
-      taken += 1;
-    }
-    // Not into the middle of a word, and not onto a space.
-    while (
-      taken > 0 &&
-      (after[taken - 1] === " " ||
-        (letterOrDigit.test(after[taken - 1]!) &&
-          letterOrDigit.test(after[taken] ?? "")))
-    ) {
-      taken -= 1;
-    }
-    longest = Math.max(longest, taken);
+  const nameWords = comparable(person.displayName || person.id).split(/\s+/);
+  const ofName = (word: string) =>
+    nameWords.some((nameWord) => nameWord.startsWith(comparable(word)));
+  const typed = state.sliceDoc(from + 1, head);
+  let end = 0;
+  if (typed && !/\s$/.test(typed)) {
+    // The cursor sits in a word, or against one.
+    const current = typed.split(/\s/).pop()!;
+    const rest = nameWordAt.exec(after)?.[0] ?? "";
+    if (rest && !ofName(current + rest)) return head;
+    end = rest.length;
+  } else {
+    const first = nameWordAt.exec(after)?.[0] ?? "";
+    if (first && ofName(first)) end = first.length;
+    if (!end) return head;
   }
-  return head + longest;
+  for (;;) {
+    const next = /^ ([\p{L}\p{N}]+)/u.exec(after.slice(end));
+    if (!next || !ofName(next[1]!)) break;
+    end += next[0].length;
+  }
+  return head + end;
 }
 
 function searching(picker: Picker) {

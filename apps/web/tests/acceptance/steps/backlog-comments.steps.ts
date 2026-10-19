@@ -752,6 +752,19 @@ Then("the new comment reads {string}", async ({ page }, text: string) => {
     .toBe(text);
 });
 
+Given("its plugin finds Ana Maria Silva for any name", async ({ page }) => {
+  await page.route(peopleSearchUrl, (route) =>
+    route.fulfill({
+      json: { people: [{ id: "ana-maria", displayName: "Ana Maria Silva" }] },
+      headers: cors,
+    }),
+  );
+});
+
+When("I pick {string} from the suggestions", async ({ page }, name: string) => {
+  await page.getByRole("option", { name }).click();
+});
+
 When("I pick Ana from the suggestions", async ({ page }) => {
   await page.getByRole("option", { name: "Ana Silva" }).click();
 });

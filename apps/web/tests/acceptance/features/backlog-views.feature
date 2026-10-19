@@ -783,6 +783,16 @@ Feature: Backlog list and board views
     And I pick Ana from the suggestions
     Then the new comment reads only the mention "@Ana Silva"
 
+  Scenario: Picking inside the last name of someone with a middle name replaces it
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds Ana Maria Silva for any name
+    When I open the Backlog parent page
+    And I type "@Ana Silva, please review" in a new comment
+    And I move back 17 characters and ask for suggestions
+    And I pick "Ana Maria Silva" from the suggestions
+    Then the new comment reads "@Ana Maria Silva, please review"
+
   Scenario: Picking before other words keeps them
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit
