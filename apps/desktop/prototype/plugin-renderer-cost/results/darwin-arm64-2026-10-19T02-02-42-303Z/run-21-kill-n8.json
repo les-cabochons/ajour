@@ -1,0 +1,633 @@
+{
+  "spec": {
+    "sharedPartition": false,
+    "noThrottle": false,
+    "mode": "kill",
+    "plugins": 8
+  },
+  "userDataDir": "/var/folders/px/z58qmbyn1056wqr8qykhb7080000gp/T/ajour-spike-renderer-cost-QN4KzA",
+  "mainPid": 52318,
+  "knownPids": [
+    52318,
+    52319,
+    52320,
+    52321,
+    52322,
+    52323,
+    52324,
+    52325,
+    52326,
+    52328,
+    52329
+  ],
+  "events": {
+    "app-ready": {
+      "event": "app-ready",
+      "t": 156.345708,
+      "mode": "kill",
+      "plugins": 8,
+      "pid": 52318,
+      "uptimeMs": 85.751,
+      "electron": "41.3.0",
+      "chrome": "146.0.7680.188",
+      "arch": "arm64",
+      "runningUnderARM64Translation": false,
+      "userData": "/var/folders/px/z58qmbyn1056wqr8qykhb7080000gp/T/ajour-spike-renderer-cost-QN4KzA",
+      "rendererProcessLimit": null,
+      "sharedPartition": false,
+      "sameSite": false,
+      "backgroundThrottling": true,
+      "harnessMs": 196.96
+    },
+    "ready": {
+      "event": "ready",
+      "t": 323.7125,
+      "plugins": [
+        {
+          "id": "plugin-1",
+          "pid": 52321,
+          "readyMs": 136.696,
+          "firstAnswerMs": 137.619,
+          "firstCallMs": 0.9133,
+          "selfCheck": {
+            "origin": "ajour-ext://plugin-1",
+            "require": "undefined",
+            "process": "undefined",
+            "bridgeKeys": [
+              "invoke"
+            ]
+          }
+        },
+        {
+          "id": "plugin-2",
+          "pid": 52322,
+          "readyMs": 105.543,
+          "firstAnswerMs": 106.702,
+          "firstCallMs": 1.0772,
+          "selfCheck": {
+            "origin": "ajour-ext://plugin-2",
+            "require": "undefined",
+            "process": "undefined",
+            "bridgeKeys": [
+              "invoke"
+            ]
+          }
+        },
+        {
+          "id": "plugin-3",
+          "pid": 52323,
+          "readyMs": 105.029,
+          "firstAnswerMs": 105.914,
+          "firstCallMs": 0.8817,
+          "selfCheck": {
+            "origin": "ajour-ext://plugin-3",
+            "require": "undefined",
+            "process": "undefined",
+            "bridgeKeys": [
+              "invoke"
+            ]
+          }
+        },
+        {
+          "id": "plugin-4",
+          "pid": 52324,
+          "readyMs": 104.854,
+          "firstAnswerMs": 105.711,
+          "firstCallMs": 0.8492,
+          "selfCheck": {
+            "origin": "ajour-ext://plugin-4",
+            "require": "undefined",
+            "process": "undefined",
+            "bridgeKeys": [
+              "invoke"
+            ]
+          }
+        },
+        {
+          "id": "plugin-5",
+          "pid": 52325,
+          "readyMs": 122.35,
+          "firstAnswerMs": 123.264,
+          "firstCallMs": 0.8987,
+          "selfCheck": {
+            "origin": "ajour-ext://plugin-5",
+            "require": "undefined",
+            "process": "undefined",
+            "bridgeKeys": [
+              "invoke"
+            ]
+          }
+        },
+        {
+          "id": "plugin-6",
+          "pid": 52326,
+          "readyMs": 103.071,
+          "firstAnswerMs": 103.991,
+          "firstCallMs": 0.907,
+          "selfCheck": {
+            "origin": "ajour-ext://plugin-6",
+            "require": "undefined",
+            "process": "undefined",
+            "bridgeKeys": [
+              "invoke"
+            ]
+          }
+        },
+        {
+          "id": "plugin-7",
+          "pid": 52328,
+          "readyMs": 127.576,
+          "firstAnswerMs": 128.42,
+          "firstCallMs": 0.8285,
+          "selfCheck": {
+            "origin": "ajour-ext://plugin-7",
+            "require": "undefined",
+            "process": "undefined",
+            "bridgeKeys": [
+              "invoke"
+            ]
+          }
+        },
+        {
+          "id": "plugin-8",
+          "pid": 52329,
+          "readyMs": 102.733,
+          "firstAnswerMs": 110.098,
+          "firstCallMs": 7.3555,
+          "selfCheck": {
+            "origin": "ajour-ext://plugin-8",
+            "require": "undefined",
+            "process": "undefined",
+            "bridgeKeys": [
+              "invoke"
+            ]
+          }
+        }
+      ],
+      "sharing": {
+        "distinctPids": 8,
+        "plugins": 8,
+        "shared": []
+      },
+      "pids": [
+        52318,
+        52319,
+        52320,
+        52321,
+        52322,
+        52323,
+        52324,
+        52325,
+        52326,
+        52328,
+        52329
+      ],
+      "rendererPids": [
+        52321,
+        52322,
+        52323,
+        52324,
+        52325,
+        52326,
+        52328,
+        52329
+      ],
+      "metrics": [
+        {
+          "pid": 52318,
+          "type": "Browser",
+          "sandboxed": false,
+          "workingSetKB": 155280,
+          "peakWorkingSetKB": 155280
+        },
+        {
+          "pid": 52319,
+          "type": "GPU",
+          "serviceName": "GPU",
+          "sandboxed": true,
+          "workingSetKB": 63024,
+          "peakWorkingSetKB": 63024
+        },
+        {
+          "pid": 52320,
+          "type": "Utility",
+          "serviceName": "network.mojom.NetworkService",
+          "name": "Network Service",
+          "sandboxed": true,
+          "workingSetKB": 49648,
+          "peakWorkingSetKB": 49648
+        },
+        {
+          "pid": 52321,
+          "type": "Tab",
+          "sandboxed": true,
+          "workingSetKB": 82288,
+          "peakWorkingSetKB": 82288
+        },
+        {
+          "pid": 52322,
+          "type": "Tab",
+          "sandboxed": true,
+          "workingSetKB": 82432,
+          "peakWorkingSetKB": 82432
+        },
+        {
+          "pid": 52323,
+          "type": "Tab",
+          "sandboxed": true,
+          "workingSetKB": 82320,
+          "peakWorkingSetKB": 82320
+        },
+        {
+          "pid": 52324,
+          "type": "Tab",
+          "sandboxed": true,
+          "workingSetKB": 82352,
+          "peakWorkingSetKB": 82352
+        },
+        {
+          "pid": 52325,
+          "type": "Tab",
+          "sandboxed": true,
+          "workingSetKB": 81632,
+          "peakWorkingSetKB": 81632
+        },
+        {
+          "pid": 52326,
+          "type": "Tab",
+          "sandboxed": true,
+          "workingSetKB": 82272,
+          "peakWorkingSetKB": 82272
+        },
+        {
+          "pid": 52328,
+          "type": "Tab",
+          "sandboxed": true,
+          "workingSetKB": 81712,
+          "peakWorkingSetKB": 81712
+        },
+        {
+          "pid": 52329,
+          "type": "Tab",
+          "sandboxed": true,
+          "workingSetKB": 81744,
+          "peakWorkingSetKB": 81744
+        }
+      ],
+      "harnessMs": 364.19
+    }
+  },
+  "log": [],
+  "stderr": "",
+  "checks": {
+    "whileRunning": {
+      "label": "while running",
+      "startedAfterMs": 364.2,
+      "finishedAfterMs": 426.2,
+      "count": 11,
+      "processes": [
+        {
+          "pid": 52318,
+          "ppid": 40452,
+          "name": "main.cjs",
+          "type": "browser",
+          "why": [
+            "recorded-pid",
+            "user-data-dir"
+          ],
+          "rssBytes": 159023104,
+          "privateBytes": null,
+          "command": "/Users/a.trepanier/Repos/Personnal/ajour/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron /Users/a.trepanier/Repos/Personnal/ajour/apps/desktop/prototype/plugin-renderer-cost/main.cjs --user-data-dir=/var/folders/px/z58qmbyn1056wqr8qykhb7080000gp/T/ajour-spike-renderer-cost-QN4KzA --spike-mode=kill --spike-plugins=8"
+        },
+        {
+          "pid": 52319,
+          "ppid": 52318,
+          "name": "Electron Helper",
+          "type": "gpu-process",
+          "why": [
+            "recorded-pid",
+            "child-of-recorded-pid",
+            "user-data-dir"
+          ],
+          "rssBytes": 64536576,
+          "privateBytes": null,
+          "command": "/Users/a.trepanier/Repos/Personnal/ajour/node_modules/electron/dist/Electron.app/Contents/Frameworks/Electron Helper.app/Contents/MacOS/Electron Helper --type=gpu-process --user-data-dir=/var/folders/px/z58qmbyn1056wqr8qykhb7080000gp/T/ajour-spike-renderer-cost-QN4KzA --gpu-preferences=SAAAAAAAAAAgAQAEAAAAAAAAAAAAAGAAAwAAAAAAAAAAAAAAAAAAAAIAAAAAAAAAAAAAAAAAAAAQAAAAAAAAABAAAAAAAAAACAAAAAAAAAAIAAAAA"
+        },
+        {
+          "pid": 52320,
+          "ppid": 52318,
+          "name": "Electron Helper",
+          "type": "utility",
+          "why": [
+            "recorded-pid",
+            "child-of-recorded-pid",
+            "user-data-dir"
+          ],
+          "rssBytes": 50839552,
+          "privateBytes": null,
+          "command": "/Users/a.trepanier/Repos/Personnal/ajour/node_modules/electron/dist/Electron.app/Contents/Frameworks/Electron Helper.app/Contents/MacOS/Electron Helper --type=utility --utility-sub-type=network.mojom.NetworkService --lang=en-US --service-sandbox-type=network --user-data-dir=/var/folders/px/z58qmbyn1056wqr8qykhb7080000gp/T/ajour-spike-renderer-cost-QN4KzA --standard-schemes=ajour-ext --secure-schem"
+        },
+        {
+          "pid": 52321,
+          "ppid": 52318,
+          "name": "Electron Helper (Renderer)",
+          "type": "renderer",
+          "why": [
+            "recorded-pid",
+            "child-of-recorded-pid",
+            "user-data-dir"
+          ],
+          "rssBytes": 84262912,
+          "privateBytes": null,
+          "command": "/Users/a.trepanier/Repos/Personnal/ajour/node_modules/electron/dist/Electron.app/Contents/Frameworks/Electron Helper (Renderer).app/Contents/MacOS/Electron Helper (Renderer) --type=renderer --user-data-dir=/var/folders/px/z58qmbyn1056wqr8qykhb7080000gp/T/ajour-spike-renderer-cost-QN4KzA --standard-schemes=ajour-ext --secure-schemes=ajour-ext --app-path=/Users/a.trepanier/Repos/Personnal/ajour/apps"
+        },
+        {
+          "pid": 52322,
+          "ppid": 52318,
+          "name": "Electron Helper (Renderer)",
+          "type": "renderer",
+          "why": [
+            "recorded-pid",
+            "child-of-recorded-pid",
+            "user-data-dir"
+          ],
+          "rssBytes": 84410368,
+          "privateBytes": null,
+          "command": "/Users/a.trepanier/Repos/Personnal/ajour/node_modules/electron/dist/Electron.app/Contents/Frameworks/Electron Helper (Renderer).app/Contents/MacOS/Electron Helper (Renderer) --type=renderer --user-data-dir=/var/folders/px/z58qmbyn1056wqr8qykhb7080000gp/T/ajour-spike-renderer-cost-QN4KzA --standard-schemes=ajour-ext --secure-schemes=ajour-ext --app-path=/Users/a.trepanier/Repos/Personnal/ajour/apps"
+        },
+        {
+          "pid": 52323,
+          "ppid": 52318,
+          "name": "Electron Helper (Renderer)",
+          "type": "renderer",
+          "why": [
+            "recorded-pid",
+            "child-of-recorded-pid",
+            "user-data-dir"
+          ],
+          "rssBytes": 84295680,
+          "privateBytes": null,
+          "command": "/Users/a.trepanier/Repos/Personnal/ajour/node_modules/electron/dist/Electron.app/Contents/Frameworks/Electron Helper (Renderer).app/Contents/MacOS/Electron Helper (Renderer) --type=renderer --user-data-dir=/var/folders/px/z58qmbyn1056wqr8qykhb7080000gp/T/ajour-spike-renderer-cost-QN4KzA --standard-schemes=ajour-ext --secure-schemes=ajour-ext --app-path=/Users/a.trepanier/Repos/Personnal/ajour/apps"
+        },
+        {
+          "pid": 52324,
+          "ppid": 52318,
+          "name": "Electron Helper (Renderer)",
+          "type": "renderer",
+          "why": [
+            "recorded-pid",
+            "child-of-recorded-pid",
+            "user-data-dir"
+          ],
+          "rssBytes": 84328448,
+          "privateBytes": null,
+          "command": "/Users/a.trepanier/Repos/Personnal/ajour/node_modules/electron/dist/Electron.app/Contents/Frameworks/Electron Helper (Renderer).app/Contents/MacOS/Electron Helper (Renderer) --type=renderer --user-data-dir=/var/folders/px/z58qmbyn1056wqr8qykhb7080000gp/T/ajour-spike-renderer-cost-QN4KzA --standard-schemes=ajour-ext --secure-schemes=ajour-ext --app-path=/Users/a.trepanier/Repos/Personnal/ajour/apps"
+        },
+        {
+          "pid": 52325,
+          "ppid": 52318,
+          "name": "Electron Helper (Renderer)",
+          "type": "renderer",
+          "why": [
+            "recorded-pid",
+            "child-of-recorded-pid",
+            "user-data-dir"
+          ],
+          "rssBytes": 83591168,
+          "privateBytes": null,
+          "command": "/Users/a.trepanier/Repos/Personnal/ajour/node_modules/electron/dist/Electron.app/Contents/Frameworks/Electron Helper (Renderer).app/Contents/MacOS/Electron Helper (Renderer) --type=renderer --user-data-dir=/var/folders/px/z58qmbyn1056wqr8qykhb7080000gp/T/ajour-spike-renderer-cost-QN4KzA --standard-schemes=ajour-ext --secure-schemes=ajour-ext --app-path=/Users/a.trepanier/Repos/Personnal/ajour/apps"
+        },
+        {
+          "pid": 52326,
+          "ppid": 52318,
+          "name": "Electron Helper (Renderer)",
+          "type": "renderer",
+          "why": [
+            "recorded-pid",
+            "child-of-recorded-pid",
+            "user-data-dir"
+          ],
+          "rssBytes": 84393984,
+          "privateBytes": null,
+          "command": "/Users/a.trepanier/Repos/Personnal/ajour/node_modules/electron/dist/Electron.app/Contents/Frameworks/Electron Helper (Renderer).app/Contents/MacOS/Electron Helper (Renderer) --type=renderer --user-data-dir=/var/folders/px/z58qmbyn1056wqr8qykhb7080000gp/T/ajour-spike-renderer-cost-QN4KzA --standard-schemes=ajour-ext --secure-schemes=ajour-ext --app-path=/Users/a.trepanier/Repos/Personnal/ajour/apps"
+        },
+        {
+          "pid": 52328,
+          "ppid": 52318,
+          "name": "Electron Helper (Renderer)",
+          "type": "renderer",
+          "why": [
+            "recorded-pid",
+            "child-of-recorded-pid",
+            "user-data-dir"
+          ],
+          "rssBytes": 83673088,
+          "privateBytes": null,
+          "command": "/Users/a.trepanier/Repos/Personnal/ajour/node_modules/electron/dist/Electron.app/Contents/Frameworks/Electron Helper (Renderer).app/Contents/MacOS/Electron Helper (Renderer) --type=renderer --user-data-dir=/var/folders/px/z58qmbyn1056wqr8qykhb7080000gp/T/ajour-spike-renderer-cost-QN4KzA --standard-schemes=ajour-ext --secure-schemes=ajour-ext --app-path=/Users/a.trepanier/Repos/Personnal/ajour/apps"
+        },
+        {
+          "pid": 52329,
+          "ppid": 52318,
+          "name": "Electron Helper (Renderer)",
+          "type": "renderer",
+          "why": [
+            "recorded-pid",
+            "child-of-recorded-pid",
+            "user-data-dir"
+          ],
+          "rssBytes": 83705856,
+          "privateBytes": null,
+          "command": "/Users/a.trepanier/Repos/Personnal/ajour/node_modules/electron/dist/Electron.app/Contents/Frameworks/Electron Helper (Renderer).app/Contents/MacOS/Electron Helper (Renderer) --type=renderer --user-data-dir=/var/folders/px/z58qmbyn1056wqr8qykhb7080000gp/T/ajour-spike-renderer-cost-QN4KzA --standard-schemes=ajour-ext --secure-schemes=ajour-ext --app-path=/Users/a.trepanier/Repos/Personnal/ajour/apps"
+        }
+      ]
+    },
+    "probeWhileRunning": {
+      "52318": "alive",
+      "52319": "alive",
+      "52320": "alive",
+      "52321": "alive",
+      "52322": "alive",
+      "52323": "alive",
+      "52324": "alive",
+      "52325": "alive",
+      "52326": "alive",
+      "52328": "alive",
+      "52329": "alive"
+    },
+    "killOutput": "kill -9 sent",
+    "killCommandMs": 12.3,
+    "deadAfterMainMs": {
+      "52318": 0,
+      "52319": 0,
+      "52320": 0,
+      "52321": 20.4,
+      "52322": 20.4,
+      "52323": 20.4,
+      "52324": 20.4,
+      "52325": 20.4,
+      "52326": 20.4,
+      "52328": 20.4,
+      "52329": 20.4
+    },
+    "afterEnd": {
+      "label": "right after main ended",
+      "startedAfterMs": 0,
+      "finishedAfterMs": 48.9,
+      "count": 11,
+      "processes": [
+        {
+          "pid": 52318,
+          "ppid": 40452,
+          "name": "(Electron)",
+          "type": "browser",
+          "why": [
+            "recorded-pid"
+          ],
+          "rssBytes": 0,
+          "privateBytes": null,
+          "command": "(Electron)"
+        },
+        {
+          "pid": 52319,
+          "ppid": 1,
+          "name": "(Electron Helper)",
+          "type": "browser",
+          "why": [
+            "recorded-pid"
+          ],
+          "rssBytes": 0,
+          "privateBytes": null,
+          "command": "(Electron Helper)"
+        },
+        {
+          "pid": 52320,
+          "ppid": 1,
+          "name": "(Electron Helper)",
+          "type": "browser",
+          "why": [
+            "recorded-pid"
+          ],
+          "rssBytes": 0,
+          "privateBytes": null,
+          "command": "(Electron Helper)"
+        },
+        {
+          "pid": 52321,
+          "ppid": 52318,
+          "name": "(Electron Helper )",
+          "type": "browser",
+          "why": [
+            "recorded-pid",
+            "child-of-recorded-pid"
+          ],
+          "rssBytes": 84262912,
+          "privateBytes": null,
+          "command": "(Electron Helper )"
+        },
+        {
+          "pid": 52322,
+          "ppid": 1,
+          "name": "(Electron Helper )",
+          "type": "browser",
+          "why": [
+            "recorded-pid"
+          ],
+          "rssBytes": 0,
+          "privateBytes": null,
+          "command": "(Electron Helper )"
+        },
+        {
+          "pid": 52323,
+          "ppid": 52318,
+          "name": "(Electron Helper )",
+          "type": "browser",
+          "why": [
+            "recorded-pid",
+            "child-of-recorded-pid"
+          ],
+          "rssBytes": 84295680,
+          "privateBytes": null,
+          "command": "(Electron Helper )"
+        },
+        {
+          "pid": 52324,
+          "ppid": 52318,
+          "name": "(Electron Helper )",
+          "type": "browser",
+          "why": [
+            "recorded-pid",
+            "child-of-recorded-pid"
+          ],
+          "rssBytes": 0,
+          "privateBytes": null,
+          "command": "(Electron Helper )"
+        },
+        {
+          "pid": 52325,
+          "ppid": 52318,
+          "name": "(Electron Helper )",
+          "type": "browser",
+          "why": [
+            "recorded-pid",
+            "child-of-recorded-pid"
+          ],
+          "rssBytes": 84361216,
+          "privateBytes": null,
+          "command": "(Electron Helper )"
+        },
+        {
+          "pid": 52326,
+          "ppid": 52318,
+          "name": "(Electron Helper )",
+          "type": "browser",
+          "why": [
+            "recorded-pid",
+            "child-of-recorded-pid"
+          ],
+          "rssBytes": 84426752,
+          "privateBytes": null,
+          "command": "(Electron Helper )"
+        },
+        {
+          "pid": 52328,
+          "ppid": 52318,
+          "name": "(Electron Helper )",
+          "type": "browser",
+          "why": [
+            "recorded-pid",
+            "child-of-recorded-pid"
+          ],
+          "rssBytes": 84377600,
+          "privateBytes": null,
+          "command": "(Electron Helper )"
+        },
+        {
+          "pid": 52329,
+          "ppid": 52318,
+          "name": "(Electron Helper )",
+          "type": "browser",
+          "why": [
+            "recorded-pid",
+            "child-of-recorded-pid"
+          ],
+          "rssBytes": 84426752,
+          "privateBytes": null,
+          "command": "(Electron Helper )"
+        }
+      ]
+    },
+    "afterWait": {
+      "label": "5 s after main ended",
+      "startedAfterMs": 5000.8,
+      "finishedAfterMs": 5043.2,
+      "count": 0,
+      "processes": []
+    }
+  },
+  "exit": {
+    "code": null,
+    "signal": "SIGKILL"
+  },
+  "leftovers": [],
+  "leftoversNotKilled": []
+}

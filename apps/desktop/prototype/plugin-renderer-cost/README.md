@@ -90,9 +90,20 @@ Two Windows quirks:
   binary. If `node_modules/electron/dist` has no Electron binary, extract the
   cached zip from the Electron cache into `dist` and write `path.txt`.
 
-## Notes for the macOS run (#260)
+## macOS results (#260)
 
-- Record whether Electron runs as arm64 or under Rosetta. The `app-ready` event
-  in each run file has `arch` and `runningUnderARM64Translation`.
+`results/darwin-arm64-2026-10-19T02-02-42-303Z/` holds the full suite from an
+Apple M2 Pro. The resolution comment on #260 has the table beside the Windows
+numbers.
+
 - `privateBytes` is Windows only, so the private memory rows stay empty on macOS.
-- Change the spike only where macOS needs it, and push to this branch.
+  The harness reads each process's footprint with `footprint -j` instead. That
+  is what Activity Monitor shows as Memory. RSS counts the shared Electron
+  framework pages again in every process.
+- Rosetta shows in two places: `arch` and `runningUnderARM64Translation` in the
+  `app-ready` event, and `translated` per process in the footprint read.
+- On macOS, `render-process-gone` reports `killed` for
+  `forcefullyCrashRenderer()`, not `crashed` as on Windows.
+- A process that is exiting shows in `ps` as `(Electron Helper)`, with no
+  arguments and an RSS of 0. A sweep that matches only on `--user-data-dir`
+  misses it until it is gone.
