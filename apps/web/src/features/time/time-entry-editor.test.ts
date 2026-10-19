@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { lockedWeekMessage } from "@/domain/time/locked-weeks";
 import {
   commitTimeEntryDraft,
   createTimeEntryEditorFields,
@@ -303,6 +304,53 @@ describe("time-entry editor", () => {
         canSave: true,
         isTimerMode: false,
         durationError: null,
+      });
+    });
+  });
+  describe("submitted weeks", () => {
+    const reason = lockedWeekMessage("2026-10-05");
+    const lockReasonFor = (localDate: string) =>
+      localDate >= "2026-10-05" && localDate <= "2026-10-11"
+        ? reason
+        : undefined;
+
+    it("blocks a new entry on a day of a submitted week, with the reason under Date", () => {
+      const editor = evaluateTimeEntryEditor(
+        { ...createTimeEntryEditorFields(DAY), durationHours: "1:00" },
+        { allowEmptyDuration: true, lockReasonFor },
+      );
+
+      expect(editor.dateError).toBe(reason);
+      expect(editor.canSave).toBe(false);
+      expect(commitTimeEntryDraft(editor, "save")).toEqual({
+        kind: "invalid",
+        error: reason,
+      });
+    });
+
+    it("refuses to move an entry into a submitted week", () => {
+      const original = { localDate: "2026-10-13", durationMs: 3_600_000 };
+      const editor = evaluateTimeEntryEditor(
+        {
+          ...createTimeEntryEditorFields("2026-10-13", original),
+          localDate: DAY,
+        },
+        { original, lockReasonFor },
+      );
+
+      expect(editor.canSave).toBe(false);
+      expect(editor.dateError).toBe(reason);
+    });
+
+    it("leaves an untouched entry of a submitted week alone when switching", () => {
+      const original = { localDate: DAY, durationMs: 3_600_000 };
+      const editor = evaluateTimeEntryEditor(
+        createTimeEntryEditorFields(DAY, original),
+        { original, lockReasonFor },
+      );
+
+      expect(commitTimeEntryDraft(editor, "switch")).toEqual({
+        kind: "unchanged",
       });
     });
   });

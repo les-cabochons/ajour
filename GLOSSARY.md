@@ -138,6 +138,10 @@ _Avoid_: Submitted, synced, sent
 The values of a time entry as it was last committed: its day, project, task, note and duration.
 _Avoid_: Snapshot, fingerprint
 
+**Submitted week**:
+A week the user locked after committing every change: its entries are read-only, for agents too, until the user reopens it. The code calls it a locked week.
+_Avoid_: Closed week, finalized week, frozen week
+
 **Change**:
 A time entry that differs from its committed copy: added (never committed), updated (its copy differs) or deleted (committed, then deleted, kept as a tombstone).
 _Avoid_: Diff, delta, dirty entry

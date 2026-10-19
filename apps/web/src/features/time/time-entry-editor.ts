@@ -91,7 +91,8 @@ export function createTimeEntryEditorFields(
  * `allowEmptyDuration` lets a new entry leave Hours empty to Start it. `isRunning`
  * accepts 0h, because the running entry keeps counting from the time it shows.
  * `prefill` is what a new entry opened with, such as a Week Grid cell's task; a
- * switch drops a new entry left as it opened.
+ * switch drops a new entry left as it opened. `lockReasonFor` blocks a draft on
+ * a day of a submitted week.
  */
 export function evaluateTimeEntryEditor(
   fields: TimeEntryEditorFields,
@@ -100,6 +101,11 @@ export function evaluateTimeEntryEditor(
     allowEmptyDuration?: boolean;
     isRunning?: boolean;
     prefill?: TimeEntryEditorFields;
+    /**
+     * Why entries on a day cannot change, from `getDateLockReason`. A draft on
+     * such a day shows it under Date and cannot be saved.
+     */
+    lockReasonFor?: (localDate: string) => string | undefined;
   } = {},
 ): TimeEntryEditorState {
   const { original, isRunning = false, prefill } = options;
@@ -130,7 +136,9 @@ export function evaluateTimeEntryEditor(
     metadata.note !== original.note ||
     durationMs !== original.durationMs ||
     fields.localDate !== original.localDate;
-  const dateError = isValidLocalDate(fields.localDate) ? null : "Enter a date";
+  const dateError = !isValidLocalDate(fields.localDate)
+    ? "Enter a date"
+    : (options.lockReasonFor?.(fields.localDate) ?? null);
   const canSave =
     durationMs !== null &&
     (durationMs > 0 || (isRunning && durationMs === 0)) &&

@@ -1,5 +1,9 @@
 import { z } from "zod";
-import { pluginFieldSchema, pluginFieldValuesSchema } from "./plugins.ts";
+import {
+  agentTaskPlacementSchema,
+  pluginFieldSchema,
+  pluginFieldValuesSchema,
+} from "./plugins.ts";
 import { isoDateSchema } from "./agent-tools.ts";
 
 /**
@@ -45,7 +49,7 @@ export const agentTaskStatusSchema = z.object({
   pluginName: z.string(),
   taskId: z.string(),
   label: z.string(),
-  placement: z.literal("commit-week"),
+  placement: agentTaskPlacementSchema,
   estimateMinutes: z.number().int(),
   settings: z.array(pluginFieldSchema),
   values: pluginFieldValuesSchema,

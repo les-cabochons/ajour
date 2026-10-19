@@ -121,6 +121,7 @@ export const readToolInputSchemas = {
     weekOf: isoDateSchema,
     onlyChecked: z.boolean().default(true),
   }),
+  get_week_status: z.object({ weekOf: isoDateSchema }),
 } as const;
 export type ReadToolName = keyof typeof readToolInputSchemas;
 export type ReadToolInput<Name extends ReadToolName> = z.infer<
@@ -193,6 +194,8 @@ export const writeToolInputSchemas = {
       .min(1)
       .max(500),
   }),
+  /** `version` is the one get_week_status returned. A different one refuses. */
+  submit_week: z.object({ weekOf: isoDateSchema, version: z.string() }),
   create_work_item: z.object({
     title: z.string().trim().min(1).max(500),
     description: z.string().max(10_000).optional(),
@@ -309,6 +312,15 @@ export const agentChangeValuesSchema = z.object({
 });
 export type AgentChangeValues = z.infer<typeof agentChangeValuesSchema>;
 
+/** Ajour's pace check of a week, in decimal hours. */
+const weekPaceSchema = z.object({
+  loggedHours: z.number(),
+  targetHours: z.number(),
+  /** The targets of the week's days up to today. */
+  expectedHours: z.number(),
+  status: z.enum(["on-pace", "under", "over"]),
+});
+
 /**
  * Output schemas of the read and write tools, by MCP tool name. The API
  * checks each renderer result against its schema before the agent sees it.
@@ -362,6 +374,30 @@ export const dataToolOutputSchemas = {
       }),
     ),
   }),
+  get_week_status: z.object({
+    /** The week's Monday. */
+    weekOf: z.string(),
+    /** Pass it to submit_week. It changes with the committed entries and their exact durations, the change count or the lock. */
+    version: z.string(),
+    /** Submitted: its entries are read-only until the user reopens it. */
+    locked: z.boolean(),
+    /** Changes not committed yet. submit_week refuses until it is 0. */
+    uncommittedChanges: z.number(),
+    /** What the external timesheet holds each day, Monday first, from the committed copies. */
+    committedHoursByDay: z.array(
+      z.object({ date: z.string(), hours: z.number() }),
+    ),
+    /** Each committed entry of the week as the external timesheet holds it, deleted ones included until their deletion is committed. */
+    committedEntries: z.array(
+      z.object({
+        entryId: z.string(),
+        externalId: z.string(),
+        committed: agentChangeValuesSchema,
+      }),
+    ),
+    /** Ask the user before submitting a week whose status is not "on-pace". */
+    pace: weekPaceSchema,
+  }),
   start_timer: z.object({ running: agentRunningTimerSchema }),
   stop_timer: z.object({
     stopped: z.literal(true),
@@ -374,6 +410,7 @@ export const dataToolOutputSchemas = {
   duplicate_entry: agentTimeEntrySchema,
   /** How many of the listed changes Ajour committed. */
   mark_entries_committed: z.object({ committed: z.number() }),
+  submit_week: z.object({ weekOf: z.string(), locked: z.literal(true) }),
   create_work_item: agentWorkItemSchema,
   edit_work_item: agentWorkItemSchema,
   move_work_item: agentWorkItemSchema,

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { LocalAppState, LocalTimesheetEntry } from "@/domain/local-state";
 import {
   getWeekChangesForAgent,
+  getWeekStatusForAgent,
   getWorkItemForAgent,
   listProjectsForAgent,
   listTimeEntriesForAgent,
@@ -93,6 +94,7 @@ function createState(): LocalAppState {
       entry({ _id: "e3", localDate: "2026-10-20" }),
     ],
     timesheetTombstones: [],
+    lockedWeeks: [],
     workItems: [
       {
         _id: "w1",
@@ -151,6 +153,137 @@ function stateWithCodedProject(): LocalAppState {
 }
 
 describe("agent read model", () => {
+  it("reports the week's status: lock, waiting changes, committed hours and entries, and pace", () => {
+    const state: LocalAppState = {
+      ...createState(),
+      timesheetTombstones: [
+        {
+          entryId: "gone",
+          commit: {
+            at: 5,
+            localDate: "2026-10-15",
+            projectId: "project-1",
+            taskId: "task-1",
+            durationMs: HOUR / 2,
+          },
+        },
+      ],
+    };
+    const acme = {
+      projectName: "Acme",
+      projectFullName: "Acme",
+      taskName: "Build",
+    };
+    const input = {
+      weekDates: WEEK,
+      today: "2026-10-14",
+      projectPropertyPlugins: [],
+    };
+
+    const status = getWeekStatusForAgent(state, input);
+    expect(status).toEqual({
+      weekOf: "2026-10-12",
+      version: expect.stringMatching(/^v:[0-9a-f]{8}$/),
+      locked: false,
+      // e1 was never committed, and "gone" was deleted since its commit.
+      uncommittedChanges: 2,
+      committedHoursByDay: [
+        { date: "2026-10-12", hours: 0 },
+        { date: "2026-10-13", hours: 1 },
+        { date: "2026-10-14", hours: 0 },
+        { date: "2026-10-15", hours: 0.5 },
+        { date: "2026-10-16", hours: 0 },
+        { date: "2026-10-17", hours: 0 },
+        { date: "2026-10-18", hours: 0 },
+      ],
+      committedEntries: [
+        {
+          entryId: "e2",
+          externalId: externalEntryId("e2"),
+          committed: {
+            date: "2026-10-13",
+            ...acme,
+            hours: 1,
+            note: "Afternoon",
+          },
+        },
+        {
+          entryId: "gone",
+          externalId: externalEntryId("gone"),
+          committed: { date: "2026-10-15", ...acme, hours: 0.5 },
+        },
+      ],
+      // Monday to Wednesday expect 24 hours; e1 and e2 log 2.
+      pace: {
+        loggedHours: 2,
+        targetHours: 40,
+        expectedHours: 24,
+        status: "under",
+      },
+    });
+    const locked = getWeekStatusForAgent(
+      { ...state, lockedWeeks: [{ weekOf: "2026-10-12", lockedAt: 1 }] },
+      input,
+    );
+    expect(locked.locked).toBe(true);
+    expect(locked.version).not.toBe(status.version);
+  });
+
+  it("versions the week's status by what submit_week depends on", () => {
+    const input = {
+      weekDates: WEEK,
+      today: "2026-10-14",
+      projectPropertyPlugins: [],
+    };
+    const state = createState();
+    const { version } = getWeekStatusForAgent(state, input);
+
+    // Pace is not part of it: another day reads the same version.
+    expect(
+      getWeekStatusForAgent(state, { ...input, today: "2026-10-16" }).version,
+    ).toBe(version);
+    // A change to a committed copy is.
+    const edited: LocalAppState = {
+      ...state,
+      timesheetEntries: state.timesheetEntries.map((entry) =>
+        entry.commit
+          ? { ...entry, commit: { ...entry.commit, durationMs: 2 * HOUR } }
+          : entry,
+      ),
+    };
+    expect(getWeekStatusForAgent(edited, input).version).not.toBe(version);
+  });
+
+  it("versions exact committed durations, not the rounded hours", () => {
+    const input = {
+      weekDates: WEEK,
+      today: "2026-10-14",
+      projectPropertyPlugins: [],
+    };
+    const base = createState();
+    const committed = base.timesheetEntries.find((entry) => entry.commit)!;
+    /** Two committed entries on Tuesday, each lasting an hour and `seconds`. */
+    const withDurations = (seconds: number): LocalAppState => {
+      const durationMs = HOUR + seconds * 1000;
+      return {
+        ...base,
+        timesheetEntries: ["c1", "c2"].map((_id) => ({
+          ...committed,
+          _id,
+          durationMs,
+          commit: { ...committed.commit!, durationMs },
+        })),
+      };
+    };
+    const before = getWeekStatusForAgent(withDurations(5), input);
+    const after = getWeekStatusForAgent(withDurations(15), input);
+
+    // Each entry reads the same rounded hours, so only the exact durations
+    // tell them apart.
+    expect(after.committedEntries).toEqual(before.committedEntries);
+    expect(after.version).not.toBe(before.version);
+  });
+
   it("reads the running entry with its counted minutes", () => {
     expect(readRunningTimer(createState(), NOW)).toEqual({
       timerId: "timer-1",

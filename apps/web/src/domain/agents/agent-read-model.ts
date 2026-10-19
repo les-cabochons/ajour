@@ -28,9 +28,15 @@ import {
   type TimesheetChange,
   type TimesheetCommitValues,
 } from "@/domain/time/timesheet-commit";
+import { getLockedWeek } from "@/domain/time/locked-weeks";
+import {
+  computeWeekPace,
+  getPaceTolerancePercent,
+} from "@/domain/time/week-pace";
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
 import {
   externalEntryId,
+  weekStatusVersion,
   timesheetChangeVersion,
 } from "@/domain/agents/external-id";
 
@@ -389,6 +395,117 @@ export function checkChangeVersionsOrRefuse(
   if (stale.size > 0) {
     throw new AgentToolRefusal(
       `${[...stale].join(", ")} changed since you read it. Call get_week_changes again and apply its current values.`,
+    );
+  }
+}
+
+/**
+ * The week's submission status for agents: whether it is submitted, how many
+ * changes wait, what the external timesheet holds per day and per entry from
+ * the committed copies, and Ajour's pace check, in decimal hours. `version`
+ * covers all of it but the pace; submit_week takes it back.
+ */
+export function getWeekStatusForAgent(
+  state: LocalAppState,
+  {
+    weekDates,
+    today,
+    projectPropertyPlugins,
+  }: {
+    weekDates: string[];
+    today: string;
+    /** Active plugins that add project properties. Passed in to keep domain free of `lib/`. */
+    projectPropertyPlugins: ProjectPropertyPlugin[];
+  },
+): DataToolOutput<"get_week_status"> {
+  const week = new Set(weekDates);
+  // The committed copies of the week: saved entries, then deleted ones.
+  const committed = [
+    ...state.timesheetEntries.flatMap((entry) =>
+      entry.commit ? [{ entryId: entry._id, commit: entry.commit }] : [],
+    ),
+    ...state.timesheetTombstones,
+  ]
+    .filter(({ commit }) => week.has(commit.localDate))
+    .sort((left, right) =>
+      left.commit.localDate.localeCompare(right.commit.localDate),
+    );
+  const loggedMs = state.timesheetEntries
+    .filter((entry) => week.has(entry.localDate))
+    .reduce((total, entry) => total + entry.durationMs, 0);
+
+  const weekOf = weekDates[0]!;
+  const locked = getLockedWeek(state, weekOf) !== undefined;
+  const uncommittedChanges = listWeekChanges({
+    entries: state.timesheetEntries,
+    tombstones: state.timesheetTombstones,
+    weekDates,
+  }).length;
+  const committedEntries = committed.map(({ entryId, commit }) => ({
+    entryId,
+    externalId: externalEntryId(entryId),
+    committed: toAgentChangeValues(state, commit, projectPropertyPlugins),
+  }));
+
+  const committedMsByDay = weekDates.map((date) =>
+    committed
+      .filter(({ commit }) => commit.localDate === date)
+      .reduce((total, { commit }) => total + commit.durationMs, 0),
+  );
+
+  return {
+    weekOf,
+    version: weekStatusVersion({
+      weekOf,
+      committedEntries,
+      // Exact milliseconds: rounded hours hide a change of a few seconds.
+      committedDurationsMs: committed.map(({ commit }) => commit.durationMs),
+      committedMsByDay,
+      uncommittedChanges,
+      locked,
+    }),
+    locked,
+    uncommittedChanges,
+    committedHoursByDay: weekDates.map((date, index) => ({
+      date,
+      hours: toHours(committedMsByDay[index]!),
+    })),
+    committedEntries,
+    pace: computeWeekPace({
+      weekDates,
+      today,
+      capacityTargets: state.userPreferences.weeklyCapacityTargets,
+      loggedMs,
+      tolerancePercent: getPaceTolerancePercent(state.userPreferences),
+    }),
+  };
+}
+
+/**
+ * Refuses submit_week when the week's status differs from the one the agent
+ * read, so Ajour never locks committed values the agent did not check.
+ */
+export function checkWeekStatusVersionOrRefuse(
+  state: LocalAppState,
+  {
+    weekDates,
+    version,
+    projectPropertyPlugins,
+  }: {
+    weekDates: string[];
+    version: string;
+    projectPropertyPlugins: ProjectPropertyPlugin[];
+  },
+): void {
+  // The version leaves the pace out, so any day reads the same one.
+  const current = getWeekStatusForAgent(state, {
+    weekDates,
+    today: weekDates[0]!,
+    projectPropertyPlugins,
+  }).version;
+  if (current !== version) {
+    throw new AgentToolRefusal(
+      "The week changed since you read it. Call get_week_status again.",
     );
   }
 }

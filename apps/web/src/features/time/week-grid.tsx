@@ -29,6 +29,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Button } from "@/components/ui/button";
+import { DisabledReason } from "@/components/disabled-reason";
 import {
   Table,
   TableBody,
@@ -125,15 +126,19 @@ const OPEN_ENTRIES_ACTION: ObjectAction<WeekGridCellActionId> = {
  * Delete row, the row's only action. It ends every cell's menu too, so the
  * focused cell's Shift+Backspace has a menu item that shows the key. A row that
  * holds the running entry keeps it, because the running entry can't be deleted.
+ * A submitted week keeps its rows.
  */
-function getDeleteRowAction(row: WeeklyGridRow): ObjectAction<"delete-row"> {
+function getDeleteRowAction(
+  row: WeeklyGridRow,
+  lockReason?: string,
+): ObjectAction<"delete-row"> {
   return {
     id: "delete-row",
     label: "Delete row",
     destructive: true,
-    disabledReason: row.holdsRunningEntry
-      ? "Stop the running entry first"
-      : undefined,
+    disabledReason:
+      lockReason ??
+      (row.holdsRunningEntry ? "Stop the running entry first" : undefined),
   };
 }
 
@@ -302,6 +307,7 @@ export function WeekGrid({
   projection,
   projects,
   projectsById,
+  lockReason,
   runningTimerId,
   showCapacityWarning,
   suggestionCounts,
@@ -324,6 +330,11 @@ export function WeekGrid({
   projection: WeeklyTimeProjection;
   projects: LocalProject[];
   projectsById: Map<string, LocalProject>;
+  /**
+   * Set when the week is submitted: cells open read-only in the side panel,
+   * nothing edits in place, and rows cannot be added or deleted.
+   */
+  lockReason?: string;
   runningTimerId?: string;
   showCapacityWarning: boolean;
   /** Open calendar suggestions per day. The Grid shows only their count. */
@@ -411,6 +422,7 @@ export function WeekGrid({
       hasRunning,
       count: entries.length + (hasRunning ? 1 : 0),
       canEditInPlace:
+        !lockReason &&
         !hasRunning &&
         (entries.length === 1 ||
           (entries.length === 0 && row.acceptsNewEntries)),
@@ -543,13 +555,16 @@ export function WeekGrid({
     model: CellModel,
   ): ObjectAction<WeekGridCellActionId>[] {
     const target = getActionTarget(model);
+    const addEntry = lockReason
+      ? { ...ADD_ENTRY_ACTION, disabledReason: lockReason }
+      : ADD_ENTRY_ACTION;
     const cellActions: ObjectAction<WeekGridCellActionId>[] =
       model.count > 1
-        ? [ADD_ENTRY_ACTION, OPEN_ENTRIES_ACTION]
+        ? [addEntry, OPEN_ENTRIES_ACTION]
         : target
-          ? [ADD_ENTRY_ACTION, ...entryActions.getActions(target)]
-          : [ADD_ENTRY_ACTION];
-    return [...cellActions, getDeleteRowAction(row)];
+          ? [addEntry, ...entryActions.getActions(target)]
+          : [addEntry];
+    return [...cellActions, getDeleteRowAction(row, lockReason)];
   }
 
   function handleCellKeyDown(
@@ -857,13 +872,15 @@ export function WeekGrid({
                     </Button>
                   </div>
                 ) : (
-                  <Button
-                    variant="ghost"
-
-                    onClick={() => setIsAddingRow(true)}
-                  >
-                    <Plus data-icon="inline-start" /> Add row
-                  </Button>
+                  <DisabledReason label="Add row" reason={lockReason}>
+                    <Button
+                      variant="ghost"
+                      disabled={lockReason !== undefined}
+                      onClick={() => setIsAddingRow(true)}
+                    >
+                      <Plus data-icon="inline-start" /> Add row
+                    </Button>
+                  </DisabledReason>
                 )}
               </TableCell>
             </TableRow>
@@ -895,7 +912,9 @@ export function WeekGrid({
         <ContextMenuTrigger render={<div hidden ref={nameMenuTriggerRef} />} />
         <ContextMenuContent>
           <ObjectActionItems
-            actions={nameMenuRow ? [getDeleteRowAction(nameMenuRow)] : []}
+            actions={
+              nameMenuRow ? [getDeleteRowAction(nameMenuRow, lockReason)] : []
+            }
             onAction={() => {
               if (nameMenuRow) requestDeleteRow(nameMenuRow);
             }}

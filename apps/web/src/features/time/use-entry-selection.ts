@@ -33,6 +33,7 @@ import {
   type EntryPasteTarget,
   type EntrySelection,
 } from "@/domain/time/entry-selection";
+import { getDateLockReason } from "@/domain/time/locked-weeks";
 import { isTimesheetEntryCommitted } from "@/domain/time/timesheet-commit";
 import {
   formatToastDay,
@@ -181,8 +182,11 @@ export function useEntrySelection({
       getTimeEntrySelectionActions({
         saved: selectedEntries.length,
         committed: selectedEntries.filter(isTimesheetEntryCommitted).length,
+        lockedReason: selectedEntries
+          .map((entry) => getDateLockReason(state, entry.localDate))
+          .find((reason) => reason !== undefined),
       }),
-    [selectedEntries],
+    [selectedEntries, state],
   );
 
   function describeForText(entry: LocalTimesheetEntry) {
