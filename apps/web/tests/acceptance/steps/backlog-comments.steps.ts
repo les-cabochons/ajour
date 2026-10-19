@@ -517,6 +517,90 @@ When("I move forward {int} characters", async ({ page }, count: number) => {
   }
 });
 
+/** People searches each page has sent, to tell whether Escape stopped them. */
+const peopleSearches = new WeakMap<Page, { count: number; atEscape: number }>();
+
+When("I press Escape in the new comment", async ({ page }) => {
+  let searches = peopleSearches.get(page);
+  if (!searches) {
+    const counter = { count: 0, atEscape: 0 };
+    page.on("request", (request) => {
+      if (request.url() === peopleSearchUrl && request.method() === "POST") {
+        counter.count += 1;
+      }
+    });
+    peopleSearches.set(page, counter);
+    searches = counter;
+  }
+  await page.keyboard.press("Escape");
+  searches.atEscape = searches.count;
+});
+
+When(
+  "I press Escape in the new comment while the search runs",
+  async ({ page }) => {
+    const answered = page.waitForResponse(peopleSearchUrl);
+    await page.waitForRequest(peopleSearchUrl);
+    await page.keyboard.press("Escape");
+    await answered;
+    // Give the late answer time to reach the editor.
+    await page.waitForTimeout(200);
+  },
+);
+
+When(
+  "I press Escape, ask again and press Escape while the first search runs",
+  async ({ page }) => {
+    const answered = page.waitForResponse(peopleSearchUrl);
+    await page.waitForRequest(peopleSearchUrl);
+    await page.keyboard.press("Escape");
+    await page.keyboard.press("Control+Space");
+    await page.keyboard.press("Escape");
+    await answered;
+    // Give the late answers time to reach the editor.
+    await page.waitForTimeout(1_500);
+  },
+);
+
+Then(
+  "nothing is suggested and the new comment stays open with {string}",
+  async ({ page }, text: string) => {
+    await expect(page.getByRole("option")).toHaveCount(0);
+    await expect(mentionStatus(page)).toHaveCount(0);
+    const editor = commentsRegion(page).getByRole("textbox", {
+      name: "New comment",
+    });
+    await expect(editor).toBeFocused();
+    await expect(editor).toHaveText(text);
+  },
+);
+
+Then("no people search ran since Escape", async ({ page }) => {
+  // Longer than the search's 200ms pause, so one would have started.
+  await page.waitForTimeout(600);
+  const searches = peopleSearches.get(page)!;
+  expect(searches.count).toBe(searches.atEscape);
+  await expect(page.getByRole("option")).toHaveCount(0);
+  await expect(mentionStatus(page)).toHaveCount(0);
+});
+
+Then(
+  "the new comment is closed, keeping the draft {string}",
+  async ({ page }, text: string) => {
+    await expect(
+      commentsRegion(page).getByRole("textbox", { name: "New comment" }),
+    ).toHaveCount(0);
+    await expect(
+      commentsRegion(page).getByRole("button", { name: `Draft: ${text}` }),
+    ).toBeVisible();
+  },
+);
+
+When("I select all and type {string}", async ({ page }, text: string) => {
+  await page.keyboard.press("ControlOrMeta+A");
+  await page.keyboard.type(text);
+});
+
 When("I pick Ana from the suggestions", async ({ page }) => {
   await page.getByRole("option", { name: "Ana Silva" }).click();
 });

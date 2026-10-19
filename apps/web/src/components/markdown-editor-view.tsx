@@ -2,7 +2,9 @@ import { useEffect, useRef, type CSSProperties } from "react";
 import type { BacklogPerson } from "@ajour/shared";
 import {
   autocompletion,
+  closeCompletion,
   completionKeymap,
+  completionStatus,
   type CompletionContext,
   type CompletionResult,
 } from "@codemirror/autocomplete";
@@ -13,7 +15,13 @@ import {
   LanguageSupport,
   syntaxHighlighting,
 } from "@codemirror/language";
-import { EditorState, Prec, StateEffect, StateField } from "@codemirror/state";
+import {
+  EditorState,
+  MapMode,
+  Prec,
+  StateEffect,
+  StateField,
+} from "@codemirror/state";
 import {
   Decoration,
   EditorView,
@@ -154,7 +162,87 @@ const mentionStatus = StateField.define<MentionStatus | null>({
   ],
 });
 
-/** Suggestions for the name after `@`, at the start of a word. */
+/** Escape closed the search for the `@` here, if one is at the cursor. */
+const dismissMention = StateEffect.define<number | null>();
+/** Ctrl+Space asks again. */
+const liftDismissal = StateEffect.define<null>();
+
+/**
+ * Where the `@` is whose suggestions Escape closed: typing on in that name
+ * asks no more, until Ctrl+Space asks again. It goes with the `@`.
+ */
+const dismissedMention = StateField.define<{
+  from: number | null;
+  /** How many times Escape closed a search, so an older one never counts. */
+  count: number;
+}>({
+  create: () => ({ from: null, count: 0 }),
+  update(dismissed, transaction) {
+    for (const effect of transaction.effects) {
+      if (effect.is(dismissMention)) {
+        return { from: effect.value, count: dismissed.count + 1 };
+      }
+      if (effect.is(liftDismissal)) return { ...dismissed, from: null };
+    }
+    return dismissed.from === null
+      ? dismissed
+      : {
+          ...dismissed,
+          from: transaction.changes.mapPos(
+            dismissed.from,
+            1,
+            MapMode.TrackAfter,
+          ),
+        };
+  },
+});
+
+/**
+ * Asking for suggestions with Ctrl+Space (Alt+` or Alt+I on a Mac) lifts the
+ * dismissal at once, before CodeMirror gets to ask.
+ */
+const askAgainKeymap = keymap.of(
+  [{ key: "Ctrl-Space" }, { mac: "Alt-`" }, { mac: "Alt-i" }].map(
+    (binding) => ({
+      ...binding,
+      run: (view: EditorView) => {
+        if (view.state.field(dismissedMention, false)?.from != null) {
+          view.dispatch({ effects: liftDismissal.of(null) });
+        }
+        return false;
+      },
+    }),
+  ),
+);
+
+/**
+ * Escape closes the suggestions or their status line first, so it leaves
+ * the editor only when nothing about a mention is showing.
+ */
+function closeMentions(view: EditorView) {
+  const { state } = view;
+  const status = state.field(mentionStatus, false);
+  const completion = completionStatus(state);
+  if (!status && completion === null) return false;
+  const head = state.selection.main.head;
+  const line = state.doc.lineAt(head);
+  const word = mentionWord.exec(state.sliceDoc(line.from, head));
+  const from = status?.from ?? (word ? line.from + word.index : null);
+  // CodeMirror also waits a moment after ordinary typing; Escape then
+  // leaves the editor, unless a search for an @name at the cursor runs.
+  const mentioning =
+    Boolean(status) ||
+    completion === "active" ||
+    (from !== null && from !== state.field(dismissedMention, false)?.from);
+  closeCompletion(view);
+  if (!mentioning) return false;
+  view.dispatch({
+    effects: [setMentionStatus.of(null), dismissMention.of(from)],
+  });
+  return true;
+}
+
+/** Suggestions for the name after `@`, even inside a word, as in an email. */
 function mentionSource(
   search: () => (query: string) => Promise<BacklogPerson[]>,
 ) {
@@ -163,9 +251,8 @@ function mentionSource(
   ): Promise<CompletionResult | null> => {
     const word = context.matchBefore(mentionWord);
     if (!word) return null;
-    const before =
-      word.from > 0 ? context.state.sliceDoc(word.from - 1, word.from) : "";
-    if (before && !/[\s(]/.test(before)) return null;
+    const dismissed = context.state.field(dismissedMention, false);
+    if (dismissed?.from === word.from) return null;
     // CodeMirror keeps a query running while the text changes, so an answer
     // counts only while this `@word` is still what is typed, in focus.
     const stillTyped = () => {
@@ -175,6 +262,8 @@ function mentionSource(
       return (
         !context.aborted &&
         view.hasFocus &&
+        // Escape closed this search while it ran.
+        state.field(dismissedMention, false)?.count === dismissed?.count &&
         state.sliceDoc(word.from, state.selection.main.head) === word.text
       );
     };
@@ -346,7 +435,8 @@ export default function MarkdownEditorView({
               },
               {
                 key: "Escape",
-                run: () => {
+                run: (target) => {
+                  if (closeMentions(target)) return true;
                   const cancel = handlers.current.onCancel;
                   if (!cancel) return false;
                   cancel();
@@ -359,6 +449,8 @@ export default function MarkdownEditorView({
           mentionChips,
           ...(mentions
             ? [
+                // Ahead of the completion's own Ctrl+Space.
+                Prec.highest(askAgainKeymap),
                 autocompletion({
                   override: [
                     mentionSource(
@@ -369,6 +461,7 @@ export default function MarkdownEditorView({
                   icons: false,
                 }),
                 mentionStatus,
+                dismissedMention,
                 keymap.of(completionKeymap),
               ]
             : []),
