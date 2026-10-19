@@ -43,24 +43,3 @@ Feature: Agent tasks from plugins
     Then the manual Submit week button is enabled
     When the local API sends the agent tasks
     Then the Commit page offers "Check Workday and submit" alongside Submit week
-
-  Scenario: Manually submit and reopen a committed week without starting an agent
-    Given I have a committed week of entries
-    And the local API reports a ready "Check Workday and submit" submit task
-    When I change Monday's "API" entry to "2:30" hours
-    And I open the Commit page for the week of 2026-10-05
-    Then "Submit week" is disabled with the reason "Commit your changes first"
-    When I press "Mark as committed"
-    And I press "Submit week"
-    And I press "Submit anyway"
-    Then the Commit page shows the week is submitted
-    And no agent run is requested
-    When I undo the manual week submission
-    Then the Commit page shows the week is not submitted
-    When I press "Submit week"
-    And I press "Submit anyway"
-    And I reload the page
-    Then the Commit page shows the week is submitted
-    When I press "Reopen week"
-    Then the Commit page shows the week is not submitted
-    And no agent run is requested

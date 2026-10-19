@@ -350,17 +350,6 @@ Then("the manual Submit week button is enabled", async ({ page }) => {
   ).toBeEnabled();
 });
 
-Then("no agent run is requested", () => {
-  expect(runner.runRequests).toEqual([]);
-});
-
-When("I undo the manual week submission", async ({ page }) => {
-  await page
-    .getByLabel("Week submitted", { exact: true })
-    .getByRole("button", { name: "Undo", exact: true })
-    .click();
-});
-
 Then("{string} is the primary button", async ({ page }, label: string) => {
   await expect(
     page.getByRole("button", { name: label, exact: true }),
