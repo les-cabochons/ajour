@@ -9,7 +9,11 @@ import {
   openAgentPanel,
   useAgentBridgeState,
 } from "@/features/agents/agent-bridge-state";
-import { refreshAgentRunner, useAgentRunner } from "@/lib/agent-runner";
+import {
+  refreshAgentRunner,
+  useAgentRunner,
+  type AgentRunnerState,
+} from "@/lib/agent-runner";
 import { startAgentRun } from "@/lib/app-api";
 
 /** The task's week link for `weekOf`, or undefined when it is not https. */
@@ -31,13 +35,30 @@ export function weekLinkFor(task: AgentTaskStatus, weekOf: string) {
   }
 }
 
-/** True when an active plugin has a task for `placement`, such as one that replaces Submit week. */
-export function useHasAgentTasks(placement: AgentTaskPlacement) {
-  const state = useAgentRunner();
-  return (
-    state.kind === "ready" &&
+/** Whether an active plugin has a task for a placement, or `loading` until Ajour knows. */
+export type AgentTaskPresence = "loading" | "present" | "absent";
+
+/**
+ * Whether an active plugin has a task for `placement`, such as one that
+ * replaces Submit week. `loading` while the overview loads on a cold start.
+ * Without the local API (the web build) or with a failed overview there is
+ * no task, so the page falls back to its own button: `AgentTaskButtons`
+ * shows nothing then either.
+ */
+export function getAgentTaskPresence(
+  state: AgentRunnerState,
+  placement: AgentTaskPlacement,
+): AgentTaskPresence {
+  if (state.kind === "loading") return "loading";
+  return state.kind === "ready" &&
     state.overview.tasks.some((task) => task.placement === placement)
-  );
+    ? "present"
+    : "absent";
+}
+
+/** `getAgentTaskPresence` for the current agent runner overview. */
+export function useAgentTaskPresence(placement: AgentTaskPlacement) {
+  return getAgentTaskPresence(useAgentRunner(), placement);
 }
 
 /**

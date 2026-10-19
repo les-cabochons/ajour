@@ -60,7 +60,7 @@ import type { LocalProjectIcon } from "@/domain/projects/project-icon";
 import {
   AgentTaskButtons,
   AgentTaskWeekLinks,
-  useHasAgentTasks,
+  useAgentTaskPresence,
 } from "@/features/agents/agent-task-buttons";
 import { offerUndo } from "@/features/feedback/undo-toast";
 import {
@@ -349,11 +349,16 @@ export function CommitPage({
       }),
     [state.userPreferences.weeklyCapacityTargets, weekDates, weekEntries],
   );
-  const hasSubmitTasks = useHasAgentTasks("submit-week");
+  const submitTasks = useAgentTaskPresence("submit-week");
   const lockedWeek = getLockedWeek(state, weekOf);
   const submitReason = lockedWeek
     ? undefined
     : getSubmitButtonReason(getSubmitWeekRefusal(state, weekOf));
+  // Until the agent tasks load, a plugin's submit task may replace Submit
+  // week, so the button waits instead of letting the week lock by hand.
+  const manualSubmitReason =
+    submitReason ??
+    (submitTasks === "loading" ? "Loading agent tasks" : undefined);
   // The pace the confirmation shows. It stays set after the dialog closes, so
   // the closing dialog keeps its title; `paceCheckOpen` drives the dialog.
   const [paceCheck, setPaceCheck] = useState<WeekPace | null>(null);
@@ -540,7 +545,7 @@ export function CommitPage({
                 Mark as committed
               </Button>
             ) : null}
-            {hasSubmitTasks ? (
+            {submitTasks === "present" ? (
               // A plugin's submit task replaces Submit week, with its reasons.
               <AgentTaskButtons
                 weekOf={weekOf}
@@ -550,12 +555,12 @@ export function CommitPage({
                 primary={changes.length === 0}
               />
             ) : (
-              <DisabledReason label="Submit week" reason={submitReason}>
+              <DisabledReason label="Submit week" reason={manualSubmitReason}>
                 <Button
                   // The next step is the primary button: Mark as committed while
                   // changes wait, Submit week after.
                   variant={changes.length > 0 ? "outline" : "default"}
-                  disabled={submitReason !== undefined}
+                  disabled={manualSubmitReason !== undefined}
                   onClick={requestSubmit}
                 >
                   <Lock data-icon="inline-start" />

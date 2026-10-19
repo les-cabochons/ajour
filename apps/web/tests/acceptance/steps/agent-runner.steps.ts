@@ -293,6 +293,30 @@ Given(
   },
 );
 
+/** Releases the held `GET /api/agents` answer, see the step below. */
+let sendAgentTasks: () => void = () => {};
+
+Given(
+  "the local API holds back a ready {string} submit task",
+  async ({ page }, label: string) => {
+    expect(label).toBe(submitWeekTask.label);
+    const overview = { ...readyOverview, tasks: [enterWeek, submitWeekTask] };
+    runner = await mockRunner(page, overview);
+    const held = new Promise<void>((resolve) => {
+      sendAgentTasks = resolve;
+    });
+    // Registered last, so it answers before the mock's own route.
+    await page.route(`${apiUrl}/api/agents`, async (route) => {
+      await held;
+      await route.fulfill({ json: overview, headers: cors });
+    });
+  },
+);
+
+When("the local API sends the agent tasks", () => {
+  sendAgentTasks();
+});
+
 Then(
   "the Commit page offers {string} instead of Submit week",
   async ({ page }, label: string) => {

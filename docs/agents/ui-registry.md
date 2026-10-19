@@ -293,7 +293,8 @@ The plugin actions and "Mark as committed" (with the Undo toast) sit in a
 wrapping row below; collapsing Changes leaves them visible. Submit week
 follows in the same row, primary once no change waits, disabled through
 `DisabledReason` with "Commit your changes first" or "Stop the running entry
-first". It asks through an `AlertDialog` when `needsPaceConfirmation` says so
+first", and with "Loading agent tasks" until the runner overview loads, since
+a plugin's `submit-week` task may replace it. It asks through an `AlertDialog` when `needsPaceConfirmation` says so
 ("Submit a week under pace?", Review and Submit anyway), then locks the week
 with the Undo toast "Week submitted". A submitted week shows `WeekLockChip`
 (`features/time/week-lock.tsx`) and "Submitted Oct 16." in the summary, and
