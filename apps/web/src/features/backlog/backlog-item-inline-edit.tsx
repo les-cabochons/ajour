@@ -1,12 +1,10 @@
 import { useRef, useState } from "react";
-import { RiAddLine as AddIcon } from "@remixicon/react";
 import { Markdown } from "@/components/markdown";
 import {
   MarkdownEditor,
   preloadMarkdownEditor,
 } from "@/components/markdown-editor";
 import { SectionHeading } from "@/components/section-heading";
-import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Figure } from "@/components/ui/value";
 import type {
@@ -269,9 +267,10 @@ export function DescriptionSection({
 }
 
 /**
- * "Add subitem" under the subitem list. It opens a name field that creates a
- * subitem with the parent's project and task on Enter, then stays open for
- * the next one. Escape, or leaving it empty, closes it.
+ * The name field under the subitem list, shown while `adding`: the Subitems
+ * card's + opens it. Enter creates a subitem with the parent's project and
+ * task, and the field stays open for the next one. Escape, or leaving it
+ * empty, closes it.
  */
 export function AddSubitemRow({
   parent,
@@ -294,19 +293,7 @@ export function AddSubitemRow({
     setTitle("");
   }
 
-  if (!adding) {
-    return (
-      <Button
-        variant="ghost"
-        size="sm"
-        className="mt-1 w-fit text-muted-foreground"
-        onClick={() => onAddingChange(true)}
-      >
-        <AddIcon data-icon="inline-start" />
-        Add subitem
-      </Button>
-    );
-  }
+  if (!adding) return null;
 
   return (
     <Input

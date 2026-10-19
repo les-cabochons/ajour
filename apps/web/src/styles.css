@@ -120,6 +120,7 @@
     --surface-lowest: var(--background);
     --surface-low: var(--sidebar);
     --surface: var(--card);
+    --surface-raised: oklch(0.985 0.002 285);
     --surface-high: var(--secondary);
     --surface-highest: oklch(0.935 0.003 285);
     --text: var(--foreground);
@@ -253,6 +254,7 @@
     --surface-lowest: var(--background);
     --surface-low: var(--sidebar);
     --surface: oklch(0.215 0.004 285);
+    --surface-raised: oklch(0.195 0.004 285);
     --surface-high: oklch(0.25 0.004 285);
     --surface-highest: oklch(0.29 0.004 285);
     --text-secondary: var(--muted-foreground);
