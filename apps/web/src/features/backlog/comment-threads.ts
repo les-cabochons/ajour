@@ -37,7 +37,7 @@ export function commentMentionSearch(source: CommentSource) {
             await searchItemPeople(source.pluginId, source.connectionId, {
               sourceId: source.sourceId,
               query,
-              limit: 8,
+              limit: 20,
             })
           ).people,
       }

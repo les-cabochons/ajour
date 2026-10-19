@@ -17,7 +17,7 @@ Export these as named functions from your entry point. Each can be `async`.
 | `editItemComment`        | `capabilities.connector.comments.edit`      | The user edits one of their own comments.                                                                                              |
 | `deleteItemComment`      | `capabilities.connector.comments.delete`    | The Undo toast of a deleted comment closes, or Ajour starts again after quitting during it.                                            |
 | `setItemCommentReaction` | `capabilities.connector.comments.reactions` | The user adds or removes their reaction.                                                                                               |
-| `searchItemPeople`       | `capabilities.connector.comments.mentions`  | The user types `@` and a few letters in a comment.                                                                                     |
+| `searchItemPeople`       | `capabilities.connector.comments.mentions`  | The user types `@` in a comment, and each name after it.                                                                               |
 
 ```ts
 export async function validateConnection(
@@ -181,7 +181,7 @@ Declare `edit`, `delete` and `reactions` under `capabilities.connector.comments`
 
 ## Mentions
 
-With `mentions: true`, Ajour suggests people when the user types `@` in a comment and calls `searchItemPeople` with what they typed. Return at most `limit` people who can be mentioned on the item, with the ids your mentions use. Ajour inserts `[@Display Name](mention:<id>)` and shows it as a chip; your `postItemComment` and `editItemComment` turn it into your tool's mention, so the person is notified.
+With `mentions: true`, Ajour suggests people when the user types `@` in a comment and calls `searchItemPeople` with what they typed. A bare `@` calls it with an empty `query`: return the people most likely to be mentioned, such as the item's assignee and commenters, or none. Return at most `limit` people who can be mentioned on the item, with the ids your mentions use, and each one's `email` when you know it, which Ajour shows under the name. Ajour inserts `[@Display Name](mention:<id>)` and shows it as a chip; your `postItemComment` and `editItemComment` turn it into your tool's mention, so the person is notified.
 
 ## Errors
 
@@ -369,6 +369,8 @@ export type BacklogReaction =
 export interface BacklogPerson {
   id: string;
   displayName: string;
+  /** Shown under the name in the @ suggestions. */
+  email?: string;
 }
 
 export interface BacklogListItemCommentsRequest {
@@ -434,7 +436,7 @@ export interface BacklogSetItemCommentReactionResult {
 
 export interface BacklogSearchItemPeopleRequest {
   sourceId: string;
-  /** What the user typed after `@`. */
+  /** What the user typed after `@`; empty after a bare `@`. */
   query: string;
   /** 1 to 20. */
   limit: number;
