@@ -187,8 +187,12 @@ _Avoid_: Cancel, delete (for a running entry)
 ### Extensions
 
 **Plugin**:
-An installable extension of Ajour that provides one or more capabilities: backlog, schema, code host, calendar or team. When a plugin provides more than one of backlog, code host, calendar and team, the user turns each on and off separately, as Backlog items, Pull requests, Calendar events and Projects.
+An installable extension of Ajour that provides one or more capabilities: backlog, schema, code host, calendar, team or sign-in. When a plugin provides more than one of backlog, code host, calendar and team, the user turns each on and off separately, as Backlog items, Pull requests, Calendar events and Projects.
 _Avoid_: Extension, add-on, integration, connector
+
+**Connection**:
+One place a plugin talks to, such as an Azure DevOps organisation or a Jira site, with its own settings. Its credentials are either its own or an account it may use through a grant. A plugin can have several connections.
+_Avoid_: Integration, instance, account (for a connection)
 
 **Team**:
 A group of people who share one set of projects and tasks through a team plugin. A workspace can connect to several teams.
@@ -209,6 +213,22 @@ _Avoid_: Git provider, PR plugin, forge
 **Calendar**:
 A plugin capability that provides the user's calendar events for a date range, from a tool such as Google Calendar, Outlook or Exchange. Read-only.
 _Avoid_: Calendar sync, calendar integration
+
+**Sign-in** (capability):
+A plugin capability that offers sign-in with a service such as Microsoft or Google. The plugin only declares the service; Ajour runs the sign-in and holds the accounts.
+_Avoid_: Authentication, SSO, identity provider, account (for the capability)
+
+**Account**:
+One person's sign-in with a service such as Microsoft or Google, which Ajour holds for them. Plugins use an account only through a grant.
+_Avoid_: Login, identity, credential, token, session
+
+**Grant**:
+The user's approval for one plugin to use one account, for what that plugin says it needs, such as reading work items. The user approves it once, and is asked again only when the plugin asks for more.
+_Avoid_: Share, authorization, token (in user-facing text, say "Used by" and "Allow")
+
+**Access**:
+What a plugin declares it will reach: its hosts and endpoints, the accounts it wants to use, and its agent prompts. The user approves it at install, and again whenever an update widens it.
+_Avoid_: Permissions, scopes, capabilities (a capability is what a plugin provides, not what it reaches)
 
 ### Agents
 

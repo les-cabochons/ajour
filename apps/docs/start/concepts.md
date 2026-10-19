@@ -63,4 +63,4 @@ Ajour has a few objects, and each one has one job. This page names them and show
 : A plugin capability that maps projects and tasks to a file layout, such as the one Workday imports.
 
 **Connection**
-: One account or site a plugin talks to, with its own credentials and settings. A plugin can have several connections, for example one per client.
+: One site or organisation a plugin talks to, with its own credentials and settings. A plugin can have several connections, for example one per client.

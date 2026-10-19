@@ -1,0 +1,26 @@
+# Ajour's broker holds every credential
+
+Plugins never see a secret, not even their own. A broker in Ajour's main process holds every credential in the OS secret store, through Electron safeStorage, and makes every authenticated request. A plugin asks for a connection, a method, a relative path, a query, allowed headers and a body. The broker then:
+
+- builds the URL from the connection's base address;
+- checks the manifest's endpoint allowlist;
+- resolves DNS itself and refuses private addresses unless the user marked the connection as on-premises;
+- attaches the credential;
+- removes secrets from what comes back.
+
+Sign-in protocols also live in the broker: bearer and basic credentials, header templates, OAuth with PKCE and a loopback redirect, and WAM through MSAL on Windows. A plugin with the sign-in capability only declares the service, its client and what it offers. The broker runs the sign-in and holds the account. Another plugin uses that account only through a grant the user approved, for what that plugin declared. The broker sits behind a message-shaped port, so a separate credential agent could replace it later. The full model is on #229.
+
+## Considered options
+
+- **The plugin runs its own sign-in, and Ajour stores an opaque credential.** This was charted first, then rejected: the plugin would hold the refresh token, and ADR 0007 forbids plugin code from holding any credential.
+- **Microsoft and Google sign-in built into Ajour only.** Rejected. Ajour would ship every client registration, and each new service would need an Ajour release. A built-in sign-in, such as a possible Ajour account, uses the same declaration as a plugin's, so either path stays open.
+- **The host hands the plugin a token for each call.** Rejected. The token would sit in plugin memory, and any request could carry it away.
+
+## Consequences
+
+- The rule in `docs/agents/architecture.md` that a plugin owns its external-system authentication and transport is reversed. A plugin owns its requests and its data mapping. Ajour owns credentials and transport.
+- Secret connection fields are never passed to a plugin and never accepted back from one. On first run, existing secrets move from the state file to safeStorage. When encryption is unavailable, Ajour refuses to store secrets and says so.
+- Accounts belong to the plugin that declared their sign-in. Uninstalling that plugin removes its accounts and every grant on them.
+- An update that widens a plugin's access starts disabled until the user approves it again.
+- The local API stops accepting unauthenticated loopback callers (#232).
+- G2 stays best effort: a plugin can still misuse what its grant allows.

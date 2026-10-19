@@ -76,6 +76,8 @@ The local API is a boundary for plugin-driven work. Plugin behavior should produ
 
 ## Plugins
 
+ADR 0007 and ADR 0010 replace this runtime. Until they ship, this section describes the current one.
+
 Backlog, code host, calendar and team are capabilities of installable
 plugins. A plugin declares one or more in its manifest, and its connections
 serve all of them. A connection field may name the capability it configures, so the connection
