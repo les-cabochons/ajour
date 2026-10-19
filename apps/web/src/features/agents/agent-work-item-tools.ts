@@ -12,7 +12,10 @@ import {
   toAgentWorkItem,
 } from "@/domain/agents/agent-read-model";
 import { AgentToolRefusal } from "@/domain/agents/agent-tool-refusal";
-import type { BacklogSettleChange } from "@/domain/backlog/backlog-item-lifecycle";
+import {
+  settleMarkOf,
+  type BacklogSettleChange,
+} from "@/domain/backlog/backlog-item-lifecycle";
 import type { WorkItemPatch } from "@/domain/backlog/work-item-transitions";
 import type { LocalAppState, LocalWorkItem } from "@/domain/local-state";
 import {
@@ -339,6 +342,7 @@ export async function runWorkItemWriteTool(
       if (commentSource && input.comment) {
         queueSettleComment({
           id: commentId,
+          settleMark: settleMarkOf(settled),
           agentClient: client.name,
           itemId: item._id,
           pluginId: commentSource.pluginId,

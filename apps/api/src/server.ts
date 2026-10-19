@@ -1687,22 +1687,31 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
          * as stored now: before the plugin runs, and again before a read's
          * text leaves, so a revocation saved meanwhile holds.
          */
-        const refuseAgent = async () => {
-          if (!forAgent) return false;
+        const agentRefusal = `The user hasn't allowed agents to ${agentNeed === "read" ? "read" : "post"} comments on the "${connection.label}" connection.`;
+        const agentAllowed = async () => {
+          if (!forAgent) return true;
           const current = await storage.getConnection(pluginId, connectionId);
-          if (
+          return Boolean(
             current &&
-            agentAccessAllows(connectionAgentAccess(current), agentNeed)
-          ) {
-            return false;
-          }
-          logCommentEvent("refused");
-          writeJson(response, 403, {
-            error: `The user hasn't allowed agents to ${agentNeed === "read" ? "read" : "post"} comments on the "${connection.label}" connection.`,
-          });
-          return true;
+            agentAccessAllows(connectionAgentAccess(current), agentNeed),
+          );
         };
-        if (await refuseAgent()) return;
+        const refuseAgent = () => {
+          logCommentEvent("refused");
+          writeJson(response, 403, { error: agentRefusal });
+        };
+        if (!(await agentAllowed())) {
+          refuseAgent();
+          return;
+        }
+        // Checked again at the plugin's admission, after the host's own
+        // waits, so a revocation saved meanwhile stops a post.
+        let refusedAtAdmission = false;
+        const admit = async () => {
+          if (await agentAllowed()) return;
+          refusedAtAdmission = true;
+          throw new Error(agentRefusal);
+        };
         try {
           const result = await pluginManager.runBacklogCommentOperation(
             pluginId,
@@ -1720,8 +1729,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
               config: connection.config,
             },
             commentRequest,
+            admit,
           );
-          if (agentNeed === "read" && (await refuseAgent())) return;
+          // A read's text leaves only while the agent may still read.
+          if (!(await agentAllowed())) {
+            refuseAgent();
+            return;
+          }
           logCommentEvent(
             "ok",
             "comments" in result
@@ -1734,6 +1748,10 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           );
           writeJson(response, 200, result);
         } catch (error) {
+          if (refusedAtAdmission) {
+            refuseAgent();
+            return;
+          }
           const message = boundConnectionError(
             redactSecretValues(errorMessage(error), plugin, connection.config),
           );

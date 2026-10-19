@@ -20,6 +20,7 @@ import {
 import { OptionSelect } from "@/components/ui/option-select";
 import {
   settleArchivesWorkItem,
+  settleMarkOf,
   type BacklogSettleChange,
 } from "@/domain/backlog/backlog-item-lifecycle";
 import { commentSourceOf } from "@/domain/backlog/comments";
@@ -140,6 +141,7 @@ export async function settleBacklogItemWithUndo(
   if (body && commentSource) {
     queueSettleComment({
       id: commentId,
+      settleMark: settled ? settleMarkOf(settled) : undefined,
       itemId: workItem._id,
       pluginId: commentSource.pluginId,
       connectionId: commentSource.connectionId,

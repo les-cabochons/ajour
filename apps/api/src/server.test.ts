@@ -1883,7 +1883,12 @@ describe("backlog comment routes", () => {
     "}",
     "export async function listItemComments(connection, request) {",
     "  if (request.sourceId === 'broken') throw new Error('Could not read with ' + connection.config.token);",
-    "  if (request.sourceId === 'slow') await new Promise((resolve) => setTimeout(resolve, 300));",
+    "  if (request.sourceId.startsWith('slow:')) {",
+    "    const [, entered, release] = request.sourceId.split('|');",
+    "    const fs = await import('node:fs/promises');",
+    "    await fs.writeFile(entered, '');",
+    "    while (!(await fs.access(release).then(() => true, () => false))) await new Promise((resolve) => setTimeout(resolve, 10));",
+    "  }",
     "  return {",
     "    viewer: { id: 'me', displayName: 'Me' },",
     "    comments: [{ id: 'c1', author: { id: 'ana', displayName: 'Ana Silva' }, body: 'Secret client detail', createdAt: '2026-10-13T10:42:00Z' }],",
@@ -2071,7 +2076,7 @@ describe("backlog comment routes", () => {
   });
 
   it("enforces agent access on an agent's comment calls, even when revoked mid-read", async () => {
-    const { server, connectionId, events } = await createServer({
+    const { server, connectionId, events, root } = await createServer({
       connector: { comments: {} },
     });
     const call = (operation: string, body: unknown, agent = true) =>
@@ -2115,13 +2120,26 @@ describe("backlog comment routes", () => {
     ).toBe(403);
 
     // Revoked while the plugin answers: the text doesn't leave.
-    const slow = call("listItemComments", { sourceId: "slow", limit: 5 });
-    await new Promise((resolve) => setTimeout(resolve, 50));
+    const entered = path.join(root, "entered");
+    const release = path.join(root, "release");
+    const slow = call("listItemComments", {
+      sourceId: `slow:|${entered}|${release}`,
+      limit: 5,
+    });
+    await expect
+      .poll(() =>
+        access(entered).then(
+          () => true,
+          () => false,
+        ),
+      )
+      .toBe(true);
     await setAccess("none");
+    await writeFile(release, "");
     expect(await slow).toMatchObject({ status: 403 });
-    expect(events.filter((event) => event.outcome === "refused")).toHaveLength(
-      3,
-    );
+    const refused = events.filter((event) => event.outcome === "refused");
+    expect(refused).toHaveLength(3);
+    expect(refused.every((event) => event.agent === true)).toBe(true);
   });
 
   it("lists an item's comments and logs no text or author", async () => {

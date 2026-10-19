@@ -1,7 +1,11 @@
 import { showErrorToast } from "@/components/ui/toast";
 import { isCapabilityActive } from "@ajour/shared";
 import type { LocalWorkItem } from "@/domain/local-state";
-import { hasSameSourceWriteRequest } from "@/domain/backlog/backlog-item-lifecycle";
+import {
+  hasSameSourceWriteRequest,
+  settleMarkOf,
+} from "@/domain/backlog/backlog-item-lifecycle";
+import { isCommentSourceOf } from "@/domain/backlog/comments";
 import { sourcePriorityFromLevel } from "@/domain/backlog/priority";
 import { announcePostedComment } from "@/features/backlog/comment-threads";
 import {
@@ -9,7 +13,6 @@ import {
   postItemComment,
   writeBacklogSettle,
 } from "@/lib/app-api";
-import { isCommentSourceOf } from "@/domain/backlog/comments";
 import {
   agentAccessAllows,
   readAgentCommentAccess,
@@ -17,6 +20,7 @@ import {
 import { keepCommentAsDraft } from "@/lib/comment-drafts";
 import { localStore } from "@/lib/local-store";
 import {
+  type PendingSettleComment,
   markSettleCommentReady,
   markSettleCommentsReady,
   settleCommentItemIds,
@@ -138,47 +142,64 @@ function keepSettleCommentsAsDrafts(workItemId: string) {
 
 /**
  * Posts the item's settle comments that are ready: their settle's Undo
- * window closed, and the item's pending write landed. A settle that was
- * undone keeps its comment as the item's draft instead, as does a refused
- * post (ADR 0008).
+ * window closed, and the item's pending write landed. An agent's comment
+ * also needs the agent to be still allowed to post. A settle that was
+ * undone, failed or replaced keeps its comment as the item's draft
+ * instead, as does a refused post (ADR 0008).
  */
 export async function sendSettleComments(workItemId: string) {
-  const item = localStore
-    .snapshot()
-    .workItems.find((workItem) => workItem._id === workItemId);
+  const itemNow = () =>
+    localStore
+      .snapshot()
+      .workItems.find((workItem) => workItem._id === workItemId);
   // The item's write goes first and sends the comments once it lands.
-  if (item?.pendingSourceWrite) return;
+  if (itemNow()?.pendingSourceWrite) return;
   const ready = settleCommentsOf(workItemId).filter((entry) => entry.ready);
   await Promise.all(
-    ready.map(async ({ id }) => {
-      const entry = takeSettleComment(id);
+    ready.map(async (queued) => {
+      // An agent's comment: read its access before taking the comment, so
+      // what the item does meanwhile is checked below.
+      let agentCheck: { allowed: boolean } | { error: unknown } | undefined;
+      if (queued.agentClient) {
+        try {
+          const { access } = await readAgentCommentAccess({
+            source: queued.pluginId,
+            sourceConnectionId: queued.connectionId,
+            sourceId: queued.sourceId,
+          });
+          agentCheck = { allowed: agentAccessAllows(access, "readWrite") };
+        } catch (error) {
+          agentCheck = { error };
+        }
+      }
+      // A write that started meanwhile goes first and sends it after.
+      if (itemNow()?.pendingSourceWrite) return;
+      const entry = takeSettleComment(queued.id);
+      const item = itemNow();
       if (!entry || !item) return;
-      if (item.status === "active" || !isCommentSourceOf(item, entry)) {
+      if (!settleStands(item, entry)) {
         keepCommentAsDraft(workItemId, entry.body);
         return;
       }
+      const author = entry.agentClient ? `${entry.agentClient}'s` : "your";
+      if (agentCheck && "error" in agentCheck) {
+        keepCommentAsDraft(workItemId, entry.body);
+        showErrorToast({
+          title: `Couldn't post ${author} comment on "${item.title}"`,
+          description: `${agentCheck.error instanceof Error ? agentCheck.error.message : "Unknown error"} It's kept as a draft on the item.`,
+        });
+        return;
+      }
+      if (agentCheck && !agentCheck.allowed) {
+        keepCommentAsDraft(workItemId, entry.body);
+        showErrorToast({
+          title: `${entry.agentClient}'s comment on "${item.title}" wasn't posted`,
+          description:
+            "Agents can no longer post comments on its connection. It's kept as a draft on the item.",
+        });
+        return;
+      }
       try {
-        if (entry.agentClient) {
-          const { access } = await readAgentCommentAccess(item);
-          if (!agentAccessAllows(access, "readWrite")) {
-            keepCommentAsDraft(workItemId, entry.body);
-            showErrorToast({
-              title: `${entry.agentClient}'s comment on "${item.title}" wasn't posted`,
-              description:
-                "Agents can no longer post comments on its connection. It's kept as a draft on the item.",
-            });
-            return;
-          }
-          // Changed while access was read: the settle no longer stands.
-          const now = localStore
-            .snapshot()
-            .workItems.find((workItem) => workItem._id === workItemId);
-          if (!now) return;
-          if (now.status === "active" || !isCommentSourceOf(now, entry)) {
-            keepCommentAsDraft(workItemId, entry.body);
-            return;
-          }
-        }
         const { comment } = await postItemComment(
           entry.pluginId,
           entry.connectionId,
@@ -190,11 +211,24 @@ export async function sendSettleComments(workItemId: string) {
       } catch (error) {
         keepCommentAsDraft(workItemId, entry.body);
         showErrorToast({
-          title: `Couldn't post ${entry.agentClient ? `${entry.agentClient}'s` : "your"} comment on "${item.title}"`,
+          title: `Couldn't post ${author} comment on "${item.title}"`,
           description: `${error instanceof Error ? error.message : "Unknown error"} It's kept as a draft on the item.`,
         });
       }
     }),
+  );
+}
+
+/**
+ * Whether the settle a comment was typed with still stands: not undone,
+ * failed or replaced by another settle, and the item still comes from the
+ * comment's thread.
+ */
+function settleStands(item: LocalWorkItem, entry: PendingSettleComment) {
+  return (
+    item.status !== "active" &&
+    isCommentSourceOf(item, entry) &&
+    (entry.settleMark === undefined || settleMarkOf(item) === entry.settleMark)
   );
 }
 
