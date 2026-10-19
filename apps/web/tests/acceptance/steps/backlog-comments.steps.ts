@@ -501,6 +501,22 @@ When("I keep typing {string}", async ({ page }, text: string) => {
   await page.keyboard.type(text);
 });
 
+When(
+  "I move back {int} characters and ask for suggestions",
+  async ({ page }, count: number) => {
+    for (let index = 0; index < count; index += 1) {
+      await page.keyboard.press("ArrowLeft");
+    }
+    await page.keyboard.press("Control+Space");
+  },
+);
+
+When("I move forward {int} characters", async ({ page }, count: number) => {
+  for (let index = 0; index < count; index += 1) {
+    await page.keyboard.press("ArrowRight");
+  }
+});
+
 When("I pick Ana from the suggestions", async ({ page }) => {
   await page.getByRole("option", { name: "Ana Silva" }).click();
 });

@@ -102,13 +102,13 @@ const escapeName = (name: string) => name.replace(/[[\]\\]/g, "");
  * words with one space between them, so a last name can follow the first.
  * Two spaces or a fourth word end it.
  */
-const mentionName = String.raw`@(?:[^\s@[\]()]+(?: [^\s@[\]()]+){0,2} ?)?`;
-const mentionWord = new RegExp(`${mentionName}$`);
-const wholeMentionWord = new RegExp(`^${mentionName}$`);
+const mentionWord = /@(?:[^\s@[\]()]+(?: [^\s@[\]()]+){0,2} ?)?$/;
 
 interface MentionStatus {
   /** Where the `@` is. */
   from: number;
+  /** The `@name` it answers. */
+  word: string;
   text: string;
 }
 
@@ -117,7 +117,8 @@ const setMentionStatus = StateEffect.define<MentionStatus | null>();
 /**
  * A line in place of the suggestions when there are none to pick: asking
  * for a name after a bare `@`, or saying no one was found. It goes when the
- * text changes, the cursor leaves the `@word` or the editor loses focus.
+ * text changes, the cursor leaves the `@name` it answers or the editor loses
+ * focus.
  */
 const mentionStatus = StateField.define<MentionStatus | null>({
   create: () => null,
@@ -130,7 +131,7 @@ const mentionStatus = StateField.define<MentionStatus | null>({
     if (!transaction.selection) return status;
     const head = transaction.state.selection.main.head;
     const typed = transaction.state.sliceDoc(status.from, head);
-    return wholeMentionWord.test(typed) ? status : null;
+    return head > status.from && status.word.startsWith(typed) ? status : null;
   },
   provide: (field) => [
     showTooltip.from(field, (status) =>
@@ -185,7 +186,9 @@ function mentionSource(
       if (!view) return;
       if (text === null && !view.state.field(mentionStatus, false)) return;
       view.dispatch({
-        effects: setMentionStatus.of(text ? { from: word.from, text } : null),
+        effects: setMentionStatus.of(
+          text ? { from: word.from, word: word.text, text } : null,
+        ),
       });
     };
     const query = word.text.slice(1).trim();

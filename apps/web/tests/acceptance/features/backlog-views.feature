@@ -593,6 +593,17 @@ Feature: Backlog list and board views
     When I keep typing " "
     Then the mention suggestions are closed
 
+  Scenario: No one found goes once the cursor leaves the name it answers
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people and records posted comments
+    When I open the Backlog parent page
+    And I type "@Zoe thanks" in a new comment
+    And I move back 7 characters and ask for suggestions
+    Then the mention suggestions say no one was found
+    When I move forward 2 characters
+    Then the mention suggestions are closed
+
   Scenario: A failed people search reads as no one found
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit
