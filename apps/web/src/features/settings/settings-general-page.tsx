@@ -225,7 +225,7 @@ export function SettingsGeneralPage() {
           <SettingRow
             label="Over-capacity warning"
             labelFor="warn-over-capacity"
-            description="Show a compact warning when logged time exceeds a target."
+            description="Show a compact warning when logged time runs more than 50% over a target."
           >
             <Switch
               id="warn-over-capacity"

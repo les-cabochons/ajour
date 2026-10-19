@@ -265,7 +265,7 @@ describe("weekly time projection", () => {
           _id: "tuesday-entry",
           localDate: "2026-08-11",
           label: "No project work",
-          durationMs: 6,
+          durationMs: 8,
           sourceBlockIds: [],
           committedAt: 2,
         },
@@ -290,12 +290,12 @@ describe("weekly time projection", () => {
     expect(projection.days[1]).toMatchObject({
       capacityMs: 5,
       overCapacity: true,
-      totalMs: 6,
+      totalMs: 8,
     });
     expect(projection).toMatchObject({
       capacityMs: 5,
       overCapacity: true,
-      totalMs: 10,
+      totalMs: 12,
     });
     expect(projection.gridRows).toEqual(
       expect.arrayContaining([
@@ -313,6 +313,59 @@ describe("weekly time projection", () => {
       projection.gridRows.some((row) => row.entryIds.includes("outside-week")),
     ).toBe(false);
   });
+
+  it("is over capacity only past half again the target", () => {
+    const HOUR = 3_600_000;
+    const project = (dayHours: number[]) =>
+      projectWeeklyTime({
+        capacityTargets: {
+          monday: 8 * HOUR,
+          tuesday: 8 * HOUR,
+          wednesday: 8 * HOUR,
+          thursday: 8 * HOUR,
+          friday: 8 * HOUR,
+          saturday: 0,
+          sunday: 0,
+        },
+        entries: dayHours.map((hours, index) => ({
+          _id: `entry-${index}`,
+          localDate: weekDates[index]!,
+          label: "Build",
+          durationMs: hours * HOUR,
+          sourceBlockIds: [],
+          committedAt: index,
+        })),
+        projects,
+        weekDates,
+      });
+
+    // Days of 8 to 9 hours against an 8-hour target are usual.
+    const usualWeek = project([8, 9, 8.5, 9, 9]);
+    expect(usualWeek.days.map((day) => day.overCapacity)).toEqual([
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+      false,
+    ]);
+    expect(usualWeek.overCapacity).toBe(false);
+
+    const longDays = project([12, 12.5, 8, 8, 8, 1]);
+    expect(longDays.days.map((day) => day.overCapacity)).toEqual([
+      false,
+      true,
+      false,
+      false,
+      false,
+      false,
+      false,
+    ]);
+
+    expect(project([12, 12, 12, 12, 12.5]).overCapacity).toBe(true);
+  });
+
   it("lists each cell's entries without the running entry's saved part", () => {
     const projection = projectWeeklyTime({
       capacityTargets,

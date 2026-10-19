@@ -19,7 +19,8 @@ export function formatWeekDay(
 
 /**
  * A day or week total in the Week view. Hovering shows the capacity target and
- * how much of it is used; the warning icon marks a total over capacity.
+ * how much of it is used; the warning icon marks a total more than 50% over
+ * its target.
  */
 export function CapacityValue({
   capacityMs,

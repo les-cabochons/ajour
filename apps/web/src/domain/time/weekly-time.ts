@@ -15,6 +15,17 @@ const CAPACITY_KEYS = [
   "sunday",
 ] as const;
 
+/**
+ * A day or week is over capacity once its total passes 1.5 times its target.
+ * Running an hour or so past the target is a normal day, so the Week view only
+ * warns about time more than 50% over it.
+ */
+const OVER_CAPACITY_RATIO = 1.5;
+
+function isOverCapacity(totalMs: number, capacityMs: number) {
+  return capacityMs > 0 && totalMs > capacityMs * OVER_CAPACITY_RATIO;
+}
+
 /** Filters a Monday-to-Sunday week for display without changing its totals. */
 export function getVisibleWeekDates(
   weekDates: string[],
@@ -39,6 +50,7 @@ export interface WeeklyDayProjection {
   capacityMs: number;
   entries: LocalTimesheetEntry[];
   localDate: string;
+  /** More than 50% over the day's target. */
   overCapacity: boolean;
   totalMs: number;
 }
@@ -151,6 +163,7 @@ export interface WeeklyTimeProjection {
   capacityMs: number;
   days: WeeklyDayProjection[];
   gridRows: WeeklyGridRow[];
+  /** More than 50% over the week's target. */
   overCapacity: boolean;
   totalMs: number;
 }
@@ -198,7 +211,7 @@ export function projectWeeklyTime({
       capacityMs,
       entries: dayEntries,
       localDate,
-      overCapacity: capacityMs > 0 && totalMs > capacityMs,
+      overCapacity: isOverCapacity(totalMs, capacityMs),
       totalMs,
     };
   });
@@ -383,7 +396,7 @@ export function projectWeeklyTime({
         visibleDates.has(weekDates[index]!),
       ),
     })),
-    overCapacity: capacityMs > 0 && totalMs > capacityMs,
+    overCapacity: isOverCapacity(totalMs, capacityMs),
     totalMs,
   };
 }
