@@ -431,6 +431,20 @@ Given("its plugin finds no one, slowly", async ({ page }) => {
   });
 });
 
+Given("its plugin finds people, slowly", async ({ page }) => {
+  await page.route(peopleSearchUrl, async (route) => {
+    const { query } = route.request().postDataJSON() as { query: string };
+    await new Promise((resolve) => setTimeout(resolve, 1_000));
+    const people = [
+      { id: "ana", displayName: "Ana Silva" },
+      { id: "andrew", displayName: "Andrew Lee" },
+    ].filter((person) =>
+      person.displayName.toLowerCase().startsWith(query.toLowerCase()),
+    );
+    await route.fulfill({ json: { people }, headers: cors });
+  });
+});
+
 When(
   "the people search works again and I ask for suggestions",
   async ({ page }) => {

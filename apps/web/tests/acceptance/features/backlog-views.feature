@@ -592,6 +592,15 @@ Feature: Backlog list and board views
     And I keep typing " " before the search answers
     Then the mention suggestions are closed once the search answers
 
+  Scenario: Typing on while a people search runs searches the longer name
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people, slowly
+    When I open the Backlog parent page
+    And I type "@A" in a new comment
+    And I keep typing "na" before the search answers
+    Then Ana is suggested and no status shows
+
   Scenario: Archive a synced item from the bottom of its properties card
     Given the Backlog parent is synced
     When I open the Backlog parent page

@@ -171,6 +171,9 @@ function mentionSource(
         state.sliceDoc(word.from, state.selection.main.head) === word.text
       );
     };
+    // An empty answer, not null: CodeMirror reads null as a failure and
+    // stops, while an answer that the newer text outdates makes it ask again.
+    const outdated: CompletionResult = { from: word.from, options: [] };
     const showStatus = (text: string | null) => {
       const view = context.view;
       if (!view) return;
@@ -183,15 +186,16 @@ function mentionSource(
     if (!query) {
       // Out of the completion's own update.
       await Promise.resolve();
-      if (stillTyped()) showStatus("Type a name to mention someone");
+      if (!stillTyped()) return outdated;
+      showStatus("Type a name to mention someone");
       return null;
     }
     // Typing fast asks once, for the last query.
     await new Promise((resolve) => setTimeout(resolve, 200));
-    if (!stillTyped()) return null;
+    if (!stillTyped()) return outdated;
     // A search that fails reads like one that found no one.
     const people = await search()(query).catch(() => []);
-    if (!stillTyped()) return null;
+    if (!stillTyped()) return outdated;
     if (people.length === 0) {
       showStatus("No one found");
       return null;
