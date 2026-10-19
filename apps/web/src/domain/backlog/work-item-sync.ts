@@ -293,10 +293,10 @@ function mergeSyncedWorkItem(
  * A settled item comes back when someone else commented after it was settled
  * (ADR 0008). The latest such comment names who brought it back.
  *
- * `sync` holds each item's settle time as the sync asked about it, and when
- * it asked. An item settled again since keeps its settle: the comment
- * predates it. An item the same sync already returned for a source change
- * still names who commented. An item whose settle write still waits, itself
+ * `sync` holds each item's settle time as the sync asked about it, and the
+ * items this sync's own answer already returned for a source change, which
+ * still name who commented. An item settled again since keeps its settle:
+ * the comment predates it. An item whose settle write still waits, itself
  * or as a subitem its parent's settle carried, is left alone, so the settle's
  * Undo keeps working; the next sync reports the comment again.
  */
@@ -304,7 +304,10 @@ export function returnItemsWithNewComments(
   state: LocalAppState,
   facts: readonly BacklogItemCommentFacts[],
   viewer: BacklogPerson,
-  sync: { settledSince: ReadonlyMap<string, number>; requestedAt: number },
+  sync: {
+    settledSince: ReadonlyMap<string, number>;
+    returnedBySync: ReadonlySet<string>;
+  },
   now: () => number,
 ): LocalAppState {
   let next = state;
@@ -337,9 +340,9 @@ export function returnItemsWithNewComments(
     } else if (
       item.status === "active" &&
       item.returnedAt !== undefined &&
-      item.returnedAt >= sync.requestedAt
+      sync.returnedBySync.has(item._id)
     ) {
-      // Settled when the sync began, and this sync brought it back.
+      // This answer brought it back from the settle it asked about.
       next = withReturnedByComment(
         next,
         item._id,

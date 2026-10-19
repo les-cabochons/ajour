@@ -1756,7 +1756,10 @@ export const localStore = {
   returnItemsWithNewComments(
     facts: BacklogItemCommentFacts[],
     viewer: BacklogPerson,
-    sync: { settledSince: ReadonlyMap<string, number>; requestedAt: number },
+    sync: {
+      settledSince: ReadonlyMap<string, number>;
+      returnedBySync: ReadonlySet<string>;
+    },
   ) {
     updateState((state) =>
       applyReturnItemsWithNewComments(state, facts, viewer, sync, Date.now),
