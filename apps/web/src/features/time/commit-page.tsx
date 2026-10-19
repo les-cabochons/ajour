@@ -60,6 +60,8 @@ import type { LocalProjectIcon } from "@/domain/projects/project-icon";
 import {
   AgentTaskButtons,
   AgentTaskWeekLinks,
+  AGENT_RUN_GOING_REASON,
+  useAgentRunGoing,
   useAgentTaskPresence,
 } from "@/features/agents/agent-task-buttons";
 import { offerUndo } from "@/features/feedback/undo-toast";
@@ -354,6 +356,13 @@ export function CommitPage({
   const submitReason = lockedWeek
     ? undefined
     : getSubmitButtonReason(getSubmitWeekRefusal(state, weekOf));
+  // An agent run may submit the week itself. Locking it by hand meanwhile
+  // would make the run's own submission fail.
+  const agentRunGoing = useAgentRunGoing();
+  const [agentStarting, setAgentStarting] = useState(false);
+  const manualSubmitReason =
+    submitReason ??
+    (agentRunGoing || agentStarting ? AGENT_RUN_GOING_REASON : undefined);
   // The pace the confirmation shows. It stays set after the dialog closes, so
   // the closing dialog keeps its title; `paceCheckOpen` drives the dialog.
   const [paceCheck, setPaceCheck] = useState<WeekPace | null>(null);
@@ -531,7 +540,11 @@ export function CommitPage({
           </Button>
         ) : (
           <>
-            <AgentTaskButtons weekOf={weekOf} placement="commit-week" />
+            <AgentTaskButtons
+              weekOf={weekOf}
+              placement="commit-week"
+              onStartingChange={setAgentStarting}
+            />
             {changes.length > 0 ? (
               <Button
                 disabled={checkedIds.length === 0}
@@ -547,9 +560,10 @@ export function CommitPage({
                 disabledReason={submitReason}
                 // Primary once nothing is left to commit, like Submit week.
                 primary={changes.length === 0}
+                onStartingChange={setAgentStarting}
               />
             ) : null}
-            <DisabledReason label="Submit week" reason={submitReason}>
+            <DisabledReason label="Submit week" reason={manualSubmitReason}>
               <Button
                 // Keep manual submission available; the agent is primary
                 // when it provides the ready week's next step.
@@ -558,7 +572,7 @@ export function CommitPage({
                     ? "outline"
                     : "default"
                 }
-                disabled={submitReason !== undefined}
+                disabled={manualSubmitReason !== undefined}
                 onClick={requestSubmit}
               >
                 <Lock data-icon="inline-start" />

@@ -61,28 +61,58 @@ export function useAgentTaskPresence(placement: AgentTaskPlacement) {
   return getAgentTaskPresence(useAgentRunner(), placement);
 }
 
+/** Why an action waits while an agent run is going. */
+export const AGENT_RUN_GOING_REASON = "An agent task is already running.";
+
+/**
+ * Whether an agent run is going. The API's current run covers a CLI that
+ * outlives its ended session.
+ */
+export function isAgentRunGoing(
+  state: AgentRunnerState,
+  sessions: readonly { runId?: string; state: string }[],
+) {
+  return (
+    (state.kind === "ready" && state.overview.currentRun !== null) ||
+    sessions.some(
+      (session) =>
+        session.runId &&
+        (session.state === "active" || session.state === "stalled"),
+    )
+  );
+}
+
+/** `isAgentRunGoing` for the current overview and agent sessions. */
+export function useAgentRunGoing() {
+  const state = useAgentRunner();
+  const { snapshot } = useAgentBridgeState();
+  return isAgentRunGoing(state, snapshot?.sessions ?? []);
+}
+
 /**
  * The Commit page's plugin agent tasks for one placement and the week on
  * screen: one button each, disabled with the reason while the task cannot
  * run, a run is going, a start is in flight, or the week is not ready
  * (`disabledReason`, such as "Commit your changes first"). With `primary`,
  * an enabled button is the primary one, as Submit week is once nothing is
- * left to commit. The week links sit in the week summary, see
- * `AgentTaskWeekLinks`.
+ * left to commit. `onStartingChange` tells the page while a start is in
+ * flight. The week links sit in the week summary, see `AgentTaskWeekLinks`.
  */
 export function AgentTaskButtons({
   weekOf,
   placement,
   disabledReason,
   primary = false,
+  onStartingChange,
 }: {
   weekOf: string;
   placement: AgentTaskPlacement;
   disabledReason?: string;
   primary?: boolean;
+  onStartingChange?: (starting: boolean) => void;
 }) {
   const state = useAgentRunner();
-  const { snapshot } = useAgentBridgeState();
+  const running = useAgentRunGoing();
   const [error, setError] = useState<string | null>(null);
   // True from the click until the API answers, so a second click cannot send a second request.
   const [starting, setStarting] = useState(false);
@@ -98,19 +128,12 @@ export function AgentTaskButtons({
     (task) => task.placement === placement,
   );
   if (tasks.length === 0) return null;
-  // The API's current run covers a CLI that outlives its ended session.
-  const running =
-    state.overview.currentRun !== null ||
-    (snapshot?.sessions ?? []).some(
-      (session) =>
-        session.runId &&
-        (session.state === "active" || session.state === "stalled"),
-    );
 
   const start = async (task: AgentTaskStatus) => {
     if (starting) return;
     setError(null);
     setStarting(true);
+    onStartingChange?.(true);
     try {
       await startAgentRun({
         pluginId: task.pluginId,
@@ -123,6 +146,7 @@ export function AgentTaskButtons({
       setError(cause instanceof Error ? cause.message : "Unknown error");
     } finally {
       setStarting(false);
+      onStartingChange?.(false);
     }
   };
 
@@ -130,7 +154,7 @@ export function AgentTaskButtons({
     <div className="flex flex-wrap items-center gap-2">
       {tasks.map((task) => {
         const reason = running
-          ? "An agent task is already running."
+          ? AGENT_RUN_GOING_REASON
           : (task.blockers[0] ?? disabledReason);
         const button = (
           <Button

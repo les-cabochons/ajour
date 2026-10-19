@@ -36,6 +36,7 @@ Feature: Agent tasks from plugins
     And "Check Workday and submit" is the primary button
     When I press "Check Workday and submit"
     Then the "submit-week" run is requested for the week of 2026-10-12
+    And "Submit week" is disabled with the reason "An agent task is already running."
 
   Scenario: Submit week stays available while the agent tasks load
     Given the local API holds back a ready "Check Workday and submit" submit task
