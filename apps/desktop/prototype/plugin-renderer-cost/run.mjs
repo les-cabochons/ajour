@@ -1,8 +1,9 @@
 #!/usr/bin/env node
 // PROTOTYPE (#230, #260). Throwaway, never merged.
 // Drives main.cjs with the repo's Electron, one unique --user-data-dir per run,
-// and checks the OS process list. It only kills PIDs it started or their
-// descendants, never a process by name.
+// and checks the OS process list. It kills main by the PID it spawned, and a
+// leftover only if its command line carries the run's --user-data-dir. Never a
+// process by name.
 //
 //   node run.mjs --mode all                     full suite, writes results/
 //   node run.mjs --mode measure --plugins 4 --runs 5
@@ -129,6 +130,41 @@ async function snapshot(run, label, since) {
   };
 }
 
+/**
+ * macOS footprint per PID, from `footprint -j`. Footprint is the process's own
+ * dirty memory (what Activity Monitor shows), the closest macOS match to
+ * Windows private bytes. RSS also counts shared framework pages in every process.
+ */
+async function footprintOf(pids) {
+  const file = path.join(
+    os.tmpdir(),
+    `ajour-spike-footprint-${process.pid}-${Date.now()}.json`,
+  );
+  try {
+    await execFileText("footprint", [
+      "-f",
+      "bytes",
+      "-j",
+      file,
+      ...pids.flatMap((pid) => ["--pid", String(pid)]),
+    ]);
+    const report = JSON.parse(fs.readFileSync(file, "utf8"));
+    return {
+      byPid: new Map(
+        report.processes.map((entry) => [
+          entry.pid,
+          { footprintBytes: entry.footprint, translated: entry.translated },
+        ]),
+      ),
+      errors: report.errors,
+    };
+  } catch (error) {
+    return { byPid: new Map(), errors: [String(error)] };
+  } finally {
+    fs.rmSync(file, { force: true });
+  }
+}
+
 /** A fast OS memory read for known PIDs, to cross-check getAppMetrics. */
 async function memoryOf(pids) {
   const startedAt = performance.now();
@@ -163,7 +199,23 @@ async function memoryOf(pids) {
         privateBytes: null,
       }));
   }
-  return { tookMs: round(performance.now() - startedAt), processes: entries };
+  const rssTookMs = round(performance.now() - startedAt);
+  let footprintErrors;
+  if (process.platform === "darwin") {
+    const footprint = await footprintOf(pids);
+    footprintErrors = footprint.errors;
+    entries = entries.map((entry) => ({
+      ...entry,
+      footprintBytes: footprint.byPid.get(entry.pid)?.footprintBytes ?? null,
+      translated: footprint.byPid.get(entry.pid)?.translated ?? null,
+    }));
+  }
+  return {
+    tookMs: rssTookMs,
+    totalTookMs: round(performance.now() - startedAt),
+    footprintErrors,
+    processes: entries,
+  };
 }
 
 /** "alive", "eperm" (exists, but this process may not open it) or "dead". */
@@ -289,7 +341,9 @@ async function runOnce(spec) {
         ]);
   const deadline = setTimeout(() => {
     run.log.push({ event: "harness-timeout" });
-    void killPid(child.pid);
+    // Once main has exited, its PID may belong to another process.
+    if (child.exitCode === null && child.signalCode === null)
+      void killPid(child.pid);
   }, RUN_TIMEOUT_MS);
 
   try {
@@ -376,9 +430,18 @@ async function runOnce(spec) {
     run.checks.afterWait?.processes ??
     spikeProcesses(await listProcesses(), run);
   run.leftovers = leftovers;
-  if (leftovers.length > 0) {
+  // Kill a leftover only if its command line carries this run's
+  // --user-data-dir. A dead spike PID can be reused by another app, so a PID
+  // match alone is recorded but never killed.
+  const killable = leftovers.filter((entry) =>
+    entry.why.includes("user-data-dir"),
+  );
+  run.leftoversNotKilled = leftovers.filter(
+    (entry) => !killable.includes(entry),
+  );
+  if (killable.length > 0) {
     run.leftoverKills = [];
-    for (const entry of leftovers)
+    for (const entry of killable)
       run.leftoverKills.push({
         pid: entry.pid,
         output: await killPid(entry.pid),
@@ -486,6 +549,28 @@ function summarizeMeasure(runs) {
         metrics.reduce((sum, metric) => sum + metric.workingSetKB, 0) / 1024,
       osTotalWorkingSetMB:
         osAll.reduce((sum, entry) => sum + entry.rssBytes, 0) / 1024 / 1024,
+      osRendererFootprintMB: median(
+        osRenderers.map((entry) =>
+          entry.footprintBytes == null
+            ? null
+            : entry.footprintBytes / 1024 / 1024,
+        ),
+      ),
+      osNonRendererFootprintMB: osAll.some(
+        (entry) => entry.footprintBytes != null,
+      )
+        ? osAll
+            .filter((entry) => !rendererPids.has(entry.pid))
+            .reduce((sum, entry) => sum + (entry.footprintBytes ?? 0), 0) /
+          1024 /
+          1024
+        : null,
+      osTotalFootprintMB: osAll.some((entry) => entry.footprintBytes != null)
+        ? osAll.reduce((sum, entry) => sum + (entry.footprintBytes ?? 0), 0) /
+          1024 /
+          1024
+        : null,
+      translatedAny: osAll.some((entry) => entry.translated === true),
       processCount: metrics.length,
       processTypes: metrics
         .map((metric) => metric.type)
@@ -527,6 +612,10 @@ function summarizeMeasure(runs) {
     nonRendererWorkingSetMB: pick("nonRendererWorkingSetMB", 1),
     totalWorkingSetMB: pick("totalWorkingSetMB", 1),
     osTotalWorkingSetMB: pick("osTotalWorkingSetMB", 1),
+    osRendererFootprintMB: pick("osRendererFootprintMB", 1),
+    osNonRendererFootprintMB: pick("osNonRendererFootprintMB", 1),
+    osTotalFootprintMB: pick("osTotalFootprintMB", 1),
+    translatedAnyRun: perRun.some((entry) => entry.translatedAny),
     perCallCreateMs: pick("perCallCreateMs", 0),
     perCallCloseToExitMs: pick("perCallCloseToExitMs", 0),
     quitToExitMs: pick("quitToExitMs", 0),
@@ -678,6 +767,13 @@ function markdown(summary) {
       ),
       row("Whole app working set, getAppMetrics (MB)", "totalWorkingSetMB"),
       row("Whole app working set, OS (MB)", "osTotalWorkingSetMB"),
+      row("Renderer footprint, macOS (MB)", "osRendererFootprintMB"),
+      row(
+        "Browser + GPU + utility footprint, macOS (MB)",
+        "osNonRendererFootprintMB",
+      ),
+      row("Whole app footprint, macOS (MB)", "osTotalFootprintMB"),
+      row("Any process translated by Rosetta", "translatedAnyRun"),
       row("Per-call renderer: create to first answer (ms)", "perCallCreateMs"),
       row(
         "Per-call renderer: close to process exit (ms)",
