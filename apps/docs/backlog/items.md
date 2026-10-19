@@ -1,13 +1,13 @@
 # Backlog items
 
-A backlog item is a piece of planned work. It has a title, a priority, a workflow state, estimates, and optionally a project, a task, a note and subitems.
+A backlog item is a piece of planned work. It has a title, a priority, a workflow state, estimates, and optionally a project, a task, a description and subitems.
 
 <Shot name="backlog-item" alt="The page of a backlog item with its estimates, subitems, time entries and properties" />
 
 ## Manual and synced items
 
 - A **manual** item is one you create in Ajour. Its source shows as **Ajour**.
-- A **synced** item comes from a connector, such as Azure DevOps or Jira. It shows its ID, its source project and its source state, and **Open in Azure DevOps** or **Open in Jira** takes you to it.
+- A **synced** item comes from a backlog plugin, such as Azure DevOps or Jira. It shows its ID, its source project and its source state, and **Open in Azure DevOps** or **Open in Jira** takes you to it.
 
 Ajour keeps your changes to a synced item. A sync updates what changed in the source, and asks you when both sides changed the same estimate. See [Sync review](/plugins/sync-review).
 
@@ -17,10 +17,9 @@ Click an item in the sidebar to open its page. On the Backlog page, a click open
 
 - **The header**, with the title and the item's actions: **Start entry**, **Snooze**, **Settle** and **New entry**. Click the title to rename it.
 - **The estimates**: **Original**, **Remaining**, **Completed** and **Logged in Ajour**, with a bar of completed over original. Click an estimate to edit it.
-- **Note**, in Markdown. Press **Edit** to change it.
-- **Subitems**. Press **Add subitem**, type a name and press <kbd>Enter</kbd>.
-- **Time entries** logged on the item, with **Add time entry**.
-- **The properties card**, at the side: state, source state, priority, lifecycle, project, task and source.
+- **Description**, in Markdown. Press **Edit** to change it.
+- **Comments**, for an item synced from a tool whose plugin provides them: the newest five, oldest first, with **Show earlier comments** for the rest. A **New** line marks the comments that arrived since you last opened the item. Press **Leave a comment…** at the bottom of the thread to write one in Markdown, and <kbd>Ctrl</kbd>+<kbd>Enter</kbd> (<kbd>⌘</kbd>+<kbd>Enter</kbd> on macOS) or **Comment** to send it. It goes to the tool at once. If sending fails, the text stays so you can send it again, and an unsent comment stays as a draft on this device until you send it or press **Discard**. Type **@** and a few letters to mention someone, when the tool supports it; pick a person and they show as a chip, and the tool notifies them. On your own comments, **…** offers **Edit** and **Delete** when the tool allows them. A deleted comment disappears at once, and **Undo** in the toast brings it back; the tool only deletes it once the toast closes. Click a reaction to add or remove yours, or use the smiley to add another. Ajour reads comments from the tool each time and never stores them.
+- **The card**, at the side: state, source state, priority, lifecycle, project, task and source, then the **Subitems**, with **Add subitem**, and the **Time entries** logged on the item, with **Add time entry**.
 
 Changes on the page save when you press <kbd>Enter</kbd> or leave the field, with an Undo toast.
 
@@ -38,7 +37,7 @@ Set the item's **Project** and **Task** so the time you log on it lands on the r
 
 **Logged in Ajour** is the sum of your time entries on the item. On a parent, the item editor (**Edit**) has a button next to each estimate that resets it to the total of its subitems.
 
-For synced items, connectors write estimate changes back to the source when they sync. See the [Azure DevOps](/plugins/azure-devops) and [Jira](/plugins/jira) pages for which fields they use.
+For synced items, backlog plugins write estimate changes back to the source when they sync. See the [Azure DevOps](/plugins/azure-devops) and [Jira](/plugins/jira) pages for which fields they use.
 
 ## Subitems
 

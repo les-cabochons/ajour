@@ -11,12 +11,9 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ColorField } from "@/components/ui/color-field";
 import { Input } from "@/components/ui/input";
-import {
-  getConnectorBacklogStatuses,
-  isConnectorApiMissing,
-} from "@/lib/app-api";
+import { getBacklogSourceStatuses, isPluginApiMissing } from "@/lib/app-api";
 import { offerUndo } from "@/features/feedback/undo-toast";
-import { useRetryWhileConnectorApiMissing } from "@/lib/use-connector-api-retry";
+import { useRetryWhilePluginApiMissing } from "@/lib/use-plugin-api-retry";
 import { useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
 import { WorkflowSourceMapping } from "@/features/settings/workflow-source-mapping";
@@ -30,7 +27,7 @@ const DEFAULT_NEW_STATE_COLOR = "#64748b";
 export function SettingsWorkflowPage() {
   const state = useLocalState();
   const [sourceStatuses, setSourceStatuses] = useState<
-    Awaited<ReturnType<typeof getConnectorBacklogStatuses>>["items"]
+    Awaited<ReturnType<typeof getBacklogSourceStatuses>>["items"]
   >([]);
   const [statusDrafts, setStatusDrafts] = useState<
     Record<string, { name: string; color: string }>
@@ -40,8 +37,8 @@ export function SettingsWorkflowPage() {
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [isRefreshing, setIsRefreshing] = useState(false);
-  // Synced statuses come from connectors, so the web build hides that section.
-  const [connectorApiMissing, setConnectorApiMissing] = useState(false);
+  // Synced statuses come from plugins, so the web build hides that section.
+  const [pluginApiMissing, setPluginApiMissing] = useState(false);
 
   useEffect(() => {
     setStatusDrafts((current) => {
@@ -69,7 +66,7 @@ export function SettingsWorkflowPage() {
     void refreshSourceStatuses();
   }, []);
 
-  useRetryWhileConnectorApiMissing(connectorApiMissing, refreshSourceStatuses);
+  useRetryWhilePluginApiMissing(pluginApiMissing, refreshSourceStatuses);
   // Mappings are local, so synced items keep the section without the API.
   const hasSyncedItems = state.workItems.some(
     (workItem) => workItem.source !== "manual",
@@ -78,13 +75,13 @@ export function SettingsWorkflowPage() {
   async function refreshSourceStatuses() {
     setIsRefreshing(true);
     try {
-      const result = await getConnectorBacklogStatuses();
+      const result = await getBacklogSourceStatuses();
       setSourceStatuses(result.items);
-      setConnectorApiMissing(false);
+      setPluginApiMissing(false);
       setError(null);
     } catch (nextError) {
-      if (isConnectorApiMissing(nextError)) {
-        setConnectorApiMissing(true);
+      if (isPluginApiMissing(nextError)) {
+        setPluginApiMissing(true);
         return;
       }
       setError(
@@ -199,7 +196,7 @@ export function SettingsWorkflowPage() {
         <AppPanel>
           <p className="text-[12px] text-[var(--text-tertiary)]">
             {state.workflowStates.length} workflow states
-            {connectorApiMissing
+            {pluginApiMissing
               ? null
               : ` · ${sourceStatuses.length} source states · ${state.workflowStateMappings.length} mappings`}
           </p>
@@ -343,7 +340,7 @@ export function SettingsWorkflowPage() {
         </AppPanel>
       </section>
 
-      {connectorApiMissing && !hasSyncedItems ? null : (
+      {pluginApiMissing && !hasSyncedItems ? null : (
         <section className="settings-section">
           <h2 className="settings-section-title">Source states</h2>
           <p className="settings-section-desc">
@@ -357,7 +354,7 @@ export function SettingsWorkflowPage() {
                 variant="outline"
 
                 className="gap-1.5"
-                disabled={isRefreshing || connectorApiMissing}
+                disabled={isRefreshing || pluginApiMissing}
                 onClick={() => void refreshSourceStatuses()}
               >
                 <RefreshCw className="h-3.5 w-3.5" />

@@ -35,7 +35,7 @@ Packages also may not import from `apps/`. Type-only imports count.
 
 ## Entry points, not barrels
 
-Prefer several small entry points (`timeline.ts`, `connectors.ts`) over one
+Prefer several small entry points (`timeline.ts`, `plugins.ts`) over one
 `index.ts` that re-exports a whole subtree. A barrel makes the interface as wide
 as the implementation and hides which callers depend on what. Adding an entry
 point is just adding a root file. Any new subfolder is private automatically, so

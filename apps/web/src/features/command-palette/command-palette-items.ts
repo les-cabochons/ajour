@@ -2,7 +2,7 @@
  * What the command palette lists, as plain data. The palette component renders
  * these sections and runs each item's `command`; everything here is pure so the
  * listing and ranking rules stay testable. See "Command palette" in
- * agents/ux-spec.md.
+ * docs/agents/ux-spec.md.
  */
 import { isBacklogItemSnoozed } from "@/domain/backlog/backlog-item-lifecycle";
 import {

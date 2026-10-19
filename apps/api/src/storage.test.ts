@@ -3,13 +3,13 @@ import path from "node:path";
 import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import { afterEach, describe, expect, it } from "vitest";
 import {
-  connectorsOverviewSchema,
-  type ConnectorImportCandidateInput,
-  type ConnectorPluginManifest,
-} from "../../../packages/shared/connectors.ts";
+  pluginsOverviewSchema,
+  type BacklogImportCandidateInput,
+  type PluginManifest,
+} from "../../../packages/shared/plugins.ts";
 import { AppApiStorage } from "./storage.ts";
 
-function buildPlugin(id: string, displayName: string): ConnectorPluginManifest {
+function buildPlugin(id: string, displayName: string): PluginManifest {
   return {
     id,
     version: "1.0.0",
@@ -39,8 +39,8 @@ function buildPlugin(id: string, displayName: string): ConnectorPluginManifest {
 }
 
 function buildImportCandidate(
-  overrides: Partial<ConnectorImportCandidateInput> = {},
-): ConnectorImportCandidateInput {
+  overrides: Partial<BacklogImportCandidateInput> = {},
+): BacklogImportCandidateInput {
   return {
     source: "azure_devops",
     connectionId: "ado-1",
@@ -73,7 +73,7 @@ describe("AppApiStorage", () => {
     );
   });
 
-  it("re-stages an imported connector item after it was previously committed", async () => {
+  it("re-stages an imported backlog item after it was previously committed", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
     tempDirs.push(tempDir);
 
@@ -226,7 +226,7 @@ describe("AppApiStorage", () => {
     const { undoToken } = await storage.dismissImports(
       staged.items.map((item) => item.id),
     );
-    await storage.removeConnectorPluginData("azure_devops");
+    await storage.removePluginData("azure_devops");
 
     await expect(storage.restoreDismissedImports(undoToken!)).resolves.toBe(
       "stale",
@@ -236,7 +236,7 @@ describe("AppApiStorage", () => {
     });
   });
 
-  it("ignores legacy seenImportKeys so previously committed connector imports can stage again", async () => {
+  it("ignores legacy seenImportKeys so previously committed backlog imports can stage again", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
     tempDirs.push(tempDir);
 
@@ -342,7 +342,7 @@ describe("AppApiStorage", () => {
     });
 
     await expect(
-      storage.getConnectorsOverview([azurePlugin, jiraPlugin]),
+      storage.getPluginsOverview([azurePlugin, jiraPlugin]),
     ).resolves.toMatchObject({
       plugins: [
         expect.objectContaining({
@@ -402,13 +402,13 @@ describe("AppApiStorage", () => {
       configSummary: { site: "https://acme.atlassian.net" },
     });
 
-    await storage.setConnectorPluginEnabled("jira", false);
+    await storage.setPluginEnabled("jira", false);
 
     await expect(
-      storage.isConnectorPluginEnabled("jira", availablePluginIds),
+      storage.isPluginEnabled("jira", availablePluginIds),
     ).resolves.toBe(false);
     await expect(
-      storage.getConnectorsOverview([jiraPlugin]),
+      storage.getPluginsOverview([jiraPlugin]),
     ).resolves.toMatchObject({
       connectionGroups: [
         {
@@ -421,15 +421,15 @@ describe("AppApiStorage", () => {
 
     const reloadedStorage = new AppApiStorage(statePath);
     await expect(
-      reloadedStorage.isConnectorPluginEnabled("jira", availablePluginIds),
+      reloadedStorage.isPluginEnabled("jira", availablePluginIds),
     ).resolves.toBe(false);
 
-    await reloadedStorage.setConnectorPluginEnabled("jira", true);
+    await reloadedStorage.setPluginEnabled("jira", true);
     await expect(
-      reloadedStorage.isConnectorPluginEnabled("jira", availablePluginIds),
+      reloadedStorage.isPluginEnabled("jira", availablePluginIds),
     ).resolves.toBe(true);
     await expect(
-      reloadedStorage.isConnectorPluginEnabled("jira", new Set()),
+      reloadedStorage.isPluginEnabled("jira", new Set()),
     ).resolves.toBe(false);
   });
 
@@ -453,27 +453,23 @@ describe("AppApiStorage", () => {
     await expect(
       reloaded.isPluginCapabilityEnabled("github", "connector", available),
     ).resolves.toBe(true);
-    await expect(
-      reloaded.isConnectorPluginEnabled("github", available),
-    ).resolves.toBe(true);
+    await expect(reloaded.isPluginEnabled("github", available)).resolves.toBe(
+      true,
+    );
     await expect(
       reloaded.listEnabledCapabilities("github", ["connector", "codeHost"]),
     ).resolves.toEqual(["connector"]);
-    await expect(
-      reloaded.getConnectorsOverview([plugin]),
-    ).resolves.toMatchObject({
+    await expect(reloaded.getPluginsOverview([plugin])).resolves.toMatchObject({
       connectionGroups: [{ enabled: true, inactiveCapabilities: ["codeHost"] }],
     });
 
     await reloaded.setPluginCapabilityEnabled("github", "codeHost", true);
-    await expect(
-      reloaded.getConnectorsOverview([plugin]),
-    ).resolves.toMatchObject({
+    await expect(reloaded.getPluginsOverview([plugin])).resolves.toMatchObject({
       connectionGroups: [{ inactiveCapabilities: [] }],
     });
 
     await reloaded.setPluginCapabilityEnabled("github", "connector", false);
-    await reloaded.removeConnectorPluginData("github");
+    await reloaded.removePluginData("github");
     await expect(
       reloaded.isPluginCapabilityEnabled("github", "connector", available),
     ).resolves.toBe(true);
@@ -518,26 +514,26 @@ describe("AppApiStorage", () => {
 
     await storage.setPluginSystemEnabled(false);
     await expect(
-      storage.getConnectorsOverview([jiraPlugin]),
+      storage.getPluginsOverview([jiraPlugin]),
     ).resolves.toMatchObject({
       pluginsEnabled: false,
       connectionGroups: [{ enabled: false }],
     });
     await expect(
-      storage.isConnectorPluginEnabled("jira", availablePluginIds),
+      storage.isPluginEnabled("jira", availablePluginIds),
     ).resolves.toBe(false);
 
     const reloaded = new AppApiStorage(statePath);
     await reloaded.setPluginSystemEnabled(true);
     await expect(
-      reloaded.isConnectorPluginEnabled("jira", availablePluginIds),
+      reloaded.isPluginEnabled("jira", availablePluginIds),
     ).resolves.toBe(true);
 
-    await reloaded.setConnectorPluginEnabled("jira", false);
+    await reloaded.setPluginEnabled("jira", false);
     await reloaded.setPluginSystemEnabled(false);
     await reloaded.setPluginSystemEnabled(true);
     await expect(
-      reloaded.isConnectorPluginEnabled("jira", availablePluginIds),
+      reloaded.isPluginEnabled("jira", availablePluginIds),
     ).resolves.toBe(false);
   });
 
@@ -557,8 +553,8 @@ describe("AppApiStorage", () => {
       configSummary: {},
     });
 
-    const overview = connectorsOverviewSchema.parse(
-      await storage.getConnectorsOverview([]),
+    const overview = pluginsOverviewSchema.parse(
+      await storage.getPluginsOverview([]),
     );
 
     expect(overview.connectionGroups).toMatchObject([
@@ -601,17 +597,15 @@ describe("AppApiStorage", () => {
     );
 
     const storage = new AppApiStorage(statePath);
-    await expect(storage.listConnectorBacklogStatuses()).resolves.toMatchObject(
-      {
-        items: [{ source: "Legacy Source", label: "Active" }],
-      },
-    );
+    await expect(storage.listBacklogSourceStatuses()).resolves.toMatchObject({
+      items: [{ source: "Legacy Source", label: "Active" }],
+    });
     await expect(
-      storage.isConnectorPluginEnabled("jira", new Set(["jira"])),
+      storage.isPluginEnabled("jira", new Set(["jira"])),
     ).resolves.toBe(true);
   });
 
-  it("removes connector configuration and credentials for an uninstalled plugin", async () => {
+  it("removes plugin configuration and credentials for an uninstalled plugin", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
     tempDirs.push(tempDir);
     const statePath = path.join(tempDir, "app-api-state.json");
@@ -631,7 +625,7 @@ describe("AppApiStorage", () => {
         connectionId: connection.id,
       }),
     ]);
-    await storage.upsertConnectorBacklogStatuses([
+    await storage.upsertBacklogSourceStatuses([
       {
         source: "jira",
         connectionId: connection.id,
@@ -640,11 +634,11 @@ describe("AppApiStorage", () => {
         label: "In Progress",
       },
     ]);
-    await storage.setConnectorPluginEnabled("jira", false);
+    await storage.setPluginEnabled("jira", false);
 
-    await storage.removeConnectorPluginData("jira");
+    await storage.removePluginData("jira");
 
-    await expect(storage.getConnectorsOverview([])).resolves.toMatchObject({
+    await expect(storage.getPluginsOverview([])).resolves.toMatchObject({
       plugins: [],
       connectionGroups: [],
       totalPendingImportCount: 0,
@@ -659,14 +653,14 @@ describe("AppApiStorage", () => {
     expect(JSON.stringify(persisted)).not.toContain("secret");
   });
 
-  it("stores connector backlog statuses discovered by any plugin source", async () => {
+  it("stores backlog source states discovered by any plugin source", async () => {
     const tempDir = await mkdtemp(path.join(os.tmpdir(), "ajour-storage-"));
     tempDirs.push(tempDir);
 
     const storage = new AppApiStorage(path.join(tempDir, "app-api-state.json"));
 
     await expect(
-      storage.upsertConnectorBacklogStatuses([
+      storage.upsertBacklogSourceStatuses([
         {
           source: "jira",
           connectionId: "jira-1",
@@ -684,7 +678,7 @@ describe("AppApiStorage", () => {
       }),
     ]);
 
-    await expect(storage.listConnectorBacklogStatuses()).resolves.toEqual({
+    await expect(storage.listBacklogSourceStatuses()).resolves.toEqual({
       items: [
         expect.objectContaining({
           source: "jira",
@@ -717,7 +711,7 @@ describe("AppApiStorage", () => {
     ).toEqual({
       timesheetUrl: "https://wd.example/t",
     });
-    await reloaded.removeConnectorPluginData("ajp-workday");
+    await reloaded.removePluginData("ajp-workday");
     expect(
       await reloaded.getAgentTaskValues("ajp-workday", "enter-week"),
     ).toEqual({});

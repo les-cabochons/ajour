@@ -22,21 +22,21 @@ Feature: Confirm a parent Settle without losing its draft
     And I include the Settle subitems
     Then the Settle draft still has source state "Closed" and priority "4"
 
-  Scenario: A connector Done category mapped to open does not warn of archiving
+  Scenario: A source Done category mapped to open does not warn of archiving
     When I choose source state "Waiting" and priority "4" in Settle
     Then Settle does not warn of archiving
     When I submit the parent Settle draft
     And I include the Settle subitems
     Then the Settle dialog closes and the parent is "settled"
 
-  Scenario: Submit the displayed priority after a connector refresh
+  Scenario: Submit the displayed priority after a backlog refresh
     When the source changes the parent's priority to Urgent during Settle
     Then the Settle priority draft remains High
     When I submit the parent Settle draft
     And I include the Settle subitems
     Then Settle writes High against the refreshed Urgent priority
 
-  Scenario: Retain an unlisted state draft after a connector refresh
+  Scenario: Retain an unlisted state draft after a backlog refresh
     When I reopen Settle on an unlisted source state
     Then the Settle state draft remains Unlisted
     When the source changes the parent's state to Active during Settle

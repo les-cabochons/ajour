@@ -145,7 +145,7 @@ Given("a code host connection with local pull requests", async ({ page }) => {
       })),
     };
   });
-  await page.route(`${apiUrl}/api/connectors`, async (route) => {
+  await page.route(`${apiUrl}/api/plugins`, async (route) => {
     await route.fulfill({
       json: {
         ...overview,
@@ -180,33 +180,30 @@ Given("a code host connection with local pull requests", async ({ page }) => {
       });
     },
   );
+  await page.route(`${apiUrl}/api/plugins/github/activation`, async (route) => {
+    const { enabled, capability } = route.request().postDataJSON();
+    overview = {
+      ...overview,
+      connectionGroups: overview.connectionGroups.map((group) =>
+        capability
+          ? {
+              ...group,
+              inactiveCapabilities: enabled
+                ? (group.inactiveCapabilities ?? []).filter(
+                    (candidate) => candidate !== capability,
+                  )
+                : [...(group.inactiveCapabilities ?? []), capability],
+            }
+          : { ...group, enabled },
+      ),
+    };
+    await route.fulfill({
+      json: overview,
+      headers: { "access-control-allow-origin": "*" },
+    });
+  });
   await page.route(
-    `${apiUrl}/api/connectors/github/activation`,
-    async (route) => {
-      const { enabled, capability } = route.request().postDataJSON();
-      overview = {
-        ...overview,
-        connectionGroups: overview.connectionGroups.map((group) =>
-          capability
-            ? {
-                ...group,
-                inactiveCapabilities: enabled
-                  ? (group.inactiveCapabilities ?? []).filter(
-                      (candidate) => candidate !== capability,
-                    )
-                  : [...(group.inactiveCapabilities ?? []), capability],
-              }
-            : { ...group, enabled },
-        ),
-      };
-      await route.fulfill({
-        json: overview,
-        headers: { "access-control-allow-origin": "*" },
-      });
-    },
-  );
-  await page.route(
-    `${apiUrl}/api/connectors/github/connections/work`,
+    `${apiUrl}/api/plugins/github/connections/work`,
     async (route) => {
       expect(route.request().method()).toBe("DELETE");
       overview = {

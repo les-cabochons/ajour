@@ -13,7 +13,7 @@ const states = [
 ];
 
 describe("settle dialog fields", () => {
-  it("groups states by category in the connector's order", () => {
+  it("groups states by category in the plugin's order", () => {
     expect(
       groupSettleStates(states).map((group) => [
         group.category,

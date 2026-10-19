@@ -40,9 +40,9 @@ apps/desktop/out-embedded/
 apps/desktop/build/internal-app-runtime/
 apps/desktop/build/embedded-agent/
 
-# Connector plugin build outputs
-connectors/*/dist/
-connectors/*/package/
+# Plugin build outputs
+plugins/*/dist/
+plugins/*/package/
 
 # Native agent build output
 apps/macos-agent/.build/

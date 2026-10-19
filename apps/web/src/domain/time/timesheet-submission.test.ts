@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
 import type { LocalProject, LocalTimesheetEntry } from "@/domain/local-state";
 import { DEFAULT_PROJECT_ICON } from "@/domain/projects/project-icon";
+import type { ProjectPropertyPlugin } from "@/domain/projects/plugin-properties";
 import {
+  describeLineNames,
   groupSubmitLines,
+  listLineNameSources,
   mergeSubmitComments,
+  resolveLineNameSource,
   summarizeWeek,
+  type SubmitLine,
 } from "@/domain/time/timesheet-submission";
 
 const HOUR = 60 * 60 * 1000;
@@ -92,7 +97,8 @@ describe("submit lines", () => {
         key: "2026-10-05::atlas::dev",
         entryIds: ["mon-dev-1", "mon-dev-2"],
         projectId: "atlas",
-        projectName: "Client Atlas",
+        // The full name, as the external timesheet knows the project.
+        projectName: "Atlas",
         taskName: "Development",
         durationMs: 3 * HOUR,
         comments: "Login form | API",
@@ -162,6 +168,136 @@ describe("submit lines", () => {
 
   it("joins trimmed, non-blank comments with a pipe", () => {
     expect(mergeSubmitComments([" a ", undefined, "", "b", "a"])).toBe("a | b");
+  });
+});
+
+describe("line names", () => {
+  const workday: ProjectPropertyPlugin = {
+    pluginId: "workday-agent",
+    capability: {
+      section: "Workday",
+      fields: [
+        { id: "code", label: "Workday code", defaultFrom: "code" },
+        { id: "name", label: "Workday name", defaultFrom: "fullName" },
+      ],
+    },
+  };
+  const named: LocalProject[] = [
+    {
+      ...projects[0]!,
+      code: "ATL",
+      pluginProperties: {
+        "workday-agent": { name: "CA004 Tech & Design" },
+      },
+    },
+  ];
+  const line: SubmitLine = {
+    key: "line",
+    entryIds: ["a"],
+    projectId: "atlas",
+    projectName: "Atlas",
+    taskName: "07 Run",
+    durationMs: HOUR,
+    comments: "",
+  };
+
+  it("lists Ajour then each plugin under its section title", () => {
+    expect(listLineNameSources([workday])).toEqual([
+      { id: "ajour", label: "Ajour" },
+      { id: "workday-agent", label: "Workday" },
+    ]);
+  });
+
+  it.each([
+    [undefined, "ajour"],
+    ["workday-agent", "workday-agent"],
+    ["removed-plugin", "ajour"],
+  ])("resolves the saved source %s to %s", (saved, expected) => {
+    expect(resolveLineNameSource(saved, [workday])).toBe(expected);
+  });
+
+  it.each([
+    [undefined, "ajour"],
+    ["ajour", "ajour"],
+    ["workday-agent", undefined],
+  ])(
+    "resolves the saved source %s to %s while plugins load",
+    (saved, expected) => {
+      expect(resolveLineNameSource(saved, undefined)).toBe(expected);
+    },
+  );
+
+  it("copies nothing while a saved plugin choice waits for its plugins", () => {
+    const source = resolveLineNameSource("workday-agent", undefined);
+    expect(describeLineNames(line, source, named, undefined)).toEqual({
+      pending: true,
+    });
+  });
+
+  it("shows and copies the full name and the task", () => {
+    expect(describeLineNames(line, "ajour", named, [workday])).toEqual({
+      shown: "Atlas / 07 Run",
+      copied: "Atlas 07 Run",
+    });
+  });
+
+  it("uses the plugin's name field, the one that defaults to the full name", () => {
+    expect(describeLineNames(line, "workday-agent", named, [workday])).toEqual({
+      shown: "CA004 Tech & Design / 07 Run",
+      copied: "CA004 Tech & Design 07 Run",
+    });
+  });
+
+  it("uses the plugin field's default when the project has no override", () => {
+    expect(
+      describeLineNames(line, "workday-agent", projects, [workday]),
+    ).toMatchObject({ copied: "Atlas 07 Run" });
+  });
+
+  it("uses the first field when none defaults to the full name", () => {
+    const codeOnly: ProjectPropertyPlugin = {
+      pluginId: "codes",
+      capability: {
+        section: "Codes",
+        fields: [{ id: "code", label: "Code", defaultFrom: "code" }],
+      },
+    };
+    expect(describeLineNames(line, "codes", named, [codeOnly])).toMatchObject({
+      copied: "ATL 07 Run",
+    });
+  });
+
+  it("falls back to Ajour names for an inactive plugin", () => {
+    expect(describeLineNames(line, "workday-agent", named, [])).toMatchObject({
+      copied: "Atlas 07 Run",
+    });
+  });
+
+  it("copies the project or the task alone when the other is missing", () => {
+    expect(
+      describeLineNames({ ...line, taskName: undefined }, "ajour", named, []),
+    ).toEqual({ shown: "Atlas", copied: "Atlas" });
+    expect(
+      describeLineNames(
+        { ...line, projectId: undefined, projectName: undefined },
+        "workday-agent",
+        named,
+        [workday],
+      ),
+    ).toEqual({ shown: "07 Run", copied: "07 Run" });
+    expect(
+      describeLineNames(
+        {
+          ...line,
+          projectId: undefined,
+          projectName: undefined,
+          taskName: undefined,
+        },
+        "ajour",
+        named,
+        [],
+      ),
+    ).toBeUndefined();
   });
 });
 

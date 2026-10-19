@@ -1,5 +1,5 @@
 /**
- * Action sets for user-facing objects, from the action model in agents/ux-spec.md.
+ * Action sets for user-facing objects, from the action model in docs/agents/ux-spec.md.
  *
  * Every surface (right-click menu, "…" menu, editors) renders the same list in the
  * same order. Kind decides which actions are listed. State decides which are enabled:
@@ -346,7 +346,7 @@ function formatDeleteLabel(subitemCount: number) {
  * Pin/Unpin · Settle/Unsettle/Restore · Change source state… · Open in
  * source · Archive · Delete.
  *
- * Open in source is listed only when a connector provided the item's URL.
+ * Open in source is listed only when a plugin provided the item's URL.
  * Archive is listed only for synced items: it archives in Ajour and leaves the
  * source as it is. A manual item archives through Settle.
  */

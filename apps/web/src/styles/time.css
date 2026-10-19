@@ -1142,10 +1142,6 @@
     min-width: 0;
   }
 
-  .submit-line-sep {
-    color: var(--text-tertiary);
-  }
-
   .submit-line-comments {
     grid-column: 1 / 3;
     justify-self: start;

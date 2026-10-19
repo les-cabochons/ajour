@@ -6,7 +6,7 @@ Committing copies your week's changes into your company's timesheet tool, such a
 
 ## Open the page
 
-Click the totals at the top right, such as `Today 3:47`, and press **Commit week**. This works on every page and at every window size.
+Click the totals at the top right, such as `Today 3:47`, and press **Commit**. This works on every page and at every window size.
 
 ## Review the week
 
@@ -28,6 +28,8 @@ Under **Changes**, each entry that changed since your last commit has a row with
 An entry you edit back to its committed values has no change. A week with no changes says "Everything is committed."
 
 Each change has a checkbox, checked by default. Uncheck a change to leave it out of this commit. It stays on the page, and is checked again the next time you open the page.
+
+Click the **Changes** heading to hide the list, and click it again to show it. **Mark as committed** stays below the heading. The list is shown again each time you open the page.
 
 ## Mark as committed
 
@@ -57,7 +59,8 @@ Press **Reopen week** on the week's Commit page. A toast offers **Undo**. The en
 
 Under **Lines**, the whole week is grouped into lines with the project, the task, the hours and the comments. Click a value to copy it, then paste it in your timesheet tool.
 
-- **Hours** copy as decimals, such as `5.00`, which most timesheet tools expect. The page shows them as clock time.
+- **Project and task** are one value, such as `CA004 Tech & Design / 07 Run`. It copies both with a space between them, such as `CA004 Tech & Design 07 Run`, which you can paste in your timesheet tool's search box. A line with no task copies the project alone.
+- **Hours** copy as decimals with a comma, such as `5,00` or `6,50`, which Workday expects. The page shows them as clock time.
 - **Comments** are the notes of the line's entries, joined with a vertical bar, such as `Standup | Code review`.
 
 **Group by** changes how entries become lines:
@@ -67,6 +70,8 @@ Under **Lines**, the whole week is grouped into lines with the project, the task
 | **Day and task** | task and day (default)   |
 | **Day**          | day                      |
 | **Task**         | task, for the whole week |
+
+Lines show each project's full name. When a plugin adds project properties, such as [Workday (agent)](/plugins/workday-agent), a **Names** switch sits next to **Group by**. Choose **Workday** to show the project's Workday name instead, which you can set in the project's **Workday** section. Ajour remembers your choice.
 
 ## Commit with an agent
 

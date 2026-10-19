@@ -26,7 +26,10 @@ import {
   ESTIMATE_FIGURES,
   formatHours,
 } from "@/features/backlog/backlog-estimates";
-import { getBacklogItemNotice } from "@/features/backlog/backlog-item-notice";
+import {
+  getVisitNotice,
+  type BacklogItemReturnNotice,
+} from "@/features/backlog/backlog-item-notice";
 import {
   WorkItemIcon,
   resolveWorkItemIcon,
@@ -37,14 +40,15 @@ import { cn } from "@/lib/utils";
 
 /**
  * The peek on the right of the backlog page: a smaller item page. It keeps the
- * page's header, estimate figures, properties, note and subitems, and lets
+ * page's header, estimate figures, properties, description and subitems, and lets
  * state, priority, project and task change in place. The row's context menu
- * and the item page carry the other actions. See "Peek" in agents/ux-spec.md.
+ * and the item page carry the other actions. See "Peek" in docs/agents/ux-spec.md.
  */
 export function BacklogPeek({
   item,
   state,
   now,
+  returnNotice = null,
   onClose,
   onOpen,
   onAction,
@@ -53,6 +57,8 @@ export function BacklogPeek({
   item: LocalWorkItem;
   state: LocalAppState;
   now: number;
+  /** Why the item came back, read before the peek cleared its Returned mark. */
+  returnNotice?: BacklogItemReturnNotice | null;
   onClose: () => void;
   onOpen: () => void;
   onAction: (action: BacklogItemActionId) => void;
@@ -81,7 +87,7 @@ export function BacklogPeek({
   const stopAction = actions.find((action) => action.id === "stop-entry");
   const children = getDirectChildWorkItems(item, state.workItems);
   const reference = parseWorkItemReference(item.sourceId) ?? item.sourceId;
-  const notice = getBacklogItemNotice(item, now);
+  const notice = getVisitNotice(item, now, returnNotice);
   const progress =
     item.originalEstimateHours && item.completedEstimateHours !== undefined
       ? Math.min(1, item.completedEstimateHours / item.originalEstimateHours)
@@ -202,10 +208,10 @@ export function BacklogPeek({
       <section aria-label="Properties">
         <BacklogItemProperties item={item} state={state} />
       </section>
-      {item.note ? (
+      {item.description ? (
         <section>
-          <SectionHeading>Note</SectionHeading>
-          <Markdown>{item.note}</Markdown>
+          <SectionHeading>Description</SectionHeading>
+          <Markdown>{item.description}</Markdown>
         </section>
       ) : null}
       {children.length > 0 ? (

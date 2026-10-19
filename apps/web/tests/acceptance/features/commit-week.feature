@@ -36,3 +36,25 @@ Feature: Commit the week
     Then a toast says "Marked 2 entries as not committed"
     When I open the Commit page for the week of 2026-10-05
     Then the Commit page lists 2 changes
+
+  Scenario: Collapse the Changes section
+    Given I have a committed week of entries
+    When I mark Monday's "API" entry as not committed
+    And I open the Commit page for the week of 2026-10-05
+    And I collapse the Changes section
+    Then the Commit page shows no change rows
+    And "Mark as committed" is still on the Commit page
+    When I expand the Changes section
+    Then the Commit page lists only an "Updated" change for "API"
+
+  Scenario: Copy a line under its Workday name
+    Given I have a committed week of entries
+    And the Workday (agent) plugin adds project properties
+    When I open the Commit page for the week of 2026-10-05
+    Then Monday's "Development" line shows "Client Atlas / Development"
+    When I show line names from "Workday"
+    Then Monday's "Development" line shows "CA004 Tech & Design / Development"
+    When I copy the project and task of Monday's "Development" line
+    Then the clipboard holds "CA004 Tech & Design Development"
+    When I open the Commit page for the week of 2026-10-05
+    Then Monday's "Development" line shows "CA004 Tech & Design / Development"

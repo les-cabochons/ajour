@@ -6,7 +6,7 @@ import { z } from "zod";
 import type {
   CodeHostPullRequestFacts,
   CodeHostSyncResult,
-  ConnectorsOverview,
+  PluginsOverview,
 } from "@ajour/shared";
 
 export type PullRequestReason =
@@ -45,7 +45,7 @@ const sameLogin = (left: string, right: string) =>
 const refKey = (facts: { repository: string; number: number }) =>
   JSON.stringify([facts.repository.toLowerCase(), facts.number]);
 
-export function enabledCodeHostGroups(overview: ConnectorsOverview | null) {
+export function enabledCodeHostGroups(overview: PluginsOverview | null) {
   return overview?.pluginsEnabled === false
     ? []
     : (overview?.connectionGroups ?? []).filter(
@@ -70,7 +70,7 @@ export function isPullRequestReturned(item: LocalPullRequest, now: number) {
 
 export function selectVisiblePullRequests(
   items: readonly LocalPullRequest[],
-  overview: ConnectorsOverview | null,
+  overview: PluginsOverview | null,
   now: number,
 ) {
   const connections = new Set(

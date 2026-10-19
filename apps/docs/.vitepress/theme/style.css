@@ -1,6 +1,6 @@
 /*
  * The docs use the app's tokens from apps/web/src/styles.css (see
- * agents/ui-tokens.md): Geist, the logo's indigo as the one accent, warm-cool
+ * docs/agents/ui-tokens.md): Geist, the logo's indigo as the one accent, warm-cool
  * neutrals, solid chrome and no shadows outside overlays. Change a value there
  * first, then mirror it here.
  */

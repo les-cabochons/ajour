@@ -98,7 +98,7 @@ async function mockRunner(
   const state: RunnerMockState = { runRequests: [], settingsSaves: [] };
   let runRequested = false;
 
-  await page.route(`${apiUrl}/api/connectors`, (route) =>
+  await page.route(`${apiUrl}/api/plugins`, (route) =>
     route.fulfill({
       json: {
         pluginsEnabled: installedPlugins.length > 0,

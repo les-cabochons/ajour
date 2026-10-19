@@ -6,7 +6,7 @@
 
 ## Purpose
 
-Confirm that a tester can open the local daily time workspace and reach its primary actions without an account or connector credentials.
+Confirm that a tester can open the local daily time workspace and reach its primary actions without an account or plugin credentials.
 
 ## Prerequisites
 
@@ -18,7 +18,7 @@ Confirm that a tester can open the local daily time workspace and reach its prim
 
 ## Test data
 
-- No account, connector credentials, projects, or time entries are required.
+- No account, plugin credentials, projects, or time entries are required.
 
 ## Procedure
 

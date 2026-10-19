@@ -1,15 +1,15 @@
 import { z } from "zod";
 import {
   agentTaskPlacementSchema,
-  connectorFieldSchema,
-  connectorFieldValuesSchema,
-} from "./connectors.ts";
+  pluginFieldSchema,
+  pluginFieldValuesSchema,
+} from "./plugins.ts";
 import { isoDateSchema } from "./agent-tools.ts";
 
 /**
  * Contracts for the agent runner: Settings > Agents, the agent tasks
  * plugins declare, and runs. See
- * docs/superpowers/specs/2026-10-15-ajour-agent-runner-design.md.
+ * docs/specs/2026-10-15-ajour-agent-runner-design.md.
  */
 
 export const agentCliIdSchema = z.enum(["claude-code", "codex", "opencode"]);
@@ -31,7 +31,7 @@ export const agentRunnerSettingsUpdateSchema =
   agentRunnerSettingsSchema.partial();
 
 export const agentTaskSettingsUpdateSchema = z.object({
-  values: connectorFieldValuesSchema,
+  values: pluginFieldValuesSchema,
 });
 
 export const agentCliStatusSchema = z.object({
@@ -51,8 +51,8 @@ export const agentTaskStatusSchema = z.object({
   label: z.string(),
   placement: agentTaskPlacementSchema,
   estimateMinutes: z.number().int(),
-  settings: z.array(connectorFieldSchema),
-  values: connectorFieldValuesSchema,
+  settings: z.array(pluginFieldSchema),
+  values: pluginFieldValuesSchema,
   weekLink: z.string().optional(),
   /** Why the task cannot run now, such as "Fill in Workday timesheet URL". Empty when ready. */
   blockers: z.array(z.string()),

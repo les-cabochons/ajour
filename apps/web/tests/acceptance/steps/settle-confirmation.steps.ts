@@ -26,7 +26,7 @@ Given("I have a writable synced parent Settle fixture", async ({ page }) => {
     ],
   };
   const headers = { "access-control-allow-origin": "*" };
-  await page.route("**/api/connectors", (route) =>
+  await page.route("**/api/plugins", (route) =>
     route.fulfill({
       headers,
       json: {
@@ -125,10 +125,10 @@ Given("I have a writable synced parent Settle fixture", async ({ page }) => {
   });
   await page.goto("/backlog/settle-parent");
   await page.evaluate(async () => {
-    const { getConnectorsOverview } = await import(
+    const { getPluginsOverview } = await import(
       /* @vite-ignore */ "/src/lib/app-api.ts"
     );
-    await getConnectorsOverview();
+    await getPluginsOverview();
   });
 });
 /** The item page's Settle button sits in the top bar, beside its breadcrumb. */
@@ -154,7 +154,7 @@ async function refreshSettleParent(
       const { localStore } = await import(
         /* @vite-ignore */ "/src/lib/local-store.ts"
       );
-      localStore.importConnectorWorkItems([
+      localStore.importSyncedWorkItems([
         {
           id: "refreshed-parent",
           source: "example",
@@ -222,7 +222,7 @@ Then(
     ).toBeVisible();
     await expect(
       dialog.getByText(
-        "This connector cannot clear its source priority. Choose a priority.",
+        "This plugin cannot clear its source priority. Choose a priority.",
         { exact: true },
       ),
     ).toHaveCount(0);

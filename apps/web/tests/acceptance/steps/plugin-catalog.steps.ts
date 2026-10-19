@@ -2,9 +2,9 @@ import { createRequire } from "node:module";
 import { expect } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 import {
-  CONNECTOR_PLUGIN_API_VERSION,
+  PLUGIN_API_VERSION,
   type PluginCatalogEntry,
-  type ConnectorsOverview,
+  type PluginsOverview,
 } from "@ajour/shared";
 
 const { Given, When, Then } = createBdd();
@@ -15,7 +15,7 @@ const { BUILT_IN_PLUGIN_CATALOG_ENTRIES: builtInEntries } = createRequire(
 };
 
 Given(
-  "the catalog contains a plugin with connector and code host capabilities",
+  "the catalog contains a plugin with backlog and code host capabilities",
   async ({ page }) => {
     const entries: PluginCatalogEntry[] = [
       ...builtInEntries,
@@ -58,7 +58,7 @@ When(
 );
 
 Then("all four plugin filters fit inside the viewport", async ({ page }) => {
-  for (const name of ["All", "Connectors", "Code hosts", "Schemas"]) {
+  for (const name of ["All", "Backlog", "Code hosts", "Schemas"]) {
     const tab = page.getByRole("tab", { name, exact: true });
     await expect(tab).toBeVisible();
     const box = await tab.boundingBox();
@@ -79,14 +79,14 @@ When("I select the {string} plugin filter", async ({ page }, name: string) => {
 });
 
 Then(
-  "the combined plugin appears with its connector and code host badge",
+  "the combined plugin appears with its backlog and code host badge",
   async ({ page }) => {
     const entry = page.getByRole("link", {
       name: "View Combined plugin",
       exact: true,
     });
     await expect(entry).toBeVisible();
-    await expect(entry).toContainText("Connector · Code host");
+    await expect(entry).toContainText("Backlog · Code host");
   },
 );
 
@@ -110,7 +110,7 @@ const oldJira = {
   id: "jira",
   displayName: "Jira",
   version: "1.0.0",
-  apiVersion: CONNECTOR_PLUGIN_API_VERSION - 1,
+  apiVersion: PLUGIN_API_VERSION - 1,
   description: "Test connector",
   iconSvg:
     "<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'><path d='M2 2h12v12H2z'/></svg>",
@@ -125,7 +125,7 @@ const oldJira = {
       secret: true,
     },
   ],
-  unavailableReason: `Jira 1.0.0 uses plugin API ${CONNECTOR_PLUGIN_API_VERSION - 1}, but this version of Ajour needs plugin API ${CONNECTOR_PLUGIN_API_VERSION}. Update the plugin to use it again.`,
+  unavailableReason: `Jira 1.0.0 uses plugin API ${PLUGIN_API_VERSION - 1}, but this version of Ajour needs plugin API ${PLUGIN_API_VERSION}. Update the plugin to use it again.`,
 };
 const savedJiraConnection = {
   id: "saved-jira",
@@ -140,7 +140,7 @@ const savedJiraConnection = {
   configSummary: { organizationUrl: "https://example.invalid" },
   editableValues: {},
 };
-const oldJiraOverview: ConnectorsOverview = {
+const oldJiraOverview: PluginsOverview = {
   pluginsEnabled: true,
   plugins: [oldJira],
   connectionGroups: [
@@ -152,11 +152,11 @@ const oldJiraOverview: ConnectorsOverview = {
 const { unavailableReason: _reason, ...jiraIdentity } = oldJira;
 const updatedJira = {
   ...jiraIdentity,
-  apiVersion: CONNECTOR_PLUGIN_API_VERSION,
+  apiVersion: PLUGIN_API_VERSION,
   version: "1.1.0",
   entrypoint: "plugin.mjs",
 };
-const updatedJiraOverview: ConnectorsOverview = {
+const updatedJiraOverview: PluginsOverview = {
   ...oldJiraOverview,
   plugins: [updatedJira],
   connectionGroups: [
@@ -169,7 +169,7 @@ const updatedJiraOverview: ConnectorsOverview = {
 };
 
 Given("an installed Jira plugin uses an older plugin API", async ({ page }) => {
-  await page.route("**/api/connectors", async (route) => {
+  await page.route("**/api/plugins", async (route) => {
     const updated = await page.evaluate(
       () => sessionStorage.getItem("jira-updated") === "true",
     );
@@ -198,9 +198,9 @@ Given("an installed Jira plugin uses an older plugin API", async ({ page }) => {
       Object.assign(window.ajourDesktop!, {
         downloadCatalogPlugin: async (id: string) => {
           if (id !== "jira") throw new Error("Unexpected plugin download");
-          return { type: "connector", result: await update() };
+          return { type: "plugin", result: await update() };
         },
-        installConnectorPlugin: update,
+        installPlugin: update,
       });
     },
     { plugin: updatedJira, overview: updatedJiraOverview },

@@ -15,12 +15,12 @@ const {
   offerUndo,
   canWriteToSource,
   sendPendingSourceWrites,
-  listConnectorSettleStates,
+  listBacklogSettleStates,
 } = vi.hoisted(() => ({
   offerUndo: vi.fn(),
   canWriteToSource: vi.fn((_item: { title: string }) => false),
   sendPendingSourceWrites: vi.fn(),
-  listConnectorSettleStates: vi.fn(),
+  listBacklogSettleStates: vi.fn(),
 }));
 vi.mock("@/features/feedback/undo-toast", () => ({ offerUndo }));
 vi.mock("@/features/backlog/backlog-source-writes", async (importOriginal) => ({
@@ -31,7 +31,7 @@ vi.mock("@/features/backlog/backlog-source-writes", async (importOriginal) => ({
 }));
 vi.mock("@/lib/app-api", async (importOriginal) => ({
   ...(await importOriginal<object>()),
-  listConnectorSettleStates,
+  listBacklogSettleStates,
 }));
 vi.mock("@/lib/plugin-project-properties", () => ({
   listProjectPropertyPlugins: async () => [],
@@ -125,7 +125,7 @@ beforeEach(() => {
   offerUndo.mockClear();
   sendPendingSourceWrites.mockClear();
   canWriteToSource.mockReturnValue(false);
-  listConnectorSettleStates.mockResolvedValue({
+  listBacklogSettleStates.mockResolvedValue({
     states: [
       { name: "Active", category: "In progress", done: false },
       { name: "Resolved", category: "Resolved", done: false },
@@ -139,7 +139,7 @@ beforeEach(() => {
 function importSyncedItem(
   localStore: Awaited<ReturnType<typeof setup>>["localStore"],
 ) {
-  localStore.importConnectorWorkItems([
+  localStore.importSyncedWorkItems([
     {
       id: "connector-1",
       source: "azure_devops",
@@ -890,7 +890,7 @@ describe("agent work item tools", () => {
   it("settles a synced item locally, then unsettles it", async () => {
     const { call, localStore } = await setup();
     const workItemId = importSyncedItem(localStore);
-    // Its connector can't write, so Settle stays in Ajour.
+    // Its plugin can't write, so Settle stays in Ajour.
     canWriteToSource.mockReturnValue(false);
 
     expect(await call("settle_work_item", { workItemId })).toMatchObject({

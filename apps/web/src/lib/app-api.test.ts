@@ -1,13 +1,13 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { ConnectorsOverview } from "@ajour/shared";
+import type { PluginsOverview } from "@ajour/shared";
 import {
-  cacheConnectorsOverview,
-  getConnectorsOverview,
-  isConnectorApiMissing,
-  subscribeConnectorsOverview,
+  cachePluginsOverview,
+  getPluginsOverview,
+  isPluginApiMissing,
+  subscribePluginsOverview,
 } from "./app-api";
 
-const overview: ConnectorsOverview = {
+const overview: PluginsOverview = {
   pluginsEnabled: true,
   plugins: [],
   connectionGroups: [],
@@ -22,11 +22,11 @@ function deferredResponse() {
   return { promise, resolve };
 }
 
-describe("connector overview cache", () => {
+describe("plugin overview cache", () => {
   afterEach(() => vi.unstubAllGlobals());
 
   it("publishes the latest refresh while keeping an older in-flight response out of the cache", async () => {
-    cacheConnectorsOverview(overview);
+    cachePluginsOverview(overview);
     const first = deferredResponse();
     const second = deferredResponse();
     vi.stubGlobal(
@@ -37,10 +37,10 @@ describe("connector overview cache", () => {
         .mockReturnValueOnce(second.promise),
     );
     const receive = vi.fn();
-    const unsubscribe = subscribeConnectorsOverview(receive);
+    const unsubscribe = subscribePluginsOverview(receive);
     try {
-      const oldRequest = getConnectorsOverview();
-      const newRequest = getConnectorsOverview();
+      const oldRequest = getPluginsOverview();
+      const newRequest = getPluginsOverview();
       first.resolve(Response.json({ ...overview, totalPendingImportCount: 1 }));
       await oldRequest;
       expect(receive).not.toHaveBeenCalled();
@@ -60,20 +60,20 @@ describe("connector overview cache", () => {
       vi.fn(() => pending.promise),
     );
     const receive = vi.fn();
-    const unsubscribe = subscribeConnectorsOverview(receive);
-    const refresh = getConnectorsOverview();
+    const unsubscribe = subscribePluginsOverview(receive);
+    const refresh = getPluginsOverview();
     const disabled = { ...overview, pluginsEnabled: false };
-    cacheConnectorsOverview(disabled);
+    cachePluginsOverview(disabled);
     pending.resolve(Response.json(overview));
     await expect(refresh).resolves.toEqual(disabled);
     expect(receive).toHaveBeenCalledExactlyOnceWith(disabled);
     unsubscribe();
-    cacheConnectorsOverview(overview);
+    cachePluginsOverview(overview);
     expect(receive).toHaveBeenCalledTimes(1);
   });
 });
 
-describe("missing connector API", () => {
+describe("missing app API", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
     vi.useRealTimers();
@@ -82,7 +82,7 @@ describe("missing connector API", () => {
   async function failedOverviewRequest(fetchImpl: () => Promise<Response>) {
     vi.useFakeTimers();
     vi.stubGlobal("fetch", vi.fn(fetchImpl));
-    const request = getConnectorsOverview().catch((error: unknown) => error);
+    const request = getPluginsOverview().catch((error: unknown) => error);
     // The default internal API retries twice before giving up.
     await vi.runAllTimersAsync();
     return request;
@@ -92,7 +92,7 @@ describe("missing connector API", () => {
     const error = await failedOverviewRequest(async () => {
       throw new TypeError("Failed to fetch");
     });
-    expect(isConnectorApiMissing(error)).toBe(true);
+    expect(isPluginApiMissing(error)).toBe(true);
   });
 
   it("keeps an unreachable API in the desktop app as a failure", async () => {
@@ -100,7 +100,7 @@ describe("missing connector API", () => {
     const error = await failedOverviewRequest(async () => {
       throw new TypeError("Failed to fetch");
     });
-    expect(isConnectorApiMissing(error)).toBe(false);
+    expect(isPluginApiMissing(error)).toBe(false);
   });
 
   it("keeps an API error response as a failure", async () => {
@@ -108,6 +108,6 @@ describe("missing connector API", () => {
       Response.json({ error: "Broken" }, { status: 500 }),
     );
     expect(error).toBeInstanceOf(Error);
-    expect(isConnectorApiMissing(error)).toBe(false);
+    expect(isPluginApiMissing(error)).toBe(false);
   });
 });

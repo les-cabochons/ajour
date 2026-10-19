@@ -527,7 +527,7 @@ function importDraft(_id: string): LocalTimesheetImportDraft {
 
 /**
  * A parent backlog item whose two subitems sit apart in the list, two backlog
- * statuses with one connector mapping, a second project task and three import
+ * statuses with one source mapping, a second project task and three import
  * drafts.
  */
 function createBacklogState(): LocalAppState {
@@ -547,7 +547,7 @@ function createBacklogState(): LocalAppState {
       ],
       workItems: [
         workItem({ _id: "item-first", workflowStateId: "status-doing" }),
-        workItem({ _id: "item-parent", note: "Parent notes" }),
+        workItem({ _id: "item-parent", description: "Parent notes" }),
         workItem({ _id: "subitem-1", parentWorkItemId: "item-parent" }),
         workItem({
           _id: "item-synced",
@@ -636,7 +636,9 @@ describe("backlog and project undo", () => {
         now: () => 100,
       }),
     );
-    const edited = updateWorkItem(after, "item-parent", { note: "Edited" });
+    const edited = updateWorkItem(after, "item-parent", {
+      description: "Edited",
+    });
 
     const restored = restoreUndo(edited, undo);
 

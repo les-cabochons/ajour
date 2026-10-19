@@ -418,15 +418,118 @@ Feature: Backlog list and board views
     When I open the Backlog parent page
     And I rename the item on its page to "Renamed parent"
     And I set its remaining estimate on its page to "5"
-    And I write "**Bold** note" as its note on its page
+    And I write "**Bold** description" as its description on its page
     And I add the subitem "Inline subitem" on its page
     Then the Backlog parent keeps the inline edits
     And the item page has no actions menu and no editor panel
 
+  Scenario: Save a description with the keyboard on the item page
+    When I open the Backlog parent page
+    And I write "Saved from the keys" as its description and press Mod+Enter
+    Then the Backlog parent's description is "Saved from the keys"
+    And its description shows "Saved from the keys"
+
   Scenario: Escape cancels an inline edit on the item page
     When I open the Backlog parent page
-    And I type in the title, the remaining estimate and the note and press Escape each time
-    Then the Backlog parent keeps its saved title, estimate and note
+    And I type in the title, the remaining estimate and the description and press Escape each time
+    Then the Backlog parent keeps its saved title, estimate and description
+
+  Scenario: Read a synced item's comments on its page
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    When I open the Backlog parent page
+    Then the page shows the newest five comments with a New divider before Ana's reply
+    And my comment says You and its mention shows as a chip
+    When I show earlier comments
+    Then all seven comments show, oldest first
+
+  Scenario: Post a comment on a synced item
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin accepts new comments
+    When I open the Backlog parent page
+    And I write "Shipping it today" in a new comment and press Mod+Enter
+    Then my new comment "Shipping it today" shows last in the thread
+
+  Scenario: A comment that fails to send stays as a draft
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin refuses new comments
+    When I open the Backlog parent page
+    And I write "Keep me" in a new comment and press Mod+Enter
+    Then the comment is not sent and the editor keeps "Keep me"
+    And after a reload the comment field shows the draft "Keep me"
+
+  Scenario: Edit my comment on a synced item
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin accepts comment changes
+    When I open the Backlog parent page
+    And I edit my comment to "Code first, then the task name."
+    Then my comment reads "Code first, then the task name." and shows it was edited
+
+  Scenario: Undo deleting my comment
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin accepts comment changes
+    When I open the Backlog parent page
+    And I delete my comment
+    Then my comment is hidden
+    When I undo the delete
+    Then my comment shows again and no delete was sent
+
+  Scenario: Delete my comment once the Undo toast closes
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin accepts comment changes
+    When I open the Backlog parent page
+    And I delete my comment
+    And the Undo toast closes on its own
+    Then the delete was sent once
+
+  Scenario: React to a comment
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin accepts comment changes
+    When I open the Backlog parent page
+    And I add a Heart to Ana's reply
+    Then Ana's reply shows my Heart
+
+  Scenario: A comment from someone else brings a settled item back
+    Given the Backlog parent is synced
+    And the Backlog parent is settled and its next sync reports a comment from Ana
+    When I reload the app
+    Then the sync asked for the comments since the parent was settled
+    And the parent has a Returned mark
+    When I open the Backlog parent page
+    Then its page says Ana commented, and still does once the mark is cleared
+
+  Scenario: Settle a synced item with a comment
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin settles items and records what it writes
+    When I open the Backlog parent page
+    And I settle it in Waiting with the comment "Waiting on the client"
+    And the Undo toast closes on its own
+    Then the source got the settle, then the comment "Waiting on the client"
+    And my new comment "Waiting on the client" shows last in the thread
+
+  Scenario: Undoing a settle keeps its comment as a draft
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin settles items and records what it writes
+    When I open the Backlog parent page
+    And I settle it in Waiting with the comment "Waiting on the client"
+    And I undo the settle
+    Then nothing went to the source and the comment field shows the draft "Waiting on the client"
+
+  Scenario: Mention someone in a comment
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people and records posted comments
+    When I open the Backlog parent page
+    And I mention Ana in a new comment and send it
+    Then the comment went out with Ana's mention, shown as a chip
 
   Scenario: Archive a synced item from the bottom of its properties card
     Given the Backlog parent is synced

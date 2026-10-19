@@ -18,8 +18,7 @@ contextBridge.exposeInMainWorld("ajourDesktop", {
     ipcRenderer.invoke("ajour:configure-automatic-updates", track),
   openUpdateRelease: (releaseUrl) =>
     ipcRenderer.invoke("ajour:open-update-release", releaseUrl),
-  installConnectorPlugin: () =>
-    ipcRenderer.invoke("ajour:install-connector-plugin"),
+  installPlugin: () => ipcRenderer.invoke("ajour:install-plugin"),
   getPluginCatalog: () => ipcRenderer.invoke("ajour:get-plugin-catalog"),
   getPluginCatalogSettings: () =>
     ipcRenderer.invoke("ajour:get-plugin-catalog-settings"),
@@ -33,8 +32,8 @@ contextBridge.exposeInMainWorld("ajourDesktop", {
   },
   downloadCatalogPlugin: (pluginId) =>
     ipcRenderer.invoke("ajour:download-catalog-plugin", pluginId),
-  uninstallConnectorPlugin: (pluginId) =>
-    ipcRenderer.invoke("ajour:uninstall-connector-plugin", pluginId),
+  uninstallPlugin: (pluginId) =>
+    ipcRenderer.invoke("ajour:uninstall-plugin", pluginId),
   getDevelopmentPluginSettings: () =>
     ipcRenderer.invoke("ajour:get-development-plugin-settings"),
   selectDevelopmentPluginDirectory: () =>

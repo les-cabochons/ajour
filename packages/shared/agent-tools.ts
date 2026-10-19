@@ -2,7 +2,7 @@ import { z } from "zod";
 
 /**
  * Contracts between the local API's MCP endpoint and the renderer that runs
- * Ajour's data tools. See docs/superpowers/specs/2026-10-14-ajour-mcp-design.md.
+ * Ajour's data tools. See docs/specs/2026-10-14-ajour-mcp-design.md.
  */
 
 const ISO_DATE_SHAPE = /^\d{4}-\d{2}-\d{2}$/;
@@ -198,7 +198,7 @@ export const writeToolInputSchemas = {
   submit_week: z.object({ weekOf: isoDateSchema, version: z.string() }),
   create_work_item: z.object({
     title: z.string().trim().min(1).max(500),
-    note: z.string().max(10_000).optional(),
+    description: z.string().max(10_000).optional(),
     projectId: z.string().optional(),
     taskId: z.string().optional(),
     priority: priorityInputSchema.optional(),
@@ -209,7 +209,7 @@ export const writeToolInputSchemas = {
   edit_work_item: z.object({
     workItemId: z.string(),
     title: z.string().trim().min(1).max(500).optional(),
-    note: z.string().max(10_000).optional(),
+    description: z.string().max(10_000).optional(),
     priority: priorityInputSchema.optional(),
     remainingEstimateHours: z.number().min(0).max(1000).nullable().optional(),
     projectId: z.string().nullable().optional(),
@@ -343,7 +343,7 @@ export const dataToolOutputSchemas = {
   }),
   list_work_items: z.object({ workItems: z.array(agentWorkItemSchema) }),
   get_work_item: agentWorkItemSchema.extend({
-    note: z.string().optional(),
+    description: z.string().optional(),
     sourceUrl: z.string().optional(),
     subitems: z.array(
       z.object({

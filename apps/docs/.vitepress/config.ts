@@ -75,7 +75,10 @@ const developerSidebar: DefaultTheme.SidebarItem[] = [
     text: "Plugin API",
     items: [
       { text: "Overview", link: "/developers/" },
-      { text: "Build a connector", link: "/developers/build-a-connector" },
+      {
+        text: "Build a backlog plugin",
+        link: "/developers/build-a-backlog-plugin",
+      },
       { text: "Runtime and limits", link: "/developers/runtime" },
       { text: "Test and debug", link: "/developers/testing" },
       { text: "Publish a plugin", link: "/developers/publish" },
@@ -85,7 +88,7 @@ const developerSidebar: DefaultTheme.SidebarItem[] = [
     text: "Reference",
     items: [
       { text: "Manifest", link: "/developers/manifest" },
-      { text: "Connector API", link: "/developers/connector-api" },
+      { text: "Backlog API", link: "/developers/backlog-api" },
       { text: "Code host API", link: "/developers/code-host-api" },
       { text: "Calendar API", link: "/developers/calendar-api" },
       { text: "Team API", link: "/developers/team-api" },

@@ -1,6 +1,6 @@
 import { useSyncExternalStore } from "react";
 import type { AgentRunnerOverview } from "@ajour/shared/agent-runs";
-import { getAgentRunner, isConnectorApiMissing } from "@/lib/app-api";
+import { getAgentRunner, isPluginApiMissing } from "@/lib/app-api";
 
 /**
  * The agent runner's overview from the local API, shared by Settings >
@@ -31,7 +31,7 @@ export async function refreshAgentRunner() {
     setAgentRunner(await getAgentRunner());
   } catch (error) {
     publish(
-      isConnectorApiMissing(error)
+      isPluginApiMissing(error)
         ? { kind: "unavailable" }
         : {
             kind: "error",

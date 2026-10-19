@@ -12,7 +12,7 @@ import { listWeekChanges } from "@/domain/time/timesheet-commit";
  * Submitted weeks. Submitting a week locks it: its entries are read-only
  * everywhere, for agents too, until the user reopens it. One rule decides
  * whether a day is locked, `isDateLocked`. See
- * docs/superpowers/specs/2026-10-15-commit-week-design.md.
+ * docs/specs/2026-10-15-commit-week-design.md.
  */
 
 type LockState = Pick<LocalAppState, "lockedWeeks">;

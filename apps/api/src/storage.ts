@@ -4,23 +4,23 @@ import { chmod, mkdir, readFile, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import {
-  connectorFieldValuesSchema,
-  normalizeConnectorStatusKey,
+  pluginFieldValuesSchema,
+  normalizeSourceStatusKey,
   pluginHasCapability,
   switchableCapabilitySchema,
   syncsPullRequestsAutomatically,
-  type ConnectorBacklogStatus,
-  type ConnectorBacklogStatusInput,
-  type ConnectorConnectionSummary,
-  type ConnectorFieldValues,
-  type ConnectorImportCandidate,
-  type ConnectorImportCandidateInput,
-  type ConnectorPluginManifest,
-  type ConnectorOverviewPlugin,
-  type ConnectorsOverview,
-  type ConnectorSummaryValues,
+  type BacklogSourceStatus,
+  type BacklogSourceStatusInput,
+  type PluginConnectionSummary,
+  type PluginFieldValues,
+  type BacklogImportCandidate,
+  type BacklogImportCandidateInput,
+  type PluginManifest,
+  type PluginOverviewItem,
+  type PluginsOverview,
+  type PluginSummaryValues,
   type SwitchableCapability,
-} from "../../../packages/shared/connectors.ts";
+} from "../../../packages/shared/plugins.ts";
 import type { McpSettings } from "../../../packages/shared/agent-tools.ts";
 import {
   agentRunnerSettingsSchema,
@@ -36,8 +36,8 @@ interface StoredConnection {
   autoSyncIntervalMinutes: number;
   /** Absent until saved; see `syncsPullRequestsAutomatically`. */
   pullRequestAutoSync?: boolean;
-  config: ConnectorFieldValues;
-  configSummary: ConnectorSummaryValues;
+  config: PluginFieldValues;
+  configSummary: PluginSummaryValues;
   connectedAt: number;
   lastSyncAt?: number;
   lastError?: string;
@@ -93,7 +93,7 @@ interface AppApiStateV2 {
       lastError?: string;
     }>;
   };
-  stagedImports?: ConnectorImportCandidate[];
+  stagedImports?: BacklogImportCandidate[];
   seenImportKeys?: string[];
 }
 
@@ -135,7 +135,7 @@ function normalizeMcpState(raw: unknown): StoredMcpState {
 interface StoredAgentRunnerState {
   settings: AgentRunnerSettings;
   /** Task setting values by plugin ID, then task ID. */
-  taskValues: Record<string, Record<string, ConnectorFieldValues>>;
+  taskValues: Record<string, Record<string, PluginFieldValues>>;
 }
 
 function defaultAgentRunnerSettings(): AgentRunnerSettings {
@@ -149,8 +149,8 @@ const UNSAFE_KEYS = new Set(["__proto__", "constructor", "prototype"]);
  * Copies `values` into a map without a prototype and without the unsafe
  * keys, so a stored key can never write to Object.prototype.
  */
-function safeValues(values: ConnectorFieldValues): ConnectorFieldValues {
-  const copy: ConnectorFieldValues = Object.create(null);
+function safeValues(values: PluginFieldValues): PluginFieldValues {
+  const copy: PluginFieldValues = Object.create(null);
   for (const [key, value] of Object.entries(values)) {
     if (!UNSAFE_KEYS.has(key)) copy[key] = value;
   }
@@ -170,7 +170,7 @@ function normalizeAgentRunnerState(raw: unknown): StoredAgentRunnerState {
       if (typeof tasks !== "object" || tasks === null) continue;
       for (const [taskId, values] of Object.entries(tasks)) {
         if (UNSAFE_KEYS.has(taskId)) continue;
-        const parsed = connectorFieldValuesSchema.safeParse(values);
+        const parsed = pluginFieldValuesSchema.safeParse(values);
         if (parsed.success) {
           (taskValues[pluginId] ??= Object.create(null))[taskId] = safeValues(
             parsed.data,
@@ -188,9 +188,9 @@ function normalizeAgentRunnerState(raw: unknown): StoredAgentRunnerState {
 interface AppApiStateV7 {
   version: 7;
   connections: StoredConnection[];
-  stagedImports: ConnectorImportCandidate[];
+  stagedImports: BacklogImportCandidate[];
   dismissedImportKeys: string[];
-  connectorBacklogStatuses: ConnectorBacklogStatus[];
+  connectorBacklogStatuses: BacklogSourceStatus[];
   disabledPluginIds: string[];
   /** Per plugin, the switchable capabilities the user turned off. */
   disabledCapabilities: Record<string, SwitchableCapability[]>;
@@ -207,7 +207,7 @@ type AppApiState = AppApiStateV7;
  */
 interface ImportDismissal {
   token: string;
-  items: ConnectorImportCandidate[];
+  items: BacklogImportCandidate[];
   addedKeys: string[];
 }
 
@@ -222,7 +222,7 @@ const MISSING_PLUGIN_ICON_SVG =
 
 function importKey(
   item: Pick<
-    ConnectorImportCandidateInput,
+    BacklogImportCandidateInput,
     "source" | "connectionId" | "sourceId"
   >,
 ) {
@@ -274,8 +274,8 @@ function compareConnections(left: StoredConnection, right: StoredConnection) {
 }
 
 function compareImports(
-  left: ConnectorImportCandidate,
-  right: ConnectorImportCandidate,
+  left: BacklogImportCandidate,
+  right: BacklogImportCandidate,
 ) {
   if (left.connectionId !== right.connectionId) {
     return left.connectionId.localeCompare(right.connectionId);
@@ -297,8 +297,8 @@ function compareImports(
 }
 
 function compareBacklogStatuses(
-  left: ConnectorBacklogStatus,
-  right: ConnectorBacklogStatus,
+  left: BacklogSourceStatus,
+  right: BacklogSourceStatus,
 ) {
   if (left.tenantLabel !== right.tenantLabel) {
     return left.tenantLabel.localeCompare(right.tenantLabel);
@@ -311,10 +311,7 @@ function compareBacklogStatuses(
   return left.label.localeCompare(right.label);
 }
 
-function comparePluginManifests(
-  left: ConnectorPluginManifest,
-  right: ConnectorPluginManifest,
-) {
+function comparePluginManifests(left: PluginManifest, right: PluginManifest) {
   return (
     left.displayName.localeCompare(right.displayName) ||
     left.id.localeCompare(right.id)
@@ -327,7 +324,7 @@ function normalizeOrganizationUrl(value: string) {
 
 function compactFieldValues(
   values: Record<string, string | number | boolean | undefined>,
-): ConnectorFieldValues {
+): PluginFieldValues {
   return Object.fromEntries(
     Object.entries(values).filter(
       (entry): entry is [string, string | number | boolean] =>
@@ -336,9 +333,7 @@ function compactFieldValues(
   );
 }
 
-function createMissingPluginManifest(
-  pluginId: string,
-): ConnectorOverviewPlugin {
+function createMissingPluginManifest(pluginId: string): PluginOverviewItem {
   return {
     id: pluginId,
     version: "0.0.0",
@@ -370,9 +365,9 @@ function createMissingPluginManifest(
 
 function toEditableValues(
   connection: StoredConnection,
-  plugin: ConnectorPluginManifest,
-): ConnectorFieldValues {
-  const editableValues: ConnectorFieldValues = {
+  plugin: PluginManifest,
+): PluginFieldValues {
+  const editableValues: PluginFieldValues = {
     label: connection.label,
     tenantLabel: connection.tenantLabel,
     autoSync: connection.autoSync,
@@ -397,8 +392,8 @@ function toEditableValues(
 function buildConnectionSummary(
   state: AppApiState,
   connection: StoredConnection,
-  plugin: ConnectorPluginManifest,
-): ConnectorConnectionSummary {
+  plugin: PluginManifest,
+): PluginConnectionSummary {
   const connectionItems = state.stagedImports.filter(
     (item) => item.connectionId === connection.id,
   );
@@ -478,7 +473,7 @@ function migrateLegacyState(raw: AppApiStateV1): AppApiState {
           selected: true,
           childCount: 0,
           pushedAt: item.pushedAt ?? Date.now(),
-        }) satisfies ConnectorImportCandidate,
+        }) satisfies BacklogImportCandidate,
     );
 
   return {
@@ -521,7 +516,7 @@ function normalizeState(
         }))
         .sort(compareConnections),
       stagedImports: (raw.stagedImports ?? defaults.stagedImports)
-        .filter((item): item is ConnectorImportCandidate =>
+        .filter((item): item is BacklogImportCandidate =>
           Boolean(
             item?.id &&
             item.source &&
@@ -545,7 +540,7 @@ function normalizeState(
         (raw as AppApiState).connectorBacklogStatuses ??
         defaults.connectorBacklogStatuses
       )
-        .filter((status): status is ConnectorBacklogStatus =>
+        .filter((status): status is BacklogSourceStatus =>
           Boolean(
             status?.source &&
             status.connectionId &&
@@ -626,7 +621,7 @@ function normalizeState(
       version: 7,
       connections: legacyConnections.sort(compareConnections),
       stagedImports: (raw.stagedImports ?? defaults.stagedImports)
-        .filter((item): item is ConnectorImportCandidate =>
+        .filter((item): item is BacklogImportCandidate =>
           Boolean(
             item?.id &&
             item.source &&
@@ -652,7 +647,7 @@ function normalizeState(
         (raw as AppApiState).connectorBacklogStatuses ??
         defaults.connectorBacklogStatuses
       )
-        .filter((status): status is ConnectorBacklogStatus =>
+        .filter((status): status is BacklogSourceStatus =>
           Boolean(
             status?.source &&
             status.connectionId &&
@@ -716,15 +711,15 @@ export class AppApiStorage {
    * `unavailable` lists installed packages the host cannot run. They show up
    * with their own name and version, and the reason.
    */
-  async getConnectorsOverview(
-    plugins: ConnectorPluginManifest[],
+  async getPluginsOverview(
+    plugins: PluginManifest[],
     unavailable: Array<{
-      manifest: ConnectorPluginManifest;
+      manifest: PluginManifest;
       reason: string;
     }> = [],
-  ): Promise<ConnectorsOverview> {
+  ): Promise<PluginsOverview> {
     const state = await this.readState();
-    const pluginMap = new Map<string, ConnectorOverviewPlugin>(
+    const pluginMap = new Map<string, PluginOverviewItem>(
       plugins.map((plugin) => [plugin.id, plugin] as const),
     );
     for (const { manifest, reason } of unavailable) {
@@ -787,7 +782,7 @@ export class AppApiStorage {
     };
   }
 
-  async isConnectorPluginEnabled(
+  async isPluginEnabled(
     pluginId: string,
     availablePluginIds: ReadonlySet<string>,
   ): Promise<boolean> {
@@ -806,7 +801,7 @@ export class AppApiStorage {
     availablePluginIds: ReadonlySet<string>,
   ): Promise<boolean> {
     return (
-      (await this.isConnectorPluginEnabled(pluginId, availablePluginIds)) &&
+      (await this.isPluginEnabled(pluginId, availablePluginIds)) &&
       !(await this.readState()).disabledCapabilities[pluginId]?.includes(
         capability,
       )
@@ -950,7 +945,7 @@ export class AppApiStorage {
   async getAgentTaskValues(
     pluginId: string,
     taskId: string,
-  ): Promise<ConnectorFieldValues> {
+  ): Promise<PluginFieldValues> {
     return (
       (await this.readState()).agentRunner.taskValues[pluginId]?.[taskId] ?? {}
     );
@@ -959,7 +954,7 @@ export class AppApiStorage {
   async setAgentTaskValues(
     pluginId: string,
     taskId: string,
-    values: ConnectorFieldValues,
+    values: PluginFieldValues,
   ): Promise<void> {
     if (UNSAFE_KEYS.has(pluginId) || UNSAFE_KEYS.has(taskId)) return;
     await this.mutate((state) => {
@@ -981,10 +976,7 @@ export class AppApiStorage {
     });
   }
 
-  async setConnectorPluginEnabled(
-    pluginId: string,
-    enabled: boolean,
-  ): Promise<void> {
+  async setPluginEnabled(pluginId: string, enabled: boolean): Promise<void> {
     await this.mutate(async (state) => {
       const disabledPluginIds = enabled
         ? state.disabledPluginIds.filter((candidate) => candidate !== pluginId)
@@ -1064,7 +1056,7 @@ export class AppApiStorage {
     }));
   }
 
-  async removeConnectorPluginData(pluginId: string): Promise<void> {
+  async removePluginData(pluginId: string): Promise<void> {
     await this.mutate(async (state) => ({
       nextState: {
         ...state,
@@ -1101,7 +1093,7 @@ export class AppApiStorage {
     }));
   }
 
-  async listConnectorBacklogStatuses() {
+  async listBacklogSourceStatuses() {
     const state = await this.readState();
     return {
       items: state.connectorBacklogStatuses,
@@ -1140,8 +1132,8 @@ export class AppApiStorage {
       autoSyncIntervalMinutes: number;
       /** Undefined keeps the saved value. */
       pullRequestAutoSync?: boolean;
-      config: ConnectorFieldValues;
-      configSummary: ConnectorSummaryValues;
+      config: PluginFieldValues;
+      configSummary: PluginSummaryValues;
     },
   ): Promise<StoredConnection> {
     return this.mutate(async (state) => {
@@ -1263,8 +1255,8 @@ export class AppApiStorage {
     return deleted;
   }
 
-  async upsertConnectorBacklogStatuses(
-    inputs: ConnectorBacklogStatusInput[],
+  async upsertBacklogSourceStatuses(
+    inputs: BacklogSourceStatusInput[],
     timestamp = Date.now(),
   ) {
     return this.mutate(async (state) => {
@@ -1279,7 +1271,7 @@ export class AppApiStorage {
 
       for (const input of inputs) {
         const label = input.label.trim();
-        const key = normalizeConnectorStatusKey(label);
+        const key = normalizeSourceStatusKey(label);
         if (!label || !key) {
           continue;
         }
@@ -1298,7 +1290,7 @@ export class AppApiStorage {
           key,
           label,
           lastSeenAt: timestamp,
-        } satisfies ConnectorBacklogStatus;
+        } satisfies BacklogSourceStatus;
 
         if (existingIndex >= 0) {
           nextStatuses[existingIndex] = nextStatus;
@@ -1331,7 +1323,7 @@ export class AppApiStorage {
           candidate.pluginId === pluginId && candidate.id === connectionId,
       );
       if (!connection) {
-        throw new Error(`Connector connection "${connectionId}" not found.`);
+        throw new Error(`Plugin connection "${connectionId}" not found.`);
       }
 
       const nextConnection = {
@@ -1360,7 +1352,7 @@ export class AppApiStorage {
           candidate.pluginId === pluginId && candidate.id === connectionId,
       );
       if (!connection) {
-        throw new Error(`Connector connection "${connectionId}" not found.`);
+        throw new Error(`Plugin connection "${connectionId}" not found.`);
       }
 
       const nextConnection = {
@@ -1378,7 +1370,7 @@ export class AppApiStorage {
   }
 
   async stageImportItems(
-    items: ConnectorImportCandidateInput[],
+    items: BacklogImportCandidateInput[],
   ): Promise<StageImportItemsResult> {
     return this.mutate(async (state) => {
       const dismissedKeys = new Set(state.dismissedImportKeys);
@@ -1446,7 +1438,7 @@ export class AppApiStorage {
         );
         const childrenByParentSourceId = new Map<
           string,
-          ConnectorImportCandidate[]
+          BacklogImportCandidate[]
         >();
 
         for (const item of state.stagedImports) {
@@ -1502,7 +1494,7 @@ export class AppApiStorage {
         }
 
         const dismissedImportKeys = new Set(state.dismissedImportKeys);
-        const items: ConnectorImportCandidate[] = [];
+        const items: BacklogImportCandidate[] = [];
         const addedKeys: string[] = [];
         for (const item of state.stagedImports) {
           if (dismissedIds.has(item.id)) {
@@ -1627,7 +1619,7 @@ export class AppApiStorage {
     });
   }
 
-  async commitSelectedImports(): Promise<ConnectorImportCandidate[]> {
+  async commitSelectedImports(): Promise<BacklogImportCandidate[]> {
     return this.mutate(async (state) => {
       const selectedItems = state.stagedImports.filter(
         (item) => item.selectable && item.selected,

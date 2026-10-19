@@ -2,7 +2,7 @@ import {
   calendarOccurrenceKey,
   isCapabilityActive,
   type CalendarEventFacts,
-  type ConnectorsOverview,
+  type PluginsOverview,
 } from "@ajour/shared";
 import { applyLoggedTimeToWorkItems } from "@/domain/backlog/work-item-estimates";
 import type {
@@ -24,7 +24,7 @@ import {
  * on their day for the user to add as time entries or dismiss. Ajour never
  * stores the events (ADR 0005). It keeps the user's decision per occurrence
  * and an event rule per recurring meeting, which the UI calls a remembered or
- * hidden meeting. See docs/superpowers/specs/2026-10-15-calendar-suggestions-design.md.
+ * hidden meeting. See docs/specs/2026-10-15-calendar-suggestions-design.md.
  */
 
 const MINUTE_MS = 60_000;
@@ -115,7 +115,7 @@ export interface CalendarSuggestion extends CalendarSource {
 }
 
 /** Calendar connections the user can see suggestions from now. */
-export function enabledCalendarGroups(overview: ConnectorsOverview | null) {
+export function enabledCalendarGroups(overview: PluginsOverview | null) {
   return overview?.pluginsEnabled === false
     ? []
     : (overview?.connectionGroups ?? []).filter(

@@ -20,8 +20,8 @@ import type {
 } from "../../../../packages/shared/agent-runs.ts";
 import type {
   AgentTask,
-  ConnectorFieldValues,
-} from "../../../../packages/shared/connectors.ts";
+  PluginFieldValues,
+} from "../../../../packages/shared/plugins.ts";
 import { fillTemplate } from "../../../../packages/shared/agent-task-templates.ts";
 import type { AgentSessions } from "../agent-sessions.ts";
 import type {
@@ -34,7 +34,7 @@ import { buildPrompt } from "./prompts.ts";
 /**
  * Runs one plugin agent task at a time: a per-run MCP client, a session the
  * runner begins, the CLI in an empty temp folder, and cleanup on every exit.
- * See docs/superpowers/specs/2026-10-15-ajour-agent-runner-design.md.
+ * See docs/specs/2026-10-15-ajour-agent-runner-design.md.
  */
 
 const STALL_LIMIT_MS = 10 * 60_000;
@@ -69,7 +69,7 @@ interface RunnerStorage {
   getAgentTaskValues(
     pluginId: string,
     taskId: string,
-  ): Promise<ConnectorFieldValues>;
+  ): Promise<PluginFieldValues>;
   createMcpClient(name: string): Promise<McpClientCreateResponse>;
   revokeMcpClient(clientId: string): Promise<boolean>;
 }

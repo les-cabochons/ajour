@@ -295,7 +295,7 @@ function loggedTime(entry: LocalTimesheetEntry, sign: 1 | -1) {
 /**
  * Takes back a time entry action's effect on work item estimates. A work item
  * still as the action left it returns to its exact old values. One edited
- * since, for example by a connector sync, gets the inverse logged time instead,
+ * since, for example by a backlog sync, gets the inverse logged time instead,
  * so the later edit is kept. Work items the action did not change stay as they
  * are.
  */

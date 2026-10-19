@@ -15,7 +15,7 @@ import {
 
 /**
  * What the Backlog page shows and how, from "Display" and "Filters" under
- * "Backlog" in agents/ux-spec.md. The ordering is the persisted
+ * "Backlog" in docs/agents/ux-spec.md. The ordering is the persisted
  * `backlogSortMode`, which the sidebar shares; the rest is saved per device.
  */
 export type BacklogLayout = "list" | "board";

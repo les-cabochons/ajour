@@ -83,7 +83,8 @@ const TOOL_DESCRIPTIONS: Record<
   list_projects: "Active projects and their active tasks, with their ids.",
   list_work_items:
     "Backlog items. The default `sidebar` filter returns the user's current work list in their order. Filter by workflow state, project or text.",
-  get_work_item: "One backlog item with its note, source link and subitems.",
+  get_work_item:
+    "One backlog item with its description, source link and subitems.",
   get_week_changes:
     "The week's changes since its last commit, one per entry: added, updated or deleted, with the entry's externalId, the change's version, its current values and, for updated and deleted ones, its committed values. `weekOf` is any date in the week. By default only the changes the user left checked on the Commit page. Write the externalId at the end of the external entry's comment, so later runs find the entry. An entry moved to another week shows in both weeks.",
   get_week_status:
@@ -107,7 +108,7 @@ const TOOL_DESCRIPTIONS: Record<
   create_work_item:
     "Adds a manual backlog item, or a subitem with parentWorkItemId.",
   edit_work_item:
-    "Changes a backlog item's title, note, priority, remaining estimate, project or task. Null clears a field.",
+    "Changes a backlog item's title, description, priority, remaining estimate, project or task. Null clears a field.",
   move_work_item:
     "Moves a backlog item to a workflow state. A done state closes it. Pass includeSubitems when it has open subitems. A synced item writes its new source state when the Undo toast closes; when the workflow state stands for several source states, Ajour refuses with the options and you call again with sourceState.",
   settle_work_item:

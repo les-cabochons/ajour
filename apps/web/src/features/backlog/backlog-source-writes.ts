@@ -2,18 +2,26 @@ import { showErrorToast } from "@/components/ui/toast";
 import { isCapabilityActive } from "@ajour/shared";
 import type { LocalWorkItem } from "@/domain/local-state";
 import { hasSameSourceWriteRequest } from "@/domain/backlog/backlog-item-lifecycle";
-import { connectorPriorityFromLevel } from "@/domain/backlog/priority";
+import { sourcePriorityFromLevel } from "@/domain/backlog/priority";
+import { announcePostedComment } from "@/features/backlog/comment-threads";
 import {
-  getCachedConnectorsOverview,
-  writeConnectorSettle,
+  getCachedPluginsOverview,
+  postItemComment,
+  writeBacklogSettle,
 } from "@/lib/app-api";
+import { keepCommentAsDraft } from "@/lib/comment-drafts";
 import { localStore } from "@/lib/local-store";
+import {
+  getSettleComment,
+  settleCommentItemIds,
+  takeSettleComment,
+} from "@/lib/settle-comments";
 
 /** Items whose write is on its way, so a second flush doesn't send it twice. */
 const sending = new Set<string>();
 
 /**
- * Whether the item is synced and its active connector can write to the source.
+ * Whether the item is synced and its active plugin can write to the source.
  * Settle then opens the settle dialog, and moves write the new source state.
  * Other items settle and move locally.
  */
@@ -26,7 +34,7 @@ export function canWriteToSource(workItem: LocalWorkItem) {
     return false;
   }
 
-  const group = getCachedConnectorsOverview()?.connectionGroups.find(
+  const group = getCachedPluginsOverview()?.connectionGroups.find(
     (candidate) => candidate.plugin.id === workItem.source,
   );
   return Boolean(
@@ -87,23 +95,67 @@ async function sendSourceWrite(
     if (!workItem.sourceId || !workItem.sourceConnectionId) {
       throw new Error("The item is no longer linked to its source.");
     }
-    await writeConnectorSettle(workItem.source, workItem.sourceConnectionId, {
+    await writeBacklogSettle(workItem.source, workItem.sourceConnectionId, {
       sourceId: workItem.sourceId,
       state: write.state,
-      priority: connectorPriorityFromLevel(write.priority),
+      priority: sourcePriorityFromLevel(write.priority),
     });
     localStore.completeSourceWrite(workItem._id, sentItems);
+    void sendSettleComment(workItem._id);
   } catch (error) {
     if (!stillCurrent()) return;
     localStore.failSourceWrite(workItem._id);
+    const keptComment = Boolean(getSettleComment(workItem._id));
+    void sendSettleComment(workItem._id);
     showErrorToast({
       title: `Couldn't update "${workItem.title}" in its source`,
-      description: `${error instanceof Error ? error.message : "Unknown error"} The item returned to its previous state.`,
+      description: `${error instanceof Error ? error.message : "Unknown error"} The item returned to its previous state.${keptComment ? " Your comment is kept as a draft on it." : ""}`,
     });
   } finally {
     sending.delete(workItem._id);
     if (!stillCurrent()) void sendPendingSourceWrites([workItem._id]);
   }
+}
+
+/**
+ * Posts the comment typed in the settle dialog once the settle stands: after
+ * its write lands, or when the Undo toast closes for a settle with nothing to
+ * write. A settle that was undone or failed keeps the comment as the item's
+ * draft instead, as does a refused post (ADR 0008).
+ */
+export async function sendSettleComment(workItemId: string) {
+  if (!getSettleComment(workItemId)) return;
+  const item = localStore
+    .snapshot()
+    .workItems.find((workItem) => workItem._id === workItemId);
+  // The settle's write goes first and sends the comment once it lands.
+  if (item?.pendingSourceWrite) return;
+  const entry = takeSettleComment(workItemId);
+  if (!entry || !item) return;
+  if (item.status === "active") {
+    keepCommentAsDraft(workItemId, entry.body);
+    return;
+  }
+
+  try {
+    const { comment } = await postItemComment(
+      entry.pluginId,
+      entry.connectionId,
+      { sourceId: entry.sourceId, body: entry.body },
+    );
+    announcePostedComment(entry, comment);
+  } catch (error) {
+    keepCommentAsDraft(workItemId, entry.body);
+    showErrorToast({
+      title: `Couldn't post your comment on "${item.title}"`,
+      description: `${error instanceof Error ? error.message : "Unknown error"} It's kept as a draft on the item.`,
+    });
+  }
+}
+
+/** At launch, sends the settle comments left from a session that quit during Undo. */
+export async function flushSettleComments() {
+  await Promise.all(settleCommentItemIds().map(sendSettleComment));
 }
 
 /** Compatibility for the explicit settle rule workflow. */

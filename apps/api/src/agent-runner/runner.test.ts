@@ -7,7 +7,7 @@ import { AgentSessions } from "../agent-sessions.ts";
 import { claudeCodeAdapter } from "./adapters/claude-code.ts";
 import { codexAdapter } from "./adapters/codex.ts";
 import type { AgentCliId } from "../../../../packages/shared/agent-runs.ts";
-import type { ConnectorField } from "../../../../packages/shared/connectors.ts";
+import type { PluginField } from "../../../../packages/shared/plugins.ts";
 import type { AgentCliAdapter } from "./adapter.ts";
 import { AgentRunner } from "./runner.ts";
 
@@ -36,7 +36,7 @@ const fakeAdapter = (script: unknown[], report: string): AgentCliAdapter => ({
   }),
 });
 
-const fakeSettings: ConnectorField[] = [
+const fakeSettings: PluginField[] = [
   {
     id: "url",
     label: "URL",

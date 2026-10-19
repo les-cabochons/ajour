@@ -54,4 +54,4 @@ Import and export projects and tasks. See [Import and export](/projects/import-e
 
 ## Sync review
 
-Items and estimate changes from connectors that wait for your decision. See [Sync review](/plugins/sync-review).
+Items and estimate changes from backlog plugins that wait for your decision. See [Sync review](/plugins/sync-review).

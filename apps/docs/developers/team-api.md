@@ -19,7 +19,7 @@ Ajour calls it from the connection form, before the connection is saved. `config
 
 ```ts
 export async function syncTeamProjects(
-  connection: ConnectorPluginConnection,
+  connection: PluginConnection,
   request: TeamSyncRequest,
 ): Promise<TeamSyncResult>;
 ```

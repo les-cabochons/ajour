@@ -45,7 +45,7 @@ import {
   AddSubitemRow,
   EstimateFigure,
   InlineTitle,
-  NoteSection,
+  DescriptionSection,
 } from "@/features/backlog/backlog-item-inline-edit";
 import { BacklogItemProperties } from "@/features/backlog/backlog-item-properties";
 import {
@@ -55,7 +55,11 @@ import {
 import { getBacklogItemBackLink } from "@/features/backlog/backlog-item-search";
 import { getWorkItemEntryValues } from "@/features/backlog/work-item-timer-comment";
 import { openNewEntryEditor } from "@/features/time/new-entry-request";
-import { getBacklogItemNotice } from "@/features/backlog/backlog-item-notice";
+import {
+  captureReturnNotice,
+  getVisitNotice,
+  type BacklogItemReturnNotice,
+} from "@/features/backlog/backlog-item-notice";
 import {
   WorkItemIcon,
   resolveWorkItemIcon,
@@ -70,12 +74,16 @@ import { useNow } from "@/lib/use-now";
 import { cn } from "@/lib/utils";
 import { findWorkItemTimer } from "@/domain/time/running-entry";
 import { PriorityIcon } from "@/features/backlog/priority-icon";
+import {
+  BacklogItemComments,
+  useCommentSource,
+} from "@/features/backlog/backlog-item-comments";
 import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
 
 /**
  * The backlog item page at /backlog/$itemId, from "Backlog item page" in
- * agents/ux-spec.md. The top bar holds the item's actions;
- * the page holds the back link, title, estimate figures and progress, then the note,
+ * docs/agents/ux-spec.md. The top bar holds the item's actions;
+ * the page holds the back link, title, estimate figures and progress, then the description,
  * subitems and time entries beside the properties card. Every field edits in
  * place, so the page has no editor panel and no "…" menu.
  *
@@ -95,6 +103,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
   const [editingTitle, setEditingTitle] = useState(false);
   const [addingSubitem, setAddingSubitem] = useState(false);
   const workItem = state.workItems.find((item) => item._id === itemId);
+  const commentSource = useCommentSource(workItem);
 
   /** Edit and Add subitem have no panel here: they open the inline fields. */
   function runHosted(action: "edit" | "add-subitem") {
@@ -102,8 +111,19 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
     else setAddingSubitem(true);
   }
 
-  // Opening the item clears its Returned mark.
+  const [returnNotice, setReturnNotice] =
+    useState<BacklogItemReturnNotice | null>(null);
+  // Opening the item clears its Returned mark; the page keeps saying why it
+  // came back until the user leaves.
   useEffect(() => {
+    const opened = localStore
+      .snapshot()
+      .workItems.find((workItem) => workItem._id === itemId);
+    const captured = opened ? captureReturnNotice(opened, Date.now()) : null;
+    // A second run for the same item, as in StrictMode, finds the mark cleared.
+    setReturnNotice(
+      (previous) => captured ?? (previous?.itemId === itemId ? previous : null),
+    );
     localStore.markWorkItemOpened(itemId);
     setEditingTitle(false);
     setAddingSubitem(false);
@@ -192,7 +212,7 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
     item.originalEstimateHours && item.completedEstimateHours !== undefined
       ? Math.min(1, item.completedEstimateHours / item.originalEstimateHours)
       : 0;
-  const notice = getBacklogItemNotice(item, now);
+  const notice = getVisitNotice(item, now, returnNotice);
 
   function runAction(
     actionId: BacklogItemActionId,
@@ -402,9 +422,47 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
 
           <div className="backlog-item-page-columns">
             <div className="flex min-w-0 flex-col">
-              <NoteSection key={item._id} item={item} readOnly={readOnly} />
+              <DescriptionSection
+                key={item._id}
+                item={item}
+                readOnly={readOnly}
+              />
+              {commentSource ? (
+                <BacklogItemComments
+                  key={item._id}
+                  itemId={item._id}
+                  source={commentSource}
+                />
+              ) : null}
+            </div>
+            <div className="backlog-item-properties-card">
+              <section
+                className="backlog-item-card-properties"
+                aria-label="Properties"
+              >
+                <BacklogItemProperties item={item} state={state}>
+                  <PropertyRow label="Source">
+                    {item.source === "manual"
+                      ? "Ajour"
+                      : (item.sourceProjectName ??
+                        item.sourceConnectionLabel ??
+                        "–")}
+                  </PropertyRow>
+                </BacklogItemProperties>
+                {archiveAction && !archiveAction.disabledReason ? (
+                  <PropertyActions>
+                    <PropertyAction onClick={() => runAction("archive")}>
+                      <ArchiveIcon aria-hidden="true" />
+                      {archiveAction.label}
+                    </PropertyAction>
+                  </PropertyActions>
+                ) : null}
+              </section>
               {!isSubitem ? (
-                <>
+                <section
+                  className="backlog-item-card-section"
+                  aria-label="Subitems"
+                >
                   <SectionHeading
                     trailing={
                       subitems.length
@@ -443,11 +501,6 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                           {subitem.priority !== undefined ? (
                             <PriorityIcon priority={subitem.priority} />
                           ) : null}
-                          {subitem.sourceStatusLabel ? (
-                            <span className="text-xs text-muted-foreground">
-                              {subitem.sourceStatusLabel}
-                            </span>
-                          ) : null}
                           <Value tone="muted" className="w-10 text-right">
                             {formatHours(subitem.remainingEstimateHours)}
                           </Value>
@@ -462,83 +515,68 @@ export function BacklogItemPage({ itemId }: { itemId: string }) {
                       onAddingChange={setAddingSubitem}
                     />
                   ) : null}
-                </>
+                </section>
               ) : null}
-              <SectionHeading
-                trailing={
-                  entries.length ? (
-                    <Value>{formatClockDuration(loggedMs)}</Value>
-                  ) : undefined
-                }
+              <section
+                className="backlog-item-card-section"
+                aria-label="Time entries"
               >
-                Time entries
-              </SectionHeading>
-              {entries.length === 0 ? (
-                <p className="text-sm text-muted-foreground">
-                  No time logged yet.
-                </p>
-              ) : (
-                <div className="backlog-item-rows">
-                  {entries.map((entry) => (
-                    <Link
-                      key={entry._id}
-                      to="/time/$date"
-                      params={{ date: entry.localDate }}
-                      className="backlog-item-row"
-                    >
-                      <span className="w-24 shrink-0 text-muted-foreground">
-                        {new Date(
-                          `${entry.localDate}T12:00:00`,
-                        ).toLocaleDateString(undefined, {
-                          weekday: "short",
-                          month: "short",
-                          day: "numeric",
-                        })}
-                      </span>
-                      <span className="backlog-item-row-title">
-                        {entry.note ?? (
-                          <span className="text-muted-foreground">No note</span>
-                        )}
-                      </span>
-                      <Value>{formatClockDuration(entry.durationMs)}</Value>
-                    </Link>
-                  ))}
-                </div>
-              )}
-              {!readOnly ? (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="mt-1 w-fit text-muted-foreground"
-                  onClick={(event) => openNewEntry(event.currentTarget)}
+                <SectionHeading
+                  trailing={
+                    entries.length ? (
+                      <Value>{formatClockDuration(loggedMs)}</Value>
+                    ) : undefined
+                  }
                 >
-                  <AddIcon data-icon="inline-start" />
-                  Add time entry
-                </Button>
-              ) : null}
+                  Time entries
+                </SectionHeading>
+                {entries.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No time logged yet.
+                  </p>
+                ) : (
+                  <div className="backlog-item-rows">
+                    {entries.map((entry) => (
+                      <Link
+                        key={entry._id}
+                        to="/time/$date"
+                        params={{ date: entry.localDate }}
+                        className="backlog-item-row"
+                      >
+                        <span className="w-20 shrink-0 text-muted-foreground">
+                          {new Date(
+                            `${entry.localDate}T12:00:00`,
+                          ).toLocaleDateString(undefined, {
+                            weekday: "short",
+                            month: "short",
+                            day: "numeric",
+                          })}
+                        </span>
+                        <span className="backlog-item-row-title">
+                          {entry.note ?? (
+                            <span className="text-muted-foreground">
+                              No note
+                            </span>
+                          )}
+                        </span>
+                        <Value>{formatClockDuration(entry.durationMs)}</Value>
+                      </Link>
+                    ))}
+                  </div>
+                )}
+                {!readOnly ? (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="mt-1 w-fit text-muted-foreground"
+                    onClick={(event) => openNewEntry(event.currentTarget)}
+                  >
+                    <AddIcon data-icon="inline-start" />
+                    Add time entry
+                  </Button>
+                ) : null}
+              </section>
             </div>
-            <section
-              className="backlog-item-properties-card"
-              aria-label="Properties"
-            >
-              <BacklogItemProperties item={item} state={state}>
-                <PropertyRow label="Source">
-                  {item.source === "manual"
-                    ? "Ajour"
-                    : (item.sourceProjectName ??
-                      item.sourceConnectionLabel ??
-                      "–")}
-                </PropertyRow>
-              </BacklogItemProperties>
-              {archiveAction && !archiveAction.disabledReason ? (
-                <PropertyActions>
-                  <PropertyAction onClick={() => runAction("archive")}>
-                    <ArchiveIcon aria-hidden="true" />
-                    {archiveAction.label}
-                  </PropertyAction>
-                </PropertyActions>
-              ) : null}
-            </section>
           </div>
         </div>
       </div>

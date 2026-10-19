@@ -1,7 +1,7 @@
 Feature: Browse plugin capabilities
   Background:
     Given I have no saved Ajour workspace
-    And the catalog contains a plugin with connector and code host capabilities
+    And the catalog contains a plugin with backlog and code host capabilities
 
   Scenario Outline: Keep every catalog filter reachable
     When I open the catalog at <width> pixels wide
@@ -15,11 +15,11 @@ Feature: Browse plugin capabilities
 
   Scenario: List a plugin under every capability it provides
     When I open the plugins catalog
-    And I select the "Connectors" plugin filter
-    Then the combined plugin appears with its connector and code host badge
+    And I select the "Backlog" plugin filter
+    Then the combined plugin appears with its backlog and code host badge
     And the GitHub catalog entry offers a download
     When I select the "Code hosts" plugin filter
-    Then the combined plugin appears with its connector and code host badge
+    Then the combined plugin appears with its backlog and code host badge
     And the GitHub catalog entry offers a download
     When I select the "Schemas" plugin filter
     Then the Workday schema is the only catalog entry

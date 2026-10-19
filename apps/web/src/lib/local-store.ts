@@ -16,9 +16,11 @@ import {
 } from "@/domain/pull-requests/pull-request-lifecycle";
 import type { CodeHostSyncResult } from "@ajour/shared";
 import type {
-  ConnectorImportCandidate,
-  ConnectorDoneWorkItem,
-  ConnectorSyncWorkItemUpdate,
+  BacklogImportCandidate,
+  BacklogDoneWorkItem,
+  BacklogItemCommentFacts,
+  BacklogPerson,
+  BacklogSyncWorkItemUpdate,
   ProjectDataShapeImportProject,
 } from "@ajour/shared";
 import {
@@ -73,10 +75,11 @@ import {
   updateWorkItem as applyUpdateWorkItem,
 } from "@/domain/backlog/work-item-transitions";
 import {
-  applyConnectorSyncWorkItemUpdates as applyConnectorWorkItemUpdates,
-  archiveDoneConnectorWorkItems,
-  importConnectorWorkItems as applyConnectorWorkItemImport,
-} from "@/domain/backlog/work-item-connector";
+  applyBacklogSyncWorkItemUpdates as applySyncedWorkItemUpdates,
+  returnItemsWithNewComments as applyReturnItemsWithNewComments,
+  archiveDoneSyncedWorkItems,
+  importSyncedWorkItems as applySyncedWorkItemImport,
+} from "@/domain/backlog/work-item-sync";
 import { type ProjectTaskImportResult } from "@/domain/projects/task-import";
 import {
   deleteTimesheetEntries as applyDeleteTimesheetEntries,
@@ -367,7 +370,7 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
     activityLoggerEnabled: _removedActivityLoggerEnabled,
     outlookIntegration: _removedOutlookIntegration,
     outlookMeetingDrafts: _removedOutlookMeetingDrafts,
-    // Connector plugins map priority values to levels now.
+    // Plugins map priority values to levels now.
     priorityScales: _removedPriorityScales,
     priorityFormat: _removedPriorityFormat,
     // Workflow states were called backlog statuses before.
@@ -626,6 +629,14 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
                   ),
                 ),
               )
+            : undefined,
+        commitLinesNameSource:
+          typeof persistedState.userPreferences?.commitLinesNameSource ===
+            "string" &&
+          persistedState.userPreferences.commitLinesNameSource.trim().length > 0
+            ? persistedState.userPreferences.commitLinesNameSource
+                .trim()
+                .slice(0, 120)
             : undefined,
         calendarSuggestions: normalizeCalendarSuggestionSettings(
           persistedState.userPreferences?.calendarSuggestions,
@@ -1889,14 +1900,14 @@ export const localStore = {
     });
   },
   /** Imports synced items. */
-  importConnectorWorkItems(
-    workItems: ConnectorImportCandidate[],
+  importSyncedWorkItems(
+    workItems: BacklogImportCandidate[],
     options?: {
       archiveMissingFromConnectionId?: string;
     },
   ) {
     return updateStateWithResult((state) =>
-      applyConnectorWorkItemImport(
+      applySyncedWorkItemImport(
         applyWorkflowStateLifecycle(
           state,
           autoMapSourceStates(
@@ -1927,7 +1938,7 @@ export const localStore = {
     );
   },
   /** Archives the synced items a sync reports in a done category. */
-  archiveDoneConnectorWorkItems(doneItems: ConnectorDoneWorkItem[]) {
+  archiveDoneSyncedWorkItems(doneItems: BacklogDoneWorkItem[]) {
     if (doneItems.length === 0) {
       return 0;
     }
@@ -1948,7 +1959,7 @@ export const localStore = {
             : [],
         ),
       );
-      const result = archiveDoneConnectorWorkItems(mapped, doneItems, {
+      const result = archiveDoneSyncedWorkItems(mapped, doneItems, {
         createId,
         now: Date.now,
       });
@@ -1965,13 +1976,22 @@ export const localStore = {
       return { state: next, result: result.archivedCount + newlyClosed };
     });
   },
-  applyConnectorSyncWorkItemUpdates(updates: ConnectorSyncWorkItemUpdate[]) {
+  /** Brings back settled items that someone else commented on (ADR 0008). */
+  returnItemsWithNewComments(
+    facts: BacklogItemCommentFacts[],
+    viewer: BacklogPerson,
+  ) {
+    updateState((state) =>
+      applyReturnItemsWithNewComments(state, facts, viewer, Date.now),
+    );
+  },
+  applyBacklogSyncWorkItemUpdates(updates: BacklogSyncWorkItemUpdate[]) {
     if (updates.length === 0) {
       return;
     }
 
     updateState((state) =>
-      applyConnectorWorkItemUpdates(state, updates, Date.now),
+      applySyncedWorkItemUpdates(state, updates, Date.now),
     );
   },
   keepLocalEstimateConflict(

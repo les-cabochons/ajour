@@ -1,9 +1,9 @@
 import { normalizePersistedWorkItem } from "@/domain/backlog/work-item-transitions";
 import { describe, expect, it } from "vitest";
 import {
-  connectorPriorityFromLevel,
+  sourcePriorityFromLevel,
   normalizePriorityLevel,
-  priorityLevelFromConnector,
+  priorityLevelFromSource,
 } from "@/domain/backlog/priority";
 
 describe("priority levels", () => {
@@ -14,12 +14,12 @@ describe("priority levels", () => {
     expect(normalizePriorityLevel("2")).toBeUndefined();
   });
 
-  it("reads and writes levels by their connector name", () => {
-    expect(priorityLevelFromConnector("urgent")).toBe(1);
-    expect(priorityLevelFromConnector("low")).toBe(4);
-    expect(priorityLevelFromConnector(undefined)).toBeUndefined();
-    expect(connectorPriorityFromLevel(2)).toBe("high");
-    expect(connectorPriorityFromLevel(undefined)).toBeUndefined();
+  it("reads and writes levels by their plugin value", () => {
+    expect(priorityLevelFromSource("urgent")).toBe(1);
+    expect(priorityLevelFromSource("low")).toBe(4);
+    expect(priorityLevelFromSource(undefined)).toBeUndefined();
+    expect(sourcePriorityFromLevel(2)).toBe("high");
+    expect(sourcePriorityFromLevel(undefined)).toBeUndefined();
   });
 });
 

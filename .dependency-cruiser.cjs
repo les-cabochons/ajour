@@ -77,7 +77,7 @@ module.exports = {
     {
       name: "packages-do-not-depend-on-apps",
       comment:
-        "Packages are shared by every runtime, so they must not import app code (agents/architecture.md).",
+        "Packages are shared by every runtime, so they must not import app code (docs/agents/architecture.md).",
       severity: "error",
       from: { path: `^${R}/` },
       to: { path: "^apps/" },

@@ -12,9 +12,9 @@ import {
   type FetchedCalendarEvents,
 } from "@/domain/time/calendar-suggestions";
 import {
-  getCachedConnectorsOverview,
+  getCachedPluginsOverview,
   listCalendarEvents,
-  subscribeConnectorsOverview,
+  subscribePluginsOverview,
 } from "@/lib/app-api";
 import { useLocalState } from "@/lib/local-hooks";
 
@@ -165,9 +165,9 @@ export const calendarEventCache = new CalendarEventCache(listCalendarEvents);
 /** Every connection of an enabled calendar plugin. */
 export function useCalendarSources(): CalendarSource[] {
   const overview = useSyncExternalStore(
-    subscribeConnectorsOverview,
-    getCachedConnectorsOverview,
-    getCachedConnectorsOverview,
+    subscribePluginsOverview,
+    getCachedPluginsOverview,
+    getCachedPluginsOverview,
   );
   return useMemo(
     () =>

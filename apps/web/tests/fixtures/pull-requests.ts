@@ -1,7 +1,4 @@
-import type {
-  CodeHostPullRequestFacts,
-  ConnectorsOverview,
-} from "@ajour/shared";
+import type { CodeHostPullRequestFacts, PluginsOverview } from "@ajour/shared";
 
 export const pullRequestFacts: CodeHostPullRequestFacts = {
   id: "pr1",
@@ -25,7 +22,7 @@ export const pullRequestFacts: CodeHostPullRequestFacts = {
   mergeability: "mergeable",
 };
 
-export const codeHostOverview: ConnectorsOverview = {
+export const codeHostOverview: PluginsOverview = {
   pluginsEnabled: true,
   plugins: [],
   connectionGroups: [

@@ -31,7 +31,7 @@ function card(page: Page) {
 Given(
   "the Workday \\(agent) plugin adds project properties",
   async ({ page }) => {
-    await page.route("http://127.0.0.1:8787/api/connectors", (route) =>
+    await page.route("http://127.0.0.1:8787/api/plugins", (route) =>
       route.fulfill({
         json: {
           pluginsEnabled: true,

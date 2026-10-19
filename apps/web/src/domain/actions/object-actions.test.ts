@@ -382,7 +382,7 @@ describe("backlog item actions", () => {
     });
   });
 
-  it("lists Open in source only when the connector gave a source URL", () => {
+  it("lists Open in source only when the plugin gave a source URL", () => {
     // An opaque source id such as ENG-42 is not a link.
     const opaqueSourceItem = {
       status: "active",

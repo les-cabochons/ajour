@@ -1,5 +1,5 @@
 // Takes the screenshots of the docs site, in light and dark, from a
-// production build of the web app on the seeded workspace. The connector API
+// production build of the web app on the seeded workspace. The app API
 // and the desktop bridge are mocked, so the official plugins show as
 // installed and connected. Output: apps/docs/public/shots/<name>-<theme>.webp,
 // encoded by Chromium, about a fifth of the PNG size.
@@ -12,7 +12,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 import {
-  connectorsOverview,
+  pluginsOverview,
   desktopBridgeScript,
   mcpSettings,
   pullRequestsScript,
@@ -36,7 +36,7 @@ const NARROW = { width: 390, height: 780 };
 
 /** The mocked internal API, keyed by path. Anything else answers 404. */
 const api = {
-  "/api/connectors": connectorsOverview,
+  "/api/plugins": pluginsOverview,
   "/api/backlog/imports": stagedImports,
   "/api/backlog/source-statuses": sourceStatuses,
   "/api/mcp/settings": () => mcpSettings(false),

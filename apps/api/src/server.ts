@@ -10,15 +10,15 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import {
-  connectorBacklogStatusListResponseSchema,
-  connectorBacklogStatusUpsertRequestSchema,
-  connectorBacklogStatusUpsertResponseSchema,
-  connectorConnectionSaveRequestSchema,
-  connectorConnectionSaveResponseSchema,
-  connectorFieldValuesSchema,
-  connectorPluginActivationUpdateSchema,
+  backlogSourceStatusListResponseSchema,
+  backlogSourceStatusUpsertRequestSchema,
+  backlogSourceStatusUpsertResponseSchema,
+  pluginConnectionSaveRequestSchema,
+  pluginConnectionSaveResponseSchema,
+  pluginFieldValuesSchema,
+  pluginActivationUpdateSchema,
   pluginSystemActivationUpdateSchema,
-  connectorPluginIdSchema,
+  pluginIdSchema,
   pluginHasCapability,
   pluginHasCodeHost,
   pluginHasCalendar,
@@ -28,32 +28,32 @@ import {
   switchableCapabilityLabels,
   switchableCapabilitySchema,
   type SwitchableCapability,
-  connectorPluginInstallResponseSchema,
-  connectorPluginUninstallResponseSchema,
-  connectorSettleStatesRequestSchema,
-  connectorSettleStatesResultSchema,
-  connectorSettleWriteRequestSchema,
-  connectorSettleWriteResultSchema,
-  connectorSyncRequestSchema,
-  connectorSyncResultSchema,
-  type ConnectorField,
-  type ConnectorFieldValues,
-  type ConnectorPluginManifest,
-  type ConnectorImportCandidate,
-  type ConnectorImportCandidateInput,
-  connectorImportCommitResponseSchema,
-  connectorImportDismissRequestSchema,
-  connectorImportDismissResponseSchema,
-  connectorImportListResponseSchema,
-  connectorImportPushRequestSchema,
-  connectorImportPushResponseSchema,
-  connectorImportRestoreRequestSchema,
-  connectorImportRestoreResponseSchema,
-  connectorImportSelectionResponseSchema,
-  connectorImportSelectionUpdateSchema,
-  connectorsOverviewSchema,
+  pluginInstallResponseSchema,
+  pluginUninstallResponseSchema,
+  backlogSettleStatesRequestSchema,
+  backlogSettleStatesResultSchema,
+  backlogSettleWriteRequestSchema,
+  backlogSettleWriteResultSchema,
+  backlogSyncRequestSchema,
+  backlogSyncResultSchema,
+  type PluginField,
+  type PluginFieldValues,
+  type PluginManifest,
+  type BacklogImportCandidate,
+  type BacklogImportCandidateInput,
+  backlogImportCommitResponseSchema,
+  backlogImportDismissRequestSchema,
+  backlogImportDismissResponseSchema,
+  backlogImportListResponseSchema,
+  backlogImportPushRequestSchema,
+  backlogImportPushResponseSchema,
+  backlogImportRestoreRequestSchema,
+  backlogImportRestoreResponseSchema,
+  backlogImportSelectionResponseSchema,
+  backlogImportSelectionUpdateSchema,
+  pluginsOverviewSchema,
   teamCreateRouteRequestSchema,
-} from "../../../packages/shared/connectors.ts";
+} from "../../../packages/shared/plugins.ts";
 import {
   codeHostOperationSchema,
   codeHostOperations,
@@ -62,6 +62,11 @@ import {
   calendarOperationSchema,
   calendarOperations,
 } from "../../../packages/shared/calendar.ts";
+import {
+  backlogCommentOperationAllowed,
+  backlogCommentOperationSchema,
+  backlogCommentOperations,
+} from "../../../packages/shared/backlog-comments.ts";
 import { teamSyncRequestSchema } from "../../../packages/shared/team-sync.ts";
 import {
   projectDataShapeExportRequestSchema,
@@ -97,7 +102,7 @@ import {
 } from "./agent-runner/cli-path.ts";
 import { playwrightMcpServer } from "./agent-runner/playwright-mcp.ts";
 import { AgentRunError, AgentRunner } from "./agent-runner/runner.ts";
-import { capabilityOfMethod, ConnectorPluginManager } from "./plugin-host.ts";
+import { capabilityOfMethod, PluginManager } from "./plugin-host.ts";
 import { ProjectDataShapePluginManager } from "./project-data-shape-host.ts";
 import { AppApiStorage, boundConnectionError } from "./storage.ts";
 
@@ -122,7 +127,7 @@ interface AppApiServerOptions {
 
 interface AppApiRuntime {
   storage: AppApiStorage;
-  pluginManager: ConnectorPluginManager;
+  pluginManager: PluginManager;
   projectDataShapePluginManager: ProjectDataShapePluginManager;
   agentRunner: AgentRunner;
   stopping: boolean;
@@ -140,8 +145,8 @@ const RESERVED_CONNECTION_FIELDS = new Set([
 ]);
 
 function materializeAutoSyncCandidates(
-  items: ConnectorImportCandidateInput[],
-): ConnectorImportCandidate[] {
+  items: BacklogImportCandidateInput[],
+): BacklogImportCandidate[] {
   const pushedAt = Date.now();
 
   return items.map((item) => ({
@@ -153,8 +158,8 @@ function materializeAutoSyncCandidates(
 }
 
 function collectAutoSyncItems(
-  items: ConnectorImportCandidateInput[],
-): ConnectorImportCandidate[] {
+  items: BacklogImportCandidateInput[],
+): BacklogImportCandidate[] {
   const candidates = materializeAutoSyncCandidates(items);
   const candidatesBySourceKey = new Map(
     candidates.map(
@@ -188,7 +193,7 @@ function collectAutoSyncItems(
 }
 
 /** Done items go back as `doneItems` so Ajour archives them, never to review. */
-function splitDoneItems(items: ConnectorImportCandidateInput[]) {
+function splitDoneItems(items: BacklogImportCandidateInput[]) {
   return {
     openItems: items.filter((item) => !item.stateDone),
     doneItems: items
@@ -202,9 +207,9 @@ function splitDoneItems(items: ConnectorImportCandidateInput[]) {
   };
 }
 
-function collectConnectorStatuses(items: ConnectorImportCandidateInput[]) {
+function collectSourceStatuses(items: BacklogImportCandidateInput[]) {
   return items
-    .filter((item): item is ConnectorImportCandidateInput & { state: string } =>
+    .filter((item): item is BacklogImportCandidateInput & { state: string } =>
       Boolean(item.state?.trim()),
     )
     .map((item) => ({
@@ -298,15 +303,21 @@ function errorMessage(error: unknown) {
   return error instanceof Error ? error.message : "Unknown error";
 }
 
-function matchConnectorRoute(pathname: string) {
+function matchPluginRoute(pathname: string) {
   return pathname.match(
-    /^\/api\/connectors\/([^/]+)\/connections(?:\/([^/]+)(?:\/(sync|settle-states|settle))?)?$/,
+    /^\/api\/plugins\/([^/]+)\/connections(?:\/([^/]+)(?:\/(sync|settle-states|settle))?)?$/,
   );
 }
 
 function matchCodeHostRoute(pathname: string) {
   return pathname.match(
     /^\/api\/code-hosts\/([^/]+)\/connections\/([^/]+)\/([A-Za-z]+)$/,
+  );
+}
+
+function matchBacklogCommentRoute(pathname: string) {
+  return pathname.match(
+    /^\/api\/backlog-comments\/([^/]+)\/connections\/([^/]+)\/([A-Za-z]+)$/,
   );
 }
 
@@ -347,8 +358,8 @@ function matchTeamRoute(pathname: string) {
   );
 }
 
-function matchConnectorPluginActivationRoute(pathname: string) {
-  return pathname.match(/^\/api\/connectors\/([^/]+)\/activation$/);
+function matchPluginActivationRoute(pathname: string) {
+  return pathname.match(/^\/api\/plugins\/([^/]+)\/activation$/);
 }
 
 function matchProjectDataShapeRoute(pathname: string) {
@@ -362,12 +373,12 @@ function parseBooleanValue(value: unknown, fieldId: string) {
     return value;
   }
 
-  throw new Error(`Connector field "${fieldId}" must be a boolean.`);
+  throw new Error(`Plugin field "${fieldId}" must be a boolean.`);
 }
 
 function parseRequiredStringValue(value: unknown, fieldId: string) {
   if (typeof value !== "string" || value.trim().length === 0) {
-    throw new Error(`Connector field "${fieldId}" is required.`);
+    throw new Error(`Plugin field "${fieldId}" is required.`);
   }
 
   return value.trim();
@@ -384,12 +395,12 @@ function parseAutoSyncIntervalValue(value: unknown) {
   }
 
   throw new Error(
-    'Connector field "autoSyncIntervalMinutes" must be an integer between 1 and 1440.',
+    'Plugin field "autoSyncIntervalMinutes" must be an integer between 1 and 1440.',
   );
 }
 
-function parseConnectionValues(values: ConnectorFieldValues) {
-  const parsedValues = connectorFieldValuesSchema.parse(values);
+function parseConnectionValues(values: PluginFieldValues) {
+  const parsedValues = pluginFieldValuesSchema.parse(values);
   const label = parseRequiredStringValue(parsedValues.label, "label");
   const tenantLabel = parseRequiredStringValue(
     parsedValues.tenantLabel,
@@ -442,10 +453,10 @@ function isHttpUrl(value: unknown): boolean {
  * blocks a run until it is filled. Returns the error message when a value is bad.
  */
 function parseAgentTaskValues(
-  fields: readonly ConnectorField[],
-  values: ConnectorFieldValues,
-): { values: ConnectorFieldValues } | { error: string } {
-  const kept: ConnectorFieldValues = {};
+  fields: readonly PluginField[],
+  values: PluginFieldValues,
+): { values: PluginFieldValues } | { error: string } {
+  const kept: PluginFieldValues = {};
   for (const field of fields) {
     if (!Object.hasOwn(values, field.id)) continue;
     const value = values[field.id]!;
@@ -470,9 +481,9 @@ async function inactiveCapabilityError(
   availablePluginIds: ReadonlySet<string>,
   action: string,
 ) {
-  if (!(await storage.isConnectorPluginEnabled(pluginId, availablePluginIds))) {
+  if (!(await storage.isPluginEnabled(pluginId, availablePluginIds))) {
     return capability === "connector"
-      ? `Activate this connector plugin before ${action}.`
+      ? `Activate this plugin before ${action}.`
       : `Activate this plugin before ${action}.`;
   }
   if (
@@ -489,17 +500,17 @@ async function inactiveCapabilityError(
 
 async function getOverview(
   storage: AppApiStorage,
-  pluginManager: ConnectorPluginManager,
+  pluginManager: PluginManager,
 ) {
   const { plugins, unavailable } = await pluginManager.inspectPlugins();
-  return connectorsOverviewSchema.parse(
-    await storage.getConnectorsOverview(plugins, unavailable),
+  return pluginsOverviewSchema.parse(
+    await storage.getPluginsOverview(plugins, unavailable),
   );
 }
 
 async function findConnectionSummary(
   storage: AppApiStorage,
-  pluginManager: ConnectorPluginManager,
+  pluginManager: PluginManager,
   pluginId: string,
   connectionId: string,
 ) {
@@ -512,7 +523,7 @@ async function findConnectionSummary(
     );
 
   if (!summary) {
-    throw new Error(`Connector connection "${connectionId}" not found.`);
+    throw new Error(`Plugin connection "${connectionId}" not found.`);
   }
 
   return {
@@ -541,18 +552,18 @@ function defaultDevelopmentPluginDirectories() {
     path.dirname(fileURLToPath(import.meta.url)),
     "../../..",
   );
-  const connectorRoot = path.join(repoRoot, "connectors");
-  if (!existsSync(connectorRoot)) {
+  const pluginRoot = path.join(repoRoot, "plugins");
+  if (!existsSync(pluginRoot)) {
     return [];
   }
 
-  return readdirSync(connectorRoot, { withFileTypes: true })
+  return readdirSync(pluginRoot, { withFileTypes: true })
     .filter(
       (entry) =>
         entry.isDirectory() &&
-        existsSync(path.join(connectorRoot, entry.name, "plugin.json")),
+        existsSync(path.join(pluginRoot, entry.name, "plugin.json")),
     )
-    .map((entry) => path.join(connectorRoot, entry.name));
+    .map((entry) => path.join(pluginRoot, entry.name));
 }
 
 function defaultProjectDataShapePluginDirectories() {
@@ -581,7 +592,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
   const allowDevelopmentPlugins =
     options.allowDevelopmentPlugins ??
     process.env.AJOUR_ALLOW_DEVELOPMENT_PLUGINS === "1";
-  const pluginManager = new ConnectorPluginManager({
+  const pluginManager = new PluginManager({
     installedPluginDirectory:
       options.installedPluginDirectory ??
       defaultInstalledPluginDirectory(options.statePath),
@@ -665,7 +676,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
     plugins: {
       listPlugins: () => pluginManager.listPlugins(),
       isPluginEnabled: async (pluginId) =>
-        storage.isConnectorPluginEnabled(
+        storage.isPluginEnabled(
           pluginId,
           new Set(
             (await pluginManager.listPlugins()).map((plugin) => plugin.id),
@@ -958,17 +969,14 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         return;
       }
 
-      if (
-        request.method === "GET" &&
-        requestUrl.pathname === "/api/connectors"
-      ) {
+      if (request.method === "GET" && requestUrl.pathname === "/api/plugins") {
         writeJson(response, 200, await getOverview(storage, pluginManager));
         return;
       }
 
       if (
         request.method === "GET" &&
-        requestUrl.pathname === "/api/connectors/plugins"
+        requestUrl.pathname === "/api/plugins/plugins"
       ) {
         writeJson(response, 200, await pluginManager.listPlugins());
         return;
@@ -1064,22 +1072,22 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         return;
       }
 
-      const pluginActivationRoute = matchConnectorPluginActivationRoute(
+      const pluginActivationRoute = matchPluginActivationRoute(
         requestUrl.pathname,
       );
       if (request.method === "POST" && pluginActivationRoute) {
-        const pluginId = connectorPluginIdSchema.parse(
+        const pluginId = pluginIdSchema.parse(
           decodeURIComponent(pluginActivationRoute[1] ?? ""),
         );
         const plugin = (await pluginManager.listPlugins()).find(
           (candidate) => candidate.id === pluginId,
         );
         if (!plugin) {
-          writeJson(response, 404, { error: "Connector plugin not found." });
+          writeJson(response, 404, { error: "Plugin not found." });
           return;
         }
 
-        const payload = connectorPluginActivationUpdateSchema.parse(
+        const payload = pluginActivationUpdateSchema.parse(
           await readJsonBody(request),
         );
         if (payload.capability) {
@@ -1106,11 +1114,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           writeJson(response, 200, await getOverview(storage, pluginManager));
           return;
         }
-        await storage.setConnectorPluginEnabled(pluginId, payload.enabled);
+        await storage.setPluginEnabled(pluginId, payload.enabled);
         if (!payload.enabled) {
           await pluginManager.cancelPluginOperations(
             pluginId,
-            new Error(`Connector plugin "${pluginId}" was deactivated.`),
+            new Error(`Plugin "${pluginId}" was deactivated.`),
           );
         }
         writeJson(response, 200, await getOverview(storage, pluginManager));
@@ -1124,8 +1132,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(
           response,
           200,
-          connectorBacklogStatusListResponseSchema.parse(
-            await storage.listConnectorBacklogStatuses(),
+          backlogSourceStatusListResponseSchema.parse(
+            await storage.listBacklogSourceStatuses(),
           ),
         );
         return;
@@ -1135,28 +1143,28 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         request.method === "POST" &&
         requestUrl.pathname === "/api/backlog/source-statuses"
       ) {
-        const payload = connectorBacklogStatusUpsertRequestSchema.parse(
+        const payload = backlogSourceStatusUpsertRequestSchema.parse(
           await readJsonBody(request),
         );
         writeJson(
           response,
           200,
-          connectorBacklogStatusUpsertResponseSchema.parse({
-            items: await storage.upsertConnectorBacklogStatuses(payload.items),
+          backlogSourceStatusUpsertResponseSchema.parse({
+            items: await storage.upsertBacklogSourceStatuses(payload.items),
           }),
         );
         return;
       }
 
-      const connectorRoute = matchConnectorRoute(requestUrl.pathname);
-      if (connectorRoute) {
-        const [, rawPluginId, rawConnectionId, action] = connectorRoute;
-        const pluginId = connectorPluginIdSchema.parse(
+      const pluginRoute = matchPluginRoute(requestUrl.pathname);
+      if (pluginRoute) {
+        const [, rawPluginId, rawConnectionId, action] = pluginRoute;
+        const pluginId = pluginIdSchema.parse(
           decodeURIComponent(rawPluginId ?? ""),
         );
 
         if (request.method === "POST" && !rawConnectionId && !action) {
-          const payload = connectorConnectionSaveRequestSchema.parse(
+          const payload = pluginConnectionSaveRequestSchema.parse(
             await readJsonBody(request),
           );
           const parsedValues = parseConnectionValues(payload.values);
@@ -1205,7 +1213,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           writeJson(
             response,
             200,
-            connectorConnectionSaveResponseSchema.parse({
+            pluginConnectionSaveResponseSchema.parse({
               overview,
               connection: summary,
             }),
@@ -1216,7 +1224,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         const connectionId = decodeURIComponent(rawConnectionId ?? "");
         if (!connectionId) {
           writeJson(response, 404, {
-            error: "Connector connection not found.",
+            error: "Plugin connection not found.",
           });
           return;
         }
@@ -1228,7 +1236,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           );
           if (!deleted) {
             writeJson(response, 404, {
-              error: "Connector connection not found.",
+              error: "Plugin connection not found.",
             });
             return;
           }
@@ -1247,7 +1255,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           );
           if (!connection) {
             writeJson(response, 404, {
-              error: "Connector connection not found.",
+              error: "Plugin connection not found.",
             });
             return;
           }
@@ -1266,7 +1274,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           }
           if (!(await pluginManager.supportsSettle(pluginId))) {
             writeJson(response, 409, {
-              error: "This connector plugin does not support settling.",
+              error: "This plugin does not support settling.",
             });
             return;
           }
@@ -1287,11 +1295,11 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           // A malformed body fails here, outside the try, as a 400.
           const statesRequest =
             action === "settle-states"
-              ? connectorSettleStatesRequestSchema.parse(body)
+              ? backlogSettleStatesRequestSchema.parse(body)
               : undefined;
           const writeRequest =
             action === "settle"
-              ? connectorSettleWriteRequestSchema.parse(body)
+              ? backlogSettleWriteRequestSchema.parse(body)
               : undefined;
           try {
             if (statesRequest) {
@@ -1303,7 +1311,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
               writeJson(
                 response,
                 200,
-                connectorSettleStatesResultSchema.parse(result),
+                backlogSettleStatesResultSchema.parse(result),
               );
               return;
             }
@@ -1316,7 +1324,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
               writeJson(
                 response,
                 200,
-                connectorSettleWriteResultSchema.parse(result),
+                backlogSettleWriteResultSchema.parse(result),
               );
             }
           } catch (error) {
@@ -1353,12 +1361,12 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           );
           if (!connection) {
             writeJson(response, 404, {
-              error: "Connector connection not found.",
+              error: "Plugin connection not found.",
             });
             return;
           }
 
-          const payload = connectorSyncRequestSchema.parse(
+          const payload = backlogSyncRequestSchema.parse(
             await readJsonBody(request),
           );
           const isSourceWriteOnly = payload.trigger === "source_write";
@@ -1391,13 +1399,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
               ))
             ) {
               writeJson(response, 409, {
-                error: "Connector plugin was deactivated while syncing.",
+                error: "Plugin was deactivated while syncing.",
               });
               return;
             }
-            const discoveredStatuses = collectConnectorStatuses(fetched.items);
+            const discoveredStatuses = collectSourceStatuses(fetched.items);
             if (discoveredStatuses.length > 0) {
-              await storage.upsertConnectorBacklogStatuses(discoveredStatuses);
+              await storage.upsertBacklogSourceStatuses(discoveredStatuses);
             }
 
             const autoSyncItems = shouldAutoSyncToBacklog
@@ -1431,7 +1439,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             writeJson(
               response,
               200,
-              connectorSyncResultSchema.parse({
+              backlogSyncResultSchema.parse({
                 connection: summary,
                 mode: shouldAutoSyncToBacklog ? "backlog" : "review",
                 items: isSourceWriteOnly ? [] : autoSyncItems,
@@ -1440,6 +1448,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
                 skippedCount: stageResult.skippedCount,
                 workItemUpdates: fetched.workItemUpdates,
                 doneItems,
+                viewer: fetched.viewer,
+                commentFacts: fetched.commentFacts,
               }),
             );
           } catch (error) {
@@ -1457,7 +1467,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             );
             // `error` gives the client the reason, as other failed requests do.
             writeJson(response, 502, {
-              ...connectorSyncResultSchema.parse({
+              ...backlogSyncResultSchema.parse({
                 connection: summary,
                 mode: shouldAutoSyncToBacklog ? "backlog" : "review",
                 items: [],
@@ -1477,7 +1487,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       const codeHostRoute = matchCodeHostRoute(requestUrl.pathname);
       if (codeHostRoute && request.method === "POST") {
         const [, rawPluginId, rawConnectionId, rawOperation] = codeHostRoute;
-        const pluginId = connectorPluginIdSchema.parse(
+        const pluginId = pluginIdSchema.parse(
           decodeURIComponent(rawPluginId ?? ""),
         );
         const connectionId = decodeURIComponent(rawConnectionId ?? "");
@@ -1555,10 +1565,123 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         return;
       }
 
+      const backlogCommentRoute = matchBacklogCommentRoute(requestUrl.pathname);
+      if (backlogCommentRoute && request.method === "POST") {
+        const [, rawPluginId, rawConnectionId, rawOperation] =
+          backlogCommentRoute;
+        const pluginId = pluginIdSchema.parse(
+          decodeURIComponent(rawPluginId ?? ""),
+        );
+        const connectionId = decodeURIComponent(rawConnectionId ?? "");
+        const operation = backlogCommentOperationSchema.safeParse(rawOperation);
+        if (!operation.success) {
+          writeJson(response, 404, { error: "Unknown comment operation." });
+          return;
+        }
+        const plugins = await pluginManager.listPlugins();
+        const plugin = plugins.find((candidate) => candidate.id === pluginId);
+        if (!plugin?.capabilities.connector?.comments) {
+          writeJson(response, 404, {
+            error: "This plugin does not provide comments.",
+          });
+          return;
+        }
+        const inactive = await inactiveCapabilityError(
+          storage,
+          pluginId,
+          "connector",
+          new Set(plugins.map((candidate) => candidate.id)),
+          "using its comments",
+        );
+        if (inactive) {
+          writeJson(response, 409, { error: inactive });
+          return;
+        }
+        const connection = await storage.getConnection(pluginId, connectionId);
+        if (!connection) {
+          writeJson(response, 404, { error: "Connection not found." });
+          return;
+        }
+
+        // A malformed body fails here, outside the try, as a 400.
+        const commentRequest = backlogCommentOperations[
+          operation.data
+        ].request.parse(await readJsonBody(request));
+        if (
+          !backlogCommentOperationAllowed(
+            plugin.capabilities.connector.comments,
+            operation.data,
+            operation.data === "setItemCommentReaction"
+              ? backlogCommentOperations.setItemCommentReaction.request.parse(
+                  commentRequest,
+                ).reaction
+              : undefined,
+          )
+        ) {
+          writeJson(response, 404, {
+            error: "This plugin does not support that on comments.",
+          });
+          return;
+        }
+        const startedAt = Date.now();
+        // Ids, counts and duration only. Comment text and authors stay out
+        // of the log (ADR 0008).
+        const logCommentEvent = (
+          outcome: "ok" | "error",
+          commentCount?: number,
+        ) =>
+          logMcpEvent({
+            event: "backlog.comments",
+            operation: operation.data,
+            plugin_id: pluginId,
+            connection_id: connectionId,
+            comment_count: commentCount,
+            outcome,
+            duration_ms: Date.now() - startedAt,
+          });
+        try {
+          const result = await pluginManager.runBacklogCommentOperation(
+            pluginId,
+            operation.data,
+            {
+              id: connection.id,
+              pluginId: connection.pluginId,
+              label: connection.label,
+              tenantLabel: connection.tenantLabel,
+              autoSync: connection.autoSync,
+              autoSyncIntervalMinutes: connection.autoSyncIntervalMinutes,
+              connectedAt: connection.connectedAt,
+              lastSyncAt: connection.lastSyncAt,
+              lastError: connection.lastError,
+              config: connection.config,
+            },
+            commentRequest,
+          );
+          logCommentEvent(
+            "ok",
+            "comments" in result
+              ? result.comments.length
+              : "people" in result
+                ? result.people.length
+                : "comment" in result
+                  ? 1
+                  : 0,
+          );
+          writeJson(response, 200, result);
+        } catch (error) {
+          const message = boundConnectionError(
+            redactSecretValues(errorMessage(error), plugin, connection.config),
+          );
+          logCommentEvent("error");
+          writeJson(response, 502, { error: message });
+        }
+        return;
+      }
+
       const calendarRoute = matchCalendarRoute(requestUrl.pathname);
       if (calendarRoute && request.method === "POST") {
         const [, rawPluginId, rawConnectionId, rawOperation] = calendarRoute;
-        const pluginId = connectorPluginIdSchema.parse(
+        const pluginId = pluginIdSchema.parse(
           decodeURIComponent(rawPluginId ?? ""),
         );
         const connectionId = decodeURIComponent(rawConnectionId ?? "");
@@ -1656,7 +1779,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
       const teamRoute = matchTeamRoute(requestUrl.pathname);
       if (teamRoute && request.method === "POST") {
         const [, rawPluginId, create, rawConnectionId] = teamRoute;
-        const pluginId = connectorPluginIdSchema.parse(
+        const pluginId = pluginIdSchema.parse(
           decodeURIComponent(rawPluginId ?? ""),
         );
         const plugins = await pluginManager.listPlugins();
@@ -1750,13 +1873,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         request.method === "POST" &&
         requestUrl.pathname === "/api/backlog/items"
       ) {
-        const payload = connectorImportPushRequestSchema.parse(
+        const payload = backlogImportPushRequestSchema.parse(
           await readJsonBody(request),
         );
         writeJson(
           response,
           200,
-          connectorImportPushResponseSchema.parse(
+          backlogImportPushResponseSchema.parse(
             await storage.stageImportItems(payload.items),
           ),
         );
@@ -1770,7 +1893,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(
           response,
           200,
-          connectorImportListResponseSchema.parse(
+          backlogImportListResponseSchema.parse(
             await storage.listStagedImports(),
           ),
         );
@@ -1781,13 +1904,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         request.method === "POST" &&
         requestUrl.pathname === "/api/backlog/imports/selection"
       ) {
-        const payload = connectorImportSelectionUpdateSchema.parse(
+        const payload = backlogImportSelectionUpdateSchema.parse(
           await readJsonBody(request),
         );
         writeJson(
           response,
           200,
-          connectorImportSelectionResponseSchema.parse({
+          backlogImportSelectionResponseSchema.parse({
             updatedCount: await storage.updateImportSelection(
               payload.ids,
               payload.selected,
@@ -1801,13 +1924,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         request.method === "POST" &&
         requestUrl.pathname === "/api/backlog/imports/dismiss"
       ) {
-        const payload = connectorImportDismissRequestSchema.parse(
+        const payload = backlogImportDismissRequestSchema.parse(
           await readJsonBody(request),
         );
         writeJson(
           response,
           200,
-          connectorImportDismissResponseSchema.parse(
+          backlogImportDismissResponseSchema.parse(
             await storage.dismissImports(payload.ids),
           ),
         );
@@ -1818,13 +1941,13 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         request.method === "POST" &&
         requestUrl.pathname === "/api/backlog/imports/restore"
       ) {
-        const payload = connectorImportRestoreRequestSchema.parse(
+        const payload = backlogImportRestoreRequestSchema.parse(
           await readJsonBody(request),
         );
         writeJson(
           response,
           200,
-          connectorImportRestoreResponseSchema.parse({
+          backlogImportRestoreResponseSchema.parse({
             result: await storage.restoreDismissedImports(payload.undoToken),
           }),
         );
@@ -1839,7 +1962,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
         writeJson(
           response,
           200,
-          connectorImportCommitResponseSchema.parse({
+          backlogImportCommitResponseSchema.parse({
             items,
             committedCount: items.length,
           }),
@@ -1876,8 +1999,8 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
  */
 async function applyCapabilityDefaults(
   storage: AppApiStorage,
-  manifest: ConnectorPluginManifest,
-  previous: ConnectorPluginManifest | undefined,
+  manifest: PluginManifest,
+  previous: PluginManifest | undefined,
 ) {
   for (const capability of switchableCapabilitySchema.options) {
     if (!pluginHasSwitchableCapabilities(manifest)) {
@@ -1900,7 +2023,7 @@ async function applyCapabilityDefaults(
   }
 }
 
-export async function installConnectorPluginForServer(
+export async function installPluginForServer(
   server: Server,
   archiveBytes: Uint8Array,
   archiveFilename: string,
@@ -1908,9 +2031,7 @@ export async function installConnectorPluginForServer(
 ) {
   const runtime = appApiRuntimesByServer.get(server);
   if (!runtime) {
-    throw new Error(
-      "Connector plugin installation requires an active app API runtime.",
-    );
+    throw new Error("Plugin installation requires an active app API runtime.");
   }
 
   const before = await runtime.pluginManager.inspectPlugins();
@@ -1922,10 +2043,7 @@ export async function installConnectorPluginForServer(
     async (installed) => {
       // An update keeps the activation the user chose for the previous version.
       if (!installed.replaced && options.enableAfterInstall === false) {
-        await runtime.storage.setConnectorPluginEnabled(
-          installed.manifest.id,
-          false,
-        );
+        await runtime.storage.setPluginEnabled(installed.manifest.id, false);
       }
       const previous = [
         ...before.plugins,
@@ -1938,27 +2056,25 @@ export async function installConnectorPluginForServer(
       );
     },
   );
-  return connectorPluginInstallResponseSchema.parse({
+  return pluginInstallResponseSchema.parse({
     plugin: installedPlugin.manifest,
     replaced: installedPlugin.replaced,
     overview: await getOverview(runtime.storage, runtime.pluginManager),
   });
 }
 
-export async function uninstallConnectorPluginForServer(
+export async function uninstallPluginForServer(
   server: Server,
   pluginId: string,
 ) {
   const runtime = appApiRuntimesByServer.get(server);
   if (!runtime) {
-    throw new Error(
-      "Connector plugin uninstall requires an active app API runtime.",
-    );
+    throw new Error("Plugin uninstall requires an active app API runtime.");
   }
 
   const removedPlugin = await runtime.pluginManager.uninstallPlugin(pluginId);
-  await runtime.storage.removeConnectorPluginData(removedPlugin.id);
-  return connectorPluginUninstallResponseSchema.parse({
+  await runtime.storage.removePluginData(removedPlugin.id);
+  return pluginUninstallResponseSchema.parse({
     pluginId: removedPlugin.id,
     overview: await getOverview(runtime.storage, runtime.pluginManager),
   });
