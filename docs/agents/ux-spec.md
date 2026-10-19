@@ -687,6 +687,17 @@ Syncs move synced items between states:
 - The page is designed for Azure DevOps first, then Jira.
 - The page edits in place: no editor side panel. Click the title, or press Enter, to rename. Every inline edit saves on Enter or blur with the Undo toast, and Escape cancels.
 
+### Description frontmatter
+
+Decided in [#281](https://github.com/les-cabochons/ajour/issues/281).
+
+- A description can start with a YAML block between two `---` lines that sends data to Ajour. Ajour reads a small subset: `key: value`, maps nested by indentation, quoted strings, `#` comments and lists of plain values. A block outside the subset is not frontmatter, and the description shows as written.
+- The item page and the peek never show the block. Edit shows the whole text, block included.
+- Every top-level key except `timelog` shows as a row above the description text, labelled with the key as written. A nested key reads `parent.child`. An `http` or `https` value is a link. Clicking it asks "Open this link?" with the full address, Cancel, Open link and a "Don't ask again" checkbox. Settings > Backlog > Descriptions > "Ask before opening frontmatter links" turns the question back on. Links in the description text open as before.
+- `timelog.project` and `timelog.task` set the item's project and task when the timelog changes: an edit in Ajour, a new item, an agent's edit, or a newly synced item. A write that picks the project or task itself keeps that pick, and so does a new item created with a project. A pick made later in the properties stays until the timelog changes again. The change shares the write's Undo.
+- The project is the active project whose name, display name or code matches, ignoring case. The task is the project's task of that name: an archived one is restored and a missing one is created. Without a task the timelog clears the task; with only a task it looks in the item's current project.
+- When no active project matches, an amber warning button follows the Project property, "Create project Beta Corp". It opens an AlertDialog that names the project and task, with Cancel and Create project, or Restore project when an archived project has that name. Confirming creates or restores the project with the task, maps the item and shows the Undo toast.
+
 ## Projects
 
 Decided in [Projects pages under the new conventions](https://github.com/les-cabochons/ajour/issues/26).
