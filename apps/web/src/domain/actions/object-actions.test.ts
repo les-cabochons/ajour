@@ -1,8 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { lockedWeekMessage } from "@/domain/time/locked-weeks";
 import {
+  addTimeEntryClipboardActions,
   getCalendarSuggestionActions,
   getBacklogItemActions,
+  getObjectActionSections,
   getProjectActions,
   getTaskActions,
   formatEntryCount,
@@ -525,5 +527,150 @@ describe("calendar suggestion actions", () => {
         .flatMap((action) => [action.label, action.disabledReason ?? ""])
         .join(" "),
     ).not.toMatch(/rule|series|occurrence/i);
+  });
+});
+
+describe("action sections", () => {
+  function sectionIds(actions: ObjectAction[]) {
+    return getObjectActionSections(actions).map(ids);
+  }
+
+  it("starts a section where the group changes and before the first destructive action", () => {
+    expect(
+      sectionIds([
+        { id: "a", label: "A", group: "one" },
+        { id: "b", label: "B", group: "one" },
+        { id: "c", label: "C", group: "two" },
+        { id: "d", label: "D", group: "two", destructive: true },
+        { id: "e", label: "E", destructive: true },
+      ]),
+    ).toEqual([["a", "b"], ["c"], ["d", "e"]]);
+  });
+
+  it("keeps ungrouped actions together", () => {
+    expect(
+      sectionIds([
+        { id: "a", label: "A" },
+        { id: "b", label: "B" },
+      ]),
+    ).toEqual([["a", "b"]]);
+    expect(sectionIds([])).toEqual([]);
+  });
+
+  it("separates a backlog item's tracking, editing, triage, source and removal", () => {
+    expect(
+      sectionIds(
+        getBacklogItemActions(
+          {
+            status: "active",
+            source: "jira",
+            sourceUrl: "https://example.atlassian.net/browse/ENG-42",
+          },
+          {
+            subitemCount: 0,
+            isSubitem: false,
+            isRunning: false,
+            otherSourceStateCount: 1,
+          },
+        ),
+      ),
+    ).toEqual([
+      ["start-entry", "new-entry"],
+      ["edit", "add-subitem"],
+      ["snooze", "pin", "settle"],
+      ["change-source-state", "open-in-source"],
+      ["archive", "delete"],
+    ]);
+  });
+
+  it("separates a time entry's opening, placing and deleting", () => {
+    expect(sectionIds(getTimeEntryActions("committed"))).toEqual([
+      ["edit", "continue"],
+      ["duplicate", "duplicate-to", "move-to", "mark-not-committed"],
+      ["delete"],
+    ]);
+  });
+
+  it("separates Restore from the work actions of an archived project or task", () => {
+    expect(sectionIds(getProjectActions({ status: "archived" }))).toEqual([
+      ["edit", "new-task"],
+      ["restore"],
+    ]);
+    expect(
+      sectionIds(getTaskActions({ status: "active" }, { status: "archived" })),
+    ).toEqual([
+      ["start-entry", "new-entry"],
+      ["edit", "assign-shortcut"],
+      ["restore"],
+    ]);
+  });
+});
+
+describe("time entry clipboard actions", () => {
+  it("adds Cut, Copy and Paste as their own section after Edit and Continue", () => {
+    const actions = addTimeEntryClipboardActions(getTimeEntryActions("saved"), {
+      saved: 1,
+      selected: 1,
+      canPaste: true,
+    });
+
+    expect(getObjectActionSections(actions).map(ids)).toEqual([
+      ["edit", "continue"],
+      ["cut", "copy", "paste"],
+      ["duplicate", "duplicate-to", "move-to"],
+      ["delete"],
+    ]);
+    expect(
+      actions
+        .filter((action) => action.clipboard)
+        .map((action) => [action.label, action.clipboard]),
+    ).toEqual([
+      ["Cut", "cut"],
+      ["Copy", "copy"],
+      ["Paste", "paste"],
+    ]);
+    expect(disabledReasons(actions)).toEqual({});
+  });
+
+  it("puts them first on a selection's menu and names the count", () => {
+    const actions = addTimeEntryClipboardActions(
+      getTimeEntrySelectionActions({ saved: 2, committed: 0 }),
+      { saved: 2, selected: 3, canPaste: true },
+    );
+
+    expect(actions.slice(0, 3).map((action) => action.label)).toEqual([
+      "Cut 2 entries",
+      "Copy 2 entries",
+      "Paste",
+    ]);
+  });
+
+  it("disables Cut and Paste on a submitted week and keeps Copy", () => {
+    const actions = addTimeEntryClipboardActions(getTimeEntryActions("saved"), {
+      saved: 1,
+      selected: 1,
+      canPaste: true,
+      lockedReason: "Week of Oct 5 is submitted",
+      pasteLockedReason: "Week of Oct 5 is submitted",
+    });
+
+    expect(disabledReasons(actions)).toMatchObject({
+      cut: "Week of Oct 5 is submitted",
+      paste: "Week of Oct 5 is submitted",
+    });
+    expect(disabledReasons(actions)).not.toHaveProperty("copy");
+  });
+
+  it("disables Cut and Copy on the running entry and Paste until entries are copied", () => {
+    const actions = addTimeEntryClipboardActions(
+      getTimeEntryActions("running"),
+      { saved: 0, selected: 1, canPaste: false },
+    );
+
+    expect(disabledReasons(actions)).toMatchObject({
+      cut: "Stop the running entry first",
+      copy: "Stop the running entry first",
+      paste: "Copy or cut entries first",
+    });
   });
 });

@@ -25,6 +25,25 @@ Feature: Select, copy, cut and paste time entries
     When I go to Monday in the day strip
     Then the Day list reads "Login form", "API", "Code review"
 
+  Scenario: Copy and paste an entry from its right-click menu
+    Given I have a week of saved entries
+    When I open Monday's Day list
+    And I right-click the "API" entry and choose "Copy"
+    And I right-click the "Code review" entry and choose "Paste"
+    Then the Day list reads "Login form", "API", "Code review", "API"
+    And a toast says "Pasted 1 entry"
+
+  Scenario: Paste from the menu skips entries once something else was copied
+    Given I have a week of saved entries
+    And the page may read the clipboard
+    When I open Monday's Day list
+    And I right-click the "API" entry and choose "Copy"
+    And another app copies "Lunch order"
+    And I right-click the "Code review" entry and choose "Paste"
+    And I right-click the "API" entry and choose "Copy"
+    And I right-click the "Login form" entry and choose "Paste"
+    Then the Day list reads "Login form", "API", "Code review", "API"
+
   Scenario: Delete every selected entry at once
     Given I have a week of saved entries
     When I open Monday's Day list

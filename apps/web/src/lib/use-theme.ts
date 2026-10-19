@@ -37,7 +37,14 @@ export function useResolvedTheme(): "dark" | "light" {
 }
 
 export function useApplyTheme(): void {
+  const { themeMode } = useUserPreferences();
   const resolvedTheme = useResolvedTheme();
+
+  // The mode, not the resolved theme: a fixed source would pin the page's
+  // prefers-color-scheme and stop System from following the system.
+  useEffect(() => {
+    window.ajourDesktop?.setThemeSource?.(themeMode);
+  }, [themeMode]);
 
   useEffect(() => {
     const root = document.documentElement;

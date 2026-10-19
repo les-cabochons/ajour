@@ -9,7 +9,9 @@ import {
   type PointerEvent as ReactPointerEvent,
 } from "react";
 import {
+  addTimeEntryClipboardActions,
   formatEntryCount,
+  type ClipboardCommand,
   getTimeEntrySelectionActions,
   TIME_ENTRY_SELECTION_ACTION_IDS,
   type ObjectAction,
@@ -47,6 +49,7 @@ import {
   setEntryClipboard,
   useEntryClipboard,
 } from "@/lib/entry-clipboard";
+import { copyTextToClipboard, readTextFromClipboard } from "@/lib/clipboard";
 import { FOCUS_ITEM_SELECTOR } from "@/lib/item-keys";
 import { useLocalProjects, useLocalState } from "@/lib/local-hooks";
 import { localStore } from "@/lib/local-store";
@@ -176,17 +179,20 @@ export function useEntrySelection({
     return ids.includes(entryId) ? ids : [entryId];
   }
 
+  /** Why the selected entries cannot change: one of them is on a submitted week. */
+  const selectionLockedReason = selectedEntries
+    .map((entry) => getDateLockReason(state, entry.localDate))
+    .find((reason) => reason !== undefined);
+
   /** The selection's actions, named with their counts. */
   const selectionActions = useMemo(
     () =>
       getTimeEntrySelectionActions({
         saved: selectedEntries.length,
         committed: selectedEntries.filter(isTimesheetEntryCommitted).length,
-        lockedReason: selectedEntries
-          .map((entry) => getDateLockReason(state, entry.localDate))
-          .find((reason) => reason !== undefined),
+        lockedReason: selectionLockedReason,
       }),
-    [selectedEntries, state],
+    [selectedEntries, selectionLockedReason],
   );
 
   function describeForText(entry: LocalTimesheetEntry) {
@@ -201,6 +207,57 @@ export function useEntrySelection({
     ]
       .filter(Boolean)
       .join(" · ");
+  }
+
+  /**
+   * Puts the selected saved entries on the entry clipboard and returns their
+   * text summary for the system clipboard, or null when there are none.
+   */
+  function putOnClipboard(mode: Exclude<ClipboardCommand, "paste">) {
+    const entries = getSelectedEntries();
+    if (entries.length === 0) return null;
+
+    const text = entries.map(describeForText).join("\n");
+    setEntryClipboard({
+      mode,
+      entries: entries.map((entry) => ({
+        entryId: entry._id,
+        localDate: entry.localDate,
+      })),
+      text,
+    });
+    return text;
+  }
+
+  /**
+   * Cut and Copy from an entry's menu. The desktop app runs the page's own
+   * command, which fires the cut or copy event handled below, as the Edit menu
+   * does. The browser writes the summary through the Clipboard API instead.
+   */
+  function copyFromMenu(mode: Exclude<ClipboardCommand, "paste">) {
+    const runEditCommand = window.ajourDesktop?.runEditCommand;
+    if (runEditCommand) {
+      runEditCommand(mode);
+      return;
+    }
+
+    const text = putOnClipboard(mode);
+    if (text !== null) {
+      void copyTextToClipboard(text);
+    }
+  }
+
+  /**
+   * Paste from a menu, at `target`. Like Cmd+V, it pastes only while the
+   * system clipboard still holds the copied entries' text, so copying
+   * something else since wins. Where the page may not read the clipboard (a
+   * browser that refuses), it pastes what Ajour copied.
+   */
+  async function pasteFromMenu(target: EntryPasteTarget) {
+    const systemText = await readTextFromClipboard();
+    if (systemText === undefined || matchEntryClipboard(systemText)) {
+      latest.current.paste(target);
+    }
   }
 
   /** Pastes the clipboard's entries at `target`, with one Undo. */
@@ -228,16 +285,14 @@ export function useEntrySelection({
 
   // The listeners read the latest render through a ref, so they attach once.
   const latest = useRef({
-    getSelectedEntries,
-    describeForText,
+    putOnClipboard,
     paste,
     pasteTarget,
     selectAll,
   });
   useEffect(() => {
     latest.current = {
-      getSelectedEntries,
-      describeForText,
+      putOnClipboard,
       paste,
       pasteTarget,
       selectAll,
@@ -251,20 +306,13 @@ export function useEntrySelection({
       const focusOnEntry = document.activeElement?.closest("[data-entry-id]");
       if (!focusOnEntry && window.getSelection()?.type === "Range") return;
 
-      const entries = latest.current.getSelectedEntries();
-      if (entries.length === 0) return;
+      const text = latest.current.putOnClipboard(
+        event.type === "cut" ? "cut" : "copy",
+      );
+      if (text === null) return;
 
       event.preventDefault();
-      const text = entries.map(latest.current.describeForText).join("\n");
       event.clipboardData?.setData("text/plain", text);
-      setEntryClipboard({
-        mode: event.type === "cut" ? "cut" : "copy",
-        entries: entries.map((entry) => ({
-          entryId: entry._id,
-          localDate: entry.localDate,
-        })),
-        text,
-      });
     }
 
     function pasteFromClipboard(event: ClipboardEvent) {
@@ -468,16 +516,41 @@ export function useEntrySelection({
   /**
    * The actions the right-click menu of `entryId` lists: the selection's, named
    * with their counts, when the entry is part of a selection of two or more, and
-   * `own`, the entry's own actions, otherwise. Opening the menu selects the
-   * entry first (`handleMenu`), so a multiple selection always includes it.
+   * `own`, the entry's own actions, otherwise. Both add Cut, Copy and Paste.
+   * Opening the menu selects the entry first (`handleMenu`), so a multiple
+   * selection always includes it.
    */
   function getMenuActions(
     entryId: string,
     own: ObjectAction<TimeEntryActionId>[],
   ): ObjectAction<TimeEntryActionId>[] {
-    return selection.ids.length >= 2 && selectedIds.has(entryId)
-      ? selectionActions
-      : own;
+    const isSelectionMenu =
+      selection.ids.length >= 2 && selectedIds.has(entryId);
+    const entryDate = state.timesheetEntries.find(
+      (entry) => entry._id === entryId,
+    )?.localDate;
+    return addTimeEntryClipboardActions(
+      isSelectionMenu ? selectionActions : own,
+      {
+        saved: isSelectionMenu
+          ? selectedEntries.length
+          : entryId === runningEntryId
+            ? 0
+            : 1,
+        selected: isSelectionMenu ? selection.ids.length : 1,
+        canPaste: clipboard !== null,
+        lockedReason: isSelectionMenu
+          ? selectionLockedReason
+          : entryDate && getDateLockReason(state, entryDate),
+        // Every day a paste can land on is in the shown day's or week's week.
+        pasteLockedReason: getDateLockReason(
+          state,
+          pasteTarget.kind === "day"
+            ? pasteTarget.localDate
+            : pasteTarget.weekDates[0]!,
+        ),
+      },
+    );
   }
 
   /**
@@ -513,12 +586,24 @@ export function useEntrySelection({
    *   Move to… and Duplicate to… ask for one day for all of them. The moved
    *   entries stay selected; the copies become the selection.
    * - Mark as not committed marks the selected committed entries.
+   * - Cut and Copy take the selected saved entries, and Paste puts them where
+   *   Cmd+V does, while the system clipboard still holds them.
    */
   function runSelectionAction(
     entryId: string,
     actionId: TimeEntryActionId,
     key?: object,
   ) {
+    if (actionId === "cut" || actionId === "copy") {
+      copyFromMenu(actionId);
+      return true;
+    }
+
+    if (actionId === "paste") {
+      void pasteFromMenu(pasteTarget);
+      return true;
+    }
+
     if (isSelectionDelete(actionId, key)) {
       if (!getSelectionActionIds(selection, entryId)) {
         return false;
@@ -578,7 +663,7 @@ export function useEntrySelection({
     selectedIds,
     cutIds,
     canPaste: clipboard !== null,
-    paste,
+    pasteFromMenu,
     handleClick,
     handlePress,
     handleMenu,

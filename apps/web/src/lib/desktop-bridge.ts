@@ -5,7 +5,11 @@ import type {
   PluginCatalogResponse,
   PluginCatalogSettings,
 } from "@ajour/shared";
-import type { LocalAppState, UpdateTrack } from "@/domain/local-state";
+import type {
+  LocalAppState,
+  ThemeMode,
+  UpdateTrack,
+} from "@/domain/local-state";
 
 export interface DevelopmentPluginSettings {
   available: boolean;
@@ -63,6 +67,23 @@ export type DesktopAppMenuItem =
       accelerator?: string;
     };
 
+/**
+ * One item of a native right-click menu, as
+ * `apps/desktop/electron/context-menu.cjs` reads it. `accelerator` is an
+ * Electron accelerator that only labels the item.
+ */
+export type DesktopContextMenuItem =
+  | { type: "separator" }
+  | {
+      type: "item";
+      id: string;
+      label: string;
+      enabled: boolean;
+      accelerator?: string;
+      /** macOS shows it before the label. */
+      icon?: "trash" | "archive";
+    };
+
 export interface DesktopAppMenu {
   id: string;
   label: string;
@@ -85,6 +106,18 @@ declare global {
       onMenuAction?: (callback: (action: string) => void) => () => void;
       /** Runs a role item of the app menu, such as Copy, in the main process. */
       runMenuItem?: (itemId: string) => void;
+      /**
+       * Pops up a native right-click menu at `position`, in CSS pixels from the
+       * window's top left. Resolves with the picked item's id, or null.
+       */
+      showContextMenu?: (
+        items: DesktopContextMenuItem[],
+        position: { x: number; y: number },
+      ) => Promise<string | null>;
+      /** Runs the page's Cut or Copy, as the Edit menu does. */
+      runEditCommand?: (command: "cut" | "copy") => void;
+      /** Makes native menus and the window chrome follow the app's theme. */
+      setThemeSource?: (mode: ThemeMode) => void;
       setWindowChromeTheme?: (theme: "dark" | "light") => void;
       checkForUpdates?: (track: UpdateTrack) => Promise<DesktopUpdateState>;
       getUpdateState?: () => Promise<DesktopUpdateState>;

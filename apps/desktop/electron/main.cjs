@@ -6,6 +6,7 @@ const { pathToFileURL } = require("node:url");
 const {
   app,
   BrowserWindow,
+  clipboard,
   dialog,
   ipcMain,
   Menu,
@@ -22,6 +23,13 @@ const {
   getAppMenuModel,
 } = require("./app-menu.cjs");
 const { createAutomaticUpdateController } = require("./automatic-update.cjs");
+const {
+  MAC_ICON_SYMBOLS,
+  buildContextMenuTemplate,
+  buildEditContextMenuTemplate,
+  getPopupPosition,
+  normalizeContextMenuItems,
+} = require("./context-menu.cjs");
 const { selectPluginArchive } = require("./plugin-install.cjs");
 const { createPluginCatalogService } = require("./plugin-catalog.cjs");
 const {
@@ -209,6 +217,59 @@ ipcMain.on("ajour:run-menu-item", (event, itemId) => {
     ?.click(undefined, mainWindow, mainWindow.webContents);
 });
 
+// Object right-click menus. Resolves with the picked item's id, or null when
+// the menu closes without a pick.
+ipcMain.handle("ajour:show-context-menu", (event, items, position) => {
+  assertActiveDesktopWindow(event, "show a context menu");
+  const menuItems = normalizeContextMenuItems(items);
+  if (menuItems.length === 0) {
+    return null;
+  }
+
+  return new Promise((resolve) => {
+    let settled = false;
+    const settle = (id) => {
+      if (!settled) {
+        settled = true;
+        resolve(id);
+      }
+    };
+    const menu = Menu.buildFromTemplate(
+      buildContextMenuTemplate(menuItems, {
+        platform: process.platform,
+        onSelect: settle,
+        getIcon: getContextMenuIcon,
+      }),
+    );
+    menu.popup({
+      window: mainWindow,
+      ...getPopupPosition(position, event.sender.getZoomFactor()),
+      // Let a click that closed the menu report its pick first.
+      callback: () => setTimeout(() => settle(null)),
+    });
+  });
+});
+
+// Cut and Copy from an object menu run the page's own commands, which fire
+// the cut and copy events the renderer listens to, as the Edit menu does.
+ipcMain.on("ajour:run-edit-command", (event, command) => {
+  assertActiveDesktopWindow(event, "run an edit command");
+  if (command === "cut") {
+    event.sender.cut();
+  } else if (command === "copy") {
+    event.sender.copy();
+  }
+});
+
+// Native menus and macOS window chrome follow the app's theme, not only the
+// system's.
+ipcMain.on("ajour:set-theme-source", (event, mode) => {
+  assertActiveDesktopWindow(event, "update the theme");
+  if (mode === "system" || mode === "dark" || mode === "light") {
+    nativeTheme.themeSource = mode;
+  }
+});
+
 ipcMain.on("ajour:set-window-chrome-theme", (event, theme) => {
   assertActiveDesktopWindow(event, "update the window chrome theme");
   if (process.platform !== "win32") {
@@ -388,6 +449,55 @@ ipcMain.handle("ajour:clear-development-plugin-directories", async (event) => {
 /** Runs a registry action in the renderer, such as "time.day-view". */
 function sendMenuAction(action) {
   mainWindow?.webContents.send("ajour:menu-action", action);
+}
+
+const contextMenuIcons = new Map();
+
+/** The macOS menu icon for `icon`, or undefined where it cannot load. */
+function getContextMenuIcon(icon) {
+  if (process.platform !== "darwin") {
+    return undefined;
+  }
+  if (!contextMenuIcons.has(icon)) {
+    let image;
+    try {
+      image = nativeImage
+        .createFromNamedImage(MAC_ICON_SYMBOLS[icon])
+        .resize({ height: 14 });
+      image.setTemplateImage(true);
+    } catch {
+      image = undefined;
+    }
+    contextMenuIcons.set(icon, image && !image.isEmpty() ? image : undefined);
+  }
+  return contextMenuIcons.get(icon);
+}
+
+/**
+ * Shows the edit menu on a right-click that no object menu claimed. Object
+ * menus cancel the page's contextmenu event, so Electron only reports the
+ * right-clicks they leave alone.
+ */
+function showEditContextMenu(window, params) {
+  const { webContents } = window;
+  const template = buildEditContextMenuTemplate(params, {
+    replaceMisspelling: (word) => webContents.replaceMisspelling(word),
+    addToDictionary: (word) =>
+      webContents.session.addWordToSpellCheckerDictionary(word),
+    copyText: (text) => clipboard.writeText(text),
+    copySelection: () => webContents.send("ajour:copy-selection"),
+  });
+  if (template.length > 0) {
+    Menu.buildFromTemplate(template).popup({
+      window,
+      // Where the page asked for the menu: the pointer, or the caret when
+      // Shift+F10 or the menu key opened it.
+      x: params.x,
+      y: params.y,
+      // macOS features such as Writing Tools need the frame.
+      ...(params.frame ? { frame: params.frame } : {}),
+    });
+  }
 }
 
 function assertActiveDesktopWindow(event, action) {
@@ -744,6 +854,10 @@ async function createMainWindow() {
   window.webContents.setWindowOpenHandler(({ url }) => {
     void shell.openExternal(url);
     return { action: "deny" };
+  });
+
+  window.webContents.on("context-menu", (_event, params) => {
+    showEditContextMenu(window, params);
   });
 
   window.webContents.on("will-navigate", (event, navigationUrl) => {

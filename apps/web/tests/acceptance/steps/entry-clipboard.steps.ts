@@ -1,7 +1,7 @@
 import { expect, type Page } from "@playwright/test";
 import { createBdd } from "playwright-bdd";
 
-const { When, Then } = createBdd();
+const { Given, When, Then } = createBdd();
 
 /** A Day list row, found by its task or note. */
 function dayRow(page: Page, text: string) {
@@ -171,6 +171,94 @@ Then(
       "aria-pressed",
       "true",
     );
+  },
+);
+
+Given("the page may read the clipboard", async ({ page }) => {
+  await page.context().grantPermissions(["clipboard-read", "clipboard-write"]);
+});
+
+When("another app copies {string}", async ({ page }, text: string) => {
+  await page.evaluate((value) => navigator.clipboard.writeText(value), text);
+});
+
+type NativeMenuItem = { type: string; id?: string; label?: string };
+
+/** The native menus the stand-in desktop bridge was asked to show. */
+function shownNativeMenus(page: Page) {
+  return page.evaluate(
+    () =>
+      new Promise<NativeMenuItem[][]>((resolve) =>
+        // The menu pops up after the render the right-click causes.
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() =>
+            resolve(
+              (window as unknown as { __nativeMenus: NativeMenuItem[][] })
+                .__nativeMenus,
+            ),
+          ),
+        ),
+      ),
+  );
+}
+
+Given(
+  "the desktop app picks {string} from its right-click menus",
+  async ({ page }, label: string) => {
+    // Stands in for the Electron bridge: records each native menu and picks
+    // the item with this label.
+    await page.addInitScript((wanted) => {
+      const shown: NativeMenuItem[][] = [];
+      Object.assign(window, {
+        __nativeMenus: shown,
+        ajourDesktop: {
+          showContextMenu: async (items: NativeMenuItem[]) => {
+            shown.push(items);
+            return items.find((item) => item.label === wanted)?.id ?? null;
+          },
+        },
+      });
+    }, label);
+  },
+);
+
+Then(/^the desktop menu lists (.+)$/, async ({ page }, list: string) => {
+  await expect
+    .poll(async () => {
+      const menus = await shownNativeMenus(page);
+      return (menus.at(-1) ?? []).flatMap((item) =>
+        item.type === "item" ? [item.label] : [],
+      );
+    })
+    .toEqual(quotedList(list));
+  expect(await shownNativeMenus(page)).toHaveLength(1);
+});
+
+Then("the desktop app showed no menu", async ({ page }) => {
+  expect(await shownNativeMenus(page)).toEqual([]);
+});
+
+When(
+  "I select the text {string} in its entry",
+  async ({ page }, text: string) => {
+    await dayRow(page, text)
+      .getByText(text, { exact: true })
+      .evaluate((element) => {
+        const range = document.createRange();
+        range.selectNodeContents(element);
+        const selection = window.getSelection()!;
+        selection.removeAllRanges();
+        selection.addRange(range);
+      });
+  },
+);
+
+When(
+  "I right-click the selected text {string}",
+  async ({ page }, text: string) => {
+    await dayRow(page, text)
+      .getByText(text, { exact: true })
+      .click({ button: "right" });
   },
 );
 

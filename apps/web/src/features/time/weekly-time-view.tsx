@@ -13,18 +13,11 @@ import { Button } from "@/components/ui/button";
 import { DisabledReason } from "@/components/disabled-reason";
 import { MessagePanel } from "@/components/app-surface";
 import { Chip } from "@/components/ui/chip";
-import {
-  ObjectActionItems,
-  ObjectContextMenu,
-} from "@/components/object-actions-menu";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
+import { ObjectContextMenu } from "@/components/object-actions-menu";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import {
   formatEntryCount,
+  PASTE_NEEDS_ENTRIES,
   type ObjectAction,
   type TimeEntryActionId,
 } from "@/domain/actions/object-actions";
@@ -64,6 +57,7 @@ import { useCalendarSuggestions } from "@/lib/calendar-suggestions";
 import { useEntrySelection } from "@/features/time/use-entry-selection";
 import { handleItemKeyDown, TIME_ENTRY_ACTION_KEYS } from "@/lib/item-keys";
 import { localStore } from "@/lib/local-store";
+import { leavesContextMenuToSystem } from "@/lib/native-context-menu";
 import {
   getSharedTableBlockDropIndex,
   getSharedTableStepOrder,
@@ -277,7 +271,7 @@ export function WeeklyTimeView({
   const columnMenuTriggerRef = useRef<HTMLDivElement>(null);
   const pasteDisabledReason = selection.canPaste
     ? undefined
-    : "Copy or cut entries first";
+    : PASTE_NEEDS_ENTRIES;
   const columnPasteActions: ObjectAction<ColumnPasteActionId>[] = [
     {
       id: "paste-here",
@@ -516,6 +510,7 @@ export function WeeklyTimeView({
     ) {
       return;
     }
+    if (leavesContextMenuToSystem(event.nativeEvent)) return;
     event.preventDefault();
     setColumnMenuDate(localDate);
     columnMenuTriggerRef.current?.dispatchEvent(
@@ -530,9 +525,9 @@ export function WeeklyTimeView({
 
   function runColumnPaste(actionId: ColumnPasteActionId) {
     if (actionId === "paste-same-weekdays") {
-      selection.paste(sameWeekdayTarget);
+      void selection.pasteFromMenu(sameWeekdayTarget);
     } else if (columnMenuDate) {
-      selection.paste({ kind: "day", localDate: columnMenuDate });
+      void selection.pasteFromMenu({ kind: "day", localDate: columnMenuDate });
     }
   }
 
@@ -978,17 +973,11 @@ export function WeeklyTimeView({
         </div>
       ) : null}
       {/* Keep this root outside the columns so card menus are not nested under it. */}
-      <ContextMenu>
-        <ContextMenuTrigger
-          render={<div hidden ref={columnMenuTriggerRef} />}
-        />
-        <ContextMenuContent>
-          <ObjectActionItems
-            actions={columnPasteActions}
-            onAction={runColumnPaste}
-          />
-        </ContextMenuContent>
-      </ContextMenu>
+      <ObjectContextMenu
+        actions={columnPasteActions}
+        onAction={runColumnPaste}
+        render={<div hidden ref={columnMenuTriggerRef} />}
+      />
       {entryActions.dialogs}
     </section>
   );

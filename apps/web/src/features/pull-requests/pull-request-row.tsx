@@ -65,20 +65,29 @@ export function pullRequestActions(
     {
       id: "open-in-source",
       label: `Open in ${item.pluginName}`,
+      group: "source",
       hint: getShortcutPlatform() === "mac" ? "Cmd-click" : "Ctrl-click",
     },
     ...(item.facts.state !== "open"
       ? []
       : [
           item.status === "settled"
-            ? { id: "unsettle" as const, label: "Unsettle" }
-            : { id: "settle" as const, label: "Settle" },
+            ? { id: "unsettle" as const, label: "Unsettle", group: "triage" }
+            : { id: "settle" as const, label: "Settle", group: "triage" },
           ...(item.status !== "active"
             ? []
             : [
                 isPullRequestSnoozed(item, now)
-                  ? { id: "unsnooze" as const, label: "Unsnooze" }
-                  : { id: "snooze" as const, label: "Snooze…" },
+                  ? {
+                      id: "unsnooze" as const,
+                      label: "Unsnooze",
+                      group: "triage",
+                    }
+                  : {
+                      id: "snooze" as const,
+                      label: "Snooze…",
+                      group: "triage",
+                    },
               ]),
         ]),
   ];

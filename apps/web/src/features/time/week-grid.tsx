@@ -9,15 +9,7 @@ import {
   RiAddLine as Plus,
   RiCalendarLine as CalendarIcon,
 } from "@remixicon/react";
-import {
-  ObjectActionItems,
-  ObjectContextMenu,
-} from "@/components/object-actions-menu";
-import {
-  ContextMenu,
-  ContextMenuContent,
-  ContextMenuTrigger,
-} from "@/components/ui/context-menu";
+import { ObjectContextMenu } from "@/components/object-actions-menu";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -71,6 +63,7 @@ import {
   type ActionKeys,
 } from "@/lib/item-keys";
 import { localStore } from "@/lib/local-store";
+import { leavesContextMenuToSystem } from "@/lib/native-context-menu";
 import { ProjectIcon } from "@/lib/project-icons";
 import { cn } from "@/lib/utils";
 
@@ -116,10 +109,12 @@ const DOUBLE_CLICK_DELAY_MS = 250;
 const ADD_ENTRY_ACTION: ObjectAction<WeekGridCellActionId> = {
   id: "add-entry",
   label: "Add entry",
+  group: "cell",
 };
 const OPEN_ENTRIES_ACTION: ObjectAction<WeekGridCellActionId> = {
   id: "open-entries",
   label: "Open entries",
+  group: "cell",
 };
 
 /**
@@ -638,6 +633,7 @@ export function WeekGrid({
 
   /** Routes row-name right-clicks to one menu, outside the cells' menu trees. */
   function openRowNameMenu(rowKey: string, event: ReactMouseEvent) {
+    if (leavesContextMenuToSystem(event.nativeEvent)) return;
     event.preventDefault();
     event.stopPropagation();
     setNameMenuRowKey(rowKey);
@@ -908,19 +904,15 @@ export function WeekGrid({
         </Table>
       </div>
       {/* Keep this root outside the table so cell menus are not nested under it. */}
-      <ContextMenu>
-        <ContextMenuTrigger render={<div hidden ref={nameMenuTriggerRef} />} />
-        <ContextMenuContent>
-          <ObjectActionItems
-            actions={
-              nameMenuRow ? [getDeleteRowAction(nameMenuRow, lockReason)] : []
-            }
-            onAction={() => {
-              if (nameMenuRow) requestDeleteRow(nameMenuRow);
-            }}
-          />
-        </ContextMenuContent>
-      </ContextMenu>
+      <ObjectContextMenu
+        actions={
+          nameMenuRow ? [getDeleteRowAction(nameMenuRow, lockReason)] : []
+        }
+        onAction={() => {
+          if (nameMenuRow) requestDeleteRow(nameMenuRow);
+        }}
+        render={<div hidden ref={nameMenuTriggerRef} />}
+      />
       {entryActions.dialogs}
       <AlertDialog
         open={isConfirmingDelete}
