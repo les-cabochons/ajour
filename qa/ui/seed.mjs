@@ -1,6 +1,6 @@
 // A realistic workspace for screenshots and measurements, written into
 // localStorage before the app loads. `large` adds 600 backlog items and
-// 1,800 entries, the workspace the progress tracker's budgets are measured on;
+// 1,800 entries, the workspace the performance budgets in docs/agents/code-standards.md are measured on;
 // `empty` leaves storage clear, as on a fresh install.
 export function seedScript(options = {}) {
   return `(() => {

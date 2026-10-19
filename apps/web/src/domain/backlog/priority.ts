@@ -1,7 +1,7 @@
 import type { BacklogPriorityLevel } from "@ajour/shared";
 
 /**
- * Ajour's five priority levels, from "Priority" in agents/ux-spec.md: 1 Urgent
+ * Ajour's five priority levels, from "Priority" in docs/agents/ux-spec.md: 1 Urgent
  * to 4 Low. An item without a level has No priority. Each plugin
  * maps its source's priority values to levels, so Ajour only stores levels.
  */

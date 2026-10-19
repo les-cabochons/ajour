@@ -6,7 +6,7 @@ import type {
 import { isPriorityLevel } from "@/domain/backlog/priority";
 
 /**
- * Settle rules, from "Settle rules" in agents/ux-spec.md. Each source project
+ * Settle rules, from "Settle rules" in docs/agents/ux-spec.md. Each source project
  * of a connection either asks with the settle dialog, the default, or applies
  * a fixed state, priority or both. Manual items have no rule.
  */

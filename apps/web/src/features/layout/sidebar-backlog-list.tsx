@@ -885,7 +885,7 @@ const OffListRow = memo(function OffListRow({
 
 /**
  * The work list in the expanded app sidebar, from "Backlog sidebar" in
- * agents/ux-spec.md: the active items in the Backlog page's order with no
+ * docs/agents/ux-spec.md: the active items in the Backlog page's order with no
  * header, pinned items first, `children` (the Pull requests section), then
  * the collapsible Snoozed and Settled sections. Every section keeps only the
  * rows `matcher` accepts, and its count follows. Empty sections are not shown.

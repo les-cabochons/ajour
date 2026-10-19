@@ -9,7 +9,7 @@
  *     ├── archive (/projects/archive)
  *     └── project import and export (/settings/projects)
  *
- * See "Narrow view" in agents/ux-spec.md.
+ * See "Narrow view" in docs/agents/ux-spec.md.
  */
 
 export type NarrowBackLink = {

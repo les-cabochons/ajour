@@ -82,7 +82,7 @@ import { getOtherSourceStates } from "@/features/backlog/backlog-item-moves";
 
 /**
  * The backlog item page at /backlog/$itemId, from "Backlog item page" in
- * agents/ux-spec.md. The top bar holds the item's actions;
+ * docs/agents/ux-spec.md. The top bar holds the item's actions;
  * the page holds the back link, title, estimate figures and progress, then the description,
  * subitems and time entries beside the properties card. Every field edits in
  * place, so the page has no editor panel and no "…" menu.

@@ -3,8 +3,8 @@
 - Date: 2026-10-15
 - Status: Implemented, slices 1 to 5 (#179 to #183). Tracking issue #178. Open: a real private feed from each provider.
 - Scope: the `calendar` plugin capability, the calendar contract, suggestions in the Time view, remembered meetings, the ICS plugin
-- Decisions: [ADR 0005](../../../agents/adr/0005-calendar-events-are-fetched-per-week-and-never-stored.md)
-- Terms: `agents/GLOSSARY.md`, sections "Time entries" and "Extensions"
+- Decisions: [ADR 0005](../adr/0005-calendar-events-are-fetched-per-week-and-never-stored.md)
+- Terms: `GLOSSARY.md`, sections "Time entries" and "Extensions"
 
 ## Summary
 
@@ -114,7 +114,7 @@ Choosing a project in a picker adds the entry at once. For a recurring meeting i
 
 ### Day view
 
-A "From your calendar" section under the day's rows, with a count and Refresh. Each 40px dashed row: time span, title, an inline project and task picker seeded from the remembered meeting, duration, Add, a dismiss button and the "…" menu. Enter adds, Delete dismisses (`agents/ux-spec.md`). A footer line says how many events the filters hid, with "Show hidden" for that day. A failed fetch shows its message, and the last events stay.
+A "From your calendar" section under the day's rows, with a count and Refresh. Each 40px dashed row: time span, title, an inline project and task picker seeded from the remembered meeting, duration, Add, a dismiss button and the "…" menu. Enter adds, Delete dismisses (`docs/agents/ux-spec.md`). A footer line says how many events the filters hid, with "Show hidden" for that day. A failed fetch shows its message, and the last events stay.
 
 ### Side panel
 

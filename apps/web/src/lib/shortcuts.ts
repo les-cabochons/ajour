@@ -1,7 +1,7 @@
 /**
  * The keyboard shortcut registry. Key handling, the "?" overlay, the command
  * palette and the object action menus read it. See "Keyboard" in
- * agents/ux-spec.md.
+ * docs/agents/ux-spec.md.
  *
  * This module is pure: it only describes shortcuts and matches key events. The
  * handlers that run app shortcuts live in `lib/shortcut-handlers.tsx`; the
