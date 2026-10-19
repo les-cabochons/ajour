@@ -2,7 +2,9 @@ import { useEffect, useRef, type CSSProperties } from "react";
 import type { BacklogPerson } from "@ajour/shared";
 import {
   autocompletion,
+  closeCompletion,
   completionKeymap,
+  completionStatus,
   type CompletionContext,
   type CompletionResult,
 } from "@codemirror/autocomplete";
@@ -13,7 +15,13 @@ import {
   LanguageSupport,
   syntaxHighlighting,
 } from "@codemirror/language";
-import { EditorState, Prec, StateEffect, StateField } from "@codemirror/state";
+import {
+  EditorState,
+  MapMode,
+  Prec,
+  StateEffect,
+  StateField,
+} from "@codemirror/state";
 import {
   Decoration,
   EditorView,
@@ -154,7 +162,48 @@ const mentionStatus = StateField.define<MentionStatus | null>({
   ],
 });
 
-/** Suggestions for the name after `@`, at the start of a word. */
+const setDismissedMention = StateEffect.define<number | null>();
+
+/**
+ * Where the `@` is whose suggestions Escape closed: typing on in that name
+ * asks no more, until Ctrl+Space asks again. It goes with the `@`.
+ */
+const dismissedMention = StateField.define<number | null>({
+  create: () => null,
+  update(from, transaction) {
+    for (const effect of transaction.effects) {
+      if (effect.is(setDismissedMention)) return effect.value;
+    }
+    return from === null
+      ? null
+      : transaction.changes.mapPos(from, 1, MapMode.TrackDel);
+  },
+});
+
+/**
+ * Escape closes the suggestions or their status line first, so it leaves
+ * the editor only when nothing about a mention is showing.
+ */
+function closeMentions(view: EditorView) {
+  const { state } = view;
+  const status = state.field(mentionStatus, false);
+  if (!status && completionStatus(state) === null) return false;
+  const head = state.selection.main.head;
+  const line = state.doc.lineAt(head);
+  const word = mentionWord.exec(state.sliceDoc(line.from, head));
+  closeCompletion(view);
+  view.dispatch({
+    effects: [
+      setMentionStatus.of(null),
+      setDismissedMention.of(
+        status?.from ?? (word ? line.from + word.index : null),
+      ),
+    ],
+  });
+  return true;
+}
+
+/** Suggestions for the name after `@`, even inside a word, as in an email. */
 function mentionSource(
   search: () => (query: string) => Promise<BacklogPerson[]>,
 ) {
@@ -163,9 +212,12 @@ function mentionSource(
   ): Promise<CompletionResult | null> => {
     const word = context.matchBefore(mentionWord);
     if (!word) return null;
-    const before =
-      word.from > 0 ? context.state.sliceDoc(word.from - 1, word.from) : "";
-    if (before && !/[\s(]/.test(before)) return null;
+    if (context.state.field(dismissedMention, false) === word.from) {
+      if (!context.explicit) return null;
+      // Ctrl+Space asks again, and typing on keeps asking.
+      await Promise.resolve();
+      context.view?.dispatch({ effects: setDismissedMention.of(null) });
+    }
     // CodeMirror keeps a query running while the text changes, so an answer
     // counts only while this `@word` is still what is typed, in focus.
     const stillTyped = () => {
@@ -346,7 +398,8 @@ export default function MarkdownEditorView({
               },
               {
                 key: "Escape",
-                run: () => {
+                run: (target) => {
+                  if (closeMentions(target)) return true;
                   const cancel = handlers.current.onCancel;
                   if (!cancel) return false;
                   cancel();
@@ -369,6 +422,7 @@ export default function MarkdownEditorView({
                   icons: false,
                 }),
                 mentionStatus,
+                dismissedMention,
                 keymap.of(completionKeymap),
               ]
             : []),

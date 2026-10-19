@@ -581,6 +581,38 @@ Feature: Backlog list and board views
     When I keep typing " thanks" until the search for "Ana thanks" answers
     Then nothing is suggested and no status shows
 
+  Scenario: Typing @ inside a word suggests people, as in an email
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people and records posted comments
+    When I open the Backlog parent page
+    And I type "write to team@Ana" in a new comment
+    Then Ana is suggested and no status shows
+
+  Scenario: Escape closes the mention suggestions before the editor
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people and records posted comments
+    When I open the Backlog parent page
+    And I type "@Ana" in a new comment
+    Then Ana is suggested and no status shows
+    When I press Escape in the new comment
+    Then nothing is suggested and the new comment stays open with "@Ana"
+    When I keep typing " Sil"
+    Then no people search ran since Escape
+    When I press Escape in the new comment
+    Then the new comment is closed, keeping the draft "@Ana Sil"
+
+  Scenario: Escape closes a mention status line before the editor
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people and records posted comments
+    When I open the Backlog parent page
+    And I type "@Zoe" in a new comment
+    Then the mention suggestions say no one was found
+    When I press Escape in the new comment
+    Then nothing is suggested and the new comment stays open with "@Zoe"
+
   Scenario: Mention suggestions say when no one matches
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit
