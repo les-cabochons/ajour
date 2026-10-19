@@ -1,5 +1,4 @@
 import { useEffect, useState } from "react";
-import { useNavigate } from "@tanstack/react-router";
 import {
   AlertDialog,
   AlertDialogAction,
@@ -13,6 +12,7 @@ import {
 import { formatClockDuration } from "@/domain/time/duration";
 import type { WeekTargetReached } from "@/domain/time/week-target-prompt";
 import { dateAtNoon } from "@/features/time/time-date-picker";
+import { useOpenCommitPage } from "@/features/time/use-open-commit-page";
 import { watchWeekTargets } from "@/features/time/week-target-watch";
 
 const shortDate = new Intl.DateTimeFormat("en-US", {
@@ -39,12 +39,14 @@ function useWeekTargetPrompt() {
 }
 
 /**
- * The "Week complete" question. Commit opens the week's Commit page; Later
- * closes it. The app shell mounts it once.
+ * The "Week complete" question. Commit opens the week's Commit page through
+ * `useOpenCommitPage`, which saves an open entry draft first; Later closes it. The app shell mounts it once.
  */
 export function WeekTargetPromptHost() {
-  const navigate = useNavigate();
   const { reached, dismiss } = useWeekTargetPrompt();
+  // The same path as the other Commit buttons, so an open entry draft is
+  // saved first, or stays open when it is invalid.
+  const openCommitPage = useOpenCommitPage(reached?.weekOf ?? "");
 
   return (
     <AlertDialog
@@ -68,12 +70,7 @@ export function WeekTargetPromptHost() {
             onClick={() => {
               const weekOf = reached?.weekOf;
               dismiss();
-              if (weekOf) {
-                void navigate({
-                  to: "/time/$date/commit",
-                  params: { date: weekOf },
-                });
-              }
+              if (weekOf) openCommitPage(weekOf);
             }}
           >
             Commit

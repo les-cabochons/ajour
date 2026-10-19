@@ -6,6 +6,7 @@ import { SidePanel } from "@/components/side-panel";
 import { Button } from "@/components/ui/button";
 import { findPinnedTask } from "@/domain/projects/project-transitions";
 import { formatClockDuration } from "@/domain/time/duration";
+import { isValidLocalDate } from "@/domain/time/local-date";
 import { getVisibleWeekDates } from "@/domain/time/weekly-time";
 import {
   TimeEntryEditorForm,
@@ -370,17 +371,21 @@ export function TimePage({ date }: { date: string }) {
     return true;
   }
 
-  function openCommitPage() {
+  /** Saves or keeps the open draft first. `weekOf` picks another week than the page's. */
+  function openCommitPage(weekOf = date) {
     if (!leaveEditorDraft()) return;
     void navigate({
       to: "/time/$date/commit",
-      params: { date },
+      params: { date: weekOf },
       search: { view: isWeekView ? "week" : undefined } as never,
     });
   }
 
-  useActionRequest(({ action }) => {
-    if (action === "commit-week") openCommitPage();
+  // `target` is outside input: only a real day picks the week.
+  useActionRequest(({ action, target }) => {
+    if (action === "commit-week") {
+      openCommitPage(target && isValidLocalDate(target) ? target : undefined);
+    }
   });
 
   // These win over the app shell's handlers while the Time page is open.

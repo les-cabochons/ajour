@@ -30,7 +30,7 @@ export function CommitWeekButton({
           variant="ghost"
           size="icon"
           className={cn("ajour-app-sidebar-toggle", className)}
-          onClick={openCommitPage}
+          onClick={() => openCommitPage()}
         />
       }
     >

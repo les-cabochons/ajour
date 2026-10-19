@@ -91,3 +91,13 @@ Feature: Commit the week
     And I undo with the toast button
     Then Monday's "Login form" entry is back
     And Ajour does not ask again
+
+  Scenario: Commit from the question saves the entry draft open in the side panel
+    Given I have a committed week of entries
+    And my weekly target is 5 hours, all on Monday
+    And an entry has run for 5 hours today
+    When I change the note of Monday's "API" entry to "API draft" without saving
+    And I stop the running entry from the sidebar
+    And I answer "Commit"
+    Then the Commit page for the current week is open
+    And Monday's "API" entry has the note "API draft"

@@ -98,7 +98,7 @@ export function NarrowSectionSwitcher({
         aria-label="Commit week"
         side="top"
         className="ajour-narrow-switcher-item"
-        onClick={openCommitPage}
+        onClick={() => openCommitPage()}
       >
         <CommitIcon />
       </TooltipButton>
