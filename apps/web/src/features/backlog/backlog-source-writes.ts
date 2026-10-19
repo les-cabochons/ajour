@@ -65,6 +65,10 @@ export const settleOpensDialog = canWriteToSource;
  *
  * A failed write restores the item's previous source values and lifecycle,
  * and shows an error toast that stays until dismissed.
+ *
+ * An action's item with no write left, such as one whose write Undo took
+ * back, may still hold settle comments that waited on that write: they go
+ * now.
  */
 export async function sendPendingSourceWrites(workItemIds?: readonly string[]) {
   const snapshot = localStore.snapshot();
@@ -74,9 +78,15 @@ export async function sendPendingSourceWrites(workItemIds?: readonly string[]) {
       !sending.has(workItem._id) &&
       (!workItemIds || workItemIds.includes(workItem._id)),
   );
-  await Promise.all(
-    pending.map((item) => sendSourceWrite(item, snapshot.workItems)),
+  const writeless = (workItemIds ?? []).filter(
+    (id) =>
+      !snapshot.workItems.find((workItem) => workItem._id === id)
+        ?.pendingSourceWrite,
   );
+  await Promise.all([
+    ...pending.map((item) => sendSourceWrite(item, snapshot.workItems)),
+    ...writeless.map(sendSettleComments),
+  ]);
 }
 
 async function sendSourceWrite(
