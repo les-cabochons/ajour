@@ -168,6 +168,90 @@ describe("splitDescription", () => {
       body: "Text",
     });
   });
+
+  it("reads a key whose value is only a comment as opening its children", () => {
+    expect(
+      getDescriptionTimelog(
+        "---\ntimelog: # where the time goes\n  project: Acme\n---",
+      ),
+    ).toEqual({ project: "Acme" });
+    expect(
+      splitDescription("---\nLinks: # the links\n  - https://one.example\n---")
+        .frontmatter?.fields,
+    ).toEqual([
+      { kind: "list", key: "Links", values: ["https://one.example"] },
+    ]);
+    expect(
+      splitDescription("---\nLinks:\n  - # later\n  - https://two.example\n---")
+        .frontmatter?.fields,
+    ).toEqual([
+      { kind: "list", key: "Links", values: ["https://two.example"] },
+    ]);
+  });
+
+  it("is not frontmatter when a plain value is not valid YAML or uses an unsupported construct", () => {
+    for (const value of [
+      "Ada: Lovelace",
+      "*missing",
+      "&anchor Ada",
+      "!tag Ada",
+      "|",
+      ">",
+      "%x",
+      "@x",
+      "`x`",
+      "{ a: b }",
+    ]) {
+      expect(
+        splitDescription(`---\nOwner: ${value}\n---\nText`).frontmatter,
+      ).toBeNull();
+    }
+  });
+
+  it("keeps plain values with colons that are not followed by a space", () => {
+    expect(
+      splitDescription("---\nStart: 10:30\nLink: https://example.com/a:b\n---")
+        .frontmatter?.fields,
+    ).toEqual([
+      { kind: "value", key: "Start", value: "10:30" },
+      { kind: "value", key: "Link", value: "https://example.com/a:b" },
+    ]);
+  });
+
+  it("decodes double-quoted escapes and rejects unknown ones", () => {
+    expect(
+      getDescriptionTimelog(
+        '---\ntimelog:\n  project: "\\u0041cme \\x42\\t\\"C\\" \\\\"\n---',
+      ),
+    ).toEqual({ project: 'Acme B\t"C" \\' });
+    expect(
+      splitDescription('---\nOwner: "\\q"\n---\nText').frontmatter,
+    ).toBeNull();
+    expect(
+      splitDescription('---\nOwner: "\\u00G1"\n---\nText').frontmatter,
+    ).toBeNull();
+  });
+
+  it("is not frontmatter when keys nest deeper than Ajour reads, without throwing", () => {
+    const deep = (levels: number) =>
+      [
+        "---",
+        ...Array.from(
+          { length: levels },
+          (_, level) => `${" ".repeat(level)}k${level}:`,
+        ),
+        `${" ".repeat(levels)}last: value`,
+        "---",
+        "Text",
+      ].join("\n");
+
+    expect(splitDescription(deep(5)).frontmatter).not.toBeNull();
+    expect(() => splitDescription(deep(5000))).not.toThrow();
+    expect(splitDescription(deep(5000))).toEqual({
+      frontmatter: null,
+      body: deep(5000),
+    });
+  });
 });
 
 describe("getDescriptionTimelog", () => {

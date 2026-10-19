@@ -49,6 +49,9 @@ interface Parsed<T> {
   next: number;
 }
 
+/** How deep keys may nest. A deeper block is not frontmatter. */
+const MAX_NESTING = 16;
+
 const OPENING = /^---[ \t]*\r?\n/;
 const CLOSING = /^(?:---|\.\.\.)[ \t]*$/;
 
@@ -63,7 +66,7 @@ export function splitDescription(description: string): SplitDescription {
   if (closing < 0) return unchanged;
 
   const yamlLines = toYamlLines(lines.slice(0, closing));
-  const map = yamlLines && parseMap(yamlLines, 0, 0);
+  const map = yamlLines && parseMap(yamlLines, 0, 0, 1);
   if (!map) return unchanged;
 
   return {
@@ -170,7 +173,9 @@ function parseMap(
   lines: YamlLine[],
   start: number,
   indent: number,
+  depth: number,
 ): Parsed<YamlMap> | null {
+  if (depth > MAX_NESTING) return null;
   const map: YamlMap = [];
   let index = start;
   while (index < lines.length) {
@@ -195,7 +200,7 @@ function parseMap(
       child && child.indent > indent
         ? isListItem(child.text)
           ? parseList(lines, index, child.indent)
-          : parseMap(lines, index, child.indent)
+          : parseMap(lines, index, child.indent, depth + 1)
         : child && child.indent === indent && isListItem(child.text)
           ? parseList(lines, index, indent)
           : { value: "", next: index };
@@ -216,7 +221,7 @@ function parseList(
   while (index < lines.length) {
     const line = lines[index]!;
     if (line.indent !== indent || !isListItem(line.text)) break;
-    const item = line.text.slice(1).trim();
+    const item = withoutComment(line.text.slice(1));
     // A map or a list inside a list is outside the subset.
     if (isListItem(item) || splitKey(item)) return null;
     const value = parseScalar(item);
@@ -237,14 +242,20 @@ function splitKey(text: string): { key: string; value: string } | null {
     if (!rest || !quoted.value) return null;
     return {
       key: quoted.value,
-      value: text.slice(quoted.end + rest[0].length).trim(),
+      value: withoutComment(text.slice(quoted.end + rest[0].length)),
     };
   }
   const colon = /:(?=[ \t]|$)/.exec(text);
   if (!colon) return null;
   const key = text.slice(0, colon.index).trim();
   if (!key || /^[[\]{}#&*!|>%@`]/.test(key)) return null;
-  return { key, value: text.slice(colon.index + 1).trim() };
+  return { key, value: withoutComment(text.slice(colon.index + 1)) };
+}
+
+/** A value that is only a comment, as in `timelog: # note`, is empty. */
+function withoutComment(value: string) {
+  const trimmed = value.trim();
+  return trimmed.startsWith("#") ? "" : trimmed;
 }
 
 function parseInlineValue(text: string): YamlValue | null {
@@ -296,14 +307,56 @@ function parseScalar(text: string): string | null {
   // A comment starts at a # after a space, so a link's # stays.
   const comment = /[ \t]#/.exec(text);
   const value = (comment ? text.slice(0, comment.index) : text).trim();
+  if (!isPlainScalar(value)) return null;
   return value === "~" || value === "null" ? "" : value;
+}
+
+/**
+ * Whether a plain value is one Ajour reads as text. YAML gives meaning to an
+ * indicator up front, such as `*alias`, `&anchor`, `!tag` or `|`, and does not
+ * allow `: ` inside a plain value; Ajour shows such a block as written.
+ */
+function isPlainScalar(value: string) {
+  return (
+    !/^[[\]{},#&*!|>'"%@`]/.test(value) &&
+    !/^[-?:](?:[ \t]|$)/.test(value) &&
+    !/:(?:[ \t]|$)/.test(value)
+  );
 }
 
 function isEmptyOrComment(text: string) {
   return /^(?:[ \t]*|[ \t]+#.*)$/.test(text);
 }
 
-/** A quoted string at the start of `text`, and where it ends. */
+/** YAML's one-character escapes in double-quoted strings. */
+const ESCAPES: Record<string, string> = {
+  "0": "\0",
+  a: "\x07",
+  b: "\b",
+  t: "\t",
+  "\t": "\t",
+  n: "\n",
+  v: "\v",
+  f: "\f",
+  r: "\r",
+  e: "\x1b",
+  " ": " ",
+  '"': '"',
+  "/": "/",
+  "\\": "\\",
+  N: "\u0085",
+  _: " ",
+  L: " ",
+  P: " ",
+};
+
+/** How many hex digits follow `\x`, `\u` and `\U`. */
+const HEX_ESCAPE_LENGTHS: Record<string, number> = { x: 2, u: 4, U: 8 };
+
+/**
+ * A quoted string at the start of `text`, and where it ends. An escape YAML
+ * does not define makes it null, so the block shows as written.
+ */
 function readQuoted(text: string): { value: string; end: number } | null {
   const quote = text[0];
   let value = "";
@@ -319,10 +372,23 @@ function readQuoted(text: string): { value: string; end: number } | null {
         return { value, end: index + 1 };
       }
     } else if (char === "\\") {
-      const escaped = text[index + 1];
-      if (escaped === undefined) return null;
-      value += escaped === "n" ? "\n" : escaped === "t" ? "\t" : escaped;
-      index += 1;
+      const escaped = text[index + 1] ?? "";
+      const hexLength = HEX_ESCAPE_LENGTHS[escaped];
+      if (hexLength) {
+        const hex = text.slice(index + 2, index + 2 + hexLength);
+        if (hex.length !== hexLength || !/^[0-9a-fA-F]+$/.test(hex)) {
+          return null;
+        }
+        const codePoint = Number.parseInt(hex, 16);
+        if (codePoint > 0x10ffff) return null;
+        value += String.fromCodePoint(codePoint);
+        index += 1 + hexLength;
+      } else {
+        const decoded = ESCAPES[escaped];
+        if (decoded === undefined) return null;
+        value += decoded;
+        index += 1;
+      }
     } else if (char === '"') {
       return { value, end: index + 1 };
     } else {
