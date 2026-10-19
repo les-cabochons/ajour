@@ -86,6 +86,7 @@ describe("work item transitions", () => {
         status: "active",
         source: "outlook",
         sourceId: "event-1",
+        sourceExternalId: "event-1",
         sourceConnectionId: "legacy-connection",
         sourceConnectionLabel: "Calendar",
         parentSourceId: "legacy-parent",
@@ -103,6 +104,7 @@ describe("work item transitions", () => {
       archivedByMissingSync: false,
     });
     expect(workItem.sourceId).toBeUndefined();
+    expect(workItem.sourceExternalId).toBeUndefined();
     expect(workItem.sourceConnectionId).toBeUndefined();
     expect(workItem.sourceConnectionLabel).toBeUndefined();
     expect(workItem.parentSourceId).toBeUndefined();

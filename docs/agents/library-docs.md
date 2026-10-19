@@ -87,6 +87,7 @@ The backlog editor module is feature-local because its vocabulary and commands b
 - Shared row/card controls: `features/backlog/backlog-item-surface.tsx`.
 - Read-only details and immediate property pickers: `features/backlog/backlog-peek.tsx`.
 - Pointer moves: `features/backlog/use-backlog-drag.ts`, using `lib/table-drag.ts`.
+- The sidebar's hover card: `features/backlog/backlog-item-hover-card.tsx`. What it shows, including where an item comes from and the pull requests whose title names it: `domain/backlog/backlog-item-summary.ts`. When it opens, moves and closes: `lib/row-hover-card.ts`.
 - The Undo module also captures custom work-item ordering. Group moves and their order change form one undoable operation.
 
 ## Desktop
