@@ -178,6 +178,7 @@ rendering keeps the preference available but identifies the desktop requirement.
 The desktop controller owns update state, shared through `lib/desktop-updates.ts`.
 Startup, periodic, and manual checks only report availability. The sidebar footer
 uses `TooltipButton` for Settings and Commit on the left and updates on the right.
+The update arrow stays outlined, with stronger contrast when an update is available.
 On supported Windows builds, clicking an available update opens a native warning
 before downloading and restarting. Cancel leaves the update available, and an
 ordinary quit never installs it. Other desktop builds open the release page for
