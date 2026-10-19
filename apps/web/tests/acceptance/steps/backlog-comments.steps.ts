@@ -536,6 +536,18 @@ When("I press Escape in the new comment", async ({ page }) => {
   searches.atEscape = searches.count;
 });
 
+When(
+  "I press Escape in the new comment while the search runs",
+  async ({ page }) => {
+    const answered = page.waitForResponse(peopleSearchUrl);
+    await page.waitForRequest(peopleSearchUrl);
+    await page.keyboard.press("Escape");
+    await answered;
+    // Give the late answer time to reach the editor.
+    await page.waitForTimeout(200);
+  },
+);
+
 Then(
   "nothing is suggested and the new comment stays open with {string}",
   async ({ page }, text: string) => {

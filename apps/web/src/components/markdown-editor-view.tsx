@@ -187,18 +187,22 @@ const dismissedMention = StateField.define<number | null>({
 function closeMentions(view: EditorView) {
   const { state } = view;
   const status = state.field(mentionStatus, false);
-  if (!status && completionStatus(state) === null) return false;
+  const completion = completionStatus(state);
+  if (!status && completion === null) return false;
   const head = state.selection.main.head;
   const line = state.doc.lineAt(head);
   const word = mentionWord.exec(state.sliceDoc(line.from, head));
+  const from = status?.from ?? (word ? line.from + word.index : null);
+  // CodeMirror also waits a moment after ordinary typing; Escape then
+  // leaves the editor, unless a search for an @name at the cursor runs.
+  const mentioning =
+    Boolean(status) ||
+    completion === "active" ||
+    (from !== null && from !== state.field(dismissedMention, false));
   closeCompletion(view);
+  if (!mentioning) return false;
   view.dispatch({
-    effects: [
-      setMentionStatus.of(null),
-      setDismissedMention.of(
-        status?.from ?? (word ? line.from + word.index : null),
-      ),
-    ],
+    effects: [setMentionStatus.of(null), setDismissedMention.of(from)],
   });
   return true;
 }
@@ -227,6 +231,8 @@ function mentionSource(
       return (
         !context.aborted &&
         view.hasFocus &&
+        // Escape closed this name's search while it ran.
+        state.field(dismissedMention, false) !== word.from &&
         state.sliceDoc(word.from, state.selection.main.head) === word.text
       );
     };

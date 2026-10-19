@@ -603,6 +603,34 @@ Feature: Backlog list and board views
     When I press Escape in the new comment
     Then the new comment is closed, keeping the draft "@Ana Sil"
 
+  Scenario: Escape stops a mention search that is still running
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds no one, slowly
+    When I open the Backlog parent page
+    And I type "@Zoe" in a new comment
+    And I press Escape in the new comment while the search runs
+    Then nothing is suggested and the new comment stays open with "@Zoe"
+
+  Scenario: Escape stops a mention search before it starts
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people and records posted comments
+    When I open the Backlog parent page
+    And I type "@Ana" in a new comment
+    And I press Escape in the new comment
+    Then no people search ran since Escape
+    And nothing is suggested and the new comment stays open with "@Ana"
+
+  Scenario: Escape right after writing closes the editor
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    And its plugin finds people and records posted comments
+    When I open the Backlog parent page
+    And I type "Looks good" in a new comment
+    And I press Escape in the new comment
+    Then the new comment is closed, keeping the draft "Looks good"
+
   Scenario: Escape closes a mention status line before the editor
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit
