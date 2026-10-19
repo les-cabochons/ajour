@@ -332,18 +332,9 @@ Given(
   },
 );
 
-When("I duplicate Monday's {string} entry", async ({ page }, note: string) => {
-  await page.goto("/time/2026-10-05");
-  const entries = page.getByText(note, { exact: true });
-  await expect(entries).toHaveCount(1, { timeout: 15_000 });
-  await entries.click({ button: "right" });
-  // "Duplicate to…" also starts with "Duplicate".
-  await page
-    .getByRole("menuitem")
-    .filter({ hasText: /^Duplicate/ })
-    .filter({ hasNotText: "to…" })
-    .click();
-  await expect(entries).toHaveCount(2);
+Then("Monday's {string} entry is back", async ({ page }, note: string) => {
+  await expect(page).toHaveURL(/\/time\/2026-10-05/);
+  await expect(page.getByText(note, { exact: true })).toHaveCount(1);
 });
 
 function weekCompleteDialog(page: Page) {

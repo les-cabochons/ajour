@@ -80,5 +80,7 @@ Feature: Commit the week
     Then Ajour asks "Week complete": "You logged 5:00 of 5:00 for the week of Oct 5 to 11. Commit and lock it now?"
     When I answer "Commit"
     Then the Commit page for the week of 2026-10-05 is open
-    When I duplicate Monday's "Login form" entry
-    Then Ajour does not ask again
+    When I delete Monday's "Login form" entry
+    And I undo with the toast button
+    Then Monday's "Login form" entry is back
+    And Ajour does not ask again
