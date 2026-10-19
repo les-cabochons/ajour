@@ -1,14 +1,15 @@
 /**
  * A list kept per device in localStorage, outside the local app state, such
- * as source writes waiting for their Undo window. The session keeps its own
- * copy, so when storage refuses a write the entries still wait until Ajour
- * quits instead of being lost at once.
+ * as source writes waiting for their Undo window. Storage stays the source of
+ * truth. While it refuses writes, the session keeps the list instead, so the
+ * entries still wait until Ajour quits rather than being lost at once.
  */
 export function createDeviceQueue<Entry>(
   storageKey: string,
   isEntry: (value: unknown) => value is Entry,
 ) {
-  let session: Entry[] | undefined;
+  /** Set only while storage refuses the list. */
+  let unsaved: Entry[] | undefined;
 
   /** Broken entries are dropped. */
   const parse = (value: string | null): Entry[] => {
@@ -23,21 +24,19 @@ export function createDeviceQueue<Entry>(
   return {
     parse,
     read(): Entry[] {
-      if (!session) {
-        try {
-          session = parse(window.localStorage.getItem(storageKey));
-        } catch {
-          session = [];
-        }
+      if (unsaved) return unsaved;
+      try {
+        return parse(window.localStorage.getItem(storageKey));
+      } catch {
+        return [];
       }
-      return session;
     },
     write(entries: Entry[]) {
-      session = entries;
       try {
         window.localStorage.setItem(storageKey, JSON.stringify(entries));
+        unsaved = undefined;
       } catch {
-        // The session copy keeps them until Ajour quits.
+        unsaved = entries;
       }
     },
   };
