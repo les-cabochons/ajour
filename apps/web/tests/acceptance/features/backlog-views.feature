@@ -443,6 +443,15 @@ Feature: Backlog list and board views
     When I show earlier comments
     Then all seven comments show, oldest first
 
+  Scenario: Switching items from the sidebar replaces the synced item's page
+    Given the Backlog parent is synced
+    And its plugin lists seven comments, two new from others since my last visit
+    When I open the Backlog parent page
+    And I open "Other backlog item" from the sidebar
+    And I open "Backlog parent" from the sidebar
+    And I open "Other backlog item" from the sidebar
+    Then the item page shows one description, for "Other backlog item"
+
   Scenario: Post a comment on a synced item
     Given the Backlog parent is synced
     And its plugin lists seven comments, two new from others since my last visit
