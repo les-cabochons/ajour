@@ -794,7 +794,24 @@ export function syncBacklogConnection(
         : { importedCount: 0, updatedCount: 0 };
     localStore.applyBacklogSyncWorkItemUpdates(result.workItemUpdates);
     if (result.viewer && result.commentFacts.length > 0) {
-      localStore.returnItemsWithNewComments(result.commentFacts, result.viewer);
+      // The settle times the sync asked about, before it changed any item.
+      const settledSince = new Map(
+        payload.workItems.flatMap((workItem) =>
+          workItem.commentsSince
+            ? [
+                [
+                  workItem.localWorkItemId,
+                  Date.parse(workItem.commentsSince),
+                ] as const,
+              ]
+            : [],
+        ),
+      );
+      localStore.returnItemsWithNewComments(
+        result.commentFacts,
+        result.viewer,
+        settledSince,
+      );
     }
 
     return {

@@ -1,6 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { LocalWorkItem } from "@/domain/local-state";
-import type { PendingSettleComment } from "@/lib/settle-comments";
 const mocks = vi.hoisted(() => ({
   snapshot: vi.fn(),
   complete: vi.fn(),
@@ -10,7 +9,6 @@ const mocks = vi.hoisted(() => ({
   post: vi.fn(),
   keepDraft: vi.fn(),
   announce: vi.fn(),
-  queue: [] as PendingSettleComment[],
 }));
 vi.mock("@/lib/local-store", () => ({
   localStore: {
@@ -29,16 +27,6 @@ vi.mock("@/lib/comment-drafts", () => ({
 }));
 vi.mock("@/features/backlog/comment-threads", () => ({
   announcePostedComment: mocks.announce,
-}));
-vi.mock("@/lib/settle-comments", () => ({
-  getSettleComment: (itemId: string) =>
-    mocks.queue.find((entry) => entry.itemId === itemId),
-  takeSettleComment: (itemId: string) => {
-    const entry = mocks.queue.find((pending) => pending.itemId === itemId);
-    mocks.queue = mocks.queue.filter((pending) => pending.itemId !== itemId);
-    return entry;
-  },
-  settleCommentItemIds: () => mocks.queue.map((entry) => entry.itemId),
 }));
 let item: LocalWorkItem;
 beforeEach(() => {
@@ -61,7 +49,9 @@ beforeEach(() => {
     item = { ...item, pendingSourceWrite: undefined };
   });
   mocks.write.mockResolvedValue({});
-  mocks.queue = [];
+  // A fresh settle comment queue per test. Storage is missing here, so it
+  // lives in the session copy.
+  vi.resetModules();
 });
 afterEach(() => {
   vi.useRealTimers();
@@ -134,14 +124,15 @@ it("handles a failed current request even when a child acknowledgement advanced 
 });
 
 describe("the comment typed in the settle dialog", () => {
-  const comment = {
+  const comment = (id: string, body = "Waiting on the client") => ({
+    id,
     itemId: "a",
     pluginId: "azure_devops",
     connectionId: "c",
     sourceId: "1",
-    body: "Waiting on the client",
+    body,
     at: 1000,
-  };
+  });
   const posted = {
     id: "9",
     author: { id: "me", displayName: "Alex" },
@@ -155,13 +146,23 @@ describe("the comment typed in the settle dialog", () => {
       status: "settled",
       pendingSourceWrite: { state: "Waiting", readyAt: 1000, previous: {} },
     };
-    mocks.queue = [comment];
     mocks.post.mockResolvedValue({ comment: posted });
   });
 
-  it("goes out once the settle's write lands, and joins the item's thread", async () => {
-    const { sendPendingSourceWrites, sendSettleComment } =
-      await import("./backlog-source-writes");
+  async function load() {
+    const writes = await import("./backlog-source-writes");
+    const queue = await import("@/lib/settle-comments");
+    return { ...writes, ...queue };
+  }
+
+  it("goes out once its Undo window closed and the write landed, and joins the item's thread", async () => {
+    const {
+      queueSettleComment,
+      releaseSettleComment,
+      sendPendingSourceWrites,
+      settleCommentsOf,
+    } = await load();
+    queueSettleComment(comment("s1"));
     let finish!: () => void;
     mocks.write.mockReturnValueOnce(
       new Promise<void>((resolve) => {
@@ -170,7 +171,7 @@ describe("the comment typed in the settle dialog", () => {
     );
     const sending = sendPendingSourceWrites(["a"]);
     // The toast closed: the comment waits for the write.
-    await sendSettleComment("a");
+    await releaseSettleComment("s1", "a");
     expect(mocks.post).not.toHaveBeenCalled();
     finish();
     await sending;
@@ -181,15 +182,54 @@ describe("the comment typed in the settle dialog", () => {
       sourceId: "1",
       body: "Waiting on the client",
     });
-    expect(mocks.announce).toHaveBeenCalledWith(comment, posted);
-    expect(mocks.queue).toEqual([]);
+    expect(mocks.announce).toHaveBeenCalledWith(
+      expect.objectContaining({ id: "s1", sourceId: "1" }),
+      posted,
+    );
+    expect(settleCommentsOf("a")).toEqual([]);
   });
 
-  it("stays as the item's draft when the settle's write fails", async () => {
-    const { sendPendingSourceWrites } = await import("./backlog-source-writes");
+  it("waits for its own Undo window even when an earlier write lands first", async () => {
+    const {
+      queueSettleComment,
+      releaseSettleComment,
+      sendPendingSourceWrites,
+    } = await load();
+    // A move's write, which the settle kept, lands before the settle's toast closes.
+    queueSettleComment(comment("s1"));
+    await sendPendingSourceWrites(["a"]);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(item.pendingSourceWrite).toBeUndefined();
+    expect(mocks.post).not.toHaveBeenCalled();
+
+    await releaseSettleComment("s1", "a");
+    expect(mocks.post).toHaveBeenCalledOnce();
+  });
+
+  it("releases only its own settle's comment", async () => {
+    const { queueSettleComment, releaseSettleComment, settleCommentsOf } =
+      await load();
+    item = { ...item, pendingSourceWrite: undefined };
+    queueSettleComment(comment("s1", "First"));
+    queueSettleComment(comment("s2", "Second"));
+
+    await releaseSettleComment("s1", "a");
+
+    expect(mocks.post).toHaveBeenCalledExactlyOnceWith("azure_devops", "c", {
+      sourceId: "1",
+      body: "First",
+    });
+    expect(settleCommentsOf("a").map((entry) => entry.id)).toEqual(["s2"]);
+  });
+
+  it("stays as the item's draft when the settle's write fails, even if the item stays settled", async () => {
+    const { queueSettleComment, sendPendingSourceWrites, settleCommentsOf } =
+      await load();
+    queueSettleComment(comment("s1"));
     mocks.write.mockRejectedValueOnce(new Error("Transition not allowed."));
+    // An earlier settle's write landed meanwhile, so recovery keeps it settled.
     mocks.fail.mockImplementation(() => {
-      item = { ...item, status: "active", pendingSourceWrite: undefined };
+      item = { ...item, pendingSourceWrite: undefined };
     });
 
     await sendPendingSourceWrites(["a"]);
@@ -197,6 +237,7 @@ describe("the comment typed in the settle dialog", () => {
 
     expect(mocks.post).not.toHaveBeenCalled();
     expect(mocks.keepDraft).toHaveBeenCalledWith("a", "Waiting on the client");
+    expect(settleCommentsOf("a")).toEqual([]);
     expect(mocks.error).toHaveBeenCalledWith(
       expect.objectContaining({
         description: expect.stringContaining(
@@ -207,21 +248,23 @@ describe("the comment typed in the settle dialog", () => {
   });
 
   it("stays as the item's draft when the settle was undone", async () => {
-    const { sendSettleComment } = await import("./backlog-source-writes");
+    const { queueSettleComment, releaseSettleComment } = await load();
     item = { ...item, status: "active", pendingSourceWrite: undefined };
+    queueSettleComment(comment("s1"));
 
-    await sendSettleComment("a");
+    await releaseSettleComment("s1", "a");
 
     expect(mocks.post).not.toHaveBeenCalled();
     expect(mocks.keepDraft).toHaveBeenCalledWith("a", "Waiting on the client");
   });
 
   it("stays as the item's draft when the source refuses it", async () => {
-    const { sendSettleComment } = await import("./backlog-source-writes");
+    const { queueSettleComment, releaseSettleComment } = await load();
     item = { ...item, pendingSourceWrite: undefined };
+    queueSettleComment(comment("s1"));
     mocks.post.mockRejectedValueOnce(new Error("No access."));
 
-    await sendSettleComment("a");
+    await releaseSettleComment("s1", "a");
 
     expect(mocks.keepDraft).toHaveBeenCalledWith("a", "Waiting on the client");
     expect(mocks.error).toHaveBeenCalledWith({
@@ -230,13 +273,15 @@ describe("the comment typed in the settle dialog", () => {
     });
   });
 
-  it("goes at the next launch for a settle with nothing to write", async () => {
-    const { flushSettleComments } = await import("./backlog-source-writes");
+  it("goes at the next launch when Ajour quit during the Undo window", async () => {
+    const { queueSettleComment, flushSettleComments, settleCommentsOf } =
+      await load();
     item = { ...item, pendingSourceWrite: undefined };
+    queueSettleComment(comment("s1"));
 
     await flushSettleComments();
 
     expect(mocks.post).toHaveBeenCalledOnce();
-    expect(mocks.queue).toEqual([]);
+    expect(settleCommentsOf("a")).toEqual([]);
   });
 });

@@ -12,8 +12,10 @@ import {
 import { keepCommentAsDraft } from "@/lib/comment-drafts";
 import { localStore } from "@/lib/local-store";
 import {
-  getSettleComment,
+  markSettleCommentReady,
+  markSettleCommentsReady,
   settleCommentItemIds,
+  settleCommentsOf,
   takeSettleComment,
 } from "@/lib/settle-comments";
 
@@ -101,15 +103,15 @@ async function sendSourceWrite(
       priority: sourcePriorityFromLevel(write.priority),
     });
     localStore.completeSourceWrite(workItem._id, sentItems);
-    void sendSettleComment(workItem._id);
+    void sendSettleComments(workItem._id);
   } catch (error) {
     if (!stillCurrent()) return;
     localStore.failSourceWrite(workItem._id);
-    const keptComment = Boolean(getSettleComment(workItem._id));
-    void sendSettleComment(workItem._id);
+    // The settle didn't stand, whatever state the item went back to.
+    const kept = keepSettleCommentsAsDrafts(workItem._id);
     showErrorToast({
       title: `Couldn't update "${workItem.title}" in its source`,
-      description: `${error instanceof Error ? error.message : "Unknown error"} The item returned to its previous state.${keptComment ? " Your comment is kept as a draft on it." : ""}`,
+      description: `${error instanceof Error ? error.message : "Unknown error"} The item returned to its previous state.${kept ? " Your comment is kept as a draft on it." : ""}`,
     });
   } finally {
     sending.delete(workItem._id);
@@ -117,45 +119,70 @@ async function sendSourceWrite(
   }
 }
 
+/** Keeps every comment waiting on the item's settle as its draft. */
+function keepSettleCommentsAsDrafts(workItemId: string) {
+  let kept = 0;
+  for (const { id } of settleCommentsOf(workItemId)) {
+    const entry = takeSettleComment(id);
+    if (!entry) continue;
+    keepCommentAsDraft(workItemId, entry.body);
+    kept += 1;
+  }
+  return kept;
+}
+
 /**
- * Posts the comment typed in the settle dialog once the settle stands: after
- * its write lands, or when the Undo toast closes for a settle with nothing to
- * write. A settle that was undone or failed keeps the comment as the item's
- * draft instead, as does a refused post (ADR 0008).
+ * Posts the item's settle comments that are ready: their settle's Undo
+ * window closed, and the item's pending write landed. A settle that was
+ * undone keeps its comment as the item's draft instead, as does a refused
+ * post (ADR 0008).
  */
-export async function sendSettleComment(workItemId: string) {
-  if (!getSettleComment(workItemId)) return;
+export async function sendSettleComments(workItemId: string) {
   const item = localStore
     .snapshot()
     .workItems.find((workItem) => workItem._id === workItemId);
-  // The settle's write goes first and sends the comment once it lands.
+  // The item's write goes first and sends the comments once it lands.
   if (item?.pendingSourceWrite) return;
-  const entry = takeSettleComment(workItemId);
-  if (!entry || !item) return;
-  if (item.status === "active") {
-    keepCommentAsDraft(workItemId, entry.body);
-    return;
-  }
+  const ready = settleCommentsOf(workItemId).filter((entry) => entry.ready);
+  await Promise.all(
+    ready.map(async ({ id }) => {
+      const entry = takeSettleComment(id);
+      if (!entry || !item) return;
+      if (item.status === "active") {
+        keepCommentAsDraft(workItemId, entry.body);
+        return;
+      }
+      try {
+        const { comment } = await postItemComment(
+          entry.pluginId,
+          entry.connectionId,
+          { sourceId: entry.sourceId, body: entry.body },
+        );
+        announcePostedComment(entry, comment);
+      } catch (error) {
+        keepCommentAsDraft(workItemId, entry.body);
+        showErrorToast({
+          title: `Couldn't post your comment on "${item.title}"`,
+          description: `${error instanceof Error ? error.message : "Unknown error"} It's kept as a draft on the item.`,
+        });
+      }
+    }),
+  );
+}
 
-  try {
-    const { comment } = await postItemComment(
-      entry.pluginId,
-      entry.connectionId,
-      { sourceId: entry.sourceId, body: entry.body },
-    );
-    announcePostedComment(entry, comment);
-  } catch (error) {
-    keepCommentAsDraft(workItemId, entry.body);
-    showErrorToast({
-      title: `Couldn't post your comment on "${item.title}"`,
-      description: `${error instanceof Error ? error.message : "Unknown error"} It's kept as a draft on the item.`,
-    });
-  }
+/**
+ * A settle's Undo window closed: its comment goes once the item's write
+ * lands, or now if nothing waits.
+ */
+export function releaseSettleComment(commentId: string, workItemId: string) {
+  markSettleCommentReady(commentId);
+  return sendSettleComments(workItemId);
 }
 
 /** At launch, sends the settle comments left from a session that quit during Undo. */
 export async function flushSettleComments() {
-  await Promise.all(settleCommentItemIds().map(sendSettleComment));
+  markSettleCommentsReady();
+  await Promise.all(settleCommentItemIds().map(sendSettleComments));
 }
 
 /** Compatibility for the explicit settle rule workflow. */

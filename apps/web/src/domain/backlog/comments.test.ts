@@ -5,6 +5,7 @@ import {
   firstNewCommentIndex,
   isEditedComment,
   mergeEarlierComments,
+  withPostedComments,
   withViewerReaction,
 } from "@/domain/backlog/comments";
 
@@ -135,5 +136,25 @@ describe("backlog comments", () => {
       { reaction: "heart", count: 1, viewerReacted: true },
     ]);
     expect(withViewerReaction([like], "heart", false)).toEqual([like]);
+  });
+});
+
+describe("comments posted while the first page loads", () => {
+  it("joins the page once each, after what it already has", () => {
+    const page = {
+      viewer,
+      comments: [comment("c1", "2026-10-17T09:00:00Z")],
+      total: 1,
+    };
+    const posted = [
+      comment("c1", "2026-10-17T09:00:00Z"),
+      comment("c2", "2026-10-18T09:00:00Z", "me"),
+    ];
+
+    const merged = withPostedComments(page, posted);
+
+    expect(merged.comments.map((entry) => entry.id)).toEqual(["c1", "c2"]);
+    expect(merged.total).toBe(2);
+    expect(withPostedComments(page, [])).toBe(page);
   });
 });

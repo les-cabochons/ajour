@@ -90,6 +90,15 @@ export function setCommentDraft(itemId: string, text: string) {
   for (const listener of listeners) listener(itemId, text);
 }
 
+/**
+ * The draft left once `sent` went out: what was typed or put back after it,
+ * such as a settle's comment that Undo returned meanwhile.
+ */
+export function draftAfterSend(draft: string, sent: string) {
+  if (draft.trim() === sent.trim()) return "";
+  return draft.startsWith(sent) ? draft.slice(sent.length).trim() : draft;
+}
+
 /** Keeps a comment that wasn't sent as the item's draft, after any draft there. */
 export function keepCommentAsDraft(itemId: string, text: string) {
   const current = getCommentDraft(itemId)?.trim();

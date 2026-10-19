@@ -1756,9 +1756,16 @@ export const localStore = {
   returnItemsWithNewComments(
     facts: BacklogItemCommentFacts[],
     viewer: BacklogPerson,
+    settledSince: ReadonlyMap<string, number>,
   ) {
     updateState((state) =>
-      applyReturnItemsWithNewComments(state, facts, viewer, Date.now),
+      applyReturnItemsWithNewComments(
+        state,
+        facts,
+        viewer,
+        settledSince,
+        Date.now,
+      ),
     );
   },
   applyBacklogSyncWorkItemUpdates(updates: BacklogSyncWorkItemUpdate[]) {

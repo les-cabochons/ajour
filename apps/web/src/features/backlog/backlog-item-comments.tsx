@@ -34,6 +34,7 @@ import {
   isEditedComment,
   isOwnComment,
   mergeEarlierComments,
+  withPostedComments,
   withViewerReaction,
   type CommentSource,
 } from "@/domain/backlog/comments";
@@ -54,6 +55,7 @@ import {
   sendCommentDelete,
 } from "@/lib/comment-deletes";
 import {
+  draftAfterSend,
   getCommentDraft,
   setCommentDraft,
   subscribeCommentDrafts,
@@ -209,15 +211,27 @@ export function BacklogItemComments({
   const sourceRef = useRef(source);
   sourceRef.current = source;
 
+  // Comments posted elsewhere during a load, which its answer may predate.
+  const postedDuringLoad = useRef<{ key: string; comments: BacklogComment[] }>({
+    key,
+    comments: [],
+  });
+
   const loadFirstPage = useCallback(async () => {
     const current = sourceRef.current;
+    const loadKey = commentThreadKey(current);
+    postedDuringLoad.current = { key: loadKey, comments: [] };
     try {
-      const result = await listItemComments(
+      const page = await listItemComments(
         current.pluginId,
         current.connectionId,
         { sourceId: current.sourceId, limit: FIRST_COMMENT_PAGE },
       );
-      firstPages.set(commentThreadKey(current), { at: Date.now(), result });
+      const result =
+        postedDuringLoad.current.key === loadKey
+          ? withPostedComments(page, postedDuringLoad.current.comments)
+          : page;
+      firstPages.set(loadKey, { at: Date.now(), result });
       setThread({ kind: "ready", ...result, loadingEarlier: false });
     } catch (error) {
       setThread(
@@ -418,9 +432,11 @@ export function BacklogItemComments({
   useEffect(
     () =>
       subscribePostedComments((threadKey, comment) => {
-        if (threadKey === key) {
-          setThread((current) => withPostedComment(current, comment));
+        if (threadKey !== key) return;
+        if (postedDuringLoad.current.key === key) {
+          postedDuringLoad.current.comments.push(comment);
         }
+        setThread((current) => withPostedComment(current, comment));
       }),
     [key],
   );
@@ -553,9 +569,11 @@ function CommentComposer({
         source.connectionId,
         { sourceId: source.sourceId, body },
       );
-      setCommentDraft(itemId, "");
-      setText("");
-      setOpen(false);
+      // Only what went out leaves the draft; text added meanwhile stays.
+      const rest = draftAfterSend(getCommentDraft(itemId) ?? "", value);
+      setCommentDraft(itemId, rest);
+      setText(rest);
+      if (!rest) setOpen(false);
       onPosted(comment);
     } catch (failure) {
       setError(

@@ -1,6 +1,7 @@
 import {
   isCapabilityActive,
   type BacklogComment,
+  type BacklogListItemCommentsResult,
   type BacklogReaction,
   type BacklogCommentsCapability,
   type BacklogPerson,
@@ -100,6 +101,26 @@ export function mergeEarlierComments(
     ...earlier.filter((comment) => !loadedIds.has(comment.id)),
     ...loaded,
   ];
+}
+
+/**
+ * A first page with the comments posted while it loaded at its end, once
+ * each: its answer may predate them.
+ */
+export function withPostedComments(
+  page: BacklogListItemCommentsResult,
+  posted: readonly BacklogComment[],
+): BacklogListItemCommentsResult {
+  const shown = new Set(page.comments.map((comment) => comment.id));
+  const missing = posted.filter((comment) => !shown.has(comment.id));
+  return missing.length === 0
+    ? page
+    : {
+        ...page,
+        comments: [...page.comments, ...missing],
+        total:
+          page.total === undefined ? undefined : page.total + missing.length,
+      };
 }
 
 /**

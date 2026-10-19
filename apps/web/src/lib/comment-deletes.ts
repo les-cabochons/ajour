@@ -1,5 +1,6 @@
 import { showErrorToast } from "@/components/ui/toast";
 import { deleteItemComment } from "@/lib/app-api";
+import { createDeviceQueue } from "@/lib/device-queue";
 
 /**
  * Deleted comments waiting for their Undo window (ADR 0008, through ADR
@@ -29,38 +30,15 @@ const isPendingDelete = (value: unknown): value is PendingCommentDelete => {
   );
 };
 
+const queue = createDeviceQueue(
+  PENDING_COMMENT_DELETES_STORAGE_KEY,
+  isPendingDelete,
+);
+const read = queue.read;
+const write = queue.write;
+
 /** Broken entries are dropped. */
-export function parsePendingCommentDeletes(
-  value: string | null,
-): PendingCommentDelete[] {
-  try {
-    const parsed: unknown = value ? JSON.parse(value) : [];
-    return Array.isArray(parsed) ? parsed.filter(isPendingDelete) : [];
-  } catch {
-    return [];
-  }
-}
-
-function read() {
-  try {
-    return parsePendingCommentDeletes(
-      window.localStorage.getItem(PENDING_COMMENT_DELETES_STORAGE_KEY),
-    );
-  } catch {
-    return [];
-  }
-}
-
-function write(entries: PendingCommentDelete[]) {
-  try {
-    window.localStorage.setItem(
-      PENDING_COMMENT_DELETES_STORAGE_KEY,
-      JSON.stringify(entries),
-    );
-  } catch {
-    // The delete then only waits in this session.
-  }
-}
+export const parsePendingCommentDeletes = queue.parse;
 
 /** Comments that wait to be deleted, so the thread keeps them hidden. */
 export function pendingCommentDeleteIds() {
