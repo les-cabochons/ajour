@@ -95,6 +95,10 @@ import {
 } from "@/domain/time/timesheet-entry";
 import { normalizeTimesheetTombstones } from "@/domain/time/timesheet-commit";
 import {
+  markCommitPrompted as applyMarkCommitPrompted,
+  normalizeCommitPromptedWeeks,
+} from "@/domain/time/week-target-prompt";
+import {
   captureUndo,
   getUndoProjectIds,
   completeSourceWriteInUndo,
@@ -328,6 +332,7 @@ function createDefaultState(): LocalAppState {
     timesheetEntries: [],
     timesheetTombstones: [],
     timesheetImportDrafts: [],
+    commitPromptedWeeks: [],
     workItems: [],
     pullRequests: [],
     calendarDecisions: [],
@@ -456,6 +461,9 @@ function normalizeState(state: Partial<LocalAppState>): LocalAppState {
       timesheetImportDrafts: arrayOrDefault(
         persistedState.timesheetImportDrafts,
         defaults.timesheetImportDrafts,
+      ),
+      commitPromptedWeeks: normalizeCommitPromptedWeeks(
+        persistedState.commitPromptedWeeks,
       ),
       workItems,
       pullRequests: normalizePullRequests(persistedState.pullRequests),
@@ -2141,6 +2149,13 @@ export const localStore = {
     updateState((state) =>
       applySaveTimer(state, timerId, { createId, now: Date.now }),
     );
+  },
+  /**
+   * Remembers that Ajour asked to commit the week of `weekOf`, so it never asks
+   * again. Undo leaves it. See `domain/time/week-target-prompt.ts`.
+   */
+  markCommitPrompted(weekOf: string) {
+    updateState((state) => applyMarkCommitPrompted(state, weekOf));
   },
   /**
    * Commits the changes of `entryIds`. See `markTimesheetEntriesCommitted`.

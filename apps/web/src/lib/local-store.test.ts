@@ -2803,6 +2803,41 @@ describe("localStore workflow state sync", () => {
     });
   });
 
+  it("normalizes the weeks it asked to commit", async () => {
+    window.localStorage.setItem(
+      "ajour.local-state.v2",
+      JSON.stringify({
+        commitPromptedWeeks: ["2026-10-12", 3, "2026-10-12", "2026-10-05"],
+      }),
+    );
+
+    const { localStore } = await import("./local-store");
+
+    expect(localStore.snapshot().commitPromptedWeeks).toEqual([
+      "2026-10-12",
+      "2026-10-05",
+    ]);
+  });
+
+  it("remembers a week it asked to commit, outside Undo", async () => {
+    const { localStore } = await import("./local-store");
+    expect(localStore.snapshot().commitPromptedWeeks).toEqual([]);
+
+    localStore.saveManualTimeEntry({
+      localDate: "2026-10-12",
+      durationMs: 60_000,
+    });
+    const entryId = localStore.snapshot().timesheetEntries.at(-1)!._id;
+    const undoToken = localStore.deleteTimesheetEntry(entryId);
+    localStore.markCommitPrompted("2026-10-12");
+    localStore.markCommitPrompted("2026-10-12");
+    expect(localStore.undo(undoToken!)).not.toBe("expired");
+
+    const restored = localStore.snapshot();
+    expect(restored.timesheetEntries.some((e) => e._id === entryId)).toBe(true);
+    expect(restored.commitPromptedWeeks).toEqual(["2026-10-12"]);
+  });
+
   it("does not persist a no-op transition", async () => {
     const { localStore } = await import("./local-store");
     localStore.snapshot();
