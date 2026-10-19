@@ -194,19 +194,21 @@ const dismissedMention = StateField.define<{
 });
 
 /**
- * Asking for suggestions with Ctrl+Space (Alt+` on a Mac) lifts the
+ * Asking for suggestions with Ctrl+Space (Alt+` or Alt+I on a Mac) lifts the
  * dismissal at once, before CodeMirror gets to ask.
  */
 const askAgainKeymap = keymap.of(
-  [{ key: "Ctrl-Space" }, { mac: "Alt-`" }].map((binding) => ({
-    ...binding,
-    run: (view: EditorView) => {
-      if (view.state.field(dismissedMention, false)?.from != null) {
-        view.dispatch({ effects: liftDismissal.of(null) });
-      }
-      return false;
-    },
-  })),
+  [{ key: "Ctrl-Space" }, { mac: "Alt-`" }, { mac: "Alt-i" }].map(
+    (binding) => ({
+      ...binding,
+      run: (view: EditorView) => {
+        if (view.state.field(dismissedMention, false)?.from != null) {
+          view.dispatch({ effects: liftDismissal.of(null) });
+        }
+        return false;
+      },
+    }),
+  ),
 );
 
 /**
