@@ -42,6 +42,10 @@ _Avoid_: Note (for a backlog item), body, details
 A block of fields at the very start of a description, between two `---` lines, through which the description sends data to Ajour. Its timelog sets the backlog item's project and task; its other fields show in the item's properties.
 _Avoid_: Metadata, header, properties (for the block)
 
+**Timelog**:
+The part of a description's frontmatter that names the backlog item's project and task, as `timelog:` with `project:` and `task:` under it.
+_Avoid_: Time log (that word means a time entry, which Ajour avoids)
+
 **Comment**:
 A message someone posted on a synced backlog item or a pull request. It lives in the source tool or code host, and Ajour shows it there without keeping its text. Manual backlog items have no comments.
 _Avoid_: Note, discussion, message
