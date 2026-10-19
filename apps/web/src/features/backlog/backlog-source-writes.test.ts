@@ -284,4 +284,27 @@ describe("the comment typed in the settle dialog", () => {
     expect(mocks.post).toHaveBeenCalledOnce();
     expect(settleCommentsOf("a")).toEqual([]);
   });
+
+  it("keeps a comment as a draft when its settle was replaced by another", async () => {
+    const { queueSettleComment, releaseSettleComment } = await load();
+    item = { ...item, pendingSourceWrite: undefined, settledAt: 2000 };
+    // Typed with the settle at 1000; the user unsettled and settled again.
+    queueSettleComment({ ...comment("s1"), settleMark: 1000 });
+
+    await releaseSettleComment("s1", "a");
+
+    expect(mocks.post).not.toHaveBeenCalled();
+    expect(mocks.keepDraft).toHaveBeenCalledWith("a", "Waiting on the client");
+  });
+
+  it("keeps a comment as a draft when its item now comes from another source", async () => {
+    const { queueSettleComment, releaseSettleComment } = await load();
+    item = { ...item, pendingSourceWrite: undefined, sourceId: "2" };
+    queueSettleComment(comment("s1"));
+
+    await releaseSettleComment("s1", "a");
+
+    expect(mocks.post).not.toHaveBeenCalled();
+    expect(mocks.keepDraft).toHaveBeenCalledWith("a", "Waiting on the client");
+  });
 });

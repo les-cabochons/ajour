@@ -1,7 +1,11 @@
 import { showErrorToast } from "@/components/ui/toast";
 import { isCapabilityActive } from "@ajour/shared";
 import type { LocalWorkItem } from "@/domain/local-state";
-import { hasSameSourceWriteRequest } from "@/domain/backlog/backlog-item-lifecycle";
+import {
+  hasSameSourceWriteRequest,
+  settleMarkOf,
+} from "@/domain/backlog/backlog-item-lifecycle";
+import { isCommentSourceOf } from "@/domain/backlog/comments";
 import { sourcePriorityFromLevel } from "@/domain/backlog/priority";
 import { announcePostedComment } from "@/features/backlog/comment-threads";
 import {
@@ -12,6 +16,7 @@ import {
 import { keepCommentAsDraft } from "@/lib/comment-drafts";
 import { localStore } from "@/lib/local-store";
 import {
+  type PendingSettleComment,
   markSettleCommentReady,
   markSettleCommentsReady,
   settleCommentItemIds,
@@ -138,17 +143,19 @@ function keepSettleCommentsAsDrafts(workItemId: string) {
  * post (ADR 0008).
  */
 export async function sendSettleComments(workItemId: string) {
-  const item = localStore
-    .snapshot()
-    .workItems.find((workItem) => workItem._id === workItemId);
+  const itemNow = () =>
+    localStore
+      .snapshot()
+      .workItems.find((workItem) => workItem._id === workItemId);
   // The item's write goes first and sends the comments once it lands.
-  if (item?.pendingSourceWrite) return;
+  if (itemNow()?.pendingSourceWrite) return;
   const ready = settleCommentsOf(workItemId).filter((entry) => entry.ready);
   await Promise.all(
     ready.map(async ({ id }) => {
       const entry = takeSettleComment(id);
+      const item = itemNow();
       if (!entry || !item) return;
-      if (item.status === "active") {
+      if (!settleStands(item, entry)) {
         keepCommentAsDraft(workItemId, entry.body);
         return;
       }
@@ -167,6 +174,19 @@ export async function sendSettleComments(workItemId: string) {
         });
       }
     }),
+  );
+}
+
+/**
+ * Whether the settle a comment was typed with still stands: not undone,
+ * failed or replaced by another settle, and the item still comes from the
+ * comment's thread.
+ */
+function settleStands(item: LocalWorkItem, entry: PendingSettleComment) {
+  return (
+    item.status !== "active" &&
+    isCommentSourceOf(item, entry) &&
+    (entry.settleMark === undefined || settleMarkOf(item) === entry.settleMark)
   );
 }
 
