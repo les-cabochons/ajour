@@ -622,9 +622,10 @@ async function agentCommentFixture(
   );
   postedComments = [];
   await page.route(
-    `${apiUrl}/api/backlog-comments/example/connections/fixture/postItemComment`,
+    `${apiUrl}/api/backlog-comments/example/connections/fixture/postItemComment?agent=1`,
     async (route) => {
       const { body } = route.request().postDataJSON() as { body: string };
+      // Marked as an agent's, so the local API checks its access.
       postedComments.push(body);
       await route.fulfill({
         json: {

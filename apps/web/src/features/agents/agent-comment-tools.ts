@@ -86,11 +86,17 @@ export async function listCommentsForAgent(
   const source = await requireAgentCommentAccess(item, "read");
   let page;
   try {
-    page = await listItemComments(source.pluginId, source.connectionId, {
-      sourceId: source.sourceId,
-      limit: input.limit,
-      ...(input.cursor ? { cursor: input.cursor } : {}),
-    });
+    // The API checks Read again when the answer comes back.
+    page = await listItemComments(
+      source.pluginId,
+      source.connectionId,
+      {
+        sourceId: source.sourceId,
+        limit: input.limit,
+        ...(input.cursor ? { cursor: input.cursor } : {}),
+      },
+      { agent: true },
+    );
   } catch (error) {
     throw new AgentToolRefusal(
       `Ajour couldn't load the item's comments: ${errorMessage(error)}`,
@@ -178,10 +184,15 @@ export async function postCommentForAgent(
 export async function sendAgentComment(id: string) {
   const entry = takeAgentComment(id);
   if (!entry) return;
-  const item = localStore
-    .snapshot()
-    .workItems.find((workItem) => workItem._id === entry.itemId);
-  if (!item || !isCommentSourceOf(item, entry)) return;
+  // The item as it is now, still from the comment's thread.
+  const currentItem = () => {
+    const item = localStore
+      .snapshot()
+      .workItems.find((workItem) => workItem._id === entry.itemId);
+    return item && isCommentSourceOf(item, entry) ? item : undefined;
+  };
+  const item = currentItem();
+  if (!item) return;
   try {
     const current = await readAgentCommentAccess(item);
     if (!agentAccessAllows(current.access, "readWrite")) {
@@ -193,10 +204,14 @@ export async function sendAgentComment(id: string) {
       });
       return;
     }
+    // Deleted or moved while access was read: the comment goes with it.
+    if (!currentItem()) return;
+    // The API checks Read and post again at the post itself.
     const { comment } = await postItemComment(
       entry.pluginId,
       entry.connectionId,
       { sourceId: entry.sourceId, body: entry.body },
+      { agent: true },
     );
     announcePostedComment(entry, comment);
   } catch (error) {

@@ -462,6 +462,14 @@ export function syncsPullRequestsAutomatically(
   return connection.pullRequestAutoSync ?? connection.autoSync;
 }
 
+/** Whether the access level lets agents read, or read and post, comments. */
+export function agentAccessAllows(
+  access: AgentAccess,
+  need: "read" | "readWrite",
+) {
+  return need === "read" ? access !== "none" : access === "readWrite";
+}
+
 /** What agents may do with the connection's comments. None until the user allows more. */
 export function connectionAgentAccess(
   connection: Pick<PluginConnectionSummary, "agentAccess">,

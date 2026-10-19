@@ -1883,6 +1883,7 @@ describe("backlog comment routes", () => {
     "}",
     "export async function listItemComments(connection, request) {",
     "  if (request.sourceId === 'broken') throw new Error('Could not read with ' + connection.config.token);",
+    "  if (request.sourceId === 'slow') await new Promise((resolve) => setTimeout(resolve, 300));",
     "  return {",
     "    viewer: { id: 'me', displayName: 'Me' },",
     "    comments: [{ id: 'c1', author: { id: 'ana', displayName: 'Ana Silva' }, body: 'Secret client detail', createdAt: '2026-10-13T10:42:00Z' }],",
@@ -2067,6 +2068,60 @@ describe("backlog comment routes", () => {
       await readFile(path.join(root, "state.json"), "utf8"),
     ) as { connections: { config: Record<string, unknown> }[] };
     expect(stored.connections[0]!.config).not.toHaveProperty("agentAccess");
+  });
+
+  it("enforces agent access on an agent's comment calls, even when revoked mid-read", async () => {
+    const { server, connectionId, events } = await createServer({
+      connector: { comments: {} },
+    });
+    const call = (operation: string, body: unknown, agent = true) =>
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: `${listPath(connectionId, operation)}${agent ? "?agent=1" : ""}`,
+        body: JSON.stringify(body),
+      });
+    const setAccess = (agentAccess: string) =>
+      dispatchJsonRequest(server, {
+        method: "POST",
+        path: "/api/plugins/jira/connections",
+        body: JSON.stringify({
+          id: connectionId,
+          values: {
+            label: "Work",
+            tenantLabel: "Contoso",
+            autoSyncIntervalMinutes: 10,
+            token: TOKEN,
+            agentAccess,
+          },
+        }),
+      });
+    const list = { sourceId: "4821", limit: 5 };
+
+    // None: an agent gets nothing; Ajour's own page still reads.
+    expect(await call("listItemComments", list)).toEqual({
+      status: 403,
+      body: {
+        error:
+          'The user hasn\'t allowed agents to read comments on the "Work" connection.',
+      },
+    });
+    expect((await call("listItemComments", list, false)).status).toBe(200);
+
+    // Read: an agent reads, but can't post.
+    await setAccess("read");
+    expect((await call("listItemComments", list)).status).toBe(200);
+    expect(
+      (await call("postItemComment", { sourceId: "4821", body: "Hi" })).status,
+    ).toBe(403);
+
+    // Revoked while the plugin answers: the text doesn't leave.
+    const slow = call("listItemComments", { sourceId: "slow", limit: 5 });
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    await setAccess("none");
+    expect(await slow).toMatchObject({ status: 403 });
+    expect(events.filter((event) => event.outcome === "refused")).toHaveLength(
+      3,
+    );
   });
 
   it("lists an item's comments and logs no text or author", async () => {

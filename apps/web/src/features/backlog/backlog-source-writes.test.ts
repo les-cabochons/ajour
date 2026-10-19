@@ -184,10 +184,13 @@ describe("the comment typed in the settle dialog", () => {
     await vi.advanceTimersByTimeAsync(0);
 
     expect(mocks.write).toHaveBeenCalledBefore(mocks.post);
-    expect(mocks.post).toHaveBeenCalledExactlyOnceWith("azure_devops", "c", {
-      sourceId: "1",
-      body: "Waiting on the client",
-    });
+    expect(mocks.post).toHaveBeenCalledExactlyOnceWith(
+      "azure_devops",
+      "c",
+      { sourceId: "1", body: "Waiting on the client" },
+      // The user's own comment: no agent check at the API.
+      undefined,
+    );
     expect(mocks.announce).toHaveBeenCalledWith(
       expect.objectContaining({ id: "s1", sourceId: "1" }),
       posted,
@@ -221,10 +224,12 @@ describe("the comment typed in the settle dialog", () => {
 
     await releaseSettleComment("s1", "a");
 
-    expect(mocks.post).toHaveBeenCalledExactlyOnceWith("azure_devops", "c", {
-      sourceId: "1",
-      body: "First",
-    });
+    expect(mocks.post).toHaveBeenCalledExactlyOnceWith(
+      "azure_devops",
+      "c",
+      { sourceId: "1", body: "First" },
+      undefined,
+    );
     expect(settleCommentsOf("a").map((entry) => entry.id)).toEqual(["s2"]);
   });
 
@@ -312,6 +317,25 @@ describe("the comment typed in the settle dialog", () => {
       title: `Claude Code's comment on "A" wasn't posted`,
       description:
         "Agents can no longer post comments on its connection. It's kept as a draft on the item.",
+    });
+  });
+
+  it("names the agent when its settle comment can't be checked", async () => {
+    const { queueSettleComment, releaseSettleComment } = await load();
+    item = { ...item, pendingSourceWrite: undefined };
+    queueSettleComment({ ...comment("s1"), agentClient: "Claude Code" });
+    mocks.access.mockRejectedValueOnce(
+      new Error("The local API is not running."),
+    );
+
+    await releaseSettleComment("s1", "a");
+
+    expect(mocks.post).not.toHaveBeenCalled();
+    expect(mocks.keepDraft).toHaveBeenCalledWith("a", "Waiting on the client");
+    expect(mocks.error).toHaveBeenCalledWith({
+      title: `Couldn't post Claude Code's comment on "A"`,
+      description:
+        "The local API is not running. It's kept as a draft on the item.",
     });
   });
 

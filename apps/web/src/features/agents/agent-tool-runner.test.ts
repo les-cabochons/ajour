@@ -1009,11 +1009,13 @@ describe("agent comment tools", () => {
       cursor: "page-1",
     });
 
-    expect(listItemComments).toHaveBeenCalledWith("azure_devops", "ado-1", {
-      sourceId: "101",
-      limit: 5,
-      cursor: "page-1",
-    });
+    // Marked as an agent's, so the API checks Read again.
+    expect(listItemComments).toHaveBeenCalledWith(
+      "azure_devops",
+      "ado-1",
+      { sourceId: "101", limit: 5, cursor: "page-1" },
+      { agent: true },
+    );
     expect(result).toEqual({
       requestId: expect.any(String),
       ok: true,
@@ -1078,6 +1080,7 @@ describe("agent comment tools", () => {
         "azure_devops",
         "ado-1",
         { sourceId: "101", body: "Fixed in 1.2" },
+        { agent: true },
       ),
     );
     toast.onClose();
@@ -1222,5 +1225,25 @@ describe("agent comment tools", () => {
     expect(settleCommentsOf(workItemId)).toEqual([
       expect.objectContaining({ agentClient: "Claude Code" }),
     ]);
+  });
+
+  it("drops a queued comment whose item is deleted while its access is read", async () => {
+    const { call, localStore } = await setup();
+    const workItemId = importSyncedItem(localStore);
+    fetchPluginsOverview.mockResolvedValue(pluginsOverview("readWrite"));
+    await call("post_work_item_comment", { workItemId, body: "Fixed in 1.2" });
+
+    let answer!: (overview: unknown) => void;
+    fetchPluginsOverview.mockReturnValueOnce(
+      new Promise((resolve) => {
+        answer = resolve;
+      }),
+    );
+    showUndoToast.mock.calls.at(-1)![0].onClose();
+    localStore.deleteWorkItem(workItemId);
+    answer(pluginsOverview("readWrite"));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    expect(postItemComment).not.toHaveBeenCalled();
   });
 });

@@ -1,4 +1,8 @@
-import { connectionAgentAccess, type AgentAccess } from "@ajour/shared";
+import {
+  agentAccessAllows,
+  connectionAgentAccess,
+  type AgentAccess,
+} from "@ajour/shared";
 import { commentSourceOf, type CommentSource } from "@/domain/backlog/comments";
 import type { LocalWorkItem } from "@/domain/local-state";
 import { fetchPluginsOverview } from "@/lib/app-api";
@@ -33,9 +37,4 @@ export async function readAgentCommentAccess(
   };
 }
 
-export function agentAccessAllows(
-  access: AgentAccess,
-  need: "read" | "readWrite",
-) {
-  return need === "read" ? access !== "none" : access === "readWrite";
-}
+export { agentAccessAllows };

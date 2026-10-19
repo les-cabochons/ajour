@@ -54,7 +54,9 @@ import {
   pluginsOverviewSchema,
   teamCreateRouteRequestSchema,
   AGENT_ACCESS_FIELD_ID,
+  agentAccessAllows,
   agentAccessSchema,
+  connectionAgentAccess,
   type AgentAccess,
 } from "../../../packages/shared/plugins.ts";
 import {
@@ -1201,13 +1203,16 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           const existingConnection = payload.id
             ? await storage.getConnection(pluginId, payload.id)
             : null;
-          const configForSave = plugin
-            ? mergeConnectionConfigForSave(
-                plugin,
-                parsedValues.config,
-                existingConnection?.config,
-              )
-            : parsedValues.config;
+          // A config saved before Ajour kept its own fields out may hold one.
+          const configForSave = withoutReservedFields(
+            plugin
+              ? mergeConnectionConfigForSave(
+                  plugin,
+                  parsedValues.config,
+                  existingConnection?.config,
+                )
+              : parsedValues.config,
+          );
           const validation = await pluginManager.validateConnection(
             pluginId,
             configForSave,
@@ -1653,10 +1658,18 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
           return;
         }
         const startedAt = Date.now();
+        // An agent's call says so; Ajour's own pages don't. The access it
+        // needs follows from the operation, not from the caller.
+        const forAgent = requestUrl.searchParams.get("agent") === "1";
+        const agentNeed =
+          operation.data === "listItemComments" ||
+          operation.data === "searchItemPeople"
+            ? "read"
+            : "readWrite";
         // Ids, counts and duration only. Comment text and authors stay out
         // of the log (ADR 0008).
         const logCommentEvent = (
-          outcome: "ok" | "error",
+          outcome: "ok" | "error" | "refused",
           commentCount?: number,
         ) =>
           logMcpEvent({
@@ -1664,10 +1677,32 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             operation: operation.data,
             plugin_id: pluginId,
             connection_id: connectionId,
+            agent: forAgent,
             comment_count: commentCount,
             outcome,
             duration_ms: Date.now() - startedAt,
           });
+        /**
+         * Refuses an agent's call the user doesn't allow on the connection,
+         * as stored now: before the plugin runs, and again before a read's
+         * text leaves, so a revocation saved meanwhile holds.
+         */
+        const refuseAgent = async () => {
+          if (!forAgent) return false;
+          const current = await storage.getConnection(pluginId, connectionId);
+          if (
+            current &&
+            agentAccessAllows(connectionAgentAccess(current), agentNeed)
+          ) {
+            return false;
+          }
+          logCommentEvent("refused");
+          writeJson(response, 403, {
+            error: `The user hasn't allowed agents to ${agentNeed === "read" ? "read" : "post"} comments on the "${connection.label}" connection.`,
+          });
+          return true;
+        };
+        if (await refuseAgent()) return;
         try {
           const result = await pluginManager.runBacklogCommentOperation(
             pluginId,
@@ -1686,6 +1721,7 @@ export function createAppApiServer(options: AppApiServerOptions = {}) {
             },
             commentRequest,
           );
+          if (agentNeed === "read" && (await refuseAgent())) return;
           logCommentEvent(
             "ok",
             "comments" in result

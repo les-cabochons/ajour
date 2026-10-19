@@ -158,31 +158,39 @@ export async function sendSettleComments(workItemId: string) {
         return;
       }
       try {
-        if (
-          entry.agentClient &&
-          !agentAccessAllows(
-            (await readAgentCommentAccess(item)).access,
-            "readWrite",
-          )
-        ) {
-          keepCommentAsDraft(workItemId, entry.body);
-          showErrorToast({
-            title: `${entry.agentClient}'s comment on "${item.title}" wasn't posted`,
-            description:
-              "Agents can no longer post comments on its connection. It's kept as a draft on the item.",
-          });
-          return;
+        if (entry.agentClient) {
+          const { access } = await readAgentCommentAccess(item);
+          if (!agentAccessAllows(access, "readWrite")) {
+            keepCommentAsDraft(workItemId, entry.body);
+            showErrorToast({
+              title: `${entry.agentClient}'s comment on "${item.title}" wasn't posted`,
+              description:
+                "Agents can no longer post comments on its connection. It's kept as a draft on the item.",
+            });
+            return;
+          }
+          // Changed while access was read: the settle no longer stands.
+          const now = localStore
+            .snapshot()
+            .workItems.find((workItem) => workItem._id === workItemId);
+          if (!now) return;
+          if (now.status === "active" || !isCommentSourceOf(now, entry)) {
+            keepCommentAsDraft(workItemId, entry.body);
+            return;
+          }
         }
         const { comment } = await postItemComment(
           entry.pluginId,
           entry.connectionId,
           { sourceId: entry.sourceId, body: entry.body },
+          // An agent's comment: the API checks its access at the post.
+          entry.agentClient ? { agent: true } : undefined,
         );
         announcePostedComment(entry, comment);
       } catch (error) {
         keepCommentAsDraft(workItemId, entry.body);
         showErrorToast({
-          title: `Couldn't post your comment on "${item.title}"`,
+          title: `Couldn't post ${entry.agentClient ? `${entry.agentClient}'s` : "your"} comment on "${item.title}"`,
           description: `${error instanceof Error ? error.message : "Unknown error"} It's kept as a draft on the item.`,
         });
       }

@@ -523,6 +523,12 @@ function normalizeState(
         )
         .map(({ pullRequestAutoSync, agentAccess, ...connection }) => ({
           ...connection,
+          // Ajour's own setting never lives in the plugin's config.
+          config: Object.fromEntries(
+            Object.entries(connection.config).filter(
+              ([key]) => key !== AGENT_ACCESS_FIELD_ID,
+            ),
+          ),
           ...(typeof pullRequestAutoSync === "boolean"
             ? { pullRequestAutoSync }
             : {}),
