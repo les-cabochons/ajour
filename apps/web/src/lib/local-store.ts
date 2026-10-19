@@ -254,6 +254,20 @@ export type {
 
 const STORAGE_KEY = "ajour.local-state.v2";
 const STATE_CHANGE_EVENT = "ajour-local-state";
+
+/**
+ * What a state change event says. `local` is true for a write in this window
+ * and false for one another window made, which this window only reloads.
+ */
+export interface LocalStateChange {
+  local: boolean;
+}
+
+function announceStateChange(change: LocalStateChange) {
+  window.dispatchEvent(
+    new CustomEvent<LocalStateChange>(STATE_CHANGE_EVENT, { detail: change }),
+  );
+}
 const RETIRED_AUTH_CACHE_PREFIX = "msal.";
 
 const defaultCapture: CaptureSettings = {
@@ -915,7 +929,7 @@ function writeState(state: LocalAppState) {
   const nextState = { ...state, updatedAt: Date.now() };
   window.localStorage.setItem(STORAGE_KEY, JSON.stringify(nextState));
   cachedState = nextState;
-  window.dispatchEvent(new Event(STATE_CHANGE_EVENT));
+  announceStateChange({ local: true });
 }
 
 /** The part of the state the team sync rules read and write. */
@@ -1065,16 +1079,26 @@ function listenForOtherWindowWrites() {
   window.addEventListener("storage", (event: StorageEvent) => {
     if (event.key === STORAGE_KEY || event.key === null) {
       refreshState();
-      window.dispatchEvent(new Event(STATE_CHANGE_EVENT));
+      announceStateChange({ local: false });
     }
   });
 }
 
 export const localStore = {
-  subscribe(callback: () => void) {
+  /**
+   * Calls `callback` after each change, from this window or another. The
+   * change says which, for listeners that act on their own window's writes.
+   */
+  subscribe(callback: (change: LocalStateChange) => void) {
     listenForOtherWindowWrites();
-    window.addEventListener(STATE_CHANGE_EVENT, callback);
-    return () => window.removeEventListener(STATE_CHANGE_EVENT, callback);
+    const listener = (event?: Event) =>
+      callback({
+        local:
+          (event as CustomEvent<LocalStateChange> | undefined)?.detail
+            ?.local === true,
+      });
+    window.addEventListener(STATE_CHANGE_EVENT, listener);
+    return () => window.removeEventListener(STATE_CHANGE_EVENT, listener);
   },
   snapshot: readState,
   syncPullRequests(

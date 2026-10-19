@@ -11,13 +11,9 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { formatClockDuration } from "@/domain/time/duration";
-import {
-  findWeekReachingTarget,
-  listTouchedWeeks,
-  type WeekTargetReached,
-} from "@/domain/time/week-target-prompt";
+import type { WeekTargetReached } from "@/domain/time/week-target-prompt";
 import { dateAtNoon } from "@/features/time/time-date-picker";
-import { localStore } from "@/lib/local-store";
+import { watchWeekTargets } from "@/features/time/week-target-watch";
 
 const shortDate = new Intl.DateTimeFormat("en-US", {
   month: "short",
@@ -35,33 +31,10 @@ export function formatWeekTargetRange(weekDates: readonly string[]) {
   return `${shortDate.format(start)} to ${endLabel}`;
 }
 
-/**
- * Watches every store write. When one brings a week's saved total to its
- * target (`findWeekReachingTarget`), it marks the week as asked at once, so
- * Ajour never asks twice whatever the answer, and returns the week to ask
- * about. A write from another window counts too.
- */
+/** The week to ask about, until the user answers. */
 function useWeekTargetPrompt() {
   const [reached, setReached] = useState<WeekTargetReached | null>(null);
-
-  useEffect(() => {
-    let previous = localStore.snapshot();
-    return localStore.subscribe(() => {
-      const before = previous;
-      const after = localStore.snapshot();
-      // Set first: marking the week below writes again and calls back here.
-      previous = after;
-      const week = findWeekReachingTarget({
-        before,
-        after,
-        touchedWeeks: listTouchedWeeks(before, after),
-      });
-      if (!week) return;
-      localStore.markCommitPrompted(week.weekOf);
-      setReached(week);
-    });
-  }, []);
-
+  useEffect(() => watchWeekTargets(setReached), []);
   return { reached, dismiss: () => setReached(null) };
 }
 
